@@ -226,6 +226,7 @@ The `workkit:migrate` skill EXECUTES this recipe — it is the doer, and this se
 4. `Rulings` → `AGENTS.md`/`docs/` if doctrine, else a comment on the issue they bind.
 5. `Done` → deleted. CHANGELOG + git are the record.
 6. `INBOX.md` entries → issues with `status:inbox`, then run triage.
-7. `git rm PROGRESS.md INBOX.md`. Register the repo in HQ `projects.json` if it is not there.
+7. CHANGELOG history → the entry format, the WHOLE file: every section including the pre-issue eras, whose entries take the literal `(no issue)`. Do not trust `changelog.js` to name this work — its section detector deliberately skips non-semver `## [...]` headings (the `## [Plans for 2026]` guard), so era sections lint green while still in the old long-line format. The eyeball check is the gate: no massive single-line entries anywhere. Rewrite rules and the fan-out recipe: the `workkit:migrate` skill §2.
+8. `git rm PROGRESS.md INBOX.md`. Register the repo in HQ `projects.json` if it is not there.
 
 Remaining repos + HQ migrate under issue #8.

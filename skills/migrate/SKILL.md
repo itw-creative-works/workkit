@@ -47,11 +47,13 @@ The entry rules and their reasoning live in the workkit plugin's `docs/project-s
 
 The depth is NOT deleted — it already lives in the commit each entry links to. That is what makes the compression safe to do.
 
+**The WHOLE file migrates, and the linter cannot scope this work for you.** `changelog.js`'s section detector deliberately skips non-semver `## [...]` headings (the `## [Plans for 2026]` guard), so a pre-issue era section (`## [cp1–cp99] — …`) lints green while every entry in it is still a massive old-format line — exactly the miss that happened in omega (2026-07-27: only `[Unreleased]` was rewritten because only its lines failed the lint). Scope by EYEBALL: every `## ` section with bullets under it migrates, and any long-line entry anywhere means the work is not done. Pre-issue-tracker entries take the literal `(no issue)`.
+
 ### Split the work by version section
 
 A long history does not fit one context. Fan it out:
 
-1. List every `## [version]` heading and its line range.
+1. List every `## [version]` heading and its line range — including non-semver era headings the linter ignores.
 2. Divide into contiguous ranges, one subagent per range.
 3. Give each agent **the count of sections it owns** and require it to state that count back and confirm it rewrote all of them before returning. An agent here returned only the first section of its range on the first attempt, and the range had to be redone — the count is the check that catches it.
 4. Each agent returns rewritten markdown for its range ONLY, never the whole file.
