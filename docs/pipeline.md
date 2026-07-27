@@ -60,10 +60,10 @@ flowchart TB
     MGR["MANAGER — the main chat<br/><i>conversation · judgment · dispatch<br/>design calls, contract changes, final verdicts</i>"]
 
     subgraph crew [" the class agents — models resolved per spawn by the manager:resolver hook "]
-        SCOUT["scout<br/><i>read-only recon</i><br/>fast tier"]
-        WORKER["worker<br/><i>implementation against a brief</i><br/>workhorse tier, capped at the session model"]
-        VERIFIER["verifier<br/><i>blind review + review scorer</i><br/>workhorse tier, effort high"]
-        ADVISOR["advisor<br/><i>plans and hard calls, never implements</i><br/>frontier tier, always"]
+        SCOUT["scout<br/><i>read-only recon</i><br/>fast tier → sonnet · effort low (pinned)"]
+        WORKER["worker<br/><i>implementation against a brief</i><br/>workhorse tier → opus, capped at the<br/>session model · effort follows the session"]
+        VERIFIER["verifier<br/><i>blind review + review scorer</i><br/>workhorse tier → opus, capped at the<br/>session model · effort high (pinned)"]
+        ADVISOR["advisor<br/><i>plans and hard calls, never implements</i><br/>frontier tier → fable · effort follows the session"]
     end
 
     MGR -- "recon" --> SCOUT
@@ -78,6 +78,7 @@ flowchart TB
 - The **manager** is whichever model the chat runs on; the topology follows the model button — a frontier session never spawns the advisor, a workhorse session consults it for plans.
 - **Crew sizing is policy, not mood**: a small change is the manager alone or one worker; a feature is one worker (a pair only under worktree isolation); the verifier runs once at claimed-done; the full review panel (the `workkit:reviewer` agent + scout lenses + verifier scorer) assembles only inside `workkit:review` and `workkit:ship`.
 - **Models are supplied per spawn** by the `manager/resolver` hook from `ladder.json` and the live session model; per-repo and per-user `manager` blocks in `.workkit/settings.json` override tiers or turn the crew off (`enabled: false`).
+- **Effort is frontmatter, never the resolver's**: scout `low` and verifier `high` are pinned in their agent files; worker and advisor carry no pin, so each spawn inherits the session's effort setting. The `workkit:reviewer` agent pins neither model nor effort — it inherits both.
 
 ## What enforces each hop
 
