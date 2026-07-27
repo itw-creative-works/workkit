@@ -9,15 +9,17 @@ flowchart TB
     Form["issue form"] --> Inbox([status:inbox])
     Note["chat note"] --> Inbox
     File[".workkit/inbox.md"] --> Inbox
-    Inbox --> Triage["triage — route it out of the inbox"]
-    Triage -->|needs shaping| Spec["write the ## Spec"]
+    Inbox --> Triage["Triage — route it out of the inbox<br>/workkit:triage"]
+    Triage -->|needs shaping| Spec["Write the spec"]
     Triage -->|not now| Parked([status:parked])
+    Parked -.->|revived| Triage
     Spec -->|accepted, or a small item| Specced([status:specced])
     Spec -->|a call to make| Blocked([status:blocked])
-    Specced -->|claim: assign yourself| Build["build"]
-    Build --> Verify["verify"]
+    Blocked -.->|answered| Spec
+    Specced -->|claim: assign yourself| Build["Build<br>/workkit:feature"]
+    Build --> Verify["Verify"]
     Verify -->|findings| Build
-    Verify -->|clean| Ship["ship — commit, CHANGELOG, Fixes #N"]
+    Verify -->|clean| Ship["Ship — commit, CHANGELOG, Fixes #N<br>/workkit:ship"]
     Ship --> Closed([closed])
 ```
 
@@ -30,10 +32,10 @@ flowchart TB
     Human([human]) <--> Manager["MANAGER — the main chat: judgment, dispatch, final verdicts"]
 
     subgraph Crew["the class agents — each spawn's model comes from the manager/resolver hook"]
-        Scout["scout — recon · sonnet, low effort"]
-        Worker["worker — builds a brief · opus, session effort"]
-        Verifier["verifier — blind review · opus, high effort"]
-        Advisor["advisor — plans, never implements · fable, session effort"]
+        Scout["scout<br>read-only recon<br>Sonnet (low)"]
+        Worker["worker<br>builds a brief<br>Opus (session effort)"]
+        Verifier["verifier<br>blind review<br>Opus (high)"]
+        Advisor["advisor<br>plans, never implements<br>Fable (session effort)"]
     end
 
     Manager -->|recon| Scout
