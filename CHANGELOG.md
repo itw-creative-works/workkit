@@ -20,3 +20,8 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 - [#5](../../issues/5) — The workflow/reload-guard hook says once, mid-session, when the kit's agents, skills, or hook wiring changed after loading — the case `/reload-plugins` exists for.
 - [#9](../../issues/9) — CHANGELOG format is enforced in CI: the heal vendors the linter into each repo's `.github/` and the seeded checks workflow lints the `[Unreleased]` section, so every maintainer hits the same gate.
 - [#14](../../issues/14) — The spec doc renumbers to v4, matching the shipped state model.
+- [#1](../../issues/1) — The docs:state-check hook caches only silence: a non-zero inbox count is re-verified every session, so a drained inbox goes quiet immediately.
+- [#2](../../issues/2) — The daily heal asserts the hook layer is alive: every wired hook resolves, is executable, and parses, and missing tools are named loudly.
+- [#8](../../issues/8) — Agent claims carry the `agent:working` label; the heal releases a claim idle for 24 hours (label, assignee, and a comment naming the sweep).
+- [#11](../../issues/11) — The commit gate requires a staged CHANGELOG entry on any commit whose message closes an issue.
+- [#12](../../issues/12) — The whats-next digest orders eligible work blockers first, then bugs, shared seams, and dependent features — the order autonomy will use.

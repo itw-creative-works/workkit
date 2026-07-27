@@ -57,10 +57,11 @@
     },
     "agent": {
       "exclusive": false,
-      "summary": "Automation permission. Absence means humans only.",
+      "summary": "Automation permission, and the agent claim marker. Absence of both means humans only, unclaimed.",
       "color": "A2EEEF",
       "values": {
-        "ok": { "description": "An agent may work this issue autonomously. Absence means humans only." }
+        "ok": { "description": "An agent may work this issue autonomously. Absence means humans only." },
+        "working": { "description": "An agent claimed this issue. Applied at claim, removed at release; the heal clears it at 24h idle." }
       }
     }
   }

@@ -253,33 +253,71 @@ const run = async () => {
 
   group('state-check: the issue-count cache');
 
-  await test('a second session inside 30 minutes makes no gh call', () => {
+  // Only SILENCE is cached (issue #1). An announcement describes a queue that
+  // triage can empty at any moment, and triage leaves no local trace this hook
+  // could fingerprint — so the announcing state is re-asked every session and
+  // the cache invalidates itself.
+  const issueCount = (stub) => ghCalls(stub).filter((c) => isCall(c, 'issue', 'list')).length;
+  // The stub answers `issue list` from this file, so rewriting it is what the
+  // repo's queue changing between two sessions looks like.
+  const setIssues = (stub, issues) => fs.writeFileSync(path.join(stub.dir, 'issues.json'), JSON.stringify(issues));
+
+  await test('an empty queue is cached — a second session inside 30 minutes makes no gh call', () => {
+    const repo = mkRepo();
+    const stub = makeGhStub({ issues: [] });
+    const cache = mkTmp();
+    const first = runHook(repo, { pathPrefix: stub.binDir, cache });
+    assertEq(first.stdout, '', 'an empty queue is not news');
+    assertEq(issueCount(stub), 1, 'exactly one query');
+    const second = runHook(repo, { pathPrefix: stub.binDir, cache });
+    assertEq(issueCount(stub), 1, 'the cached run queries nothing');
+    assertEq(second.stdout, '', 'and stays silent');
+    cleanup(repo); cleanup(stub.dir); cleanup(cache);
+  });
+
+  await test('a count worth announcing is never cached — the next session asks again', () => {
     const repo = mkRepo();
     const stub = makeGhStub({ issues: [{ number: 1 }, { number: 2 }] });
     const cache = mkTmp();
     const first = runHook(repo, { pathPrefix: stub.binDir, cache });
-    assert(first.stdout.includes('2 open status:inbox'), `first run queried, got: ${first.stdout}`);
-    const callsAfterFirst = ghCalls(stub).filter((c) => isCall(c, 'issue', 'list')).length;
-    assertEq(callsAfterFirst, 1, 'exactly one query');
+    assert(first.stdout.includes('2 open status:inbox'), `first run announces, got: ${first.stdout}`);
+    assertEq(fs.readdirSync(cache).length, 0, 'nothing was written to the cache');
     const second = runHook(repo, { pathPrefix: stub.binDir, cache });
-    assertEq(ghCalls(stub).filter((c) => isCall(c, 'issue', 'list')).length, 1, 'the cached run queries nothing');
-    assert(second.stdout.includes('2 open status:inbox'), `and still announces the count, got: ${second.stdout}`);
+    assertEq(issueCount(stub), 2, 'the announcing state re-queries');
+    assert(second.stdout.includes('2 open status:inbox'), `and announces the fresh count, got: ${second.stdout}`);
     cleanup(repo); cleanup(stub.dir); cleanup(cache);
   });
 
-  await test('a cache file older than 30 minutes re-queries', () => {
+  await test('triage drains the inbox and the very next session goes quiet', () => {
+    // The reported bug (issue #1): the drained inbox kept announcing until the
+    // cache aged out. Nothing here invalidates anything — the announcing state
+    // simply has no cache entry to go stale.
     const repo = mkRepo();
-    const stub = makeGhStub({ issues: [{ number: 1 }] });
+    const stub = makeGhStub({ issues: [{ number: 1 }, { number: 2 }] });
+    const cache = mkTmp();
+    const before = runHook(repo, { pathPrefix: stub.binDir, cache });
+    assert(before.stdout.includes('2 open status:inbox'), `announced first, got: ${before.stdout}`);
+    setIssues(stub, []);
+    const after = runHook(repo, { pathPrefix: stub.binDir, cache });
+    assertEq(after.stdout, '', 'silent immediately, with no wait for the cache window');
+    cleanup(repo); cleanup(stub.dir); cleanup(cache);
+  });
+
+  await test('a cached silence older than 30 minutes re-queries', () => {
+    const repo = mkRepo();
+    const stub = makeGhStub({ issues: [] });
     const cache = mkTmp();
     runHook(repo, { pathPrefix: stub.binDir, cache });
     const cacheFile = path.join(cache, fs.readdirSync(cache)[0]);
-    assertEq(fs.readFileSync(cacheFile, 'utf8'), '1', 'the cache holds the count');
+    assertEq(fs.readFileSync(cacheFile, 'utf8'), '0', 'the cache holds the empty count');
     // Backdate past the 30-minute window the hook checks with `find -mmin -30`.
     const old = new Date(Date.now() - 90 * 60 * 1000);
     fs.utimesSync(cacheFile, old, old);
+    setIssues(stub, [{ number: 1 }]);
     const again = runHook(repo, { pathPrefix: stub.binDir, cache });
-    assertEq(ghCalls(stub).filter((c) => isCall(c, 'issue', 'list')).length, 2, 'a stale cache re-queries');
+    assertEq(issueCount(stub), 2, 'a stale cache re-queries');
     assert(again.stdout.includes('1 open status:inbox'), `and reports the fresh count, got: ${again.stdout}`);
+    assertEq(fs.readdirSync(cache).length, 0, 'and the entry it invalidated is gone');
     cleanup(repo); cleanup(stub.dir); cleanup(cache);
   });
 

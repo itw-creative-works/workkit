@@ -5,7 +5,7 @@ The agent-agnostic core of the issue workflow. It knows nothing about Claude Cod
 | File | What it is |
 |---|---|
 | `labels.json` | Machine SSOT for the label vocabulary — every label is `group:value`, with its description and color |
-| `standards.sh` | Brings a repo to the standard, idempotently: creates the labels from `labels.json` (and corrects description/color drift), installs the issue templates and the required-checks CI workflow, vendors `changelog.js` to the repo's `.github/changelog-lint.js` and adds the `changelog` job to its `checks.yml`, asks for branch protection on the test check (best effort), moves a repo's old `.workflow/` to `.workkit/` once, keeps `.workkit/` in `.gitignore`, seeds `.workkit/inbox.md` and `.workkit/session.md`, and reports leftovers from a retired convention |
+| `standards.sh` | Brings a repo to the standard, idempotently: creates the labels from `labels.json` (and corrects description/color drift), installs the issue templates and the required-checks CI workflow, vendors `changelog.js` to the repo's `.github/changelog-lint.js` and adds the `changelog` job to its `checks.yml`, asks for branch protection on the test check (best effort), moves a repo's old `.workflow/` to `.workkit/` once, keeps `.workkit/` in `.gitignore`, seeds `.workkit/inbox.md` and `.workkit/session.md`, releases agent claims that went quiet, checks that the hook layer beside it is alive, and reports leftovers from a retired convention |
 | `templates/issue-forms/` | The markdown GitHub issue templates (bug · enhancement · idea · dump) installed into a repo's `.github/ISSUE_TEMPLATE/`. Each pre-fills the issue anatomy (`## Description` then `## Spec`) and auto-applies `status:inbox` + its `type:` label |
 | `templates/github-workflows/` | `checks.yml`, the CI workflow installed into a repo's `.github/workflows/` — the `test` job runs the suite on every pull request, the `changelog` job holds the `[Unreleased]` section to the entry format. Installed once; the repo's copy is its own to extend and is never overwritten, except that the `changelog` job is appended once to a workflow healed before it existed |
 | `templates/inbox.md` · `templates/session.md` | The two gitignored working files seeded into a participating repo's `.workkit/`. A file that already has content is never overwritten |
@@ -23,6 +23,10 @@ The two guarding hooks run only where the plugin is installed, so the format is 
 `settings.json`'s `version` records the standard a repo was last healed to; the script carries the current one. A repo already at it does what it always did — cheap idempotent checks. A repo BELOW it also gets a drift report, then has its version stamped forward once the mechanical heals succeed (a half-heal leaves it alone, so the repo is asked again).
 
 The report names, and never touches, what a script must not decide alone: `PROGRESS.md`, `INBOX.md`, `TODO.md`, and `plans/` (each still holds work items nobody migrated), and a `CHANGELOG.md` whose entries are not in the entry format. Each line says what to run. Deleting those files is a judgment call and a human's to make.
+
+## The hook layer self-check
+
+Every hook fails open by design, so a chmod-stripped script, a syntax error, or a missing tool takes a safety layer offline with nothing watching. Once a day, the heal asserts the layer beside it: every hook wired in `hooks.json` resolves through `loader.sh` to a script that exists, is executable, and parses (`bash -n`), and the tools they call (`jq`, `git`, `node`, `shasum`) are on the PATH. A broken script is a broken install — it warns and marks the run unfinished, so the next session tries again. A missing tool warns just as loudly but never marks the run: no repo can install it, and holding the version stamp hostage to it would nag forever. An engine installed with no hook layer beside it checks nothing and says nothing (`WORKFLOW_HOOKS_DIR` overrides the location).
 
 ## The two settings files
 
@@ -65,7 +69,7 @@ Run it by hand against any repo:
 bash ~/.claude/workkit/standards.sh [repo-root]
 ```
 
-Only the label step needs `jq`, `gh`, and a reachable remote; the migration, gitignore, working-file, and forms heals are pure bash and always run. The gitignore heal checks its result with `git check-ignore` rather than looking for its own text — if some other pattern still hides `.workkit/settings.json` (the directory form `.workkit/` does exactly that, and no negation can undo it), the run names that line and reports the repo as needing attention instead of claiming success.
+Only the label step, the claim sweep, and the label report need `jq`, `gh`, and a reachable remote; the migration, gitignore, working-file, and forms heals are pure bash and always run. The gitignore heal checks its result with `git check-ignore` rather than looking for its own text — if some other pattern still hides `.workkit/settings.json` (the directory form `.workkit/` does exactly that, and no negation can undo it), the run names that line and reports the repo as needing attention instead of claiming success.
 
 ## Where this is going
 

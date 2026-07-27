@@ -95,10 +95,13 @@ const makeGhStub = ({
   const issuesFile = path.join(dir, 'issues.json');
   fs.writeFileSync(labelsFile, JSON.stringify(labels));
   fs.writeFileSync(issuesFile, JSON.stringify(issues));
+  // An entry is a bare number when the caller only cares which issues carry the
+  // label (the migration), or a whole object when the fields matter (the
+  // stale-claim sweep reads updatedAt and assignees).
   for (const [label, numbers] of Object.entries(labeled)) {
     fs.writeFileSync(
       path.join(dir, `issues-${label}.json`),
-      JSON.stringify(numbers.map((number) => ({ number }))),
+      JSON.stringify(numbers.map((n) => (typeof n === 'object' ? n : { number: n }))),
     );
   }
   for (const [label, numbers] of Object.entries(labeledRecheck)) {
@@ -220,12 +223,21 @@ const binDirWithout = (excluded) => {
   return binDir;
 };
 
-const runScript = (repoDir, { pathPrefix, args = [], workflowHome, claudeHome } = {}) => {
-  const basePath = '/usr/bin:/bin:/usr/sbin:/sbin';
+const runScript = (repoDir, {
+  pathPrefix, args = [], workflowHome, claudeHome, hooksDir,
+} = {}) => {
+  // node is on the PATH of any machine running this standard (the engine lints
+  // CHANGELOGs with it, and so does the hook layer), so the default PATH
+  // carries it. A test proving what happens WITHOUT a tool builds its own PATH
+  // with binDirWithout() — the suite's idiom for exactly that.
+  const basePath = `/usr/bin:/bin:/usr/sbin:/sbin:${path.dirname(process.execPath)}`;
   const res = spawnSync('bash', [SCRIPT, ...args, repoDir], {
     env: {
       ...process.env,
       PATH: pathPrefix ? `${pathPrefix}:${basePath}` : basePath,
+      // Unset means the real hook layer beside the engine, which is what most
+      // of this suite runs against; the self-check tests point at a fixture.
+      ...(hooksDir ? { WORKFLOW_HOOKS_DIR: hooksDir } : {}),
       WORKFLOW_HOME: workflowHome || path.join(mkTmp(), 'workflow-home'),
       // Same rule as WORKFLOW_HOME for the engine's address symlink: the step
       // that maintains ~/.claude/workkit must never reach the real ~/.claude.
@@ -256,7 +268,7 @@ const run = async () => {
     assertEq(values('status'), 'blocked,inbox,parked,specced', 'status values');
     assertEq(values('type'), 'bug,enhancement,idea', 'type values');
     assertEq(values('priority'), 'high,low', 'priority values');
-    assertEq(values('agent'), 'ok', 'agent values');
+    assertEq(values('agent'), 'ok,working', 'agent values');
   });
 
   await test('values are single lowercase words — no hyphens', () => {
@@ -1644,7 +1656,11 @@ const run = async () => {
     assert(output.includes('#8'), `an issue without a type is named — type is required, got: ${output}`);
     assert(output.includes('#9'), `a double type is named — type is exclusive, got: ${output}`);
     assert(output.includes('workkit:triage'), `names the fix, got: ${output}`);
-    assertEq(ghCalls(stub).filter((c) => isCall(c, 'issue', 'list')).length, 1, 'one gh call for the whole report');
+    // The report's own query is the unscoped one — the label-scoped queries
+    // belong to the migration and the stale-claim sweep.
+    const reportQueries = ghCalls(stub)
+      .filter((c) => isCall(c, 'issue', 'list') && !c.includes('--label'));
+    assertEq(reportQueries.length, 1, 'one gh call for the whole report');
     cleanup(repo); cleanup(stub.dir);
   });
 
@@ -1660,6 +1676,215 @@ const run = async () => {
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
     assert(!output.includes('workkit:triage'), `nothing to route, got: ${output}`);
     cleanup(repo); cleanup(stub.dir);
+  });
+
+  group('standards.sh: the stale-claim sweep');
+
+  // An agent that claimed an issue and then died leaves it locked against every
+  // other worker. The claim is the agent:working label (assignee accounts
+  // cannot tell an agent from a human — agents run gh as the owner) plus the
+  // assignee, and the heal releases both after 24 hours with no activity.
+  const CLAIM = 'agent:working';
+  const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString().replace(/\.\d+Z$/, 'Z');
+  const claimStub = (carried, extra = {}) => makeGhStub({
+    labels: desiredLabels(), labeled: { [CLAIM]: carried }, ...extra,
+  });
+  const issueEdits = (stub) => ghCalls(stub).filter((c) => isCall(c, 'issue', 'edit'));
+
+  await test('agent:working is a label the manifest creates', () => {
+    assert(desiredLabels().some((l) => l.name === CLAIM), 'the sweep queries a label the heal makes');
+    assertEq(MANIFEST.groups.agent.exclusive, false, 'the claim marker is not exclusive with agent:ok');
+    assert(!Object.keys(MANIFEST.groups.status.values).includes('working'),
+      'a claim is not a status — the issue stays status:specced while it is worked');
+  });
+
+  await test('a claim with recent activity is left exactly as it is', () => {
+    const repo = makeRepo();
+    const stub = claimStub([{ number: 5, updatedAt: hoursAgo(2), assignees: [{ login: 'someone' }] }]);
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 0, 'exit 0');
+    assertEq(issueEdits(stub).length, 0, `a live claim is never released, got: ${fmtCalls(ghCalls(stub))}`);
+    assert(!output.includes('claims:'), `and nothing is claimed about it, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a claim idle past 24 hours loses the label, the assignee, and gets a comment', () => {
+    const repo = makeRepo();
+    const stub = claimStub([{ number: 8, updatedAt: hoursAgo(30), assignees: [{ login: 'someone' }] }]);
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 0, 'a release is a heal, not a failure');
+    const edits = issueEdits(stub);
+    assertEq(edits.length, 1, `one release, got: ${fmtCalls(ghCalls(stub))}`);
+    const hasPair = (call, flag, value) => call.some((a, i) => a === flag && call[i + 1] === value);
+    assert(hasPair(edits[0], '--remove-label', CLAIM), `the label comes off, got: ${fmtCalls(edits)}`);
+    assert(hasPair(edits[0], '--remove-assignee', 'someone'),
+      `and so does the assignee — one left behind still reads as a claim, got: ${fmtCalls(edits)}`);
+    const comments = ghCalls(stub).filter((c) => isCall(c, 'issue', 'comment'));
+    assertEq(comments.length, 1, `the release is recorded on the issue, got: ${fmtCalls(ghCalls(stub))}`);
+    assert(comments[0].some((a) => /stale-claim sweep/.test(a)), `naming the sweep, got: ${fmtCalls(comments)}`);
+    assert(output.includes('claims: released 1'), `and the run says so, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a failed query releases nothing and asks for another session', () => {
+    const repo = makeRepo();
+    const stub = claimStub([{ number: 8, updatedAt: hoursAgo(30), assignees: [] }], { labelQueryFails: true });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 1, 'an unfinished heal reports itself');
+    assertEq(issueEdits(stub).length, 0, 'an unreachable GitHub is not an idle claim');
+    assert(output.includes('left in place'), `says what it did not do, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('an issue assigned without the label is never touched — a human claim is not swept', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub({
+      labels: desiredLabels(),
+      // Nothing carries agent:working; the human claim is only in the whole-repo
+      // report, which the sweep never reads.
+      issues: [{
+        number: 9,
+        labels: [{ name: 'status:specced' }, { name: 'type:bug' }],
+        assignees: [{ login: 'ian' }],
+      }],
+    });
+    const { code } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 0, 'exit 0');
+    assertEq(issueEdits(stub).length, 0, `a human claim has no expiry, got: ${fmtCalls(ghCalls(stub))}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  group('standards.sh: the hook layer self-check');
+
+  // Every hook fails open by design, so a chmod-stripped script, a syntax
+  // error, or a missing tool disables a safety layer with nothing watching.
+  // This is the once-a-day assertion that the layer is alive.
+  const HOOK_NAMES = ['docs:one', 'safety:two'];
+  const makeHooksDir = ({ missing = [], notExecutable = [], badSyntax = [] } = {}) => {
+    const dir = mkTmp();
+    fs.writeFileSync(path.join(dir, 'hooks.json'), `${JSON.stringify({
+      hooks: {
+        SessionStart: [{
+          hooks: HOOK_NAMES.map((n) => ({
+            type: 'command',
+            command: `"\${CLAUDE_PLUGIN_ROOT}"/hooks/loader.sh ${n}`,
+          })),
+        }],
+      },
+    }, null, 2)}\n`);
+    fs.writeFileSync(path.join(dir, 'loader.sh'), '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 });
+    for (const name of HOOK_NAMES) {
+      if (missing.includes(name)) continue;
+      const hookDir = path.join(dir, ...name.split(':'));
+      fs.mkdirSync(hookDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(hookDir, 'run.sh'),
+        badSyntax.includes(name) ? '#!/bin/bash\nif [ 1 ; then\n' : '#!/bin/bash\nexit 0\n',
+        { mode: notExecutable.includes(name) ? 0o644 : 0o755 },
+      );
+    }
+    return dir;
+  };
+
+  await test('a healthy hook layer says nothing at all', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const hooks = makeHooksDir();
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir, hooksDir: hooks });
+    assertEq(code, 0, 'exit 0');
+    assert(!output.includes('⚠'), `a live layer is not news, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir); cleanup(hooks);
+  });
+
+  await test('the real shipped hook layer passes its own check', () => {
+    // The fixtures below prove the check catches things; this proves the kit
+    // being shipped is not one of them.
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 0, 'exit 0');
+    assert(!output.includes('⚠'), `every wired hook resolves and parses, got: ${output}`);
+    assert(/hooks: \d+ hook scripts resolve/.test(output),
+      `and the count is a skip line, which the session never sees, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a chmod-stripped hook script is named, with the chmod that fixes it', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const hooks = makeHooksDir({ notExecutable: ['safety:two'] });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir, hooksDir: hooks });
+    assertEq(code, 1, 'a dead safety layer is not a standardized repo');
+    assert(output.includes('safety:two is not executable'), `names the hook, got: ${output}`);
+    assert(output.includes('chmod +x'), `and the fix, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir); cleanup(hooks);
+  });
+
+  await test('a hook wired with no script behind it is named', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const hooks = makeHooksDir({ missing: ['docs:one'] });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir, hooksDir: hooks });
+    assertEq(code, 1, 'reported as unfinished');
+    assert(output.includes('docs:one is wired in hooks.json'), `names the hook, got: ${output}`);
+    assert(output.includes('reinstall'), `and what to do, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir); cleanup(hooks);
+  });
+
+  await test('a hook script that does not parse is named', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const hooks = makeHooksDir({ badSyntax: ['docs:one'] });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir, hooksDir: hooks });
+    assertEq(code, 1, 'reported as unfinished');
+    assert(output.includes('docs:one has a syntax error'), `names the hook, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir); cleanup(hooks);
+  });
+
+  await test('the loader itself is checked — nothing runs without it', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const hooks = makeHooksDir();
+    fs.chmodSync(path.join(hooks, 'loader.sh'), 0o644);
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir, hooksDir: hooks });
+    assertEq(code, 1, 'reported as unfinished');
+    assert(output.includes('loader.sh is not executable'), `names the router, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir); cleanup(hooks);
+  });
+
+  await test('a missing tool is named loudly, without holding the repo back', () => {
+    // A tool the machine lacks is not the repo's fault, so it warns like
+    // everything else here but never flags the run — the version stamp and the
+    // drift report must not wait on something no repo can install for it.
+    const repo = makeRepo();
+    const hooks = makeHooksDir();
+    const stub = makeGhStub();
+    const binDir = binDirWithout('node');
+    const res = spawnSync('/bin/bash', [SCRIPT, repo], {
+      env: {
+        PATH: `${stub.binDir}:${binDir}`,
+        WORKFLOW_HOME: path.join(binDir, 'wh'),
+        WORKFLOW_CLAUDE_HOME: path.join(binDir, 'ch'),
+        WORKFLOW_HOOKS_DIR: hooks,
+      },
+      encoding: 'utf8',
+      timeout: 20000,
+    });
+    const out = (res.stdout || '') + (res.stderr || '');
+    assertEq(res.status, 0, 'a machine condition never fails the run');
+    assert(/hooks: the hook layer needs.*node/.test(out), `names the missing tool, got: ${out}`);
+    assert(out.includes('silently do not run'), `and what its absence costs, got: ${out}`);
+    cleanup(repo); cleanup(hooks); cleanup(binDir); cleanup(stub.dir);
+  });
+
+  await test('an engine installed without a hook layer beside it checks nothing', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const empty = mkTmp();
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir, hooksDir: empty });
+    assertEq(code, 0, 'exit 0');
+    assert(!output.includes('hooks:'), `no hooks.json means no hook layer to judge, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir); cleanup(empty);
   });
 
   group('gh stub: argument boundaries survive recording');
@@ -1901,7 +2126,18 @@ const driftRun = async () => {
       '# Changelog', '', '## [1.0.0] - 2020-01-01', '', '### Added',
       '- **A big essay entry** that carries no issue link and no separator at all.', '',
     ].join('\n'));
-    const { code, output } = runScript(dir, { pathPrefix: stub.binDir });
+    const binDir = binDirWithout('node');
+    const res = spawnSync('/bin/bash', [SCRIPT, dir], {
+      env: {
+        PATH: `${stub.binDir}:${binDir}`,
+        WORKFLOW_HOME: path.join(binDir, 'wh'),
+        WORKFLOW_CLAUDE_HOME: path.join(binDir, 'ch'),
+      },
+      encoding: 'utf8',
+      timeout: 20000,
+    });
+    const code = res.status;
+    const output = (res.stdout || '') + (res.stderr || '');
     assertEq(code, 0, 'a missing tool is a machine condition, not a failure');
     assertEq(repoVersion(dir), 1, 'not stamped past a check that never ran');
     assert(output.includes('version not stamped'), `says so on stderr, got: ${output}`);

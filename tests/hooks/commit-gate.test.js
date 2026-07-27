@@ -686,6 +686,70 @@ const run = async () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  group('commit-gate: a Fixes #N commit stages its CHANGELOG entry');
+
+  // Collapse on ship: the turn that closes an issue writes the entry the issue
+  // closes against. Prose until now, and deterministically checkable.
+  const ENTRY = CHANGELOG(`- ${ISSUE} — The thing the issue asked for.`);
+
+  await test('a Fixes trailer with no CHANGELOG staged blocks', () => {
+    const dir = mkRepo();
+    fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), ENTRY);
+    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe' });
+    stage(dir, 'app.js', 'const x = 1;\n');
+    touchMarker(dir);
+    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4"');
+    assertEq(code, 2, `blocked, got: ${stderr}`);
+    assert(stderr.includes('CHANGELOG'), `names the rule, got: ${stderr}`);
+    assert(stderr.includes('Unreleased'), `and names the fix, got: ${stderr}`);
+    cleanup(dir);
+  });
+
+  await test('the same commit with the entry staged passes', () => {
+    const dir = mkRepo();
+    fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), CHANGELOG());
+    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe' });
+    stage(dir, 'app.js', 'const x = 1;\n');
+    stage(dir, 'CHANGELOG.md', ENTRY);
+    touchMarker(dir);
+    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4"');
+    assertEq(code, 0, `allowed, got: ${stderr}`);
+    cleanup(dir);
+  });
+
+  await test('Closes and Resolves are the same trailer', () => {
+    const dir = mkRepo();
+    fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), ENTRY);
+    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe' });
+    stage(dir, 'app.js', 'const x = 1;\n');
+    touchMarker(dir);
+    for (const word of ['Closes', 'Resolves', 'closes']) {
+      const { code } = runHook(dir, `git commit -m "feat: a thing\n\n${word} #12"`);
+      assertEq(code, 2, `${word} #N closes an issue too`);
+    }
+    cleanup(dir);
+  });
+
+  await test('no trailer — the commit is not asked for an entry', () => {
+    const dir = mkRepo();
+    fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), ENTRY);
+    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe' });
+    stage(dir, 'app.js', 'const x = 1;\n');
+    touchMarker(dir);
+    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing that closes nothing"');
+    assertEq(code, 0, `allowed, got: ${stderr}`);
+    cleanup(dir);
+  });
+
+  await test('a repo that keeps no CHANGELOG.md is never asked for one', () => {
+    const dir = mkRepo();
+    stage(dir, 'app.js', 'const x = 1;\n');
+    touchMarker(dir);
+    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4"');
+    assertEq(code, 0, `allowed, got: ${stderr}`);
+    cleanup(dir);
+  });
+
   await test('hooks.json registers the gate under PreToolUse Bash', () => {
     const settings = JSON.parse(fs.readFileSync(
       path.join(__dirname, '..', '..', 'hooks', 'hooks.json'), 'utf8'));

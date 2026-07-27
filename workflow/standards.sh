@@ -31,6 +31,12 @@
 #                  default branch. Quietly skipped wherever the plan or the
 #                  token cannot grant it; an existing protection is never
 #                  touched.
+#   6. claims    — release agent claims that went quiet: an open issue carrying
+#                  agent:working with no activity for 24 hours loses the label
+#                  and its assignee, and gets a comment saying the sweep did it.
+#   7. hooks     — assert the hook layer beside this engine is alive: every hook
+#                  wired in hooks.json resolves to a script that exists, is
+#                  executable, and parses, and the tools they call are present.
 #
 # Two user-level seeds run before any of that, on every invocation: the user's
 # own settings file, and the engine's public address (~/.claude/workkit → this
@@ -58,6 +64,23 @@ TEMPLATES_DIR="$SCRIPT_DIR/templates"
 FORMS_DIR="$TEMPLATES_DIR/issue-forms"
 CHANGELOG_LINTER="$SCRIPT_DIR/changelog.js"
 
+# The hook layer that ships beside this engine. The engine runs fine without it
+# (it is installed alone wherever someone scripts the standard directly), so the
+# self-check below skips silently when there is no hooks.json here.
+# WORKFLOW_HOOKS_DIR overrides the location (the tests point at a fixture).
+HOOKS_DIR="${WORKFLOW_HOOKS_DIR:-$SCRIPT_DIR/../hooks}"
+# The tools the hooks call for their core work. Each hook fails OPEN without
+# them by design, so a missing one disables a safety layer in silence — this
+# list is what makes that visible once a day.
+HOOK_TOOLS="jq git node shasum perl"
+
+# The label an agent applies when it claims an issue, and how long a claim may
+# sit without activity before the heal releases it (owner ruling, 2026-07-26:
+# assignee accounts cannot tell an agent from a human, because agents run gh as
+# the owner, so the claim needs a marker of its own).
+CLAIM_LABEL="agent:working"
+CLAIM_STALE_SECONDS=86400
+
 # The workflow state directory's name, for the ENGINE layer — one string so a
 # rename is one edit here. The hooks (hooks/_lib.sh) and the
 # test harness (tests/lib/harness.js) hold their own copy for the same reason;
@@ -72,7 +95,7 @@ WORKKIT_LEGACY_DIR=".workflow"
 # is one integer compare instead of a scan. Bump it when a new heal or a new
 # drift check lands; a repo already at the current version does exactly what it
 # did before.
-STANDARD_VERSION=6
+STANDARD_VERSION=7
 
 # ── Logging (mirrors setup/lib/helpers.sh; standalone so the script travels) ──
 _G='\033[0;32m' _Y='\033[0;33m' _C='\033[0;36m' _D='\033[0;90m' _N='\033[0m'
@@ -874,6 +897,70 @@ migrate_labels() {
   return 0
 }
 
+# ── 3c. Agent claims that went quiet are released ──
+# An agent that claimed an issue and then died leaves it locked against every
+# other worker. The claim is the CLAIM_LABEL plus the assignee, so releasing it
+# removes both and says so in a comment — the issue's own trail records who
+# freed it and why, which a silent unassign would not.
+#
+# Fail-safe like the migration: only an ANSWER from GitHub licenses a write. A
+# query that fails leaves every claim exactly as it is and flags the run, so the
+# next session tries again rather than releasing work that is still running.
+# A human claim (an assignee and no CLAIM_LABEL) is never in the query's answer
+# and is never touched.
+#
+# The staleness test is jq's, not the shell's: `date -d` and `date -v` disagree
+# across platforms, and jq is already required to read GitHub's answer at all.
+sweep_stale_claims() {
+  local issues stale n assignees args login moved=0 failed=0
+  command -v jq >/dev/null 2>&1 || return 0
+  command -v gh >/dev/null 2>&1 || return 0
+  gh auth status >/dev/null 2>&1 || return 0
+  git remote get-url origin >/dev/null 2>&1 || return 0
+  # The label step creates CLAIM_LABEL from the manifest; without a manifest
+  # (or a sync that never reached GitHub) the label may not exist here yet, and
+  # a query for a label a repo does not have is not a failure worth reporting.
+  [[ -n "$existing_labels" ]] || return 0
+  jq -e --arg n "$CLAIM_LABEL" 'any(.[]; .name == $n)' <<<"$existing_labels" >/dev/null 2>&1 || return 0
+
+  if ! issues="$(gh issue list --state open --label "$CLAIM_LABEL" --json number,updatedAt,assignees --limit 100 2>/dev/null)"; then
+    log_warn "claims: could not list the issues carrying $CLAIM_LABEL — every claim is left in place"
+    needs_attention=1
+    return 0
+  fi
+
+  stale="$(jq -r --argjson max "$CLAIM_STALE_SECONDS" '
+    .[] | select((.updatedAt | fromdateiso8601) < (now - $max)) | .number' <<<"$issues" 2>/dev/null || true)"
+
+  while read -r n; do
+    [[ -n "$n" ]] || continue
+    # Every assignee comes off with the label: an assignee left behind still
+    # reads as a claim to everyone querying the queue.
+    assignees="$(jq -r --argjson n "$n" '.[] | select(.number == $n) | .assignees[].login' <<<"$issues" 2>/dev/null || true)"
+    args=(--remove-label "$CLAIM_LABEL")
+    while read -r login; do
+      [[ -n "$login" ]] || continue
+      args+=(--remove-assignee "$login")
+    done <<<"$assignees"
+
+    if ! gh issue edit "$n" "${args[@]}" >/dev/null 2>&1; then
+      log_warn "claims: could not release the stale claim on #$n — left as it was"
+      failed=1
+      continue
+    fi
+    # The comment follows the release, never precedes it: a comment about a
+    # release that then failed would be the issue's record of something that
+    # did not happen.
+    gh issue comment "$n" --body "Released by the standards stale-claim sweep: this issue carried $CLAIM_LABEL with no activity for 24 hours, so the label and any assignee were cleared. It is free to claim again." >/dev/null 2>&1 \
+      || log_warn "claims: released #$n but could not comment on it"
+    moved=$((moved + 1))
+  done <<<"$stale"
+
+  [[ "$failed" -eq 1 ]] && needs_attention=1
+  [[ "$moved" -gt 0 ]] && log_ok "claims: released $moved stale $CLAIM_LABEL claim(s) — idle for over 24 hours"
+  return 0
+}
+
 # ── 4. Open issues carry conforming labels ──
 # REPORTS ONLY, like the drift report: templates can be installed before the
 # label sync ever ran, GitHub silently drops nonexistent labels at issue
@@ -903,6 +990,88 @@ check_issue_labels() {
   if [[ -n "$bad" ]]; then
     log_warn "issues: $bad missing a required status:/type: label or carrying two from one exclusive group — run the workkit:triage skill to route them"
   fi
+}
+
+# ── 5. The hook layer is alive ──
+# Every hook fails OPEN by design — a broken hook must never wedge a session —
+# so a chmod-stripped script, a syntax error, or a missing tool disables a
+# safety layer with nothing watching (issue #2). The per-event fail-open stays;
+# this is the once-a-day assertion that the layer exists at all.
+#
+# Reports only, in two registers. A hook that cannot run is a BROKEN INSTALL:
+# it warns and flags the run, the same as a missing template. A missing TOOL is
+# a machine condition, not a repo's fault — it warns just as loudly but does not
+# flag the run, so the version stamp and the drift report are not held hostage
+# to something no repo can fix.
+hook_names() {
+  # Each wired command is `…/loader.sh <prefix>:<name>`; the name is what
+  # resolves to a directory on disk.
+  jq -r '.. | objects | select(has("command")) | .command' "$HOOKS_DIR/hooks.json" 2>/dev/null \
+    | sed -E 's|.*loader\.sh[[:space:]]+||; s|[[:space:]].*||' \
+    | grep -E '^[a-z]+[:/][a-z-]+$' | sort -u || true
+}
+
+hooks_checked=0
+check_hook_layer() {
+  local manifest="$HOOKS_DIR/hooks.json" name tool missing=""
+
+  # No hook layer beside the engine: this is the engine installed on its own,
+  # not a broken install.
+  [[ -f "$manifest" ]] || return 0
+
+  for tool in $HOOK_TOOLS; do
+    command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"
+  done
+  if [[ -n "$missing" ]]; then
+    log_warn "hooks: the hook layer needs$missing — without them the hooks exit 0 and their checks silently do not run"
+  fi
+
+  # Everything below reads the manifest, which needs jq. Without it the tool
+  # warning above has already said what is wrong.
+  command -v jq >/dev/null 2>&1 || return 0
+
+  # The router every wired command goes through is checked first: unusable here
+  # means no hook runs at all, whatever the scripts behind it look like.
+  check_hook_script "loader.sh" "$HOOKS_DIR/loader.sh"
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    check_hook_script "$name" "$HOOKS_DIR/${name//://}/run.sh"
+  done < <(hook_names)
+
+  # The extraction's name filter is exact on purpose, so a wired command it
+  # cannot parse would silently fall out of the check — compare against the
+  # raw count of loader.sh commands and say so instead.
+  local wired
+  wired="$(jq -r '.. | objects | select(has("command")) | .command' "$HOOKS_DIR/hooks.json" 2>/dev/null \
+    | grep 'loader\.sh' | sort -u | grep -c . || true)"
+  if [[ -n "$wired" && "$wired" -gt $((hooks_checked - 1)) ]]; then
+    log_warn "hooks: $wired commands are wired through loader.sh but only $((hooks_checked - 1)) resolved to checkable names — a hook name the checker cannot parse is going unchecked"
+  fi
+
+  [[ "$hooks_checked" -gt 0 ]] && log_skip "hooks: $hooks_checked hook scripts resolve, are executable, and parse"
+  return 0
+}
+
+# One wired hook, by the three ways it can be dead. Counts into hooks_checked.
+check_hook_script() {
+  local name="$1" script="$2"
+  hooks_checked=$((hooks_checked + 1))
+  if [[ ! -f "$script" ]]; then
+    log_warn "hooks: $name is wired in hooks.json but there is no script at $script — reinstall the workkit plugin"
+    needs_attention=1
+    return 0
+  fi
+  if [[ ! -x "$script" ]]; then
+    log_warn "hooks: $name is not executable — the loader skips it and its checks never run (chmod +x $script)"
+    needs_attention=1
+    return 0
+  fi
+  if ! bash -n "$script" 2>/dev/null; then
+    log_warn "hooks: $name has a syntax error — it exits non-zero before doing anything (bash -n $script)"
+    needs_attention=1
+    return 0
+  fi
+  return 0
 }
 
 # Set by any heal that could not finish on its own — the run stays exit 0 (a
@@ -949,7 +1118,9 @@ ensure_changelog_job
 ensure_branch_protection
 sync_labels
 migrate_labels
+sweep_stale_claims
 check_issue_labels
+check_hook_layer
 
 # A repo already at the current standard has nothing to look for — the whole
 # point of recording the version. Below it, say what is left over, then stamp

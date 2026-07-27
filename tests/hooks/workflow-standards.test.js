@@ -20,7 +20,11 @@ const HOOK = path.join(__dirname, '..', '..', 'hooks', 'workflow', 'standards', 
 // default-path group drops it to prove the relative resolution.
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 
-const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
+// node is on the PATH of any machine running this standard — the engine lints
+// CHANGELOGs with it, and its hook-layer self-check counts it among the tools
+// the hooks call. A PATH without it makes every heal here report a machine that
+// does not exist.
+const BASE_PATH = `/usr/bin:/bin:/usr/sbin:/sbin:${path.dirname(process.execPath)}`;
 
 // The ignore line the engine writes, built from the harness constant so the
 // directory's name lives in exactly one place here too.

@@ -12,7 +12,7 @@ Every phase exists to prevent a specific failure (building the wrong thing, miss
 
 When the work has an issue, check its stage before anything else. Builds start ONLY from `status:specced` with a real `## Spec` (the implementation layer, or the literal `None needed — small item.`). An issue at `status:inbox` — or a specced one whose Spec is missing its implementation layer — gets the SPEC PASS first: a `workkit:scout` maps the territory, the spec drafts against the issue and the map, the manager reviews, the owner accepts; the deepened Spec lands on the issue and the label moves to `status:specced`. That flip IS the authorization; on an issue carrying `agent:ok` an agent may make it itself. Then build.
 
-Claim the issue before working it: assign it to yourself, skip an issue already assigned to someone else, and re-read the label and the assignee at the moment you start — not at the moment you listed the queue. (The road and the rules: the workkit plugin's README and `docs/project-state.md`.)
+Claim the issue before working it: assign it to yourself AND add `agent:working` (`gh issue edit <N> --add-assignee @me --add-label agent:working`), skip an issue already assigned to someone else, and re-read the label and the assignee at the moment you start — not at the moment you listed the queue. Remove `agent:working` when you release the issue, finished or not; a claim left behind is swept by the standards heal after 24 idle hours. The label is what tells an agent claim from a human one — an agent runs `gh` as the owner, so the assignee cannot. (The road and the rules: the workkit plugin's README and `docs/project-state.md`.)
 
 ## 0. Size the task — say the size out loud
 

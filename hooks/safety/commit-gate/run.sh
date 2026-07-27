@@ -7,7 +7,9 @@
 #      the workkit:review skill must have run since the last commit — it leaves
 #      a marker file this hook checks. Docs-only commits skip this.
 #   3. CHANGELOG: entries this commit adds must match the entry format.
-#   4. Tests: when the repo's package.json has a test script, it must pass.
+#   4. Collapse on ship: a commit closing an issue (Fixes/Closes/Resolves #N)
+#      must stage the CHANGELOG.md entry it closes against.
+#   5. Tests: when the repo's package.json has a test script, it must pass.
 # Code-vs-docs classification matches the docs/change-tracker hook (same
 # definition in both, kept in sync by hand — no second consumer shape yet).
 # Fail open on anything that isn't clearly a violating commit.
@@ -213,7 +215,25 @@ if linter="$(hook_changelog_linter 2>/dev/null)"; then
   done <<<"$changelogs"
 fi
 
-# 4. Tests must pass when the repo defines them (at the repo ROOT — the
+# 4. Collapse on ship: a commit that closes an issue carries its CHANGELOG
+# entry. The rule is the spec's (docs/project-state.md § queue semantics — the
+# turn that closes an issue writes the entry pointing at it), and the trailer
+# makes it checkable. Read from the RAW command: the message text is inside a
+# quoted span, which the clause strip replaced with a placeholder, so the
+# tokenized clause cannot see it. A mention of the trailer outside the message
+# reads the same way here, and asking that commit for its entry too is the
+# harmless direction.
+# Only in repos that keep a CHANGELOG.md, and only when the staged file list is
+# knowable — a pathspec commit bypasses staging, so what it carries cannot be
+# read (the same reason check 1 stands down there).
+if [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/CHANGELOG.md" ] \
+  && printf '%s' "$cmd" | grep -Eqi '(^|[^[:alnum:]])(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+#[0-9]+'; then
+  if ! printf '%s\n' "$files" | grep -Eq '(^|/)CHANGELOG\.md$'; then
+    block "the message closes an issue (Fixes/Closes/Resolves #N) but no CHANGELOG.md is staged. An issue closes against its CHANGELOG entry (docs/project-state.md): add the entry under [Unreleased], stage CHANGELOG.md, then commit."
+  fi
+fi
+
+# 5. Tests must pass when the repo defines them (at the repo ROOT — the
 # session may sit in a subdirectory).
 if [ -f "$repo_root/package.json" ] && jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
   if ! out=$(cd "$repo_root" && npm test 2>&1); then

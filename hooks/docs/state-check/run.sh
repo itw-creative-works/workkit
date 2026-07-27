@@ -55,7 +55,17 @@ msg=""
 # Captured-but-unrouted work items (GitHub Issues are the SSOT).
 # The count is cached ~30 min per repo — a network call on EVERY new panel is
 # the latency the standards hook's daily marker exists to avoid (review
-# finding 2026-07-24). Cache holds the last count; stale or missing = refresh.
+# finding 2026-07-24). Stale or missing cache = refresh.
+#
+# ONLY SILENCE IS CACHED (issue #1). Triage drains status:inbox by editing
+# labels on GitHub, which leaves no local trace this hook could fingerprint,
+# and a skill cannot be relied on to run an invalidate command — so the cache
+# has to invalidate itself. It does, by never holding an announcement: an empty
+# queue is written to the cache, a non-empty one is re-queried every session and
+# the old entry removed. The moment triage empties the queue, the next session
+# asks GitHub and goes quiet, with no cooperation from the skill at all.
+# The trade is one bounded query per session while the inbox is non-empty —
+# paid only in the state the announcement is telling you to clear.
 if [ -n "$cwd" ] && command -v gh >/dev/null 2>&1 \
   && git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   cache_dir="${STATE_CHECK_CACHE:-$HOME/.claude/logs/state-check}"
@@ -75,7 +85,15 @@ if [ -n "$cwd" ] && command -v gh >/dev/null 2>&1 \
       # `|| true`: this is the last command of the block, and an empty repo_key
       # would make the block return 1 — set -e would end the hook right here,
       # before the CLAUDE.md and AGENTS.md checks below ever run.
-      { [ -n "$repo_key" ] && printf '%s' "$n" >"$cache_file" 2>/dev/null; } || true
+      if [ -n "$repo_key" ]; then
+        if [ "$n" -eq 0 ]; then
+          printf '%s' "$n" >"$cache_file" 2>/dev/null || true
+        else
+          # A count worth announcing is never held: the queue it describes can
+          # be drained at any moment, and a stale alarm outlives its truth.
+          rm -f "$cache_file" 2>/dev/null || true
+        fi
+      fi
     fi
   fi
   case "$n" in ''|*[!0-9]*) n=0 ;; esac
