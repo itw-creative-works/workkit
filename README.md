@@ -29,14 +29,14 @@ Capture (any of the three sources) is what puts an item INTO `status:inbox`; tri
 
 ```mermaid
 flowchart TB
-    Human([human]) <--> Manager
+    Human([human]) <--> Chat
 
-    subgraph Top[" "]
+    subgraph Chat[" "]
         direction LR
         Manager["MANAGER<br>the main chat<br>judgment, dispatch, final verdicts"]
         Manager <-->|plans, hard calls| Advisor["advisor<br>plans, never implements<br>Fable (session effort)"]
     end
-    style Top fill:none,stroke:none
+    style Chat fill:none,stroke:none
 
     subgraph Crew["the class agents"]
         Scout["scout<br>read-only recon<br>Sonnet (low)"]
@@ -44,10 +44,10 @@ flowchart TB
         Verifier["verifier<br>blind review<br>Opus (high)"]
     end
 
-    Manager -->|recon| Scout
-    Manager -->|brief| Worker
-    Manager -->|diff + brief| Verifier
-    Crew -.->|reports back| Manager
+    Chat -->|recon| Scout
+    Chat -->|brief| Worker
+    Chat -->|diff + brief| Verifier
+    Crew -.->|reports back| Chat
 ```
 
 - The **manager** is whichever model your chat runs on, so the topology follows the model button: a frontier session never spawns the advisor, a workhorse session consults it for plans.
