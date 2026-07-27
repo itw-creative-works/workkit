@@ -8,9 +8,11 @@ user-invocable: true
 
 Every phase exists to prevent a specific failure (building the wrong thing, missing a consumer, shipping unreviewed). Skip a phase only when its failure can't happen at this size.
 
-## 0a. Pipeline gate — build only from `status:queued`
+## 0a. Pipeline gate — build only from `status:specced`
 
-When the work has an issue, check its stage before anything else. Builds start ONLY from `status:queued` with a real `## Plan` (the implementation layer, or the literal `None needed — small item.`). An issue at `status:spec` — or a queued one whose Plan is missing its implementation layer — gets the PLANNING PASS first: a `workkit:scout` maps the territory, a plan drafts against the issue and the map, the manager reviews, the human ratifies; the deepened Plan lands on the issue and the label moves to `status:queued`. Then build. (The pipeline: the workkit plugin's `docs/pipeline.md`.)
+When the work has an issue, check its stage before anything else. Builds start ONLY from `status:specced` with a real `## Spec` (the implementation layer, or the literal `None needed — small item.`). An issue at `status:inbox` — or a specced one whose Spec is missing its implementation layer — gets the SPEC PASS first: a `workkit:scout` maps the territory, the spec drafts against the issue and the map, the manager reviews, the owner accepts; the deepened Spec lands on the issue and the label moves to `status:specced`. That flip IS the authorization; on an issue carrying `agent:ok` an agent may make it itself. Then build.
+
+Claim the issue before working it: assign it to yourself, skip an issue already assigned to someone else, and re-read the label and the assignee at the moment you start — not at the moment you listed the queue. (The road and the rules: the workkit plugin's README and `docs/project-state.md`.)
 
 ## 0. Size the task — say the size out loud
 

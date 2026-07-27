@@ -1,5 +1,9 @@
 {
-  "note": "SSOT for the issue label vocabulary. Every label is group:value — values are single lowercase words, never hyphenated. The standards script creates missing labels and corrects description/color drift; it never deletes labels it does not know. A group's color is the default for its values; a value may override it. An exclusive group allows at most one of its labels per open issue; a required group demands exactly one.",
+  "note": "SSOT for the issue label vocabulary. Every label is group:value — values are single lowercase words, never hyphenated. The standards script creates missing labels and corrects description/color drift; it never deletes labels it does not know. A group's color is the default for its values; a value may override it. An exclusive group allows at most one of its labels per open issue; a required group demands exactly one. The migrations map is old label to new: the heal relabels every issue carrying the old one, open and closed, then deletes it — an entry stays here until every participating repo has healed.",
+  "migrations": {
+    "status:spec": "status:inbox",
+    "status:queued": "status:specced"
+  },
   "groups": {
     "status": {
       "exclusive": true,
@@ -8,15 +12,11 @@
       "color": "1D76DB",
       "values": {
         "inbox": {
-          "description": "Captured, not yet routed — triage drains this state. Exactly one status: label per open issue.",
+          "description": "Captured, nothing authorized — triage drains this state. Exactly one status: label per open issue.",
           "color": "1D76DB"
         },
-        "spec": {
-          "description": "Needs the detailed plan before build. Exactly one status: label per open issue.",
-          "color": "BFD4F2"
-        },
-        "queued": {
-          "description": "Plan ready, buildable now. Exactly one status: label per open issue. Pull one by self-assigning.",
+        "specced": {
+          "description": "Spec written and accepted — building is authorized. Exactly one status: label per open issue.",
           "color": "0E8A16"
         },
         "blocked": {

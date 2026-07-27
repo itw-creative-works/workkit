@@ -8,7 +8,7 @@ user-invocable: true
 
 ## 1. Scope
 
-Default: uncommitted changes (else the last commit); the user may name a range, PR, or files. Collect the diff + the task context (what was ASKED — from the conversation, the issue, or its `## Plan`) so Spec-faithfulness is judgeable.
+Default: uncommitted changes (else the last commit); the user may name a range, PR, or files. Collect the diff + the task context (what was ASKED — from the conversation, the issue, or its `## Spec`) so Spec-faithfulness is judgeable.
 
 ## 1b. Tier — full by default, light by criteria
 

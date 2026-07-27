@@ -46,26 +46,28 @@ Repo instructions live in `AGENTS.md` (provider-agnostic); `CLAUDE.md` is exactl
 
 | Label | Meaning |
 |---|---|
-| `status:inbox` | Captured, not yet routed. Triage is the ACTION that drains it, not a state. |
-| `status:spec` | Accepted, needs the detailed plan before it is buildable. The planning pass (deepen the issue's `## Plan`, ratified by the owner) moves it to `status:queued`. |
-| `status:queued` | Plan ready, buildable now. The only stage builds start from, and the only pool `agent:ok` autonomy pulls from. |
+| `status:inbox` | Captured, nothing authorized. Raw notes, half-thoughts, and accepted-but-unspecced items all sit here. Triage is the ACTION that drains it, not a state. |
+| `status:specced` | The issue's `## Spec` is written AND accepted. The label flip IS the authorization to build — the only stage builds start from. |
 | `status:blocked` | Waiting on a human decision — the question lives in the issue body or a comment. |
 | `status:parked` | Kept on purpose, not now. |
 | `type:bug` · `type:enhancement` · `type:idea` | What kind of thing it is — exactly one per open issue, like `status:`. Applied by the issue templates at capture (a dump is `type:idea`); rarely changes. (Native GitHub issue types are org-only, so labels carry this.) |
 | `priority:high` · `priority:low` | Order within the queue. **Absence = normal** — there is no `priority:normal` label. |
-| `agent:ok` | An agent may work this issue autonomously. Absence means humans only. |
+| `agent:ok` | An agent may work this issue autonomously, at every stage. Absence means humans only. |
 
-- **Exactly one `status:` label per open issue.** Every relabel removes the old one in the same command: `gh issue edit <N> --remove-label status:inbox --add-label status:queued`.
-- The four groups are orthogonal and compose: `status:queued` + `priority:high` + `agent:ok` on one issue is legal and means exactly what it says.
+- **Exactly one `status:` label per open issue.** Every relabel removes the old one in the same command: `gh issue edit <N> --remove-label status:inbox --add-label status:specced`.
+- The four groups are orthogonal and compose: `status:specced` + `priority:high` + `agent:ok` on one issue is legal and means exactly what it says.
 - `area:*` is deliberately NOT bootstrapped — it is project-specific; a repo adds its own if it wants one. Adopt a group deliberately, never speculatively.
+- **A retired label migrates itself.** `labels.json` carries a `migrations` map (old label → new); the standards heal moves every issue carrying an old label, open and closed, to its replacement and then deletes the old label. `status:spec` and `status:queued` are the entries in it today.
 
-**The statuses read as a PIPELINE** — intent to implemented: `status:inbox` → `status:spec` → `status:queued` → build → verify → ship → closed against the CHANGELOG entry, with `blocked` and `parked` as side pockets. A small item skips `spec` (triage routes it straight to `queued` with the literal Plan `None needed — small item.`). Plans ratify in two stages: architecture level first (what and why — enough to say yes or no), then the planning pass deepens the SAME `## Plan` section with the implementation layer before build. The `workkit:feature` skill refuses to build an issue below `status:queued`. The visual map — stages, hops, the agent crew and its tiers — is [docs/pipeline.md](pipeline.md).
+**The statuses read as a PIPELINE** — intent to implemented: `status:inbox` → `status:specced` → build → verify → ship → closed against the CHANGELOG entry, with `blocked` and `parked` as side pockets. Status labels name WAIT states; the working stages have no label of their own — the issue stays `status:specced` while the work runs, and the assignee marks it in flight.
+
+The one gate is the flip from `inbox` to `specced`, and it is a deliberate act: it says the `## Spec` is written, it is accepted, and building this is now authorized. Nobody flips it casually. A small item is specced the moment someone accepts it with the literal Spec `None needed — small item.`; a large one is specced when its implementation layer is written and accepted. "Accepted but not yet specced" is deliberately NOT a visible stage — it stays `status:inbox`, with a triage comment or a `priority:` label carrying that signal. The `workkit:feature` skill refuses to build an issue that is not `status:specced`. The visual map — the road and the crew that works it — is in the [README](../README.md).
 
 ## Capture
 
 Three surfaces, all converging on issues. There is no other store.
 
-1. **Issue templates** (`.github/ISSUE_TEMPLATE/`: bug · enhancement · idea · dump) — markdown templates that pre-fill the body with the issue anatomy (`## Description` then `## Plan`) and auto-apply `status:inbox` + the `type:` label, so a first-day teammate files a correctly shaped issue from the web or phone.
+1. **Issue templates** (`.github/ISSUE_TEMPLATE/`: bug · enhancement · idea · dump) — markdown templates that pre-fill the body with the issue anatomy (`## Description` then `## Spec`) and auto-apply `status:inbox` + the `type:` label, so a first-day teammate files a correctly shaped issue from the web or phone.
 2. **A dump issue** — one issue holding a wall of mixed notes. The template stamps it `type:idea` (every issue carries exactly one `type:`); triage reads the body and fans it out.
 3. **`.workkit/inbox.md`** — the local, gitignored free-form dump for offline moments. Triage drains it into issues the same way. The standards script creates it empty (with its capture header) so dumping is always zero-friction; it never overwrites one that has entries.
 
@@ -78,7 +80,7 @@ Every issue body has the SAME two sections, always present, always in this order
 | Section | Holds |
 |---|---|
 | `## Description` | What the thing is and why, in prose — never restating the title. Background, evidence, links, and success criteria all live here. |
-| `## Plan` | The proposal or spec: how it will be built — the editable, single-current-version part. Plans are for BIG items; a small item's Plan is the literal line `None needed — small item.` An agent that picks up a "None needed" issue and finds real complexity writes the plan in before building. |
+| `## Spec` | How it will be built — the editable, single-current-version part. Specs are for BIG items; a small item's Spec is the literal line `None needed — small item.` An agent that picks up a "None needed" issue and finds real complexity writes the spec in before building. Accepting what is written here is what earns `status:specced`. |
 
 The body is the current version of the thinking; comments are the trail of how it got there.
 
@@ -90,11 +92,11 @@ The issue templates in `.github/ISSUE_TEMPLATE/` pre-fill exactly this anatomy, 
 
 | The parts... | Shape |
 |---|---|
-| always ship together | ONE issue; list the parts as a checklist in the Plan |
+| always ship together | ONE issue; list the parts as a checklist in the Spec |
 | serve one goal but ship separately, each needing its own state | a PARENT issue with GitHub sub-issues (`gh issue edit <child> --add-parent <N>`) — a checkbox cannot hold a status label, a sub-issue can |
 | share only a theme | SEPARATE issues, no parent |
 
-Sub-issues are also the dependency mechanism: work that waits on OTHER WORK stays `status:queued` under its parent — the open siblings say what comes first, and each child is a real issue the queue query can see (a checkbox is not). `status:blocked` stays reserved for waiting on a human decision. A checklist line can be converted to a sub-issue from the GitHub UI the moment it turns out to need its own state, so starting small costs nothing.
+Sub-issues are also the dependency mechanism: work that waits on OTHER WORK stays `status:specced` under its parent — the open siblings say what comes first, and each child is a real issue the queue query can see (a checkbox is not). `status:blocked` stays reserved for waiting on a human decision. A checklist line can be converted to a sub-issue from the GitHub UI the moment it turns out to need its own state, so starting small costs nothing.
 
 **A later idea is always its own issue** — never appended to an existing one, however related (owner ruling, 2026-07-26). Two MCP integrations decided days apart are two issues: they ship at different moments, which is the whole test. Add a `relates to #N` line when the connection matters; merge two issues only on deciding they will ship as one; reach for a parent only when separate shipments serve one coordinated goal, never for taxonomy.
 
@@ -106,7 +108,7 @@ Every entry is routed to exactly ONE home: a comment on an existing issue · a n
 
 - **Search first, open AND closed** (`gh issue list --state all --search ...`). A closed **not planned** issue is the rejection record — cite it instead of re-pitching.
 - **The Filed trail is mandatory**: triage ends by printing `Filed:` — one line per entry → its destination. On a dump issue, that trail is the closing comment. Capture is only trusted when filing is visible.
-- **Route by readiness**: actionable work whose plan still needs design or detail goes to `status:spec`; only plan-ready work (or a small item with `None needed — small item.`) goes to `status:queued`.
+- **Route by authorization, not by enthusiasm**: `status:specced` is only for work whose `## Spec` is written and accepted (a small item's accepted Spec is the literal `None needed — small item.`). Anything still needing design stays `status:inbox` with whatever spec exists drafted into `## Spec` or a comment — accepting it later is its own act.
 - Detection is automatic (the `docs:state-check` hook announces open `status:inbox` issues and a non-empty `.workkit/inbox.md` at session start); filing stays deliberate. Full playbook: the `workkit:triage` skill.
 
 ## Queue semantics
@@ -114,7 +116,8 @@ Every entry is routed to exactly ONE home: a comment on an existing issue · a n
 - **Working** = the issue is assigned (no label for it). Your queue is `gh issue list --assignee @me`.
 - **Done** = closed `completed`. **Rejected** = closed `not planned` — the institutional no, and the thing triage cites.
 - Queue order: `priority:high`, then unlabeled (= normal), then `priority:low`. GitHub has no manual ordering; `priority:` is the substitute.
-- **Multi-developer**: pull any unassigned `status:queued` issue by self-assigning. Nothing is shared but the issues — `.workkit/` is per developer, so there are no merge conflicts and no lane collisions.
+- **The assignee is the claim.** Whoever starts work — a human or an agent session — assigns the issue to themselves first; everyone else skips an issue that is already assigned. That is the whole anti-double-work mechanism, and it works for a developer, a teammate, and an agent alike, because nothing is shared but the issues (`.workkit/` is per developer, so there are no merge conflicts and no lane collisions).
+- **Re-validate immediately before starting.** Between finding an eligible issue and starting on it, the label and the assignee can both change — someone else claimed it, or the owner pulled `agent:ok`. Re-read both at the moment work begins, not at the moment the queue was listed, and stop if either moved.
 - **Collapse on ship**: the turn that writes the CHANGELOG entry also closes the issue with a pointer to that entry. A `Fixes #N` trailer in the commit does both on push.
 - **An issue is the work item; a PR is the delivery vehicle.** The issue holds what and why, the plan, the state labels, and the decision trail — it can live for months and survive many attempts. A pull request is one reviewable diff with checks, born from a branch and finished at merge; it belongs to exactly ONE issue through its `Fixes #N` trailer, and never spans two. The issue closes when its work ships, not when a PR merges partway there.
 - **Delivery is hybrid** (issue #37, ratified 2026-07-26): a supervised local session commits DIRECTLY to the default branch — the local hook gates (tests, review, message lint) are its enforcement, and a PR would re-review work they already reviewed. A PULL REQUEST is required exactly where those hooks cannot reach: unattended or agent-authored work (`agent:ok`, an @mention), outside contributors, or when the owner asks. PR mechanics: branch `issue/<N>-slug` (no issue → `ship/<slug>`), ONE squash merge whose subject ends `(#<PR>)` and whose body carries the `Fixes #N` trailer; the `checks.yml` workflow installed by the standards heal runs the test suite on every PR, so an author without the hooks still meets the bar; a red check is fixed on the branch, never merged around. The `chore(release)` commit always pushes directly — generated bookkeeping, and the changelog backfill needs the merged sha. The standards heal also asks GitHub to REQUIRE the test check (branch protection) as a best effort — applied where the plan allows it, quietly skipped where it does not (free-plan private repos).
@@ -150,15 +153,16 @@ Enforced at write time by the `docs:changelog-guard` hook and at commit time by 
 
 Three things are deliberately NOT entries, because a guard that judges them bounces correct work: anything inside a fenced code block (a CHANGELOG documenting its own format), anything under a `##` heading that is not a version section (a prose appendix), and any flush-left line following a bullet — which is what keepachangelog's `[1.0.0]: <url>` reference footer is made of.
 
-## Plans
+## Specs
 
-**A plan is not a file. A plan is the `## Plan` section of its issue body** (owner ruling, 2026-07-24) — one home, always current, always attached to the work it describes. There is no `plans/` directory and no plan frontmatter.
+**A spec is not a file. A spec is the `## Spec` section of its issue body** (owner ruling, 2026-07-24) — one home, always current, always attached to the work it describes. There is no `plans/` directory and no plan frontmatter.
 
 - **Editing beats appending.** The body carries the current version of the proposal; a superseded paragraph is rewritten, not struck through. The comments carry the trail — what changed, why, and who called it.
-- Plans are PROPOSALS + specs. **No checkboxes, no work-state inside the `## Plan` section** — state is the issue's labels, assignee, and open/closed.
-- **Promotion**: when a plan's content is validated in practice, its durable parts move to `docs/<topic>.md` (with `AGENTS.md` pointing at them), and the issue closes citing that path. Docs follow validation, never intentions.
+- Specs are PROPOSALS. **No checkboxes, no work-state inside the `## Spec` section** — state is the issue's labels, assignee, and open/closed.
+- **Accepting the spec is the authorization**, and it is one act: the `## Spec` is agreed and the label goes to `status:specced` in the same moment. Without `agent:ok` that act is the owner's; with it, an agent may write a spec and accept its own.
+- **Promotion**: when a spec's content is validated in practice, its durable parts move to `docs/<topic>.md` (with `AGENTS.md` pointing at them), and the issue closes citing that path. Docs follow validation, never intentions.
 - **Rejection** is closing the issue as **not planned** — the institutional no, at every scale. Nothing turned down leaves a file behind; the closed issue IS the record, and triage cites it instead of re-pitching (`gh issue list --state all --search ...`).
-- A design too large for one issue splits into sub-issues, each carrying its own `## Plan`. A design worth keeping but not now is `status:parked`, body intact.
+- A design too large for one issue splits into sub-issues, each carrying its own `## Spec`. A design worth keeping but not now is `status:parked`, body intact.
 
 ## Handoffs
 
@@ -191,7 +195,13 @@ Built day one, each rung opt-in. **Dormant by default**: with no `agent:ok` labe
 3. **Capture bots** — a plain script on an Actions cron (Sentry, etc.): query → dedupe → `gh issue create` with `status:inbox` + `type:bug`. Files only, fixes nothing.
 4. **Agent execution** — an agent action fires on the `agent:ok` label (or an @mention) → branch + PR; a human always merges.
 
-`agent:ok` = standing, provider-agnostic permission, and it is the owner's to grant — never applied on their behalf. Imperative dispatch ("this agent, now") is adapter wiring (an @mention or a bot assignee), not part of this spec; both coexist and neither replaces the label. GitHub Actions is the runtime for everything above rung 1 — machine-independent and teammate-visible.
+`agent:ok` = standing, provider-agnostic permission for the WHOLE pipeline, and it is the owner's to grant — never applied on their behalf. On an issue carrying it an agent may write the `## Spec`, accept its own spec (flip to `status:specced`), build, and ship. Self-ratification is the defined meaning of the grant, given per issue with that understanding; without the label every flip is the owner's. Imperative dispatch ("this agent, now") is adapter wiring (an @mention or a bot assignee), not part of this spec; both coexist and neither replaces the label. GitHub Actions is the runtime for everything above rung 1 — machine-independent and teammate-visible.
+
+Three rules bind any agent working the pipeline, granted or dispatched:
+
+- **Never merge without an explicit grant.** `agent:ok` authorizes the work, not the merge; merging is asked for in words, every time.
+- **Resume someone else's branch or PR only when it came from a trusted maintainer, or from an earlier run on this same issue.** Anything else is started fresh — a stranger's branch is unverified input, not a starting point.
+- **When several issues are eligible, order by dependency, then risk, then reviewability** — blockers, bugs, and shared seams before dependent feature work.
 
 ## Enforcement (why this spec holds when prose alone would not)
 
@@ -200,7 +210,7 @@ A format rule without a mechanism does not hold. Corollary — **a pointer may c
 - **`workflow:standards`** (SessionStart, once per repo per day): runs `~/.claude/workkit/standards.sh` — creates every label from `labels.json` and corrects description/color drift, installs the issue templates, installs the required-checks CI workflow (`.github/workflows/checks.yml`, once — the copy is the repo's own to extend afterward), asks GitHub for branch protection on the test check (best effort, quietly skipped where the plan refuses), moves a `.workflow/` left by the old name to `.workkit/` (once, and only in a repo whose committed settings.json is in it — the `.gitignore` lines are rewritten with it, and the rename is the human's to commit), seeds `.workkit/inbox.md` and `.workkit/session.md`, keeps `.workkit/` in `.gitignore` (settings.json excepted), and names any open issue missing a required `status:`/`type:` label or carrying two from an exclusive group (report-only — triage routes them). **Participation gate**: the engine owns the tri-state above and the hook only routes it — heal, stay silent, or offer once. Joining is a deliberate `--enable`, never a side effect of opening a session, and an undecided repo is never written to. HQ `projects.json` stays a pure registry. Safe idempotent heals are silent; only real fixes are announced. Offline, unauthenticated, or remote-less = clean skip.
 - **`docs:state-check`** (SessionStart): announces open `status:inbox` issues, a non-empty `.workkit/inbox.md`, a content-bearing `CLAUDE.md`, and an oversized `AGENTS.md`. Heal-on-contact, no manual sweeps. Standing rule: every new doctrine gets its detection added here (or to the guard) the same turn it is adopted.
 - **`docs:change-tracker`** (Stop, with uncommitted work): re-injects the three obligations — keep the issue true, promote durable findings out of `.workkit/`, doc parity on finalized work.
-- **`docs:board-guard`** (PostToolUse): validates `CLAUDE.md` (pointer doctrine) and `AGENTS.md` (≤250 lines) — its last two duties. Violations bounce to the writing agent with a precise fix-list while the context that produced them is still loaded. Board-shape checks retired with the board (label legality is the standards script's job); plan-file checks retired with `plans/` (a plan lives in its issue body, which no write-time hook sees).
+- **`docs:board-guard`** (PostToolUse): validates `CLAUDE.md` (pointer doctrine) and `AGENTS.md` (≤250 lines) — its last two duties. Violations bounce to the writing agent with a precise fix-list while the context that produced them is still loaded. Board-shape checks retired with the board (label legality is the standards script's job); spec-file checks retired with `plans/` (a spec lives in its issue body, which no write-time hook sees).
 - **`comms:style`** (UserPromptSubmit): re-injects the lite-register + rich-summary contract (canonical home: global AGENTS.md § Communication Preferences) every turn.
 
 ## Migration recipe (board repo → v3)
@@ -209,7 +219,7 @@ The `workkit:migrate` skill EXECUTES this recipe — it is the doer, and this se
 
 1. Run `bash ~/.claude/workkit/standards.sh --enable` in the repo — it writes `.workkit/settings.json` holding `{ "version": 1, "enabled": true }` (COMMIT it, that is the opt-in) and heals the repo in the same pass: labels, issue templates, `.workkit/` ignored, inbox and session files seeded.
 2. Read the whole board. Nothing is deleted; every line lands somewhere.
-3. `Now` + `Next` → issues, `status:queued` (assign the in-flight ones). `Parked` → `status:parked`. `Blocked` GO gates → `status:blocked` with the question as a comment.
+3. `Now` + `Next` → issues, `status:specced` (assign the in-flight ones). `Parked` → `status:parked`. `Blocked` GO gates → `status:blocked` with the question as a comment.
 4. `Rulings` → `AGENTS.md`/`docs/` if doctrine, else a comment on the issue they bind.
 5. `Done` → deleted. CHANGELOG + git are the record.
 6. `INBOX.md` entries → issues with `status:inbox`, then run triage.

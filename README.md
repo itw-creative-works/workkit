@@ -2,6 +2,57 @@
 
 The issue-pipeline workflow system as a Claude Code plugin. Install it and every session gains the same working standard: GitHub Issues as the single home for work items, labels as the pipeline, guard hooks that hold the line at commit time, a manager crew to delegate to, and the skills that drive the flow from "build this" to a shipped release.
 
+## The road every item travels
+
+```mermaid
+flowchart TB
+    subgraph Decide["Decide, then authorize — the label flip IS the go-ahead"]
+        Capture["capture — issue form, chat note, .workkit/inbox.md"] --> Inbox([status:inbox])
+        Inbox --> Triage["triage"]
+        Triage -->|needs shaping| Spec["write the ## Spec"]
+        Triage -->|small item| Specced([status:specced])
+        Triage -->|not now| Parked([status:parked])
+        Spec -->|accepted| Specced
+        Spec -->|a call to make| Blocked([status:blocked])
+        Blocked -->|answered| Inbox
+        Parked -->|revived| Inbox
+    end
+
+    subgraph Deliver["Deliver — the assignee is the claim"]
+        Specced --> Build["build"] --> Verify["verify"]
+        Verify -->|findings| Build
+        Verify -->|clean| Ship["ship — commit, CHANGELOG, Fixes #N"]
+    end
+
+    Ship --> Closed([closed])
+```
+
+Only two labels sit on the road: `status:inbox` (captured, nothing authorized) and `status:specced` (the spec is written and accepted, so building is authorized). `blocked` and `parked` are side pockets. Build, verify, and ship have no label of their own — the issue stays `status:specced` while the work runs, and the assignee is what marks it in flight; claiming an issue means assigning it to yourself. The rules behind every hop: [`docs/project-state.md`](docs/project-state.md).
+
+## The crew that works it
+
+```mermaid
+flowchart TB
+    Human([human]) <--> Manager["MANAGER — the main chat: judgment, dispatch, final verdicts"]
+
+    subgraph Crew["the class agents — each spawn's model comes from the manager/resolver hook"]
+        Scout["scout — recon · sonnet, low effort"]
+        Worker["worker — builds a brief · opus, session effort"]
+        Verifier["verifier — blind review · opus, high effort"]
+        Advisor["advisor — plans, never implements · fable, session effort"]
+    end
+
+    Manager -->|recon| Scout
+    Manager -->|brief| Worker
+    Manager -->|diff + brief| Verifier
+    Manager -->|only below frontier| Advisor
+    Crew -->|reports back| Manager
+```
+
+- The **manager** is whichever model your chat runs on, so the topology follows the model button: a frontier session never spawns the advisor, a workhorse session consults it for plans.
+- **Crew sizing is policy, not mood**: a small change is the manager alone or one worker; a feature is one worker (a pair only under worktree isolation); the verifier runs once at claimed-done; the full review panel assembles only inside `workkit:review` and `workkit:ship`.
+- Tiers come from `hooks/manager/ladder.json`; a repo's or a user's `.workkit/settings.json` `manager` block overrides them or turns the crew off. Effort is pinned in each agent's own frontmatter, never by the resolver.
+
 ## Install
 
 ```sh
@@ -56,13 +107,12 @@ hooks/            hooks.json + the hook groups, resolved via ${CLAUDE_PLUGIN_ROO
 agents/           the crew (namespaced workkit:<name>)
 skills/           the nine workflow skills (namespaced workkit:<name>)
 workflow/         the agent-agnostic engine
-docs/             project-state.md (the spec) · pipeline.md (the visual map)
+docs/             project-state.md (the spec) · agents.md (the crew contract)
 tests/            npm test
 ```
 
 ## Docs
 
 - [`docs/project-state.md`](docs/project-state.md) — the spec: labels, capture and triage, issue anatomy, queue semantics, `.workkit/`, plans, `_attic/`, HQ, the migration recipe
-- [`docs/pipeline.md`](docs/pipeline.md) — the visual map: stages, hops, the crew and its tiers
 - [`AGENTS.md`](AGENTS.md) — architecture overview for agent sessions
 - [`docs/agents.md`](docs/agents.md) · [`workflow/README.md`](workflow/README.md) — the crew contract and the engine reference

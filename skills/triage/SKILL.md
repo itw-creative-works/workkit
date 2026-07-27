@@ -8,7 +8,7 @@ description: Route every captured entry to its one correct home — relabel or c
 Work items live as **GitHub issues**. Triage is the ACTION that drains `status:inbox`; it is not a state.
 
 Label vocabulary (SSOT: `~/.claude/workkit/labels.json`, and every repo's own `gh label list`):
-`status:inbox|spec|queued|blocked|parked` (exactly ONE per open issue — the PIPELINE, mapped in the workkit plugin's `docs/pipeline.md`) · `type:bug|enhancement|idea` · `priority:high|low` (absence = normal) · `agent:ok` (an agent may work it autonomously; pulls only from `status:queued`).
+`status:inbox|specced|blocked|parked` (exactly ONE per open issue — the PIPELINE, mapped in the workkit plugin's README) · `type:bug|enhancement|idea` · `priority:high|low` (absence = normal) · `agent:ok` (an agent may work it autonomously at every stage — spec, accept, build, ship).
 
 ## Sources to drain
 
@@ -27,21 +27,21 @@ Before creating anything, **search what already exists** — open AND closed:
 |---|---|
 | Already covered by an existing issue | `gh issue comment <N>` on that issue — never a duplicate |
 | Already rejected (a closed **not planned** issue) | Cite the rejection in the Filed trail; do NOT re-file |
-| Actionable, plan ready (or a small item — Plan is `None needed — small item.`) | Relabel to `status:queued` (+ `type:`, + `priority:` if clearly high/low) |
-| Actionable, but the plan needs design or detail first | Relabel to `status:spec` — the planning pass (deepen the `## Plan`, the human ratifies) is what earns `status:queued` |
+| Actionable, spec written and accepted (or a small item — Spec is `None needed — small item.`) | Relabel to `status:specced` (+ `type:`, + `priority:` if clearly high/low). The flip AUTHORIZES the build — only make it when the spec is genuinely accepted |
+| Actionable, but it still needs design or detail | Leave it `status:inbox` and draft what you have into the `## Spec` (or a comment). Accepting that spec later is what earns `status:specced` |
 | Waiting on the owner's decision | `status:blocked` + a comment naming the question |
 | Worth keeping, deliberately not now | `status:parked` |
 | Cross-project / business / no single repo | An issue on the **HQ** repo (the global layer per `docs/project-state.md` § HQ — its `projects.json` is the registry) |
 | Belongs to a DIFFERENT project | An issue on that repo (`gh issue create --repo <owner/name>`) |
 | A durable fact about how things work | The right `docs/*.md` (or AGENTS.md if doctrinal) — then close the issue pointing at it |
-| Needs the owner's yes/no before it is even accepted | Draft the proposal into the `## Plan`; label `status:blocked` with the question |
+| Needs the owner's yes/no before it is even accepted | Draft the proposal into the `## Spec`; label `status:blocked` with the question |
 
 Relabel with one command so the status stays single:
-`gh issue edit <N> --remove-label status:inbox --add-label status:queued,type:enhancement`
+`gh issue edit <N> --remove-label status:inbox --add-label status:specced,type:enhancement`
 
 **Dump issues** (a wall of mixed notes in one issue): fan out to N new issues and comments, then close the dump with the Filed trail as its closing comment.
 
-**Every issue body you create or route follows the anatomy** (spec § Issue anatomy): `## Description` then `## Plan`, both always present; a small item's Plan is the literal `None needed — small item.`
+**Every issue body you create or route follows the anatomy** (spec § Issue anatomy): `## Description` then `## Spec`, both always present; a small item's Spec is the literal `None needed — small item.`
 
 **hq may have no remote yet.** If any `gh` call against hq fails, leave that entry in `.workkit/inbox.md` and say so in the Filed trail — never drop it.
 

@@ -8,8 +8,8 @@
 # immediately — prevention at write time, not cleanup later.
 # Board checks retired with the board itself (spec v3): work-item state lives
 # in GitHub Issues, where label legality is the standards script's job.
-# Plan checks retired with plans/ — a plan lives in its issue body under a
-# '## Plan' heading, so there is no plan file left to validate.
+# Spec checks retired with plans/ — a spec lives in its issue body under a
+# '## Spec' heading, so there is no plan file left to validate.
 
 set -euo pipefail
 

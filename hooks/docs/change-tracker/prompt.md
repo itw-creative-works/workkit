@@ -4,7 +4,7 @@ The working tree has uncommitted code/config changes. Work items live as GitHub 
 
 The issue is the record — its labels say where the work is, its comments carry the trail.
 
-- Work in flight → the issue is assigned to you and carries exactly one `status:` label (`queued` while waiting, `blocked` when a human decision is pending — the question goes in a comment).
+- Work in flight → the issue is assigned to you (the assignment IS the claim) and carries exactly one `status:` label (`specced` while the work runs, `blocked` when a human decision is pending — the question goes in a comment).
 - Work shipped this turn → write the CHANGELOG `[Unreleased]` entry, then close the issue with a comment pointing at it (`Fixes #N` in the commit message does both).
 - New notes/ideas surfaced this turn → a `status:inbox` issue, or `.workkit/inbox.md` if you cannot reach GitHub. Print the `Filed:` trail either way.
 

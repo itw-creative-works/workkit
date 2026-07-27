@@ -10,6 +10,6 @@ assignees: ""
 
 <!-- The thought, as rough as you like — triage shapes it later. -->
 
-## Plan
+## Spec
 
 None needed — small item.

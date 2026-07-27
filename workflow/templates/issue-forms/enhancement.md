@@ -10,6 +10,6 @@ assignees: ""
 
 <!-- What should change, stated plainly, and why — the problem it solves. -->
 
-## Plan
+## Spec
 
 None needed — small item.

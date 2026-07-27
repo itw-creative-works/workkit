@@ -10,6 +10,6 @@ assignees: ""
 
 <!-- What happened, what you expected instead, and how to reproduce it — steps, a command, or the smallest case that shows it. -->
 
-## Plan
+## Spec
 
 None needed — small item.

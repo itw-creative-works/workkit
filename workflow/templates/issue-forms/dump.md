@@ -10,6 +10,6 @@ assignees: ""
 
 <!-- Anything, in any order. Triage routes each item into its own issue and closes this one with the filed trail. -->
 
-## Plan
+## Spec
 
 None needed — small item.

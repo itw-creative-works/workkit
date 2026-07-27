@@ -34,8 +34,8 @@ This is `workkit:triage`'s routing pointed at a file instead of an inbox — **i
 
 1. Read the whole file first. Split it into discrete items; never file a mixed dump as one issue.
 2. Drop what is already true: a board's `Done` lane is history, and history lives in the CHANGELOG and the commits. Do not file completed work as an open issue.
-3. File each live item with `## Description` then `## Plan` (a small item's Plan is the literal line `None needed — small item.`), exactly one `status:` label, and a `type:` label. Never apply `agent:ok` — that is the owner's to grant.
-4. A `plans/` file becomes the `## Plan` section of its issue. One plan, one issue. A plan already marked rejected is not filed; it stays rejected.
+3. File each live item with `## Description` then `## Spec` (a small item's Spec is the literal line `None needed — small item.`), exactly one `status:` label, and a `type:` label. Never apply `agent:ok` — that is the owner's to grant.
+4. A `plans/` file becomes the `## Spec` section of its issue. One plan, one issue. A spec already marked rejected is not filed; it stays rejected.
 5. **Print the Filed trail before deleting anything**, one line per item: `"<summary>" → #<number>`.
 6. Delete the file only after every live item in it has an issue number. Deleting first turns a mis-read into lost work.
 
@@ -84,6 +84,6 @@ Whole file, not `--added-only` — the point of this pass is the history, which 
 ## Rules
 
 - **Never delete a file whose items are not yet filed.** The Filed trail is the receipt.
-- **Never invent priority or ordering.** Queue position is the owner's call; `status:queued` with no priority label is the default.
+- **Never invent priority or ordering.** Queue position is the owner's call; `status:specced` with no priority label is the default.
 - **Idempotent.** Re-running on a migrated repo finds nothing in the drift report and does nothing.
 - A repo with no CHANGELOG at all is not given one here — that is a repo-setup decision, not a migration.

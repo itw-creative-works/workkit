@@ -73,6 +73,16 @@ const makeRepo = ({ remote = true, settings = '{ "version": 1, "enabled": true }
 // indistinguishable from a correct call.
 const makeGhStub = ({
   labels = [], issues = [], authed = true, createFails = false, editFails = false,
+  // The migration step's surface. `labeled` maps a label name to the issues
+  // carrying it, so `gh issue list --label <name>` answers per label instead of
+  // handing back the whole fixture. The SECOND query for the same label is the
+  // heal's re-ask before deleting, and it answers empty by default — the moves
+  // it just made worked. `labeledRecheck` overrides that answer, which is how a
+  // capped list (issues left over past the limit) is modeled.
+  // `issueEditFails`, `labelDeleteFails`, and `labelQueryFails` drive the three
+  // ways a migration can stop halfway.
+  labeled = {}, labeledRecheck = {},
+  issueEditFails = false, labelDeleteFails = false, labelQueryFails = false,
   // Branch-protection knobs. `protection`: 'absent' (404s, PUT accepted),
   // 'present' (GET succeeds), or 'denied' (404s, PUT rejected — the free-plan
   // private repo). `repoView`: answer `gh repo view` with a real owner/branch;
@@ -85,6 +95,18 @@ const makeGhStub = ({
   const issuesFile = path.join(dir, 'issues.json');
   fs.writeFileSync(labelsFile, JSON.stringify(labels));
   fs.writeFileSync(issuesFile, JSON.stringify(issues));
+  for (const [label, numbers] of Object.entries(labeled)) {
+    fs.writeFileSync(
+      path.join(dir, `issues-${label}.json`),
+      JSON.stringify(numbers.map((number) => ({ number }))),
+    );
+  }
+  for (const [label, numbers] of Object.entries(labeledRecheck)) {
+    fs.writeFileSync(
+      path.join(dir, `recheck-${label}.json`),
+      JSON.stringify(numbers.map((number) => ({ number }))),
+    );
+  }
   fs.mkdirSync(path.join(dir, 'bin'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'bin', 'gh'), [
     '#!/usr/bin/env bash',
@@ -97,14 +119,40 @@ const makeGhStub = ({
     '  exit 0',
     'fi',
     'if [[ "$1 $2" == "issue list" ]]; then',
-    `  cat "${issuesFile}"`,
+    // A --label query is the migration asking who carries one retired label;
+    // without it this is the whole-repo report, which gets the full fixture.
+    '  want=""; prev=""',
+    '  for a in "$@"; do [[ "$prev" == "--label" ]] && want="$a"; prev="$a"; done',
+    '  if [[ -z "$want" ]]; then',
+    `    cat "${issuesFile}"`,
+    '    exit 0',
+    '  fi',
+    ...(labelQueryFails ? ['  exit 1'] : []),
+    // Which time this label is being asked about: the first is the migration's
+    // list, any later one its re-ask before deleting.
+    `  asked=0; counter="${dir}/asked-$want"`,
+    '  [[ -f "$counter" ]] && asked=$(cat "$counter")',
+    '  asked=$((asked + 1)); printf \'%s\' "$asked" > "$counter"',
+    '  if [[ "$asked" -gt 1 ]]; then',
+    `    if [[ -f "${dir}/recheck-$want.json" ]]; then cat "${dir}/recheck-$want.json"; else echo "[]"; fi`,
+    `  elif [[ -f "${dir}/issues-$want.json" ]]; then`,
+    `    cat "${dir}/issues-$want.json"`,
+    '  else',
+    '    echo "[]"',
+    '  fi',
     '  exit 0',
+    'fi',
+    'if [[ "$1 $2" == "issue edit" ]]; then',
+    `  exit ${issueEditFails ? 1 : 0}`,
     'fi',
     'if [[ "$1 $2" == "label create" ]]; then',
     `  exit ${createFails ? 1 : 0}`,
     'fi',
     'if [[ "$1 $2" == "label edit" ]]; then',
     `  exit ${editFails ? 1 : 0}`,
+    'fi',
+    'if [[ "$1 $2" == "label delete" ]]; then',
+    `  exit ${labelDeleteFails ? 1 : 0}`,
     'fi',
     'if [[ "$1" == "repo" && "$2" == "view" ]]; then',
     ...(repoView ? [
@@ -205,7 +253,7 @@ const run = async () => {
 
   await test('exact values per group', () => {
     const values = (g) => Object.keys(MANIFEST.groups[g].values).sort().join(',');
-    assertEq(values('status'), 'blocked,inbox,parked,queued,spec', 'status values');
+    assertEq(values('status'), 'blocked,inbox,parked,specced', 'status values');
     assertEq(values('type'), 'bug,enhancement,idea', 'type values');
     assertEq(values('priority'), 'high,low', 'priority values');
     assertEq(values('agent'), 'ok', 'agent values');
@@ -272,6 +320,26 @@ const run = async () => {
 
   await test('agent:ok grants autonomous work', () => {
     assert(/agent may work/i.test(MANIFEST.groups.agent.values.ok.description), 'agent:ok states the permission');
+  });
+
+  group('labels.json: the migration map');
+
+  // A vocabulary change strands every already-labeled issue outside the queue
+  // queries unless the heal carries them across, so the map is part of the SSOT.
+  await test('every migration names a retired label and a live replacement', () => {
+    const live = new Set(desiredLabels().map((l) => l.name));
+    const migrations = MANIFEST.migrations || {};
+    assert(Object.keys(migrations).length > 0, 'the map exists');
+    for (const [from, to] of Object.entries(migrations)) {
+      assert(/^[a-z]+:[a-z]+$/.test(from), `${from} is a group:value label`);
+      assert(!live.has(from), `${from} must be retired — a label the manifest still asks for cannot be migrated away`);
+      assert(live.has(to), `${to} must be a label the manifest creates, got a target nothing makes`);
+    }
+  });
+
+  await test('the v4 rename is the map in force today', () => {
+    assertEq(MANIFEST.migrations['status:spec'], 'status:inbox', 'spec meant "no spec yet" — that is inbox now');
+    assertEq(MANIFEST.migrations['status:queued'], 'status:specced', 'queued meant "spec ready and blessed"');
   });
 
   group('standards.sh: guards');
@@ -1007,14 +1075,14 @@ const run = async () => {
       const body = readFile(path.join(dir, `${form}.md`));
       const afterFrontmatter = body.split('---').slice(2).join('---');
       assert(afterFrontmatter.includes('## Description'), `${form}.md pre-fills ## Description`);
-      assert(afterFrontmatter.includes('## Plan'), `${form}.md pre-fills ## Plan`);
+      assert(afterFrontmatter.includes('## Spec'), `${form}.md pre-fills ## Spec`);
       assert(
-        afterFrontmatter.indexOf('## Description') < afterFrontmatter.indexOf('## Plan'),
-        `${form}.md orders Description before Plan`,
+        afterFrontmatter.indexOf('## Description') < afterFrontmatter.indexOf('## Spec'),
+        `${form}.md orders Description before Spec`,
       );
       assert(
         afterFrontmatter.includes('None needed — small item.'),
-        `${form}.md defaults the Plan so an untouched body still conforms`,
+        `${form}.md defaults the Spec so an untouched body still conforms`,
       );
     }
     cleanup(repo); cleanup(stub.dir);
@@ -1220,6 +1288,221 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
+  group('standards.sh: retired labels migrate');
+
+  // The manifest's migrations map, exercised against the labels actually in it
+  // rather than hard-coded names — a later rename inherits this coverage.
+  const MIGRATIONS = Object.entries(MANIFEST.migrations || {});
+  const [OLD_LABEL, NEW_LABEL] = MIGRATIONS[0];
+  const retiredLabel = (name) => ({ name, description: 'from the previous vocabulary', color: 'CCCCCC' });
+
+  await test('every issue carrying a retired label moves to its replacement', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub({
+      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
+      labeled: { [OLD_LABEL]: [11, 12] },
+    });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 0, 'exit 0');
+    const edits = ghCalls(stub).filter((c) => isCall(c, 'issue', 'edit'));
+    assertEq(edits.length, 2, `one edit per issue, got: ${fmtCalls(edits)}`);
+    for (const n of ['11', '12']) {
+      assert(
+        edits.some((c) => eqArgv(c, ['issue', 'edit', n, '--add-label', NEW_LABEL, '--remove-label', OLD_LABEL])),
+        `#${n} gains ${NEW_LABEL} and loses ${OLD_LABEL} in ONE command, so it is never without a status; got: ${fmtCalls(edits)}`,
+      );
+    }
+    assert(output.includes(`moved 2 issues from ${OLD_LABEL} to ${NEW_LABEL}`), `reports the move, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('the query covers closed issues too — a label is part of the record', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub({
+      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
+      labeled: { [OLD_LABEL]: [7] },
+    });
+    runScript(repo, { pathPrefix: stub.binDir });
+    const query = ghCalls(stub).find((c) => isCall(c, 'issue', 'list') && c.includes(OLD_LABEL));
+    assert(query, `the migration asked for the retired label's issues, got: ${fmtCalls(ghCalls(stub))}`);
+    assert(query.includes('--state') && query.includes('all'), `open AND closed, got: ${query.join(' ')}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('the retired label itself is deleted once its issues are moved', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub({
+      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
+      labeled: { [OLD_LABEL]: [3] },
+    });
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    const deletes = ghCalls(stub).filter((c) => isCall(c, 'label', 'delete'));
+    assertEq(deletes.length, 1, `exactly the retired label, got: ${fmtCalls(deletes)}`);
+    assert(eqArgv(deletes[0], ['label', 'delete', OLD_LABEL, '--yes']), `deleted ${OLD_LABEL}, got: ${fmtCalls(deletes)}`);
+    assert(output.includes(`removed the retired ${OLD_LABEL}`), `says so, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a repo carrying every retired label migrates all of them', () => {
+    const repo = makeRepo();
+    const labeled = {};
+    MIGRATIONS.forEach(([from], i) => { labeled[from] = [100 + i]; });
+    const stub = makeGhStub({
+      labels: [...desiredLabels(), ...MIGRATIONS.map(([from]) => retiredLabel(from))],
+      labeled,
+    });
+    runScript(repo, { pathPrefix: stub.binDir });
+    const deletes = ghCalls(stub).filter((c) => isCall(c, 'label', 'delete'));
+    assertEq(deletes.length, MIGRATIONS.length, `one delete per retired label, got: ${fmtCalls(deletes)}`);
+    for (const [from, to] of MIGRATIONS) {
+      assert(
+        ghCalls(stub).some((c) => isCall(c, 'issue', 'edit') && c.includes('--add-label') && c.includes(to) && c.includes(from)),
+        `${from} → ${to} happened, got: ${fmtCalls(ghCalls(stub))}`,
+      );
+    }
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a repo with none of the retired labels does nothing at all', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub({ labels: desiredLabels() });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 0, 'exit 0');
+    const calls = ghCalls(stub);
+    assert(calls.some((c) => isCall(c, 'label', 'list')), `the label step ran, got: ${fmtCalls(calls)}`);
+    assert(!calls.some((c) => isCall(c, 'issue', 'edit')), `no relabeling, got: ${fmtCalls(calls)}`);
+    assert(!calls.some((c) => isCall(c, 'label', 'delete')), `no deletion, got: ${fmtCalls(calls)}`);
+    assert(!output.includes('retired'), `and nothing announced, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('the migration is idempotent — the second run has nothing left to find', () => {
+    // The old label is gone from GitHub after the first pass, which is exactly
+    // what the step turns on, so a rerun is silent without any extra bookkeeping.
+    const repo = makeRepo();
+    const first = makeGhStub({
+      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
+      labeled: { [OLD_LABEL]: [5] },
+    });
+    runScript(repo, { pathPrefix: first.binDir });
+    const second = makeGhStub({ labels: desiredLabels() });
+    const { code, output } = runScript(repo, { pathPrefix: second.binDir });
+    assertEq(code, 0, 'exit 0');
+    assert(!ghCalls(second).some((c) => isCall(c, 'issue', 'edit')), 'nothing relabeled twice');
+    assert(!output.includes('moved'), `and nothing claimed, got: ${output}`);
+    cleanup(repo); cleanup(first.dir); cleanup(second.dir);
+  });
+
+  await test('an issue that could not be moved keeps the retired label alive for the retry', () => {
+    // Deleting the label after a failed move would leave that issue with no
+    // status at all — the one outcome worse than a half-finished rename.
+    const repo = makeRepo();
+    const stub = makeGhStub({
+      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
+      labeled: { [OLD_LABEL]: [9] },
+      issueEditFails: true,
+    });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 1, 'the run reports itself unfinished');
+    assert(output.includes(`could not move #9 from ${OLD_LABEL}`), `names the issue, got: ${output}`);
+    assert(!ghCalls(stub).some((c) => isCall(c, 'label', 'delete')), 'and the label survives for the next run');
+    assertEq(repoVersion(repo), 1, 'the version is not stamped, so the heal is asked again');
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a failed issue query keeps the label — it is not read as "nobody carries it"', () => {
+    // An unreachable GitHub and an empty label both produce no issue numbers.
+    // Reading the first as the second deletes the label out from under every
+    // issue still wearing it, and those issues lose their only status.
+    const repo = makeRepo();
+    const stub = makeGhStub({
+      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
+      labeled: { [OLD_LABEL]: [21] },
+      labelQueryFails: true,
+    });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 1, 'a query it could not run leaves the run unfinished');
+    assert(output.includes(`could not list the issues carrying ${OLD_LABEL}`), `says what failed, got: ${output}`);
+    assert(!ghCalls(stub).some((c) => isCall(c, 'label', 'delete')), 'and the label survives for the next run');
+    assert(!ghCalls(stub).some((c) => isCall(c, 'issue', 'edit')), 'nothing was relabeled on a guess');
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('issues left over past the query limit keep the label alive', () => {
+    // The list is capped. A repo above the cap moves the page it can see; the
+    // overflow is still out there, so the repo is ASKED AGAIN and only an
+    // answer of none licenses the delete.
+    const repo = makeRepo();
+    const page = Array.from({ length: 500 }, (_, i) => 1000 + i);
+    const stub = makeGhStub({
+      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
+      labeled: { [OLD_LABEL]: page },
+      labeledRecheck: { [OLD_LABEL]: [2000, 2001] },
+    });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 1, 'the run reports itself unfinished');
+    assertEq(ghCalls(stub).filter((c) => isCall(c, 'issue', 'edit')).length, 500, 'the visible page still moved');
+    assert(output.includes(`${OLD_LABEL} still carries issues`), `says why the label stayed, got: ${output}`);
+    assert(!ghCalls(stub).some((c) => isCall(c, 'label', 'delete')), 'and nothing was deleted over the overflow');
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a re-ask that fails is not read as an empty label either', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub({
+      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
+      labeled: { [OLD_LABEL]: [31] },
+    });
+    // The first query answers; the re-ask before the delete does not.
+    fs.writeFileSync(path.join(stub.binDir, 'gh'),
+      readFile(path.join(stub.binDir, 'gh')).replace(
+        '  if [[ "$asked" -gt 1 ]]; then',
+        '  if [[ "$asked" -gt 1 ]]; then\n    exit 1',
+      ), { mode: 0o755 });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 1, 'exit non-zero');
+    assert(output.includes(`could not confirm ${OLD_LABEL} is empty`), `says so, got: ${output}`);
+    assert(!ghCalls(stub).some((c) => isCall(c, 'label', 'delete')), 'the label is kept');
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a label delete that fails is named and marks the run unfinished', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub({
+      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
+      labeled: { [OLD_LABEL]: [4] },
+      labelDeleteFails: true,
+    });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 1, 'exit non-zero');
+    assert(output.includes(`could not delete the retired ${OLD_LABEL}`), `says which, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a retired label with no issues on it is simply deleted', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub({ labels: [...desiredLabels(), retiredLabel(OLD_LABEL)] });
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    assert(!ghCalls(stub).some((c) => isCall(c, 'issue', 'edit')), 'nothing to relabel');
+    assert(
+      ghCalls(stub).some((c) => eqArgv(c, ['label', 'delete', OLD_LABEL, '--yes'])),
+      `the empty label still goes, got: ${fmtCalls(ghCalls(stub))}`,
+    );
+    assert(!output.includes('moved 0 issues'), `and no empty claim is printed, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('offline — the migration touches nothing without the label list', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub({ authed: false });
+    const { code } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 0, 'exit 0');
+    const calls = ghCalls(stub);
+    assert(!calls.some((c) => isCall(c, 'issue', 'edit')), 'no relabeling');
+    assert(!calls.some((c) => isCall(c, 'label', 'delete')), 'no deletion on a machine that never saw the labels');
+    cleanup(repo); cleanup(stub.dir);
+  });
+
   group('standards.sh: open-issue label report');
 
   await test('issues missing a status label or doubling an exclusive group are named', () => {
@@ -1228,12 +1511,12 @@ const run = async () => {
       labels: desiredLabels(),
       issues: [
         { number: 3, labels: [{ name: 'type:bug' }] },
-        { number: 4, labels: [{ name: 'status:inbox' }, { name: 'status:queued' }, { name: 'type:bug' }] },
-        { number: 5, labels: [{ name: 'status:queued' }, { name: 'type:bug' }, { name: 'priority:high' }, { name: 'priority:low' }] },
-        { number: 6, labels: [{ name: 'status:queued' }, { name: 'type:enhancement' }] },
+        { number: 4, labels: [{ name: 'status:inbox' }, { name: 'status:specced' }, { name: 'type:bug' }] },
+        { number: 5, labels: [{ name: 'status:specced' }, { name: 'type:bug' }, { name: 'priority:high' }, { name: 'priority:low' }] },
+        { number: 6, labels: [{ name: 'status:specced' }, { name: 'type:enhancement' }] },
         { number: 7, labels: [{ name: 'status:parked' }, { name: 'type:idea' }, { name: 'priority:low' }] },
-        { number: 8, labels: [{ name: 'status:queued' }] },
-        { number: 9, labels: [{ name: 'status:queued' }, { name: 'type:bug' }, { name: 'type:idea' }] },
+        { number: 8, labels: [{ name: 'status:specced' }] },
+        { number: 9, labels: [{ name: 'status:specced' }, { name: 'type:bug' }, { name: 'type:idea' }] },
       ],
     });
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
@@ -1254,7 +1537,7 @@ const run = async () => {
     const stub = makeGhStub({
       labels: desiredLabels(),
       issues: [
-        { number: 1, labels: [{ name: 'status:queued' }, { name: 'type:bug' }] },
+        { number: 1, labels: [{ name: 'status:specced' }, { name: 'type:bug' }] },
         { number: 2, labels: [{ name: 'status:parked' }, { name: 'type:idea' }, { name: 'priority:high' }] },
       ],
     });

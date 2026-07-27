@@ -4,7 +4,11 @@
 # The heals, all safe to re-run:
 #   1. labels    — create every group:value label from labels.json (SSOT) and
 #                  correct description/color drift. Unknown labels are left alone.
-#   1b. migrate  — move a repo's `.workflow/` to `.workkit/`, the name the state
+#   1a. migrate  — apply the manifest's `migrations` map (old label → new): every
+#                  issue carrying a retired label, open and closed, is moved to
+#                  its replacement and the retired label is then deleted. A repo
+#                  with none of the old labels does nothing at all.
+#   1b. rename   — move a repo's `.workflow/` to `.workkit/`, the name the state
 #                  directory carries now. One-time and idempotent; the only
 #                  place in the engine that still knows the old name.
 #   2. gitignore — make sure `.workkit/` stays untracked EXCEPT settings.json,
@@ -12,7 +16,7 @@
 #   3. forms     — install .github/ISSUE_TEMPLATE/ markdown templates so a
 #                  first-day teammate files correctly; each one auto-applies
 #                  status:inbox + its type and pre-fills the issue anatomy
-#                  (## Description then ## Plan), so every issue conforms from
+#                  (## Description then ## Spec), so every issue conforms from
 #                  the moment it is filed.
 #   4. checks    — install .github/workflows/checks.yml, the required-checks
 #                  CI workflow that runs the test suite on every pull request.
@@ -63,7 +67,7 @@ WORKKIT_LEGACY_DIR=".workflow"
 # is one integer compare instead of a scan. Bump it when a new heal or a new
 # drift check lands; a repo already at the current version does exactly what it
 # did before.
-STANDARD_VERSION=4
+STANDARD_VERSION=5
 
 # ── Logging (mirrors setup/lib/helpers.sh; standalone so the script travels) ──
 _G='\033[0;32m' _Y='\033[0;33m' _C='\033[0;36m' _D='\033[0;90m' _N='\033[0m'
@@ -234,7 +238,7 @@ report_drift() {
     found=1
   done
   if [[ -d "$root/plans" ]]; then
-    log_warn "standards: plans/ is retired by spec v3 — a plan is the '## Plan' section of its issue; run the workkit:migrate skill to move each one, then delete the directory"
+    log_warn "standards: plans/ is retired by spec v3 — a plan is the '## Spec' section of its issue; run the workkit:migrate skill to move each one, then delete the directory"
     found=1
   fi
 
@@ -595,6 +599,11 @@ desired_labels() {
   ' "$LABELS_JSON"
 }
 
+# GitHub's answer to `gh label list`, kept from the sync so the migration below
+# needs no second round trip. Empty means the sync never reached GitHub, and the
+# migration has nothing to decide on.
+existing_labels=""
+
 sync_labels() {
   local existing name description color current cur_desc cur_color
   local created=0 updated=0 unchanged=0
@@ -630,6 +639,7 @@ sync_labels() {
     log_skip "labels: could not reach GitHub — skipped"
     return 0
   fi
+  existing_labels="$existing"
 
   while IFS=$'\t' read -r name description color; do
     [[ -n "$name" ]] || continue
@@ -665,6 +675,98 @@ sync_labels() {
   [[ "$created" -gt 0 ]] && log_ok "labels: created $created"
   [[ "$updated" -gt 0 ]] && log_ok "labels: corrected $updated"
   [[ "$unchanged" -gt 0 ]] && log_skip "labels: $unchanged already correct"
+  return 0
+}
+
+# ── 3b. Retired labels move to their replacements ──
+# The manifest's `migrations` map is old label → new. A vocabulary change would
+# otherwise leave every already-labeled issue outside the queue queries, so the
+# heal carries each one across: add the new label, remove the old, then delete
+# the old label itself. CLOSED issues are included — the label on a closed issue
+# is the record of how it was worked, and half a rename is worse than none.
+#
+# Idempotent by shape: the whole step turns on the old label still existing, and
+# deleting it is the last thing that happens, so the next run finds nothing.
+#
+# The delete is the dangerous end of this, because an issue whose only status
+# label it is comes out of the pass with no status at all. So it happens only
+# after the repo has been ASKED AGAIN and answered that nothing carries the
+# label any more. Every other outcome — a move that failed, a query that
+# failed, issues still listed (the query is capped, and a repo past the cap
+# strands the overflow) — keeps the label and flags the run, so the next
+# session picks the migration up where this one stopped.
+migrations() {
+  jq -r '.migrations // {} | to_entries[] | "\(.key)\t\(.value)"' "$LABELS_JSON" 2>/dev/null || true
+}
+
+# The issue numbers carrying one label, open and closed, one per line. Returns
+# NON-ZERO when the query itself failed: an unreachable GitHub and a label
+# nothing carries both produce no numbers, and treating the first as the second
+# is what deletes a label out from under the issues still wearing it.
+list_labeled() {
+  local raw
+  raw="$(gh issue list --state all --label "$1" --json number --limit 500 2>/dev/null)" || return 1
+  jq -r '.[].number' <<<"$raw" 2>/dev/null || return 1
+}
+
+migrate_labels() {
+  local old new numbers remaining n moved failed
+
+  # No manifest, or a label step that never reached GitHub: nothing to decide on.
+  [[ -f "$LABELS_JSON" ]] || return 0
+  [[ -n "$existing_labels" ]] || return 0
+
+  while IFS=$'\t' read -r old new; do
+    [[ -n "$old" && -n "$new" ]] || continue
+    jq -e --arg n "$old" 'any(.[]; .name == $n)' <<<"$existing_labels" >/dev/null 2>&1 || continue
+
+    if ! numbers="$(list_labeled "$old")"; then
+      log_warn "labels: could not list the issues carrying $old — leaving the label in place"
+      needs_attention=1
+      continue
+    fi
+
+    moved=0
+    failed=0
+    while read -r n; do
+      # A repo with no such issues answers with an empty line, not no line.
+      [[ -n "$n" ]] || continue
+      if gh issue edit "$n" --add-label "$new" --remove-label "$old" >/dev/null 2>&1; then
+        moved=$((moved + 1))
+      else
+        log_warn "labels: could not move #$n from $old to $new"
+        failed=1
+      fi
+    done <<<"$numbers"
+
+    if [[ "$failed" -eq 1 ]]; then
+      needs_attention=1
+      continue
+    fi
+    [[ "$moved" -gt 0 ]] && log_ok "labels: moved $moved issues from $old to $new"
+
+    # Ask the repo again before deleting anything. "Every move I made succeeded"
+    # is not "nothing is left": the list above is capped, and only an answer of
+    # NONE licenses the delete.
+    if ! remaining="$(list_labeled "$old")"; then
+      log_warn "labels: could not confirm $old is empty — leaving the label in place"
+      needs_attention=1
+      continue
+    fi
+    if [[ -n "$remaining" ]]; then
+      log_warn "labels: $old still carries issues after this pass — leaving the label in place, the next run continues it"
+      needs_attention=1
+      continue
+    fi
+
+    if gh label delete "$old" --yes >/dev/null 2>&1; then
+      log_ok "labels: removed the retired $old — it is $new now"
+    else
+      log_warn "labels: could not delete the retired $old"
+      needs_attention=1
+    fi
+  done < <(migrations)
+
   return 0
 }
 
@@ -740,6 +842,7 @@ ensure_issue_forms
 ensure_ci_workflow
 ensure_branch_protection
 sync_labels
+migrate_labels
 check_issue_labels
 
 # A repo already at the current standard has nothing to look for — the whole

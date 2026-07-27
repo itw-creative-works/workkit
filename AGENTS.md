@@ -6,7 +6,7 @@
 
 workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: the standards heal, the manager crew, the guard hooks, the workflow skills, and the agent-agnostic engine they all call. It installs into any repo's sessions and brings that repo to one standard — GitHub Issues as the work-item SSOT, labels as the pipeline, a CHANGELOG entry per shipped item.
 
-The spec it implements is `docs/project-state.md`; `docs/pipeline.md` is the visual map of the same system.
+The spec it implements is `docs/project-state.md`; the README carries the visual map of the same system — the road and the crew.
 
 ## Repo structure
 
@@ -23,7 +23,7 @@ The spec it implements is `docs/project-state.md`; `docs/pipeline.md` is the vis
 ├── agents/               # the crew — surface as workkit:<name> (roster + contract: docs/agents.md)
 ├── skills/               # the nine workflow skills — surface as workkit:<name>
 ├── workflow/             # the agent-agnostic engine (labels.json, standards.sh, changelog.js, templates)
-├── docs/                 # project-state.md (the spec) · pipeline.md (the visual map)
+├── docs/                 # project-state.md (the spec) · agents.md (the crew contract)
 ├── tests/                # Node runner + hook/script suites (npm test)
 └── .workkit/             # settings.json is COMMITTED (this repo's own opt-in)
 ```
@@ -66,7 +66,7 @@ Nine, namespaced `workkit:<name>`, one `SKILL.md` each:
 
 | Skill | What it does |
 |---|---|
-| `feature` | The scaled build flow — explore, grill, propose, gate, build, review; builds only from `status:queued` |
+| `feature` | The scaled build flow — explore, grill, propose, gate, build, review; builds only from `status:specced` |
 | `grill` | Alignment interrogation — one decision at a time, each with a recommendation |
 | `diagnose` | Reproduce-first debugging |
 | `review` | Multi-lens code review: parallel lenses, a separate scorer, ≥80 threshold; leaves the marker the commit gate checks |
