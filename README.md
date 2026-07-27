@@ -6,28 +6,22 @@ The issue-pipeline workflow system as a Claude Code plugin. Install it and every
 
 ```mermaid
 flowchart TB
-    subgraph Decide["Decide, then authorize — the label flip IS the go-ahead"]
-        Capture["capture — issue form, chat note, .workkit/inbox.md"] --> Inbox([status:inbox])
-        Inbox --> Triage["triage"]
-        Triage -->|needs shaping| Spec["write the ## Spec"]
-        Triage -->|small item| Specced([status:specced])
-        Triage -->|not now| Parked([status:parked])
-        Spec -->|accepted| Specced
-        Spec -->|a call to make| Blocked([status:blocked])
-        Blocked -->|answered| Inbox
-        Parked -->|revived| Inbox
-    end
-
-    subgraph Deliver["Deliver — the assignee is the claim"]
-        Specced --> Build["build"] --> Verify["verify"]
-        Verify -->|findings| Build
-        Verify -->|clean| Ship["ship — commit, CHANGELOG, Fixes #N"]
-    end
-
+    Form["issue form"] --> Inbox([status:inbox])
+    Note["chat note"] --> Inbox
+    File[".workkit/inbox.md"] --> Inbox
+    Inbox --> Triage["triage — route it out of the inbox"]
+    Triage -->|needs shaping| Spec["write the ## Spec"]
+    Triage -->|not now| Parked([status:parked])
+    Spec -->|accepted, or a small item| Specced([status:specced])
+    Spec -->|a call to make| Blocked([status:blocked])
+    Specced -->|claim: assign yourself| Build["build"]
+    Build --> Verify["verify"]
+    Verify -->|findings| Build
+    Verify -->|clean| Ship["ship — commit, CHANGELOG, Fixes #N"]
     Ship --> Closed([closed])
 ```
 
-Only two labels sit on the road: `status:inbox` (captured, nothing authorized) and `status:specced` (the spec is written and accepted, so building is authorized). `blocked` and `parked` are side pockets. Build, verify, and ship have no label of their own — the issue stays `status:specced` while the work runs, and the assignee is what marks it in flight; claiming an issue means assigning it to yourself. The rules behind every hop: [`docs/project-state.md`](docs/project-state.md).
+Capture (any of the three sources) is what puts an item INTO `status:inbox`; triage is the action that routes it OUT. Only two labels sit on the road: `status:inbox` (captured, nothing authorized) and `status:specced` (the spec is written and accepted, so building is authorized — the label flip IS the go-ahead). `blocked` and `parked` are side pockets with no arrows back: an answered `blocked` issue rejoins at `status:specced`, a revived `parked` one re-enters triage. Build, verify, and ship have no label of their own — the issue stays `status:specced` while the work runs, and the assignee is what marks it in flight; claiming an issue means assigning it to yourself. The rules behind every hop: [`docs/project-state.md`](docs/project-state.md).
 
 ## The crew that works it
 
