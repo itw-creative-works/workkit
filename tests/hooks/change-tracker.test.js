@@ -1,0 +1,289 @@
+/* eslint-disable no-console */
+//
+// Tests for hooks/docs:change-tracker — the Stop hook that detects uncommitted
+// code changes and nudges Claude to keep the work item's issue true, promote
+// durable findings out of .workkit/, and check doc-parity.
+//
+// The hook reads JSON on stdin (with cwd), checks git status, classifies
+// changes as code vs docs, and outputs a "block" decision with the prompt.md content.
+//
+
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const { spawnSync, execSync } = require('child_process');
+const { group, test, assert, assertEq, summary, WORKKIT_DIR: W } = require('../lib/harness');
+
+const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'change-tracker', 'run.sh');
+const PROMPT = path.join(__dirname, '..', '..', 'hooks', 'docs', 'change-tracker', 'prompt.md');
+
+const mkTmpRepo = () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-test-'));
+  execSync('git init && git commit --allow-empty -m "init"', { cwd: dir, stdio: 'pipe' });
+  return dir;
+};
+
+const runHook = (cwd) => {
+  const input = JSON.stringify({ cwd, stop_hook_active: false });
+  const res = spawnSync('bash', [HOOK], {
+    input,
+    env: { ...process.env, HOME: os.homedir() },
+    encoding: 'utf8',
+    timeout: 10000,
+  });
+  return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
+};
+
+const cleanup = (dir) => {
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+};
+
+const run = async () => {
+  group('change-tracker: dirty tree detection');
+
+  await test('clean repo — no output (no block)', () => {
+    const dir = mkTmpRepo();
+    const { stdout } = runHook(dir);
+    assert(!stdout.includes('block'), 'clean repo should not block');
+    cleanup(dir);
+  });
+
+  await test('code change — outputs block decision', () => {
+    const dir = mkTmpRepo();
+    fs.writeFileSync(path.join(dir, 'app.js'), 'console.log("hi")');
+    const { stdout } = runHook(dir);
+    assert(stdout.includes('"block"'), `code change should produce block, got: ${stdout.slice(0, 200)}`);
+    assert(stdout.includes('additionalContext'), 'should include context');
+    cleanup(dir);
+  });
+
+  await test('doc-only changes — no block (only code triggers)', () => {
+    const dir = mkTmpRepo();
+    fs.writeFileSync(path.join(dir, 'README.md'), '# hi');
+    const { stdout } = runHook(dir);
+    assert(!stdout.includes('"block"'), 'doc-only changes should not block');
+    cleanup(dir);
+  });
+
+  await test('mixed code + docs — triggers block', () => {
+    const dir = mkTmpRepo();
+    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
+    fs.writeFileSync(path.join(dir, 'README.md'), 'docs');
+    const { stdout } = runHook(dir);
+    assert(stdout.includes('"block"'), 'mixed changes should block');
+    cleanup(dir);
+  });
+
+  group('change-tracker: prompt.md content');
+
+  await test('prompt.md exists and is non-empty', () => {
+    assert(fs.existsSync(PROMPT), 'prompt.md should exist');
+    const content = fs.readFileSync(PROMPT, 'utf8');
+    assert(content.length > 100, 'prompt.md should have substantial content');
+  });
+
+  await test('prompt.md points at issues as the work-item home', () => {
+    const content = fs.readFileSync(PROMPT, 'utf8');
+    assert(/GitHub issues/i.test(content), 'should name issues as the SSOT');
+    assert(content.includes('status:'), 'should name the status label vocabulary');
+    assert(content.includes('CHANGELOG'), 'should require the CHANGELOG entry on ship');
+  });
+
+  await test('prompt.md requires promoting durable findings out of .workkit/', () => {
+    const content = fs.readFileSync(PROMPT, 'utf8');
+    assert(content.includes(`${W}/`), 'should reference scratch');
+    assert(/promote/i.test(content), 'should state the promotion rule');
+  });
+
+  await test('prompt.md carries no board instructions', () => {
+    const content = fs.readFileSync(PROMPT, 'utf8');
+    assert(!content.includes('PROGRESS.md'), 'the board is not the prompt\'s business anymore');
+    assert(!content.includes('INBOX.md'), 'nor the retired inbox file');
+  });
+
+  await test('prompt.md mentions doc parity', () => {
+    const content = fs.readFileSync(PROMPT, 'utf8');
+    assert(
+      content.includes('doc parity') || content.includes('Doc parity') || content.includes('CLAUDE.md'),
+      'should reference the doc parity system'
+    );
+  });
+
+  group('change-tracker: per-session dedupe');
+
+  // With a session_id, the hook nudges once per unique dirty state per session
+  // (marker in $TMPDIR/claude-change-tracker). Isolated TMPDIR per test so
+  // markers never leak into the real one.
+  const runHookSession = (cwd, sessionId, tmpdir) => {
+    const input = JSON.stringify({ cwd, stop_hook_active: false, session_id: sessionId });
+    const res = spawnSync('bash', [HOOK], {
+      input,
+      env: { ...process.env, HOME: os.homedir(), TMPDIR: tmpdir },
+      encoding: 'utf8',
+      timeout: 10000,
+    });
+    return { code: res.status, stdout: res.stdout || '' };
+  };
+
+  await test('same dirty state twice — first blocks, second is silent', () => {
+    const dir = mkTmpRepo();
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-dedupe-'));
+    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
+    const first = runHookSession(dir, 'sess-dedupe-1', tmp);
+    assert(first.stdout.includes('"block"'), 'first run should block');
+    const second = runHookSession(dir, 'sess-dedupe-1', tmp);
+    assert(!second.stdout.includes('"block"'), 'unchanged dirty state should not re-block');
+    assertEq(second.code, 0, 'silent run should exit 0');
+    cleanup(dir); cleanup(tmp);
+  });
+
+  await test('tree changes between runs — re-blocks on the new state', () => {
+    const dir = mkTmpRepo();
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-dedupe-'));
+    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
+    runHookSession(dir, 'sess-dedupe-2', tmp);
+    fs.writeFileSync(path.join(dir, 'lib.js'), 'more code');
+    const rerun = runHookSession(dir, 'sess-dedupe-2', tmp);
+    assert(rerun.stdout.includes('"block"'), 'a NEW dirty state should re-arm the nudge');
+    cleanup(dir); cleanup(tmp);
+  });
+
+  await test('same dirty state, different session — blocks independently', () => {
+    const dir = mkTmpRepo();
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-dedupe-'));
+    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
+    runHookSession(dir, 'sess-a', tmp);
+    const other = runHookSession(dir, 'sess-b', tmp);
+    assert(other.stdout.includes('"block"'), 'dedupe is per-session, not global');
+    cleanup(dir); cleanup(tmp);
+  });
+
+  group('change-tracker: fail-open / guards');
+
+  await test('non-git directory — exits 0 silently (fail open)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-nogit-'));
+    const { code, stdout } = runHook(dir);
+    assertEq(code, 0, 'non-git dir should exit 0');
+    assert(!stdout.includes('block'), 'should not block');
+    cleanup(dir);
+  });
+
+  await test('stop_hook_active=true — exits 0 (prevents recursion)', () => {
+    const dir = mkTmpRepo();
+    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
+    const input = JSON.stringify({ cwd: dir, stop_hook_active: true });
+    const res = spawnSync('bash', [HOOK], {
+      input,
+      env: { ...process.env, HOME: os.homedir() },
+      encoding: 'utf8',
+      timeout: 10000,
+    });
+    assertEq(res.status, 0, 'should exit 0 when stop_hook_active');
+    assert(!res.stdout.includes('block'), 'should not block on re-entry');
+    cleanup(dir);
+  });
+
+  group('change-tracker: unfiled inbox surfacing');
+
+  await test('clean tree + unfiled INBOX entries — blocks with INBOX count', () => {
+    const dir = mkTmpRepo();
+    fs.writeFileSync(path.join(dir, 'INBOX.md'), '# INBOX\n> header line\n\nan idea\nanother note\n');
+    execSync('git add -A && git commit -m "inbox"', { cwd: dir, stdio: 'pipe' });
+    const { stdout } = runHook(dir);
+    assert(stdout.includes('"block"'), 'unfiled inbox should nudge even with a clean tree');
+    assert(stdout.includes('INBOX: 2 unfiled'), `context carries the count, got: ${stdout.slice(0, 300)}`);
+    assert(stdout.includes('workkit:triage'), 'offers the triage skill');
+    cleanup(dir);
+  });
+
+  await test('clean tree + header-only INBOX — no block', () => {
+    const dir = mkTmpRepo();
+    fs.writeFileSync(path.join(dir, 'INBOX.md'), '# INBOX\n> Dump anything here.\n\n');
+    execSync('git add -A && git commit -m "inbox"', { cwd: dir, stdio: 'pipe' });
+    const { code, stdout } = runHook(dir);
+    assertEq(code, 0, 'empty inbox exits 0');
+    assert(!stdout.includes('block'), 'no nudge for an empty inbox');
+    cleanup(dir);
+  });
+
+  await test('code change + unfiled INBOX — one block carrying both', () => {
+    const dir = mkTmpRepo();
+    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
+    fs.writeFileSync(path.join(dir, 'INBOX.md'), '# INBOX\nnote\n');
+    const { stdout } = runHook(dir);
+    assert(stdout.includes('"block"'), 'blocks');
+    assert(stdout.includes('INBOX: 1 unfiled'), 'inbox line rides the code nudge');
+    cleanup(dir);
+  });
+
+  group('change-tracker: local .workkit/inbox.md');
+
+  const writeScratch = (dir, body) => {
+    fs.mkdirSync(path.join(dir, W), { recursive: true });
+    fs.writeFileSync(path.join(dir, W, 'inbox.md'), body);
+  };
+
+  await test('clean tree + scratch entries — blocks with the count', () => {
+    const dir = mkTmpRepo();
+    writeScratch(dir, '# inbox\n> header\n\na finding\nan idea\n');
+    const { stdout } = runHook(dir);
+    assert(stdout.includes('"block"'), 'a non-empty local inbox nudges on its own');
+    assert(stdout.includes('SCRATCH: 2 unfiled'), `context carries the count, got: ${stdout.slice(0, 400)}`);
+    assert(stdout.includes('workkit:triage'), 'offers the triage skill');
+    assert(stdout.includes('never drain'), 'draining stays deliberate');
+    cleanup(dir);
+  });
+
+  await test('clean tree + header-only scratch inbox — no block', () => {
+    const dir = mkTmpRepo();
+    writeScratch(dir, '# inbox\n> dump anything here\n\n');
+    const { code, stdout } = runHook(dir);
+    assertEq(code, 0, 'exits 0');
+    assert(!stdout.includes('block'), 'no nudge for an empty local inbox');
+    cleanup(dir);
+  });
+
+  await test('code change + scratch entries — one block carrying both', () => {
+    const dir = mkTmpRepo();
+    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
+    writeScratch(dir, 'note\n');
+    const { stdout } = runHook(dir);
+    assert(stdout.includes('"block"'), 'blocks');
+    assert(stdout.includes('SCRATCH: 1 unfiled'), 'scratch line rides the code nudge');
+    cleanup(dir);
+  });
+
+  group('change-tracker: board transition guard');
+
+  await test('PROGRESS.md present — the board reminder rides along', () => {
+    const dir = mkTmpRepo();
+    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
+    fs.writeFileSync(path.join(dir, 'PROGRESS.md'), '# PROGRESS\n');
+    const { stdout } = runHook(dir);
+    assert(stdout.includes('BOARD: PROGRESS.md still exists'), `pre-migration turn is not lawless, got: ${stdout.slice(0, 400)}`);
+    cleanup(dir);
+  });
+
+  await test('no PROGRESS.md — no board reminder', () => {
+    const dir = mkTmpRepo();
+    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
+    const { stdout } = runHook(dir);
+    assert(stdout.includes('"block"'), 'still nudges on the code change');
+    assert(!stdout.includes('BOARD:'), 'the board line is file-existence gated');
+    cleanup(dir);
+  });
+
+  await test('the hook never calls gh', () => {
+    const hook = fs.readFileSync(HOOK, 'utf8');
+    assert(!/\bgh\b/.test(hook.replace(/^#.*$/gm, '')), 'a Stop hook pays no network latency');
+  });
+};
+
+module.exports = async () => {
+  await run();
+  return summary();
+};
+
+if (require.main === module) {
+  module.exports().then(({ failed }) => process.exit(failed > 0 ? 1 : 0));
+}

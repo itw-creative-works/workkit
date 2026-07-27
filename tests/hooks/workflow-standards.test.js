@@ -1,0 +1,342 @@
+//
+// Tests for hooks/workflow:standards — the SessionStart hook that runs
+// the workflow core's standards.sh against the session's repo, at most once per
+// repo per day, and reports only what it created or corrected.
+//
+// The standards script's label step needs gh; every test here runs with a PATH
+// that has no gh on it (or a recording stub), so nothing touches the network.
+//
+
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const { spawnSync } = require('child_process');
+const { group, test, assert, assertEq, summary, WORKKIT_DIR: W } = require('../lib/harness');
+
+const HOOK = path.join(__dirname, '..', '..', 'hooks', 'workflow', 'standards', 'run.sh');
+
+// The hook resolves the engine via WORKFLOW_DIR (default ~/.claude/workflow).
+// Point it at the repo's own workflow/ so the suite never depends on the
+// machine's symlink.
+const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
+
+const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
+
+// The ignore line the engine writes, built from the harness constant so the
+// directory's name lives in exactly one place here too.
+const IGNORE_GLOB = new RegExp(`^${W.replace(/\./g, '\\.')}/\\*$`, 'm');
+
+const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'wf-hook-'));
+const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
+
+// Participation gate: a committed .workkit/settings.json holding
+// `enabled: true` at the repo root IS the opt-in, so every repo fixture gets one
+// unless a test is exercising another state.
+const makeRepo = ({ optIn = true, settings = '{ "version": 1, "enabled": true }\n' } = {}) => {
+  const dir = mkTmp();
+  spawnSync('git', ['init', '-q'], { cwd: dir });
+  spawnSync('git', ['remote', 'add', 'origin', 'https://example.invalid/ian/repo.git'], { cwd: dir });
+  if (optIn) {
+    fs.mkdirSync(path.join(dir, W), { recursive: true });
+    fs.writeFileSync(path.join(dir, W, 'settings.json'), settings);
+  }
+  return dir;
+};
+
+// Record a decline the way the engine does — through its own entry point, so
+// the test proves the two halves agree on the file's shape.
+const decline = (repo, workflowHome) => spawnSync('bash', [
+  path.join(WORKFLOW_DIR, 'standards.sh'), '--decline', repo,
+], { env: { ...process.env, WORKFLOW_HOME: workflowHome }, encoding: 'utf8' });
+
+// Each run gets its own cache dir unless one is passed in — the daily marker
+// must never leak between tests (or into the real ~/.claude/logs).
+// `home` overrides HOME; passing workflowDir: null DROPS WORKFLOW_DIR from the
+// environment so the hook falls back to its default $HOME/.claude/workflow.
+// WORKFLOW_HOME always points somewhere disposable: the user-level settings
+// file the engine reads and writes must never be the real ~/.workkit.
+const runHook = (cwd, { cache, pathPrefix, home, workflowDir, workflowHome } = {}) => {
+  const cacheDir = cache || mkTmp();
+  const env = {
+    HOME: home || os.homedir(),
+    PATH: pathPrefix ? `${pathPrefix}:${BASE_PATH}` : BASE_PATH,
+    WORKFLOW_STANDARDS_CACHE: cacheDir,
+    // OUTSIDE the marker cache: the engine now seeds the user settings file on
+    // every run, and a workflow-home nested in the cache would be counted by
+    // the tests that assert one marker file per repo.
+    WORKFLOW_HOME: workflowHome || path.join(mkTmp(), 'workflow-home'),
+  };
+  const dir = workflowDir === undefined ? WORKFLOW_DIR : workflowDir;
+  if (dir !== null) env.WORKFLOW_DIR = dir;
+  const res = spawnSync('bash', [HOOK], {
+    input: JSON.stringify({ cwd, source: 'startup' }),
+    env,
+    encoding: 'utf8',
+    timeout: 20000,
+  });
+  return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '', cacheDir };
+};
+
+const run = async () => {
+  group('workflow:standards — guards');
+
+  await test('non-git cwd — silent exit 0, creates nothing', () => {
+    const dir = mkTmp();
+    const { code, stdout, cacheDir } = runHook(dir);
+    assertEq(code, 0, 'exit 0');
+    assertEq(stdout, '', 'no output');
+    assert(!fs.existsSync(path.join(dir, '.github')), 'nothing written outside a repo');
+    cleanup(dir); cleanup(cacheDir);
+  });
+
+  await test('empty cwd in input — exit 0', () => {
+    const { code, stdout, cacheDir } = runHook('');
+    assertEq(code, 0, 'fail open');
+    assertEq(stdout, '', 'no output');
+    cleanup(cacheDir);
+  });
+
+  group('workflow:standards — participation gate');
+
+  // The offer an undecided repo hears, as SessionStart context.
+  const offerOf = (stdout) => JSON.parse(stdout).hookSpecificOutput.additionalContext;
+
+  await test('no .workkit/settings.json — offers to enable, writes nothing', () => {
+    const repo = makeRepo({ optIn: false });
+    const { code, stdout, cacheDir } = runHook(repo);
+    assertEq(code, 0, 'fail closed for writes, open for the session');
+    const ctx = offerOf(stdout);
+    assert(ctx.includes('not in the issue workflow'), `offers to enable, got: ${ctx}`);
+    assert(ctx.includes('--enable') && ctx.includes('--decline'), 'and gives both answers');
+    assert(!fs.existsSync(path.join(repo, '.github')), 'no templates on a non-participating repo');
+    assert(!fs.existsSync(path.join(repo, '.gitignore')), 'and no gitignore appended');
+    assert(!fs.existsSync(path.join(repo, W)), 'and no .workkit directory');
+    cleanup(repo); cleanup(cacheDir);
+  });
+
+  await test('enabled: false — silent, and no offer either', () => {
+    const repo = makeRepo({ settings: '{ "version": 1, "enabled": false }\n' });
+    const { code, stdout, cacheDir } = runHook(repo);
+    assertEq(code, 0, 'exit 0');
+    assertEq(stdout, '', `the project turned it off on purpose, got: ${stdout}`);
+    assert(!fs.existsSync(path.join(repo, '.github')), 'nothing written');
+    cleanup(repo); cleanup(cacheDir);
+  });
+
+  await test('a declined repo is never mentioned again', () => {
+    const repo = makeRepo({ optIn: false });
+    const workflowHome = mkTmp();
+    decline(repo, workflowHome);
+    const { code, stdout, cacheDir } = runHook(repo, { workflowHome });
+    assertEq(code, 0, 'exit 0');
+    assertEq(stdout, '', `no offer after a decline, got: ${stdout}`);
+    assert(!fs.existsSync(path.join(repo, '.github')), 'and nothing written');
+    cleanup(repo); cleanup(cacheDir); cleanup(workflowHome);
+  });
+
+  await test('the offer repeats every session — it is not daily-cached', () => {
+    const repo = makeRepo({ optIn: false });
+    const cache = mkTmp();
+    const first = runHook(repo, { cache });
+    const second = runHook(repo, { cache });
+    assert(first.stdout.length > 0 && second.stdout.length > 0, 'both sessions hear it');
+    assertEq(fs.readdirSync(cache).filter((f) => f !== 'workflow-home').length, 0, 'an offer costs nothing, so it leaves no marker');
+    cleanup(repo); cleanup(cache);
+  });
+
+  await test('a .workkit/ directory without settings.json is not an opt-in', () => {
+    const repo = makeRepo({ optIn: false });
+    fs.mkdirSync(path.join(repo, W), { recursive: true });
+    fs.writeFileSync(path.join(repo, W, 'inbox.md'), '- a note\n');
+    const { code, stdout, cacheDir } = runHook(repo);
+    assertEq(code, 0, 'exit 0');
+    assert(offerOf(stdout).includes('not in the issue workflow'), 'the committed settings.json is what opts a repo in');
+    assert(!fs.existsSync(path.join(repo, '.github')), 'nothing written');
+    cleanup(repo); cleanup(cacheDir);
+  });
+
+  await test('settings.json in a subdirectory does not opt the repo in', () => {
+    const repo = makeRepo({ optIn: false });
+    const nested = path.join(repo, 'packages', 'app', W);
+    fs.mkdirSync(nested, { recursive: true });
+    fs.writeFileSync(path.join(nested, 'settings.json'), '{ "version": 1 }\n');
+    const { stdout, cacheDir } = runHook(repo);
+    assert(offerOf(stdout).includes('not in the issue workflow'), 'the gate reads the repo ROOT only');
+    assert(!fs.existsSync(path.join(repo, '.github')), 'nothing written');
+    cleanup(repo); cleanup(cacheDir);
+  });
+
+  group('workflow:standards — healing a repo');
+
+  await test('unstandardized repo — heals it and reports what changed', () => {
+    const repo = makeRepo();
+    const { code, stdout, cacheDir } = runHook(repo);
+    assertEq(code, 0, 'exit 0');
+    assert(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'issue templates installed');
+    assert(IGNORE_GLOB.test(fs.readFileSync(path.join(repo, '.gitignore'), 'utf8')), `${W}/ ignored`);
+    const parsed = JSON.parse(stdout);
+    assertEq(parsed.hookSpecificOutput.hookEventName, 'SessionStart', 'SessionStart context');
+    const ctx = parsed.hookSpecificOutput.additionalContext;
+    assert(ctx.includes('issue forms'), `reports the forms, got: ${ctx}`);
+    assert(ctx.includes('gitignore'), `reports the gitignore heal, got: ${ctx}`);
+    assert(!ctx.includes('['), 'ANSI colors stripped');
+    cleanup(repo); cleanup(cacheDir);
+  });
+
+  await test('already-standardized repo — silent (skips are not news)', () => {
+    const repo = makeRepo();
+    const first = runHook(repo);
+    assert(first.stdout.length > 0, 'first run reported the heals');
+    // Fresh cache dir: this is the "different day" run, not the cached one.
+    const second = runHook(repo);
+    assertEq(second.code, 0, 'exit 0');
+    assertEq(second.stdout, '', `an all-skip run stays silent, got: ${second.stdout}`);
+    cleanup(repo); cleanup(first.cacheDir); cleanup(second.cacheDir);
+  });
+
+  await test('a subdirectory session resolves to the repo root', () => {
+    const repo = makeRepo();
+    const nested = path.join(repo, 'src', 'deep');
+    fs.mkdirSync(nested, { recursive: true });
+    // settings.json sits at the ROOT — the gate reads the resolved root, not the cwd.
+    const { cacheDir } = runHook(nested);
+    assert(fs.existsSync(path.join(repo, '.gitignore')), 'root healed');
+    assert(!fs.existsSync(path.join(nested, '.gitignore')), 'nothing written in the subdirectory');
+    cleanup(repo); cleanup(cacheDir);
+  });
+
+  group('workflow:standards — daily cache');
+
+  await test('second session the same day — no re-run, no output', () => {
+    const repo = makeRepo();
+    const cache = mkTmp();
+    const first = runHook(repo, { cache });
+    assert(first.stdout.length > 0, 'first run reported');
+    fs.rmSync(path.join(repo, '.github'), { recursive: true, force: true });
+    const second = runHook(repo, { cache });
+    assertEq(second.stdout, '', 'cached run says nothing');
+    assert(!fs.existsSync(path.join(repo, '.github')), 'and does not re-run the script');
+    cleanup(repo); cleanup(cache);
+  });
+
+  await test('the marker is dated, one file per repo', () => {
+    const repoA = makeRepo();
+    const repoB = makeRepo();
+    const cache = mkTmp();
+    runHook(repoA, { cache });
+    const afterA = fs.readdirSync(cache);
+    assertEq(afterA.length, 1, 'one marker after the first repo');
+    // The hook stamps `date +%Y-%m-%d` — LOCAL time. Comparing against a UTC
+    // ISO slice fails for the hours the two dates disagree.
+    const today = spawnSync('date', ['+%Y-%m-%d'], { encoding: 'utf8' }).stdout.trim();
+    assertEq(fs.readFileSync(path.join(cache, afterA[0]), 'utf8'), today, 'marker holds today');
+    const second = runHook(repoB, { cache });
+    assertEq(fs.readdirSync(cache).length, 2, 'a second repo gets its own marker');
+    assert(second.stdout.length > 0, 'and is healed on its own schedule');
+    cleanup(repoA); cleanup(repoB); cleanup(cache);
+  });
+
+  await test('a stale marker re-arms the run', () => {
+    const repo = makeRepo();
+    const cache = mkTmp();
+    runHook(repo, { cache });
+    const marker = path.join(cache, fs.readdirSync(cache)[0]);
+    fs.writeFileSync(marker, '2000-01-01');
+    fs.rmSync(path.join(repo, '.github'), { recursive: true, force: true });
+    const again = runHook(repo, { cache });
+    assert(again.stdout.includes('issue forms'), `yesterday's marker does not suppress today, got: ${again.stdout}`);
+    cleanup(repo); cleanup(cache);
+  });
+
+  group('workflow:standards — default engine path');
+
+  await test('no WORKFLOW_DIR — resolves $HOME/.claude/workflow and heals', () => {
+    const home = mkTmp();
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.symlinkSync(path.resolve(WORKFLOW_DIR), path.join(home, '.claude', 'workflow'));
+    const repo = makeRepo();
+    const { code, stdout, cacheDir } = runHook(repo, { home, workflowDir: null });
+    assertEq(code, 0, 'exit 0');
+    assert(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'the default path found the engine');
+    assert(stdout.includes('issue forms'), `and reported the heal, got: ${stdout}`);
+    cleanup(repo); cleanup(cacheDir); cleanup(home);
+  });
+
+  await test('no WORKFLOW_DIR and no engine — says where it looked, exit 0', () => {
+    const home = mkTmp();
+    const repo = makeRepo();
+    const { code, stdout, cacheDir } = runHook(repo, { home, workflowDir: null });
+    assertEq(code, 0, 'a missing engine never wedges the session');
+    const ctx = JSON.parse(stdout).hookSpecificOutput.additionalContext;
+    assert(ctx.includes(path.join(home, '.claude', 'workflow', 'standards.sh')), `names the path it looked at, got: ${ctx}`);
+    assert(ctx.includes('setup.sh'), 'tells the human what to run');
+    assert(!fs.existsSync(path.join(repo, '.github')), 'and heals nothing');
+    cleanup(repo); cleanup(cacheDir); cleanup(home);
+  });
+
+  await test('an engine without labels.json is announced for an opted-in repo', () => {
+    // A missing manifest used to fail --state, which this hook read as nogit —
+    // a broken install went silent forever instead of speaking once.
+    const engine = mkTmp();
+    fs.symlinkSync(path.join(WORKFLOW_DIR, 'standards.sh'), path.join(engine, 'standards.sh'));
+    const repo = makeRepo();
+    const { code, stdout, cacheDir } = runHook(repo, { workflowDir: engine });
+    assertEq(code, 0, 'a broken install never wedges the session');
+    const ctx = JSON.parse(stdout).hookSpecificOutput.additionalContext;
+    assert(ctx.includes('labels.json'), `names the manifest, got: ${ctx}`);
+    assert(ctx.includes('setup.sh'), 'tells the human what to run');
+    assert(!fs.existsSync(path.join(repo, '.github')), 'and heals nothing');
+    cleanup(repo); cleanup(cacheDir); cleanup(engine);
+  });
+
+  await test('a missing manifest stays silent on a repo that never opted in', () => {
+    const engine = mkTmp();
+    fs.symlinkSync(path.join(WORKFLOW_DIR, 'standards.sh'), path.join(engine, 'standards.sh'));
+    const repo = makeRepo({ optIn: false });
+    const { code, stdout, cacheDir } = runHook(repo, { workflowDir: engine });
+    assertEq(code, 0, 'exit 0');
+    assertEq(stdout, '', `non-participating repos hear nothing, got: ${stdout}`);
+    cleanup(repo); cleanup(cacheDir); cleanup(engine);
+  });
+
+  await test('a missing engine stays silent on a repo that never opted in', () => {
+    const home = mkTmp();
+    const repo = makeRepo({ optIn: false });
+    const { code, stdout, cacheDir } = runHook(repo, { home, workflowDir: null });
+    assertEq(code, 0, 'exit 0');
+    assertEq(stdout, '', 'non-participating repos hear nothing');
+    cleanup(repo); cleanup(cacheDir); cleanup(home);
+  });
+
+  // Without the engine, undecided and declined are indistinguishable — but a
+  // committed `false` is resolvable from the repo alone, so the deliberate no
+  // must be honored here too (review finding, 2026-07-24).
+  await test('a missing engine stays silent on a deliberately disabled repo', () => {
+    const home = mkTmp();
+    const repo = makeRepo({ settings: '{ "version": 1, "enabled": false }\n' });
+    const { code, stdout, cacheDir } = runHook(repo, { home, workflowDir: null });
+    assertEq(code, 0, 'exit 0');
+    assertEq(stdout, '', `a project that turned it off hears nothing, got: ${stdout}`);
+    cleanup(repo); cleanup(cacheDir); cleanup(home);
+  });
+
+  group('workflow:standards — offline');
+
+  await test('no gh on PATH — local heals still reported, no failure', () => {
+    const repo = makeRepo();
+    const { code, stdout, cacheDir } = runHook(repo);
+    assertEq(code, 0, 'exit 0');
+    assert(!stdout.includes('gh not installed'), 'a skip line never reaches the session');
+    assert(stdout.includes('issue forms'), 'the local heals do');
+    cleanup(repo); cleanup(cacheDir);
+  });
+};
+
+module.exports = async () => {
+  await run();
+  return summary();
+};
+
+if (require.main === module) {
+  module.exports().then(({ failed }) => process.exit(failed > 0 ? 1 : 0));
+}

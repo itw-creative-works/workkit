@@ -1,0 +1,45 @@
+# Checks (workflow spec) — the test gate that runs on every pull request.
+# Making it a REQUIRED check is a repo setting (branch protection / ruleset)
+# a human turns on; until then it runs and reports, and the ship skill treats
+# a red run as unmergeable.
+# Installed once by workflow/standards.sh; after that this copy is the repo's
+# own, so repo-specific steps (extra tools, matrix builds) belong here, not in
+# the workflow core's template.
+#
+# The job mirrors what the local safety/commit-gate hook runs: the npm test
+# suite. A repo without a test script passes trivially — the check exists so
+# a pull request from ANY author (cloud agent, collaborator, laptop without
+# the hooks) meets the same bar before merge.
+name: checks
+
+on:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      # A runner has no global git identity, so any test that builds a scratch
+      # repo and commits into it fails at "Author identity unknown".
+      - name: Configure git identity
+        run: |
+          git config --global user.name "checks"
+          git config --global user.email "checks@ci.local"
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          elif [ -f package.json ]; then
+            npm install --no-audit --no-fund
+          fi
+      - name: Test
+        run: |
+          if [ -f package.json ] && node -e "process.exit((require('./package.json').scripts || {}).test ? 0 : 1)"; then
+            npm test
+          else
+            echo "no test script — nothing to check"
+          fi

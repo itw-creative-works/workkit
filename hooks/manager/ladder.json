@@ -1,0 +1,21 @@
+{
+  "note": "SSOT for the manager tier ladder (issue #11). `ladder` maps rung names to the model value the resolver emits, ordered STRONGEST FIRST — rank comes from key order, never from code. Values are the Agent tool's model ALIASES, not full ids: the tool's schema is an enum (sonnet/opus/haiku/fable) and a full id fails validation before the spawn runs (probed live on CC 2.1.219, 2026-07-26). `classes` maps each agent class to a capability tier; `tiers` maps capability tiers to ladder rungs. `mode`: 'rewrite' = the manager/resolver hook rewrites the spawn's model via updatedInput (probe-confirmed working); 'advise' = the resolver blocks naming the required model (fallback for versions where updatedInput is not honored). Consumers: hooks/manager/resolver, hooks/manager/profile; tests override the path via MANAGER_LADDER. New model family = one ladder line here PLUS a case line in _lib.sh hook_model_tier (the family matcher both consumers use); rung names must stay equal to family names or the profile's tier comparison breaks.",
+  "mode": "rewrite",
+  "ladder": {
+    "fable": "fable",
+    "opus": "opus",
+    "sonnet": "sonnet",
+    "haiku": "haiku"
+  },
+  "classes": {
+    "scout": "fast",
+    "worker": "workhorse",
+    "verifier": "workhorse",
+    "advisor": "frontier"
+  },
+  "tiers": {
+    "frontier": "fable",
+    "workhorse": "opus",
+    "fast": "sonnet"
+  }
+}

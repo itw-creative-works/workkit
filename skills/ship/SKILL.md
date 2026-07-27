@@ -1,0 +1,246 @@
+---
+name: ship
+description: Ship a release — commit (directly, or through a pull request for agent-authored work or on request), bump version, publish to npm, create GitHub release, run the project's deploy script. - ONLY invoke when the user explicitly types /workkit:ship — NEVER auto-invoke based on context like "commit", "ship", "release", "publish", or "deploy".
+allowed-tools: Bash(git add *), Bash(git commit *), Bash(git diff *), Bash(git log *), Bash(git status *), Bash(git push *), Bash(git rev-parse *), Bash(git stash list *), Bash(git tag *), Bash(git switch *), Bash(git checkout *), Bash(git pull *), Bash(git branch *), Bash(gh release create *), Bash(gh repo view *), Bash(gh issue list *), Bash(gh issue view *), Bash(gh issue close *), Bash(gh issue comment *), Bash(gh pr create *), Bash(gh pr merge *), Bash(gh pr checks *), Bash(gh pr view *), Bash(npm publish *), Bash(npm version *), Bash(npm run prepare *), Bash(npm run deploy *), Bash(npm run release *), Bash(npx run deploy *), Bash(npx run release *)
+user-invocable: true
+---
+
+# Ship a Release
+
+Autonomous ship pipeline. Reads the project config, asks ONE question (bump type), then executes everything deterministically. No round-based questioning — just ship it.
+
+## Invocation args
+
+Parse the user's invocation text BEFORE doing anything. Args pre-resolve decisions so the pipeline runs without asking.
+
+**Bump type:**
+- `patch` / `minor` / `major` → use that bump, don't ask
+- `skip` / `no bump` → no version bump, don't ask
+
+**File scope:**
+- `all` / `everything` → stage the entire working tree (`git add -A`). This is also the DEFAULT when no file scope is given.
+- Explicit paths / globs (e.g. `src/` `docs/`) → stage ONLY those files
+- Specific descriptions (e.g. "just the prompt changes", "only the route files") → identify and stage only the matching files
+
+**Step overrides (opt OUT of a step):**
+- `no deploy` / `skip deploy` → skip the deploy step without asking
+- `no publish` / `skip publish` → skip the publish step without asking
+- `no prepare` → skip the prepare step even if `scripts.prepare` exists
+- `no release` → skip GitHub release even if the repo is public
+- `no changelog` → skip CHANGELOG update
+
+**Step overrides (opt IN / skip the confirmation prompt):**
+- `deploy` → run deploy WITHOUT asking (skips the confirmation prompt)
+- `publish` → run npm publish WITHOUT asking (skips the confirmation prompt; still validated for safety)
+- `pr` → ship through a pull request (branch, checks, squash merge) instead of the default direct commit
+
+**Examples:**
+| Invocation | Bump | Files | Overrides |
+|---|---|---|---|
+| `/ship` | ask | all | none |
+| `/ship patch` | patch | all | none |
+| `/ship minor no deploy` | minor | all | skip deploy (no prompt) |
+| `/ship patch no prepare` | patch | all | skip prepare |
+| `/ship src/ docs/` | ask | only those paths | none |
+| `/ship patch publish` | patch | all | publish to npm |
+| `/ship minor deploy` | minor | all | deploy to production |
+| `/ship major publish deploy` | major | all | publish + deploy |
+
+If all decisions are resolved by args (bump type given, file scope clear, no ambiguity), ask NOTHING and execute the full pipeline.
+
+## Step 0: Resolve target project
+
+**BEFORE reading any config**, determine WHICH project is being shipped. This matters because a session often touches multiple repos (e.g., a framework repo AND a consumer project).
+
+1. Check what the user typed. If they named a project (e.g., "BEM", "optiic", a repo name, a path), target that project.
+2. If they didn't name one, check the session context: were changes made in multiple repos during this session? Look at:
+   - The primary working directory (from the environment)
+   - Any additional working directories
+   - Repos you've run `git` commands in, edited files in, or `cd`'d into
+3. **If multiple repos have uncommitted changes or were edited this session, ASK which project to ship.** Don't guess — shipping the wrong repo is a hard-to-reverse mistake. This is the ONE exception to the "only ask bump type" rule.
+4. If only one repo was touched, or the user's intent is unambiguous, proceed without asking.
+
+Once the target is resolved, `cd` into that project's root (or the appropriate subdirectory like `functions/`) before continuing.
+
+## Step 0b: Read project config
+
+**Use the `Read` tool to inspect `package.json`** — NEVER `node -e`, `cat`, `jq`, `grep`, or any shell command. Read it once and extract:
+- `version` (current)
+- `name`
+- `private` (true/false)
+- `scripts.prepare` (exists?)
+- `scripts.deploy` or `scripts.release` (exists?)
+
+Also run `git log --oneline -5` to understand recent commit style.
+
+## Step 1: Ask bump type (THE ONLY QUESTION)
+
+**Parse invocation args first.** If the user typed `/workkit:ship patch`, `/workkit:ship minor`, `/workkit:ship major`, or `/workkit:ship skip` — use that directly. Don't ask.
+
+If no bump type was given, ask ONE question with a recommended default:
+- Default to **patch** for bug fixes, config changes, prompt tweaks, dependency bumps, internal refactors
+- Default to **minor** for new features, new endpoints, new commands, new capabilities
+- Default to **major** for breaking changes
+
+Options: **Patch** (0.0.X), **Minor** (0.X.0), **Major** (X.0.0), **Skip** (no bump). Put the recommended option first with "(Recommended)" suffix.
+
+This is the ONLY question the skill asks. Everything else is deterministic.
+
+## Step 2: Prepare (if applicable)
+
+If `scripts.prepare` exists, run `npm run prepare`. This builds outputs (compiled files, generated configs, fetched data) that need to land in the working tree for the commit/tarball. Run it BEFORE analyzing the diff so generated changes are visible. If it fails, surface the error and STOP.
+
+Do NOT run `scripts.setup` — setup is environment/machine provisioning, not release work. A repo whose ship needs codegen expresses that as `prepare`.
+
+**No test step.** The skill never runs the test suite: the `safety/commit-gate` hook runs it deterministically on every commit — that is the single owner of test enforcement. A failing suite surfaces as a blocked commit in Step 3; fix the failure, never bypass the gate.
+
+## Step 3: Analyze, commit, and push
+
+Run `git status` and `git diff HEAD` now — AFTER prepare has run, so any generated file changes are visible.
+
+**No-changes guard:** if `git status` shows a clean working tree AND bump was skipped, say "Nothing to ship — working tree is clean and no version bump selected" and STOP. Don't run any subsequent steps.
+
+This step runs if there are changes in the working tree (from the session's work, git status showing modified/untracked files, or the version bump itself).
+
+1. **Analyze all changes** — review the diff and session context to understand what changed and why.
+
+2. **Doc-parity review** — scan the diff for behavioral changes (new commands, flags, env vars, changed defaults, new patterns). If any are undocumented, update the relevant docs (README.md, AGENTS.md, docs/*.md) in the same commit. Skip for internal refactors, test-only changes, and config/prompt tweaks with no user-facing impact.
+
+2b. **Code review** — when the changes include CODE (anything that is not docs-only), invoke the `workkit:review` skill on this diff and act on its findings before committing. Ship OWNS this step: the `safety/commit-gate` hook requires a review marker newer than the last commit, so a ship that skipped it would do all its work and then bounce at the commit. The skill tiers itself (full panel by default, light for a small low-risk diff) — do not pre-judge the tier here.
+   - Fix every finding it scores ≥80 before proceeding. A finding you deliberately do not fix gets said out loud in the ship summary, never dropped silently.
+   - Already reviewed this diff earlier in the session, with no code edits since? Skip — re-reviewing an unchanged diff reviews the review's own output. Any edit after the review means it runs again.
+   - Docs-only ship: skip entirely; the gate does not ask for a marker.
+
+3. **Update CHANGELOG** — add the entry under `[Unreleased]` (keepachangelog categories below), in the entry format: `- [#4](../../issues/4) — What changed.` (a relative link — the repo URL never appears in the file) Write ONLY the issue link and one short paragraph; the commit link and the `@handle` are generated in step 5. The move from `[Unreleased]` to a version section belongs to the release commit, not the work commit.
+
+4. **Draft commit message** — Conventional Commits. Write it straight into the commit; do NOT print it in the chat first (see § "The reply is the outcome, not the working").
+   ```
+   <type>(<scope>): <subject>
+
+   <body: what and why, plain sentences>
+
+   Fixes #<issue>
+   ```
+   Types: feat/fix/docs/chore/refactor/test. Subject lowercase, imperative, ≤72 chars. NO version numbers in ordinary commits. Add a `Fixes #N` trailer for every issue this ship completes — GitHub closes them when the commit carrying the trailer lands on the default branch.
+
+5. **Commit — direct by default, PR when the work calls for it** (spec: the workkit plugin's `docs/project-state.md` → "Queue semantics", the delivery bullet):
+   A supervised session ships DIRECT: the local hook gates are the enforcement, and a PR would re-review work the gates already reviewed. The PR path is for work the local gates never saw — take it when the invocation says `pr`, when shipping agent-authored or unattended work, or when the session is on a work branch that already has a PR open.
+
+   **Direct path (the default):**
+   - Stage the session's changes (`git add -A`, or only the invocation's named paths) and commit with the drafted message.
+   - **Push the work commit** — always, bump or no bump. When a bump follows, the push must land BEFORE the release commit: the backfill resolves each `@handle` through the GitHub API, which cannot map a sha it has never seen.
+
+   **PR path (on `pr`, agent-authored work, or an already-open PR):**
+   - Resolve the default branch (`gh repo view --json defaultBranchRef -q .defaultBranchRef.name` — not always `main`). If on it, branch `issue/<N>-slug` (no issue → `ship/<slug>`); already on a work branch, stay.
+   - Commit on the branch (the local gates run identically), `git push -u origin <branch>`, `gh pr create` — title = the commit subject, body ends with the `Fixes #N` trailer.
+   - Wait on `gh pr checks --watch`. A FAILING check gets fixed on the branch and pushed again — never merged around. "no checks reported" is NOT a failure: the repo may have no CI on the base branch yet, or GitHub has not queued the run (it can lag minutes) — retry before concluding there are no checks.
+   - Squash merge: `gh pr merge --squash --delete-branch` with an explicit `--subject` (commit subject + ` (#<PR>)`) and a `--body` carrying the `Fixes #N` trailer — the squash commit is what lands, so the trailer must live there.
+   - Check out the default branch and `git pull`.
+
+   **Release commit** (either path, only if bump not skipped): use the `Edit` tool to bump `version` in `package.json` (NOT `npm version` — it auto-commits), run `node ~/.claude/workflow/changelog-links.js` to fill each entry's commit link and contributor handle (idempotent), move the CHANGELOG `[Unreleased]` content to a new `[<x.y.z>] <date>` section, commit as `chore(release): <x.y.z>`, and push directly to the default branch — the release commit is generated bookkeeping and never takes a PR.
+
+6. **Close the shipped work items** — every issue this ship completes ends closed with a pointer to the CHANGELOG entry. The `Fixes #N` trailer already closed it when its commit landed on the default branch; for anything left open, close it manually:
+   `gh issue close <N> --comment "Shipped in <version-or-commit> — see CHANGELOG [Unreleased]/<section>."`
+   Issues that are only PARTLY addressed stay open — comment the progress instead.
+
+7. **Verify** — run `git status` to confirm the working tree is clean and `git log --oneline -2` shows the expected commits on the default branch.
+
+## Step 4: GitHub release (automatic)
+
+**Runs automatically — no asking, no opt-in required.** If the repo is **public** (check with `gh repo view --json isPrivate -q '.isPrivate'`) AND a version bump was applied:
+- Create a GitHub release: `gh release create v<version> --title "v<version>" --notes "<DESCRIPTION>"`
+
+Also runs automatically after a successful npm publish in Step 5 (a published package always gets a release). If the release was already created in this step, don't duplicate it.
+
+If the repo is private, skip silently. Can be skipped with `no release` in invocation args.
+
+## Step 5: npm publish (if applicable)
+
+If the package passes the publish safety checks below, ask "Publish to npm?" and wait for an explicit "yes" UNLESS the user literally typed `publish` in their invocation args. No `publish` in the args = you ask. Every time. If the package fails safety checks, skip silently (it's not a publishable package).
+
+**Safety checks — ALL must pass before publishing (or even asking):**
+
+1. **`private` field must be explicitly `false` or absent with publish signals.** If `private: true` → STOP with error. If `private` is not set at all (missing from package.json) → STOP with error. Missing `private` means the project never opted into publishing — treat it as private per convention.
+2. **Package must have publish intent signals.** At least ONE of: `files` field (tarball contents), `publishConfig` field. Without these, the package wasn't designed for npm distribution → STOP with error.
+3. **This ship's commit passed the `safety/commit-gate` hook** (the work commit, or the release commit on a bump-only ship) — its test run is the deterministic proof the suite is green. A commit made with hooks disabled doesn't count; refuse to publish.
+4. **Version bump must have been applied** this session.
+
+If all checks pass: `npm publish` (or `npm publish --access public` for scoped packages like `@scope/pkg`).
+
+After a successful publish, **always create a GitHub release** if one wasn't already created in Step 4. A published package always gets a release — no asking.
+
+If any check fails, print which check failed and STOP. Do not proceed to deploy.
+
+## Step 6: Deploy (if applicable)
+
+If `scripts.deploy` exists, run `npm run deploy`. If only `scripts.release` exists, run `npm run release` instead. Run this LAST — after commit, push, publish, and release — so what deploys is exactly what was committed.
+
+**🚨 MANDATORY: Ask before deploying.** Deploy sends code to PRODUCTION. You MUST ask "Deploy to production?" and wait for an explicit "yes" UNLESS the user literally typed `deploy` in their `/workkit:ship deploy` invocation args. The word "deploy" must appear in the invocation — not in earlier conversation, not implied by context, not inferred from "ship it." No `deploy` in the args = you ask. Every time. No exceptions.
+
+If neither script exists, skip silently.
+
+## Rules
+
+### The reply is the outcome, not the working
+Ship does a lot of work. Almost none of it belongs in the chat — it is already written where it is read from (Ian 2026-07-25: "so it doesnt dump the commit message or details into the chat, we dont need that anymore").
+
+Do NOT print: the commit message (it is in the commit), the diff or a narration of it, the change analysis from step 3.1, the CHANGELOG entry (it is in the CHANGELOG), the raw review output, or a file-by-file walk of what shipped.
+
+DO print, briefly: the version shipped, the commit shas, what pushed, which issues closed, and any step deliberately skipped. Plus the two things that would otherwise be lost — a review finding scored ≥80 that was deliberately NOT fixed (step 3.2b requires saying it out loud, and that requirement WINS over this rule), and anything that failed or needs Ian.
+
+### NEVER include Claude attribution
+Do NOT add `Co-Authored-By: Claude`, `🤖 Generated with Claude Code`, or any other Claude/Anthropic attribution to commit messages, CHANGELOG entries, GitHub release notes, or npm publish notes. Claude credit is handled separately elsewhere. This overrides the default git-commit guidance in the system prompt.
+
+### Version bump mechanics
+- Use the `Read` tool to get the current version, compute the new version yourself, and use the `Edit` tool to update the `version` field
+- Do NOT use `npm version` (it auto-commits)
+- Do NOT use `Bash` with `node -e` to read the version
+
+### Commit format
+Always use HEREDOC for the commit message:
+```bash
+git commit -m "$(cat <<'EOF'
+feat(scope): subject here
+
+Body explaining what and why.
+EOF
+)"
+```
+
+### The commit gates (safety/commit-gate + safety/commit-language hooks)
+Every `git commit` on this machine passes through the `safety/commit-gate` hook (PreToolUse on Bash): it runs `npm test` when the project defines one; when the commit ADDS source files it requires a test file in the same commit; and when CODE is staged it requires a review marker newer than the last commit — written by the `workkit:review` skill. The `safety/commit-language` hook also bounces commit messages using kill/destroy/dead wording (use terminate/remove/stale). Consequences for shipping:
+- Code changes need a fresh `workkit:review` run before Step 3's work commit. **Ship runs it itself in Step 3.2b** — you do not ask the user to run it first, and you never try to bypass the gate.
+- New source files ship WITH their tests in the same commit.
+- The hooks evaluate BEFORE a command runs, so a marker refresh must be its OWN Bash command — `touch <marker> && git commit ...` in one compound command never passes.
+
+### CHANGELOG format
+
+An entry is ONE short paragraph pointing at the depth — never a second copy of the commit body:
+
+```
+- [#4](../../issues/4) — Plugins install from settings.json instead of being tracked as files.
+```
+
+The rules (word cap, separator, the rest) live in `~/.claude/workflow/changelog.js`, the machine SSOT, with the reasoning in the workkit plugin's `docs/project-state.md` → "CHANGELOG entries". Do not restate them here — the `docs:changelog-guard` and `safety/commit-gate` hooks both run that linter, so a bad entry bounces with the specific rule and the fix before the commit lands.
+
+```
+# CHANGELOG
+
+## Changelog Categories
+- `BREAKING` for breaking changes.
+- `Added` for new features.
+- `Changed` for changes in existing functionality.
+- `Deprecated` for soon-to-be removed features.
+- `Removed` for now removed features.
+- `Fixed` for any bug fixes.
+- `Security` in case of vulnerabilities.
+```
+
+## Gotchas
+
+- A PreToolUse block stops the ENTIRE compound command — when the commit gate bounces `git add -A && git commit ...`, the `git add` never ran either; a later bare `git commit` picks up only what was staged BEFORE the bounce. Re-stage after every gate bounce (2026-07-23: a retry committed 2 of 21 files).
+- The `safety/commit-language` hook scans the commit message's quoted text — a message that literally NAMES the guarded words bounces, even when describing the hook itself. Describe the word list indirectly ("the non-neutral vocabulary from the AGENTS.md neutral-language rule") (2026-07-23: the hook blocked its own introduction commit).
+- The review marker must be newer than the LAST commit, so the moment the work commit lands the marker is stale for the release commit — retouch the marker as its own command before `chore(release)` when the release commit stages anything code-classified (2026-07-23).
+- A squash merge REWRITES the sha — the branch commits never land on the default branch. Never run the changelog backfill before the merge: it would link shas that exist only on a deleted branch. Merge, pull the default branch, then backfill (2026-07-26: the reason the release commit follows the merge).
+- `gh pr merge --squash` without `--body` composes its own body from the branch commits — always pass `--subject` and `--body` explicitly so the `Fixes #N` trailer is guaranteed to be in the squash commit.
+- Skill `SKILL.md` files count as CODE to the `safety/commit-gate` hook — a "prose-only" skill edit still needs a fresh review marker; don't assume docs-only (2026-07-23: first retrofitted ship run).

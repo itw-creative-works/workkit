@@ -1,0 +1,67 @@
+{
+  "note": "SSOT for the issue label vocabulary. Every label is group:value — values are single lowercase words, never hyphenated. The standards script creates missing labels and corrects description/color drift; it never deletes labels it does not know. A group's color is the default for its values; a value may override it. An exclusive group allows at most one of its labels per open issue; a required group demands exactly one.",
+  "groups": {
+    "status": {
+      "exclusive": true,
+      "required": true,
+      "summary": "Where the issue sits in the lifecycle. Exactly one status: label per open issue.",
+      "color": "1D76DB",
+      "values": {
+        "inbox": {
+          "description": "Captured, not yet routed — triage drains this state. Exactly one status: label per open issue.",
+          "color": "1D76DB"
+        },
+        "spec": {
+          "description": "Needs the detailed plan before build. Exactly one status: label per open issue.",
+          "color": "BFD4F2"
+        },
+        "queued": {
+          "description": "Plan ready, buildable now. Exactly one status: label per open issue. Pull one by self-assigning.",
+          "color": "0E8A16"
+        },
+        "blocked": {
+          "description": "Waiting on a human decision. Exactly one status: label per open issue. A comment names the question.",
+          "color": "B60205"
+        },
+        "parked": {
+          "description": "Kept on purpose, not now. Exactly one status: label per open issue.",
+          "color": "6A737D"
+        }
+      }
+    },
+    "type": {
+      "exclusive": true,
+      "required": true,
+      "summary": "What kind of thing the issue is. Exactly one type: label per open issue. Set at capture by the issue template, rarely changes.",
+      "color": "8250DF",
+      "values": {
+        "bug": { "description": "Something is broken. Exactly one type: label per open issue. Set at capture." },
+        "enhancement": { "description": "New or improved behavior. Exactly one type: label per open issue. Set at capture." },
+        "idea": { "description": "Unshaped thought worth keeping. Exactly one type: label per open issue. Set at capture." }
+      }
+    },
+    "priority": {
+      "exclusive": true,
+      "summary": "Order within the queue. Absence of a priority: label means normal — there is no priority:normal label.",
+      "color": "D93F0B",
+      "values": {
+        "high": {
+          "description": "Work this before unlabeled issues. Absence of a priority: label means normal.",
+          "color": "D93F0B"
+        },
+        "low": {
+          "description": "Work this after unlabeled issues. Absence of a priority: label means normal.",
+          "color": "FEF2C0"
+        }
+      }
+    },
+    "agent": {
+      "exclusive": false,
+      "summary": "Automation permission. Absence means humans only.",
+      "color": "A2EEEF",
+      "values": {
+        "ok": { "description": "An agent may work this issue autonomously. Absence means humans only." }
+      }
+    }
+  }
+}
