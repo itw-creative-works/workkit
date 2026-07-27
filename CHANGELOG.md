@@ -9,6 +9,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ### Added
 
+- [#36](../../issues/36) — The 9am daily brief arrives as `jobs/`: `brief-payload.js` composes the tower's brief without the tower, `claude-daily.sh` sends it headless and notifies with the headline, and `install.sh` loads the LaunchAgent for this checkout.
 - [#24](../../issues/24) — A unit suite over the tower dashboard's browser JavaScript: `tests/tower/app.test.js` imports the pure libs under Node and covers the repo-selection narrowing, the formatting edges, and the crew tree.
 - [#20](../../issues/20) — Tower v2, mission control: the API splits to `tower/api/` and serves JSON only, the dashboard becomes an OMEGA app on 4300 with six pages, and new telemetry and brief endpoints add token accounting, subagent attribution, and the daily brief. CORS on the existing allowlist lets the two halves talk.
 - [#17](../../issues/17) — The tower: a one-page dashboard serving the cross-repo issue board, live Claude sessions, per-repo health tiles, and an intake box that files an inbox issue.

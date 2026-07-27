@@ -67,6 +67,8 @@ The engine's stable address, `~/.claude/workkit` → this repo's `workflow/`, is
 
 Plugins load at startup, so a new (or restarted) session is what puts a change into effect.
 
+The 9am daily-brief schedule is separate from the plugin and opt-in: `bash jobs/install.sh` loads it (macOS launchd).
+
 ## What ships
 
 ### Hooks — the part that runs by itself
@@ -99,9 +101,13 @@ The first four are capability classes — the resolver hook gives each spawn its
 
 Mission control over everything the system already knows, in two processes: `npm run tower` starts the JSON API on port 8693, and `npx omega dev` inside `tower/app/apps/web` serves the dashboard on 4300.
 
-Six pages. **Overview** is the control room. **Board** is the full issue board across every repo, columns by `status:` label with filters. **Crew** draws the running Claude sessions as an org chart, each subagent under its parent with its class, model and token spend. **Usage** is where the tokens went — by model, by agent class, over thirty days, and what it cost. **Health** is per-repo unpushed, uncommitted and unreleased work. **Brief** is the morning read — the payload the 9am job will send once that job is switched over to it. An intake dialog sits on the topbar of all six.
+Six pages. **Overview** is the control room. **Board** is the full issue board across every repo, columns by `status:` label with filters. **Crew** draws the running Claude sessions as an org chart, each subagent under its parent with its class, model and token spend. **Usage** is where the tokens went — by model, by agent class, over thirty days, and what it cost. **Health** is per-repo unpushed, uncommitted and unreleased work. **Brief** is the morning read — the same payload the 9am job under `jobs/` sends. An intake dialog sits on the topbar of all six.
 
 A view over the system's own data — its only write path is `gh issue create`. Phone access goes through Tailscale. Reference: [`tower/README.md`](tower/README.md).
+
+### The daily brief (jobs/)
+
+The 9am morning notification. `jobs/brief-payload.js` assembles the same brief the tower serves — straight from the libraries, no server needed — and wraps it in the digest instruction; `jobs/claude-daily.sh` runs it through headless Claude on a capped budget and fires a desktop notification with the headline. `bash jobs/install.sh` renders the launchd plist and loads the schedule (macOS, re-run safe). Detail: [`jobs/README.md`](jobs/README.md).
 
 ### Engine — `workflow/`
 
@@ -120,6 +126,7 @@ agents/           the crew (namespaced workkit:<name>)
 skills/           the nine workflow skills (namespaced workkit:<name>)
 workflow/         the agent-agnostic engine
 tower/            mission control — api/ (the JSON API) + app/ (the OMEGA dashboard)
+jobs/             the 9am daily brief — payload builder, headless runner, launchd schedule
 docs/             project-state.md (the spec) · agents.md (the crew contract)
 tests/            npm test
 ```
@@ -129,3 +136,4 @@ tests/            npm test
 - [`docs/project-state.md`](docs/project-state.md) — the spec: labels, capture and triage, issue anatomy, queue semantics, `.workkit/`, plans, `_attic/`, HQ, the migration recipe
 - [`AGENTS.md`](AGENTS.md) — architecture overview for agent sessions
 - [`docs/agents.md`](docs/agents.md) · [`workflow/README.md`](workflow/README.md) — the crew contract and the engine reference
+- [`jobs/README.md`](jobs/README.md) — the daily brief job: payload, runner, schedule, install

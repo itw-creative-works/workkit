@@ -24,6 +24,7 @@ The spec it implements is `docs/project-state.md`; the README carries the visual
 ├── skills/               # the nine workflow skills — surface as workkit:<name>
 ├── workflow/             # the agent-agnostic engine (labels.json, standards.sh, changelog.js, templates)
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
+├── jobs/                 # scheduled work — the 9am daily brief, its launchd plist, and install.sh
 ├── docs/                 # project-state.md (the spec) · agents.md (the crew contract)
 ├── tests/                # Node runner + hook/script/tower suites (npm test)
 └── .workkit/             # settings.json is COMMITTED (this repo's own opt-in)
@@ -84,7 +85,11 @@ Agent-agnostic: shell + Node, no Claude Code knowledge. `labels.json` is the lab
 
 ## The tower (`tower/`)
 
-Mission control, in two processes. `tower/api/` is a plain-Node JSON API with zero dependencies (`npm run tower`, port 8693); `tower/app/` is the dashboard, an OMEGA app on port 4300 that reads it cross-origin. Six pages — Overview, Board, Crew, Usage, Health, Brief — over the cross-repo issue board, the live Claude crew and its token spend, per-repo health, and the daily brief, with an intake dialog on the topbar of every one. A view, never a second store: it reads the opted-in repos' issues via one GraphQL sweep, the keep-awake markers, the session transcripts, and git; its only write path is `gh issue create`. The API is useful alone: `/api/brief` exists so the 9am job and the page can share one payload, and the job is switched over separately. The framework owns the chrome, which is why the app consumes `@omega.js/*` by `file:` spec rather than vendoring a stylesheet. Reference: `tower/README.md`.
+Mission control, in two processes. `tower/api/` is a plain-Node JSON API with zero dependencies (`npm run tower`, port 8693); `tower/app/` is the dashboard, an OMEGA app on port 4300 that reads it cross-origin. Six pages — Overview, Board, Crew, Usage, Health, Brief — over the cross-repo issue board, the live Claude crew and its token spend, per-repo health, and the daily brief, with an intake dialog on the topbar of every one. A view, never a second store: it reads the opted-in repos' issues via one GraphQL sweep, the keep-awake markers, the session transcripts, and git; its only write path is `gh issue create`. The API is useful alone: `/api/brief` exists so the 9am job and the page share one payload. The framework owns the chrome, which is why the app consumes `@omega.js/*` by `file:` spec rather than vendoring a stylesheet. Reference: `tower/README.md`.
+
+## The jobs (`jobs/`)
+
+Scheduled work this machine runs. One job: the 9am daily brief. `brief-payload.js` composes the tower's `/api/brief` WITHOUT the tower — the same roster, board, health and `buildBrief` under `tower/api/lib/` — and prints the digest instruction plus that payload; `claude-daily.sh` sends it headless (haiku, no tools, a hard budget), logs the exchange, and puts the response's first line in a desktop notification. `install.sh` renders `com.workkit.claude-daily.plist` for this checkout and loads it, only when something changed. Reference: `jobs/README.md`.
 
 ## Participation is a tri-state
 
@@ -92,7 +97,7 @@ A repo's committed `.workkit/settings.json` (`{ "version": 1, "enabled": true }`
 
 ## Tests
 
-`npm test` runs `tests/run.js`, which discovers every `tests/**/*.test.js`. A suite whose precondition this machine cannot meet calls `skipSuite()` and the runner names the skip rather than hiding it. Suites live under `tests/hooks/`, `tests/scripts/`, and `tests/tower/`.
+`npm test` runs `tests/run.js`, which discovers every `tests/**/*.test.js`. A suite whose precondition this machine cannot meet calls `skipSuite()` and the runner names the skip rather than hiding it. Suites live under `tests/hooks/`, `tests/scripts/`, `tests/tower/`, and `tests/jobs/`.
 
 ## Conventions
 

@@ -13,7 +13,7 @@ npm run tower                                  # the API on http://127.0.0.1:869
 cd tower/app/apps/web && npx omega dev         # the dashboard on https://localhost:4300
 ```
 
-The API answers on its own and is useful without the dashboard: `/api/brief` is built for the 9am job to read, though that job still reads the retired markdown until it is switched over. The dashboard needs the API; with it down, every pane says so in a line and the page still draws.
+The API answers on its own and is useful without the dashboard. The 9am job does not read it over HTTP — `jobs/brief-payload.js` composes the same payload from the same libs, so nothing has to be running at nine in the morning. The dashboard needs the API; with it down, every pane says so in a line and the page still draws.
 
 | Knob | Default | Meaning |
 |---|---|---|
@@ -97,7 +97,7 @@ tower/
 │       ├── sessions.js # keep-awake markers + transcripts + statusline cache
 │       ├── health.js   # unpushed / uncommitted / unreleased / last tag
 │       ├── telemetry.js# token accounting and subagent attribution
-│       └── brief.js    # the daily brief — one payload for the page and, once switched, the 9am job
+│       └── brief.js    # the daily brief — one payload for the page and the 9am job (jobs/)
 └── app/                # the OMEGA app — its own npm root (workspaces do not nest)
     └── apps/web/src/
         ├── pages/                      # one markdown page per view

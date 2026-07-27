@@ -1,0 +1,109 @@
+#!/usr/bin/env node
+//
+// The morning payload — what the 9am job hands to Claude.
+//
+// It is the tower's `/api/brief`, composed WITHOUT the tower: the same roster
+// walk, the same board sweep, the same per-repo health, through the same
+// `buildBrief`. Mirroring the server's composition rather than calling it over
+// HTTP is what lets the job run at nine in the morning whether or not anyone
+// started `npm run tower` — and because both halves derive from one module, the
+// notification and the Brief page cannot tell different stories.
+//
+// The caching the server wraps around those reads is deliberately absent. A job
+// that runs once a day has nothing to cache.
+//
+// A sweep that FAILED is printed as a failure. "Nothing is waiting on you" and
+// "gh could not answer" are opposite facts, and a morning that quietly reported
+// the first when the second happened is worse than no brief at all.
+//
+// Pure gather: no writes, no Claude, no notification. `claude-daily.sh` owns the
+// sending.
+//
+// Usage:
+//   node jobs/brief-payload.js          // the payload on stdout
+//   composeBrief({ root, exec })        // offline, against fixtures
+//
+
+const { discoverRepos } = require('../tower/api/lib/repos');
+const { fetchBoard } = require('../tower/api/lib/board');
+const { repoHealth } = require('../tower/api/lib/health');
+const { buildBrief } = require('../tower/api/lib/brief');
+
+// The digest instruction. It names the payload's sections rather than the shape
+// of a board file, and it fixes the FIRST line of the response: claude-daily.sh
+// puts that line in the desktop notification, which is the only part of the
+// morning most days get read at all.
+const INSTRUCTION = `You are producing the owner's MORNING KICKOFF from the brief payload below.
+
+The payload is the tower's daily brief as JSON. \`waiting\` is blocked on a
+decision from the owner, \`ready\` is specced and unclaimed, \`inFlight\` is specced and
+claimed, \`inbox\` is captured but not yet specced, and \`warnings\` is work sitting
+on the table per repo (uncommitted, unpushed, unreleased). \`ok: false\` means the
+sweep itself failed — report that and its \`reason\`, never a quiet morning.
+
+Respond in EXACTLY this shape, plain language, no markdown headers:
+Line 1 — the literal prefix "HEADLINE: " then one sentence, the single most
+important thing today (<=120 chars total).
+Then these labeled sections, one line per item, tightest useful phrasing:
+WAITING ON YOU: every issue in \`waiting\` — these move only if the owner acts.
+IN FLIGHT: every issue in \`inFlight\`, saying which repo.
+TODAY'S TOP 3: your pick of the highest-leverage next actions, judged across
+\`ready\`, inbox pressure, and \`warnings\`. Number them.
+ON THE TABLE: only repos in \`warnings\`, as "repo: N uncommitted, N unpushed, N unreleased".
+INBOX: one line — \`counts.inbox\` captured items not yet specced; omit if zero.
+Nothing else — no preamble, no advice, no restating the payload.
+
+--- BRIEF ---`;
+
+/**
+ * The brief payload, assembled from the three reads the tower's endpoints make.
+ *
+ * Every option passes through to the libs untouched, which is what lets the
+ * suite run this whole composition against a fixture root and a fake exec.
+ *
+ * @param {object} [opts]
+ * @param {string} [opts.root] the Repositories root to walk
+ * @param {string} [opts.workflowHome] the user's ~/.workkit
+ * @param {string} [opts.home] overrides ~ for the libs that resolve it
+ * @param {string} [opts.generatedAt] ISO stamp, injectable so the suite is not a clock test
+ * @param {Function} [opts.exec] (cmd, args) => stdout — the git/gh seam
+ * @returns {object} the brief payload
+ */
+const composeBrief = (opts = {}) => {
+  const { exec } = opts;
+  const seam = exec ? { exec } : {};
+
+  let repos;
+  try {
+    repos = discoverRepos({
+      root: opts.root,
+      workflowHome: opts.workflowHome,
+      home: opts.home,
+      exec,
+    });
+  } catch (err) {
+    // A walk that threw leaves no roster to sweep, and an empty roster sweeps
+    // clean — which would read as an empty board rather than as a broken read.
+    return buildBrief(
+      { ok: false, reason: `the roster walk failed: ${err.message}`, issues: [] },
+      {},
+      [],
+      opts.generatedAt,
+    );
+  }
+
+  const board = fetchBoard(repos, seam);
+  const health = {};
+  for (const repo of repos) health[repo.path] = repoHealth(repo.path, seam);
+
+  return buildBrief(board, health, repos, opts.generatedAt);
+};
+
+/** The instruction, then the payload as JSON a human could read over a shoulder. */
+const render = (payload) => `${INSTRUCTION}\n\n${JSON.stringify(payload, null, 2)}\n`;
+
+module.exports = { composeBrief, render, INSTRUCTION };
+
+if (require.main === module) {
+  process.stdout.write(render(composeBrief()));
+}

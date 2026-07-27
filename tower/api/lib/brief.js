@@ -6,11 +6,9 @@
 // health that every other tower page already reads. Nothing is stored: a brief
 // is a question asked of the live data, not a document that accumulates.
 //
-// This is what will replace the retired markdown the morning job still reads
-// (BOARD.md, PROGRESS.md, INBOX.md): the job switches to calling the API for
-// this payload rather than parsing files that no longer exist. That switch is
-// its own change, in the dotfiles repo — this endpoint is the half that lands
-// here.
+// The 9am job does not reach the API for it. `jobs/brief-payload.js` calls this
+// module directly, through the same roster, board and health reads the server
+// makes, so the morning works whether or not a tower is running.
 //
 // The four sections answer the four questions a morning asks, in the order a
 // morning asks them:
