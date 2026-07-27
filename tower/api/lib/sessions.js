@@ -61,14 +61,28 @@ const markerRoot = (exec) => {
   return path.join(base || '/tmp', 'claude-keep-awake');
 };
 
-/** The idle threshold, honoring the same env var and the same typo guard. */
-const idleThreshold = (opts) => {
-  if (typeof opts.idleMinutes === 'number') return opts.idleMinutes;
-  const env = process.env.KEEP_AWAKE_IDLE_MINUTES;
-  // A non-numeric override falls back rather than passing through — the hook
-  // makes the same call, so a typo cannot quietly disable the idle check.
-  if (env && /^\d+$/.test(env)) return Number(env);
-  return DEFAULT_IDLE_MINUTES;
+/**
+ * How long a transcript may stay quiet before whatever wrote it counts as
+ * finished, in milliseconds, honoring the same env var and the same typo guard.
+ *
+ * This is the ONE liveness rule the tower has: `listSessions` reads it for a
+ * session's `state`, and telemetry.js reads it for a subagent's. A second copy
+ * of the number would let the same crew read live on one page and finished on
+ * another.
+ *
+ * @param {object} opts the caller's options — `idleMinutes` overrides everything
+ * @returns {number} milliseconds
+ */
+const idleWindowMs = (opts) => {
+  const minutes = (() => {
+    if (typeof opts.idleMinutes === 'number') return opts.idleMinutes;
+    const env = process.env.KEEP_AWAKE_IDLE_MINUTES;
+    // A non-numeric override falls back rather than passing through — the hook
+    // makes the same call, so a typo cannot quietly disable the idle check.
+    if (env && /^\d+$/.test(env)) return Number(env);
+    return DEFAULT_IDLE_MINUTES;
+  })();
+  return minutes * 60 * 1000;
 };
 
 /**
@@ -213,7 +227,7 @@ const listSessions = (opts = {}) => {
   const markerDir = opts.markerDir || markerRoot(exec);
   const home = opts.home || os.homedir();
   const stateDir = opts.stateDir || path.join(process.env.TMPDIR || '/tmp', 'claude-session-state');
-  const idleMs = idleThreshold(opts) * 60 * 1000;
+  const idleMs = idleWindowMs(opts);
   const now = opts.now || Date.now();
   const nameReadBytes = opts.nameReadBytes || NAME_READ_BYTES;
 
@@ -261,4 +275,6 @@ const listSessions = (opts = {}) => {
   return out;
 };
 
-module.exports = { listSessions, readMarker, transcriptPath, chatNameFrom, DEFAULT_IDLE_MINUTES, NAME_READ_BYTES };
+module.exports = {
+  listSessions, readMarker, transcriptPath, chatNameFrom, idleWindowMs, DEFAULT_IDLE_MINUTES, NAME_READ_BYTES,
+};

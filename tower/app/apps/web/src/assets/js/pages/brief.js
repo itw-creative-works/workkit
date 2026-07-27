@@ -8,31 +8,13 @@
 // The 9am notification sends that same payload, so the page and the message
 // tell one story and neither can drift.
 //
-// It is fetched HERE rather than through the page runtime's feed table: that
-// table (libs/tower/page.js) has no `brief` entry and is another agent's file
-// today. So this page holds its own answer, re-reads it on the board's cadence,
-// and re-renders itself — what the runtime would do for it. The day `brief`
-// joins FEEDS, all of that collapses to `feeds: ['brief']` and a render.
+// `brief` is one of the runtime's feeds, so the poll cadence and the chrome's
+// Refresh both reach it the same way every other page's data is reached.
 //
 
 import { startPage } from '../libs/tower/page.js';
-import { fetchFeed } from '../libs/tower/api.js';
-import { esc, num, empty, problem, statCell, statgrid, card } from '../libs/tower/format.js';
-
-// The board sweep behind the brief is re-read every 60 seconds, and the brief
-// is never fresher than its source.
-const EVERY = 60000;
-
-/** The last answer from /api/brief, in `fetchFeed`'s result shape, or null. */
-let result = null;
-
-/** Where the page is drawn, kept so a re-read can redraw without a repaint. */
-let mounted = null;
-
-const reread = async () => {
-  result = await fetchFeed('/api/brief');
-  if (mounted) render(mounted.root, mounted.state);
-};
+import { feed } from '../libs/tower/state.js';
+import { esc, num, empty, problem, issueChips, statCell, statgrid, card } from '../libs/tower/format.js';
 
 /** The rows a section shows — narrowed to the selected repo when there is one. */
 const forRepo = (items, selected) => (selected ? items.filter((item) => item.repo === selected) : items);
@@ -77,12 +59,7 @@ const issueRow = (issue) => `<li class="py-2">
     <span class="classy-micro d-block">${esc(issue.repo)} #${esc(issue.number)}</span>
     <span class="d-block">${esc(issue.title)}</span>
   </a>
-  <span class="d-flex flex-wrap align-items-center gap-1 mt-1">
-    ${issue.type ? `<span class="classy-chip">${esc(issue.type)}</span>` : ''}
-    ${issue.priority === 'high' ? '<span class="classy-chip classy-chip--accent">high</span>' : ''}
-    ${issue.agentOk ? '<span class="classy-chip">agent:ok</span>' : ''}
-    ${(issue.assignees || []).length ? `<span class="classy-micro">@${esc(issue.assignees.join(', @'))}</span>` : ''}
-  </span>
+  ${issueChips(issue, 'mt-1')}
 </li>`;
 
 // A section with nothing in it says the sentence its emptiness means. "Nothing
@@ -123,16 +100,7 @@ const warnings = (rows) => card('Work sitting on the table', rows.length
  * @param {object} state the runtime's feed state
  */
 const render = (root, state) => {
-  mounted = { root, state };
-
-  // The chrome's Refresh re-reads the runtime's feeds, and this page has none
-  // of them, so it hangs its own re-read on the same button. Wired once per
-  // button: the chrome rebuilds it on every repaint, a re-read does not.
-  const refresh = document.getElementById('tower-refresh');
-  if (refresh && !refresh.dataset.briefWired) {
-    refresh.dataset.briefWired = 'yes';
-    refresh.addEventListener('click', reread);
-  }
+  const result = feed(state, 'brief');
 
   if (!result) {
     root.innerHTML = empty('reading the brief…');
@@ -165,15 +133,11 @@ const render = (root, state) => {
   `;
 };
 
-export default () => {
-  reread();
-  setInterval(reread, EVERY);
-  // `repos` is the roster the chrome's repo selector is built from — the page
-  // reads no issue data from it, but without it there is no way to narrow the
-  // brief, and the runtime's stamp would never leave "reading…".
-  return startPage({
-    mount: 'tower-brief',
-    feeds: ['repos'],
-    render,
-  });
-};
+// `repos` is the roster the chrome's repo selector is built from — the page
+// reads no issue data from it, but without it there is no way to narrow the
+// brief.
+export default () => startPage({
+  mount: 'tower-brief',
+  feeds: ['repos', 'brief'],
+  render,
+});

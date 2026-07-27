@@ -7,9 +7,10 @@
 // URL ('/' → 'index'), so js/pages/index.js is this page's module.
 //
 
+import { startPage } from '../libs/tower/page.js';
 import {
-  startPage, issuesFor, reposFor, sessionsFor, board, health, feed,
-} from '../libs/tower/page.js';
+  issuesFor, reposFor, sessionsFor, board, health, feed,
+} from '../libs/tower/state.js';
 import {
   esc, num, empty, problem, shortPath, statCell, statgrid, card, pill, STATUSES, statusColor,
 } from '../libs/tower/format.js';

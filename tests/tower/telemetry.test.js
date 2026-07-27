@@ -19,7 +19,8 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harn
 
 const lib = path.join(__dirname, '..', '..', 'tower', 'api', 'lib');
 const {
-  collectTelemetry, sessionTelemetry, readUsage, resetCache, costOf, className, dayKey, PRICING, OVERTIME_DAYS,
+  collectTelemetry, sessionTelemetry, readUsage, resetCache, cachedPaths,
+  costOf, className, dayKey, PRICING, OVERTIME_DAYS,
 } = require(path.join(lib, 'telemetry.js'));
 const { transcriptPath } = require(path.join(lib, 'sessions.js'));
 const { createServer } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'server.js'));
@@ -265,6 +266,25 @@ const run = async () => {
     cleanup(w.root);
   });
 
+  await test('a collection pass forgets the transcripts it no longer names', () => {
+    const w = mkWorld();
+    const staying = mkSession(w, { pid: 7001, session: 'sess-stays', lines: [assistantLine({ id: 'a', input: 10 })] });
+    const going = mkSession(w, { pid: 7002, session: 'sess-goes', lines: [assistantLine({ id: 'b', input: 20 })] });
+    const sub = mkSubagent(going, 'gone', { lines: [assistantLine({ id: 'c', input: 30 })], meta: {} });
+
+    collect(w);
+    assert(cachedPaths().includes(going), 'the first pass held the session it read');
+    assert(cachedPaths().includes(sub), 'and its subagent');
+
+    // The session ends: its marker is gone, so the second pass never names it.
+    fs.rmSync(path.join(w.markerDir, '7002'));
+    collect(w);
+    assert(!cachedPaths().includes(going), 'the finished session is forgotten');
+    assert(!cachedPaths().includes(sub), 'and so is its subagent');
+    assert(cachedPaths().includes(staying), 'the session still running keeps its read state');
+    cleanup(w.root);
+  });
+
   group('tower/telemetry: cost');
 
   await test('a known model prices per million tokens, each counter at its own rate', () => {
@@ -444,6 +464,37 @@ const run = async () => {
     assertEq(byClass.manager, 1000, 'the session drives, so it is the manager');
     assertEq(byClass.worker, 500, 'the worker');
     assertEq(byClass.scout, 100, 'the scout');
+    cleanup(w.root);
+  });
+
+  await test('a subagent is working while its transcript is fresh and done once it goes quiet', () => {
+    const w = mkWorld();
+    const now = Date.parse('2026-07-27T12:00:00.000Z');
+    const at = (minutesAgo) => new Date(now - minutesAgo * 60 * 1000).toISOString();
+    const transcript = mkSession(w, { lines: [assistantLine({ id: 'root', input: 1, timestamp: at(1) })] });
+    mkSubagent(transcript, 'fresh', { lines: [assistantLine({ id: 'f', input: 10, timestamp: at(2) })], meta: {} });
+    mkSubagent(transcript, 'quiet', { lines: [assistantLine({ id: 'q', input: 10, timestamp: at(180) })], meta: {} });
+    mkSubagent(transcript, 'silent', { lines: [], meta: {} });
+
+    const states = Object.fromEntries(collect(w, { now }).sessions[0].subagents.map((s) => [s.id, s.state]));
+    assertEq(states['agent-fresh'], 'working', 'two minutes quiet is still working');
+    assertEq(states['agent-quiet'], 'done', 'three hours quiet is finished');
+    assertEq(states['agent-silent'], 'done', 'one that never spoke is not live crew');
+    cleanup(w.root);
+  });
+
+  await test('the subagent window is the SAME one sessions.js reads, override and all', () => {
+    const w = mkWorld();
+    const now = Date.parse('2026-07-27T12:00:00.000Z');
+    const transcript = mkSession(w, { lines: [assistantLine({ id: 'root', input: 1 })] });
+    mkSubagent(transcript, 'edge', {
+      lines: [assistantLine({ id: 'e', input: 10, timestamp: new Date(now - 60 * 60 * 1000).toISOString() })],
+      meta: {},
+    });
+    // An hour quiet: outside the 45-minute default, inside a widened window.
+    assertEq(collect(w, { now }).sessions[0].subagents[0].state, 'done', 'the default window closed on it');
+    resetCache();
+    assertEq(collect(w, { now, idleMinutes: 120 }).sessions[0].subagents[0].state, 'working', 'the override moves both tiers');
     cleanup(w.root);
   });
 

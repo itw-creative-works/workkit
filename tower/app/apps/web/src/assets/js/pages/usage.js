@@ -7,19 +7,20 @@
 //
 //   { sessions: [ { id, chatName, model, cost, startedAt,
 //                   tokens: { input, output, cacheRead, cacheCreation, total },
-//                   subagents: [ { class, model, tokens, cost, startedAt } ] } ],
+//                   subagents: [ { class, model, tokens, cost, state, startedAt } ] } ],
 //     byModel:  { <model>: <tokens> },
 //     byClass:  { <class>: <tokens> },
 //     overTime: [ { label: 'YYYY-MM-DD', tokens } ] }   // 30 days, quiet days 0
 //
-// The three aggregates are AUTHORITATIVE and are what the charts draw. The API
-// computes them over every transcript on the machine, subagents included, while
-// `sessions` lists only the handful of ROOT chats — so recomputing the charts
-// from that list throws the real answer away and draws a far smaller one: two
-// models instead of five, one bar for the main chat instead of nine agent
-// classes, and a two-point line instead of thirty days. Deriving an aggregate
-// from the sessions is the fallback for a field the endpoint did not send, and
-// nothing else.
+// That shape is the contract, and this page reads exactly it. The three
+// aggregates are AUTHORITATIVE and are what the charts draw: the API computes
+// them over every transcript on the machine, subagents included, while
+// `sessions` lists only the handful of ROOT chats. This page used to fall back
+// to recomputing them from that list, which threw the real answer away and drew
+// a far smaller one — two models instead of five, one bar for the main chat
+// instead of nine agent classes, a two-point line instead of thirty days. An
+// aggregate the endpoint did not send is the endpoint's defect, so the chart
+// says it has nothing rather than drawing a quieter wrong number.
 //
 // The session list is read for two things: the inventory table, which is
 // per-session by definition, and the cache split and the cost, which the
@@ -28,45 +29,24 @@
 // page are one accounting, not two.
 //
 
-import { startPage, feed } from '../libs/tower/page.js';
+import { startPage } from '../libs/tower/page.js';
+import { feed } from '../libs/tower/state.js';
 import { esc, empty, problem, compact, money, statCell, statgrid, card } from '../libs/tower/format.js';
 import { chartSlot, barChart, doughnutChart, lineChart } from '../libs/tower/charts.js';
-
-/** Sum the token fields of one session, whichever of them it carries. */
-const tokensOf = (session) => {
-  const raw = session.tokens || {};
-  if (typeof raw === 'number') return { total: raw, input: 0, output: 0, cacheRead: 0, cacheCreation: 0 };
-  const part = (key) => (typeof raw[key] === 'number' ? raw[key] : 0);
-  const parts = {
-    input: part('input'),
-    output: part('output'),
-    cacheRead: part('cacheRead'),
-    cacheCreation: part('cacheCreation'),
-  };
-  const total = typeof raw.total === 'number'
-    ? raw.total
-    : parts.input + parts.output + parts.cacheRead + parts.cacheCreation;
-  return { ...parts, total };
-};
 
 const sortDown = (list) => [...list].sort((a, b) => b[1] - a[1]);
 
 /**
- * One of the endpoint's `{ label: tokens }` aggregates as sorted rows, or null
- * when it sent none — null is what puts the derived fallback in play.
+ * One of the endpoint's `{ label: tokens }` aggregates as sorted rows.
  *
  * A zero-token entry is dropped: an empty bar carries no information and takes
  * a row of the chart to say nothing. `<synthetic>` — Claude Code's locally
  * generated messages, which cost nothing and are billed to no model — is always
  * one of these.
  */
-const aggregate = (map) => {
-  if (!map || typeof map !== 'object') return null;
-  const list = Object.entries(map)
-    .map(([label, tokens]) => [label, Number(tokens) || 0])
-    .filter(([label, tokens]) => label && tokens > 0);
-  return list.length ? sortDown(list) : null;
-};
+const aggregate = (map) => sortDown(Object.entries(map)
+  .map(([label, tokens]) => [label, Number(tokens) || 0])
+  .filter(([label, tokens]) => label && tokens > 0));
 
 /** '2026-07-27' → 'Jul 27'. Thirty of these share one axis. */
 const dayLabel = (day) => {
@@ -74,78 +54,41 @@ const dayLabel = (day) => {
   return Number.isNaN(when.getTime()) ? day : when.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 };
 
-/** The endpoint's day series, oldest first and quiet days included, or null. */
-const series = (list) => {
-  if (!Array.isArray(list) || !list.length) return null;
-  const days = list
-    .map((entry) => [String(entry.label || ''), Number(entry.tokens) || 0])
-    .filter(([label]) => label);
-  return days.length ? days : null;
-};
+/** The endpoint's day series as rows, oldest first and quiet days included. */
+const series = (list) => list.map((entry) => [String(entry.label), Number(entry.tokens) || 0]);
 
 /**
  * Every transcript the payload carries — each root session, and each subagent
  * it spawned. The endpoint's aggregates are computed over exactly this set, so
- * the numbers derived here (the cache split, the cost, and any aggregate the
- * endpoint did not send) account for the same tokens the charts show.
+ * the two numbers derived here, the cache split and the cost, account for the
+ * same tokens the charts show.
  */
 const spends = (sessions) => sessions.flatMap((session) => [
-  {
-    // A root session IS the manager, which is what the endpoint's byClass calls
-    // it — a derived class chart has to speak the same vocabulary as a served one.
-    agentClass: 'manager',
-    model: session.model || 'unknown',
-    startedAt: session.startedAt || session.lastAt || '',
-    cost: typeof session.cost === 'number' ? session.cost : null,
-    tokens: tokensOf(session),
-  },
-  ...(Array.isArray(session.subagents) ? session.subagents : []).map((agent) => ({
-    agentClass: agent.class || 'unknown',
-    model: agent.model || 'unknown',
-    startedAt: agent.startedAt || agent.lastAt || '',
-    cost: typeof agent.cost === 'number' ? agent.cost : null,
-    tokens: tokensOf(agent),
-  })),
+  { cost: session.cost, tokens: session.tokens },
+  ...session.subagents.map((agent) => ({ cost: agent.cost, tokens: agent.tokens })),
 ]);
 
 /** Everything the page draws, read out of the telemetry payload. */
 const readUsage = (result) => {
   if (!result || !result.ok || !result.data) return null;
   const payload = result.data;
-  const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
-  const all = spends(sessions);
-
-  const sumBy = (key) => {
-    const map = new Map();
-    for (const spend of all) map.set(spend[key], (map.get(spend[key]) || 0) + spend.tokens.total);
-    return sortDown([...map.entries()].filter(([, tokens]) => tokens > 0));
-  };
-
-  // The fallback day series: by calendar day of each transcript's start.
-  const byDay = () => {
-    const map = new Map();
-    for (const spend of all) {
-      const day = String(spend.startedAt).slice(0, 10);
-      if (!day) continue;
-      map.set(day, (map.get(day) || 0) + spend.tokens.total);
-    }
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  };
-
+  const all = spends(payload.sessions);
   const costs = all.map((spend) => spend.cost).filter((value) => typeof value === 'number');
 
   return {
-    sessions: sessions.map((session) => ({
-      id: session.id || '',
+    sessions: payload.sessions.map((session) => ({
+      id: session.id,
       title: session.chatName || '',
       model: session.model || 'unknown',
+      // A root session IS the manager, which is what the endpoint's byClass
+      // calls it — the table and the class chart name the same tier the same way.
       agentClass: 'manager',
-      cost: typeof session.cost === 'number' ? session.cost : null,
-      tokens: tokensOf(session),
+      cost: session.cost,
+      tokens: session.tokens,
     })),
-    byModel: aggregate(payload.byModel) || sumBy('model'),
-    byClass: aggregate(payload.byClass) || sumBy('agentClass'),
-    overTime: series(payload.overTime) || byDay(),
+    byModel: aggregate(payload.byModel),
+    byClass: aggregate(payload.byClass),
+    overTime: series(payload.overTime),
     cacheRead: all.reduce((sum, spend) => sum + spend.tokens.cacheRead, 0),
     fresh: all.reduce((sum, spend) => sum + spend.tokens.input + spend.tokens.output + spend.tokens.cacheCreation, 0),
     cost: costs.length ? costs.reduce((a, b) => a + b, 0) : null,
@@ -169,7 +112,7 @@ const sessionTable = (usage) => {
   return `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
     <thead><tr><th>session</th><th>class</th><th>model</th><th class="text-end">tokens</th><th class="text-end">cache</th><th class="text-end">cost</th></tr></thead>
     <tbody>${usage.sessions.map((session) => `<tr>
-      <td class="text-truncate">${esc(session.title || session.id || '—')}</td>
+      <td>${esc(session.title || session.id || '—')}</td>
       <td>${esc(session.agentClass)}</td>
       <td>${esc(session.model)}</td>
       <td class="text-end">${esc(compact(session.tokens.total))}</td>

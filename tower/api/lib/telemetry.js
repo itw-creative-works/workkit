@@ -47,7 +47,7 @@ const os = require('os');
 const path = require('path');
 const { StringDecoder } = require('string_decoder');
 
-const { listSessions, transcriptPath } = require('./sessions');
+const { listSessions, transcriptPath, idleWindowMs } = require('./sessions');
 
 // Bytes per read. Large enough that a gigabyte transcript is a few hundred
 // syscalls, small enough that the buffer is never a memory question.
@@ -103,6 +103,27 @@ const cache = new Map();
 
 /** Drop every file's read state. The suite calls this between fixtures. */
 const resetCache = () => cache.clear();
+
+/** The files the cache is currently holding read state for. Test-only. */
+const cachedPaths = () => [...cache.keys()];
+
+/**
+ * Forget every file this pass did not read.
+ *
+ * The cache is keyed by path and would otherwise only grow: a session that
+ * finished drops out of `listSessions` and its read state — a Set of message
+ * ids, plus the per-day and per-model maps — would be held for as long as the
+ * tower process lives. A finished session is not read again, so nothing is lost
+ * by dropping it, and a session that comes back is read from zero, which is
+ * what a rewritten file already does.
+ *
+ * @param {Set<string>} keep the paths this pass named
+ */
+const prune = (keep) => {
+  for (const file of cache.keys()) {
+    if (!keep.has(file)) cache.delete(file);
+  }
+};
 
 const zeroTokens = () => ({ input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 });
 
@@ -395,28 +416,54 @@ const className = (subagentType) => {
 };
 
 /**
- * The subagents a session spawned, each with its own usage and its class.
+ * Whether a transcript that last moved at `lastAt` is still being written to.
+ *
+ * A finished subagent never touches its file again, so quiet IS finished — and
+ * the window is the one `sessions.js` derives a root session's state from, so a
+ * subagent and its manager are called live by the same rule.
+ *
+ * @param {string|null} lastAt the last timestamp the transcript carries
+ * @param {number} now
+ * @param {number} idleMs
+ * @returns {'working'|'done'}
+ */
+const subagentState = (lastAt, now, idleMs) => {
+  const when = lastAt ? Date.parse(lastAt) : NaN;
+  // A subagent whose transcript carries no timestamp at all has never spoken;
+  // it is not evidence of anything running, so it reads done.
+  if (Number.isNaN(when)) return 'done';
+  return now - when <= idleMs ? 'working' : 'done';
+};
+
+/**
+ * The subagents a session spawned, each with its own usage, its class and
+ * whether it is still working.
  *
  * @param {string} transcript the PARENT transcript path
  * @param {object} taskTypes parent tool_use id -> subagent_type
- * @returns {{rows: Array<{id: string, class: string, model: string|null, tokens: object, cost: number|null, startedAt: string|null, lastAt: string|null}>, readings: object[]}}
+ * @param {number} now
+ * @param {number} idleMs the liveness window, from sessions.js
+ * @returns {{rows: Array<{id: string, class: string, model: string|null, tokens: object, cost: number|null, state: string, startedAt: string|null, lastAt: string|null}>, readings: object[], files: string[]}}
  */
-const readSubagents = (transcript, taskTypes) => {
+const readSubagents = (transcript, taskTypes, now, idleMs) => {
   const dir = path.join(transcript.replace(/\.jsonl$/, ''), 'subagents');
   let names;
   try {
     names = fs.readdirSync(dir);
   } catch {
     // No subagents were spawned, or the folder is gone. Both are an empty list.
-    return { rows: [], readings: [] };
+    return { rows: [], readings: [], files: [] };
   }
 
   const rows = [];
   const readings = [];
+  const files = [];
   for (const name of names.sort()) {
     if (!/^agent-.+\.jsonl$/.test(name)) continue;
     const id = name.replace(/\.jsonl$/, '');
-    const usage = readUsage(path.join(dir, name));
+    const file = path.join(dir, name);
+    files.push(file);
+    const usage = readUsage(file);
 
     let meta = {};
     try {
@@ -437,11 +484,12 @@ const readSubagents = (transcript, taskTypes) => {
       model: usage.model,
       tokens: usage.tokens,
       cost: usage.cost,
+      state: subagentState(usage.lastAt, now, idleMs),
       startedAt: usage.firstAt,
       lastAt: usage.lastAt,
     });
   }
-  return { rows, readings };
+  return { rows, readings, files };
 };
 
 /** The last `days` local calendar days ending today, oldest first. */
@@ -466,13 +514,16 @@ const mergeCounts = (into, from) => {
  *
  * @param {object} session a row from listSessions
  * @param {string} home
- * @returns {{row: object, usage: object, subUsage: object[]}} the row plus the
- *   raw readings behind it, which the totals need and the response does not
+ * @param {number} now
+ * @param {number} idleMs the liveness window, from sessions.js
+ * @returns {{row: object, usage: object, subUsage: object[], files: string[]}} the
+ *   row plus the raw readings behind it, which the totals need and the response
+ *   does not, and every file it read, which the cache prune needs
  */
-const sessionRow = (session, home) => {
+const sessionRow = (session, home, now, idleMs) => {
   const transcript = transcriptPath(home, session.cwd, session.session);
   const usage = readUsage(transcript);
-  const { rows, readings } = readSubagents(transcript, usage.taskTypes);
+  const { rows, readings, files } = readSubagents(transcript, usage.taskTypes, now, idleMs);
   return {
     row: {
       id: session.session,
@@ -491,6 +542,7 @@ const sessionRow = (session, home) => {
     },
     usage,
     subUsage: readings,
+    files: [transcript, ...files],
   };
 };
 
@@ -535,17 +587,21 @@ const collectTelemetry = (opts = {}) => {
   const byModel = {};
   const byClass = {};
   const byDay = {};
+  // Every transcript this pass named, so the read cache can forget the rest.
+  const seenFiles = new Set();
+  const idleMs = idleWindowMs(opts);
 
   for (const session of listing) {
     let read;
     try {
-      read = sessionRow(session, home);
+      read = sessionRow(session, home, now, idleMs);
     } catch {
       // One session whose transcript cannot be reached costs its own numbers
       // and leaves the rest of the crew reported.
       continue;
     }
     sessions.push(read.row);
+    for (const file of read.files) seenFiles.add(file);
 
     mergeCounts(byModel, read.usage.byModel);
     mergeCounts(byDay, read.usage.byDay);
@@ -557,6 +613,8 @@ const collectTelemetry = (opts = {}) => {
       byClass[sub.class] = (byClass[sub.class] || 0) + sub.tokens.total;
     });
   }
+
+  prune(seenFiles);
 
   const overTime = dayLabels(now, OVERTIME_DAYS).map((label) => ({ label, tokens: byDay[label] || 0 }));
   return { sessions, byModel, byClass, overTime };
@@ -576,6 +634,8 @@ module.exports = {
   sessionTelemetry,
   readUsage,
   resetCache,
+  cachedPaths,
+  subagentState,
   costOf,
   className,
   dayKey,

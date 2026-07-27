@@ -9,42 +9,18 @@
 // where, and whether they are working, which is the root tier without its
 // crews — so a telemetry failure costs the children, never the page.
 //
-// `normalize` accepts the spellings either source could take (`sessions`/`crew`
-// for the roster, `subagents`/`children` for the tier below, a token count
-// either flat or split) and shows what it recognizes.
+// A finished subagent is not crew: the session's transcript holds every one it
+// ever spawned, so the working ones are drawn and the rest are one expandable
+// count line per session (libs/tower/crew.js does that split).
 //
 
-import { startPage, sessionsFor, sessions, feed, inSelectedRepo } from '../libs/tower/page.js';
+import { startPage } from '../libs/tower/page.js';
+import { sessionsFor, sessions, feed, inSelectedRepo } from '../libs/tower/state.js';
+import { normalize, splitCrew, crewCount } from '../libs/tower/crew.js';
 import { esc, empty, problem, compact, shortPath, statCell, statgrid, card, pill } from '../libs/tower/format.js';
 
-/** The tone a session's state is drawn in. */
+/** The tone a node's state is drawn in. */
 const tone = (value) => ({ working: 'ok', idle: 'warn', stale: 'danger' }[value] || 'warn');
-
-/** Total tokens from whatever shape the number arrives in. */
-const tokensOf = (node) => {
-  const raw = node.tokens;
-  if (typeof raw === 'number') return raw;
-  if (raw && typeof raw === 'object') {
-    if (typeof raw.total === 'number') return raw.total;
-    return ['input', 'output', 'cacheRead', 'cacheCreation']
-      .map((key) => (typeof raw[key] === 'number' ? raw[key] : 0))
-      .reduce((sum, value) => sum + value, 0);
-  }
-  return null;
-};
-
-/** One node of the chart, from either source, in the shape the render wants. */
-const normalize = (node) => ({
-  id: node.id || node.sessionId || node.agentId || '',
-  title: node.chatName || node.title || node.name || '',
-  cwd: node.cwd || '',
-  model: node.model || '',
-  effort: node.effort || '',
-  state: node.state || '',
-  agentClass: node.class || node.agentClass || node.subagentType || node.subagent_type || '',
-  tokens: tokensOf(node),
-  children: (node.subagents || node.children || []).map(normalize),
-});
 
 /**
  * The roster to draw: telemetry when it answers, the plain session list when it
@@ -56,11 +32,8 @@ const normalize = (node) => ({
  */
 const roots = (state) => {
   const result = feed(state, 'telemetry');
-  if (result && result.ok && result.data) {
-    const list = result.data.sessions || result.data.crew || result.data.roots || [];
-    if (Array.isArray(list) && list.length) {
-      return list.filter((row) => inSelectedRepo(state, row.cwd)).map(normalize);
-    }
+  if (result && result.ok && result.data && result.data.sessions.length) {
+    return result.data.sessions.filter((row) => inSelectedRepo(state, row.cwd)).map(normalize);
   }
   return sessionsFor(state).map(normalize);
 };
@@ -69,7 +42,7 @@ const node = (entry, isRoot) => `<div class="card ${isRoot ? '' : 'flex-grow-1'}
   <div class="card-body p-3">
     <div class="d-flex align-items-center gap-2 mb-1">
       <span class="text-truncate flex-grow-1">${esc(entry.title || shortPath(entry.cwd) || entry.id || 'session')}</span>
-      ${entry.state ? pill(tone(entry.state), entry.state) : ''}
+      ${entry.state && entry.state !== 'done' ? pill(tone(entry.state), entry.state) : ''}
     </div>
     <div class="classy-micro text-body-secondary text-truncate">${esc(entry.agentClass || (isRoot ? 'main chat' : 'subagent'))}${entry.cwd ? ` · ${esc(shortPath(entry.cwd))}` : ''}</div>
     <div class="classy-micro text-body-secondary text-truncate">${esc(entry.model || 'model unknown')}${entry.effort ? ` · ${esc(entry.effort)}` : ''}</div>
@@ -77,13 +50,27 @@ const node = (entry, isRoot) => `<div class="card ${isRoot ? '' : 'flex-grow-1'}
   </div>
 </div>`;
 
-const branch = (entry) => `<div class="mb-3">
-  ${node(entry, true)}
-  ${entry.children.length ? `<div class="tower-tree__children mt-2">${entry.children.map((child) => node(child, false)).join('')}</div>` : ''}
-</div>`;
+const tier = (children) => `<div class="tower-tree__children mt-2">${children.map((child) => node(child, false)).join('')}</div>`;
+
+// The finished crew, folded shut. They are still worth reaching — what ran and
+// what it spent is the session's history — so the line opens onto the same
+// cards rather than hiding them.
+const finished = (children) => `<details class="mt-2">
+  <summary class="classy-micro text-body-secondary">${children.length} finished subagent${children.length === 1 ? '' : 's'}</summary>
+  ${tier(children)}
+</details>`;
+
+const branch = (entry) => {
+  const { working, done } = splitCrew(entry.children);
+  return `<div class="mb-3">
+    ${node(entry, true)}
+    ${working.length ? tier(working) : ''}
+    ${done.length ? finished(done) : ''}
+  </div>`;
+};
 
 const numbers = (tree) => {
-  const subagents = tree.reduce((sum, entry) => sum + entry.children.length, 0);
+  const crew = crewCount(tree);
   const working = tree.filter((entry) => entry.state === 'working').length;
   const spend = tree
     .flatMap((entry) => [entry, ...entry.children])
@@ -92,7 +79,9 @@ const numbers = (tree) => {
   return statgrid([
     statCell('Sessions', tree.length),
     statCell('Working', working),
-    statCell('Subagents', subagents),
+    // The live count is the answer to "who is running"; the total says how much
+    // history the parenthesis is folding away.
+    statCell('Subagents', `${crew.working} (${crew.total})`),
     statCell('Tokens', spend.length ? compact(spend.reduce((a, b) => a + b, 0)) : '—', '/usage'),
   ]);
 };

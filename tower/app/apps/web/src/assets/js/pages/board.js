@@ -11,8 +11,9 @@
 // toolbar is rebuilt from the URL, not from whatever the DOM last held.
 //
 
-import { startPage, issuesFor, board, feed } from '../libs/tower/page.js';
-import { esc, empty, problem, STATUSES, statusColor } from '../libs/tower/format.js';
+import { startPage } from '../libs/tower/page.js';
+import { issuesFor, board, feed } from '../libs/tower/state.js';
+import { esc, empty, problem, issueChips, STATUSES, statusColor } from '../libs/tower/format.js';
 
 // The filter names, which are also their URL parameter names. `repo` is not one
 // of them — the page chrome owns that globally and every page obeys it.
@@ -89,12 +90,7 @@ const issueCard = (issue, showRepo) => `<a class="card mb-2 text-decoration-none
   <div class="card-body p-3">
     <span class="classy-micro d-block">${showRepo ? `${esc(issue.repo)} ` : ''}#${esc(issue.number)}</span>
     <span class="d-block mb-2">${esc(issue.title)}</span>
-    <span class="d-flex flex-wrap align-items-center gap-1">
-      ${issue.type ? `<span class="classy-chip">${esc(issue.type)}</span>` : ''}
-      ${issue.priority === 'high' ? '<span class="classy-chip classy-chip--accent">high</span>' : ''}
-      ${issue.agentOk ? '<span class="classy-chip">agent:ok</span>' : ''}
-      ${(issue.assignees || []).length ? `<span class="classy-micro">@${esc(issue.assignees.join(', @'))}</span>` : ''}
-    </span>
+    ${issueChips(issue)}
   </div>
 </a>`;
 

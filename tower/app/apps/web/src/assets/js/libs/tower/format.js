@@ -116,5 +116,23 @@ export const card = (heading, body, options = {}) => `<div class="card ${options
   </div>
 </div>`;
 
+/**
+ * The chips that label one issue — its type, whether it is high priority,
+ * whether an agent may take it, and who holds it.
+ *
+ * One row of markup for the Board's cards and the Brief's list, which say the
+ * same four things about the same issue and had drifted into two copies of it.
+ *
+ * @param {object} issue one issue from /api/board or /api/brief
+ * @param {string} [extraClass] spacing the caller's layout needs
+ * @returns {string} markup
+ */
+export const issueChips = (issue, extraClass = '') => `<span class="d-flex flex-wrap align-items-center gap-1${extraClass ? ` ${extraClass}` : ''}">
+  ${issue.type ? `<span class="classy-chip">${esc(issue.type)}</span>` : ''}
+  ${issue.priority === 'high' ? '<span class="classy-chip classy-chip--accent">high</span>' : ''}
+  ${issue.agentOk ? '<span class="classy-chip">agent:ok</span>' : ''}
+  ${(issue.assignees || []).length ? `<span class="classy-micro">@${esc(issue.assignees.join(', @'))}</span>` : ''}
+</span>`;
+
 /** A status pill in the theme's three tones. */
 export const pill = (tone, label) => `<span class="classy-status classy-status--${esc(tone)}"><span class="classy-dot classy-dot--${esc(tone)}"></span>${esc(label)}</span>`;

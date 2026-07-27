@@ -48,7 +48,7 @@ The app is an OMEGA brand root whose one app is the dashboard. The framework sup
 |---|---|
 | **Overview** | the control room: a statgrid row (open, blocked, in flight, live sessions, unpushed, unreleased), what is waiting on you, the live crew compact, health at a glance, and the queue by status |
 | **Board** | the full issue board — columns by `status:`, filters for type, priority, assignee and `agent:ok`, all repos or one |
-| **Crew** | the running agents as an org chart: each session at the root with its subagents beneath it by class, every node carrying its model and its token spend |
+| **Crew** | the running agents as an org chart: each session at the root with its WORKING subagents beneath it by class, every node carrying its model and its token spend; the ones that have finished collapse into one expandable count per session |
 | **Usage** | where the tokens went — by model, by agent class, over thirty days, cache reads against fresh, and a cost derived from the token counts |
 | **Health** | per-repo unpushed, uncommitted, unreleased entries and last tag, with the release-lag view |
 | **Brief** | the daily brief: the headline, the counts, what is waiting on you, what is ready to start, what is in flight, and the work sitting on the table |
@@ -80,6 +80,7 @@ Token counts come from the transcripts Claude Code already writes. Three facts s
 
 - **Transcripts reach gigabytes.** Reading one whole throws. Each file is streamed in chunks and its totals cached by size and mtime, so a second call reads only the bytes appended since the first; a file that shrank re-reads from zero.
 - **Usage lines duplicate.** One API response is written as several lines, one per content block, each repeating the same usage — and a resumed session replays its history. Counts are deduplicated by message id; raw summing overstates a busy session by a large multiple. The measurement behind that claim lives in the module header, next to the code it justifies.
+- **A finished subagent goes quiet and stays quiet.** Its transcript is never touched again, so recency is the liveness signal: each row is stamped `working` or `done` against the same idle window `sessions.js` derives a session's state from, one constant serving both tiers. The read cache is pruned to the transcripts each pass named, so a session that ended is forgotten rather than held for the life of the process.
 - **A subagent's class is not in its own file.** `agent-<id>.jsonl` sits beside `agent-<id>.meta.json`, whose `toolUseId` is the parent's tool_use id, and that tool_use names the class. `meta.agentType` carries the same value and is the fallback when the parent line has been compacted away.
 
 Cost is derived from a pricing table in the library, hand-entered from published rates and commented as a snapshot. An unpriced model reports its tokens with a null cost, never a zero — a partial total would render as a real number.
@@ -105,7 +106,7 @@ tower/
         └── assets/js/
             ├── main.js                 # the one bundle every page loads — mounts the intake dialog
             ├── pages/                  # one module per page, bound by URL
-            └── libs/tower/             # api, page, format, charts, intake
+            └── libs/tower/             # api, page, state, format, crew, charts, intake
 ```
 
 Every lib takes an `opts` object for path and exec injection; the suites under `tests/tower/` run the whole server against fixtures, fully offline.

@@ -7,18 +7,24 @@
 // mount id, the feeds it reads, and one `render(root, state)` — nothing else.
 //
 // Polling cadence is the tower's old one: the board every 60 seconds (a gh
-// sweep is expensive), everything live every 10.
+// sweep is expensive), everything live every 10. The brief is built from the
+// board sweep and is never fresher than it, so it shares that cadence.
+//
+// Reading the state back out is state.js, which this file does not import: a
+// page asks the runtime to run it and asks state.js what the answers were.
 //
 
 import omega from '@omega.js/client';
 import { fetchFeed } from './api.js';
 import { loadCharts } from './charts.js';
 import { esc } from './format.js';
+import { repos } from './state.js';
 
 /** Every feed the API offers, with its path and its re-read interval. */
 const FEEDS = {
   repos: { path: '/api/repos', every: 10000, fresh: '/api/repos?fresh=1' },
   board: { path: '/api/board', every: 60000, fresh: '/api/board?fresh=1' },
+  brief: { path: '/api/brief', every: 60000 },
   sessions: { path: '/api/sessions', every: 10000 },
   health: { path: '/api/health', every: 10000 },
   telemetry: { path: '/api/telemetry', every: 10000 },
@@ -35,63 +41,6 @@ const writeSelectedRepo = (slug) => {
   else url.searchParams.delete('repo');
   history.replaceState(null, '', url);
 };
-
-// ── Reading the state ──────────────────────────────────────────────────────
-
-/** The raw result of one feed: `{ ok, data, status, reason }`, or null before its first read. */
-export const feed = (state, name) => state.feeds[name] || null;
-
-/** The roster, or [] when it has not answered. */
-export const repos = (state) => {
-  const result = feed(state, 'repos');
-  return result && result.ok && Array.isArray(result.data) ? result.data : [];
-};
-
-/** The board payload, or null. */
-export const board = (state) => {
-  const result = feed(state, 'board');
-  return result && result.ok ? result.data : null;
-};
-
-/** The live sessions, or []. */
-export const sessions = (state) => {
-  const result = feed(state, 'sessions');
-  return result && result.ok && Array.isArray(result.data) ? result.data : [];
-};
-
-/** The per-repo health map, keyed by repo path, or {}. */
-export const health = (state) => {
-  const result = feed(state, 'health');
-  return result && result.ok && result.data ? result.data : {};
-};
-
-/** The roster entries the selection leaves in play. */
-export const reposFor = (state) => repos(state).filter((repo) => !state.selectedRepo || repo.slug === state.selectedRepo);
-
-/** The open issues the selection leaves in play. */
-export const issuesFor = (state) => {
-  const payload = board(state);
-  return ((payload && payload.issues) || []).filter((issue) => !state.selectedRepo || issue.repo === state.selectedRepo);
-};
-
-/**
- * Whether a working directory sits in the repo the selection names — the one
- * rule that places anything with a `cwd`, so the pages that read a different
- * feed of sessions all place them the same way.
- *
- * @param {object} state the runtime's state
- * @param {string} cwd the working directory to place
- * @returns {boolean} true when nothing is selected, or when the cwd is the
- *   selected repo or sits under it
- */
-export const inSelectedRepo = (state, cwd) => {
-  if (!state.selectedRepo) return true;
-  const paths = repos(state).filter((repo) => repo.slug === state.selectedRepo).map((repo) => repo.path);
-  return paths.some((base) => cwd === base || String(cwd || '').startsWith(`${base}/`));
-};
-
-/** The live sessions the selection leaves in play — a session is placed by its cwd. */
-export const sessionsFor = (state) => sessions(state).filter((session) => inSelectedRepo(state, session.cwd));
 
 // ── The chrome ─────────────────────────────────────────────────────────────
 //

@@ -8,7 +8,8 @@
 // follow, each carrying its own numbers and its own open-issue split by status.
 //
 
-import { startPage, issuesFor, reposFor, health, feed } from '../libs/tower/page.js';
+import { startPage } from '../libs/tower/page.js';
+import { issuesFor, reposFor, health, feed } from '../libs/tower/state.js';
 import {
   esc, num, empty, problem, statCell, statgrid, card, STATUSES, statusColor,
 } from '../libs/tower/format.js';
@@ -40,7 +41,7 @@ const releaseLag = (rows) => {
       <div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0">
         <thead><tr><th>repo</th><th class="text-end">unreleased</th><th class="text-end">unpushed</th><th class="text-end">last tag</th></tr></thead>
         <tbody>${rows.map((row) => `<tr>
-          <td class="text-truncate">${esc(row.repo.name)}</td>
+          <td>${esc(row.repo.name)}</td>
           <td class="text-end">${esc(row.unreleased)}</td>
           <td class="text-end">${esc(row.unpushed)}</td>
           <td class="text-end classy-micro">${esc(row.lastTag || 'never tagged')}</td>
