@@ -1,6 +1,6 @@
 # The pipeline — intent to implemented
 
-Every piece of work travels one road: captured as intent, accepted and spec'd, built by the crew, verified, shipped with its docs and CHANGELOG entry, closed. The stages are the `status:` labels themselves — the board IS the pipeline. This page is the visual map; the rules live in [project-state.md](project-state.md) (stages, labels, issue anatomy) and the crew mechanics in the [agents README](../agents/README.md) and the hook inventory in [AGENTS.md](../AGENTS.md).
+Every piece of work travels one road: captured as intent, accepted and spec'd, built by the crew, verified, shipped with its docs and CHANGELOG entry, closed. The stages are the `status:` labels themselves — the board IS the pipeline. This page is the visual map; the rules live in [project-state.md](project-state.md) (stages, labels, issue anatomy) and the crew mechanics in the [agents reference](agents.md) and the hook inventory in [AGENTS.md](../AGENTS.md).
 
 ## The road
 

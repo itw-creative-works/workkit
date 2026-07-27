@@ -7,7 +7,7 @@ const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harn
 const REPO = path.join(__dirname, '..', '..');
 const AGENTS_DIR = path.join(REPO, 'agents');
 const LADDER = path.join(REPO, 'hooks', 'manager', 'ladder.json');
-const README = path.join(AGENTS_DIR, 'README.md');
+const README = path.join(REPO, 'docs', 'agents.md');
 const SKILL = path.join(REPO, 'skills', 'review', 'SKILL.md');
 
 const CLASSES = ['scout', 'worker', 'verifier', 'advisor'];
@@ -67,7 +67,7 @@ const run = async () => {
     }
   });
   await test('every agent file inlines its handoff rules instead of pointing at a personal path', () => {
-    for (const file of fs.readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md') && f !== 'README.md')) {
+    for (const file of fs.readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md'))) {
       const text = fs.readFileSync(path.join(AGENTS_DIR, file), 'utf8');
       assert(text.includes('Never spawn subagents.'), `${file} does not state the no-subagents rule`);
       assert(/report path/.test(text), `${file} does not state the report-path rule`);

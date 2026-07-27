@@ -65,4 +65,4 @@ tests/            npm test
 - [`docs/project-state.md`](docs/project-state.md) — the spec: labels, capture and triage, issue anatomy, queue semantics, `.workkit/`, plans, `_attic/`, HQ, the migration recipe
 - [`docs/pipeline.md`](docs/pipeline.md) — the visual map: stages, hops, the crew and its tiers
 - [`AGENTS.md`](AGENTS.md) — architecture overview for agent sessions
-- [`agents/README.md`](agents/README.md) · [`workflow/README.md`](workflow/README.md) — the crew contract and the engine reference
+- [`docs/agents.md`](docs/agents.md) · [`workflow/README.md`](workflow/README.md) — the crew contract and the engine reference
