@@ -1,6 +1,6 @@
 #!/bin/bash
 # safety/commit-gate — PreToolUse hook (Bash)
-# Every `git commit` goes through the gate (Ian 2026-07-22, plan Q3 ruling):
+# Every `git commit` goes through the gate (owner ruling, 2026-07-22, plan Q3):
 #   1. New-file tests: a commit that ADDS source files while touching no test
 #      file bounces (the test-TYPE proxy — only in repos with a test script).
 #   2. Review: when the files going into the commit include CODE (not docs-only),
@@ -129,9 +129,9 @@ if [ -n "$files" ]; then
   done <<<"$files"
 fi
 
-# 1. New source files need tests (Ian 2026-07-23, the test-TYPE proxy): a hook
-# cannot judge what KIND of test a file holds, but it CAN see a commit that
-# ADDS code files while touching no test file at all. Only enforced in repos
+# 1. New source files need tests (owner ruling, 2026-07-23, the test-TYPE
+# proxy): a hook cannot judge what KIND of test a file holds, but it CAN see a
+# commit that ADDS code files while touching no test file at all. Only in repos
 # that define a test script (a repo without tests isn't asked to start here),
 # and only for staged adds (pathspec commits are already gated strictly).
 if [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/package.json" ] && jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then

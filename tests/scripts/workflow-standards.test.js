@@ -172,13 +172,16 @@ const binDirWithout = (excluded) => {
   return binDir;
 };
 
-const runScript = (repoDir, { pathPrefix, args = [], workflowHome } = {}) => {
+const runScript = (repoDir, { pathPrefix, args = [], workflowHome, claudeHome } = {}) => {
   const basePath = '/usr/bin:/bin:/usr/sbin:/sbin';
   const res = spawnSync('bash', [SCRIPT, ...args, repoDir], {
     env: {
       ...process.env,
       PATH: pathPrefix ? `${pathPrefix}:${basePath}` : basePath,
       WORKFLOW_HOME: workflowHome || path.join(mkTmp(), 'workflow-home'),
+      // Same rule as WORKFLOW_HOME for the engine's address symlink: the step
+      // that maintains ~/.claude/workkit must never reach the real ~/.claude.
+      WORKFLOW_CLAUDE_HOME: claudeHome || path.join(mkTmp(), 'claude-home'),
     },
     encoding: 'utf8',
     timeout: 20000,
@@ -689,7 +692,10 @@ const run = async () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     const res = spawnSync('bash', [path.join(engine, 'standards.sh'), repo], {
-      env: { ...process.env, PATH: `${stub.binDir}:/usr/bin:/bin:/usr/sbin:/sbin`, WORKFLOW_HOME: path.join(mkTmp(), 'wh') },
+      env: {
+        ...process.env, PATH: `${stub.binDir}:/usr/bin:/bin:/usr/sbin:/sbin`,
+        WORKFLOW_HOME: path.join(mkTmp(), 'wh'), WORKFLOW_CLAUDE_HOME: path.join(mkTmp(), 'ch'),
+      },
       encoding: 'utf8', timeout: 20000,
     });
     const out = (res.stdout || '') + (res.stderr || '');
@@ -707,7 +713,10 @@ const run = async () => {
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, engine]);
     fs.rmSync(path.join(engine, 'labels.json'));
     const repo = makeRepo();
-    const env = { ...process.env, PATH: '/usr/bin:/bin:/usr/sbin:/sbin', WORKFLOW_HOME: path.join(mkTmp(), 'wh') };
+    const env = {
+      ...process.env, PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+      WORKFLOW_HOME: path.join(mkTmp(), 'wh'), WORKFLOW_CLAUDE_HOME: path.join(mkTmp(), 'ch'),
+    };
     const state = spawnSync('bash', [path.join(engine, 'standards.sh'), '--state', repo], { env, encoding: 'utf8', timeout: 20000 });
     assertEq(state.status, 0, '--state answers without the manifest');
     assertEq((state.stdout || '').trim(), 'enabled', 'and answers correctly');
@@ -810,6 +819,109 @@ const run = async () => {
     const { stdout } = runScript(repo, { args: ['--announce'] });
     assert(!/--enable [^'"]*has space/.test(stdout), `the suggested command must survive a paste, got: ${stdout}`);
     cleanup(parent);
+  });
+
+  group("standards.sh: the engine's address");
+
+  // ~/.claude/workkit → the engine. The step runs on EVERY invocation, so the
+  // cheapest one (--state, no gh, no heal) is what these drive it with.
+  const ENGINE = path.resolve(WORKFLOW_DIR);
+  const claudeHomeWith = () => {
+    const home = mkTmp();
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    return { home, claude: path.join(home, '.claude') };
+  };
+
+  await test('links ~/.claude/workkit at the engine it is running from', () => {
+    const repo = makeRepo();
+    const { claude } = claudeHomeWith();
+    const { output } = runScript(repo, { args: ['--state'], claudeHome: claude });
+    const link = path.join(claude, 'workkit');
+    assertEq(fs.realpathSync(link), fs.realpathSync(ENGINE), 'the address points at this engine');
+    assert(fs.lstatSync(link).isSymbolicLink(), 'and it is a symlink, not a copy');
+    assert(output.includes('engine: linked'), `says so once, got: ${output}`);
+    cleanup(repo); cleanup(claude);
+  });
+
+  await test('an address already correct is silent — the step is idempotent', () => {
+    const repo = makeRepo();
+    const { claude } = claudeHomeWith();
+    runScript(repo, { args: ['--state'], claudeHome: claude });
+    const { output } = runScript(repo, { args: ['--state'], claudeHome: claude });
+    assert(!output.includes('engine:'), `a correct address says nothing, got: ${output}`);
+    assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(ENGINE), 'and stays put');
+    cleanup(repo); cleanup(claude);
+  });
+
+  await test('an address pointing somewhere else is repaired', () => {
+    const repo = makeRepo();
+    const { claude } = claudeHomeWith();
+    const stale = mkTmp();
+    fs.symlinkSync(stale, path.join(claude, 'workkit'));
+    const { output } = runScript(repo, { args: ['--state'], claudeHome: claude });
+    assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(ENGINE), 'repointed at this engine');
+    assert(output.includes('engine: repointed'), `and says so, got: ${output}`);
+    cleanup(repo); cleanup(claude); cleanup(stale);
+  });
+
+  await test('a REAL directory at the address is never replaced', () => {
+    const repo = makeRepo();
+    const { claude } = claudeHomeWith();
+    const real = path.join(claude, 'workkit');
+    fs.mkdirSync(real);
+    fs.writeFileSync(path.join(real, 'keep.txt'), 'mine\n');
+    const { output } = runScript(repo, { args: ['--state'], claudeHome: claude });
+    assert(fs.statSync(real).isDirectory() && !fs.lstatSync(real).isSymbolicLink(), 'the directory survives');
+    assertEq(fs.readFileSync(path.join(real, 'keep.txt'), 'utf8'), 'mine\n', 'with its contents');
+    assert(output.includes('is a real file or directory'), `and the human is told, got: ${output}`);
+    cleanup(repo); cleanup(claude);
+  });
+
+  await test('no ~/.claude on the machine — nothing is created', () => {
+    const repo = makeRepo();
+    const home = mkTmp();
+    const claude = path.join(home, '.claude');
+    const { output } = runScript(repo, { args: ['--state'], claudeHome: claude });
+    assert(!fs.existsSync(claude), 'the engine creates no agent directory of its own');
+    assert(!output.includes('engine:'), `and says nothing about it, got: ${output}`);
+    cleanup(repo); cleanup(home);
+  });
+
+  await test('the retired address is removed when it links to a workflow engine', () => {
+    const repo = makeRepo();
+    const { claude } = claudeHomeWith();
+    const legacy = path.join(claude, 'workflow');
+    fs.symlinkSync(ENGINE, legacy);
+    const { output } = runScript(repo, { args: ['--state'], claudeHome: claude });
+    assert(!fs.existsSync(legacy) && !fs.lstatSync(legacy, { throwIfNoEntry: false }), 'the old link is gone');
+    assert(output.includes('removed the retired'), `and the removal is announced, got: ${output}`);
+    assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(ENGINE), 'the new address took over');
+    cleanup(repo); cleanup(claude);
+  });
+
+  await test('a foreign link at the old name is left alone', () => {
+    const repo = makeRepo();
+    const { claude } = claudeHomeWith();
+    const someoneElses = mkTmp();
+    fs.writeFileSync(path.join(someoneElses, 'notes.md'), 'not an engine\n');
+    const legacy = path.join(claude, 'workflow');
+    fs.symlinkSync(someoneElses, legacy);
+    runScript(repo, { args: ['--state'], claudeHome: claude });
+    assert(fs.lstatSync(legacy).isSymbolicLink(), 'a link to something that is not an engine survives');
+    assertEq(fs.realpathSync(legacy), fs.realpathSync(someoneElses), 'still pointing where it did');
+    cleanup(repo); cleanup(claude); cleanup(someoneElses);
+  });
+
+  await test('a real directory at the old name is never removed', () => {
+    const repo = makeRepo();
+    const { claude } = claudeHomeWith();
+    const legacy = path.join(claude, 'workflow');
+    fs.mkdirSync(legacy);
+    fs.writeFileSync(path.join(legacy, 'standards.sh'), '# not a link\n');
+    runScript(repo, { args: ['--state'], claudeHome: claude });
+    assert(fs.statSync(legacy).isDirectory() && !fs.lstatSync(legacy).isSymbolicLink(), 'the directory survives');
+    assert(fs.existsSync(path.join(legacy, 'standards.sh')), 'with its contents');
+    cleanup(repo); cleanup(claude);
   });
 
   group('standards.sh: local working files');
@@ -1288,7 +1400,12 @@ const run = async () => {
     const stub = makeGhStub();
     const res = spawnSync('bash', [SCRIPT], {
       cwd: repo,
-      env: { ...process.env, PATH: `${stub.binDir}:/usr/bin:/bin:/usr/sbin:/sbin` },
+      env: {
+        ...process.env, PATH: `${stub.binDir}:/usr/bin:/bin:/usr/sbin:/sbin`,
+        // Inherited HOME plus the two user-level seeds would write the real
+        // ~/.workkit and repoint the real ~/.claude/workkit.
+        WORKFLOW_HOME: path.join(mkTmp(), 'wh'), WORKFLOW_CLAUDE_HOME: path.join(mkTmp(), 'ch'),
+      },
       encoding: 'utf8',
       timeout: 20000,
     });

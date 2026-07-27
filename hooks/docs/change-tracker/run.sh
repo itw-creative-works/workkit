@@ -111,7 +111,7 @@ fi
 if [ "$inbox_count" -gt 0 ]; then
   CONTEXT="$CONTEXT
 
-INBOX: $inbox_count unfiled entries in $cwd/INBOX.md — surface the count to Ian and offer the workkit:triage skill. Filing stays deliberate: never empty the inbox as a side effect."
+INBOX: $inbox_count unfiled entries in $cwd/INBOX.md — surface the count to the user and offer the workkit:triage skill. Filing stays deliberate: never empty the inbox as a side effect."
 fi
 
 if [ "$scratch_count" -gt 0 ]; then

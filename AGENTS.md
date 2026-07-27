@@ -20,7 +20,7 @@ The spec it implements is `docs/project-state.md`; `docs/pipeline.md` is the vis
 │   ├── safety/           # vendor-guard, commit-gate, commit-language
 │   ├── manager/          # resolver, profile + ladder.json (the tier SSOT)
 │   └── workflow/         # standards (the daily heal)
-├── agents/               # the crew — surface as workkit:<name> (README.md = roster + contract)
+├── agents/               # the crew — surface as workkit:<name> (roster + contract: docs/agents.md)
 ├── skills/               # the nine workflow skills — surface as workkit:<name>
 ├── workflow/             # the agent-agnostic engine (labels.json, standards.sh, changelog.js, templates)
 ├── docs/                 # project-state.md (the spec) · pipeline.md (the visual map)
@@ -31,11 +31,11 @@ The spec it implements is `docs/project-state.md`; `docs/pipeline.md` is the vis
 ## Install
 
 ```sh
-claude plugin marketplace add ~/Developer/Repositories/ITW-Creative-Works/workkit
+claude plugin marketplace add <path-to-checkout>
 claude plugin install workkit@workkit
 ```
 
-The engine also wants a stable filesystem address: `~/.claude/workflow` → this repo's `workflow/`. Skills and docs reference the engine by that path, so it survives a plugin reinstall.
+The engine's stable filesystem address, `~/.claude/workkit` → this repo's `workflow/`, needs no install step: the standards heal points it at the folder it is running from on every run. The hooks resolve the engine from their own location instead, so they never wait on it; skills and docs reference it by that path.
 
 ## Hooks
 
@@ -90,6 +90,6 @@ A repo's committed `.workkit/settings.json` (`{ "version": 1, "enabled": true }`
 
 ## Conventions
 
-- **Portable by default.** Nothing under `hooks/`, `agents/`, or `skills/` may carry a machine-specific absolute path. Hook commands resolve through `${CLAUDE_PLUGIN_ROOT}`; the engine's stable address is `~/.claude/workflow`.
+- **Portable by default.** Nothing under `hooks/`, `agents/`, or `skills/` may carry a machine-specific absolute path. Hook commands resolve through `${CLAUDE_PLUGIN_ROOT}`; the engine's stable address is `~/.claude/workkit`.
 - **Idempotent.** Every heal checks before acting; running twice equals running once.
 - **The spec is the SSOT.** Rules live in `docs/project-state.md`; skills and hooks execute them and point at it rather than restating them.

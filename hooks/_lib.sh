@@ -10,7 +10,7 @@
 # (hook_session_model, hook_model_tier, hook_manager_config). Add helpers
 # only with a second named consumer.
 #
-# hook_session_model also exists in Ian's personal hooks (~/.claude/hooks),
+# hook_session_model also exists in the user's personal hooks (~/.claude/hooks),
 # where claude/session/context needs it. The duplication is deliberate: a
 # plugin directory is not a stable import target for the personal hooks, so
 # neither side sources the other. Change both together.
@@ -47,7 +47,7 @@ hook_strip_heredocs() {
 # it, and `git com""mit` is a real command that must stay detectable.
 # The sed fallback stays line-based, so a multi-line quoted message there still
 # truncates the clause — it fails toward gating, but a pathspec after such a
-# message is not seen. Machines with perl (all of Ian's) take the first branch.
+# message is not seen. Machines with perl (nearly all of them) take the first branch.
 # MULTILINE-safe: a line-based strip leaves the tail lines of a multi-line
 # quoted string looking unquoted, so a mention like `echo "todo\ngit commit"`
 # would classify as a real commit (review 2026-07-23). The strip is ONE
@@ -258,12 +258,13 @@ EOF
 # node or the engine is missing, so both callers fail open the same way.
 hook_changelog_linter() {
   command -v node >/dev/null 2>&1 || return 1
-  # Resolve by the engine's own path, never by walking `..` out of this file:
-  # hooks/ is a directory symlink into the repo, and bash canonicalizes `..`
-  # textually before touching the filesystem, so the walk aims at a path that
-  # does not exist and lands correctly only by accident. Same form (and the
-  # same WORKFLOW_DIR override for tests) as the workflow/standards hook.
-  local dir="${WORKFLOW_DIR:-$HOME/.claude/workflow}"
+  # Resolve the engine from this file's PHYSICAL location — `pwd -P` resolves
+  # any symlink in the path before the `..` walk, so the climb out of hooks/
+  # lands on the real workflow/ beside it instead of a textual path that does
+  # not exist. Same form (and the same WORKFLOW_DIR override for tests) as the
+  # workflow/standards hook.
+  local dir="${WORKFLOW_DIR:-}"
+  [ -n "$dir" ] || dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/../workflow"
   [ -f "$dir/changelog.js" ] || return 1
   printf '%s\n' "$dir/changelog.js"
 }
@@ -279,7 +280,7 @@ hook_changelog_linter() {
 # (live, terminal sessions only; trusted only when statusline-shaped — model or
 # thinking present), then the transcript's last assistant entry (exact, lags
 # one response). Callers treat empty as "unknown", never as an error.
-# Consumers: manager/resolver, manager/profile (and, in Ian's personal
+# Consumers: manager/resolver, manager/profile (and, in a user's personal
 # hooks, claude/session/context — see the duplication note at the top).
 hook_session_model() {
   HOOK_SESSION_MODEL=""

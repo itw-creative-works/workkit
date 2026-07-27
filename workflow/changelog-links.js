@@ -28,7 +28,7 @@
 // still lands and the attribution is simply absent.
 //
 // Run at release time, from the repo root:
-//   node ~/.claude/workflow/changelog-links.js [--file CHANGELOG.md] [--range v3.1.0..HEAD] [--dry-run]
+//   node ~/.claude/workkit/changelog-links.js [--file CHANGELOG.md] [--range v3.1.0..HEAD] [--dry-run]
 //
 
 const fs = require('fs');

@@ -8,7 +8,7 @@
 #
 # Injection condition: only manager-capable sessions get the profile — the
 # session tier is the frontier or workhorse rung (read from ../ladder.json),
-# or unknown (a fresh VS Code first prompt; Ian's default model is frontier,
+# or unknown (a fresh VS Code first prompt; the owner's default model is frontier,
 # so silence there would drop the profile exactly where it matters most).
 # A sonnet/haiku session is a deliberately cheap solo session: no crew, no
 # profile, no output at all. The tier names come from the LAYERED config

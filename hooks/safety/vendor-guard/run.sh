@@ -5,7 +5,7 @@
 #   - package-manager lockfiles (owned by their tools, never hand-edited)
 #   - gitignored files (git check-ignore) — generated/runtime files aren't hand-edited
 # Mechanical half of the AGENTS.md "edit the SOURCE, not the output" rule.
-# Designed exceptions (Ian 2026-07-22, plan Q1: default-deny + tiny visible allowlist):
+# Designed exceptions (owner ruling, 2026-07-22, plan Q1: default-deny + tiny visible allowlist):
 #   _attic/ (gitignored holding pen, written on purpose — checked FIRST, since
 #   an attic may hold a parked dist/), .env / .env.* (secrets live there BECAUSE
 #   they're gitignored), and .workkit/ (session state and the local inbox,

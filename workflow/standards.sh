@@ -23,6 +23,10 @@
 #                  token cannot grant it; an existing protection is never
 #                  touched.
 #
+# Two user-level seeds run before any of that, on every invocation: the user's
+# own settings file, and the engine's public address (~/.claude/workkit → this
+# folder, retiring the link the address carried under its previous name).
+#
 # Usage: bash standards.sh [--state|--announce|--enable|--decline] [repo_dir]
 #        (repo_dir defaults to the current directory)
 #
@@ -94,9 +98,10 @@ cd "$root"
 # ── 0. Participation ──────────────────────────────────────────────────────────
 # Four states, two files. The REPO's committed .workkit/settings.json is the
 # only place a yes or a deliberate no can live — it is a project fact a teammate
-# reads. Never-asked and declined are PERSONAL (Ian 2026-07-24): a teammate
-# seeing `enabled: false` would read it as the project declining when it was one
-# developer undecided, so those live in the user's own settings file instead.
+# reads. Never-asked and declined are PERSONAL (owner ruling, 2026-07-24): a
+# teammate seeing `enabled: false` would read it as the project declining when
+# it was one developer undecided, so those live in the user's own settings file
+# instead.
 #
 #   enabled   — committed settings.json, `enabled: true` or the key absent
 #               (legacy `{ "version": 1 }` opted in by existing at all)
@@ -107,8 +112,9 @@ USER_SETTINGS="${WORKFLOW_HOME:-${HOME:-}/$WORKKIT_DIR}/settings.json"
 REPO_SETTINGS="$WORKKIT_DIR/settings.json"
 
 # The user's workflow folder exists from the first run, not from the first
-# decline. Someone running this system expects to find it (Ian 2026-07-25);
-# a folder that appears only after a particular action reads as missing.
+# decline. Someone running this system expects to find it (owner ruling,
+# 2026-07-25); a folder that appears only after a particular action reads as
+# missing.
 # A machine whose dotfiles already track and symlink the folder makes this a
 # no-op — it is the path for a machine where nothing has created it yet.
 # The seed has ONE writer. `set -C` makes the create O_EXCL, so a --decline
@@ -122,6 +128,62 @@ seed_user_settings() {
   ( set -C; printf '{\n  "version": 1,\n  "repos": {}\n}\n' 2>/dev/null >"$USER_SETTINGS" ) || return 0
 }
 seed_user_settings
+
+# The engine's public address, for anything that scripts the standard directly:
+# ~/.claude/workkit points at this folder. The heal owns it, so a plugin update
+# or a fresh machine gets the address from the first session that runs — no
+# install step, no module in someone's dotfiles.
+#
+# The engine stays agent-agnostic: it CREATES nothing under ~/.claude and skips
+# quietly on a machine that has no such directory. The address is a convenience
+# for the machines that do.
+# WORKFLOW_CLAUDE_HOME overrides the parent (the tests point it at a temp dir —
+# this step must never touch a real ~/.claude).
+CLAUDE_HOME="${WORKFLOW_CLAUDE_HOME:-${HOME:-}/.claude}"
+ENGINE_LINK="$CLAUDE_HOME/workkit"
+# The address the engine answered to before this standard renamed it. Removed
+# once, and only when it is a symlink to a workflow engine — a real directory or
+# a link to something else belongs to someone else and is left alone.
+ENGINE_LEGACY_LINK="$CLAUDE_HOME/workflow"
+
+ensure_engine_link() {
+  [[ -d "$CLAUDE_HOME" ]] || return 0
+
+  local current
+  if [[ -L "$ENGINE_LINK" ]]; then
+    current="$(cd "$ENGINE_LINK" 2>/dev/null && pwd -P || true)"
+    [[ "$current" == "$SCRIPT_DIR" ]] && return 0
+    ln -sfn "$SCRIPT_DIR" "$ENGINE_LINK" \
+      && log_ok "engine: repointed $ENGINE_LINK at $SCRIPT_DIR"
+  elif [[ -e "$ENGINE_LINK" ]]; then
+    log_warn "engine: $ENGINE_LINK is a real file or directory — move it aside so the engine's address can be linked"
+  else
+    ln -s "$SCRIPT_DIR" "$ENGINE_LINK" \
+      && log_ok "engine: linked $ENGINE_LINK → $SCRIPT_DIR"
+  fi
+}
+
+remove_legacy_engine_link() {
+  [[ -L "$ENGINE_LEGACY_LINK" ]] || return 0
+
+  local resolved
+  resolved="$(cd "$ENGINE_LEGACY_LINK" 2>/dev/null && pwd -P || true)"
+  if [[ -n "$resolved" ]]; then
+    # A workflow engine is a directory holding standards.sh. Anything else under
+    # that name is a foreign link and is not this script's to remove.
+    [[ "$resolved" == "$SCRIPT_DIR" || -f "$resolved/standards.sh" ]] || return 0
+  else
+    # Dangling: the checkout it pointed at is gone. Only a link that still names
+    # a workflow/ directory is claimed — that is the address this rename retired.
+    [[ "$(readlink "$ENGINE_LEGACY_LINK")" == */workflow ]] || return 0
+  fi
+
+  rm -f "$ENGINE_LEGACY_LINK" \
+    && log_ok "engine: removed the retired $ENGINE_LEGACY_LINK link — the address is $ENGINE_LINK"
+}
+
+ensure_engine_link
+remove_legacy_engine_link
 
 offer_line() {
   # %q on the path: a repo directory containing a space would otherwise print a
@@ -186,7 +248,7 @@ report_drift() {
       local bad
       bad="$(node "$CHANGELOG_LINTER" "$root/CHANGELOG.md" 2>&1 | grep -oE '^  line [0-9]+' | sort -u | wc -l | tr -d ' ')"
       if [[ "${bad:-0}" -gt 0 ]]; then
-        log_warn "standards: CHANGELOG.md has $bad entries not in the entry format — run the workkit:migrate skill, or 'node ~/.claude/workflow/changelog.js CHANGELOG.md' to see them"
+        log_warn "standards: CHANGELOG.md has $bad entries not in the entry format — run the workkit:migrate skill, or 'node ~/.claude/workkit/changelog.js CHANGELOG.md' to see them"
         found=1
       fi
     else

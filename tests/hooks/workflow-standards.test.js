@@ -15,9 +15,9 @@ const { group, test, assert, assertEq, summary, WORKKIT_DIR: W } = require('../l
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'workflow', 'standards', 'run.sh');
 
-// The hook resolves the engine via WORKFLOW_DIR (default ~/.claude/workflow).
-// Point it at the repo's own workflow/ so the suite never depends on the
-// machine's symlink.
+// The hook resolves the engine from its own location; WORKFLOW_DIR overrides
+// that. Most tests point it at the repo's own workflow/ explicitly, and the
+// default-path group drops it to prove the relative resolution.
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 
 const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -47,14 +47,22 @@ const makeRepo = ({ optIn = true, settings = '{ "version": 1, "enabled": true }\
 // the test proves the two halves agree on the file's shape.
 const decline = (repo, workflowHome) => spawnSync('bash', [
   path.join(WORKFLOW_DIR, 'standards.sh'), '--decline', repo,
-], { env: { ...process.env, WORKFLOW_HOME: workflowHome }, encoding: 'utf8' });
+], {
+  env: {
+    ...process.env,
+    WORKFLOW_HOME: workflowHome,
+    WORKFLOW_CLAUDE_HOME: path.join(mkTmp(), 'claude-home'),
+  },
+  encoding: 'utf8',
+});
 
 // Each run gets its own cache dir unless one is passed in — the daily marker
 // must never leak between tests (or into the real ~/.claude/logs).
 // `home` overrides HOME; passing workflowDir: null DROPS WORKFLOW_DIR from the
-// environment so the hook falls back to its default $HOME/.claude/workflow.
-// WORKFLOW_HOME always points somewhere disposable: the user-level settings
-// file the engine reads and writes must never be the real ~/.workkit.
+// environment so the hook resolves the engine beside itself.
+// WORKFLOW_HOME and WORKFLOW_CLAUDE_HOME always point somewhere disposable: the
+// user-level settings file and the engine's address symlink, both written by
+// the engine on every run, must never be the real ~/.workkit or ~/.claude.
 const runHook = (cwd, { cache, pathPrefix, home, workflowDir, workflowHome } = {}) => {
   const cacheDir = cache || mkTmp();
   const env = {
@@ -65,6 +73,7 @@ const runHook = (cwd, { cache, pathPrefix, home, workflowDir, workflowHome } = {
     // every run, and a workflow-home nested in the cache would be counted by
     // the tests that assert one marker file per repo.
     WORKFLOW_HOME: workflowHome || path.join(mkTmp(), 'workflow-home'),
+    WORKFLOW_CLAUDE_HOME: path.join(mkTmp(), 'claude-home'),
   };
   const dir = workflowDir === undefined ? WORKFLOW_DIR : workflowDir;
   if (dir !== null) env.WORKFLOW_DIR = dir;
@@ -250,28 +259,28 @@ const run = async () => {
 
   group('workflow:standards — default engine path');
 
-  await test('no WORKFLOW_DIR — resolves $HOME/.claude/workflow and heals', () => {
+  await test('no WORKFLOW_DIR — resolves the engine beside the hook and heals', () => {
+    // No symlink, no HOME: the hook climbs out of its own directory to the
+    // kit's workflow/, so a fresh plugin install works with nothing installed.
     const home = mkTmp();
-    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
-    fs.symlinkSync(path.resolve(WORKFLOW_DIR), path.join(home, '.claude', 'workflow'));
     const repo = makeRepo();
     const { code, stdout, cacheDir } = runHook(repo, { home, workflowDir: null });
     assertEq(code, 0, 'exit 0');
-    assert(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'the default path found the engine');
+    assert(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'the relative path found the engine');
     assert(stdout.includes('issue forms'), `and reported the heal, got: ${stdout}`);
     cleanup(repo); cleanup(cacheDir); cleanup(home);
   });
 
-  await test('no WORKFLOW_DIR and no engine — says where it looked, exit 0', () => {
-    const home = mkTmp();
+  await test('a missing engine — says where it looked, exit 0', () => {
+    const engine = mkTmp();
     const repo = makeRepo();
-    const { code, stdout, cacheDir } = runHook(repo, { home, workflowDir: null });
+    const { code, stdout, cacheDir } = runHook(repo, { workflowDir: engine });
     assertEq(code, 0, 'a missing engine never wedges the session');
     const ctx = JSON.parse(stdout).hookSpecificOutput.additionalContext;
-    assert(ctx.includes(path.join(home, '.claude', 'workflow', 'standards.sh')), `names the path it looked at, got: ${ctx}`);
-    assert(ctx.includes('setup.sh'), 'tells the human what to run');
+    assert(ctx.includes(path.join(engine, 'standards.sh')), `names the path it looked at, got: ${ctx}`);
+    assert(ctx.includes('plugin'), 'tells the human what to reinstall');
     assert(!fs.existsSync(path.join(repo, '.github')), 'and heals nothing');
-    cleanup(repo); cleanup(cacheDir); cleanup(home);
+    cleanup(repo); cleanup(cacheDir); cleanup(engine);
   });
 
   await test('an engine without labels.json is announced for an opted-in repo', () => {
@@ -284,7 +293,7 @@ const run = async () => {
     assertEq(code, 0, 'a broken install never wedges the session');
     const ctx = JSON.parse(stdout).hookSpecificOutput.additionalContext;
     assert(ctx.includes('labels.json'), `names the manifest, got: ${ctx}`);
-    assert(ctx.includes('setup.sh'), 'tells the human what to run');
+    assert(ctx.includes('plugin'), 'tells the human what to reinstall');
     assert(!fs.existsSync(path.join(repo, '.github')), 'and heals nothing');
     cleanup(repo); cleanup(cacheDir); cleanup(engine);
   });
@@ -300,24 +309,24 @@ const run = async () => {
   });
 
   await test('a missing engine stays silent on a repo that never opted in', () => {
-    const home = mkTmp();
+    const engine = mkTmp();
     const repo = makeRepo({ optIn: false });
-    const { code, stdout, cacheDir } = runHook(repo, { home, workflowDir: null });
+    const { code, stdout, cacheDir } = runHook(repo, { workflowDir: engine });
     assertEq(code, 0, 'exit 0');
     assertEq(stdout, '', 'non-participating repos hear nothing');
-    cleanup(repo); cleanup(cacheDir); cleanup(home);
+    cleanup(repo); cleanup(cacheDir); cleanup(engine);
   });
 
   // Without the engine, undecided and declined are indistinguishable — but a
   // committed `false` is resolvable from the repo alone, so the deliberate no
   // must be honored here too (review finding, 2026-07-24).
   await test('a missing engine stays silent on a deliberately disabled repo', () => {
-    const home = mkTmp();
+    const engine = mkTmp();
     const repo = makeRepo({ settings: '{ "version": 1, "enabled": false }\n' });
-    const { code, stdout, cacheDir } = runHook(repo, { home, workflowDir: null });
+    const { code, stdout, cacheDir } = runHook(repo, { workflowDir: engine });
     assertEq(code, 0, 'exit 0');
     assertEq(stdout, '', `a project that turned it off hears nothing, got: ${stdout}`);
-    cleanup(repo); cleanup(cacheDir); cleanup(home);
+    cleanup(repo); cleanup(cacheDir); cleanup(engine);
   });
 
   group('workflow:standards — offline');

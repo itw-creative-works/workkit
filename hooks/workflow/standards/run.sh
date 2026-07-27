@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # workflow:standards — SessionStart hook.
 # Brings the session's repo to the issue-workflow standard by running
-# ~/.claude/workflow/standards.sh (labels from labels.json, .github issue templates,
+# the kit's own workflow/standards.sh (labels from labels.json, issue templates,
 # .workkit/ in .gitignore). The script is idempotent; this hook is its delivery
-# — Ian never runs a command.
+# — nobody runs a command by hand.
 #
 # Runs at most once per repo per DAY: the label step talks to GitHub, and a
 # session-start network call on every new panel is not worth the latency. The
@@ -24,17 +24,18 @@ cwd=$(jq -r '.cwd // ""' <<<"$input" 2>/dev/null || true)
 
 root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
 
-# The workflow engine is this kit's workflow/ folder, symlinked to
-# ~/.claude/workflow at install — so resolve it by that path, not relative to
-# this hook.
-# WORKFLOW_DIR overrides it (the tests point at the repo's own workflow/).
-ENGINE_DIR="${WORKFLOW_DIR:-$HOME/.claude/workflow}"
+# The workflow engine is this kit's own workflow/ folder — resolve it from this
+# script's physical location, never through a symlink someone has to install
+# first. `pwd -P` resolves the link before the `..` walk, so the climb out of
+# hooks/workflow/standards/ lands on the real directory.
+# WORKFLOW_DIR overrides it (the tests point at a partial engine).
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+ENGINE_DIR="${WORKFLOW_DIR:-$SCRIPT_DIR/../../../workflow}"
 STANDARDS="$ENGINE_DIR/standards.sh"
 MANIFEST="$ENGINE_DIR/labels.json"
 
-# A missing engine is a real state, not a no-op: ~/.claude/hooks is a directory
-# symlink, so a machine that pulls a new kit version has this hook live
-# immediately while ~/.claude/workflow does not exist until it is linked. The
+# A missing engine is a real state, not a no-op: a half-installed or partially
+# updated kit has this hook live while the engine beside it is incomplete. The
 # manifest is half the engine — the label heals cannot run without it, so a
 # missing or unreadable labels.json is the same broken install and must speak,
 # not go quiet. Say so once, and only for a repo that already opted in —
@@ -42,9 +43,9 @@ MANIFEST="$ENGINE_DIR/labels.json"
 # session start.
 broken=""
 if [ ! -f "$STANDARDS" ]; then
-  broken="workflow engine not found at $STANDARDS — run setup.sh to install the symlink."
+  broken="workflow engine not found at $STANDARDS — reinstall the workkit plugin."
 elif [ ! -r "$MANIFEST" ]; then
-  broken="workflow manifest missing or unreadable at $MANIFEST — run setup.sh to reinstall the workflow core."
+  broken="workflow manifest missing or unreadable at $MANIFEST — reinstall the workkit plugin."
 fi
 if [ -n "$broken" ]; then
   # Without the engine, undecided and declined cannot be told apart (both need

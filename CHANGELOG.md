@@ -10,3 +10,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 ### Added
 
 - (no issue) — Extracted from the dotfiles: the hook groups, class agents, workflow skills, and the engine (dotfiles issue #23).
+
+### Changed
+
+- (no issue) — Shipped content carries no personal identifiers, enforced by the portability tests, and the engine's address is `~/.claude/workkit`, maintained by the standards heal itself; hooks resolve the engine relative to their own location.

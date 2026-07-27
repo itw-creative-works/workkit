@@ -7,7 +7,7 @@ description: Route every captured entry to its one correct home — relabel or c
 
 Work items live as **GitHub issues**. Triage is the ACTION that drains `status:inbox`; it is not a state.
 
-Label vocabulary (SSOT: `~/.claude/workflow/labels.json`, and every repo's own `gh label list`):
+Label vocabulary (SSOT: `~/.claude/workkit/labels.json`, and every repo's own `gh label list`):
 `status:inbox|spec|queued|blocked|parked` (exactly ONE per open issue — the PIPELINE, mapped in the workkit plugin's `docs/pipeline.md`) · `type:bug|enhancement|idea` · `priority:high|low` (absence = normal) · `agent:ok` (an agent may work it autonomously; pulls only from `status:queued`).
 
 ## Sources to drain
@@ -29,12 +29,12 @@ Before creating anything, **search what already exists** — open AND closed:
 | Already rejected (a closed **not planned** issue) | Cite the rejection in the Filed trail; do NOT re-file |
 | Actionable, plan ready (or a small item — Plan is `None needed — small item.`) | Relabel to `status:queued` (+ `type:`, + `priority:` if clearly high/low) |
 | Actionable, but the plan needs design or detail first | Relabel to `status:spec` — the planning pass (deepen the `## Plan`, the human ratifies) is what earns `status:queued` |
-| Waiting on Ian's decision | `status:blocked` + a comment naming the question |
+| Waiting on the owner's decision | `status:blocked` + a comment naming the question |
 | Worth keeping, deliberately not now | `status:parked` |
 | Cross-project / business / no single repo | An issue on the **HQ** repo (the global layer per `docs/project-state.md` § HQ — its `projects.json` is the registry) |
 | Belongs to a DIFFERENT project | An issue on that repo (`gh issue create --repo <owner/name>`) |
 | A durable fact about how things work | The right `docs/*.md` (or AGENTS.md if doctrinal) — then close the issue pointing at it |
-| Needs Ian's yes/no before it is even accepted | Draft the proposal into the `## Plan`; label `status:blocked` with the question |
+| Needs the owner's yes/no before it is even accepted | Draft the proposal into the `## Plan`; label `status:blocked` with the question |
 
 Relabel with one command so the status stays single:
 `gh issue edit <N> --remove-label status:inbox --add-label status:queued,type:enhancement`
@@ -62,6 +62,6 @@ Filed:
 - One home per entry (SSOT). If two homes seem right, pick the lowest-owning layer and point from the other.
 - Exactly one `status:` label per open issue — removing the old one is part of every relabel.
 - Idempotent: re-running with nothing captured does nothing and says so.
-- Never invent priority. `priority:` is Ian's call unless the entry states urgency; absence = normal.
+- Never invent priority. `priority:` is the owner's call unless the entry states urgency; absence = normal.
 - Ambiguous entries: file your best call and flag it in the Filed trail with `(check placement)` — do NOT stop to ask per-entry.
-- Never `agent:ok` on Ian's behalf — that permission is his to grant.
+- Never `agent:ok` on the owner's behalf — that permission is theirs to grant.

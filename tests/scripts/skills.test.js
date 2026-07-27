@@ -56,19 +56,39 @@ const run = async () => {
     assertEq(bad.join('; '), '', 'stale skill names');
   });
 
-  group('skills + agents: portability');
-  await test('no dotfiles-absolute path appears in a shipped agent or skill', () => {
+  group('skills + agents + docs: portability');
+
+  const shippedDocs = () => [
+    ...markdownIn(path.join(REPO, 'docs')),
+    path.join(REPO, 'README.md'),
+    path.join(REPO, 'AGENTS.md'),
+  ];
+
+  await test('no machine-specific path appears in shipped content', () => {
+    // Nothing that ships may name one machine's filesystem: an absolute
+    // /Users/… path, a ~/Developer/… checkout, or the dotfiles this kit came
+    // from. Generic placeholders (`<path-to-checkout>`, `<owner>`) are how an
+    // example path is written instead.
     const bad = [];
-    for (const dir of [SKILLS_DIR, AGENTS_DIR]) {
-      for (const file of markdownIn(dir)) {
-        const text = fs.readFileSync(file, 'utf8');
-        if (/\.dotfiles\b/.test(text) || /~\/\.claude\/(agents|skills|hooks)\b/.test(text)
-          || /Ian-Wiedenman/.test(text) || /~\/Developer\/Repositories\//.test(text)) {
-          bad.push(path.relative(REPO, file));
-        }
+    for (const file of [...markdownIn(SKILLS_DIR), ...markdownIn(AGENTS_DIR), ...shippedDocs()]) {
+      const text = fs.readFileSync(file, 'utf8');
+      if (/\.dotfiles\b/.test(text) || /\/Users\//.test(text) || /~\/Developer\//.test(text)) {
+        bad.push(path.relative(REPO, file));
       }
     }
-    assertEq(bad.join(', '), '', 'files carrying a dotfiles path');
+    assertEq(bad.join(', '), '', 'files carrying a machine-specific path');
+  });
+
+  await test('no shipped agent or skill reaches into a personal ~/.claude directory', () => {
+    // The spec may POINT at the surrounding harness (`~/.claude/hooks/README.md`
+    // is a real neighbouring document); an agent or a skill, which runs
+    // anywhere, may not depend on one.
+    const bad = [];
+    for (const file of [...markdownIn(SKILLS_DIR), ...markdownIn(AGENTS_DIR)]) {
+      const text = fs.readFileSync(file, 'utf8');
+      if (/~\/\.claude\/(agents|skills|hooks)\b/.test(text)) bad.push(path.relative(REPO, file));
+    }
+    assertEq(bad.join(', '), '', 'files reaching into a personal ~/.claude directory');
   });
 };
 

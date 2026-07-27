@@ -5,11 +5,11 @@ The issue-pipeline workflow system as a Claude Code plugin. Install it and every
 ## Install
 
 ```sh
-claude plugin marketplace add ~/Developer/Repositories/ITW-Creative-Works/workkit
+claude plugin marketplace add <path-to-checkout>
 claude plugin install workkit@workkit
 ```
 
-Point `~/.claude/workflow` at this repo's `workflow/` as well — that path is the engine's stable address, used by the skills and by anything scripting the standard directly.
+The engine's stable address, `~/.claude/workkit` → this repo's `workflow/`, is installed by the standards heal itself the first time a session runs it. The skills and anything scripting the standard directly reach the engine there.
 
 Plugins load at startup, so a new (or restarted) session is what puts a change into effect.
 

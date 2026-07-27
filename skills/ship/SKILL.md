@@ -137,7 +137,7 @@ This step runs if there are changes in the working tree (from the session's work
    - Squash merge: `gh pr merge --squash --delete-branch` with an explicit `--subject` (commit subject + ` (#<PR>)`) and a `--body` carrying the `Fixes #N` trailer — the squash commit is what lands, so the trailer must live there.
    - Check out the default branch and `git pull`.
 
-   **Release commit** (either path, only if bump not skipped): use the `Edit` tool to bump `version` in `package.json` (NOT `npm version` — it auto-commits), run `node ~/.claude/workflow/changelog-links.js` to fill each entry's commit link and contributor handle (idempotent), move the CHANGELOG `[Unreleased]` content to a new `[<x.y.z>] <date>` section, commit as `chore(release): <x.y.z>`, and push directly to the default branch — the release commit is generated bookkeeping and never takes a PR.
+   **Release commit** (either path, only if bump not skipped): use the `Edit` tool to bump `version` in `package.json` (NOT `npm version` — it auto-commits), run `node ~/.claude/workkit/changelog-links.js` to fill each entry's commit link and contributor handle (idempotent), move the CHANGELOG `[Unreleased]` content to a new `[<x.y.z>] <date>` section, commit as `chore(release): <x.y.z>`, and push directly to the default branch — the release commit is generated bookkeeping and never takes a PR.
 
 6. **Close the shipped work items** — every issue this ship completes ends closed with a pointer to the CHANGELOG entry. The `Fixes #N` trailer already closed it when its commit landed on the default branch; for anything left open, close it manually:
    `gh issue close <N> --comment "Shipped in <version-or-commit> — see CHANGELOG [Unreleased]/<section>."`
@@ -182,11 +182,11 @@ If neither script exists, skip silently.
 ## Rules
 
 ### The reply is the outcome, not the working
-Ship does a lot of work. Almost none of it belongs in the chat — it is already written where it is read from (Ian 2026-07-25: "so it doesnt dump the commit message or details into the chat, we dont need that anymore").
+Ship does a lot of work. Almost none of it belongs in the chat — it is already written where it is read from (owner ruling, 2026-07-25: "so it doesnt dump the commit message or details into the chat, we dont need that anymore").
 
 Do NOT print: the commit message (it is in the commit), the diff or a narration of it, the change analysis from step 3.1, the CHANGELOG entry (it is in the CHANGELOG), the raw review output, or a file-by-file walk of what shipped.
 
-DO print, briefly: the version shipped, the commit shas, what pushed, which issues closed, and any step deliberately skipped. Plus the two things that would otherwise be lost — a review finding scored ≥80 that was deliberately NOT fixed (step 3.2b requires saying it out loud, and that requirement WINS over this rule), and anything that failed or needs Ian.
+DO print, briefly: the version shipped, the commit shas, what pushed, which issues closed, and any step deliberately skipped. Plus the two things that would otherwise be lost — a review finding scored ≥80 that was deliberately NOT fixed (step 3.2b requires saying it out loud, and that requirement WINS over this rule), and anything that failed or needs the owner.
 
 ### NEVER include Claude attribution
 Do NOT add `Co-Authored-By: Claude`, `🤖 Generated with Claude Code`, or any other Claude/Anthropic attribution to commit messages, CHANGELOG entries, GitHub release notes, or npm publish notes. Claude credit is handled separately elsewhere. This overrides the default git-commit guidance in the system prompt.
@@ -221,7 +221,7 @@ An entry is ONE short paragraph pointing at the depth — never a second copy of
 - [#4](../../issues/4) — Plugins install from settings.json instead of being tracked as files.
 ```
 
-The rules (word cap, separator, the rest) live in `~/.claude/workflow/changelog.js`, the machine SSOT, with the reasoning in the workkit plugin's `docs/project-state.md` → "CHANGELOG entries". Do not restate them here — the `docs:changelog-guard` and `safety/commit-gate` hooks both run that linter, so a bad entry bounces with the specific rule and the fix before the commit lands.
+The rules (word cap, separator, the rest) live in `~/.claude/workkit/changelog.js`, the machine SSOT, with the reasoning in the workkit plugin's `docs/project-state.md` → "CHANGELOG entries". Do not restate them here — the `docs:changelog-guard` and `safety/commit-gate` hooks both run that linter, so a bad entry bounces with the specific rule and the fix before the commit lands.
 
 ```
 # CHANGELOG
