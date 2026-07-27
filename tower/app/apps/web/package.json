@@ -1,0 +1,17 @@
+{
+  "name": "workkit-tower-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The tower dashboard — an OMEGA web app served on 4300, reading the tower API on 8693",
+  "dependencies": {
+    "@omega.js/web": "file:../../../../../../Omega/omega/packages/web"
+  },
+  "scripts": {
+    "start": "omega dev",
+    "build": "omega build",
+    "clean": "omega clean"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

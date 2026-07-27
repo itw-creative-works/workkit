@@ -23,7 +23,7 @@ The spec it implements is `docs/project-state.md`; the README carries the visual
 ├── agents/               # the crew — surface as workkit:<name> (roster + contract: docs/agents.md)
 ├── skills/               # the nine workflow skills — surface as workkit:<name>
 ├── workflow/             # the agent-agnostic engine (labels.json, standards.sh, changelog.js, templates)
-├── tower/                # the dashboard: server.js + lib/ (data libraries) + public/ (the page)
+├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
 ├── docs/                 # project-state.md (the spec) · agents.md (the crew contract)
 ├── tests/                # Node runner + hook/script/tower suites (npm test)
 └── .workkit/             # settings.json is COMMITTED (this repo's own opt-in)
@@ -84,7 +84,7 @@ Agent-agnostic: shell + Node, no Claude Code knowledge. `labels.json` is the lab
 
 ## The tower (`tower/`)
 
-The dashboard: one plain-Node server (`npm run tower`, port 8693) serving a single page — the cross-repo issue board, the live Claude sessions, per-repo health tiles, and an intake box that files a `status:inbox` issue. A view, never a second store: it reads the opted-in repos' issues via one GraphQL sweep, the keep-awake markers, and git; its only write path is `gh issue create`. Reference: `tower/README.md`.
+Mission control, in two processes. `tower/api/` is a plain-Node JSON API with zero dependencies (`npm run tower`, port 8693); `tower/app/` is the dashboard, an OMEGA app on port 4300 that reads it cross-origin. Six pages — Overview, Board, Crew, Usage, Health, Brief — over the cross-repo issue board, the live Claude crew and its token spend, per-repo health, and the daily brief, with an intake dialog on the topbar of every one. A view, never a second store: it reads the opted-in repos' issues via one GraphQL sweep, the keep-awake markers, the session transcripts, and git; its only write path is `gh issue create`. The API is useful alone: `/api/brief` exists so the 9am job and the page can share one payload, and the job is switched over separately. The framework owns the chrome, which is why the app consumes `@omega.js/*` by `file:` spec rather than vendoring a stylesheet. Reference: `tower/README.md`.
 
 ## Participation is a tri-state
 

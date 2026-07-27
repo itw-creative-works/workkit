@@ -1,0 +1,17 @@
+# The tower app is its own npm root and its own OMEGA brand root, so it carries
+# its own ignore rules — the same set omega-brand uses. Two separate derived
+# trees have to be named (dist/ and .omega/), which is why this lives here
+# rather than as one line in the repo root's .gitignore.
+
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build output + machinery (omega build / omega dev)
+dist/
+.omega/
+.cache/
+.temp/
+
+# Secrets
+.env

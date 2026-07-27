@@ -1,5 +1,5 @@
 //
-// Tests for tower/lib/health.js — per-repo health.
+// Tests for tower/api/lib/health.js — per-repo health.
 //
 // Real git repositories throughout, including a real bare "origin" cloned
 // locally so the upstream cases are genuine: whether a branch has an upstream,
@@ -13,7 +13,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
-const { repoHealth, unreleasedCount } = require(path.join(__dirname, '..', '..', 'tower', 'lib', 'health.js'));
+const { repoHealth, unreleasedCount } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'health.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-health-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };

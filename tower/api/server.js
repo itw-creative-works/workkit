@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 //
-// The tower's server — one plain-Node process, zero dependencies.
+// The tower's API — one plain-Node process, zero dependencies.
 //
-// Every endpoint is a thin wrapper over a lib under tower/lib: the server owns
-// routing, caching and validation, and nothing else. It is a VIEW, so the only
-// write path in the whole surface is `POST /api/intake`, and that writes
+// It serves JSON and nothing else: the dashboard is the OMEGA app under
+// tower/app, served by its own dev server, and it reads this API cross-origin.
+// Anything outside /api/* here is a 404.
+//
+// Every endpoint is a thin wrapper over a lib under tower/api/lib: the server
+// owns routing, caching and validation, and nothing else. It is a VIEW, so the
+// only write path in the whole surface is `POST /api/intake`, and that writes
 // through the same door everyone else uses — `gh issue create`.
 //
 // Binding is 127.0.0.1 on purpose. The phone reaches the tower through
@@ -14,10 +18,15 @@
 //
 // What the bind cannot cover is a browser: any page can resolve a name it owns
 // to 127.0.0.1 and reach a localhost listener, so the Host header is checked
-// against an allowlist on EVERY request, and the intake POST additionally
-// checks Origin when the browser sends one. Because `tailscale serve` proxies
+// against an allowlist on EVERY request, and a request that carries an Origin
+// must carry one from that same allowlist. Because `tailscale serve` proxies
 // under the tailnet hostname, that hostname belongs in `TOWER_ALLOW_HOST`
 // (comma-separated) or `opts.allowHosts` — otherwise the phone sees a 403.
+//
+// CORS falls out of that one allowlist: an allowed origin is ECHOED back in
+// `Access-Control-Allow-Origin` (never `*`), and the preflight is answered for
+// the intake POST. The dashboard on the dev server reaches the API exactly
+// because `localhost` is already a name this tower answers to.
 //
 // Caching is in memory and time based, matching the poll rates the page uses:
 // the roster and the board are expensive (a disk walk, a GraphQL round trip)
@@ -27,25 +36,28 @@
 // test suite run the WHOLE server against fixture directories and a fake exec.
 //
 // Usage:
-//   node tower/server.js                    // TOWER_PORT, default 8693
+//   node tower/api/server.js                // TOWER_PORT, default 8693
 //   createServer({ root, exec }).listen(0);  // offline, against fixtures
 //
 
 const http = require('http');
-const fs = require('fs');
-const path = require('path');
 const { execFileSync } = require('child_process');
 
 const { discoverRepos } = require('./lib/repos');
 const { fetchBoard } = require('./lib/board');
 const { listSessions } = require('./lib/sessions');
 const { repoHealth } = require('./lib/health');
+const { collectTelemetry } = require('./lib/telemetry');
+const { buildBrief } = require('./lib/brief');
 
 // TOWER on a phone keypad is 86937; 8693 is what fits a port.
 const DEFAULT_PORT = 8693;
 const DEFAULT_BIND = '127.0.0.1';
 
-const PAGE = path.join(__dirname, 'public', 'index.html');
+// How long a browser may keep a preflight answer. The allowlist changes only
+// when the process restarts, so ten minutes costs nothing and saves the page a
+// round trip before every intake POST.
+const CORS_MAX_AGE = 600;
 
 // The roster is a disk walk and the board a network round trip; both change on
 // a human timescale. Sessions and health are local reads the page polls at 10s.
@@ -105,14 +117,45 @@ const cached = (ttl, produce, keep = (value) => !(value && value.ok === false)) 
   };
 };
 
-/** The hostname in a Host header or an Origin URL, port and brackets stripped. */
+/**
+ * The hostname in a Host header or an Origin URL, port and brackets stripped.
+ *
+ * A value carrying `@` is REFUSED outright rather than parsed. URL parsing
+ * reads everything before an `@` as userinfo and drops it, so `evil.com@
+ * localhost` would answer `localhost` and walk straight through an allowlist
+ * that has never heard of evil.com. Neither header has a userinfo component to
+ * begin with — RFC 7230 gives Host the grammar `host [":" port]` — so a value
+ * containing one is malformed, and the only safe reading of it is none.
+ *
+ * @param {string|undefined} value a Host header or an Origin URL
+ * @returns {string|null} the hostname, or null if there is not exactly one
+ */
 const hostnameOf = (value) => {
-  if (!value) return null;
+  if (!value || value.includes('@')) return null;
   try {
     return new URL(/^[a-z]+:\/\//i.test(value) ? value : `http://${value}`).hostname.replace(/^\[|\]$/g, '');
   } catch {
     return null;
   }
+};
+
+/**
+ * The `Access-Control-Allow-Origin` value for a request, or null when the
+ * request carries no Origin or one this tower does not answer to.
+ *
+ * The judgment is the SAME allowlist the Host and intake gates use, so the app
+ * on the dev server is reachable exactly because `localhost` is already a name
+ * the tower answers to. It echoes the caller's origin rather than sending `*`:
+ * `*` would hand every page on the machine the tower's whole board.
+ *
+ * @param {string|undefined} origin the request's Origin header
+ * @param {Set<string>} hosts the allowlist from allowedHosts
+ * @returns {string|null} the origin to echo back
+ */
+const corsOrigin = (origin, hosts) => {
+  if (!origin) return null;
+  const name = hostnameOf(origin);
+  return name && hosts.has(name) ? origin : null;
 };
 
 /** The names this tower answers to. */
@@ -174,10 +217,14 @@ const readBody = (req) => new Promise((resolve, reject) => {
  */
 const validateIntake = (payload, slugs) => {
   if (!payload || typeof payload !== 'object') return { ok: false, reason: 'body must be a JSON object' };
-  const repo = typeof payload.repo === 'string' ? payload.repo.trim() : '';
+  const asked = typeof payload.repo === 'string' ? payload.repo.trim() : '';
   const title = typeof payload.title === 'string' ? payload.title.trim() : '';
   const body = typeof payload.body === 'string' ? payload.body.trim() : '';
-  if (!slugs.includes(repo)) return { ok: false, reason: `unknown repo: ${repo || '(none)'}` };
+  // GitHub owner and repo names are case-insensitive, and a roster slug is
+  // whatever case the git remote was written in. The ROSTER's spelling is what
+  // gets filed, so `gh` always receives a name this machine actually holds.
+  const repo = slugs.find((slug) => slug.toLowerCase() === asked.toLowerCase()) || '';
+  if (!repo) return { ok: false, reason: `unknown repo: ${asked || '(none)'}` };
   if (!title) return { ok: false, reason: 'title is required' };
   if (title.length > TITLE_MAX) return { ok: false, reason: `title is longer than ${TITLE_MAX} characters` };
   if (body.length > BODY_MAX) return { ok: false, reason: `body is longer than ${BODY_MAX} characters` };
@@ -233,25 +280,27 @@ const createServer = (opts = {}) => {
     idleMinutes: opts.idleMinutes,
     exec,
   }));
+  // The drill-down reads this same slot rather than sweeping again: one session
+  // is a row of the whole answer, and the whole answer was just computed.
+  const telemetry = cached(LIVE_TTL, () => collectTelemetry({
+    markerDir: opts.markerDir,
+    home: opts.home,
+    stateDir: opts.stateDir,
+    idleMinutes: opts.idleMinutes,
+    exec,
+  }));
   const health = cached(LIVE_TTL, () => {
     const out = {};
     for (const repo of roster()) out[repo.path] = repoHealth(repo.path, seam);
     return out;
   });
 
-  const intake = async (req, res) => {
-    const origin = req.headers.origin;
-    if (origin) {
-      // Browsers send Origin on a same-origin POST, so the page's own origin is
-      // covered by the same allowlist. An absent Origin is a non-browser client
-      // (curl), which the Host check has already judged.
-      const name = hostnameOf(origin);
-      if (!name || !hosts.has(name)) {
-        sendJson(res, 403, { ok: false, reason: `origin not allowed: ${origin}` });
-        return;
-      }
-    }
+  // The brief is assembled from the two slots above rather than from reads of
+  // its own, so the morning notification and the Brief page cannot disagree:
+  // they are the same board and the same health, one derivation.
+  const brief = () => buildBrief(board(), health(), roster());
 
+  const intake = async (req, res) => {
     let payload;
     try {
       payload = JSON.parse(await readBody(req));
@@ -310,6 +359,38 @@ const createServer = (opts = {}) => {
       return;
     }
 
+    // One origin gate for the whole surface. A browser sends Origin on every
+    // cross-origin request and on same-origin writes; an absent Origin is a
+    // non-browser client, which the Host check has already judged. A page this
+    // tower does not answer to gets a 403 — no header, and no data either.
+    const origin = req.headers.origin;
+    const allowOrigin = corsOrigin(origin, hosts);
+    if (origin && !allowOrigin) {
+      sendJson(res, 403, { ok: false, reason: `origin not allowed: ${origin}` });
+      return;
+    }
+    if (allowOrigin) {
+      res.setHeader('access-control-allow-origin', allowOrigin);
+      // The answer differs by origin, so a shared cache must not reuse one
+      // origin's response for another.
+      res.setHeader('vary', 'Origin');
+    }
+
+    // The preflight the intake POST triggers: a cross-origin JSON body is never
+    // a simple request, so the browser asks first. Only a request that carries
+    // an allowed Origin is answered — a preflight without one is not a browser
+    // asking permission, and falls through to the method check like any other
+    // unsupported verb.
+    if (req.method === 'OPTIONS' && allowOrigin) {
+      res.writeHead(204, {
+        'access-control-allow-methods': 'GET, POST, OPTIONS',
+        'access-control-allow-headers': 'content-type, accept',
+        'access-control-max-age': String(CORS_MAX_AGE),
+      });
+      res.end();
+      return;
+    }
+
     if (req.method === 'POST' && pathname === '/api/intake') {
       intake(req, res).catch((err) => sendJson(res, 500, { ok: false, reason: err.message }));
       return;
@@ -320,29 +401,26 @@ const createServer = (opts = {}) => {
       return;
     }
 
-    if (pathname === '/') {
-      let page;
-      try {
-        page = fs.readFileSync(PAGE);
-      } catch (err) {
-        // The page ships with the server. Missing means a broken checkout, not
-        // a condition the tower is meant to degrade around.
-        sendJson(res, 500, { ok: false, reason: `page unavailable: ${err.message}` });
-        return;
-      }
-      res.writeHead(200, {
-        'content-type': 'text/html; charset=utf-8',
-        'content-length': page.length,
-        'cache-control': 'no-store',
-      });
-      res.end(page);
-      return;
-    }
-
     if (pathname === '/api/repos') return sendJson(res, 200, roster({ fresh }));
     if (pathname === '/api/board') return sendJson(res, 200, board({ fresh }));
     if (pathname === '/api/sessions') return sendJson(res, 200, sessions());
     if (pathname === '/api/health') return sendJson(res, 200, health());
+    if (pathname === '/api/telemetry') return sendJson(res, 200, telemetry());
+    if (pathname === '/api/brief') return sendJson(res, 200, brief());
+
+    const drill = pathname.match(/^\/api\/telemetry\/(.+)$/);
+    if (drill) {
+      // A malformed percent escape throws; it is simply not a session id.
+      let id = drill[1];
+      try {
+        id = decodeURIComponent(id);
+      } catch {
+        id = drill[1];
+      }
+      const found = telemetry().sessions.find((s) => s.id === id);
+      if (!found) return sendJson(res, 404, { ok: false, reason: `no such session: ${id}` });
+      return sendJson(res, 200, found);
+    }
 
     return sendJson(res, 404, { ok: false, reason: `no such endpoint: ${pathname}` });
   });

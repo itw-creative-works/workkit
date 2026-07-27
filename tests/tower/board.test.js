@@ -1,5 +1,5 @@
 //
-// Tests for tower/lib/board.js — the cross-repo issue sweep.
+// Tests for tower/api/lib/board.js — the cross-repo issue sweep.
 //
 // `gh` is the one thing that cannot be exercised for real here: a live call
 // needs auth and the network, and the point of the seam is that the tower
@@ -14,7 +14,7 @@ const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
 const REPO = path.join(__dirname, '..', '..');
-const { fetchBoard, buildQuery, labelGroups, LABELS_FILE, PAGE_SIZE } = require(path.join(REPO, 'tower', 'lib', 'board.js'));
+const { fetchBoard, buildQuery, labelGroups, LABELS_FILE, PAGE_SIZE } = require(path.join(REPO, 'tower', 'api', 'lib', 'board.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-board-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };

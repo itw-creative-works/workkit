@@ -42,7 +42,7 @@ const { execFileSync } = require('child_process');
 // open issues than that is reported truncated rather than silently short.
 const PAGE_SIZE = 100;
 
-const LABELS_FILE = path.join(__dirname, '..', '..', 'workflow', 'labels.json');
+const LABELS_FILE = path.join(__dirname, '..', '..', '..', 'workflow', 'labels.json');
 
 // stderr is piped, not ignored: gh writes its "gh auth login" guidance there,
 // and failureReason needs that text to name an auth failure as one.

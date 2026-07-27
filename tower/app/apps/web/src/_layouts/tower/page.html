@@ -1,0 +1,80 @@
+---
+layout: admin/core/minimal
+
+# Every tower page wears this — for one frontmatter key, and for the intake
+# dialog in its body (the topbar's button opens it, so it has to be on every
+# page). The key: the tower is a localhost
+# tool with no user accounts, and the admin layout chain it extends sets
+# `web_manager.auth.config.policy: "authenticated"` (plus an admin role), which
+# would bounce every page to a sign-in screen that has no Firebase behind it.
+# `policy: "disabled"` makes core/js/core/auth.js return before it looks at
+# anything (auth.js:17).
+#
+# Why a LAYOUT and not each page's own frontmatter: a consumer page's
+# frontmatter is meta-only — the engine's guard (engine.js, "the meta-only
+# guard") deletes every key outside {meta, schema, theme, append, sitemap}
+# from the cascade and warns, so `web_manager` set on a page is dropped before
+# it can resolve. Layouts are exempt, being theme voice. Verified by building:
+# with the key on the page, the build printed
+# "ignoring frontmatter content keys (web_manager)".
+web_manager:
+  auth:
+    config:
+      policy: "disabled"
+  cookieConsent:
+    enabled: false
+  chatsy:
+    enabled: false
+  exitPopup:
+    enabled: false
+
+sitemap:
+  include: false
+meta:
+  index: false
+---
+
+{{ content }}
+
+<!-- Intake dialog.
+     It lives in the LAYOUT, not on a page, because the spec puts intake on the
+     topbar of every page rather than behind a tab — and the topbar's button
+     (backend/sections/topbar.json) targets this id. Plain Bootstrap markup:
+     the theme already ships the modal, and the only thing tower JS adds is the
+     roster in the select and the POST behind the button. -->
+<div class="modal fade" id="tower-intake" tabindex="-1" aria-labelledby="tower-intake-label" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="tower-intake-label">File an issue</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <!-- `novalidate`: the API is the one authority on what a valid intake is
+           (unknown repo, empty title, over-long title), and its `reason` is
+           what the dialog shows. A browser-side gate would only disagree. -->
+      <form novalidate data-intake-form>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label" for="tower-intake-repo">Repository</label>
+            <select class="form-select" id="tower-intake-repo" name="repo" data-intake-repo>
+              <option value="">Loading the roster…</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="tower-intake-title">Title</label>
+            <input class="form-control" id="tower-intake-title" name="title" type="text" maxlength="256" autocomplete="off" placeholder="What is the thing?"/>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="tower-intake-body">Body <span class="text-body-secondary">(optional)</span></label>
+            <textarea class="form-control" id="tower-intake-body" name="body" rows="4" placeholder="Filed from the tower."></textarea>
+          </div>
+          <div data-intake-result aria-live="polite"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline-adaptive btn-sm" type="button" data-bs-dismiss="modal">Close</button>
+          <button class="btn btn-adaptive btn-sm" type="submit" data-intake-submit>File it</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

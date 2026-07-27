@@ -1,5 +1,5 @@
 //
-// Tests for tower/lib/repos.js — roster discovery.
+// Tests for tower/api/lib/repos.js — roster discovery.
 //
 // The fixtures are REAL git repositories with real `origin` remotes (adding a
 // remote needs no network), because "what does git call this repo's origin" is
@@ -14,7 +14,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
-const { discoverRepos, slugFromRemote } = require(path.join(__dirname, '..', '..', 'tower', 'lib', 'repos.js'));
+const { discoverRepos, slugFromRemote } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'repos.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-repos-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };

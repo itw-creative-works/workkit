@@ -1,0 +1,34 @@
+// The tower's brand layer. Deliberately TINY: only brand.id and brand.name are
+// required by the config schema (@omega.js/config src/schema.js), and the tower
+// is a localhost tool with no cloud project, no payments, no analytics and no
+// monitoring — so those sections are ABSENT rather than filled with nulls.
+//
+// LOCAL ERA: every @omega.js/* dependency is a relative file: spec into the
+// sibling Omega checkout (see tower/app/README.md). The specs flip to registry
+// ranges when OMEGA publishes.
+{
+  brand: {
+    id: "workkit",
+    name: "Tower",
+    description: "Mission control for the workkit issue workflow — the board, the crew, token usage, repo health, and the daily brief.",
+  },
+
+  // The classy theme is what the whole dashboard is drawn in: omega-shell for
+  // the geometry, classy-side__* for the sidebar, classy-statgrid for tiles.
+  theme: {
+    id: "classy",
+    appearance: "system",
+  },
+
+  // Key presence = target enabled. Web only — the tower has no backend target
+  // (its API is the plain Node server in tower/, on 8693). The port keeps the
+  // family clear of its siblings: playground 4000, dailybuild 4100,
+  // omega-brand 4200, tower 4300.
+  targets: {
+    web: {
+      ports: {
+        website: 4300,
+      },
+    },
+  },
+}

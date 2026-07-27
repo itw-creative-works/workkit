@@ -5,6 +5,7 @@ The issue-pipeline workflow system as a Claude Code plugin. Install it and every
 ## The road every item travels
 
 ```mermaid
+%%{init: {"flowchart": {"curve": "linear"}}}%%
 flowchart TB
     Form["issue form"] --> Inbox([status:inbox])
     Note["chat note"] --> Inbox
@@ -28,15 +29,14 @@ Capture (any of the three sources) is what puts an item INTO `status:inbox`; tri
 ## The crew that works it
 
 ```mermaid
+%%{init: {"flowchart": {"curve": "linear"}}}%%
 flowchart TB
-    Human([human]) <--> Chat
+    Human([human])
+    Manager["MANAGER<br>the main chat<br>judgment, dispatch, final verdicts"]
+    Advisor["advisor<br>plans, never implements<br>Fable (session effort)"]
 
-    subgraph Chat[" "]
-        direction LR
-        Manager["MANAGER<br>the main chat<br>judgment, dispatch, final verdicts"]
-        Manager <-->|plans, hard calls| Advisor["advisor<br>plans, never implements<br>Fable (session effort)"]
-    end
-    style Chat fill:none,stroke:none
+    Human <--> Manager
+    Manager <-->|plans, hard calls| Advisor
 
     subgraph Crew["the class agents"]
         Scout["scout<br>read-only recon<br>Sonnet (low)"]
@@ -44,10 +44,12 @@ flowchart TB
         Verifier["verifier<br>blind review<br>Opus (high)"]
     end
 
-    Chat -->|recon| Scout
-    Chat -->|brief| Worker
-    Chat -->|diff + brief| Verifier
-    Crew -.->|reports back| Chat
+    Manager -->|recon| Scout
+    Manager -->|brief| Worker
+    Manager -->|diff + brief| Verifier
+    Scout -.-> Manager
+    Worker -.->|reports back| Manager
+    Verifier -.-> Manager
 ```
 
 - The **manager** is whichever model your chat runs on, so the topology follows the model button: a frontier session never spawns the advisor, a workhorse session consults it for plans.
@@ -95,7 +97,11 @@ The first four are capability classes — the resolver hook gives each spawn its
 
 ### Tower — the dashboard
 
-`npm run tower` serves one page on port 8693: the cross-repo issue board (columns by `status:` label, blocked questions surfaced), the live Claude sessions with their state and model, per-repo health tiles (unpushed, uncommitted, unreleased), and an intake box that files a `status:inbox` issue. A view over the system's own data — its only write path is `gh issue create`. Phone access goes through Tailscale. Reference: [`tower/README.md`](tower/README.md).
+Mission control over everything the system already knows, in two processes: `npm run tower` starts the JSON API on port 8693, and `npx omega dev` inside `tower/app/apps/web` serves the dashboard on 4300.
+
+Six pages. **Overview** is the control room. **Board** is the full issue board across every repo, columns by `status:` label with filters. **Crew** draws the running Claude sessions as an org chart, each subagent under its parent with its class, model and token spend. **Usage** is where the tokens went — by model, by agent class, over thirty days, and what it cost. **Health** is per-repo unpushed, uncommitted and unreleased work. **Brief** is the morning read — the payload the 9am job will send once that job is switched over to it. An intake dialog sits on the topbar of all six.
+
+A view over the system's own data — its only write path is `gh issue create`. Phone access goes through Tailscale. Reference: [`tower/README.md`](tower/README.md).
 
 ### Engine — `workflow/`
 
@@ -113,7 +119,7 @@ hooks/            hooks.json + the hook groups, resolved via ${CLAUDE_PLUGIN_ROO
 agents/           the crew (namespaced workkit:<name>)
 skills/           the nine workflow skills (namespaced workkit:<name>)
 workflow/         the agent-agnostic engine
-tower/            the dashboard — server, data libraries, one-page UI
+tower/            mission control — api/ (the JSON API) + app/ (the OMEGA dashboard)
 docs/             project-state.md (the spec) · agents.md (the crew contract)
 tests/            npm test
 ```

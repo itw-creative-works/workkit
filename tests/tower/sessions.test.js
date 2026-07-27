@@ -1,5 +1,5 @@
 //
-// Tests for tower/lib/sessions.js — the live crew.
+// Tests for tower/api/lib/sessions.js — the live crew.
 //
 // Everything is a fixture: a scratch marker directory, a scratch ~/.claude
 // projects tree, a scratch statusline cache. The real TMPDIR markers belong to
@@ -16,7 +16,7 @@ const os = require('os');
 const path = require('path');
 const { group, test, assertEq, summary, selfRun } = require('../lib/harness');
 
-const { listSessions, transcriptPath, chatNameFrom, NAME_READ_BYTES } = require(path.join(__dirname, '..', '..', 'tower', 'lib', 'sessions.js'));
+const { listSessions, transcriptPath, chatNameFrom, NAME_READ_BYTES } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'sessions.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-sessions-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };

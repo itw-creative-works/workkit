@@ -1,5 +1,5 @@
 //
-// Tests for tower/server.js — the endpoints, the caches, the one write path.
+// Tests for tower/api/server.js — the endpoints, the caches, the one write path.
 //
 // The WHOLE server runs here, on port 0, against fixtures: a scratch
 // Repositories root of real git repos, a scratch marker directory and
@@ -21,7 +21,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harn
 
 const {
   createServer, DEFAULT_BIND, DEFAULT_PORT, MAX_REQUEST_BYTES,
-} = require(path.join(__dirname, '..', '..', 'tower', 'server.js'));
+} = require(path.join(__dirname, '..', '..', 'tower', 'api', 'server.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-server-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -158,7 +158,7 @@ const raw = (client, { method = 'GET', path: p = '/', headers = {}, body = null 
     let text = '';
     res.setEncoding('utf8');
     res.on('data', (chunk) => { text += chunk; });
-    res.on('end', () => resolve({ status: res.statusCode, text }));
+    res.on('end', () => resolve({ status: res.statusCode, text, headers: res.headers }));
   });
   // An over-cap POST is answered mid-upload and the connection then closed, so
   // the write end may error AFTER the response arrived. The promise is already
@@ -171,7 +171,7 @@ const raw = (client, { method = 'GET', path: p = '/', headers = {}, body = null 
 const ghCalls = (world, verb) => world.calls.filter((c) => c[0] === 'gh' && c[1] === verb);
 
 const run = async () => {
-  group('tower/server: the read endpoints');
+  group('tower/api/server: the read endpoints');
 
   await test('/api/repos serves the discovered roster', async () => {
     const w = mkWorld();
@@ -181,6 +181,24 @@ const run = async () => {
     assertEq(body.length, 1, 'one repo in the fixture root');
     assertEq(body[0].slug, SLUG, 'with its origin slug');
     assertEq(body[0].path, w.repo, 'and its path');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('/api/brief assembles the morning from the same board and health', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { status, body } = await getJson(c, '/api/brief');
+    assertEq(status, 200, 'ok');
+    assertEq(body.ok, true, 'the sweep behind it succeeded');
+    // The fixture board is one specced issue and one blocked one.
+    assertEq(body.counts.waiting, 1, 'the blocked issue is waiting on a human');
+    assertEq(body.waiting[0].number, 18, 'and it is named');
+    assertEq(body.counts.ready, 1, 'the specced issue is unclaimed, so it is ready');
+    assert(/waiting on a decision/.test(body.headline), 'the headline leads with the decision');
+    // The fixture repo has an unreleased CHANGELOG entry and no tag.
+    assertEq(body.warnings.length, 1, 'the repo has work sitting on the table');
+    assertEq(body.warnings[0].repo, SLUG, 'named by its slug');
     await c.stop();
     cleanup(w.root);
   });
@@ -227,7 +245,7 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  group('tower/server: caching');
+  group('tower/api/server: caching');
 
   await test('two board reads inside the TTL make ONE graphql call', async () => {
     const w = mkWorld();
@@ -312,7 +330,7 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  group('tower/server: intake, the only write path');
+  group('tower/api/server: intake, the only write path');
 
   await test('a valid filing calls gh with exactly the expected ARGV and returns the url', async () => {
     const w = mkWorld();
@@ -347,6 +365,21 @@ const run = async () => {
     assertEq(body.ok, false, 'not filed');
     assert(/unknown repo/.test(body.reason), 'the reason names it');
     assertEq(ghCalls(w, 'issue').length, 0, 'gh never ran against an arbitrary string');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a repo named in another case is accepted, and gh gets the roster’s spelling', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    // GitHub treats owner and repo names as case-insensitive, and the roster's
+    // slug is whatever case the git remote carries — so a payload written in
+    // GitHub's canonical casing names the same repository.
+    const { status, body } = await postJson(c, '/api/intake', { repo: SLUG.toUpperCase(), title: 'Shouted' });
+    assertEq(status, 200, 'accepted');
+    assertEq(body.ok, true, 'filed');
+    const [call] = ghCalls(w, 'issue');
+    assertEq(call[call.indexOf('--repo') + 1], SLUG, 'gh receives the roster spelling, not the caller’s');
     await c.stop();
     cleanup(w.root);
   });
@@ -409,7 +442,7 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  group('tower/server: who may reach the tower');
+  group('tower/api/server: who may reach the tower');
 
   await test('a Host the tower does not answer to is 403, on a plain read', async () => {
     const w = mkWorld();
@@ -423,6 +456,40 @@ const run = async () => {
     // URL-parse normalization (a bare ::1 in the constant silently drops out).
     const six = await raw(c, { path: '/api/repos', headers: { host: `[::1]:${c.port}` } });
     assertEq(six.status, 200, 'the IPv6 loopback is local too');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a Host or Origin carrying userinfo is refused, not parsed down to its tail', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    // URL parsing reads everything before an `@` as userinfo and drops it, so
+    // `evil.com@localhost` would answer `localhost` and pass an allowlist that
+    // has never heard of evil.com. Neither header has a userinfo component.
+    const host = await raw(c, { path: '/api/repos', headers: { host: 'evil.com@localhost' } });
+    assertEq(host.status, 403, 'the Host gate is not walked through');
+    assert(!/"slug"/.test(host.text), 'and no roster leaked');
+
+    const origin = await raw(c, {
+      path: '/api/repos',
+      headers: { host: `127.0.0.1:${c.port}`, origin: 'http://evil.com@localhost' },
+    });
+    assertEq(origin.status, 403, 'the Origin gate is not either');
+    assertEq(origin.headers['access-control-allow-origin'], undefined, 'and nothing is echoed back');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a preflight carrying no Origin is not a browser asking, and is refused', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const res = await raw(c, {
+      method: 'OPTIONS',
+      path: '/api/intake',
+      headers: { host: `127.0.0.1:${c.port}` },
+    });
+    assertEq(res.status, 405, 'it falls through to the method check like any other verb');
+    assertEq(res.headers['access-control-allow-methods'], undefined, 'no preflight answer');
     await c.stop();
     cleanup(w.root);
   });
@@ -490,18 +557,103 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  group('tower/server: the page and the edges');
+  group('tower/api/server: CORS for the dashboard origin');
 
-  await test('GET / serves the page as text/html with all four panes', async () => {
+  await test('an allowed origin gets the header echoed back, never a star', async () => {
     const w = mkWorld();
     const c = await start(w);
-    const res = await fetch(c.url('/'));
-    assertEq(res.status, 200, 'ok');
-    assert(/text\/html/.test(res.headers.get('content-type')), 'content type');
-    const html = await res.text();
-    for (const id of ['pane-board', 'pane-crew', 'pane-health', 'pane-intake']) {
-      assert(html.includes(`id="${id}"`), `${id} is in the page`);
-    }
+    const res = await raw(c, {
+      path: '/api/repos',
+      headers: { host: `127.0.0.1:${c.port}`, origin: 'https://localhost:4300' },
+    });
+    assertEq(res.status, 200, 'the dashboard reads the board');
+    assertEq(res.headers['access-control-allow-origin'], 'https://localhost:4300', 'echoed, so the browser keeps the body');
+    assertEq(res.headers.vary, 'Origin', 'and a shared cache cannot mix two origins up');
+    assert(/"slug"/.test(res.text), 'the body is the real answer');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('an off-list origin gets neither the header nor the data', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const res = await raw(c, {
+      path: '/api/repos',
+      headers: { host: `127.0.0.1:${c.port}`, origin: 'https://evil.example.com' },
+    });
+    assertEq(res.status, 403, 'refused outright');
+    assertEq(res.headers['access-control-allow-origin'], undefined, 'no header');
+    assert(!/"slug"/.test(res.text), 'and no board in the body');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('the intake preflight answers with the methods, headers and a max-age', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const res = await raw(c, {
+      method: 'OPTIONS',
+      path: '/api/intake',
+      headers: {
+        host: `127.0.0.1:${c.port}`,
+        origin: 'https://localhost:4300',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'content-type',
+      },
+    });
+    assertEq(res.status, 204, 'answered, not 405');
+    assertEq(res.headers['access-control-allow-origin'], 'https://localhost:4300', 'for this origin');
+    assert(/POST/.test(res.headers['access-control-allow-methods']), 'the write method is allowed');
+    assert(/content-type/.test(res.headers['access-control-allow-headers']), 'and the JSON content type');
+    assert(Number(res.headers['access-control-max-age']) > 0, 'cached, so every filing is not two round trips');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a preflight from an off-list origin is refused', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const res = await raw(c, {
+      method: 'OPTIONS',
+      path: '/api/intake',
+      headers: { host: `127.0.0.1:${c.port}`, origin: 'https://evil.example.com', 'access-control-request-method': 'POST' },
+    });
+    assertEq(res.status, 403, 'the preflight is judged by the same allowlist');
+    assertEq(res.headers['access-control-allow-origin'], undefined, 'and says nothing else');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('the cross-origin POST that follows the preflight files the issue', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const res = await raw(c, {
+      method: 'POST',
+      path: '/api/intake',
+      headers: {
+        host: `127.0.0.1:${c.port}`,
+        origin: 'https://localhost:4300',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ repo: SLUG, title: 'From the dashboard' }),
+    });
+    assertEq(res.status, 200, 'filed');
+    assertEq(res.headers['access-control-allow-origin'], 'https://localhost:4300', 'and the answer is readable to the page');
+    assertEq(ghCalls(w, 'issue').length, 1, 'gh ran once');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  group('tower/api/server: the edges');
+
+  await test('the API serves no pages — / is a 404 like any other non-endpoint', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const root = await getJson(c, '/');
+    assertEq(root.status, 404, 'the dashboard is the OMEGA app, not this process');
+    assertEq(root.body.ok, false, 'the soft shape everywhere');
+    const asset = await getJson(c, '/assets/css/omega.css');
+    assertEq(asset.status, 404, 'and nothing static is served either');
     await c.stop();
     cleanup(w.root);
   });

@@ -1,0 +1,8 @@
+// App-layer config — TARGETS ONLY. Everything shared (brand, theme, ports)
+// lives in the brand root's config/omega.json5; any key added here overrides
+// the brand layer for THIS app only, so keep it minimal.
+{
+  targets: {
+    web: {},
+  },
+}

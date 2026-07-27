@@ -1,0 +1,28 @@
+// Replaces the framework's packaged backend/sections/topbar.json. Two
+// differences from the stock one, both because this is a local tool and not a
+// product: the search form is dropped (it posts to /search, a page the tower
+// does not have), and the account action is dropped (there is no auth — the
+// layout turns the auth module off entirely).
+//
+// What remains is the topbar the shell needs: the drawer toggle, the rail
+// collapse, the breadcrumb slot fed by each page's
+// `theme.header.title.content`, and one action.
+//
+// The action is intake. It is a plain button — no `href`, which is what makes
+// global/sections/app-topbar.html render a `<button>` — carrying the two
+// Bootstrap data attributes that open the dialog the tower page layout ships.
+// Nothing else is needed to OPEN it: the classy theme puts Bootstrap on
+// `window` on every page, so the toggle works before any tower JS runs.
+{
+  actions: [
+    {
+      label: 'File an issue',
+      icon: 'plus',
+      class: 'btn-adaptive btn-sm',
+      attributes: [
+        ['data-bs-toggle', 'modal'],
+        ['data-bs-target', '#tower-intake'],
+      ],
+    },
+  ],
+}

@@ -1,0 +1,31 @@
+// Tier-1 consumer entry: this file WINS the layered main.scss lookup and pulls
+// the whole stock chain via the self-skipping omega:main import.
+//
+// It is nearly empty on purpose. The dashboard is drawn in the theme's own
+// vocabulary — omega-shell for the geometry, classy-side__* for the nav,
+// classy-statgrid for tiles, Bootstrap cards/tables/badges/forms for
+// everything else — so a rule here has to earn its place by naming what the
+// theme does not ship.
+@use 'omega:main';
+
+// The board's columns. The theme has Bootstrap's grid, which wraps rows at
+// breakpoints; a kanban board wants ONE row that scrolls sideways and keeps
+// its column widths, which no theme utility expresses.
+.tower-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(15rem, 1fr);
+  gap: 1rem;
+  overflow-x: auto;
+  padding-bottom: .5rem;
+}
+
+// The crew org chart's connector lines. The theme has no tree component, and
+// the lines are geometry, not decoration — there is nothing to reuse.
+.tower-tree__children {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding-left: 1.5rem;
+  border-left: 1px solid var(--omega-line, var(--bs-border-color));
+}
