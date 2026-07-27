@@ -23,8 +23,9 @@ The spec it implements is `docs/project-state.md`; the README carries the visual
 ├── agents/               # the crew — surface as workkit:<name> (roster + contract: docs/agents.md)
 ├── skills/               # the nine workflow skills — surface as workkit:<name>
 ├── workflow/             # the agent-agnostic engine (labels.json, standards.sh, changelog.js, templates)
+├── tower/                # the dashboard: server.js + lib/ (data libraries) + public/ (the page)
 ├── docs/                 # project-state.md (the spec) · agents.md (the crew contract)
-├── tests/                # Node runner + hook/script suites (npm test)
+├── tests/                # Node runner + hook/script/tower suites (npm test)
 └── .workkit/             # settings.json is COMMITTED (this repo's own opt-in)
 ```
 
@@ -81,13 +82,17 @@ Nine, namespaced `workkit:<name>`, one `SKILL.md` each:
 
 Agent-agnostic: shell + Node, no Claude Code knowledge. `labels.json` is the label SSOT, `standards.sh` the idempotent heal (plus `--enable` / `--decline` / `--state`), `changelog.js` the entry-format linter both guarding hooks call, `changelog-links.js` the release-time backfill of commit links and contributor handles, `templates/` what a repo receives on enable. Details: `workflow/README.md`.
 
+## The tower (`tower/`)
+
+The dashboard: one plain-Node server (`npm run tower`, port 8693) serving a single page — the cross-repo issue board, the live Claude sessions, per-repo health tiles, and an intake box that files a `status:inbox` issue. A view, never a second store: it reads the opted-in repos' issues via one GraphQL sweep, the keep-awake markers, and git; its only write path is `gh issue create`. Reference: `tower/README.md`.
+
 ## Participation is a tri-state
 
 A repo's committed `.workkit/settings.json` (`{ "version": 1, "enabled": true }`) is the project's yes; `"enabled": false` is its deliberate no; per-developer declines live in `~/.workkit/settings.json`. A repo with no answer hears one offer per session and is never written to. Everything else under `.workkit/` is gitignored session state.
 
 ## Tests
 
-`npm test` runs `tests/run.js`, which discovers every `tests/**/*.test.js`. A suite whose precondition this machine cannot meet calls `skipSuite()` and the runner names the skip rather than hiding it. Suites live under `tests/hooks/` and `tests/scripts/`.
+`npm test` runs `tests/run.js`, which discovers every `tests/**/*.test.js`. A suite whose precondition this machine cannot meet calls `skipSuite()` and the runner names the skip rather than hiding it. Suites live under `tests/hooks/`, `tests/scripts/`, and `tests/tower/`.
 
 ## Conventions
 

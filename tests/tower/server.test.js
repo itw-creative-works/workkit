@@ -1,0 +1,541 @@
+//
+// Tests for tower/server.js — the endpoints, the caches, the one write path.
+//
+// The WHOLE server runs here, on port 0, against fixtures: a scratch
+// Repositories root of real git repos, a scratch marker directory and
+// statusline cache, and one fake exec standing in for `gh` and `ps` (`git` is
+// answered for real, because roster discovery and health both ask git
+// questions no stub could answer honestly).
+//
+// The intake endpoint is exercised for its ARGV, never for its effect: the fake
+// exec records the exact argument vector and returns what `gh issue create`
+// prints. Nothing in this file can file an issue anywhere.
+//
+
+const fs = require('fs');
+const os = require('os');
+const http = require('http');
+const path = require('path');
+const { execFileSync } = require('child_process');
+const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+
+const {
+  createServer, DEFAULT_BIND, DEFAULT_PORT, MAX_REQUEST_BYTES,
+} = require(path.join(__dirname, '..', '..', 'tower', 'server.js'));
+
+const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-server-'));
+const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
+
+const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+
+const SLUG = 'ITW-Creative-Works/fixture';
+
+const issueNode = (number, labels) => ({
+  number,
+  title: `issue ${number}`,
+  url: `https://github.com/${SLUG}/issues/${number}`,
+  updatedAt: '2026-07-27T00:00:00Z',
+  labels: { nodes: labels.map((name) => ({ name })) },
+  assignees: { nodes: [] },
+});
+
+/**
+ * A scratch world: one opted-in git repo with an origin, one live keep-awake
+ * marker with its transcript, a statusline cache entry, and the exec seam that
+ * answers gh and ps while passing git through to the real binary.
+ */
+const mkWorld = () => {
+  const root = mkTmp();
+  const repo = path.join(root, 'repos', 'Owner', 'fixture');
+  fs.mkdirSync(repo, { recursive: true });
+  git(repo, 'init', '-q', '-b', 'main');
+  git(repo, 'config', 'user.email', 'test@example.com');
+  git(repo, 'config', 'user.name', 'Test');
+  git(repo, 'remote', 'add', 'origin', `git@github.com:${SLUG}.git`);
+  fs.mkdirSync(path.join(repo, '.workkit'), { recursive: true });
+  fs.writeFileSync(path.join(repo, '.workkit', 'settings.json'), JSON.stringify({ version: 7, enabled: true }));
+  fs.writeFileSync(path.join(repo, 'CHANGELOG.md'), '# Changelog\n\n## [Unreleased]\n\n- [#1](u) — One thing.\n');
+  git(repo, 'add', '-A');
+  git(repo, 'commit', '-qm', 'initial');
+
+  const markerDir = path.join(root, 'claude-keep-awake');
+  const stateDir = path.join(root, 'claude-session-state');
+  const home = path.join(root, 'home');
+  fs.mkdirSync(markerDir, { recursive: true });
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(path.join(markerDir, '5001'), 'caffeinate=6001\ncwd=/x/fixture\nsession=sess-1\n');
+  const transcript = path.join(home, '.claude', 'projects', '-x-fixture', 'sess-1.jsonl');
+  fs.mkdirSync(path.dirname(transcript), { recursive: true });
+  fs.writeFileSync(transcript, '{"customTitle":"The tower build"}\n');
+  fs.writeFileSync(path.join(stateDir, 'sess_1.json'), JSON.stringify({
+    model: { id: 'claude-opus-5' },
+    effort: { level: 'high' },
+  }));
+
+  const world = {
+    root,
+    repo,
+    markerDir,
+    stateDir,
+    home,
+    calls: [],
+    // What `gh api graphql` answers. Replaceable per test.
+    board: {
+      data: { r0: { issues: { totalCount: 2, nodes: [issueNode(17, ['status:specced', 'agent:ok']), issueNode(18, ['status:blocked', 'priority:high'])] } } },
+    },
+    // What `gh issue create` does. Either a string to print or an Error to throw.
+    createResult: `https://github.com/${SLUG}/issues/99\n`,
+    // Flip to make the `gh --version` probe fail, as an unprovisioned machine does.
+    ghMissing: false,
+  };
+
+  world.exec = (cmd, args) => {
+    world.calls.push([cmd, ...args]);
+    if (cmd === 'git') return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    if (cmd === 'ps') return 'caffeinate -d -i -w 5001\n';
+    if (cmd === 'gh' && args[0] === '--version') {
+      if (world.ghMissing) throw new Error('spawnSync gh ENOENT');
+      return 'gh version 2.0.0\n';
+    }
+    if (cmd === 'gh' && args[0] === 'api') return JSON.stringify(world.board);
+    if (cmd === 'gh' && args[0] === 'issue') {
+      if (world.createResult instanceof Error) throw world.createResult;
+      return world.createResult;
+    }
+    throw new Error(`unexpected exec: ${cmd} ${args.join(' ')}`);
+  };
+  return world;
+};
+
+/** Listen on port 0 and hand back a client bound to whatever port that was. */
+const listen = (server) => new Promise((resolve) => {
+  server.listen(0, '127.0.0.1', () => {
+    const { address, port } = server.address();
+    resolve({
+      server,
+      address,
+      port,
+      url: (p) => `http://127.0.0.1:${port}${p}`,
+      stop: () => new Promise((done) => server.close(done)),
+    });
+  });
+});
+
+/** The server options for a world — a live object, so a test may mutate it. */
+const worldOpts = (world, opts = {}) => ({
+  root: path.join(world.root, 'repos'),
+  workflowHome: path.join(world.root, 'workflow-home'),
+  markerDir: world.markerDir,
+  stateDir: world.stateDir,
+  home: world.home,
+  exec: world.exec,
+  ...opts,
+});
+
+/** Start the server on port 0 against a world; returns a client bound to it. */
+const start = (world, opts = {}) => listen(createServer(worldOpts(world, opts)));
+
+const getJson = async (client, p) => {
+  const res = await fetch(client.url(p));
+  return { status: res.status, body: await res.json() };
+};
+
+const postJson = async (client, p, payload) => {
+  const res = await fetch(client.url(p), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return { status: res.status, body: await res.json() };
+};
+
+/**
+ * A request built by hand. `fetch` will not let a caller set Host, and Host is
+ * exactly what the allowlist judges — so the header cases speak http directly.
+ */
+const raw = (client, { method = 'GET', path: p = '/', headers = {}, body = null } = {}) => new Promise((resolve, reject) => {
+  const req = http.request({ host: '127.0.0.1', port: client.port, method, path: p, headers }, (res) => {
+    let text = '';
+    res.setEncoding('utf8');
+    res.on('data', (chunk) => { text += chunk; });
+    res.on('end', () => resolve({ status: res.statusCode, text }));
+  });
+  // An over-cap POST is answered mid-upload and the connection then closed, so
+  // the write end may error AFTER the response arrived. The promise is already
+  // settled by then; a late rejection is a no-op.
+  req.on('error', reject);
+  if (body !== null) req.write(body);
+  req.end();
+});
+
+const ghCalls = (world, verb) => world.calls.filter((c) => c[0] === 'gh' && c[1] === verb);
+
+const run = async () => {
+  group('tower/server: the read endpoints');
+
+  await test('/api/repos serves the discovered roster', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { status, body } = await getJson(c, '/api/repos');
+    assertEq(status, 200, 'ok');
+    assertEq(body.length, 1, 'one repo in the fixture root');
+    assertEq(body[0].slug, SLUG, 'with its origin slug');
+    assertEq(body[0].path, w.repo, 'and its path');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('/api/board serves the sweep, normalized', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { status, body } = await getJson(c, '/api/board');
+    assertEq(status, 200, 'ok');
+    assertEq(body.ok, true, 'the sweep succeeded');
+    assertEq(body.issues.length, 2, 'both issues');
+    assertEq(body.issues[0].status, 'specced', 'labels parsed');
+    assertEq(body.issues[0].agentOk, true, 'the runway badge');
+    assertEq(body.issues[1].priority, 'high', 'priority parsed');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('/api/sessions serves the live crew', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { status, body } = await getJson(c, '/api/sessions');
+    assertEq(status, 200, 'ok');
+    assertEq(body.length, 1, 'one marker');
+    assertEq(body[0].claudePid, 5001, 'the pid from the marker name');
+    assertEq(body[0].chatName, 'The tower build', 'the transcript title');
+    assertEq(body[0].state, 'working', 'fresh transcript, live assertion');
+    assertEq(body[0].model, 'claude-opus-5', 'from the statusline cache');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('/api/health is keyed by repo path and carries the CHANGELOG count', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { status, body } = await getJson(c, '/api/health');
+    assertEq(status, 200, 'ok');
+    assertEq(Object.keys(body).length, 1, 'one tile');
+    const health = body[w.repo];
+    assertEq(health.unreleasedEntries, 1, 'one [Unreleased] bullet');
+    assertEq(health.uncommitted, 0, 'a clean fixture');
+    assertEq(health.unpushed, null, 'no upstream is null, not zero');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  group('tower/server: caching');
+
+  await test('two board reads inside the TTL make ONE graphql call', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    await getJson(c, '/api/board');
+    await getJson(c, '/api/board');
+    assertEq(ghCalls(w, 'api').length, 1, 'the second read was served from memory');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('the roster cache means the board and health share one disk walk', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    await getJson(c, '/api/repos');
+    await getJson(c, '/api/board');
+    await getJson(c, '/api/health');
+    const remotes = w.calls.filter((c2) => c2[0] === 'git' && c2.includes('get-url'));
+    assertEq(remotes.length, 1, 'discovery ran once for all three endpoints');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a failed sweep is NOT cached — the next read inside the TTL tries again', async () => {
+    const w = mkWorld();
+    w.ghMissing = true;
+    const c = await start(w);
+    const first = await getJson(c, '/api/board');
+    assertEq(first.body.ok, false, 'the failure is served');
+    w.ghMissing = false;
+    const second = await getJson(c, '/api/board');
+    assertEq(second.body.ok, true, 'the recovery is immediate, not a minute away');
+    assertEq(second.body.issues.length, 2, 'and it carries the real data');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a failed roster walk is not cached either, and still serves [] meanwhile', async () => {
+    const w = mkWorld();
+    // A root that is not a path makes discovery throw — the "walk failed" case,
+    // which must not take the cache slot the way a genuinely empty roster does.
+    const opts = worldOpts(w, { root: 42 });
+    const c = await listen(createServer(opts));
+    const broken = await getJson(c, '/api/repos');
+    assertEq(broken.status, 200, 'the client is never handed an error page');
+    assertEq(broken.body.length, 0, 'an empty roster is what it sees');
+    opts.root = path.join(w.root, 'repos');
+    const fixed = await getJson(c, '/api/repos');
+    assertEq(fixed.body.length, 1, 'the repaired walk is read at once');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('an empty roster IS cached — nothing found is an answer', async () => {
+    const w = mkWorld();
+    const c = await start(w, { root: path.join(w.root, 'empty') });
+    fs.mkdirSync(path.join(w.root, 'empty'), { recursive: true });
+    await getJson(c, '/api/repos');
+    const before = w.calls.length;
+    await getJson(c, '/api/repos');
+    assertEq(w.calls.length, before, 'the second read walked nothing');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('?fresh=1 bypasses and repopulates the cache — the refresh button works', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    await getJson(c, '/api/board');
+    await getJson(c, '/api/board');
+    assertEq(ghCalls(w, 'api').length, 1, 'cached so far');
+    await getJson(c, '/api/board?fresh=1');
+    assertEq(ghCalls(w, 'api').length, 2, 'the forced read went out');
+    await getJson(c, '/api/board');
+    assertEq(ghCalls(w, 'api').length, 2, 'and it repopulated the slot');
+
+    const walks = () => w.calls.filter((call) => call[0] === 'git' && call.includes('get-url')).length;
+    const before = walks();
+    await getJson(c, '/api/repos?fresh=1');
+    assertEq(walks(), before + 1, 'the roster takes the same flag');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  group('tower/server: intake, the only write path');
+
+  await test('a valid filing calls gh with exactly the expected ARGV and returns the url', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { status, body } = await postJson(c, '/api/intake', { repo: SLUG, title: '  Watch the tower  ', body: 'From the phone.' });
+    assertEq(status, 200, 'ok');
+    assertEq(body.ok, true, 'filed');
+    assertEq(body.url, `https://github.com/${SLUG}/issues/99`, 'the url gh printed');
+    const [call] = ghCalls(w, 'issue');
+    assertEq(call.join(' '),
+      `gh issue create --repo ${SLUG} --title Watch the tower --body From the phone. --label status:inbox --label type:idea`,
+      'ARGV, not a shell string — title trimmed, both labels present');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('an omitted body files the default text', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    await postJson(c, '/api/intake', { repo: SLUG, title: 'No body' });
+    const [call] = ghCalls(w, 'issue');
+    assertEq(call[call.indexOf('--body') + 1], 'Filed from the tower.', 'the default body');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a repo outside the roster is rejected without ever calling gh', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { status, body } = await postJson(c, '/api/intake', { repo: 'someone/else', title: 'Nope' });
+    assertEq(status, 400, 'rejected');
+    assertEq(body.ok, false, 'not filed');
+    assert(/unknown repo/.test(body.reason), 'the reason names it');
+    assertEq(ghCalls(w, 'issue').length, 0, 'gh never ran against an arbitrary string');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('an empty title and an over-long one are both rejected, gh untouched', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const empty = await postJson(c, '/api/intake', { repo: SLUG, title: '   ' });
+    assertEq(empty.body.ok, false, 'empty title out');
+    assert(/title is required/.test(empty.body.reason), 'says why');
+    const long = await postJson(c, '/api/intake', { repo: SLUG, title: 'x'.repeat(257) });
+    assertEq(long.body.ok, false, '257 characters out');
+    assert(/longer than 256/.test(long.body.reason), 'names the cap');
+    const big = await postJson(c, '/api/intake', { repo: SLUG, title: 'fine', body: 'y'.repeat(4001) });
+    assertEq(big.body.ok, false, 'an over-long body out');
+    assert(/longer than 4000/.test(big.body.reason), 'names that cap too');
+    assertEq(ghCalls(w, 'issue').length, 0, 'no filing attempted');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a gh failure is a soft-fail body, never a 500', async () => {
+    const w = mkWorld();
+    const err = new Error('Command failed: gh issue create');
+    err.stderr = 'gh: To get started with GitHub CLI, please run: gh auth login\n';
+    w.createResult = err;
+    const c = await start(w);
+    const { status, body } = await postJson(c, '/api/intake', { repo: SLUG, title: 'Offline' });
+    assertEq(status, 200, 'the tower stays up');
+    assertEq(body.ok, false, 'not filed');
+    assert(/gh auth login/.test(body.reason), 'the underlying message survives');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('gh output carrying no url reads as a failure, not a success', async () => {
+    const w = mkWorld();
+    w.createResult = 'Creating issue in ...\n';
+    const c = await start(w);
+    const { body } = await postJson(c, '/api/intake', { repo: SLUG, title: 'Silent' });
+    assertEq(body.ok, false, 'no url, no claim of success');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('an over-cap body gets its answer before the connection closes', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const body = JSON.stringify({ repo: SLUG, title: 'huge', body: 'z'.repeat(MAX_REQUEST_BYTES + 1024) });
+    const res = await raw(c, {
+      method: 'POST',
+      path: '/api/intake',
+      headers: { host: `127.0.0.1:${c.port}`, 'content-type': 'application/json' },
+      body,
+    });
+    assertEq(res.status, 413, 'the client is TOLD, not just disconnected');
+    assert(/larger than/.test(res.text), 'and told why');
+    assertEq(ghCalls(w, 'issue').length, 0, 'nothing was filed');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  group('tower/server: who may reach the tower');
+
+  await test('a Host the tower does not answer to is 403, on a plain read', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const res = await raw(c, { path: '/api/repos', headers: { host: 'evil.example.com' } });
+    assertEq(res.status, 403, 'a page that resolved its own name here gets nothing');
+    assert(/host not allowed/.test(res.text), 'the reason names it');
+    const ok = await raw(c, { path: '/api/repos', headers: { host: `localhost:${c.port}` } });
+    assertEq(ok.status, 200, 'localhost is on the list, port and all');
+    // The IPv6 loopback arrives bracketed — the allowlist must survive its own
+    // URL-parse normalization (a bare ::1 in the constant silently drops out).
+    const six = await raw(c, { path: '/api/repos', headers: { host: `[::1]:${c.port}` } });
+    assertEq(six.status, 200, 'the IPv6 loopback is local too');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a tailnet hostname passes once it is in the allowlist, by opt or by env', async () => {
+    const w = mkWorld();
+    const c = await start(w, { allowHosts: ['tower.tailnet.ts.net'] });
+    const res = await raw(c, { path: '/api/repos', headers: { host: 'tower.tailnet.ts.net' } });
+    assertEq(res.status, 200, 'tailscale serve fronts the tower under its own name');
+    await c.stop();
+
+    const before = process.env.TOWER_ALLOW_HOST;
+    try {
+      process.env.TOWER_ALLOW_HOST = 'mac.tailnet.ts.net, other.example';
+      const env = await start(w);
+      const viaEnv = await raw(env, { path: '/api/repos', headers: { host: 'mac.tailnet.ts.net' } });
+      assertEq(viaEnv.status, 200, 'TOWER_ALLOW_HOST is the deployment knob');
+      const off = await raw(env, { path: '/api/repos', headers: { host: 'nope.example' } });
+      assertEq(off.status, 403, 'and it extends the list rather than opening it');
+      await env.stop();
+    } finally {
+      if (before === undefined) delete process.env.TOWER_ALLOW_HOST;
+      else process.env.TOWER_ALLOW_HOST = before;
+    }
+    cleanup(w.root);
+  });
+
+  await test('the write path rejects an off-list Origin without calling gh', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const res = await raw(c, {
+      method: 'POST',
+      path: '/api/intake',
+      headers: { host: `127.0.0.1:${c.port}`, origin: 'https://evil.example.com', 'content-type': 'application/json' },
+      body: JSON.stringify({ repo: SLUG, title: 'Cross-site' }),
+    });
+    assertEq(res.status, 403, 'refused');
+    assert(/origin not allowed/.test(res.text), 'the reason names it');
+    assertEq(ghCalls(w, 'issue').length, 0, 'gh never ran');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('the page’s own Origin passes, and an absent Origin passes too', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const same = await raw(c, {
+      method: 'POST',
+      path: '/api/intake',
+      headers: { host: `127.0.0.1:${c.port}`, origin: `http://127.0.0.1:${c.port}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ repo: SLUG, title: 'From the page' }),
+    });
+    assertEq(same.status, 200, 'a browser sends Origin on a same-origin POST');
+    assert(/"ok":true/.test(same.text), 'filed');
+
+    const curl = await raw(c, {
+      method: 'POST',
+      path: '/api/intake',
+      headers: { host: `127.0.0.1:${c.port}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ repo: SLUG, title: 'From curl' }),
+    });
+    assertEq(curl.status, 200, 'no Origin at all is a non-browser client');
+    assertEq(ghCalls(w, 'issue').length, 2, 'both filings went through');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  group('tower/server: the page and the edges');
+
+  await test('GET / serves the page as text/html with all four panes', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const res = await fetch(c.url('/'));
+    assertEq(res.status, 200, 'ok');
+    assert(/text\/html/.test(res.headers.get('content-type')), 'content type');
+    const html = await res.text();
+    for (const id of ['pane-board', 'pane-crew', 'pane-health', 'pane-intake']) {
+      assert(html.includes(`id="${id}"`), `${id} is in the page`);
+    }
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('an unknown path is a 404 with a JSON reason', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { status, body } = await getJson(c, '/api/nope');
+    assertEq(status, 404, '404');
+    assertEq(body.ok, false, 'the soft shape everywhere');
+    assert(/no such endpoint/.test(body.reason), 'says what was asked for');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('the defaults bind 127.0.0.1 on 8693 — Tailscale is the only way in', () => {
+    assertEq(DEFAULT_BIND, '127.0.0.1', 'localhost only, never 0.0.0.0');
+    assertEq(DEFAULT_PORT, 8693, 'TOWER on a keypad');
+  });
+
+  await test('an unreadable roster root serves an empty roster instead of crashing', async () => {
+    const w = mkWorld();
+    const c = await start(w, { root: path.join(w.root, 'absent') });
+    const repos = await getJson(c, '/api/repos');
+    assertEq(repos.body.length, 0, 'empty');
+    const health = await getJson(c, '/api/health');
+    assertEq(Object.keys(health.body).length, 0, 'no tiles, no error page');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  return summary();
+};
+
+module.exports = run;
+
+if (require.main === module) selfRun(run);

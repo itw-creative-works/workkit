@@ -9,6 +9,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ### Added
 
+- [#17](../../issues/17) — The tower: a one-page dashboard serving the cross-repo issue board, live Claude sessions, per-repo health tiles, and an intake box that files an inbox issue.
 - (no issue) — Extracted from the dotfiles: the hook groups, class agents, workflow skills, and the engine (dotfiles issue #23).
 
 ### Changed

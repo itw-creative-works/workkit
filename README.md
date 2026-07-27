@@ -93,6 +93,10 @@ The first four are capability classes — the resolver hook gives each spawn its
 
 `workkit:feature` · `workkit:grill` · `workkit:diagnose` · `workkit:review` · `workkit:simplify` · `workkit:triage` · `workkit:whats-next` · `workkit:migrate` · `workkit:ship`. Most load themselves when your message matches their triggers; you can also type them as `/workkit:<name>`.
 
+### Tower — the dashboard
+
+`npm run tower` serves one page on port 8693: the cross-repo issue board (columns by `status:` label, blocked questions surfaced), the live Claude sessions with their state and model, per-repo health tiles (unpushed, uncommitted, unreleased), and an intake box that files a `status:inbox` issue. A view over the system's own data — its only write path is `gh issue create`. Phone access goes through Tailscale. Reference: [`tower/README.md`](tower/README.md).
+
 ### Engine — `workflow/`
 
 Plain shell and Node, no Claude Code knowledge: `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `changelog.js` (the entry-format linter the hooks call), `changelog-links.js` (release-time commit links and contributor handles), and the templates a repo receives when it opts in.
@@ -109,6 +113,7 @@ hooks/            hooks.json + the hook groups, resolved via ${CLAUDE_PLUGIN_ROO
 agents/           the crew (namespaced workkit:<name>)
 skills/           the nine workflow skills (namespaced workkit:<name>)
 workflow/         the agent-agnostic engine
+tower/            the dashboard — server, data libraries, one-page UI
 docs/             project-state.md (the spec) · agents.md (the crew contract)
 tests/            npm test
 ```

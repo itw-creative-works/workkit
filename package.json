@@ -2,6 +2,7 @@
   "name": "workkit",
   "private": true,
   "scripts": {
-    "test": "node tests/run.js"
+    "test": "node tests/run.js",
+    "tower": "node tower/server.js"
   }
 }
