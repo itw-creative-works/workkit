@@ -376,6 +376,74 @@ const run = async () => {
     cleanup(dir);
   });
 
+  group('changelog: --unreleased-only (the CI mode)');
+
+  // A CHANGELOG whose released history is out of format and whose [Unreleased]
+  // section is the part still being written — the shape every repo has while it
+  // is adopting the format.
+  const mixed = (unreleased) => [
+    '# Changelog',
+    '',
+    '## [Unreleased]',
+    '',
+    '### Added',
+    '',
+    unreleased,
+    '',
+    '## [1.0.0] - 2020-01-01',
+    '',
+    '### Added',
+    '',
+    '- A legacy released entry with no link, no separator, and a great many words about nothing in particular.',
+    '',
+  ].join('\n');
+
+  await test('released history never fails the check', () => {
+    const dir = mkTmp();
+    const file = path.join(dir, 'CHANGELOG.md');
+    fs.writeFileSync(file, mixed(`- ${ISSUE} — A clean unreleased entry.`));
+    assertEq(runCli(file, [], dir).code, 1, 'the whole file does violate');
+    assertEq(runCli(file, ['--unreleased-only'], dir).code, 0, 'but published history is not this gate\'s business');
+    cleanup(dir);
+  });
+
+  await test('a violating unreleased entry fails, naming its rule', () => {
+    const dir = mkTmp();
+    const file = path.join(dir, 'CHANGELOG.md');
+    fs.writeFileSync(file, mixed('- An unreleased entry with no issue link.'));
+    const { code, out } = runCli(file, ['--unreleased-only'], dir);
+    assertEq(code, 1, 'exit 1');
+    assert(/line \d+ \[issue-link\]/.test(out), `names line + rule, got: ${out}`);
+    assert(!/great many words/.test(out), 'and reports only the unreleased section');
+    cleanup(dir);
+  });
+
+  await test('a released entry missing its commit link is not judged either', () => {
+    // The rule that only applies to released sections is the one a CI run has
+    // no business enforcing: the links are generated at release time.
+    const dir = mkTmp();
+    const file = path.join(dir, 'CHANGELOG.md');
+    fs.writeFileSync(file, doc('1.0.0] - 2020-01-01', `- ${ISSUE} — Released without its commit link.`));
+    assertEq(runCli(file, [], dir).code, 1, 'the commit-link rule does apply to it');
+    assertEq(runCli(file, ['--unreleased-only'], dir).code, 0, 'but not in the CI mode');
+    cleanup(dir);
+  });
+
+  await test('a file with no [Unreleased] section passes', () => {
+    const dir = mkTmp();
+    const file = path.join(dir, 'CHANGELOG.md');
+    fs.writeFileSync(file, doc('1.0.0] - 2020-01-01', '- An old entry with nothing right about it.'));
+    assertEq(runCli(file, ['--unreleased-only'], dir).code, 0, 'nothing to judge');
+    cleanup(dir);
+  });
+
+  await test('lintText filters by section, and composes with the added-lines filter', () => {
+    const text = mixed('- An unreleased entry with no issue link.');
+    assertEq(lintText(text).length > 1, true, 'both sections violate');
+    assertEq(rules(lintText(text, null, true)).join(','), 'issue-link,separator', 'only the unreleased entry');
+    assertEq(lintText(text, new Set([1]), true).length, 0, 'a line filter that matches nothing wins too');
+  });
+
   return summary();
 };
 

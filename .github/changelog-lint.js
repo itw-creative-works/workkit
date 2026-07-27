@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Vendored from the workflow core's changelog.js by standards.sh — the kit is the SSOT; edit it there. This copy is resynced on every heal.
 /* eslint-disable no-console */
 //
 // CHANGELOG entry format — the single home for the rules (SSOT).

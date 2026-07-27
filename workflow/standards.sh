@@ -22,6 +22,11 @@
 #                  CI workflow that runs the test suite on every pull request.
 #                  Installed once and never overwritten: after the first heal
 #                  the copy is the repo's own to extend.
+#   4a. changelog lint — vendor changelog.js to .github/changelog-lint.js,
+#                  byte-synced on every run so the kit stays the SSOT, and add
+#                  the `changelog` job to the repo's checks.yml once. The
+#                  format gate then holds for a maintainer with no plugin
+#                  installed, which is the only enforcement point CI has.
 #   5. protection — best-effort: ask GitHub to require the test check on the
 #                  default branch. Quietly skipped wherever the plan or the
 #                  token cannot grant it; an existing protection is never
@@ -67,7 +72,7 @@ WORKKIT_LEGACY_DIR=".workflow"
 # is one integer compare instead of a scan. Bump it when a new heal or a new
 # drift check lands; a repo already at the current version does exactly what it
 # did before.
-STANDARD_VERSION=5
+STANDARD_VERSION=6
 
 # ── Logging (mirrors setup/lib/helpers.sh; standalone so the script travels) ──
 _G='\033[0;32m' _Y='\033[0;33m' _C='\033[0;36m' _D='\033[0;90m' _N='\033[0m'
@@ -234,11 +239,11 @@ report_drift() {
 
   for f in PROGRESS.md INBOX.md TODO.md; do
     [[ -f "$root/$f" ]] || continue
-    log_warn "standards: $f is retired by spec v3 — its contents are work items; run the workkit:migrate skill to file them as issues, then delete it"
+    log_warn "standards: $f is retired by spec v4 — its contents are work items; run the workkit:migrate skill to file them as issues, then delete it"
     found=1
   done
   if [[ -d "$root/plans" ]]; then
-    log_warn "standards: plans/ is retired by spec v3 — a plan is the '## Spec' section of its issue; run the workkit:migrate skill to move each one, then delete the directory"
+    log_warn "standards: plans/ is retired by spec v4 — a plan is the '## Spec' section of its issue; run the workkit:migrate skill to move each one, then delete the directory"
     found=1
   fi
 
@@ -554,6 +559,105 @@ ensure_ci_workflow() {
   log_ok "checks: created $dest — commit it so it runs on every pull request"
 }
 
+# ── 2b-i. The CHANGELOG linter, vendored ──
+# The entry-format gates (the docs/changelog-guard and safety/commit-gate
+# hooks) run only on a machine carrying the plugin, so a maintainer with an
+# editor and a GitHub account meets no gate at all. CI is the enforcement point
+# every author passes through, and a runner has no kit checkout — so the repo
+# gets a copy of the linter it can run from its own tree.
+#
+# The kit stays the SSOT: the copy is rewritten whenever it differs from what
+# this engine would produce, so an edit to the copy is undone on the next heal
+# and the header says so. The comparison is over BYTES, which makes the step
+# idempotent — a current copy is left untouched and nothing is reported.
+CHANGELOG_LINT_DEST=".github/changelog-lint.js"
+CHANGELOG_LINT_HEADER="// Vendored from the workflow core's changelog.js by standards.sh — the kit is the SSOT; edit it there. This copy is resynced on every heal."
+
+# The header goes on line 2, after the shebang, so the file stays runnable.
+render_changelog_linter() {
+  head -n 1 "$CHANGELOG_LINTER"
+  printf '%s\n' "$CHANGELOG_LINT_HEADER"
+  tail -n +2 "$CHANGELOG_LINTER"
+}
+
+ensure_changelog_linter() {
+  local dest="$CHANGELOG_LINT_DEST" tmp verb="created"
+
+  if [[ ! -f "$CHANGELOG_LINTER" ]]; then
+    log_warn "changelog lint: source missing at $CHANGELOG_LINTER — reinstall the workflow core"
+    needs_attention=1
+    return 0
+  fi
+
+  mkdir -p .github
+  tmp="$dest.tmp.$$"
+  if ! render_changelog_linter >"$tmp" 2>/dev/null || [[ ! -s "$tmp" ]]; then
+    rm -f "$tmp"
+    log_warn "changelog lint: could not build $dest from $CHANGELOG_LINTER"
+    needs_attention=1
+    return 0
+  fi
+
+  if [[ -f "$dest" ]]; then
+    if cmp -s "$tmp" "$dest"; then
+      rm -f "$tmp"
+      log_skip "changelog lint: $dest already matches the workflow core"
+      return 0
+    fi
+    verb="resynced"
+  fi
+
+  if ! mv "$tmp" "$dest"; then
+    rm -f "$tmp"
+    log_warn "changelog lint: could not write $dest"
+    needs_attention=1
+    return 0
+  fi
+  log_ok "changelog lint: $verb $dest from the workflow core — commit it"
+}
+
+# ── 2b-ii. The changelog job in the repo's checks.yml ──
+# checks.yml is installed once and then belongs to the repo, so this adds ONE
+# job to it rather than overwriting the file: a repo healed before this standard
+# would otherwise never get the check, and a repo that extended its workflow
+# would lose the extension. Idempotent by presence — the job is added when it is
+# not there, and looked for by name every run after.
+#
+# The job's text has one home, the template, so the two can never drift.
+# Appending is only correct while `jobs:` is the last top-level block; anything
+# else is a layout this script cannot reason about, so it says what to add and
+# leaves the file alone.
+ensure_changelog_job() {
+  local dest=".github/workflows/checks.yml" src="$TEMPLATES_DIR/github-workflows/checks.yml" block last
+
+  [[ -f "$dest" ]] || return 0
+  if grep -qE '^  changelog:' "$dest"; then
+    log_skip "checks: the changelog job is already in $dest"
+    return 0
+  fi
+  # A missing template was already reported by the install step above.
+  [[ -f "$src" ]] || return 0
+
+  block="$(awk '/^  changelog:/ { f = 1 } f && /^  [A-Za-z_-]+:/ && !/^  changelog:/ { exit } f' "$src")"
+  if [[ -z "$block" ]]; then
+    log_warn "checks: the template at $src defines no changelog job — reinstall the workflow core"
+    needs_attention=1
+    return 0
+  fi
+
+  last="$(grep -E '^[A-Za-z_-]+:' "$dest" | tail -n 1)"
+  if [[ "$last" != "jobs:" ]]; then
+    log_skip "checks: $dest does not end in its jobs: block — add a changelog job running 'node $CHANGELOG_LINT_DEST CHANGELOG.md --unreleased-only' by hand"
+    return 0
+  fi
+
+  if [[ -n "$(tail -c 1 "$dest")" ]]; then
+    printf '\n' >>"$dest"
+  fi
+  printf '%s\n' "$block" >>"$dest"
+  log_ok "checks: added the changelog job to $dest — commit it"
+}
+
 # ── 2c. Branch protection (best effort, never a failure) ──
 # Asks GitHub to require the `test` check before merging into the default
 # branch. ADVISORY by design: it needs admin on the repo, and GitHub only
@@ -840,6 +944,8 @@ ensure_local_file inbox.md
 ensure_local_file session.md
 ensure_issue_forms
 ensure_ci_workflow
+ensure_changelog_linter
+ensure_changelog_job
 ensure_branch_protection
 sync_labels
 migrate_labels

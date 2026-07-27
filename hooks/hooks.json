@@ -65,6 +65,15 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh workflow:standards"
           }
         ]
+      },
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh workflow:reload-guard"
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
@@ -73,6 +82,10 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh manager:profile"
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh workflow:reload-guard"
           }
         ]
       }

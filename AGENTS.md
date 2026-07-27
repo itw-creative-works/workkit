@@ -43,8 +43,9 @@ Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh`
 
 | Hook | Event | What it does |
 |---|---|---|
-| `workflow/standards` | SessionStart | Brings an enabled repo to the standard once per repo per day — labels from `labels.json`, issue templates, the required-checks CI workflow, best-effort branch protection, `.workkit/` seeded and gitignored — and reports only what it fixed. An undecided repo hears one offer and is never written to |
+| `workflow/standards` | SessionStart | Brings an enabled repo to the standard once per repo per day — labels from `labels.json`, issue templates, the required-checks CI workflow plus its `changelog` job and the vendored `.github/changelog-lint.js`, best-effort branch protection, `.workkit/` seeded and gitignored — and reports only what it fixed. An undecided repo hears one offer and is never written to |
 | `docs/state-check` | SessionStart | Announces open `status:inbox` issues, a non-empty `.workkit/inbox.md`, broken pointer files, an oversized AGENTS.md |
+| `workflow/reload-guard` | SessionStart + UserPromptSubmit | Stamps the load-time surfaces (`hooks.json` content, the `agents/` and `skills/` file list and mtimes) at session start and injects one line when they change — hook-script, skill-body, and engine edits are already live, so only these need `/reload-plugins`. Each change nags once |
 | `manager/resolver` | PreToolUse (Task/Agent) | Supplies each crew spawn's model from `manager/ladder.json` and the live session model |
 | `manager/profile` | UserPromptSubmit | Injects the manager standing instruction — delegate to the crew — in frontier/workhorse sessions only |
 | `safety/vendor-guard` | PreToolUse (Edit/Write) | Blocks edits to generated, vendored, and gitignored files (`_attic/`, `.workkit/`, `.env*` excepted) |

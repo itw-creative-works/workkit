@@ -1,6 +1,6 @@
 //
 // Tests for hooks/docs:board-guard — the PostToolUse hook that enforces the
-// document rules of the project-state spec v3: CLAUDE.md pointer doctrine and
+// document rules of the project-state spec v4: CLAUDE.md pointer doctrine and
 // the AGENTS.md size budget.
 //
 // The hook reads JSON on stdin (tool_input.file_path), validates the written
@@ -54,7 +54,7 @@ const run = async () => {
     for (const name of ['PROGRESS.md', 'BOARD.md']) {
       const p = writeFile(dir, '# whatever\n\n## Random\n- GO 1: anywhere\n', name);
       const { code, stderr } = runHook(p);
-      assertEq(code, 0, `${name} is not a guard surface in v3`);
+      assertEq(code, 0, `${name} is not a guard surface in v4`);
       assertEq(stderr, '', 'no output');
     }
     cleanup(dir);

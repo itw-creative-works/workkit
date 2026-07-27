@@ -2,7 +2,7 @@
 
 **Hook type:** Stop
 
-Keeps the work item true and checks documentation parity when the working tree has uncommitted code/config changes. Implements the three-layer system described in the project-state spec v3 (`docs/project-state.md`).
+Keeps the work item true and checks documentation parity when the working tree has uncommitted code/config changes. Implements the three-layer system described in the project-state spec v4 (`docs/project-state.md`).
 
 ## Two behaviors, one hook
 

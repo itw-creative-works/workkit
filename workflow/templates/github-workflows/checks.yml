@@ -6,10 +6,15 @@
 # own, so repo-specific steps (extra tools, matrix builds) belong here, not in
 # the workflow core's template.
 #
-# The job mirrors what the local safety/commit-gate hook runs: the npm test
-# suite. A repo without a test script passes trivially — the check exists so
-# a pull request from ANY author (cloud agent, collaborator, laptop without
-# the hooks) meets the same bar before merge.
+# The jobs mirror what the local hooks run: the npm test suite
+# (safety/commit-gate) and the CHANGELOG entry format (docs/changelog-guard).
+# A repo without a test script or without a CHANGELOG passes trivially — the
+# checks exist so a pull request from ANY author (cloud agent, collaborator,
+# laptop without the hooks) meets the same bar before merge.
+#
+# The `changelog` job is the only job the heal adds to an EXISTING checks.yml,
+# appended once at the end of `jobs:`. Its linter is the copy of the kit's
+# changelog.js the heal vendors to .github/changelog-lint.js on every run.
 name: checks
 
 on:
@@ -42,4 +47,20 @@ jobs:
             npm test
           else
             echo "no test script — nothing to check"
+          fi
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      # Only the [Unreleased] section: released history is already published,
+      # and a maintainer editing it is not what this gate is for.
+      - name: CHANGELOG entry format
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            node .github/changelog-lint.js CHANGELOG.md --unreleased-only
+          else
+            echo "no CHANGELOG.md — nothing to check"
           fi

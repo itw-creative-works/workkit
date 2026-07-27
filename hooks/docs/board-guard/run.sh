@@ -1,12 +1,12 @@
 #!/bin/bash
 # docs:board-guard — PostToolUse hook (Edit|Write)
-# Enforces the document rules of the project-state spec v3 at write time,
+# Enforces the document rules of the project-state spec v4 at write time,
 # two surfaces:
 #   CLAUDE.md — pointer doctrine: exactly a bare '@AGENTS.md' import, no content.
 #   AGENTS.md — size budget: ≤250 lines; the meat lives in docs/<topic>.md.
 # Violations exit 2 with a precise fix-list so the WRITING agent corrects
 # immediately — prevention at write time, not cleanup later.
-# Board checks retired with the board itself (spec v3): work-item state lives
+# Board checks retired with the board itself (spec v4): work-item state lives
 # in GitHub Issues, where label legality is the standards script's job.
 # Spec checks retired with plans/ — a spec lives in its issue body under a
 # '## Spec' heading, so there is no plan file left to validate.
@@ -59,7 +59,7 @@ fi
 
 if [ -n "$violations" ]; then
   {
-    echo "board-guard: $base violates the document rules of the project-state spec v3 (spec: $SPEC). Fix these NOW, before any other work:"
+    echo "board-guard: $base violates the document rules of the project-state spec v4 (spec: $SPEC). Fix these NOW, before any other work:"
     printf '%s' "$violations"
   } >&2
   exit 2

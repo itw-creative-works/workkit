@@ -70,8 +70,9 @@ Plugins load at startup, so a new (or restarted) session is what puts a change i
 
 | Hook | When | What it does for you |
 |---|---|---|
-| `workflow/standards` | session opens | Brings an opted-in repo to the standard once a day: labels, issue templates, the required-checks CI workflow, branch protection where it can, `.workkit/` seeded and ignored. Reports only what it fixed |
+| `workflow/standards` | session opens | Brings an opted-in repo to the standard once a day: labels, issue templates, the required-checks CI workflow and its CHANGELOG lint, branch protection where it can, `.workkit/` seeded and ignored. Reports only what it fixed |
 | `docs/state-check` | session opens | Tells you about open `status:inbox` issues, unfiled inbox notes, and document anomalies |
+| `workflow/reload-guard` | session opens, then every message | Says once when the kit's agents, skills, or hook wiring changed after your session loaded — the case `/reload-plugins` exists for |
 | `manager/resolver` | before a subagent spawns | Picks that spawn's model from the tier ladder and your live session model |
 | `manager/profile` | every message | Reminds a capable session it is the MANAGER and should delegate |
 | `safety/vendor-guard` | before any edit | Blocks edits to generated, vendored, and gitignored files |

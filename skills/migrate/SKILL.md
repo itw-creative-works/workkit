@@ -1,6 +1,6 @@
 ---
 name: migrate
-description: Bring a repo the rest of the way onto project-state spec v3 — file the contents of retired PROGRESS.md/INBOX.md/TODO.md/plans as issues and delete them, and rewrite CHANGELOG history into the entry format. - Use when the user says "migrate this repo", "bring this repo to the standard", "fix the changelog history", "delete PROGRESS.md", or when the workflow:standards drift report names retired files or CHANGELOG entries out of format.
+description: Bring a repo the rest of the way onto project-state spec v4 — file the contents of retired PROGRESS.md/INBOX.md/TODO.md/plans as issues and delete them, and rewrite CHANGELOG history into the entry format. - Use when the user says "migrate this repo", "bring this repo to the standard", "fix the changelog history", "delete PROGRESS.md", or when the workflow:standards drift report names retired files or CHANGELOG entries out of format.
 user-invocable: true
 argument-hint: [repo path] [files|changelog]
 ---

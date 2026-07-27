@@ -1136,6 +1136,122 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
+  group('standards.sh: the vendored CHANGELOG linter');
+
+  await test('vendors the linter into the repo, headed by the note that the kit owns it', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    const body = readFile(path.join(repo, '.github', 'changelog-lint.js'));
+    assert(body, 'changelog-lint.js created');
+    const lines = body.split('\n');
+    assert(lines[0].startsWith('#!'), 'the shebang stays on line 1');
+    assert(/SSOT/.test(lines[1]) && /resynced on every heal/.test(lines[1]), `line 2 says the kit owns it, got: ${lines[1]}`);
+    assert(body.includes(readFile(path.join(WORKFLOW_DIR, 'changelog.js')).split('\n').slice(1).join('\n')),
+      'the rest is the engine copy, verbatim');
+    assert(output.includes('changelog lint: created'), `reported the vendoring, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('the vendored copy actually runs — it is the engine, not a stub', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    runScript(repo, { pathPrefix: stub.binDir });
+    fs.writeFileSync(path.join(repo, 'CHANGELOG.md'),
+      '# Changelog\n\n## [Unreleased]\n\n- a line with no issue link and no separator\n');
+    const res = spawnSync('node', ['.github/changelog-lint.js', 'CHANGELOG.md', '--unreleased-only'], {
+      cwd: repo, encoding: 'utf8', timeout: 15000,
+    });
+    assertEq(res.status, 1, 'a bad entry fails the check');
+    assert((res.stderr || '').includes('issue-link'), `and names the rule, got: ${res.stderr}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a drifted copy is resynced — the kit stays the SSOT', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    runScript(repo, { pathPrefix: stub.binDir });
+    const dest = path.join(repo, '.github', 'changelog-lint.js');
+    const current = readFile(dest);
+    fs.writeFileSync(dest, '// someone edited the copy\n');
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(readFile(dest), current, 'the edit is undone');
+    assert(output.includes('changelog lint: resynced'), `and the resync is reported, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a current copy is left alone and reported as a skip', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    runScript(repo, { pathPrefix: stub.binDir });
+    const dest = path.join(repo, '.github', 'changelog-lint.js');
+    const before = fs.statSync(dest).mtimeMs;
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(fs.statSync(dest).mtimeMs, before, 'the file is not rewritten');
+    assert(output.includes('changelog lint: .github/changelog-lint.js already matches'), `skip reported, got: ${output}`);
+    assert(!output.includes('changelog lint: resynced'), 'and nothing claims a resync');
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  group('standards.sh: the changelog job in checks.yml');
+
+  await test('a freshly installed checks.yml carries the job', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    const body = readFile(path.join(repo, '.github', 'workflows', 'checks.yml'));
+    assert(/^ {2}changelog:$/m.test(body), `the job is defined, got: ${body}`);
+    assert(body.includes('node .github/changelog-lint.js CHANGELOG.md --unreleased-only'),
+      'and runs the vendored linter over the unreleased section');
+    assert(body.includes('no CHANGELOG.md — nothing to check'), 'a repo without a CHANGELOG passes cleanly');
+    assert(output.includes('changelog job is already in'), `no second append, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a checks.yml healed before this standard gains the job, keeping its own edits', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const owned = 'name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n  test:\n    runs-on: macos-14\n    steps:\n      - run: npm test\n';
+    fs.writeFileSync(file, owned);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    const body = readFile(file);
+    assert(body.startsWith(owned), 'every line the repo owned survives, in place');
+    assert(/^ {2}changelog:$/m.test(body), `the job is appended, got: ${body}`);
+    assert(body.includes('--unreleased-only'), 'with the CI mode');
+    assert(output.includes('checks: added the changelog job'), `reported, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('the job is added once — a second heal appends nothing', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, 'name: checks\n\non:\n  pull_request:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n');
+    runScript(repo, { pathPrefix: stub.binDir });
+    const once = readFile(file);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(readFile(file), once, 'idempotent');
+    assert(output.includes('changelog job is already in'), `seen as present, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a workflow that does not end in its jobs: block is described, never rewritten', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const owned = 'name: checks\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n\nconcurrency:\n  group: checks\n';
+    fs.writeFileSync(file, owned);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(readFile(file), owned, 'a layout the script cannot reason about is left exactly as found');
+    assert(output.includes('does not end in its jobs: block'), `says so, got: ${output}`);
+    assert(output.includes('--unreleased-only'), 'and names the command to add by hand');
+    cleanup(repo); cleanup(stub.dir);
+  });
+
   group('standards.sh: branch protection');
 
   await test('asks GitHub to require the test check when none is set', () => {
@@ -1797,11 +1913,10 @@ const driftRun = async () => {
 
   await test('no jq — the version is not stamped and the run says why, instead of re-reporting silently forever', () => {
     const dir = makeRepo();
-    const binDir = mkTmp();
-    for (const tool of ['git', 'grep', 'tail', 'head', 'cp', 'mkdir', 'tr', 'cat', 'dirname', 'basename']) {
-      const real = spawnSync('command', ['-v', tool], { shell: '/bin/bash', encoding: 'utf8' }).stdout.trim();
-      fs.symlinkSync(real, path.join(binDir, tool));
-    }
+    // Every tool but jq — a hand-listed set falls behind the script as it grows
+    // and then dies of a missing utility while claiming to prove something
+    // about the excluded one.
+    const binDir = binDirWithout('jq');
     const res = spawnSync('/bin/bash', [SCRIPT, dir], {
       env: { PATH: binDir, WORKFLOW_HOME: path.join(binDir, 'wh') }, encoding: 'utf8', timeout: 20000,
     });

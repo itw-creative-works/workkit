@@ -5,16 +5,18 @@ The agent-agnostic core of the issue workflow. It knows nothing about Claude Cod
 | File | What it is |
 |---|---|
 | `labels.json` | Machine SSOT for the label vocabulary — every label is `group:value`, with its description and color |
-| `standards.sh` | Brings a repo to the standard, idempotently: creates the labels from `labels.json` (and corrects description/color drift), installs the issue templates and the required-checks CI workflow, asks for branch protection on the test check (best effort), moves a repo's old `.workflow/` to `.workkit/` once, keeps `.workkit/` in `.gitignore`, seeds `.workkit/inbox.md` and `.workkit/session.md`, and reports leftovers from a retired convention |
+| `standards.sh` | Brings a repo to the standard, idempotently: creates the labels from `labels.json` (and corrects description/color drift), installs the issue templates and the required-checks CI workflow, vendors `changelog.js` to the repo's `.github/changelog-lint.js` and adds the `changelog` job to its `checks.yml`, asks for branch protection on the test check (best effort), moves a repo's old `.workflow/` to `.workkit/` once, keeps `.workkit/` in `.gitignore`, seeds `.workkit/inbox.md` and `.workkit/session.md`, and reports leftovers from a retired convention |
 | `templates/issue-forms/` | The markdown GitHub issue templates (bug · enhancement · idea · dump) installed into a repo's `.github/ISSUE_TEMPLATE/`. Each pre-fills the issue anatomy (`## Description` then `## Spec`) and auto-applies `status:inbox` + its `type:` label |
-| `templates/github-workflows/` | `checks.yml`, the CI workflow installed into a repo's `.github/workflows/` — runs the test suite on every pull request. Installed once; the repo's copy is its own to extend and is never overwritten |
+| `templates/github-workflows/` | `checks.yml`, the CI workflow installed into a repo's `.github/workflows/` — the `test` job runs the suite on every pull request, the `changelog` job holds the `[Unreleased]` section to the entry format. Installed once; the repo's copy is its own to extend and is never overwritten, except that the `changelog` job is appended once to a workflow healed before it existed |
 | `templates/inbox.md` · `templates/session.md` | The two gitignored working files seeded into a participating repo's `.workkit/`. A file that already has content is never overwritten |
-| `changelog.js` | Machine SSOT for the CHANGELOG entry rules, and the CLI both guarding hooks call: `node changelog.js <file> [--added-only] [--staged]` |
+| `changelog.js` | Machine SSOT for the CHANGELOG entry rules, and the CLI both guarding hooks call: `node changelog.js <file> [--added-only] [--staged] [--unreleased-only]` |
 | `changelog-links.js` | Release-time backfill of each entry's commit link and contributor handle: `node changelog-links.js [--file X] [--range A..B] [--dry-run]` |
 
 ## The CHANGELOG entry format
 
 An entry is one short paragraph pointing at the depth, never a second copy of the commit body. Written during ordinary work as `- [#4](../../issues/4) — What changed.`; the commit link and `Thanks [@who]!` are filled in at release time by `changelog-links.js`, which matches entries to commits through the `Fixes #N` trailer they already carry. The rules and the reasoning live in [`docs/project-state.md`](../docs/project-state.md) → "CHANGELOG entries"; `changelog.js` is where they are executable.
+
+The two guarding hooks run only where the plugin is installed, so the format is also checked in CI, which every author passes through. The heal vendors `changelog.js` to each participating repo's `.github/changelog-lint.js` — headed by a line saying the kit owns it, byte-synced on every run, so an edit to the copy is undone next heal — and the `changelog` job runs it as `--unreleased-only`. Released history is already published and is never judged there; a repo with no `CHANGELOG.md` passes cleanly.
 
 ## The standard version
 

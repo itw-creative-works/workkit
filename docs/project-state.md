@@ -1,8 +1,8 @@
-# Project State Spec (v3) — issues · workflow · attic · HQ
+# Project State Spec (v4) — issues · workflow · attic · HQ
 
 > The ONE definition of how project state is captured, tracked, and cleaned across every repo.
 > Provider-agnostic: GitHub Issues + plain markdown + JSON + git. Agents of any provider implement it; Claude adapters = the `workkit:triage`, `workkit:whats-next`, `workkit:ship`, `workkit:migrate` skills + the `workflow:standards`, `docs:state-check`, `docs:change-tracker`, `docs:board-guard`, `docs:changelog-guard` hooks.
-> **v3 is the only format. No backwards compat.** `PROGRESS.md` (the board) and `INBOX.md` are RETIRED — work-item state lives in GitHub Issues. Migration recipe at the bottom.
+> **v4 is the only format. No backwards compat.** `PROGRESS.md` (the board) and `INBOX.md` are RETIRED — work-item state lives in GitHub Issues. Migration recipe at the bottom.
 
 ## The model
 
@@ -213,7 +213,7 @@ A format rule without a mechanism does not hold. Corollary — **a pointer may c
 - **`docs:board-guard`** (PostToolUse): validates `CLAUDE.md` (pointer doctrine) and `AGENTS.md` (≤250 lines) — its last two duties. Violations bounce to the writing agent with a precise fix-list while the context that produced them is still loaded. Board-shape checks retired with the board (label legality is the standards script's job); spec-file checks retired with `plans/` (a spec lives in its issue body, which no write-time hook sees).
 - **`comms:style`** (UserPromptSubmit): re-injects the lite-register + rich-summary contract (canonical home: global AGENTS.md § Communication Preferences) every turn.
 
-## Migration recipe (board repo → v3)
+## Migration recipe (board repo → v4)
 
 The `workkit:migrate` skill EXECUTES this recipe — it is the doer, and this section stays the rules. Run it rather than doing the steps by hand; it also carries the CHANGELOG-history half, which is mechanical enough to fan out and easy to get wrong (a dropped category, a range only half rewritten).
 

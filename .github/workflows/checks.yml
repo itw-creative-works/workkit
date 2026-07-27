@@ -45,3 +45,19 @@ jobs:
           fi
       - name: Test
         run: npm test
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      # Only the [Unreleased] section: released history is already published,
+      # and a maintainer editing it is not what this gate is for.
+      - name: CHANGELOG entry format
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            node .github/changelog-lint.js CHANGELOG.md --unreleased-only
+          else
+            echo "no CHANGELOG.md — nothing to check"
+          fi
