@@ -9,7 +9,7 @@ flowchart TB
     Form["issue form"] --> Inbox([status:inbox])
     Note["chat note"] --> Inbox
     File[".workkit/inbox.md"] --> Inbox
-    Inbox --> Triage["Triage — route it out of the inbox<br>/workkit:triage"]
+    Inbox --> Triage["Triage<br>route it out of the inbox<br>/workkit:triage"]
     Triage -->|needs shaping| Spec["Write the spec"]
     Triage -->|not now| Parked([status:parked])
     Parked -.->|revived| Triage
@@ -18,8 +18,8 @@ flowchart TB
     Blocked -.->|answered| Spec
     Specced -->|claim: assign yourself| Build["Build<br>/workkit:feature"]
     Build --> Verify["Verify"]
-    Verify -->|findings| Build
-    Verify -->|clean| Ship["Ship — commit, CHANGELOG, Fixes #N<br>/workkit:ship"]
+    Verify -.->|findings| Build
+    Verify -->|clean| Ship["Ship<br>commit, CHANGELOG, Fixes #N<br>/workkit:ship"]
     Ship --> Closed([closed])
 ```
 
@@ -29,20 +29,25 @@ Capture (any of the three sources) is what puts an item INTO `status:inbox`; tri
 
 ```mermaid
 flowchart TB
-    Human([human]) <--> Manager["MANAGER — the main chat: judgment, dispatch, final verdicts"]
+    Human([human]) <--> Manager
 
-    subgraph Crew["the class agents — each spawn's model comes from the manager/resolver hook"]
+    subgraph Top[" "]
+        direction LR
+        Manager["MANAGER<br>the main chat<br>judgment, dispatch, final verdicts"]
+        Manager <-->|plans, hard calls| Advisor["advisor<br>plans, never implements<br>Fable (session effort)"]
+    end
+    style Top fill:none,stroke:none
+
+    subgraph Crew["the class agents"]
         Scout["scout<br>read-only recon<br>Sonnet (low)"]
         Worker["worker<br>builds a brief<br>Opus (session effort)"]
         Verifier["verifier<br>blind review<br>Opus (high)"]
-        Advisor["advisor<br>plans, never implements<br>Fable (session effort)"]
     end
 
     Manager -->|recon| Scout
     Manager -->|brief| Worker
     Manager -->|diff + brief| Verifier
-    Manager -->|only below frontier| Advisor
-    Crew -->|reports back| Manager
+    Crew -.->|reports back| Manager
 ```
 
 - The **manager** is whichever model your chat runs on, so the topology follows the model button: a frontier session never spawns the advisor, a workhorse session consults it for plans.
@@ -72,7 +77,7 @@ Plugins load at startup, so a new (or restarted) session is what puts a change i
 | `manager/resolver` | before a subagent spawns | Picks that spawn's model from the tier ladder and your live session model |
 | `manager/profile` | every message | Reminds a capable session it is the MANAGER and should delegate |
 | `safety/vendor-guard` | before any edit | Blocks edits to generated, vendored, and gitignored files |
-| `safety/commit-gate` | before `git commit` | No commit unless tests pass, new source files come with tests, code carries a fresh review, and any CHANGELOG entry is in format |
+| `safety/commit-gate` | before `git commit` | No commit unless tests pass, new source files come with tests, code carries a fresh review, and any CHANGELOG entry is in format. Heal bookkeeping (the version stamp and the current vendored linter, alone) skips the review and new-file checks |
 | `safety/commit-language` | before `git commit` | Bounces kill/destroy/dead wording in commit messages |
 | `docs/board-guard` | after any edit | Holds `AGENTS.md` / `CLAUDE.md` to the document rules |
 | `docs/changelog-guard` | after any edit | Holds a CHANGELOG entry to one short linked paragraph |

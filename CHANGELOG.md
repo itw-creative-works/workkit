@@ -25,3 +25,4 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 - [#8](../../issues/8) — Agent claims carry the `agent:working` label; the heal releases a claim idle for 24 hours (label, assignee, and a comment naming the sweep).
 - [#11](../../issues/11) — The commit gate requires a staged CHANGELOG entry on any commit whose message closes an issue.
 - [#12](../../issues/12) — The whats-next digest orders eligible work blockers first, then bugs, shared seams, and dependent features — the order autonomy will use.
+- [#15](../../issues/15) — Heal bookkeeping commits (the version stamp, the current vendored linter) skip the commit gate's review and new-file checks; tests still run.

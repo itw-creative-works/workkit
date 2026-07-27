@@ -503,6 +503,93 @@ const run = async () => {
     cleanup(dir);
   });
 
+  group('commit-gate: heal bookkeeping skips review + new-file checks (issue #15)');
+
+  // Exactly what standards.sh render_changelog_linter produces: the engine's
+  // shebang, the vendor header on line 2, then the engine's own bytes.
+  const vendoredLinter = () => {
+    const engine = fs.readFileSync(path.join(WORKFLOW_DIR, 'changelog.js'), 'utf8');
+    const nl = engine.indexOf('\n');
+    return `${engine.slice(0, nl + 1)}// Vendored from the workflow core's changelog.js by standards.sh — the kit is the SSOT; edit it there. This copy is resynced on every heal.\n${engine.slice(nl + 1)}`;
+  };
+
+  const stageDeep = (dir, name, content) => {
+    fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
+    stage(dir, name, content);
+  };
+
+  // A repo with a committed settings.json — the stamp arm only exempts an EDIT
+  // that touches nothing but the version key.
+  const mkStampedRepo = () => {
+    const dir = mkRepo();
+    stageDeep(dir, '.workkit/settings.json', '{ "version": 6, "enabled": true }\n');
+    execSync('git commit -m "opt in"', { cwd: dir, stdio: 'pipe' });
+    return dir;
+  };
+
+  await test('version stamp alone, no marker — exit 0', () => {
+    const dir = mkStampedRepo();
+    stage(dir, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
+    const { code, stderr } = runHook(dir, 'git commit -m "chore(workflow): stamp"');
+    assertEq(code, 0, `a stamp commit needs no review, stderr: ${stderr}`);
+    cleanup(dir);
+  });
+
+  await test('settings edit beyond the version, no marker — exit 2', () => {
+    const dir = mkStampedRepo();
+    stage(dir, '.workkit/settings.json', '{ "version": 7, "enabled": false }\n');
+    const { code } = runHook(dir, 'git commit -m "chore: flip"');
+    assertEq(code, 2, 'only the version key is bookkeeping — an enabled flip gets the full gate');
+    cleanup(dir);
+  });
+
+  await test('NEW settings.json (the opt-in commit), no marker — exit 2', () => {
+    const dir = mkRepo();
+    stageDeep(dir, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
+    const { code } = runHook(dir, 'git commit -m "chore: opt in"');
+    assertEq(code, 2, 'a first settings.json is not a stamp');
+    cleanup(dir);
+  });
+
+  await test('stamp + a source file, no marker — exit 2 (full gate restored)', () => {
+    const dir = mkStampedRepo();
+    stage(dir, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
+    stage(dir, 'app.js', 'const x = 1;\n');
+    const { code } = runHook(dir, 'git commit -m "chore: mixed"');
+    assertEq(code, 2, 'any non-bookkeeping file restores the review requirement');
+    cleanup(dir);
+  });
+
+  await test('stamp + current vendored linter, no marker, no test file — exit 0', () => {
+    const dir = mkStampedRepo();
+    // A test script makes checks 1 and 5 live; the suite itself passes.
+    stage(dir, 'package.json', '{ "scripts": { "test": "exit 0" } }\n');
+    execSync('git commit -m "base"', { cwd: dir, stdio: 'pipe' });
+    stage(dir, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
+    stageDeep(dir, '.github/changelog-lint.js', vendoredLinter());
+    const { code, stderr } = runHook(dir, 'git commit -m "chore(workflow): heal output"');
+    assertEq(code, 0, `the heal's own output needs no review or test file, stderr: ${stderr}`);
+    cleanup(dir);
+  });
+
+  await test('tampered linter copy, no marker — exit 2', () => {
+    const dir = mkRepo();
+    stageDeep(dir, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
+    stageDeep(dir, '.github/changelog-lint.js', `${vendoredLinter()}\n// local edit\n`);
+    const { code } = runHook(dir, 'git commit -m "chore: tampered"');
+    assertEq(code, 2, 'a hand-edited linter copy gets the full gate');
+    cleanup(dir);
+  });
+
+  await test('linter copy missing the vendor header, no marker — exit 2', () => {
+    const dir = mkRepo();
+    const engine = fs.readFileSync(path.join(WORKFLOW_DIR, 'changelog.js'), 'utf8');
+    stageDeep(dir, '.github/changelog-lint.js', engine);
+    const { code } = runHook(dir, 'git commit -m "chore: raw copy"');
+    assertEq(code, 2, 'a raw engine copy without the header is not the vendored shape');
+    cleanup(dir);
+  });
+
   group('commit-gate: wiring (loader + settings)');
 
   const LOADER = path.join(__dirname, '..', '..', 'hooks', 'loader.sh');

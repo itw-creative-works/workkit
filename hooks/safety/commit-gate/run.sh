@@ -131,12 +131,66 @@ if [ -n "$files" ]; then
   done <<<"$files"
 fi
 
+# Heal bookkeeping (owner ruling, 2026-07-27): a commit whose files are ALL
+# workflow bookkeeping — the .workkit/settings.json version stamp, and the
+# vendored .github/changelog-lint.js when its content is exactly what the
+# engine would vendor — carries no judgment to review, so checks 1 and 2 stand
+# down for it. Tests (check 5) still run. Any other file in the commit, a
+# hand-edited linter copy, or an unknowable file list restores the full gate.
+linter_is_vendor_current() {
+  local engine copy
+  engine="$(hook_changelog_linter 2>/dev/null)" || return 1
+  # Judge the bytes the COMMIT will carry: the staged blob normally, the
+  # working tree under -a/--all (which is what such a commit stages).
+  if [ "$has_all_flag" -eq 1 ]; then
+    copy="$(cat "$repo_root/.github/changelog-lint.js" 2>/dev/null)" || return 1
+  else
+    copy="$(cd "$repo_root" && git show ":.github/changelog-lint.js" 2>/dev/null)" || return 1
+  fi
+  [ -n "$copy" ] || return 1
+  # The vendored shape is standards.sh render_changelog_linter's: the engine's
+  # shebang, the vendor header on line 2, then the engine's own bytes.
+  [ "$(printf '%s\n' "$copy" | head -n 1)" = "$(head -n 1 "$engine")" ] || return 1
+  case "$(printf '%s\n' "$copy" | sed -n 2p)" in "// Vendored"*) ;; *) return 1 ;; esac
+  cmp -s <(printf '%s\n' "$copy" | tail -n +3) <(tail -n +2 "$engine")
+}
+
+# The stamp arm proves its content like the linter arm does: only the `version`
+# key may differ from HEAD. Any other edit — flipping `enabled`, rewriting the
+# `manager` block that picks every spawn's model — gets the full gate, and so
+# does a NEW settings.json (the one-time opt-in commit is not a stamp).
+settings_is_stamp_only() {
+  local head staged a b
+  head="$(cd "$repo_root" && git show "HEAD:.workkit/settings.json" 2>/dev/null)" || return 1
+  if [ "$has_all_flag" -eq 1 ]; then
+    staged="$(cat "$repo_root/.workkit/settings.json" 2>/dev/null)" || return 1
+  else
+    staged="$(cd "$repo_root" && git show ":.workkit/settings.json" 2>/dev/null)" || return 1
+  fi
+  [ -n "$staged" ] || return 1
+  a="$(jq -Sc 'del(.version)' <<<"$head" 2>/dev/null)" || return 1
+  b="$(jq -Sc 'del(.version)' <<<"$staged" 2>/dev/null)" || return 1
+  [ -n "$a" ] && [ "$a" = "$b" ]
+}
+
+bookkeeping=0
+if [ "$has_pathspec" -eq 0 ] && [ -n "$files" ]; then
+  bookkeeping=1
+  while IFS= read -r path; do
+    case "$path" in
+      .workkit/settings.json) settings_is_stamp_only || { bookkeeping=0; break; } ;;
+      .github/changelog-lint.js) linter_is_vendor_current || { bookkeeping=0; break; } ;;
+      *) bookkeeping=0; break ;;
+    esac
+  done <<<"$files"
+fi
+
 # 1. New source files need tests (owner ruling, 2026-07-23, the test-TYPE
 # proxy): a hook cannot judge what KIND of test a file holds, but it CAN see a
 # commit that ADDS code files while touching no test file at all. Only in repos
 # that define a test script (a repo without tests isn't asked to start here),
 # and only for staged adds (pathspec commits are already gated strictly).
-if [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/package.json" ] && jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
+if [ "$bookkeeping" -eq 0 ] && [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/package.json" ] && jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
   added=$(git diff --cached --name-only --diff-filter=A 2>/dev/null || true)
   new_code=""
   while IFS= read -r path; do
@@ -177,7 +231,7 @@ fi
 
 # 2. Review marker (code commits only). The workkit:review skill touches the
 # marker when it finishes; it must be newer than the previous commit.
-if [ "$has_code" -eq 1 ]; then
+if [ "$has_code" -eq 1 ] && [ "$bookkeeping" -eq 0 ]; then
   marker="${TMPDIR:-/tmp}/claude-review-marker/$(printf '%s' "$repo_root" | shasum | cut -d' ' -f1)"
   if [ ! -f "$marker" ]; then
     block "the commit contains code and no review has run. Run the workkit:review skill on the diff first (it records a marker), then commit."
