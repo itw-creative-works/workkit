@@ -7,6 +7,14 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#13](../../issues/13) — `wk.sh note "the thought"` captures a note from any shell in one line: the engine's new CLI walks up from the current directory and appends the bullet to the participating repo's `.workkit/inbox.md`, or to `~/.workkit/inbox.md` outside one, creating a missing inbox from the template.
+- [#57](../../issues/57) — Every repo is assumed public, so issue and PR text carries no secrets: the spec says it and the new `safety:issue-guard` hook blocks a `gh issue`/`gh pr` write whose outbound text holds a local `.env` value or a token-shaped string, naming the key or the kind and never the match.
+- [#3](../../issues/3) — The daily heal keeps a repo's `.gitignore` carrying the two entries every repo needs, `.DS_Store` and `.env`, appending only the ones nothing already covers.
+- [#4](../../issues/4) — `.workkit/inbox.md` is the owner's scratchpad: the new `safety:inbox-guard` hook blocks reading its contents outside a triage run, which the `workkit:triage` skill opens with a marker, while counting and appending stay free.
+- [#51](../../issues/51) — The tower app documents its FontAwesome Pro supply: the omega icon chain already resolves Pro once it is provided, so a new `tower/app/.env.example` carries the `OMEGA_FONTAWESOME_ROOT` line and the tower README names both supply routes.
+
 ## [0.4.0] - 2026-07-28
 
 ### Added

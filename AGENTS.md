@@ -17,7 +17,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 │   ├── loader.sh         # name → path router (docs:board-guard → docs/board-guard/run.sh)
 │   ├── _lib.sh           # shared helpers (sourced, never executed)
 │   ├── docs/             # board-guard, changelog-guard, change-tracker, session, state-check
-│   ├── safety/           # vendor-guard, commit-gate, commit-language
+│   ├── safety/           # vendor-guard, commit-gate, commit-language, issue-guard, inbox-guard
 │   ├── manager/          # resolver, profile + ladder.json (the tier SSOT)
 │   └── workflow/         # standards (the daily heal)
 ├── agents/               # the crew — surface as workkit:<name> (roster + contract: docs/agents.md)
@@ -55,6 +55,8 @@ Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh`
 | `safety/vendor-guard` | PreToolUse (Edit/Write) | Blocks edits to generated, vendored, and gitignored files (`_attic/`, `.workkit/`, `.env*` excepted) |
 | `safety/commit-gate` | PreToolUse (Bash) | Blocks `git commit` unless tests pass, new source files come with test files, code carries a fresh review marker, any added CHANGELOG entry matches the format, and a commit closing an issue (`Fixes #N`) stages the entry it closes against |
 | `safety/commit-language` | PreToolUse (Bash) | Bounces commit messages using kill/destroy/dead wording, suggesting the neutral terms |
+| `safety/issue-guard` | PreToolUse (Bash) | Blocks a `gh issue create/comment/edit` or `gh pr create/comment/edit/merge` whose outbound text carries a local `.env` value or a token-shaped string — every repo is assumed public (the spec § Issue anatomy). Names the key or the kind, never the match |
+| `safety/inbox-guard` | PreToolUse (Read/Bash) | Blocks a read of `.workkit/inbox.md`'s contents outside a triage run — the owner's scratchpad, opened by the marker the `workkit:triage` skill records and stale after 30 minutes. Counting and appending stay open |
 | `docs/board-guard` | PostToolUse (Edit/Write) | Bounces `CLAUDE.md` / `AGENTS.md` writes that break the spec's document rules |
 | `docs/changelog-guard` | PostToolUse (Edit/Write) | Bounces a CHANGELOG entry that is an essay instead of one short linked paragraph — only entries the write ADDED |
 | `docs/change-tracker` | Stop | Nags about uncommitted work, keeping the issue true, promoting findings out of `.workkit/`, and unfiled inbox notes |
@@ -84,7 +86,7 @@ Nine, namespaced `workkit:<name>`, one `SKILL.md` each:
 
 ## The engine (`workflow/`)
 
-Agent-agnostic: shell + Node, no Claude Code knowledge. `labels.json` is the label SSOT, `standards.sh` the idempotent heal (plus `--enable` / `--decline` / `--state`), `changelog.js` the entry-format linter both guarding hooks call, `changelog-links.js` the release-time backfill of commit links and contributor handles, `templates/` what a repo receives on enable. Details: `workflow/README.md`.
+Agent-agnostic: shell + Node, no Claude Code knowledge. `labels.json` is the label SSOT, `standards.sh` the idempotent heal (plus `--enable` / `--decline` / `--state`), `changelog.js` the entry-format linter both guarding hooks call, `changelog-links.js` the release-time backfill of commit links and contributor handles, `wk.sh` the capture CLI (`wk.sh note "…"` appends to the nearest participating inbox), `templates/` what a repo receives on enable. Details: `workflow/README.md`.
 
 ## The tower (`tower/`)
 

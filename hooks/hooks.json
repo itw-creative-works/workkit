@@ -11,6 +11,15 @@
         ]
       },
       {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh safety:inbox-guard"
+          }
+        ]
+      },
+      {
         "matcher": "Task|Agent",
         "hooks": [
           {
@@ -34,6 +43,14 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh safety:commit-language"
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh safety:issue-guard"
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh safety:inbox-guard"
           }
         ]
       }

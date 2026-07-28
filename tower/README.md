@@ -130,3 +130,7 @@ Every lib takes an `opts` object for path and exec injection; the suites under `
 ## The dependency posture
 
 `@omega.js/*` is consumed by relative `file:` specs into the sibling Omega checkout, matching the `omega-brand` precedent. They flip to registry ranges when OMEGA publishes, which happens before workkit does. Until then the dashboard cannot build without that checkout on disk. The API has no such dependency and never will.
+
+## FontAwesome Pro
+
+The app ships against the free tier and every icon it draws today is a free `fa-solid` glyph. Pro is supplied, never vendored — the framework's icon chain (`[env dir, pro npm, free]`, documented in the omega monorepo's `docs/shared/icons.md`) picks it up with zero code changes here. Either route works: set `OMEGA_FONTAWESOME_ROOT` in `tower/app/.env` (see `.env.example`) to a Pro SVG download, or authenticate the `@fortawesome` scope machine-globally and add `@fortawesome/fontawesome-pro` to `tower/app/package.json`. Once supplied, Pro styles (`fa-light`, `fa-sharp`, …) simply start resolving.

@@ -569,6 +569,60 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
+  group('standards.sh: the .gitignore basics');
+
+  // The two entries every repo needs, read from the engine so the suite asks
+  // for whatever the engine actually heals.
+  const BASICS = /^GITIGNORE_BASICS="([^"]+)"/m
+    .exec(fs.readFileSync(SCRIPT, 'utf8'))[1].split(' ');
+  const countLine = (text, entry) =>
+    (text.match(new RegExp(`^${entry.replace(/\./g, '\\.')}$`, 'gm')) || []).length;
+
+  await test('a repo with no .gitignore gets both entries', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    const ignore = readFile(path.join(repo, '.gitignore'));
+    for (const entry of BASICS) {
+      assertEq(countLine(ignore, entry), 1, `${entry} written once, got: ${ignore}`);
+    }
+    assert(output.includes(`gitignore: added ${BASICS.join(' ')}`),
+      `the run reports what it added, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a partial .gitignore gains only the missing entry', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    fs.writeFileSync(path.join(repo, '.gitignore'), `node_modules\n${BASICS[0]}\n`);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    const ignore = readFile(path.join(repo, '.gitignore'));
+    assertEq(countLine(ignore, BASICS[0]), 1, `${BASICS[0]} not duplicated, got: ${ignore}`);
+    assertEq(countLine(ignore, BASICS[1]), 1, `${BASICS[1]} appended, got: ${ignore}`);
+    assert(output.includes(`gitignore: added ${BASICS[1]}`),
+      `only the missing one is reported, got: ${output}`);
+    assert(!output.includes(`added ${BASICS[0]}`), 'the present one is not claimed');
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('glob forms already covering them are left untouched, and a re-run changes nothing', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const covered = `node_modules\n**/.DS_Store\n*.env\n`;
+    fs.writeFileSync(path.join(repo, '.gitignore'), covered);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    const ignore = readFile(path.join(repo, '.gitignore'));
+    for (const entry of BASICS) {
+      assertEq(countLine(ignore, entry), 0, `${entry} not appended over a covering glob, got: ${ignore}`);
+    }
+    assert(output.includes(`${BASICS.join(' ')} already ignored`),
+      `the run reports the existing state, got: ${output}`);
+    const { output: second } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(readFile(path.join(repo, '.gitignore')), ignore, 'second run leaves the file alone');
+    assert(second.includes('already ignored'), `and says so, got: ${second}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
   group('standards.sh: participation');
 
   // Four states, two files. A yes (or a deliberate project-level no) is the

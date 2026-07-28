@@ -84,6 +84,8 @@ The 9am daily-brief schedule is separate from the plugin and opt-in: `bash jobs/
 | `safety/vendor-guard` | before any edit | Blocks edits to generated, vendored, and gitignored files |
 | `safety/commit-gate` | before `git commit` | No commit unless tests pass, new source files come with tests, code carries a fresh review, and any CHANGELOG entry is in format. Heal bookkeeping (the version stamp and the current vendored linter, alone) skips the review and new-file checks |
 | `safety/commit-language` | before `git commit` | Bounces kill/destroy/dead wording in commit messages |
+| `safety/issue-guard` | before a `gh issue`/`gh pr` write | Blocks outbound issue or PR text carrying a local `.env` value or a token-shaped string — every repo is assumed public. Names the key or the kind, never the match |
+| `safety/inbox-guard` | before a read of the inbox | Keeps `.workkit/inbox.md` the owner's scratchpad: contents open only during a triage run; counting and appending stay free |
 | `docs/board-guard` | after any edit | Holds `AGENTS.md` / `CLAUDE.md` to the document rules |
 | `docs/changelog-guard` | after any edit | Holds a CHANGELOG entry to one short linked paragraph |
 | `docs/change-tracker` | when a reply finishes | Nags about uncommitted work, a stale issue, and unfiled notes |
@@ -112,7 +114,7 @@ The 9am morning notification. `jobs/brief-payload.js` assembles the same brief t
 
 ### Engine — `workflow/`
 
-Plain shell and Node, no Claude Code knowledge: `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `changelog.js` (the entry-format linter the hooks call), `changelog-links.js` (release-time commit links and contributor handles), and the templates a repo receives when it opts in.
+Plain shell and Node, no Claude Code knowledge: `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `changelog.js` (the entry-format linter the hooks call), `changelog-links.js` (release-time commit links and contributor handles), `wk.sh` (the capture CLI — `wk.sh note "the thought"` drops a bullet into the nearest participating repo's inbox, or your own `~/.workkit/inbox.md` outside one), and the templates a repo receives when it opts in.
 
 ## Opting a repo in
 

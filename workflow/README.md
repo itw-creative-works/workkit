@@ -5,12 +5,25 @@ The agent-agnostic core of the issue workflow. It knows nothing about Claude Cod
 | File | What it is |
 |---|---|
 | `labels.json` | Machine SSOT for the label vocabulary — every label is `group:value`, with its description and color |
-| `standards.sh` | Brings a repo to the standard, idempotently: creates the labels from `labels.json` (and corrects description/color drift), installs the issue templates and the required-checks CI workflow, vendors `changelog.js` to the repo's `.github/changelog-lint.js` and adds the `changelog` job to its `checks.yml`, asks for branch protection on the test check (best effort), moves a repo's old `.workflow/` to `.workkit/` once, keeps `.workkit/` in `.gitignore`, seeds `.workkit/inbox.md` and `.workkit/session.md`, releases agent claims that went quiet, checks that the hook layer beside it is alive, and reports leftovers from a retired convention |
+| `standards.sh` | Brings a repo to the standard, idempotently: creates the labels from `labels.json` (and corrects description/color drift), installs the issue templates and the required-checks CI workflow, vendors `changelog.js` to the repo's `.github/changelog-lint.js` and adds the `changelog` job to its `checks.yml`, asks for branch protection on the test check (best effort), moves a repo's old `.workflow/` to `.workkit/` once, keeps `.workkit/` in `.gitignore` along with the basics every repo needs (`.DS_Store`, `.env` — appended only when nothing already covers them), seeds `.workkit/inbox.md` and `.workkit/session.md`, releases agent claims that went quiet, checks that the hook layer beside it is alive, and reports leftovers from a retired convention |
 | `templates/issue-forms/` | The markdown GitHub issue templates (bug · enhancement · idea · dump) installed into a repo's `.github/ISSUE_TEMPLATE/`. Each pre-fills the issue anatomy (`## Description` then `## Spec`) and auto-applies `status:inbox` + its `type:` label |
 | `templates/github-workflows/` | `checks.yml`, the CI workflow installed into a repo's `.github/workflows/` — the `test` job runs the suite on every pull request, the `changelog` job holds the `[Unreleased]` section to the entry format. Installed once; the repo's copy is its own to extend and is never overwritten, except that the `changelog` job is appended once to a workflow healed before it existed |
 | `templates/inbox.md` · `templates/session.md` | The two gitignored working files seeded into a participating repo's `.workkit/`. A file that already has content is never overwritten |
+| `wk.sh` | The capture CLI: `wk.sh note <text...>` appends one bullet to the right inbox |
 | `changelog.js` | Machine SSOT for the CHANGELOG entry rules, and the CLI both guarding hooks call: `node changelog.js <file> [--added-only] [--staged] [--unreleased-only]` |
 | `changelog-links.js` | Release-time backfill of each entry's commit link and contributor handle: `node changelog-links.js [--file X] [--range A..B] [--dry-run]` |
+
+## The capture CLI
+
+`wk.sh` gets a thought out of a head and into an inbox with no session, no agent, and no network:
+
+```sh
+bash ~/.claude/workkit/wk.sh note fix the tower poller
+```
+
+The words after `note` join with spaces, so the call works unquoted, and the bullet lands in the inbox of the repo the shell is standing in — decided by a walk UP from the current directory to the first ancestor whose `.workkit/settings.json` says the repo participates. Standing outside one, it lands in the user's own `~/.workkit/inbox.md`. A missing inbox is created from `templates/inbox.md`, so a hand-made file reads exactly like a seeded one; existing content is only ever appended to. No arguments, an unknown subcommand, or an empty note prints usage on stderr and exits 1. Triage drains both inboxes into issues.
+
+Putting it on the PATH or behind an alias is the user's own shell config (dotfiles) — the heal maintains the address below and nothing beyond it.
 
 ## The CHANGELOG entry format
 
