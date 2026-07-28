@@ -42,6 +42,13 @@ const { execFileSync } = require('child_process');
 // open issues than that is reported truncated rather than silently short.
 const PAGE_SIZE = 100;
 
+// How much of an issue body the sweep carries. The dashboard's issue dialog
+// reads the body straight off the board payload, so the whole roster's bodies
+// ride every poll — and one issue with a pasted log in it would be larger than
+// the rest of the board put together. What is cut is reported (`bodyTruncated`)
+// and the rest is one click away on GitHub.
+const BODY_LIMIT = 4000;
+
 const LABELS_FILE = path.join(__dirname, '..', '..', '..', 'workflow', 'labels.json');
 
 // stderr is piped, not ignored: gh writes its "gh auth login" guidance there,
@@ -93,7 +100,10 @@ const buildQuery = (slugs) => {
         number
         title
         url
+        body
+        createdAt
         updatedAt
+        comments { totalCount }
         labels(first: 20) { nodes { name } }
         assignees(first: 5) { nodes { login } }
       }
@@ -207,11 +217,16 @@ const fetchBoard = (repos, opts = {}) => {
     for (const node of nodes) {
       const parsed = parseLabels((node.labels || {}).nodes, groups);
       const agent = parsed.agent || [];
+      const body = String(node.body || '');
       issues.push({
         repo: repo.slug,
         number: node.number,
         title: node.title,
         url: node.url,
+        body: body.slice(0, BODY_LIMIT),
+        bodyTruncated: body.length > BODY_LIMIT,
+        comments: ((node.comments || {}).totalCount) || 0,
+        createdAt: node.createdAt || null,
         updatedAt: node.updatedAt,
         status: (parsed.status || [])[0] || null,
         type: (parsed.type || [])[0] || null,
@@ -226,4 +241,4 @@ const fetchBoard = (repos, opts = {}) => {
   return { ok: true, issues, repos: repoEntries };
 };
 
-module.exports = { fetchBoard, buildQuery, parseLabels, labelGroups, errorsByAlias, PAGE_SIZE, LABELS_FILE };
+module.exports = { fetchBoard, buildQuery, parseLabels, labelGroups, errorsByAlias, PAGE_SIZE, BODY_LIMIT, LABELS_FILE };

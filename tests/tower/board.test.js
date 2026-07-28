@@ -14,7 +14,7 @@ const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
 const REPO = path.join(__dirname, '..', '..');
-const { fetchBoard, buildQuery, labelGroups, LABELS_FILE, PAGE_SIZE } = require(path.join(REPO, 'tower', 'api', 'lib', 'board.js'));
+const { fetchBoard, buildQuery, labelGroups, LABELS_FILE, PAGE_SIZE, BODY_LIMIT } = require(path.join(REPO, 'tower', 'api', 'lib', 'board.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-board-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -116,6 +116,38 @@ const run = async () => {
     assert(q.includes('r1: repository(owner: "ianwieds", name: ".dotfiles")'), 'r1 alias');
     assert(q.includes('totalCount'), 'truncation is answerable');
     assert(q.includes(`first: ${PAGE_SIZE}`), 'the page cap is in the query');
+    // The dashboard's issue dialog reads these off the sweep — there is no
+    // second request behind a click.
+    assert(q.includes('body'), 'the body the dialog renders');
+    assert(q.includes('createdAt'), 'when it was filed');
+    assert(q.includes('comments { totalCount }'), 'and how much conversation is waiting');
+  });
+
+  await test('an issue carries what the dialog shows, with a long body cut and reported', () => {
+    const long = 'x'.repeat(BODY_LIMIT + 500);
+    const res = fetchBoard([ROSTER[0]], {
+      exec: fakeGh({
+        data: {
+          r0: {
+            issues: {
+              totalCount: 2,
+              nodes: [
+                issue(17, { body: '## Spec\n\nnone', createdAt: '2026-07-01T00:00:00Z', comments: { totalCount: 3 } }),
+                issue(18, { body: long }),
+              ],
+            },
+          },
+        },
+      }),
+    });
+    const [a, b] = res.issues;
+    assertEq(a.body, '## Spec\n\nnone', 'the body arrives as it was written');
+    assertEq(a.bodyTruncated, false, 'and whole');
+    assertEq(a.createdAt, '2026-07-01T00:00:00Z', 'the filing date');
+    assertEq(a.comments, 3, 'the comment count');
+    assertEq(b.body.length, BODY_LIMIT, 'a body longer than the cap is cut to it');
+    assertEq(b.bodyTruncated, true, 'and says so, so the dialog can point at GitHub');
+    assertEq(b.comments, 0, 'an issue with no comment count reads as none');
   });
 
   await test('two repos come back as one flat, normalized issue list', () => {

@@ -20,7 +20,6 @@ The API answers on its own and is useful without the dashboard. The 9am job does
 | `TOWER_PORT` | `8693` (TOWER on a phone keypad) | listen port |
 | `TOWER_BIND` | `127.0.0.1` | bind address — keep it loopback; front it with Tailscale for the phone |
 | `TOWER_ALLOW_HOST` | (empty) | comma-separated extra hostnames the Host and Origin gate admits — put the tailnet name here |
-| `TOWER_ROOT` | `~/Developer/Repositories` | where roster discovery walks |
 | `KEEP_AWAKE_IDLE_MINUTES` | `45` | when a quiet session counts as idle, matching the keep-awake hook |
 
 The dashboard finds the API at `http://127.0.0.1:8693`. Two overrides, neither needing a rebuild: `?api=http://host:port` in the URL, which points one link at another machine's tower, and `window.TOWER_API` from the console.
@@ -46,9 +45,9 @@ The app is an OMEGA brand root whose one app is the dashboard. The framework sup
 
 | Page | What |
 |---|---|
-| **Overview** | the control room: a statgrid row (open, blocked, in flight, live sessions, unpushed, unreleased), what is waiting on you, the live crew compact, health at a glance, and the queue by status |
-| **Board** | the full issue board — columns by `status:`, filters for type, priority, assignee and `agent:ok`, all repos or one |
-| **Crew** | the running agents as an org chart: each session at the root with its WORKING subagents beneath it by class, every node carrying its model and its token spend; the ones that have finished collapse into one expandable count per session |
+| **Overview** | the control room: a statgrid row (open, blocked, in flight, live sessions, unpushed, unreleased), what is waiting on you, the live crew compact, health at a glance worst-first, and the queue by status as a doughnut. Each list stops at five with a line to the page that holds the rest |
+| **Board** | the full issue board — columns by `status:`, filters for type, priority, assignee and `agent:ok`, all repos or one. Every card is one size, its title clamped to two lines; the whole title is in the dialog it opens |
+| **Crew** | the running agents as an org chart: each session at the root titled `repo/chat`, a trunk down to its WORKING subagents, and a moving line into every one of them. A subagent's card leads with its CLASS and demotes its agent id to the line beneath; every node carries its class and model as coloured badges plus its token spend. The ones that have finished collapse into one expandable count per session. Narrow screens turn the same tree on its side — one spine down the left, an elbow into each card |
 | **Usage** | where the tokens went — by model, by agent class, over thirty days, cache reads against fresh, and a cost derived from the token counts |
 | **Health** | per-repo unpushed, uncommitted, unreleased entries and last tag, with the release-lag view |
 | **Brief** | the daily brief: the headline, the counts, what is waiting on you, what is ready to start, what is in flight, and the work sitting on the table |
@@ -57,12 +56,18 @@ The repo selection is global, held in `?repo=owner/name`, and every page whose d
 
 **Intake** is not a page: it is an action on the topbar, reachable from all of them. Repo select, title, optional body, one button; it files with `status:inbox` and `type:idea`, and triage does the rest.
 
+**Clicking an issue** — on the Board, the Overview, the Brief or the Health page — opens it in a dialog on the page you are on: number, repo, status and chips, the body rendered, who holds it, when it was filed and last touched, and how many comments are waiting. Nothing navigates to github.com by itself. The box-with-arrow button does, in a new tab, and it is on the dialog and on each issue while it is hovered or focused. The body is rendered by a small markdown renderer that escapes first and never passes markup through, because an issue body is text from an API and may say anything.
+
+**Models and crew classes carry one colour.** A model id and an agent class are drawn as coloured badges wherever they appear — the Crew cards, the Overview's crew table, the Usage table — and the Usage charts draw each bar in that same colour, so a row in a chart and a badge in the table below it are recognizably the same thing. Which name falls in which slot is `libs/tower/format.js`; the colours are theme tokens in `main.scss`, so dark mode follows. Anything clickable — every issue card and row — warms and lifts under the pointer and settles again on press.
+
+**Refreshes are in place.** A section that has never answered shows a spinner naming the read; the chrome shows one while a refresh is in flight; and a poll that changed nothing writes nothing, so the page keeps its focus, its scroll and its open panels. A refresh that fails leaves the last good answer on screen and marks the feed unavailable rather than replacing a full board with an error line.
+
 ## Endpoints
 
 | Route | What |
 |---|---|
-| `GET /api/repos` | roster discovery — opted-in repos minus personal declines (cache 60s, `?fresh=1` bypasses) |
-| `GET /api/board` | the GraphQL sweep, normalized to the label vocabulary (cache 60s, `?fresh=1` bypasses) |
+| `GET /api/repos` | roster discovery — opted-in repos under `~/Developer/Repositories` minus personal declines; the root is a library option, not an environment knob (cache 60s, `?fresh=1` bypasses) |
+| `GET /api/board` | the GraphQL sweep, normalized to the label vocabulary, each issue carrying the body, dates and comment count the issue dialog reads — bodies over 4,000 characters are cut and flagged `bodyTruncated` (cache 60s, `?fresh=1` bypasses) |
 | `GET /api/sessions` | live sessions from the keep-awake markers (cache 5s) |
 | `GET /api/health` | git health per roster repo (cache 5s) |
 | `GET /api/telemetry` | token accounting and subagent attribution, with `byModel`, `byClass` and thirty days of history (cache 5s) |

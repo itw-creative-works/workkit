@@ -13,6 +13,11 @@
 // Reading the state back out is state.js, which this file does not import: a
 // page asks the runtime to run it and asks state.js what the answers were.
 //
+// The loop calls render() on every answer and on every tick; what reaches the
+// DOM is decided further down, by loading.js's `swap` in each page's render, so
+// a tick that changed nothing leaves the page — and its focus, its scroll and
+// its open `details` — exactly as it was.
+//
 
 import omega from '@omega.js/client';
 import { fetchFeed } from './api.js';
@@ -52,7 +57,7 @@ const writeSelectedRepo = (slug) => {
 
 const chromeMarkup = (state) => {
   const slugs = repos(state).map((repo) => repo.slug).filter(Boolean);
-  const stale = Object.entries(state.feeds).filter(([, result]) => result && !result.ok);
+  const stale = Object.entries(state.feeds).filter(([, result]) => result && (!result.ok || result.stale));
   return `<div class="d-flex flex-wrap align-items-end gap-2 mb-4">
     <label class="flex-grow-0">
       <span class="classy-micro d-block">Repository</span>
@@ -62,8 +67,11 @@ const chromeMarkup = (state) => {
       </select>
     </label>
     <button class="btn btn-sm btn-outline-adaptive" type="button" id="tower-refresh">Refresh</button>
-    <span class="classy-micro text-body-secondary ms-auto">${esc(state.stamp || 'reading…')}</span>
-    ${stale.length ? `<span class="classy-chip classy-chip--accent" title="${esc(stale.map(([name, result]) => `${name}: ${result.reason}`).join(' · '))}">${stale.length} feed${stale.length === 1 ? '' : 's'} unavailable</span>` : ''}
+    <span class="classy-micro text-body-secondary ms-auto d-flex align-items-center gap-2">
+      ${state.pending ? '<span class="spinner-border spinner-border-sm" role="status" aria-label="Reading"></span>' : ''}
+      ${esc(state.stamp || 'reading…')}
+    </span>
+    ${stale.length ? `<span class="classy-chip classy-chip--accent" title="${esc(stale.map(([name, result]) => `${name}: ${result.stale || result.reason}`).join(' · '))}">${stale.length} feed${stale.length === 1 ? '' : 's'} unavailable</span>` : ''}
   </div>`;
 };
 
@@ -95,7 +103,10 @@ export async function startPage(options) {
   const chrome = host.querySelector('[data-tower-chrome]');
   const body = host.querySelector('[data-tower-body]');
 
-  const state = { feeds: {}, selectedRepo: selectedRepo(), stamp: '' };
+  // `pending` is how many reads are in flight, which the chrome's spinner is
+  // drawn from: a refresh is visible while it happens, and the page under it
+  // keeps showing the data it already has.
+  const state = { feeds: {}, selectedRepo: selectedRepo(), stamp: '', pending: 0 };
 
   const paint = () => {
     chrome.innerHTML = chromeMarkup(state);
@@ -110,7 +121,19 @@ export async function startPage(options) {
 
   const read = async (name, fresh) => {
     const spec = FEEDS[name];
-    state.feeds[name] = await fetchFeed(fresh && spec.fresh ? spec.fresh : spec.path);
+    state.pending += 1;
+    paint();
+    const answer = await fetchFeed(fresh && spec.fresh ? spec.fresh : spec.path);
+    const previous = state.feeds[name];
+    state.pending -= 1;
+
+    // A refresh that fails does not take the page down with it. The last good
+    // answer stays on screen, marked stale so the chrome can say a feed is
+    // unavailable — replacing a full board with an error line because one poll
+    // missed is the "clearing to empty" this is here to prevent.
+    state.feeds[name] = !answer.ok && previous && previous.ok
+      ? { ...previous, stale: answer.reason }
+      : answer;
     state.stamp = `updated ${new Date().toLocaleTimeString()}`;
     paint();
   };

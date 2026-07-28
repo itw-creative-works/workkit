@@ -40,6 +40,11 @@ const run = async () => {
   const format = await load('format.js');
   const state = await load('state.js');
   const crew = await load('crew.js');
+  const loading = await load('loading.js');
+  const markdown = await load('markdown.js');
+  // modal.js reaches for `document` only inside mountIssueModal, so everything
+  // that shapes an issue into markup imports and answers under Node.
+  const modal = await load('modal.js');
 
   group('tower/app: format — values into markup');
 
@@ -84,6 +89,45 @@ const run = async () => {
       assert(format.statusColor(status.key).startsWith('var(--omega-'), `${status.key || 'no status'} resolves to a theme token`);
     }
     assertEq(format.statusToken('nonsense'), '--omega-warn', 'an unknown status is drawn, not dropped');
+  });
+
+  await test('a model id falls in its family whatever it is decorated with', () => {
+    assertEq(format.modelKey('claude-opus-5'), 'opus', 'the plain id');
+    assertEq(format.modelKey('claude-opus-5[1m]'), 'opus', 'a context variant is the same model');
+    assertEq(format.modelKey('claude-opus-4-1-20250805'), 'opus', 'and so is a dated build');
+    assertEq(format.modelKey('claude-3-7-sonnet'), 'sonnet', 'the family is not always last in the id');
+    assertEq(format.modelKey('claude-haiku-4-5'), 'haiku', 'haiku');
+    assertEq(format.modelKey('fable'), 'fable', 'and the top rung');
+    assertEq(format.modelKey('<synthetic>'), 'other', 'a locally generated message belongs to no model');
+    assertEq(format.modelKey(null), 'other', 'and an unknown model still has a slot');
+  });
+
+  await test('an agent class falls in its own slot, prefixed or not', () => {
+    assertEq(format.classKey('worker'), 'worker', 'the bare name the API sends');
+    assertEq(format.classKey('workkit:verifier'), 'verifier', 'and the namespaced one');
+    assertEq(format.classKey('manager'), 'manager', 'the root tier telemetry counts');
+    assertEq(format.classKey('general-purpose'), 'other', 'a built-in agent is drawn neutral, not as crew');
+    assertEq(format.classKey(''), 'other', 'and so is no class at all');
+  });
+
+  await test('a badge is a chip in its slot, and its label is text', () => {
+    const badge = format.modelBadge('claude-opus-5[1m]');
+    assert(badge.includes('classy-chip tower-badge tower-badge--opus'), 'the theme chip, in the opus slot');
+    assert(badge.includes('claude-opus-5[1m]'), 'labelled with the id itself');
+    assertEq(format.badgeColor('opus'), 'var(--tower-badge-opus)', 'and the chart reads the same slot as a token');
+    assert(!format.classBadge('<img src=x>').includes('<img'), 'a hostile class name is escaped');
+    assert(format.modelBadge(null).includes('model unknown'), 'an unknown model says so rather than drawing empty');
+  });
+
+  await test('cap shows the head of a list and counts what it held back', () => {
+    const five = [1, 2, 3, 4, 5];
+    assertEq(format.cap(five).shown.length, 5, 'exactly five fits');
+    assertEq(format.cap(five).hidden, 0, 'with nothing behind it');
+    assertEq(format.cap([...five, 6, 7]).shown.length, 5, 'a longer list is cut');
+    assertEq(format.cap([...five, 6, 7]).hidden, 2, 'and says how many are on the other page');
+    assertEq(format.cap([]).hidden, 0, 'an empty list hides nothing');
+    assertEq(format.cap(undefined).shown.length, 0, 'and a list that is not there is empty, not a crash');
+    assertEq(format.cap(five, 2).shown.length, 2, 'the caller can set the limit');
   });
 
   await test('a stat cell is a link only when it is given somewhere to go', () => {
@@ -221,6 +265,13 @@ const run = async () => {
     assertEq(node.children.length, 0, 'and it spawns nothing');
   });
 
+  await test('a root card is titled repo then chat name, with a fallback for each half', () => {
+    assertEq(crew.rootLabel({ cwd: '/repos/ITW/workkit', title: 'the tower' }), 'workkit/the tower', 'the repo, a slash, the chat');
+    assertEq(crew.rootLabel({ cwd: '/repos/ITW/workkit', title: '', id: 'sess-1' }), 'workkit/sess-1', 'an unnamed chat falls back to its id');
+    assertEq(crew.rootLabel({ cwd: '', title: 'the tower' }), 'the tower', 'no cwd is no leading slash');
+    assertEq(crew.rootLabel({ cwd: '', title: '', id: '' }), 'session', 'and a node with nothing still has a name');
+  });
+
   await test('the crew splits into who is working and who has finished', () => {
     const children = [
       { state: 'working', id: 'a' },
@@ -248,6 +299,160 @@ const run = async () => {
     const count = crew.crewCount([crew.normalize({ id: 'x', tokens: { total: 1 } })]);
     assertEq(count.working, 0, 'nobody running');
     assertEq(count.total, 0, 'and nobody at all');
+  });
+
+  group('tower/app: loading — refreshing in place');
+
+  await test('a section that has not answered says which read it is waiting on', () => {
+    const markup = loading.loading('reading the board…');
+    assert(markup.includes('spinner-border'), 'the theme spinner');
+    assert(markup.includes('reading the board…'), 'and the sentence naming the read');
+  });
+
+  await test('the loading line escapes what it is handed', () => {
+    assert(!loading.loading('<img src=x onerror=1>').includes('<img'), 'a message is text');
+  });
+
+  await test('swap writes once and leaves an unchanged section alone', () => {
+    // A host is only ever asked for `innerHTML`, so a plain object is the real
+    // contract — swap compares against what IT wrote, never against the DOM's
+    // own re-serialization of it.
+    const host = { innerHTML: '' };
+    assertEq(loading.swap(host, '<p>one</p>'), true, 'the first write happens');
+    assertEq(host.innerHTML, '<p>one</p>', 'and lands');
+    assertEq(loading.swap(host, '<p>one</p>'), false, 'the same markup is not written again');
+    assertEq(loading.swap(host, '<p>two</p>'), true, 'different markup is');
+    assertEq(host.innerHTML, '<p>two</p>', 'and replaces it');
+  });
+
+  await test('two sections keep their own last write', () => {
+    const a = { innerHTML: '' };
+    const b = { innerHTML: '' };
+    loading.swap(a, '<p>a</p>');
+    assertEq(loading.swap(b, '<p>a</p>'), true, 'the same markup in another host is still new');
+    assertEq(loading.swap(a, '<p>a</p>'), false, 'and the first host still knows what it holds');
+  });
+
+  group('tower/app: markdown — an issue body as safe markup');
+
+  await test('an empty body renders as nothing, so the caller can say what that means', () => {
+    assertEq(markdown.renderMarkdown(''), '', 'empty');
+    assertEq(markdown.renderMarkdown('   \n\n'), '', 'and whitespace is empty too');
+    assertEq(markdown.renderMarkdown(null), '', 'and so is a body that is not there');
+  });
+
+  await test('markup in a body is text, whatever the grammar around it', () => {
+    const out = markdown.renderMarkdown('<script>alert(1)</script>\n\n- <img src=x onerror=alert(1)>');
+    assert(!out.includes('<script>'), 'no script survives');
+    assert(!out.includes('<img'), 'and no tag inside a list item either');
+    assert(out.includes('&lt;script&gt;'), 'it is shown as the text it is');
+  });
+
+  await test('the grammar an issue body actually uses renders', () => {
+    const out = markdown.renderMarkdown('## Spec\n\nOne **bold** and `code`.\n\n- first\n- second\n\n1. step');
+    assert(out.includes('<h5 class="h6 mt-3 mb-2">Spec</h5>'), 'a heading starts below the dialog title');
+    assert(out.includes('<strong>bold</strong>'), 'bold');
+    assert(out.includes('<code>code</code>'), 'inline code');
+    assert(out.includes('<ul><li>first</li><li>second</li></ul>'), 'a bullet list');
+    assert(out.includes('<ol><li>step</li></ol>'), 'and a numbered one, kept apart');
+  });
+
+  await test('a fenced block is literal, emphasis and all', () => {
+    const out = markdown.renderMarkdown('```\nrm -rf *not*bold*\n<b>x</b>\n```');
+    assert(out.includes('<pre'), 'it is a code block');
+    assert(out.includes('*not*bold*'), 'the asterisks are code, not emphasis');
+    assert(!out.includes('<b>x</b>'), 'and the tag inside it is still escaped');
+  });
+
+  await test('an unterminated fence keeps its content instead of dropping it', () => {
+    assert(markdown.renderMarkdown('```\nhalf a block').includes('half a block'), 'the text survives');
+  });
+
+  await test('a link is followed only when the scheme is one a browser may follow', () => {
+    const safe = markdown.renderMarkdown('see [the spec](https://example.com/a)');
+    assert(safe.includes('<a href="https://example.com/a" target="_blank" rel="noopener">the spec</a>'), 'https opens in a new tab');
+    const unsafe = markdown.renderMarkdown('see [click](javascript:alert(1))');
+    assert(!unsafe.includes('<a '), 'a javascript: URL is not made into a link');
+    assert(unsafe.includes('[click]'), 'it stays the text it was');
+  });
+
+  await test('an href holding asterisks survives the emphasis pass', () => {
+    const out = markdown.renderMarkdown('see [x](https://ok.com/*a*b*)');
+    assert(out.includes('href="https://ok.com/*a*b*"'), `the URL is untouched: ${out}`);
+    assert(!out.includes('<em>'), 'and no emphasis was minted inside it');
+  });
+
+  group('tower/app: modal — the issue dialog');
+
+  const ISSUE = {
+    repo: 'ITW/workkit',
+    number: 31,
+    title: 'Issues open in a modal',
+    url: 'https://github.com/ITW-Creative-Works/workkit/issues/31',
+    body: '## Description\n\nThe body.',
+    bodyTruncated: false,
+    comments: 2,
+    createdAt: '2026-07-20T10:00:00Z',
+    updatedAt: '2026-07-27T10:00:00Z',
+    status: 'specced',
+    type: 'enhancement',
+    priority: 'high',
+    agentOk: true,
+    assignees: ['ianwieds'],
+  };
+
+  await test('a trigger carries the key and the keyboard affordance a div needs', () => {
+    const attrs = modal.issueTrigger(ISSUE);
+    assert(attrs.includes('data-issue="ITW/workkit#31"'), 'the repo and number are the key');
+    assert(attrs.includes('role="button"') && attrs.includes('tabindex="0"'), 'and it is reachable without a mouse');
+  });
+
+  await test('the external link is the only thing that leaves for GitHub', () => {
+    const link = modal.externalLink(ISSUE.url, 'ms-2');
+    assert(link.includes(`href="${ISSUE.url}"`), 'it points at the issue');
+    assert(link.includes('target="_blank"') && link.includes('rel="noopener"'), 'in a new tab, safely');
+    assert(link.includes('aria-label="Open on GitHub"'), 'and says what it does');
+    assert(link.includes('class="tower-external ms-2"'), 'the caller can place it');
+  });
+
+  await test('the dialog says everything the issue knows', () => {
+    const parts = modal.issueDialog(ISSUE);
+    assert(parts.title.includes('ITW/workkit #31'), 'repo and number');
+    assert(parts.title.includes('Issues open in a modal'), 'and the title');
+    assert(parts.actions.includes('target="_blank"'), 'the external button is the header action');
+    assert(parts.body.includes('>specced<'), 'the status');
+    assert(parts.body.includes('>enhancement<') && parts.body.includes('agent:ok'), 'and the chips');
+    assert(parts.body.includes('held by @ianwieds'), 'who holds it');
+    assert(/filed .* · updated /.test(parts.body), 'both dates');
+    assert(parts.body.includes('<p>The body.</p>'), 'the body, rendered');
+    assert(parts.body.includes('2 comments on GitHub'), 'and where the conversation is');
+  });
+
+  await test('an issue with nothing on it still opens', () => {
+    const bare = modal.issueDialog({ repo: 'r', number: 1, url: 'https://example.com/1', title: 'bare' });
+    assert(bare.body.includes('No description.'), 'an empty body says so');
+    assert(bare.body.includes('unclaimed'), 'and nobody holding it says that');
+    assert(bare.body.includes('0 comments'), 'a missing count is zero, not undefined');
+    assert(bare.body.includes('—'), 'and a missing date is a dash');
+  });
+
+  await test('a truncated body admits it', () => {
+    const cut = modal.issueDialog({ ...ISSUE, bodyTruncated: true });
+    assert(cut.body.includes('the rest is on GitHub'), 'the dialog says what it is not showing');
+  });
+
+  await test('a hostile issue reaches the dialog as text', () => {
+    const nasty = modal.issueDialog({
+      ...ISSUE,
+      title: '<img src=x onerror=alert(1)>',
+      body: '<script>alert(1)</script>',
+      assignees: ['<b>me</b>'],
+      status: '<i>x</i>',
+    });
+    assert(!nasty.title.includes('<img'), 'the title is escaped');
+    assert(!nasty.body.includes('<script>'), 'the body is escaped');
+    assert(!nasty.body.includes('<b>me</b>'), 'the handle is escaped');
+    assert(!nasty.body.includes('<i>x</i>'), 'and so is the status chip');
   });
 
   return summary();

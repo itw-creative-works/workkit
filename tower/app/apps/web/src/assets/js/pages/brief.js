@@ -15,6 +15,8 @@
 import { startPage } from '../libs/tower/page.js';
 import { feed } from '../libs/tower/state.js';
 import { esc, num, empty, problem, issueChips, statCell, statgrid, card } from '../libs/tower/format.js';
+import { loading, swap } from '../libs/tower/loading.js';
+import { issueTrigger, externalLink } from '../libs/tower/modal.js';
 
 /** The rows a section shows — narrowed to the selected repo when there is one. */
 const forRepo = (items, selected) => (selected ? items.filter((item) => item.repo === selected) : items);
@@ -54,11 +56,14 @@ const numbers = (payload, lists, selected) => statgrid([
 
 // ── The sections ───────────────────────────────────────────────────────────
 
-const issueRow = (issue) => `<li class="py-2">
-  <a class="text-reset text-decoration-none" href="${esc(issue.url)}" target="_blank" rel="noopener">
-    <span class="classy-micro d-block">${esc(issue.repo)} #${esc(issue.number)}</span>
-    <span class="d-block">${esc(issue.title)}</span>
-  </a>
+const issueRow = (issue) => `<li class="py-2 tower-issue" ${issueTrigger(issue)}>
+  <div class="d-flex align-items-start gap-2">
+    <span class="flex-grow-1">
+      <span class="classy-micro d-block">${esc(issue.repo)} #${esc(issue.number)}</span>
+      <span class="d-block">${esc(issue.title)}</span>
+    </span>
+    ${externalLink(issue.url)}
+  </div>
   ${issueChips(issue, 'mt-1')}
 </li>`;
 
@@ -103,14 +108,14 @@ const render = (root, state) => {
   const result = feed(state, 'brief');
 
   if (!result) {
-    root.innerHTML = empty('reading the brief…');
+    swap(root, loading('reading the brief…'));
     return;
   }
   // A brief that could not be built is the whole page. A quiet morning and a
   // failed sweep are opposite facts, and empty sections would tell the first
   // story while the second is the true one.
   if (!result.ok) {
-    root.innerHTML = problem(result.reason);
+    swap(root, problem(result.reason));
     return;
   }
 
@@ -123,14 +128,14 @@ const render = (root, state) => {
     inbox: forRepo(payload.inbox || [], selected),
   };
 
-  root.innerHTML = `
+  swap(root, `
     ${headline(payload, selected)}
     ${numbers(payload, lists, selected)}
     ${section('Waiting on you', lists.waiting, 'nothing is waiting on you', true)}
     ${section('Ready to start', lists.ready, 'nothing is specced and unclaimed')}
     ${section('In flight', lists.inFlight, 'nothing is claimed right now')}
     ${warnings(forRepo(payload.warnings || [], selected))}
-  `;
+  `);
 };
 
 // `repos` is the roster the chrome's repo selector is built from — the page

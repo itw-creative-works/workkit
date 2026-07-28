@@ -20,12 +20,357 @@
   padding-bottom: .5rem;
 }
 
-// The crew org chart's connector lines. The theme has no tree component, and
-// the lines are geometry, not decoration — there is nothing to reuse.
+// One card size, so the columns read as columns. Two rules do it: a floor that
+// lifts a one-line card to the height of a two-line one, and the clamp below
+// that stops a long title growing past it. Nothing is lost to either — the
+// whole title is in the dialog the card opens.
+// 8.25rem is what a FULL card measures — a slug line, two lines of title and a
+// row of chips — so the floor lifts every shorter one to exactly that and no
+// card is left with dead space at the bottom of it.
+.tower-board .tower-issue { min-height: 8.25rem; }
+
+.tower-issue__title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+// The chips are the card's last row and stay ONE row: an issue carrying a type,
+// a priority, the agent grant and an assignee wrapped into a second line and
+// made its card twenty pixels taller than its neighbours. The handle is the
+// piece that gives, ending in an ellipsis rather than being cut mid-word; the
+// whole of it is in the dialog the card opens.
+//
+// `!important` because Bootstrap's utilities are GENERATED with it — the row
+// carries `.flex-wrap`, which no amount of specificity outranks, and the row is
+// shared with the Brief and the dialog, where wrapping is right.
+.tower-issue__chips {
+  flex-wrap: nowrap !important;
+  overflow: hidden;
+
+  // The handle is the row's only wrapping text, and a flex item squeezed by a
+  // nowrap row is squeezed to its MIN-content — which for `@ianwieds, @someone`
+  // is one word per line, and made the card twice as tall as the wrap it was
+  // meant to prevent. Held on one line it truncates instead.
+  > .classy-micro {
+    overflow: hidden;
+    min-width: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+// ── The crew org chart ─────────────────────────────────────────────────────
+//
+// The theme has no tree component, and the connector lines are geometry, not
+// decoration — there is nothing to reuse. Every line is a repeating gradient
+// rather than a border, for one reason: a gradient's position is animatable
+// and a border's dash pattern is not, and the lines on this chart MOVE. Only
+// working agents are ever drawn on it (the finished ones are the collapsed
+// count below), so the animation needs no condition.
+//
+// Wide: the root centred over a row of crew, a trunk down to a horizontal bus,
+// a stub down into each card. Under 768px the same tree turns on its side —
+// one spine down the left with an elbow into each card — because six 16rem
+// columns on a phone is not a chart, it is a scrollbar.
+.tower-tree {
+  --tower-line: var(--omega-line, var(--bs-border-color));
+  --tower-line-size: 2px;
+  --tower-drop: 1.5rem;
+}
+
+.tower-tree__root,
+.tower-tree__node,
+.tower-tree__leaf {
+  flex: 0 0 auto;
+  position: relative;
+  width: 16rem;
+}
+
+.tower-tree__root { margin-inline: auto; }
+
 .tower-tree__children {
+  display: flex;
+  // `safe` keeps an overflowing crew reachable: centring a row wider than its
+  // container puts the first card off the scrollable edge. An engine that does
+  // not know the keyword drops the declaration and starts the row at the left,
+  // which is the same rescue.
+  justify-content: safe center;
+  gap: 1rem;
+  // A crew wider than the card scrolls sideways, the way the board's columns
+  // do, rather than wrapping into rows the bus cannot connect. The trunk is
+  // drawn INSIDE this padding rather than above the box, because a scroll
+  // container clips what hangs outside it.
+  overflow-x: auto;
+  padding-top: var(--tower-drop);
+  padding-bottom: .25rem;
+  position: relative;
+}
+
+// The trunk: from the root's bottom edge down to the bus.
+.tower-tree__children::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: calc(50% - (var(--tower-line-size) / 2));
+  width: var(--tower-line-size);
+  height: var(--tower-drop);
+  background-image: repeating-linear-gradient(180deg, var(--tower-line) 0 6px, transparent 6px 12px);
+  animation: tower-flow-down 1.2s linear infinite;
+}
+
+// Each node holds the drop the bus and its own stub are drawn in.
+.tower-tree__node { padding-top: var(--tower-drop); }
+
+// The bus, in segments: one per node, reaching half the gap either side so the
+// segments meet. The first and last stop at their own centre, which is what
+// makes the bus span exactly from the first card to the last.
+.tower-tree__node::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -.5rem;
+  right: -.5rem;
+  height: var(--tower-line-size);
+  background-image: repeating-linear-gradient(90deg, var(--tower-line) 0 6px, transparent 6px 12px);
+  animation: tower-flow-right 1.2s linear infinite;
+}
+
+.tower-tree__node:first-child::after { left: calc(50% - (var(--tower-line-size) / 2)); }
+.tower-tree__node:last-child::after { right: calc(50% - (var(--tower-line-size) / 2)); }
+
+// The stub: down from the bus into the card.
+.tower-tree__node::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: calc(50% - (var(--tower-line-size) / 2));
+  width: var(--tower-line-size);
+  height: var(--tower-drop);
+  background-image: repeating-linear-gradient(180deg, var(--tower-line) 0 6px, transparent 6px 12px);
+  animation: tower-flow-down 1.2s linear infinite;
+}
+
+// The finished crew: a plain wrapping list, connected to nothing.
+.tower-tree__done {
   display: flex;
   flex-wrap: wrap;
   gap: 1rem;
-  padding-left: 1.5rem;
-  border-left: 1px solid var(--omega-line, var(--bs-border-color));
+}
+
+@keyframes tower-flow-down { to { background-position: 0 12px; } }
+@keyframes tower-flow-right { to { background-position: 12px 0; } }
+
+// Narrow: the same tree, stacked. The bus becomes a spine down the left and
+// each node's stub becomes an elbow into its card, so nothing floats free.
+@media (max-width: 767.98px) {
+  .tower-tree__root,
+  .tower-tree__node,
+  .tower-tree__leaf { width: auto; }
+
+  .tower-tree__children {
+    display: block;
+    overflow-x: visible;
+    padding-left: var(--tower-drop);
+  }
+
+  .tower-tree__children::before { left: 0; }
+
+  .tower-tree__node {
+    padding-top: 0;
+    margin-top: 1rem;
+  }
+
+  // The elbow, at the card's shoulder.
+  .tower-tree__node::before {
+    top: var(--tower-drop);
+    left: calc(var(--tower-drop) * -1);
+    width: var(--tower-drop);
+    height: var(--tower-line-size);
+    background-image: repeating-linear-gradient(90deg, var(--tower-line) 0 6px, transparent 6px 12px);
+    animation: tower-flow-right 1.2s linear infinite;
+  }
+
+  // The spine, in segments: each node carries the piece above it, and the last
+  // one stops at its own elbow instead of running past the bottom card.
+  //
+  // The first and last node are named here too. Their wide-layout rules trim
+  // the bus to a half segment, a media query adds no specificity of its own,
+  // and without the same two selectors on this side they would keep winning.
+  .tower-tree__node::after,
+  .tower-tree__node:first-child::after,
+  .tower-tree__node:last-child::after {
+    top: -1rem;
+    bottom: 0;
+    left: calc(var(--tower-drop) * -1);
+    right: auto;
+    width: var(--tower-line-size);
+    height: auto;
+    background-image: repeating-linear-gradient(180deg, var(--tower-line) 0 6px, transparent 6px 12px);
+    animation: tower-flow-down 1.2s linear infinite;
+  }
+
+  .tower-tree__node:last-child::after {
+    bottom: auto;
+    height: calc(1rem + var(--tower-drop));
+  }
+}
+
+// Last, and naming the trimmed segments too: this has to outrank both layouts,
+// and a media query lends a rule no specificity to outrank them with.
+@media (prefers-reduced-motion: reduce) {
+  .tower-tree__children::before,
+  .tower-tree__node::before,
+  .tower-tree__node::after,
+  .tower-tree__node:first-child::after,
+  .tower-tree__node:last-child::after { animation: none; }
+}
+
+// ── The issue affordance ───────────────────────────────────────────────────
+//
+// An issue is clicked to OPEN it in the tower's dialog; the one thing that
+// leaves for github.com is this button, and it is only there while the card is
+// hovered or focused so a list of issues is not a row of icons. It stays put on
+// a touch screen, which has no hover to reveal it with.
+//
+// A whole card is the click target, and it says so the way the theme's own
+// controls do: the surface warms under the pointer, and a card lifts a hair
+// while a row — which has no edges to lift — only warms. Pressing puts the lift
+// back down, so the click has somewhere to land. The keyboard gets the same
+// affordance through :focus-visible, since these are divs carrying a button role.
+.tower-issue {
+  cursor: pointer;
+  transition: background-color var(--omega-speed, 160ms) var(--omega-ease, ease),
+    box-shadow var(--omega-speed, 160ms) var(--omega-ease, ease),
+    transform var(--omega-speed, 160ms) var(--omega-ease, ease);
+}
+
+.tower-issue:hover,
+.tower-issue:focus-visible { background-color: var(--omega-surface-2, var(--bs-tertiary-bg)); }
+
+.tower-issue:focus-visible { outline: 2px solid var(--omega-accent-ring, var(--omega-accent)); outline-offset: 2px; }
+
+.card.tower-issue:hover,
+.card.tower-issue:focus-visible {
+  box-shadow: var(--omega-shadow-2);
+  transform: translateY(-2px);
+}
+
+.tower-issue:active { background-color: var(--omega-accent-subtle, var(--omega-surface-2)); }
+
+.card.tower-issue:active {
+  box-shadow: var(--omega-shadow-1);
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tower-issue { transition: none; }
+
+  .card.tower-issue:hover,
+  .card.tower-issue:focus-visible,
+  .card.tower-issue:active { transform: none; }
+}
+
+// ── Model and class colour ─────────────────────────────────────────────────
+//
+// The one palette for the two vocabularies the tower repeats — which model ran
+// and which crew class ran it — so a bar on the Usage chart and a badge on a
+// Crew card are the same colour for the same thing. Which NAME falls in which
+// slot is libs/tower/format.js (modelKey / classKey); the colours are here,
+// beside the theme's own tokens, and carry the same light/dark plumbing the
+// token sheet uses so appearance follows without a second palette.
+//
+// Muted on purpose: the theme tells status with a dot and a label and never
+// with colour alone, so these are recognition aids on text that already reads
+// correctly in grey. Models take the cool half of the wheel and classes the
+// warm half, which is what keeps a model badge and a class badge apart at a
+// glance on the pages carrying both.
+$tower-badge-light: (
+  fable: #4a46b8,
+  opus: #7a45b5,
+  sonnet: #0f8fa9,
+  haiku: #12925c,
+  manager: var(--omega-accent),
+  advisor: #b0416a,
+  worker: #a06a08,
+  verifier: #6a7f2b,
+  scout: #b05a2a,
+  reviewer: #8a4a8f,
+  other: var(--omega-ink-muted),
+);
+
+$tower-badge-dark: (
+  fable: #9b96f0,
+  opus: #c09aec,
+  sonnet: #1f9fb4,
+  haiku: #3ecf8e,
+  manager: var(--omega-accent),
+  advisor: #ee89a8,
+  worker: #e0a33c,
+  verifier: #a9c153,
+  scout: #e08d5c,
+  reviewer: #cb92cf,
+  other: var(--omega-ink-muted),
+);
+
+@mixin tower-badge-tokens($map) {
+  @each $key, $value in $map {
+    --tower-badge-#{$key}: #{$value};
+  }
+}
+
+:root { @include tower-badge-tokens($tower-badge-light); }
+
+// The OS preference carries when nothing is stamped, and the appearance stamp
+// beats it in both directions — the same three rules the token sheet ships.
+@media (prefers-color-scheme: dark) {
+  :root { @include tower-badge-tokens($tower-badge-dark); }
+}
+
+:root[data-bs-theme='dark'] { @include tower-badge-tokens($tower-badge-dark); }
+:root[data-bs-theme='light'] { @include tower-badge-tokens($tower-badge-light); }
+
+@each $key, $value in $tower-badge-light {
+  .tower-badge--#{$key} { --tower-badge: var(--tower-badge-#{$key}); }
+}
+
+// A chip in its slot's colour. `text-transform` is turned off because the label
+// is an identifier, not a word — `CLAUDE-OPUS-5[1M]` is not the model's name.
+.tower-badge {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--tower-badge, var(--omega-ink-muted));
+  background: color-mix(in srgb, var(--tower-badge, var(--omega-ink-muted)) 14%, transparent);
+  border-color: transparent;
+  text-overflow: ellipsis;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.tower-external {
+  color: inherit;
+  display: inline-flex;
+  flex: 0 0 auto;
+  opacity: 0;
+  transition: opacity .12s ease-in-out;
+}
+
+.tower-issue:hover .tower-external,
+.tower-issue:focus-within .tower-external,
+.tower-external:focus-visible { opacity: 1; }
+
+// In the dialog the button is the header's own control, not a card's reveal.
+.modal-header .tower-external { opacity: 1; }
+
+@media (hover: none) {
+  .tower-external { opacity: 1; }
+}
+
+// An issue body is markdown rendered by libs/tower/markdown.js — the code it
+// carries needs the one thing Bootstrap does not give a bare `pre`: a surface.
+.tower-issue__body pre {
+  background: var(--omega-surface-2, var(--bs-tertiary-bg));
+  overflow-x: auto;
 }

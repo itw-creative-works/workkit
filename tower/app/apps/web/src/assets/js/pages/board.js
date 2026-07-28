@@ -14,6 +14,8 @@
 import { startPage } from '../libs/tower/page.js';
 import { issuesFor, board, feed } from '../libs/tower/state.js';
 import { esc, empty, problem, issueChips, STATUSES, statusColor } from '../libs/tower/format.js';
+import { loading, swap } from '../libs/tower/loading.js';
+import { issueTrigger, externalLink } from '../libs/tower/modal.js';
 
 // The filter names, which are also their URL parameter names. `repo` is not one
 // of them — the page chrome owns that globally and every page obeys it.
@@ -86,13 +88,26 @@ const order = (a, b) => {
   return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
 };
 
-const issueCard = (issue, showRepo) => `<a class="card mb-2 text-decoration-none text-reset${issue.status === 'blocked' ? ' border-danger' : ''}" href="${esc(issue.url)}" target="_blank" rel="noopener">
-  <div class="card-body p-3">
-    <span class="classy-micro d-block">${showRepo ? `${esc(issue.repo)} ` : ''}#${esc(issue.number)}</span>
-    <span class="d-block mb-2">${esc(issue.title)}</span>
-    ${issueChips(issue)}
+// A card OPENS the issue in the dialog; GitHub is reached only through the
+// button in its corner, which shows while the card is hovered or focused.
+//
+// Every card is the same size, which takes all three of its rows holding one
+// shape: the slug line truncates, the title is clamped to two lines
+// (`tower-issue__title`), and the chips stay on one row
+// (`tower-issue__chips`) — so the only remaining variation is a short title,
+// which the floor on `.tower-board .tower-issue` absorbs while `mt-auto` keeps
+// the chips against the bottom edge. Nothing is lost to any of it: the card
+// opens the dialog, which says the whole of all three.
+const issueCard = (issue, showRepo) => `<div class="card tower-issue mb-2${issue.status === 'blocked' ? ' border-danger' : ''}" ${issueTrigger(issue)}>
+  <div class="card-body p-3 d-flex flex-column">
+    <div class="d-flex align-items-start gap-2">
+      <span class="classy-micro d-block flex-grow-1 text-truncate">${showRepo ? `${esc(issue.repo)} ` : ''}#${esc(issue.number)}</span>
+      ${externalLink(issue.url)}
+    </div>
+    <span class="mb-2 tower-issue__title">${esc(issue.title)}</span>
+    ${issueChips(issue, 'mt-auto tower-issue__chips')}
   </div>
-</a>`;
+</div>`;
 
 const column = (status, issues, showRepo) => `<section>
   <div class="classy-panel-head mb-3" style="border-bottom: 2px solid ${statusColor(status.key)};">
@@ -135,18 +150,20 @@ const render = (root, state) => {
   const showRepo = !state.selectedRepo;
 
   let body;
-  if (!result) body = empty('reading the board…');
+  if (!result) body = loading('reading the board…');
   else if (!result.ok) body = problem(result.reason);
   else if (!board(state)) body = empty('the board answered with nothing');
   else body = `${counts(shown.length, all.length, state.selectedRepo)}${columns(shown, showRepo)}`;
 
   // The page repaints every poll, and a repaint must not take the caret out of
   // the search box mid-word — so where the focus was is put back where it goes.
+  // A poll that changed nothing does not write at all (swap), and then there is
+  // nothing to restore.
   const focused = document.activeElement;
   const focusId = focused && root.contains(focused) ? focused.id : null;
   const caret = focusId && typeof focused.selectionStart === 'number' ? focused.selectionStart : null;
 
-  root.innerHTML = `${toolbar(all, filters)}${body}`;
+  if (!swap(root, `${toolbar(all, filters)}${body}`)) return;
 
   if (focusId) {
     const again = root.querySelector(`#${focusId}`);

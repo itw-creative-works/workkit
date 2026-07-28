@@ -17,6 +17,13 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ### Changed
 
+- [#35](../../issues/35) — Models and crew classes are drawn as coloured badges everywhere they appear, and the Usage charts use the same colours; every clickable issue card warms and lifts under the pointer and settles on press.
+- [#34](../../issues/34) — The Overview's lists stop at five with a line to the page holding the rest, health is ranked worst-first, the queue by status is a doughnut, and the panel links carry no underline.
+- [#33](../../issues/33) — Every board card is one size: the title clamps to two lines, the repo line truncates, and the chips stay on one row. The whole of all three is in the dialog the card opens.
+- [#30](../../issues/30) — A Crew root card is titled `repo/chat` and a subagent card leads with its class, demoting the agent id to the muted line under it.
+- [#31](../../issues/31) — Clicking an issue anywhere on the tower opens it in a dialog — status, chips, the body rendered, holder, dates and comment count — instead of leaving for GitHub. The box-with-arrow button is the only thing that does, in a new tab.
+- [#32](../../issues/32) — Tower pages refresh in place: a first paint shows a spinner naming the read, a poll that changed nothing writes nothing, and a failed refresh keeps the last good answer on screen instead of clearing the page.
+- [#29](../../issues/29) — The Crew page draws a real org chart: a trunk from each session down to a bus, a moving line into every working subagent, and the same tree on its side under 768px.
 - [#22](../../issues/22) — The tower's page modules read the one shape `/api/telemetry` defines and nothing else: the Usage page draws the endpoint's aggregates or says it has none, and the issue chips the Board and the Brief both draw come from one helper.
 - [#23](../../issues/23) — The Brief page reads `/api/brief` through the page runtime's feed table, so the poll cadence and the Refresh button are the same ones every other page uses.
 - (no issue) — Shipped content carries no personal identifiers, enforced by the portability tests, and the engine's address is `~/.claude/workkit`, maintained by the standards heal itself; hooks resolve the engine relative to their own location.
@@ -35,5 +42,6 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ### Fixed
 
+- [#38](../../issues/38) — `tower/README.md` no longer documents a `TOWER_ROOT` environment variable; nothing reads it, and the roster root is a library option.
 - [#25](../../issues/25) — The Crew page draws only the subagents still working: the API stamps each one `working` or `done` from the same idle window a session's state uses, and the finished ones collapse into one expandable count per session.
 - [#21](../../issues/21) — The telemetry read cache is pruned to the transcripts each collection pass named, so a long-running tower forgets the sessions that ended instead of holding their read state forever.

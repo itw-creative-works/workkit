@@ -81,9 +81,14 @@ export function resolveColor(value) {
  * The markup a chart is drawn into. A canvas has no intrinsic height, so the
  * box carries it. When the library did not load, the slot says that instead of
  * leaving a hole — the figures it would have drawn are always beside it.
+ *
+ * `series` is the data the chart will draw, stamped onto the box: pages only
+ * redraw charts when `swap` wrote, and a canvas carries no data of its own, so
+ * without the stamp a data-only change leaves the old picture standing.
+ * @param {Array<number>} [series] the values the chart will draw
  */
-export const chartSlot = (id, height = 220) => (chartsReady()
-  ? `<div style="position: relative; height: ${Number(height)}px;"><canvas id="${id}"></canvas></div>`
+export const chartSlot = (id, height = 220, series = []) => (chartsReady()
+  ? `<div style="position: relative; height: ${Number(height)}px;" data-series="${series.map(Number).join(',')}"><canvas id="${id}"></canvas></div>`
   : '<p class="classy-micro text-body-secondary mb-0">chart library unavailable offline — the figures are in the table</p>');
 
 /** Draw into `id`, replacing whatever chart was there (every poll repaints). */

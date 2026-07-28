@@ -31,8 +31,12 @@
 
 import { startPage } from '../libs/tower/page.js';
 import { feed } from '../libs/tower/state.js';
-import { esc, empty, problem, compact, money, statCell, statgrid, card } from '../libs/tower/format.js';
+import {
+  esc, empty, problem, compact, money, statCell, statgrid, card,
+  modelKey, classKey, badgeColor, modelBadge, classBadge,
+} from '../libs/tower/format.js';
 import { chartSlot, barChart, doughnutChart, lineChart } from '../libs/tower/charts.js';
+import { loading, swap } from '../libs/tower/loading.js';
 
 const sortDown = (list) => [...list].sort((a, b) => b[1] - a[1]);
 
@@ -113,8 +117,8 @@ const sessionTable = (usage) => {
     <thead><tr><th>session</th><th>class</th><th>model</th><th class="text-end">tokens</th><th class="text-end">cache</th><th class="text-end">cost</th></tr></thead>
     <tbody>${usage.sessions.map((session) => `<tr>
       <td>${esc(session.title || session.id || '—')}</td>
-      <td>${esc(session.agentClass)}</td>
-      <td>${esc(session.model)}</td>
+      <td>${classBadge(session.agentClass)}</td>
+      <td>${modelBadge(session.model)}</td>
       <td class="text-end">${esc(compact(session.tokens.total))}</td>
       <td class="text-end">${esc(compact(session.tokens.cacheRead))}</td>
       <td class="text-end">${session.cost === null ? '—' : esc(money(session.cost))}</td>
@@ -139,11 +143,15 @@ const charts = (usage) => {
 </div>`;
 };
 
+// Each bar is drawn in the colour its model or class carries everywhere else on
+// the tower, so a row in the chart and a badge in the table below it are
+// recognizably the same thing.
 const drawCharts = (usage) => {
   if (usage.byModel.length) {
     barChart('usage-model', {
       labels: usage.byModel.map(([label]) => label),
       values: usage.byModel.map(([, value]) => value),
+      colors: usage.byModel.map(([label]) => badgeColor(modelKey(label))),
       horizontal: true,
       label: 'tokens',
     });
@@ -152,6 +160,7 @@ const drawCharts = (usage) => {
     barChart('usage-class', {
       labels: usage.byClass.map(([label]) => label),
       values: usage.byClass.map(([, value]) => value),
+      colors: usage.byClass.map(([label]) => badgeColor(classKey(label))),
       horizontal: true,
       label: 'tokens',
     });
@@ -184,21 +193,21 @@ const render = (root, state) => {
   const result = feed(state, 'telemetry');
 
   if (!result) {
-    root.innerHTML = empty('reading usage…');
+    swap(root, loading('reading usage…'));
     return;
   }
   if (!result.ok) {
-    root.innerHTML = problem(result.reason);
+    swap(root, problem(result.reason));
     return;
   }
 
   const usage = readUsage(result);
   if (!usage) {
-    root.innerHTML = empty('the telemetry endpoint answered with nothing to chart');
+    swap(root, empty('the telemetry endpoint answered with nothing to chart'));
     return;
   }
 
-  root.innerHTML = `${numbers(usage)}${charts(usage)}${card('Sessions', sessionTable(usage))}`;
+  if (!swap(root, `${numbers(usage)}${charts(usage)}${card('Sessions', sessionTable(usage))}`)) return;
   drawCharts(usage);
 };
 

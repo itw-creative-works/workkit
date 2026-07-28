@@ -22,12 +22,21 @@
 //   buildBrief(board, health, repos);
 //
 
-/** An issue as the brief carries it — the fields a one-line summary needs. */
+// An issue as the brief carries it — the fields a one-line summary needs, plus
+// the ones the dashboard's issue dialog reads. The Brief page never fetches the
+// board, so an issue arriving without its body would be the one place on the
+// dashboard where opening an issue showed less than everywhere else.
 const brief = (issue) => ({
   repo: issue.repo,
   number: issue.number,
   title: issue.title,
   url: issue.url,
+  body: issue.body || '',
+  bodyTruncated: Boolean(issue.bodyTruncated),
+  comments: issue.comments || 0,
+  createdAt: issue.createdAt || null,
+  updatedAt: issue.updatedAt || null,
+  status: issue.status || null,
   type: issue.type || null,
   priority: issue.priority || null,
   agentOk: Boolean(issue.agentOk),

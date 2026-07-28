@@ -12,9 +12,12 @@ import {
   issuesFor, reposFor, sessionsFor, board, health, feed,
 } from '../libs/tower/state.js';
 import {
-  esc, num, empty, problem, shortPath, statCell, statgrid, card, pill, STATUSES, statusColor,
+  esc, num, empty, problem, shortPath, statCell, statgrid, card, pill, cap,
+  modelBadge, STATUSES, statusColor,
 } from '../libs/tower/format.js';
-import { chartSlot, barChart } from '../libs/tower/charts.js';
+import { chartSlot, doughnutChart } from '../libs/tower/charts.js';
+import { loading, swap } from '../libs/tower/loading.js';
+import { issueTrigger, externalLink } from '../libs/tower/modal.js';
 
 /** Sum a health field across the repos in play; nulls (unknowable) are skipped. */
 const total = (state, field) => reposFor(state)
@@ -40,15 +43,24 @@ const numbers = (state) => {
 // The alarm is spent only when something IS waiting: an empty strip carries no
 // red border and no accent chip, because a dashboard that shouts at a clear
 // queue teaches you to stop reading it.
+// The rest of a capped list is on the Board, and the line says how many it is —
+// "see all" with no number would hide exactly the fact that matters when the
+// queue has grown.
+const seeMore = (hidden, href) => (hidden
+  ? `<p class="mt-2 mb-0"><a class="classy-micro text-decoration-none" href="${esc(href)}">see all — ${hidden} more on the board</a></p>`
+  : '');
+
 const waiting = (state) => {
   const blocked = issuesFor(state).filter((issue) => issue.status === 'blocked');
+  const { shown, hidden } = cap(blocked);
   const body = blocked.length
-    ? `<ul class="list-unstyled mb-0">${blocked.map((issue) => `<li class="py-1">
-        <a href="${esc(issue.url)}" target="_blank" rel="noopener" class="text-reset">
+    ? `<ul class="list-unstyled mb-0">${shown.map((issue) => `<li class="py-1 tower-issue d-flex align-items-start gap-2" ${issueTrigger(issue)}>
+        <span class="flex-grow-1">
           <span class="classy-micro">${esc(issue.repo)} #${esc(issue.number)}</span>
           <span class="d-block">${esc(issue.title)}</span>
-        </a>
-      </li>`).join('')}</ul>`
+        </span>
+        ${externalLink(issue.url)}
+      </li>`).join('')}</ul>${seeMore(hidden, '/board')}`
     : empty('nothing is waiting on you');
   return card('Waiting on you', body, {
     chip: blocked.length,
@@ -61,7 +73,8 @@ const crew = (state) => {
   const live = sessionsFor(state);
   const result = feed(state, 'sessions');
   let body;
-  if (result && !result.ok) body = problem(result.reason);
+  if (!result) body = loading('reading the crew…');
+  else if (!result.ok) body = problem(result.reason);
   else if (!live.length) body = empty('no live sessions');
   else {
     // The chat name WRAPS. It used to carry `text-truncate`, which on a table
@@ -69,15 +82,16 @@ const crew = (state) => {
     // long session name grew the table to twice its card and pushed the state
     // pill and the model out past the card's edge, reachable only by scrolling
     // the table sideways. Wrapping keeps every column inside the card.
+    const { shown, hidden } = cap(live);
     body = `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
       <thead><tr><th>repo</th><th>chat</th><th>state</th><th>model</th></tr></thead>
-      <tbody>${live.map((session) => `<tr>
+      <tbody>${shown.map((session) => `<tr>
         <td class="text-nowrap">${esc(shortPath(session.cwd))}</td>
         <td>${esc(session.chatName || '—')}</td>
         <td>${pill(session.state === 'working' ? 'ok' : (session.state === 'stale' ? 'danger' : 'warn'), session.state || 'unknown')}</td>
-        <td>${esc(session.model || '—')}</td>
+        <td>${session.model ? modelBadge(session.model) : '—'}</td>
       </tr>`).join('')}</tbody>
-    </table></div>`;
+    </table></div>${seeMore(hidden, '/crew')}`;
   }
   return card('Live crew', body, { class: 'h-100', link: { href: '/crew', label: 'all' } });
 };
@@ -101,29 +115,50 @@ const healthLine = (repo, reading) => {
   </li>`;
 };
 
+// How much is wrong with a repo, as one number — what the capped list is
+// ordered by. A cap that kept the roster's own order would show five clean
+// repos and hide the dirty one, which is the only row on this panel anyone is
+// looking for; the full census is the Health page, one click away.
+const trouble = (reading) => {
+  if (!reading) return 0;
+  if (reading.error) return Infinity;
+  return ['unpushed', 'uncommitted', 'unreleasedEntries']
+    .reduce((sum, field) => sum + (typeof reading[field] === 'number' ? reading[field] : 0), 0);
+};
+
 const healthPanel = (state) => {
   const list = reposFor(state);
   const result = feed(state, 'repos');
   let body;
-  if (result && !result.ok) body = problem(result.reason);
+  if (!result) body = loading('reading the roster…');
+  else if (!result.ok) body = problem(result.reason);
   else if (!list.length) body = empty('no repos in the roster — nothing has opted in under the roster root');
-  else body = `<ul class="list-unstyled mb-0">${list.map((repo) => healthLine(repo, health(state)[repo.path])).join('')}</ul>`;
+  else {
+    const ranked = [...list].sort((a, b) => trouble(health(state)[b.path]) - trouble(health(state)[a.path]));
+    const { shown, hidden } = cap(ranked);
+    body = `<ul class="list-unstyled mb-0">${shown.map((repo) => healthLine(repo, health(state)[repo.path])).join('')}</ul>${seeMore(hidden, '/health')}`;
+  }
   return card('Health', body, { class: 'h-100', link: { href: '/health', label: 'all' } });
 };
 
-/** Open issues by status — the same series the Board's columns count. */
+// Open issues by status — the same series the Board's columns count, as a
+// doughnut: the question this panel answers is what SHARE of the queue is
+// blocked or unspecced, and a ring says a share where five bars said five
+// unrelated heights. The box is taller than the bars needed because the legend
+// sits under the ring and carries the labels the axis used to.
+const statusSeries = (issues) => STATUSES.map((status) => issues.filter((issue) => (issue.status || '') === status.key).length);
+
 const shape = (state) => (issuesFor(state).length
-  ? card('The queue by status', chartSlot('overview-status', 200), { class: 'mt-4' })
+  ? card('The queue by status', chartSlot('overview-status', 260, statusSeries(issuesFor(state))), { class: 'mt-4' })
   : '');
 
 const drawShape = (state) => {
   const issues = issuesFor(state);
   if (!issues.length) return;
-  barChart('overview-status', {
+  doughnutChart('overview-status', {
     labels: STATUSES.map((status) => status.label),
-    values: STATUSES.map((status) => issues.filter((issue) => (issue.status || '') === status.key).length),
+    values: statusSeries(issues),
     colors: STATUSES.map((status) => statusColor(status.key)),
-    label: 'open issues',
   });
 };
 
@@ -140,7 +175,7 @@ const render = (root, state) => {
   // login, no network. It says so where the numbers would be rather than
   // showing six confident zeros.
   let head;
-  if (!result) head = `<div class="mb-4">${empty('reading the board…')}</div>`;
+  if (!result) head = `<div class="mb-4">${loading('reading the board…')}</div>`;
   else if (!result.ok) head = `<div class="mb-4">${problem(result.reason)}</div>`;
   else {
     const warnings = ((payload && payload.repos) || [])
@@ -150,14 +185,17 @@ const render = (root, state) => {
     head = `${numbers(state)}${warnings}${waiting(state)}`;
   }
 
-  root.innerHTML = `
+  // The chart is drawn only when the markup it lives on was actually written:
+  // an unchanged tick leaves the existing canvas — and its Chart.js instance —
+  // alone rather than tearing it down and building the same picture again.
+  if (!swap(root, `
     ${head}
     <div class="row g-4">
       <div class="col-12 col-xl-6">${crew(state)}</div>
       <div class="col-12 col-xl-6">${healthPanel(state)}</div>
     </div>
     ${shape(state)}
-  `;
+  `)) return;
 
   drawShape(state);
 };

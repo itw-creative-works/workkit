@@ -14,6 +14,8 @@ import {
   esc, num, empty, problem, statCell, statgrid, card, STATUSES, statusColor,
 } from '../libs/tower/format.js';
 import { chartSlot, barChart } from '../libs/tower/charts.js';
+import { loading, swap } from '../libs/tower/loading.js';
+import { issueTrigger, externalLink } from '../libs/tower/modal.js';
 
 /** One repo's open issues, from the board sweep, matched on its slug. */
 const issuesOf = (state, repo) => issuesFor(state).filter((issue) => issue.repo === repo.slug);
@@ -37,7 +39,7 @@ const lagRows = (state) => reposFor(state)
 
 const releaseLag = (rows) => {
   const body = rows.length
-    ? `${chartSlot('health-lag', 40 + rows.length * 32)}
+    ? `${chartSlot('health-lag', 40 + rows.length * 32, rows.map((row) => row.total))}
       <div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0">
         <thead><tr><th>repo</th><th class="text-end">unreleased</th><th class="text-end">unpushed</th><th class="text-end">last tag</th></tr></thead>
         <tbody>${rows.map((row) => `<tr>
@@ -71,7 +73,7 @@ const repoCard = (state, repo, alone) => {
       statCell('Unreleased', num(reading.unreleasedEntries)),
       statCell('Last tag', reading.lastTag || '—'),
     ], 'mb-3')}
-      ${chartSlot(canvasId(repo), 180)}
+      ${chartSlot(canvasId(repo), 180, STATUSES.map((status) => issues.filter((issue) => (issue.status || '') === status.key).length))}
       ${alone ? issueList(issues) : ''}`;
   }
 
@@ -82,9 +84,10 @@ const repoCard = (state, repo, alone) => {
 
 // The single-repo view has the room to name the issues, not only count them.
 const issueList = (issues) => (issues.length
-  ? `<ul class="list-unstyled mt-3 mb-0">${issues.map((issue) => `<li class="py-1 d-flex gap-2 align-items-center">
+  ? `<ul class="list-unstyled mt-3 mb-0">${issues.map((issue) => `<li class="py-1 tower-issue d-flex gap-2 align-items-center" ${issueTrigger(issue)}>
       <span class="classy-chip">${esc(issue.status || 'no status')}</span>
-      <a class="text-reset text-truncate flex-grow-1" href="${esc(issue.url)}" target="_blank" rel="noopener">#${esc(issue.number)} ${esc(issue.title)}</a>
+      <span class="text-truncate flex-grow-1">#${esc(issue.number)} ${esc(issue.title)}</span>
+      ${externalLink(issue.url)}
     </li>`).join('')}</ul>`
   : '');
 
@@ -100,22 +103,24 @@ const render = (root, state) => {
   const alone = list.length === 1;
 
   if (roster && !roster.ok) {
-    root.innerHTML = problem(roster.reason);
+    swap(root, problem(roster.reason));
     return;
   }
   if (!list.length) {
-    root.innerHTML = empty(roster ? 'no repos in the roster — nothing has opted in under the roster root' : 'reading the roster…');
+    swap(root, roster ? empty('no repos in the roster — nothing has opted in under the roster root') : loading('reading the roster…'));
     return;
   }
 
+  // The charts are redrawn only when the markup carrying their canvases was
+  // actually written — an unchanged tick leaves the drawn ones standing.
   const rows = lagRows(state);
-  root.innerHTML = `
+  if (!swap(root, `
     ${readings && !readings.ok ? `<div class="mb-4">${problem(readings.reason)}</div>` : ''}
     ${releaseLag(rows)}
     <div class="row g-4">
       ${list.map((repo) => repoCard(state, repo, alone)).join('')}
     </div>
-  `;
+  `)) return;
 
   if (rows.length) {
     barChart('health-lag', {

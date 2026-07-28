@@ -16,8 +16,11 @@
 
 import { startPage } from '../libs/tower/page.js';
 import { sessionsFor, sessions, feed, inSelectedRepo } from '../libs/tower/state.js';
-import { normalize, splitCrew, crewCount } from '../libs/tower/crew.js';
-import { esc, empty, problem, compact, shortPath, statCell, statgrid, card, pill } from '../libs/tower/format.js';
+import { normalize, splitCrew, crewCount, rootLabel } from '../libs/tower/crew.js';
+import {
+  esc, empty, problem, compact, statCell, statgrid, card, pill, modelBadge, classBadge,
+} from '../libs/tower/format.js';
+import { loading, swap } from '../libs/tower/loading.js';
 
 /** The tone a node's state is drawn in. */
 const tone = (value) => ({ working: 'ok', idle: 'warn', stale: 'danger' }[value] || 'warn');
@@ -38,32 +41,54 @@ const roots = (state) => {
   return sessionsFor(state).map(normalize);
 };
 
-const node = (entry, isRoot) => `<div class="card ${isRoot ? '' : 'flex-grow-1'}" style="min-width: 14rem;">
+// A card leads with what the node IS. For a root that is where it is working
+// and what the chat is called; for a subagent it is the CLASS, because a crew
+// is read as roles and the agent id is a uuid nothing recognizes — so the id
+// demotes to the muted line under it, where it stays reachable for matching a
+// card against a transcript.
+//
+// A root is a manager: that is the tier telemetry's byClass counts it as, so
+// the chart and the Usage page name it the same way.
+const node = (entry, isRoot) => `<div class="card h-100">
   <div class="card-body p-3">
     <div class="d-flex align-items-center gap-2 mb-1">
-      <span class="text-truncate flex-grow-1">${esc(entry.title || shortPath(entry.cwd) || entry.id || 'session')}</span>
+      <span class="text-truncate flex-grow-1">${esc(isRoot ? rootLabel(entry) : (entry.agentClass || 'subagent'))}</span>
       ${entry.state && entry.state !== 'done' ? pill(tone(entry.state), entry.state) : ''}
     </div>
-    <div class="classy-micro text-body-secondary text-truncate">${esc(entry.agentClass || (isRoot ? 'main chat' : 'subagent'))}${entry.cwd ? ` · ${esc(shortPath(entry.cwd))}` : ''}</div>
-    <div class="classy-micro text-body-secondary text-truncate">${esc(entry.model || 'model unknown')}${entry.effort ? ` · ${esc(entry.effort)}` : ''}</div>
+    <div class="classy-micro text-body-secondary text-truncate">${esc(entry.id || 'no id')}</div>
+    <div class="d-flex flex-wrap align-items-center gap-1 my-2">
+      ${classBadge(isRoot ? 'manager' : entry.agentClass)}
+      ${modelBadge(entry.model)}
+      ${entry.effort ? `<span class="classy-chip">${esc(entry.effort)}</span>` : ''}
+    </div>
     <div class="classy-micro">${entry.tokens === null ? '<span class="text-body-secondary">tokens unknown</span>' : `${esc(compact(entry.tokens))} tokens`}</div>
   </div>
 </div>`;
 
-const tier = (children) => `<div class="tower-tree__children mt-2">${children.map((child) => node(child, false)).join('')}</div>`;
+// The chart's second tier: the session's working crew, hanging off the trunk
+// under the root. Every connector line on the chart is animated, and needs no
+// condition to be — splitCrew has already left only the working agents here.
+// The lines themselves are the stylesheet's (.tower-tree in main.scss); the
+// markup supplies only the nesting they are drawn from.
+const tier = (children) => `<div class="tower-tree__children">
+  ${children.map((child) => `<div class="tower-tree__node">${node(child, false)}</div>`).join('')}
+</div>`;
 
 // The finished crew, folded shut. They are still worth reaching — what ran and
 // what it spent is the session's history — so the line opens onto the same
-// cards rather than hiding them.
-const finished = (children) => `<details class="mt-2">
+// cards rather than hiding them. They are a LIST, not part of the chart: an
+// agent that has stopped is connected to nothing that is still running.
+const finished = (children) => `<details class="mt-3">
   <summary class="classy-micro text-body-secondary">${children.length} finished subagent${children.length === 1 ? '' : 's'}</summary>
-  ${tier(children)}
+  <div class="tower-tree__done mt-2">
+    ${children.map((child) => `<div class="tower-tree__leaf">${node(child, false)}</div>`).join('')}
+  </div>
 </details>`;
 
 const branch = (entry) => {
   const { working, done } = splitCrew(entry.children);
-  return `<div class="mb-3">
-    ${node(entry, true)}
+  return `<div class="tower-tree mb-4">
+    <div class="tower-tree__root">${node(entry, true)}</div>
     ${working.length ? tier(working) : ''}
     ${done.length ? finished(done) : ''}
   </div>`;
@@ -101,11 +126,12 @@ const render = (root, state) => {
   const note = telemetry && !telemetry.ok ? `<div class="mb-3">${problem(telemetry.reason)}</div>` : '';
 
   let body;
-  if (live && !live.ok && (!telemetry || !telemetry.ok)) body = problem(live.reason);
+  if (!live && !telemetry) body = loading('reading the crew…');
+  else if (live && !live.ok && (!telemetry || !telemetry.ok)) body = problem(live.reason);
   else if (!tree.length) body = empty(sessions(state).length ? 'no sessions in the selected repo' : 'no live sessions');
   else body = `${numbers(tree)}${tree.map(branch).join('')}`;
 
-  root.innerHTML = `${note}${card('Who is running', body)}`;
+  swap(root, `${note}${card('Who is running', body)}`);
 };
 
 export default () => startPage({

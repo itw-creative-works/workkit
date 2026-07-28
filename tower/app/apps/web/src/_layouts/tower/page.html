@@ -36,6 +36,28 @@ meta:
 
 {{ content }}
 
+<!-- Issue dialog.
+     Clicking an issue anywhere on the tower opens this instead of leaving for
+     github.com; the external-link button in the header is the only thing that
+     does. It is in the LAYOUT for the same reason the intake dialog is — issues
+     are clicked on four of the six pages, and one shell serves all of them.
+     Every part of it is filled by libs/tower/modal.js, which is also the one
+     place issue text is escaped. -->
+<div class="modal fade" id="tower-issue" tabindex="-1" aria-labelledby="tower-issue-label" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header align-items-start gap-2">
+        <h5 class="modal-title" id="tower-issue-label" data-issue-title></h5>
+        <span class="ms-auto d-flex align-items-center gap-2">
+          <span data-issue-actions></span>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </span>
+      </div>
+      <div class="modal-body" data-issue-body></div>
+    </div>
+  </div>
+</div>
+
 <!-- Intake dialog.
      It lives in the LAYOUT, not on a page, because the spec puts intake on the
      topbar of every page rather than behind a tab — and the topbar's button

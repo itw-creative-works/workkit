@@ -8,6 +8,8 @@
 // page so the suite can ask it what it made of a payload without a browser.
 //
 
+import { shortPath } from './format.js';
+
 /**
  * One node of the chart, from either roster.
  *
@@ -29,6 +31,24 @@ export const normalize = (node) => ({
   tokens: node.tokens ? node.tokens.total : null,
   children: (node.subagents || []).map(normalize),
 });
+
+/**
+ * What a ROOT node is called: the repo it is working in, a slash, then the
+ * chat's name — `workkit/the tower`.
+ *
+ * The repo is the leaf of the cwd, which is the same short name every other
+ * page shows a session's repo as (format.shortPath). Both halves can be
+ * missing: an unnamed chat falls back to its session id, and a session with no
+ * cwd is just its name rather than a leading slash.
+ *
+ * @param {object} entry a normalized root node
+ * @returns {string} the title text — never markup, never empty
+ */
+export const rootLabel = (entry) => {
+  const repo = shortPath(entry.cwd);
+  const name = entry.title || entry.id || 'session';
+  return repo ? `${repo}/${name}` : name;
+};
 
 /**
  * A session's subagents split by whether they are still running.
