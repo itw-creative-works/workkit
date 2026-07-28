@@ -14,6 +14,8 @@ bash jobs/install.sh
 
 Renders the plist for THIS checkout into `~/Library/LaunchAgents/` and loads it. Idempotent: a second run with an unchanged plist confirms the agent is loaded and does nothing else. Re-run it after moving the checkout — the plist carries absolute paths, because launchd expands nothing.
 
+**This script is also driven for you.** `workkit setup` runs it for the first install, and `workkit update` (which the standards hook calls once a day as `update --auto`) re-runs it when the machine has drifted from this checkout — so a moved clone or a changed template no longer waits for anyone to remember. The drift question is `bash jobs/install.sh --check`: the same render and compare with nothing written and launchd never asked, printing one line per agent that is missing, out of date, or retired-but-still-installed, and nothing at all when the machine matches. The CLI carries no second copy of what a current install looks like; that answer lives here. A schedule is only ever installed FRESH by a human — the automatic path updates and never introduces one.
+
 It also retires the agent this kit used to ship, `com.workkit.claude-nightly`: a machine still carrying the old 3am agent has it unloaded and its plist removed, or the summaries would run twice a day. Silent on a machine that never had it.
 
 ## The pieces
@@ -26,7 +28,7 @@ It also retires the agent this kit used to ship, `com.workkit.claude-nightly`: a
 | `nightly-payload.js` | the summaries payload: the reflection instruction, then the day's transcript INDEX and commits as JSON. Pure gather |
 | `claude-nightly.sh` | the summaries step, no agent of its own: sends the payload, writes the returned summary into HQ, rolls the week up on a Sunday and the month on the 1st, logs to `~/Library/Logs/claude-nightly.log`, notifies |
 | `com.workkit.claude-daily.plist` | the schedule — 9:00 AM daily, `{{WORKKIT_DIR}}` and `{{HOME}}` rendered at install |
-| `install.sh` | render, compare, and only on change copy and reload — plus the retirement of the old 3am agent |
+| `install.sh` | render, compare, and only on change copy and reload — plus the retirement of the old 3am agent. `--check` is the same comparison as a report, touching neither disk nor launchd |
 
 ## Where the output goes
 

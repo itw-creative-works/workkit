@@ -113,6 +113,22 @@ if [ "$rc" -eq 0 ]; then
   printf '%s' "$today" >"$marker" 2>/dev/null || true
 fi
 
+# Machine-side upkeep, on the same daily schedule (issue #71). Claude Code has
+# no plugin-install hook, so this is the trigger the kit owns: a checkout that
+# moved or a job template that changed would otherwise leave the installed
+# schedule pointing at yesterday's paths until somebody remembered to re-run the
+# installer. The CLI resolves beside the engine — never through the PATH or the
+# ~/.local/bin symlink, which is exactly what may not exist yet — and only ever
+# UPDATES a schedule a human already installed. Most session starts never reach
+# this line at all: the daily marker above returns first. The run it does make
+# costs a few short shell invocations and a plutil lint — no launchd call, no
+# network — and prints nothing when nothing drifted.
+upkeep=""
+CLI="$ENGINE_DIR/workkit.sh"
+if [ -f "$CLI" ]; then
+  upkeep=$(bash "$CLI" update --auto 2>/dev/null || true)
+fi
+
 # Strip the script's ANSI colors, then keep only the lines that report an
 # action (created/corrected = ✓, needs judgment = ⚠). Skips stay silent.
 # (Alternation, not a bracket class: in the C locale a class of multibyte
@@ -124,11 +140,27 @@ if [ "$rc" -ne 0 ]; then
   # no ✓/⚠ line of its own — that is exactly the half-finished case.
   msg="workflow standards did not finish in $root (exit $rc) — it will retry next session:
 ${actions:-$(printf '%s\n' "$out" | sed $'s/\033\\[[0-9;]*m//g' | tail -3)}"
-else
-  [ -n "$actions" ] || exit 0
+elif [ -n "$actions" ]; then
   msg="workflow standards healed $root:
 $actions"
+else
+  msg=""
 fi
+
+# The upkeep speaks only when it did something, and it says so even on a session
+# where the repo itself needed no heal.
+if [ -n "$upkeep" ]; then
+  if [ -n "$msg" ]; then
+    msg="$msg
+
+$upkeep"
+  else
+    msg="workkit upkeep:
+$upkeep"
+  fi
+fi
+
+[ -n "$msg" ] || exit 0
 
 jq -n --arg ctx "$msg" '{
   "hookSpecificOutput": {

@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#71](../../issues/71) — One `workkit` command for onboarding, setup, and upkeep, with the standards hook's daily run keeping the machine's own installs current.
+
 ## [0.9.0] - 2026-07-28
 
 ### Changed

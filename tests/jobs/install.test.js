@@ -75,6 +75,7 @@ const mkWorld = ({ loaded = false, retiredLoaded = false } = {}) => {
 };
 
 const install = (world) => spawnSync('bash', [SCRIPT], { encoding: 'utf8', timeout: 30000, env: world.env });
+const check = (world) => spawnSync('bash', [SCRIPT, '--check'], { encoding: 'utf8', timeout: 30000, env: world.env });
 
 const run = async () => {
   if (process.platform !== 'darwin') skipSuite('launchd and plutil are macOS');
@@ -192,6 +193,48 @@ const run = async () => {
     assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
     assert(!/retired/.test(res.stdout), `no noise about an agent that was never there: ${res.stdout}`);
     assert(!world.calls().some((c) => isCall(c, 'bootout', `gui/${process.getuid()}/${RETIRED}`)), 'and nothing is booted out for it');
+    cleanup(world.root);
+  });
+
+  group('jobs/install: --check, the drift report');
+
+  await test('a machine with nothing installed says the agent is not installed', () => {
+    const world = mkWorld();
+    const res = check(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assert(new RegExp(`${LABEL} → not installed`).test(res.stdout), `it says so: ${res.stdout}`);
+    assertEq(world.rendered().join(','), '', 'and writes nothing');
+    cleanup(world.root);
+  });
+
+  await test('a current machine reports nothing, and never asks launchd', () => {
+    const world = mkWorld({ loaded: true });
+    install(world);
+    const before = world.calls().length;
+    const res = check(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.stdout, '', `silence is "current": ${res.stdout}`);
+    assertEq(world.calls().length, before, `no launchctl call at all: ${fmtCalls(world.calls().slice(before))}`);
+    cleanup(world.root);
+  });
+
+  await test('a plist from another checkout reads as out of date, and is not replaced', () => {
+    const world = mkWorld({ loaded: true });
+    install(world);
+    fs.appendFileSync(world.installed, '\n<!-- from an older checkout -->\n');
+    const res = check(world);
+    assert(new RegExp(`${LABEL} → out of date`).test(res.stdout), `it names the drift: ${res.stdout}`);
+    assert(fs.readFileSync(world.installed, 'utf8').includes('older checkout'), 'and the check writes nothing');
+    cleanup(world.root);
+  });
+
+  await test('a retired agent still on the machine is drift too', () => {
+    const world = mkWorld({ loaded: true });
+    install(world);
+    world.seedPlist(RETIRED, '<!-- the 3am agent, from before -->\n');
+    const res = check(world);
+    assert(new RegExp(`${RETIRED} → still installed`).test(res.stdout), `it names it: ${res.stdout}`);
+    assert(fs.existsSync(world.plist(RETIRED)), 'and removes nothing — that is the install’s job');
     cleanup(world.root);
   });
 

@@ -9,9 +9,38 @@ The agent-agnostic core of the issue workflow. It knows nothing about Claude Cod
 | `templates/issue-forms/` | The markdown GitHub issue templates (bug · enhancement · idea · dump) installed into a repo's `.github/ISSUE_TEMPLATE/`. Each pre-fills the issue anatomy (`## Description` then `## Spec`) and auto-applies `status:inbox` + its `type:` label |
 | `templates/github-workflows/` | `checks.yml`, the CI workflow installed into a repo's `.github/workflows/` — the `test` job runs the suite on every pull request, the `changelog` job holds the `[Unreleased]` section to the entry format. Installed once; the repo's copy is its own to extend and is never overwritten, except that the `changelog` job is appended once to a workflow healed before it existed |
 | `templates/inbox.md` · `templates/session.md` | The two gitignored working files seeded into a participating repo's `.workkit/`. A file that already has content is never overwritten |
+| `workkit.sh` | The one command: `setup` · `update [--auto]` · `doctor` · `enable` · `decline` · `note` — the front door to everything below |
 | `wk.sh` | The capture CLI: `wk.sh note <text...>` appends one bullet to the right inbox |
 | `changelog.js` | Machine SSOT for the CHANGELOG entry rules, and the CLI both guarding hooks call: `node changelog.js <file> [--added-only] [--staged] [--unreleased-only]` |
 | `changelog-links.js` | Release-time backfill of each entry's commit link and contributor handle: `node changelog-links.js [--file X] [--range A..B] [--dry-run]` |
+
+## The one command
+
+`workkit.sh` is the front door. From zero on a new machine, the whole recipe is a clone and one line:
+
+```sh
+git clone <this repo> && cd workkit
+./workflow/workkit.sh setup
+```
+
+`setup` installs the plugin from this checkout when the `claude` CLI is present and does not have it (a machine without that CLI gets a named skip, never a failure), checks that `gh` is installed and authenticated, points the engine's address at this folder, installs the 9am schedule through `jobs/install.sh`, says where the tower is started, offers to enable the repo the shell is standing in, and symlinks itself to `~/.local/bin/workkit`. Where that directory is not on the PATH it prints the one `export` line to add — it never edits a shell rc. Every step checks before acting, so a second `setup` reports nothing to do.
+
+| Command | What it does |
+|---|---|
+| `workkit help` | the map (also what a bare `workkit` prints) |
+| `workkit setup` | the wizard above — the only path that installs a schedule for the first time |
+| `workkit update` | re-runs the machine-side installs: the engine address, the `~/.local/bin` symlink, and the schedule |
+| `workkit update --auto` | the quiet variant the standards hook runs; prints only what it changed |
+| `workkit doctor` | reports drift — plugin, gh, both links, schedule vintage, this repo's state — with the fix command for anything out of its reach |
+| `workkit enable [repo]` · `workkit decline [repo]` | `standards.sh --enable` / `--decline` under the one name |
+| `workkit note <text...>` | `wk.sh note`, unchanged |
+
+**Upkeep is automatic.** Claude Code has no plugin-install hook, so the trigger is the one this kit owns: the `workflow:standards` SessionStart hook's once-per-day run calls `workkit update --auto` (resolved beside the engine, never through the PATH or the symlink, which are exactly what may not exist yet). A checkout that moved, or a job template that changed, is corrected the next morning instead of waiting for someone to remember the installer. Two boundaries keep that safe:
+
+- **It only ever UPDATES a schedule a human already installed** — the installed `com.workkit.claude-daily.plist` is the marker. A machine with no schedule never gets one at session start.
+- **It creates no convention it did not find.** `~/.local/bin` is linked when the directory already exists; making it is a human's `setup`. The same restraint the engine's address shows toward `~/.claude`.
+
+The drift question is answered by `jobs/install.sh --check`, which renders and compares without asking launchd anything. Most session starts never get that far — the hook's daily marker returns first — and the once-a-day run that does costs a few short shell invocations and a `plutil` lint, with no launchd call and no network. Agents themselves never issue launchd commands; their path is `workkit doctor`, which reports and fixes nothing.
 
 ## The capture CLI
 

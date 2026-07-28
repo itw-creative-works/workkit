@@ -32,6 +32,8 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 
 ## Install
 
+From zero: clone, then `./workflow/workkit.sh setup` — the plugin, `gh`, the 9am schedule, this repo's opt-in, and the `~/.local/bin/workkit` symlink, each checked before it acts. The plugin alone is still two lines:
+
 ```sh
 claude plugin marketplace add <path-to-checkout>
 claude plugin install workkit@workkit
@@ -45,7 +47,7 @@ Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh`
 
 | Hook | Event | What it does |
 |---|---|---|
-| `workflow/standards` | SessionStart | Runs the engine's heal in a participating repo, once per repo per day (what the heal writes: `workflow/README.md`; the standard it heals to: the spec § Enforcement), and adds the one check that is the hook layer's own — every wired hook resolves, is executable, parses, and the tools they call are present. Reports only what it fixed; an undecided repo hears one offer and is never written to |
+| `workflow/standards` | SessionStart | Runs the engine's heal in a participating repo, once per repo per day (what the heal writes: `workflow/README.md`; the standard it heals to: the spec § Enforcement), and adds the one check that is the hook layer's own — every wired hook resolves, is executable, parses, and the tools they call are present. Reports only what it fixed; an undecided repo hears one offer and is never written to. The same daily run calls `workkit update --auto`, the machine-side upkeep — it updates a schedule a human already installed and installs nothing fresh |
 | `docs/state-check` | SessionStart | Announces open `status:inbox` issues, a non-empty `.workkit/inbox.md`, broken pointer files, an oversized AGENTS.md |
 | `docs/session` | SessionStart | Injects a participating repo's `.workkit/session.md` on every source — the task queue a compacted or restarted session reads first — and warns when it has grown past the light bar. Silent for a header-only or absent file |
 | `workflow/reload-guard` | SessionStart + UserPromptSubmit | Stamps the load-time surfaces (`hooks.json` content, the `agents/` and `skills/` file list and mtimes) at session start and injects one line when they change — hook-script, skill-body, and engine edits are already live, so only these need `/reload-plugins`. Each change nags once |
@@ -86,7 +88,7 @@ Nine, namespaced `workkit:<name>`, one `SKILL.md` each:
 
 ## The engine (`workflow/`)
 
-Agent-agnostic: shell + Node, no Claude Code knowledge. `labels.json` is the label SSOT, `standards.sh` the idempotent heal (plus `--enable` / `--decline` / `--state`), `changelog.js` the entry-format linter both guarding hooks call, `changelog-links.js` the release-time backfill of commit links and contributor handles, `wk.sh` the capture CLI (`wk.sh note "…"` appends to the nearest participating inbox), `templates/` what a repo receives on enable. Details: `workflow/README.md`.
+Agent-agnostic: shell + Node, no Claude Code knowledge. `workkit.sh` is the one command (`setup` · `update [--auto]` · `doctor` · `enable` · `decline` · `note`) and the from-zero entry point, `labels.json` is the label SSOT, `standards.sh` the idempotent heal (plus `--enable` / `--decline` / `--state`), `changelog.js` the entry-format linter both guarding hooks call, `changelog-links.js` the release-time backfill of commit links and contributor handles, `wk.sh` the capture CLI (`wk.sh note "…"` appends to the nearest participating inbox), `templates/` what a repo receives on enable. Details: `workflow/README.md`.
 
 ## The tower (`tower/`)
 

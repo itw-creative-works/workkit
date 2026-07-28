@@ -59,6 +59,17 @@ flowchart TB
 
 ## Install
 
+From zero, one command:
+
+```sh
+git clone <this repo> && cd workkit
+./workflow/workkit.sh setup
+```
+
+`setup` installs the plugin from this checkout, checks `gh`, loads the 9am daily-brief schedule (macOS launchd), offers to enable the repo you are standing in, and puts `workkit` on your PATH at `~/.local/bin` — printing the `export` line to add when that directory is not on it, never editing a shell rc. It is safe to re-run: every step checks before acting. `workkit doctor` reports what is set up and what has drifted; `workkit help` is the map.
+
+The plugin alone is still two lines, if that is all you want:
+
 ```sh
 claude plugin marketplace add <path-to-checkout>
 claude plugin install workkit@workkit
@@ -68,7 +79,7 @@ The engine's stable address, `~/.claude/workkit` → this repo's `workflow/`, is
 
 Plugins load at startup, so a new (or restarted) session is what puts a change into effect.
 
-The 9am daily-brief schedule is separate from the plugin and opt-in: `bash jobs/install.sh` loads it (macOS launchd).
+**It keeps itself current.** The session-start standards heal runs `workkit update --auto` once a day per repo, which re-renders the schedule when the checkout moved or the job template changed. It only ever updates a schedule you already installed, and it never creates a directory your machine does not have.
 
 ## What ships
 
@@ -76,7 +87,7 @@ The 9am daily-brief schedule is separate from the plugin and opt-in: `bash jobs/
 
 | Hook | When | What it does for you |
 |---|---|---|
-| `workflow/standards` | session opens | Brings an opted-in repo to the standard once a day: labels, issue templates, the required-checks CI workflow and its CHANGELOG lint, branch protection where it can, `.workkit/` seeded and ignored. Reports only what it fixed |
+| `workflow/standards` | session opens | Brings an opted-in repo to the standard once a day: labels, issue templates, the required-checks CI workflow and its CHANGELOG lint, branch protection where it can, `.workkit/` seeded and ignored — then runs `workkit update --auto` to keep the machine's own installs current. Reports only what it fixed |
 | `docs/state-check` | session opens | Tells you about open `status:inbox` issues, unfiled inbox notes, and document anomalies |
 | `docs/session` | session opens, compaction included | Hands the session back its `.workkit/session.md` — the task queue it keeps across a compaction or a restart — and says when the file has grown past being a queue |
 | `workflow/reload-guard` | session opens, then every message | Says once when the kit's agents, skills, or hook wiring changed after your session loaded — the case `/reload-plugins` exists for |
@@ -115,11 +126,11 @@ The 9am morning notification, and the one job on the clock. It writes up the day
 
 ### Engine — `workflow/`
 
-Plain shell and Node, no Claude Code knowledge: `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `changelog.js` (the entry-format linter the hooks call), `changelog-links.js` (release-time commit links and contributor handles), `wk.sh` (the capture CLI — `wk.sh note "the thought"` drops a bullet into the nearest participating repo's inbox, or your own `~/.workkit/inbox.md` outside one), and the templates a repo receives when it opts in.
+Plain shell and Node, no Claude Code knowledge: `workkit.sh` (the one command — `setup` · `update` · `doctor` · `enable` · `decline` · `note`), `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `changelog.js` (the entry-format linter the hooks call), `changelog-links.js` (release-time commit links and contributor handles), `wk.sh` (the capture CLI — `wk.sh note "the thought"` drops a bullet into the nearest participating repo's inbox, or your own `~/.workkit/inbox.md` outside one), and the templates a repo receives when it opts in.
 
 ## Opting a repo in
 
-Participation is deliberate. `bash workflow/standards.sh --enable <repo>` writes that repo's `.workkit/settings.json` yes; `--decline` records your personal no in `~/.workkit/settings.json`. A repo that has answered neither hears one offer per session and is never written to.
+Participation is deliberate. `workkit enable <repo>` writes that repo's `.workkit/settings.json` yes; `workkit decline <repo>` records your personal no in `~/.workkit/settings.json` (the engine underneath is `workflow/standards.sh --enable` / `--decline`). A repo that has answered neither hears one offer per session and is never written to.
 
 ## Layout
 

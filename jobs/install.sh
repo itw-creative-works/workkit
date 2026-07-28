@@ -3,14 +3,28 @@
 # summaries and then the brief. Renders jobs/<label>.plist ({{WORKKIT_DIR}} /
 # {{HOME}}) into ~/Library/LaunchAgents/ and (re)loads it — only when something
 # changed — and removes the retired 3am agent if this machine still carries it.
-# Usage: bash jobs/install.sh
+# Usage: bash jobs/install.sh [--check]
 #
 # Copied, never symlinked: launchd expands nothing (the plist needs absolute
 # paths baked in) and `launchctl bootstrap` is unreliable with symlinked plists.
 # Idempotent — a second run with the same checkout does nothing but confirm the
 # agents are loaded.
+#
+# `--check` is the same render and compare with nothing written and launchd
+# never asked: it prints one line per agent that is missing, out of date, or
+# retired-but-still-installed, and nothing at all when the machine matches this
+# checkout. That is what makes `workkit update --auto` cheap enough to run at
+# every session start — the drift question is answered here, so the CLI carries
+# no second copy of what a current install looks like.
 
 set -euo pipefail
+
+MODE="install"
+case "${1:-}" in
+  --check) MODE="check"; shift ;;
+  -h|--help) printf 'usage: install.sh [--check]\n'; exit 0 ;;
+  --*) printf 'usage: install.sh [--check]\n' >&2; exit 1 ;;
+esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKKIT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -35,6 +49,15 @@ install_agent() {
   if ! plutil -lint "$RENDERED" >/dev/null 2>&1; then
     printf '%s → rendered plist fails plutil -lint\n' "$LABEL" >&2
     exit 1
+  fi
+
+  if [[ "$MODE" == "check" ]]; then
+    if [[ ! -f "$TARGET" ]]; then
+      printf '%s → not installed\n' "$LABEL"
+    elif ! cmp -s "$RENDERED" "$TARGET"; then
+      printf '%s → out of date for this checkout\n' "$LABEL"
+    fi
+    return 0
   fi
 
   if [[ -f "$TARGET" ]] && cmp -s "$RENDERED" "$TARGET"; then
@@ -66,6 +89,14 @@ retire_agent() {
   local LABEL="$1"
   local TARGET="$HOME/Library/LaunchAgents/$LABEL.plist"
   local RETIRED=0
+
+  # The check asks the filesystem only — a retired agent always leaves its plist
+  # behind, so launchd has nothing to add and every launchctl call it would cost
+  # is one this path exists to avoid.
+  if [[ "$MODE" == "check" ]]; then
+    [[ -f "$TARGET" ]] && printf '%s → still installed, retired by this checkout\n' "$LABEL"
+    return 0
+  fi
 
   if launchctl print "gui/$UID/$LABEL" >/dev/null 2>&1; then
     launchctl bootout "gui/$UID/$LABEL" >/dev/null 2>&1 || true

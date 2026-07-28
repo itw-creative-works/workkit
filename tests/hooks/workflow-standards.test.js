@@ -70,7 +70,11 @@ const decline = (repo, workflowHome) => spawnSync('bash', [
 const runHook = (cwd, { cache, pathPrefix, home, workflowDir, workflowHome } = {}) => {
   const cacheDir = cache || mkTmp();
   const env = {
-    HOME: home || os.homedir(),
+    // A scratch HOME by default: the hook's daily run now also drives the
+    // machine-side upkeep (`workkit update --auto`), which reads
+    // ~/Library/LaunchAgents and ~/.local/bin. Neither may ever be the
+    // developer's own.
+    HOME: home || mkTmp(),
     PATH: pathPrefix ? `${pathPrefix}:${BASE_PATH}` : BASE_PATH,
     WORKFLOW_STANDARDS_CACHE: cacheDir,
     // OUTSIDE the marker cache: the engine now seeds the user settings file on
@@ -331,6 +335,65 @@ const run = async () => {
     assertEq(code, 0, 'exit 0');
     assertEq(stdout, '', `a project that turned it off hears nothing, got: ${stdout}`);
     cleanup(repo); cleanup(cacheDir); cleanup(engine);
+  });
+
+  group('workflow:standards — machine-side upkeep');
+
+  // The plist a machine carries, rendered for some OTHER checkout — the drift
+  // `workkit update --auto` exists to correct. Written straight to disk rather
+  // than through the installer: what matters here is that the hook noticed.
+  const seedStalePlist = (home) => {
+    const dir = path.join(home, 'Library', 'LaunchAgents');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'com.workkit.claude-daily.plist');
+    fs.writeFileSync(file, '<!-- rendered by an older checkout -->\n');
+    return file;
+  };
+
+  // A launchctl that records nothing and answers "not loaded" — the real one is
+  // never reached from a test.
+  const launchctlShim = () => {
+    const dir = mkTmp();
+    fs.writeFileSync(path.join(dir, 'launchctl'), '#!/usr/bin/env bash\nif [[ "$1" == \'print\' ]]; then exit 1; fi\nexit 0\n');
+    fs.chmodSync(path.join(dir, 'launchctl'), 0o755);
+    return dir;
+  };
+
+  await test('a repo’s daily run corrects a schedule left by another checkout', () => {
+    const repo = makeRepo();
+    const home = mkTmp();
+    const shim = launchctlShim();
+    const plist = seedStalePlist(home);
+    const { code, stdout, cacheDir } = runHook(repo, { home, pathPrefix: shim });
+    assertEq(code, 0, 'exit 0');
+    const body = fs.readFileSync(plist, 'utf8');
+    assert(!body.includes('older checkout'), 'the plist is re-rendered for this checkout');
+    assert(body.includes('com.workkit.claude-daily'), 'and it is the real one');
+    const ctx = JSON.parse(stdout).hookSpecificOutput.additionalContext;
+    assert(ctx.includes('schedule:'), `the session hears what was corrected, got: ${ctx}`);
+    cleanup(repo); cleanup(cacheDir); cleanup(home); cleanup(shim);
+  });
+
+  await test('a machine with no schedule installed never gets one', () => {
+    // The whole cron boundary: the hook UPDATES what a human installed and
+    // installs nothing fresh.
+    const repo = makeRepo();
+    const home = mkTmp();
+    const shim = launchctlShim();
+    const { code, cacheDir } = runHook(repo, { home, pathPrefix: shim });
+    assertEq(code, 0, 'exit 0');
+    assert(!fs.existsSync(path.join(home, 'Library', 'LaunchAgents')), 'nothing was installed behind anyone’s back');
+    cleanup(repo); cleanup(cacheDir); cleanup(home); cleanup(shim);
+  });
+
+  await test('an all-current machine stays silent', () => {
+    const repo = makeRepo();
+    const home = mkTmp();
+    const first = runHook(repo, { home });
+    assert(first.stdout.length > 0, 'the first run reported the heals');
+    const second = runHook(repo, { home });
+    assertEq(second.stdout, '', `upkeep with nothing to do adds no noise, got: ${second.stdout}`);
+    cleanup(repo); cleanup(home); cleanup(first.cacheDir); cleanup(second.cacheDir);
   });
 
   group('workflow:standards — offline');
