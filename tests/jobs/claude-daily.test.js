@@ -201,6 +201,42 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  group('jobs/claude-daily: the manual trigger');
+
+  await test('--now sends the same brief, not the flag as a message', () => {
+    const world = mkWorld();
+    const res = runJob(world, ['--now']);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    const message = world.calls()[0][1];
+    assert(message.startsWith(INSTRUCTION), 'the flag reaches the compose step — same payload as 9am');
+    assert(!message.includes('--now'), 'and is never mistaken for the message');
+    cleanup(world.root);
+  });
+
+  await test('--now marks its log block manual, in the same log file', () => {
+    const world = mkWorld();
+    runJob(world, ['--now']);
+    const log = world.log();
+    assert(/── \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \(manual\) ──/.test(log), `stamped manual, got: ${log.slice(0, 120)}`);
+    cleanup(world.root);
+  });
+
+  await test('a scheduled run is not marked manual', () => {
+    const world = mkWorld();
+    runJob(world);
+    assert(!/\(manual\)/.test(world.log()), 'the 9am block reads as it always did');
+    cleanup(world.root);
+  });
+
+  await test('npm run brief is the trigger, and it points at this script', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'));
+    const script = pkg.scripts.brief;
+    assert(typeof script === 'string' && script.includes('--now'), `the brief script runs the manual flag, got: ${script}`);
+    const target = script.match(/(jobs\/[\w-]+\.sh)/);
+    assert(target, `it names a jobs script, got: ${script}`);
+    assert(fs.existsSync(path.join(__dirname, '..', '..', target[1])), `${target[1]} resolves from the repo root`);
+  });
+
   return summary();
 };
 

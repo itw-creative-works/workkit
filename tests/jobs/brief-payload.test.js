@@ -244,6 +244,33 @@ const run = async () => {
     cleanup(home);
   });
 
+  await test('a manual run reports the news but leaves the mark where it is', () => {
+    // `claude-daily.sh --now` exists for testing the brief; consuming the news
+    // there would mean the 9am job never reports it.
+    const home = mkTmp();
+    const env = { ...process.env, HOME: home, WORKKIT_CC_CHANGELOG: `file://${ccFixture(home)}` };
+    const markFile = path.join(home, '.workkit', 'cc-news.json');
+    spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
+    fs.writeFileSync(ccFixture(home), `# Changelog\n\n## 2.1.220\n\n- Added a \`DirectoryAdded\` hook\n${CC_CHANGELOG}`);
+
+    const manual = spawnSync('node', [SCRIPT], {
+      encoding: 'utf8', timeout: 60000, env: { ...env, WORKKIT_BRIEF_MANUAL: '1' },
+    });
+    assertEq(manual.status, 0, `exit 0 — stderr: ${manual.stderr}`);
+    assert(/--- CC NEWS ---/.test(manual.stdout.slice(INSTRUCTION.length)), 'the manual run still sees the news');
+    assertEq(
+      JSON.parse(fs.readFileSync(markFile, 'utf8')).version, '2.1.219',
+      'and the mark is untouched',
+    );
+
+    spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
+    assertEq(
+      JSON.parse(fs.readFileSync(markFile, 'utf8')).version, '2.1.220',
+      'the scheduled run still advances it',
+    );
+    cleanup(home);
+  });
+
   return summary();
 };
 

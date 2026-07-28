@@ -24,6 +24,30 @@ export const empty = (message) => `<p class="text-body-secondary mb-0">${esc(mes
 /** The line a page shows where a section would be when its feed did not answer. */
 export const problem = (message) => `<div class="alert alert-warning mb-0">${esc(message)}</div>`;
 
+/**
+ * What a published copy says in place of live data — one sentence, the single
+ * home of it, shown by every surface that has no tower behind it (a page body,
+ * the intake dialog). Not a failure — this build simply has no tower on the
+ * other end — so it is written in the same muted voice as `empty`, never as an
+ * alert.
+ */
+export const PUBLISHED_NOTICE = 'Live data needs a local tower (npm run tower), or point this page at one with ?api=.';
+
+/** That sentence as markup, with its two commands in code voice. */
+export const publishedNotice = () => `<p class="text-body-secondary mb-0">${esc(PUBLISHED_NOTICE)
+  .replace('npm run tower', '<code>npm run tower</code>')
+  .replace('?api=', '<code>?api=</code>')}</p>`;
+
+/**
+ * The one name for one issue: `repo#number`.
+ *
+ * Three things spell it — the `data-issue` attribute a card carries, the dialog
+ * registry it is looked up in, and the Board's drop, which reads that attribute
+ * off a dragged card and finds the issue in the live board payload. One home for
+ * it, so the three cannot mean different things.
+ */
+export const issueKey = (issue) => `${issue.repo}#${issue.number}`;
+
 /** The last path segment of a repo path — what a session's cwd is shown as. */
 export const shortPath = (value) => String(value || '').split('/').filter(Boolean).pop() || String(value || '');
 

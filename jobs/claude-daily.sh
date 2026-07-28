@@ -2,7 +2,8 @@
 # Daily Claude job — sends a message to Claude Code headless, logs the exchange,
 # and fires a desktop notification with the response.
 # Runs standalone or via launchd (sets its own PATH — launchd provides a bare env).
-# Usage: claude-daily.sh [message]   (defaults to the brief-payload payload)
+# Usage: claude-daily.sh [--now | message]   (defaults to the brief-payload payload;
+#        --now is the on-demand brief, `npm run brief` — same pipeline, marked manual)
 # Log: ~/Library/Logs/claude-daily.log — appended, one timestamped block per run.
 
 set -euo pipefail
@@ -40,6 +41,18 @@ notify() {
   disown 2>/dev/null || true
 }
 
+# --now: run the 9am brief right now, by hand (`npm run brief`). Same pipeline,
+# same log file, same notification — the only differences are the `(manual)`
+# stamp on the log block and WORKKIT_BRIEF_MANUAL, which tells brief-payload to
+# leave the upstream-news mark where it is so testing the brief at noon cannot
+# swallow tomorrow morning's news.
+if [[ "${1:-}" == "--now" ]]; then
+  export WORKKIT_BRIEF_MANUAL=1
+  LOG_STAMP="$TIMESTAMP (manual)"
+  shift
+fi
+LOG_STAMP="${LOG_STAMP:-$TIMESTAMP}"
+
 # Default payload: the morning brief built from the tower's own libs
 # (jobs/brief-payload.js). Any argument overrides it — claude-daily.sh stays a
 # generic headless runner.
@@ -53,7 +66,7 @@ else
   MESSAGE="$(node "$SCRIPT_DIR/brief-payload.js" 2>&1)" || PAYLOAD_STATUS=$?
   if (( PAYLOAD_STATUS != 0 )); then
     {
-      printf '── %s ──\n' "$TIMESTAMP"
+      printf '── %s ──\n' "$LOG_STAMP"
       printf '[brief-payload exit %d]\n' "$PAYLOAD_STATUS"
       printf '%s\n\n' "$MESSAGE"
     } >> "$LOG_FILE"
@@ -72,7 +85,7 @@ RESPONSE="$(claude -p "$MESSAGE" \
   --max-budget-usd 0.25 2>&1)" || STATUS=$?
 
 {
-  printf '── %s ──\n' "$TIMESTAMP"
+  printf '── %s ──\n' "$LOG_STAMP"
   printf '> %s\n' "${MESSAGE:0:200}"
   if (( STATUS != 0 )); then
     printf '[exit %d]\n' "$STATUS"

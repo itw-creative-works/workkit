@@ -16,7 +16,7 @@ import { startPage } from '../libs/tower/page.js';
 import { feed } from '../libs/tower/state.js';
 import { esc, num, empty, problem, issueChips, statCell, statgrid, card } from '../libs/tower/format.js';
 import { loading, swap } from '@omega.js/client/modules/live-page';
-import { issueTrigger, externalLink } from '../libs/tower/modal.js';
+import { issueItem, externalLink } from '../libs/tower/modal.js';
 
 /** The rows a section shows — narrowed to the selected repo when there is one. */
 const forRepo = (items, selected) => (selected ? items.filter((item) => item.repo === selected) : items);
@@ -56,7 +56,7 @@ const numbers = (payload, lists, selected) => statgrid([
 
 // ── The sections ───────────────────────────────────────────────────────────
 
-const issueRow = (issue) => `<li class="py-2 omega-tower-issue omega-interactive" ${issueTrigger(issue)}>
+const issueRow = (issue) => issueItem(issue, `
   <div class="d-flex align-items-start gap-2">
     <span class="flex-grow-1">
       <span class="classy-micro d-block">${esc(issue.repo)} #${esc(issue.number)}</span>
@@ -65,7 +65,7 @@ const issueRow = (issue) => `<li class="py-2 omega-tower-issue omega-interactive
     ${externalLink(issue.url)}
   </div>
   ${issueChips(issue, 'mt-1')}
-</li>`;
+`, { inner: 'py-2' });
 
 // A section with nothing in it says the sentence its emptiness means. "Nothing
 // is waiting on you" is a morning's best news, and a card drawn empty would

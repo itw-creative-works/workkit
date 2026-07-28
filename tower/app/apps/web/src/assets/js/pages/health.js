@@ -15,7 +15,7 @@ import {
 } from '../libs/tower/format.js';
 import { chartSlot, barChart } from '__main_assets__/js/libs/charts.js';
 import { loading, swap } from '@omega.js/client/modules/live-page';
-import { issueTrigger, externalLink } from '../libs/tower/modal.js';
+import { issueItem, externalLink } from '../libs/tower/modal.js';
 
 /** One repo's open issues, from the board sweep, matched on its slug. */
 const issuesOf = (state, repo) => issuesFor(state).filter((issue) => issue.repo === repo.slug);
@@ -84,11 +84,11 @@ const repoCard = (state, repo, alone) => {
 
 // The single-repo view has the room to name the issues, not only count them.
 const issueList = (issues) => (issues.length
-  ? `<ul class="list-unstyled mt-3 mb-0">${issues.map((issue) => `<li class="py-1 omega-tower-issue omega-interactive d-flex gap-2 align-items-center" ${issueTrigger(issue)}>
+  ? `<ul class="list-unstyled mt-3 mb-0">${issues.map((issue) => issueItem(issue, `
       <span class="classy-chip">${esc(issue.status || 'no status')}</span>
       <span class="text-truncate flex-grow-1">#${esc(issue.number)} ${esc(issue.title)}</span>
       ${externalLink(issue.url)}
-    </li>`).join('')}</ul>`
+    `, { inner: 'py-1 d-flex gap-2 align-items-center' })).join('')}</ul>`
   : '');
 
 /**

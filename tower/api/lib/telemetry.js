@@ -207,6 +207,9 @@ const newEntry = () => ({
   model: null,
   firstAt: null,
   lastAt: null,
+  // The most recent tool_use in the file, and when it was written.
+  lastTool: null,
+  lastToolAt: null,
   cost: 0,
   // Any tokens at all from a model PRICING does not carry. One such line makes
   // the whole file's cost null rather than an under-count.
@@ -232,11 +235,17 @@ const ingest = (entry, line) => {
   const message = record.message;
   if (!message || typeof message !== 'object') return;
 
-  // The spawn half of the class join, collected while the file is open anyway.
+  // The spawn half of the class join, collected while the file is open anyway —
+  // and beside it the last tool this transcript reached for, which is the one
+  // line that says what an agent is DOING rather than how much it has spent.
+  // A transcript is folded in file order, so the last one seen is the latest.
   if (Array.isArray(message.content)) {
     for (const block of message.content) {
-      if (block && block.type === 'tool_use' && block.input && block.input.subagent_type) {
-        entry.taskTypes[block.id] = block.input.subagent_type;
+      if (!block || block.type !== 'tool_use') continue;
+      if (block.input && block.input.subagent_type) entry.taskTypes[block.id] = block.input.subagent_type;
+      if (block.name) {
+        entry.lastTool = block.name;
+        entry.lastToolAt = record.timestamp || null;
       }
     }
   }
@@ -365,6 +374,8 @@ const snapshot = (entry) => ({
   model: entry.model,
   firstAt: entry.firstAt,
   lastAt: entry.lastAt,
+  lastTool: entry.lastTool,
+  lastToolAt: entry.lastToolAt,
   cost: entry.unpriced ? null : entry.cost,
   malformed: entry.malformed,
   bytesRead: entry.bytesRead,
@@ -383,7 +394,7 @@ const snapshot = (entry) => ({
  * whose transcript has not been written yet is an ordinary condition.
  *
  * @param {string} file
- * @returns {{tokens: object, byDay: object, byModel: object, taskTypes: object, model: string|null, firstAt: string|null, lastAt: string|null, cost: number|null, malformed: number, bytesRead: number, offset: number}}
+ * @returns {{tokens: object, byDay: object, byModel: object, taskTypes: object, model: string|null, firstAt: string|null, lastAt: string|null, lastTool: string|null, lastToolAt: string|null, cost: number|null, malformed: number, bytesRead: number, offset: number}}
  */
 const readUsage = (file) => {
   let stat = null;
@@ -443,7 +454,7 @@ const subagentState = (lastAt, now, idleMs) => {
  * @param {object} taskTypes parent tool_use id -> subagent_type
  * @param {number} now
  * @param {number} idleMs the liveness window, from sessions.js
- * @returns {{rows: Array<{id: string, class: string, model: string|null, tokens: object, cost: number|null, state: string, startedAt: string|null, lastAt: string|null}>, readings: object[], files: string[]}}
+ * @returns {{rows: Array<{id: string, class: string, model: string|null, tokens: object, cost: number|null, state: string, startedAt: string|null, lastAt: string|null, lastTool: string|null, lastToolAt: string|null, transcript: string}>, readings: object[], files: string[]}}
  */
 const readSubagents = (transcript, taskTypes, now, idleMs) => {
   const dir = path.join(transcript.replace(/\.jsonl$/, ''), 'subagents');
@@ -487,6 +498,9 @@ const readSubagents = (transcript, taskTypes, now, idleMs) => {
       state: subagentState(usage.lastAt, now, idleMs),
       startedAt: usage.firstAt,
       lastAt: usage.lastAt,
+      lastTool: usage.lastTool,
+      lastToolAt: usage.lastToolAt,
+      transcript: file,
     });
   }
   return { rows, readings, files };
@@ -536,6 +550,13 @@ const sessionRow = (session, home, now, idleMs) => {
       state: session.state,
       startedAt: usage.firstAt,
       lastAt: usage.lastAt,
+      lastTool: usage.lastTool,
+      lastToolAt: usage.lastToolAt,
+      // The two file times listSessions probed, carried through rather than
+      // re-derived: a page ages both of them between reads.
+      lastActivity: session.lastActivity === undefined ? null : session.lastActivity,
+      aliveSince: session.aliveSince === undefined ? null : session.aliveSince,
+      transcript,
       tokens: usage.tokens,
       cost: usage.cost,
       subagents: rows,

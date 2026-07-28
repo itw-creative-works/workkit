@@ -205,12 +205,35 @@ const mtimeMs = (file) => {
 };
 
 /**
+ * When a file was created, in ms, or null when it cannot be probed.
+ *
+ * A filesystem with no birth time answers 0 (Node's documented fallback), which
+ * is not a time anything happened — it reads as unknown rather than as 1970.
+ *
+ * @param {string} file
+ * @returns {number|null}
+ */
+const birthMs = (file) => {
+  try {
+    const { birthtimeMs } = fs.statSync(file);
+    return birthtimeMs > 0 ? birthtimeMs : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Every session with a keep-awake marker.
  *
  * `state` is one of:
  *   working  the assertion is live and the transcript moved recently
  *   idle     the assertion is live but the session has gone quiet
  *   stale    the caffeinate pid is gone or is now some other process
+ *
+ * `lastActivity` and `aliveSince` are the same two probes the state is decided
+ * from, handed over as ms epochs rather than kept private: a page draws how
+ * FRESH a session is and how long it has been up, and both of those age between
+ * reads — so the times travel and the arithmetic is the reader's.
  *
  * @param {object} [opts]
  * @param {string} [opts.markerDir] override the marker directory
@@ -220,7 +243,7 @@ const mtimeMs = (file) => {
  * @param {Function} [opts.exec] (cmd, args) => stdout — the `ps` seam
  * @param {number} [opts.now] override "now" in ms
  * @param {number} [opts.nameReadBytes] bytes read from each end of a transcript
- * @returns {Array<{claudePid: number, cwd: string, session: string, chatName: string|null, state: string, model: string|null, effort: string|null}>}
+ * @returns {Array<{claudePid: number, cwd: string, session: string, chatName: string|null, state: string, model: string|null, effort: string|null, transcript: string, lastActivity: number|null, aliveSince: number|null}>}
  */
 const listSessions = (opts = {}) => {
   const exec = opts.exec || defaultExec;
@@ -258,19 +281,24 @@ const listSessions = (opts = {}) => {
     const live = command === `caffeinate -d -i -w ${claudePid}`;
 
     const transcript = transcriptPath(home, marker.cwd, marker.session);
+    // The marker's own times are when the assertion was taken — the right
+    // fallback when the transcript cannot be read.
+    const probed = mtimeMs(transcript);
+    const lastActivity = probed === null ? mtimeMs(file) : probed;
+    const born = birthMs(transcript);
+    const aliveSince = born === null ? birthMs(file) : born;
+
     let state = 'stale';
     let chatName = null;
     if (live) {
-      // The marker's own mtime is when the assertion was taken — the right
-      // fallback when the transcript cannot be read.
-      const probed = mtimeMs(transcript);
-      const quietSince = probed === null ? mtimeMs(file) : probed;
-      state = quietSince !== null && now - quietSince > idleMs ? 'idle' : 'working';
+      state = lastActivity !== null && now - lastActivity > idleMs ? 'idle' : 'working';
       chatName = chatNameFrom(transcript, nameReadBytes);
     }
 
     const { model, effort } = sessionState(stateDir, marker.session);
-    out.push({ claudePid, cwd: marker.cwd, session: marker.session, chatName, state, model, effort });
+    out.push({
+      claudePid, cwd: marker.cwd, session: marker.session, chatName, state, model, effort, transcript, lastActivity, aliveSince,
+    });
   }
   return out;
 };

@@ -125,5 +125,7 @@ if (require.main === module) {
   const news = collectCcNews();
   process.stdout.write(render(composeBrief(), news));
   // Only now — a run that died before printing repeats the news tomorrow.
-  if (news) news.commit();
+  // A MANUAL run (claude-daily.sh --now) leaves the mark alone: testing the
+  // brief by hand must not consume news the 9am job has not reported yet.
+  if (news && !process.env.WORKKIT_BRIEF_MANUAL) news.commit();
 }

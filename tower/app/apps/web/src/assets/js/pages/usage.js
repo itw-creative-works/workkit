@@ -32,7 +32,7 @@
 import { startPage } from '../libs/tower/page.js';
 import { feed } from '../libs/tower/state.js';
 import {
-  esc, empty, problem, compact, money, statCell, statgrid, card,
+  esc, empty, problem, compact, money, statCell, statgrid, card, pill,
   modelKey, classKey, badgeColor, modelBadge, classBadge,
 } from '../libs/tower/format.js';
 import { chartSlot, barChart, doughnutChart, lineChart } from '__main_assets__/js/libs/charts.js';
@@ -111,6 +111,20 @@ const numbers = (usage) => {
   ]);
 };
 
+// A session's cache column says one thing and it is worth seeing at a glance:
+// tokens that were READ from the cache are the cheap ones, and a session that
+// read none paid full price for its whole context. So the cell is the theme's
+// status pill — green for a read, red for a miss — rather than another number
+// in a column of numbers.
+//
+// A session that has spent NOTHING gets neither. It has not missed the cache;
+// it has not asked it anything yet, and a red pill on a chat that has said one
+// word reads as a problem where there is none.
+const cacheCell = (tokens) => {
+  if (!tokens.cacheRead && !tokens.input) return '<span class="text-body-secondary">—</span>';
+  return tokens.cacheRead > 0 ? pill('ok', compact(tokens.cacheRead)) : pill('danger', 'miss');
+};
+
 const sessionTable = (usage) => {
   if (!usage.sessions.length) return empty('no per-session detail in this payload');
   return `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
@@ -120,7 +134,7 @@ const sessionTable = (usage) => {
       <td>${classBadge(session.agentClass)}</td>
       <td>${modelBadge(session.model)}</td>
       <td class="text-end">${esc(compact(session.tokens.total))}</td>
-      <td class="text-end">${esc(compact(session.tokens.cacheRead))}</td>
+      <td class="text-end">${cacheCell(session.tokens)}</td>
       <td class="text-end">${session.cost === null ? '—' : esc(money(session.cost))}</td>
     </tr>`).join('')}</tbody>
   </table></div>`;

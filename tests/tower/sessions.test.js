@@ -14,7 +14,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { group, test, assertEq, summary, selfRun } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
 const { listSessions, transcriptPath, chatNameFrom, NAME_READ_BYTES } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'sessions.js'));
 
@@ -160,6 +160,32 @@ const run = async () => {
       if (before === undefined) delete process.env.KEEP_AWAKE_IDLE_MINUTES;
       else process.env.KEEP_AWAKE_IDLE_MINUTES = before;
     }
+    cleanup(w.root);
+  });
+
+  group('tower/sessions: the times a page ages');
+
+  await test('a row carries its transcript path, when it last moved and when it began', () => {
+    const w = mkWorld();
+    mkMarker(w, 4106, { cwd: '/x/times', session: 'tick' });
+    const file = mkTranscript(w, '/x/times', 'tick', ['{}'], 5);
+    const [s] = list(w);
+    assertEq(s.transcript, file, 'the transcript the state was read from');
+    const quiet = Date.now() - s.lastActivity;
+    assert(quiet > 4 * MINUTE && quiet < 6 * MINUTE, `lastActivity is the transcript mtime — five minutes ago, got ${Math.round(quiet / 1000)}s`);
+    assert(typeof s.aliveSince === 'number' && s.aliveSince <= Date.now(), 'aliveSince is when the file was created');
+    cleanup(w.root);
+  });
+
+  await test('with no transcript the times fall back to the marker, not to null', () => {
+    const w = mkWorld();
+    const file = mkMarker(w, 4107, { cwd: '/x/gone', session: 'nofile' });
+    const when = (Date.now() - 30 * MINUTE) / 1000;
+    fs.utimesSync(file, when, when);
+    const [s] = list(w);
+    const quiet = Date.now() - s.lastActivity;
+    assert(quiet > 29 * MINUTE && quiet < 31 * MINUTE, 'the marker mtime is the fallback probe, and it travels');
+    assert(typeof s.aliveSince === 'number', 'so is its birth time');
     cleanup(w.root);
   });
 

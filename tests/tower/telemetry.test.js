@@ -563,6 +563,50 @@ const run = async () => {
     cleanup(w.root);
   });
 
+  await test('a row says what it last reached for, where its transcript is, and the file times', () => {
+    const w = mkWorld();
+    const transcript = mkSession(w, {
+      lines: [
+        spawnLine({ id: 's', toolUseId: 'toolu_w', subagentType: 'workkit:worker' }),
+        assistantLine({
+          id: 'r',
+          input: 5,
+          timestamp: '2026-07-27T12:30:00.000Z',
+          content: [{ type: 'tool_use', id: 'toolu_r', name: 'Read', input: { file_path: '/x/a.js' } }],
+        }),
+      ],
+    });
+    const sub = mkSubagent(transcript, 'k1', {
+      lines: [assistantLine({
+        id: 'w1',
+        input: 3,
+        timestamp: '2026-07-27T12:31:00.000Z',
+        content: [{ type: 'tool_use', id: 'toolu_e', name: 'Edit', input: {} }],
+      })],
+      meta: { toolUseId: 'toolu_w' },
+    });
+    const [session] = collect(w).sessions;
+    assertEq(session.lastTool, 'Read', 'the last tool_use in the parent transcript, not the first');
+    assertEq(session.lastToolAt, '2026-07-27T12:30:00.000Z', 'stamped when the line was written');
+    assertEq(session.transcript, transcript, 'the file every one of these was read from');
+    assert(typeof session.lastActivity === 'number', 'listSessions\' mtime probe travels');
+    assert(typeof session.aliveSince === 'number', 'and its birth time');
+    const [agent] = session.subagents;
+    assertEq(agent.lastTool, 'Edit', 'a subagent says its own last tool');
+    assertEq(agent.lastToolAt, '2026-07-27T12:31:00.000Z', 'with its own stamp');
+    assertEq(agent.transcript, sub, 'and carries its own transcript path');
+    cleanup(w.root);
+  });
+
+  await test('a transcript that has called no tool says so with a null, never a guess', () => {
+    const w = mkWorld();
+    mkSession(w, { lines: [assistantLine({ id: 'a', input: 1 })] });
+    const [session] = collect(w).sessions;
+    assertEq(session.lastTool, null, 'nothing was called');
+    assertEq(session.lastToolAt, null, 'so there is no when either');
+    cleanup(w.root);
+  });
+
   await test('with no statusline cache the model comes from the transcript instead', () => {
     const w = mkWorld();
     mkSession(w, { lines: [assistantLine({ id: 'a', model: 'claude-sonnet-4-5', input: 1 })] });

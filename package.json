@@ -2,6 +2,7 @@
   "name": "workkit",
   "private": true,
   "scripts": {
+    "brief": "bash jobs/claude-daily.sh --now",
     "test": "node tests/run.js",
     "tower": "node tower/api/server.js"
   }

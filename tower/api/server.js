@@ -8,8 +8,9 @@
 //
 // Every endpoint is a thin wrapper over a lib under tower/api/lib: the server
 // owns routing, caching and validation, and nothing else. It is a VIEW, so the
-// only write path in the whole surface is `POST /api/intake`, and that writes
-// through the same door everyone else uses — `gh issue create`.
+// whole surface has exactly two write paths — `POST /api/intake`, which files an
+// issue, and `POST /api/issues/status`, which moves one along the pipeline — and
+// both write through the door everyone else uses, `gh`.
 //
 // Binding is 127.0.0.1 on purpose. The phone reaches the tower through
 // `tailscale serve`, which proxies to localhost, so there is never a second
@@ -25,8 +26,8 @@
 //
 // CORS falls out of that one allowlist: an allowed origin is ECHOED back in
 // `Access-Control-Allow-Origin` (never `*`), and the preflight is answered for
-// the intake POST. The dashboard on the dev server reaches the API exactly
-// because `localhost` is already a name this tower answers to.
+// every POST the page makes. The dashboard on the dev server reaches the API
+// exactly because `localhost` is already a name this tower answers to.
 //
 // Caching is in memory and time based, matching the poll rates the page uses:
 // the roster and the board are expensive (a disk walk, a GraphQL round trip)
@@ -44,7 +45,7 @@ const http = require('http');
 const { execFileSync } = require('child_process');
 
 const { discoverRepos } = require('./lib/repos');
-const { fetchBoard } = require('./lib/board');
+const { fetchBoard, LABELS_FILE } = require('./lib/board');
 const { listSessions } = require('./lib/sessions');
 const { repoHealth } = require('./lib/health');
 const { collectTelemetry } = require('./lib/telemetry');
@@ -68,6 +69,17 @@ const LIVE_TTL = 5 * 1000;
 const TITLE_MAX = 256;
 const BODY_MAX = 4000;
 const DEFAULT_BODY = 'Filed from the tower.';
+
+// The statuses an issue may be moved between, read from the label SSOT rather
+// than restated — the same file the sweep parses its vocabulary from. A require,
+// so a tower whose vocabulary file is unreadable says so at start instead of
+// refusing every move at runtime for a reason nobody can see.
+const MOVE_STATUSES = Object.keys(require(LABELS_FILE).groups.status.values);
+
+// `owner/name` and nothing else. It is only the first gate — the slug still has
+// to be one the roster holds — but it is what keeps a value that is not even
+// shaped like a repository from reaching the roster comparison at all.
+const SLUG_SHAPE = /^[\w.-]+\/[\w.-]+$/;
 
 // An intake payload is a title and a paragraph. Anything larger is not one, and
 // reading it would let a single request hold memory the tower has no use for.
@@ -204,6 +216,28 @@ const readBody = (req) => new Promise((resolve, reject) => {
 });
 
 /**
+ * The JSON body of a write request, or nothing once the client has been told
+ * why there is none. Both write paths read a body the same way, so the answer —
+ * including the over-cap dance, where the response goes out before the socket
+ * closes — is written once.
+ *
+ * @param {import('http').IncomingMessage} req
+ * @param {import('http').ServerResponse} res
+ * @returns {Promise<{ok: boolean, payload?: any}>}
+ */
+const readPayload = async (req, res) => {
+  try {
+    return { ok: true, payload: JSON.parse(await readBody(req)) };
+  } catch (err) {
+    // The answer goes out first; an over-cap request still has bytes in flight,
+    // and the connection closes only once the client has been told.
+    sendJson(res, err.tooLarge ? 413 : 400, { ok: false, reason: `unreadable body: ${err.message}` });
+    if (err.tooLarge) res.on('finish', () => req.destroy());
+    return { ok: false };
+  }
+};
+
+/**
  * What the intake endpoint may do, or why it may not.
  *
  * `repo` is checked against the CURRENT roster rather than pattern matched. The
@@ -229,6 +263,49 @@ const validateIntake = (payload, slugs) => {
   if (title.length > TITLE_MAX) return { ok: false, reason: `title is longer than ${TITLE_MAX} characters` };
   if (body.length > BODY_MAX) return { ok: false, reason: `body is longer than ${BODY_MAX} characters` };
   return { ok: true, repo, title, body: body || DEFAULT_BODY };
+};
+
+/**
+ * What the status endpoint may do, or why it may not.
+ *
+ * Every field is judged before `gh` is reached, and none of them is trusted for
+ * being well formed: the number has to be a positive integer, the slug has to
+ * be shaped like one AND be a name the roster holds, and both statuses have to
+ * be words the label vocabulary defines. A drag on a page is where these values
+ * come from today, which is exactly why none of that is assumed here.
+ *
+ * The move is `from` → `to` rather than `to` alone because the one-status
+ * invariant is what makes it a move: the old label is removed in the same call
+ * that adds the new one, so an issue never carries two.
+ *
+ * @param {object} payload
+ * @param {string[]} slugs the roster's slugs
+ * @returns {{ok: boolean, reason?: string, repo?: string, number?: number, from?: string, to?: string}}
+ */
+const validateMove = (payload, slugs) => {
+  if (!payload || typeof payload !== 'object') return { ok: false, reason: 'body must be a JSON object' };
+
+  const number = payload.number;
+  if (typeof number !== 'number' || !Number.isInteger(number) || number < 1) {
+    return { ok: false, reason: 'issue number must be a positive integer' };
+  }
+
+  const asked = typeof payload.repo === 'string' ? payload.repo.trim() : '';
+  if (!SLUG_SHAPE.test(asked)) return { ok: false, reason: `not a repository slug: ${asked || '(none)'}` };
+  // The ROSTER's spelling is what gets edited, for the reason intake files
+  // under it: GitHub names are case-insensitive and a slug is whatever case the
+  // git remote was written in.
+  const repo = slugs.find((slug) => slug.toLowerCase() === asked.toLowerCase()) || '';
+  if (!repo) return { ok: false, reason: `unknown repo: ${asked}` };
+
+  const from = typeof payload.from === 'string' ? payload.from.trim() : '';
+  const to = typeof payload.to === 'string' ? payload.to.trim() : '';
+  for (const [field, value] of [['from', from], ['to', to]]) {
+    if (!MOVE_STATUSES.includes(value)) return { ok: false, reason: `${field} is not a status: ${value || '(none)'}` };
+  }
+  if (from === to) return { ok: false, reason: `the issue is already status:${to}` };
+
+  return { ok: true, repo, number, from, to };
 };
 
 /** The URL `gh issue create` prints, from output that may carry other lines. */
@@ -300,20 +377,15 @@ const createServer = (opts = {}) => {
   // they are the same board and the same health, one derivation.
   const brief = () => buildBrief(board(), health(), roster());
 
-  const intake = async (req, res) => {
-    let payload;
-    try {
-      payload = JSON.parse(await readBody(req));
-    } catch (err) {
-      // The answer goes out first; an over-cap request still has bytes in
-      // flight, and the connection closes only once the client has been told.
-      sendJson(res, err.tooLarge ? 413 : 400, { ok: false, reason: `unreadable body: ${err.message}` });
-      if (err.tooLarge) res.on('finish', () => req.destroy());
-      return;
-    }
+  /** The roster's slugs — what both write paths judge a repo against. */
+  const slugsNow = () => roster().map((r) => r.slug).filter(Boolean);
 
-    const slugs = roster().map((r) => r.slug).filter(Boolean);
-    const checked = validateIntake(payload, slugs);
+  const intake = async (req, res) => {
+    const read = await readPayload(req, res);
+    if (!read.ok) return;
+
+    const slugs = slugsNow();
+    const checked = validateIntake(read.payload, slugs);
     if (!checked.ok) {
       sendJson(res, 400, checked);
       return;
@@ -343,6 +415,38 @@ const createServer = (opts = {}) => {
       return;
     }
     sendJson(res, 200, { ok: true, url });
+  };
+
+  // The board's drag, arriving as a write. One `gh issue edit` carries both
+  // halves of the move, so the issue is never momentarily unlabelled or
+  // momentarily carrying two statuses.
+  const moveStatus = async (req, res) => {
+    const read = await readPayload(req, res);
+    if (!read.ok) return;
+
+    const checked = validateMove(read.payload, slugsNow());
+    if (!checked.ok) {
+      sendJson(res, 400, checked);
+      return;
+    }
+
+    try {
+      exec('gh', [
+        'issue', 'edit', String(checked.number),
+        '--repo', checked.repo,
+        '--remove-label', `status:${checked.from}`,
+        '--add-label', `status:${checked.to}`,
+      ]);
+    } catch (err) {
+      // Soft, like intake's: the page reverts the card and shows this sentence.
+      const detail = String(err.stderr || err.message || '').trim().split('\n').pop();
+      sendJson(res, 200, { ok: false, reason: `gh issue edit failed: ${detail}` });
+      return;
+    }
+
+    sendJson(res, 200, {
+      ok: true, repo: checked.repo, number: checked.number, status: checked.to,
+    });
   };
 
   return http.createServer((req, res) => {
@@ -376,11 +480,12 @@ const createServer = (opts = {}) => {
       res.setHeader('vary', 'Origin');
     }
 
-    // The preflight the intake POST triggers: a cross-origin JSON body is never
-    // a simple request, so the browser asks first. Only a request that carries
-    // an allowed Origin is answered — a preflight without one is not a browser
-    // asking permission, and falls through to the method check like any other
-    // unsupported verb.
+    // The preflight the page's POSTs trigger: a cross-origin JSON body is never
+    // a simple request, so the browser asks first. One answer covers both write
+    // paths — it is about the method and the headers, not the path. Only a
+    // request that carries an allowed Origin is answered — a preflight without
+    // one is not a browser asking permission, and falls through to the method
+    // check like any other unsupported verb.
     if (req.method === 'OPTIONS' && allowOrigin) {
       res.writeHead(204, {
         'access-control-allow-methods': 'GET, POST, OPTIONS',
@@ -391,8 +496,13 @@ const createServer = (opts = {}) => {
       return;
     }
 
+    const soft = (err) => sendJson(res, 500, { ok: false, reason: err.message });
     if (req.method === 'POST' && pathname === '/api/intake') {
-      intake(req, res).catch((err) => sendJson(res, 500, { ok: false, reason: err.message }));
+      intake(req, res).catch(soft);
+      return;
+    }
+    if (req.method === 'POST' && pathname === '/api/issues/status') {
+      moveStatus(req, res).catch(soft);
       return;
     }
 
@@ -429,6 +539,8 @@ const createServer = (opts = {}) => {
 module.exports = {
   createServer,
   validateIntake,
+  validateMove,
+  MOVE_STATUSES,
   urlFrom,
   hostnameOf,
   allowedHosts,

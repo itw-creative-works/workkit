@@ -17,9 +17,9 @@
 // a filed issue clears the form.
 //
 
-import { fetchFeed, postJson } from './api.js';
+import { fetchFeed, postJson, LIVE } from './api.js';
 import { selectedRepo } from './page.js';
-import { esc } from './format.js';
+import { esc, publishedNotice } from './format.js';
 
 /** The roster select, filled from /api/repos. An empty roster is a state, not an error. */
 const fillRepos = async (select) => {
@@ -39,6 +39,26 @@ const fillRepos = async (select) => {
 const showResult = (host, markup) => { host.innerHTML = markup; };
 
 /**
+ * The published shape of the affordance: filing needs the API's one write
+ * path, and there is none here, so the form is inert and says why.
+ *
+ * The topbar button stays ENABLED and still opens the dialog — that is the only
+ * place the explanation can actually be read. A disabled button suppresses its
+ * own `title` tooltip in Chromium, and the dialog is opened by Bootstrap's
+ * toggle, so a disabled trigger would leave the reason unreachable. What is
+ * disabled is everything that would file: the fields, the roster and the submit.
+ * Close still closes.
+ */
+const disableIntake = (dialog) => {
+  for (const field of dialog.querySelectorAll('input, textarea, select, [data-intake-submit]')) {
+    field.disabled = true;
+  }
+  const select = dialog.querySelector('[data-intake-repo]');
+  select.innerHTML = '<option value="">no roster without a tower</option>';
+  showResult(dialog.querySelector('[data-intake-result]'), publishedNotice());
+};
+
+/**
  * Wire the intake dialog on this page.
  *
  * Idempotent by construction — it binds once to the one dialog the layout
@@ -50,6 +70,11 @@ const showResult = (host, markup) => { host.innerHTML = markup; };
 export function mountIntake(scope = document) {
   const dialog = scope.querySelector('#tower-intake');
   if (!dialog) return;
+
+  if (!LIVE) {
+    disableIntake(dialog);
+    return;
+  }
 
   const form = dialog.querySelector('[data-intake-form]');
   const select = dialog.querySelector('[data-intake-repo]');

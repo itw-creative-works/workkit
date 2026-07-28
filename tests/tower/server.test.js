@@ -20,7 +20,7 @@ const { execFileSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
 const {
-  createServer, DEFAULT_BIND, DEFAULT_PORT, MAX_REQUEST_BYTES,
+  createServer, DEFAULT_BIND, DEFAULT_PORT, MAX_REQUEST_BYTES, MOVE_STATUSES,
 } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'server.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-server-'));
@@ -85,6 +85,8 @@ const mkWorld = () => {
     },
     // What `gh issue create` does. Either a string to print or an Error to throw.
     createResult: `https://github.com/${SLUG}/issues/99\n`,
+    // And what `gh issue edit` does — the relabel the board's drag performs.
+    editResult: `https://github.com/${SLUG}/issues/17\n`,
     // Flip to make the `gh --version` probe fail, as an unprovisioned machine does.
     ghMissing: false,
   };
@@ -99,8 +101,9 @@ const mkWorld = () => {
     }
     if (cmd === 'gh' && args[0] === 'api') return JSON.stringify(world.board);
     if (cmd === 'gh' && args[0] === 'issue') {
-      if (world.createResult instanceof Error) throw world.createResult;
-      return world.createResult;
+      const result = args[1] === 'edit' ? world.editResult : world.createResult;
+      if (result instanceof Error) throw result;
+      return result;
     }
     throw new Error(`unexpected exec: ${cmd} ${args.join(' ')}`);
   };
@@ -330,7 +333,7 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  group('tower/api/server: intake, the only write path');
+  group('tower/api/server: intake, the filing write path');
 
   await test('a valid filing calls gh with exactly the expected ARGV and returns the url', async () => {
     const w = mkWorld();
@@ -438,6 +441,184 @@ const run = async () => {
     assertEq(res.status, 413, 'the client is TOLD, not just disconnected');
     assert(/larger than/.test(res.text), 'and told why');
     assertEq(ghCalls(w, 'issue').length, 0, 'nothing was filed');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  group('tower/api/server: the board’s relabel write path');
+
+  const MOVE = '/api/issues/status';
+  const validMove = { repo: SLUG, number: 17, from: 'specced', to: 'blocked' };
+
+  await test('a valid move calls gh with exactly the expected ARGV and reports the new status', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { status, body } = await postJson(c, MOVE, validMove);
+    assertEq(status, 200, 'ok');
+    assertEq(body.ok, true, 'moved');
+    assertEq(body.status, 'blocked', 'the status it now carries');
+    assertEq(body.number, 17, 'on the issue that was dragged');
+    const [call] = ghCalls(w, 'issue');
+    assertEq(call.join(' '),
+      `gh issue edit 17 --repo ${SLUG} --remove-label status:specced --add-label status:blocked`,
+      'ARGV, not a shell string — and both halves of the move in ONE call, so the issue never carries two statuses');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('the vocabulary is the label SSOT’s own four, never a second copy', () => {
+    assertEq(MOVE_STATUSES.join(','), 'inbox,specced,blocked,parked', 'the pipeline, in its own order');
+  });
+
+  await test('an issue number that is not a positive integer is refused, gh untouched', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    for (const number of [0, -3, 2.5, '17', null, undefined]) {
+      const { status, body } = await postJson(c, MOVE, { ...validMove, number });
+      assertEq(status, 400, `${JSON.stringify(number)} is rejected`);
+      assert(/positive integer/.test(body.reason), 'and the reason says what one is');
+    }
+    assertEq(ghCalls(w, 'issue').length, 0, 'gh never ran against any of them');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a repo that is not shaped like a slug never reaches the roster comparison', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    for (const repo of ['', 'nope', 'owner/name/extra', 'owner/name;rm -rf /', '../../etc/passwd', 42]) {
+      const { status, body } = await postJson(c, MOVE, { ...validMove, repo });
+      assertEq(status, 400, `${JSON.stringify(repo)} is rejected`);
+      assert(/not a repository slug/.test(body.reason), 'on its shape alone');
+    }
+    assertEq(ghCalls(w, 'issue').length, 0, 'gh never ran');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a well-formed slug the roster does not hold is refused too', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { status, body } = await postJson(c, MOVE, { ...validMove, repo: 'someone/else' });
+    assertEq(status, 400, 'the shape test is the first gate, not the only one');
+    assert(/unknown repo/.test(body.reason), 'the roster is what a repo is judged against');
+    assertEq(ghCalls(w, 'issue').length, 0, 'gh never ran against an arbitrary repository');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a status outside the vocabulary is refused at either end', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const bad = await postJson(c, MOVE, { ...validMove, to: 'shipped' });
+    assertEq(bad.status, 400, 'an invented status is not one');
+    assert(/to is not a status/.test(bad.body.reason), 'and the end it was on is named');
+    const worse = await postJson(c, MOVE, { ...validMove, from: '' });
+    assertEq(worse.status, 400, 'and neither is none at all — the No-status column is not a move');
+    assert(/from is not a status/.test(worse.body.reason), 'named too');
+    const label = await postJson(c, MOVE, { ...validMove, to: 'status:parked' });
+    assertEq(label.status, 400, 'the value is a status, not a whole label');
+    assertEq(ghCalls(w, 'issue').length, 0, 'gh never ran');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a drop on the column the card came from is refused rather than run', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { status, body } = await postJson(c, MOVE, { ...validMove, to: 'specced' });
+    assertEq(status, 400, 'nothing to change');
+    assert(/already status:specced/.test(body.reason), 'and it says so');
+    assertEq(ghCalls(w, 'issue').length, 0, 'a no-op never becomes a write');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a repo named in another case is accepted, and gh gets the roster’s spelling', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { status } = await postJson(c, MOVE, { ...validMove, repo: SLUG.toUpperCase() });
+    assertEq(status, 200, 'GitHub names are case-insensitive');
+    const [call] = ghCalls(w, 'issue');
+    assertEq(call[call.indexOf('--repo') + 1], SLUG, 'gh receives the roster spelling, not the caller’s');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a gh failure is a soft-fail body the page can revert on, never a 500', async () => {
+    const w = mkWorld();
+    const err = new Error('Command failed: gh issue edit');
+    err.stderr = 'gh: could not add label: not found\n';
+    w.editResult = err;
+    const c = await start(w);
+    const { status, body } = await postJson(c, MOVE, validMove);
+    assertEq(status, 200, 'the tower stays up');
+    assertEq(body.ok, false, 'not moved');
+    assert(/could not add label/.test(body.reason), 'the underlying message survives');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('the preflight covers this POST too — one answer, both write paths', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const res = await raw(c, {
+      method: 'OPTIONS',
+      path: MOVE,
+      headers: {
+        host: `127.0.0.1:${c.port}`,
+        origin: 'https://localhost:4300',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'content-type',
+      },
+    });
+    assertEq(res.status, 204, 'answered, not 405');
+    assert(/POST/.test(res.headers['access-control-allow-methods']), 'the write method is allowed');
+    assertEq(res.headers['access-control-allow-origin'], 'https://localhost:4300', 'for the dashboard origin');
+
+    const wrote = await raw(c, {
+      method: 'POST',
+      path: MOVE,
+      headers: { host: `127.0.0.1:${c.port}`, origin: 'https://localhost:4300', 'content-type': 'application/json' },
+      body: JSON.stringify(validMove),
+    });
+    assertEq(wrote.status, 200, 'and the POST that follows it lands');
+    assertEq(wrote.headers['access-control-allow-origin'], 'https://localhost:4300', 'readable to the page');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('an off-list Origin cannot move an issue', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const res = await raw(c, {
+      method: 'POST',
+      path: MOVE,
+      headers: { host: `127.0.0.1:${c.port}`, origin: 'https://evil.example.com', 'content-type': 'application/json' },
+      body: JSON.stringify(validMove),
+    });
+    assertEq(res.status, 403, 'the same gate the read paths and intake pass');
+    assertEq(ghCalls(w, 'issue').length, 0, 'gh never ran');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a body that is not a JSON object is refused before anything is read out of it', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { status, body } = await postJson(c, MOVE, 'just a string');
+    assertEq(status, 400, 'rejected');
+    assert(/JSON object/.test(body.reason), 'says what a body is');
+    assertEq(ghCalls(w, 'issue').length, 0, 'gh never ran');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('the endpoint is a write and nothing else — a GET of it is a 404', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { status } = await getJson(c, MOVE);
+    assertEq(status, 404, 'there is no such read endpoint');
     await c.stop();
     cleanup(w.root);
   });

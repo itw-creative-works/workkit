@@ -16,7 +16,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 ├── hooks/                # hooks.json + the hook groups, resolved via ${CLAUDE_PLUGIN_ROOT}
 │   ├── loader.sh         # name → path router (docs:board-guard → docs/board-guard/run.sh)
 │   ├── _lib.sh           # shared helpers (sourced, never executed)
-│   ├── docs/             # board-guard, changelog-guard, change-tracker, state-check
+│   ├── docs/             # board-guard, changelog-guard, change-tracker, session, state-check
 │   ├── safety/           # vendor-guard, commit-gate, commit-language
 │   ├── manager/          # resolver, profile + ladder.json (the tier SSOT)
 │   └── workflow/         # standards (the daily heal)
@@ -47,6 +47,7 @@ Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh`
 |---|---|---|
 | `workflow/standards` | SessionStart | Runs the engine's heal in a participating repo, once per repo per day (what the heal writes: `workflow/README.md`; the standard it heals to: the spec § Enforcement), and adds the one check that is the hook layer's own — every wired hook resolves, is executable, parses, and the tools they call are present. Reports only what it fixed; an undecided repo hears one offer and is never written to |
 | `docs/state-check` | SessionStart | Announces open `status:inbox` issues, a non-empty `.workkit/inbox.md`, broken pointer files, an oversized AGENTS.md |
+| `docs/session` | SessionStart | Injects a participating repo's `.workkit/session.md` on every source — the task queue a compacted or restarted session reads first — and warns when it has grown past the light bar. Silent for a header-only or absent file |
 | `workflow/reload-guard` | SessionStart + UserPromptSubmit | Stamps the load-time surfaces (`hooks.json` content, the `agents/` and `skills/` file list and mtimes) at session start and injects one line when they change — hook-script, skill-body, and engine edits are already live, so only these need `/reload-plugins`. Each change nags once |
 | `manager/resolver` | PreToolUse (Task/Agent) | Supplies each crew spawn's model from `manager/ladder.json` and the live session model |
 | `manager/spawn-guard` | PreToolUse (Task/Agent) | Warns — never blocks — when a crew spawn carries a hand-passed `model` param, or when a frontier session spawns the advisor |
@@ -87,7 +88,7 @@ Agent-agnostic: shell + Node, no Claude Code knowledge. `labels.json` is the lab
 
 ## The tower (`tower/`)
 
-Mission control, in two processes. `tower/api/` is a plain-Node JSON API with zero dependencies (`npm run tower`, port 8693); `tower/app/` is the dashboard, an OMEGA app on port 4300 that reads it cross-origin. Six pages — Overview, Board, Crew, Usage, Health, Brief — over the cross-repo issue board, the live Claude crew and its token spend, per-repo health, and the daily brief, with an intake dialog on the topbar of every one. A view, never a second store: it reads the opted-in repos' issues via one GraphQL sweep, the keep-awake markers, the session transcripts, and git; its only write path is `gh issue create`. The API is useful alone: `/api/brief` exists so the 9am job and the page share one payload. The framework owns the chrome, which is why the app consumes `@omega.js/*` by `file:` spec rather than vendoring a stylesheet. Reference: `tower/README.md`.
+Mission control, in two processes. `tower/api/` is a plain-Node JSON API with zero dependencies (`npm run tower`, port 8693); `tower/app/` is the dashboard, an OMEGA app on port 4300 that reads it cross-origin. Six pages — Overview, Board, Crew, Usage, Health, Brief — over the cross-repo issue board, the live Claude crew and its token spend, per-repo health, and the daily brief, with an intake dialog on the topbar of every one. A view, never a second store: it reads the opted-in repos' issues via one GraphQL sweep, the keep-awake markers, the session transcripts, and git; its two write paths are `gh issue create` behind the intake dialog and `gh issue edit` behind the Board's drag. The API is useful alone: `/api/brief` exists so the 9am job and the page share one payload. The framework owns the chrome, which is why the app consumes `@omega.js/*` by `file:` spec rather than vendoring a stylesheet. Reference: `tower/README.md`.
 
 ## The jobs (`jobs/`)
 

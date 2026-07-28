@@ -124,6 +124,14 @@ const run = async () => {
     assert(ctx.includes('worktree isolation'), 'no pairing constraint');
   });
 
+  await test('the injected context tells the manager to keep session.md current', () => {
+    freshTmp();
+    cacheSession('sess1', id('fable'));
+    const ctx = contextOf(runHook(payload()));
+    assert(ctx.includes('.workkit/session.md'), 'the file the docs:session hook reads back is never named');
+    assert(/durable facts go to issues/.test(ctx), 'the light bar is not stated');
+  });
+
   group('manager-profile: layered overrides (repo > user > ladder)');
   await test('enabled: false silences a frontier session', () => {
     freshTmp();

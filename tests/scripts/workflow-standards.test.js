@@ -1040,6 +1040,17 @@ const run = async () => {
     cleanup(repo);
   });
 
+  await test('the seeded session.md states its purpose and the light bar', () => {
+    // The docs:session hook reads this file back at every session start; the
+    // header is what tells the agent it is a queue and not a journal.
+    const repo = makeRepo();
+    runScript(repo);
+    const text = readFile(path.join(repo, W, 'session.md'));
+    assert(/compaction/i.test(text), 'names the job it does — surviving a compaction');
+    assert(/40/.test(text), 'states the light bar');
+    cleanup(repo);
+  });
+
   await test('never overwrites a session file that has content', () => {
     const repo = makeRepo();
     fs.writeFileSync(path.join(repo, W, 'session.md'), '# Session\n\n## Active\n#42 — mid-flight\n');

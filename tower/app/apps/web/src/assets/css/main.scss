@@ -20,6 +20,18 @@
   padding-bottom: .5rem;
 }
 
+// Dragging a card between the columns is how an issue is relabelled, and the
+// two states that needs are the ones the browser does not draw itself: the card
+// that was picked up fades so its origin is still readable, and the column under
+// the pointer takes a tint so the drop is aimed rather than guessed. Both are
+// added and removed by the Board's own handlers.
+.omega-tower-issue--dragging { opacity: .5; }
+
+.omega-tower-board [data-column].omega-tower-column--over {
+  background: var(--omega-surface-2, var(--bs-tertiary-bg));
+  border-radius: var(--bs-border-radius, .375rem);
+}
+
 // One card size, so the columns read as columns. Two rules do it: a floor that
 // lifts a one-line card to the height of a two-line one, and the clamp below
 // that stops a long title growing past it. Nothing is lost to either — the
@@ -66,8 +78,8 @@
 // The chart itself is the framework's `.omega-org-chart` — root, children,
 // nodes and every animated connector between them. What is left here is the
 // one tier that is NOT part of the chart: the subagents that have stopped,
-// folded behind a count line. They are a plain wrapping list, connected to
-// nothing, at the same card width the chart's nodes use.
+// shown only while the page's switch is on. They are a plain wrapping list,
+// connected to nothing, at the same card width the chart's nodes use.
 .omega-tower-tree__done {
   display: flex;
   flex-wrap: wrap;
@@ -81,6 +93,52 @@
 
 @media (max-width: 767.98px) {
   .omega-tower-tree__leaf { width: auto; }
+}
+
+// ── The connectors' direction ──────────────────────────────────────────────
+//
+// The framework animates every segment of the bus one way, which is right for
+// the half of a tree that sits right of the trunk and backwards for the half
+// that does not: a card on the left is REACHED by a line flowing left. The
+// markup says which side each child is on (libs/tower/crew.js connectorFlow)
+// and this reverses the ones that need it. Only in the wide layout — under
+// 768px the tree is a spine flowing down with an elbow into each card, and
+// every one of those already runs the way the flow does.
+//
+// The properties are disjoint from the theme's `:first-child` / `:last-child`
+// trims (they set the segment's ends, this its direction), so the tie in
+// specificity costs nothing either way.
+@media (min-width: 768px) {
+  .omega-org-chart__node.omega-tower-flow--left::after { animation-direction: reverse; }
+}
+
+// ── The agent indicator ────────────────────────────────────────────────────
+//
+// One glyph, wordless: spinning in the ok colour while an agent is working,
+// still and faint for the minute after it stops (libs/tower/agent.js). Sized
+// under the text it sits beside — it is a light, not a word.
+.omega-tower-activity {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: .75rem;
+}
+
+.omega-tower-activity--working { color: var(--omega-ok); }
+.omega-tower-activity--idle { color: var(--omega-ink-faint, var(--bs-secondary-color)); }
+
+// The role glyph at the top of a crew card, in that class's own colour (the
+// style attribute the markup writes). Bigger than the indicator, because it is
+// the first thing the card says.
+.omega-tower-role {
+  font-size: 1.125rem;
+  line-height: 1;
+}
+
+// Font Awesome's spin has no reduced-motion rule of its own, and the chart's
+// connectors next to it do.
+@media (prefers-reduced-motion: reduce) {
+  .omega-tower-activity .fa-spin { animation: none; }
 }
 
 // ── The issue affordance ───────────────────────────────────────────────────

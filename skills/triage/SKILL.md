@@ -41,7 +41,7 @@ Relabel with one command so the status stays single:
 
 **Dump issues** (a wall of mixed notes in one issue): fan out to N new issues and comments, then close the dump with the Filed trail as its closing comment.
 
-**Every issue body you create or route follows the anatomy** (spec § Issue anatomy): `## Description` then `## Spec`, both always present; a small item's Spec is the literal `None needed — small item.`
+**Every issue body you create or route follows the anatomy** (spec § Issue anatomy): `## Description` then `## Spec`, both always present; a small item's Spec is the literal `None needed — small item.` The same section carries the introduction rule — the first mention of an outside project or repo, in a body or a comment, gets a link and a one-line description of what it is.
 
 **hq may have no remote yet.** If any `gh` call against hq fails, leave that entry in `.workkit/inbox.md` and say so in the Filed trail — never drop it.
 

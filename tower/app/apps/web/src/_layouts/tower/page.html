@@ -58,6 +58,24 @@ meta:
   </div>
 </div>
 
+<!-- Agent dialog.
+     Clicking a crew card opens this: what the agent is doing, what it has
+     spent, how long it has been up, and where its transcript is. It is in the
+     LAYOUT beside the issue dialog because the mount that fills it runs from
+     the main bundle, which every page loads; a page with no crew cards on it
+     simply never opens it. libs/tower/modal.js fills it. -->
+<div class="modal fade" id="tower-agent" tabindex="-1" aria-labelledby="tower-agent-label" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header align-items-start gap-2">
+        <h5 class="modal-title" id="tower-agent-label" data-agent-title></h5>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" data-agent-body></div>
+    </div>
+  </div>
+</div>
+
 <!-- Intake dialog.
      It lives in the LAYOUT, not on a page, because the spec puts intake on the
      topbar of every page rather than behind a tab — and the topbar's button

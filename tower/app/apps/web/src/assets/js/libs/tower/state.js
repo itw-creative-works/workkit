@@ -7,6 +7,12 @@
 // what lets the suite import it under Node and ask it the questions the browser
 // used to be the only way to ask.
 //
+// `issueByKey` is the one that answers a question about NOW rather than about a
+// paint: the Board's drop resolves the card it was handed against the feed as it
+// currently stands, because every poll replaces the object graph underneath.
+//
+
+import { issueKey } from './format.js';
 
 /** The raw result of one feed: `{ ok, data, status, reason }`, or null before its first read. */
 export const feed = (state, name) => state.feeds[name] || null;
@@ -42,6 +48,26 @@ export const reposFor = (state) => repos(state).filter((repo) => !state.selected
 export const issuesFor = (state) => {
   const payload = board(state);
   return ((payload && payload.issues) || []).filter((issue) => !state.selectedRepo || issue.repo === state.selectedRepo);
+};
+
+/**
+ * The issue one `repo#number` key names, out of the board payload as it stands
+ * RIGHT NOW.
+ *
+ * This is the whole reason it exists rather than a caller keeping its own map.
+ * Every poll parses a new object graph into the feed, so an issue object a
+ * paint held on to is detached the moment a read lands — and a page that
+ * mutates that detached object (the Board's optimistic move) changes nothing
+ * anybody draws. Asking at the moment of the interaction, never at the moment
+ * of the paint, is what makes the answer the live one.
+ *
+ * @param {object} state the runtime's feed state
+ * @param {string} key `repo#number`
+ * @returns {object|null} the issue the board is holding, or null
+ */
+export const issueByKey = (state, key) => {
+  const payload = board(state);
+  return ((payload && payload.issues) || []).find((issue) => issueKey(issue) === key) || null;
 };
 
 /**

@@ -43,6 +43,8 @@ Where it counted from is one file the module owns, `~/.workkit/cc-news.json`, an
 - **The send is capped**: haiku, effort low, `--safe-mode`, no tools, no session persistence, and a hard budget of $0.25.
 - **The notification is detached.** Notifly does not return until it is dismissed, and the job must never wait on a human. Its message is the response's first line, which is why the instruction fixes that line as `HEADLINE:`.
 
+`claude-daily.sh --now` (or `npm run brief`) runs the whole thing on demand — the same payload, the same send, the same log file and notification — so the brief can be tested without waiting for tomorrow. Its log block is stamped `(manual)`, and it sets `WORKKIT_BRIEF_MANUAL` so the upstream-news mark stays where it is: a run at noon must not swallow the news the 9am job has yet to report.
+
 `NOTIFLY` overrides the notifier's path — a seam for the suite, so running the tests never puts a notification on screen.
 
 ## Tests

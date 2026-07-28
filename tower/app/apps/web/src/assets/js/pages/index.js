@@ -17,7 +17,8 @@ import {
 } from '../libs/tower/format.js';
 import { chartSlot, doughnutChart } from '__main_assets__/js/libs/charts.js';
 import { loading, swap } from '@omega.js/client/modules/live-page';
-import { issueTrigger, externalLink } from '../libs/tower/modal.js';
+import { issueItem, externalLink } from '../libs/tower/modal.js';
+import { activityPhase, activityIcon, sinceLabel } from '../libs/tower/agent.js';
 
 /** Sum a health field across the repos in play; nulls (unknowable) are skipped. */
 const total = (state, field) => reposFor(state)
@@ -54,13 +55,13 @@ const waiting = (state) => {
   const blocked = issuesFor(state).filter((issue) => issue.status === 'blocked');
   const { shown, hidden } = cap(blocked);
   const body = blocked.length
-    ? `<ul class="list-unstyled mb-0">${shown.map((issue) => `<li class="py-1 omega-tower-issue omega-interactive d-flex align-items-start gap-2" ${issueTrigger(issue)}>
+    ? `<ul class="list-unstyled mb-0">${shown.map((issue) => issueItem(issue, `
         <span class="flex-grow-1">
           <span class="classy-micro">${esc(issue.repo)} #${esc(issue.number)}</span>
           <span class="d-block">${esc(issue.title)}</span>
         </span>
         ${externalLink(issue.url)}
-      </li>`).join('')}</ul>${seeMore(hidden, '/board')}`
+      `, { inner: 'py-1 d-flex align-items-start gap-2' })).join('')}</ul>${seeMore(hidden, '/board')}`
     : empty('nothing is waiting on you');
   return card('Waiting on you', body, {
     chip: blocked.length,
@@ -69,8 +70,25 @@ const waiting = (state) => {
   });
 };
 
+// What a session's `state` column says. A session that is MOVING says it with
+// the crew's own glyph and how fresh it is — the same indicator the Crew page
+// and the Board draw, so one agent reads the same on every surface (#46). The
+// states the glyph does not name — idle, stale, unknown — keep their pill,
+// because a word is the only thing that tells those two apart.
+const stateCell = (session, now) => {
+  const phase = activityPhase(session, now);
+  if (phase === 'none') return pill(session.state === 'stale' ? 'danger' : 'warn', session.state || 'unknown');
+  const age = Number.isFinite(Number(session.lastActivity)) ? sinceLabel(now - Number(session.lastActivity)) : '';
+  return `<span class="d-inline-flex align-items-center gap-1">
+    ${activityIcon(phase, `${esc(session.state || 'unknown')} — last moved ${age || 'at an unknown time'}`)}
+    ${age ? `<span class="classy-micro text-body-secondary">${esc(age)}</span>` : ''}
+  </span>`;
+};
+
 const crew = (state) => {
   const live = sessionsFor(state);
+  // One `now` for the whole table, so every row ages against the same instant.
+  const now = Date.now();
   const result = feed(state, 'sessions');
   let body;
   if (!result) body = loading('reading the crew…');
@@ -88,7 +106,7 @@ const crew = (state) => {
       <tbody>${shown.map((session) => `<tr>
         <td class="text-nowrap">${esc(shortPath(session.cwd))}</td>
         <td>${esc(session.chatName || '—')}</td>
-        <td>${pill(session.state === 'working' ? 'ok' : (session.state === 'stale' ? 'danger' : 'warn'), session.state || 'unknown')}</td>
+        <td>${stateCell(session, now)}</td>
         <td>${session.model ? modelBadge(session.model) : '—'}</td>
       </tr>`).join('')}</tbody>
     </table></div>${seeMore(hidden, '/crew')}`;

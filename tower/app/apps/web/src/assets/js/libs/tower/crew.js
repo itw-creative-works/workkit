@@ -11,6 +11,23 @@
 import { shortPath } from './format.js';
 
 /**
+ * A moment as a ms epoch, whichever way the API said it.
+ *
+ * A session's file times arrive as numbers (`lastActivity`, `aliveSince`) and a
+ * subagent's as the transcript's own ISO stamps (`lastAt`, `startedAt`) — one
+ * scale for both, so the indicator does the same arithmetic on either.
+ *
+ * @param {number|string|null|undefined} value
+ * @returns {number|null}
+ */
+const stamp = (value) => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+/**
  * One node of the chart, from either roster.
  *
  * A telemetry session carries `tokens` and `subagents`; a plain session row
@@ -18,7 +35,7 @@ import { shortPath } from './format.js';
  * two shapes either endpoint sends.
  *
  * @param {object} node a session or subagent row
- * @returns {{id: string, title: string, cwd: string, model: string, effort: string, state: string, agentClass: string, tokens: number|null, children: object[]}}
+ * @returns {{id: string, title: string, cwd: string, model: string, effort: string, state: string, agentClass: string, tokens: number|null, usage: object|null, cost: number|null, lastActivity: number|null, aliveSince: number|null, lastTool: string, lastToolAt: number|null, transcript: string, children: object[]}}
  */
 export const normalize = (node) => ({
   id: node.id || node.session || '',
@@ -29,6 +46,15 @@ export const normalize = (node) => ({
   state: node.state || '',
   agentClass: node.class || '',
   tokens: node.tokens ? node.tokens.total : null,
+  // The counters behind that one number, for the card's dialog — a plain
+  // session row has none and says so rather than reading as zeros.
+  usage: node.tokens || null,
+  cost: typeof node.cost === 'number' ? node.cost : null,
+  lastActivity: stamp(typeof node.lastActivity === 'number' ? node.lastActivity : node.lastAt),
+  aliveSince: stamp(typeof node.aliveSince === 'number' ? node.aliveSince : node.startedAt),
+  lastTool: node.lastTool || '',
+  lastToolAt: stamp(node.lastToolAt),
+  transcript: node.transcript || '',
   children: (node.subagents || []).map(normalize),
 });
 
@@ -65,6 +91,30 @@ export const splitCrew = (children) => ({
   working: children.filter((child) => child.state === 'working'),
   done: children.filter((child) => child.state !== 'working'),
 });
+
+/**
+ * Which way the connector into one child actually flows.
+ *
+ * The chart's bus runs sideways from the trunk under the root out to each card,
+ * and the framework animates every segment of it in ONE direction — so half the
+ * lines on a wide tree crawl back towards the parent they came from. The
+ * geometry says which half: a child left of centre is reached by flowing LEFT,
+ * a child right of centre by flowing right, and the one sitting on the centre
+ * is reached straight down with no sideways run to have a direction.
+ *
+ * Pure index arithmetic, because the cards are equal width and evenly spaced —
+ * child `i` of `n` sits left of centre exactly when `i < (n - 1) / 2`.
+ *
+ * @param {number} index the child's position in the row
+ * @param {number} count how many children the row holds
+ * @returns {'left'|'right'|'down'}
+ */
+export const connectorFlow = (index, count) => {
+  const middle = (count - 1) / 2;
+  if (index < middle) return 'left';
+  if (index > middle) return 'right';
+  return 'down';
+};
 
 /** How many subagents are working across the whole tree, and how many exist. */
 export const crewCount = (tree) => ({

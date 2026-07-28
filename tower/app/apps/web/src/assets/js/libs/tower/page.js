@@ -2,13 +2,14 @@
 // The page runtime every tower page boots into.
 //
 // It owns the things that are the same on all six pages: which feeds this page
-// needs, how often each is re-read, the repo selection held in `?repo=`, the
-// chrome that lets you change it, and the paint loop. A page module supplies a
-// mount id, the feeds it reads, and one `render(root, state)` — nothing else.
+// arms, the repo selection held in `?repo=`, the chrome that lets you change
+// it, and the paint loop. A page module supplies a mount id, the feeds it
+// reads, and one `render(root, state)` — nothing else. The feed table itself
+// (paths and cadence) is api.js's, which is where every tower URL is written.
 //
-// Polling cadence is the tower's old one: the board every 60 seconds (a gh
-// sweep is expensive), everything live every 10. The brief is built from the
-// board sweep and is never fresher than it, so it shares that cadence.
+// A published copy has no tower to read (api.js's `LIVE`): it keeps its mount,
+// its sidebar and its topbar, arms no feeds, and says so where its data would
+// be.
 //
 // Reading the state back out is state.js, which this file does not import: a
 // page asks the runtime to run it and asks state.js what the answers were.
@@ -22,25 +23,18 @@
 // The loop calls render() on every answer and on every tick; what reaches the
 // DOM is decided further down, by live-page's `swap` in each page's render, so
 // a tick that changed nothing leaves the page — and its focus, its scroll and
-// its open `details` — exactly as it was.
+// its open `details` — exactly as it was. The chrome above the body is held to
+// the same rule by its own means: chrome.js writes it in two pieces and this
+// file rewrites the frame only when what it shows changed, so a poll passing
+// under an open `<select>` no longer closes it.
 //
 
 import omega from '@omega.js/client';
 import { createFeedPoller } from '@omega.js/client/modules/live-page';
 import { loadCharts } from '__main_assets__/js/libs/charts.js';
-import { feedFetcher } from './api.js';
-import { esc } from './format.js';
-import { repos } from './state.js';
-
-/** Every feed the API offers, with its path and its re-read interval. */
-const FEEDS = {
-  repos: { path: '/api/repos', every: 10000, fresh: '/api/repos?fresh=1' },
-  board: { path: '/api/board', every: 60000, fresh: '/api/board?fresh=1' },
-  brief: { path: '/api/brief', every: 60000 },
-  sessions: { path: '/api/sessions', every: 10000 },
-  health: { path: '/api/health', every: 10000 },
-  telemetry: { path: '/api/telemetry', every: 10000 },
-};
+import { feedFetcher, pageFeeds, LIVE } from './api.js';
+import { publishedNotice } from './format.js';
+import { chromeKey, chromeMarkup, statusMarkup } from './chrome.js';
 
 // ── The repo selection ─────────────────────────────────────────────────────
 
@@ -52,33 +46,6 @@ const writeSelectedRepo = (slug) => {
   if (slug) url.searchParams.set('repo', slug);
   else url.searchParams.delete('repo');
   history.replaceState(null, '', url);
-};
-
-// ── The chrome ─────────────────────────────────────────────────────────────
-//
-// The repo selector lives here, in the page's own chrome, and NOT in the
-// sidebar's `selector` block. The sidebar is a JSON file baked at build time;
-// the roster is whatever repos are on the machine when the page is open, read
-// from /api/repos. A build-time file cannot hold a runtime list, so the
-// selector is drawn where the data is.
-
-const chromeMarkup = (state, stale) => {
-  const slugs = repos(state).map((repo) => repo.slug).filter(Boolean);
-  return `<div class="d-flex flex-wrap align-items-end gap-2 mb-4">
-    <label class="flex-grow-0">
-      <span class="classy-micro d-block">Repository</span>
-      <select class="form-select form-select-sm" id="tower-repo" aria-label="Filter every page by repository">
-        <option value=""${state.selectedRepo ? '' : ' selected'}>All repos${slugs.length ? ` (${slugs.length})` : ''}</option>
-        ${slugs.map((slug) => `<option value="${esc(slug)}"${slug === state.selectedRepo ? ' selected' : ''}>${esc(slug)}</option>`).join('')}
-      </select>
-    </label>
-    <button class="btn btn-sm btn-outline-adaptive" type="button" id="tower-refresh">Refresh</button>
-    <span class="classy-micro text-body-secondary ms-auto d-flex align-items-center gap-2">
-      ${state.pending ? '<span class="spinner-border spinner-border-sm" role="status" aria-label="Reading"></span>' : ''}
-      ${esc(state.stamp || 'reading…')}
-    </span>
-    ${stale.length ? `<span class="classy-chip classy-chip--accent" title="${esc(stale.map((entry) => `${entry.name}: ${entry.reason}`).join(' · '))}">${stale.length} feed${stale.length === 1 ? '' : 's'} unavailable</span>` : ''}
-  </div>`;
 };
 
 // ── The runtime ────────────────────────────────────────────────────────────
@@ -109,11 +76,21 @@ export async function startPage(options) {
   const chrome = host.querySelector('[data-tower-chrome]');
   const body = host.querySelector('[data-tower-body]');
 
+  // Published mode is read from the flag itself, never inferred from an empty
+  // feed table: a page that legitimately declares no feeds is still a live
+  // page. There is no tower to read, so no poller is created and no chrome is
+  // drawn — every control in it (the roster select, Refresh, the freshness
+  // stamp) needs a feed behind it.
+  if (!LIVE) {
+    body.innerHTML = publishedNotice();
+    return;
+  }
+
   const poller = createFeedPoller({
     // Only the feeds this page asked for: readAll reads the whole table and
     // start() arms a timer per entry, so a page never polls a feed it draws
     // nothing from.
-    feeds: Object.fromEntries(options.feeds.map((name) => [name, FEEDS[name]])),
+    feeds: pageFeeds(options.feeds),
     fetcher: feedFetcher,
     onChange: () => paint(),
   });
@@ -123,15 +100,34 @@ export async function startPage(options) {
   // through one argument.
   const state = poller.state;
   state.selectedRepo = selectedRepo();
+  // A page that WRITES has to be able to read the result of its own write: the
+  // board's poll is a minute away and the API caches the sweep for as long, so
+  // a relabel that landed would otherwise be shown as the old state until both
+  // expired. It rides the state object for the same reason the selection does —
+  // render(root, state) is the whole of a page module's argument list.
+  state.refresh = (name) => poller.read(name, true);
+
+  // What the chrome's frame was last drawn from. A poll paints twice — once as
+  // the read starts and once as it lands — and rewriting the frame each time
+  // re-created the `<select>`, which closed it if it was open while a poll went
+  // by. The frame is rewritten only when `chromeKey` says what it shows has
+  // changed; the status inside it is rewritten every paint, because that is the
+  // half a poll actually changes.
+  let painted = null;
 
   function paint() {
-    chrome.innerHTML = chromeMarkup(state, poller.staleFeeds());
-    chrome.querySelector('#tower-repo').addEventListener('change', (event) => {
-      state.selectedRepo = event.target.value;
-      writeSelectedRepo(state.selectedRepo);
-      paint();
-    });
-    chrome.querySelector('#tower-refresh').addEventListener('click', () => poller.readAll(true));
+    const key = chromeKey(state);
+    if (key !== painted) {
+      painted = key;
+      chrome.innerHTML = chromeMarkup(state);
+      chrome.querySelector('#tower-repo').addEventListener('change', (event) => {
+        state.selectedRepo = event.target.value;
+        writeSelectedRepo(state.selectedRepo);
+        paint();
+      });
+      chrome.querySelector('#tower-refresh').addEventListener('click', () => poller.readAll(true));
+    }
+    chrome.querySelector('[data-tower-status]').innerHTML = statusMarkup(state, poller.staleFeeds());
     options.render(body, state);
   }
 
