@@ -9,7 +9,8 @@
   "scripts": {
     "start": "omega",
     "dev": "omega dev",
-    "build": "omega build"
+    "build": "omega build",
+    "deploy": "omega deploy"
   },
   "devDependencies": {
     "@omega.js/manager": "file:../../../../Omega/omega/packages/manager"

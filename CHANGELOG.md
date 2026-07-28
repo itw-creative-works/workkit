@@ -17,6 +17,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ### Changed
 
+- [#44](../../issues/44) — The tower app is a full OMEGA-style project: the manage cycle runs to convergence at `tower/app`, generating the agent-docs chain and its run state, with deploy-facing surfaces deliberately absent for an embedded localhost dashboard.
 - [#16](../../issues/16) — The three tellings collapse to one: `docs/project-state.md` is the only normative text, AGENTS.md keeps architecture and points at the spec, and the README keeps the human summary and its charts. A rule change now touches one file.
 - [#35](../../issues/35) — Models and crew classes are drawn as coloured badges everywhere they appear, and the Usage charts use the same colours; every clickable issue card warms and lifts under the pointer and settles on press.
 - [#34](../../issues/34) — The Overview's lists stop at five with a line to the page holding the rest, health is ranked worst-first, the queue by status is a doughnut, and the panel links carry no underline.
