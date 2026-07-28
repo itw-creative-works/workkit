@@ -56,9 +56,9 @@ The repo selection is global, held in `?repo=owner/name`, and every page whose d
 
 **Intake** is not a page: it is an action on the topbar, reachable from all of them. Repo select, title, optional body, one button; it files with `status:inbox` and `type:idea`, and triage does the rest.
 
-**Clicking an issue** — on the Board, the Overview, the Brief or the Health page — opens it in a dialog on the page you are on: number, repo, status and chips, the body rendered, who holds it, when it was filed and last touched, and how many comments are waiting. Nothing navigates to github.com by itself. The box-with-arrow button does, in a new tab, and it is on the dialog and on each issue while it is hovered or focused. The body is rendered by a small markdown renderer that escapes first and never passes markup through, because an issue body is text from an API and may say anything.
+**Clicking an issue** — on the Board, the Overview, the Brief or the Health page — opens it in a dialog on the page you are on: number, repo, status and chips, the body rendered, who holds it, when it was filed and last touched, and how many comments are waiting. Nothing navigates to github.com by itself. The box-with-arrow button does, in a new tab, and it is on the dialog and on each issue while it is hovered or focused. The body is rendered by the framework's markdown renderer, which escapes first and never passes markup through, because an issue body is text from an API and may say anything.
 
-**Models and crew classes carry one colour.** A model id and an agent class are drawn as coloured badges wherever they appear — the Crew cards, the Overview's crew table, the Usage table — and the Usage charts draw each bar in that same colour, so a row in a chart and a badge in the table below it are recognizably the same thing. Which name falls in which slot is `libs/tower/format.js`; the colours are theme tokens in `main.scss`, so dark mode follows. Anything clickable — every issue card and row — warms and lifts under the pointer and settles again on press.
+**Models and crew classes carry one colour.** A model id and an agent class are drawn as coloured badges wherever they appear — the Crew cards, the Overview's crew table, the Usage table — and the Usage charts draw each bar in that same colour, so a row in a chart and a badge in the table below it are recognizably the same thing. Which name falls in which tone is `libs/tower/format.js`; the colours are the framework's categorical ramp (`.omega-tone-1..6` on `.omega-badge-tone`), so dark mode follows. Anything clickable — every issue card and row — warms and lifts under the pointer and settles again on press, which is the framework's `.omega-interactive`.
 
 **Refreshes are in place.** A section that has never answered shows a spinner naming the read; the chrome shows one while a refresh is in flight; and a poll that changed nothing writes nothing, so the page keeps its focus, its scroll and its open panels. A refresh that fails leaves the last good answer on screen and marks the feed unavailable rather than replacing a full board with an error line.
 
@@ -111,7 +111,7 @@ tower/
         └── assets/js/
             ├── main.js                 # the one bundle every page loads — mounts the intake dialog
             ├── pages/                  # one module per page, bound by URL
-            └── libs/tower/             # api, page, state, format, crew, charts, intake
+            └── libs/tower/             # api, page, state, format, crew, modal, intake
 ```
 
 Every lib takes an `opts` object for path and exec injection; the suites under `tests/tower/` run the whole server against fixtures, fully offline.

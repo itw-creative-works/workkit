@@ -15,8 +15,8 @@ import {
   esc, num, empty, problem, shortPath, statCell, statgrid, card, pill, cap,
   modelBadge, STATUSES, statusColor,
 } from '../libs/tower/format.js';
-import { chartSlot, doughnutChart } from '../libs/tower/charts.js';
-import { loading, swap } from '../libs/tower/loading.js';
+import { chartSlot, doughnutChart } from '__main_assets__/js/libs/charts.js';
+import { loading, swap } from '@omega.js/client/modules/live-page';
 import { issueTrigger, externalLink } from '../libs/tower/modal.js';
 
 /** Sum a health field across the repos in play; nulls (unknowable) are skipped. */
@@ -54,7 +54,7 @@ const waiting = (state) => {
   const blocked = issuesFor(state).filter((issue) => issue.status === 'blocked');
   const { shown, hidden } = cap(blocked);
   const body = blocked.length
-    ? `<ul class="list-unstyled mb-0">${shown.map((issue) => `<li class="py-1 omega-tower-issue d-flex align-items-start gap-2" ${issueTrigger(issue)}>
+    ? `<ul class="list-unstyled mb-0">${shown.map((issue) => `<li class="py-1 omega-tower-issue omega-interactive d-flex align-items-start gap-2" ${issueTrigger(issue)}>
         <span class="flex-grow-1">
           <span class="classy-micro">${esc(issue.repo)} #${esc(issue.number)}</span>
           <span class="d-block">${esc(issue.title)}</span>

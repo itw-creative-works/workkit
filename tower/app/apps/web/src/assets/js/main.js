@@ -27,5 +27,8 @@ export default async function (context) {
   await coreMain(context);
   await omega.dom().ready();
   mountIntake();
-  mountIssueModal();
+  // The issue dialog draws a body with the framework's escape-first markdown
+  // renderer. It is handed in here, where the singleton already is, so modal.js
+  // stays pure string functions the suite can run under Node.
+  mountIssueModal({ render: (text) => omega.utilities().renderMarkdown(text) });
 }

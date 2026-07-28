@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#45](../../issues/45) — The tower drops its local copies of four pieces OMEGA now ships: the markdown renderer and the refresh-in-place primitives come from `@omega.js/client`, the chart helpers from the web core layer, and the tone badges, the interactive affordance and the crew org chart's connectors from the framework's stylesheets.
+
 ## [0.2.0] - 2026-07-27
 
 ### Added

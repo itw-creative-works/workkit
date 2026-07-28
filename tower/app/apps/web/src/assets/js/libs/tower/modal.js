@@ -23,9 +23,14 @@
 // GitHub's API and are escaped (or run through the markdown renderer, which
 // escapes first) without exception.
 //
+// The renderer itself is the framework's — `omega.utilities().renderMarkdown`,
+// which this file never names. It is handed in at mount instead, from the main
+// bundle that already holds the client singleton, which is what keeps every
+// markup function here a pure string function the suite can ask questions of
+// under Node.
+//
 
 import { esc, issueChips } from './format.js';
-import { renderMarkdown } from './markdown.js';
 
 /** The issues the current markup can open, keyed `repo#number`. */
 const registry = new Map();
@@ -82,10 +87,13 @@ const day = (value) => {
  * ask what a hostile title renders as without a browser.
  *
  * @param {object} issue - one issue from /api/board or /api/brief
+ * @param {(text: string) => string} renderBody - the markdown renderer, handed
+ *   in by the mount: an issue body is hostile text, and what turns it into
+ *   markup escapes first
  * @returns {{title: string, actions: string, body: string}}
  */
-export const issueDialog = (issue) => {
-  const rendered = renderMarkdown(issue.body);
+export const issueDialog = (issue, renderBody) => {
+  const rendered = renderBody(issue.body);
   const meta = [
     `filed ${day(issue.createdAt)}`,
     `updated ${day(issue.updatedAt)}`,
@@ -113,10 +121,17 @@ export const issueDialog = (issue) => {
  * Idempotent: it binds to the one dialog the layout ships and marks it, so a
  * second call does nothing. A page without the dialog is left alone.
  *
- * @param {Document|HTMLElement} [scope] - where to look for the dialog
+ * @param {object} options
+ * @param {(text: string) => string} options.render - the markdown renderer the
+ *   dialog draws a body with
+ * @param {Document|HTMLElement} [options.scope] - where to look for the dialog
  * @returns {void}
  */
-export function mountIssueModal(scope = document) {
+export function mountIssueModal({ render, scope = document } = {}) {
+  // Without a renderer the dialog would mount fine and then throw inside the
+  // click listener — one interaction away from the mistake. Fail at the mount,
+  // where the missing argument is.
+  if (typeof render !== 'function') throw new Error('mountIssueModal needs a render function for issue bodies');
   const dialog = scope.querySelector('#tower-issue');
   if (!dialog || dialog.dataset.towerMounted) return;
   dialog.dataset.towerMounted = '1';
@@ -134,7 +149,7 @@ export function mountIssueModal(scope = document) {
       console.warn(`[tower] no issue registered for ${key}`);
       return;
     }
-    const parts = issueDialog(issue);
+    const parts = issueDialog(issue, render);
     title.innerHTML = parts.title;
     actions.innerHTML = parts.actions;
     body.innerHTML = parts.body;

@@ -63,6 +63,36 @@ export async function fetchFeed(path) {
 }
 
 /**
+ * Translate one feed answer into the poller's fetcher contract — resolve with
+ * the body, throw an Error carrying `.code` (`omega.request`'s shape). api.js
+ * answers in the tower's own result shape instead, because the intake dialog
+ * reads its `reason` sentence directly, so the translation between the two
+ * happens here, once. The reason and the status survive it: the poller stores
+ * them as `reason` and `status`, which is the shape the chrome and state.js
+ * already read. A body that reported `ok: false` itself loses its `data` in
+ * the throw — no consumer reads `.data` on a failed feed (state.js gates every
+ * accessor on `ok`), so only the sentence and the status are worth carrying.
+ *
+ * @param {{ok: boolean, data: any, status: number|null, reason: string|null}} answer
+ * @returns {any} the feed's body when `ok`
+ * @throws {Error} carrying the reason as its message and the status as `.code`
+ */
+export function unwrapFeed(answer) {
+  if (answer.ok) return answer.data;
+  const error = new Error(answer.reason);
+  error.code = answer.status;
+  throw error;
+}
+
+/**
+ * The fetcher the page runtime hands to the framework's feed poller.
+ *
+ * @param {string} path - '/api/board', with its query if any
+ * @returns {Promise<any>} the feed's body
+ */
+export const feedFetcher = async (path) => unwrapFeed(await fetchFeed(path));
+
+/**
  * POST a JSON body to one API path — the tower's single write path.
  *
  * Same result shape as `fetchFeed` and the same promise never to throw, with

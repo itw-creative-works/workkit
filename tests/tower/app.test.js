@@ -5,10 +5,20 @@
 // each lib is pulled in with a dynamic `import()`. That works for exactly the
 // modules that touch neither the DOM nor the network: `format.js` (markup from
 // values), `state.js` (what a feed said, and what the repo selection leaves in
-// play) and `crew.js` (the crew tree). The runtime itself (page.js), the API
-// client and the intake dialog all reach for `document`, `window` or `fetch` at
-// import time and are out of scope here by design — the logic worth asserting
-// was moved OUT of them into the three modules above.
+// play), `crew.js` (the crew tree) and `modal.js` (an issue as markup). The
+// runtime itself (page.js) and the intake dialog reach for `document` and
+// `window` at import time and are out of scope here by design — the logic
+// worth asserting was moved OUT of them into the modules above. `api.js` sits
+// in between: it reads `location` once at import to fix the API origin and
+// touches `fetch` only at call time, so two stubbed globals bring its feed
+// adapter — the one translation the runtime leans on — under test.
+//
+// A module that imports the FRAMEWORK is out of reach too: `@omega.js/client`
+// and `__main_assets__/…` are bundler specifiers, resolved by esbuild and by
+// nothing else, so the tower's own modules keep those imports out of the pure
+// half. Refreshing in place (`loading`/`swap`), the feed poller, the markdown
+// renderer and the chart helpers now live upstream and are tested there
+// (@omega.js/client's live-page and utilities suites, @omega.js/web's dataviz).
 //
 // The questions asked are the ones the #20 review found the hard way: does the
 // repo selection actually narrow a session list, and does a hostile issue title
@@ -40,11 +50,16 @@ const run = async () => {
   const format = await load('format.js');
   const state = await load('state.js');
   const crew = await load('crew.js');
-  const loading = await load('loading.js');
-  const markdown = await load('markdown.js');
   // modal.js reaches for `document` only inside mountIssueModal, so everything
   // that shapes an issue into markup imports and answers under Node.
   const modal = await load('modal.js');
+  // api.js fixes its origin from `location` at import — stub it (and the
+  // `window` override hatch) just long enough to load the module.
+  globalThis.location = { href: 'http://localhost:4300/' };
+  globalThis.window = {};
+  const api = await load('api.js');
+  delete globalThis.location;
+  delete globalThis.window;
 
   group('tower/app: format — values into markup');
 
@@ -110,13 +125,39 @@ const run = async () => {
     assertEq(format.classKey(''), 'other', 'and so is no class at all');
   });
 
-  await test('a badge is a chip in its slot, and its label is text', () => {
+  await test('a badge is a chip in its tone, and its label is text', () => {
     const badge = format.modelBadge('claude-opus-5[1m]');
-    assert(badge.includes('classy-chip omega-tower-badge omega-tower-badge--opus'), 'the theme chip, in the opus slot');
+    assert(badge.includes('classy-chip omega-badge-tone omega-tone-2'), 'the theme chip, in the opus tone');
     assert(badge.includes('claude-opus-5[1m]'), 'labelled with the id itself');
-    assertEq(format.badgeColor('opus'), 'var(--tower-badge-opus)', 'and the chart reads the same slot as a token');
+    assertEq(format.badgeColor('opus'), 'var(--omega-chart-2)', 'and the chart reads the same tone as a token');
     assert(!format.classBadge('<img src=x>').includes('<img'), 'a hostile class name is escaped');
     assert(format.modelBadge(null).includes('model unknown'), 'an unknown model says so rather than drawing empty');
+  });
+
+  await test('every name the tower draws has a tone, and no vocabulary repeats one', () => {
+    const models = ['fable', 'opus', 'sonnet', 'haiku'].map((key) => format.badgeColor(key));
+    const classes = ['manager', 'advisor', 'worker', 'verifier', 'scout', 'reviewer'].map((key) => format.badgeColor(key));
+    assert(models.every((color) => color.startsWith('var(--omega-chart-')), 'a model is drawn from the ramp');
+    assert(classes.every((color) => color.startsWith('var(--omega-chart-')), 'and so is a crew class');
+    assertEq(new Set(models).size, models.length, 'two models never share a tone');
+    assertEq(new Set(classes).size, classes.length, 'and neither do two classes');
+    // Ten names over a six-slot ramp: a name with no tone is drawn in the muted
+    // ink `.omega-badge-tone` falls back to, never in another name's colour.
+    assertEq(format.badgeColor('other'), 'var(--omega-ink-muted)', 'and everything else is neutral');
+    assert(!format.classBadge('general-purpose').includes('omega-tone-'), 'which is no tone class at all');
+    // Sharing across the vocabularies is forced (ten names, six slots), so the
+    // table pins WHO shares: the class chip and the model chip that sit
+    // together on a real crew card — the manager ladder's pairings — never
+    // match (hooks/manager/ladder.json: manager and advisor run fable, scouts
+    // sonnet, workers and verifiers opus; a reviewer inherits the session's
+    // model, so it pairs with fable and opus both).
+    const pairings = [
+      ['manager', 'fable'], ['advisor', 'fable'], ['scout', 'sonnet'],
+      ['worker', 'opus'], ['verifier', 'opus'], ['reviewer', 'opus'], ['reviewer', 'fable'],
+    ];
+    for (const [cls, model] of pairings) {
+      assert(format.badgeColor(cls) !== format.badgeColor(model), `${cls} and ${model} appear side by side and must differ`);
+    }
   });
 
   await test('cap shows the head of a list and counts what it held back', () => {
@@ -301,87 +342,6 @@ const run = async () => {
     assertEq(count.total, 0, 'and nobody at all');
   });
 
-  group('tower/app: loading — refreshing in place');
-
-  await test('a section that has not answered says which read it is waiting on', () => {
-    const markup = loading.loading('reading the board…');
-    assert(markup.includes('spinner-border'), 'the theme spinner');
-    assert(markup.includes('reading the board…'), 'and the sentence naming the read');
-  });
-
-  await test('the loading line escapes what it is handed', () => {
-    assert(!loading.loading('<img src=x onerror=1>').includes('<img'), 'a message is text');
-  });
-
-  await test('swap writes once and leaves an unchanged section alone', () => {
-    // A host is only ever asked for `innerHTML`, so a plain object is the real
-    // contract — swap compares against what IT wrote, never against the DOM's
-    // own re-serialization of it.
-    const host = { innerHTML: '' };
-    assertEq(loading.swap(host, '<p>one</p>'), true, 'the first write happens');
-    assertEq(host.innerHTML, '<p>one</p>', 'and lands');
-    assertEq(loading.swap(host, '<p>one</p>'), false, 'the same markup is not written again');
-    assertEq(loading.swap(host, '<p>two</p>'), true, 'different markup is');
-    assertEq(host.innerHTML, '<p>two</p>', 'and replaces it');
-  });
-
-  await test('two sections keep their own last write', () => {
-    const a = { innerHTML: '' };
-    const b = { innerHTML: '' };
-    loading.swap(a, '<p>a</p>');
-    assertEq(loading.swap(b, '<p>a</p>'), true, 'the same markup in another host is still new');
-    assertEq(loading.swap(a, '<p>a</p>'), false, 'and the first host still knows what it holds');
-  });
-
-  group('tower/app: markdown — an issue body as safe markup');
-
-  await test('an empty body renders as nothing, so the caller can say what that means', () => {
-    assertEq(markdown.renderMarkdown(''), '', 'empty');
-    assertEq(markdown.renderMarkdown('   \n\n'), '', 'and whitespace is empty too');
-    assertEq(markdown.renderMarkdown(null), '', 'and so is a body that is not there');
-  });
-
-  await test('markup in a body is text, whatever the grammar around it', () => {
-    const out = markdown.renderMarkdown('<script>alert(1)</script>\n\n- <img src=x onerror=alert(1)>');
-    assert(!out.includes('<script>'), 'no script survives');
-    assert(!out.includes('<img'), 'and no tag inside a list item either');
-    assert(out.includes('&lt;script&gt;'), 'it is shown as the text it is');
-  });
-
-  await test('the grammar an issue body actually uses renders', () => {
-    const out = markdown.renderMarkdown('## Spec\n\nOne **bold** and `code`.\n\n- first\n- second\n\n1. step');
-    assert(out.includes('<h5 class="h6 mt-3 mb-2">Spec</h5>'), 'a heading starts below the dialog title');
-    assert(out.includes('<strong>bold</strong>'), 'bold');
-    assert(out.includes('<code>code</code>'), 'inline code');
-    assert(out.includes('<ul><li>first</li><li>second</li></ul>'), 'a bullet list');
-    assert(out.includes('<ol><li>step</li></ol>'), 'and a numbered one, kept apart');
-  });
-
-  await test('a fenced block is literal, emphasis and all', () => {
-    const out = markdown.renderMarkdown('```\nrm -rf *not*bold*\n<b>x</b>\n```');
-    assert(out.includes('<pre'), 'it is a code block');
-    assert(out.includes('*not*bold*'), 'the asterisks are code, not emphasis');
-    assert(!out.includes('<b>x</b>'), 'and the tag inside it is still escaped');
-  });
-
-  await test('an unterminated fence keeps its content instead of dropping it', () => {
-    assert(markdown.renderMarkdown('```\nhalf a block').includes('half a block'), 'the text survives');
-  });
-
-  await test('a link is followed only when the scheme is one a browser may follow', () => {
-    const safe = markdown.renderMarkdown('see [the spec](https://example.com/a)');
-    assert(safe.includes('<a href="https://example.com/a" target="_blank" rel="noopener">the spec</a>'), 'https opens in a new tab');
-    const unsafe = markdown.renderMarkdown('see [click](javascript:alert(1))');
-    assert(!unsafe.includes('<a '), 'a javascript: URL is not made into a link');
-    assert(unsafe.includes('[click]'), 'it stays the text it was');
-  });
-
-  await test('an href holding asterisks survives the emphasis pass', () => {
-    const out = markdown.renderMarkdown('see [x](https://ok.com/*a*b*)');
-    assert(out.includes('href="https://ok.com/*a*b*"'), `the URL is untouched: ${out}`);
-    assert(!out.includes('<em>'), 'and no emphasis was minted inside it');
-  });
-
   group('tower/app: modal — the issue dialog');
 
   const ISSUE = {
@@ -401,6 +361,16 @@ const run = async () => {
     assignees: ['ianwieds'],
   };
 
+  // The renderer is the framework's and is handed to the dialog by the mount,
+  // so the questions left here are the tower's own: is the RAW body what gets
+  // handed over, and does what comes back land in the body's own container.
+  // Whether markdown becomes safe markup is asked upstream, of the real one.
+  const rendered = [];
+  const render = (text) => {
+    rendered.push(text);
+    return text ? `<p data-rendered>${text}</p>` : '';
+  };
+
   await test('a trigger carries the key and the keyboard affordance a div needs', () => {
     const attrs = modal.issueTrigger(ISSUE);
     assert(attrs.includes('data-issue="ITW/workkit#31"'), 'the repo and number are the key');
@@ -418,7 +388,7 @@ const run = async () => {
   });
 
   await test('the dialog says everything the issue knows', () => {
-    const parts = modal.issueDialog(ISSUE);
+    const parts = modal.issueDialog(ISSUE, render);
     assert(parts.title.includes('ITW/workkit #31'), 'repo and number');
     assert(parts.title.includes('Issues open in a modal'), 'and the title');
     assert(parts.actions.includes('target="_blank"'), 'the external button is the header action');
@@ -426,12 +396,13 @@ const run = async () => {
     assert(parts.body.includes('>enhancement<') && parts.body.includes('agent:ok'), 'and the chips');
     assert(parts.body.includes('held by @ianwieds'), 'who holds it');
     assert(/filed .* · updated /.test(parts.body), 'both dates');
-    assert(parts.body.includes('<p>The body.</p>'), 'the body, rendered');
+    assertEq(rendered[rendered.length - 1], ISSUE.body, 'the renderer is handed the raw body, markdown and all');
+    assert(parts.body.includes(`<div class="omega-tower-issue__body"><p data-rendered>${ISSUE.body}</p></div>`), 'and what it answers is the body of the dialog');
     assert(parts.body.includes('2 comments on GitHub'), 'and where the conversation is');
   });
 
   await test('an issue with nothing on it still opens', () => {
-    const bare = modal.issueDialog({ repo: 'r', number: 1, url: 'https://example.com/1', title: 'bare' });
+    const bare = modal.issueDialog({ repo: 'r', number: 1, url: 'https://example.com/1', title: 'bare' }, render);
     assert(bare.body.includes('No description.'), 'an empty body says so');
     assert(bare.body.includes('unclaimed'), 'and nobody holding it says that');
     assert(bare.body.includes('0 comments'), 'a missing count is zero, not undefined');
@@ -439,22 +410,91 @@ const run = async () => {
   });
 
   await test('a truncated body admits it', () => {
-    const cut = modal.issueDialog({ ...ISSUE, bodyTruncated: true });
+    const cut = modal.issueDialog({ ...ISSUE, bodyTruncated: true }, render);
     assert(cut.body.includes('the rest is on GitHub'), 'the dialog says what it is not showing');
   });
 
-  await test('a hostile issue reaches the dialog as text', () => {
+  await test('a mount without a renderer fails there, not at the first click', () => {
+    let thrown = null;
+    try {
+      // The scope stub keeps Node's missing `document` (the destructuring
+      // default) out of the way — the guard is what is under test.
+      modal.mountIssueModal({ scope: {} });
+    } catch (error) {
+      thrown = error;
+    }
+    assert(thrown, 'the missing renderer is refused at the mount');
+    assert(thrown.message.includes('render'), 'and the error names what is missing');
+  });
+
+  await test('every field the dialog writes itself reaches it as text', () => {
     const nasty = modal.issueDialog({
       ...ISSUE,
       title: '<img src=x onerror=alert(1)>',
-      body: '<script>alert(1)</script>',
       assignees: ['<b>me</b>'],
       status: '<i>x</i>',
-    });
+    }, render);
     assert(!nasty.title.includes('<img'), 'the title is escaped');
-    assert(!nasty.body.includes('<script>'), 'the body is escaped');
     assert(!nasty.body.includes('<b>me</b>'), 'the handle is escaped');
     assert(!nasty.body.includes('<i>x</i>'), 'and so is the status chip');
+    // The body is the ONE field this file does not escape itself — it is the
+    // renderer's, which escapes first (@omega.js/client's utilities suite).
+  });
+
+  group('tower/app: api — the feed adapter');
+
+  // The one translation the runtime leans on: the tower's four-key result
+  // shape into the framework poller's fetcher contract (resolve with the body,
+  // throw carrying `.code`).
+  await test('a good answer resolves with the body, untouched', () => {
+    const data = { rows: [1, 2, 3] };
+    assertEq(api.unwrapFeed({ ok: true, data, status: 200, reason: null }), data, 'the body passes through by reference');
+  });
+
+  await test('a failed answer throws the reason with the status as its code', () => {
+    let thrown = null;
+    try {
+      api.unwrapFeed({ ok: false, data: null, status: 502, reason: '/api/board answered 502' });
+    } catch (error) {
+      thrown = error;
+    }
+    assertEq(thrown && thrown.message, '/api/board answered 502', 'the reason is the message');
+    assertEq(thrown && thrown.code, 502, 'and the status rides as .code');
+  });
+
+  await test('a transport failure keeps its null status', () => {
+    let thrown = null;
+    try {
+      api.unwrapFeed({ ok: false, data: null, status: null, reason: 'did not answer' });
+    } catch (error) {
+      thrown = error;
+    }
+    assertEq(thrown && thrown.code, null, 'no HTTP status means a null code, not 0 or undefined');
+  });
+
+  await test('the fetcher composes fetchFeed and the unwrap, both ways', async () => {
+    // Node ships its own global fetch and the suites share one process —
+    // restore it, never delete it.
+    const realFetch = globalThis.fetch;
+    let body;
+    let thrown = null;
+    try {
+      globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ rows: [] }) });
+      body = await api.feedFetcher('/api/board');
+
+      // A body that reports its own failure (`ok: false`) throws with ITS reason.
+      globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: false, reason: 'gh is not logged in' }) });
+      try {
+        await api.feedFetcher('/api/board');
+      } catch (error) {
+        thrown = error;
+      }
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    assertEq(JSON.stringify(body), '{"rows":[]}', 'a 200 with JSON resolves with the body');
+    assertEq(thrown && thrown.message, 'gh is not logged in', 'the body\'s own sentence survives the translation');
+    assertEq(thrown && thrown.code, 200, 'with the HTTP status it arrived under');
   });
 
   return summary();

@@ -20,7 +20,7 @@ import { normalize, splitCrew, crewCount, rootLabel } from '../libs/tower/crew.j
 import {
   esc, empty, problem, compact, statCell, statgrid, card, pill, modelBadge, classBadge,
 } from '../libs/tower/format.js';
-import { loading, swap } from '../libs/tower/loading.js';
+import { loading, swap } from '@omega.js/client/modules/live-page';
 
 /** The tone a node's state is drawn in. */
 const tone = (value) => ({ working: 'ok', idle: 'warn', stale: 'danger' }[value] || 'warn');
@@ -68,10 +68,11 @@ const node = (entry, isRoot) => `<div class="card h-100">
 // The chart's second tier: the session's working crew, hanging off the trunk
 // under the root. Every connector line on the chart is animated, and needs no
 // condition to be — splitCrew has already left only the working agents here.
-// The lines themselves are the stylesheet's (.omega-tower-tree in main.scss); the
-// markup supplies only the nesting they are drawn from.
-const tier = (children) => `<div class="omega-tower-tree__children">
-  ${children.map((child) => `<div class="omega-tower-tree__node">${node(child, false)}</div>`).join('')}
+// The lines themselves are the framework's (`.omega-org-chart` — its data/org-chart
+// component's stylesheet, which a client-rendered tree gets by writing the same
+// class vocabulary); the markup supplies only the nesting they are drawn from.
+const tier = (children) => `<div class="omega-org-chart__children">
+  ${children.map((child) => `<div class="omega-org-chart__node">${node(child, false)}</div>`).join('')}
 </div>`;
 
 // The finished crew, folded shut. They are still worth reaching — what ran and
@@ -87,8 +88,8 @@ const finished = (children) => `<details class="mt-3">
 
 const branch = (entry) => {
   const { working, done } = splitCrew(entry.children);
-  return `<div class="omega-tower-tree mb-4">
-    <div class="omega-tower-tree__root">${node(entry, true)}</div>
+  return `<div class="omega-org-chart mb-4">
+    <div class="omega-org-chart__root">${node(entry, true)}</div>
     ${working.length ? tier(working) : ''}
     ${done.length ? finished(done) : ''}
   </div>`;

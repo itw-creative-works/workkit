@@ -79,9 +79,10 @@ export const statusColor = (key) => `var(${statusToken(key)})`;
 //
 // The split of homes is deliberate. What lives HERE is which name falls in
 // which slot, because only code can read `claude-opus-5[1m]` as opus. The
-// COLOURS live in the stylesheet (`--tower-badge-*` in main.scss) with the
-// theme's own tokens, which is what makes dark mode follow without a second
-// palette written in JavaScript.
+// COLOURS are the framework's categorical ramp — `.omega-tone-1..6` sets
+// `--omega-tone` from `--omega-chart-1..6` and `.omega-badge-tone` paints a
+// chip with it — which is what makes dark mode follow, and makes a bar on the
+// Usage chart and the badge beside it the same colour for the same thing.
 //
 
 // Ordered longest-lived first only for readability; the ids they match are
@@ -122,11 +123,28 @@ export const classKey = (name) => {
   return AGENT_CLASSES.includes(bare) ? bare : 'other';
 };
 
+//
+// The one mapping from a name to a tone slot, for both vocabularies at once —
+// the keys are disjoint, so one table cannot be ambiguous. The ramp has six
+// slots and the two vocabularies name ten things, so sharing is forced — the
+// rule is WHO shares: each model takes the slot of a class that never runs it
+// (workers and verifiers run opus, scouts sonnet, managers and advisors fable
+// per the manager ladder, and a reviewer inherits the session's model — so
+// opus avoids reviewer's slot too), so the class chip and the model chip that
+// actually sit together on a crew card never match. Within a vocabulary a tone
+// never repeats. `other` is absent on purpose: with no tone set,
+// `.omega-badge-tone` paints itself in the muted ink it falls back to.
+//
+const TONES = {
+  fable: 5, sonnet: 6, opus: 2, haiku: 4,
+  manager: 1, scout: 2, reviewer: 3, advisor: 4, worker: 5, verifier: 6,
+};
+
 /** The colour of a slot, as a token a chart can resolve against :root. */
-export const badgeColor = (key) => `var(--tower-badge-${key})`;
+export const badgeColor = (key) => (TONES[key] ? `var(--omega-chart-${TONES[key]})` : 'var(--omega-ink-muted)');
 
 /** One coloured chip. The label is the raw name — a model id is not a word. */
-export const badge = (key, label) => `<span class="classy-chip omega-tower-badge omega-tower-badge--${esc(key)}">${esc(label)}</span>`;
+export const badge = (key, label) => `<span class="classy-chip omega-badge-tone${TONES[key] ? ` omega-tone-${TONES[key]}` : ''}">${esc(label)}</span>`;
 
 /** The badge for a model id — an unknown model still gets one, saying so. */
 export const modelBadge = (model) => badge(modelKey(model), model || 'model unknown');
@@ -153,24 +171,6 @@ export const cap = (items, limit = 5) => {
 
 // ── The shapes that repeat ─────────────────────────────────────────────────
 
-// The statgrid's geometry, which the tower has to state itself. The theme sizes
-// the grid off the VIEWPORT — two tiles per row, all of them in one row above
-// 1200px — and draws the tile separators with nth-child rules that hold for
-// exactly those two shapes. The tower puts the same six tiles inside a
-// half-width repo card, where that gives six 80px columns with their labels
-// overlapping and "v3.5.0" broken one character per line. So the row reflows off
-// the CONTAINER instead, and each tile carries its own right and bottom hairline
-// — a rule that is right at ANY column count, unlike the borders it replaces.
-// The outermost hairlines fall on the container's edge, which already clips.
-//
-// Inline styles because this is a patch, not a vocabulary: a container-sized
-// statgrid is a variant every consumer of the theme wants, so upstream-first
-// says it belongs in the framework rather than in a copy per dashboard.
-// Omega-JS-Stack/omega#69 is that variant; the day it ships, these two
-// constants and every `style` they are interpolated into come out.
-const GRID_STYLE = 'grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));';
-const CELL_STYLE = 'border: 0; box-shadow: 1px 0 0 var(--omega-line), 0 1px 0 var(--omega-line);';
-
 /**
  * One classy-statgrid tile. `href` makes it a link to the page that owns it.
  *
@@ -182,12 +182,18 @@ export const statCell = (label, value, href) => {
   const inner = `<div class="classy-statgrid__label"><span class="classy-micro text-nowrap">${esc(label)}</span></div>
     <h3 class="classy-statgrid__value text-truncate">${esc(value)}</h3>`;
   return href
-    ? `<a class="classy-statgrid__cell text-reset text-decoration-none" style="${CELL_STYLE}" href="${esc(href)}">${inner}</a>`
-    : `<div class="classy-statgrid__cell" style="${CELL_STYLE}">${inner}</div>`;
+    ? `<a class="classy-statgrid__cell text-reset text-decoration-none" href="${esc(href)}">${inner}</a>`
+    : `<div class="classy-statgrid__cell">${inner}</div>`;
 };
 
-/** A row of tiles — as many per row as fit, so a narrow card wraps them. */
-export const statgrid = (cells, extraClass = 'mb-4') => `<div class="classy-statgrid ${extraClass}" style="${GRID_STYLE}">
+/**
+ * A row of tiles — as many per row as fit, so a narrow card wraps them.
+ *
+ * The reflow is the theme's own now: `.classy-statgrid` sizes off the
+ * CONTAINER, with `--classy-statgrid-cols` as the ceiling, so a grid inside a
+ * half-width repo card drops columns instead of overflowing.
+ */
+export const statgrid = (cells, extraClass = 'mb-4') => `<div class="classy-statgrid ${extraClass}">
   ${cells.join('')}
 </div>`;
 

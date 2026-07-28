@@ -14,7 +14,7 @@
 import { startPage } from '../libs/tower/page.js';
 import { issuesFor, board, feed } from '../libs/tower/state.js';
 import { esc, empty, problem, issueChips, STATUSES, statusColor } from '../libs/tower/format.js';
-import { loading, swap } from '../libs/tower/loading.js';
+import { loading, swap } from '@omega.js/client/modules/live-page';
 import { issueTrigger, externalLink } from '../libs/tower/modal.js';
 
 // The filter names, which are also their URL parameter names. `repo` is not one
@@ -98,7 +98,7 @@ const order = (a, b) => {
 // title, which the floor on `.omega-tower-board .omega-tower-issue` absorbs
 // while `mt-auto` keeps the chips against the bottom edge. Nothing is lost to
 // any of it: the card opens the dialog, which says the whole of all three.
-const issueCard = (issue, showRepo) => `<div class="card omega-tower-issue mb-2${issue.status === 'blocked' ? ' border-danger' : ''}" ${issueTrigger(issue)}>
+const issueCard = (issue, showRepo) => `<div class="card omega-tower-issue omega-interactive omega-interactive--lift mb-2${issue.status === 'blocked' ? ' border-danger' : ''}" ${issueTrigger(issue)}>
   <div class="card-body p-3 d-flex flex-column">
     <div class="d-flex align-items-start gap-2">
       <span class="classy-micro d-block flex-grow-1 text-truncate">${showRepo ? `${esc(issue.repo)} ` : ''}#${esc(issue.number)}</span>

@@ -61,170 +61,26 @@
   }
 }
 
-// ── The crew org chart ─────────────────────────────────────────────────────
+// ── The crew org chart's finished tier ─────────────────────────────────────
 //
-// The theme has no tree component, and the connector lines are geometry, not
-// decoration — there is nothing to reuse. Every line is a repeating gradient
-// rather than a border, for one reason: a gradient's position is animatable
-// and a border's dash pattern is not, and the lines on this chart MOVE. Only
-// working agents are ever drawn on it (the finished ones are the collapsed
-// count below), so the animation needs no condition.
-//
-// Wide: the root centred over a row of crew, a trunk down to a horizontal bus,
-// a stub down into each card. Under 768px the same tree turns on its side —
-// one spine down the left with an elbow into each card — because six 16rem
-// columns on a phone is not a chart, it is a scrollbar.
-.omega-tower-tree {
-  --tower-line: var(--omega-line, var(--bs-border-color));
-  --tower-line-size: 2px;
-  --tower-drop: 1.5rem;
-}
-
-.omega-tower-tree__root,
-.omega-tower-tree__node,
-.omega-tower-tree__leaf {
-  flex: 0 0 auto;
-  position: relative;
-  width: 16rem;
-}
-
-.omega-tower-tree__root { margin-inline: auto; }
-
-.omega-tower-tree__children {
-  display: flex;
-  // `safe` keeps an overflowing crew reachable: centring a row wider than its
-  // container puts the first card off the scrollable edge. An engine that does
-  // not know the keyword drops the declaration and starts the row at the left,
-  // which is the same rescue.
-  justify-content: safe center;
-  gap: 1rem;
-  // A crew wider than the card scrolls sideways, the way the board's columns
-  // do, rather than wrapping into rows the bus cannot connect. The trunk is
-  // drawn INSIDE this padding rather than above the box, because a scroll
-  // container clips what hangs outside it.
-  overflow-x: auto;
-  padding-top: var(--tower-drop);
-  padding-bottom: .25rem;
-  position: relative;
-}
-
-// The trunk: from the root's bottom edge down to the bus.
-.omega-tower-tree__children::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: calc(50% - (var(--tower-line-size) / 2));
-  width: var(--tower-line-size);
-  height: var(--tower-drop);
-  background-image: repeating-linear-gradient(180deg, var(--tower-line) 0 6px, transparent 6px 12px);
-  animation: tower-flow-down 1.2s linear infinite;
-}
-
-// Each node holds the drop the bus and its own stub are drawn in.
-.omega-tower-tree__node { padding-top: var(--tower-drop); }
-
-// The bus, in segments: one per node, reaching half the gap either side so the
-// segments meet. The first and last stop at their own centre, which is what
-// makes the bus span exactly from the first card to the last.
-.omega-tower-tree__node::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -.5rem;
-  right: -.5rem;
-  height: var(--tower-line-size);
-  background-image: repeating-linear-gradient(90deg, var(--tower-line) 0 6px, transparent 6px 12px);
-  animation: tower-flow-right 1.2s linear infinite;
-}
-
-.omega-tower-tree__node:first-child::after { left: calc(50% - (var(--tower-line-size) / 2)); }
-.omega-tower-tree__node:last-child::after { right: calc(50% - (var(--tower-line-size) / 2)); }
-
-// The stub: down from the bus into the card.
-.omega-tower-tree__node::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: calc(50% - (var(--tower-line-size) / 2));
-  width: var(--tower-line-size);
-  height: var(--tower-drop);
-  background-image: repeating-linear-gradient(180deg, var(--tower-line) 0 6px, transparent 6px 12px);
-  animation: tower-flow-down 1.2s linear infinite;
-}
-
-// The finished crew: a plain wrapping list, connected to nothing.
+// The chart itself is the framework's `.omega-org-chart` — root, children,
+// nodes and every animated connector between them. What is left here is the
+// one tier that is NOT part of the chart: the subagents that have stopped,
+// folded behind a count line. They are a plain wrapping list, connected to
+// nothing, at the same card width the chart's nodes use.
 .omega-tower-tree__done {
   display: flex;
   flex-wrap: wrap;
   gap: 1rem;
 }
 
-@keyframes tower-flow-down { to { background-position: 0 12px; } }
-@keyframes tower-flow-right { to { background-position: 12px 0; } }
-
-// Narrow: the same tree, stacked. The bus becomes a spine down the left and
-// each node's stub becomes an elbow into its card, so nothing floats free.
-@media (max-width: 767.98px) {
-  .omega-tower-tree__root,
-  .omega-tower-tree__node,
-  .omega-tower-tree__leaf { width: auto; }
-
-  .omega-tower-tree__children {
-    display: block;
-    overflow-x: visible;
-    padding-left: var(--tower-drop);
-  }
-
-  .omega-tower-tree__children::before { left: 0; }
-
-  .omega-tower-tree__node {
-    padding-top: 0;
-    margin-top: 1rem;
-  }
-
-  // The elbow, at the card's shoulder.
-  .omega-tower-tree__node::before {
-    top: var(--tower-drop);
-    left: calc(var(--tower-drop) * -1);
-    width: var(--tower-drop);
-    height: var(--tower-line-size);
-    background-image: repeating-linear-gradient(90deg, var(--tower-line) 0 6px, transparent 6px 12px);
-    animation: tower-flow-right 1.2s linear infinite;
-  }
-
-  // The spine, in segments: each node carries the piece above it, and the last
-  // one stops at its own elbow instead of running past the bottom card.
-  //
-  // The first and last node are named here too. Their wide-layout rules trim
-  // the bus to a half segment, a media query adds no specificity of its own,
-  // and without the same two selectors on this side they would keep winning.
-  .omega-tower-tree__node::after,
-  .omega-tower-tree__node:first-child::after,
-  .omega-tower-tree__node:last-child::after {
-    top: -1rem;
-    bottom: 0;
-    left: calc(var(--tower-drop) * -1);
-    right: auto;
-    width: var(--tower-line-size);
-    height: auto;
-    background-image: repeating-linear-gradient(180deg, var(--tower-line) 0 6px, transparent 6px 12px);
-    animation: tower-flow-down 1.2s linear infinite;
-  }
-
-  .omega-tower-tree__node:last-child::after {
-    bottom: auto;
-    height: calc(1rem + var(--tower-drop));
-  }
+.omega-tower-tree__leaf {
+  flex: 0 0 auto;
+  width: 16rem;
 }
 
-// Last, and naming the trimmed segments too: this has to outrank both layouts,
-// and a media query lends a rule no specificity to outrank them with.
-@media (prefers-reduced-motion: reduce) {
-  .omega-tower-tree__children::before,
-  .omega-tower-tree__node::before,
-  .omega-tower-tree__node::after,
-  .omega-tower-tree__node:first-child::after,
-  .omega-tower-tree__node:last-child::after { animation: none; }
+@media (max-width: 767.98px) {
+  .omega-tower-tree__leaf { width: auto; }
 }
 
 // ── The issue affordance ───────────────────────────────────────────────────
@@ -234,121 +90,10 @@
 // hovered or focused so a list of issues is not a row of icons. It stays put on
 // a touch screen, which has no hover to reveal it with.
 //
-// A whole card is the click target, and it says so the way the theme's own
-// controls do: the surface warms under the pointer, and a card lifts a hair
-// while a row — which has no edges to lift — only warms. Pressing puts the lift
-// back down, so the click has somewhere to land. The keyboard gets the same
-// affordance through :focus-visible, since these are divs carrying a button role.
-.omega-tower-issue {
-  cursor: pointer;
-  transition: background-color var(--omega-speed, 160ms) var(--omega-ease, ease),
-    box-shadow var(--omega-speed, 160ms) var(--omega-ease, ease),
-    transform var(--omega-speed, 160ms) var(--omega-ease, ease);
-}
-
-.omega-tower-issue:hover,
-.omega-tower-issue:focus-visible { background-color: var(--omega-surface-2, var(--bs-tertiary-bg)); }
-
-.omega-tower-issue:focus-visible { outline: 2px solid var(--omega-accent-ring, var(--omega-accent)); outline-offset: 2px; }
-
-.card.omega-tower-issue:hover,
-.card.omega-tower-issue:focus-visible {
-  box-shadow: var(--omega-shadow-2);
-  transform: translateY(-2px);
-}
-
-.omega-tower-issue:active { background-color: var(--omega-accent-subtle, var(--omega-surface-2)); }
-
-.card.omega-tower-issue:active {
-  box-shadow: var(--omega-shadow-1);
-  transform: translateY(0);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .omega-tower-issue { transition: none; }
-
-  .card.omega-tower-issue:hover,
-  .card.omega-tower-issue:focus-visible,
-  .card.omega-tower-issue:active { transform: none; }
-}
-
-// ── Model and class colour ─────────────────────────────────────────────────
+// That a whole card is the click target is said with the framework's
+// `.omega-interactive` (plus `--lift` on the cards, which have edges to lift),
+// stamped in the page markup — so the only rule left here is the reveal.
 //
-// The one palette for the two vocabularies the tower repeats — which model ran
-// and which crew class ran it — so a bar on the Usage chart and a badge on a
-// Crew card are the same colour for the same thing. Which NAME falls in which
-// slot is libs/tower/format.js (modelKey / classKey); the colours are here,
-// beside the theme's own tokens, and carry the same light/dark plumbing the
-// token sheet uses so appearance follows without a second palette.
-//
-// Muted on purpose: the theme tells status with a dot and a label and never
-// with colour alone, so these are recognition aids on text that already reads
-// correctly in grey. Models take the cool half of the wheel and classes the
-// warm half, which is what keeps a model badge and a class badge apart at a
-// glance on the pages carrying both.
-$tower-badge-light: (
-  fable: #4a46b8,
-  opus: #7a45b5,
-  sonnet: #0f8fa9,
-  haiku: #12925c,
-  manager: var(--omega-accent),
-  advisor: #b0416a,
-  worker: #a06a08,
-  verifier: #6a7f2b,
-  scout: #b05a2a,
-  reviewer: #8a4a8f,
-  other: var(--omega-ink-muted),
-);
-
-$tower-badge-dark: (
-  fable: #9b96f0,
-  opus: #c09aec,
-  sonnet: #1f9fb4,
-  haiku: #3ecf8e,
-  manager: var(--omega-accent),
-  advisor: #ee89a8,
-  worker: #e0a33c,
-  verifier: #a9c153,
-  scout: #e08d5c,
-  reviewer: #cb92cf,
-  other: var(--omega-ink-muted),
-);
-
-@mixin tower-badge-tokens($map) {
-  @each $key, $value in $map {
-    --tower-badge-#{$key}: #{$value};
-  }
-}
-
-:root { @include tower-badge-tokens($tower-badge-light); }
-
-// The OS preference carries when nothing is stamped, and the appearance stamp
-// beats it in both directions — the same three rules the token sheet ships.
-@media (prefers-color-scheme: dark) {
-  :root { @include tower-badge-tokens($tower-badge-dark); }
-}
-
-:root[data-bs-theme='dark'] { @include tower-badge-tokens($tower-badge-dark); }
-:root[data-bs-theme='light'] { @include tower-badge-tokens($tower-badge-light); }
-
-@each $key, $value in $tower-badge-light {
-  .omega-tower-badge--#{$key} { --tower-badge: var(--tower-badge-#{$key}); }
-}
-
-// A chip in its slot's colour. `text-transform` is turned off because the label
-// is an identifier, not a word — `CLAUDE-OPUS-5[1M]` is not the model's name.
-.omega-tower-badge {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--tower-badge, var(--omega-ink-muted));
-  background: color-mix(in srgb, var(--tower-badge, var(--omega-ink-muted)) 14%, transparent);
-  border-color: transparent;
-  text-overflow: ellipsis;
-  text-transform: none;
-  letter-spacing: normal;
-}
-
 // The glyph is a Font Awesome icon, drawn at 1em in the current colour, so the
 // only thing left to say is how big an em is here: the button sits beside a
 // card's slug line and a dialog's title, and one size across both keeps it the
@@ -375,8 +120,9 @@ $tower-badge-dark: (
   .omega-tower-external { opacity: 1; }
 }
 
-// An issue body is markdown rendered by libs/tower/markdown.js — the code it
-// carries needs the one thing Bootstrap does not give a bare `pre`: a surface.
+// An issue body is markdown rendered by the framework's `renderMarkdown` — the
+// code it carries needs the one thing Bootstrap does not give a bare `pre`: a
+// surface.
 .omega-tower-issue__body pre {
   background: var(--omega-surface-2, var(--bs-tertiary-bg));
   overflow-x: auto;

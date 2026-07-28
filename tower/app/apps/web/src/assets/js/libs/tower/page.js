@@ -13,15 +13,22 @@
 // Reading the state back out is state.js, which this file does not import: a
 // page asks the runtime to run it and asks state.js what the answers were.
 //
+// The polling itself is the framework's: `createFeedPoller` owns the declared
+// feed table, the in-flight count, the timestamp and the keep-last-good rule
+// (@omega.js/client/modules/live-page — upstreamed FROM this file). What stays
+// here is what is the TOWER's: which feeds exist, the repo selection, the
+// chrome, and the paint loop.
+//
 // The loop calls render() on every answer and on every tick; what reaches the
-// DOM is decided further down, by loading.js's `swap` in each page's render, so
+// DOM is decided further down, by live-page's `swap` in each page's render, so
 // a tick that changed nothing leaves the page — and its focus, its scroll and
 // its open `details` — exactly as it was.
 //
 
 import omega from '@omega.js/client';
-import { fetchFeed } from './api.js';
-import { loadCharts } from './charts.js';
+import { createFeedPoller } from '@omega.js/client/modules/live-page';
+import { loadCharts } from '__main_assets__/js/libs/charts.js';
+import { feedFetcher } from './api.js';
 import { esc } from './format.js';
 import { repos } from './state.js';
 
@@ -55,9 +62,8 @@ const writeSelectedRepo = (slug) => {
 // from /api/repos. A build-time file cannot hold a runtime list, so the
 // selector is drawn where the data is.
 
-const chromeMarkup = (state) => {
+const chromeMarkup = (state, stale) => {
   const slugs = repos(state).map((repo) => repo.slug).filter(Boolean);
-  const stale = Object.entries(state.feeds).filter(([, result]) => result && (!result.ok || result.stale));
   return `<div class="d-flex flex-wrap align-items-end gap-2 mb-4">
     <label class="flex-grow-0">
       <span class="classy-micro d-block">Repository</span>
@@ -71,7 +77,7 @@ const chromeMarkup = (state) => {
       ${state.pending ? '<span class="spinner-border spinner-border-sm" role="status" aria-label="Reading"></span>' : ''}
       ${esc(state.stamp || 'reading…')}
     </span>
-    ${stale.length ? `<span class="classy-chip classy-chip--accent" title="${esc(stale.map(([name, result]) => `${name}: ${result.stale || result.reason}`).join(' · '))}">${stale.length} feed${stale.length === 1 ? '' : 's'} unavailable</span>` : ''}
+    ${stale.length ? `<span class="classy-chip classy-chip--accent" title="${esc(stale.map((entry) => `${entry.name}: ${entry.reason}`).join(' · '))}">${stale.length} feed${stale.length === 1 ? '' : 's'} unavailable</span>` : ''}
   </div>`;
 };
 
@@ -103,42 +109,31 @@ export async function startPage(options) {
   const chrome = host.querySelector('[data-tower-chrome]');
   const body = host.querySelector('[data-tower-body]');
 
-  // `pending` is how many reads are in flight, which the chrome's spinner is
-  // drawn from: a refresh is visible while it happens, and the page under it
-  // keeps showing the data it already has.
-  const state = { feeds: {}, selectedRepo: selectedRepo(), stamp: '', pending: 0 };
+  const poller = createFeedPoller({
+    // Only the feeds this page asked for: readAll reads the whole table and
+    // start() arms a timer per entry, so a page never polls a feed it draws
+    // nothing from.
+    feeds: Object.fromEntries(options.feeds.map((name) => [name, FEEDS[name]])),
+    fetcher: feedFetcher,
+    onChange: () => paint(),
+  });
 
-  const paint = () => {
-    chrome.innerHTML = chromeMarkup(state);
+  // The poller owns `feeds`, `pending` and `stamp`. The repo selection is the
+  // tower's own and rides the same object, because state.js reads both halves
+  // through one argument.
+  const state = poller.state;
+  state.selectedRepo = selectedRepo();
+
+  function paint() {
+    chrome.innerHTML = chromeMarkup(state, poller.staleFeeds());
     chrome.querySelector('#tower-repo').addEventListener('change', (event) => {
       state.selectedRepo = event.target.value;
       writeSelectedRepo(state.selectedRepo);
       paint();
     });
-    chrome.querySelector('#tower-refresh').addEventListener('click', () => readAll(true));
+    chrome.querySelector('#tower-refresh').addEventListener('click', () => poller.readAll(true));
     options.render(body, state);
-  };
-
-  const read = async (name, fresh) => {
-    const spec = FEEDS[name];
-    state.pending += 1;
-    paint();
-    const answer = await fetchFeed(fresh && spec.fresh ? spec.fresh : spec.path);
-    const previous = state.feeds[name];
-    state.pending -= 1;
-
-    // A refresh that fails does not take the page down with it. The last good
-    // answer stays on screen, marked stale so the chrome can say a feed is
-    // unavailable — replacing a full board with an error line because one poll
-    // missed is the "clearing to empty" this is here to prevent.
-    state.feeds[name] = !answer.ok && previous && previous.ok
-      ? { ...previous, stale: answer.reason }
-      : answer;
-    state.stamp = `updated ${new Date().toLocaleTimeString()}`;
-    paint();
-  };
-
-  const readAll = (fresh) => Promise.all(options.feeds.map((name) => read(name, fresh)));
+  }
 
   // First paint before anything answers, so the page is never a blank region.
   paint();
@@ -148,9 +143,5 @@ export async function startPage(options) {
     paint();
   }
 
-  await readAll(false);
-
-  for (const name of options.feeds) {
-    setInterval(() => { read(name, false); }, FEEDS[name].every);
-  }
+  await poller.start();
 }

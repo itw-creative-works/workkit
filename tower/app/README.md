@@ -66,7 +66,7 @@ tower/app/
             ├── css/main.scss    # nearly empty — the theme does the work
             └── js/
                 ├── pages/*.js   # one module per page, bound by URL
-                └── libs/tower/  # api, format, charts, the page runtime
+                └── libs/tower/  # api, format, modal, the page runtime
 ```
 
 A few things worth knowing before changing it:
@@ -83,8 +83,13 @@ A few things worth knowing before changing it:
   `/admin`, and the tower's pages sit at clean top-level URLs.
 - **The repo selector is page chrome, not the sidebar's `selector` block.** The
   roster is fetched at runtime; the sidebar JSON is baked at build time.
-- **Charts are Chart.js, pulled in through `omega.dom().loadScript()`** — the
-  framework's own dynamic-loading module. No charting dependency is declared
-  here.
+- **Charts, refreshing in place and markdown are the FRAMEWORK's.** The chart
+  helpers come from `__main_assets__/js/libs/charts.js` (Chart.js is a
+  dependency of `@omega.js/web`, dynamically imported into its own chunk — the
+  tower declares no charting dependency); `loading`, `swap` and the feed poller
+  behind the page runtime come from `@omega.js/client/modules/live-page`; the
+  issue dialog's body is drawn with `omega.utilities().renderMarkdown`, handed
+  to `mountIssueModal` by `main.js` so `libs/tower/modal.js` stays pure string
+  functions the suite runs under Node.
 - **The API origin is written once**, in `assets/js/libs/tower/api.js`, and is
   overridable per page load with `?api=http://host:port`.
