@@ -7,6 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#60](../../issues/60) — A fifth pipeline state, `status:building`, makes in-flight work visible: it is applied when a specced issue's build starts, carried through build, verify and the wait to ship, and ended by the ship close; the tower board gains a Building column between Specced and Blocked.
+- [#39](../../issues/39) — A 3am nightly job writes up the day that just ended: Claude samples the last 24 hours of session transcripts and commits, and its summary is filed in HQ as `summaries/daily/YYYY-MM-DD.md`, with a weekly rollup on Sundays and a monthly on the 1st.
+
 ## [0.5.0] - 2026-07-28
 
 ### Added

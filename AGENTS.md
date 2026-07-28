@@ -94,7 +94,7 @@ Mission control, in two processes. `tower/api/` is a plain-Node JSON API with ze
 
 ## The jobs (`jobs/`)
 
-Scheduled work this machine runs. One job: the 9am daily brief. `brief-payload.js` composes the tower's `/api/brief` WITHOUT the tower — the same roster, board, health and `buildBrief` under `tower/api/lib/` — and prints the digest instruction plus that payload, with `cc-news.js` appending the upstream Claude Code CHANGELOG entries that touch the harness since the last brief; `claude-daily.sh` sends it headless (haiku, no tools, a hard budget), logs the exchange, and puts the response's first line in a desktop notification. `install.sh` renders `com.workkit.claude-daily.plist` for this checkout and loads it, only when something changed. Reference: `jobs/README.md`.
+Scheduled work this machine runs. Two jobs. The 9am daily brief: `brief-payload.js` composes the tower's `/api/brief` WITHOUT the tower — the same roster, board, health and `buildBrief` under `tower/api/lib/` — and prints the digest instruction plus that payload, with `cc-news.js` appending the upstream Claude Code CHANGELOG entries that touch the harness since the last brief; `claude-daily.sh` sends it headless (haiku, no tools, a hard budget), logs the exchange, and puts the response's first line in a desktop notification. The 3am nightly summaries (the write side of the brief): `nightly-payload.js` indexes the day's transcripts and commits, `claude-nightly.sh` has Claude sample them read-only and files the distilled daily under HQ's `summaries/`, with a weekly rollup on Sundays and a monthly on the 1st. `install.sh` renders both plists for this checkout and loads them, only when something changed. Reference: `jobs/README.md`.
 
 ## Tests
 
