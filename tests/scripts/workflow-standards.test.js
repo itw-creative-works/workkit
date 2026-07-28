@@ -1760,6 +1760,7 @@ const run = async () => {
     labels: desiredLabels(), labeled: { [CLAIM]: carried }, ...extra,
   });
   const issueEdits = (stub) => ghCalls(stub).filter((c) => isCall(c, 'issue', 'edit'));
+  const hasPair = (call, flag, value) => call.some((a, i) => a === flag && call[i + 1] === value);
 
   await test('agent:working is a label the manifest creates', () => {
     assert(desiredLabels().some((l) => l.name === CLAIM), 'the sweep queries a label the heal makes');
@@ -1785,7 +1786,6 @@ const run = async () => {
     assertEq(code, 0, 'a release is a heal, not a failure');
     const edits = issueEdits(stub);
     assertEq(edits.length, 1, `one release, got: ${fmtCalls(ghCalls(stub))}`);
-    const hasPair = (call, flag, value) => call.some((a, i) => a === flag && call[i + 1] === value);
     assert(hasPair(edits[0], '--remove-label', CLAIM), `the label comes off, got: ${fmtCalls(edits)}`);
     assert(hasPair(edits[0], '--remove-assignee', 'someone'),
       `and so does the assignee — one left behind still reads as a claim, got: ${fmtCalls(edits)}`);
@@ -1793,6 +1793,80 @@ const run = async () => {
     assertEq(comments.length, 1, `the release is recorded on the issue, got: ${fmtCalls(ghCalls(stub))}`);
     assert(comments[0].some((a) => /stale-claim sweep/.test(a)), `naming the sweep, got: ${fmtCalls(comments)}`);
     assert(output.includes('claims: released 1'), `and the run says so, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  // Releasing a building issue and leaving it building would keep it counted as
+  // in flight by every surface reading the pipeline, with nobody working it. The
+  // spec is still accepted, so it goes back to specced — in the SAME edit, or
+  // there is a window where it is unclaimed and still reads as in flight.
+  await test('a stale claim on a building issue goes back to specced in the same edit', () => {
+    const repo = makeRepo();
+    const stub = claimStub([{
+      number: 12,
+      updatedAt: hoursAgo(30),
+      assignees: [{ login: 'someone' }],
+      labels: [{ name: CLAIM }, { name: 'status:building' }, { name: 'type:enhancement' }],
+    }]);
+    const { code } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 0, 'a release is a heal, not a failure');
+    const edits = issueEdits(stub);
+    assertEq(edits.length, 1, `one edit, never two, got: ${fmtCalls(ghCalls(stub))}`);
+    assert(hasPair(edits[0], '--remove-label', CLAIM), `the claim comes off, got: ${fmtCalls(edits)}`);
+    assert(hasPair(edits[0], '--remove-assignee', 'someone'), `and the assignee, got: ${fmtCalls(edits)}`);
+    assert(hasPair(edits[0], '--remove-label', 'status:building'),
+      `building ends, got: ${fmtCalls(edits)}`);
+    assert(hasPair(edits[0], '--add-label', 'status:specced'),
+      `and specced resumes — the spec is still accepted, got: ${fmtCalls(edits)}`);
+    const comments = ghCalls(stub).filter((c) => isCall(c, 'issue', 'comment'));
+    assertEq(comments.length, 1, `one comment, got: ${fmtCalls(ghCalls(stub))}`);
+    assert(comments[0].some((a) => /status:specced/.test(a)),
+      `the trail says where the issue landed, got: ${fmtCalls(comments)}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a stale claim on an issue that is not building touches no status label', () => {
+    const repo = makeRepo();
+    const stub = claimStub([{
+      number: 13,
+      updatedAt: hoursAgo(30),
+      assignees: [{ login: 'someone' }],
+      labels: [{ name: CLAIM }, { name: 'status:blocked' }, { name: 'type:bug' }],
+    }]);
+    const { code } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 0, 'exit 0');
+    const edits = issueEdits(stub);
+    assertEq(edits.length, 1, `one release, got: ${fmtCalls(ghCalls(stub))}`);
+    assert(!edits[0].some((a) => /^status:/.test(a)),
+      `the sweep releases a claim, it does not re-route a queue, got: ${fmtCalls(edits)}`);
+    const comments = ghCalls(stub).filter((c) => isCall(c, 'issue', 'comment'));
+    assert(!comments[0].some((a) => /status:specced/.test(a)),
+      `and the comment claims no flip, got: ${fmtCalls(comments)}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  // `gh issue edit` fails whole when it is handed a label the repo does not
+  // have, so a flip added blind would cost the release itself on exactly the
+  // repos least able to afford it — the ones whose labels never reached GitHub.
+  await test('a missing status:specced costs the flip, never the release', () => {
+    const repo = makeRepo();
+    const stub = claimStub([{
+      number: 14,
+      updatedAt: hoursAgo(30),
+      assignees: [{ login: 'someone' }],
+      labels: [{ name: CLAIM }, { name: 'status:building' }, { name: 'type:enhancement' }],
+    }], { labels: desiredLabels().filter((l) => l.name !== 'status:specced') });
+    const { code } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 0, 'exit 0');
+    const edits = issueEdits(stub);
+    assertEq(edits.length, 1, `the claim is still released, got: ${fmtCalls(ghCalls(stub))}`);
+    assert(hasPair(edits[0], '--remove-label', CLAIM), `the claim comes off, got: ${fmtCalls(edits)}`);
+    assert(hasPair(edits[0], '--remove-assignee', 'someone'), `and the assignee, got: ${fmtCalls(edits)}`);
+    assert(!edits[0].some((a) => /^status:/.test(a)),
+      `and no status label is named at all — the edit must not fail on one, got: ${fmtCalls(edits)}`);
+    const comments = ghCalls(stub).filter((c) => isCall(c, 'issue', 'comment'));
+    assert(!comments[0].some((a) => /status:specced/.test(a)),
+      `the comment claims no flip either, got: ${fmtCalls(comments)}`);
     cleanup(repo); cleanup(stub.dir);
   });
 

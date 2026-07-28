@@ -2,8 +2,9 @@
 //
 // Tests for hooks/safety/commit-language — the PreToolUse hook that bounces
 // git commit commands whose quoted message text uses non-neutral vocabulary
-// (kill/destroy/dead → terminate/remove/stale). Only quoted spans are
-// scanned, so unquoted file paths never trigger it.
+// (kill/destroy/dead → terminate/remove/stale), and whose subject line is not
+// Conventional Commits or carries a version number outside a release commit.
+// Only quoted spans are scanned, so unquoted file paths never trigger it.
 //
 
 const path = require('path');
@@ -152,6 +153,138 @@ const run = async () => {
     // demanded whitespace between the option cluster and the quotes.
     const { code } = runHook('bash -c"git commit -m \'kill the watcher\'"');
     assertEq(code, 2, 'the attached option-argument form is still a wrapped commit');
+  });
+
+  group('commit-language: subject format (#58)');
+
+  await test('conventional subject with scope — exit 0', () => {
+    const { code, stderr } = runHook('git commit -m "feat(hooks): check the subject line format"');
+    assertEq(code, 0, `conventional subject passes, got: ${stderr}`);
+  });
+
+  await test('unknown type — exit 2', () => {
+    const { code, stderr } = runHook('git commit -m "feature: check the subject line format"');
+    assertEq(code, 2, 'a type outside the vocabulary bounces');
+    assert(stderr.includes('Conventional Commits'), 'names the failure');
+  });
+
+  await test('uppercase subject start — exit 2', () => {
+    const { code } = runHook('git commit -m "feat: Check the subject line format"');
+    assertEq(code, 2, 'the subject must start lowercase');
+  });
+
+  await test('no type prefix at all — exit 2', () => {
+    const { code } = runHook('git commit -m "check the subject line format"');
+    assertEq(code, 2, 'a bare sentence is not a conventional subject');
+  });
+
+  await test('subject over 72 characters — exit 2 naming the length', () => {
+    const { code, stderr } = runHook(`git commit -m "feat: ${'a'.repeat(70)}"`);
+    assertEq(code, 2, 'an over-long subject bounces');
+    assert(stderr.includes('72-character'), 'names the limit');
+  });
+
+  await test('breaking marker and multi-word scope — exit 0', () => {
+    const { code, stderr } = runHook('git commit -m "refactor(hooks/safety)!: fold the format check in"');
+    assertEq(code, 0, `the ! marker and a slashed scope pass, got: ${stderr}`);
+  });
+
+  await test('version number in a feat subject — exit 2', () => {
+    const { code, stderr } = runHook('git commit -m "feat: bump the engine to 1.2.3"');
+    assertEq(code, 2, 'ordinary commits carry no version number');
+    assert(stderr.includes('version number'), 'names the failure');
+  });
+
+  await test('chore(release) subject with a version — exit 0', () => {
+    for (const s of ['chore(release): 1.2.3', 'chore(release): v0.7.0']) {
+      const { code, stderr } = runHook(`git commit -m "${s}"`);
+      assertEq(code, 0, `the release commit names its version, got: ${stderr}`);
+    }
+  });
+
+  await test('Merge and Revert subjects pass unexamined — exit 0', () => {
+    for (const s of ['Merge branch main into topic', 'Revert \\"feat: the thing\\"', 'fixup! feat: the thing']) {
+      const { code, stderr } = runHook(`git commit -m "${s}"`);
+      assertEq(code, 0, `"${s}" is exempt, got: ${stderr}`);
+    }
+  });
+
+  await test('HEREDOC message — the subject under the opener is judged (exit 0)', () => {
+    const cmd = 'git commit -m "$(cat <<\'EOF\'\nfix(hooks): restart the watcher\n\nBody prose, sentence-cased and long.\nEOF\n)"';
+    const { code, stderr } = runHook(cmd);
+    assertEq(code, 0, `the heredoc body's first line is the subject, got: ${stderr}`);
+  });
+
+  await test('body carries a version, subject does not — exit 0', () => {
+    const cmd = 'git commit -m "$(cat <<\'EOF\'\nfix(hooks): restart the watcher\n\nRegression since 1.2.3.\nEOF\n)"';
+    const { code, stderr } = runHook(cmd);
+    assertEq(code, 0, `only the subject line is judged, got: ${stderr}`);
+  });
+
+  await test('fallback path does NOT format-judge a quoted span — exit 0', () => {
+    // No extractable -m span; the remaining quoted text is not a subject.
+    const { code, stderr } = runHook('git commit -m tidy && echo "all done here"');
+    assertEq(code, 0, `no clean span → no format verdict, got: ${stderr}`);
+  });
+
+  await test('fallback path still runs the vocabulary scan — exit 2', () => {
+    const { code, stderr } = runHook('git commit -m tidy && echo "killing the old server"');
+    assertEq(code, 2, 'the vocabulary scan is untouched by the format check');
+    assert(stderr.includes('terminate'), 'the vocabulary bounce, not a format bounce');
+  });
+
+  group('commit-language: subject format hardening (#58 review)');
+
+  await test('command-substitution subject that is not the heredoc idiom — exit 0', () => {
+    // The hook cannot expand `$(cat …)`, so the span it holds is shell text,
+    // not a subject; judging it bounced a message never actually read.
+    const { code, stderr } = runHook('git commit -m "$(cat /tmp/msg.txt)"');
+    assertEq(code, 0, `an unexpandable subject fails open, got: ${stderr}`);
+  });
+
+  await test('flag-shaped span BEFORE the commit is not judged as the subject — exit 0', () => {
+    // The format extraction used to read the whole command, so grep's -F
+    // value was format-judged and bounced a clean commit.
+    const { code, stderr } = runHook('grep -F "Some Thing" f && git commit -m "feat: fine"');
+    assertEq(code, 0, `only spans after the commit token are judged, got: ${stderr}`);
+  });
+
+  await test('the real subject after the commit token is still judged — exit 2', () => {
+    const { code, stderr } = runHook('grep -F "Some Thing" f && git commit -m "feat: Bad subject start"');
+    assertEq(code, 2, 'scoping the extraction must not stop the format check');
+    assert(stderr.includes('Conventional Commits'), 'names the failure');
+  });
+
+  await test('two -m flags with "commit" in the subject — the FIRST is the subject (exit 0)', () => {
+    // A last-to-first offset walk started inside the subject text, so the
+    // body flag became the subject and bounced a clean commit.
+    const { code, stderr } = runHook('git commit -m "fix(hooks): scan the commit message" -m "Body here."');
+    assertEq(code, 0, `the first -m is the subject, got: ${stderr}`);
+  });
+
+  await test('two -m flags, the SUBJECT itself is bad — exit 2', () => {
+    const { code, stderr } = runHook('git commit -m "Scan the commit message" -m "Body here."');
+    assertEq(code, 2, 'the first -m is still judged');
+    assert(stderr.includes('Conventional Commits'), 'names the failure');
+  });
+
+  await test('72 characters of multi-byte text under LC_ALL=C — exit 0', () => {
+    // `${#subject}` counts bytes: a subject with an em dash measured 74.
+    const subject = `feat: ${'a'.repeat(62)} — b`; // 6 + 62 + 4 = 72 characters
+    assertEq(subject.length, 72, 'the fixture is exactly at the limit');
+    const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command: `git commit -m "${subject}"` } });
+    const res = spawnSync('bash', [HOOK], {
+      input,
+      env: { ...process.env, HOME: os.homedir(), LC_ALL: 'C' },
+      encoding: 'utf8',
+      timeout: 10000,
+    });
+    assertEq(res.status, 0, `characters, not bytes, got: ${res.stderr}`);
+  });
+
+  await test('leading whitespace is trimmed before judging — exit 0', () => {
+    const { code, stderr } = runHook('git commit -m "  feat(hooks): trim the subject first"');
+    assertEq(code, 0, `the trimmed form is judged, got: ${stderr}`);
   });
 
   group('commit-language: fail-open');

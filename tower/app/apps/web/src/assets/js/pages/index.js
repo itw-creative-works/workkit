@@ -26,13 +26,21 @@ const total = (state, field) => reposFor(state)
   .filter(Boolean)
   .reduce((sum, reading) => sum + (typeof reading[field] === 'number' ? reading[field] : 0), 0);
 
+// In flight is the brief's definition, to the letter (tower/api/lib/brief.js):
+// `status:building` IS in flight, and a CLAIMED specced issue counts too — the
+// shape the board carried before the fifth state existed. A claim is an
+// assignee OR the agent:working label, because an agent that took an issue
+// without assigning itself is still working it; counting only assignees would
+// make this number disagree with the brief's on exactly those issues.
+const claimed = (issue) => (issue.assignees || []).length > 0 || issue.agentWorking;
+
 const numbers = (state) => {
   const issues = issuesFor(state);
   return statgrid([
     statCell('Open issues', issues.length, '/board'),
     statCell('Blocked', issues.filter((issue) => issue.status === 'blocked').length, '/board'),
     statCell('In flight', issues.filter((issue) => issue.status === 'building'
-      || (issue.status === 'specced' && (issue.assignees || []).length > 0)).length, '/board'),
+      || (issue.status === 'specced' && claimed(issue))).length, '/board'),
     statCell('Live sessions', sessionsFor(state).length, '/crew'),
     statCell('Unpushed', total(state, 'unpushed'), '/health'),
     statCell('Unreleased', total(state, 'unreleasedEntries'), '/health'),

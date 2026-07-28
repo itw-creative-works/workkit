@@ -780,6 +780,22 @@ const run = async () => {
     assert(bare.includes('class="omega-interactive"'), 'and the trigger just the affordance');
   });
 
+  // The Overview's "In flight" and the brief's inFlight section are the same
+  // claim about the same board, and a page cannot import the API's module, so
+  // the two copies are held together here instead. The predicate is the thing
+  // that drifted (#61): counting only assignees hides an issue an agent took
+  // under agent:working without assigning itself.
+  await test('the Overview counts in flight by the brief’s definition of a claim', () => {
+    const fs = require('fs');
+    const overview = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'index.js'), 'utf8');
+    const briefSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'brief.js'), 'utf8');
+    const claimedOf = (source) => (source.match(/claimed = \(issue\) => ([^;]+);/) || [])[1];
+    assert(claimedOf(briefSrc), 'the brief defines a claim in one expression');
+    assertEq(claimedOf(overview), claimedOf(briefSrc), 'and the Overview reads the same expression');
+    assert(/status === 'specced' && claimed\(issue\)/.test(overview),
+      'the In flight cell asks that predicate rather than inlining a rule of its own');
+  });
+
   await test('every page that lists issues routes through it — no role on an li anywhere', () => {
     const fs = require('fs');
     const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');

@@ -54,7 +54,7 @@ Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh`
 | `manager/profile` | UserPromptSubmit | Injects the manager standing instruction — delegate to the crew — in frontier/workhorse sessions only |
 | `safety/vendor-guard` | PreToolUse (Edit/Write) | Blocks edits to generated, vendored, and gitignored files (`_attic/`, `.workkit/`, `.env*` excepted) |
 | `safety/commit-gate` | PreToolUse (Bash) | Blocks `git commit` unless tests pass, new source files come with test files, code carries a fresh review marker, any added CHANGELOG entry matches the format, and a commit closing an issue (`Fixes #N`) stages the entry it closes against |
-| `safety/commit-language` | PreToolUse (Bash) | Bounces commit messages using kill/destroy/dead wording, suggesting the neutral terms |
+| `safety/commit-language` | PreToolUse (Bash) | Bounces commit messages using kill/destroy/dead wording, suggesting the neutral terms, and subject lines that are not Conventional Commits or carry a version number outside `chore(release)` |
 | `safety/issue-guard` | PreToolUse (Bash) | Blocks a `gh issue create/comment/edit` or `gh pr create/comment/edit/merge` whose outbound text carries a local `.env` value or a token-shaped string — every repo is assumed public (the spec § Issue anatomy). Names the key or the kind, never the match |
 | `safety/inbox-guard` | PreToolUse (Read/Bash) | Blocks a read of `.workkit/inbox.md`'s contents outside a triage run — the owner's scratchpad, opened by the marker the `workkit:triage` skill records and stale after 30 minutes. Counting and appending stay open |
 | `docs/board-guard` | PostToolUse (Edit/Write) | Bounces `CLAUDE.md` / `AGENTS.md` writes that break the spec's document rules |

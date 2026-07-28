@@ -36,7 +36,8 @@
 #                  touched.
 #   6. claims    — release agent claims that went quiet: an open issue carrying
 #                  agent:working with no activity for 24 hours loses the label
-#                  and its assignee, and gets a comment saying the sweep did it.
+#                  and its assignee, goes back from status:building to
+#                  status:specced, and gets a comment saying the sweep did it.
 #   7. hooks     — assert the hook layer beside this engine is alive: every hook
 #                  wired in hooks.json resolves to a script that exists, is
 #                  executable, and parses, and the tools they call are present.
@@ -83,6 +84,10 @@ HOOK_TOOLS="jq git node shasum perl"
 # the owner, so the claim needs a marker of its own).
 CLAIM_LABEL="agent:working"
 CLAIM_STALE_SECONDS=86400
+# The two pipeline states a release moves between: an unclaimed issue whose spec
+# is still accepted is specced, not building.
+BUILDING_LABEL="status:building"
+SPECCED_LABEL="status:specced"
 
 # The workflow state directory's name, for the ENGINE layer — one string so a
 # rename is one edit here. The hooks (hooks/_lib.sh) and the
@@ -961,6 +966,12 @@ migrate_labels() {
 # removes both and says so in a comment — the issue's own trail records who
 # freed it and why, which a silent unassign would not.
 #
+# A released issue that was status:building goes back to status:specced in the
+# same edit: the spec is still accepted, the work is simply unclaimed again, and
+# leaving it building would keep it counted as in flight by every surface that
+# reads the pipeline. Whatever partial progress exists lives in the issue's own
+# trail, so nothing is lost by moving the label back.
+#
 # Fail-safe like the migration: only an ANSWER from GitHub licenses a write. A
 # query that fails leaves every claim exactly as it is and flags the run, so the
 # next session tries again rather than releasing work that is still running.
@@ -970,7 +981,7 @@ migrate_labels() {
 # The staleness test is jq's, not the shell's: `date -d` and `date -v` disagree
 # across platforms, and jq is already required to read GitHub's answer at all.
 sweep_stale_claims() {
-  local issues stale n assignees args login moved=0 failed=0
+  local issues stale n assignees args login building body can_flip="" moved=0 failed=0
   command -v jq >/dev/null 2>&1 || return 0
   command -v gh >/dev/null 2>&1 || return 0
   gh auth status >/dev/null 2>&1 || return 0
@@ -980,8 +991,16 @@ sweep_stale_claims() {
   # a query for a label a repo does not have is not a failure worth reporting.
   [[ -n "$existing_labels" ]] || return 0
   jq -e --arg n "$CLAIM_LABEL" 'any(.[]; .name == $n)' <<<"$existing_labels" >/dev/null 2>&1 || return 0
+  # The flip is a bonus, the release is the job. `gh issue edit` fails whole
+  # when it is handed a label the repo does not have, so a repo whose
+  # SPECCED_LABEL never made it to GitHub would lose the release too — the one
+  # thing the sweep exists to do. Where the label is missing, release without
+  # the flip, exactly as the sweep did before the flip existed.
+  if jq -e --arg n "$SPECCED_LABEL" 'any(.[]; .name == $n)' <<<"$existing_labels" >/dev/null 2>&1; then
+    can_flip=1
+  fi
 
-  if ! issues="$(gh issue list --state open --label "$CLAIM_LABEL" --json number,updatedAt,assignees --limit 100 2>/dev/null)"; then
+  if ! issues="$(gh issue list --state open --label "$CLAIM_LABEL" --json number,updatedAt,assignees,labels --limit 100 2>/dev/null)"; then
     log_warn "claims: could not list the issues carrying $CLAIM_LABEL — every claim is left in place"
     needs_attention=1
     return 0
@@ -1000,6 +1019,14 @@ sweep_stale_claims() {
       [[ -n "$login" ]] || continue
       args+=(--remove-assignee "$login")
     done <<<"$assignees"
+    # The status flip rides along in the same edit: two edits would leave a
+    # window where the issue is unclaimed but still reads as in flight.
+    building=""
+    if [[ -n "$can_flip" ]] && jq -e --argjson n "$n" --arg b "$BUILDING_LABEL" \
+        '.[] | select(.number == $n) | any(.labels[]; .name == $b)' <<<"$issues" >/dev/null 2>&1; then
+      building=1
+      args+=(--remove-label "$BUILDING_LABEL" --add-label "$SPECCED_LABEL")
+    fi
 
     if ! gh issue edit "$n" "${args[@]}" >/dev/null 2>&1; then
       log_warn "claims: could not release the stale claim on #$n — left as it was"
@@ -1009,7 +1036,11 @@ sweep_stale_claims() {
     # The comment follows the release, never precedes it: a comment about a
     # release that then failed would be the issue's record of something that
     # did not happen.
-    gh issue comment "$n" --body "Released by the standards stale-claim sweep: this issue carried $CLAIM_LABEL with no activity for 24 hours, so the label and any assignee were cleared. It is free to claim again." >/dev/null 2>&1 \
+    body="Released by the standards stale-claim sweep: this issue carried $CLAIM_LABEL with no activity for 24 hours, so the label and any assignee were cleared. It is free to claim again."
+    if [[ -n "$building" ]]; then
+      body="$body It also went back from $BUILDING_LABEL to $SPECCED_LABEL — the spec is still accepted, the work is simply unclaimed; whatever partial progress exists is in this issue's own trail."
+    fi
+    gh issue comment "$n" --body "$body" >/dev/null 2>&1 \
       || log_warn "claims: released #$n but could not comment on it"
     moved=$((moved + 1))
   done <<<"$stale"
