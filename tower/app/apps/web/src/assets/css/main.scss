@@ -11,7 +11,7 @@
 // The board's columns. The theme has Bootstrap's grid, which wraps rows at
 // breakpoints; a kanban board wants ONE row that scrolls sideways and keeps
 // its column widths, which no theme utility expresses.
-.tower-board {
+.omega-tower-board {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(15rem, 1fr);
@@ -27,9 +27,9 @@
 // 8.25rem is what a FULL card measures — a slug line, two lines of title and a
 // row of chips — so the floor lifts every shorter one to exactly that and no
 // card is left with dead space at the bottom of it.
-.tower-board .tower-issue { min-height: 8.25rem; }
+.omega-tower-board .omega-tower-issue { min-height: 8.25rem; }
 
-.tower-issue__title {
+.omega-tower-issue__title {
   display: -webkit-box;
   overflow: hidden;
   -webkit-line-clamp: 2;
@@ -45,7 +45,7 @@
 // `!important` because Bootstrap's utilities are GENERATED with it — the row
 // carries `.flex-wrap`, which no amount of specificity outranks, and the row is
 // shared with the Brief and the dialog, where wrapping is right.
-.tower-issue__chips {
+.omega-tower-issue__chips {
   flex-wrap: nowrap !important;
   overflow: hidden;
 
@@ -74,23 +74,23 @@
 // a stub down into each card. Under 768px the same tree turns on its side —
 // one spine down the left with an elbow into each card — because six 16rem
 // columns on a phone is not a chart, it is a scrollbar.
-.tower-tree {
+.omega-tower-tree {
   --tower-line: var(--omega-line, var(--bs-border-color));
   --tower-line-size: 2px;
   --tower-drop: 1.5rem;
 }
 
-.tower-tree__root,
-.tower-tree__node,
-.tower-tree__leaf {
+.omega-tower-tree__root,
+.omega-tower-tree__node,
+.omega-tower-tree__leaf {
   flex: 0 0 auto;
   position: relative;
   width: 16rem;
 }
 
-.tower-tree__root { margin-inline: auto; }
+.omega-tower-tree__root { margin-inline: auto; }
 
-.tower-tree__children {
+.omega-tower-tree__children {
   display: flex;
   // `safe` keeps an overflowing crew reachable: centring a row wider than its
   // container puts the first card off the scrollable edge. An engine that does
@@ -109,7 +109,7 @@
 }
 
 // The trunk: from the root's bottom edge down to the bus.
-.tower-tree__children::before {
+.omega-tower-tree__children::before {
   content: '';
   position: absolute;
   top: 0;
@@ -121,12 +121,12 @@
 }
 
 // Each node holds the drop the bus and its own stub are drawn in.
-.tower-tree__node { padding-top: var(--tower-drop); }
+.omega-tower-tree__node { padding-top: var(--tower-drop); }
 
 // The bus, in segments: one per node, reaching half the gap either side so the
 // segments meet. The first and last stop at their own centre, which is what
 // makes the bus span exactly from the first card to the last.
-.tower-tree__node::after {
+.omega-tower-tree__node::after {
   content: '';
   position: absolute;
   top: 0;
@@ -137,11 +137,11 @@
   animation: tower-flow-right 1.2s linear infinite;
 }
 
-.tower-tree__node:first-child::after { left: calc(50% - (var(--tower-line-size) / 2)); }
-.tower-tree__node:last-child::after { right: calc(50% - (var(--tower-line-size) / 2)); }
+.omega-tower-tree__node:first-child::after { left: calc(50% - (var(--tower-line-size) / 2)); }
+.omega-tower-tree__node:last-child::after { right: calc(50% - (var(--tower-line-size) / 2)); }
 
 // The stub: down from the bus into the card.
-.tower-tree__node::before {
+.omega-tower-tree__node::before {
   content: '';
   position: absolute;
   top: 0;
@@ -153,7 +153,7 @@
 }
 
 // The finished crew: a plain wrapping list, connected to nothing.
-.tower-tree__done {
+.omega-tower-tree__done {
   display: flex;
   flex-wrap: wrap;
   gap: 1rem;
@@ -165,25 +165,25 @@
 // Narrow: the same tree, stacked. The bus becomes a spine down the left and
 // each node's stub becomes an elbow into its card, so nothing floats free.
 @media (max-width: 767.98px) {
-  .tower-tree__root,
-  .tower-tree__node,
-  .tower-tree__leaf { width: auto; }
+  .omega-tower-tree__root,
+  .omega-tower-tree__node,
+  .omega-tower-tree__leaf { width: auto; }
 
-  .tower-tree__children {
+  .omega-tower-tree__children {
     display: block;
     overflow-x: visible;
     padding-left: var(--tower-drop);
   }
 
-  .tower-tree__children::before { left: 0; }
+  .omega-tower-tree__children::before { left: 0; }
 
-  .tower-tree__node {
+  .omega-tower-tree__node {
     padding-top: 0;
     margin-top: 1rem;
   }
 
   // The elbow, at the card's shoulder.
-  .tower-tree__node::before {
+  .omega-tower-tree__node::before {
     top: var(--tower-drop);
     left: calc(var(--tower-drop) * -1);
     width: var(--tower-drop);
@@ -198,9 +198,9 @@
   // The first and last node are named here too. Their wide-layout rules trim
   // the bus to a half segment, a media query adds no specificity of its own,
   // and without the same two selectors on this side they would keep winning.
-  .tower-tree__node::after,
-  .tower-tree__node:first-child::after,
-  .tower-tree__node:last-child::after {
+  .omega-tower-tree__node::after,
+  .omega-tower-tree__node:first-child::after,
+  .omega-tower-tree__node:last-child::after {
     top: -1rem;
     bottom: 0;
     left: calc(var(--tower-drop) * -1);
@@ -211,7 +211,7 @@
     animation: tower-flow-down 1.2s linear infinite;
   }
 
-  .tower-tree__node:last-child::after {
+  .omega-tower-tree__node:last-child::after {
     bottom: auto;
     height: calc(1rem + var(--tower-drop));
   }
@@ -220,11 +220,11 @@
 // Last, and naming the trimmed segments too: this has to outrank both layouts,
 // and a media query lends a rule no specificity to outrank them with.
 @media (prefers-reduced-motion: reduce) {
-  .tower-tree__children::before,
-  .tower-tree__node::before,
-  .tower-tree__node::after,
-  .tower-tree__node:first-child::after,
-  .tower-tree__node:last-child::after { animation: none; }
+  .omega-tower-tree__children::before,
+  .omega-tower-tree__node::before,
+  .omega-tower-tree__node::after,
+  .omega-tower-tree__node:first-child::after,
+  .omega-tower-tree__node:last-child::after { animation: none; }
 }
 
 // ── The issue affordance ───────────────────────────────────────────────────
@@ -239,37 +239,37 @@
 // while a row — which has no edges to lift — only warms. Pressing puts the lift
 // back down, so the click has somewhere to land. The keyboard gets the same
 // affordance through :focus-visible, since these are divs carrying a button role.
-.tower-issue {
+.omega-tower-issue {
   cursor: pointer;
   transition: background-color var(--omega-speed, 160ms) var(--omega-ease, ease),
     box-shadow var(--omega-speed, 160ms) var(--omega-ease, ease),
     transform var(--omega-speed, 160ms) var(--omega-ease, ease);
 }
 
-.tower-issue:hover,
-.tower-issue:focus-visible { background-color: var(--omega-surface-2, var(--bs-tertiary-bg)); }
+.omega-tower-issue:hover,
+.omega-tower-issue:focus-visible { background-color: var(--omega-surface-2, var(--bs-tertiary-bg)); }
 
-.tower-issue:focus-visible { outline: 2px solid var(--omega-accent-ring, var(--omega-accent)); outline-offset: 2px; }
+.omega-tower-issue:focus-visible { outline: 2px solid var(--omega-accent-ring, var(--omega-accent)); outline-offset: 2px; }
 
-.card.tower-issue:hover,
-.card.tower-issue:focus-visible {
+.card.omega-tower-issue:hover,
+.card.omega-tower-issue:focus-visible {
   box-shadow: var(--omega-shadow-2);
   transform: translateY(-2px);
 }
 
-.tower-issue:active { background-color: var(--omega-accent-subtle, var(--omega-surface-2)); }
+.omega-tower-issue:active { background-color: var(--omega-accent-subtle, var(--omega-surface-2)); }
 
-.card.tower-issue:active {
+.card.omega-tower-issue:active {
   box-shadow: var(--omega-shadow-1);
   transform: translateY(0);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tower-issue { transition: none; }
+  .omega-tower-issue { transition: none; }
 
-  .card.tower-issue:hover,
-  .card.tower-issue:focus-visible,
-  .card.tower-issue:active { transform: none; }
+  .card.omega-tower-issue:hover,
+  .card.omega-tower-issue:focus-visible,
+  .card.omega-tower-issue:active { transform: none; }
 }
 
 // ── Model and class colour ─────────────────────────────────────────────────
@@ -332,12 +332,12 @@ $tower-badge-dark: (
 :root[data-bs-theme='light'] { @include tower-badge-tokens($tower-badge-light); }
 
 @each $key, $value in $tower-badge-light {
-  .tower-badge--#{$key} { --tower-badge: var(--tower-badge-#{$key}); }
+  .omega-tower-badge--#{$key} { --tower-badge: var(--tower-badge-#{$key}); }
 }
 
 // A chip in its slot's colour. `text-transform` is turned off because the label
 // is an identifier, not a word — `CLAUDE-OPUS-5[1M]` is not the model's name.
-.tower-badge {
+.omega-tower-badge {
   display: inline-block;
   max-width: 100%;
   overflow: hidden;
@@ -349,28 +349,35 @@ $tower-badge-dark: (
   letter-spacing: normal;
 }
 
-.tower-external {
+// The glyph is a Font Awesome icon, drawn at 1em in the current colour, so the
+// only thing left to say is how big an em is here: the button sits beside a
+// card's slug line and a dialog's title, and one size across both keeps it the
+// same affordance on either. `align-items` because the icon is the flex row's
+// only item and should sit on the line's centre rather than stretch to it.
+.omega-tower-external {
+  align-items: center;
   color: inherit;
   display: inline-flex;
   flex: 0 0 auto;
+  font-size: .875rem;
   opacity: 0;
   transition: opacity .12s ease-in-out;
 }
 
-.tower-issue:hover .tower-external,
-.tower-issue:focus-within .tower-external,
-.tower-external:focus-visible { opacity: 1; }
+.omega-tower-issue:hover .omega-tower-external,
+.omega-tower-issue:focus-within .omega-tower-external,
+.omega-tower-external:focus-visible { opacity: 1; }
 
 // In the dialog the button is the header's own control, not a card's reveal.
-.modal-header .tower-external { opacity: 1; }
+.modal-header .omega-tower-external { opacity: 1; }
 
 @media (hover: none) {
-  .tower-external { opacity: 1; }
+  .omega-tower-external { opacity: 1; }
 }
 
 // An issue body is markdown rendered by libs/tower/markdown.js — the code it
 // carries needs the one thing Bootstrap does not give a bare `pre`: a surface.
-.tower-issue__body pre {
+.omega-tower-issue__body pre {
   background: var(--omega-surface-2, var(--bs-tertiary-bg));
   overflow-x: auto;
 }

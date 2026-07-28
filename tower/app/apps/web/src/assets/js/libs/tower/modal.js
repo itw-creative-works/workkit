@@ -53,19 +53,20 @@ export const issueTrigger = (issue) => {
  * The one external-link button: a box with an arrow leaving it, opening the
  * GitHub page in a new tab.
  *
- * `tower-external` is what the stylesheet hides until a card is hovered or
- * focused; in the dialog it is passed no extra class and simply shows.
+ * `omega-tower-external` is what the stylesheet hides until a card is hovered
+ * or focused; in the dialog it is passed no extra class and simply shows.
+ *
+ * The glyph is plain Font Awesome markup — the framework's shared renderer
+ * watches for inserted elements and draws it, which is what makes it work in
+ * markup this file writes long after the page booted. The anchor carries the
+ * label, so the icon itself is hidden from the accessibility tree.
  *
  * @param {string} url - the GitHub issue URL
  * @param {string} [extraClass] - layout classes the caller's context needs
  * @returns {string} markup
  */
-export const externalLink = (url, extraClass = '') => `<a class="tower-external${extraClass ? ` ${extraClass}` : ''}" href="${esc(url)}" target="_blank" rel="noopener" title="Open on GitHub" aria-label="Open on GitHub">
-  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-    <path d="M6.5 2.75H3.75a1 1 0 0 0-1 1v8.5a1 1 0 0 0 1 1h8.5a1 1 0 0 0 1-1V9.5"/>
-    <path d="M9.5 2.75H13.25V6.5"/>
-    <path d="M13.25 2.75 7.75 8.25"/>
-  </svg>
+export const externalLink = (url, extraClass = '') => `<a class="omega-tower-external${extraClass ? ` ${extraClass}` : ''}" href="${esc(url)}" target="_blank" rel="noopener" title="Open on GitHub" aria-label="Open on GitHub">
+  <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
 </a>`;
 
 /** A date as the dialog says it — the day, or a dash when there is no date. */
@@ -100,7 +101,7 @@ export const issueDialog = (issue) => {
         ${issueChips(issue)}
       </div>
       <p class="classy-micro text-body-secondary">${esc(meta.join(' · '))}</p>
-      <div class="tower-issue__body">${rendered || '<p class="text-body-secondary mb-0">No description.</p>'}</div>
+      <div class="omega-tower-issue__body">${rendered || '<p class="text-body-secondary mb-0">No description.</p>'}</div>
       ${issue.bodyTruncated ? '<p class="classy-micro text-body-secondary mt-2">The body is longer than this — the rest is on GitHub.</p>' : ''}
       <p class="mt-3 mb-0"><a href="${esc(issue.url)}" target="_blank" rel="noopener">${esc(issue.comments === 1 ? '1 comment' : `${issue.comments || 0} comments`)} on GitHub</a></p>`,
   };

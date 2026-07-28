@@ -54,7 +54,7 @@ const waiting = (state) => {
   const blocked = issuesFor(state).filter((issue) => issue.status === 'blocked');
   const { shown, hidden } = cap(blocked);
   const body = blocked.length
-    ? `<ul class="list-unstyled mb-0">${shown.map((issue) => `<li class="py-1 tower-issue d-flex align-items-start gap-2" ${issueTrigger(issue)}>
+    ? `<ul class="list-unstyled mb-0">${shown.map((issue) => `<li class="py-1 omega-tower-issue d-flex align-items-start gap-2" ${issueTrigger(issue)}>
         <span class="flex-grow-1">
           <span class="classy-micro">${esc(issue.repo)} #${esc(issue.number)}</span>
           <span class="d-block">${esc(issue.title)}</span>

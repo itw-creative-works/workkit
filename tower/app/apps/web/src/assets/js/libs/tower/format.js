@@ -126,7 +126,7 @@ export const classKey = (name) => {
 export const badgeColor = (key) => `var(--tower-badge-${key})`;
 
 /** One coloured chip. The label is the raw name — a model id is not a word. */
-export const badge = (key, label) => `<span class="classy-chip tower-badge tower-badge--${esc(key)}">${esc(label)}</span>`;
+export const badge = (key, label) => `<span class="classy-chip omega-tower-badge omega-tower-badge--${esc(key)}">${esc(label)}</span>`;
 
 /** The badge for a model id — an unknown model still gets one, saying so. */
 export const modelBadge = (model) => badge(modelKey(model), model || 'model unknown');
@@ -162,6 +162,12 @@ export const cap = (items, limit = 5) => {
 // the CONTAINER instead, and each tile carries its own right and bottom hairline
 // — a rule that is right at ANY column count, unlike the borders it replaces.
 // The outermost hairlines fall on the container's edge, which already clips.
+//
+// Inline styles because this is a patch, not a vocabulary: a container-sized
+// statgrid is a variant every consumer of the theme wants, so upstream-first
+// says it belongs in the framework rather than in a copy per dashboard.
+// Omega-JS-Stack/omega#69 is that variant; the day it ships, these two
+// constants and every `style` they are interpolated into come out.
 const GRID_STYLE = 'grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));';
 const CELL_STYLE = 'border: 0; box-shadow: 1px 0 0 var(--omega-line), 0 1px 0 var(--omega-line);';
 

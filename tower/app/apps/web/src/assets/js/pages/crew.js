@@ -68,10 +68,10 @@ const node = (entry, isRoot) => `<div class="card h-100">
 // The chart's second tier: the session's working crew, hanging off the trunk
 // under the root. Every connector line on the chart is animated, and needs no
 // condition to be — splitCrew has already left only the working agents here.
-// The lines themselves are the stylesheet's (.tower-tree in main.scss); the
+// The lines themselves are the stylesheet's (.omega-tower-tree in main.scss); the
 // markup supplies only the nesting they are drawn from.
-const tier = (children) => `<div class="tower-tree__children">
-  ${children.map((child) => `<div class="tower-tree__node">${node(child, false)}</div>`).join('')}
+const tier = (children) => `<div class="omega-tower-tree__children">
+  ${children.map((child) => `<div class="omega-tower-tree__node">${node(child, false)}</div>`).join('')}
 </div>`;
 
 // The finished crew, folded shut. They are still worth reaching — what ran and
@@ -80,15 +80,15 @@ const tier = (children) => `<div class="tower-tree__children">
 // agent that has stopped is connected to nothing that is still running.
 const finished = (children) => `<details class="mt-3">
   <summary class="classy-micro text-body-secondary">${children.length} finished subagent${children.length === 1 ? '' : 's'}</summary>
-  <div class="tower-tree__done mt-2">
-    ${children.map((child) => `<div class="tower-tree__leaf">${node(child, false)}</div>`).join('')}
+  <div class="omega-tower-tree__done mt-2">
+    ${children.map((child) => `<div class="omega-tower-tree__leaf">${node(child, false)}</div>`).join('')}
   </div>
 </details>`;
 
 const branch = (entry) => {
   const { working, done } = splitCrew(entry.children);
-  return `<div class="tower-tree mb-4">
-    <div class="tower-tree__root">${node(entry, true)}</div>
+  return `<div class="omega-tower-tree mb-4">
+    <div class="omega-tower-tree__root">${node(entry, true)}</div>
     ${working.length ? tier(working) : ''}
     ${done.length ? finished(done) : ''}
   </div>`;

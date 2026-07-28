@@ -112,7 +112,7 @@ const run = async () => {
 
   await test('a badge is a chip in its slot, and its label is text', () => {
     const badge = format.modelBadge('claude-opus-5[1m]');
-    assert(badge.includes('classy-chip tower-badge tower-badge--opus'), 'the theme chip, in the opus slot');
+    assert(badge.includes('classy-chip omega-tower-badge omega-tower-badge--opus'), 'the theme chip, in the opus slot');
     assert(badge.includes('claude-opus-5[1m]'), 'labelled with the id itself');
     assertEq(format.badgeColor('opus'), 'var(--tower-badge-opus)', 'and the chart reads the same slot as a token');
     assert(!format.classBadge('<img src=x>').includes('<img'), 'a hostile class name is escaped');
@@ -412,7 +412,9 @@ const run = async () => {
     assert(link.includes(`href="${ISSUE.url}"`), 'it points at the issue');
     assert(link.includes('target="_blank"') && link.includes('rel="noopener"'), 'in a new tab, safely');
     assert(link.includes('aria-label="Open on GitHub"'), 'and says what it does');
-    assert(link.includes('class="tower-external ms-2"'), 'the caller can place it');
+    assert(link.includes('class="omega-tower-external ms-2"'), 'the caller can place it');
+    assert(link.includes('<i class="fa-solid fa-arrow-up-right-from-square"'), 'the glyph is the framework\'s one icon mechanism');
+    assert(!link.includes('<svg'), 'and not a hand-drawn one the renderer never sees');
   });
 
   await test('the dialog says everything the issue knows', () => {

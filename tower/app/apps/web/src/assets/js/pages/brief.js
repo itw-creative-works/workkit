@@ -56,7 +56,7 @@ const numbers = (payload, lists, selected) => statgrid([
 
 // ── The sections ───────────────────────────────────────────────────────────
 
-const issueRow = (issue) => `<li class="py-2 tower-issue" ${issueTrigger(issue)}>
+const issueRow = (issue) => `<li class="py-2 omega-tower-issue" ${issueTrigger(issue)}>
   <div class="d-flex align-items-start gap-2">
     <span class="flex-grow-1">
       <span class="classy-micro d-block">${esc(issue.repo)} #${esc(issue.number)}</span>

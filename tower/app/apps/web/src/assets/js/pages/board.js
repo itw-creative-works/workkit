@@ -93,19 +93,19 @@ const order = (a, b) => {
 //
 // Every card is the same size, which takes all three of its rows holding one
 // shape: the slug line truncates, the title is clamped to two lines
-// (`tower-issue__title`), and the chips stay on one row
-// (`tower-issue__chips`) — so the only remaining variation is a short title,
-// which the floor on `.tower-board .tower-issue` absorbs while `mt-auto` keeps
-// the chips against the bottom edge. Nothing is lost to any of it: the card
-// opens the dialog, which says the whole of all three.
-const issueCard = (issue, showRepo) => `<div class="card tower-issue mb-2${issue.status === 'blocked' ? ' border-danger' : ''}" ${issueTrigger(issue)}>
+// (`omega-tower-issue__title`), and the chips stay on one row
+// (`omega-tower-issue__chips`) — so the only remaining variation is a short
+// title, which the floor on `.omega-tower-board .omega-tower-issue` absorbs
+// while `mt-auto` keeps the chips against the bottom edge. Nothing is lost to
+// any of it: the card opens the dialog, which says the whole of all three.
+const issueCard = (issue, showRepo) => `<div class="card omega-tower-issue mb-2${issue.status === 'blocked' ? ' border-danger' : ''}" ${issueTrigger(issue)}>
   <div class="card-body p-3 d-flex flex-column">
     <div class="d-flex align-items-start gap-2">
       <span class="classy-micro d-block flex-grow-1 text-truncate">${showRepo ? `${esc(issue.repo)} ` : ''}#${esc(issue.number)}</span>
       ${externalLink(issue.url)}
     </div>
-    <span class="mb-2 tower-issue__title">${esc(issue.title)}</span>
-    ${issueChips(issue, 'mt-auto tower-issue__chips')}
+    <span class="mb-2 omega-tower-issue__title">${esc(issue.title)}</span>
+    ${issueChips(issue, 'mt-auto omega-tower-issue__chips')}
   </div>
 </div>`;
 
@@ -117,14 +117,14 @@ const column = (status, issues, showRepo) => `<section>
   ${issues.length ? issues.map((issue) => issueCard(issue, showRepo)).join('') : empty('nothing here')}
 </section>`;
 
-// `.tower-board` is the sideways-scrolling strip; how WIDE a column is belongs
+// `.omega-tower-board` is the sideways-scrolling strip; how WIDE a column is belongs
 // here, because it is a function of how many the pipeline has. Five at the
 // stylesheet's 15rem floor are wider than an ordinary main region, which put
 // Parked half off the edge and No status past it with only an overlay scrollbar
 // to say so. At 11rem all five are on screen down to a laptop width, they still
 // stretch to fill a wide one, and the strip goes on scrolling when the window is
 // genuinely too narrow for the board.
-const columns = (shown, showRepo) => `<div class="tower-board" style="grid-auto-columns: minmax(11rem, 1fr);">
+const columns = (shown, showRepo) => `<div class="omega-tower-board" style="grid-auto-columns: minmax(11rem, 1fr);">
   ${STATUSES.map((status) => column(status, shown.filter((issue) => (issue.status || '') === status.key).sort(order), showRepo)).join('')}
 </div>`;
 

@@ -43,6 +43,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ### Fixed
 
+- [#43](../../issues/43) — The tower's runtime-stamped classes move into the `omega-` namespace so a production `omega build` keeps their styles, and the issue dialog's external-link icon becomes the Font Awesome glyph.
 - [#38](../../issues/38) — `tower/README.md` no longer documents a `TOWER_ROOT` environment variable; nothing reads it, and the roster root is a library option.
 - [#25](../../issues/25) — The Crew page draws only the subagents still working: the API stamps each one `working` or `done` from the same idle window a session's state uses, and the finished ones collapse into one expandable count per session.
 - [#21](../../issues/21) — The telemetry read cache is pruned to the transcripts each collection pass named, so a long-running tower forgets the sessions that ended instead of holding their read state forever.
