@@ -24,7 +24,7 @@ flowchart TB
     Ship --> Closed([closed])
 ```
 
-Capture (any of the three sources) is what puts an item INTO `status:inbox`; triage is the action that routes it OUT. Only two labels sit on the road: `status:inbox` (captured, nothing authorized) and `status:specced` (the spec is written and accepted, so building is authorized — the label flip IS the go-ahead). `blocked` and `parked` are side pockets with no arrows back: an answered `blocked` issue rejoins at `status:specced`, a revived `parked` one re-enters triage. Build, verify, and ship have no label of their own — the issue stays `status:specced` while the work runs, and the assignee is what marks it in flight; claiming an issue means assigning it to yourself (an agent adds `agent:working` too, which the heal clears if the claim goes quiet for 24 hours). The rules behind every hop: [`docs/project-state.md`](docs/project-state.md).
+Capture puts an item in `status:inbox`; triage is what routes it out. Only two labels sit on the road, and the flip to `status:specced` is the go-ahead to build. `blocked` and `parked` are side pockets: an answered question rejoins the road, a revived item goes back through triage. The working stages carry no label at all — you claim an issue by assigning it to yourself, and that is what marks it in flight. The letter of every hop — what each label means, who may flip it, how a claim expires: [`docs/project-state.md`](docs/project-state.md).
 
 ## The crew that works it
 

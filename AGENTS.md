@@ -6,7 +6,7 @@
 
 workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: the standards heal, the manager crew, the guard hooks, the workflow skills, and the agent-agnostic engine they all call. It installs into any repo's sessions and brings that repo to one standard — GitHub Issues as the work-item SSOT, labels as the pipeline, a CHANGELOG entry per shipped item.
 
-The spec it implements is `docs/project-state.md`; the README carries the visual map of the same system — the road and the crew.
+`docs/project-state.md` is the spec it implements — the ONE normative text, and the only home of the rules the parts below enforce: the label vocabulary and the pipeline, capture and triage, issue anatomy, `.workkit/` and the participation tri-state, queue semantics, CHANGELOG entries. This file describes the ARCHITECTURE that executes those rules and points at the spec's sections instead of restating them; the README tells the same story in human voice, with the road and the crew charts.
 
 ## Repo structure
 
@@ -45,7 +45,7 @@ Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh`
 
 | Hook | Event | What it does |
 |---|---|---|
-| `workflow/standards` | SessionStart | Brings an enabled repo to the standard once per repo per day — labels from `labels.json`, issue templates, the required-checks CI workflow plus its `changelog` job and the vendored `.github/changelog-lint.js`, best-effort branch protection, `.workkit/` seeded and gitignored, agent claims idle for 24 hours released, and the hook layer itself asserted alive (every wired hook resolves, is executable, parses; the tools they call are present) — and reports only what it fixed. An undecided repo hears one offer and is never written to |
+| `workflow/standards` | SessionStart | Runs the engine's heal in a participating repo, once per repo per day (what the heal writes: `workflow/README.md`; the standard it heals to: the spec § Enforcement), and adds the one check that is the hook layer's own — every wired hook resolves, is executable, parses, and the tools they call are present. Reports only what it fixed; an undecided repo hears one offer and is never written to |
 | `docs/state-check` | SessionStart | Announces open `status:inbox` issues, a non-empty `.workkit/inbox.md`, broken pointer files, an oversized AGENTS.md |
 | `workflow/reload-guard` | SessionStart + UserPromptSubmit | Stamps the load-time surfaces (`hooks.json` content, the `agents/` and `skills/` file list and mtimes) at session start and injects one line when they change — hook-script, skill-body, and engine edits are already live, so only these need `/reload-plugins`. Each change nags once |
 | `manager/resolver` | PreToolUse (Task/Agent) | Supplies each crew spawn's model from `manager/ladder.json` and the live session model |
@@ -90,10 +90,6 @@ Mission control, in two processes. `tower/api/` is a plain-Node JSON API with ze
 ## The jobs (`jobs/`)
 
 Scheduled work this machine runs. One job: the 9am daily brief. `brief-payload.js` composes the tower's `/api/brief` WITHOUT the tower — the same roster, board, health and `buildBrief` under `tower/api/lib/` — and prints the digest instruction plus that payload; `claude-daily.sh` sends it headless (haiku, no tools, a hard budget), logs the exchange, and puts the response's first line in a desktop notification. `install.sh` renders `com.workkit.claude-daily.plist` for this checkout and loads it, only when something changed. Reference: `jobs/README.md`.
-
-## Participation is a tri-state
-
-A repo's committed `.workkit/settings.json` (`{ "version": 1, "enabled": true }`) is the project's yes; `"enabled": false` is its deliberate no; per-developer declines live in `~/.workkit/settings.json`. A repo with no answer hears one offer per session and is never written to. Everything else under `.workkit/` is gitignored session state.
 
 ## Tests
 

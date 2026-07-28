@@ -17,6 +17,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ### Changed
 
+- [#16](../../issues/16) — The three tellings collapse to one: `docs/project-state.md` is the only normative text, AGENTS.md keeps architecture and points at the spec, and the README keeps the human summary and its charts. A rule change now touches one file.
 - [#35](../../issues/35) — Models and crew classes are drawn as coloured badges everywhere they appear, and the Usage charts use the same colours; every clickable issue card warms and lifts under the pointer and settles on press.
 - [#34](../../issues/34) — The Overview's lists stop at five with a line to the page holding the rest, health is ranked worst-first, the queue by status is a doughnut, and the panel links carry no underline.
 - [#33](../../issues/33) — Every board card is one size: the title clamps to two lines, the repo line truncates, and the chips stay on one row. The whole of all three is in the dialog the card opens.
