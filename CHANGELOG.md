@@ -7,13 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-28
+
 ### Added
 
-- [#58](../../issues/58) — The `safety:commit-language` hook now also reads the subject line: it bounces a subject that is not Conventional Commits (`<type>(<scope>): <subject>`, lowercase start, 72 characters) or that carries a version number outside the `chore(release)` commit, with merge, revert and fixup subjects exempt.
+- [#58](../../issues/58) [`61867ee`](../../commit/61867ee) Thanks [@ianwieds]! — The `safety:commit-language` hook now also reads the subject line: it bounces a subject that is not Conventional Commits (`<type>(<scope>): <subject>`, lowercase start, 72 characters) or that carries a version number outside the `chore(release)` commit, with merge, revert and fixup subjects exempt.
 
 ### Fixed
 
-- [#61](../../issues/61) — The daily heal's stale-claim sweep now also moves a released issue from `status:building` back to `status:specced`, so an abandoned claim stops reading as in-flight work, and the tower Overview's "In flight" number counts a claim the way the brief does — an assignee or the `agent:working` label.
+- [#61](../../issues/61) [`61867ee`](../../commit/61867ee) Thanks [@ianwieds]! — The daily heal's stale-claim sweep now also moves a released issue from `status:building` back to `status:specced`, so an abandoned claim stops reading as in-flight work, and the tower Overview's "In flight" number counts a claim the way the brief does — an assignee or the `agent:working` label.
 
 ## [0.7.0] - 2026-07-28
 
