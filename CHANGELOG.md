@@ -7,24 +7,26 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-28
+
 ### Added
 
-- [#46](../../issues/46) — An agent's activity is one wordless glyph on the Crew and Overview pages: spinning green while its transcript moves, still and faint for the rest of the minute, gone once quieter than that, with how fresh it is beside it. A claimed `specced` Board card carries the still glyph too.
-- [#50](../../issues/50) — Clicking a crew card opens a dialog for that agent: its last tool call and when, model, effort, spend, uptime and transcript path. `/api/sessions` and `/api/telemetry` now carry the timestamps, the last tool call and the transcript paths it reads.
-- [#56](../../issues/56) — `.workkit/session.md` is read back at every session start by the new `docs:session` hook, so a compacted or restarted agent picks up its own task queue; past ~40 content lines it says the file is a queue, not a journal. The template and the manager instruction say the same.
-- [#54](../../issues/54) — `npm run brief` (`jobs/claude-daily.sh --now`) runs the daily brief on demand through the same pipeline, log file and notification, stamped `(manual)` and leaving the upstream-news mark for the 9am job.
-- [#48](../../issues/48) — A Board card is dragged between the status columns and the drop really relabels the issue, through a new validated `POST /api/issues/status` that removes the old label and adds the new one in one `gh issue edit`. The card moves at once and goes back if the write fails.
+- [#46](../../issues/46) [`c10a0c6`](../../commit/c10a0c6) Thanks [@ianwieds]! — An agent's activity is one wordless glyph on the Crew and Overview pages: spinning green while its transcript moves, still and faint for the rest of the minute, gone once quieter than that, with how fresh it is beside it. A claimed `specced` Board card carries the still glyph too.
+- [#50](../../issues/50) [`c10a0c6`](../../commit/c10a0c6) Thanks [@ianwieds]! — Clicking a crew card opens a dialog for that agent: its last tool call and when, model, effort, spend, uptime and transcript path. `/api/sessions` and `/api/telemetry` now carry the timestamps, the last tool call and the transcript paths it reads.
+- [#56](../../issues/56) [`c10a0c6`](../../commit/c10a0c6) Thanks [@ianwieds]! — `.workkit/session.md` is read back at every session start by the new `docs:session` hook, so a compacted or restarted agent picks up its own task queue; past ~40 content lines it says the file is a queue, not a journal. The template and the manager instruction say the same.
+- [#54](../../issues/54) [`c10a0c6`](../../commit/c10a0c6) Thanks [@ianwieds]! — `npm run brief` (`jobs/claude-daily.sh --now`) runs the daily brief on demand through the same pipeline, log file and notification, stamped `(manual)` and leaving the upstream-news mark for the 9am job.
+- [#48](../../issues/48) [`c10a0c6`](../../commit/c10a0c6) Thanks [@ianwieds]! — A Board card is dragged between the status columns and the drop really relabels the issue, through a new validated `POST /api/issues/status` that removes the old label and adds the new one in one `gh issue edit`. The card moves at once and goes back if the write fails.
 
 ### Changed
 
-- [#47](../../issues/47) — The Crew page reads as a chart: each connector flows the way it runs from parent to child, each tree is headed by its repo, every card wears its role as an icon, and the finished subagents moved to one page-global switch, off by default.
-- [#52](../../issues/52) — Issue anatomy gains the introduction rule: the first mention of an outside project or repo, in a body or a comment, carries a link and a one-line description of what it is. The triage and feature skills point at it.
-- [#26](../../issues/26) — The tower dashboard knows whether it has a tower to read: a published build with no `?api=` or `window.TOWER_API` override arms no feeds and makes no requests, drawing one muted line in place of its data, and the intake dialog opens inert carrying the same sentence.
+- [#47](../../issues/47) [`c10a0c6`](../../commit/c10a0c6) Thanks [@ianwieds]! — The Crew page reads as a chart: each connector flows the way it runs from parent to child, each tree is headed by its repo, every card wears its role as an icon, and the finished subagents moved to one page-global switch, off by default.
+- [#52](../../issues/52) [`c10a0c6`](../../commit/c10a0c6) Thanks [@ianwieds]! — Issue anatomy gains the introduction rule: the first mention of an outside project or repo, in a body or a comment, carries a link and a one-line description of what it is. The triage and feature skills point at it.
+- [#26](../../issues/26) [`c10a0c6`](../../commit/c10a0c6) Thanks [@ianwieds]! — The tower dashboard knows whether it has a tower to read: a published build with no `?api=` or `window.TOWER_API` override arms no feeds and makes no requests, drawing one muted line in place of its data, and the intake dialog opens inert carrying the same sentence.
 
 ### Fixed
 
-- [#42](../../issues/42) — Two tower nits: an issue list keeps its list semantics, the button role moved off the `<li>` onto an inner element, and the chrome is drawn in two pieces so a poll refreshes the stamp without rebuilding the repo `<select>` — a dropdown open mid-poll stays open.
-- [#49](../../issues/49) — Three tower nits: a session's cache column reads green for a cache read and red for a miss, the Board's clear-filter button is always there instead of appearing with the first filter, and a Board column's title sits clear of the rule under it.
+- [#42](../../issues/42) [`c10a0c6`](../../commit/c10a0c6) Thanks [@ianwieds]! — Two tower nits: an issue list keeps its list semantics, the button role moved off the `<li>` onto an inner element, and the chrome is drawn in two pieces so a poll refreshes the stamp without rebuilding the repo `<select>` — a dropdown open mid-poll stays open.
+- [#49](../../issues/49) [`c10a0c6`](../../commit/c10a0c6) Thanks [@ianwieds]! — Three tower nits: a session's cache column reads green for a cache read and red for a miss, the Board's clear-filter button is always there instead of appearing with the first filter, and a Board column's title sits clear of the rule under it.
 
 ## [0.3.0] - 2026-07-27
 
