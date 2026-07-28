@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-28
+
 ### Added
 
-- [#60](../../issues/60) — A fifth pipeline state, `status:building`, marks in-flight work from build start to ship close; the tower board gains a Building column, and a missing or doubled status label now flags the daily heal instead of warning once a day.
+- [#60](../../issues/60) [`b037acf`](../../commit/b037acf) Thanks [@ianwieds]! — A fifth pipeline state, `status:building`, marks in-flight work from build start to ship close; the tower board gains a Building column, and a missing or doubled status label now flags the daily heal instead of warning once a day.
 
 ## [0.6.0] - 2026-07-28
 
