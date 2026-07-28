@@ -13,7 +13,7 @@ One query does it: `gh issue list --state open --json number,title,labels,assign
 Answer in this shape, plain language, one sentence per item:
 
 1. **Waiting on you** — `status:blocked` issues. Name the actual question for each (it is in a comment: `gh issue view <N> --comments`).
-2. **In flight** — open issues with an assignee. Say who and what.
+2. **In flight** — `status:building` issues, plus a `status:specced` issue with an assignee (the pre-flip claim shape). Say who and what.
 3. **Up next** — `status:specced` and unassigned, in priority order: `priority:high` first, then unlabeled (= normal), then `priority:low`. First 3–5.
    Within one priority, order by dependency, risk, and reviewability: blockers first (work other issues wait on — a parent's open siblings and anything another issue names), then bugs, then shared seams (the file or module several queued items all touch), and only then dependent feature work. Say WHY the top item is top in the same sentence ("first because #12 waits on it"). This is the order the autonomy loop uses; the rule's home is `docs/project-state.md` § Queue semantics.
 4. **Inbox** — the `status:inbox` count → offer the `workkit:triage` skill.

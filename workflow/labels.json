@@ -19,6 +19,10 @@
           "description": "Spec written and accepted — building is authorized. Exactly one status: label per open issue.",
           "color": "0E8A16"
         },
+        "building": {
+          "description": "Authorized and in flight, build through ship. Exactly one status: label per open issue.",
+          "color": "FBCA04"
+        },
         "blocked": {
           "description": "Waiting on a human decision. Exactly one status: label per open issue. A comment names the question.",
           "color": "B60205"

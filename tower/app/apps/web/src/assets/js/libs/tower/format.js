@@ -78,6 +78,7 @@ export const money = (value) => {
 export const STATUSES = [
   { key: 'inbox', label: 'Inbox' },
   { key: 'specced', label: 'Specced' },
+  { key: 'building', label: 'Building' },
   { key: 'blocked', label: 'Blocked' },
   { key: 'parked', label: 'Parked' },
   { key: '', label: 'No status' },
@@ -87,9 +88,10 @@ export const STATUSES = [
 export const statusToken = (key) => ({
   inbox: '--omega-chart-2',
   specced: '--omega-ok',
+  building: '--omega-warn',
   blocked: '--omega-danger',
   parked: '--omega-ink-faint',
-}[key] || '--omega-warn');
+}[key] || '--omega-ink-muted');
 
 /** The resolved colour for a status — CSS custom properties, so dark mode follows. */
 export const statusColor = (key) => `var(${statusToken(key)})`;

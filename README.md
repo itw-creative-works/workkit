@@ -17,14 +17,15 @@ flowchart TB
     Spec -->|accepted, or a small item| Specced([status:specced])
     Spec -->|a call to make| Blocked([status:blocked])
     Blocked -.->|answered| Spec
-    Specced -->|claim: assign yourself| Build["Build<br>/workkit:feature"]
+    Specced -->|claim: assign yourself| Building([status:building])
+    Building --> Build["Build<br>/workkit:feature"]
     Build --> Verify["Verify"]
     Verify -.->|findings| Build
     Verify -->|clean| Ship["Ship<br>commit, CHANGELOG, Fixes #N<br>/workkit:ship"]
     Ship --> Closed([closed])
 ```
 
-Capture puts an item in `status:inbox`; triage is what routes it out. Only two labels sit on the road, and the flip to `status:specced` is the go-ahead to build. `blocked` and `parked` are side pockets: an answered question rejoins the road, a revived item goes back through triage. The working stages carry no label at all — you claim an issue by assigning it to yourself, and that is what marks it in flight. The letter of every hop — what each label means, who may flip it, how a claim expires: [`docs/project-state.md`](docs/project-state.md).
+Capture puts an item in `status:inbox`; triage is what routes it out. Three labels sit on the road: the flip to `status:specced` is the go-ahead to build, and `status:building` carries the work from the moment it starts until the ship close ends it. `blocked` and `parked` are side pockets: an answered question rejoins the road, a revived item goes back through triage. You still claim an issue by assigning it to yourself — the assignee is who holds it, the label is what makes it visible in flight. The letter of every hop — what each label means, who may flip it, how a claim expires: [`docs/project-state.md`](docs/project-state.md).
 
 ## The crew that works it
 

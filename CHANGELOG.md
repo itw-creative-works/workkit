@@ -9,7 +9,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ### Added
 
-- [#60](../../issues/60) — A fifth pipeline state, `status:building`, makes in-flight work visible: it is applied when a specced issue's build starts, carried through build, verify and the wait to ship, and ended by the ship close; the tower board gains a Building column between Specced and Blocked.
+- [#60](../../issues/60) — A fifth pipeline state, `status:building`, marks in-flight work from build start to ship close; the tower board gains a Building column, and a missing or doubled status label now flags the daily heal instead of warning once a day.
 
 ## [0.6.0] - 2026-07-28
 

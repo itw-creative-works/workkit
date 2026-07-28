@@ -466,8 +466,32 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  await test('the vocabulary is the label SSOT’s own four, never a second copy', () => {
-    assertEq(MOVE_STATUSES.join(','), 'inbox,specced,blocked,parked', 'the pipeline, in its own order');
+  await test('the vocabulary is the label SSOT’s own five, never a second copy', () => {
+    assertEq(MOVE_STATUSES.join(','), 'inbox,specced,building,blocked,parked', 'the pipeline, in its own order');
+  });
+
+  await test('a move into status:building is a valid move — in-flight work is a column like any other', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { status, body } = await postJson(c, MOVE, { ...validMove, to: 'building' });
+    assertEq(status, 200, 'ok');
+    assertEq(body.status, 'building', 'the status it now carries');
+    const [call] = ghCalls(w, 'issue');
+    assertEq(call.join(' '),
+      `gh issue edit 17 --repo ${SLUG} --remove-label status:specced --add-label status:building`,
+      'the flip that starts the work is one call, like every other move');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a move out of status:building is valid too — the board can pull work back', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { status, body } = await postJson(c, MOVE, { ...validMove, from: 'building', to: 'blocked' });
+    assertEq(status, 200, 'ok');
+    assertEq(body.status, 'blocked', 'a question mid-build is still a question');
+    await c.stop();
+    cleanup(w.root);
   });
 
   await test('an issue number that is not a positive integer is refused, gh untouched', async () => {

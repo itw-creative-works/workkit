@@ -14,7 +14,7 @@
 // morning asks them:
 //   waiting    what is blocked on a human decision — the only thing that stops work
 //   ready      specced and unclaimed — what may be started right now
-//   inFlight   specced and assigned — what is already someone's
+//   inFlight   building, or the legacy shape: specced and assigned
 //   warnings   work sitting on the table: uncommitted, unpushed, unreleased
 //
 // Usage:
@@ -95,7 +95,10 @@ const buildBrief = (board, health, repos, generatedAt) => {
 
   const waiting = issues.filter((i) => i.status === 'blocked').map(brief);
   const ready = issues.filter((i) => i.status === 'specced' && !claimed(i)).map(brief);
-  const inFlight = issues.filter((i) => i.status === 'specced' && claimed(i)).map(brief);
+  // `status:building` IS in flight — the label is what says work has started.
+  // A claimed `specced` issue counts too, as the shape the board carried before
+  // the fifth state existed; it stays until the live issues have flipped.
+  const inFlight = issues.filter((i) => i.status === 'building' || (i.status === 'specced' && claimed(i))).map(brief);
   const inbox = issues.filter((i) => i.status === 'inbox').map(brief);
 
   const warnings = [];

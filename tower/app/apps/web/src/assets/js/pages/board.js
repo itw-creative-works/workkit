@@ -1,7 +1,7 @@
 //
 // Board — every open issue on the roster, in columns by `status:`.
 //
-// The five columns are the four status labels plus one for issues carrying no
+// The six columns are the five status labels plus one for issues carrying no
 // status at all: those exist, they are the ones triage has not reached, and a
 // board that hides them tells a comfortable lie about how much is in the queue.
 //
@@ -10,7 +10,7 @@
 // URL on every draw, which also makes the 60-second repaint harmless: the
 // toolbar is rebuilt from the URL, not from whatever the DOM last held.
 //
-// A card is DRAGGED between the four status columns, and the drop really
+// A card is DRAGGED between the five status columns, and the drop really
 // relabels the issue: the payload and the mode gate are api.js's `moveRequest`,
 // the write is its `postIssueStatus`, and everything here is what the browser
 // contributes — which card was picked up, which column it landed on, and the
@@ -115,7 +115,7 @@ const order = (a, b) => {
 // what it looks like, when it is earned and what it says to a screen reader are
 // one decision, and it is made in the lib the Crew page draws from too.
 //
-// A card carrying one of the four statuses is draggable; the one in the "No
+// A card carrying one of the five statuses is draggable; the one in the "No
 // status" column is not, because there is no label to take off it. The card's
 // `data-issue` key is what the drop reads back — the same key the dialog
 // registry uses, so the two never mean different things.
@@ -143,12 +143,12 @@ const column = (status, issues, showRepo) => `<section${MOVABLE_STATUSES.include
 </section>`;
 
 // `.omega-tower-board` is the sideways-scrolling strip; how WIDE a column is belongs
-// here, because it is a function of how many the pipeline has. Five at the
-// stylesheet's 15rem floor are wider than an ordinary main region, which put
-// Parked half off the edge and No status past it with only an overlay scrollbar
-// to say so. At 11rem all five are on screen down to a laptop width, they still
-// stretch to fill a wide one, and the strip goes on scrolling when the window is
-// genuinely too narrow for the board.
+// here, because it is a function of how many the pipeline has. At the
+// stylesheet's 15rem floor the strip is wider than an ordinary main region,
+// which put Parked half off the edge and No status past it with only an overlay
+// scrollbar to say so. At 11rem the columns fit the main region down to a laptop
+// width, they still stretch to fill a wide one, and the strip goes on scrolling
+// when the window is genuinely too narrow for the board.
 const columns = (shown, showRepo) => `<div class="omega-tower-board" style="grid-auto-columns: minmax(11rem, 1fr);">
   ${STATUSES.map((status) => column(status, shown.filter((issue) => (issue.status || '') === status.key).sort(order), showRepo)).join('')}
 </div>`;

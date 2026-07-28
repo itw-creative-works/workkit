@@ -265,7 +265,7 @@ const run = async () => {
 
   await test('exact values per group', () => {
     const values = (g) => Object.keys(MANIFEST.groups[g].values).sort().join(',');
-    assertEq(values('status'), 'blocked,inbox,parked,specced', 'status values');
+    assertEq(values('status'), 'blocked,building,inbox,parked,specced', 'status values');
     assertEq(values('type'), 'bug,enhancement,idea', 'type values');
     assertEq(values('priority'), 'high,low', 'priority values');
     assertEq(values('agent'), 'ok,working', 'agent values');
@@ -320,6 +320,11 @@ const run = async () => {
 
   await test('inbox description names triage as the drain', () => {
     assert(/triage/i.test(MANIFEST.groups.status.values.inbox.description), 'status:inbox points at triage');
+  });
+
+  await test('building description says the work is in flight', () => {
+    assert(/in flight/i.test(MANIFEST.groups.status.values.building.description),
+      'status:building is the label in-flight work carries');
   });
 
   await test('priority descriptions state that absence means normal', () => {
@@ -1713,7 +1718,7 @@ const run = async () => {
       ],
     });
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 0, 'report-only — never fails the run');
+    assertEq(code, 1, 'a label violation flags the run — the day is not cached and the heal re-reports next session');
     assert(output.includes('#3'), `an issue without a status is named, got: ${output}`);
     assert(output.includes('#4'), `a double status is named, got: ${output}`);
     assert(output.includes('#5'), `priority:high plus priority:low is named, got: ${output}`);
@@ -1760,7 +1765,7 @@ const run = async () => {
     assert(desiredLabels().some((l) => l.name === CLAIM), 'the sweep queries a label the heal makes');
     assertEq(MANIFEST.groups.agent.exclusive, false, 'the claim marker is not exclusive with agent:ok');
     assert(!Object.keys(MANIFEST.groups.status.values).includes('working'),
-      'a claim is not a status — the issue stays status:specced while it is worked');
+      'a claim is not a status — the issue carries status:building while it is worked');
   });
 
   await test('a claim with recent activity is left exactly as it is', () => {

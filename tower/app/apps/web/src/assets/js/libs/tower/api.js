@@ -215,8 +215,8 @@ export async function postJson(path, payload) {
 }
 
 /**
- * The statuses a card may be dragged between — the pipeline's four, taken from
- * the column list rather than written a second time. The board's fifth column,
+ * The statuses a card may be dragged between — the pipeline's five, taken from
+ * the column list rather than written a second time. The board's last column,
  * "No status", is not one of them: a move is `from` one label `to` another, and
  * an issue triage has not reached carries neither end of that.
  */

@@ -62,6 +62,19 @@ const run = async () => {
     assertEq(out.generatedAt, STAMP, 'the stamp is the one passed in');
   });
 
+  await test('a building issue is in flight on its label alone, claimed or not', () => {
+    const board = boardOf([
+      issue(1, { status: 'building', assignees: ['ianwieds'] }),
+      issue(2, { status: 'building' }),
+    ]);
+    const out = buildBrief(board, {}, ROSTER, STAMP);
+    assertEq(out.inFlight.map((i) => i.number).sort().join(','), '1,2',
+      'the label is what says work has started — the assignee only says who holds it');
+    assertEq(out.counts.inFlight, 2, 'and the count the headline reads agrees');
+    assertEq(out.ready.length, 0, 'work already started is never offered as ready');
+    assert(/2 issues are in flight/.test(out.headline), `the morning leads with them, got: ${out.headline}`);
+  });
+
   await test('an agent claim counts as in flight even with no assignee', () => {
     const board = boardOf([issue(7, { status: 'specced', agentWorking: true })]);
     const out = buildBrief(board, {}, ROSTER, STAMP);

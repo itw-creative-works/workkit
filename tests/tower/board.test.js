@@ -210,6 +210,27 @@ const run = async () => {
     assertEq(b.agentOk, false, 'humans only');
   });
 
+  // Documentation, not a vocabulary proof: parseLabels matches on the group
+  // name and passes any status value through, so this case also passes without
+  // the fifth label. The vocabulary itself is proven by the server and app
+  // suites (MOVE_STATUSES, STATUSES).
+  await test('status:building parses like any other status — in-flight work reaches the board', () => {
+    const res = fetchBoard([ROSTER[0]], {
+      exec: fakeGh({
+        data: {
+          r0: {
+            issues: {
+              totalCount: 1,
+              nodes: [issue(17, { labels: labels('status:building', 'type:bug'), assignees: assignees('ianwieds') })],
+            },
+          },
+        },
+      }),
+    });
+    assertEq(res.issues[0].status, 'building', 'the status group passes the value through');
+    assertEq(res.issues[0].assignees.join(','), 'ianwieds', 'and the assignee still says who holds it');
+  });
+
   await test('an unparseable vocabulary file leaves every group unparsed rather than crashing', () => {
     const tmp = mkTmp();
     const file = path.join(tmp, 'labels.json');

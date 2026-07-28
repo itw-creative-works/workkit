@@ -1020,13 +1020,16 @@ sweep_stale_claims() {
 }
 
 # ── 4. Open issues carry conforming labels ──
-# REPORTS ONLY, like the drift report: templates can be installed before the
+# A violation FLAGS THE RUN (owner ruling, 2026-07-28: a missing status is an
+# error, a double status is an error): templates can be installed before the
 # label sync ever ran, GitHub silently drops nonexistent labels at issue
 # creation, and web-filed issues arrive unlabeled — so a captured issue can sit
-# outside every queue query. The manifest is the rule: an `exclusive` group
-# allows at most one of its labels per issue, and a `required` group (status)
-# demands exactly one. Needs gh + auth like the label sync; the sync already
-# said why those are missing, so this check skips silently without them.
+# outside every queue query, and the heal must keep saying so every session
+# until it is routed, not once a day. The manifest is the rule: an `exclusive`
+# group allows at most one of its labels per issue, and a `required` group
+# (status, type) demands exactly one. Needs gh + auth like the label sync; the
+# sync already said why those are missing, so this check skips silently
+# without them.
 check_issue_labels() {
   local issues bad
   [[ -f "$LABELS_JSON" ]] || return 0
@@ -1047,6 +1050,7 @@ check_issue_labels() {
     | join(" ")' <<<"$issues" 2>/dev/null || true)"
   if [[ -n "$bad" ]]; then
     log_warn "issues: $bad missing a required status:/type: label or carrying two from one exclusive group — run the workkit:triage skill to route them"
+    needs_attention=1
   fi
 }
 

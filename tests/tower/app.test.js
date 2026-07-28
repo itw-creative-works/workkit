@@ -107,11 +107,20 @@ const run = async () => {
     assertEq(format.shortPath(''), '', 'nothing in, nothing out');
   });
 
+  await test('the board’s columns are the pipeline in order, Building between Specced and Blocked', () => {
+    assertEq(format.STATUSES.map((s) => s.key).join(','), 'inbox,specced,building,blocked,parked,',
+      'left to right, ending with the No-status column');
+    assertEq(format.STATUSES.map((s) => s.label).join(','), 'Inbox,Specced,Building,Blocked,Parked,No status',
+      'and each column is titled the way a human reads it');
+  });
+
   await test('every status has a colour, and one the pipeline does not name still has one', () => {
     for (const status of format.STATUSES) {
       assert(format.statusColor(status.key).startsWith('var(--omega-'), `${status.key || 'no status'} resolves to a theme token`);
     }
-    assertEq(format.statusToken('nonsense'), '--omega-warn', 'an unknown status is drawn, not dropped');
+    assertEq(format.statusToken('nonsense'), '--omega-ink-muted', 'an unknown status is drawn, not dropped');
+    assert(format.statusToken('building') !== format.statusToken(''),
+      'in-flight work and the No-status column never share a colour');
   });
 
   await test('a model id falls in its family whatever it is decorated with', () => {
@@ -506,6 +515,13 @@ const run = async () => {
     assertEq(agent.claimGlyph({ status: 'inbox', assignees: ['ianwieds'] }), '', 'a claim before the spec is accepted is not either');
     assertEq(agent.claimGlyph({ status: 'blocked', assignees: ['ianwieds'] }), '', 'nor a claim on something blocked');
     assertEq(agent.claimGlyph({}), '', 'and an issue with nothing on it draws nothing');
+  });
+
+  await test('a claim on work already started carries the glyph too', () => {
+    const building = agent.claimGlyph({ status: 'building', assignees: ['ianwieds'] });
+    assert(building.includes('omega-tower-activity--idle'), 'the glyph marks a claim, and claimed work lives in building');
+    assert(building.includes('title="held by @ianwieds"'), 'saying who has it there as well');
+    assertEq(agent.claimGlyph({ status: 'building', assignees: [] }), '', 'a building issue nobody holds still draws nothing');
   });
 
   await test('a claim announces itself as a claim, not as an idle agent', () => {
@@ -936,8 +952,8 @@ const run = async () => {
       'where it came from rides along — the move removes one label and adds the other');
   });
 
-  await test('the four columns that are a status are the only ones a card moves between', () => {
-    assertEq(api.MOVABLE_STATUSES.join(','), 'inbox,specced,blocked,parked', 'the pipeline, from the column list itself');
+  await test('the five columns that are a status are the only ones a card moves between', () => {
+    assertEq(api.MOVABLE_STATUSES.join(','), 'inbox,specced,building,blocked,parked', 'the pipeline, from the column list itself');
     assertEq(api.moveRequest(CARD, '', true), null, 'the No-status column is not a destination');
     assertEq(api.moveRequest({ ...CARD, status: null }, 'inbox', true), null, 'and an issue triage has not reached has no label to remove');
     assertEq(api.moveRequest(CARD, 'shipped', true), null, 'a status the pipeline does not name is not one');
@@ -945,6 +961,15 @@ const run = async () => {
 
   await test('a drop on the column the card is already in is not a move', () => {
     assertEq(api.moveRequest(CARD, 'specced', true), null, 'nothing to write');
+  });
+
+  await test('starting work is a drop like any other — specced to building is a payload', () => {
+    assertEq(JSON.stringify(api.moveRequest(CARD, 'building', true)),
+      '{"repo":"ITW/workkit","number":48,"from":"specced","to":"building"}',
+      'the flip that puts an issue in flight');
+    assertEq(JSON.stringify(api.moveRequest({ ...CARD, status: 'building' }, 'blocked', true)),
+      '{"repo":"ITW/workkit","number":48,"from":"building","to":"blocked"}',
+      'and a card leaves the Building column the same way');
   });
 
   await test('a published copy produces no move at all — there is no tower to write to', () => {

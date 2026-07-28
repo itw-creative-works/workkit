@@ -31,7 +31,8 @@ const numbers = (state) => {
   return statgrid([
     statCell('Open issues', issues.length, '/board'),
     statCell('Blocked', issues.filter((issue) => issue.status === 'blocked').length, '/board'),
-    statCell('In flight', issues.filter((issue) => (issue.assignees || []).length > 0).length, '/board'),
+    statCell('In flight', issues.filter((issue) => issue.status === 'building'
+      || (issue.status === 'specced' && (issue.assignees || []).length > 0)).length, '/board'),
     statCell('Live sessions', sessionsFor(state).length, '/crew'),
     statCell('Unpushed', total(state, 'unpushed'), '/health'),
     statCell('Unreleased', total(state, 'unreleasedEntries'), '/health'),
@@ -161,8 +162,8 @@ const healthPanel = (state) => {
 
 // Open issues by status — the same series the Board's columns count, as a
 // doughnut: the question this panel answers is what SHARE of the queue is
-// blocked or unspecced, and a ring says a share where five bars said five
-// unrelated heights. The box is taller than the bars needed because the legend
+// blocked or unspecced, and a ring says a share where a row of bars said that
+// many unrelated heights. The box is taller than the bars needed because the legend
 // sits under the ring and carries the labels the axis used to.
 const statusSeries = (issues) => STATUSES.map((status) => issues.filter((issue) => (issue.status || '') === status.key).length);
 

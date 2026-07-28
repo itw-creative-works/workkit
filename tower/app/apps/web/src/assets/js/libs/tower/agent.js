@@ -112,6 +112,10 @@ export const activityIcon = (phase, title = '', label = '') => {
   </span>`;
 };
 
+// The statuses a claim can sit on — the two the pipeline treats as authorized
+// to build. Anything earlier is still triage's, anything later has shipped.
+const CLAIMABLE = ['specced', 'building'];
+
 /**
  * The Board's version of the glyph: an issue an agent HOLDS.
  *
@@ -120,16 +124,17 @@ export const activityIcon = (phase, title = '', label = '') => {
  * someone has this one and nothing more, and says exactly that to a screen
  * reader rather than the word `idle`.
  *
- * The gate is both halves of the claim: an assignee, and `specced` — the state
- * the pipeline treats as authorized to build (#46). An issue claimed while it
- * is still in triage is not work in flight.
+ * The gate is both halves of the claim: an assignee, and a status the pipeline
+ * treats as authorized to build (#46) — `specced` or `building`, which is where
+ * claimed work sits once it starts (#60). An issue claimed while it is still in
+ * triage is not work in flight.
  *
  * @param {object} issue one issue from /api/board
  * @returns {string} markup, or '' when the issue is not claimed work
  */
 export const claimGlyph = (issue) => {
   const held = ((issue || {}).assignees || []);
-  if ((issue || {}).status !== 'specced' || !held.length) return '';
+  if (!CLAIMABLE.includes((issue || {}).status) || !held.length) return '';
   return activityIcon('idle', `held by @${held.join(', @')}`, 'claimed');
 };
 

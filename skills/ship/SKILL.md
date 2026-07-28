@@ -142,7 +142,7 @@ This step runs if there are changes in the working tree (from the session's work
 6. **Close the shipped work items** — every issue this ship completes ends closed with a pointer to the CHANGELOG entry. The `Fixes #N` trailer already closed it when its commit landed on the default branch; for anything left open, close it manually:
    `gh issue close <N> --comment "Shipped in <version-or-commit> — see CHANGELOG [Unreleased]/<section>."`
    Issues that are only PARTLY addressed stay open — comment the progress instead.
-   Release every claim this ship completes: remove `agent:working` from each closed issue (`gh issue edit <N> --remove-label agent:working`) — a trailer closes the issue but never releases the claim, and a label left on closed issues stops meaning anything.
+   Release every claim this ship completes: remove `status:building` and `agent:working` from each closed issue (`gh issue edit <N> --remove-label status:building,agent:working`) — a trailer closes the issue but never touches labels, the spec says the ship close is what ENDS `status:building`, and a label left on closed issues stops meaning anything.
 
 7. **Verify** — run `git status` to confirm the working tree is clean and `git log --oneline -2` shows the expected commits on the default branch.
 

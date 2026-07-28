@@ -38,8 +38,9 @@ const { collectCcNews, renderCcNews } = require('./cc-news');
 const INSTRUCTION = `You are producing the owner's MORNING KICKOFF from the brief payload below.
 
 The payload is the tower's daily brief as JSON. \`waiting\` is blocked on a
-decision from the owner, \`ready\` is specced and unclaimed, \`inFlight\` is specced and
-claimed, \`inbox\` is captured but not yet specced, and \`warnings\` is work sitting
+decision from the owner, \`ready\` is specced and unclaimed, \`inFlight\` is
+building (or the legacy shape, specced and claimed), \`inbox\` is captured but
+not yet specced, and \`warnings\` is work sitting
 on the table per repo (uncommitted, unpushed, unreleased). \`ok: false\` means the
 sweep itself failed — report that and its \`reason\`, never a quiet morning.
 
