@@ -90,6 +90,56 @@ const run = async () => {
     assertEq(code, 0, 'only directory segments match, not basenames');
   });
 
+  group('vendor-guard: dist/ and build/ anchored to package roots (#63)');
+
+  const fsp = require('fs');
+  // A monorepo fixture: repo root (git + package.json), a package with its own
+  // package.json, and a committed source tree whose path merely holds a build/.
+  const mkMonorepo = () => {
+    const dir = fsp.mkdtempSync(path.join(os.tmpdir(), 'vg-pkg-'));
+    fsp.mkdirSync(path.join(dir, '.git'), { recursive: true });
+    fsp.writeFileSync(path.join(dir, 'package.json'), '{}\n');
+    fsp.mkdirSync(path.join(dir, 'build'), { recursive: true });
+    fsp.mkdirSync(path.join(dir, 'packages', 'foo'), { recursive: true });
+    fsp.writeFileSync(path.join(dir, 'packages', 'foo', 'package.json'), '{}\n');
+    fsp.mkdirSync(path.join(dir, 'packages', 'foo', 'dist'), { recursive: true });
+    fsp.mkdirSync(path.join(dir, 'packages', 'foo', 'src', 'test', 'suites', 'build'), { recursive: true });
+    fsp.mkdirSync(path.join(dir, 'src', 'assets', 'build'), { recursive: true });
+    return dir;
+  };
+  const rmTree = (dir) => { try { fsp.rmSync(dir, { recursive: true, force: true }); } catch {} };
+
+  await test('src/test/suites/build/ is committed source — exit 0', () => {
+    const dir = mkMonorepo();
+    const p = path.join(dir, 'packages', 'foo', 'src', 'test', 'suites', 'build', 'x.test.js');
+    assertEq(runHook(p).code, 0, 'a build/ whose parent is not a package root is source');
+    rmTree(dir);
+  });
+
+  await test('build/ at the repo root still bounces — exit 2', () => {
+    const dir = mkMonorepo();
+    const { code, stderr } = runHook(path.join(dir, 'build', 'out.js'));
+    assertEq(code, 2, 'the repo root is a package root');
+    assert(stderr.includes('package root'), 'names the anchor');
+    rmTree(dir);
+  });
+
+  await test('packages/<pkg>/dist/ with a package.json present — exit 2', () => {
+    const dir = mkMonorepo();
+    assertEq(runHook(path.join(dir, 'packages', 'foo', 'dist', 'index.js')).code, 2, 'a package output dir blocks');
+    rmTree(dir);
+  });
+
+  await test('nested non-output build/ under a non-package dir — exit 0', () => {
+    const dir = mkMonorepo();
+    assertEq(runHook(path.join(dir, 'src', 'assets', 'build', 'tool.js')).code, 0, 'assets/build is not output');
+    rmTree(dir);
+  });
+
+  await test('unresolvable path with a dist/ segment stays blocked — exit 2 (default-deny)', () => {
+    assertEq(runHook('/nope/does-not-exist/dist/app.js').code, 2, 'what cannot be disproved stays blocked');
+  });
+
   group('vendor-guard: gitignored files');
 
   const fs = require('fs');

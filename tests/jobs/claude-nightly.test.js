@@ -1,5 +1,6 @@
 //
-// Tests for jobs/claude-nightly.sh — the runner behind the 3am agent.
+// Tests for jobs/claude-nightly.sh — the summaries step the 9am job runs first,
+// tested here on its own (claude-daily's suite covers the wiring).
 //
 // The runner is executed for real, with a fake `claude` on PATH recording the
 // argument vector it was given and a fake Notifly recording the notification.

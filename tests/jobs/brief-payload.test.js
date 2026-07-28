@@ -230,7 +230,7 @@ const run = async () => {
     // Past the instruction, which names the block it is explaining.
     assert(!/--- CC NEWS ---/.test(first.stdout.slice(INSTRUCTION.length)), 'the first morning does not dump the history');
     assertEq(
-      JSON.parse(fs.readFileSync(path.join(home, '.workkit', 'cc-news.json'), 'utf8')).version,
+      JSON.parse(fs.readFileSync(path.join(home, '.workkit', 'jobs', 'cc-news.json'), 'utf8')).version,
       '2.1.219',
       'it recorded the latest instead',
     );
@@ -249,7 +249,7 @@ const run = async () => {
     // there would mean the 9am job never reports it.
     const home = mkTmp();
     const env = { ...process.env, HOME: home, WORKKIT_CC_CHANGELOG: `file://${ccFixture(home)}` };
-    const markFile = path.join(home, '.workkit', 'cc-news.json');
+    const markFile = path.join(home, '.workkit', 'jobs', 'cc-news.json');
     spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
     fs.writeFileSync(ccFixture(home), `# Changelog\n\n## 2.1.220\n\n- Added a \`DirectoryAdded\` hook\n${CC_CHANGELOG}`);
 

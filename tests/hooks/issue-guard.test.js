@@ -33,6 +33,18 @@ fs.writeFileSync(path.join(CWD, '.env'), [
 const PLACEHOLDER = 'your-api-key-here-1234';
 fs.writeFileSync(path.join(CWD, '.env.example'), `API_SECRET=${PLACEHOLDER}\n`);
 
+// A git repo whose .env sits at the ROOT while the session stands in a
+// subdirectory — the case that made value matching go blind. Realpath'd so the
+// git toplevel and the cwd are the same string on macOS.
+const REPO = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'issue-guard-repo-')));
+spawnSync('git', ['init', '-q'], { cwd: REPO });
+const ROOT_SECRET = 'r00tSecretValue_7c1b';
+fs.writeFileSync(path.join(REPO, '.env'), `ROOT_TOKEN=${ROOT_SECRET}\n`);
+const SUB = path.join(REPO, 'packages', 'api');
+fs.mkdirSync(SUB, { recursive: true });
+const SUB_SECRET = 'subSecretValue_4d9e';
+fs.writeFileSync(path.join(SUB, '.env'), `SUB_TOKEN=${SUB_SECRET}\n`);
+
 const runHook = (command, cwd = CWD) => {
   const input = JSON.stringify({ tool_name: 'Bash', cwd, tool_input: { command } });
   const res = spawnSync('bash', [HOOK], {
@@ -123,6 +135,42 @@ const run = async () => {
       assertEq(code, 2, `must block: ${c}`);
       assert(stderr.includes('GitHub token-shaped'), 'names the kind');
     }
+  });
+
+  group('issue-guard: the repo root .env');
+
+  await test("a root .env value, from a subdirectory cwd — exit 2, names the KEY", () => {
+    const { code, stderr } = runHook(
+      `gh issue comment 12 --body "it failed with ${ROOT_SECRET}"`, SUB);
+    assertEq(code, 2, "the repo root's values are loaded from a subdirectory too");
+    assert(stderr.includes('ROOT_TOKEN'), 'names the key');
+    assert(!stderr.includes(ROOT_SECRET), 'never echoes the value');
+  });
+
+  await test("the subdirectory's own .env is still scanned — exit 2", () => {
+    const { code, stderr } = runHook(
+      `gh issue comment 12 --body "it failed with ${SUB_SECRET}"`, SUB);
+    assertEq(code, 2, 'the cwd scan is unchanged');
+    assert(stderr.includes('SUB_TOKEN'), 'names the key');
+  });
+
+  await test('standing AT the repo root — exit 2, the one scan still catches it', () => {
+    const { code, stderr } = runHook(
+      `gh issue comment 12 --body "it failed with ${ROOT_SECRET}"`, REPO);
+    assertEq(code, 2, 'toplevel == cwd is scanned once and still blocks');
+    assert(stderr.includes('ROOT_TOKEN'), 'names the key');
+  });
+
+  await test('clean text from a subdirectory — exit 0', () => {
+    const { code, stderr } = runHook('gh issue comment 12 --body "specced, building now"', SUB);
+    assertEq(code, 0, `the root scan adds no false block, got: ${stderr}`);
+  });
+
+  await test('a cwd in no repo at all — exit 0, the toplevel lookup never errors', () => {
+    const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'issue-guard-norepo-'));
+    const { code, stderr } = runHook('gh issue create --title "x" --body "plain text"', bare);
+    assertEq(code, 0, `no repo → just the cwd scan, got: ${stderr}`);
+    fs.rmSync(bare, { recursive: true, force: true });
   });
 
   group('issue-guard: allowed');
@@ -229,6 +277,7 @@ module.exports = async () => {
   await run();
   const result = summary();
   fs.rmSync(CWD, { recursive: true, force: true });
+  fs.rmSync(REPO, { recursive: true, force: true });
   return result;
 };
 

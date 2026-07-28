@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 //
-// The nightly payload — what the 3am job hands to Claude.
+// The nightly payload — what the summaries step hands to Claude.
 //
 // The day's two records, gathered without reading either: an INDEX of the
 // session transcripts that moved in the last 24 hours (path, size, mtime) and
@@ -10,7 +10,7 @@
 // has enough. The index is what makes "newest first" possible at all.
 //
 // The roster it walks is the same `discoverRepos` the morning brief uses, so
-// the two jobs agree about which repos are the owner's work.
+// the two halves of the daily job agree about which repos are the owner's work.
 //
 // Pure gather: no writes, no Claude, no notification. `claude-nightly.sh` owns
 // the sending AND owns writing the summary the model returns — this file never

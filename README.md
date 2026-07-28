@@ -111,7 +111,7 @@ A view over the system's own data, with two deliberate write paths: filing an is
 
 ### The daily brief (jobs/)
 
-The 9am morning notification. `jobs/brief-payload.js` assembles the same brief the tower serves — straight from the libraries, no server needed — and wraps it in the digest instruction; `jobs/claude-daily.sh` runs it through headless Claude on a capped budget and fires a desktop notification with the headline. `bash jobs/install.sh` renders the launchd plist and loads the schedule (macOS, re-run safe). Detail: [`jobs/README.md`](jobs/README.md).
+The 9am morning notification, and the one job on the clock. It writes up the day that just ended first — `jobs/claude-nightly.sh` has Claude read yesterday's sessions and commits and files the summary in HQ — and then the brief: `jobs/brief-payload.js` assembles the same brief the tower serves, straight from the libraries, no server needed, and wraps it in the digest instruction; `jobs/claude-daily.sh` runs both, sends the brief through headless Claude on a capped budget, and fires a desktop notification with the headline. `bash jobs/install.sh` renders the launchd plist and loads the schedule (macOS, re-run safe). Detail: [`jobs/README.md`](jobs/README.md).
 
 ### Engine — `workflow/`
 
@@ -130,7 +130,7 @@ agents/           the crew (namespaced workkit:<name>)
 skills/           the nine workflow skills (namespaced workkit:<name>)
 workflow/         the agent-agnostic engine
 tower/            mission control — api/ (the JSON API) + app/ (the OMEGA dashboard)
-jobs/             the 9am daily brief — payload builder, headless runner, launchd schedule
+jobs/             the 9am job — summaries then brief, payload builders, runners, launchd schedule
 docs/             project-state.md (the spec) · agents.md (the crew contract)
 tests/            npm test
 ```
@@ -140,4 +140,4 @@ tests/            npm test
 - [`docs/project-state.md`](docs/project-state.md) — the spec: labels, capture and triage, issue anatomy, queue semantics, `.workkit/`, plans, `_attic/`, HQ, the migration recipe
 - [`AGENTS.md`](AGENTS.md) — architecture overview for agent sessions
 - [`docs/agents.md`](docs/agents.md) · [`workflow/README.md`](workflow/README.md) — the crew contract and the engine reference
-- [`jobs/README.md`](jobs/README.md) — the daily brief job: payload, runner, schedule, install
+- [`jobs/README.md`](jobs/README.md) — the daily job: the summaries step, the brief, payloads, runners, schedule, install

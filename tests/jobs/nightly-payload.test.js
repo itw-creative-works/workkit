@@ -1,6 +1,6 @@
 //
-// Tests for jobs/nightly-payload.js — the day's record, as the 3am job hands it
-// to Claude.
+// Tests for jobs/nightly-payload.js — the day's record, as the summaries step
+// hands it to Claude.
 //
 // The transcript index runs against a fixture projects tree whose mtimes are set
 // by the suite, so "the last 24 hours" is a fact of the fixture and not of the

@@ -12,9 +12,10 @@
 # CONTENT of a --body-file path when it exists. Any other command exits fast.
 #
 # Two secret sources:
-#   1. Local .env values — every KEY=value in ./.env and ./.env.* whose value
-#      is ≥ 8 chars and not obviously non-secret, matched verbatim. The block
-#      names the KEY, never the value.
+#   1. Local .env values — every KEY=value in .env and .env.*, in the session's
+#      cwd AND in the repo root above it, whose value is ≥ 8 chars and not
+#      obviously non-secret, matched verbatim. The block names the KEY, never
+#      the value.
 #   2. Token shapes — the common key prefixes, and long high-entropy runs.
 #      The block names the KIND, never the match.
 # A 40-char lowercase-hex git sha is NOT high entropy by this test (mixed case
@@ -74,42 +75,56 @@ block() {
 # --- 1. Local .env values, matched verbatim. ---
 # The committed example/template variants are skipped: their values are public
 # placeholders by design, so scanning them only produces false blocks.
-for envfile in "$cwd"/.env "$cwd"/.env.*; do
-  [ -f "$envfile" ] || continue
-  case "$(basename "$envfile")" in
-    .env.example|.env.sample|.env.template|.env.defaults) continue ;;
-  esac
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-      ''|\#*) continue ;;
-      *=*) ;;
-      *) continue ;;
+scan_env_dir() {
+  local dir="$1" envfile line key val
+  for envfile in "$dir"/.env "$dir"/.env.*; do
+    [ -f "$envfile" ] || continue
+    case "$(basename "$envfile")" in
+      .env.example|.env.sample|.env.template|.env.defaults) continue ;;
     esac
-    key="${line%%=*}"
-    val="${line#*=}"
-    key="${key#export }"
-    key="$(printf '%s' "$key" | tr -d '[:space:]')"
-    [ -n "$key" ] || continue
-    val="${val#"${val%%[![:space:]]*}"}"
-    val="${val%"${val##*[![:space:]]}"}"
-    case "$val" in
-      \"*\") val="${val#\"}"; val="${val%\"}" ;;
-      \'*\') val="${val#\'}"; val="${val%\'}" ;;
-    esac
-    # Obviously non-secret values: too short to be a key, a boolean, a bare
-    # number or version, or a local URL carrying no credentials.
-    [ ${#val} -ge 8 ] || continue
-    case "$val" in
-      [Tt]rue|[Ff]alse|TRUE|FALSE) continue ;;
-      http://localhost*|https://localhost*|http://127.0.0.1*|https://127.0.0.1*)
-        case "$val" in *@*) ;; *) continue ;; esac ;;
-    esac
-    case "$val" in *[!0-9.]*) ;; *) continue ;; esac
-    case "$text" in
-      *"$val"*) block "the value of $key from a local .env file" ;;
-    esac
-  done < "$envfile"
-done
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        ''|\#*) continue ;;
+        *=*) ;;
+        *) continue ;;
+      esac
+      key="${line%%=*}"
+      val="${line#*=}"
+      key="${key#export }"
+      key="$(printf '%s' "$key" | tr -d '[:space:]')"
+      [ -n "$key" ] || continue
+      val="${val#"${val%%[![:space:]]*}"}"
+      val="${val%"${val##*[![:space:]]}"}"
+      case "$val" in
+        \"*\") val="${val#\"}"; val="${val%\"}" ;;
+        \'*\') val="${val#\'}"; val="${val%\'}" ;;
+      esac
+      # Obviously non-secret values: too short to be a key, a boolean, a bare
+      # number or version, or a local URL carrying no credentials.
+      [ ${#val} -ge 8 ] || continue
+      case "$val" in
+        [Tt]rue|[Ff]alse|TRUE|FALSE) continue ;;
+        http://localhost*|https://localhost*|http://127.0.0.1*|https://127.0.0.1*)
+          case "$val" in *@*) ;; *) continue ;; esac ;;
+      esac
+      case "$val" in *[!0-9.]*) ;; *) continue ;; esac
+      case "$text" in
+        *"$val"*) block "the value of $key from a local .env file" ;;
+      esac
+    done < "$envfile"
+  done
+}
+
+scan_env_dir "$cwd"
+
+# The repo root's .env too: a session standing in a subdirectory loads none of
+# the root's values from the cwd alone, and value matching goes blind there.
+# No repo — or a toplevel that IS the cwd — leaves the cwd scan as the whole of
+# it, never an error.
+toplevel=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)
+if [ -n "$toplevel" ] && [ "$toplevel" != "$cwd" ]; then
+  scan_env_dir "$toplevel"
+fi
 
 # --- 2. Token shapes. The KIND is named; the match is never echoed. ---
 match() { printf '%s' "$text" | grep -Eq -e "$1"; }

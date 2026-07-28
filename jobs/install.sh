@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Install this checkout's LaunchAgents — the 9am daily brief and the 3am nightly
-# summary. Renders each jobs/<label>.plist ({{WORKKIT_DIR}} / {{HOME}}) into
-# ~/Library/LaunchAgents/ and (re)loads it — only when something changed.
+# Install this checkout's LaunchAgent — the 9am daily job, which writes the
+# summaries and then the brief. Renders jobs/<label>.plist ({{WORKKIT_DIR}} /
+# {{HOME}}) into ~/Library/LaunchAgents/ and (re)loads it — only when something
+# changed — and removes the retired 3am agent if this machine still carries it.
 # Usage: bash jobs/install.sh
 #
 # Copied, never symlinked: launchd expands nothing (the plist needs absolute
@@ -57,5 +58,27 @@ install_agent() {
   printf '%s → installed and loaded (%s)\n' "$LABEL" "$WHEN"
 }
 
+# An agent this checkout no longer ships. The 3am summaries run inside the 9am
+# job now, so a machine installed before that has one agent too many: unload it
+# and remove its plist. Idempotent and silent when there is nothing to retire.
+# Usage: retire_agent <label>
+retire_agent() {
+  local LABEL="$1"
+  local TARGET="$HOME/Library/LaunchAgents/$LABEL.plist"
+  local RETIRED=0
+
+  if launchctl print "gui/$UID/$LABEL" >/dev/null 2>&1; then
+    launchctl bootout "gui/$UID/$LABEL" >/dev/null 2>&1 || true
+    RETIRED=1
+  fi
+  if [[ -f "$TARGET" ]]; then
+    rm -f "$TARGET"
+    RETIRED=1
+  fi
+
+  (( RETIRED == 1 )) && printf '%s → retired (unloaded and removed)\n' "$LABEL"
+  return 0
+}
+
 install_agent 'com.workkit.claude-daily' '9:00 AM daily'
-install_agent 'com.workkit.claude-nightly' '3:00 AM daily'
+retire_agent 'com.workkit.claude-nightly'

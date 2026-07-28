@@ -1,5 +1,5 @@
 #!/bin/bash
-# safety/inbox-guard — PreToolUse hook (Read|Bash)
+# safety/inbox-guard — PreToolUse hook (Read|Grep|Bash)
 # `.workkit/inbox.md` is the owner's scratchpad: its CONTENTS are read during a
 # TRIAGE RUN and at no other time. Counting the entries, appending to it, and
 # seeing that it is non-empty all stay free — this guard blocks only the reads
@@ -15,6 +15,10 @@
 #
 # Scope:
 #   Read — .tool_input.file_path ending in .workkit/inbox.md
+#   Grep — .tool_input.path pointing AT that file or the directory holding it
+#          (when the inbox exists there and any glob can name it), or a
+#          .tool_input.glob naming the inbox. A broad repo-wide
+#          search stays open.
 #   Bash — .tool_input.command naming that path AND running a content-reading
 #          command (cat, head, tail, less, more, grep, sed, awk, bat). An
 #          append (`wk.sh note`, `>>`) or a count (`wc -l`) is not one.
@@ -37,6 +41,8 @@ cwd=$(jq -r '.cwd // ""' <<<"$input" || true)
 # hook_file_mtime, and the directory name's SSOT is WORKKIT_DIR there — change
 # both together.
 INBOX_SUFFIX=".workkit/inbox.md"
+INBOX_DIR="${INBOX_SUFFIX%/*}"
+INBOX_FILE="${INBOX_SUFFIX##*/}"
 MARKER_MAX_AGE=1800   # 30 minutes
 
 # The inbox this call names, as the hook finds it in the payload.
@@ -69,6 +75,36 @@ case "$tool" in
       | grep -Eo "[^[:space:]\"']*${INBOX_SUFFIX//./\\.}" | head -n 1 || true)
     [ -n "$inbox_path" ] || inbox_path="$cwd/$INBOX_SUFFIX"
     ;;
+  Grep)
+    grep_path=$(jq -r '.tool_input.path // ""' <<<"$input" || true)
+    grep_glob=$(jq -r '.tool_input.glob // ""' <<<"$input" || true)
+    # Only a search pointed AT the inbox is gated — the path names the file or
+    # the directory holding it, or the glob names the inbox. A repo-wide
+    # search whose results might happen to include the inbox stays open: this
+    # guard never blocks the searching of a whole repo. Every Grep carries a
+    # pattern, so unlike `wc -l` no mode of it is a mere count.
+    while [ "${grep_path%/}" != "$grep_path" ]; do grep_path="${grep_path%/}"; done
+    case "$grep_path" in
+      "$INBOX_SUFFIX"|*/"$INBOX_SUFFIX") inbox_path="$grep_path" ;;
+      "$INBOX_DIR"|*/"$INBOX_DIR")
+        # A glob that cannot name the inbox narrows the search away from it —
+        # a .workkit/ Grep for session.md or findings.md is ordinary session
+        # work and stays open.
+        case "$grep_glob" in
+          ''|*inbox*) ;;
+          *) exit 0 ;;
+        esac
+        inbox_path="$grep_path/$INBOX_FILE"
+        grep_dir_probe=1
+        ;;
+      *)
+        case "$grep_glob" in
+          *inbox*) inbox_path="${grep_path:-$cwd}/$INBOX_SUFFIX" ;;
+          *) exit 0 ;;
+        esac
+        ;;
+    esac
+    ;;
   *) exit 0 ;;
 esac
 
@@ -81,6 +117,12 @@ case "$inbox_path" in
   /*) ;;
   *) inbox_path="$cwd/$inbox_path" ;;
 esac
+
+# A directory-pointed Grep can only reach the inbox if the file is actually
+# there — an absent inbox has no contents to protect.
+if [ "${grep_dir_probe:-0}" = 1 ] && [ ! -f "$inbox_path" ]; then
+  exit 0
+fi
 
 # What the marker is keyed to: the inbox's own repo root, or — outside a repo —
 # the .workkit directory's own parent, which for ~/.workkit/inbox.md is $HOME.

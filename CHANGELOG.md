@@ -7,6 +7,16 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#68](../../issues/68) — One daily cron instead of two: the 9am job now writes the nightly summaries first and then composes the brief, so the morning reads a record that already includes the day behind it; a summaries failure is logged and the brief still goes, and `jobs/install.sh` retires the old 3am agent.
+- [#67](../../issues/67) — Job state now lives under one directory, `~/.workkit/jobs/`, so the upstream-news mark no longer sits loose beside `settings.json`; a mark at the old path moves itself on the next run.
+
+### Fixed
+
+- [#59](../../issues/59) — The `safety:issue-guard` hook now loads `.env` values from the repo root as well as the session's cwd, so a session in a subdirectory still matches them, and `safety:inbox-guard` now gates a Grep pointed at `.workkit/inbox.md`, leaving repo-wide searches open.
+- [#63](../../issues/63) — The `safety:vendor-guard` hook now treats `dist/` and `build/` as output only when they sit directly under a package root (the repo root or a directory holding a `package.json`), so a committed source tree like `src/test/suites/build/` is editable again while a package's real output still bounces.
+
 ## [0.8.0] - 2026-07-28
 
 ### Added

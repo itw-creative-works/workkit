@@ -1,7 +1,8 @@
 #!/bin/bash
 # safety/vendor-guard — PreToolUse hook (Edit|Write)
 # Blocks edits to generated/vendor/installed files BEFORE they happen:
-#   - vendor/build dir segments: node_modules/, dist/, build/, vendor/, .bundle/
+#   - vendor dir segments anywhere: node_modules/, vendor/, .bundle/
+#   - dist/ and build/ only DIRECTLY under a package root (see check_output_dir)
 #   - package-manager lockfiles (owned by their tools, never hand-edited)
 #   - gitignored files (git check-ignore) — generated/runtime files aren't hand-edited
 # Mechanical half of the AGENTS.md "edit the SOURCE, not the output" rule.
@@ -40,10 +41,45 @@ block() {
   exit 2
 }
 
+# A package root is the repo root or any directory holding a package.json; a
+# dist/ or build/ sitting DIRECTLY under one is that package's output. Deeper in
+# a source tree the name means nothing (…/src/test/suites/build/ is committed
+# source, 2026-07-28), so only the anchored case blocks. A path whose parent
+# does not exist can't be disproved and stays blocked — default-deny.
+is_package_root() {
+  local dir="${1:-/}"
+  [ -d "$dir" ] || return 0
+  [ -f "$dir/package.json" ] && return 0
+  [ -e "$dir/.git" ] && return 0
+  return 1
+}
+
+check_output_dir() {
+  local prefix rest seg
+  case "$1" in
+    /*) prefix=""; rest="${1#/}" ;;
+    *)  prefix="."; rest="$1" ;;
+  esac
+  while [ -n "$rest" ]; do
+    seg="${rest%%/*}"
+    [ "$seg" = "$rest" ] && break   # last component is the basename, not a directory
+    rest="${rest#*/}"
+    case "$seg" in
+      dist|build) is_package_root "$prefix" && return 0 ;;
+    esac
+    prefix="$prefix/$seg"
+  done
+  return 1
+}
+
 case "$file_path" in
   */node_modules/*|node_modules/*) block "node_modules/ is installed output." ;;
-  */dist/*|dist/*|*/build/*|build/*|*/vendor/*|vendor/*|*/.bundle/*|.bundle/*) block "generated/vendored directory." ;;
+  */vendor/*|vendor/*|*/.bundle/*|.bundle/*) block "generated/vendored directory." ;;
 esac
+
+if check_output_dir "$file_path"; then
+  block "a dist/ or build/ directly under a package root is generated output."
+fi
 
 case "$(basename "$file_path")" in
   package-lock.json|yarn.lock|pnpm-lock.yaml|bun.lock|bun.lockb|Gemfile.lock|Podfile.lock|composer.lock)

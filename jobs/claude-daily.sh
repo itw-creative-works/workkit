@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Daily Claude job — sends a message to Claude Code headless, logs the exchange,
-# and fires a desktop notification with the response.
+# Daily Claude job — the one cron this kit runs. It writes up the day that just
+# ended (claude-nightly.sh), then sends the morning brief to Claude Code
+# headless, logs the exchange, and fires a desktop notification with the response.
 # Runs standalone or via launchd (sets its own PATH — launchd provides a bare env).
 # Usage: claude-daily.sh [--now | message]   (defaults to the brief-payload payload;
 #        --now is the on-demand brief, `npm run brief` — same pipeline, marked manual)
@@ -52,6 +53,40 @@ if [[ "${1:-}" == "--now" ]]; then
   shift
 fi
 LOG_STAMP="${LOG_STAMP:-$TIMESTAMP}"
+
+# The summaries step, and it goes FIRST: yesterday is written up before the
+# brief is composed, so the morning reads a record that already includes the day
+# behind it. claude-nightly.sh stays the one home of that logic — its own guards
+# (a day already written up is skipped, a quiet day sends nothing) and its own
+# log; calling it is all the wiring there is. It runs only when this is the
+# brief: `claude-daily.sh <message>` is still the generic headless runner.
+#
+# A summaries failure is NOT the brief's failure. It is logged here and the
+# morning carries on — the job exists to make sure nine o'clock says something.
+# A HANG is that same failure with no exit status, so the step is bounded: 15
+# minutes, after which timeout's 124 flows down the log-and-continue path like
+# any other. `timeout` is homebrew coreutils on macOS and may be absent, so an
+# empty array is the no-bound case — expanded the bash 3.2 way, since a bare
+# "${TIMEOUT[@]}" is an unbound variable there under `set -u`.
+# The `if` is load-bearing too: under `set -e` a bare `command -v … && …` whose
+# left side fails IS the statement's status, and the job would exit right here
+# on a machine without it.
+TIMEOUT=()
+if command -v timeout >/dev/null; then
+  TIMEOUT=(timeout 900)
+fi
+
+if (( $# == 0 )); then
+  SUMMARY_STATUS=0
+  SUMMARY_OUTPUT="$(${TIMEOUT[@]+"${TIMEOUT[@]}"} bash "$SCRIPT_DIR/claude-nightly.sh" 2>&1)" || SUMMARY_STATUS=$?
+  if (( SUMMARY_STATUS != 0 )); then
+    {
+      printf '── %s ──\n' "$LOG_STAMP"
+      printf '[summaries exit %d — the brief continues]\n' "$SUMMARY_STATUS"
+      printf '%s\n\n' "$SUMMARY_OUTPUT"
+    } >> "$LOG_FILE"
+  fi
+fi
 
 # Default payload: the morning brief built from the tower's own libs
 # (jobs/brief-payload.js). Any argument overrides it — claude-daily.sh stays a

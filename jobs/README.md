@@ -1,8 +1,10 @@
 # The jobs
 
-Scheduled work the kit runs on this machine. Two jobs, a day apart and pointing opposite ways: the **9am daily brief** reads the same payload the tower's Brief page draws and hands it to Claude for a plain-language digest, arriving as a desktop notification; the **3am nightly summary** reflects on the day that just ended and writes it up in HQ.
+Scheduled work the kit runs on this machine. **One job, at 9am, in two steps pointing opposite ways.** The **summaries step** goes first: it reflects on the day that just ended and writes it up in HQ. Then the **brief** reads the same payload the tower's Brief page draws and hands it to Claude for a plain-language digest, arriving as a desktop notification.
 
-They live here rather than in a machine's own configuration because both are kit knowledge — the roster, the board, the health, and `buildBrief` are all in this repo, and each job is one more reader of them.
+That order is the whole reason there is one cron and not two: the morning reads a record that already includes the day behind it. The window is a rolling 24 hours either way, so the reflection covers the same span — only its phase moves.
+
+It lives here rather than in a machine's own configuration because it is kit knowledge — the roster, the board, the health, and `buildBrief` are all in this repo, and each step is one more reader of them.
 
 ## Install
 
@@ -10,7 +12,9 @@ They live here rather than in a machine's own configuration because both are kit
 bash jobs/install.sh
 ```
 
-Renders both plists for THIS checkout into `~/Library/LaunchAgents/` and loads them. Idempotent: a second run with an unchanged plist confirms that agent is loaded and does nothing else, and one agent changing never churns the other. Re-run it after moving the checkout — the plists carry absolute paths, because launchd expands nothing.
+Renders the plist for THIS checkout into `~/Library/LaunchAgents/` and loads it. Idempotent: a second run with an unchanged plist confirms the agent is loaded and does nothing else. Re-run it after moving the checkout — the plist carries absolute paths, because launchd expands nothing.
+
+It also retires the agent this kit used to ship, `com.workkit.claude-nightly`: a machine still carrying the old 3am agent has it unloaded and its plist removed, or the summaries would run twice a day. Silent on a machine that never had it.
 
 ## The pieces
 
@@ -18,12 +22,15 @@ Renders both plists for THIS checkout into `~/Library/LaunchAgents/` and loads t
 |---|---|
 | `brief-payload.js` | the morning payload, on stdout: the digest instruction, then the brief as JSON, then the upstream news. Pure gather — no Claude, no notification |
 | `cc-news.js` | every upstream Claude Code CHANGELOG entry since the last brief, organized by topic, and the small mark file that remembers where it counted from |
-| `claude-daily.sh` | the morning runner: sends the payload headless, appends the exchange to `~/Library/Logs/claude-daily.log`, notifies |
-| `nightly-payload.js` | the night's payload: the reflection instruction, then the day's transcript INDEX and commits as JSON. Pure gather |
-| `claude-nightly.sh` | the night runner: sends the payload, writes the returned summary into HQ, rolls the week up on a Sunday and the month on the 1st, logs to `~/Library/Logs/claude-nightly.log`, notifies |
+| `claude-daily.sh` | the entry point: runs the summaries step, then sends the payload headless, appends the exchange to `~/Library/Logs/claude-daily.log`, notifies |
+| `nightly-payload.js` | the summaries payload: the reflection instruction, then the day's transcript INDEX and commits as JSON. Pure gather |
+| `claude-nightly.sh` | the summaries step, no agent of its own: sends the payload, writes the returned summary into HQ, rolls the week up on a Sunday and the month on the 1st, logs to `~/Library/Logs/claude-nightly.log`, notifies |
 | `com.workkit.claude-daily.plist` | the schedule — 9:00 AM daily, `{{WORKKIT_DIR}}` and `{{HOME}}` rendered at install |
-| `com.workkit.claude-nightly.plist` | the same, at 3:00 AM |
-| `install.sh` | render, compare, and only on change copy and reload — per agent |
+| `install.sh` | render, compare, and only on change copy and reload — plus the retirement of the old 3am agent |
+
+## Where the output goes
+
+**A job never writes into the checkout.** What runs here is machine state, not repo content: it belongs to the machine that ran it, so a clone is never dirtied and a second checkout never disagrees with the first. Three homes, and no fourth — state under `~/.workkit/jobs/` (the news mark today, whatever a later job needs to remember), logs under `~/Library/Logs/`, and the summaries in HQ. The payload scripts write nothing at all; they print.
 
 ## The payload
 
@@ -35,11 +42,13 @@ A sweep that failed prints as a failure (`ok: false` and its reason) and the dig
 
 Claude Code releases most days and its CHANGELOG is the only announcement, so `cc-news.js` reads that file — the raw one on the default branch, no token and no rate limit — and appends a `--- CC NEWS ---` block after the payload carrying every entry since the last brief, grouped by topic (the kit's own surfaces — hooks, agents, skills, plugins, settings, MCP, the statusline — then `other`). The job never judges which entries matter; the digest model does, with the board in view: a feature the kit could use, a change that breaks something it built, an improvement worth adopting. Finding out weeks late that a hook no longer matches the tool it hooks is the failure it exists to prevent.
 
-Where it counted from is one file the module owns, `~/.workkit/cc-news.json`, and it advances only once the payload has printed — a morning that died repeats its news rather than losing it. A first run records the latest version and reports nothing: with no mark the honest "since" is the whole history, which would bury the brief. Every failure is silent (no network, a non-200, a body that is not a changelog): no block, the mark untouched, the brief still prints. `WORKKIT_CC_CHANGELOG` overrides the source — a seam for the suite, which points it at a file on disk.
+Where it counted from is one file the module owns, `~/.workkit/jobs/cc-news.json`, and it advances only once the payload has printed — a morning that died repeats its news rather than losing it. A first run records the latest version and reports nothing: with no mark the honest "since" is the whole history, which would bury the brief. Every failure is silent (no network, a non-200, a body that is not a changelog): no block, the mark untouched, the brief still prints. `WORKKIT_CC_CHANGELOG` overrides the source — a seam for the suite, which points it at a file on disk.
 
 ## The runner
 
-`claude-daily.sh [message]` is a generic headless runner — an argument replaces the payload, which is how you test a prompt without waiting for tomorrow. It is hardened for launchd, where the environment is bare and the job is its own TCC identity:
+`claude-daily.sh` is the entry point the agent runs, and it does the summaries step first: it calls `claude-nightly.sh`, waits for it, and only then composes the brief. That step keeps its own script, its own guards, and its own log — calling it is all the wiring there is, so neither half of the logic lives in two places. **A summaries failure is never the brief's failure**: the exit status and output are logged as `[summaries exit N — the brief continues]` and the morning carries on, because making sure nine o'clock says something is what the job is for. A hang is that failure without an exit status, so the step is bounded at 15 minutes where `timeout` exists (homebrew coreutils, absent on a stock macOS) — its 124 reads as any other failure.
+
+`claude-daily.sh [message]` is otherwise a generic headless runner — an argument replaces the payload, which is how you test a prompt without waiting for tomorrow, and it skips the summaries step for the same reason. It is hardened for launchd, where the environment is bare and the job is its own TCC identity:
 
 - **PATH is set by the script.** launchd provides almost none; node comes from `~/.nvm/default-bin`, which survives Node upgrades.
 - **The cwd is an empty scratch directory** under `~/Library/Caches/claude-daily`. launchd starts a job at `/`, and Claude Code's startup scan from there trips macOS privacy prompts. An empty directory gives it nothing to scan.
@@ -50,18 +59,18 @@ Where it counted from is one file the module owns, `~/.workkit/cc-news.json`, an
 
 `NOTIFLY` overrides the notifier's path — a seam for the suite, so running the tests never puts a notification on screen.
 
-## The nightly summary
+## The summaries step
 
-At 3:00 AM `claude-nightly.sh` writes up the day that just ended, into `<HQ>/summaries/daily/YYYY-MM-DD.md` — HQ being `~/Developer/Repositories/Ian-Wiedenman/hq` unless `WORKKIT_HQ` says otherwise. HQ is a plain directory to this job: it writes a file and runs no git.
+`claude-nightly.sh` writes up the day that just ended, into `<HQ>/summaries/daily/YYYY-MM-DD.md` — HQ being `~/Developer/Repositories/Ian-Wiedenman/hq` unless `WORKKIT_HQ` says otherwise. HQ is a plain directory to this job: it writes a file and runs no git. It has no agent of its own; the 9am job runs it, and it keeps its own log at `~/Library/Logs/claude-nightly.log` — one job, two logs, because the reflection and the digest are two different stories to read back.
 
 `nightly-payload.js` gathers the day's two records without reading either. The transcripts are an INDEX — every `.jsonl` under `~/.claude/projects/` that moved in the last 24 hours, newest first, with its size and mtime, and no contents; a day of sessions is far past any budget, so the send carries `Read,Grep,Glob` and `--add-dir` and the model samples them itself, skipping anything over 10 MB and stopping when its reading budget feels spent. The other half is what landed: `git log --since="24 hours ago"` across the same roster the morning brief walks. `WORKKIT_CLAUDE_PROJECTS` overrides the transcripts root — a seam for the suite.
 
 The response IS the document: four sections (`## Went well`, `## Went poorly`, `## Improvements`, `## Facts learned`), written to disk by the script rather than by the session, which is why the send can read everything and write nothing. **Observational only** — each improvement is phrased as a candidate issue and nothing is filed; triage stays the one writer.
 
-Two guards on what gets written. A day with no sessions and no commits is a **quiet day**: nothing is sent, nothing is filed, nothing interrupts you, and the log says so. A date that **already has a summary** skips the send before anything is composed — the document someone may have already read is never replaced behind their back. `claude-nightly.sh --now` (or `npm run nightly`) is the exception and the manual trigger: same pipeline, log block stamped `(manual)`, and it does replace today's draft. The notification is the summary's first line that is neither blank nor a heading, or the date it filed when the document has no prose line at all. A send that succeeded but could not be written to HQ is reported like any other failure — the send is already paid for by then.
+Two guards on what gets written. A day with no sessions and no commits is a **quiet day**: nothing is sent, nothing is filed, nothing interrupts you, and the log says so. A date that **already has a summary** skips the send before anything is composed — the document someone may have already read is never replaced behind their back. `claude-nightly.sh --now` (or `npm run nightly`) is the exception and the manual trigger: same pipeline, log block stamped `(manual)`, and it does replace today's draft. The notification is the summary's first line that is neither blank nor a heading, or the date it filed when the document has no prose line at all. A send that succeeded but could not be written to HQ is reported like any other failure — the send is already paid for by then. The 9am job always calls it WITHOUT `--now`, which is what makes `npm run brief` at noon cheap: the day is already written up, so the step skips and only the brief is sent.
 
 Rollups ride on the same run, from the summaries already on disk — small enough to inline, so those sends carry no tools at all. A **Sunday** rolls the last seven daily files into `summaries/weekly/YYYY-Www.md`; the **1st of the month** rolls every ISO week the previous month touched into `summaries/monthly/YYYY-MM.md`. Missing inputs skip the rollup with a log line, never an error. Neither guard above stops them: a week closes on its Sunday or not at all, since the next Sunday computes a different ISO week, so a quiet Sunday still rolls up whatever days did happen. `WORKKIT_NIGHTLY_DATE` overrides the date the whole run hangs off — the seam that lets the suite be a Sunday.
 
 ## Tests
 
-`tests/jobs/` runs all six against fixtures: a scratch Repositories root for the payloads, a fixture CHANGELOG and a scratch `~/.workkit` for the news, a fixture projects tree with fixture mtimes for the transcript index, a fake `claude` and notifier plus a scratch `HOME` and `WORKKIT_HQ` for the runners, and a recording `launchctl` for the installer. Nothing in the suite reaches the network, files an issue, loads an agent, writes into the real HQ, or writes outside its temp directory.
+`tests/jobs/` runs all six against fixtures: a scratch Repositories root for the payloads, a fixture CHANGELOG and a scratch `~/.workkit` for the news, a fixture projects tree with fixture mtimes for the transcript index, a fake `claude` and notifier plus a scratch `HOME` and `WORKKIT_HQ` for the runners — the entry point's suite hands those same seams to the summaries step it calls — and a recording `launchctl` for the installer. Nothing in the suite reaches the network, files an issue, loads an agent, writes into the real HQ, or writes outside its temp directory.

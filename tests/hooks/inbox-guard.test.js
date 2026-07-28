@@ -69,6 +69,7 @@ const runHook = (payload, env = {}) => {
 
 const read = (file) => runHook({ tool_name: 'Read', tool_input: { file_path: file } });
 const bash = (command) => runHook({ tool_name: 'Bash', tool_input: { command } });
+const grep = (tool_input) => runHook({ tool_name: 'Grep', tool_input });
 
 const run = async () => {
   group('inbox-guard: the Read path');
@@ -157,6 +158,88 @@ const run = async () => {
     assertEq(bash(`cat ${W}/session.md`).code, 0, 'only the inbox is gated');
   });
 
+  group('inbox-guard: the Grep path');
+
+  await test('a Grep whose path IS the inbox — exit 2', () => {
+    clearMarker();
+    for (const input of [
+      { pattern: 'salary', path: INBOX, output_mode: 'content' },
+      { pattern: 'salary', path: `${W}/inbox.md` },
+      { pattern: 'salary', path: INBOX, output_mode: 'files_with_matches' },
+    ]) {
+      const { code, stderr } = grep(input);
+      assertEq(code, 2, `must block: ${JSON.stringify(input)}`);
+      assert(stderr.includes('inbox-guard'), 'names itself');
+    }
+  });
+
+  await test('a Grep whose path is the .workkit directory — exit 2', () => {
+    clearMarker();
+    for (const p of [path.join(REPO, W), W]) {
+      assertEq(grep({ pattern: 'salary', path: p }).code, 2, `must block: ${p}`);
+    }
+  });
+
+  await test('a glob spelling the inbox out — exit 2', () => {
+    clearMarker();
+    assertEq(grep({ pattern: 'salary', path: REPO, glob: '**/inbox.md' }).code, 2,
+      'the glob names the file, so the search is pointed at it');
+  });
+
+  await test('a fresh marker opens the Grep path too — exit 0', () => {
+    touchMarker();
+    const { code, stderr } = grep({ pattern: 'salary', path: INBOX, output_mode: 'content' });
+    assertEq(code, 0, `a triage run reads freely, got: ${stderr}`);
+  });
+
+  await test('a broad repo-wide Grep — exit 0', () => {
+    clearMarker();
+    for (const input of [
+      { pattern: 'salary', path: REPO, output_mode: 'content' },
+      { pattern: 'salary' },
+      { pattern: 'salary', path: REPO, glob: '**/*.md' },
+      { pattern: 'salary', path: path.join(REPO, 'docs') },
+    ]) {
+      const { code, stderr } = grep(input);
+      assertEq(code, 0, `a whole-repo search must never block: ${JSON.stringify(input)}, got: ${stderr}`);
+    }
+  });
+
+  await test('a .workkit Grep narrowed away from the inbox by its glob — exit 0', () => {
+    clearMarker();
+    for (const input of [
+      { pattern: 'salary', path: path.join(REPO, W), glob: 'session.md' },
+      { pattern: 'salary', path: path.join(REPO, W), glob: '*.json' },
+    ]) {
+      const { code, stderr } = grep(input);
+      assertEq(code, 0, `the glob cannot name the inbox: ${JSON.stringify(input)}, got: ${stderr}`);
+    }
+  });
+
+  await test('a glob merely mentioning inbox is still pointed at it — exit 2', () => {
+    clearMarker();
+    assertEq(grep({ pattern: 'salary', path: REPO, glob: '*inbox*' }).code, 2,
+      'the glob names the inbox, however it spells it');
+  });
+
+  await test('a trailing slash does not slip the Grep gate — exit 2', () => {
+    clearMarker();
+    for (const p of [`${path.join(REPO, W)}/`, `${INBOX}/`]) {
+      assertEq(grep({ pattern: 'salary', path: p }).code, 2, `must block: ${p}`);
+    }
+  });
+
+  await test('a .workkit Grep where no inbox exists — exit 0', () => {
+    clearMarker();
+    const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'inbox-guard-bare-'));
+    spawnSync('git', ['init', '-q'], { cwd: bare });
+    fs.mkdirSync(path.join(bare, W), { recursive: true });
+    fs.writeFileSync(path.join(bare, W, 'session.md'), '# Session\n');
+    const { code, stderr } = grep({ pattern: 'salary', path: path.join(bare, W) });
+    assertEq(code, 0, `an absent inbox has nothing to protect, got: ${stderr}`);
+    fs.rmSync(bare, { recursive: true, force: true });
+  });
+
   group('inbox-guard: the user-level inbox');
 
   // ~/.workkit/inbox.md is where wk.sh writes outside a repo, and $HOME is not
@@ -217,11 +300,12 @@ const run = async () => {
 
   group('inbox-guard: wiring and fail-open');
 
-  await test('hooks.json registers the guard on PreToolUse Read and Bash', () => {
+  await test('hooks.json registers the guard on PreToolUse Read, Grep and Bash', () => {
     const wiring = JSON.parse(fs.readFileSync(
       path.join(__dirname, '..', '..', 'hooks', 'hooks.json'), 'utf8'));
-    for (const matcher of ['Read', 'Bash']) {
-      const block = (wiring.hooks.PreToolUse || []).find((b) => b.matcher === matcher);
+    for (const matcher of ['Read', 'Grep', 'Bash']) {
+      const block = (wiring.hooks.PreToolUse || [])
+        .find((b) => (b.matcher || '').split('|').includes(matcher));
       assert(block, `a PreToolUse ${matcher} block exists`);
       assert(block.hooks.some((h) => h.command.includes('safety:inbox-guard')),
         `the ${matcher} block routes safety:inbox-guard through the loader`);

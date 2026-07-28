@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Nightly Claude job — reflects on the day that just ended and writes the daily
+# The summaries step — reflects on the day that just ended and writes the daily
 # summary into HQ, plus the weekly rollup on a Sunday and the monthly on the 1st.
-# Runs standalone or via launchd (sets its own PATH — launchd provides a bare env).
+# No agent of its own: claude-daily.sh runs it first thing, and a human runs it
+# directly. Sets its own PATH — under launchd the environment is bare.
 # Usage: claude-nightly.sh [--now]   (--now is the manual rerun, `npm run nightly`
 #        — same pipeline, marked manual, and it replaces today's summary)
 # Log: ~/Library/Logs/claude-nightly.log — appended, one timestamped block per run.
