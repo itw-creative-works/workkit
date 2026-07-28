@@ -7,6 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#18](../../issues/18) — Two warn-only manager hooks: `manager:spawn-guard` flags a crew spawn carrying a hand-passed model and an advisor spawn from a frontier session; `manager:close-guard` flags a frontier session that did the bulk editing itself and worker output that ended the turn unreviewed. Neither blocks.
+- [#37](../../issues/37) — The 9am brief carries upstream Claude Code news: `jobs/cc-news.js` reads the raw CHANGELOG and appends every entry newer than the last brief as a topic-grouped `CC NEWS` block; the digest judges what could break or improve the kit. A network failure skips silently.
+
 ### Changed
 
 - [#45](../../issues/45) — The tower drops its local copies of four pieces OMEGA now ships: the markdown renderer and the refresh-in-place primitives come from `@omega.js/client`, the chart helpers from the web core layer, and the tone badges, the interactive affordance and the crew org chart's connectors from the framework's stylesheets.

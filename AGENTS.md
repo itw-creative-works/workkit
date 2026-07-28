@@ -49,6 +49,7 @@ Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh`
 | `docs/state-check` | SessionStart | Announces open `status:inbox` issues, a non-empty `.workkit/inbox.md`, broken pointer files, an oversized AGENTS.md |
 | `workflow/reload-guard` | SessionStart + UserPromptSubmit | Stamps the load-time surfaces (`hooks.json` content, the `agents/` and `skills/` file list and mtimes) at session start and injects one line when they change — hook-script, skill-body, and engine edits are already live, so only these need `/reload-plugins`. Each change nags once |
 | `manager/resolver` | PreToolUse (Task/Agent) | Supplies each crew spawn's model from `manager/ladder.json` and the live session model |
+| `manager/spawn-guard` | PreToolUse (Task/Agent) | Warns — never blocks — when a crew spawn carries a hand-passed `model` param, or when a frontier session spawns the advisor |
 | `manager/profile` | UserPromptSubmit | Injects the manager standing instruction — delegate to the crew — in frontier/workhorse sessions only |
 | `safety/vendor-guard` | PreToolUse (Edit/Write) | Blocks edits to generated, vendored, and gitignored files (`_attic/`, `.workkit/`, `.env*` excepted) |
 | `safety/commit-gate` | PreToolUse (Bash) | Blocks `git commit` unless tests pass, new source files come with test files, code carries a fresh review marker, any added CHANGELOG entry matches the format, and a commit closing an issue (`Fixes #N`) stages the entry it closes against |
@@ -56,6 +57,7 @@ Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh`
 | `docs/board-guard` | PostToolUse (Edit/Write) | Bounces `CLAUDE.md` / `AGENTS.md` writes that break the spec's document rules |
 | `docs/changelog-guard` | PostToolUse (Edit/Write) | Bounces a CHANGELOG entry that is an essay instead of one short linked paragraph — only entries the write ADDED |
 | `docs/change-tracker` | Stop | Nags about uncommitted work, keeping the issue true, promoting findings out of `.workkit/`, and unfiled inbox notes |
+| `manager/close-guard` | Stop | Warns — never continues the turn — when a frontier session did the bulk editing itself, or when worker output ended the turn with no verifier pass |
 
 ## Agents
 
@@ -89,7 +91,7 @@ Mission control, in two processes. `tower/api/` is a plain-Node JSON API with ze
 
 ## The jobs (`jobs/`)
 
-Scheduled work this machine runs. One job: the 9am daily brief. `brief-payload.js` composes the tower's `/api/brief` WITHOUT the tower — the same roster, board, health and `buildBrief` under `tower/api/lib/` — and prints the digest instruction plus that payload; `claude-daily.sh` sends it headless (haiku, no tools, a hard budget), logs the exchange, and puts the response's first line in a desktop notification. `install.sh` renders `com.workkit.claude-daily.plist` for this checkout and loads it, only when something changed. Reference: `jobs/README.md`.
+Scheduled work this machine runs. One job: the 9am daily brief. `brief-payload.js` composes the tower's `/api/brief` WITHOUT the tower — the same roster, board, health and `buildBrief` under `tower/api/lib/` — and prints the digest instruction plus that payload, with `cc-news.js` appending the upstream Claude Code CHANGELOG entries that touch the harness since the last brief; `claude-daily.sh` sends it headless (haiku, no tools, a hard budget), logs the exchange, and puts the response's first line in a desktop notification. `install.sh` renders `com.workkit.claude-daily.plist` for this checkout and loads it, only when something changed. Reference: `jobs/README.md`.
 
 ## Tests
 

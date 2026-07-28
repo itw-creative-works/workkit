@@ -67,6 +67,9 @@ const mkWorld = ({ response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n
       HOME: home,
       NOTIFLY: notifly,
       PATH: `${bin}:${process.env.PATH}`,
+      // The payload's upstream-news read stays off the network: an empty
+      // curl-readable source is the module's silent-skip path.
+      WORKKIT_CC_CHANGELOG: 'file:///dev/null',
     },
   };
 };

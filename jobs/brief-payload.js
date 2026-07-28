@@ -17,7 +17,8 @@
 // the first when the second happened is worse than no brief at all.
 //
 // Pure gather: no writes, no Claude, no notification. `claude-daily.sh` owns the
-// sending.
+// sending. The one exception is `cc-news.js`, which owns a mark file of its own
+// and only moves it once the payload has printed.
 //
 // Usage:
 //   node jobs/brief-payload.js          // the payload on stdout
@@ -28,6 +29,7 @@ const { discoverRepos } = require('../tower/api/lib/repos');
 const { fetchBoard } = require('../tower/api/lib/board');
 const { repoHealth } = require('../tower/api/lib/health');
 const { buildBrief } = require('../tower/api/lib/brief');
+const { collectCcNews, renderCcNews } = require('./cc-news');
 
 // The digest instruction. It names the payload's sections rather than the shape
 // of a board file, and it fixes the FIRST line of the response: claude-daily.sh
@@ -41,6 +43,11 @@ claimed, \`inbox\` is captured but not yet specced, and \`warnings\` is work sit
 on the table per repo (uncommitted, unpushed, unreleased). \`ok: false\` means the
 sweep itself failed — report that and its \`reason\`, never a quiet morning.
 
+A \`--- CC NEWS ---\` block may follow the payload: every upstream Claude Code
+CHANGELOG entry that shipped since the last brief, grouped by topic. You judge
+which matter — a new feature the kit could use, a change that could break
+something the kit built, an improvement worth adopting.
+
 Respond in EXACTLY this shape, plain language, no markdown headers:
 Line 1 — the literal prefix "HEADLINE: " then one sentence, the single most
 important thing today (<=120 chars total).
@@ -51,6 +58,11 @@ TODAY'S TOP 3: your pick of the highest-leverage next actions, judged across
 \`ready\`, inbox pressure, and \`warnings\`. Number them.
 ON THE TABLE: only repos in \`warnings\`, as "repo: N uncommitted, N unpushed, N unreleased".
 INBOX: one line — \`counts.inbox\` captured items not yet specced; omit if zero.
+CC NEWS: only when a CC NEWS block is present — NOT a restating of the block:
+name only the entries that matter to this kit (could break something we built,
+a feature or improvement we should adopt), each as "<version> — what it means
+for us"; end the line with how many entries were routine. Omit the section
+entirely when there is no block.
 Nothing else — no preamble, no advice, no restating the payload.
 
 --- BRIEF ---`;
@@ -99,11 +111,19 @@ const composeBrief = (opts = {}) => {
   return buildBrief(board, health, repos, opts.generatedAt);
 };
 
-/** The instruction, then the payload as JSON a human could read over a shoulder. */
-const render = (payload) => `${INSTRUCTION}\n\n${JSON.stringify(payload, null, 2)}\n`;
+/**
+ * The instruction, then the payload as JSON a human could read over a shoulder,
+ * then the upstream news when there is any.
+ * @param {object} payload what composeBrief returned
+ * @param {object|null} [news] what collectCcNews returned
+ */
+const render = (payload, news) => `${INSTRUCTION}\n\n${JSON.stringify(payload, null, 2)}\n${renderCcNews(news)}`;
 
 module.exports = { composeBrief, render, INSTRUCTION };
 
 if (require.main === module) {
-  process.stdout.write(render(composeBrief()));
+  const news = collectCcNews();
+  process.stdout.write(render(composeBrief(), news));
+  // Only now — a run that died before printing repeats the news tomorrow.
+  if (news) news.commit();
 }

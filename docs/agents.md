@@ -16,6 +16,12 @@ Agent definitions shipped by the workkit plugin. They surface in a session names
 
 `scout` / `worker` / `verifier` / `advisor` are the CAPABILITY CLASSES of the manager system. Their concrete model is supplied per spawn by the `manager/resolver` hook from `../hooks/manager/ladder.json` (the tier SSOT) and the LIVE session model — a mid-session `/model` switch takes effect on the next spawn. The `model:` frontmatter in these four files is only the static fallback for when the hook is disabled; never treat it as the routing truth, and never pass a `model` param when dispatching them.
 
+## Agents from other repos
+
+A session's agents come from three places: any plugin ships them in its own `agents/` directory (this repo's, namespaced `workkit:`, is one such set), a repo ships them in `.claude/agents/`, and a user in `~/.claude/agents/`. Precedence on a name collision is **project > user > plugin**.
+
+The `manager/resolver` hook routes ONLY the four workkit classes above — every other `subagent_type`, foreign or built-in, passes through untouched. So a foreign agent's `model:` frontmatter IS its contract: nothing here overrides it, and nothing here needs to know it exists. Ladder routing for foreign agents is deliberately unbuilt; it waits for a real consumer to name what it needs.
+
 ## File-handoff convention (all dispatches)
 
 Chat-inline briefs and reports bloat the dispatching context. Instead:

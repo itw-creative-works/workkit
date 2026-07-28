@@ -16,7 +16,8 @@ Renders `com.workkit.claude-daily.plist` for THIS checkout into `~/Library/Launc
 
 | File | What |
 |---|---|
-| `brief-payload.js` | the payload, on stdout: the digest instruction, then the brief as JSON. Pure gather — no Claude, no notification, no writes |
+| `brief-payload.js` | the payload, on stdout: the digest instruction, then the brief as JSON, then the upstream news. Pure gather — no Claude, no notification |
+| `cc-news.js` | every upstream Claude Code CHANGELOG entry since the last brief, organized by topic, and the small mark file that remembers where it counted from |
 | `claude-daily.sh` | the runner: sends the payload headless, appends the exchange to `~/Library/Logs/claude-daily.log`, notifies |
 | `com.workkit.claude-daily.plist` | the schedule — 9:00 AM daily, `{{WORKKIT_DIR}}` and `{{HOME}}` rendered at install |
 | `install.sh` | render, compare, and only on change copy and reload |
@@ -26,6 +27,12 @@ Renders `com.workkit.claude-daily.plist` for THIS checkout into `~/Library/Launc
 `brief-payload.js` composes `/api/brief` without the tower: the roster walk, the board sweep, per-repo health, then `buildBrief` — the same modules under `tower/api/lib/`, so the morning notification and the Brief page cannot tell different stories. It needs no running server, which is the point: nothing has to be started for nine o'clock to work.
 
 A sweep that failed prints as a failure (`ok: false` and its reason) and the digest says so. "Nothing is waiting on you" and "gh could not answer" are opposite facts.
+
+## The upstream news
+
+Claude Code releases most days and its CHANGELOG is the only announcement, so `cc-news.js` reads that file — the raw one on the default branch, no token and no rate limit — and appends a `--- CC NEWS ---` block after the payload carrying every entry since the last brief, grouped by topic (the kit's own surfaces — hooks, agents, skills, plugins, settings, MCP, the statusline — then `other`). The job never judges which entries matter; the digest model does, with the board in view: a feature the kit could use, a change that breaks something it built, an improvement worth adopting. Finding out weeks late that a hook no longer matches the tool it hooks is the failure it exists to prevent.
+
+Where it counted from is one file the module owns, `~/.workkit/cc-news.json`, and it advances only once the payload has printed — a morning that died repeats its news rather than losing it. A first run records the latest version and reports nothing: with no mark the honest "since" is the whole history, which would bury the brief. Every failure is silent (no network, a non-200, a body that is not a changelog): no block, the mark untouched, the brief still prints. `WORKKIT_CC_CHANGELOG` overrides the source — a seam for the suite, which points it at a file on disk.
 
 ## The runner
 
@@ -40,4 +47,4 @@ A sweep that failed prints as a failure (`ok: false` and its reason) and the dig
 
 ## Tests
 
-`tests/jobs/` runs all three against fixtures: a scratch Repositories root for the payload, a fake `claude` and notifier for the runner, and a scratch `HOME` with a recording `launchctl` for the installer. Nothing in the suite reaches the network, files an issue, loads an agent, or writes outside its temp directory.
+`tests/jobs/` runs all four against fixtures: a scratch Repositories root for the payload, a fixture CHANGELOG and a scratch `~/.workkit` for the news, a fake `claude` and notifier for the runner, and a scratch `HOME` with a recording `launchctl` for the installer. Nothing in the suite reaches the network, files an issue, loads an agent, or writes outside its temp directory.

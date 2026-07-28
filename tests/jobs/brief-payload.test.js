@@ -27,6 +27,17 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
+// The upstream CHANGELOG the script reads, as a file on disk — the seam that
+// keeps the news gather off the network. cc-news.test.js owns the parsing and
+// filtering cases; this suite only asks whether the script wires it up.
+const CC_CHANGELOG = '\n## 2.1.219\n\n- Added the `workflowSizeGuideline` settings key\n';
+
+const ccFixture = (home) => {
+  const file = path.join(home, 'cc-changelog.md');
+  if (!fs.existsSync(file)) fs.writeFileSync(file, `# Changelog\n${CC_CHANGELOG}`);
+  return file;
+};
+
 const issueNode = (number, labels) => ({
   number,
   title: `issue ${number}`,
@@ -188,18 +199,49 @@ const run = async () => {
 
   await test('run as a script it prints a payload and exits 0', () => {
     // An empty HOME: the live machine's repos are none of this suite's business.
+    // WORKKIT_CC_CHANGELOG points the news fetch at a fixture file, so the
+    // script's one network read happens against the disk instead.
     const home = mkTmp();
     const res = spawnSync('node', [SCRIPT], {
       encoding: 'utf8',
       timeout: 60000,
-      env: { ...process.env, HOME: home },
+      env: { ...process.env, HOME: home, WORKKIT_CC_CHANGELOG: `file://${ccFixture(home)}` },
     });
     cleanup(home);
     assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
     assert(res.stdout.startsWith(INSTRUCTION), 'stdout leads with the instruction');
-    const parsed = JSON.parse(res.stdout.slice(INSTRUCTION.length));
+    const parsed = JSON.parse(res.stdout.slice(INSTRUCTION.length).split('--- CC NEWS ---')[0]);
     assert(typeof parsed.headline === 'string' && parsed.headline.length > 0, 'and carries a headline');
     assert(Array.isArray(parsed.waiting), 'and the sections');
+  });
+
+  group('jobs/brief-payload: the upstream news');
+
+  await test('the instruction tells the digest what a CC NEWS block is', () => {
+    assert(/--- CC NEWS ---/.test(INSTRUCTION), 'the payload description names the block');
+    assert(/^CC NEWS: only when a CC NEWS block is present/m.test(INSTRUCTION), 'and the response shape has its line');
+  });
+
+  await test('a first run seeds the mark and prints no block; the next run prints one', () => {
+    const home = mkTmp();
+    const env = { ...process.env, HOME: home, WORKKIT_CC_CHANGELOG: `file://${ccFixture(home)}` };
+    const first = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
+    assertEq(first.status, 0, `exit 0 — stderr: ${first.stderr}`);
+    // Past the instruction, which names the block it is explaining.
+    assert(!/--- CC NEWS ---/.test(first.stdout.slice(INSTRUCTION.length)), 'the first morning does not dump the history');
+    assertEq(
+      JSON.parse(fs.readFileSync(path.join(home, '.workkit', 'cc-news.json'), 'utf8')).version,
+      '2.1.219',
+      'it recorded the latest instead',
+    );
+
+    fs.writeFileSync(ccFixture(home), `# Changelog\n\n## 2.1.220\n\n- Added a \`DirectoryAdded\` hook\n- Bug fixes\n${CC_CHANGELOG}`);
+    const second = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
+    assertEq(second.status, 0, `exit 0 — stderr: ${second.stderr}`);
+    assert(/--- CC NEWS ---/.test(second.stdout.slice(INSTRUCTION.length)), 'the new release is flagged');
+    assert(/\[hooks\]\n2\.1\.220 — Added a `DirectoryAdded` hook/.test(second.stdout), 'with the entry under its topic');
+    assert(/\[other\]\n2\.1\.220 — Bug fixes/.test(second.stdout), 'and the housekeeping rides under other — the digest judges, not the job');
+    cleanup(home);
   });
 
   return summary();
