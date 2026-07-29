@@ -1,36 +1,27 @@
 //
 // The tower's repo roster — which repositories the workflow covers.
 //
-// There is no registry file to maintain, and there is deliberately none: the
-// tri-state opt-in already records the answer in two places the workflow owns.
-// A repo says yes by COMMITTING `.workkit/settings.json` with `enabled: true`;
-// a user says no for their own machine in `~/.workkit/settings.json` under
-// `repos`. Discovery is a walk of the Repositories root reading those two
-// surfaces, so adding a repo to the tower is the same act as opting it in.
+// The tri-state opt-in is unchanged and the COMMITTED `.workkit/settings.json`
+// (anything but `enabled: false`) stays the SSOT of membership; what this
+// module reads is the machine-local INDEX of it. The engine registers every repo it heals or enables
+// under `repos` in `~/.workkit/settings.json` and prunes the entries that went
+// away, so the list maintains itself and no filesystem root is ever walked. A
+// repo this machine has never opened is not on the dashboard — correct by
+// definition, since the tower reports on the machine it runs on.
 //
-// The walk is bounded (four levels, matching the depth move-legacy.sh assumes
-// for `<root>/<owner>/<repo>`) and prunes only `node_modules` and `.git`. Dot
-// directories are NOT pruned: `.dotfiles` is a real, opted-in repo, and the
-// depth bound is what keeps the walk cheap rather than a name filter that would
-// have to know about it.
+// The same `repos` map holds this user's declines (`"declined"`), which are
+// decisions rather than observations: they are skipped here, never listed.
 //
 // Usage:
 //   const { discoverRepos } = require('./repos');
-//   discoverRepos();                       // the live roster
-//   discoverRepos({ root, workflowHome }); // a fixture roster, fully offline
+//   discoverRepos();                 // the live roster
+//   discoverRepos({ workflowHome }); // a fixture roster, fully offline
 //
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
-
-// How deep below the root a repo may sit. `<root>/<owner>/<repo>` needs two;
-// the extra headroom covers the nested groupings that exist today without
-// turning the walk into a full-disk crawl.
-const MAX_DEPTH = 4;
-
-const PRUNE = new Set(['node_modules', '.git']);
 
 const WORKKIT_DIR = '.workkit';
 
@@ -80,72 +71,50 @@ const originSlug = (repoPath, exec) => {
   }
 };
 
-/** The set of absolute paths this user declined, from ~/.workkit/settings.json. */
-const declinedPaths = (workflowHome) => {
-  const settings = readJson(path.join(workflowHome, 'settings.json'));
-  const repos = settings && settings.repos;
-  if (!repos || typeof repos !== 'object') return new Set();
-  return new Set(Object.keys(repos).filter((k) => repos[k] === 'declined'));
-};
-
-/** Does this directory carry a committed opt-in? */
+/**
+ * Does this directory carry a committed opt-in?
+ *
+ * The engine's `resolve_state` is the SSOT of what "enabled" means, and this
+ * reads it the same way: a committed file that does not say `enabled: false` is
+ * a yes, so a legacy `{ "version": 1 }` written before the key existed stays in.
+ * An absent or unparseable file is not a member — the answer is missing, not
+ * given.
+ */
 const isEnabled = (dir) => {
   const settings = readJson(path.join(dir, WORKKIT_DIR, 'settings.json'));
-  return !!settings && settings.enabled === true;
+  return !!settings && settings.enabled !== false;
 };
 
 /**
- * Every opted-in repo under the root, minus this user's declines.
+ * Every registered repo that still carries its committed opt-in.
+ *
+ * A listed path whose opt-in is gone is dropped SILENTLY: pruning the index is
+ * the engine's job, done the next time it touches that repo, and a reader that
+ * rewrote it would be a second writer of a file the engine owns.
+ *
  * @param {object} [opts]
- * @param {string} [opts.root] where to walk (default ~/Developer/Repositories)
  * @param {string} [opts.workflowHome] the user's workflow state (default ~/.workkit)
- * @param {string} [opts.home] overrides ~ for both defaults
- * @param {number} [opts.maxDepth] levels below the root to descend
+ * @param {string} [opts.home] overrides ~ for the default
  * @param {Function} [opts.exec] (cmd, args) => stdout — the git seam
  * @returns {Array<{name: string, path: string, slug: string|null}>}
  */
 const discoverRepos = (opts = {}) => {
   const home = opts.home || os.homedir();
-  const root = opts.root || path.join(home, 'Developer', 'Repositories');
   const workflowHome = opts.workflowHome || path.join(home, WORKKIT_DIR);
-  const maxDepth = opts.maxDepth === undefined ? MAX_DEPTH : opts.maxDepth;
   const exec = opts.exec || defaultExec;
 
-  const declined = declinedPaths(workflowHome);
+  const settings = readJson(path.join(workflowHome, 'settings.json'));
+  const registered = settings && settings.repos;
+  if (!registered || typeof registered !== 'object') return [];
+
   const found = [];
-
-  const walk = (dir, depth) => {
-    if (isEnabled(dir)) {
-      // A repo is a leaf: nothing inside an opted-in repo is another repo, and
-      // descending would find its vendored checkouts.
-      let real = dir;
-      try {
-        real = fs.realpathSync(dir);
-      } catch {
-        // Unreadable path — the enabled read already succeeded, so keep going
-        // with the path as given rather than dropping a real repo.
-      }
-      if (!declined.has(real) && !declined.has(dir)) {
-        found.push({ name: path.basename(dir), path: dir, slug: originSlug(dir, exec) });
-      }
-      return;
-    }
-    if (depth >= maxDepth) return;
-    let entries;
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (!entry.isDirectory() || PRUNE.has(entry.name)) continue;
-      walk(path.join(dir, entry.name), depth + 1);
-    }
-  };
-
-  walk(root, 0);
+  for (const [dir, value] of Object.entries(registered)) {
+    if (value === 'declined') continue;
+    if (!isEnabled(dir)) continue;
+    found.push({ name: path.basename(dir), path: dir, slug: originSlug(dir, exec) });
+  }
   found.sort((a, b) => a.path.localeCompare(b.path));
   return found;
 };
 
-module.exports = { discoverRepos, slugFromRemote, MAX_DEPTH };
+module.exports = { discoverRepos, slugFromRemote };

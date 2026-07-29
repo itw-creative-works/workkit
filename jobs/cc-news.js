@@ -123,23 +123,6 @@ const parseSections = (text) => {
 /** The topic an entry files under — the first TOPICS match, or 'other'. */
 const topicOf = (entry) => (TOPICS.find(({ re }) => re.test(entry)) || { name: 'other' }).name;
 
-/**
- * Move a mark left at the old location — the workflow home root — under `jobs/`.
- * Runs once: with the new file present there is nothing to move, and after the
- * move the old one is gone. Silent like every other failure here, because the
- * worst a lost mark costs is one seeding morning.
- */
-const migrateMark = (legacyFile, cacheFile) => {
-  try {
-    if (fs.existsSync(cacheFile) || !fs.existsSync(legacyFile)) return;
-    fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
-    fs.writeFileSync(cacheFile, fs.readFileSync(legacyFile));
-    fs.rmSync(legacyFile);
-  } catch {
-    // silent by design — see the header
-  }
-};
-
 /** The recorded last-seen version, or null when this machine has never looked. */
 const readMark = (file) => {
   try {
@@ -165,8 +148,6 @@ const collectCcNews = (opts = {}) => {
   const workflowHome = opts.workflowHome || path.join(home, WORKKIT_DIR);
   const cacheFile = path.join(workflowHome, JOBS_DIR, CACHE_FILE);
   const exec = opts.exec || defaultExec;
-
-  migrateMark(path.join(workflowHome, CACHE_FILE), cacheFile);
 
   const text = fetchChangelog(opts.source || SOURCE, exec);
   if (!text) return null;

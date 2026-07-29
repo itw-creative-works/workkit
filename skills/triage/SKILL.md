@@ -1,6 +1,6 @@
 ---
 name: triage
-description: Route every captured entry to its one correct home — relabel or comment on GitHub issues, hand cross-project items to HQ — then print the Filed trail. - Use when the user says "triage", "file my notes", "empty the inbox", "process the inbox", "route the inbox", dumps a batch of notes and asks to file them, or when the state-check hook reports open status:inbox issues or a non-empty .workkit/inbox.md.
+description: Route every captured entry to its one correct home — relabel or comment on GitHub issues, hand cross-project items to the home repo — then print the Filed trail. - Use when the user says "triage", "file my notes", "empty the inbox", "process the inbox", "route the inbox", dumps a batch of notes and asks to file them, or when the state-check hook reports open status:inbox issues or a non-empty .workkit/inbox.md.
 ---
 
 # Triage — drain the inbox, visibly
@@ -42,8 +42,9 @@ Before creating anything, **search what already exists** — open AND closed:
 | Actionable, but it still needs design or detail | Leave it `status:inbox` and draft what you have into the `## Spec` (or a comment). Accepting that spec later is what earns `status:specced` |
 | Waiting on the owner's decision | `status:blocked` + a comment naming the question |
 | Worth keeping, deliberately not now | `status:parked` |
-| Cross-project / business / no single repo | An issue on the **HQ** repo (the global layer per `docs/project-state.md` § HQ — its `projects.json` is the registry) |
+| Cross-project / business / no single repo | An issue on the **home repo** — the `"home": "<owner>/<repo>"` named in `~/.workkit/settings.json` (`docs/project-state.md` § The global layer). No `home` set: leave the entry in the inbox and say so |
 | Belongs to a DIFFERENT project | An issue on that repo (`gh issue create --repo <owner/name>`) |
+| An idea for a project that has no repo yet | A `type:idea` issue on the **home repo**, later notes as comments on it. Never create a repo or a folder — graduation is the owner's word |
 | A durable fact about how things work | The right `docs/*.md` (or AGENTS.md if doctrinal) — then close the issue pointing at it |
 | Needs the owner's yes/no before it is even accepted | Draft the proposal into the `## Spec`; label `status:blocked` with the question |
 
@@ -54,7 +55,7 @@ Relabel with one command so the status stays single:
 
 **Every issue body you create or route follows the anatomy** (spec § Issue anatomy): `## Description` then `## Spec`, both always present; a small item's Spec is the literal `None needed — small item.` The same section carries the introduction rule — the first mention of an outside project or repo, in a body or a comment, gets a link and a one-line description of what it is.
 
-**hq may have no remote yet.** If any `gh` call against hq fails, leave that entry in `.workkit/inbox.md` and say so in the Filed trail — never drop it.
+**The home repo is optional.** With no `home` key, or when a `gh` call against it fails, leave that entry in `.workkit/inbox.md` and say so in the Filed trail — never drop it, and never invent a destination.
 
 ## Draining `.workkit/inbox.md`
 

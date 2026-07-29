@@ -9,16 +9,22 @@
 // model samples them itself with Read/Grep/Glob, newest first, and stops when it
 // has enough. The index is what makes "newest first" possible at all.
 //
-// The roster it walks is the same `discoverRepos` the morning brief uses, so
+// The roster it reads is the same `discoverRepos` the morning brief uses, so
 // the two halves of the daily job agree about which repos are the owner's work.
 //
-// Pure gather: no writes, no Claude, no notification. `claude-nightly.sh` owns
-// the sending AND owns writing the summary the model returns — this file never
-// touches HQ.
+// Pure gather: no writes, no Claude, no notification. claude-nightly.sh owns
+// the sending and the publishing — the summary is posted as a Discussion on the
+// home repo and never written to disk (issue #27).
+//
+// The WEEKLY and MONTHLY rollups take the same shape with different inputs: a
+// week has no transcripts worth re-reading, so its material is the daily
+// summaries already published, handed in on stdin as the JSON the API answered
+// with. One module, so the three cadences cannot drift apart in voice.
 //
 // Usage:
-//   node jobs/nightly-payload.js                    // the payload on stdout
-//   composeNightly({ projectsRoot, root, exec })    // offline, against fixtures
+//   node jobs/nightly-payload.js                        // the day
+//   … | node jobs/nightly-payload.js --cadence weekly   // the rollup, prior summaries on stdin
+//   composeNightly({ projectsRoot, workflowHome, exec })  // offline, against fixtures
 //
 
 const fs = require('fs');
@@ -148,7 +154,6 @@ const transcriptIndex = (opts = {}) => {
  * facts, and the model is told which it is looking at.
  *
  * @param {object} [opts]
- * @param {string} [opts.root] the Repositories root to walk
  * @param {string} [opts.workflowHome] the user's ~/.workkit
  * @param {string} [opts.home] overrides ~ for the libs that resolve it
  * @param {Function} [opts.exec] (cmd, args) => stdout — the git seam
@@ -160,7 +165,6 @@ const commitsToday = (opts = {}) => {
   let repos;
   try {
     repos = discoverRepos({
-      root: opts.root,
       workflowHome: opts.workflowHome,
       home: opts.home,
       exec,
@@ -220,8 +224,106 @@ const composeNightly = (opts = {}) => {
  */
 const render = (payload) => `${INSTRUCTION}\n\n${JSON.stringify(payload, null, 2)}\n`;
 
-module.exports = { composeNightly, transcriptIndex, commitsToday, render, INSTRUCTION, WINDOW_HOURS };
+/**
+ * The rollup instruction. It says what the material IS — summaries, not raw
+ * days — because a rollup that re-reads transcripts would spend a week's budget
+ * on ground the daily summaries already covered.
+ *
+ * @param {string} cadence 'weekly' or 'monthly'
+ */
+const rollupInstruction = (cadence) => `You are writing the owner's ${cadence.toUpperCase()} SUMMARY — a rollup of the period that just ended.
+
+The payload below is JSON. \`summaries\` is every DAILY summary published in the
+period, newest first, each with its title, its date, and its full body. That is
+the whole material: the days have already been read and judged, and your work is
+to find what runs THROUGH them.
+
+Output ONLY the finished ${cadence} summary as markdown, with EXACTLY these four
+sections and no others:
+
+## Themes
+What the period was actually about — the two or three threads that show up
+across days, not a list of days.
+
+## What held and what did not
+Decisions that survived contact, and the ones that were re-litigated or undone.
+
+## Improvements
+Each bullet is ONE line, phrased as a candidate issue: what would change and
+why, tight enough to file as-is. Prefer a pattern seen on several days over
+anything that happened once. Nothing is filed from this document — a human
+triages these.
+
+## Facts learned
+Durable things now known that were not known at the start of the period.
+
+Ground every claim in one of the summaries; write "no evidence in the period's
+record" rather than inventing one. Name a day when it helps. No preamble, no
+closing remarks, no code fence around the document itself.
+
+--- ${cadence.toUpperCase()} ---`;
+
+/**
+ * The rollup payload: the summaries already published, as they came back from
+ * the API.
+ *
+ * @param {Array<{title: string, createdAt: string, body: string}>} summaries
+ * @param {object} [opts]
+ * @param {string} [opts.cadence] 'weekly' (default) or 'monthly'
+ * @param {string} [opts.generatedAt] ISO stamp, injectable so the suite is not a clock test
+ * @returns {object} the rollup payload
+ */
+const composeRollup = (summaries, opts = {}) => ({
+  generatedAt: opts.generatedAt || new Date().toISOString(),
+  cadence: opts.cadence || 'weekly',
+  quiet: !Array.isArray(summaries) || summaries.length === 0,
+  summaries: Array.isArray(summaries) ? summaries : [],
+});
+
+/**
+ * The rollup instruction, then its payload.
+ * @param {object} payload what composeRollup returned
+ */
+const renderRollup = (payload) => `${rollupInstruction(payload.cadence)}\n\n${JSON.stringify(payload, null, 2)}\n`;
+
+module.exports = {
+  composeNightly,
+  composeRollup,
+  transcriptIndex,
+  commitsToday,
+  render,
+  renderRollup,
+  rollupInstruction,
+  INSTRUCTION,
+  WINDOW_HOURS,
+};
 
 if (require.main === module) {
-  process.stdout.write(render(composeNightly()));
+  const flag = process.argv.indexOf('--cadence');
+  const cadence = flag === -1 ? 'daily' : process.argv[flag + 1];
+
+  if (cadence === 'daily') {
+    process.stdout.write(render(composeNightly()));
+  } else if (cadence === 'weekly' || cadence === 'monthly') {
+    // The prior summaries arrive on stdin: the API call belongs to the step that
+    // already holds the credentials (workflow/discussions.sh), and this module
+    // stays a pure composer. Unreadable input is an EMPTY period, said plainly —
+    // a rollup invented from nothing is worse than none.
+    let raw = '';
+    try {
+      raw = fs.readFileSync(0, 'utf8');
+    } catch {
+      raw = '';
+    }
+    let summaries = [];
+    try {
+      summaries = JSON.parse(raw);
+    } catch {
+      summaries = [];
+    }
+    process.stdout.write(renderRollup(composeRollup(summaries, { cadence })));
+  } else {
+    process.stderr.write(`nightly-payload: unknown cadence ${cadence}\n`);
+    process.exit(1);
+  }
 }

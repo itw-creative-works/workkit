@@ -644,8 +644,7 @@ const run = async () => {
     });
     mkSubagent(transcript, 'w1', { lines: [assistantLine({ id: 'a', input: 60 })], meta: { toolUseId: 'toolu_w' } });
     const c = await listen(createServer({
-      root: path.join(w.root, 'no-repos'),
-      workflowHome: path.join(w.root, 'workflow-home'),
+      workflowHome: path.join(w.root, 'no-roster'),
       home: w.home,
       markerDir: w.markerDir,
       stateDir: w.stateDir,
@@ -666,8 +665,7 @@ const run = async () => {
     const w = mkWorld();
     mkSession(w, { lines: [assistantLine({ id: 'r', input: 77 })] });
     const c = await listen(createServer({
-      root: path.join(w.root, 'no-repos'),
-      workflowHome: path.join(w.root, 'workflow-home'),
+      workflowHome: path.join(w.root, 'no-roster'),
       home: w.home,
       markerDir: w.markerDir,
       stateDir: w.stateDir,

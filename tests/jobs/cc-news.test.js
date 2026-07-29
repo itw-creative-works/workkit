@@ -45,7 +45,6 @@ const mkWorld = (text = CHANGELOG) => {
     home,
     workflowHome: path.join(home, WORKKIT_DIR),
     cacheFile: path.join(home, WORKKIT_DIR, 'jobs', 'cc-news.json'),
-    legacyFile: path.join(home, WORKKIT_DIR, 'cc-news.json'),
     calls: [],
     text,
     fail: null,
@@ -67,12 +66,6 @@ const collectIn = (world) => collectCcNews({
 const seed = (world, version) => {
   fs.mkdirSync(path.dirname(world.cacheFile), { recursive: true });
   fs.writeFileSync(world.cacheFile, JSON.stringify({ version }));
-};
-
-/** A mark at the pre-#67 location: loose in the workflow home. */
-const seedLegacy = (world, version) => {
-  fs.mkdirSync(world.workflowHome, { recursive: true });
-  fs.writeFileSync(world.legacyFile, JSON.stringify({ version }));
 };
 
 const run = async () => {
@@ -208,31 +201,6 @@ const run = async () => {
     assert(!fs.existsSync(world.workflowHome), 'nothing exists yet');
     collectIn(world).commit();
     assert(fs.existsSync(world.cacheFile), 'the mark is under jobs/');
-    assert(!fs.existsSync(world.legacyFile), 'and nothing is left loose in the workflow home');
-    cleanup(world.home);
-  });
-
-  await test('a mark left at the old location moves under jobs, keeping its place', () => {
-    const world = mkWorld();
-    seedLegacy(world, '2.1.218');
-    const news = collectIn(world);
-    assertEq(news.since, '2.1.218', 'the machine did not forget where it counted from');
-    assertEq(news.matches.length, 5, 'so it reports the diff rather than seeding');
-    assertEq(JSON.parse(fs.readFileSync(world.cacheFile, 'utf8')).version, '2.1.218', 'the mark moved as written');
-    assert(!fs.existsSync(world.legacyFile), 'and the old file is gone');
-    cleanup(world.home);
-  });
-
-  await test('the move happens once — a mark under jobs is never overwritten', () => {
-    const world = mkWorld();
-    seedLegacy(world, '2.1.218');
-    collectIn(world).commit();
-    assertEq(JSON.parse(fs.readFileSync(world.cacheFile, 'utf8')).version, '2.1.220', 'the moved mark advanced');
-    // A second run finds nothing to move, and a stale old file cannot rewind it.
-    assertEq(collectIn(world).matches.length, 0, 'the second run repeats nothing');
-    seedLegacy(world, '2.1.218');
-    assertEq(collectIn(world).since, '2.1.220', 'and a reappearing old file does not clobber the current mark');
-    assert(fs.existsSync(world.legacyFile), 'it is left where it lies rather than moved again');
     cleanup(world.home);
   });
 

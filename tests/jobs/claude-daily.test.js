@@ -6,11 +6,10 @@
 // argument vector it was given and a fake Notifly recording the notification.
 // HOME is a scratch directory, so the log it appends to and the empty cwd it
 // runs from are both inside the fixture: this suite never writes to the real
-// home and never puts a notification on screen. The summaries step it calls
-// gets the same treatment — a scratch HQ, a fixture transcripts root, and a
-// fixed date — so it never writes into the real HQ either. By default that
-// root is empty, which is the summaries step's quiet day: it sends nothing and
-// the assertions below see only the brief.
+// home and never puts a notification on screen. The summaries step it calls gets
+// the same treatment — a scratch WORKFLOW_HOME with no home repo named in it, so
+// it has nowhere to publish, sends nothing, and the assertions below see only
+// the brief (the step's own suite covers the publishing).
 //
 
 const fs = require('fs');
@@ -22,11 +21,6 @@ const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-daily.sh');
 const { INSTRUCTION } = require(path.join(__dirname, '..', '..', 'jobs', 'brief-payload.js'));
-const { INSTRUCTION: NIGHTLY_INSTRUCTION } = require(path.join(__dirname, '..', '..', 'jobs', 'nightly-payload.js'));
-
-// The date the summaries step hangs off — fixed, so the file it would file is
-// known without asking the clock.
-const DAY = '2026-07-23';
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'claude-daily-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -35,20 +29,14 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
  * A scratch home, a fake `claude` printing `response` and exiting `status`, and
  * a fake Notifly. Returns everything an assertion needs to read back.
  */
-const mkWorld = ({ response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n', status = 0, transcripts = false } = {}) => {
+const mkWorld = ({ response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n', status = 0 } = {}) => {
   const root = mkTmp();
   const bin = path.join(root, 'bin');
   const home = path.join(root, 'home');
-  const hq = path.join(root, 'hq');
-  const projects = path.join(root, 'projects');
+  const workflowHome = path.join(root, 'workflow-home');
   fs.mkdirSync(bin, { recursive: true });
-  fs.mkdirSync(projects, { recursive: true });
-  // A transcript inside the window is what makes the summaries step have a day
-  // to reflect on; without one it is a quiet day and sends nothing.
-  if (transcripts) {
-    fs.mkdirSync(path.join(projects, 'a-repo'), { recursive: true });
-    fs.writeFileSync(path.join(projects, 'a-repo', 'session.jsonl'), '{"type":"user"}\n');
-  }
+  fs.mkdirSync(workflowHome, { recursive: true });
+  fs.writeFileSync(path.join(workflowHome, 'settings.json'), JSON.stringify({ version: 1, repos: {} }, null, 2));
   // ~/Library/Logs is a directory every macOS home already has; the fixture home
   // is bare, so it is created here rather than by the job.
   fs.mkdirSync(path.join(home, 'Library', 'Logs'), { recursive: true });
@@ -74,9 +62,9 @@ const mkWorld = ({ response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n
   return {
     root,
     home,
-    hq,
+    workflowHome,
     notifly,
-    daily: (day) => path.join(hq, 'summaries', 'daily', `${day}.md`),
+    nightlyLog: path.join(home, 'Library', 'Logs', 'claude-nightly.log'),
     calls: () => readArgv(claudeLog),
     notifs: () => readArgv(notifLog),
     log: () => {
@@ -88,10 +76,8 @@ const mkWorld = ({ response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n
       HOME: home,
       NOTIFLY: notifly,
       PATH: `${bin}:${process.env.PATH}`,
-      // The summaries step's seams: its HQ, its transcripts root, and its date.
-      WORKKIT_HQ: hq,
-      WORKKIT_CLAUDE_PROJECTS: projects,
-      WORKKIT_NIGHTLY_DATE: DAY,
+      // The summaries step's one seam: where it looks for the home repo.
+      WORKFLOW_HOME: workflowHome,
       // The payload's upstream-news read stays off the network: an empty
       // curl-readable source is the module's silent-skip path.
       WORKKIT_CC_CHANGELOG: 'file:///dev/null',
@@ -241,64 +227,75 @@ const run = async () => {
 
   group('jobs/claude-daily: the summaries step');
 
-  await test('the day is written up BEFORE the brief is composed', async () => {
-    const world = mkWorld({ transcripts: true });
+  await test('the summaries step runs FIRST, and with no home repo it only logs its skip', async () => {
+    const world = mkWorld();
     const res = runJob(world);
     assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
 
     const calls = world.calls();
-    assertEq(calls.length, 2, `two sends: the summaries step, then the brief — ${fmtCalls(calls).slice(0, 160)}`);
-    assert(calls[0][1].startsWith(NIGHTLY_INSTRUCTION), 'the summaries send goes first');
-    assert(calls[1][1].startsWith(INSTRUCTION), 'and the brief reads a day that is already written up');
-    assert(fs.existsSync(world.daily(DAY)), `the summary is filed at summaries/daily/${DAY}.md`);
+    assertEq(calls.length, 1, `one send — the step has nowhere to publish: ${fmtCalls(calls).slice(0, 160)}`);
+    assert(calls[0][1].startsWith(INSTRUCTION), 'and it was the brief');
+    assert(fs.existsSync(world.nightlyLog), 'the step ran — it kept its own log');
+    assert(/summaries: no home repo configured — skipped/.test(fs.readFileSync(world.nightlyLog, 'utf8')),
+      'and said why it had nothing to do');
     await settle();
     cleanup(world.root);
   });
 
   await test('a summaries failure still produces the brief', async () => {
-    const world = mkWorld({ transcripts: true });
-    // A file where the summaries directory belongs: the step sends, then fails
-    // on the write — the shape of failure that costs the most to swallow.
-    fs.mkdirSync(world.hq, { recursive: true });
-    fs.writeFileSync(path.join(world.hq, 'summaries'), 'in the way\n');
+    const world = mkWorld();
+    // A directory where the step's log file belongs: its first append fails, and
+    // the step exits non-zero — the shape of failure that costs the most to
+    // swallow, since the morning would be lost to the night before.
+    fs.mkdirSync(world.nightlyLog, { recursive: true });
 
     const res = runJob(world);
     assertEq(res.status, 0, 'the morning is not lost to the night before');
     assert(res.stdout.includes('HEADLINE: one thing today.'), 'the brief still printed');
     const calls = world.calls();
-    assertEq(calls.length, 2, `both sends still happened: ${calls.length}`);
-    assert(calls[1][1].startsWith(INSTRUCTION), 'and the second was the brief');
+    assertEq(calls.length, 1, `and the brief was sent: ${calls.length}`);
+    assert(calls[0][1].startsWith(INSTRUCTION), 'the brief, not the flag');
     assert(/\[summaries exit \d+ — the brief continues\]/.test(world.log()), `the log names the failed step: ${world.log().slice(0, 300)}`);
     await notifiedMatching(world, /^HEADLINE: one thing today\.$/);
     cleanup(world.root);
   });
 
-  await test('a second run the same day re-sends the brief and nothing else', async () => {
-    // What makes `npm run brief` at noon cheap: the step is called WITHOUT
-    // --now, so a day already written up skips the send and keeps its document.
-    const world = mkWorld({ transcripts: true });
-    const seeded = '# written this morning\n';
-    fs.mkdirSync(path.dirname(world.daily(DAY)), { recursive: true });
-    fs.writeFileSync(world.daily(DAY), seeded);
-
-    const res = runJob(world, ['--now']);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
-    const calls = world.calls();
-    assertEq(calls.length, 1, `one send: ${fmtCalls(calls).slice(0, 160)}`);
-    assert(calls[0][1].startsWith(INSTRUCTION), 'and it was the brief');
-    assertEq(fs.readFileSync(world.daily(DAY), 'utf8'), seeded, 'the summary already filed is untouched');
-    await settle();
-    cleanup(world.root);
-  });
-
   await test('a message argument runs the brief’s runner alone, summaries and all skipped', () => {
-    const world = mkWorld({ transcripts: true });
+    const world = mkWorld();
     const res = runJob(world, ['hello']);
     assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
     const calls = world.calls();
     assertEq(calls.length, 1, `one send: ${fmtCalls(calls).slice(0, 160)}`);
     assertEq(calls[0][1], 'hello', 'the generic headless runner is still generic');
-    assert(!fs.existsSync(world.daily(DAY)), 'and nothing was filed');
+    assert(!fs.existsSync(world.nightlyLog), 'and the summaries step never ran at all');
+    cleanup(world.root);
+  });
+
+  group('jobs/claude-daily: the site publish');
+
+  await test('the publish runs after the brief, quietly, and never before it', () => {
+    const text = fs.readFileSync(SCRIPT, 'utf8');
+    const sent = text.indexOf('RESPONSE="$(claude -p');
+    const published = text.indexOf('workflow/publish.sh');
+    assert(sent !== -1 && published > sent, 'the brief is sent before anything is built');
+    assert(/publish\.sh" --quiet/.test(text), 'and the daily run asks for the quiet variant');
+    assert(/publish exit %d — the brief was already sent/.test(text), 'a failure is logged, never fatal');
+  });
+
+  await test('a machine with no home repo hears nothing about publishing', async () => {
+    const world = mkWorld();
+    const res = runJob(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assert(!/publish/.test(world.log()), `the log stays about the morning, got: ${world.log()}`);
+    assert(res.stdout.includes('HEADLINE: one thing today.'), 'and the brief is untouched');
+    await settle();
+    cleanup(world.root);
+  });
+
+  await test('a message argument publishes nothing', () => {
+    const world = mkWorld();
+    runJob(world, ['hello']);
+    assert(!/publish/.test(world.log()), 'the generic headless runner stays generic');
     cleanup(world.root);
   });
 

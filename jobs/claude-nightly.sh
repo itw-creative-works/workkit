@@ -1,65 +1,52 @@
 #!/usr/bin/env bash
-# The summaries step — reflects on the day that just ended and writes the daily
-# summary into HQ, plus the weekly rollup on a Sunday and the monthly on the 1st.
-# No agent of its own: claude-daily.sh runs it first thing, and a human runs it
-# directly. Sets its own PATH — under launchd the environment is bare.
-# Usage: claude-nightly.sh [--now]   (--now is the manual rerun, `npm run nightly`
-#        — same pipeline, marked manual, and it replaces today's summary)
+# The summaries step — the first half of the 9am job.
+#
+# It writes up the day that just ended and PUBLISHES it: generated records are
+# never files (owner ruling, 2026-07-28), so the summary goes straight to a
+# Discussion on the home repo named in `~/.workkit/settings.json` and nothing
+# lands on disk but this log. On a Sunday it also posts the week, on the 1st the
+# month, and those rollups read their inputs back from the API — the summaries
+# already published — rather than from any folder.
+#
+# No home repo means no destination, and that is a named skip, not a failure:
+# `workkit setup` creates the home repo, and until someone runs it this step
+# says which reason applied in one line and exits 0. Every API failure takes the
+# same path — a morning brief must never be lost to a summary that could not be
+# posted.
+#
+# Usage: claude-nightly.sh [--now]   (--now is the manual trigger, `npm run
+#        nightly`; it stamps the log block manual and changes nothing else)
 # Log: ~/Library/Logs/claude-nightly.log — appended, one timestamped block per run.
-#
-# The model returns the finished summary and the SCRIPT writes it: a document on
-# disk with a known name is the thing the morning can read, and letting the model
-# do its own filing would put a write path inside a headless session. HQ is a
-# plain directory here — the job never runs git in it.
-#
-# Observational only. Nothing under `## Improvements` is filed; triage stays the
-# one writer of issues.
 
 set -euo pipefail
 
 export PATH="$HOME/.local/bin:$HOME/.nvm/default-bin:/opt/homebrew/bin:$PATH"
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 
-# Resolve before any cd — BASH_SOURCE may be a relative path.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolved before any cd — BASH_SOURCE may be a relative path.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+ENGINE_DIR="$(cd "$SCRIPT_DIR/../workflow" && pwd -P)"
 
-# Run from an empty scratch dir. Under launchd the default cwd is / and the job
-# is its own TCC identity (no inherited Terminal grants) — Claude Code's startup
-# scan from / trips macOS privacy prompts (Media Library, Documents, …).
-# An empty cwd gives it nothing to scan.
-WORK_DIR="$HOME/Library/Caches/claude-nightly"
-mkdir -p "$WORK_DIR"
+# The scratch directory this run works from, and it is entered before anything
+# reaches the network. Under launchd the default cwd is / and the job is its own
+# TCC identity (no inherited Terminal grants) — Claude Code's startup scan from
+# / trips macOS privacy prompts (Media Library, Documents, …). An empty cwd
+# gives it nothing to scan, and the payloads and the composed summaries live
+# here and go away with the run.
+WORK_DIR="$(mktemp -d)"
+trap 'rm -rf "$WORK_DIR"' EXIT
 cd "$WORK_DIR"
 
 LOG_FILE="$HOME/Library/Logs/claude-nightly.log"
+# The log directory is this step's own to ensure: a home without ~/Library/Logs
+# would fail the append under `set -e`, and the line is the whole record of what
+# this run decided.
+mkdir -p "$(dirname "$LOG_FILE")"
 TIMESTAMP="$(date '+%Y-%m-%d %H:%M:%S')"
 
-# Desktop notification — backgrounded + fully detached from stdio: Notifly
-# doesn't return until the notification dismisses; never make the job wait.
-# NOTIFLY is a seam, not a knob: the suite points it at a recorder so running
-# the tests never puts a notification on your screen.
-NOTIFLY="${NOTIFLY:-/Applications/Notifly.app/Contents/MacOS/Notifly}"
-notify() {
-  unset ELECTRON_RUN_AS_NODE
-  "$NOTIFLY" \
-    --title 'Claude Nightly' \
-    --message "${1:0:180}" \
-    --appIcon "$HOME/.claude/icon.png" \
-    --timeout 10 \
-    --sound 'default' </dev/null >/dev/null 2>&1 &
-  disown 2>/dev/null || true
-}
-
-# One timestamped block saying what the run decided, for the paths that send
-# nothing. The sends log the same block shape with the exchange inside it.
-note() {
-  printf '── %s ──\n%s\n\n' "$LOG_STAMP" "$1" >> "$LOG_FILE"
-}
-
-# --now: run tonight's reflection right now, by hand (`npm run nightly`). Same
-# pipeline, same log file, same notification — the differences are the `(manual)`
-# stamp and permission to replace today's summary, since a manual rerun is how a
-# draft gets redone.
+# --now is the manual trigger, and it BYPASSES the two guards that exist for the
+# scheduled run: the day already published and the quiet day. A person running
+# it is explicitly asking for a post — that is what testing the delivery means.
 MANUAL=0
 if [[ "${1:-}" == "--now" ]]; then
   MANUAL=1
@@ -68,223 +55,159 @@ if [[ "${1:-}" == "--now" ]]; then
 fi
 LOG_STAMP="${LOG_STAMP:-$TIMESTAMP}"
 
-# WORKKIT_NIGHTLY_DATE is the clock seam: the whole run — the file it writes and
-# whether a rollup is due — hangs off this one date, so the suite can be Sunday
-# or the 1st without waiting for one.
-DATE="${WORKKIT_NIGHTLY_DATE:-$(date '+%Y-%m-%d')}"
-HQ="${WORKKIT_HQ:-$HOME/Developer/Repositories/Ian-Wiedenman/hq}"
-DAILY_FILE="$HQ/summaries/daily/$DATE.md"
-
-# A date, N days earlier. BSD date — this job is macOS-only by construction.
-day_before() {
-  date -j -v-"$2"d -f '%Y-%m-%d' "$1" '+%Y-%m-%d'
+# One timestamped block saying what the run decided — the same shape the sends
+# have always logged, so a reader walking the file back sees one continuous story.
+note() {
+  printf '── %s ──\n%s\n\n' "$LOG_STAMP" "$1" >> "$LOG_FILE"
 }
 
-# The first line that is neither blank nor a heading — the notification, since a
-# document that opens with `## Went well` would notify nothing worth reading.
-# A document with no prose at all is empty here, not a failure: grep finding
-# nothing is a non-zero pipeline, and under pipefail that would end the run.
-first_prose_line() {
-  printf '%s\n' "$1" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' | head -1 || true
+# The engine's home-repo libraries. A checkout missing them has no way to reach
+# the destination, which reads exactly like having no destination.
+if [[ -f "$ENGINE_DIR/lib.sh" && -f "$ENGINE_DIR/discussions.sh" && -f "$ENGINE_DIR/home.sh" ]]; then
+  # shellcheck source=../workflow/lib.sh
+  . "$ENGINE_DIR/lib.sh"
+  # shellcheck source=../workflow/discussions.sh
+  . "$ENGINE_DIR/discussions.sh"
+  # shellcheck source=../workflow/home.sh
+  . "$ENGINE_DIR/home.sh"
+else
+  note "summaries: the engine's home-repo library is missing at $ENGINE_DIR — skipped"
+  exit 0
+fi
+
+HOME_REPO="$(wk_home_slug)"
+if [[ -z "$HOME_REPO" ]]; then
+  note 'summaries: no home repo configured — skipped'
+  exit 0
+fi
+if ! wk_disc_ready; then
+  note "summaries: $HOME_REPO is the home repo, but gh and jq are what reach it — skipped"
+  exit 0
+fi
+
+# The cadences due today. Daily always; the week on a Sunday, the month on the
+# 1st — the same schedule the local summaries kept before they were published.
+DATE="$(date '+%Y-%m-%d')"
+CADENCES=(daily)
+# Written as `if`s rather than `[[ … ]] && …`: under `set -e` the second form is
+# exempt only by a rule about AND-lists, and a reader should not have to know it.
+if [[ "$(date '+%u')" == '7' ]]; then CADENCES+=(weekly); fi
+if [[ "$(date '+%d')" == '01' ]]; then CADENCES+=(monthly); fi
+
+# The category a cadence publishes in, and the window a rollup reads back.
+category_of() {
+  case "$1" in
+    daily)   printf 'Daily' ;;
+    weekly)  printf 'Weekly' ;;
+    monthly) printf 'Monthly' ;;
+  esac
+}
+since_of() {
+  case "$1" in
+    weekly)  date -v-7d '+%Y-%m-%dT00:00:00Z' 2>/dev/null || date -u -d '7 days ago' '+%Y-%m-%dT00:00:00Z' ;;
+    monthly) date -v-1m '+%Y-%m-%dT00:00:00Z' 2>/dev/null || date -u -d '1 month ago' '+%Y-%m-%dT00:00:00Z' ;;
+  esac
 }
 
-# Skipping tonight's summary is NOT skipping the run. The rollups read the
-# summaries already on disk, and a week closes on its Sunday or not at all — the
-# next Sunday computes a different ISO week, so a quiet Sunday that returned
-# early would lose that week permanently. Every reason to skip the daily half
-# sets this flag and falls through.
-SKIP_DAILY=0
-RESPONSE=''
+# Whether this date's summary for a cadence is already published. The titles are
+# fixed (`<cadence>: <date>`), so an EXACT title match in the window is the
+# question, and the answer costs one API call the composition would have cost
+# far more than.
+already_published() {
+  local cadence="$1" posted
+  posted="$(wk_disc_list "$HOME_REPO" "$(category_of "$cadence")" "${DATE}T00:00:00Z")" || return 1
+  [[ -n "$posted" ]] || return 1
+  printf '%s' "$posted" \
+    | jq -e --arg t "$cadence: $DATE" 'any(.[]; .title == $t)' >/dev/null 2>&1
+}
 
-# Today's summary already exists and this is the scheduled run: the day was
-# already written up, and rewriting it would replace a document someone may have
-# already read. Checked before anything is composed, so the rerun costs nothing.
-if [[ -f "$DAILY_FILE" && $MANUAL -eq 0 ]]; then
-  note "$DATE already has a summary — nothing sent"
-  SKIP_DAILY=1
-fi
+# One cadence: compose the payload, have Claude write the summary, post it.
+# Every failure is a logged line and a zero exit — this step's whole contract.
+publish_cadence() {
+  local cadence="$1" category payload_file summary_file stderr_file prior='' status=0 url
+  category="$(category_of "$cadence")"
+  payload_file="$WORK_DIR/$cadence-payload.txt"
+  summary_file="$WORK_DIR/$cadence-summary.md"
+  stderr_file="$WORK_DIR/$cadence-stderr.log"
 
-if (( SKIP_DAILY == 0 )); then
-  # Guarded like the claude call below: a payload-builder crash must still log
-  # and notify — a silent night hides the failure until someone goes looking for
-  # a summary that was never written. This one is a failure, not a skip: it
-  # leaves the run with nothing to say about the day, rollups included.
-  PAYLOAD_STATUS=0
-  MESSAGE="$(node "$SCRIPT_DIR/nightly-payload.js" 2>&1)" || PAYLOAD_STATUS=$?
-  if (( PAYLOAD_STATUS != 0 )); then
-    {
-      printf '── %s ──\n' "$LOG_STAMP"
-      printf '[nightly-payload exit %d]\n' "$PAYLOAD_STATUS"
-      printf '%s\n\n' "$MESSAGE"
-    } >> "$LOG_FILE"
-    notify "❌ nightly-payload exit $PAYLOAD_STATUS — $MESSAGE"
-    exit "$PAYLOAD_STATUS"
+  # The day is already written up. A second scheduled run — the job re-fired,
+  # the machine woken twice — must not publish a second post about it, and the
+  # check comes BEFORE the composition so the duplicate costs nothing.
+  if (( MANUAL == 0 )) && already_published "$cadence"; then
+    note "summaries: $HOME_REPO already carries the $cadence summary for $DATE — nothing posted"
+    return 0
   fi
 
-  # No transcripts and no commits in the window: there is no day to reflect on. A
-  # summary composed from an empty record would be invention, so nothing is sent,
-  # nothing is written, and nothing interrupts the morning.
-  if printf '%s' "$MESSAGE" | grep -q '"quiet": true'; then
-    note "quiet day — no sessions and no commits in the last 24 hours"
-    SKIP_DAILY=1
+  if [[ "$cadence" == 'daily' ]]; then
+    node "$SCRIPT_DIR/nightly-payload.js" >"$payload_file" 2>/dev/null || status=$?
+  else
+    # A rollup's inputs are the summaries already published, read back from the
+    # API. Nothing to roll up is not a failure — it is a quiet week.
+    prior="$(wk_disc_list "$HOME_REPO" 'Daily' "$(since_of "$cadence")")" || prior=''
+    if [[ -z "$prior" || "$prior" == '[]' ]]; then
+      note "summaries: no daily summaries published since $(since_of "$cadence") — the $cadence rollup has nothing to roll up"
+      return 0
+    fi
+    printf '%s' "$prior" \
+      | node "$SCRIPT_DIR/nightly-payload.js" --cadence "$cadence" >"$payload_file" 2>/dev/null || status=$?
   fi
-fi
+  if (( status != 0 )); then
+    note "summaries: the $cadence payload could not be composed (exit $status) — skipped"
+    return 0
+  fi
 
-if (( SKIP_DAILY == 0 )); then
-  # The reflection reads transcripts itself, so unlike the morning brief this send
-  # carries the three read tools and the transcripts directory — the SAME root the
-  # payload indexed, or the grant and the index would disagree.
-  STATUS=0
-  RESPONSE="$(claude -p "$MESSAGE" \
-    --model opus \
+  # A quiet period — no transcripts and no commits in the window, or no prior
+  # summaries to roll up — is the payload's own verdict, and the runner acts on
+  # it: a summary composed from nothing would be invention, and publishing it
+  # would put invention in the archive the rollups read. The manual trigger
+  # overrides, since a person asking for a post has already decided.
+  if (( MANUAL == 0 )) && grep -q '"quiet": true' "$payload_file"; then
+    note "summaries: a quiet day — nothing happened in the window, so no $cadence summary was composed or posted"
+    return 0
+  fi
+
+  # The reflection reads transcripts itself, so this send carries the three read
+  # tools and the transcripts directory — the SAME root the payload indexed, or
+  # the grant and the index would disagree.
+  #
+  # stderr goes to a FILE, never into the body: `2>&1` here would publish a
+  # warning line Claude wrote to stderr as the first paragraph of the summary.
+  claude -p "$(cat "$payload_file")" \
+    --model sonnet \
     --safe-mode \
     --no-session-persistence \
     --tools "Read,Grep,Glob" \
     --add-dir "${WORKKIT_CLAUDE_PROJECTS:-$HOME/.claude/projects}" \
-    --max-budget-usd 1.00 2>&1)" || STATUS=$?
-
-  {
-    printf '── %s ──\n' "$LOG_STAMP"
-    printf '> %s\n' "${MESSAGE:0:200}"
-    if (( STATUS != 0 )); then
-      printf '[exit %d]\n' "$STATUS"
-    fi
-    printf '%s\n\n' "$RESPONSE"
-  } >> "$LOG_FILE"
-
-  if (( STATUS != 0 )); then
-    notify "❌ exit $STATUS — $RESPONSE"
-    printf '%s\n' "$RESPONSE"
-    exit "$STATUS"
+    --max-budget-usd 1.00 >"$summary_file" 2>"$stderr_file" || status=$?
+  if [[ -s "$stderr_file" ]]; then
+    note "summaries: the $cadence send wrote to stderr —$(printf '\n%s' "$(tail -20 "$stderr_file")")"
   fi
-
-  # The send is already paid for by the time we get here, so a write that fails
-  # is reported like any other failure rather than ending the run in silence.
-  WRITE_STATUS=0
-  WRITE_ERROR="$({ mkdir -p "$(dirname "$DAILY_FILE")" && printf '%s\n' "$RESPONSE" > "$DAILY_FILE"; } 2>&1)" || WRITE_STATUS=$?
-  if (( WRITE_STATUS != 0 )); then
-    {
-      printf '── %s ──\n' "$LOG_STAMP"
-      printf '[write failed: %s]\n' "$DAILY_FILE"
-      printf '%s\n\n' "$WRITE_ERROR"
-    } >> "$LOG_FILE"
-    notify "❌ the summary could not be written — $WRITE_ERROR"
-    exit "$WRITE_STATUS"
-  fi
-
-  # A document that is all headings would notify an empty message, which reads on
-  # screen as a job that failed. The date it filed is the honest fallback.
-  NOTIF_MSG="$(first_prose_line "$RESPONSE")"
-  if [[ -z "$NOTIF_MSG" ]]; then
-    NOTIF_MSG="summary filed for $DATE"
-  fi
-  notify "$NOTIF_MSG"
-fi
-
-# A rollup over the summaries already on disk — the weekly over the last seven
-# days, the monthly over the previous month's weeklies. They are small, so they
-# ride inline and the send needs no tools at all.
-# Usage: rollup <kind> <period> <out-file> <input-file>...
-rollup() {
-  local kind="$1" period="$2" out="$3"
-  shift 3
-
-  local inputs=() file
-  for file in "$@"; do
-    [[ -f "$file" ]] && inputs+=("$file")
-  done
-  if (( ${#inputs[@]} == 0 )); then
-    note "$kind rollup for $period skipped — none of its summaries exist yet"
+  if (( status != 0 )) || [[ ! -s "$summary_file" ]]; then
+    note "summaries: the $cadence summary was not written (exit $status) — skipped"
     return 0
   fi
 
-  local payload="You are writing the owner's $kind ROLLUP for $period, from the daily-level summaries below.
-
-Read across them, not down each one. Output ONLY the finished markdown document:
-
-## Trends
-What moved over the period — direction, not a list of events.
-
-## Recurring friction
-What went poorly more than once. Name the pattern and how often it appeared.
-
-## Wins
-What landed, and what made it land.
-
-## Carried forward
-Improvements raised in the inputs that are still open. One line each, phrased as
-a candidate issue.
-
-Nothing is filed from this document. No preamble, no closing remarks, no code
-fence around the document itself.
-
---- SUMMARIES ---"
-
-  for file in "${inputs[@]}"; do
-    payload="$payload
-
---- $(basename "$file") ---
-$(cat "$file")"
-  done
-
-  local status=0 response
-  response="$(claude -p "$payload" \
-    --model opus \
-    --safe-mode \
-    --no-session-persistence \
-    --tools "" \
-    --max-budget-usd 1.00 2>&1)" || status=$?
-
-  {
-    printf '── %s ──\n' "$LOG_STAMP"
-    printf '> %s rollup %s (%d summaries)\n' "$kind" "$period" "${#inputs[@]}"
-    if (( status != 0 )); then
-      printf '[exit %d]\n' "$status"
-    fi
-    printf '%s\n\n' "$response"
-  } >> "$LOG_FILE"
-
-  if (( status != 0 )); then
-    notify "❌ $kind rollup exit $status — $response"
+  # Resolved OUT of a substitution, so the fallback the resolution may have
+  # taken comes back with it.
+  if ! wk_disc_resolve_category "$HOME_REPO" "$category"; then
+    note "summaries: $HOME_REPO has no discussion category to publish the $cadence summary in — skipped, and nothing was written to disk"
     return 0
   fi
-
-  mkdir -p "$(dirname "$out")"
-  printf '%s\n' "$response" > "$out"
+  url="$(wk_disc_create "$HOME_REPO" "$WK_DISC_CATEGORY_ID" "$cadence: $DATE" "$summary_file")" || url=''
+  if [[ -z "$url" ]]; then
+    note "summaries: the $cadence summary could not be posted to $HOME_REPO — skipped, and nothing was written to disk"
+    return 0
+  fi
+  if [[ -n "$WK_DISC_CATEGORY_NAME" && "$WK_DISC_CATEGORY_NAME" != "$category" ]]; then
+    note "summaries: posted the $cadence summary in $WK_DISC_CATEGORY_NAME (the $category category does not exist — GitHub has no API that creates one) → $url"
+  else
+    note "summaries: posted the $cadence summary → $url"
+  fi
+  return 0
 }
 
-# Sunday closes the week: %u is 7.
-if [[ "$(date -j -f '%Y-%m-%d' "$DATE" '+%u')" == '7' ]]; then
-  WEEK="$(date -j -f '%Y-%m-%d' "$DATE" '+%G-W%V')"
-  WEEK_INPUTS=()
-  for i in 0 1 2 3 4 5 6; do
-    WEEK_INPUTS+=("$HQ/summaries/daily/$(day_before "$DATE" "$i").md")
-  done
-  rollup weekly "$WEEK" "$HQ/summaries/weekly/$WEEK.md" "${WEEK_INPUTS[@]}"
-fi
+for cadence in "${CADENCES[@]}"; do
+  publish_cadence "$cadence"
+done
 
-# The 1st closes the month before it — every ISO week the previous month touched,
-# walked day by day back from its last day so no week is missed or invented.
-if [[ "$(date -j -f '%Y-%m-%d' "$DATE" '+%d')" == '01' ]]; then
-  CURSOR="$(day_before "$DATE" 1)"
-  MONTH="${CURSOR%-*}"
-  WEEKS=''
-  while [[ "${CURSOR%-*}" == "$MONTH" ]]; do
-    WEEK="$(date -j -f '%Y-%m-%d' "$CURSOR" '+%G-W%V')"
-    case " $WEEKS " in
-      *" $WEEK "*) ;;
-      *) WEEKS="$WEEKS $WEEK" ;;
-    esac
-    CURSOR="$(day_before "$CURSOR" 1)"
-  done
-  MONTH_INPUTS=()
-  for WEEK in $WEEKS; do
-    MONTH_INPUTS+=("$HQ/summaries/weekly/$WEEK.md")
-  done
-  rollup monthly "$MONTH" "$HQ/summaries/monthly/$MONTH.md" "${MONTH_INPUTS[@]}"
-fi
-
-if [[ -n "$RESPONSE" ]]; then
-  printf '%s\n' "$RESPONSE"
-fi
 exit 0

@@ -4,7 +4,7 @@
 //
 // The transcript index runs against a fixture projects tree whose mtimes are set
 // by the suite, so "the last 24 hours" is a fact of the fixture and not of the
-// clock. The commit walk runs against a fixture Repositories root: one real,
+// clock. The commit walk runs against a fixture roster: one real,
 // opted-in git repo for the pass-through case, and a canned exec for the shapes
 // a real repo cannot be made to produce on demand.
 //
@@ -18,7 +18,10 @@ const { execFileSync, spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'nightly-payload.js');
-const { composeNightly, transcriptIndex, commitsToday, render, INSTRUCTION } = require(SCRIPT);
+const {
+  composeNightly, composeRollup, transcriptIndex, commitsToday,
+  render, renderRollup, rollupInstruction, INSTRUCTION,
+} = require(SCRIPT);
 
 const NOW = Date.parse('2026-07-28T03:00:00.000Z');
 const HOUR = 60 * 60 * 1000;
@@ -47,7 +50,11 @@ const mkProjects = (files) => {
 
 const indexIn = (projectsRoot) => transcriptIndex({ projectsRoot, now: NOW });
 
-/** A fixture Repositories root with one opted-in repo carrying two commits. */
+/**
+ * A fixture roster with one opted-in repo carrying two commits: the repo, and
+ * the scratch ~/.workkit that registers it — the index the tower and the jobs
+ * both read, so nothing here walks a disk.
+ */
 const mkRepos = () => {
   const root = mkTmp();
   const repo = path.join(root, 'repos', 'Owner', 'fixture');
@@ -64,13 +71,18 @@ const mkRepos = () => {
   fs.writeFileSync(path.join(repo, 'b.txt'), 'two\n');
   git(repo, 'add', '-A');
   git(repo, 'commit', '-qm', 'fix: the second thing');
-  return { root, repo, home: path.join(root, 'home') };
+  const home = path.join(root, 'home');
+  fs.mkdirSync(path.join(home, '.workkit'), { recursive: true });
+  fs.writeFileSync(
+    path.join(home, '.workkit', 'settings.json'),
+    JSON.stringify({ version: 1, repos: { [repo]: 'enabled' } }, null, 2),
+  );
+  return { root, repo, home };
 };
 
 const passThrough = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
 const commitsIn = (world, exec) => commitsToday({
-  root: path.join(world.root, 'repos'),
   workflowHome: path.join(world.home, '.workkit'),
   home: world.home,
   exec: exec || passThrough,
@@ -185,7 +197,6 @@ const run = async () => {
     const projects = mkProjects([{ project: 'repo-a', name: 'session.jsonl', agoHours: 1 }]);
     const out = composeNightly({
       projectsRoot: projects,
-      root: path.join(world.root, 'repos'),
       workflowHome: path.join(world.home, '.workkit'),
       home: world.home,
       exec: passThrough,
@@ -203,7 +214,6 @@ const run = async () => {
   await test('no sessions and no commits is a quiet day', () => {
     const out = composeNightly({
       projectsRoot: '/nonexistent/projects',
-      root: '/nonexistent/repos',
       workflowHome: '/nonexistent/.workkit',
       exec: () => { throw new Error('never called'); },
       now: NOW,
@@ -247,7 +257,7 @@ const run = async () => {
   group('jobs/nightly-payload: what is printed');
 
   await test('the rendered payload leads with the instruction, then readable JSON', () => {
-    const out = composeNightly({ projectsRoot: '/nonexistent', root: '/nonexistent', now: NOW });
+    const out = composeNightly({ projectsRoot: '/nonexistent', workflowHome: '/nonexistent', now: NOW });
     const text = render(out);
     assert(text.startsWith(INSTRUCTION), 'the instruction is first');
     const parsed = JSON.parse(text.slice(INSTRUCTION.length));
@@ -270,6 +280,52 @@ const run = async () => {
     const parsed = JSON.parse(res.stdout.slice(INSTRUCTION.length));
     assert(Array.isArray(parsed.transcripts), 'and carries the index');
     assert(Array.isArray(parsed.commits), 'and the commits');
+  });
+
+  group('jobs/nightly-payload: the rollups');
+
+  await test('a rollup is composed from the summaries already published', () => {
+    // A week's material is the daily summaries, read back from the Discussions
+    // API — never the transcripts again, which the days already read.
+    const prior = [
+      { title: 'daily: 2026-07-27', createdAt: '2026-07-27T09:00:00Z', body: '## Went well\nShipped.' },
+      { title: 'daily: 2026-07-26', createdAt: '2026-07-26T09:00:00Z', body: '## Went well\nSpecced.' },
+    ];
+    const payload = composeRollup(prior, { cadence: 'weekly', generatedAt: '2026-07-28T09:00:00Z' });
+    assertEq(payload.cadence, 'weekly', 'it knows which period it is');
+    assertEq(payload.quiet, false, 'and that there was something to roll up');
+    assertEq(payload.summaries.length, 2, 'carrying every summary it was given');
+
+    const text = renderRollup(payload);
+    assert(text.startsWith(rollupInstruction('weekly')), 'the instruction is first');
+    assert(/WEEKLY SUMMARY/.test(text), 'and names the cadence it is asking for');
+    assertEq(JSON.parse(text.slice(rollupInstruction('weekly').length)).summaries.length, 2, 'the payload round-trips');
+  });
+
+  await test('a period with nothing published is quiet, not invented', () => {
+    assertEq(composeRollup([], { cadence: 'monthly' }).quiet, true, 'an empty period says so');
+    assertEq(composeRollup(null, { cadence: 'monthly' }).summaries.length, 0, 'and unreadable input is empty, never a guess');
+  });
+
+  await test('run as a script, --cadence reads the prior summaries from stdin', () => {
+    const home = mkTmp();
+    const res = spawnSync('node', [SCRIPT, '--cadence', 'weekly'], {
+      encoding: 'utf8',
+      timeout: 60000,
+      input: JSON.stringify([{ title: 'daily: 2026-07-27', createdAt: '2026-07-27T09:00:00Z', body: 'a day' }]),
+      env: { ...process.env, HOME: home },
+    });
+    cleanup(home);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assert(res.stdout.startsWith(rollupInstruction('weekly')), 'stdout leads with the rollup instruction');
+    const parsed = JSON.parse(res.stdout.slice(rollupInstruction('weekly').length));
+    assertEq(parsed.summaries[0].body, 'a day', 'and carries what stdin handed it');
+  });
+
+  await test('an unknown cadence is refused rather than guessed', () => {
+    const res = spawnSync('node', [SCRIPT, '--cadence', 'hourly'], { encoding: 'utf8', input: '[]', timeout: 60000 });
+    assertEq(res.status, 1, 'exit 1');
+    assert(/unknown cadence hourly/.test(res.stderr), `it names what it did not understand, got: ${res.stderr}`);
   });
 
   return summary();

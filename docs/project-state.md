@@ -1,4 +1,4 @@
-# Project State Spec (v4) — issues · workflow · attic · HQ
+# Project State Spec (v4) — issues · workflow · attic · the global layer
 
 > The ONE definition of how project state is captured, tracked, and cleaned across every repo.
 > Provider-agnostic: GitHub Issues + plain markdown + JSON + git. Agents of any provider implement it; Claude adapters = the `workkit:triage`, `workkit:whats-next`, `workkit:ship`, `workkit:migrate` skills + the `workflow:standards`, `docs:state-check`, `docs:change-tracker`, `docs:board-guard`, `docs:changelog-guard` hooks.
@@ -59,7 +59,7 @@ Repo instructions live in `AGENTS.md` (provider-agnostic); `CLAUDE.md` is exactl
 - **Exactly one `status:` label per open issue.** Every relabel removes the old one in the same command: `gh issue edit <N> --remove-label status:inbox --add-label status:specced`.
 - The four groups are orthogonal and compose: `status:specced` + `priority:high` + `agent:ok` on one issue is legal and means exactly what it says.
 - `area:*` is deliberately NOT bootstrapped — it is project-specific; a repo adds its own if it wants one. Adopt a group deliberately, never speculatively.
-- **A retired label migrates itself.** `labels.json` carries a `migrations` map (old label → new); the standards heal moves every issue carrying an old label, open and closed, to its replacement and then deletes the old label. `status:spec` and `status:queued` are the entries in it today.
+- **A label rename is applied once, at rename time.** Moving every issue off a retired label — open and closed — and deleting it is the job of the rename itself, done by hand or by a one-off sweep. No standing code in the heal carries old vocabulary forward; `labels.json` describes the vocabulary as it is now.
 
 **The statuses read as a PIPELINE** — intent to implemented: `status:inbox` → `status:specced` → `status:building` (build → verify → ship) → closed against the CHANGELOG entry, with `blocked` and `parked` as side pockets — an answered `blocked` issue rejoins at `status:specced`, a revived `parked` one re-enters triage. The flip to `building` happens the moment work starts, and it is the only status the working stages have; the assignee is still the claim, and the label is what makes in-flight work visible on a board. Nobody takes it off by hand — the ship close ends it.
 
@@ -112,7 +112,7 @@ The smell: an issue you cannot answer yes to, because yes would approve a part y
 
 ## Triage — the action that drains the inbox
 
-Every entry is routed to exactly ONE home: a comment on an existing issue · a new routed issue · an hq issue (cross-project) · another repo's issues · `docs/`/`AGENTS.md` (a durable fact) · `_attic/inbox.md` (kept but rejected).
+Every entry is routed to exactly ONE home: a comment on an existing issue · a new routed issue · an issue on the home repo (cross-project) · another repo's issues · `docs/`/`AGENTS.md` (a durable fact) · `_attic/inbox.md` (kept but rejected).
 
 - **Search first, open AND closed** (`gh issue list --state all --search ...`). A closed **not planned** issue is the rejection record — cite it instead of re-pitching.
 - **The Filed trail is mandatory**: triage ends by printing `Filed:` — one line per entry → its destination. On a dump issue, that trail is the closing comment. Capture is only trusted when filing is visible.
@@ -178,19 +178,39 @@ Three things are deliberately NOT entries, because a guard that judges them boun
 
 Read-once context docs ("write what you'd need after your memory is erased"). Never carry GO markers or standing instructions — a gate is a `status:blocked` issue with the question in a comment. After consumption → `archive/` beside them.
 
-## HQ (the global layer)
+## The global layer
 
-One HQ = one world (a company, a client). A plain git repo:
+**State lives in cloud surfaces; disks hold only scratch that never syncs** (owner ruling, 2026-07-28). Work is issues, and summaries are Discussions on the home repo. **Generated records are never files** — not in a repo, not on a machine: anything a machine produced and a human reads is published where every machine can see it, so no laptop is the one place a record exists. What is left on disk is scratch — the capture inbox, session state, caches, logs — and none of it is a source of truth.
 
-| Surface | Job |
-|---|---|
-| `projects.json` | The registry: `[{ "name", "path", "about", "status": "active\|parked" }]` — how any agent, job, or dashboard finds every project |
-| hq **issues** | Cross-project + business capture: whatever belongs to no single repo. Triage routes entries OUT into project repos. Needs hq's own remote — tracked as issue #8 |
-| `handoffs/` (optional) | Cross-repo handoff docs |
+Two surfaces, both generic. There is no assumed folder layout anywhere, and no path outside them.
 
-**HQ never copies project state** — it indexes (the registry) and holds only what belongs to no single repo. Cross-project views ("what's next everywhere", the dashboard) are generated on demand by walking `projects.json` → each repo's issues; never stored.
-Rule of thumb: prose = `.md`, index = `.json`. Multi-tenancy = multiple HQs, never multi-tenant files.
-HQ is a repo like any other, kept wherever the projects it indexes are — `<repos-root>/<owner>/hq` is the shape, not a required location.
+**1. `~/.workkit`** — workkit's user-level home on any machine (`$WORKFLOW_HOME` overrides it). It is also the home repo's CLONE, which is what makes the folder two layers in one place; the committed `.gitignore` is the boundary:
+
+| Surface | Committed? | Job |
+|---|---|---|
+| `workkit.json` | Yes — every machine | The shared truth: `projects` (the opted-in repos by SLUG, engine-maintained), `site` (the published dashboard's optional custom URL), `preferences` |
+| `docs/` | Yes — every machine | The built dashboard GitHub Pages serves (see the tower's README) |
+| `settings.json` | Never — one machine's own | This developer's decisions: the `repos` map (the roster, below, plus the declines), the `"home": "<owner>/<repo>"` slug, and the cached GitHub node ids |
+| `inbox.md` | Never | The user-level capture scratchpad — where `workkit note` lands when no participating repo is nearer. Drained by triage |
+| `jobs/` | Never | Scheduled-job state (marks, caches). Machine-local by definition; never a record |
+
+**2. The home repo** — one private GitHub repo, `<login>/workkit`, created by `workkit setup` and named in `~/.workkit/settings.json` as `"home": "<owner>/<repo>"`. It is the queue for everything that belongs to no single repo, and it is a repo like any other — the standard's labels, its issue anatomy, its templates.
+
+- **Setup creates it and nothing else ever does.** The wizard detects the login, creates the private repo, converts `~/.workkit` into its clone in place (an existing folder keeps every file it has; only the schema files are committed), enables Discussions and Pages, and pushes. Each step is idempotent, each failure warns with the exact fix and the wizard carries on, and a folder pointing at a DIFFERENT remote stops the home steps rather than being adopted. The daily path and the session hook never create, clone, or enable anything.
+- Its **`projects`** list is the roster told to every machine: the heal writes the repo's slug where the roster writes its path, and drops a slug whose repo said `enabled: false`. A slug whose repo THIS machine does not have stays — slugs are portable truth, paths are not.
+
+- Its **issues** are the cross-project and business queue: whatever triage cannot route to a project repo.
+- It is also the **nursery** for projects that do not exist yet. An idea with no repo becomes a `type:idea` issue there, and related notes accumulate as comments on it.
+- **Graduation is the owner's word, and it is manual** — no automation creates repos or moves issues. The recipe: create the real repo, run `workkit enable` in it, then `gh issue transfer <n> <owner>/<new-repo>` to carry the trail across. Triage never creates a repo or a folder; creation is always deliberate.
+- **Unset `home`**: triage says so and leaves global entries in the inbox. Nothing is invented, and nothing is filed into a project repo it does not belong to.
+
+**The roster replaces the walk.** Nothing scans a filesystem root for repos. Whenever the engine touches an enabled repo (`workkit enable`, the daily heal), it records that repo's absolute path under `repos` in `~/.workkit/settings.json` as `"enabled"`; an entry whose path is gone, whose committed `.workkit/settings.json` is gone, or whose committed file now says `enabled: false`, is pruned on the same contact. A `"declined"` entry is a decision rather than an observation and is never pruned. The committed per-repo file stays the SSOT of membership; this list is a self-maintaining machine-local INDEX of it, and the tower reads it. A repo never opened on this machine is not on that machine's dashboard — correct by definition. The same contact writes the repo's slug into the home repo's `workkit.json`; the heal never commits or pushes that, the daily publish does. `workkit doctor` reports the count, the home clone's state, and how it stands against its upstream (a diverged clone is reported and healed by pull-rebase, never by a force push).
+
+**Capture surfaces, all draining through triage:** `workkit note` → the nearest inbox; an editor → the inbox file directly; phone or web → a new issue on the home repo (the GitHub app is the interface — there is no second UI); the tower's intake dialog → any repo on this machine's roster, which is what its repo list offers. A home repo that is not cloned on this machine is reachable from GitHub, not from that dialog.
+
+**Summaries and briefs** are generated records, so they are never written to disk. The daily summary is published as a Discussion on the home repo in the `Daily` category, the rollups in `Weekly` and `Monthly`, each reading its inputs back from the API rather than from any folder. GitHub offers no way to CREATE a discussion category — there is no such mutation — so setup prints a one-time pointer at the page that makes them and the delivery publishes in the repo's default category until they exist, saying so every time. No home repo, no network, or an API that refuses: the step logs its reason and exits 0, the same doctrine the brief runs under.
+
+**The published dashboard.** The tower's app, built locally by the engine and committed to the home repo's `docs/`, which GitHub Pages serves — the board readable from a phone, with the sweep it shipped with baked in at `docs/data/board.json`. The daily job publishes after the brief, and `workkit publish` does it on demand; a machine without the build tooling skips cleanly. `workkit.json`'s `site.url` becomes the CNAME.
 
 ## The system works without the harness
 
@@ -201,7 +221,7 @@ Everything a contributor or a cloud agent touches is PLAIN GITHUB — that is th
 Built day one, each rung opt-in. **Dormant by default**: with no `agent:ok` label anywhere, the whole system is human-run.
 
 1. **Manual** — humans file and label; sessions work "issue #42" or pull from the queue.
-2. **Scheduled read-only digest** — an Actions cron sweeps `projects.json` repos and posts the digest as a GitHub Discussion (announcements, not work items). Digest items are numbered and linked, so "file item 3" creates the linked `status:inbox` issue.
+2. **Scheduled read-only digest** — an Actions cron sweeps the roster's repos and posts the digest as a GitHub Discussion (announcements, not work items). Digest items are numbered and linked, so "file item 3" creates the linked `status:inbox` issue.
 3. **Capture bots** — a plain script on an Actions cron (Sentry, etc.): query → dedupe → `gh issue create` with `status:inbox` + `type:bug`. Files only, fixes nothing.
 4. **Agent execution** — an agent action fires on the `agent:ok` label (or an @mention) → branch + PR; a human always merges.
 
@@ -217,7 +237,7 @@ Three rules bind any agent working the pipeline, granted or dispatched:
 
 A format rule without a mechanism does not hold. Corollary — **a pointer may carry reference detail, never sole enforcement**: every rule that must bind every session gets a hook. This spec is where detail lives, not where obedience comes from.
 
-- **`workflow:standards`** (SessionStart, once per repo per day): runs `~/.claude/workkit/standards.sh` — creates every label from `labels.json` and corrects description/color drift, installs the issue templates, installs the required-checks CI workflow (`.github/workflows/checks.yml`, once — the copy is the repo's own to extend afterward), asks GitHub for branch protection on the test check (best effort, quietly skipped where the plan refuses), moves a `.workflow/` left by the old name to `.workkit/` (once, and only in a repo whose committed settings.json is in it — the `.gitignore` lines are rewritten with it, and the rename is the human's to commit), seeds `.workkit/inbox.md` and `.workkit/session.md`, keeps `.workkit/` in `.gitignore` (settings.json excepted) along with the basics every repo needs (`.DS_Store` and `.env`, appended only when nothing already covers them), and names any open issue missing a required `status:`/`type:` label or carrying two from an exclusive group (a violation flags the run, so the heal re-reports it every session until triage routes them — owner ruling, 2026-07-28: exactly one status, always). **Participation gate**: the engine owns the tri-state above and the hook only routes it — heal, stay silent, or offer once. Joining is a deliberate `--enable`, never a side effect of opening a session, and an undecided repo is never written to. HQ `projects.json` stays a pure registry. Safe idempotent heals are silent; only real fixes are announced. Offline, unauthenticated, or remote-less = clean skip.
+- **`workflow:standards`** (SessionStart, once per repo per day): runs `~/.claude/workkit/standards.sh` — creates every label from `labels.json` and corrects description/color drift, installs the issue templates, installs the required-checks CI workflow (`.github/workflows/checks.yml`, once — the copy is the repo's own to extend afterward), asks GitHub for branch protection on the test check (best effort, quietly skipped where the plan refuses), seeds `.workkit/inbox.md` and `.workkit/session.md`, registers the repo in this machine's roster (`repos` in `~/.workkit/settings.json`, pruning the entries that went away), keeps `.workkit/` in `.gitignore` (settings.json excepted) along with the basics every repo needs (`.DS_Store` and `.env`, appended only when nothing already covers them), and names any open issue missing a required `status:`/`type:` label or carrying two from an exclusive group (a violation flags the run, so the heal re-reports it every session until triage routes them — owner ruling, 2026-07-28: exactly one status, always). **Participation gate**: the engine owns the tri-state above and the hook only routes it — heal, stay silent, or offer once. Joining is a deliberate `--enable`, never a side effect of opening a session, and an undecided repo is never written to. Safe idempotent heals are silent; only real fixes are announced. Offline, unauthenticated, or remote-less = clean skip.
 - **`docs:state-check`** (SessionStart): announces open `status:inbox` issues, a non-empty `.workkit/inbox.md`, a content-bearing `CLAUDE.md`, and an oversized `AGENTS.md`. Heal-on-contact, no manual sweeps. Standing rule: every new doctrine gets its detection added here (or to the guard) the same turn it is adopted.
 - **`docs:session`** (SessionStart, every source): injects `.workkit/session.md` in a participating repo so a compacted or restarted session reads its own task state first, and says so when the file has grown past the ~40-line light bar. Silent for a header-only or absent file.
 - **`docs:change-tracker`** (Stop, with uncommitted work): re-injects the three obligations — keep the issue true, promote durable findings out of `.workkit/`, doc parity on finalized work.
@@ -235,6 +255,4 @@ The `workkit:migrate` skill EXECUTES this recipe — it is the doer, and this se
 5. `Done` → deleted. CHANGELOG + git are the record.
 6. `INBOX.md` entries → issues with `status:inbox`, then run triage.
 7. CHANGELOG history → the entry format, the WHOLE file: every section including the pre-issue eras, whose entries take the literal `(no issue)`. Do not trust `changelog.js` to name this work — its section detector deliberately skips non-semver `## [...]` headings (the `## [Plans for 2026]` guard), so era sections lint green while still in the old long-line format. The eyeball check is the gate: no massive single-line entries anywhere. Rewrite rules and the fan-out recipe: the `workkit:migrate` skill §2.
-8. `git rm PROGRESS.md INBOX.md`. Register the repo in HQ `projects.json` if it is not there.
-
-Remaining repos + HQ migrate under issue #8.
+8. `git rm PROGRESS.md INBOX.md`. The roster registers itself — step 1 put the repo on it.

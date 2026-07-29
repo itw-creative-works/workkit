@@ -10,7 +10,7 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, WORKKIT_DIR: W } = require('../lib/harness');
 const { recordArgv, readArgv, isCall, eqArgv, fmtCalls } = require('../lib/argv-log');
 
@@ -25,9 +25,6 @@ const IGNORE_GLOB = new RegExp(`^${W_RE}/\\*$`, 'm');
 const IGNORE_GLOB_ALL = new RegExp(`^${W_RE}/\\*$`, 'gm');
 const IGNORE_NEGATION = new RegExp(`^!${W_RE}/settings\\.json$`, 'm');
 
-// The name the state directory carried before the rename — read from the
-// engine, so this suite migrates whatever the engine still knows how to migrate.
-const LEGACY = /^WORKKIT_LEGACY_DIR="([^"]+)"/m.exec(fs.readFileSync(SCRIPT, 'utf8'))[1];
 // The hooks' copy of the name, checked against the harness by the drift test.
 const HOOK_LIB = path.join(__dirname, '..', '..', 'hooks', '_lib.sh');
 
@@ -73,16 +70,10 @@ const makeRepo = ({ remote = true, settings = '{ "version": 1, "enabled": true }
 // indistinguishable from a correct call.
 const makeGhStub = ({
   labels = [], issues = [], authed = true, createFails = false, editFails = false,
-  // The migration step's surface. `labeled` maps a label name to the issues
-  // carrying it, so `gh issue list --label <name>` answers per label instead of
-  // handing back the whole fixture. The SECOND query for the same label is the
-  // heal's re-ask before deleting, and it answers empty by default — the moves
-  // it just made worked. `labeledRecheck` overrides that answer, which is how a
-  // capped list (issues left over past the limit) is modeled.
-  // `issueEditFails`, `labelDeleteFails`, and `labelQueryFails` drive the three
-  // ways a migration can stop halfway.
-  labeled = {}, labeledRecheck = {},
-  issueEditFails = false, labelDeleteFails = false, labelQueryFails = false,
+  // `labeled` maps a label name to the issues carrying it, so
+  // `gh issue list --label <name>` answers per label instead of handing back
+  // the whole fixture. `labelQueryFails` makes that query fail.
+  labeled = {}, labelQueryFails = false,
   // Branch-protection knobs. `protection`: 'absent' (404s, PUT accepted),
   // 'present' (GET succeeds), or 'denied' (404s, PUT rejected — the free-plan
   // private repo). `repoView`: answer `gh repo view` with a real owner/branch;
@@ -96,18 +87,12 @@ const makeGhStub = ({
   fs.writeFileSync(labelsFile, JSON.stringify(labels));
   fs.writeFileSync(issuesFile, JSON.stringify(issues));
   // An entry is a bare number when the caller only cares which issues carry the
-  // label (the migration), or a whole object when the fields matter (the
-  // stale-claim sweep reads updatedAt and assignees).
+  // label, or a whole object when the fields matter (the stale-claim sweep
+  // reads updatedAt and assignees).
   for (const [label, numbers] of Object.entries(labeled)) {
     fs.writeFileSync(
       path.join(dir, `issues-${label}.json`),
       JSON.stringify(numbers.map((n) => (typeof n === 'object' ? n : { number: n }))),
-    );
-  }
-  for (const [label, numbers] of Object.entries(labeledRecheck)) {
-    fs.writeFileSync(
-      path.join(dir, `recheck-${label}.json`),
-      JSON.stringify(numbers.map((number) => ({ number }))),
     );
   }
   fs.mkdirSync(path.join(dir, 'bin'), { recursive: true });
@@ -122,8 +107,8 @@ const makeGhStub = ({
     '  exit 0',
     'fi',
     'if [[ "$1 $2" == "issue list" ]]; then',
-    // A --label query is the migration asking who carries one retired label;
-    // without it this is the whole-repo report, which gets the full fixture.
+    // A --label query asks who carries one label; without it this is the
+    // whole-repo report, which gets the full fixture.
     '  want=""; prev=""',
     '  for a in "$@"; do [[ "$prev" == "--label" ]] && want="$a"; prev="$a"; done',
     '  if [[ -z "$want" ]]; then',
@@ -131,14 +116,7 @@ const makeGhStub = ({
     '    exit 0',
     '  fi',
     ...(labelQueryFails ? ['  exit 1'] : []),
-    // Which time this label is being asked about: the first is the migration's
-    // list, any later one its re-ask before deleting.
-    `  asked=0; counter="${dir}/asked-$want"`,
-    '  [[ -f "$counter" ]] && asked=$(cat "$counter")',
-    '  asked=$((asked + 1)); printf \'%s\' "$asked" > "$counter"',
-    '  if [[ "$asked" -gt 1 ]]; then',
-    `    if [[ -f "${dir}/recheck-$want.json" ]]; then cat "${dir}/recheck-$want.json"; else echo "[]"; fi`,
-    `  elif [[ -f "${dir}/issues-$want.json" ]]; then`,
+    `  if [[ -f "${dir}/issues-$want.json" ]]; then`,
     `    cat "${dir}/issues-$want.json"`,
     '  else',
     '    echo "[]"',
@@ -146,16 +124,13 @@ const makeGhStub = ({
     '  exit 0',
     'fi',
     'if [[ "$1 $2" == "issue edit" ]]; then',
-    `  exit ${issueEditFails ? 1 : 0}`,
+    '  exit 0',
     'fi',
     'if [[ "$1 $2" == "label create" ]]; then',
     `  exit ${createFails ? 1 : 0}`,
     'fi',
     'if [[ "$1 $2" == "label edit" ]]; then',
     `  exit ${editFails ? 1 : 0}`,
-    'fi',
-    'if [[ "$1 $2" == "label delete" ]]; then',
-    `  exit ${labelDeleteFails ? 1 : 0}`,
     'fi',
     'if [[ "$1" == "repo" && "$2" == "view" ]]; then',
     ...(repoView ? [
@@ -339,26 +314,6 @@ const run = async () => {
     assert(/agent may work/i.test(MANIFEST.groups.agent.values.ok.description), 'agent:ok states the permission');
   });
 
-  group('labels.json: the migration map');
-
-  // A vocabulary change strands every already-labeled issue outside the queue
-  // queries unless the heal carries them across, so the map is part of the SSOT.
-  await test('every migration names a retired label and a live replacement', () => {
-    const live = new Set(desiredLabels().map((l) => l.name));
-    const migrations = MANIFEST.migrations || {};
-    assert(Object.keys(migrations).length > 0, 'the map exists');
-    for (const [from, to] of Object.entries(migrations)) {
-      assert(/^[a-z]+:[a-z]+$/.test(from), `${from} is a group:value label`);
-      assert(!live.has(from), `${from} must be retired — a label the manifest still asks for cannot be migrated away`);
-      assert(live.has(to), `${to} must be a label the manifest creates, got a target nothing makes`);
-    }
-  });
-
-  await test('the v4 rename is the map in force today', () => {
-    assertEq(MANIFEST.migrations['status:spec'], 'status:inbox', 'spec meant "no spec yet" — that is inbox now');
-    assertEq(MANIFEST.migrations['status:queued'], 'status:specced', 'queued meant "spec ready and blessed"');
-  });
-
   group('standards.sh: guards');
 
   await test('a non-git directory is skipped cleanly', () => {
@@ -368,101 +323,6 @@ const run = async () => {
     assert(stdout.includes('not a git repo'), `says why, got: ${stdout}`);
     assert(!fs.existsSync(path.join(dir, '.github')), 'creates nothing');
     cleanup(dir);
-  });
-
-  group('standards.sh: the one-time .workflow/ → .workkit/ move');
-
-  // A repo healed before the rename, exactly as it was left: the committed
-  // settings.json and the gitignored working files in the old directory, and a
-  // .gitignore naming it.
-  const makeLegacyRepo = ({ settings = '{ "version": 1, "enabled": true }\n' } = {}) => {
-    const repo = makeRepo({ settings: null });
-    fs.mkdirSync(path.join(repo, LEGACY), { recursive: true });
-    if (settings !== null) {
-      fs.writeFileSync(path.join(repo, LEGACY, 'settings.json'), settings);
-    }
-    fs.writeFileSync(path.join(repo, LEGACY, 'inbox.md'), '- a note nobody filed yet\n');
-    fs.writeFileSync(path.join(repo, '.gitignore'), `node_modules\n${LEGACY}/*\n!${LEGACY}/settings.json\n`);
-    return repo;
-  };
-
-  await test('moves the directory, contents and all, and says so', () => {
-    const repo = makeLegacyRepo();
-    const stub = makeGhStub();
-    const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    assert(!fs.existsSync(path.join(repo, LEGACY)), `${LEGACY}/ is gone`);
-    assertEq(
-      readFile(path.join(repo, W, 'inbox.md')), '- a note nobody filed yet\n',
-      'the gitignored working file rode along',
-    );
-    assert(readFile(path.join(repo, W, 'settings.json')).length > 0, 'and so did the committed answer');
-    assert(output.includes(`migrate: ${LEGACY}/ → ${W}/`), `reports the move, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('rewrites the .gitignore lines that named the old directory', () => {
-    const repo = makeLegacyRepo();
-    const stub = makeGhStub();
-    runScript(repo, { pathPrefix: stub.binDir });
-    const ignore = readFile(path.join(repo, '.gitignore'));
-    assert(!ignore.includes(`${LEGACY}/`), `no ${LEGACY}/ line left, got: ${ignore}`);
-    assert(IGNORE_GLOB.test(ignore), `${W}/* line, got: ${ignore}`);
-    assert(IGNORE_NEGATION.test(ignore), `settings.json still re-included, got: ${ignore}`);
-    assertEq((ignore.match(IGNORE_GLOB_ALL) || []).length, 1, 'and no duplicate from the gitignore heal');
-    const ignored = (rel) => spawnSync('git', ['check-ignore', '-q', '--', rel], { cwd: repo }).status === 0;
-    assert(!ignored(`${W}/settings.json`), 'the opt-in file stays committable');
-    assert(ignored(`${W}/inbox.md`), 'session state stays untracked');
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('the repo reads as enabled, not as one that never answered', () => {
-    // The answer moves with the directory, so a --state query must migrate
-    // first — reporting `undecided` here would offer to enable a repo that
-    // said yes long ago, and the heal that does the move would never run.
-    const repo = makeLegacyRepo();
-    const stub = makeGhStub();
-    const { stdout } = runScript(repo, { pathPrefix: stub.binDir, args: ['--state'] });
-    assertEq(stdout.trim(), 'enabled', 'state answered from the moved file');
-    assert(fs.existsSync(path.join(repo, W, 'settings.json')), 'and the move happened');
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('a second run has nothing to move and says nothing about it', () => {
-    const repo = makeLegacyRepo();
-    const stub = makeGhStub();
-    runScript(repo, { pathPrefix: stub.binDir });
-    const inbox = readFile(path.join(repo, W, 'inbox.md'));
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 0, 'exit 0');
-    assert(!output.includes('migrate:'), `silent the second time, got: ${output}`);
-    assertEq(readFile(path.join(repo, W, 'inbox.md')), inbox, 'and the working file is untouched');
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('a repo that never opted in keeps its old directory untouched', () => {
-    // No committed settings.json means no yes, and nothing is ever written
-    // into a repo that has not given one — a move included.
-    const repo = makeLegacyRepo({ settings: null });
-    const stub = makeGhStub();
-    const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    assert(fs.existsSync(path.join(repo, LEGACY, 'inbox.md')), `${LEGACY}/ left alone`);
-    assert(!fs.existsSync(path.join(repo, W)), `and no ${W}/ created`);
-    assert(!output.includes('migrate:'), `nothing claimed, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('both directories present — warns, moves nothing, asks for a human', () => {
-    const repo = makeLegacyRepo();
-    fs.mkdirSync(path.join(repo, W), { recursive: true });
-    fs.writeFileSync(path.join(repo, W, 'settings.json'), '{ "version": 1, "enabled": true }\n');
-    fs.writeFileSync(path.join(repo, W, 'inbox.md'), '- the newer note\n');
-    const stub = makeGhStub();
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 1, 'the run reports itself unfinished');
-    assert(output.includes('both exist'), `names the conflict, got: ${output}`);
-    assertEq(readFile(path.join(repo, LEGACY, 'inbox.md')), '- a note nobody filed yet\n', 'old file kept');
-    assertEq(readFile(path.join(repo, W, 'inbox.md')), '- the newer note\n', 'new file kept');
-    cleanup(repo); cleanup(stub.dir);
   });
 
   group('the state directory name is one string per layer');
@@ -788,6 +648,282 @@ const run = async () => {
     cleanup(dir);
   });
 
+  group('standards.sh: the roster');
+
+  // The machine-local index the tower reads instead of walking a disk. It is
+  // maintained ON CONTACT — a heal registers the repo it is standing in and
+  // prunes what has gone away — and it is silent, so every assertion here is
+  // against the file rather than the output.
+  const rosterOf = (home) => JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8')).repos;
+
+  await test('a heal registers the repo it healed', () => {
+    const repo = makeRepo();
+    const home = mkTmp();
+    const stub = makeGhStub({ authed: false });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
+    assertEq(code, 0, 'exit 0');
+    assertEq(rosterOf(home)[fs.realpathSync(repo)], 'enabled', 'keyed by the absolute repo root');
+    assert(!/roster/.test(output), `registration is silent, got: ${output}`);
+    cleanup(repo); cleanup(home); cleanup(stub.dir);
+  });
+
+  await test('running twice registers once — no duplicate, no rewrite', () => {
+    const repo = makeRepo();
+    const home = mkTmp();
+    const stub = makeGhStub({ authed: false });
+    runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
+    const file = path.join(home, 'settings.json');
+    const first = fs.readFileSync(file, 'utf8');
+    runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
+    assertEq(fs.readFileSync(file, 'utf8'), first, 'an up-to-date roster is not written again');
+    assertEq(Object.keys(rosterOf(home)).length, 1, 'and the repo appears once');
+    cleanup(repo); cleanup(home); cleanup(stub.dir);
+  });
+
+  await test('--enable registers the repo it just opted in', () => {
+    const repo = makeRepo({ settings: null });
+    const home = mkTmp();
+    const stub = makeGhStub({ authed: false });
+    runScript(repo, { args: ['--enable'], pathPrefix: stub.binDir, workflowHome: home });
+    assertEq(rosterOf(home)[fs.realpathSync(repo)], 'enabled', 'joining and being indexed are one act');
+    cleanup(repo); cleanup(home); cleanup(stub.dir);
+  });
+
+  await test('sessions opening at once in several repos all end registered', async () => {
+    // The roster edit is a whole-file read-modify-write, so without the mutex
+    // the last writer wins and the other repos are silently left off. Three
+    // heals started together against ONE user settings file; every one of them
+    // has to be on the roster when they finish.
+    //
+    // And the home repo's writers edit that same file: `wk_home_set_slug` runs
+    // alongside them here, because a mutex only two of the three writers take
+    // is not a mutex — the slug it records has to survive as well.
+    const home = mkTmp();
+    const stub = makeGhStub({ authed: false });
+    const repos = [makeRepo(), makeRepo(), makeRepo()];
+    const basePath = `${stub.binDir}:/usr/bin:/bin:/usr/sbin:/sbin:${path.dirname(process.execPath)}`;
+    // Seeded here rather than by whichever process gets there first: the race
+    // under test is the EDIT, and two creations racing is a different one.
+    fs.writeFileSync(path.join(home, 'settings.json'), `${JSON.stringify({ version: 1, repos: {} }, null, 2)}\n`);
+    const env = {
+      ...process.env,
+      PATH: basePath,
+      WORKFLOW_HOME: home,
+      WORKFLOW_CLAUDE_HOME: path.join(mkTmp(), 'claude-home'),
+    };
+    const setSlug = [
+      'set -euo pipefail',
+      `. ${JSON.stringify(path.join(WORKFLOW_DIR, 'lib.sh'))}`,
+      `. ${JSON.stringify(path.join(WORKFLOW_DIR, 'discussions.sh'))}`,
+      `. ${JSON.stringify(path.join(WORKFLOW_DIR, 'home.sh'))}`,
+      'wk_home_set_slug owner/workkit',
+    ].join('\n');
+    await Promise.all([
+      ...repos.map((repo) => new Promise((resolve) => {
+        const child = spawn('bash', [SCRIPT, repo], { env, stdio: 'ignore' });
+        child.on('close', (code) => resolve(code));
+      })),
+      new Promise((resolve) => {
+        const child = spawn('bash', ['-c', setSlug], { env, stdio: 'ignore' });
+        child.on('close', (code) => resolve(code));
+      }),
+    ]);
+    const settings = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
+    for (const repo of repos) {
+      assertEq(settings.repos[fs.realpathSync(repo)], 'enabled', `${path.basename(repo)} survived the concurrent write`);
+    }
+    assertEq(settings.home, 'owner/workkit', 'and so did the home slug written beside them');
+    assert(!fs.existsSync(path.join(home, 'settings.json.lock')), 'and the lock is released, not left behind');
+    for (const repo of repos) cleanup(repo);
+    cleanup(home); cleanup(stub.dir);
+  });
+
+  // The home repo's half of the same fact: the roster keys a repo by PATH for
+  // this machine, workkit.json keys it by SLUG for every machine (issue #27).
+  // A `~/.workkit` that is a clone of the home repo, made without a network:
+  // the heal only ever reads and writes files in it.
+  const makeHomeClone = () => {
+    const home = mkTmp();
+    spawnSync('git', ['init', '-q'], { cwd: home });
+    spawnSync('git', ['remote', 'add', 'origin', 'https://github.com/owner/workkit.git'], { cwd: home });
+    fs.writeFileSync(path.join(home, 'settings.json'), `${JSON.stringify({ version: 1, repos: {}, home: 'owner/workkit' }, null, 2)}\n`);
+    fs.writeFileSync(path.join(home, 'workkit.json'), `${JSON.stringify({
+      version: 1, projects: {}, site: { url: null }, preferences: {},
+    }, null, 2)}\n`);
+    return home;
+  };
+  const projectsOf = (home) => JSON.parse(fs.readFileSync(path.join(home, 'workkit.json'), 'utf8')).projects;
+
+  await test('a heal writes the repo’s slug into the home repo’s project list', () => {
+    const repo = makeRepo();
+    const home = makeHomeClone();
+    const stub = makeGhStub({ authed: false });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
+    assertEq(code, 0, 'exit 0');
+    assertEq(projectsOf(home)['ian/repo'].name, path.basename(fs.realpathSync(repo)), 'the slug carries the repo’s name');
+    assert(!/projects/.test(output), `and like the roster, it is silent: ${output}`);
+    cleanup(repo); cleanup(home); cleanup(stub.dir);
+  });
+
+  await test('the heal never commits or pushes what it wrote there', () => {
+    // Repo creation, commits and pushes belong to setup and to the daily
+    // publish. A session-start hook that pushed would be writing to GitHub.
+    const repo = makeRepo();
+    const home = makeHomeClone();
+    const stub = makeGhStub({ authed: false });
+    runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
+    const log = spawnSync('git', ['-C', home, 'log', '--oneline'], { encoding: 'utf8' });
+    assert(!log.stdout.trim(), `no commit was made: ${log.stdout}`);
+    const status = spawnSync('git', ['-C', home, 'status', '--short'], { encoding: 'utf8' }).stdout;
+    assert(/workkit\.json/.test(status), `the change is left for the publish to commit: ${status}`);
+    cleanup(repo); cleanup(home); cleanup(stub.dir);
+  });
+
+  await test('a repo that turned itself off leaves the project list too', () => {
+    const repo = makeRepo();
+    const off = makeRepo({ settings: '{ "version": 1, "enabled": false }\n' });
+    const home = makeHomeClone();
+    fs.writeFileSync(path.join(home, 'settings.json'), `${JSON.stringify({
+      version: 1, repos: { [fs.realpathSync(off)]: 'enabled' }, home: 'owner/workkit',
+    }, null, 2)}\n`);
+    fs.writeFileSync(path.join(home, 'workkit.json'), `${JSON.stringify({
+      version: 1, projects: { 'ian/repo': { name: 'gone-quiet' }, 'other/kept': { name: 'kept' } }, site: { url: null }, preferences: {},
+    }, null, 2)}\n`);
+
+    const stub = makeGhStub({ authed: false });
+    runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
+    const projects = projectsOf(home);
+    assertEq(projects['other/kept'].name, 'kept', 'a slug this machine has no repo for stays — slugs are portable, paths are not');
+    // Both repos carry the same fixture remote, so the healed repo re-adds the
+    // slug the disabled one lost: what the assertion proves is the removal ran
+    // and left the rest of the list alone.
+    assertEq(Object.keys(projects).sort().join(','), 'ian/repo,other/kept', 'and nothing else was disturbed');
+    cleanup(repo); cleanup(off); cleanup(home); cleanup(stub.dir);
+  });
+
+  await test('a ~/.workkit that is not a home clone gets no project list', () => {
+    const repo = makeRepo();
+    const home = mkTmp();
+    const stub = makeGhStub({ authed: false });
+    const { code } = runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
+    assertEq(code, 0, 'the heal is unbothered');
+    assert(!fs.existsSync(path.join(home, 'workkit.json')), 'nothing is created to hold a project list');
+    cleanup(repo); cleanup(home); cleanup(stub.dir);
+  });
+
+  await test('an entry whose path is gone, and one that turned itself off, are pruned', () => {
+    const repo = makeRepo();
+    const gone = mkTmp();
+    const off = makeRepo({ settings: '{ "version": 1, "enabled": false }\n' });
+    const home = mkTmp();
+    fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({
+      version: 1,
+      repos: { [gone]: 'enabled', [fs.realpathSync(off)]: 'enabled' },
+    }, null, 2));
+    cleanup(gone);
+
+    const stub = makeGhStub({ authed: false });
+    runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
+    const roster = rosterOf(home);
+    assertEq(roster[gone], undefined, 'the path that no longer exists is dropped');
+    assertEq(roster[fs.realpathSync(off)], undefined, 'and so is the repo whose committed file now says no');
+    assertEq(roster[fs.realpathSync(repo)], 'enabled', 'while the repo being healed is registered');
+    cleanup(repo); cleanup(off); cleanup(home); cleanup(stub.dir);
+  });
+
+  await test('an entry whose committed settings file was deleted is pruned too', () => {
+    // Removing the committed file is the tri-state's way back to undecided, so
+    // the entry is exactly as stale as a path that no longer exists.
+    const repo = makeRepo();
+    const left = makeRepo();
+    fs.rmSync(path.join(left, W, 'settings.json'));
+    const home = mkTmp();
+    fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({
+      version: 1,
+      repos: { [fs.realpathSync(left)]: 'enabled' },
+    }, null, 2));
+
+    const stub = makeGhStub({ authed: false });
+    runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
+    assertEq(rosterOf(home)[fs.realpathSync(left)], undefined, 'no committed answer, no membership');
+    cleanup(repo); cleanup(left); cleanup(home); cleanup(stub.dir);
+  });
+
+  await test('a legacy opt-in with no enabled key is kept — it is still a yes', () => {
+    // resolve_state reads a file that predates the key as opted in, and the
+    // prune has to read it the same way or it would evict a member.
+    const repo = makeRepo();
+    const legacy = makeRepo({ settings: '{ "version": 1 }\n' });
+    const home = mkTmp();
+    fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({
+      version: 1,
+      repos: { [fs.realpathSync(legacy)]: 'enabled' },
+    }, null, 2));
+
+    const stub = makeGhStub({ authed: false });
+    runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
+    assertEq(rosterOf(home)[fs.realpathSync(legacy)], 'enabled', 'the legacy shape stays on the roster');
+    cleanup(repo); cleanup(legacy); cleanup(home); cleanup(stub.dir);
+  });
+
+  await test('a decline is a decision, not an observation — it is never pruned', () => {
+    const repo = makeRepo();
+    const declined = mkTmp();
+    const home = mkTmp();
+    fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({
+      version: 1,
+      editor: 'code',
+      repos: { [declined]: 'declined' },
+    }, null, 2));
+    cleanup(declined);
+
+    const stub = makeGhStub({ authed: false });
+    runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
+    const parsed = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
+    assertEq(parsed.repos[declined], 'declined', 'the decline survives a vanished path');
+    assertEq(parsed.editor, 'code', 'and every other key survives the write');
+    cleanup(repo); cleanup(home); cleanup(stub.dir);
+  });
+
+  await test('an undecided repo is never registered — nothing observes it', () => {
+    const repo = makeRepo({ settings: null });
+    const home = mkTmp();
+    const stub = makeGhStub({ authed: false });
+    runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
+    assertEq(Object.keys(rosterOf(home)).length, 0, 'the offer writes nothing, here included');
+    cleanup(repo); cleanup(home); cleanup(stub.dir);
+  });
+
+  await test('malformed user settings warn and skip — the heal still finishes', () => {
+    const repo = makeRepo();
+    const home = mkTmp();
+    fs.writeFileSync(path.join(home, 'settings.json'), '{ not json');
+    const stub = makeGhStub({ authed: false });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
+    assertEq(code, 0, 'a broken index never fails a heal');
+    assert(/not valid JSON/.test(output), `it says what is wrong, got: ${output}`);
+    assertEq(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'), '{ not json', 'and the file is left alone');
+    assertEq(fs.readdirSync(home).join(','), 'settings.json', 'with no temp file left behind');
+    cleanup(repo); cleanup(home); cleanup(stub.dir);
+  });
+
+  await test('without jq the roster is simply not maintained', () => {
+    const repo = makeRepo();
+    const home = mkTmp();
+    // A PATH with no jq anywhere on it — the roster edit is a jq edit, and a
+    // machine without it must lose the index, never the heal.
+    const binDir = binDirWithout('jq');
+    const res = spawnSync('bash', [SCRIPT, repo], {
+      env: { PATH: binDir, WORKFLOW_HOME: home, WORKFLOW_CLAUDE_HOME: path.join(mkTmp(), 'ch') },
+      encoding: 'utf8',
+      timeout: 20000,
+    });
+    assertEq(res.status, 0, `the heal runs without it: ${res.stderr}`);
+    const parsed = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
+    assertEq(parsed.repos[fs.realpathSync(repo)], undefined, 'no jq, no edit — and no half-written file');
+    cleanup(repo); cleanup(home); cleanup(binDir);
+  });
+
   group('standards.sh: it fails loudly, never silently');
 
   // Every case here was a reproduced defect before 3.1.0 — the suite proved the
@@ -1024,43 +1160,6 @@ const run = async () => {
     assert(!fs.existsSync(claude), 'the engine creates no agent directory of its own');
     assert(!output.includes('engine:'), `and says nothing about it, got: ${output}`);
     cleanup(repo); cleanup(home);
-  });
-
-  await test('the retired address is removed when it links to a workflow engine', () => {
-    const repo = makeRepo();
-    const { claude } = claudeHomeWith();
-    const legacy = path.join(claude, 'workflow');
-    fs.symlinkSync(ENGINE, legacy);
-    const { output } = runScript(repo, { args: ['--state'], claudeHome: claude });
-    assert(!fs.existsSync(legacy) && !fs.lstatSync(legacy, { throwIfNoEntry: false }), 'the old link is gone');
-    assert(output.includes('removed the retired'), `and the removal is announced, got: ${output}`);
-    assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(ENGINE), 'the new address took over');
-    cleanup(repo); cleanup(claude);
-  });
-
-  await test('a foreign link at the old name is left alone', () => {
-    const repo = makeRepo();
-    const { claude } = claudeHomeWith();
-    const someoneElses = mkTmp();
-    fs.writeFileSync(path.join(someoneElses, 'notes.md'), 'not an engine\n');
-    const legacy = path.join(claude, 'workflow');
-    fs.symlinkSync(someoneElses, legacy);
-    runScript(repo, { args: ['--state'], claudeHome: claude });
-    assert(fs.lstatSync(legacy).isSymbolicLink(), 'a link to something that is not an engine survives');
-    assertEq(fs.realpathSync(legacy), fs.realpathSync(someoneElses), 'still pointing where it did');
-    cleanup(repo); cleanup(claude); cleanup(someoneElses);
-  });
-
-  await test('a real directory at the old name is never removed', () => {
-    const repo = makeRepo();
-    const { claude } = claudeHomeWith();
-    const legacy = path.join(claude, 'workflow');
-    fs.mkdirSync(legacy);
-    fs.writeFileSync(path.join(legacy, 'standards.sh'), '# not a link\n');
-    runScript(repo, { args: ['--state'], claudeHome: claude });
-    assert(fs.statSync(legacy).isDirectory() && !fs.lstatSync(legacy).isSymbolicLink(), 'the directory survives');
-    assert(fs.existsSync(path.join(legacy, 'standards.sh')), 'with its contents');
-    cleanup(repo); cleanup(claude);
   });
 
   group('standards.sh: local working files');
@@ -1486,221 +1585,6 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  group('standards.sh: retired labels migrate');
-
-  // The manifest's migrations map, exercised against the labels actually in it
-  // rather than hard-coded names — a later rename inherits this coverage.
-  const MIGRATIONS = Object.entries(MANIFEST.migrations || {});
-  const [OLD_LABEL, NEW_LABEL] = MIGRATIONS[0];
-  const retiredLabel = (name) => ({ name, description: 'from the previous vocabulary', color: 'CCCCCC' });
-
-  await test('every issue carrying a retired label moves to its replacement', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub({
-      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
-      labeled: { [OLD_LABEL]: [11, 12] },
-    });
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 0, 'exit 0');
-    const edits = ghCalls(stub).filter((c) => isCall(c, 'issue', 'edit'));
-    assertEq(edits.length, 2, `one edit per issue, got: ${fmtCalls(edits)}`);
-    for (const n of ['11', '12']) {
-      assert(
-        edits.some((c) => eqArgv(c, ['issue', 'edit', n, '--add-label', NEW_LABEL, '--remove-label', OLD_LABEL])),
-        `#${n} gains ${NEW_LABEL} and loses ${OLD_LABEL} in ONE command, so it is never without a status; got: ${fmtCalls(edits)}`,
-      );
-    }
-    assert(output.includes(`moved 2 issues from ${OLD_LABEL} to ${NEW_LABEL}`), `reports the move, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('the query covers closed issues too — a label is part of the record', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub({
-      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
-      labeled: { [OLD_LABEL]: [7] },
-    });
-    runScript(repo, { pathPrefix: stub.binDir });
-    const query = ghCalls(stub).find((c) => isCall(c, 'issue', 'list') && c.includes(OLD_LABEL));
-    assert(query, `the migration asked for the retired label's issues, got: ${fmtCalls(ghCalls(stub))}`);
-    assert(query.includes('--state') && query.includes('all'), `open AND closed, got: ${query.join(' ')}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('the retired label itself is deleted once its issues are moved', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub({
-      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
-      labeled: { [OLD_LABEL]: [3] },
-    });
-    const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    const deletes = ghCalls(stub).filter((c) => isCall(c, 'label', 'delete'));
-    assertEq(deletes.length, 1, `exactly the retired label, got: ${fmtCalls(deletes)}`);
-    assert(eqArgv(deletes[0], ['label', 'delete', OLD_LABEL, '--yes']), `deleted ${OLD_LABEL}, got: ${fmtCalls(deletes)}`);
-    assert(output.includes(`removed the retired ${OLD_LABEL}`), `says so, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('a repo carrying every retired label migrates all of them', () => {
-    const repo = makeRepo();
-    const labeled = {};
-    MIGRATIONS.forEach(([from], i) => { labeled[from] = [100 + i]; });
-    const stub = makeGhStub({
-      labels: [...desiredLabels(), ...MIGRATIONS.map(([from]) => retiredLabel(from))],
-      labeled,
-    });
-    runScript(repo, { pathPrefix: stub.binDir });
-    const deletes = ghCalls(stub).filter((c) => isCall(c, 'label', 'delete'));
-    assertEq(deletes.length, MIGRATIONS.length, `one delete per retired label, got: ${fmtCalls(deletes)}`);
-    for (const [from, to] of MIGRATIONS) {
-      assert(
-        ghCalls(stub).some((c) => isCall(c, 'issue', 'edit') && c.includes('--add-label') && c.includes(to) && c.includes(from)),
-        `${from} → ${to} happened, got: ${fmtCalls(ghCalls(stub))}`,
-      );
-    }
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('a repo with none of the retired labels does nothing at all', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub({ labels: desiredLabels() });
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 0, 'exit 0');
-    const calls = ghCalls(stub);
-    assert(calls.some((c) => isCall(c, 'label', 'list')), `the label step ran, got: ${fmtCalls(calls)}`);
-    assert(!calls.some((c) => isCall(c, 'issue', 'edit')), `no relabeling, got: ${fmtCalls(calls)}`);
-    assert(!calls.some((c) => isCall(c, 'label', 'delete')), `no deletion, got: ${fmtCalls(calls)}`);
-    assert(!output.includes('retired'), `and nothing announced, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('the migration is idempotent — the second run has nothing left to find', () => {
-    // The old label is gone from GitHub after the first pass, which is exactly
-    // what the step turns on, so a rerun is silent without any extra bookkeeping.
-    const repo = makeRepo();
-    const first = makeGhStub({
-      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
-      labeled: { [OLD_LABEL]: [5] },
-    });
-    runScript(repo, { pathPrefix: first.binDir });
-    const second = makeGhStub({ labels: desiredLabels() });
-    const { code, output } = runScript(repo, { pathPrefix: second.binDir });
-    assertEq(code, 0, 'exit 0');
-    assert(!ghCalls(second).some((c) => isCall(c, 'issue', 'edit')), 'nothing relabeled twice');
-    assert(!output.includes('moved'), `and nothing claimed, got: ${output}`);
-    cleanup(repo); cleanup(first.dir); cleanup(second.dir);
-  });
-
-  await test('an issue that could not be moved keeps the retired label alive for the retry', () => {
-    // Deleting the label after a failed move would leave that issue with no
-    // status at all — the one outcome worse than a half-finished rename.
-    const repo = makeRepo();
-    const stub = makeGhStub({
-      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
-      labeled: { [OLD_LABEL]: [9] },
-      issueEditFails: true,
-    });
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 1, 'the run reports itself unfinished');
-    assert(output.includes(`could not move #9 from ${OLD_LABEL}`), `names the issue, got: ${output}`);
-    assert(!ghCalls(stub).some((c) => isCall(c, 'label', 'delete')), 'and the label survives for the next run');
-    assertEq(repoVersion(repo), 1, 'the version is not stamped, so the heal is asked again');
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('a failed issue query keeps the label — it is not read as "nobody carries it"', () => {
-    // An unreachable GitHub and an empty label both produce no issue numbers.
-    // Reading the first as the second deletes the label out from under every
-    // issue still wearing it, and those issues lose their only status.
-    const repo = makeRepo();
-    const stub = makeGhStub({
-      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
-      labeled: { [OLD_LABEL]: [21] },
-      labelQueryFails: true,
-    });
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 1, 'a query it could not run leaves the run unfinished');
-    assert(output.includes(`could not list the issues carrying ${OLD_LABEL}`), `says what failed, got: ${output}`);
-    assert(!ghCalls(stub).some((c) => isCall(c, 'label', 'delete')), 'and the label survives for the next run');
-    assert(!ghCalls(stub).some((c) => isCall(c, 'issue', 'edit')), 'nothing was relabeled on a guess');
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('issues left over past the query limit keep the label alive', () => {
-    // The list is capped. A repo above the cap moves the page it can see; the
-    // overflow is still out there, so the repo is ASKED AGAIN and only an
-    // answer of none licenses the delete.
-    const repo = makeRepo();
-    const page = Array.from({ length: 500 }, (_, i) => 1000 + i);
-    const stub = makeGhStub({
-      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
-      labeled: { [OLD_LABEL]: page },
-      labeledRecheck: { [OLD_LABEL]: [2000, 2001] },
-    });
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 1, 'the run reports itself unfinished');
-    assertEq(ghCalls(stub).filter((c) => isCall(c, 'issue', 'edit')).length, 500, 'the visible page still moved');
-    assert(output.includes(`${OLD_LABEL} still carries issues`), `says why the label stayed, got: ${output}`);
-    assert(!ghCalls(stub).some((c) => isCall(c, 'label', 'delete')), 'and nothing was deleted over the overflow');
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('a re-ask that fails is not read as an empty label either', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub({
-      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
-      labeled: { [OLD_LABEL]: [31] },
-    });
-    // The first query answers; the re-ask before the delete does not.
-    fs.writeFileSync(path.join(stub.binDir, 'gh'),
-      readFile(path.join(stub.binDir, 'gh')).replace(
-        '  if [[ "$asked" -gt 1 ]]; then',
-        '  if [[ "$asked" -gt 1 ]]; then\n    exit 1',
-      ), { mode: 0o755 });
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 1, 'exit non-zero');
-    assert(output.includes(`could not confirm ${OLD_LABEL} is empty`), `says so, got: ${output}`);
-    assert(!ghCalls(stub).some((c) => isCall(c, 'label', 'delete')), 'the label is kept');
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('a label delete that fails is named and marks the run unfinished', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub({
-      labels: [...desiredLabels(), retiredLabel(OLD_LABEL)],
-      labeled: { [OLD_LABEL]: [4] },
-      labelDeleteFails: true,
-    });
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 1, 'exit non-zero');
-    assert(output.includes(`could not delete the retired ${OLD_LABEL}`), `says which, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('a retired label with no issues on it is simply deleted', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub({ labels: [...desiredLabels(), retiredLabel(OLD_LABEL)] });
-    const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    assert(!ghCalls(stub).some((c) => isCall(c, 'issue', 'edit')), 'nothing to relabel');
-    assert(
-      ghCalls(stub).some((c) => eqArgv(c, ['label', 'delete', OLD_LABEL, '--yes'])),
-      `the empty label still goes, got: ${fmtCalls(ghCalls(stub))}`,
-    );
-    assert(!output.includes('moved 0 issues'), `and no empty claim is printed, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('offline — the migration touches nothing without the label list', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub({ authed: false });
-    const { code } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 0, 'exit 0');
-    const calls = ghCalls(stub);
-    assert(!calls.some((c) => isCall(c, 'issue', 'edit')), 'no relabeling');
-    assert(!calls.some((c) => isCall(c, 'label', 'delete')), 'no deletion on a machine that never saw the labels');
-    cleanup(repo); cleanup(stub.dir);
-  });
-
   group('standards.sh: open-issue label report');
 
   await test('issues missing a status label or doubling an exclusive group are named', () => {
@@ -1727,7 +1611,7 @@ const run = async () => {
     assert(output.includes('#9'), `a double type is named — type is exclusive, got: ${output}`);
     assert(output.includes('workkit:triage'), `names the fix, got: ${output}`);
     // The report's own query is the unscoped one — the label-scoped queries
-    // belong to the migration and the stale-claim sweep.
+    // belong to the stale-claim sweep.
     const reportQueries = ghCalls(stub)
       .filter((c) => isCall(c, 'issue', 'list') && !c.includes('--label'));
     assertEq(reportQueries.length, 1, 'one gh call for the whole report');

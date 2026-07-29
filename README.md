@@ -66,7 +66,7 @@ git clone <this repo> && cd workkit
 ./workflow/workkit.sh setup
 ```
 
-`setup` installs the plugin from this checkout, checks `gh`, loads the 9am daily-brief schedule (macOS launchd), offers to enable the repo you are standing in, and puts `workkit` on your PATH at `~/.local/bin` — printing the `export` line to add when that directory is not on it, never editing a shell rc. It is safe to re-run: every step checks before acting. `workkit doctor` reports what is set up and what has drifted; `workkit help` is the map.
+`setup` installs the plugin from this checkout, checks `gh`, loads the 9am daily-brief schedule (macOS launchd), creates your private HOME REPO and makes `~/.workkit` its clone, offers to enable the repo you are standing in, and puts `workkit` on your PATH at `~/.local/bin` — printing the `export` line to add when that directory is not on it, never editing a shell rc. It is safe to re-run: every step checks before acting. `workkit doctor` reports what is set up and what has drifted; `workkit help` is the map.
 
 The plugin alone is still two lines, if that is all you want:
 
@@ -122,11 +122,15 @@ A view over the system's own data, with two deliberate write paths: filing an is
 
 ### The daily brief (jobs/)
 
-The 9am morning notification, and the one job on the clock. It writes up the day that just ended first — `jobs/claude-nightly.sh` has Claude read yesterday's sessions and commits and files the summary in HQ — and then the brief: `jobs/brief-payload.js` assembles the same brief the tower serves, straight from the libraries, no server needed, and wraps it in the digest instruction; `jobs/claude-daily.sh` runs both, sends the brief through headless Claude on a capped budget, and fires a desktop notification with the headline. `bash jobs/install.sh` renders the launchd plist and loads the schedule (macOS, re-run safe). Detail: [`jobs/README.md`](jobs/README.md).
+The 9am morning notification, and the one job on the clock. The summaries step goes first — `jobs/claude-nightly.sh` writes the day that just ended up and publishes it as a Discussion on your home repo, with a weekly rollup on a Sunday and a monthly on the 1st, each reading its inputs back from the API. Then the brief: `jobs/brief-payload.js` assembles the same brief the tower serves, straight from the libraries, no server needed, and wraps it in the digest instruction; `jobs/claude-daily.sh` runs both, sends the brief through headless Claude on a capped budget, and fires a desktop notification with the headline. Last it publishes the dashboard to the home repo, after the brief has gone, so a build can never delay nine o'clock. `bash jobs/install.sh` renders the launchd plist and loads the schedule (macOS, re-run safe). Detail: [`jobs/README.md`](jobs/README.md).
 
 ### Engine — `workflow/`
 
-Plain shell and Node, no Claude Code knowledge: `workkit.sh` (the one command — `setup` · `update` · `doctor` · `enable` · `decline` · `note`), `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `changelog.js` (the entry-format linter the hooks call), `changelog-links.js` (release-time commit links and contributor handles), `wk.sh` (the capture CLI — `wk.sh note "the thought"` drops a bullet into the nearest participating repo's inbox, or your own `~/.workkit/inbox.md` outside one), and the templates a repo receives when it opts in.
+Plain shell and Node, no Claude Code knowledge: `workkit.sh` (the one command — `setup` · `update` · `doctor` · `publish` · `enable` · `decline` · `note`), `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `home.sh` + `discussions.sh` + `publish.sh` (the home repo's lifecycle, its Discussions API, and the site publish), `changelog.js` (the entry-format linter the hooks call), `changelog-links.js` (release-time commit links and contributor handles), `wk.sh` (the capture CLI — `wk.sh note "the thought"` drops a bullet into the nearest participating repo's inbox, or your own `~/.workkit/inbox.md` outside one), and the templates a repo receives when it opts in.
+
+## The home repo
+
+`workkit setup` creates one private repo, `<login>/workkit`, and turns `~/.workkit` into its clone in place — keeping every file already there and committing only the schema. It is where the work that belongs to no single project lives: its ISSUES are the cross-project queue and the nursery for projects that do not exist yet, its DISCUSSIONS are where the daily summaries are published, its `workkit.json` carries the opted-in repos by slug so the list travels between machines, and its `docs/` is the dashboard built locally and served by GitHub Pages — the board readable from a phone. Everything one machine knows about itself (`settings.json`, your inbox) stays gitignored beside it. `workkit doctor` reports where the clone stands; the engine never force-pushes.
 
 ## Opting a repo in
 
@@ -141,14 +145,14 @@ agents/           the crew (namespaced workkit:<name>)
 skills/           the nine workflow skills (namespaced workkit:<name>)
 workflow/         the agent-agnostic engine
 tower/            mission control — api/ (the JSON API) + app/ (the OMEGA dashboard)
-jobs/             the 9am job — summaries then brief, payload builders, runners, launchd schedule
+jobs/             the 9am job — summaries, brief, publish: payload builders, runners, launchd schedule
 docs/             project-state.md (the spec) · agents.md (the crew contract)
 tests/            npm test
 ```
 
 ## Docs
 
-- [`docs/project-state.md`](docs/project-state.md) — the spec: labels, capture and triage, issue anatomy, queue semantics, `.workkit/`, plans, `_attic/`, HQ, the migration recipe
+- [`docs/project-state.md`](docs/project-state.md) — the spec: labels, capture and triage, issue anatomy, queue semantics, `.workkit/`, plans, `_attic/`, the global layer, the migration recipe
 - [`AGENTS.md`](AGENTS.md) — architecture overview for agent sessions
 - [`docs/agents.md`](docs/agents.md) · [`workflow/README.md`](workflow/README.md) — the crew contract and the engine reference
 - [`jobs/README.md`](jobs/README.md) — the daily job: the summaries step, the brief, payloads, runners, schedule, install

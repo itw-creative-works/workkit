@@ -1,7 +1,7 @@
 //
 // Tests for jobs/brief-payload.js — the payload the 9am job hands to Claude.
 //
-// The whole composition runs here against a fixture Repositories root: one
+// The whole composition runs here against a fixture roster: one
 // real, opted-in git repo and one fake exec answering `gh` while passing `git`
 // through to the real binary — the same seam the tower's server suite uses,
 // because roster discovery and health ask git questions no stub answers
@@ -48,9 +48,9 @@ const issueNode = (number, labels) => ({
 });
 
 /**
- * A scratch Repositories root holding one opted-in repo with an origin, an
- * unreleased CHANGELOG entry, and an uncommitted file — plus the exec seam that
- * answers gh and lets git through.
+ * One opted-in repo with an origin, an unreleased CHANGELOG entry, and an
+ * uncommitted file, registered in a scratch ~/.workkit roster — plus the exec
+ * seam that answers gh and lets git through.
  */
 const mkWorld = () => {
   const root = mkTmp();
@@ -67,10 +67,17 @@ const mkWorld = () => {
   git(repo, 'commit', '-qm', 'initial');
   fs.writeFileSync(path.join(repo, 'scratch.txt'), 'uncommitted\n');
 
+  const home = path.join(root, 'home');
+  fs.mkdirSync(path.join(home, '.workkit'), { recursive: true });
+  fs.writeFileSync(
+    path.join(home, '.workkit', 'settings.json'),
+    JSON.stringify({ version: 1, repos: { [repo]: 'enabled' } }, null, 2),
+  );
+
   const world = {
     root,
     repo,
-    home: path.join(root, 'home'),
+    home,
     board: {
       data: {
         r0: {
@@ -104,7 +111,6 @@ const mkWorld = () => {
 };
 
 const composeIn = (world) => composeBrief({
-  root: path.join(world.root, 'repos'),
   workflowHome: path.join(world.home, '.workkit'),
   home: world.home,
   generatedAt: STAMP,
@@ -162,17 +168,16 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('a roster walk that throws is reported as one', () => {
+  await test('a roster read that throws is reported as one', () => {
     const out = composeBrief({
-      root: '/nonexistent',
       generatedAt: STAMP,
       exec: () => { throw new Error('never called'); },
-      // Discovery swallows an unreadable directory, so the throw has to come
-      // from the argument itself — a getter is the one seam that reaches inside.
+      // The read swallows an unreadable file, so the throw has to come from
+      // the argument itself — a getter is the one seam that reaches inside.
       get workflowHome() { throw new Error('the workflow home could not be read'); },
     });
     assertEq(out.ok, false, 'the brief is not ok');
-    assert(/roster walk failed/.test(out.reason), `and names the walk: ${out.reason}`);
+    assert(/roster read failed/.test(out.reason), `and names the read: ${out.reason}`);
   });
 
   group('jobs/brief-payload: what is printed');

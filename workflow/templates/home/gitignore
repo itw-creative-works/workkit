@@ -1,0 +1,24 @@
+# The home repo carries the SHARED truth: workkit.json (the opted-in project
+# slugs, the site settings, the preferences) and docs/ (the built dashboard
+# Pages serves). Everything below is what one machine knows about itself, and
+# travels to no other.
+
+# The machine-local layer — paths, declines, the roster, the home slug, the
+# cached GitHub node ids.
+settings.json
+settings.json.lock/
+
+# The owner's own scratchpad, and the session queue.
+inbox.md
+session.md
+
+# The scheduled jobs' own state — the upstream-news mark and whatever else a
+# job remembers between runs. One machine's record of what IT has already seen,
+# and a second machine reading it would skip news it never got.
+jobs/
+cc-news.json
+
+# Caches and logs.
+caches/
+*.log
+.DS_Store

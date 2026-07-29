@@ -20,20 +20,16 @@ const REPO = path.join(__dirname, '..', '..');
 // step and then the brief.
 const AGENT = { label: 'com.workkit.claude-daily', runner: 'claude-daily.sh', hour: '9' };
 const LABEL = AGENT.label;
-// The 3am agent it replaced. An install has to take it off a machine that still
-// carries it, or the summaries would run twice a day.
-const RETIRED = 'com.workkit.claude-nightly';
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'workkit-install-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 /**
- * A scratch home plus a `launchctl` recorder. `loaded` and `retiredLoaded`
- * decide what `launchctl print` answers PER LABEL — the difference between an
- * agent already running and one that has never been bootstrapped, asked
- * separately of the agent this checkout installs and of the one it retires.
+ * A scratch home plus a `launchctl` recorder. `loaded` decides what
+ * `launchctl print` answers for the agent this checkout installs — the
+ * difference between one already running and one never bootstrapped.
  */
-const mkWorld = ({ loaded = false, retiredLoaded = false } = {}) => {
+const mkWorld = ({ loaded = false } = {}) => {
   const root = mkTmp();
   const bin = path.join(root, 'bin');
   const home = path.join(root, 'home');
@@ -48,7 +44,6 @@ const mkWorld = ({ loaded = false, retiredLoaded = false } = {}) => {
     'if [[ "$1" == \'print\' ]]; then',
     '  case "$2" in',
     `    */${LABEL}) exit ${loaded ? 0 : 1} ;;`,
-    `    */${RETIRED}) exit ${retiredLoaded ? 0 : 1} ;;`,
     '  esac',
     '  exit 1',
     'fi',
@@ -65,10 +60,6 @@ const mkWorld = ({ loaded = false, retiredLoaded = false } = {}) => {
     calls: () => readArgv(log),
     plist: (label) => path.join(agents, `${label}.plist`),
     rendered: () => (fs.existsSync(agents) ? fs.readdirSync(agents).sort() : []),
-    seedPlist: (label, text) => {
-      fs.mkdirSync(agents, { recursive: true });
-      fs.writeFileSync(path.join(agents, `${label}.plist`), text);
-    },
     installed: path.join(agents, `${LABEL}.plist`),
     env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` },
   };
@@ -137,10 +128,8 @@ const run = async () => {
     assertEq(fs.readFileSync(world.installed, 'utf8'), first, 'the plist is untouched');
 
     const added = world.calls().slice(before);
-    // The print that confirms the daily is loaded, and the print that asks
-    // whether the retired agent still is.
-    assertEq(added.length, 2, `only the print checks: ${fmtCalls(added)}`);
-    assert(added.every((c) => isCall(c, 'print')), 'and they were the print checks');
+    assertEq(added.length, 1, `only the print check: ${fmtCalls(added)}`);
+    assert(added.every((c) => isCall(c, 'print')), 'and it was the print check');
     cleanup(world.root);
   });
 
@@ -152,7 +141,7 @@ const run = async () => {
     const res = install(world);
     assert(/loaded \(plist unchanged\)/.test(res.stdout), `it says what it did: ${res.stdout}`);
     const added = world.calls().slice(before);
-    assertEq(added.length, 3, `print, bootstrap, then the retirement check: ${fmtCalls(added)}`);
+    assertEq(added.length, 2, `print, then bootstrap: ${fmtCalls(added)}`);
     assert(isCall(added[1], 'bootstrap'), 'no bootout — there was nothing to remove');
     assert(!added.some((c) => isCall(c, 'bootout')), `and nothing was booted out: ${fmtCalls(added)}`);
     cleanup(world.root);
@@ -168,31 +157,6 @@ const run = async () => {
     assert(!fs.readFileSync(world.installed, 'utf8').includes('stale'), 'the stale copy is replaced');
     const added = world.calls().slice(before);
     assert(added.some((c) => isCall(c, 'bootout', `gui/${process.getuid()}/${LABEL}`)), `and the running agent is booted out: ${fmtCalls(added)}`);
-    cleanup(world.root);
-  });
-
-  group('jobs/install: retiring the 3am agent');
-
-  await test('a machine still carrying it has it unloaded and its plist removed', () => {
-    const world = mkWorld({ loaded: true, retiredLoaded: true });
-    world.seedPlist(RETIRED, '<!-- the 3am agent, from before -->\n');
-    const res = install(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
-
-    const calls = world.calls();
-    assert(calls.some((c) => isCall(c, 'bootout', `gui/${process.getuid()}/${RETIRED}`)), `it is booted out: ${fmtCalls(calls)}`);
-    assert(!fs.existsSync(world.plist(RETIRED)), 'and its plist is gone');
-    assertEq(world.rendered().join(','), `${LABEL}.plist`, 'leaving one agent behind');
-    assert(new RegExp(`${RETIRED} → retired`).test(res.stdout), `it says what it removed: ${res.stdout}`);
-    cleanup(world.root);
-  });
-
-  await test('a machine that never had it hears nothing', () => {
-    const world = mkWorld({ loaded: false });
-    const res = install(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
-    assert(!/retired/.test(res.stdout), `no noise about an agent that was never there: ${res.stdout}`);
-    assert(!world.calls().some((c) => isCall(c, 'bootout', `gui/${process.getuid()}/${RETIRED}`)), 'and nothing is booted out for it');
     cleanup(world.root);
   });
 
@@ -225,16 +189,6 @@ const run = async () => {
     const res = check(world);
     assert(new RegExp(`${LABEL} → out of date`).test(res.stdout), `it names the drift: ${res.stdout}`);
     assert(fs.readFileSync(world.installed, 'utf8').includes('older checkout'), 'and the check writes nothing');
-    cleanup(world.root);
-  });
-
-  await test('a retired agent still on the machine is drift too', () => {
-    const world = mkWorld({ loaded: true });
-    install(world);
-    world.seedPlist(RETIRED, '<!-- the 3am agent, from before -->\n');
-    const res = check(world);
-    assert(new RegExp(`${RETIRED} → still installed`).test(res.stdout), `it names it: ${res.stdout}`);
-    assert(fs.existsSync(world.plist(RETIRED)), 'and removes nothing — that is the install’s job');
     cleanup(world.root);
   });
 

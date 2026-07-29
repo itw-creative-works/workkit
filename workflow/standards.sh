@@ -4,13 +4,6 @@
 # The heals, all safe to re-run:
 #   1. labels    — create every group:value label from labels.json (SSOT) and
 #                  correct description/color drift. Unknown labels are left alone.
-#   1a. migrate  — apply the manifest's `migrations` map (old label → new): every
-#                  issue carrying a retired label, open and closed, is moved to
-#                  its replacement and the retired label is then deleted. A repo
-#                  with none of the old labels does nothing at all.
-#   1b. rename   — move a repo's `.workflow/` to `.workkit/`, the name the state
-#                  directory carries now. One-time and idempotent; the only
-#                  place in the engine that still knows the old name.
 #   2. gitignore — make sure `.workkit/` stays untracked EXCEPT settings.json,
 #                  the committed file carrying the repo's answer (enabled true/false).
 #   2a. gitignore basics — make sure `.DS_Store` and `.env` are ignored, the
@@ -38,13 +31,22 @@
 #                  agent:working with no activity for 24 hours loses the label
 #                  and its assignee, goes back from status:building to
 #                  status:specced, and gets a comment saying the sweep did it.
+#   6a. roster   — record this repo's path under `repos` in the user settings,
+#                  the machine-local index the tower reads instead of walking a
+#                  filesystem root, and drop any listed path that is gone or has
+#                  since said `enabled: false`. Silent; `workkit doctor` counts it.
+#   6b. projects — the same membership told to every machine instead of this
+#                  one: the repo's SLUG in the home clone's workkit.json, and
+#                  the removal of any slug that has since said `enabled: false`.
+#                  Only where a home clone exists; never creates and never
+#                  pushes — the daily publish commits what this writes.
 #   7. hooks     — assert the hook layer beside this engine is alive: every hook
 #                  wired in hooks.json resolves to a script that exists, is
 #                  executable, and parses, and the tools they call are present.
 #
 # Two user-level seeds run before any of that, on every invocation: the user's
 # own settings file, and the engine's public address (~/.claude/workkit → this
-# folder, retiring the link the address carried under its previous name).
+# folder).
 #
 # Usage: bash standards.sh [--state|--announce|--enable|--decline] [repo_dir]
 #        (repo_dir defaults to the current directory)
@@ -67,6 +69,21 @@ LABELS_JSON="$SCRIPT_DIR/labels.json"
 TEMPLATES_DIR="$SCRIPT_DIR/templates"
 FORMS_DIR="$TEMPLATES_DIR/issue-forms"
 CHANGELOG_LINTER="$SCRIPT_DIR/changelog.js"
+
+# The home repo's library, for the one thing the heal owes it: the opted-in
+# repo's SLUG in workkit.json's project list. Sourced when it is there and
+# skipped when it is not — a checkout without it still heals every repo it can,
+# and nothing here creates a home (issue #71's doctrine: only `workkit setup`
+# creates). Sourcing runs nothing.
+HOME_LIBS=1
+for _lib in lib.sh discussions.sh home.sh; do
+  if [[ -f "$SCRIPT_DIR/$_lib" ]]; then
+    # shellcheck source=/dev/null
+    . "$SCRIPT_DIR/$_lib"
+  else
+    HOME_LIBS=0
+  fi
+done
 
 # The hook layer that ships beside this engine. The engine runs fine without it
 # (it is installed alone wherever someone scripts the standard directly), so the
@@ -94,9 +111,6 @@ SPECCED_LABEL="status:specced"
 # test harness (tests/lib/harness.js) hold their own copy for the same reason;
 # a test asserts all three still say the same thing.
 WORKKIT_DIR=".workkit"
-# The name this directory carried before, read by the migration step below and
-# nowhere else. Every other path in this script is the current name.
-WORKKIT_LEGACY_DIR=".workflow"
 
 # The standard this script brings a repo to. A repo's committed settings.json
 # records the version it was last healed to, so "does this repo need attention?"
@@ -181,10 +195,6 @@ seed_user_settings
 # this step must never touch a real ~/.claude).
 CLAUDE_HOME="${WORKFLOW_CLAUDE_HOME:-${HOME:-}/.claude}"
 ENGINE_LINK="$CLAUDE_HOME/workkit"
-# The address the engine answered to before this standard renamed it. Removed
-# once, and only when it is a symlink to a workflow engine — a real directory or
-# a link to something else belongs to someone else and is left alone.
-ENGINE_LEGACY_LINK="$CLAUDE_HOME/workflow"
 
 ensure_engine_link() {
   [[ -d "$CLAUDE_HOME" ]] || return 0
@@ -203,27 +213,7 @@ ensure_engine_link() {
   fi
 }
 
-remove_legacy_engine_link() {
-  [[ -L "$ENGINE_LEGACY_LINK" ]] || return 0
-
-  local resolved
-  resolved="$(cd "$ENGINE_LEGACY_LINK" 2>/dev/null && pwd -P || true)"
-  if [[ -n "$resolved" ]]; then
-    # A workflow engine is a directory holding standards.sh. Anything else under
-    # that name is a foreign link and is not this script's to remove.
-    [[ "$resolved" == "$SCRIPT_DIR" || -f "$resolved/standards.sh" ]] || return 0
-  else
-    # Dangling: the checkout it pointed at is gone. Only a link that still names
-    # a workflow/ directory is claimed — that is the address this rename retired.
-    [[ "$(readlink "$ENGINE_LEGACY_LINK")" == */workflow ]] || return 0
-  fi
-
-  rm -f "$ENGINE_LEGACY_LINK" \
-    && log_ok "engine: removed the retired $ENGINE_LEGACY_LINK link — the address is $ENGINE_LINK"
-}
-
 ensure_engine_link
-remove_legacy_engine_link
 
 offer_line() {
   # %q on the path: a repo directory containing a space would otherwise print a
@@ -348,8 +338,11 @@ edit_settings_json() {
   return 0
 }
 
+# The settings mutex is the engine's, not this script's: `wk_take_settings_lock`
+# and `wk_drop_settings_lock` in lib.sh are the single home, because the home
+# repo's writers (the id cache, the home slug) take the same one and a second
+# copy of it here would be a second mutex guarding the same file.
 record_decline() {
-  local lock held=0 waited=0
   if ! command -v jq >/dev/null 2>&1; then
     log_warn "decline: jq is required to edit $USER_SETTINGS"
     exit 1
@@ -361,25 +354,11 @@ record_decline() {
   seed_user_settings
   [[ -f "$USER_SETTINGS" ]] || { log_warn "decline: cannot write $USER_SETTINGS"; exit 1; }
 
-  # The whole-file read-modify-write races when two sessions decline at once —
-  # last writer wins and the other decision is lost. mkdir is the atomic mutex.
-  lock="$USER_SETTINGS.lock"
-  while [ "$waited" -lt 50 ]; do
-    if mkdir "$lock" 2>/dev/null; then held=1; break; fi
-    sleep 0.1
-    # An assignment, never `(( waited++ ))`: that form yields the value BEFORE
-    # the increment, so the first pass evaluates to 0, which is a non-zero exit
-    # status. Bash 4.1 and later apply errexit to it and the whole run ends
-    # silently mid-wait; bash 3.2 (stock macOS) does not, so the defect only
-    # ever surfaced off this machine.
-    waited=$(( waited + 1 ))
-  done
-  if [ "$held" -eq 1 ]; then
-    # shellcheck disable=SC2064  # expand $lock now
-    trap "rmdir '$lock' 2>/dev/null || true" EXIT
+  # The decline is written under the shared mutex; the trap releases it however
+  # this run ends, since a decline is the last thing it does.
+  if wk_take_settings_lock; then
+    trap 'wk_drop_settings_lock' EXIT
   else
-    # No trap here: the mutex belongs to whichever run holds it, and removing
-    # it on the way out would let a third decline race the current holder.
     log_warn "decline: proceeding without the lock (held for 5s by another run)"
   fi
 
@@ -394,6 +373,129 @@ record_decline() {
   else
     log_ok "decline: recorded $root in $USER_SETTINGS — it will not be offered again"
   fi
+}
+
+# The machine-local roster: every repo this machine has healed, listed under the
+# same `repos` key that holds this user's declines ("enabled" against the path,
+# "declined" where a decline was recorded). It is an INDEX, never the answer —
+# the repo's committed settings.json stays the SSOT of membership, and this list
+# only says which of those repos this machine has seen. The tower reads it
+# instead of walking a filesystem root, so a repo never opened here is simply
+# not on the dashboard.
+#
+# Maintained on contact and silently: a heal or an --enable adds the repo it is
+# standing in and removes any listed path that is gone, whose committed file is
+# gone, or whose committed file now says `enabled: false` — the three ways a
+# repo stops being a member, exactly as resolve_state reads them. A decline
+# entry is a decision, not an observation, and is never pruned.
+#
+# Best effort throughout — no jq, no settings file, or a settings file nobody
+# can parse each leave the roster as it is. The heal never fails over its index.
+# The slugs register_in_roster found had said `enabled: false`, for the sibling
+# below to drop from the home repo's project list. A global because the two run
+# in one heal and the prune loop is the only place that learns them.
+home_stale_slugs=''
+
+# The home repo's half of the roster: this repo's SLUG in workkit.json's
+# `projects`, and the removal of any slug whose repo has since said no.
+#
+# The roster (settings.json) and the project list (workkit.json) are the two
+# halves of the same fact told to two audiences — paths for this machine, slugs
+# for every machine — which is why this runs beside register_in_roster and under
+# the same mutex.
+#
+# It never creates, clones or pushes: a machine with no home clone does nothing
+# at all here, and the commit of what it writes belongs to the daily publish. A
+# heal that pushed would put the hook path in the business of writing to GitHub.
+register_home_project() {
+  local slug name locked=0 stale
+
+  [[ "$HOME_LIBS" -eq 1 ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  wk_home_ready || return 0
+
+  slug="$(wk_repo_slug "$root")"
+  name="$(basename "$root")"
+
+  if wk_take_settings_lock; then locked=1; fi
+  # Removals FIRST: the repo being healed is the authority on its own slug, and
+  # two checkouts of one repo (or two paths for it) would otherwise let a stale
+  # entry delete the registration this run just made.
+  while IFS= read -r stale; do
+    [[ -n "$stale" ]] || continue
+    wk_home_remove_project "$stale"
+  done <<<"$home_stale_slugs"
+  [[ -n "$slug" ]] && wk_home_upsert_project "$slug" "$name"
+  if [ "$locked" -eq 1 ]; then wk_drop_settings_lock; fi
+  return 0
+}
+
+register_in_roster() {
+  local keys key stale='' stale_json flag locked=0
+
+  command -v jq >/dev/null 2>&1 || return 0
+  seed_user_settings
+  [[ -f "$USER_SETTINGS" ]] || return 0
+
+  # A file nobody can parse is SAID, not silently skipped: the roster would go
+  # stale forever and the tower would quietly show the wrong machine.
+  if ! keys="$(jq -r '(.repos // {}) | to_entries[] | select(.value != "declined") | .key' "$USER_SETTINGS" 2>/dev/null)"; then
+    log_warn "roster: $USER_SETTINGS is not valid JSON — fix or remove it; until then this machine's roster is not maintained"
+    return 0
+  fi
+
+  while IFS= read -r key; do
+    [[ -n "$key" ]] || continue
+    [[ "$key" == "$root" ]] && continue
+    if [[ ! -d "$key" ]]; then
+      stale="$stale$key"$'\n'
+      continue
+    fi
+    # No committed file is the tri-state's way back to undecided or declined, so
+    # it is the same "no longer a member" case as a path that is gone. Left in,
+    # the entry would sit on the roster forever while the tower ignored it.
+    if [[ ! -f "$key/$REPO_SETTINGS" ]]; then
+      stale="$stale$key"$'\n'
+      continue
+    fi
+    # `has`, not `//`: jq's alternative operator treats `false` as absent, which
+    # is the one value this check exists to find.
+    flag="$(jq -r 'if has("enabled") then (.enabled | tostring) else "absent" end' "$key/$REPO_SETTINGS" 2>/dev/null || true)"
+    if [[ "$flag" == "false" ]]; then
+      stale="$stale$key"$'\n'
+      # A repo that said no is off the home repo's project list too. A path that
+      # simply went away is NOT: slugs are portable truth and paths are not, so
+      # another machine's copy of that repo keeps its place (issue #27 Spec).
+      if [[ "$HOME_LIBS" -eq 1 ]]; then
+        home_stale_slugs="$home_stale_slugs$(wk_repo_slug "$key")"$'\n'
+      fi
+    fi
+  done <<<"$keys"
+
+  # Nothing to add and nothing to remove: leave the file untouched, so a session
+  # start on an up-to-date machine writes nothing at all.
+  if [[ -z "$stale" ]] \
+    && jq -e --arg r "$root" '(.repos // {})[$r] == "enabled"' "$USER_SETTINGS" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  stale_json="$(printf '%s' "$stale" | jq -Rs 'split("\n") | map(select(length > 0))' 2>/dev/null)" || return 0
+
+  # The same mutex a decline takes, for the same reason: this is a whole-file
+  # read-modify-write, and sessions opening together in several repos would
+  # otherwise keep only the last one's registration. The heal runs once per repo
+  # per day, so a lost registration keeps that repo off the tower, the board and
+  # the brief until tomorrow. Released here rather than by an EXIT trap — the
+  # heal has work left after this, and holding the lock through it would make
+  # every concurrent run wait out the full five seconds.
+  if wk_take_settings_lock; then locked=1; fi
+
+  edit_settings_json "$USER_SETTINGS" --arg r "$root" --argjson stale "$stale_json" \
+    '.repos = ((.repos // {}) | with_entries(select(.key as $k | ($stale | index($k)) | not)) + { ($r): "enabled" })' \
+    || true
+
+  if [ "$locked" -eq 1 ]; then wk_drop_settings_lock; fi
+  return 0
 }
 
 write_repo_optin() {
@@ -414,50 +516,6 @@ write_repo_optin() {
   fi
   edit_settings_json "$REPO_SETTINGS" '.enabled = true' || exit 1
   log_ok "opt-in: $REPO_SETTINGS is now enabled"
-}
-
-# ── 1b. .workflow/ → .workkit/, once ──
-# The state directory was called .workflow until this standard renamed it, and
-# every other path in this script now says .workkit. A repo healed before the
-# rename still has the old directory, so the heal moves it — once, and then
-# never again, because the old name is gone.
-#
-# The trigger is the COMMITTED settings.json in the old directory: that file is
-# the repo's answer, so moving it touches only a repo that already said yes. The
-# move is a plain `mv`, which carries the gitignored session files along with it;
-# git sees the tracked settings.json as a rename, for the human to commit with
-# the .gitignore lines rewritten here.
-#
-# Both directories present means someone made a .workkit/ by hand, or a half-
-# finished migration left the two side by side. Merging them needs judgment
-# about which inbox is current, so this says so and touches nothing.
-migrate_legacy_dir() {
-  local ignore=".gitignore" tmp
-  [[ -f "$WORKKIT_LEGACY_DIR/settings.json" ]] || return 0
-
-  if [[ -e "$WORKKIT_DIR" ]]; then
-    log_warn "migrate: $WORKKIT_LEGACY_DIR/ and $WORKKIT_DIR/ both exist — move what you want to keep into $WORKKIT_DIR/, then remove $WORKKIT_LEGACY_DIR/"
-    needs_attention=1
-    return 0
-  fi
-  if ! mv "$WORKKIT_LEGACY_DIR" "$WORKKIT_DIR"; then
-    log_warn "migrate: could not move $WORKKIT_LEGACY_DIR/ to $WORKKIT_DIR/ — do it by hand"
-    needs_attention=1
-    return 0
-  fi
-
-  if [[ -f "$ignore" ]] && grep -qF "$WORKKIT_LEGACY_DIR/" "$ignore"; then
-    tmp="$ignore.tmp.$$"
-    if sed "s|$WORKKIT_LEGACY_DIR/|$WORKKIT_DIR/|g" "$ignore" >"$tmp" && [[ -s "$tmp" ]]; then
-      mv "$tmp" "$ignore"
-    else
-      rm -f "$tmp"
-      log_warn "migrate: could not rewrite $ignore — point its $WORKKIT_LEGACY_DIR/ lines at $WORKKIT_DIR/ by hand"
-      needs_attention=1
-    fi
-  fi
-
-  log_ok "migrate: $WORKKIT_LEGACY_DIR/ → $WORKKIT_DIR/ — commit the rename"
 }
 
 # ── 1. .workkit/ stays untracked, except the committed settings.json ──
@@ -789,9 +847,9 @@ desired_labels() {
   ' "$LABELS_JSON"
 }
 
-# GitHub's answer to `gh label list`, kept from the sync so the migration below
-# needs no second round trip. Empty means the sync never reached GitHub, and the
-# migration has nothing to decide on.
+# GitHub's answer to `gh label list`, kept from the sync so the steps below need
+# no second round trip. Empty means the sync never reached GitHub, and they have
+# nothing to decide on.
 existing_labels=""
 
 sync_labels() {
@@ -868,99 +926,7 @@ sync_labels() {
   return 0
 }
 
-# ── 3b. Retired labels move to their replacements ──
-# The manifest's `migrations` map is old label → new. A vocabulary change would
-# otherwise leave every already-labeled issue outside the queue queries, so the
-# heal carries each one across: add the new label, remove the old, then delete
-# the old label itself. CLOSED issues are included — the label on a closed issue
-# is the record of how it was worked, and half a rename is worse than none.
-#
-# Idempotent by shape: the whole step turns on the old label still existing, and
-# deleting it is the last thing that happens, so the next run finds nothing.
-#
-# The delete is the dangerous end of this, because an issue whose only status
-# label it is comes out of the pass with no status at all. So it happens only
-# after the repo has been ASKED AGAIN and answered that nothing carries the
-# label any more. Every other outcome — a move that failed, a query that
-# failed, issues still listed (the query is capped, and a repo past the cap
-# strands the overflow) — keeps the label and flags the run, so the next
-# session picks the migration up where this one stopped.
-migrations() {
-  jq -r '.migrations // {} | to_entries[] | "\(.key)\t\(.value)"' "$LABELS_JSON" 2>/dev/null || true
-}
-
-# The issue numbers carrying one label, open and closed, one per line. Returns
-# NON-ZERO when the query itself failed: an unreachable GitHub and a label
-# nothing carries both produce no numbers, and treating the first as the second
-# is what deletes a label out from under the issues still wearing it.
-list_labeled() {
-  local raw
-  raw="$(gh issue list --state all --label "$1" --json number --limit 500 2>/dev/null)" || return 1
-  jq -r '.[].number' <<<"$raw" 2>/dev/null || return 1
-}
-
-migrate_labels() {
-  local old new numbers remaining n moved failed
-
-  # No manifest, or a label step that never reached GitHub: nothing to decide on.
-  [[ -f "$LABELS_JSON" ]] || return 0
-  [[ -n "$existing_labels" ]] || return 0
-
-  while IFS=$'\t' read -r old new; do
-    [[ -n "$old" && -n "$new" ]] || continue
-    jq -e --arg n "$old" 'any(.[]; .name == $n)' <<<"$existing_labels" >/dev/null 2>&1 || continue
-
-    if ! numbers="$(list_labeled "$old")"; then
-      log_warn "labels: could not list the issues carrying $old — leaving the label in place"
-      needs_attention=1
-      continue
-    fi
-
-    moved=0
-    failed=0
-    while read -r n; do
-      # A repo with no such issues answers with an empty line, not no line.
-      [[ -n "$n" ]] || continue
-      if gh issue edit "$n" --add-label "$new" --remove-label "$old" >/dev/null 2>&1; then
-        moved=$((moved + 1))
-      else
-        log_warn "labels: could not move #$n from $old to $new"
-        failed=1
-      fi
-    done <<<"$numbers"
-
-    if [[ "$failed" -eq 1 ]]; then
-      needs_attention=1
-      continue
-    fi
-    [[ "$moved" -gt 0 ]] && log_ok "labels: moved $moved issues from $old to $new"
-
-    # Ask the repo again before deleting anything. "Every move I made succeeded"
-    # is not "nothing is left": the list above is capped, and only an answer of
-    # NONE licenses the delete.
-    if ! remaining="$(list_labeled "$old")"; then
-      log_warn "labels: could not confirm $old is empty — leaving the label in place"
-      needs_attention=1
-      continue
-    fi
-    if [[ -n "$remaining" ]]; then
-      log_warn "labels: $old still carries issues after this pass — leaving the label in place, the next run continues it"
-      needs_attention=1
-      continue
-    fi
-
-    if gh label delete "$old" --yes >/dev/null 2>&1; then
-      log_ok "labels: removed the retired $old — it is $new now"
-    else
-      log_warn "labels: could not delete the retired $old"
-      needs_attention=1
-    fi
-  done < <(migrations)
-
-  return 0
-}
-
-# ── 3c. Agent claims that went quiet are released ──
+# ── 3b. Agent claims that went quiet are released ──
 # An agent that claimed an issue and then died leaves it locked against every
 # other worker. The claim is the CLAIM_LABEL plus the assignee, so releasing it
 # removes both and says so in a comment — the issue's own trail records who
@@ -972,7 +938,7 @@ migrate_labels() {
 # reads the pipeline. Whatever partial progress exists lives in the issue's own
 # trail, so nothing is lost by moving the label back.
 #
-# Fail-safe like the migration: only an ANSWER from GitHub licenses a write. A
+# Fail-safe by shape: only an ANSWER from GitHub licenses a write. A
 # query that fails leaves every claim exactly as it is and flags the run, so the
 # next session tries again rather than releasing work that is still running.
 # A human claim (an assignee and no CLAIM_LABEL) is never in the query's answer
@@ -1174,11 +1140,6 @@ needs_attention=0
 # version is not stamped past a check that never happened.
 drift_skipped=0
 
-# BEFORE the state is resolved, and so before the mode dispatch: a repo whose
-# answer still sits in .workflow/settings.json would otherwise read as undecided,
-# be offered instead of healed, and never reach the migration at all.
-migrate_legacy_dir
-
 state="$(resolve_state)"
 
 case "$mode" in
@@ -1201,6 +1162,8 @@ case "$state" in
 esac
 
 log_info "standards: $root"
+register_in_roster
+register_home_project
 ensure_workflow_ignored
 ensure_gitignore_basics
 ensure_local_file inbox.md
@@ -1211,7 +1174,6 @@ ensure_changelog_linter
 ensure_changelog_job
 ensure_branch_protection
 sync_labels
-migrate_labels
 sweep_stale_claims
 check_issue_labels
 check_hook_layer

@@ -30,7 +30,7 @@
 // exactly because `localhost` is already a name this tower answers to.
 //
 // Caching is in memory and time based, matching the poll rates the page uses:
-// the roster and the board are expensive (a disk walk, a GraphQL round trip)
+// the roster and the board are expensive (a disk read, a GraphQL round trip)
 // and change slowly; sessions and health are cheap and change constantly.
 //
 // Every `opts` key passes straight through to the libs, which is what lets the
@@ -60,7 +60,7 @@ const DEFAULT_BIND = '127.0.0.1';
 // round trip before every intake POST.
 const CORS_MAX_AGE = 600;
 
-// The roster is a disk walk and the board a network round trip; both change on
+// The roster is a disk read and the board a network round trip; both change on
 // a human timescale. Sessions and health are local reads the page polls at 10s.
 const ROSTER_TTL = 60 * 1000;
 const BOARD_TTL = 60 * 1000;
@@ -100,7 +100,7 @@ const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
  * Memoize a producer for `ttl` ms. One slot, no key: every cached call here
  * asks the same whole-roster question.
  *
- * A FAILURE is never stored. `gh` being briefly unauthenticated, or a disk walk
+ * A FAILURE is never stored. `gh` being briefly unauthenticated, or a roster read
  * that threw, would otherwise pin its own error in front of every read for the
  * whole TTL — the tower would stay broken for a minute after the machine was
  * fine again. Only an answer worth keeping takes the slot; everything else is
@@ -317,7 +317,6 @@ const urlFrom = (stdout) => {
 /**
  * The tower server.
  * @param {object} [opts]
- * @param {string} [opts.root] the Repositories root to walk
  * @param {string} [opts.workflowHome] the user's ~/.workkit
  * @param {string} [opts.markerDir] the keep-awake marker directory
  * @param {string} [opts.stateDir] the statusline cache directory
@@ -332,13 +331,12 @@ const createServer = (opts = {}) => {
   const seam = { exec };
   const hosts = allowedHosts(opts.allowHosts);
 
-  // A failed walk answers null, which the cache refuses to store — distinct
-  // from a walk that ran and found nothing, which is a real empty roster and
+  // A failed read answers null, which the cache refuses to store — distinct
+  // from a read that ran and found nothing, which is a real empty roster and
   // caches like any other answer. Callers see [] either way.
   const rosterOrNull = cached(ROSTER_TTL, () => {
     try {
       return discoverRepos({
-        root: opts.root,
         workflowHome: opts.workflowHome,
         home: opts.home,
         exec,

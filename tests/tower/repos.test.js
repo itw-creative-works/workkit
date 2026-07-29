@@ -1,11 +1,10 @@
 //
-// Tests for tower/api/lib/repos.js — roster discovery.
+// Tests for tower/api/lib/repos.js — the roster read.
 //
 // The fixtures are REAL git repositories with real `origin` remotes (adding a
 // remote needs no network), because "what does git call this repo's origin" is
 // a question only git answers and a stubbed answer would test the stub. The
-// walk itself runs against a scratch tree, so the real Repositories root and
-// the real ~/.workkit are never read.
+// roster itself is a scratch ~/.workkit, so the real one is never read.
 //
 
 const fs = require('fs');
@@ -41,11 +40,21 @@ const mkRepo = (root, rel, { settings = { version: 7, enabled: true }, origin = 
   return dir;
 };
 
-/** A ~/.workkit fixture carrying a declines map. */
-const mkWorkflowHome = (root, repos) => {
+/**
+ * A ~/.workkit fixture. `repos` is the map verbatim when an object; an array of
+ * paths is the ordinary case — every one registered as the engine writes it.
+ * `settings` overrides the whole file (a string is written raw).
+ */
+const mkWorkflowHome = (root, repos, settings) => {
   const dir = path.join(root, 'workflow-home');
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ version: 1, repos }, null, 2));
+  const map = Array.isArray(repos)
+    ? Object.fromEntries(repos.map((p) => [p, 'enabled']))
+    : repos;
+  const body = settings === undefined
+    ? JSON.stringify({ version: 1, repos: map }, null, 2)
+    : (typeof settings === 'string' ? settings : JSON.stringify(settings, null, 2));
+  fs.writeFileSync(path.join(dir, 'settings.json'), body);
   return dir;
 };
 
@@ -54,52 +63,68 @@ const names = (found) => found.map((r) => r.name).sort().join(',');
 const run = async () => {
   group('tower/repos: which repos are in');
 
-  await test('an opted-in repo is found at owner/repo depth', () => {
+  await test('a registered, opted-in repo is on the roster', () => {
     const tmp = mkTmp();
-    mkRepo(tmp, 'Owner/alpha');
-    const found = discoverRepos({ root: tmp, workflowHome: path.join(tmp, 'nope') });
-    assertEq(names(found), 'alpha', 'alpha discovered');
-    assertEq(found[0].path, path.join(tmp, 'Owner', 'alpha'), 'path is the repo dir');
+    const repo = mkRepo(tmp, 'Owner/alpha');
+    const found = discoverRepos({ workflowHome: mkWorkflowHome(tmp, [repo]) });
+    assertEq(names(found), 'alpha', 'alpha listed');
+    assertEq(found[0].path, repo, 'path is the repo dir');
     cleanup(tmp);
   });
 
-  await test('enabled:false is out, and so is an unparseable settings file', () => {
+  await test('a repo nobody registered is NOT found, however opted in it is', () => {
     const tmp = mkTmp();
-    mkRepo(tmp, 'Owner/yes');
-    mkRepo(tmp, 'Owner/no', { settings: { version: 7, enabled: false } });
-    mkRepo(tmp, 'Owner/broken', { settings: '{ not json' });
-    mkRepo(tmp, 'Owner/none', { settings: null });
-    assertEq(names(discoverRepos({ root: tmp, workflowHome: path.join(tmp, 'nope') })), 'yes', 'only the enabled repo');
+    const listed = mkRepo(tmp, 'Owner/listed');
+    mkRepo(tmp, 'Owner/unlisted');
+    const found = discoverRepos({ workflowHome: mkWorkflowHome(tmp, [listed]) });
+    assertEq(names(found), 'listed', 'the roster is the whole list — nothing is walked');
     cleanup(tmp);
   });
 
-  await test('the opt-in is strictly `enabled === true` — absent and stringy are both out', () => {
+  await test('a registered repo that lost its opt-in is dropped silently', () => {
     const tmp = mkTmp();
-    mkRepo(tmp, 'Owner/yes');
-    mkRepo(tmp, 'Owner/silent', { settings: { version: 1 } });
-    mkRepo(tmp, 'Owner/stringy', { settings: { version: 1, enabled: 'true' } });
-    mkRepo(tmp, 'Owner/numeric', { settings: { version: 1, enabled: 1 } });
-    assertEq(names(discoverRepos({ root: tmp, workflowHome: path.join(tmp, 'nope') })), 'yes',
-      'a repo joins by saying so, not by nearly saying so');
+    const yes = mkRepo(tmp, 'Owner/yes');
+    const no = mkRepo(tmp, 'Owner/no', { settings: { version: 7, enabled: false } });
+    const broken = mkRepo(tmp, 'Owner/broken', { settings: '{ not json' });
+    const none = mkRepo(tmp, 'Owner/none', { settings: null });
+    const gone = path.join(tmp, 'Owner', 'gone');
+    const home = mkWorkflowHome(tmp, [yes, no, broken, none, gone]);
+    assertEq(names(discoverRepos({ workflowHome: home })), 'yes', 'only the repo whose committed file still says yes');
+    assertEq(fs.readFileSync(path.join(home, 'settings.json'), 'utf8').includes('gone'), true,
+      'and the reader never rewrites the index — pruning is the engine\'s');
     cleanup(tmp);
   });
 
-  await test('a decline in the user settings excludes the repo by realpath', () => {
+  await test('the opt-in is anything but `enabled: false` — the engine reads it that way', () => {
+    // The engine's resolve_state is the SSOT of what enabled means: a committed
+    // file that does not say false is a yes, which is how a legacy
+    // `{ "version": 1 }` written before the key existed stays a member. Reading
+    // it more strictly here would drop repos the heal keeps registering.
+    const tmp = mkTmp();
+    const yes = mkRepo(tmp, 'Owner/yes');
+    const legacy = mkRepo(tmp, 'Owner/legacy', { settings: { version: 1 } });
+    const off = mkRepo(tmp, 'Owner/off', { settings: { version: 1, enabled: false } });
+    assertEq(names(discoverRepos({ workflowHome: mkWorkflowHome(tmp, [yes, legacy, off]) })), 'legacy,yes',
+      'only the repo that said no is out');
+    cleanup(tmp);
+  });
+
+  await test('a declined entry is skipped, and the enabled ones beside it are not', () => {
     const tmp = mkTmp();
     const kept = mkRepo(tmp, 'Owner/kept');
     const declined = mkRepo(tmp, 'Owner/declined');
     const workflowHome = mkWorkflowHome(tmp, {
-      [fs.realpathSync(declined)]: 'declined',
-      [fs.realpathSync(kept)]: 'enabled',
+      [declined]: 'declined',
+      [kept]: 'enabled',
     });
-    assertEq(names(discoverRepos({ root: tmp, workflowHome })), 'kept', 'the declined repo is dropped');
+    assertEq(names(discoverRepos({ workflowHome })), 'kept', 'the declined repo is not listed');
     cleanup(tmp);
   });
 
-  await test('a hidden repo directory is discovered — .dotfiles is a real repo', () => {
+  await test('a hidden repo directory is listed — .dotfiles is a real repo', () => {
     const tmp = mkTmp();
-    mkRepo(tmp, 'Owner/.dotfiles');
-    assertEq(names(discoverRepos({ root: tmp, workflowHome: path.join(tmp, 'nope') })), '.dotfiles', 'dot dirs are walked');
+    const repo = mkRepo(tmp, 'Owner/.dotfiles');
+    assertEq(names(discoverRepos({ workflowHome: mkWorkflowHome(tmp, [repo]) })), '.dotfiles', 'dot names are ordinary');
     cleanup(tmp);
   });
 
@@ -107,10 +132,14 @@ const run = async () => {
 
   await test('ssh, ssh-URL and https remotes all parse to owner/repo', () => {
     const tmp = mkTmp();
-    mkRepo(tmp, 'Owner/ssh', { origin: 'git@github.com:ITW-Creative-Works/workkit.git' });
-    mkRepo(tmp, 'Owner/sshurl', { origin: 'ssh://git@github.com/ITW-Creative-Works/workkit' });
-    mkRepo(tmp, 'Owner/https', { origin: 'https://github.com/ianwieds/.dotfiles.git' });
-    const bySlug = Object.fromEntries(discoverRepos({ root: tmp, workflowHome: path.join(tmp, 'nope') }).map((r) => [r.name, r.slug]));
+    const repos = [
+      mkRepo(tmp, 'Owner/ssh', { origin: 'git@github.com:ITW-Creative-Works/workkit.git' }),
+      mkRepo(tmp, 'Owner/sshurl', { origin: 'ssh://git@github.com/ITW-Creative-Works/workkit' }),
+      mkRepo(tmp, 'Owner/https', { origin: 'https://github.com/ianwieds/.dotfiles.git' }),
+    ];
+    const bySlug = Object.fromEntries(
+      discoverRepos({ workflowHome: mkWorkflowHome(tmp, repos) }).map((r) => [r.name, r.slug]),
+    );
     assertEq(bySlug.ssh, 'ITW-Creative-Works/workkit', 'ssh shorthand');
     assertEq(bySlug.sshurl, 'ITW-Creative-Works/workkit', 'ssh URL');
     assertEq(bySlug.https, 'ianwieds/.dotfiles', 'https, dot in the repo name kept');
@@ -119,8 +148,8 @@ const run = async () => {
 
   await test('a repo with no origin is still listed, with slug null', () => {
     const tmp = mkTmp();
-    mkRepo(tmp, 'Owner/local');
-    const found = discoverRepos({ root: tmp, workflowHome: path.join(tmp, 'nope') });
+    const repo = mkRepo(tmp, 'Owner/local');
+    const found = discoverRepos({ workflowHome: mkWorkflowHome(tmp, [repo]) });
     assertEq(found.length, 1, 'still listed — health works locally');
     assertEq(found[0].slug, null, 'no slug');
     cleanup(tmp);
@@ -132,30 +161,26 @@ const run = async () => {
     assertEq(slugFromRemote('notaremote'), null, 'no owner segment');
   });
 
-  group('tower/repos: the walk is bounded');
+  group('tower/repos: a roster that says nothing');
 
-  await test('a repo deeper than the bound is not found, and one at the bound is', () => {
+  await test('no settings file, no repos key, and an unparseable file are all empty', () => {
     const tmp = mkTmp();
-    mkRepo(tmp, 'a/b/c/deep');
-    mkRepo(tmp, 'a/b/c/d/deeper');
-    assertEq(names(discoverRepos({ root: tmp, workflowHome: path.join(tmp, 'nope') })), 'deep', 'depth 4 in, depth 5 out');
+    const absent = discoverRepos({ workflowHome: path.join(tmp, 'nope') });
+    assert(Array.isArray(absent) && absent.length === 0, 'a machine that has healed nothing yet');
+    assertEq(discoverRepos({ workflowHome: mkWorkflowHome(tmp, null, { version: 1 }) }).length, 0, 'no repos key');
     cleanup(tmp);
+
+    const tmp2 = mkTmp();
+    assertEq(discoverRepos({ workflowHome: mkWorkflowHome(tmp2, null, '{ not json') }).length, 0, 'unparseable');
+    cleanup(tmp2);
   });
 
-  await test('node_modules is pruned and a repo is a leaf', () => {
+  await test('the sort is by path, so the answer is stable however the map was written', () => {
     const tmp = mkTmp();
-    mkRepo(tmp, 'Owner/outer');
-    mkRepo(tmp, 'Owner/outer/node_modules/vendored');
-    mkRepo(tmp, 'Owner/outer/nested');
-    const found = discoverRepos({ root: tmp, workflowHome: path.join(tmp, 'nope') });
-    assertEq(names(found), 'outer', 'nothing inside an opted-in repo is a second repo');
-    cleanup(tmp);
-  });
-
-  await test('a missing root is empty, not an exception', () => {
-    const tmp = mkTmp();
-    const found = discoverRepos({ root: path.join(tmp, 'absent'), workflowHome: path.join(tmp, 'nope') });
-    assert(Array.isArray(found) && found.length === 0, 'empty roster');
+    const b = mkRepo(tmp, 'Owner/b');
+    const a = mkRepo(tmp, 'Owner/a');
+    const found = discoverRepos({ workflowHome: mkWorkflowHome(tmp, [b, a]) });
+    assertEq(found.map((r) => r.name).join(','), 'a,b', 'insertion order is not the answer');
     cleanup(tmp);
   });
 

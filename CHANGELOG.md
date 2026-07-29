@@ -7,6 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#40](../../issues/40) — The global layer is `~/.workkit` and one optional home repo: the engine keeps a self-maintaining roster the tower reads instead of walking a filesystem root, and the summaries step's local file path is gone — a generated record never lives as a file.
+- [#27](../../issues/27) — The home repo is real: `workkit setup` creates the private `<login>/workkit` and converts `~/.workkit` into its clone in place, summaries publish as Discussions instead of skipping, the opted-in repos travel between machines as slugs in `workkit.json`, and the dashboard is built locally and served from the repo by GitHub Pages.
+
+### Removed
+
+- [#76](../../issues/76) — The one-time migrations are out of the everyday runners: the label `migrations` map, the `.workflow/` → `.workkit/` rename, the old engine-link removal, the retirement of the 3am agent, and the news-mark move. A rename is applied once at rename time, not carried forward by standing code.
+
 ## [0.10.0] - 2026-07-28
 
 ### Added

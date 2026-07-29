@@ -21,7 +21,6 @@ const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 const CLI = path.join(WORKFLOW_DIR, 'workkit.sh');
 const JOBS_INSTALL = path.join(__dirname, '..', '..', 'jobs', 'install.sh');
 const LABEL = 'com.workkit.claude-daily';
-const RETIRED = 'com.workkit.claude-nightly';
 
 // A PATH with the ordinary system tools and nothing else — the shims are
 // prepended per world, so a command this script looks for is present only when
@@ -340,17 +339,6 @@ const run = async () => {
       cleanup(world.root);
     });
 
-    await test('a retired agent still on the machine counts as drift', () => {
-      const world = mkWorld();
-      installSchedule(world);
-      world.seedPlist(RETIRED, '<!-- the 3am agent, from before -->\n');
-      const { out } = runCli(world, ['update', '--auto']);
-      assert(!fs.existsSync(world.plist(RETIRED)), 'the retired agent is removed');
-      assert(out.includes('retired'), `it says what actually happened, got: ${out}`);
-      assert(!out.includes('installed and loaded'), 'and does not claim to have reinstalled the 9am job');
-      cleanup(world.root);
-    });
-
     group('workkit: a checkout or an installer that cannot answer (macOS)');
 
     await test('a checkout missing its installer says so, never "current"', () => {
@@ -465,6 +453,47 @@ const run = async () => {
     cleanup(world.root); cleanup(repo);
   });
 
+  await test('setup offers the home repo, and a non-interactive run only says what it would do', () => {
+    // The gh shim answers `auth status` and nothing else, so `gh api user`
+    // prints nothing: the home step has no login to work from and hands over
+    // the command instead of guessing one. What this proves is the OFFER — the
+    // wizard reaches the home steps at all, and creates nothing without a
+    // terminal (workflow/home.sh's own suite covers the steps themselves).
+    const world = mkWorld();
+    const { code, out } = runCli(world, ['setup']);
+    assertEq(code, 0, 'exit 0');
+    assert(/home:/.test(out), `the home repo is part of setup, got: ${out}`);
+    assert(!fs.existsSync(path.join(world.env.WORKFLOW_HOME, '.git')), 'and nothing was converted without an answer');
+    cleanup(world.root);
+  });
+
+  group('workkit publish');
+
+  await test('publish delegates to the engine’s script, which skips with no home repo', () => {
+    const world = mkWorld();
+    const { code, out } = runCli(world, ['publish']);
+    assertEq(code, 0, 'a machine with no home repo is not broken');
+    assert(/publish: no home repo/.test(out), `the engine's own reason comes through, got: ${out}`);
+    cleanup(world.root);
+  });
+
+  await test('the map names it', () => {
+    const world = mkWorld();
+    assert(runCli(world, ['help']).out.includes('publish'), 'one command, and publish is reachable from it');
+    cleanup(world.root);
+  });
+
+  await test('update --auto never builds a site at session start', () => {
+    // The daily job publishes; a session start that ran an app build would cost
+    // minutes nobody asked for.
+    const world = mkWorld({ binOnPath: true });
+    fs.mkdirSync(world.claudeHome, { recursive: true });
+    runCli(world, ['update']);
+    const { out } = runCli(world, ['update', '--auto']);
+    assert(!/publish:/.test(out), `the quiet path says nothing about the site, got: ${out}`);
+    cleanup(world.root);
+  });
+
   group('workkit doctor');
 
   await test('a bare machine hears what is missing and how to fix each', () => {
@@ -487,6 +516,49 @@ const run = async () => {
     const { out } = runCli(world, ['doctor'], { cwd: repo });
     assert(out.includes('Everything this command can see is current'), `no drift after a setup, got: ${out}`);
     cleanup(world.root); cleanup(repo);
+  });
+
+  await test('the global layer is reported: the roster count and the home repo', () => {
+    const world = mkWorld({ pluginInstalled: true, binOnPath: true });
+    const repo = mkRepo({ optIn: true });
+    // A heal of the repo is what puts it on the roster, so `doctor` has a real
+    // count to read rather than a seeded one.
+    runCli(world, ['enable', repo]);
+    const { out } = runCli(world, ['doctor'], { cwd: repo });
+    assert(/roster: 1 repo\(s\) registered/.test(out), `it counts the roster, got: ${out}`);
+    assert(/home: not set/.test(out) && out.includes('workkit setup'), `and says which command makes one, got: ${out}`);
+
+    const settings = path.join(world.env.WORKFLOW_HOME, 'settings.json');
+    const parsed = JSON.parse(fs.readFileSync(settings, 'utf8'));
+    parsed.home = 'owner/private-home';
+    fs.writeFileSync(settings, JSON.stringify(parsed, null, 2));
+    const named = runCli(world, ['doctor'], { cwd: repo }).out;
+    assert(/home: owner\/private-home/.test(named), `it reports the home repo once it is named, got: ${named}`);
+    assert(/is not a clone of it/.test(named), `and that the folder is not its clone yet, got: ${named}`);
+    cleanup(world.root); cleanup(repo);
+  });
+
+  await test('a machine with no user settings yet is told the first heal writes it', () => {
+    const world = mkWorld();
+    const { out } = runCli(world, ['doctor']);
+    assert(/roster: .*does not exist yet/.test(out), `no invented count, got: ${out}`);
+    cleanup(world.root);
+  });
+
+  await test('an empty roster reports as a notice, not as a green check', () => {
+    // Zero registered means the tower, the board and the brief have nothing to
+    // read — the one count that must not read as everything being fine.
+    const world = mkWorld({ pluginInstalled: true, binOnPath: true });
+    fs.mkdirSync(world.env.WORKFLOW_HOME, { recursive: true });
+    fs.writeFileSync(
+      path.join(world.env.WORKFLOW_HOME, 'settings.json'),
+      JSON.stringify({ version: 1, repos: {} }, null, 2),
+    );
+    const { out } = runCli(world, ['doctor']);
+    const line = out.split('\n').find((l) => l.includes('roster:'));
+    assert(line && !/✓/.test(line), `no green check on an empty roster, got: ${line}`);
+    assert(/fills as a session opens/.test(line), `and it says how it fills, got: ${line}`);
+    cleanup(world.root);
   });
 
   group('workkit: the engine commands');

@@ -1,11 +1,11 @@
 //
 // Tests for tower/api/server.js — the endpoints, the caches, the one write path.
 //
-// The WHOLE server runs here, on port 0, against fixtures: a scratch
-// Repositories root of real git repos, a scratch marker directory and
+// The WHOLE server runs here, on port 0, against fixtures: a scratch ~/.workkit
+// whose roster lists one real git repo, a scratch marker directory and
 // statusline cache, and one fake exec standing in for `gh` and `ps` (`git` is
-// answered for real, because roster discovery and health both ask git
-// questions no stub could answer honestly).
+// answered for real, because the roster and health both ask git questions no
+// stub could answer honestly).
 //
 // The intake endpoint is exercised for its ARGV, never for its effect: the fake
 // exec records the exact argument vector and returns what `gh issue create`
@@ -40,9 +40,10 @@ const issueNode = (number, labels) => ({
 });
 
 /**
- * A scratch world: one opted-in git repo with an origin, one live keep-awake
- * marker with its transcript, a statusline cache entry, and the exec seam that
- * answers gh and ps while passing git through to the real binary.
+ * A scratch world: one opted-in git repo with an origin, registered in the
+ * scratch ~/.workkit the server reads as its roster, one live keep-awake marker
+ * with its transcript, a statusline cache entry, and the exec seam that answers
+ * gh and ps while passing git through to the real binary.
  */
 const mkWorld = () => {
   const root = mkTmp();
@@ -57,6 +58,13 @@ const mkWorld = () => {
   fs.writeFileSync(path.join(repo, 'CHANGELOG.md'), '# Changelog\n\n## [Unreleased]\n\n- [#1](u) — One thing.\n');
   git(repo, 'add', '-A');
   git(repo, 'commit', '-qm', 'initial');
+
+  const workflowHome = path.join(root, 'workflow-home');
+  fs.mkdirSync(workflowHome, { recursive: true });
+  fs.writeFileSync(
+    path.join(workflowHome, 'settings.json'),
+    JSON.stringify({ version: 1, repos: { [repo]: 'enabled' } }, null, 2),
+  );
 
   const markerDir = path.join(root, 'claude-keep-awake');
   const stateDir = path.join(root, 'claude-session-state');
@@ -126,7 +134,6 @@ const listen = (server) => new Promise((resolve) => {
 
 /** The server options for a world — a live object, so a test may mutate it. */
 const worldOpts = (world, opts = {}) => ({
-  root: path.join(world.root, 'repos'),
   workflowHome: path.join(world.root, 'workflow-home'),
   markerDir: world.markerDir,
   stateDir: world.stateDir,
@@ -286,30 +293,31 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  await test('a failed roster walk is not cached either, and still serves [] meanwhile', async () => {
+  await test('a failed roster read is not cached either, and still serves [] meanwhile', async () => {
     const w = mkWorld();
-    // A root that is not a path makes discovery throw — the "walk failed" case,
-    // which must not take the cache slot the way a genuinely empty roster does.
-    const opts = worldOpts(w, { root: 42 });
+    // A workflow home that is not a path makes the read throw — the "read
+    // failed" case, which must not take the cache slot the way a genuinely
+    // empty roster does.
+    const opts = worldOpts(w, { workflowHome: 42 });
     const c = await listen(createServer(opts));
     const broken = await getJson(c, '/api/repos');
     assertEq(broken.status, 200, 'the client is never handed an error page');
     assertEq(broken.body.length, 0, 'an empty roster is what it sees');
-    opts.root = path.join(w.root, 'repos');
+    opts.workflowHome = path.join(w.root, 'workflow-home');
     const fixed = await getJson(c, '/api/repos');
-    assertEq(fixed.body.length, 1, 'the repaired walk is read at once');
+    assertEq(fixed.body.length, 1, 'the repaired roster is read at once');
     await c.stop();
     cleanup(w.root);
   });
 
   await test('an empty roster IS cached — nothing found is an answer', async () => {
     const w = mkWorld();
-    const c = await start(w, { root: path.join(w.root, 'empty') });
+    const c = await start(w, { workflowHome: path.join(w.root, 'empty') });
     fs.mkdirSync(path.join(w.root, 'empty'), { recursive: true });
     await getJson(c, '/api/repos');
     const before = w.calls.length;
     await getJson(c, '/api/repos');
-    assertEq(w.calls.length, before, 'the second read walked nothing');
+    assertEq(w.calls.length, before, 'the second read asked git nothing');
     await c.stop();
     cleanup(w.root);
   });
@@ -879,9 +887,9 @@ const run = async () => {
     assertEq(DEFAULT_PORT, 8693, 'TOWER on a keypad');
   });
 
-  await test('an unreadable roster root serves an empty roster instead of crashing', async () => {
+  await test('an absent roster serves an empty one instead of crashing', async () => {
     const w = mkWorld();
-    const c = await start(w, { root: path.join(w.root, 'absent') });
+    const c = await start(w, { workflowHome: path.join(w.root, 'absent') });
     const repos = await getJson(c, '/api/repos');
     assertEq(repos.body.length, 0, 'empty');
     const health = await getJson(c, '/api/health');

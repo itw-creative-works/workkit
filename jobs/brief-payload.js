@@ -22,7 +22,7 @@
 //
 // Usage:
 //   node jobs/brief-payload.js          // the payload on stdout
-//   composeBrief({ root, exec })        // offline, against fixtures
+//   composeBrief({ workflowHome, exec }) // offline, against fixtures
 //
 
 const { discoverRepos } = require('../tower/api/lib/repos');
@@ -72,10 +72,9 @@ Nothing else — no preamble, no advice, no restating the payload.
  * The brief payload, assembled from the three reads the tower's endpoints make.
  *
  * Every option passes through to the libs untouched, which is what lets the
- * suite run this whole composition against a fixture root and a fake exec.
+ * suite run this whole composition against a fixture roster and a fake exec.
  *
  * @param {object} [opts]
- * @param {string} [opts.root] the Repositories root to walk
  * @param {string} [opts.workflowHome] the user's ~/.workkit
  * @param {string} [opts.home] overrides ~ for the libs that resolve it
  * @param {string} [opts.generatedAt] ISO stamp, injectable so the suite is not a clock test
@@ -89,16 +88,15 @@ const composeBrief = (opts = {}) => {
   let repos;
   try {
     repos = discoverRepos({
-      root: opts.root,
       workflowHome: opts.workflowHome,
       home: opts.home,
       exec,
     });
   } catch (err) {
-    // A walk that threw leaves no roster to sweep, and an empty roster sweeps
+    // A read that threw leaves no roster to sweep, and an empty roster sweeps
     // clean — which would read as an empty board rather than as a broken read.
     return buildBrief(
-      { ok: false, reason: `the roster walk failed: ${err.message}`, issues: [] },
+      { ok: false, reason: `the roster read failed: ${err.message}`, issues: [] },
       {},
       [],
       opts.generatedAt,

@@ -1,6 +1,6 @@
 ---
 name: whats-next
-description: Plain-language status digest from the repo's GitHub issues (or across all projects via HQ) — one sentence per item, tells and never does. - Use when the user asks "what's next", "whats next", "where are we", "status", "what's left", "what am I waiting on", "what's next everywhere / across all projects".
+description: Plain-language status digest from the repo's GitHub issues (or across all projects via the roster) — one sentence per item, tells and never does. - Use when the user asks "what's next", "whats next", "where are we", "status", "what's left", "what am I waiting on", "what's next everywhere / across all projects".
 ---
 
 # What's Next — tell, don't do
@@ -22,11 +22,11 @@ Also mention `.workkit/` if a lease/notes file says this session or developer is
 
 Omit empty sections. No jargon without a plain-words gloss. Note `agent:ok` where it exists — that item can be worked autonomously.
 
-## HQ mode ("across all projects" / cwd is the HQ repo)
+## Global mode ("across all projects" / cwd is the home repo)
 
-1. Read HQ `projects.json` → for each `active` project, query its issues (`gh issue list --repo <owner/name> ...`).
+1. Read the roster — the `repos` map in `~/.workkit/settings.json`, every entry whose value is not `"declined"` — and query each one's issues (`gh issue list --repo <owner/name> ...`). It is this machine's index; a repo it has never opened is not on it.
 2. Per project, ONE line: `<name> — <in-flight item or "idle">; blocked: <count or none>; specced: <count>`.
-3. Then hq's own issues, same shape as repo mode.
+3. Then the home repo's own issues (`"home": "<owner>/<repo>"` in the same file), same shape as repo mode — that is where the cross-project and business queue lives. No `home` set: say so.
 4. Flag unreachable repos (`(no remote)` / `(path missing)`) instead of skipping silently.
 
 ## Rules

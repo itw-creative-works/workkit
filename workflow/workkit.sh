@@ -7,9 +7,11 @@
 # nobody could find. This is the front door for all of them:
 #
 #   workkit help                the map
-#   workkit setup               from zero: plugin, gh, the schedule, the symlink
+#   workkit setup               from zero: plugin, gh, the schedule, the home
+#                               repo, the symlink
 #   workkit update [--auto]     re-run the machine-side installs
 #   workkit doctor              report drift, print the fix for what it cannot reach
+#   workkit publish             build and publish the dashboard from the home repo
 #   workkit enable [repo]       the repo's committed yes
 #   workkit decline [repo]      this developer's no, recorded personally
 #   workkit note <text...>      capture a thought
@@ -46,6 +48,7 @@ KIT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
 STANDARDS="$SCRIPT_DIR/standards.sh"
 CAPTURE="$SCRIPT_DIR/wk.sh"
+PUBLISH="$SCRIPT_DIR/publish.sh"
 JOBS_INSTALL="$KIT_DIR/jobs/install.sh"
 
 # The plugin, as `claude plugin list` names it, and the marketplace this repo is.
@@ -65,6 +68,29 @@ BIN_LINK="$BIN_DIR/workkit"
 # can report it — this script never writes it.
 CLAUDE_HOME="${WORKFLOW_CLAUDE_HOME:-${HOME:-}/.claude}"
 ENGINE_LINK="$CLAUDE_HOME/workkit"
+
+# The user-level settings file — the machine-local roster and the optional
+# `home` repo both live here. Read by `doctor`, written only by the engine.
+USER_SETTINGS="${WORKFLOW_HOME:-${HOME:-}/.workkit}/settings.json"
+
+# The home repo's lifecycle — creating it, converting ~/.workkit into its clone,
+# Discussions, Pages, the project list, the doctor lines. Sourced rather than
+# shelled out to, so its steps speak in this command's own voice (lib.sh's
+# wk_say_* delegate to the say_* below). Each file is a library: sourcing them
+# runs nothing.
+#
+# An incomplete checkout is REPORTED by the steps that need them, never by a
+# source that aborts before this command can say anything at all — the same
+# restraint refresh_engine_link shows about a missing standards.sh.
+HOME_LIBS=1
+for _lib in lib.sh discussions.sh home.sh; do
+  if [[ -f "$SCRIPT_DIR/$_lib" ]]; then
+    # shellcheck source=/dev/null
+    . "$SCRIPT_DIR/$_lib"
+  else
+    HOME_LIBS=0
+  fi
+done
 
 # ── Output ────────────────────────────────────────────────────────────────────
 # Everything goes to STDOUT: this is a human command, and its one machine caller
@@ -104,6 +130,8 @@ usage: workkit <command> [args]
                        hook runs once a day
   doctor               report what is set up, what has drifted, and the command
                        that fixes anything out of reach
+  publish              build the dashboard and publish it from the home repo
+                       (the daily job does this after the morning brief)
   enable [repo]        write the repo's committed opt-in, then heal it
   decline [repo]       record this developer's no for the repo, personally
   note <text...>       append one bullet to the nearest inbox
@@ -137,9 +165,7 @@ refresh_engine_link() {
 
   out="$(printf '%s\n' "$out" | sed $'s/\033\\[[0-9;]*m//g' | grep '^  ✓ engine:' || true)"
   if [[ -n "$out" ]]; then
-    # Line by line: the engine reports the repoint and the removal of the
-    # retired address separately, and a prefix stripped from the string as a
-    # whole would only ever reach the first of them.
+    # Relay each engine line as its own say_ok, stripping the prefix per line.
     while IFS= read -r line; do
       say_ok "${line#  ✓ }"
     done <<<"$out"
@@ -206,8 +232,8 @@ cron_drift() {
 }
 
 # Run the installer and relay what it ACTUALLY did — one line per agent, in the
-# installer's own words, so a run that only retired the old agent never claims
-# to have reinstalled the 9am job. A failure is reported and swallowed: this
+# installer's own words, so a run that changed nothing never claims to have
+# reinstalled the 9am job. A failure is reported and swallowed: this
 # runs inside a session-start hook that discards stderr, so an unguarded
 # `set -e` abort here would be invisible and would retry silently every day.
 run_installer() {
@@ -316,6 +342,48 @@ offer_repo() {
   esac
 }
 
+# The global layer, reported and never written: how many repos this machine has
+# registered in the roster (the engine maintains it on every heal), and whether a
+# home repo is named for the work that belongs to no single repo.
+report_globals() {
+  local count home
+
+  if [[ ! -f "$USER_SETTINGS" ]]; then
+    say_info "roster: $USER_SETTINGS does not exist yet — the first heal writes it"
+    return 0
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    say_skip "roster: reading $USER_SETTINGS needs jq"
+    return 0
+  fi
+
+  count="$(jq -r '[(.repos // {}) | to_entries[] | select(.value != "declined")] | length' "$USER_SETTINGS" 2>/dev/null || printf '')"
+  if [[ -z "$count" ]]; then
+    say_warn "roster: $USER_SETTINGS is not valid JSON — fix or remove it, then re-run a session in any repo"
+    return 0
+  fi
+  # Zero is the one count worth a different voice: an empty roster means the
+  # tower, the board and the brief have nothing to read.
+  if [[ "$count" == "0" ]]; then
+    say_info "roster: no repos registered in $USER_SETTINGS yet — it fills as a session opens in each enabled repo"
+  else
+    say_ok "roster: $count repo(s) registered in $USER_SETTINGS"
+  fi
+
+}
+
+# The home repo half of setup: the private repo, the folder that becomes its
+# clone, its two schema files, Discussions and Pages. A machine without the
+# libraries (an incomplete checkout) is told which command to run once it has
+# them, rather than silently getting no home.
+home_steps() {
+  if [[ "$HOME_LIBS" -ne 1 ]]; then
+    say_warn "home: the home-repo library is missing beside $SCRIPT_DIR — this checkout is incomplete"
+    return 0
+  fi
+  wk_home_setup
+}
+
 # ── The commands ──────────────────────────────────────────────────────────────
 
 cmd_setup() {
@@ -325,6 +393,7 @@ cmd_setup() {
   refresh_engine_link
   link_command
   install_cron
+  home_steps
   tower_pointer
   offer_repo
   say_head "Setup is idempotent — re-run it any time. \`workkit doctor\` reports what is left."
@@ -371,6 +440,27 @@ cmd_update() {
   refresh_engine_link
   link_command
   update_cron
+
+  # The published site is rebuilt from THIS checkout, so a human's update is
+  # also how a shipped tower improvement reaches it. The automatic path leaves
+  # it alone: an app build at session start is minutes of work nobody asked for,
+  # and the daily job publishes anyway.
+  if [[ "$QUIET" -eq 1 ]]; then
+    say_skip "site: the daily job publishes it — \`workkit publish\` does it now"
+  else
+    cmd_publish
+  fi
+}
+
+# The site publish, which is the engine's own script — named here so everything
+# stays reachable from one command.
+cmd_publish() {
+  if [[ ! -f "$PUBLISH" ]]; then
+    say_warn "site: publish.sh is missing at $PUBLISH — this checkout is incomplete"
+    return 0
+  fi
+  bash "$PUBLISH" "$@" || say_warn "site: the publish did not finish — run \`bash $PUBLISH\` to see why"
+  return 0
 }
 
 cmd_doctor() {
@@ -429,6 +519,19 @@ cmd_doctor() {
     fi
   fi
 
+  report_globals
+
+  # The home repo: whether one is named, whether the folder is its clone, and
+  # where that clone stands against its upstream.
+  if [[ "$HOME_LIBS" -ne 1 ]]; then
+    say_warn "home: the home-repo library is missing beside $SCRIPT_DIR — this checkout is incomplete"
+    attention=$((attention + 1))
+  else
+    local home_attention=0
+    wk_home_doctor || home_attention=$?
+    attention=$((attention + home_attention))
+  fi
+
   local state
   state="$(bash "$STANDARDS" --state "$PWD" 2>/dev/null | tail -1 || printf 'nogit')"
   case "$state" in
@@ -451,6 +554,7 @@ case "${1:-help}" in
   setup)   shift; cmd_setup "$@" ;;
   update)  shift; cmd_update "$@" ;;
   doctor)  shift; cmd_doctor "$@" ;;
+  publish) shift; cmd_publish "$@" ;;
   enable)  shift; exec bash "$STANDARDS" --enable "${1:-$PWD}" ;;
   decline) shift; exec bash "$STANDARDS" --decline "${1:-$PWD}" ;;
   note)    shift; exec bash "$CAPTURE" note "$@" ;;

@@ -2,7 +2,7 @@
 # Install this checkout's LaunchAgent — the 9am daily job, which writes the
 # summaries and then the brief. Renders jobs/<label>.plist ({{WORKKIT_DIR}} /
 # {{HOME}}) into ~/Library/LaunchAgents/ and (re)loads it — only when something
-# changed — and removes the retired 3am agent if this machine still carries it.
+# changed.
 # Usage: bash jobs/install.sh [--check]
 #
 # Copied, never symlinked: launchd expands nothing (the plist needs absolute
@@ -11,11 +11,11 @@
 # agents are loaded.
 #
 # `--check` is the same render and compare with nothing written and launchd
-# never asked: it prints one line per agent that is missing, out of date, or
-# retired-but-still-installed, and nothing at all when the machine matches this
-# checkout. That is what makes `workkit update --auto` cheap enough to run at
-# every session start — the drift question is answered here, so the CLI carries
-# no second copy of what a current install looks like.
+# never asked: it prints one line per agent that is missing or out of date, and
+# nothing at all when the machine matches this checkout. That is what makes
+# `workkit update --auto` cheap enough to run at every session start — the drift
+# question is answered here, so the CLI carries no second copy of what a current
+# install looks like.
 
 set -euo pipefail
 
@@ -81,35 +81,4 @@ install_agent() {
   printf '%s → installed and loaded (%s)\n' "$LABEL" "$WHEN"
 }
 
-# An agent this checkout no longer ships. The 3am summaries run inside the 9am
-# job now, so a machine installed before that has one agent too many: unload it
-# and remove its plist. Idempotent and silent when there is nothing to retire.
-# Usage: retire_agent <label>
-retire_agent() {
-  local LABEL="$1"
-  local TARGET="$HOME/Library/LaunchAgents/$LABEL.plist"
-  local RETIRED=0
-
-  # The check asks the filesystem only — a retired agent always leaves its plist
-  # behind, so launchd has nothing to add and every launchctl call it would cost
-  # is one this path exists to avoid.
-  if [[ "$MODE" == "check" ]]; then
-    [[ -f "$TARGET" ]] && printf '%s → still installed, retired by this checkout\n' "$LABEL"
-    return 0
-  fi
-
-  if launchctl print "gui/$UID/$LABEL" >/dev/null 2>&1; then
-    launchctl bootout "gui/$UID/$LABEL" >/dev/null 2>&1 || true
-    RETIRED=1
-  fi
-  if [[ -f "$TARGET" ]]; then
-    rm -f "$TARGET"
-    RETIRED=1
-  fi
-
-  (( RETIRED == 1 )) && printf '%s → retired (unloaded and removed)\n' "$LABEL"
-  return 0
-}
-
 install_agent 'com.workkit.claude-daily' '9:00 AM daily'
-retire_agent 'com.workkit.claude-nightly'

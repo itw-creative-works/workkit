@@ -30,6 +30,10 @@ The app knows whether it has a tower to read. `omega dev` bakes `environment: de
 
 Published mode degrades in place rather than failing: every page keeps its mount, its sidebar and its topbar, arms no feeds (so a published tab makes no requests at all) and draws one muted line where its data would be — "Live data needs a local tower (`npm run tower`), or point this page at one with `?api=`." The intake button still opens its dialog, which shows that same line with its fields and its submit disabled — a disabled button would be the one place the explanation could not be read.
 
+**Where a published copy comes from.** `workflow/publish.sh` builds this app from the checkout, commits the output to the home repo's `docs/`, and GitHub Pages serves it (issue #27) — the daily job after the morning brief, or `workkit publish` on demand. The build is LOCAL, never CI: the app consumes `@omega.js/*` by `file:` spec from a sibling omega checkout that no runner has, and on a machine without it `npm install` exits 0 while leaving nothing that can build, so the publish checks for the `omega` binary and skips cleanly rather than trusting an install.
+
+Alongside the pages it can bake in `docs/data/board.json` — one sweep of the roster and the board, taken at publish time by `workflow/site-data.js` and rewritten only when something other than its timestamp changed, so an untouched board is not a commit a day. It is written only when the home repo's `workkit.json` says `site.board: true`, and the default is off: Pages is public even on a private repo, so publishing every issue title of every repo is the owner's call — turning the switch back off removes the snapshot already served. The pages do not read it yet: published mode still shows its muted line, and teaching a page to fall back to the snapshot is app work this issue did not do. The data ships first because the publish is what has the sweep in hand.
+
 ### Phone access
 
 Nothing listens beyond loopback. Put Tailscale in front and allow its hostname:
@@ -76,7 +80,7 @@ The repo selection is global, held in `?repo=owner/name`, and every page whose d
 
 | Route | What |
 |---|---|
-| `GET /api/repos` | roster discovery — opted-in repos under `~/Developer/Repositories` minus personal declines; the root is a library option, not an environment knob (cache 60s, `?fresh=1` bypasses) |
+| `GET /api/repos` | the roster — the repos this machine has registered in `~/.workkit/settings.json` that still carry their committed opt-in; the settings location is a library option, not an environment knob (cache 60s, `?fresh=1` bypasses) |
 | `GET /api/board` | the GraphQL sweep, normalized to the label vocabulary, each issue carrying the body, dates and comment count the issue dialog reads — bodies over 4,000 characters are cut and flagged `bodyTruncated` (cache 60s, `?fresh=1` bypasses) |
 | `GET /api/sessions` | live sessions from the keep-awake markers, each carrying its transcript path and the two file times a page ages — `lastActivity` and `aliveSince`, ms epochs (cache 5s) |
 | `GET /api/health` | git health per roster repo (cache 5s) |
@@ -108,7 +112,7 @@ tower/
 ├── api/
 │   ├── server.js       # createServer(opts) + the main block: routing, caching, the gates
 │   └── lib/
-│       ├── repos.js    # roster discovery (.workkit/settings.json opt-ins)
+│       ├── repos.js    # the roster, read from ~/.workkit/settings.json
 │       ├── board.js    # one gh api graphql sweep, normalized
 │       ├── sessions.js # keep-awake markers + transcripts + statusline cache
 │       ├── health.js   # unpushed / uncommitted / unreleased / last tag
