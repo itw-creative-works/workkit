@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-29
+
 ### Changed
 
-- [#79](../../issues/79) — The site options (`site.url`, `site.board`) moved to `~/.workkit/settings.json`, and the tower clone carries no `.workkit/` at all: it is engine territory, never hand-edited, so a capture made outside every project is filed straight onto the home repo as a `status:inbox` issue and the board discovers the clone by path.
+- [#79](../../issues/79) [`ff72baa`](../../commit/ff72baa) Thanks [@ianwieds]! — The site options (`site.url`, `site.board`) moved to `~/.workkit/settings.json`, and the tower clone carries no `.workkit/` at all: it is engine territory, never hand-edited, so a capture made outside every project is filed straight onto the home repo as a `status:inbox` issue and the board discovers the clone by path.
 
 ## [0.12.0] - 2026-07-29
 
