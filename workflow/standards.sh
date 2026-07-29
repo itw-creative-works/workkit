@@ -217,7 +217,13 @@ cd "$root"
 #   undecided — no committed file, no record: offer once, write nothing
 #   home      — this IS the tower clone (below): engine territory, never
 #               offered, never healed, never registered
+#
+# The user's own answers are split by who writes them (issue #80): the roster
+# and the declines are the MACHINE's and live in `.repos.json`, while
+# `settings.json` beside it is hand-edited and holds only the site options. The
+# heal reads and writes the first and never touches the second.
 USER_SETTINGS="${WORKFLOW_HOME:-${HOME:-}/$WORKKIT_DIR}/settings.json"
+USER_REPOS="${WORKFLOW_HOME:-${HOME:-}/$WORKKIT_DIR}/.repos.json"
 REPO_SETTINGS="$WORKKIT_DIR/settings.json"
 
 # The fifth state, and the one no repo can write: `home`, the tower clone. It is
@@ -246,13 +252,27 @@ is_home_clone() {
 # landing between the test and the write cannot be truncated away. The stderr
 # redirect precedes the target: redirections apply left to right, so one written
 # last cannot suppress the shell's own message for the redirect before it.
+#
+# The hand-edited file is seeded with the site options SPELLED OUT rather than
+# empty: someone opening it has to be able to see what there is to set, and a
+# `{ "version": 1 }` teaches nothing.
 seed_user_settings() {
   local dir="${USER_SETTINGS%/*}"
   [[ -e "$USER_SETTINGS" ]] && return 0
   mkdir -p "$dir" 2>/dev/null || return 0
-  ( set -C; printf '{\n  "version": 1,\n  "repos": {}\n}\n' 2>/dev/null >"$USER_SETTINGS" ) || return 0
+  ( set -C; printf '{\n  "version": 1,\n  "site": {\n    "repo": null,\n    "publish": false,\n    "url": null\n  }\n}\n' 2>/dev/null >"$USER_SETTINGS" ) || return 0
 }
 seed_user_settings
+
+# The machine's own file, seeded the same way and for the opposite reason: it is
+# written by the engine and by nobody else, so it appears when the engine first
+# has something to record rather than sitting there inviting an edit.
+seed_user_repos() {
+  local dir="${USER_REPOS%/*}"
+  [[ -e "$USER_REPOS" ]] && return 0
+  mkdir -p "$dir" 2>/dev/null || return 0
+  ( set -C; printf '{\n  "version": 1,\n  "repos": {}\n}\n' 2>/dev/null >"$USER_REPOS" ) || return 0
+}
 
 offer_line() {
   # %q on the path: a repo directory containing a space would otherwise print a
@@ -346,10 +366,10 @@ resolve_state() {
     esac
     return 0
   fi
-  # The user file is read-only here and only ever holds decisions, so no jq means
-  # no record — an undecided repo simply gets offered again.
-  if [[ -f "$USER_SETTINGS" ]] && command -v jq >/dev/null 2>&1 \
-    && [[ "$(jq -r --arg r "$root" '.repos[$r] // ""' "$USER_SETTINGS" 2>/dev/null)" == "declined" ]]; then
+  # The machine file is read-only here and the decline is the one decision in it,
+  # so no jq means no record — an undecided repo simply gets offered again.
+  if [[ -f "$USER_REPOS" ]] && command -v jq >/dev/null 2>&1 \
+    && [[ "$(jq -r --arg r "$root" '.repos[$r] // ""' "$USER_REPOS" 2>/dev/null)" == "declined" ]]; then
     printf 'declined'
     return 0
   fi
@@ -383,46 +403,47 @@ edit_settings_json() {
   return 0
 }
 
-# The settings mutex is the engine's, not this script's: `wk_take_settings_lock`
-# and `wk_drop_settings_lock` in lib.sh are the single home, because the home
+# The state mutex is the engine's, not this script's: `wk_take_state_lock`
+# and `wk_drop_state_lock` in lib.sh are the single home, because the home
 # repo's writers (the id cache, the home slug) take the same one and a second
-# copy of it here would be a second mutex guarding the same file.
+# copy of it here would be a second mutex guarding the same files.
 record_decline() {
   if ! command -v jq >/dev/null 2>&1; then
-    log_warn "decline: jq is required to edit $USER_SETTINGS"
+    log_warn "decline: jq is required to edit $USER_REPOS"
     exit 1
   fi
-  mkdir -p "$(dirname "$USER_SETTINGS")" 2>/dev/null \
-    || { log_warn "decline: cannot create $(dirname "$USER_SETTINGS")"; exit 1; }
-  # seed_user_settings ran at load, so the file is normally already here; this
-  # covers a --decline whose settings file was removed in between.
-  seed_user_settings
-  [[ -f "$USER_SETTINGS" ]] || { log_warn "decline: cannot write $USER_SETTINGS"; exit 1; }
+  mkdir -p "$(dirname "$USER_REPOS")" 2>/dev/null \
+    || { log_warn "decline: cannot create $(dirname "$USER_REPOS")"; exit 1; }
+  seed_user_repos
+  [[ -f "$USER_REPOS" ]] || { log_warn "decline: cannot write $USER_REPOS"; exit 1; }
 
   # The decline is written under the shared mutex; the trap releases it however
   # this run ends, since a decline is the last thing it does.
-  if wk_take_settings_lock; then
-    trap 'wk_drop_settings_lock' EXIT
+  if wk_take_state_lock; then
+    trap 'wk_drop_state_lock' EXIT
   else
     log_warn "decline: proceeding without the lock (held for 5s by another run)"
   fi
 
-  edit_settings_json "$USER_SETTINGS" --arg r "$root" \
+  edit_settings_json "$USER_REPOS" --arg r "$root" \
     '.repos = ((.repos // {}) + { ($r): "declined" })' || exit 1
 
   # A committed answer wins at resolve time, so saying "it will not be offered
   # again" would be a lie while that file says yes.
   if [[ -f "$REPO_SETTINGS" ]]; then
-    log_ok "decline: recorded $root in $USER_SETTINGS"
+    log_ok "decline: recorded $root in $USER_REPOS"
     log_warn "decline: $REPO_SETTINGS still carries the repo's committed answer, which wins — this takes effect only if that file goes away"
   else
-    log_ok "decline: recorded $root in $USER_SETTINGS — it will not be offered again"
+    log_ok "decline: recorded $root in $USER_REPOS — it will not be offered again"
   fi
 }
 
-# The machine-local roster: every repo this machine has healed, listed under the
-# same `repos` key that holds this user's declines ("enabled" against the path,
-# "declined" where a decline was recorded). It is an INDEX, never the answer —
+# The machine-local roster: every repo this machine has healed, listed in
+# `.repos.json` under the same `repos` key that holds this user's declines
+# ("enabled" against the path, "declined" where a decline was recorded). The
+# file is the ENGINE's — nothing in it is ever typed by hand, which is why it
+# sits beside the hand-edited settings.json rather than in it. It is an INDEX,
+# never the answer —
 # the repo's committed settings.json stays the SSOT of membership, and this list
 # only says which of those repos this machine has seen. The tower reads it
 # instead of walking a filesystem root, so a repo never opened here is simply
@@ -434,19 +455,19 @@ record_decline() {
 # repo stops being a member, exactly as resolve_state reads them. A decline
 # entry is a decision, not an observation, and is never pruned.
 #
-# Best effort throughout — no jq, no settings file, or a settings file nobody
+# Best effort throughout — no jq, no roster file, or a roster file nobody
 # can parse each leave the roster as it is. The heal never fails over its index.
 register_in_roster() {
   local keys key stale='' stale_json flag locked=0
 
   command -v jq >/dev/null 2>&1 || return 0
-  seed_user_settings
-  [[ -f "$USER_SETTINGS" ]] || return 0
+  seed_user_repos
+  [[ -f "$USER_REPOS" ]] || return 0
 
   # A file nobody can parse is SAID, not silently skipped: the roster would go
   # stale forever and the tower would quietly show the wrong machine.
-  if ! keys="$(jq -r '(.repos // {}) | to_entries[] | select(.value != "declined") | .key' "$USER_SETTINGS" 2>/dev/null)"; then
-    log_warn "roster: $USER_SETTINGS is not valid JSON — fix or remove it; until then this machine's roster is not maintained"
+  if ! keys="$(jq -r '(.repos // {}) | to_entries[] | select(.value != "declined") | .key' "$USER_REPOS" 2>/dev/null)"; then
+    log_warn "roster: $USER_REPOS is not valid JSON — fix or remove it; until then this machine's roster is not maintained"
     return 0
   fi
 
@@ -475,7 +496,7 @@ register_in_roster() {
   # Nothing to add and nothing to remove: leave the file untouched, so a session
   # start on an up-to-date machine writes nothing at all.
   if [[ -z "$stale" ]] \
-    && jq -e --arg r "$root" '(.repos // {})[$r] == "enabled"' "$USER_SETTINGS" >/dev/null 2>&1; then
+    && jq -e --arg r "$root" '(.repos // {})[$r] == "enabled"' "$USER_REPOS" >/dev/null 2>&1; then
     return 0
   fi
 
@@ -488,13 +509,13 @@ register_in_roster() {
   # the brief until tomorrow. Released here rather than by an EXIT trap — the
   # heal has work left after this, and holding the lock through it would make
   # every concurrent run wait out the full five seconds.
-  if wk_take_settings_lock; then locked=1; fi
+  if wk_take_state_lock; then locked=1; fi
 
-  edit_settings_json "$USER_SETTINGS" --arg r "$root" --argjson stale "$stale_json" \
+  edit_settings_json "$USER_REPOS" --arg r "$root" --argjson stale "$stale_json" \
     '.repos = ((.repos // {}) | with_entries(select(.key as $k | ($stale | index($k)) | not)) + { ($r): "enabled" })' \
     || true
 
-  if [ "$locked" -eq 1 ]; then wk_drop_settings_lock; fi
+  if [ "$locked" -eq 1 ]; then wk_drop_state_lock; fi
   return 0
 }
 

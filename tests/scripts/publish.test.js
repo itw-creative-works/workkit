@@ -40,9 +40,13 @@ const writeStub = (file, lines) => {
  * `buildFails` makes the build exit non-zero.
  * `board` is the owner's `site.board` call — the published board snapshot,
  * which is off unless a world says otherwise.
+ * `publish` is the owner's `site.publish` call, the all-or-nothing switch: the
+ * ordinary world here has said yes, since every case below is about what a
+ * publish DOES. The switch itself has its own tests.
  */
 const mkWorld = ({
   tooling = true, buildFails = false, siteUrl = null, home = true, board = false,
+  publish: publishOn = true,
 } = {}) => {
   const root = mkTmp();
   const kit = path.join(root, 'kit');
@@ -82,9 +86,7 @@ const mkWorld = ({
   // the clone below is engine territory and carries nothing hand-written.
   const settings = {
     version: 1,
-    repos: {},
-    site: { url: siteUrl, board },
-    ...(home ? { home: 'owner/workkit' } : {}),
+    site: { repo: home ? 'owner/workkit' : null, publish: publishOn, url: siteUrl, board },
   };
   fs.writeFileSync(path.join(workflowHome, 'settings.json'), `${JSON.stringify(settings, null, 2)}\n`);
 
@@ -129,6 +131,31 @@ const mkWorld = ({
     dist: path.join(tower, 'apps', 'web', 'dist'),
     env,
   };
+};
+
+/**
+ * A bin directory mirroring the real PATH with one tool left out — the suite's
+ * idiom for a machine that is missing it. The whole PATH is mirrored rather
+ * than a hand-listed set, so the run never dies of some other utility while
+ * claiming to prove something about the excluded one.
+ */
+const binDirWithout = (excluded) => {
+  const binDir = mkTmp();
+  const seen = new Set();
+  for (const dir of ['/usr/bin', '/bin', '/usr/sbin', '/sbin', path.dirname(process.execPath)]) {
+    if (!fs.existsSync(dir)) continue;
+    for (const name of fs.readdirSync(dir)) {
+      if (name === excluded || seen.has(name)) continue;
+      seen.add(name);
+      try {
+        fs.symlinkSync(path.join(dir, name), path.join(binDir, name));
+      } catch {
+        // A name that cannot be linked is simply absent, which is the state the
+        // caller is testing for anyway.
+      }
+    }
+  }
+  return binDir;
 };
 
 const publish = (world, args = []) => {
@@ -183,7 +210,7 @@ const run = async () => {
     const world = mkWorld({ home: false });
     fs.writeFileSync(
       path.join(world.workflowHome, 'settings.json'),
-      `${JSON.stringify({ version: 1, repos: {}, home: 'owner/workkit' }, null, 2)}\n`,
+      `${JSON.stringify({ version: 1, site: { repo: 'owner/workkit', publish: true } }, null, 2)}\n`,
     );
     const { code, out } = publish(world);
     assertEq(code, 0, 'exit 0');
@@ -213,7 +240,7 @@ const run = async () => {
     git(world.tower, 'remote', 'add', 'origin', theirs);
     fs.writeFileSync(
       path.join(world.workflowHome, 'settings.json'),
-      `${JSON.stringify({ version: 1, repos: {}, home: 'owner/workkit' }, null, 2)}\n`,
+      `${JSON.stringify({ version: 1, site: { repo: 'owner/workkit', publish: true } }, null, 2)}\n`,
     );
 
     const { code, out } = publish(world);
@@ -394,7 +421,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  group('workflow/publish: the owner’s two switches');
+  group('workflow/publish: the owner’s switches');
 
   await test('the board snapshot is baked in beside the pages when the owner says so', () => {
     const world = mkWorld({ board: true });
@@ -456,13 +483,13 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('a settings file with no site key at all publishes the defaults', () => {
-    // Nothing pre-creates the key, so an absent one has to read as url null and
-    // board false rather than as an error.
+  await test('a site key carrying nothing but the switch publishes the defaults', () => {
+    // Nothing pre-creates the sub-keys, so absent ones have to read as url null
+    // and board false rather than as an error.
     const world = mkWorld();
     fs.writeFileSync(
       world.settings,
-      `${JSON.stringify({ version: 1, repos: {}, home: 'owner/workkit' }, null, 2)}\n`,
+      `${JSON.stringify({ version: 1, site: { repo: 'owner/workkit', publish: true } }, null, 2)}\n`,
     );
     const { code, out } = publish(world);
     assertEq(code, 0, `exit 0 — ${out}`);
@@ -470,6 +497,67 @@ const run = async () => {
     assert(fs.existsSync(path.join(pages, 'index.html')), 'the dashboard publishes');
     assert(!fs.existsSync(path.join(pages, 'data', 'board.json')), 'with no board snapshot');
     assert(!fs.existsSync(path.join(pages, 'CNAME')), 'and no CNAME');
+    cleanup(world.root);
+  });
+
+  await test('`site.publish` off publishes NOTHING — not even a build', () => {
+    // The all-or-nothing switch (issue #80), and it is default off: what Pages
+    // serves is public even from a private repo, so publishing at all is the
+    // owner's yes to give. The gate is before the build, so an off machine does
+    // no work either.
+    const world = mkWorld({ publish: false });
+    const { code, out } = publish(world);
+    assertEq(code, 0, 'a machine that publishes nothing is not broken');
+    assert(/`site.publish` is off/.test(out), `it names the switch, got: ${out}`);
+    assertEq(fs.existsSync(world.dist), false, 'nothing was even built');
+    const branches = spawnSync('git', ['-C', world.bare, 'branch', '--list', 'gh-pages'], { encoding: 'utf8' }).stdout;
+    assertEq(branches.trim(), '', 'and no branch was pushed');
+    cleanup(world.root);
+  });
+
+  await test('an absent switch reads as off — the default is not to publish', () => {
+    const world = mkWorld();
+    fs.writeFileSync(
+      world.settings,
+      `${JSON.stringify({ version: 1, site: { repo: 'owner/workkit' } }, null, 2)}\n`,
+    );
+    const { code, out } = publish(world);
+    assertEq(code, 0, 'exit 0');
+    assert(/`site.publish` is off/.test(out), `the absent key is the off answer, got: ${out}`);
+    cleanup(world.root);
+  });
+
+  await test('no jq — the skip names jq, not a switch that is already on', () => {
+    // The switch is read through jq, so a machine without it reads empty, which
+    // is indistinguishable from off. Blaming the switch would send an owner who
+    // already said yes to turn on what is already on.
+    const world = mkWorld();
+    const { code, out } = publish({
+      ...world,
+      env: { ...world.env, PATH: binDirWithout('jq') },
+    });
+    assertEq(code, 0, 'exit 0 — a missing tool is not a crash');
+    assert(/jq/.test(out), `it names the missing tool, got: ${out}`);
+    assert(!/is off/.test(out), `and never calls an unreadable switch an off one, got: ${out}`);
+    assertEq(fs.existsSync(world.dist), false, 'nothing was built');
+    cleanup(world.root);
+  });
+
+  await test('turning the switch off stops publishing, and leaves what Pages already serves', () => {
+    // Off means this machine does nothing — it does not mean the site is torn
+    // down. Un-publishing is `gh-pages` being removed by hand, deliberately.
+    const world = mkWorld();
+    publish(world);
+    assert(fs.existsSync(path.join(fromPages(world), 'index.html')), 'it published');
+    const before = spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim();
+
+    setSite(world, { publish: false });
+    fs.writeFileSync(path.join(world.tower, 'apps', 'web', 'src', 'index.html'), '<html>newer</html>\n');
+    const { code, out } = publish(world);
+    assertEq(code, 0, 'exit 0');
+    assert(/`site.publish` is off/.test(out), `it says why, got: ${out}`);
+    const after = spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim();
+    assertEq(after, before, 'the published branch is exactly where it was');
     cleanup(world.root);
   });
 

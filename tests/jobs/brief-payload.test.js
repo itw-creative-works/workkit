@@ -70,7 +70,7 @@ const mkWorld = () => {
   const home = path.join(root, 'home');
   fs.mkdirSync(path.join(home, '.workkit'), { recursive: true });
   fs.writeFileSync(
-    path.join(home, '.workkit', 'settings.json'),
+    path.join(home, '.workkit', '.repos.json'),
     JSON.stringify({ version: 1, repos: { [repo]: 'enabled' } }, null, 2),
   );
 
@@ -146,7 +146,7 @@ const run = async () => {
   await test('a declined repo leaves the roster, and the brief', () => {
     const world = mkWorld();
     fs.mkdirSync(path.join(world.home, '.workkit'), { recursive: true });
-    fs.writeFileSync(path.join(world.home, '.workkit', 'settings.json'), JSON.stringify({
+    fs.writeFileSync(path.join(world.home, '.workkit', '.repos.json'), JSON.stringify({
       version: 1,
       repos: { [world.repo]: 'declined' },
     }));
@@ -235,7 +235,7 @@ const run = async () => {
     // Past the instruction, which names the block it is explaining.
     assert(!/--- CC NEWS ---/.test(first.stdout.slice(INSTRUCTION.length)), 'the first morning does not dump the history');
     assertEq(
-      JSON.parse(fs.readFileSync(path.join(home, '.workkit', 'jobs', 'cc-news.json'), 'utf8')).version,
+      JSON.parse(fs.readFileSync(path.join(home, '.workkit', '.cache.json'), 'utf8')).ccNews.version,
       '2.1.219',
       'it recorded the latest instead',
     );
@@ -254,7 +254,7 @@ const run = async () => {
     // there would mean the 9am job never reports it.
     const home = mkTmp();
     const env = { ...process.env, HOME: home, WORKKIT_CC_CHANGELOG: `file://${ccFixture(home)}` };
-    const markFile = path.join(home, '.workkit', 'jobs', 'cc-news.json');
+    const markFile = path.join(home, '.workkit', '.cache.json');
     spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
     fs.writeFileSync(ccFixture(home), `# Changelog\n\n## 2.1.220\n\n- Added a \`DirectoryAdded\` hook\n${CC_CHANGELOG}`);
 
@@ -264,13 +264,13 @@ const run = async () => {
     assertEq(manual.status, 0, `exit 0 — stderr: ${manual.stderr}`);
     assert(/--- CC NEWS ---/.test(manual.stdout.slice(INSTRUCTION.length)), 'the manual run still sees the news');
     assertEq(
-      JSON.parse(fs.readFileSync(markFile, 'utf8')).version, '2.1.219',
+      JSON.parse(fs.readFileSync(markFile, 'utf8')).ccNews.version, '2.1.219',
       'and the mark is untouched',
     );
 
     spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
     assertEq(
-      JSON.parse(fs.readFileSync(markFile, 'utf8')).version, '2.1.220',
+      JSON.parse(fs.readFileSync(markFile, 'utf8')).ccNews.version, '2.1.220',
       'the scheduled run still advances it',
     );
     cleanup(home);

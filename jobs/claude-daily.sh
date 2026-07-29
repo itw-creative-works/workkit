@@ -141,8 +141,9 @@ notify "$NOTIF_MSG"
 # pushed to the home repo's gh-pages branch. It runs LAST and only for the
 # brief, for the same reason the summaries run first and are allowed to fail:
 # the job exists to make sure nine o'clock says something, and a build is the
-# slowest thing here. Its every reason not to publish — no home repo, no build
-# tooling, a diverged clone, nothing changed — is a skip it logs and exits 0 on,
+# slowest thing here. Its every reason not to publish — `site.publish` off (the
+# default), no home repo, no build tooling, a diverged clone, nothing changed —
+# is a skip it logs and exits 0 on,
 # so only a real failure ever appears in this block.
 if (( $# == 0 )) && [[ -f "$SCRIPT_DIR/../workflow/publish.sh" ]]; then
   PUBLISH_STATUS=0

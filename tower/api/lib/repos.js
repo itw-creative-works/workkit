@@ -4,7 +4,9 @@
 // The tri-state opt-in is unchanged and the COMMITTED `.workkit/settings.json`
 // (anything but `enabled: false`) stays the SSOT of membership; what this
 // module reads is the machine-local INDEX of it. The engine registers every repo it heals or enables
-// under `repos` in `~/.workkit/settings.json` and prunes the entries that went
+// under `repos` in `~/.workkit/.repos.json` — the machine-maintained file, which
+// is why it is not the hand-edited `settings.json` beside it (issue #80) — and
+// prunes the entries that went
 // away, so the list maintains itself and no filesystem root is ever walked. A
 // repo this machine has never opened is not on the dashboard — correct by
 // definition, since the tower reports on the machine it runs on.
@@ -107,8 +109,8 @@ const discoverRepos = (opts = {}) => {
   const workflowHome = opts.workflowHome || path.join(home, WORKKIT_DIR);
   const exec = opts.exec || defaultExec;
 
-  const settings = readJson(path.join(workflowHome, 'settings.json'));
-  const registered = settings && settings.repos;
+  const roster = readJson(path.join(workflowHome, '.repos.json'));
+  const registered = roster && roster.repos;
 
   const found = [];
   if (registered && typeof registered === 'object') {
@@ -128,13 +130,16 @@ const discoverRepos = (opts = {}) => {
   // By-path discovery has to prove two things a committed opt-in would have
   // proved for it: that this user did not DECLINE that path, and that whatever
   // sits there is actually the home repo. The proof of the second is the origin
-  // slug matching the `home` slug the engine recorded in the same settings file
-  // — no origin, no recorded slug, or a mismatch means some other checkout is
-  // parked at that name, and a foreign repo is never listed.
+  // slug matching `site.repo` — the slug the owner's settings.json names as the
+  // repo the site publishes from. No origin, no configured slug, or a mismatch
+  // means some other checkout is parked at that name, and a foreign repo is
+  // never listed.
   const tower = path.join(workflowHome, 'tower');
   const towerDeclined = !!registered && typeof registered === 'object' && registered[tower] === 'declined';
   if (!towerDeclined && !found.some((r) => r.path === tower) && fs.existsSync(path.join(tower, '.git'))) {
-    const homeSlug = settings && typeof settings.home === 'string' ? settings.home : null;
+    const settings = readJson(path.join(workflowHome, 'settings.json'));
+    const site = (settings && settings.site) || null;
+    const homeSlug = site && typeof site.repo === 'string' ? site.repo : null;
     const slug = originSlug(tower, exec);
     if (homeSlug && slug === homeSlug) {
       found.push({ name: path.basename(tower), path: tower, slug });

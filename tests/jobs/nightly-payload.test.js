@@ -74,7 +74,7 @@ const mkRepos = () => {
   const home = path.join(root, 'home');
   fs.mkdirSync(path.join(home, '.workkit'), { recursive: true });
   fs.writeFileSync(
-    path.join(home, '.workkit', 'settings.json'),
+    path.join(home, '.workkit', '.repos.json'),
     JSON.stringify({ version: 1, repos: { [repo]: 'enabled' } }, null, 2),
   );
   return { root, repo, home };

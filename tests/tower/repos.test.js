@@ -41,20 +41,30 @@ const mkRepo = (root, rel, { settings = { version: 7, enabled: true }, origin = 
 };
 
 /**
- * A ~/.workkit fixture. `repos` is the map verbatim when an object; an array of
- * paths is the ordinary case — every one registered as the engine writes it.
- * `settings` overrides the whole file (a string is written raw).
+ * A ~/.workkit fixture, in the two files the engine keeps there: the
+ * machine-maintained `.repos.json` (the roster and the declines) and the
+ * hand-edited `settings.json` (the site options, `site.repo` among them).
+ *
+ * `repos` is the map verbatim when an object; an array of paths is the ordinary
+ * case — every one registered as the engine writes it. `homeSlug` is what the
+ * owner set as the repo the site publishes from, which is what by-path
+ * discovery of the clone matches against. `roster` overrides the whole roster
+ * file (a string is written raw).
  */
-const mkWorkflowHome = (root, repos, settings) => {
+const mkWorkflowHome = (root, repos, { homeSlug = null, roster } = {}) => {
   const dir = path.join(root, 'workflow-home');
   fs.mkdirSync(dir, { recursive: true });
   const map = Array.isArray(repos)
     ? Object.fromEntries(repos.map((p) => [p, 'enabled']))
     : repos;
-  const body = settings === undefined
+  const body = roster === undefined
     ? JSON.stringify({ version: 1, repos: map }, null, 2)
-    : (typeof settings === 'string' ? settings : JSON.stringify(settings, null, 2));
-  fs.writeFileSync(path.join(dir, 'settings.json'), body);
+    : (typeof roster === 'string' ? roster : JSON.stringify(roster, null, 2));
+  fs.writeFileSync(path.join(dir, '.repos.json'), body);
+  fs.writeFileSync(
+    path.join(dir, 'settings.json'),
+    `${JSON.stringify({ version: 1, site: { repo: homeSlug, publish: false, url: null } }, null, 2)}\n`,
+  );
   return dir;
 };
 
@@ -69,6 +79,25 @@ const run = async () => {
     const found = discoverRepos({ workflowHome: mkWorkflowHome(tmp, [repo]) });
     assertEq(names(found), 'alpha', 'alpha listed');
     assertEq(found[0].path, repo, 'path is the repo dir');
+    cleanup(tmp);
+  });
+
+  await test('the roster is read from .repos.json — a `repos` key in settings.json is not one', () => {
+    // The split (issue #80): the machine writes `.repos.json`, a human writes
+    // `settings.json`, and the reader takes the roster from the file whose
+    // writer maintains it. A leftover `repos` block in the hand-edited file is
+    // not a roster and must not put a repo on the dashboard.
+    const tmp = mkTmp();
+    const repo = mkRepo(tmp, 'Owner/alpha');
+    const home = mkWorkflowHome(tmp, [repo]);
+    assertEq(names(discoverRepos({ workflowHome: home })), 'alpha', 'the roster file is what is read');
+
+    fs.writeFileSync(path.join(home, '.repos.json'), `${JSON.stringify({ version: 1, repos: {} }, null, 2)}\n`);
+    fs.writeFileSync(
+      path.join(home, 'settings.json'),
+      `${JSON.stringify({ version: 1, repos: { [repo]: 'enabled' }, site: { repo: null } }, null, 2)}\n`,
+    );
+    assertEq(names(discoverRepos({ workflowHome: home })), '', 'and settings.json is not a second roster');
     cleanup(tmp);
   });
 
@@ -90,7 +119,7 @@ const run = async () => {
     const gone = path.join(tmp, 'Owner', 'gone');
     const home = mkWorkflowHome(tmp, [yes, no, broken, none, gone]);
     assertEq(names(discoverRepos({ workflowHome: home })), 'yes', 'only the repo whose committed file still says yes');
-    assertEq(fs.readFileSync(path.join(home, 'settings.json'), 'utf8').includes('gone'), true,
+    assertEq(fs.readFileSync(path.join(home, '.repos.json'), 'utf8').includes('gone'), true,
       'and the reader never rewrites the index — pruning is the engine\'s');
     cleanup(tmp);
   });
@@ -134,9 +163,7 @@ const run = async () => {
     // exactly the cross-project issues it holds.
     const tmp = mkTmp();
     const listed = mkRepo(tmp, 'Owner/listed');
-    const home = mkWorkflowHome(tmp, [listed], {
-      version: 1, home: 'owner/workkit', repos: { [listed]: 'enabled' },
-    });
+    const home = mkWorkflowHome(tmp, [listed], { homeSlug: 'owner/workkit' });
     const tower = path.join(home, 'tower');
     fs.mkdirSync(tower, { recursive: true });
     git(tower, 'init', '-q', '-b', 'main');
@@ -152,14 +179,14 @@ const run = async () => {
     // By-path discovery has no committed file to read, so the decline in the
     // roster is the only record of the answer — and it is an answer.
     const tmp = mkTmp();
-    const home = mkWorkflowHome(tmp, {}, { version: 1, home: 'owner/workkit', repos: {} });
+    const home = mkWorkflowHome(tmp, {}, { homeSlug: 'owner/workkit' });
     const tower = path.join(home, 'tower');
     fs.mkdirSync(tower, { recursive: true });
     git(tower, 'init', '-q', '-b', 'main');
     git(tower, 'remote', 'add', 'origin', 'https://github.com/owner/workkit.git');
     fs.writeFileSync(
-      path.join(home, 'settings.json'),
-      `${JSON.stringify({ version: 1, home: 'owner/workkit', repos: { [tower]: 'declined' } }, null, 2)}\n`,
+      path.join(home, '.repos.json'),
+      `${JSON.stringify({ version: 1, repos: { [tower]: 'declined' } }, null, 2)}\n`,
     );
     assertEq(names(discoverRepos({ workflowHome: home })), '', 'a declined clone stays off the board');
     cleanup(tmp);
@@ -170,7 +197,7 @@ const run = async () => {
     // home repo: no origin, no recorded home slug, or a mismatch means someone
     // else's checkout is sitting at that name.
     const tmp = mkTmp();
-    const home = mkWorkflowHome(tmp, {}, { version: 1, home: 'owner/workkit', repos: {} });
+    const home = mkWorkflowHome(tmp, {}, { homeSlug: 'owner/workkit' });
     const tower = path.join(home, 'tower');
     fs.mkdirSync(tower, { recursive: true });
     git(tower, 'init', '-q', '-b', 'main');
@@ -213,7 +240,7 @@ const run = async () => {
     git(tower, 'init', '-q', '-b', 'main');
     fs.writeFileSync(path.join(tower, '.workkit', 'settings.json'), '{ "version": 1, "enabled": true }\n');
     fs.writeFileSync(
-      path.join(home, 'settings.json'),
+      path.join(home, '.repos.json'),
       `${JSON.stringify({ version: 1, repos: { [tower]: 'enabled' } }, null, 2)}\n`,
     );
     const found = discoverRepos({ workflowHome: home });

@@ -39,7 +39,7 @@ const mkWorld = ({ response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n
   const workflowHome = path.join(root, 'workflow-home');
   fs.mkdirSync(bin, { recursive: true });
   fs.mkdirSync(workflowHome, { recursive: true });
-  fs.writeFileSync(path.join(workflowHome, 'settings.json'), JSON.stringify({ version: 1, repos: {} }, null, 2));
+  fs.writeFileSync(path.join(workflowHome, 'settings.json'), JSON.stringify({ version: 1 }, null, 2));
   // ~/Library/Logs is a directory every macOS home already has; the fixture home
   // is bare, so it is created here rather than by the job.
   if (logsDir) fs.mkdirSync(path.join(home, 'Library', 'Logs'), { recursive: true });

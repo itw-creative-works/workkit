@@ -13,9 +13,11 @@
 // The source is the raw `CHANGELOG.md` on the default branch, not the releases
 // API: it is the same text without a token, a rate limit, or a schema.
 //
-// The seen mark is one small file this module owns, `~/.workkit/jobs/cc-news.json`.
-// It advances only when the caller says the payload printed — a morning that
-// died before the notification REPEATS rather than losing the news.
+// The seen mark is one key, `ccNews`, in the machine's disposable cache file
+// (`~/.workkit/.cache.json`, issue #80) — a cursor is exactly what that file is
+// for, and deleting it costs one repeated brief. It advances only when the
+// caller says the payload printed — a morning that died before the notification
+// REPEATS rather than losing the news.
 //
 // FIRST RUN SEEDS, IT DOES NOT REPORT. With no mark there is no "since", and
 // the honest answer for a machine that has never looked is the entire history —
@@ -39,10 +41,10 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const WORKKIT_DIR = '.workkit';
-// Job state files sit together under one directory, never loose in the workflow
-// home beside `settings.json` and never inside a checkout.
-const JOBS_DIR = 'jobs';
-const CACHE_FILE = 'cc-news.json';
+// The machine's disposable file, and this module's one key in it. Never inside
+// a checkout, and never in the hand-edited settings.json beside it.
+const CACHE_FILE = '.cache.json';
+const CACHE_KEY = 'ccNews';
 
 // `WORKKIT_CC_CHANGELOG` overrides the source — a seam for the suite, which
 // points it at a `file://` fixture so running the tests never reaches the
@@ -123,14 +125,20 @@ const parseSections = (text) => {
 /** The topic an entry files under — the first TOPICS match, or 'other'. */
 const topicOf = (entry) => (TOPICS.find(({ re }) => re.test(entry)) || { name: 'other' }).name;
 
+/** The whole cache file, or an empty object when it is absent or unreadable. */
+const readCache = (file) => {
+  try {
+    const cache = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return cache && typeof cache === 'object' ? cache : {};
+  } catch {
+    return {};
+  }
+};
+
 /** The recorded last-seen version, or null when this machine has never looked. */
 const readMark = (file) => {
-  try {
-    const mark = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return mark && typeof mark.version === 'string' ? mark.version : null;
-  } catch {
-    return null;
-  }
+  const mark = readCache(file)[CACHE_KEY];
+  return mark && typeof mark.version === 'string' ? mark.version : null;
 };
 
 /**
@@ -146,7 +154,7 @@ const readMark = (file) => {
 const collectCcNews = (opts = {}) => {
   const home = opts.home || os.homedir();
   const workflowHome = opts.workflowHome || path.join(home, WORKKIT_DIR);
-  const cacheFile = path.join(workflowHome, JOBS_DIR, CACHE_FILE);
+  const cacheFile = path.join(workflowHome, CACHE_FILE);
   const exec = opts.exec || defaultExec;
 
   const text = fetchChangelog(opts.source || SOURCE, exec);
@@ -182,9 +190,15 @@ const collectCcNews = (opts = {}) => {
     commit: () => {
       // An unwritable mark must not veto the brief the payload already printed —
       // the run simply repeats tomorrow, which is the failure semantics anyway.
+      //
+      // Read-modify-WRITE, never a plain write: the Discussions id cache shares
+      // this file, and a morning that ran both would otherwise drop whichever
+      // key it did not own.
       try {
+        const cache = readCache(cacheFile);
+        cache[CACHE_KEY] = { version, updatedAt: new Date().toISOString() };
         fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
-        fs.writeFileSync(cacheFile, `${JSON.stringify({ version, updatedAt: new Date().toISOString() }, null, 2)}\n`);
+        fs.writeFileSync(cacheFile, `${JSON.stringify(cache, null, 2)}\n`);
       } catch {
         // silent by design — see the header
       }

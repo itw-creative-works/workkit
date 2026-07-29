@@ -62,7 +62,7 @@ const mkWorld = () => {
   const workflowHome = path.join(root, 'workflow-home');
   fs.mkdirSync(workflowHome, { recursive: true });
   fs.writeFileSync(
-    path.join(workflowHome, 'settings.json'),
+    path.join(workflowHome, '.repos.json'),
     JSON.stringify({ version: 1, repos: { [repo]: 'enabled' } }, null, 2),
   );
 

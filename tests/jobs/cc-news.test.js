@@ -44,7 +44,7 @@ const mkWorld = (text = CHANGELOG) => {
   const world = {
     home,
     workflowHome: path.join(home, WORKKIT_DIR),
-    cacheFile: path.join(home, WORKKIT_DIR, 'jobs', 'cc-news.json'),
+    cacheFile: path.join(home, WORKKIT_DIR, '.cache.json'),
     calls: [],
     text,
     fail: null,
@@ -63,10 +63,15 @@ const collectIn = (world) => collectCcNews({
   exec: world.exec,
 });
 
-const seed = (world, version) => {
+// The cursor is one key in the machine's disposable cache file (issue #80), so
+// seeding and reading it both go through that key rather than the whole file.
+const seed = (world, version, rest = {}) => {
   fs.mkdirSync(path.dirname(world.cacheFile), { recursive: true });
-  fs.writeFileSync(world.cacheFile, JSON.stringify({ version }));
+  fs.writeFileSync(world.cacheFile, JSON.stringify({ ...rest, ccNews: { version } }));
 };
+
+const readCache = (world) => JSON.parse(fs.readFileSync(world.cacheFile, 'utf8'));
+const mark = (world) => readCache(world).ccNews.version;
 
 const run = async () => {
   group('jobs/cc-news: parsing');
@@ -160,7 +165,7 @@ const run = async () => {
     assertEq(news.since, null, 'this machine had never looked');
     assertEq(news.matches.length, 0, 'so the history is not dumped into the brief');
     news.commit();
-    assertEq(JSON.parse(fs.readFileSync(world.cacheFile, 'utf8')).version, '2.1.220', 'the mark is the latest');
+    assertEq(mark(world), '2.1.220', 'the mark is the latest');
     cleanup(world.home);
   });
 
@@ -168,9 +173,9 @@ const run = async () => {
     const world = mkWorld();
     seed(world, '2.1.218');
     const news = collectIn(world);
-    assertEq(JSON.parse(fs.readFileSync(world.cacheFile, 'utf8')).version, '2.1.218', 'gathering moved nothing');
+    assertEq(mark(world), '2.1.218', 'gathering moved nothing');
     news.commit();
-    assertEq(JSON.parse(fs.readFileSync(world.cacheFile, 'utf8')).version, '2.1.220', 'committing did');
+    assertEq(mark(world), '2.1.220', 'committing did');
     // The next morning repeats nothing.
     assertEq(collectIn(world).matches.length, 0, 'and the news is not reported twice');
     cleanup(world.home);
@@ -190,17 +195,29 @@ const run = async () => {
     const news = collectIn(world);
     assertEq(news.version, '2.2.0', 'an older source does not rewind the mark');
     news.commit();
-    assertEq(JSON.parse(fs.readFileSync(world.cacheFile, 'utf8')).version, '2.2.0', 'as written');
+    assertEq(mark(world), '2.2.0', 'as written');
     cleanup(world.home);
   });
 
   group('jobs/cc-news: where the mark lives');
 
-  await test('the mark lands under the jobs directory, created when missing', () => {
+  await test('the mark lands in the machine\'s cache file, created when missing', () => {
     const world = mkWorld();
     assert(!fs.existsSync(world.workflowHome), 'nothing exists yet');
     collectIn(world).commit();
-    assert(fs.existsSync(world.cacheFile), 'the mark is under jobs/');
+    assertEq(path.basename(world.cacheFile), '.cache.json', 'the disposable file, never the hand-edited one');
+    assertEq(mark(world), '2.1.220', 'and the cursor is in it');
+    cleanup(world.home);
+  });
+
+  await test('committing keeps the other keys in the cache file', () => {
+    // The Discussions id cache shares this file, and a morning runs both steps:
+    // a plain write of the cursor would take the ids away with it.
+    const world = mkWorld();
+    seed(world, '2.1.218', { homeCache: { 'owner/workkit': { repositoryId: 'R_1' } } });
+    collectIn(world).commit();
+    assertEq(mark(world), '2.1.220', 'the cursor advanced');
+    assertEq(readCache(world).homeCache['owner/workkit'].repositoryId, 'R_1', 'and the ids beside it survived');
     cleanup(world.home);
   });
 
@@ -212,7 +229,7 @@ const run = async () => {
     world.fail = new Error('curl: (6) Could not resolve host');
     assertEq(collectIn(world), null, 'no news');
     assertEq(renderCcNews(null), '', 'no block');
-    assertEq(JSON.parse(fs.readFileSync(world.cacheFile, 'utf8')).version, '2.1.218', 'the mark is untouched');
+    assertEq(mark(world), '2.1.218', 'the mark is untouched');
     cleanup(world.home);
   });
 
@@ -235,7 +252,7 @@ const run = async () => {
     } finally {
       fs.chmodSync(world.cacheFile, 0o644);
     }
-    assertEq(JSON.parse(fs.readFileSync(world.cacheFile, 'utf8')).version, '2.1.218', 'the mark held');
+    assertEq(mark(world), '2.1.218', 'the mark held');
     assertEq(collectIn(world).matches.length, 5, 'and the news repeats rather than vetoing the brief');
     cleanup(world.home);
   });

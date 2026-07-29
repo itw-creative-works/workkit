@@ -10,15 +10,29 @@
 
 # ── The addresses ─────────────────────────────────────────────────────────────
 # The user's workflow folder — a PLAIN folder and never a git repo (issue #77).
-# It holds this machine's own state and nothing versioned: the roster, the
-# declines, the home slug, the id cache, and the job state under jobs/.
+# It holds this machine's own state and nothing versioned: the site options, the
+# roster, the declines, the id cache, and the job state under jobs/.
 # WORKFLOW_HOME is the same override the rest of the engine honors — the suite
 # points it at a fixture, so nothing here ever reaches the real one.
 WK_USER_DIR="${WORKFLOW_HOME:-${HOME:-}/.workkit}"
-# Machine-local: paths, declines, the roster, the home slug, the id cache — and
-# the site options (`site.url`, `site.board`), which live here because the clone
-# below is engine territory and nothing in it is ever hand-edited (issue #79).
+
+# Three files, split by WHO WRITES THEM (issue #80).
+#
+# settings.json is HAND-EDITED: `version` and one nested `site` key — the home
+# repo's slug (`site.repo`), the all-or-nothing publish switch (`site.publish`)
+# and the custom domain (`site.url`). The site options live here rather than in
+# the clone because the clone is engine territory and is never hand-edited
+# (issue #79); setup writes `site.repo` once and nothing else in this file is
+# ever written by a machine.
 WK_HOME_SETTINGS="$WK_USER_DIR/settings.json"
+# .repos.json is MACHINE-MAINTAINED: the roster the heal registers and the
+# declines the CLI records, under one `repos` map. Dot-named because it is not
+# the owner's to edit — the engine rewrites it on contact.
+WK_HOME_REPOS="$WK_USER_DIR/.repos.json"
+# .cache.json is DISPOSABLE: the Discussions GraphQL ids and the cc-news cursor.
+# Deleting it costs one round trip and one repeated brief; every reader rebuilds
+# what it does not find.
+WK_HOME_CACHE="$WK_USER_DIR/.cache.json"
 
 # The ONE git repo in the global layer: the clone of `<login>/workkit`, seeded
 # from this checkout's tower/app and shaped like every other omega site project.
@@ -85,25 +99,27 @@ wk_json_edit() {
   return 0
 }
 
-# ── The settings mutex ────────────────────────────────────────────────────────
-# The machine-local settings file is edited by a whole-file read-modify-write,
+# ── The state mutex ───────────────────────────────────────────────────────────
+# Every machine-written file here is edited by a whole-file read-modify-write,
 # and two runs doing that at once keep only the last writer's change — a
 # decline, a roster registration, the cached node ids, the home slug: whichever
 # lost is simply gone. mkdir is the atomic mutex, and EVERY writer takes this
-# one, which is why it lives here rather than in any of them.
+# one, which is why it lives here rather than in any of them. ONE lock covers
+# all three files: the writers are the same handful of runs, and a lock per file
+# would only trade a rare wait for three ways to get the pairing wrong.
 #
 # Returns 0 holding the lock, 1 when another run held it for the whole 5s wait.
 # Every caller proceeds either way — a rare lost edit costs less than a run that
 # stops — and only the caller that took it releases it: the mutex belongs to
 # whichever run holds it, and removing it on the way out of a run that never had
 # it would let a third writer race the current holder.
-WK_SETTINGS_LOCK="$WK_HOME_SETTINGS.lock"
+WK_STATE_LOCK="$WK_USER_DIR/.state.lock"
 
-wk_take_settings_lock() {
+wk_take_state_lock() {
   local waited=0
-  mkdir -p "$(dirname "$WK_SETTINGS_LOCK")" 2>/dev/null || return 1
+  mkdir -p "$(dirname "$WK_STATE_LOCK")" 2>/dev/null || return 1
   while [ "$waited" -lt 50 ]; do
-    if mkdir "$WK_SETTINGS_LOCK" 2>/dev/null; then return 0; fi
+    if mkdir "$WK_STATE_LOCK" 2>/dev/null; then return 0; fi
     sleep 0.1
     # An assignment, never `(( waited++ ))`: that form yields the value BEFORE
     # the increment, so the first pass evaluates to 0, which is a non-zero exit
@@ -115,8 +131,8 @@ wk_take_settings_lock() {
   return 1
 }
 
-wk_drop_settings_lock() {
-  rmdir "$WK_SETTINGS_LOCK" 2>/dev/null || true
+wk_drop_state_lock() {
+  rmdir "$WK_STATE_LOCK" 2>/dev/null || true
 }
 
 # One value out of a JSON file, or empty for an absent key, an unreadable file,

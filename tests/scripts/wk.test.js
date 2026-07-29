@@ -58,7 +58,7 @@ const makeTree = ({ settings = '{ "version": 1, "enabled": true }\n', tower = tr
   fs.mkdirSync(path.join(dir, 'home', W), { recursive: true });
   fs.writeFileSync(
     path.join(dir, 'home', W, 'settings.json'),
-    `${JSON.stringify({ version: 1, repos: {}, home: 'owner/workkit' }, null, 2)}\n`,
+    `${JSON.stringify({ version: 1, site: { repo: 'owner/workkit', publish: false, url: null } }, null, 2)}\n`,
   );
   if (tower) {
     const origin = tower === 'foreign'

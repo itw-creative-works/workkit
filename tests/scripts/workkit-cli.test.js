@@ -494,11 +494,13 @@ const run = async () => {
 
   group('workkit publish');
 
-  await test('publish delegates to the engine’s script, which skips with no home repo', () => {
+  await test('publish delegates to the engine’s script, which skips while the site is off', () => {
+    // `site.publish` is default off (issue #80), so an untouched machine is the
+    // switch's own named skip — the engine's reason, printed in this voice.
     const world = mkWorld();
     const { code, out } = runCli(world, ['publish']);
-    assertEq(code, 0, 'a machine with no home repo is not broken');
-    assert(/publish: no home repo/.test(out), `the engine's own reason comes through, got: ${out}`);
+    assertEq(code, 0, 'a machine that publishes nothing is not broken');
+    assert(/publish: `site.publish` is off/.test(out), `the engine's own reason comes through, got: ${out}`);
     cleanup(world.root);
   });
 
@@ -555,7 +557,7 @@ const run = async () => {
 
     const settings = path.join(world.env.WORKFLOW_HOME, 'settings.json');
     const parsed = JSON.parse(fs.readFileSync(settings, 'utf8'));
-    parsed.home = 'owner/private-home';
+    parsed.site = { ...(parsed.site || {}), repo: 'owner/private-home' };
     fs.writeFileSync(settings, JSON.stringify(parsed, null, 2));
     const named = runCli(world, ['doctor'], { cwd: repo }).out;
     assert(/home: owner\/private-home/.test(named), `it reports the home repo once it is named, got: ${named}`);
@@ -577,7 +579,7 @@ const run = async () => {
     const world = mkWorld({ pluginInstalled: true, binOnPath: true });
     fs.mkdirSync(world.env.WORKFLOW_HOME, { recursive: true });
     fs.writeFileSync(
-      path.join(world.env.WORKFLOW_HOME, 'settings.json'),
+      path.join(world.env.WORKFLOW_HOME, '.repos.json'),
       JSON.stringify({ version: 1, repos: {} }, null, 2),
     );
     const { out } = runCli(world, ['doctor']);
@@ -622,7 +624,7 @@ const run = async () => {
     const repo = mkRepo();
     const { code } = runCli(world, ['decline', repo]);
     assertEq(code, 0, 'exit 0');
-    const user = JSON.parse(fs.readFileSync(path.join(world.env.WORKFLOW_HOME, 'settings.json'), 'utf8'));
+    const user = JSON.parse(fs.readFileSync(path.join(world.env.WORKFLOW_HOME, '.repos.json'), 'utf8'));
     assertEq(user.repos[repo], 'declined', 'the personal file carries it');
     assert(!fs.existsSync(path.join(repo, W)), 'and the repo is never written to');
     cleanup(world.root); cleanup(repo);

@@ -24,9 +24,9 @@ Omit empty sections. No jargon without a plain-words gloss. Note `agent:ok` wher
 
 ## Global mode ("across all projects" / cwd is the home repo)
 
-1. Read the roster — the `repos` map in `~/.workkit/settings.json`, every entry whose value is not `"declined"` — and query each one's issues (`gh issue list --repo <owner/name> ...`). It is this machine's index; a repo it has never opened is not on it.
+1. Read the roster — the `repos` map in `~/.workkit/.repos.json`, every entry whose value is not `"declined"` — and query each one's issues (`gh issue list --repo <owner/name> ...`). It is this machine's index; a repo it has never opened is not on it.
 2. Per project, ONE line: `<name> — <in-flight item or "idle">; blocked: <count or none>; specced: <count>`.
-3. Then the home repo's own issues (`"home": "<owner>/<repo>"` in the same file), same shape as repo mode — that is where the cross-project and business queue lives. No `home` set: say so.
+3. Then the home repo's own issues (`site.repo` in `~/.workkit/settings.json`), same shape as repo mode — that is where the cross-project and business queue lives. No `site.repo` set: say so.
 4. Flag unreachable repos (`(no remote)` / `(path missing)`) instead of skipping silently.
 
 ## Rules

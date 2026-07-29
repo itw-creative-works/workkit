@@ -70,7 +70,7 @@ const mkWorld = ({
     fs.mkdirSync(workflowHome, { recursive: true });
     fs.writeFileSync(
       path.join(workflowHome, 'settings.json'),
-      JSON.stringify({ version: 1, repos: {}, ...(home ? { home } : {}), ...settings }, null, 2),
+      JSON.stringify({ version: 1, site: { repo: home || null, publish: false, url: null }, ...settings }, null, 2),
     );
   }
 
@@ -154,6 +154,7 @@ const mkWorld = ({
       return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
     },
     settings: () => JSON.parse(fs.readFileSync(path.join(workflowHome, 'settings.json'), 'utf8')),
+    cache: () => JSON.parse(fs.readFileSync(path.join(workflowHome, '.cache.json'), 'utf8')),
     env: {
       ...process.env,
       HOME: homeDir,
@@ -222,10 +223,13 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the repo id and the category ids are cached in the machine-local settings', () => {
+  await test('the repo id and the category ids are cached in the machine\'s disposable file', () => {
+    // Ids are GitHub's and rebuildable, so they live in `.cache.json` and never
+    // in the hand-edited settings.json beside it (issue #80).
     const world = mkWorld({ home: 'owner/private-home' });
     runJob(world);
-    const cache = world.settings().homeCache['owner/private-home'];
+    assert(!('homeCache' in world.settings()), 'the hand-edited file carries no cache');
+    const cache = world.cache().homeCache['owner/private-home'];
     assertEq(cache.repositoryId, 'R_kdt', 'the repo node id is cached');
     assertEq(cache.categories.Daily, 'DIC_0', 'and every category by name');
 

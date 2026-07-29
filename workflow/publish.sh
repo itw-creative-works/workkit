@@ -69,13 +69,32 @@ say_skip() { [[ "$QUIET" -eq 1 ]] || printf "${_D}· %s${_N}\n" "$1"; }
 
 # The site options decide what is published, so a settings file that does not
 # parse is not a default — it is an answer nobody can read. Reading on would
-# turn the board switch silently off and drop the CNAME, which is the loudest
+# turn every switch silently off and drop the CNAME, which is the loudest
 # way to publish the wrong thing quietly. It is asked FIRST because the same
 # file names the home repo, so every check below would otherwise report an
 # unreadable file as a machine with no home at all.
 if [[ -f "$WK_HOME_SETTINGS" ]] && command -v jq >/dev/null 2>&1 \
   && ! jq . "$WK_HOME_SETTINGS" >/dev/null 2>&1; then
-  say_warn "publish: $WK_HOME_SETTINGS does not parse as JSON — \`site.board\` and \`site.url\` cannot be read, so nothing was published; fix the file and run it again"
+  say_warn "publish: $WK_HOME_SETTINGS does not parse as JSON — the site options (\`site.publish\`, \`site.board\`, \`site.url\`) cannot be read, so nothing was published; fix the file and run it again"
+  exit 0
+fi
+
+# Without jq the switch cannot be READ, and an unreadable switch is not an off
+# one: the gate below reads empty on a machine with no jq, so it would tell an
+# owner who already said yes to go and turn on what is already on.
+if ! command -v jq >/dev/null 2>&1; then
+  say_skip "publish: jq is missing — cannot read the publish switch (\`site.publish\`), so nothing is built or pushed; install jq and run it again"
+  exit 0
+fi
+
+# `site.publish` is the whole decision, and it is DEFAULT OFF — an absent key
+# reads as off, and only `true` publishes (issue #80). It is all or nothing: a
+# machine that has not said yes builds nothing and pushes nothing, whoever asked
+# for the run, because what Pages serves is public and saying so once is the
+# owner's to do. The engine takes that yes at its word and checks nothing else —
+# not the account's plan, not the repo's visibility (owner ruling, 2026-07-29).
+if [[ "$(wk_json_get "$WK_HOME_SETTINGS" '.site.publish')" != 'true' ]]; then
+  say_skip "publish: \`site.publish\` is off in $WK_HOME_SETTINGS — nothing is built or pushed; set it to true to publish the site (what Pages serves is public, even from a private repo)"
   exit 0
 fi
 

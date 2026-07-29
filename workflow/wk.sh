@@ -58,8 +58,8 @@ participating() {
   local settings="$1/$WORKKIT_DIR/settings.json"
   [[ -f "$settings" ]] || return 1
   # The machine's own state dir is NOT a repo opt-in. The walk passes through
-  # $HOME, where `.workkit/settings.json` is the machine settings file (roster,
-  # site options, home slug) — with no `enabled` key it would read as a legacy
+  # $HOME, where `.workkit/settings.json` is the machine settings file (the site
+  # options) — with no `enabled` key it would read as a legacy
   # yes and the note would buffer into a file the spec says must not exist.
   local state_dir user_dir
   state_dir="$(cd "$1/$WORKKIT_DIR" 2>/dev/null && pwd -P)" || state_dir=""

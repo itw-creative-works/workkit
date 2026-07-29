@@ -8,8 +8,9 @@
 # a brand root with `apps/`, `config/` and its own `.gitignore`.
 #
 # The boundary is the folder, not a .gitignore:
-#   ~/.workkit/          settings.json (roster, declines, home slug, id cache,
-#                        the site options) and jobs/ — one machine's own
+#   ~/.workkit/          settings.json (the site options, hand-edited),
+#                        .repos.json (the roster and the declines) and
+#                        .cache.json (the ids and cursors) — one machine's own
 #                        knowledge, never travelling
 #   ~/.workkit/tower/    the project, and only the project: engine territory,
 #                        never hand-edited and carrying no `.workkit/` of its own
@@ -47,11 +48,13 @@ wk_home_remote_url() {
   printf 'https://github.com/%s.git' "$1"
 }
 
-# The home slug this machine is configured for, or empty.
-wk_home_slug() { wk_json_get "$WK_HOME_SETTINGS" '.home'; }
+# The home slug this machine is configured for, or empty. It is a SITE option:
+# the hand-edited file names the repo the site publishes from (issue #80).
+wk_home_slug() { wk_json_get "$WK_HOME_SETTINGS" '.site.repo'; }
 
-# Record the home slug in the machine-local settings — the key everything else
-# reads to decide whether there is a home at all.
+# Record the home slug in the hand-edited settings — the one key setup writes
+# there, and the key everything else reads to decide whether there is a home at
+# all. Nothing else in that file is ever written by a machine.
 wk_home_set_slug() {
   local locked=0 rc=0
   # The engine seeds this file on every run, so it is normally already here;
@@ -59,14 +62,15 @@ wk_home_set_slug() {
   # command is `setup`, before any heal has written the user folder.
   if [[ ! -f "$WK_HOME_SETTINGS" ]]; then
     mkdir -p "$WK_USER_DIR" 2>/dev/null || return 1
-    printf '{\n  "version": 1,\n  "repos": {}\n}\n' >"$WK_HOME_SETTINGS" 2>/dev/null || return 1
+    printf '{\n  "version": 1,\n  "site": {\n    "repo": null,\n    "publish": false,\n    "url": null\n  }\n}\n' \
+      >"$WK_HOME_SETTINGS" 2>/dev/null || return 1
   fi
-  # The shared mutex, for the same reason every other writer of this file takes
-  # it: a whole-file read-modify-write, and a heal registering a repo at the
-  # same moment would otherwise keep only one of the two edits.
-  if wk_take_settings_lock; then locked=1; fi
-  wk_json_edit "$WK_HOME_SETTINGS" --arg s "$1" '.home = $s' || rc=$?
-  if [[ "$locked" -eq 1 ]]; then wk_drop_settings_lock; fi
+  # The shared mutex, for the same reason every other writer of the machine's
+  # state files takes it: a whole-file read-modify-write, and a heal registering
+  # a repo at the same moment would otherwise keep only one of the two edits.
+  if wk_take_state_lock; then locked=1; fi
+  wk_json_edit "$WK_HOME_SETTINGS" --arg s "$1" '.site = ((.site // {}) + { repo: $s })' || rc=$?
+  if [[ "$locked" -eq 1 ]]; then wk_drop_state_lock; fi
   return "$rc"
 }
 

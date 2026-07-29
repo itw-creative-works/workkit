@@ -21,7 +21,7 @@ Renders the plist for THIS checkout into `~/Library/LaunchAgents/` and loads it.
 | File | What |
 |---|---|
 | `brief-payload.js` | the morning payload, on stdout: the digest instruction, then the brief as JSON, then the upstream news. Pure gather — no Claude, no notification |
-| `cc-news.js` | every upstream Claude Code CHANGELOG entry since the last brief, organized by topic, and the small mark file that remembers where it counted from |
+| `cc-news.js` | every upstream Claude Code CHANGELOG entry since the last brief, organized by topic, and the cursor that remembers where it counted from |
 | `claude-daily.sh` | the entry point: runs the summaries step, sends the payload headless, appends the exchange to `~/Library/Logs/claude-daily.log`, notifies, then publishes the site |
 | `nightly-payload.js` | the summaries payload: the reflection instruction, then the day's transcript INDEX and commits as JSON — or, with `--cadence weekly\|monthly`, the rollup instruction over the prior summaries handed in on stdin. Pure gather |
 | `claude-nightly.sh` | the summaries step: composes the day, sends it, and posts it as a Discussion on the home repo — logging what it decided to `~/Library/Logs/claude-nightly.log` |
@@ -42,7 +42,7 @@ A sweep that failed prints as a failure (`ok: false` and its reason) and the dig
 
 Claude Code releases most days and its CHANGELOG is the only announcement, so `cc-news.js` reads that file — the raw one on the default branch, no token and no rate limit — and appends a `--- CC NEWS ---` block after the payload carrying every entry since the last brief, grouped by topic (the kit's own surfaces — hooks, agents, skills, plugins, settings, MCP, the statusline — then `other`). The job never judges which entries matter; the digest model does, with the board in view: a feature the kit could use, a change that breaks something it built, an improvement worth adopting. Finding out weeks late that a hook no longer matches the tool it hooks is the failure it exists to prevent.
 
-Where it counted from is one file the module owns, `~/.workkit/jobs/cc-news.json`, and it advances only once the payload has printed — a morning that died repeats its news rather than losing it. A first run records the latest version and reports nothing: with no mark the honest "since" is the whole history, which would bury the brief. Every failure is silent (no network, a non-200, a body that is not a changelog): no block, the mark untouched, the brief still prints. `WORKKIT_CC_CHANGELOG` overrides the source — a seam for the suite, which points it at a file on disk.
+Where it counted from is one key the module owns, `ccNews` in the machine's disposable `~/.workkit/.cache.json`, and it advances only once the payload has printed — a morning that died repeats its news rather than losing it. A first run records the latest version and reports nothing: with no mark the honest "since" is the whole history, which would bury the brief. Every failure is silent (no network, a non-200, a body that is not a changelog): no block, the mark untouched, the brief still prints. `WORKKIT_CC_CHANGELOG` overrides the source — a seam for the suite, which points it at a file on disk.
 
 ## The runner
 
@@ -61,9 +61,9 @@ Where it counted from is one file the module owns, `~/.workkit/jobs/cc-news.json
 
 ## The summaries step
 
-`claude-nightly.sh` writes the day that just ended up and PUBLISHES it: a Discussion on the home repo named in `~/.workkit/settings.json` — over the API, so a machine with no clone still publishes — never a file (owner ruling, 2026-07-28: generated records are never files — not on a machine, not in a repo). The daily summary goes in the `Daily` category, a weekly rollup on a Sunday, a monthly on the 1st, each titled `<cadence>: <date>`.
+`claude-nightly.sh` writes the day that just ended up and PUBLISHES it: a Discussion on the home repo named by `site.repo` in `~/.workkit/settings.json` — over the API, so a machine with no clone still publishes — never a file (owner ruling, 2026-07-28: generated records are never files — not on a machine, not in a repo). The daily summary goes in the `Daily` category, a weekly rollup on a Sunday, a monthly on the 1st, each titled `<cadence>: <date>`.
 
-A rollup's inputs are the summaries ALREADY PUBLISHED, read back through the API — never the transcripts again, which the days already read. `workflow/discussions.sh` is the one place that speaks that API: it resolves the repository and category node ids, caches them in the machine-local settings (refreshed on a miss), posts, and lists.
+A rollup's inputs are the summaries ALREADY PUBLISHED, read back through the API — never the transcripts again, which the days already read. `workflow/discussions.sh` is the one place that speaks that API: it resolves the repository and category node ids, caches them in `~/.workkit/.cache.json` under `homeCache` (refreshed on a miss), posts, and lists.
 
 **Categories cannot be created over the API.** There is no `createDiscussionCategory` mutation — probed against the live schema — so `workkit setup` prints a one-time pointer at the page that makes them, and until they exist the summary publishes in the repo's default category, saying so in the log every time.
 

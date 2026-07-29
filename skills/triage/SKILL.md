@@ -41,7 +41,7 @@ Before creating anything, **search what already exists** — open AND closed:
 | Actionable, but it still needs design or detail | Leave it `status:inbox` and draft what you have into the `## Spec` (or a comment). Accepting that spec later is what earns `status:specced` |
 | Waiting on the owner's decision | `status:blocked` + a comment naming the question |
 | Worth keeping, deliberately not now | `status:parked` |
-| Cross-project / business / no single repo | An issue on the **home repo** — the `"home": "<owner>/<repo>"` named in `~/.workkit/settings.json` (`docs/project-state.md` § The global layer). No `home` set: leave the entry in the inbox and say so |
+| Cross-project / business / no single repo | An issue on the **home repo** — the `site.repo` named in `~/.workkit/settings.json` (`docs/project-state.md` § The global layer). No `site.repo` set: leave the entry in the inbox and say so |
 | Belongs to a DIFFERENT project | An issue on that repo (`gh issue create --repo <owner/name>`) |
 | An idea for a project that has no repo yet | A `type:idea` issue on the **home repo**, later notes as comments on it. Never create a repo or a folder — graduation is the owner's word |
 | A durable fact about how things work | The right `docs/*.md` (or AGENTS.md if doctrinal) — then close the issue pointing at it |
@@ -54,7 +54,7 @@ Relabel with one command so the status stays single:
 
 **Every issue body you create or route follows the anatomy** (spec § Issue anatomy): `## Description` then `## Spec`, both always present; a small item's Spec is the literal `None needed — small item.` The same section carries the introduction rule — the first mention of an outside project or repo, in a body or a comment, gets a link and a one-line description of what it is.
 
-**The home repo is optional.** With no `home` key, or when a `gh` call against it fails, leave that entry in `.workkit/inbox.md` and say so in the Filed trail — never drop it, and never invent a destination.
+**The home repo is optional.** With no `site.repo` key, or when a `gh` call against it fails, leave that entry in `.workkit/inbox.md` and say so in the Filed trail — never drop it, and never invent a destination.
 
 ## Draining `.workkit/inbox.md`
 

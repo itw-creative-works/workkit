@@ -32,7 +32,7 @@ Published mode degrades in place rather than failing: every page keeps its mount
 
 **Where a published copy comes from.** This app is also the SEED of the home repo: `workkit setup` copies it into `~/.workkit/tower`, where it becomes a project in its own right, and `workflow/publish.sh` builds THAT clone and pushes the output to the home repo's `gh-pages` branch, which GitHub Pages serves from the branch root (issues #27, #77) — the daily job after the morning brief, or `workkit publish` on demand. So nothing built is ever committed as source. The build runs in `apps/web` rather than at the brand root, because `omega build` is a command of `@omega.js/web` and the root's `omega` bin is the manager's (probed 2026-07-29). The build is LOCAL, never CI: the app consumes `@omega.js/*` by `file:` spec from a sibling omega checkout that no runner has, and on a machine without it `npm install` exits 0 while leaving nothing that can build, so the publish checks for the `omega` binary and skips cleanly rather than trusting an install.
 
-Alongside the pages it can bake in `data/board.json` — one sweep of the roster and the board, taken at publish time by `workflow/site-data.js` and rewritten only when something other than its timestamp changed, so an untouched board is not a commit a day. It is written only when the machine settings file (`~/.workkit/settings.json`) says `site.board: true`, and the default is off: Pages is public even on a private repo, so publishing every issue title of every repo is the owner's call — turning the switch back off removes the snapshot already served. The pages do not read it yet: published mode still shows its muted line, and teaching a page to fall back to the snapshot is app work this issue did not do. The data ships first because the publish is what has the sweep in hand.
+Alongside the pages it can bake in `data/board.json` — one sweep of the roster and the board, taken at publish time by `workflow/site-data.js` and rewritten only when something other than its timestamp changed, so an untouched board is not a commit a day. It is written only when the machine settings file (`~/.workkit/settings.json`) says `site.board: true`, and the default is off — inside a publish that `site.publish` allowed at all, which is its own default-off switch: Pages is public even on a private repo, so publishing every issue title of every repo is the owner's call — turning the switch back off removes the snapshot already served. The pages do not read it yet: published mode still shows its muted line, and teaching a page to fall back to the snapshot is app work this issue did not do. The data ships first because the publish is what has the sweep in hand.
 
 ### Phone access
 
@@ -80,7 +80,7 @@ The repo selection is global, held in `?repo=owner/name`, and every page whose d
 
 | Route | What |
 |---|---|
-| `GET /api/repos` | the roster — the repos this machine has registered in `~/.workkit/settings.json` that still carry their committed opt-in, plus the home clone at `~/.workkit/tower`, which carries no opt-in of its own and is recognized by path; the settings location is a library option, not an environment knob (cache 60s, `?fresh=1` bypasses) |
+| `GET /api/repos` | the roster — the repos this machine has registered in `~/.workkit/.repos.json` that still carry their committed opt-in, plus the home clone at `~/.workkit/tower`, which carries no opt-in of its own and is recognized by path; the settings location is a library option, not an environment knob (cache 60s, `?fresh=1` bypasses) |
 | `GET /api/board` | the GraphQL sweep, normalized to the label vocabulary, each issue carrying the body, dates and comment count the issue dialog reads — bodies over 4,000 characters are cut and flagged `bodyTruncated` (cache 60s, `?fresh=1` bypasses) |
 | `GET /api/sessions` | live sessions from the keep-awake markers, each carrying its transcript path and the two file times a page ages — `lastActivity` and `aliveSince`, ms epochs (cache 5s) |
 | `GET /api/health` | git health per roster repo (cache 5s) |
@@ -112,7 +112,7 @@ tower/
 ├── api/
 │   ├── server.js       # createServer(opts) + the main block: routing, caching, the gates
 │   └── lib/
-│       ├── repos.js    # the roster from ~/.workkit/settings.json, plus the home clone
+│       ├── repos.js    # the roster from ~/.workkit/.repos.json, plus the home clone
 │       ├── board.js    # one gh api graphql sweep, normalized
 │       ├── sessions.js # keep-awake markers + transcripts + statusline cache
 │       ├── health.js   # unpushed / uncommitted / unreleased / last tag

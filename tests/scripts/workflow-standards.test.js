@@ -46,6 +46,13 @@ const desiredLabels = () => {
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'wf-std-'));
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
+// The roster and the declines, out of the machine-maintained `.repos.json` —
+// absent until the engine has something to record there (issue #80).
+const rosterOf = (home) => {
+  const file = path.join(home, '.repos.json');
+  return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')).repos || {}) : {};
+};
+
 // A git repo with an origin remote — the shape the script expects. No commits
 // are made and the remote is never contacted (gh is stubbed).
 // Participation: the committed .workkit/settings.json is the repo's yes, so
@@ -575,8 +582,7 @@ const run = async () => {
     assert(!stdout.includes('not in the issue workflow'), `never offered, got: ${stdout}`);
     assertUntouched(tower);
     // And it never joins the roster — the tower finds it by path instead.
-    const settings = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
-    assertEq(JSON.stringify(settings.repos || {}), '{}', 'not registered');
+    assertEq(JSON.stringify(rosterOf(home)), '{}', 'not registered');
     cleanup(home);
   });
 
@@ -596,16 +602,17 @@ const run = async () => {
     const { code, output: stdout } = runScript(tower, { workflowHome: home, args: ['--decline'] });
     assert(code !== 0, `the refusal is a failure, got exit ${code}`);
     assert(stdout.includes('engine territory'), `says why, got: ${stdout}`);
-    const settings = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
-    assert(!(settings.repos || {})[fs.realpathSync(tower)], 'no decline recorded');
-    assertEq(JSON.stringify(settings.repos || {}), '{}', 'the roster is untouched');
+    assert(!rosterOf(home)[fs.realpathSync(tower)], 'no decline recorded');
+    assertEq(JSON.stringify(rosterOf(home)), '{}', 'the roster is untouched');
     cleanup(home);
   });
 
   await test('the user settings file exists from the first run, before any decision', () => {
     // It used to appear only on the first decline, so someone running the
     // workflow system found no ~/.workkit at all and read that as broken
-    // (Ian 2026-07-25). An empty repos map is the honest starting state.
+    // (Ian 2026-07-25). The site options spelled out are the honest starting
+    // state: it is the hand-edited file (issue #80), and an empty one would
+    // show nobody what there is to set.
     const repo = makeRepo({ settings: null });
     const home = path.join(mkTmp(), 'never-touched');
     runScript(repo, { args: ['--state'], workflowHome: home });
@@ -613,7 +620,10 @@ const run = async () => {
     assert(fs.existsSync(file), 'created without any decline');
     const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
     assertEq(parsed.version, 1, 'seeded with a version');
-    assertEq(Object.keys(parsed.repos).length, 0, 'no repos declined yet');
+    assertEq(parsed.repos, undefined, 'the roster is not in the hand-edited file');
+    assertEq(parsed.site.repo, null, 'the home repo is unset');
+    assertEq(parsed.site.publish, false, 'the site does not publish until someone says so');
+    assertEq(parsed.site.url, null, 'and there is no custom domain');
     cleanup(repo);
   });
 
@@ -621,25 +631,30 @@ const run = async () => {
     const repo = makeRepo({ settings: null });
     const home = mkTmp();
     const file = path.join(home, 'settings.json');
-    fs.writeFileSync(file, JSON.stringify({ version: 1, repos: { '/somewhere': 'declined' } }));
+    fs.writeFileSync(file, JSON.stringify({ version: 1, site: { repo: 'owner/workkit', publish: true, url: null } }));
     runScript(repo, { args: ['--state'], workflowHome: home });
     const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    assertEq(parsed.repos['/somewhere'], 'declined', 'the recorded decline survives');
+    assertEq(parsed.site.publish, true, 'what the owner typed survives');
+    assertEq(parsed.site.repo, 'owner/workkit', 'home slug and all');
     cleanup(repo); cleanup(home);
   });
 
-  await test('--decline records the repo under repos in the user settings', () => {
+  await test('--decline records the repo under repos in the machine\'s roster file', () => {
+    // The decline is the machine's record, not the owner's typing, so it lands
+    // in `.repos.json` beside the settings rather than in them (issue #80).
     const repo = makeRepo({ settings: null });
     const home = mkTmp();
     const { code, output: stdout } = runScript(repo, { args: ['--decline'], workflowHome: home });
     assertEq(code, 0, 'exit 0');
     assert(stdout.includes('recorded'), `reports the record, got: ${stdout}`);
-    const file = path.join(home, 'settings.json');
-    assert(fs.existsSync(file), 'the user settings file exists');
+    const file = path.join(home, '.repos.json');
+    assert(fs.existsSync(file), 'the roster file exists');
     const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
     assertEq(parsed.version, 1, 'seeded with a version');
     const root = fs.realpathSync(repo);
     assertEq(parsed.repos[root], 'declined', 'keyed by the absolute repo root');
+    const settings = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
+    assertEq(settings.repos, undefined, 'and nothing was written into the hand-edited file');
     cleanup(repo); cleanup(home);
   });
 
@@ -652,9 +667,9 @@ const run = async () => {
       nested: { keep: ['me', 1] },
       repos: { '/some/other/repo': 'declined' },
     };
-    fs.writeFileSync(path.join(home, 'settings.json'), `${JSON.stringify(seeded, null, 2)}\n`);
+    fs.writeFileSync(path.join(home, '.repos.json'), `${JSON.stringify(seeded, null, 2)}\n`);
     runScript(repo, { args: ['--decline'], workflowHome: home });
-    const parsed = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
+    const parsed = JSON.parse(fs.readFileSync(path.join(home, '.repos.json'), 'utf8'));
     assertEq(parsed.editor, 'code', 'unrelated key survives with its value');
     assertEq(JSON.stringify(parsed.nested), JSON.stringify({ keep: ['me', 1] }), 'nested value survives');
     assertEq(parsed.repos['/some/other/repo'], 'declined', 'other repo decisions survive');
@@ -700,8 +715,6 @@ const run = async () => {
   // maintained ON CONTACT — a heal registers the repo it is standing in and
   // prunes what has gone away — and it is silent, so every assertion here is
   // against the file rather than the output.
-  const rosterOf = (home) => JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8')).repos;
-
   await test('a heal registers the repo it healed', () => {
     const repo = makeRepo();
     const home = mkTmp();
@@ -718,7 +731,7 @@ const run = async () => {
     const home = mkTmp();
     const stub = makeGhStub({ authed: false });
     runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
-    const file = path.join(home, 'settings.json');
+    const file = path.join(home, '.repos.json');
     const first = fs.readFileSync(file, 'utf8');
     runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
     assertEq(fs.readFileSync(file, 'utf8'), first, 'an up-to-date roster is not written again');
@@ -750,7 +763,11 @@ const run = async () => {
     const basePath = `${stub.binDir}:/usr/bin:/bin:/usr/sbin:/sbin:${path.dirname(process.execPath)}`;
     // Seeded here rather than by whichever process gets there first: the race
     // under test is the EDIT, and two creations racing is a different one.
-    fs.writeFileSync(path.join(home, 'settings.json'), `${JSON.stringify({ version: 1, repos: {} }, null, 2)}\n`);
+    fs.writeFileSync(path.join(home, '.repos.json'), `${JSON.stringify({ version: 1, repos: {} }, null, 2)}\n`);
+    fs.writeFileSync(
+      path.join(home, 'settings.json'),
+      `${JSON.stringify({ version: 1, site: { repo: null, publish: false, url: null } }, null, 2)}\n`,
+    );
     const env = {
       ...process.env,
       PATH: basePath,
@@ -774,12 +791,13 @@ const run = async () => {
         child.on('close', (code) => resolve(code));
       }),
     ]);
-    const settings = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
+    const roster = rosterOf(home);
     for (const repo of repos) {
-      assertEq(settings.repos[fs.realpathSync(repo)], 'enabled', `${path.basename(repo)} survived the concurrent write`);
+      assertEq(roster[fs.realpathSync(repo)], 'enabled', `${path.basename(repo)} survived the concurrent write`);
     }
-    assertEq(settings.home, 'owner/workkit', 'and so did the home slug written beside them');
-    assert(!fs.existsSync(path.join(home, 'settings.json.lock')), 'and the lock is released, not left behind');
+    const settings = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
+    assertEq(settings.site.repo, 'owner/workkit', 'and so did the home slug written beside them');
+    assert(!fs.existsSync(path.join(home, '.state.lock')), 'and the lock is released, not left behind');
     for (const repo of repos) cleanup(repo);
     cleanup(home); cleanup(stub.dir);
   });
@@ -796,7 +814,7 @@ const run = async () => {
     assertEq(code, 0, 'exit 0');
 
     const left = fs.readdirSync(home).sort();
-    assertEq(left.join(','), 'settings.json', `only the machine state: ${left.join(', ')}`);
+    assertEq(left.join(','), '.repos.json,settings.json', `only the machine state: ${left.join(', ')}`);
     assertEq(rosterOf(home)[fs.realpathSync(repo)], 'enabled', 'and the roster is the thing it wrote');
     cleanup(repo); cleanup(home); cleanup(stub.dir);
   });
@@ -810,7 +828,10 @@ const run = async () => {
     fs.mkdirSync(tower, { recursive: true });
     spawnSync('git', ['init', '-q'], { cwd: tower });
     spawnSync('git', ['remote', 'add', 'origin', 'https://github.com/owner/workkit.git'], { cwd: tower });
-    fs.writeFileSync(path.join(home, 'settings.json'), `${JSON.stringify({ version: 1, repos: {}, home: 'owner/workkit' }, null, 2)}\n`);
+    fs.writeFileSync(
+      path.join(home, 'settings.json'),
+      `${JSON.stringify({ version: 1, site: { repo: 'owner/workkit', publish: false, url: null } }, null, 2)}\n`,
+    );
 
     const stub = makeGhStub({ authed: false });
     runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
@@ -826,7 +847,7 @@ const run = async () => {
     const gone = mkTmp();
     const off = makeRepo({ settings: '{ "version": 1, "enabled": false }\n' });
     const home = mkTmp();
-    fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({
+    fs.writeFileSync(path.join(home, '.repos.json'), JSON.stringify({
       version: 1,
       repos: { [gone]: 'enabled', [fs.realpathSync(off)]: 'enabled' },
     }, null, 2));
@@ -848,7 +869,7 @@ const run = async () => {
     const left = makeRepo();
     fs.rmSync(path.join(left, W, 'settings.json'));
     const home = mkTmp();
-    fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({
+    fs.writeFileSync(path.join(home, '.repos.json'), JSON.stringify({
       version: 1,
       repos: { [fs.realpathSync(left)]: 'enabled' },
     }, null, 2));
@@ -865,7 +886,7 @@ const run = async () => {
     const repo = makeRepo();
     const legacy = makeRepo({ settings: '{ "version": 1 }\n' });
     const home = mkTmp();
-    fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({
+    fs.writeFileSync(path.join(home, '.repos.json'), JSON.stringify({
       version: 1,
       repos: { [fs.realpathSync(legacy)]: 'enabled' },
     }, null, 2));
@@ -880,7 +901,7 @@ const run = async () => {
     const repo = makeRepo();
     const declined = mkTmp();
     const home = mkTmp();
-    fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({
+    fs.writeFileSync(path.join(home, '.repos.json'), JSON.stringify({
       version: 1,
       editor: 'code',
       repos: { [declined]: 'declined' },
@@ -889,7 +910,7 @@ const run = async () => {
 
     const stub = makeGhStub({ authed: false });
     runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
-    const parsed = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
+    const parsed = JSON.parse(fs.readFileSync(path.join(home, '.repos.json'), 'utf8'));
     assertEq(parsed.repos[declined], 'declined', 'the decline survives a vanished path');
     assertEq(parsed.editor, 'code', 'and every other key survives the write');
     cleanup(repo); cleanup(home); cleanup(stub.dir);
@@ -904,16 +925,16 @@ const run = async () => {
     cleanup(repo); cleanup(home); cleanup(stub.dir);
   });
 
-  await test('malformed user settings warn and skip — the heal still finishes', () => {
+  await test('a malformed roster file warns and skips — the heal still finishes', () => {
     const repo = makeRepo();
     const home = mkTmp();
-    fs.writeFileSync(path.join(home, 'settings.json'), '{ not json');
+    fs.writeFileSync(path.join(home, '.repos.json'), '{ not json');
     const stub = makeGhStub({ authed: false });
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
     assertEq(code, 0, 'a broken index never fails a heal');
     assert(/not valid JSON/.test(output), `it says what is wrong, got: ${output}`);
-    assertEq(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'), '{ not json', 'and the file is left alone');
-    assertEq(fs.readdirSync(home).join(','), 'settings.json', 'with no temp file left behind');
+    assertEq(fs.readFileSync(path.join(home, '.repos.json'), 'utf8'), '{ not json', 'and the file is left alone');
+    assertEq(fs.readdirSync(home).sort().join(','), '.repos.json,settings.json', 'with no temp file left behind');
     cleanup(repo); cleanup(home); cleanup(stub.dir);
   });
 
@@ -929,8 +950,7 @@ const run = async () => {
       timeout: 20000,
     });
     assertEq(res.status, 0, `the heal runs without it: ${res.stderr}`);
-    const parsed = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
-    assertEq(parsed.repos[fs.realpathSync(repo)], undefined, 'no jq, no edit — and no half-written file');
+    assertEq(rosterOf(home)[fs.realpathSync(repo)], undefined, 'no jq, no edit — and no half-written file');
     cleanup(repo); cleanup(home); cleanup(binDir);
   });
 
@@ -1022,16 +1042,15 @@ const run = async () => {
     // its way out.
     const repo = makeRepo({ settings: null });
     const home = mkTmp();
-    fs.mkdirSync(path.join(home, 'settings.json.lock'), { recursive: true });
+    fs.mkdirSync(path.join(home, '.state.lock'), { recursive: true });
     const { output } = runScript(repo, { args: ['--decline'], workflowHome: home });
     assert(output.includes('without the lock'), `says it proceeded unlocked, got: ${output}`);
-    assert(fs.existsSync(path.join(home, 'settings.json.lock')), 'the mutex it never held survives');
-    const parsed = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
-    assertEq(parsed.repos[fs.realpathSync(repo)], 'declined', 'the decline is still recorded');
+    assert(fs.existsSync(path.join(home, '.state.lock')), 'the mutex it never held survives');
+    assertEq(rosterOf(home)[fs.realpathSync(repo)], 'declined', 'the decline is still recorded');
     // And a decline that did acquire the lock removes its own on exit.
     const home2 = mkTmp();
     runScript(repo, { args: ['--decline'], workflowHome: home2 });
-    assert(!fs.existsSync(path.join(home2, 'settings.json.lock')), 'a held lock is released');
+    assert(!fs.existsSync(path.join(home2, '.state.lock')), 'a held lock is released');
     cleanup(repo); cleanup(home); cleanup(home2);
   });
 
@@ -1044,9 +1063,9 @@ const run = async () => {
     cleanup(repo);
   });
 
-  await test('malformed user settings — declines cleanly, records nothing, leaves no litter', () => {
+  await test('a malformed roster file — declines cleanly, records nothing, leaves no litter', () => {
     const home = mkTmp();
-    fs.writeFileSync(path.join(home, 'settings.json'), '{ this is not json\n');
+    fs.writeFileSync(path.join(home, '.repos.json'), '{ this is not json\n');
     const repo = makeRepo({ settings: null });
     const { output } = runScript(repo, { args: ['--decline'], workflowHome: home });
     assert(output.includes('not valid JSON'), `says what is wrong, got: ${output}`);
@@ -1054,17 +1073,17 @@ const run = async () => {
     cleanup(repo); cleanup(home);
   });
 
-  await test('a symlinked user settings file is updated in place, not replaced', () => {
+  await test('a symlinked roster file is updated in place, not replaced', () => {
     // This repo's whole model is symlinking config out of ~, so writing over the
     // link would replace it with a regular file and orphan the real one.
     const home = mkTmp();
     const realDir = mkTmp();
-    const realFile = path.join(realDir, 'settings.json');
+    const realFile = path.join(realDir, '.repos.json');
     fs.writeFileSync(realFile, '{\n  "version": 1,\n  "repos": {},\n  "digest": { "hour": 9 }\n}\n');
-    fs.symlinkSync(realFile, path.join(home, 'settings.json'));
+    fs.symlinkSync(realFile, path.join(home, '.repos.json'));
     const repo = makeRepo({ settings: null });
     runScript(repo, { args: ['--decline'], workflowHome: home });
-    assert(fs.lstatSync(path.join(home, 'settings.json')).isSymbolicLink(), 'still a symlink');
+    assert(fs.lstatSync(path.join(home, '.repos.json')).isSymbolicLink(), 'still a symlink');
     const written = JSON.parse(fs.readFileSync(realFile, 'utf8'));
     assertEq(written.repos[fs.realpathSync(repo)] || written.repos[repo], 'declined', 'the real target got the decline');
     assertEq(written.digest.hour, 9, 'and an unrelated key survived');

@@ -69,9 +69,10 @@ BIN_LINK="$BIN_DIR/workkit"
 CLAUDE_HOME="${WORKFLOW_CLAUDE_HOME:-${HOME:-}/.claude}"
 ENGINE_LINK="$CLAUDE_HOME/workkit"
 
-# The user-level settings file — the machine-local roster and the optional
-# `home` repo both live here. Read by `doctor`, written only by the engine.
-USER_SETTINGS="${WORKFLOW_HOME:-${HOME:-}/.workkit}/settings.json"
+# The machine-maintained roster file (issue #80: the hand-edited settings.json
+# holds the site options, and this one holds what the engine records). Read by
+# `doctor`, written only by the engine.
+USER_REPOS="${WORKFLOW_HOME:-${HOME:-}/.workkit}/.repos.json"
 
 # The home repo's lifecycle — creating it, cloning it into ~/.workkit/tower,
 # seeding the tower project, Discussions, Pages, the doctor lines. Sourced
@@ -359,26 +360,26 @@ offer_repo() {
 report_globals() {
   local count home
 
-  if [[ ! -f "$USER_SETTINGS" ]]; then
-    say_info "roster: $USER_SETTINGS does not exist yet — the first heal writes it"
+  if [[ ! -f "$USER_REPOS" ]]; then
+    say_info "roster: $USER_REPOS does not exist yet — the first heal writes it"
     return 0
   fi
   if ! command -v jq >/dev/null 2>&1; then
-    say_skip "roster: reading $USER_SETTINGS needs jq"
+    say_skip "roster: reading $USER_REPOS needs jq"
     return 0
   fi
 
-  count="$(jq -r '[(.repos // {}) | to_entries[] | select(.value != "declined")] | length' "$USER_SETTINGS" 2>/dev/null || printf '')"
+  count="$(jq -r '[(.repos // {}) | to_entries[] | select(.value != "declined")] | length' "$USER_REPOS" 2>/dev/null || printf '')"
   if [[ -z "$count" ]]; then
-    say_warn "roster: $USER_SETTINGS is not valid JSON — fix or remove it, then re-run a session in any repo"
+    say_warn "roster: $USER_REPOS is not valid JSON — fix or remove it, then re-run a session in any repo"
     return 0
   fi
   # Zero is the one count worth a different voice: an empty roster means the
   # tower, the board and the brief have nothing to read.
   if [[ "$count" == "0" ]]; then
-    say_info "roster: no repos registered in $USER_SETTINGS yet — it fills as a session opens in each enabled repo"
+    say_info "roster: no repos registered in $USER_REPOS yet — it fills as a session opens in each enabled repo"
   else
-    say_ok "roster: $count repo(s) registered in $USER_SETTINGS"
+    say_ok "roster: $count repo(s) registered in $USER_REPOS"
   fi
 
 }

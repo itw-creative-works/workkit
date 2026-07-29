@@ -20,7 +20,7 @@
 # refuses gets an empty answer and a non-zero status, never an abort. The
 # summaries step exits 0 either way — the same doctrine the brief runs under.
 #
-# Needs: lib.sh sourced first (WK_HOME_SETTINGS, wk_json_edit, wk_say_*).
+# Needs: lib.sh sourced first (WK_HOME_CACHE, wk_json_edit, wk_say_*).
 
 # The categories a summary looks for, one per cadence. A repo that has them gets
 # a tidy archive; a repo that does not still gets its summaries (see the
@@ -65,32 +65,33 @@ wk_disc_fetch_meta() {
 }
 
 # The cached meta for the home repo, fetching and caching when it is absent or
-# when the caller asks for a refresh. The cache lives in the MACHINE-LOCAL
-# settings file: node ids are GitHub's, not the project's, and a committed cache
-# would travel to a machine that never asked for it.
+# when the caller asks for a refresh. The cache lives in the machine's DISPOSABLE
+# file (`~/.workkit/.cache.json`, issue #80): node ids are GitHub's, not the
+# project's, they are never hand-edited, and deleting the file costs one round
+# trip — which is why it is created here on demand rather than seeded anywhere.
 #
 # Usage: wk_disc_meta <slug> [--refresh]
 wk_disc_meta() {
-  local slug="$1" refresh="${2:-}" cached fresh
+  local slug="$1" refresh="${2:-}" cached fresh locked=0
   wk_disc_ready || return 1
 
   if [[ "$refresh" != "--refresh" ]]; then
-    cached="$(jq -ce --arg s "$slug" '.homeCache[$s] // empty' "$WK_HOME_SETTINGS" 2>/dev/null || true)"
+    cached="$(jq -ce --arg s "$slug" '.homeCache[$s] // empty' "$WK_HOME_CACHE" 2>/dev/null || true)"
     if [[ -n "$cached" ]]; then printf '%s' "$cached"; return 0; fi
   fi
 
   fresh="$(wk_disc_fetch_meta "$slug")" || return 1
   [[ -n "$fresh" ]] || return 1
-  # Under the shared mutex: this is a whole-file read-modify-write of the same
-  # file the heal's roster registration writes, and the two run in the same
-  # minute of a morning. Taking the lock is best effort like every other
-  # writer's — a cache that lost a race is re-fetched, never wrong.
-  if [[ -f "$WK_HOME_SETTINGS" ]]; then
-    local locked=0
-    if wk_take_settings_lock; then locked=1; fi
-    wk_json_edit "$WK_HOME_SETTINGS" --arg s "$slug" --argjson m "$fresh" \
+  # Under the shared mutex: this is a whole-file read-modify-write, and the
+  # cc-news cursor writes the same file in the same minute of a morning. Taking
+  # the lock is best effort like every other writer's — a cache that lost a race
+  # is re-fetched, never wrong.
+  if [[ -d "$WK_USER_DIR" ]] || mkdir -p "$WK_USER_DIR" 2>/dev/null; then
+    if wk_take_state_lock; then locked=1; fi
+    [[ -f "$WK_HOME_CACHE" ]] || printf '{}\n' >"$WK_HOME_CACHE" 2>/dev/null || true
+    wk_json_edit "$WK_HOME_CACHE" --arg s "$slug" --argjson m "$fresh" \
       '.homeCache = ((.homeCache // {}) + { ($s): $m })' >/dev/null 2>&1 || true
-    if [[ "$locked" -eq 1 ]]; then wk_drop_settings_lock; fi
+    if [[ "$locked" -eq 1 ]]; then wk_drop_state_lock; fi
   fi
   printf '%s' "$fresh"
 }
