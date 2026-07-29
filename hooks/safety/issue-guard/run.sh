@@ -4,12 +4,21 @@
 # "Issue anatomy"): every repo workkit touches is assumed PUBLIC, so outbound
 # issue/PR text carries no secrets. This guard blocks a `gh issue
 # create|comment|edit|close|reopen` or `gh pr create|comment|edit|merge|close`
-# whose text holds something secret-shaped. The judgment half — private
-# business and personal detail, which no pattern can see — stays prose.
+# whose text holds something secret-shaped — and a `gh api graphql` call
+# carrying a discussion or issue mutation, which is the same egress by another
+# door (workflow/discussions.sh publishes summaries that way). The judgment
+# half — private business and personal detail, which no pattern can see —
+# stays prose.
 #
 # Scope: the whole command string (titles and bodies arrive as --title/--body
-# arguments, including the `--body "$(cat <<'EOF' … )"` idiom), plus the
-# CONTENT of a --body-file path when it exists. Any other command exits fast.
+# or as -f/-F/--field/--raw-field GraphQL variables, including the
+# `--body "$(cat <<'EOF' … )"` idiom), plus the CONTENT of a body path when it
+# exists — `--body-file <path>`, `-F <path>`, and the `-F body=@<path>` form a
+# mutation sends. A GraphQL QUERY writes nothing and is left alone; any other
+# command exits fast.
+# The limit of the GraphQL door: a mutation is recognized by the keyword in the
+# COMMAND TEXT, so a call that keeps its operation out of the command — `gh api
+# graphql --input <file>`, or a query held in a shell variable — is not seen.
 #
 # Two secret sources:
 #   1. Local .env values — every KEY=value in .env and .env.*, in the session's
@@ -38,9 +47,23 @@ cmd=$(jq -r '.tool_input.command // ""' <<<"$input" || true)
 # --- Is this an outbound gh issue/PR write? ---
 # close and reopen belong here too: their --comment posts free text publicly,
 # exactly like a plain comment (verifier finding, 2026-07-28).
-if ! printf '%s' "$cmd" | grep -Eq '(^|[^[:alnum:]_./-])gh[[:space:]]+(issue[[:space:]]+(create|comment|edit|close|reopen)|pr[[:space:]]+(create|comment|edit|merge|close))([[:space:]]|$)'; then
-  exit 0
+outbound=no
+if printf '%s' "$cmd" | grep -Eq '(^|[^[:alnum:]_./-])gh[[:space:]]+(issue[[:space:]]+(create|comment|edit|close|reopen)|pr[[:space:]]+(create|comment|edit|merge|close))([[:space:]]|$)'; then
+  outbound=yes
 fi
+
+# The GraphQL door. A mutation is the write — `mutation` is the keyword every
+# one of them carries (an anonymous `{…}` operation is a query), and the
+# operation name says whether the payload is public text. Both are matched
+# case-insensitively; a query passes untouched.
+if [ "$outbound" = no ] \
+  && printf '%s' "$cmd" | grep -Eq '(^|[^[:alnum:]_./-])gh[[:space:]]+api[[:space:]]+graphql([[:space:]]|$)' \
+  && printf '%s' "$cmd" | grep -Eqi 'mutation' \
+  && printf '%s' "$cmd" | grep -Eqi '(create|update|add|delete)(Discussion|DiscussionComment|Issue|IssueComment|Comment)'; then
+  outbound=yes
+fi
+
+[ "$outbound" = yes ] || exit 0
 
 cwd=$(jq -r '.cwd // ""' <<<"$input" || true)
 [ -n "$cwd" ] || cwd="$PWD"
@@ -49,19 +72,36 @@ cwd=$(jq -r '.cwd // ""' <<<"$input" || true)
 # `-F` is gh's shorthand for --body-file on these subcommands, so both
 # spellings are extracted; a path that does not resolve is simply skipped.
 text="$cmd"
-while IFS= read -r bf; do
-  [ -n "$bf" ] || continue
+add_file() {
+  local bf="$1" file
+  [ -n "$bf" ] || return 0
   bf="${bf#\"}"; bf="${bf%\"}"
   bf="${bf#\'}"; bf="${bf%\'}"
   case "$bf" in
     /*) file="$bf" ;;
     *)  file="$cwd/$bf" ;;
   esac
-  [ -f "$file" ] || continue
+  [ -f "$file" ] || return 0
   text="$text
 $(cat "$file" 2>/dev/null || true)"
+}
+
+while IFS= read -r bf; do
+  add_file "$bf"
 done <<EOF
-$(printf '%s' "$cmd" | grep -Eo -- '(--body-file|(^|[[:space:]])-F)[=[:space:]]+[^[:space:]]+' | sed -E 's/^[[:space:]]*(--body-file|-F)[=[:space:]]+//' || true)
+$(printf '%s' "$cmd" | grep -Eo -- '(--body-file|--raw-field|--field|(^|[[:space:]])-F)[=[:space:]]+[^[:space:]]+' | sed -E 's/^[[:space:]]*(--body-file|--raw-field|--field|-F)[=[:space:]]+//' || true)
+EOF
+
+# The GraphQL variable form: `-F body=@<path>` sends the file verbatim, which is
+# how a composed summary reaches a discussion. The path is what follows the `@`.
+# gh's long synonyms are the same door: `--field` for -F and `--raw-field` for
+# -f, and a call spelled the long way carried the file past this step
+# untouched (verifier finding, 2026-07-29).
+at_pattern="(^|[[:space:]])(-[fF]|--field|--raw-field)[=[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[\"']?@[^[:space:]\"']+"
+while IFS= read -r bf; do
+  add_file "$bf"
+done <<EOF
+$(printf '%s' "$cmd" | grep -Eo -- "$at_pattern" | sed -E 's/^.*@//' || true)
 EOF
 
 block() {

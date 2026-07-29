@@ -137,6 +137,96 @@ const run = async () => {
     }
   });
 
+  group('issue-guard: the GraphQL door');
+
+  // The shape workflow/discussions.sh sends, with the body inline rather than
+  // from a file — the same mutation either way.
+  const mutation = (body) => [
+    'gh api graphql',
+    '-f repoId="R_kg1" -f catId="DIC_kw1" -f title="Daily — 2026-07-29"',
+    `-f body='${body}'`,
+    "-f query='mutation($repoId:ID!,$catId:ID!,$title:String!,$body:String!){",
+    '  createDiscussion(input:{repositoryId:$repoId, categoryId:$catId, title:$title, body:$body}){',
+    '    discussion { url }',
+    '  }',
+    "}'",
+  ].join(' ');
+
+  await test('createDiscussion carrying a .env value — exit 2, names the KEY', () => {
+    const { code, stderr } = runHook(mutation(`## Went well\n\nthe token is ${SECRET}`));
+    assertEq(code, 2, 'the summary path is an outbound write like any other');
+    assert(stderr.includes('API_SECRET'), 'names the key');
+    assert(!stderr.includes(SECRET), 'never echoes the value');
+  });
+
+  await test('a token shape in the mutation body — exit 2, names the kind', () => {
+    const token = `ghp_${'A1b2C3d4E5f6G7h8I9j0'}`;
+    const { code, stderr } = runHook(mutation(`the run used ${token}`));
+    assertEq(code, 2, 'a ghp_ token must block here too');
+    assert(stderr.includes('GitHub token-shaped'), 'names the kind');
+    assert(!stderr.includes(token), 'never echoes the match');
+  });
+
+  await test('the -F body=@file form is dereferenced — exit 2 (what discussions.sh sends)', () => {
+    const file = path.join(CWD, 'summary.md');
+    fs.writeFileSync(file, `## Went well\n\nthe key is ${SECRET}\n`);
+    const cmd = mutation('placeholder').replace("-f body='placeholder'", `-F body="@${file}"`);
+    const { code, stderr } = runHook(cmd);
+    assertEq(code, 2, 'the body arrives as a file, and its content is the outbound text');
+    assert(stderr.includes('API_SECRET'), 'names the key from the file content');
+  });
+
+  await test('the --field body=@file long form is dereferenced too — exit 2 (verifier finding)', () => {
+    const file = path.join(CWD, 'long-form-summary.md');
+    fs.writeFileSync(file, `## Went well\n\nthe key is ${SECRET}\n`);
+    for (const flag of ['--field', '--raw-field']) {
+      const cmd = mutation('placeholder').replace("-f body='placeholder'", `${flag} body=@${file}`);
+      const { code, stderr } = runHook(cmd);
+      assertEq(code, 2, `gh's long synonym is the same door: ${flag}`);
+      assert(stderr.includes('API_SECRET'), 'names the key from the file content');
+    }
+  });
+
+  await test('a clean --field mutation — exit 0', () => {
+    const file = path.join(CWD, 'clean-summary.md');
+    fs.writeFileSync(file, '## Went well\n\nThe suite is green.\n');
+    const cmd = mutation('placeholder').replace("-f body='placeholder'", `--field body=@${file}`);
+    const { code, stderr } = runHook(cmd);
+    assertEq(code, 0, `ordinary summary prose publishes the long way too, got: ${stderr}`);
+    assertEq(stderr, '', 'silent');
+  });
+
+  await test('a clean createDiscussion — exit 0', () => {
+    const { code, stderr } = runHook(mutation('## Went well\n\nThe suite is green.'));
+    assertEq(code, 0, `ordinary summary prose publishes, got: ${stderr}`);
+    assertEq(stderr, '', 'silent');
+  });
+
+  await test('other discussion and issue mutations are gated — exit 2', () => {
+    const token = `ghp_${'A1b2C3d4E5f6G7h8I9j0'}`;
+    for (const op of ['addDiscussionComment', 'createIssue', 'updateIssue', 'addComment']) {
+      const cmd = `gh api graphql -f body='${token}' -f query='mutation{ ${op}(input:{body:$body}){ clientMutationId } }'`;
+      assertEq(runHook(cmd).code, 2, `must block: ${op}`);
+    }
+  });
+
+  await test('a plain GraphQL query — exit 0, reads are never gated', () => {
+    const query = [
+      'gh api graphql -f owner="ITW-Creative-Works" -f name="workkit"',
+      "-f query='query($owner:String!,$name:String!){",
+      '  repository(owner:$owner, name:$name){ id hasDiscussionsEnabled',
+      '    discussions(first:10){ nodes { title createdAt body } } }',
+      "}'",
+    ].join(' ');
+    const { code, stderr } = runHook(query);
+    assertEq(code, 0, `a read writes nothing, got: ${stderr}`);
+  });
+
+  await test('a GraphQL query naming a repository mutation-free field — exit 0', () => {
+    const { code, stderr } = runHook("gh api graphql -f query='{ viewer { login } }'");
+    assertEq(code, 0, `an anonymous operation is a query, got: ${stderr}`);
+  });
+
   group('issue-guard: the repo root .env');
 
   await test("a root .env value, from a subdirectory cwd — exit 2, names the KEY", () => {

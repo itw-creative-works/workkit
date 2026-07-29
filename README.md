@@ -75,7 +75,7 @@ claude plugin marketplace add <path-to-checkout>
 claude plugin install workkit@workkit
 ```
 
-The engine's stable address, `~/.claude/workkit` → this repo's `workflow/`, is installed by the standards heal itself the first time a session runs it. The skills and anything scripting the standard directly reach the engine there.
+The engine's stable address, `~/.claude/workkit` → this repo's `workflow/`, is installed by the standards heal itself the first time a session runs it in a participating repo — and from a real checkout only, so a fixture copy never takes the machine's address. A machine whose repos have not joined yet gets the same address from `workkit setup` or `workkit update`. The skills and anything scripting the standard directly reach the engine there.
 
 Plugins load at startup, so a new (or restarted) session is what puts a change into effect.
 
@@ -96,7 +96,7 @@ Plugins load at startup, so a new (or restarted) session is what puts a change i
 | `safety/vendor-guard` | before any edit | Blocks edits to generated, vendored, and gitignored files |
 | `safety/commit-gate` | before `git commit` | No commit unless tests pass, new source files come with tests, code carries a fresh review, and any CHANGELOG entry is in format. Heal bookkeeping (the version stamp and the current vendored linter, alone) skips the review and new-file checks |
 | `safety/commit-language` | before `git commit` | Bounces kill/destroy/dead wording in commit messages, and off-format subject lines |
-| `safety/issue-guard` | before a `gh issue`/`gh pr` write | Blocks outbound issue or PR text carrying a local `.env` value or a token-shaped string — every repo is assumed public. Names the key or the kind, never the match |
+| `safety/issue-guard` | before a `gh issue`/`gh pr` write, or a GraphQL discussion/issue mutation | Blocks outbound text carrying a local `.env` value or a token-shaped string — every repo is assumed public. Names the key or the kind, never the match |
 | `safety/inbox-guard` | before a read of the inbox | Keeps `.workkit/inbox.md` the owner's scratchpad: contents open only during a triage run; counting and appending stay free |
 | `docs/board-guard` | after any edit | Holds `AGENTS.md` / `CLAUDE.md` to the document rules |
 | `docs/changelog-guard` | after any edit | Holds a CHANGELOG entry to one short linked paragraph |

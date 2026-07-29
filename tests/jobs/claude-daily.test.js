@@ -28,8 +28,11 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
 /**
  * A scratch home, a fake `claude` printing `response` and exiting `status`, and
  * a fake Notifly. Returns everything an assertion needs to read back.
+ *
+ * `logsDir: false` leaves ~/Library/Logs out — the bare home the job has to
+ * make its own log directory in.
  */
-const mkWorld = ({ response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n', status = 0 } = {}) => {
+const mkWorld = ({ response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n', status = 0, logsDir = true } = {}) => {
   const root = mkTmp();
   const bin = path.join(root, 'bin');
   const home = path.join(root, 'home');
@@ -39,7 +42,7 @@ const mkWorld = ({ response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n
   fs.writeFileSync(path.join(workflowHome, 'settings.json'), JSON.stringify({ version: 1, repos: {} }, null, 2));
   // ~/Library/Logs is a directory every macOS home already has; the fixture home
   // is bare, so it is created here rather than by the job.
-  fs.mkdirSync(path.join(home, 'Library', 'Logs'), { recursive: true });
+  if (logsDir) fs.mkdirSync(path.join(home, 'Library', 'Logs'), { recursive: true });
 
   const claudeLog = path.join(root, 'claude-argv.log');
   const notifLog = path.join(root, 'notifly-argv.log');
@@ -185,6 +188,14 @@ const run = async () => {
     const after = (flag) => notif[notif.indexOf(flag) + 1];
     assertEq(after('--title'), 'Claude Daily', 'titled');
     assertEq(after('--message'), 'HEADLINE: one thing today.', 'the headline IS the notification');
+    cleanup(world.root);
+  });
+
+  await test('a home with no Library/Logs gets one — the exchange is still logged', () => {
+    const world = mkWorld({ logsDir: false });
+    const res = runJob(world, ['hello']);
+    assertEq(res.status, 0, `the append cannot fail the job: ${res.stderr}`);
+    assert(world.log().includes('HEADLINE: one thing today.'), `the log was created and written: ${world.log()}`);
     cleanup(world.root);
   });
 

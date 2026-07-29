@@ -295,6 +295,15 @@ wk_home_install() {
   # The exit status proves nothing (probed 2026-07-28: an install with no omega
   # checkout to resolve still exits 0 and leaves dangling symlinks), so the
   # binary itself is the check — the same one publish.sh makes.
+  #
+  # A second pass when the bin is still missing: on a fresh tree npm's own
+  # workspace linking took two runs to put anything but omega-manager in
+  # node_modules/.bin (observed on the first real setup, 2026-07-29). The retry
+  # is one extra run over an installed tree, never a loop — if the bin is absent
+  # after it, the warn below is the genuine failure.
+  if [[ ! -x "$WK_HOME_DIR/node_modules/.bin/omega" ]]; then
+    npm --prefix "$WK_HOME_DIR" install >/dev/null 2>&1 || true
+  fi
   if [[ -x "$WK_HOME_DIR/node_modules/.bin/omega" ]]; then
     wk_say_ok "home: the tower project can build here"
   else

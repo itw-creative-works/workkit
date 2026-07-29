@@ -39,19 +39,20 @@
 #                  wired in hooks.json resolves to a script that exists, is
 #                  executable, and parses, and the tools they call are present.
 #
-# Two user-level seeds run before any of that, on every invocation: the user's
-# own settings file, and the engine's public address (~/.claude/workkit → this
-# folder).
+# One user-level seed runs before any of that, on every invocation: the user's
+# own settings file. The engine's public address (~/.claude/workkit → this
+# folder) is written by a real heal, or by --engine-link on its own.
 #
-# Usage: bash standards.sh [--state|--announce|--enable|--decline] [repo_dir]
+# Usage: bash standards.sh [--state|--announce|--enable|--decline|--engine-link] [repo_dir]
 #        (repo_dir defaults to the current directory)
 #
-#   (no mode)   heal the repo — but only if it is enabled (see participation)
-#   --state     print enabled | disabled | declined | undecided | home | nogit
-#               (home is the tower clone: engine territory, never healed)
-#   --announce  print the one-line offer shown to an undecided repo
-#   --enable    write the committed opt-in (enabled: true), then heal
-#   --decline   record "never ask about this repo again" in the USER settings
+#   (no mode)     heal the repo — but only if it is enabled (see participation)
+#   --state       print enabled | disabled | declined | undecided | home | nogit
+#                 (home is the tower clone: engine territory, never healed)
+#   --announce    print the one-line offer shown to an undecided repo
+#   --enable      write the committed opt-in (enabled: true), then heal
+#   --decline     record "never ask about this repo again" in the USER settings
+#   --engine-link maintain the engine's address and nothing else (no repo needed)
 #
 # The label step and the protection ask need jq/gh + auth + a remote. Without
 # them each says so quietly and moves on — an offline machine has nothing
@@ -126,9 +127,67 @@ log_info() { printf "  ${_C}ℹ %s${_N}\n" "$1" >&2; }
 
 mode="heal"
 case "${1:-}" in
-  --state|--announce|--enable|--decline) mode="${1#--}"; shift ;;
+  --state|--announce|--enable|--decline|--engine-link) mode="${1#--}"; shift ;;
   --*) log_warn "standards: unknown option $1"; exit 1 ;;
 esac
+
+# The engine's public address, for anything that scripts the standard directly:
+# ~/.claude/workkit points at this folder. The heal owns it, so a plugin update
+# or a fresh machine gets the address from the first session that runs — no
+# install step, no module in someone's dotfiles. Two things may write it: a real
+# heal, and `--engine-link`, the address step on its own (what `workkit
+# setup|update` asks for, so the machine-side install owns no second copy of it).
+# A probe answers a question and writes nothing.
+#
+# The engine stays agent-agnostic: it CREATES nothing under ~/.claude and skips
+# quietly on a machine that has no such directory. The address is a convenience
+# for the machines that do.
+# WORKFLOW_CLAUDE_HOME overrides the parent (the tests point it at a temp dir —
+# this step must never touch a real ~/.claude).
+CLAUDE_HOME="${WORKFLOW_CLAUDE_HOME:-${HOME:-}/.claude}"
+ENGINE_LINK="$CLAUDE_HOME/workkit"
+
+# Only the machine's REAL engine may take the address. A fixture copy, an
+# archive, or a partial checkout running this script is not the engine every
+# other session resolves — one of them repointing the link stole it from the
+# whole machine (verify finding, 2026-07-29). Canonical means: the script sits
+# in a git checkout whose origin names the workkit repo. Anything else is a
+# quiet skip, not a fault.
+is_canonical_checkout() {
+  local top url
+  command -v git >/dev/null 2>&1 || return 1
+  top="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  [[ -n "$top" ]] || return 1
+  url="$(git -C "$top" remote get-url origin 2>/dev/null)" || return 1
+  # The slug is what identifies it — https, ssh, and a trailing .git all read
+  # the same, and the owner's letter case is not the engine's business.
+  printf '%s' "$url" | grep -Eiq '[/:]workkit(\.git)?/?$'
+}
+
+ensure_engine_link() {
+  [[ -d "$CLAUDE_HOME" ]] || return 0
+  is_canonical_checkout || return 0
+
+  local current
+  if [[ -L "$ENGINE_LINK" ]]; then
+    current="$(cd "$ENGINE_LINK" 2>/dev/null && pwd -P || true)"
+    [[ "$current" == "$SCRIPT_DIR" ]] && return 0
+    ln -sfn "$SCRIPT_DIR" "$ENGINE_LINK" \
+      && log_ok "engine: repointed $ENGINE_LINK at $SCRIPT_DIR"
+  elif [[ -e "$ENGINE_LINK" ]]; then
+    log_warn "engine: $ENGINE_LINK is a real file or directory — move it aside so the engine's address can be linked"
+  else
+    ln -s "$SCRIPT_DIR" "$ENGINE_LINK" \
+      && log_ok "engine: linked $ENGINE_LINK → $SCRIPT_DIR"
+  fi
+}
+
+# The address step alone — it is the ENGINE's address, so it needs no repo and
+# answers before the repo is even resolved.
+if [[ "$mode" == "engine-link" ]]; then
+  ensure_engine_link
+  exit 0
+fi
 
 repo_dir="${1:-$PWD}"
 
@@ -194,38 +253,6 @@ seed_user_settings() {
   ( set -C; printf '{\n  "version": 1,\n  "repos": {}\n}\n' 2>/dev/null >"$USER_SETTINGS" ) || return 0
 }
 seed_user_settings
-
-# The engine's public address, for anything that scripts the standard directly:
-# ~/.claude/workkit points at this folder. The heal owns it, so a plugin update
-# or a fresh machine gets the address from the first session that runs — no
-# install step, no module in someone's dotfiles.
-#
-# The engine stays agent-agnostic: it CREATES nothing under ~/.claude and skips
-# quietly on a machine that has no such directory. The address is a convenience
-# for the machines that do.
-# WORKFLOW_CLAUDE_HOME overrides the parent (the tests point it at a temp dir —
-# this step must never touch a real ~/.claude).
-CLAUDE_HOME="${WORKFLOW_CLAUDE_HOME:-${HOME:-}/.claude}"
-ENGINE_LINK="$CLAUDE_HOME/workkit"
-
-ensure_engine_link() {
-  [[ -d "$CLAUDE_HOME" ]] || return 0
-
-  local current
-  if [[ -L "$ENGINE_LINK" ]]; then
-    current="$(cd "$ENGINE_LINK" 2>/dev/null && pwd -P || true)"
-    [[ "$current" == "$SCRIPT_DIR" ]] && return 0
-    ln -sfn "$SCRIPT_DIR" "$ENGINE_LINK" \
-      && log_ok "engine: repointed $ENGINE_LINK at $SCRIPT_DIR"
-  elif [[ -e "$ENGINE_LINK" ]]; then
-    log_warn "engine: $ENGINE_LINK is a real file or directory — move it aside so the engine's address can be linked"
-  else
-    ln -s "$SCRIPT_DIR" "$ENGINE_LINK" \
-      && log_ok "engine: linked $ENGINE_LINK → $SCRIPT_DIR"
-  fi
-}
-
-ensure_engine_link
 
 offer_line() {
   # %q on the path: a repo directory containing a space would otherwise print a
@@ -1144,6 +1171,10 @@ case "$state" in
 esac
 
 log_info "standards: $root"
+# The address is written by a real heal only: a --state or --announce probe
+# answers a question and writes nothing, and a repo that has not said yes is
+# offered and left alone. Both exit above this line.
+ensure_engine_link
 register_in_roster
 ensure_workflow_ignored
 ensure_gitignore_basics

@@ -1108,8 +1108,9 @@ const run = async () => {
 
   group("standards.sh: the engine's address");
 
-  // ~/.claude/workkit → the engine. The step runs on EVERY invocation, so the
-  // cheapest one (--state, no gh, no heal) is what these drive it with.
+  // ~/.claude/workkit → the engine. The step runs on a real HEAL from a
+  // CANONICAL checkout — this suite's SCRIPT is that checkout, and every claude
+  // home below is a temp directory, so the machine's own address is untouched.
   const ENGINE = path.resolve(WORKFLOW_DIR);
   const claudeHomeWith = () => {
     const home = mkTmp();
@@ -1120,7 +1121,7 @@ const run = async () => {
   await test('links ~/.claude/workkit at the engine it is running from', () => {
     const repo = makeRepo();
     const { claude } = claudeHomeWith();
-    const { output } = runScript(repo, { args: ['--state'], claudeHome: claude });
+    const { output } = runScript(repo, { claudeHome: claude });
     const link = path.join(claude, 'workkit');
     assertEq(fs.realpathSync(link), fs.realpathSync(ENGINE), 'the address points at this engine');
     assert(fs.lstatSync(link).isSymbolicLink(), 'and it is a symlink, not a copy');
@@ -1131,8 +1132,8 @@ const run = async () => {
   await test('an address already correct is silent — the step is idempotent', () => {
     const repo = makeRepo();
     const { claude } = claudeHomeWith();
-    runScript(repo, { args: ['--state'], claudeHome: claude });
-    const { output } = runScript(repo, { args: ['--state'], claudeHome: claude });
+    runScript(repo, { claudeHome: claude });
+    const { output } = runScript(repo, { claudeHome: claude });
     assert(!output.includes('engine:'), `a correct address says nothing, got: ${output}`);
     assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(ENGINE), 'and stays put');
     cleanup(repo); cleanup(claude);
@@ -1143,7 +1144,7 @@ const run = async () => {
     const { claude } = claudeHomeWith();
     const stale = mkTmp();
     fs.symlinkSync(stale, path.join(claude, 'workkit'));
-    const { output } = runScript(repo, { args: ['--state'], claudeHome: claude });
+    const { output } = runScript(repo, { claudeHome: claude });
     assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(ENGINE), 'repointed at this engine');
     assert(output.includes('engine: repointed'), `and says so, got: ${output}`);
     cleanup(repo); cleanup(claude); cleanup(stale);
@@ -1155,7 +1156,7 @@ const run = async () => {
     const real = path.join(claude, 'workkit');
     fs.mkdirSync(real);
     fs.writeFileSync(path.join(real, 'keep.txt'), 'mine\n');
-    const { output } = runScript(repo, { args: ['--state'], claudeHome: claude });
+    const { output } = runScript(repo, { claudeHome: claude });
     assert(fs.statSync(real).isDirectory() && !fs.lstatSync(real).isSymbolicLink(), 'the directory survives');
     assertEq(fs.readFileSync(path.join(real, 'keep.txt'), 'utf8'), 'mine\n', 'with its contents');
     assert(output.includes('is a real file or directory'), `and the human is told, got: ${output}`);
@@ -1166,10 +1167,129 @@ const run = async () => {
     const repo = makeRepo();
     const home = mkTmp();
     const claude = path.join(home, '.claude');
-    const { output } = runScript(repo, { args: ['--state'], claudeHome: claude });
+    const { output } = runScript(repo, { claudeHome: claude });
     assert(!fs.existsSync(claude), 'the engine creates no agent directory of its own');
     assert(!output.includes('engine:'), `and says nothing about it, got: ${output}`);
     cleanup(repo); cleanup(home);
+  });
+
+  // The address belongs to the machine's real engine, and only a real heal from
+  // it may write one. A --state probe or a fixture copy that repointed it stole
+  // the machine's engine from under every other session — which is exactly what
+  // a partial-checkout test run did on 2026-07-29.
+  await test('a probe never touches the address — --state and --announce', () => {
+    for (const args of [['--state'], ['--announce']]) {
+      const repo = makeRepo();
+      const { claude } = claudeHomeWith();
+      const { output } = runScript(repo, { args, claudeHome: claude });
+      assert(!fs.existsSync(path.join(claude, 'workkit')), `${args[0]} asked a question and wrote nothing`);
+      assert(!output.includes('engine:'), `and said nothing about the address, got: ${output}`);
+      cleanup(repo); cleanup(claude);
+    }
+  });
+
+  // The machine-side install (`workkit setup|update`) needs the address without
+  // a heal of anything, and must not own a second copy of the step.
+  await test('--engine-link writes the address and heals nothing', () => {
+    const repo = makeRepo();
+    const { claude } = claudeHomeWith();
+    const { output } = runScript(repo, { args: ['--engine-link'], claudeHome: claude });
+    assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(ENGINE), 'the address points at this engine');
+    assert(!output.includes('standards:'), `and nothing else ran, got: ${output}`);
+    cleanup(repo); cleanup(claude);
+  });
+
+  await test('a probe leaves an EXISTING address alone', () => {
+    const repo = makeRepo();
+    const { claude } = claudeHomeWith();
+    const other = mkTmp();
+    fs.symlinkSync(other, path.join(claude, 'workkit'));
+    runScript(repo, { args: ['--state'], claudeHome: claude });
+    assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(other),
+      'the address a probe found is the address it leaves');
+    cleanup(repo); cleanup(claude); cleanup(other);
+  });
+
+  await test('a repo that has not said yes never repoints it', () => {
+    const repo = makeRepo({ settings: null });
+    const { claude } = claudeHomeWith();
+    runScript(repo, { claudeHome: claude, workflowHome: path.join(mkTmp(), 'wh') });
+    assert(!fs.existsSync(path.join(claude, 'workkit')), 'an undecided repo is offered, and nothing else happens');
+    cleanup(repo); cleanup(claude);
+  });
+
+  await test('a NON-canonical copy of the engine leaves the address alone, silently', () => {
+    const repo = makeRepo();
+    const { claude } = claudeHomeWith();
+    // A copy in a temp directory — no git repo above it, which is what a
+    // fixture, an archive, or a partial checkout looks like.
+    const copy = mkTmp();
+    spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
+    const res = spawnSync('bash', [path.join(copy, 'standards.sh'), repo], {
+      env: {
+        ...process.env,
+        PATH: `/usr/bin:/bin:/usr/sbin:/sbin:${path.dirname(process.execPath)}`,
+        WORKFLOW_HOME: path.join(mkTmp(), 'wh'),
+        WORKFLOW_CLAUDE_HOME: claude,
+      },
+      encoding: 'utf8',
+      timeout: 20000,
+    });
+    assertEq(res.status, 0, `the heal itself still runs: ${res.stderr}`);
+    assert(!fs.existsSync(path.join(claude, 'workkit')), 'a copy is not the machine engine and takes no address');
+    assert(!(res.stdout + res.stderr).includes('engine:'), `and says nothing — it is a skip, not a fault, got: ${res.stderr}`);
+    cleanup(repo); cleanup(claude); cleanup(copy);
+  });
+
+  await test('a copy whose origin is some OTHER repo leaves it alone too', () => {
+    const repo = makeRepo();
+    const { claude } = claudeHomeWith();
+    // A git repo this time, so only the origin tells the two apart.
+    const copyRoot = mkTmp();
+    const copy = path.join(copyRoot, 'workflow');
+    fs.mkdirSync(copy, { recursive: true });
+    spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
+    spawnSync('git', ['init', '-q'], { cwd: copyRoot });
+    spawnSync('git', ['remote', 'add', 'origin', 'https://github.com/someone/not-the-kit.git'], { cwd: copyRoot });
+    const res = spawnSync('bash', [path.join(copy, 'standards.sh'), repo], {
+      env: {
+        ...process.env,
+        PATH: `/usr/bin:/bin:/usr/sbin:/sbin:${path.dirname(process.execPath)}`,
+        WORKFLOW_HOME: path.join(mkTmp(), 'wh'),
+        WORKFLOW_CLAUDE_HOME: claude,
+      },
+      encoding: 'utf8',
+      timeout: 20000,
+    });
+    assertEq(res.status, 0, `the heal itself still runs: ${res.stderr}`);
+    assert(!fs.existsSync(path.join(claude, 'workkit')), 'the origin is what makes a checkout the machine engine');
+    cleanup(repo); cleanup(claude); cleanup(copyRoot);
+  });
+
+  await test('a copy whose origin IS the kit takes the address', () => {
+    const repo = makeRepo();
+    const { claude } = claudeHomeWith();
+    const copyRoot = mkTmp();
+    const copy = path.join(copyRoot, 'workflow');
+    fs.mkdirSync(copy, { recursive: true });
+    spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
+    spawnSync('git', ['init', '-q'], { cwd: copyRoot });
+    spawnSync('git', ['remote', 'add', 'origin', 'git@github.com:ITW-Creative-Works/workkit.git'], { cwd: copyRoot });
+    runScript(repo, { claudeHome: claude });   // prime it with THIS engine first
+    const res = spawnSync('bash', [path.join(copy, 'standards.sh'), repo], {
+      env: {
+        ...process.env,
+        PATH: `/usr/bin:/bin:/usr/sbin:/sbin:${path.dirname(process.execPath)}`,
+        WORKFLOW_HOME: path.join(mkTmp(), 'wh'),
+        WORKFLOW_CLAUDE_HOME: claude,
+      },
+      encoding: 'utf8',
+      timeout: 20000,
+    });
+    assertEq(res.status, 0, `the heal runs: ${res.stderr}`);
+    assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(copy),
+      'a second real checkout is still a real checkout — the address follows the one that ran');
+    cleanup(repo); cleanup(claude); cleanup(copyRoot);
   });
 
   group('standards.sh: local working files');

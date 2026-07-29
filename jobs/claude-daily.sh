@@ -24,6 +24,10 @@ mkdir -p "$WORK_DIR"
 cd "$WORK_DIR"
 
 LOG_FILE="$HOME/Library/Logs/claude-daily.log"
+# The log directory is this step's own to ensure: a home without ~/Library/Logs
+# would fail the append under `set -e`, and the log is the whole record of the
+# exchange this run sent.
+mkdir -p "$(dirname "$LOG_FILE")"
 TIMESTAMP="$(date '+%Y-%m-%d %H:%M:%S')"
 
 # Desktop notification — backgrounded + fully detached from stdio: Notifly

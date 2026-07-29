@@ -142,13 +142,14 @@ bash ~/.claude/workkit/standards.sh --enable [repo]    # write the committed opt
 bash ~/.claude/workkit/standards.sh --decline [repo]   # record it in the USER file; never offered again
 bash ~/.claude/workkit/standards.sh --state [repo]     # enabled | disabled | declined | undecided | home | nogit
 bash ~/.claude/workkit/standards.sh --announce [repo]  # the offer line, for a hook to relay
+bash ~/.claude/workkit/standards.sh --engine-link       # maintain the engine's address, nothing else
 ```
 
 `--decline` writes only the `repos` key: every other key in the user file, and its value, survives untouched. Both files are created lazily — nothing exists until there is a decision to record.
 
 ## How it is reached
 
-The hooks resolve this folder from their own location, so they work the moment the plugin is installed. Everything else — the spec, the skills, anything scripting the standard by hand — reaches it at `~/.claude/workkit`, a symlink this script maintains itself: every run points the address at the folder it is running from. The hook takes a `WORKFLOW_DIR` override and the address step a `WORKFLOW_CLAUDE_HOME` one; the tests use both.
+The hooks resolve this folder from their own location, so they work the moment the plugin is installed. Everything else — the spec, the skills, anything scripting the standard by hand — reaches it at `~/.claude/workkit`, a symlink this script maintains itself: a real heal points the address at the folder it is running from, provided that folder is a git checkout whose origin names the workkit repo. A probe writes nothing, and a copy that is not the machine's engine is left silently alone. `--engine-link` is that step on its own, which is what `workkit setup|update` calls. The hook takes a `WORKFLOW_DIR` override and the address step a `WORKFLOW_CLAUDE_HOME` one; the tests use both.
 
 Run it by hand against any repo:
 

@@ -39,7 +39,7 @@ claude plugin marketplace add <path-to-checkout>
 claude plugin install workkit@workkit
 ```
 
-The engine's stable filesystem address, `~/.claude/workkit` → this repo's `workflow/`, needs no install step: the standards heal points it at the folder it is running from on every run. The hooks resolve the engine from their own location instead, so they never wait on it; skills and docs reference it by that path.
+The engine's stable filesystem address, `~/.claude/workkit` → this repo's `workflow/`, needs no install step: a real heal points it at the folder it is running from, when that folder is a checkout whose origin names this repo — a probe or a fixture copy leaves the machine's address alone (`--engine-link` is the step on its own, for `workkit setup|update`). The hooks resolve the engine from their own location instead, so they never wait on it; skills and docs reference it by that path.
 
 ## Hooks
 
@@ -57,7 +57,7 @@ Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh`
 | `safety/vendor-guard` | PreToolUse (Edit/Write) | Blocks edits to generated, vendored, and gitignored files (`_attic/`, `.workkit/`, `.env*` excepted) |
 | `safety/commit-gate` | PreToolUse (Bash) | Blocks `git commit` unless tests pass, new source files come with test files, code carries a fresh review marker, any added CHANGELOG entry matches the format, and a commit closing an issue (`Fixes #N`) stages the entry it closes against |
 | `safety/commit-language` | PreToolUse (Bash) | Bounces commit messages using kill/destroy/dead wording, suggesting the neutral terms, and subject lines that are not Conventional Commits or carry a version number outside `chore(release)` |
-| `safety/issue-guard` | PreToolUse (Bash) | Blocks a `gh issue create/comment/edit` or `gh pr create/comment/edit/merge` whose outbound text carries a local `.env` value or a token-shaped string — every repo is assumed public (the spec § Issue anatomy). Names the key or the kind, never the match |
+| `safety/issue-guard` | PreToolUse (Bash) | Blocks a `gh issue create/comment/edit`, a `gh pr create/comment/edit/merge/close`, or a `gh api graphql` carrying a discussion or issue mutation, whose outbound text carries a local `.env` value or a token-shaped string — every repo is assumed public (the spec § Issue anatomy). Names the key or the kind, never the match |
 | `safety/inbox-guard` | PreToolUse (Read/Grep/Bash) | Blocks a read of `.workkit/inbox.md`'s contents outside a triage run — the owner's scratchpad, opened by the marker the `workkit:triage` skill records and stale after 30 minutes. Counting and appending stay open |
 | `docs/board-guard` | PostToolUse (Edit/Write) | Bounces `CLAUDE.md` / `AGENTS.md` writes that break the spec's document rules |
 | `docs/changelog-guard` | PostToolUse (Edit/Write) | Bounces a CHANGELOG entry that is an essay instead of one short linked paragraph — only entries the write ADDED |

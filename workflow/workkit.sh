@@ -145,11 +145,11 @@ EOF
 
 # ── The pieces ────────────────────────────────────────────────────────────────
 
-# The engine's address is standards.sh's own to maintain — it repoints
-# ~/.claude/workkit at the folder it is running from on every run, before it
-# does anything else. Asking it for a state is how this command triggers that
-# step without owning a second copy of it. Its diagnostics arrive on stderr, so
-# an action line is relayed and silence stays silent.
+# The engine's address is standards.sh's own to maintain — it points
+# ~/.claude/workkit at the folder it is running from, when that folder is a real
+# workkit checkout. `--engine-link` is that step on its own, which is how this
+# command triggers it without owning a second copy of it. Its diagnostics arrive
+# on stderr, so an action line is relayed and silence stays silent.
 refresh_engine_link() {
   local out rc=0
   # A missing engine is a broken checkout, never a machine that is up to date:
@@ -159,9 +159,9 @@ refresh_engine_link() {
     return 0
   fi
 
-  out="$(bash "$STANDARDS" --state "$KIT_DIR" 2>&1 >/dev/null)" || rc=$?
+  out="$(bash "$STANDARDS" --engine-link "$KIT_DIR" 2>&1 >/dev/null)" || rc=$?
   if [[ "$rc" -ne 0 ]]; then
-    say_warn "engine: the heal could not report its state (exit $rc) — run \`bash $STANDARDS --state $KIT_DIR\` to see why"
+    say_warn "engine: the address step could not run (exit $rc) — run \`bash $STANDARDS --engine-link $KIT_DIR\` to see why"
     return 0
   fi
 
@@ -172,7 +172,16 @@ refresh_engine_link() {
       say_ok "${line#  ✓ }"
     done <<<"$out"
   else
-    say_skip "engine: $ENGINE_LINK is current"
+    # Silence is two different outcomes: the address already resolves here, or
+    # the engine REFUSED to write it (no ~/.claude, no git, a checkout that is
+    # not the machine's engine). Only the first is "current", so the address is
+    # read back rather than assumed — a refusal that reads as up to date is the
+    # one report this command must not print (verifier finding, 2026-07-29).
+    if [[ -L "$ENGINE_LINK" && "$(cd "$ENGINE_LINK" 2>/dev/null && pwd -P || true)" == "$SCRIPT_DIR" ]]; then
+      say_skip "engine: $ENGINE_LINK is current"
+    else
+      say_skip "engine: $ENGINE_LINK was left as it is — this checkout does not take the engine's address"
+    fi
   fi
 }
 

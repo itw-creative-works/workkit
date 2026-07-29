@@ -120,7 +120,7 @@ const mkTowerApp = (root) => {
 const mkWorld = ({
   login = 'owner', repoExists = false, discussionsOn = false,
   categories = ['Daily', 'Weekly', 'Monthly'], pagesOn = false, pagesFails = false,
-  settings = { version: 1, repos: {} }, remote = null,
+  settings = { version: 1, repos: {} }, remote = null, npmLinksOn = 1,
 } = {}) => {
   const root = mkTmp();
   const bin = path.join(root, 'bin');
@@ -136,15 +136,22 @@ const mkWorld = ({
 
   // npm is a shim throughout: a seed's install must never reach the network,
   // and no test in this suite runs a real build.
+  // `npmLinksOn` is which invocation links the workspace bin — 1 is the ordinary
+  // machine, 2 is the fresh tree npm needs two passes on, and 0 never links.
   const npmLog = path.join(root, 'npm-argv.log');
+  const npmCount = path.join(root, 'npm-count');
   fs.writeFileSync(path.join(bin, 'npm'), [
     '#!/usr/bin/env bash',
     recordArgv(npmLog),
     'prefix=""',
     'if [[ "$1" == "--prefix" ]]; then prefix="$2"; fi',
-    'mkdir -p "$prefix/node_modules/.bin"',
-    'printf \'#!/bin/sh\\n\' > "$prefix/node_modules/.bin/omega"',
-    'chmod +x "$prefix/node_modules/.bin/omega"',
+    `n=$(( $(cat ${JSON.stringify(npmCount)} 2>/dev/null || printf 0) + 1 ))`,
+    `printf '%s' "$n" > ${JSON.stringify(npmCount)}`,
+    `if [[ "$n" -ge ${npmLinksOn} && ${npmLinksOn} -gt 0 ]]; then`,
+    '  mkdir -p "$prefix/node_modules/.bin"',
+    '  printf \'#!/bin/sh\\n\' > "$prefix/node_modules/.bin/omega"',
+    '  chmod +x "$prefix/node_modules/.bin/omega"',
+    'fi',
     'exit 0',
     '',
   ].join('\n'));
@@ -558,6 +565,28 @@ const run = async () => {
     const again = setup(world);
     assert(/already installed/.test(again.out), `a second run costs nothing, got: ${again.out}`);
     assertEq(world.npmCalls().filter((c) => /install/.test(c)).length, 1, 'and npm ran exactly once');
+    cleanup(world.root);
+  });
+
+  await test('a fresh tree that links its bins only on the second pass still installs', () => {
+    // npm's own workspace linking left node_modules/.bin holding nothing but
+    // omega-manager on the first real setup (2026-07-29); the second install
+    // linked everything. One retry is what makes that machine publishable.
+    const world = mkWorld({ login: 'owner', npmLinksOn: 2 });
+    const { code, out } = setup(world);
+    assertEq(code, 0, `exit 0 — ${out}`);
+    assert(/the tower project can build here/.test(out), `the retry is what proved it, got: ${out}`);
+    assert(fs.existsSync(path.join(world.tower, 'node_modules', '.bin', 'omega')), 'and the bin is linked');
+    assertEq(world.npmCalls().filter((c) => /install/.test(c)).length, 2, 'two passes, never more');
+    cleanup(world.root);
+  });
+
+  await test('a tree that never links its bins warns once, after the retry', () => {
+    const world = mkWorld({ login: 'owner', npmLinksOn: 0 });
+    const { code, out } = setup(world);
+    assertEq(code, 0, `the setup still finishes — ${out}`);
+    assertEq(world.npmCalls().filter((c) => /install/.test(c)).length, 2, 'it retried once and stopped');
+    assert(/build tooling did not install/.test(out), `and says so plainly, got: ${out}`);
     cleanup(world.root);
   });
 

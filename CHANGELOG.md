@@ -7,6 +7,16 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#73](../../issues/73) — The daily job makes its own log directory, so a home without `~/Library/Logs` no longer fails the run at its first append.
+- [#75](../../issues/75) — Only a real heal from a real workkit checkout writes the engine's address at `~/.claude/workkit`: a `--state` probe and a fixture copy leave the machine's own address alone, and `workkit setup|update` asks for that step by name with `standards.sh --engine-link`.
+- [#78](../../issues/78) — Setup's dependency install verifies its outcome and runs once more when the workspace bins are still unlinked, which is what npm's own linking needs on a fresh tower clone.
+
+### Changed
+
+- [#74](../../issues/74) — The issue-guard scrub covers the GraphQL door: a `gh api graphql` call carrying a discussion or issue mutation gets the same env-value and token-shape scan, body file included, while queries stay unblocked.
+
 ## [0.13.0] - 2026-07-29
 
 ### Changed

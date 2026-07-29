@@ -186,6 +186,31 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  await test('a second run reads the address back before calling it current', () => {
+    const world = mkWorld();
+    fs.mkdirSync(world.claudeHome, { recursive: true });
+    runCli(world, ['update']);
+    const { out } = runCli(world, ['update']);
+    assert(out.includes(`engine: ${world.engineLink} is current`), `an address that resolves here IS current, got: ${out}`);
+    cleanup(world.root);
+  });
+
+  await test('an engine that refuses the address never reports "is current"', () => {
+    // A copy of the engine outside any checkout: standards.sh declines to take
+    // the machine's address, and says nothing about it. Silence read as
+    // agreement printed a link that was never written.
+    const world = mkWorld();
+    fs.mkdirSync(world.claudeHome, { recursive: true });
+    const kit = mkTmp();
+    fs.cpSync(WORKFLOW_DIR, path.join(kit, 'workflow'), { recursive: true });
+    const { code, out } = runCli(world, ['update'], { script: path.join(kit, 'workflow', 'workkit.sh') });
+    assertEq(code, 0, 'exit 0');
+    assert(!fs.existsSync(world.engineLink), 'nothing was written at the address');
+    assert(!out.includes('is current'), `a refusal never reads as up to date, got: ${out}`);
+    assert(out.includes('was left as it is'), `and the run says the address went unwritten, got: ${out}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
   await test('the command is linked into ~/.local/bin', () => {
     const world = mkWorld();
     const { out } = runCli(world, ['update']);
