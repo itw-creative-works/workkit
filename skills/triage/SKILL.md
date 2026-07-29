@@ -22,8 +22,9 @@ mkdir -p "${TMPDIR:-/tmp}/claude-triage-marker" && touch "${TMPDIR:-/tmp}/claude
 
 1. **Open `status:inbox` issues** on the cwd repo — `gh issue list --state open --label status:inbox --json number,title,body,labels`.
 2. **`.workkit/inbox.md`** — the local, gitignored capture file (offline moments, free-form dumps).
-3. **The tower clone's `.workkit/inbox.md`** (`~/.workkit/tower/.workkit/inbox.md`) — where the capture CLI (`wk.sh note`) writes outside every participating repo; it is a repo like any other, so the same marker line run from that root opens it. Drained the same way, each entry routed to the repo it belongs to.
-4. **Mid-chat note dumps** — same routing, no file needed first.
+3. **Mid-chat note dumps** — same routing, no file needed first.
+
+A capture made outside every participating repo is already a `status:inbox` issue on the home repo — `wk.sh note` files it there directly, so there is nothing to drain for it here.
 
 Split every source into discrete entries. A wall of mixed notes fans out to MANY destinations — never route a mixed dump as one blob.
 

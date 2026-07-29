@@ -8,3 +8,6 @@ package-lock.json
 # Workflow state (workflow spec) — only settings.json is committed
 .workkit/*
 !.workkit/settings.json
+
+# Editor and environment files, ignored everywhere
+.env

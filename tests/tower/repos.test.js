@@ -128,6 +128,99 @@ const run = async () => {
     cleanup(tmp);
   });
 
+  await test('the tower clone is discovered by path, though no roster lists it', () => {
+    // The home repo carries no committed opt-in of its own (issue #79): the
+    // engine knows it by path and so does the board, which exists to show
+    // exactly the cross-project issues it holds.
+    const tmp = mkTmp();
+    const listed = mkRepo(tmp, 'Owner/listed');
+    const home = mkWorkflowHome(tmp, [listed], {
+      version: 1, home: 'owner/workkit', repos: { [listed]: 'enabled' },
+    });
+    const tower = path.join(home, 'tower');
+    fs.mkdirSync(tower, { recursive: true });
+    git(tower, 'init', '-q', '-b', 'main');
+    git(tower, 'remote', 'add', 'origin', 'https://github.com/owner/workkit.git');
+
+    const found = discoverRepos({ workflowHome: home });
+    assertEq(names(found), 'listed,tower', 'the clone joins the roster entries');
+    assertEq(found.find((r) => r.name === 'tower').slug, 'owner/workkit', 'named from its origin like any other');
+    cleanup(tmp);
+  });
+
+  await test('a tower path this user declined is not listed', () => {
+    // By-path discovery has no committed file to read, so the decline in the
+    // roster is the only record of the answer — and it is an answer.
+    const tmp = mkTmp();
+    const home = mkWorkflowHome(tmp, {}, { version: 1, home: 'owner/workkit', repos: {} });
+    const tower = path.join(home, 'tower');
+    fs.mkdirSync(tower, { recursive: true });
+    git(tower, 'init', '-q', '-b', 'main');
+    git(tower, 'remote', 'add', 'origin', 'https://github.com/owner/workkit.git');
+    fs.writeFileSync(
+      path.join(home, 'settings.json'),
+      `${JSON.stringify({ version: 1, home: 'owner/workkit', repos: { [tower]: 'declined' } }, null, 2)}\n`,
+    );
+    assertEq(names(discoverRepos({ workflowHome: home })), '', 'a declined clone stays off the board');
+    cleanup(tmp);
+  });
+
+  await test('a foreign repo parked at the tower path is not listed', () => {
+    // The origin slug is the only proof by-path discovery has that this IS the
+    // home repo: no origin, no recorded home slug, or a mismatch means someone
+    // else's checkout is sitting at that name.
+    const tmp = mkTmp();
+    const home = mkWorkflowHome(tmp, {}, { version: 1, home: 'owner/workkit', repos: {} });
+    const tower = path.join(home, 'tower');
+    fs.mkdirSync(tower, { recursive: true });
+    git(tower, 'init', '-q', '-b', 'main');
+    assertEq(names(discoverRepos({ workflowHome: home })), '', 'no origin at all proves nothing');
+
+    git(tower, 'remote', 'add', 'origin', 'https://github.com/someone/else.git');
+    assertEq(names(discoverRepos({ workflowHome: home })), '', 'a different slug is a different repo');
+
+    git(tower, 'remote', 'set-url', 'origin', 'https://github.com/owner/workkit.git');
+    assertEq(names(discoverRepos({ workflowHome: home })), 'tower', 'the matching clone still is');
+    cleanup(tmp);
+  });
+
+  await test('the tower clone is skipped when the settings file records no home slug', () => {
+    const tmp = mkTmp();
+    const home = mkWorkflowHome(tmp, {});
+    const tower = path.join(home, 'tower');
+    fs.mkdirSync(tower, { recursive: true });
+    git(tower, 'init', '-q', '-b', 'main');
+    git(tower, 'remote', 'add', 'origin', 'https://github.com/owner/workkit.git');
+    assertEq(names(discoverRepos({ workflowHome: home })), '', 'nothing to match against, nothing listed');
+    cleanup(tmp);
+  });
+
+  await test('a tower path that is not a git repo, or absent, adds nothing', () => {
+    const tmp = mkTmp();
+    const listed = mkRepo(tmp, 'Owner/listed');
+    const home = mkWorkflowHome(tmp, [listed]);
+    assertEq(names(discoverRepos({ workflowHome: home })), 'listed', 'nothing cloned yet');
+    fs.mkdirSync(path.join(home, 'tower'), { recursive: true });
+    assertEq(names(discoverRepos({ workflowHome: home })), 'listed', 'a plain folder is not the home repo');
+    cleanup(tmp);
+  });
+
+  await test('a tower clone the roster also lists is one entry, not two', () => {
+    const tmp = mkTmp();
+    const home = mkWorkflowHome(tmp, []);
+    const tower = path.join(home, 'tower');
+    fs.mkdirSync(path.join(tower, '.workkit'), { recursive: true });
+    git(tower, 'init', '-q', '-b', 'main');
+    fs.writeFileSync(path.join(tower, '.workkit', 'settings.json'), '{ "version": 1, "enabled": true }\n');
+    fs.writeFileSync(
+      path.join(home, 'settings.json'),
+      `${JSON.stringify({ version: 1, repos: { [tower]: 'enabled' } }, null, 2)}\n`,
+    );
+    const found = discoverRepos({ workflowHome: home });
+    assertEq(found.length, 1, `deduplicated by path: ${found.map((r) => r.path).join(', ')}`);
+    cleanup(tmp);
+  });
+
   group('tower/repos: the origin slug');
 
   await test('ssh, ssh-URL and https remotes all parse to owner/repo', () => {

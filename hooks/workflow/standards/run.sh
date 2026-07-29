@@ -65,9 +65,10 @@ if [ -n "$broken" ]; then
   exit 0
 fi
 
-# Participation gate — the engine owns the four states (enabled · disabled ·
-# declined · undecided); this hook only routes them. A repo that has not said
-# yes is never written to, and an undecided one hears a single offer line every
+# Participation gate — the engine owns the five states (enabled · disabled ·
+# declined · undecided · home); this hook only routes them. A repo that has
+# not said yes is never written to, and an undecided one hears a single offer
+# line every
 # session (no daily cache: the offer costs nothing and reaches no network).
 # The engine prints its answer on stdout and every diagnostic on stderr, so this
 # capture is the state and nothing else. Take the last line defensively: a state

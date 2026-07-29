@@ -135,7 +135,8 @@ usage: workkit <command> [args]
                        (the daily job does this after the morning brief)
   enable [repo]        write the repo's committed opt-in, then heal it
   decline [repo]       record this developer's no for the repo, personally
-  note <text...>       append one bullet to the nearest inbox
+  note <text...>       append one bullet to the nearest inbox, or file it as an
+                       issue on the home repo outside every project
 
 The engine it drives lives beside this script; the spec both implement is
 docs/project-state.md in the checkout.

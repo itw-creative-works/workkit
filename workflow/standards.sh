@@ -47,7 +47,8 @@
 #        (repo_dir defaults to the current directory)
 #
 #   (no mode)   heal the repo — but only if it is enabled (see participation)
-#   --state     print enabled | disabled | declined | undecided | nogit
+#   --state     print enabled | disabled | declined | undecided | home | nogit
+#               (home is the tower clone: engine territory, never healed)
 #   --announce  print the one-line offer shown to an undecided repo
 #   --enable    write the committed opt-in (enabled: true), then heal
 #   --decline   record "never ask about this repo again" in the USER settings
@@ -65,12 +66,14 @@ TEMPLATES_DIR="$SCRIPT_DIR/templates"
 FORMS_DIR="$TEMPLATES_DIR/issue-forms"
 CHANGELOG_LINTER="$SCRIPT_DIR/changelog.js"
 
-# The engine's shared helpers, for the one thing the heal borrows: the settings
-# mutex every writer of the user file takes. The heal owes the global layer
-# nothing else — the roster is machine-local and the tower repo is a repo like
-# any other, healed by standing in it. Sourced when it is there and skipped when
-# it is not, so a checkout without it still heals every repo it can. Sourcing
-# runs nothing.
+# The engine's shared helpers, for two things the heal borrows: the settings
+# mutex every writer of the user file takes, and the tower clone's address
+# (WK_HOME_DIR), which the participation step compares against so the clone is
+# never offered, healed or registered. The heal owes the global layer nothing
+# else — the roster is machine-local, and the heal writes nothing into the clone
+# at all: it carries no opt-in and is engine territory. Sourced when it is there
+# and skipped when it is not, so a checkout without it still heals every repo it
+# can. Sourcing runs nothing.
 if [[ -f "$SCRIPT_DIR/lib.sh" ]]; then
   # shellcheck source=./lib.sh
   . "$SCRIPT_DIR/lib.sh"
@@ -153,8 +156,26 @@ cd "$root"
 #   disabled  — committed settings.json with `enabled: false`
 #   declined  — no committed file; this user recorded a decline for this repo
 #   undecided — no committed file, no record: offer once, write nothing
+#   home      — this IS the tower clone (below): engine territory, never
+#               offered, never healed, never registered
 USER_SETTINGS="${WORKFLOW_HOME:-${HOME:-}/$WORKKIT_DIR}/settings.json"
 REPO_SETTINGS="$WORKKIT_DIR/settings.json"
+
+# The fifth state, and the one no repo can write: `home`, the tower clone. It is
+# a git repo like any other to look at, but it is ENGINE TERRITORY — it carries
+# no committed opt-in, the engine knows it BY PATH, and the heal writes nothing
+# into it, offers it nothing, and never puts it on the roster.
+# Compared by PHYSICAL path on both sides (cd + pwd -P, never realpath, which is
+# not on every machine): a symlinked home directory would otherwise make the
+# same folder look like two. lib.sh owns the address; the fallback keeps this
+# working in a checkout without it, where sourcing was skipped above.
+HOME_CLONE_DIR="${WK_HOME_DIR:-${WORKFLOW_HOME:-${HOME:-}/$WORKKIT_DIR}/tower}"
+is_home_clone() {
+  local here there
+  here="$(cd "$root" 2>/dev/null && pwd -P)" || return 1
+  there="$(cd "$HOME_CLONE_DIR" 2>/dev/null && pwd -P)" || return 1
+  [[ -n "$here" && "$here" == "$there" ]]
+}
 
 # The user's workflow folder exists from the first run, not from the first
 # decline. Someone running this system expects to find it (owner ruling,
@@ -284,6 +305,12 @@ report_drift() {
 }
 
 resolve_state() {
+  # The clone answers before anything else: a stray .workkit/settings.json that
+  # landed in it must not read as a yes.
+  if is_home_clone; then
+    printf 'home'
+    return 0
+  fi
   if [[ -f "$REPO_SETTINGS" ]]; then
     case "$(repo_enabled_flag)" in
       false)      printf 'disabled' ;;
@@ -1091,8 +1118,16 @@ state="$(resolve_state)"
 case "$mode" in
   state)    printf '%s\n' "$state"; exit 0 ;;
   announce) offer_line; printf '\n'; exit 0 ;;
-  decline)  record_decline; exit 0 ;;
-  enable)   write_repo_optin; state="enabled" ;;
+  decline)  if [[ "$state" == "home" ]]; then
+              log_warn "standards: $root is the tower clone — engine territory, and it never participates (nothing recorded)"
+              exit 1
+            fi
+            record_decline; exit 0 ;;
+  enable)   if [[ "$state" == "home" ]]; then
+              log_warn "standards: $root is the tower clone — engine territory, and it never participates"
+              exit 1
+            fi
+            write_repo_optin; state="enabled" ;;
 esac
 
 # Nothing is ever written into a repo that has not said yes — not a stub
@@ -1101,6 +1136,7 @@ esac
 # than skipping a repo forever (review finding, 2026-07-24).
 case "$state" in
   enabled)    ;;
+  home)       log_skip "standards: $root is the tower clone — engine territory, nothing to heal"; exit 0 ;;
   undecided)  log_info "$(offer_line)"; exit 0 ;;
   disabled|declined) exit 0 ;;
   unreadable) log_warn "standards: $REPO_SETTINGS is not valid JSON — fix or remove it; healing nothing until then"; exit 0 ;;

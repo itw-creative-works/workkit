@@ -15,25 +15,21 @@
 # WORKFLOW_HOME is the same override the rest of the engine honors — the suite
 # points it at a fixture, so nothing here ever reaches the real one.
 WK_USER_DIR="${WORKFLOW_HOME:-${HOME:-}/.workkit}"
-# Machine-local: paths, declines, the roster, the home slug, the id cache.
+# Machine-local: paths, declines, the roster, the home slug, the id cache — and
+# the site options (`site.url`, `site.board`), which live here because the clone
+# below is engine territory and nothing in it is ever hand-edited (issue #79).
 WK_HOME_SETTINGS="$WK_USER_DIR/settings.json"
 
 # The ONE git repo in the global layer: the clone of `<login>/workkit`, seeded
 # from this checkout's tower/app and shaped like every other omega site project.
 # Everything versioned lives inside it, so the folder above stays a plain one.
 WK_HOME_DIR="$WK_USER_DIR/tower"
-# The site options, committed inside the project the way every omega project
-# carries its config: `site.url` and `site.board`.
-WK_HOME_CONFIG="$WK_HOME_DIR/config/workkit.json"
 # The one app in the brand root, and the build output it leaves. Proved against
 # the real tower/app 2026-07-29: `omega build` is a command of @omega.js/web and
 # resolves only inside the APP (at the brand root the `omega` bin dispatches to
 # @omega.js/manager, which has no build), and it writes `dist/` beside src/.
 WK_HOME_APP="$WK_HOME_DIR/apps/web"
 WK_HOME_DIST="$WK_HOME_APP/dist"
-# The user-level captures: the tower repo participates in the pipeline like any
-# other repo, so they land in its own gitignored working folder.
-WK_HOME_INBOX="$WK_HOME_DIR/.workkit/inbox.md"
 
 # ── Voice ─────────────────────────────────────────────────────────────────────
 # Each caller already has one — workkit.sh's say_* on stdout, standards.sh's

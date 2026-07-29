@@ -78,7 +78,14 @@ const mkWorld = ({
   const bare = path.join(root, 'remote.git');
   spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare], { encoding: 'utf8' });
 
-  const settings = { version: 1, repos: {}, ...(home ? { home: 'owner/workkit' } : {}) };
+  // The site options are the USER'S and live beside the roster (issue #79) —
+  // the clone below is engine territory and carries nothing hand-written.
+  const settings = {
+    version: 1,
+    repos: {},
+    site: { url: siteUrl, board },
+    ...(home ? { home: 'owner/workkit' } : {}),
+  };
   fs.writeFileSync(path.join(workflowHome, 'settings.json'), `${JSON.stringify(settings, null, 2)}\n`);
 
   const env = {
@@ -88,18 +95,15 @@ const mkWorld = ({
     WORKKIT_HOME_REMOTE: bare,
   };
 
-  // The clone, carrying what a seed leaves: the project on main, its site
-  // options in config/workkit.json, and (unless a world says otherwise) the
-  // build tooling that proves it can build here.
+  // The clone, carrying what a seed leaves: the project on main — the app and
+  // nothing else — and (unless a world says otherwise) the build tooling that
+  // proves it can build here.
   if (home) {
     const seed = path.join(root, 'seed');
     fs.mkdirSync(path.join(seed, 'apps', 'web', 'src'), { recursive: true });
-    fs.mkdirSync(path.join(seed, 'config'), { recursive: true });
     fs.writeFileSync(path.join(seed, 'package.json'), '{ "name": "workkit-tower" }\n');
     fs.writeFileSync(path.join(seed, 'apps', 'web', 'src', 'index.html'), '<html>the board</html>\n');
-    fs.writeFileSync(path.join(seed, 'config', 'workkit.json'), `${JSON.stringify({
-      site: { url: siteUrl, board },
-    }, null, 2)}\n`);
+    fs.writeFileSync(path.join(seed, 'README.md'), '# the tower\n');
     fs.writeFileSync(path.join(seed, '.gitignore'), 'node_modules/\ndist/\n');
     git(seed, 'init', '-q', '-b', 'main');
     git(seed, 'add', '-A');
@@ -118,7 +122,10 @@ const mkWorld = ({
     bare,
     tower,
     workflowHome,
-    config: path.join(tower, 'config', 'workkit.json'),
+    settings: path.join(workflowHome, 'settings.json'),
+    // A tracked file of the project itself, for the cases about what the clone
+    // carries rather than what the owner configured.
+    source: path.join(tower, 'README.md'),
     dist: path.join(tower, 'apps', 'web', 'dist'),
     env,
   };
@@ -132,10 +139,10 @@ const publish = (world, args = []) => {
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
-const setBoard = (world, value) => {
-  const config = JSON.parse(fs.readFileSync(world.config, 'utf8'));
-  config.site.board = value;
-  fs.writeFileSync(world.config, `${JSON.stringify(config, null, 2)}\n`);
+const setSite = (world, patch) => {
+  const settings = JSON.parse(fs.readFileSync(world.settings, 'utf8'));
+  settings.site = { ...settings.site, ...patch };
+  fs.writeFileSync(world.settings, `${JSON.stringify(settings, null, 2)}\n`);
 };
 
 /** What the published branch actually carries, as a fresh clone sees it. */
@@ -220,11 +227,11 @@ const run = async () => {
     // Two histories that disagree: someone else pushed while this machine
     // committed something of its own.
     const other = onMain(world);
-    fs.writeFileSync(path.join(other, 'config', 'workkit.json'), '{ "site": { "url": null, "board": false } }\n');
+    fs.writeFileSync(path.join(other, 'README.md'), '# the tower, from elsewhere\n');
     git(other, 'add', '-A');
     git(other, '-c', 'user.name=t', '-c', 'user.email=t@localhost', 'commit', '-q', '-m', 'chore(home): elsewhere');
     git(other, 'push', '-q');
-    fs.writeFileSync(world.config, '{ "site": { "url": null, "board": true } }\n');
+    fs.writeFileSync(world.source, '# the tower, from here\n');
     git(world.tower, 'add', '-A');
     git(world.tower, '-c', 'user.name=t', '-c', 'user.email=t@localhost', 'commit', '-q', '-m', 'chore(home): here');
 
@@ -246,12 +253,12 @@ const run = async () => {
     // there would push the markers to main.
     const world = mkWorld();
     const other = onMain(world);
-    fs.writeFileSync(path.join(other, 'config', 'workkit.json'), '{ "site": { "url": "https://theirs.example.com", "board": false } }\n');
+    fs.writeFileSync(path.join(other, 'README.md'), '# the tower, theirs\n');
     git(other, 'add', '-A');
-    git(other, '-c', 'user.name=t', '-c', 'user.email=t@localhost', 'commit', '-q', '-m', 'chore(home): their config');
+    git(other, '-c', 'user.name=t', '-c', 'user.email=t@localhost', 'commit', '-q', '-m', 'chore(home): their edit');
     git(other, 'push', '-q');
-    const mine = '{ "site": { "url": "https://mine.example.com", "board": true } }\n';
-    fs.writeFileSync(world.config, mine);
+    const mine = '# the tower, mine\n';
+    fs.writeFileSync(world.source, mine);
 
     const before = spawnSync('git', ['-C', world.bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim();
     const { code, out } = publish(world);
@@ -261,25 +268,27 @@ const run = async () => {
       'main on the remote is exactly where it was');
     assertEq(fromPages(world), null, 'and nothing was published');
 
-    assertEq(fs.readFileSync(world.config, 'utf8'), mine, 'the local edit is back, with no conflict markers in it');
+    assertEq(fs.readFileSync(world.source, 'utf8'), mine, 'the local edit is back, with no conflict markers in it');
     assertEq(spawnSync('git', ['-C', world.tower, 'stash', 'list'], { encoding: 'utf8' }).stdout.trim(), '',
       'and nothing of it was left behind in a stash');
     cleanup(world.root);
   });
 
-  await test('a config that does not parse refuses loudly instead of defaulting', () => {
+  await test('a settings file that does not parse refuses loudly instead of defaulting', () => {
     // `site.board` and `site.url` decide what is published. An unreadable
-    // config read as an absent one would turn the board switch off and drop
-    // the CNAME without a word.
+    // settings file read as an absent one would turn the board switch off and
+    // drop the CNAME without a word — and the same file names the home repo,
+    // so the refusal has to come before every other check.
     const world = mkWorld({ board: true });
     publish(world);
     assert(fs.existsSync(path.join(fromPages(world), 'data', 'board.json')), 'the board was published');
     const before = spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim();
 
-    fs.writeFileSync(world.config, '{ "site": { "board": true, }\n');
+    fs.writeFileSync(world.settings, '{ "site": { "board": true, }\n');
     const { code, out } = publish(world);
     assertEq(code, 0, 'exit 0 — a file to fix is not a crash');
-    assert(/does not parse as JSON/.test(out) && /workkit\.json/.test(out), `it names the file, got: ${out}`);
+    assert(/does not parse as JSON/.test(out) && /settings\.json/.test(out), `it names the file, got: ${out}`);
+    assert(!/no home repo/.test(out), `and never reads an unparseable file as a machine with no home, got: ${out}`);
     assertEq(spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim(), before,
       'and the published site was not quietly rebuilt without its board');
     cleanup(world.root);
@@ -321,7 +330,8 @@ const run = async () => {
     assert(!tracked.includes('index.html'), `no built page at the root of main: ${tracked.join(', ')}`);
     assert(!tracked.some((f) => f.startsWith('docs/')), 'and no docs/ folder at all');
     assert(!tracked.some((f) => f.includes('/dist/')), 'nor any build output');
-    assert(tracked.includes('config/workkit.json'), 'main carries the project it always did');
+    assert(tracked.includes('package.json'), 'main carries the project it always did');
+    assert(!tracked.some((f) => f.startsWith('config/workkit.json')), 'and no site options of its own');
     cleanup(world.root);
   });
 
@@ -414,7 +424,7 @@ const run = async () => {
     publish(world);
     assert(fs.existsSync(path.join(fromPages(world), 'data', 'board.json')), 'it was published');
 
-    setBoard(world, false);
+    setSite(world, { board: false });
     const { out } = publish(world);
     assert(/was removed/.test(out), `it says what it took away, got: ${out}`);
     assert(!fs.existsSync(path.join(fromPages(world), 'data', 'board.json')), 'and it is gone from what Pages serves');
@@ -440,23 +450,38 @@ const run = async () => {
     assertEq(fs.readFileSync(path.join(fromPages(world), 'CNAME'), 'utf8'), 'board.example.com\n',
       'the scheme is not part of a CNAME');
 
-    const config = JSON.parse(fs.readFileSync(world.config, 'utf8'));
-    config.site.url = null;
-    fs.writeFileSync(world.config, `${JSON.stringify(config, null, 2)}\n`);
+    setSite(world, { url: null });
     publish(world);
     assert(!fs.existsSync(path.join(fromPages(world), 'CNAME')), 'clearing it takes the file away');
     cleanup(world.root);
   });
 
+  await test('a settings file with no site key at all publishes the defaults', () => {
+    // Nothing pre-creates the key, so an absent one has to read as url null and
+    // board false rather than as an error.
+    const world = mkWorld();
+    fs.writeFileSync(
+      world.settings,
+      `${JSON.stringify({ version: 1, repos: {}, home: 'owner/workkit' }, null, 2)}\n`,
+    );
+    const { code, out } = publish(world);
+    assertEq(code, 0, `exit 0 — ${out}`);
+    const pages = fromPages(world);
+    assert(fs.existsSync(path.join(pages, 'index.html')), 'the dashboard publishes');
+    assert(!fs.existsSync(path.join(pages, 'data', 'board.json')), 'with no board snapshot');
+    assert(!fs.existsSync(path.join(pages, 'CNAME')), 'and no CNAME');
+    cleanup(world.root);
+  });
+
   group('workflow/publish: the source side');
 
-  await test('a config edit is committed and pushed to main', () => {
+  await test('an edit to the project itself is committed and pushed to main', () => {
     const world = mkWorld();
-    fs.writeFileSync(world.config, `${JSON.stringify({ site: { url: null, board: false }, note: 'edited' }, null, 2)}\n`);
+    fs.writeFileSync(world.source, '# the tower, edited\n');
     const { code, out } = publish(world);
     assertEq(code, 0, `exit 0 — ${out}`);
     const main = onMain(world);
-    assert(/edited/.test(fs.readFileSync(path.join(main, 'config', 'workkit.json'), 'utf8')),
+    assert(/edited/.test(fs.readFileSync(path.join(main, 'README.md'), 'utf8')),
       'the source change travelled with the publish');
     cleanup(world.root);
   });

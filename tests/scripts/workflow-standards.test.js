@@ -556,6 +556,52 @@ const run = async () => {
     cleanup(repo); cleanup(home);
   });
 
+  // The tower clone at <WORKFLOW_HOME>/tower is ENGINE TERRITORY (issue #79):
+  // it is a git repo, but it carries no committed opt-in, is never offered, and
+  // the heal writes nothing into it.
+  const makeHomeClone = () => {
+    const home = mkTmp();
+    const tower = path.join(home, 'tower');
+    fs.mkdirSync(tower, { recursive: true });
+    spawnSync('git', ['init', '-q'], { cwd: tower });
+    return { home, tower };
+  };
+
+  await test('the tower clone is the `home` state — no offer, nothing written', () => {
+    const { home, tower } = makeHomeClone();
+    assertEq(stateOf(tower, { workflowHome: home }), 'home', 'state');
+    const { code, output: stdout } = runScript(tower, { workflowHome: home });
+    assertEq(code, 0, 'exit 0');
+    assert(!stdout.includes('not in the issue workflow'), `never offered, got: ${stdout}`);
+    assertUntouched(tower);
+    // And it never joins the roster — the tower finds it by path instead.
+    const settings = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
+    assertEq(JSON.stringify(settings.repos || {}), '{}', 'not registered');
+    cleanup(home);
+  });
+
+  await test('--enable refuses on the tower clone', () => {
+    const { home, tower } = makeHomeClone();
+    const { code, output: stdout } = runScript(tower, { workflowHome: home, args: ['--enable'] });
+    assert(code !== 0, `the refusal is a failure, got exit ${code}`);
+    assert(stdout.includes('engine territory'), `says why, got: ${stdout}`);
+    assertUntouched(tower);
+    cleanup(home);
+  });
+
+  await test('--decline refuses on the tower clone', () => {
+    // Symmetric with --enable: a decline recorded against the clone's path
+    // would drop the home repo from the board's by-path discovery for good.
+    const { home, tower } = makeHomeClone();
+    const { code, output: stdout } = runScript(tower, { workflowHome: home, args: ['--decline'] });
+    assert(code !== 0, `the refusal is a failure, got exit ${code}`);
+    assert(stdout.includes('engine territory'), `says why, got: ${stdout}`);
+    const settings = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
+    assert(!(settings.repos || {})[fs.realpathSync(tower)], 'no decline recorded');
+    assertEq(JSON.stringify(settings.repos || {}), '{}', 'the roster is untouched');
+    cleanup(home);
+  });
+
   await test('the user settings file exists from the first run, before any decision', () => {
     // It used to appear only on the first decline, so someone running the
     // workflow system found no ~/.workkit at all and read that as broken

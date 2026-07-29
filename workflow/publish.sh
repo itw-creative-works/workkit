@@ -8,9 +8,11 @@
 #
 # WHAT IS BUILT is the clone itself, never this checkout: `~/.workkit/tower` is
 # the tower project, seeded from `tower/app` at setup and carrying its own
-# dependencies, its own config, and the site options in `config/workkit.json`
-# (issue #77). A shipped tower improvement reaches it the way any project takes
-# an upstream change, not by being rebuilt from somewhere else.
+# dependencies (issue #77). A shipped tower improvement reaches it the way any
+# project takes an upstream change, not by being rebuilt from somewhere else.
+# The site options it is built WITH are the user's, so they live in the machine
+# settings file at `~/.workkit/settings.json` and never inside the clone, which
+# is engine territory and is never hand-edited (issue #79).
 #
 # WHY THE BUILD IS LOCAL, and never a GitHub Action (issue #27 Spec, deviation
 # 1): the app consumes `@omega.js/*` by `file:` spec from a sibling omega
@@ -34,7 +36,7 @@
 #
 # Every reason not to publish is a NAMED SKIP with exit 0 — no home repo, no
 # build tooling, a clone that could not catch up with its upstream, an
-# autostash that conflicted on the way back, a config that does not parse,
+# autostash that conflicted on the way back, a settings file that does not parse,
 # nothing changed. Only a build or a copy that
 # actually failed exits non-zero, which is what the daily job logs.
 #
@@ -65,6 +67,18 @@ say_skip() { [[ "$QUIET" -eq 1 ]] || printf "${_D}· %s${_N}\n" "$1"; }
 
 # ── The three things a publish needs ──────────────────────────────────────────
 
+# The site options decide what is published, so a settings file that does not
+# parse is not a default — it is an answer nobody can read. Reading on would
+# turn the board switch silently off and drop the CNAME, which is the loudest
+# way to publish the wrong thing quietly. It is asked FIRST because the same
+# file names the home repo, so every check below would otherwise report an
+# unreadable file as a machine with no home at all.
+if [[ -f "$WK_HOME_SETTINGS" ]] && command -v jq >/dev/null 2>&1 \
+  && ! jq . "$WK_HOME_SETTINGS" >/dev/null 2>&1; then
+  say_warn "publish: $WK_HOME_SETTINGS does not parse as JSON — \`site.board\` and \`site.url\` cannot be read, so nothing was published; fix the file and run it again"
+  exit 0
+fi
+
 if ! wk_home_ready; then
   case "$(wk_home_state)" in
     unset)  say_skip "publish: no home repo — \`workkit setup\` creates one, and the site publishes from it" ;;
@@ -84,14 +98,15 @@ if [[ ! -x "$OMEGA_BIN" ]]; then
 fi
 
 # ── Catch up with the remote ──────────────────────────────────────────────────
-# Another machine's publish, or a config edit made on GitHub, is the ordinary
-# reason main has moved. A rebase that cannot finish means the two histories
-# disagree, which is a human's to settle: the run says so, aborts the rebase it
-# started, and publishes NOTHING rather than pushing over the other side.
+# Another machine's publish, or an edit made to the project on GitHub, is the
+# ordinary reason main has moved. A rebase that cannot finish means the two
+# histories disagree, which is a human's to settle: the run says so, aborts the
+# rebase it started, and publishes NOTHING rather than pushing over the other
+# side.
 #
-# `--autostash` because the ordinary local state here is a config edit nobody
-# has committed yet — the very change this run is about to publish. Without it
-# a rebase refuses on the dirty tree and every edited config would read as a
+# `--autostash` because the ordinary local state here is a project file nobody
+# has committed yet — an upstream change someone took by hand. Without it a
+# rebase refuses on the dirty tree and every such tree would read as a
 # divergence.
 #
 # A pull that cannot finish is not always a divergence — offline, an auth
@@ -108,7 +123,7 @@ fi
 # The autostash's own failure is SILENT (probed 2026-07-29): a rebase that
 # lands while the stash it took CONFLICTS on the way back exits 0 and leaves
 # the tree full of conflict markers. A run carrying on from there would build
-# them, read an unparseable config, and push the markers to main. The stash
+# them and push the markers to main. The stash
 # entry surviving the pull is the tell, and the restore is the one git itself
 # names — back to the commit this run started on, then pop, which applies onto
 # the base the stash was taken from and so cannot conflict again.
@@ -120,16 +135,6 @@ if [[ "$(git -C "$WK_HOME_DIR" stash list 2>/dev/null || true)" != "$STASH_BEFOR
   else
     say_warn "publish: the uncommitted changes in $WK_HOME_DIR conflict with what its upstream now carries, and putting the tree back did not finish — the changes are safe in \`git -C $WK_HOME_DIR stash list\`; settle it by hand. Nothing was published and nothing was committed"
   fi
-  exit 0
-fi
-
-# The site options decide what is published, so a config that does not parse is
-# not a default — it is an answer nobody can read. Reading on would turn the
-# board switch silently off and drop the CNAME, which is the loudest way to
-# publish the wrong thing quietly.
-if [[ -f "$WK_HOME_CONFIG" ]] && command -v jq >/dev/null 2>&1 \
-  && ! jq . "$WK_HOME_CONFIG" >/dev/null 2>&1; then
-  say_warn "publish: $WK_HOME_CONFIG does not parse as JSON — \`site.board\` and \`site.url\` cannot be read, so nothing was published; fix the file and run it again"
   exit 0
 fi
 
@@ -215,10 +220,11 @@ cp -R "$WK_HOME_DIST/." "$WORKTREE/" \
 # GitHub Pages is PUBLIC even when the repo serving it is private (there is no
 # private-Pages tier below Enterprise), so baking the board in publishes it to
 # anyone with the URL. That makes it the owner's call and nobody else's:
-# `site.board` in the project's config/workkit.json is DEFAULT OFF, and only
-# `true` turns it on. Off, the snapshot is not written and one already published
-# is taken away — flipping the switch back has to un-publish what it published.
-BAKE_BOARD="$(wk_json_get "$WK_HOME_CONFIG" '.site.board')"
+# `site.board` in the machine settings file is DEFAULT OFF — an absent key reads
+# as off — and only `true` turns it on. Off, the snapshot is not written and one
+# already published is taken away: flipping the switch back has to un-publish
+# what it published.
+BAKE_BOARD="$(wk_json_get "$WK_HOME_SETTINGS" '.site.board')"
 if [[ "$BAKE_BOARD" != 'true' ]]; then
   if [[ "$HAD_SNAPSHOT" -eq 1 ]]; then
     say_info "publish: \`site.board\` is off — the published board snapshot was removed"
@@ -244,10 +250,10 @@ fi
 if [[ -n "$PREV_SNAPSHOT" ]]; then rm -f "$PREV_SNAPSHOT"; fi
 
 # ── The custom URL ────────────────────────────────────────────────────────────
-# `site.url` in the project's config/workkit.json is the whole configuration:
-# set, it becomes the CNAME Pages serves under; cleared, the CNAME goes away and
-# Pages falls back to its github.io address.
-SITE_URL="$(wk_json_get "$WK_HOME_CONFIG" '.site.url')"
+# `site.url` in the machine settings file is the whole configuration: set, it
+# becomes the CNAME Pages serves under; cleared or absent, the CNAME goes away
+# and Pages falls back to its github.io address.
+SITE_URL="$(wk_json_get "$WK_HOME_SETTINGS" '.site.url')"
 if [[ -n "$SITE_URL" ]]; then
   printf '%s\n' "${SITE_URL#*://}" >"$WORKTREE/CNAME"
   say_info "publish: CNAME → ${SITE_URL#*://}"
@@ -277,8 +283,8 @@ if ! git -C "$WORKTREE" diff --cached --quiet 2>/dev/null; then
 fi
 
 # ── The source side ───────────────────────────────────────────────────────────
-# Whatever the day changed in the project itself — a config edit, an upstream
-# file someone touched. Nothing staged means nothing to say.
+# Whatever the day changed in the project itself — an upstream file someone
+# took by hand. Nothing staged means nothing to say.
 if git -C "$WK_HOME_DIR" diff --quiet 2>/dev/null && git -C "$WK_HOME_DIR" diff --cached --quiet 2>/dev/null \
   && [[ -z "$(git -C "$WK_HOME_DIR" ls-files --others --exclude-standard 2>/dev/null)" ]]; then
   :

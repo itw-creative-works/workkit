@@ -202,7 +202,6 @@ const mkWorld = ({
     ghCalls: () => readArgv(ghLog),
     npmCalls: () => readArgv(npmLog),
     settings: () => JSON.parse(fs.readFileSync(path.join(workflowHome, 'settings.json'), 'utf8')),
-    config: () => JSON.parse(fs.readFileSync(path.join(workflowHome, 'tower', 'config', 'workkit.json'), 'utf8')),
     pkg: (rel = 'package.json') => JSON.parse(fs.readFileSync(path.join(workflowHome, 'tower', rel), 'utf8')),
     env: {
       HOME: home,
@@ -266,12 +265,17 @@ const run = async () => {
 
   await test('the addresses are the new layout: a plain folder with one repo in it', () => {
     const world = mkWorld();
-    const { out } = inHome(world, 'printf "%s\\n%s\\n%s\\n%s\\n" "$WK_USER_DIR" "$WK_HOME_DIR" "$WK_HOME_CONFIG" "$WK_HOME_INBOX"');
-    const [userDir, homeDir, config, inbox] = out.trim().split('\n');
+    const { out } = inHome(world, 'printf "%s\\n%s\\n%s\\n" "$WK_USER_DIR" "$WK_HOME_DIR" "$WK_HOME_SETTINGS"');
+    const [userDir, homeDir, settings] = out.trim().split('\n');
     assertEq(userDir, world.workflowHome, 'the user folder is ~/.workkit');
     assertEq(homeDir, path.join(world.workflowHome, 'tower'), 'and the clone is the tower under it');
-    assertEq(config, path.join(world.workflowHome, 'tower', 'config', 'workkit.json'), 'the site options live inside the project');
-    assertEq(inbox, path.join(world.workflowHome, 'tower', '.workkit', 'inbox.md'), 'and so does the user-level inbox');
+    assertEq(settings, path.join(world.workflowHome, 'settings.json'),
+      'the site options live beside the roster, outside the clone the user never edits');
+
+    // Nothing addresses anything INSIDE the clone but the app it builds: the
+    // site options moved out and the inbox is gone entirely (issue #79).
+    const lib = fs.readFileSync(path.join(WORKFLOW_DIR, 'lib.sh'), 'utf8');
+    assert(!/WK_HOME_CONFIG|WK_HOME_INBOX/.test(lib), 'no address is kept for either retired file');
     cleanup(world.root);
   });
 
@@ -420,21 +424,21 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the seed writes the site options, the opt-in, and the working-file ignore', () => {
+  await test('the seed is the app and nothing else — no config file, no .workkit', () => {
+    // The clone is engine territory (issue #79): the site options are the
+    // user's and live in the machine settings file, and the home repo is known
+    // by path, so there is no opt-in to seed and no inbox to keep out.
     const world = mkWorld();
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
     inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed');
 
-    assertEq(JSON.stringify(world.config().site), '{"url":null,"board":false}',
-      'the site options, with the public board snapshot off until the owner says otherwise');
-    const optIn = JSON.parse(fs.readFileSync(path.join(world.tower, '.workkit', 'settings.json'), 'utf8'));
-    assertEq(optIn.enabled, true, 'the tower repo participates in the pipeline like any repo');
+    assert(!fs.existsSync(path.join(world.tower, 'config', 'workkit.json')), 'no site options inside the project');
+    assert(!fs.existsSync(path.join(world.tower, '.workkit')), 'and no .workkit/ folder at all');
 
     const ignore = fs.readFileSync(path.join(world.tower, '.gitignore'), 'utf8').split('\n');
     assert(ignore.includes('node_modules/'), 'the app’s own rules are kept');
     assert(ignore.includes('dist/'), 'build output included');
-    assert(ignore.includes('.workkit/*') && ignore.includes('!.workkit/settings.json'),
-      `the working files are ignored and the opt-in is not: ${ignore.join('\n')}`);
+    assert(!ignore.some((l) => l.includes('.workkit')), `and nothing is ignored for a folder that never exists: ${ignore.join('\n')}`);
     cleanup(world.root);
   });
 
@@ -452,14 +456,36 @@ const run = async () => {
     const check = path.join(world.root, 'check');
     spawnSync('git', ['clone', '-q', remote, check], { encoding: 'utf8' });
     assert(fs.existsSync(path.join(check, 'apps', 'web', 'src', 'index.html')), 'the push landed the project');
-    assert(fs.existsSync(path.join(check, 'config', 'workkit.json')), 'with its site options');
-    assert(fs.existsSync(path.join(check, '.workkit', 'settings.json')), 'and its opt-in');
+    assert(fs.existsSync(path.join(check, 'config', 'omega.json5')), 'with the app’s own config');
+    assert(!fs.existsSync(path.join(check, 'config', 'workkit.json')), 'and no site options of its own');
+    assert(!fs.existsSync(path.join(check, '.workkit')), 'nor a .workkit/ folder in what a second machine clones');
+    cleanup(world.root);
+  });
 
-    // The inbox is the proof the ignore rule works: it is the one file under
-    // .workkit/ that must never travel.
-    fs.writeFileSync(path.join(world.tower, '.workkit', 'inbox.md'), '- a thought\n');
-    const staged = spawnSync('git', ['-C', world.tower, 'add', '-An', '.'], { encoding: 'utf8' }).stdout;
-    assert(!/inbox\.md/.test(staged), `the scratchpad is not added: ${staged}`);
+  await test('a stray .workkit/ in the clone is never committed by the daily push', () => {
+    // The clone carries no participation state, so anything under that name is
+    // scratch someone or something left there — and an unattended commit must
+    // not push it to the default branch (issue #79).
+    const world = mkWorld();
+    const remote = mkRemote(world.root);
+    world.env.WORKKIT_HOME_REMOTE = remote;
+    inHome(world, [
+      'wk_home_clone owner/workkit',
+      'wk_home_seed',
+      'wk_home_set_slug owner/workkit',
+      'wk_home_commit_push "chore(home): seed the tower project"',
+    ].join('\n'));
+
+    fs.mkdirSync(path.join(world.tower, '.workkit'), { recursive: true });
+    fs.writeFileSync(path.join(world.tower, '.workkit', 'scratch.md'), '- a stray note\n');
+    fs.writeFileSync(path.join(world.tower, 'README.md'), '# the tower, edited\n');
+    inHome(world, 'wk_home_commit_push "chore(home): publish the site"');
+
+    const check = path.join(world.root, 'check');
+    spawnSync('git', ['clone', '-q', remote, check], { encoding: 'utf8' });
+    assert(/edited/.test(fs.readFileSync(path.join(check, 'README.md'), 'utf8')), 'the real change went');
+    assert(!fs.existsSync(path.join(check, '.workkit')), 'and the scratchpad stayed home');
+    assert(fs.existsSync(path.join(world.tower, '.workkit', 'scratch.md')), 'left where it was, not removed');
     cleanup(world.root);
   });
 
@@ -474,7 +500,7 @@ const run = async () => {
     assert(calls.some((c) => c.includes('repo create owner/workkit --private')), `the private repo is created: ${fmtCalls(world.ghCalls())}`);
     assertEq(world.settings().home, 'owner/workkit', 'the home slug is recorded');
     assert(fs.existsSync(path.join(world.tower, 'apps', 'web', 'src', 'index.html')), 'the project is seeded');
-    assertEq(JSON.stringify(world.config().site), '{"url":null,"board":false}', 'with its site options');
+    assert(!fs.existsSync(path.join(world.tower, '.workkit')), 'and the clone carries no workflow folder of its own');
 
     assert(world.npmCalls().some((c) => c.join(' ').includes('install')), `the dependencies are installed once, here: ${fmtCalls(world.npmCalls())}`);
     assert(!fs.existsSync(path.join(world.workflowHome, '.git')), 'and ~/.workkit is still a plain folder');
@@ -489,16 +515,15 @@ const run = async () => {
   await test('a second setup finds the clone and re-seeds nothing', () => {
     const world = mkWorld({ login: 'owner', repoExists: true, discussionsOn: true, pagesOn: true });
     setup(world);
-    fs.writeFileSync(path.join(world.tower, 'config', 'workkit.json'), `${JSON.stringify({
-      site: { url: 'https://board.example.com', board: true },
-    }, null, 2)}\n`);
+    fs.writeFileSync(path.join(world.tower, 'apps', 'web', 'src', 'index.html'), '<html>edited here</html>\n');
     const head = spawnSync('git', ['-C', world.tower, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout;
 
     const { code, out } = setup(world);
     assertEq(code, 0, `exit 0 — ${out}`);
     assert(!/created the private repo/.test(out), `nothing is created twice, got: ${out}`);
     assert(/is the clone of/.test(out), `it reports the clone it found, got: ${out}`);
-    assertEq(world.config().site.url, 'https://board.example.com', 'and the owner’s own site options survive');
+    assertEq(fs.readFileSync(path.join(world.tower, 'apps', 'web', 'src', 'index.html'), 'utf8'),
+      '<html>edited here</html>\n', 'and what the project already carried survives');
     assertEq(spawnSync('git', ['-C', world.tower, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout, head, 'the repo is untouched');
     cleanup(world.root);
   });
@@ -506,11 +531,12 @@ const run = async () => {
   await test('a clone another machine already seeded is left exactly as it is', () => {
     const world = mkWorld({ login: 'owner', repoExists: true });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root, {
-      seed: { 'package.json': '{ "name": "tower" }\n', 'config/workkit.json': '{ "site": { "url": null, "board": true } }\n' },
+      seed: { 'package.json': '{ "name": "tower" }\n', 'README.md': '# from elsewhere\n' },
     });
     const { code, out } = setup(world);
     assertEq(code, 0, `exit 0 — ${out}`);
-    assertEq(world.config().site.board, true, 'the other machine’s options are the ones here');
+    assertEq(fs.readFileSync(path.join(world.tower, 'README.md'), 'utf8'), '# from elsewhere\n',
+      'the other machine’s project is the one here');
     assert(!fs.existsSync(path.join(world.tower, 'apps')), 'and nothing was seeded over it');
     assert(/already in/.test(out), `it says so, got: ${out}`);
     cleanup(world.root);
@@ -521,7 +547,7 @@ const run = async () => {
     // install on this path a second machine can never build or publish.
     const world = mkWorld({ login: 'owner', repoExists: true });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root, {
-      seed: { 'package.json': '{ "name": "tower" }\n', 'config/workkit.json': '{ "site": { "url": null, "board": false } }\n' },
+      seed: { 'package.json': '{ "name": "tower" }\n', 'README.md': '# from elsewhere\n' },
     });
     const { code, out } = setup(world);
     assertEq(code, 0, `exit 0 — ${out}`);
@@ -715,9 +741,9 @@ const run = async () => {
     const world = mkWorld({ settings: { version: 1, repos: {}, home: 'owner/workkit' } });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
     inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed\nwk_home_commit_push "chore(home): seed the tower project"');
-    fs.writeFileSync(path.join(world.tower, 'config', 'workkit.json'), '{ "site": { "url": null, "board": true } }\n');
+    fs.writeFileSync(path.join(world.tower, 'README.md'), '# the tower, edited\n');
     git(world.tower, 'add', '-A');
-    git(world.tower, '-c', 'user.name=t', '-c', 'user.email=t@localhost', 'commit', '-q', '-m', 'chore(home): the board on');
+    git(world.tower, '-c', 'user.name=t', '-c', 'user.email=t@localhost', 'commit', '-q', '-m', 'chore(home): a project edit');
 
     const { out } = inHome(world, 'rc=0; wk_home_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
     assert(/unpushed commits/.test(out), `it says what is waiting, got: ${out}`);
@@ -734,7 +760,7 @@ const run = async () => {
     // Someone else pushed. This machine only learns it on a fetch.
     const other = path.join(world.root, 'other');
     spawnSync('git', ['clone', '-q', remote, other], { encoding: 'utf8' });
-    fs.writeFileSync(path.join(other, 'config', 'workkit.json'), '{ "site": { "url": null, "board": false } }\n');
+    fs.writeFileSync(path.join(other, 'README.md'), '# the tower, from elsewhere\n');
     git(other, 'add', '-A');
     git(other, '-c', 'user.name=t', '-c', 'user.email=t@localhost', 'commit', '-q', '-m', 'chore(home): elsewhere');
     git(other, 'push', '-q');

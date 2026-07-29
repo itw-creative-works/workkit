@@ -8,10 +8,11 @@
 # a brand root with `apps/`, `config/` and its own `.gitignore`.
 #
 # The boundary is the folder, not a .gitignore:
-#   ~/.workkit/          settings.json (roster, declines, home slug, id cache)
-#                        and jobs/ — one machine's own knowledge, never travelling
-#   ~/.workkit/tower/    the project: its source, its config/workkit.json site
-#                        options, and its own `.workkit/` working files
+#   ~/.workkit/          settings.json (roster, declines, home slug, id cache,
+#                        the site options) and jobs/ — one machine's own
+#                        knowledge, never travelling
+#   ~/.workkit/tower/    the project, and only the project: engine territory,
+#                        never hand-edited and carrying no `.workkit/` of its own
 #
 # The built site never lands on main at all: it is pushed to the repo's
 # `gh-pages` branch, which Pages serves from the branch root.
@@ -221,11 +222,13 @@ wk_home_repoint_file_specs() {
 # AGENTS.md, CLAUDE.md and README.md travel WITH it: they are the tower
 # project's docs and the repo they land in is a real repo.
 #
-# On top of the copy the seed writes the three things the clone needs and the
-# checkout has no reason to carry: the site options, the repo's opt-in, and the
-# absolute `file:` specs.
+# The clone is the app and nothing else (issue #79): the site options are the
+# user's and live in the machine settings file, and no `.workkit/` is ever
+# written here — the engine treats this path as the home BY PATH, so there is no
+# participation flag to seed and no inbox to keep out of the commit. The one
+# thing the seed adds on top of the copy is the absolute `file:` specs.
 wk_home_seed() {
-  local pkg app_pkg ignore
+  local pkg app_pkg
 
   [[ -n "$WK_TOWER_APP" && -d "$WK_TOWER_APP" ]] || {
     wk_say_warn "home: the tower app is missing at ${WK_TOWER_APP:-this checkout} — nothing to seed the project from"
@@ -265,34 +268,6 @@ wk_home_seed() {
       --arg note ' Local era: the @omega.js frameworks resolve by absolute file: link into the omega monorepo on the machine that seeded this repo, until OMEGA publishes.' \
       '.description = ((.description // "") + $note)' >/dev/null 2>&1 || true
   fi
-
-  # The site options, inside the project like every other omega config. Written
-  # only when the app carries none of its own, so a tower/app that grows one
-  # stays the single source.
-  if [[ ! -f "$WK_HOME_CONFIG" ]]; then
-    mkdir -p "$(dirname "$WK_HOME_CONFIG")" 2>/dev/null || true
-    printf '{\n  "site": {\n    "url": null,\n    "board": false\n  }\n}\n' >"$WK_HOME_CONFIG" \
-      || { wk_say_warn "home: could not write $WK_HOME_CONFIG"; return 1; }
-  fi
-
-  # The tower repo is a repo: it joins the pipeline the way every other one
-  # does, which is what makes its issues the cross-project home and its
-  # `.workkit/inbox.md` the place a capture outside any repo lands.
-  mkdir -p "$WK_HOME_DIR/.workkit" 2>/dev/null || true
-  if [[ ! -f "$WK_HOME_DIR/.workkit/settings.json" ]]; then
-    printf '{\n  "version": 1,\n  "enabled": true\n}\n' >"$WK_HOME_DIR/.workkit/settings.json" || true
-  fi
-
-  # The working files under `.workkit/` are one session's, never the repo's —
-  # the same boundary every participating repo keeps, and the heal writes it
-  # into a repo it is healing. This clone is seeded before any heal sees it.
-  ignore="$WK_HOME_DIR/.gitignore"
-  if [[ -s "$ignore" ]] && [[ -n "$(tail -c 1 "$ignore")" ]]; then printf '\n' >>"$ignore"; fi
-  {
-    printf '\n# The workflow'"'"'s working files — one session'"'"'s, never the repo'"'"'s.\n'
-    printf '%s\n' '.workkit/*'
-    printf '%s\n' '!.workkit/settings.json'
-  } >>"$ignore"
 
   wk_say_ok "home: seeded the tower project in $WK_HOME_DIR from $WK_TOWER_APP"
   return 0
@@ -337,7 +312,11 @@ wk_home_commit_push() {
   local subject="$1" branch
   wk_home_ready || return 1
 
-  git -C "$WK_HOME_DIR" add -A >/dev/null 2>&1 || true
+  # `.workkit` is excluded rather than trusted to be absent: the clone carries no
+  # participation state of its own, so anything that appeared under that name is
+  # scratch, and an unattended daily commit must never push it to the default
+  # branch (issue #79).
+  git -C "$WK_HOME_DIR" add -A -- ':!.workkit' >/dev/null 2>&1 || true
   if ! git -C "$WK_HOME_DIR" diff --cached --quiet 2>/dev/null; then
     git -C "$WK_HOME_DIR" -c user.name="${GIT_AUTHOR_NAME:-workkit}" \
       -c user.email="${GIT_AUTHOR_EMAIL:-workkit@localhost}" \

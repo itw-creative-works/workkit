@@ -12,6 +12,10 @@
 // The same `repos` map holds this user's declines (`"declined"`), which are
 // decisions rather than observations: they are skipped here, never listed.
 //
+// The one repo that is never on the roster is the HOME repo: the tower clone at
+// `<workflowHome>/tower` carries no committed opt-in of its own (issue #79), so
+// it is recognized by path and added after the roster, deduplicated against it.
+//
 // Usage:
 //   const { discoverRepos } = require('./repos');
 //   discoverRepos();                 // the live roster
@@ -105,14 +109,38 @@ const discoverRepos = (opts = {}) => {
 
   const settings = readJson(path.join(workflowHome, 'settings.json'));
   const registered = settings && settings.repos;
-  if (!registered || typeof registered !== 'object') return [];
 
   const found = [];
-  for (const [dir, value] of Object.entries(registered)) {
-    if (value === 'declined') continue;
-    if (!isEnabled(dir)) continue;
-    found.push({ name: path.basename(dir), path: dir, slug: originSlug(dir, exec) });
+  if (registered && typeof registered === 'object') {
+    for (const [dir, value] of Object.entries(registered)) {
+      if (value === 'declined') continue;
+      if (!isEnabled(dir)) continue;
+      found.push({ name: path.basename(dir), path: dir, slug: originSlug(dir, exec) });
+    }
   }
+
+  // The home repo, which the roster never carries: the tower clone holds no
+  // `.workkit/` of its own (issue #79), so the engine knows it BY PATH and so
+  // does this. Its issues are the cross-project queue, which is exactly what the
+  // board exists to show — and a machine whose roster somehow lists it too gets
+  // one entry, not two.
+  //
+  // By-path discovery has to prove two things a committed opt-in would have
+  // proved for it: that this user did not DECLINE that path, and that whatever
+  // sits there is actually the home repo. The proof of the second is the origin
+  // slug matching the `home` slug the engine recorded in the same settings file
+  // — no origin, no recorded slug, or a mismatch means some other checkout is
+  // parked at that name, and a foreign repo is never listed.
+  const tower = path.join(workflowHome, 'tower');
+  const towerDeclined = !!registered && typeof registered === 'object' && registered[tower] === 'declined';
+  if (!towerDeclined && !found.some((r) => r.path === tower) && fs.existsSync(path.join(tower, '.git'))) {
+    const homeSlug = settings && typeof settings.home === 'string' ? settings.home : null;
+    const slug = originSlug(tower, exec);
+    if (homeSlug && slug === homeSlug) {
+      found.push({ name: path.basename(tower), path: tower, slug });
+    }
+  }
+
   found.sort((a, b) => a.path.localeCompare(b.path));
   return found;
 };
