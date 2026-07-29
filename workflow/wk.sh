@@ -3,8 +3,8 @@
 #
 # One job: get a thought out of a human's head and into the right inbox with no
 # session, no agent, and no network. `wk.sh note "the thought"` appends a bullet
-# to the inbox of the repo the shell is standing in, and to the user's own inbox
-# when it is standing outside one. Triage drains both into GitHub issues.
+# to the inbox of the repo the shell is standing in, and to the TOWER repo's
+# inbox when it is standing outside one. Triage drains both into GitHub issues.
 #
 # Usage: wk.sh note <text...>
 #
@@ -13,6 +13,11 @@
 # directory walk rather than `git rev-parse` on purpose — the answer this needs
 # is "which participating repo am I in", and a nested checkout or a worktree
 # would make git's answer and the settings file's answer differ.
+#
+# There is no user-level inbox any more (issue #77): captures that belong to no
+# project belong to the repo whose issues ARE the cross-project home, which is
+# the tower clone at `~/.workkit/tower` — itself a participating repo, so a
+# shell standing inside it is answered by the walk above like any other.
 #
 # Reached at the engine's stable address: ~/.claude/workkit/wk.sh. Putting it on
 # the PATH or behind an alias is the user's own shell config — the heal maintains
@@ -23,6 +28,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 TEMPLATES_DIR="$SCRIPT_DIR/templates"
 
+# The global layer's addresses and the one question about the clone this file
+# asks — is the folder at that path the home repo, or somebody else's repo
+# sitting there. Sourcing runs nothing.
+# shellcheck source=./lib.sh
+. "$SCRIPT_DIR/lib.sh"
+# shellcheck source=./home.sh
+. "$SCRIPT_DIR/home.sh"
+
 # The workflow state directory's name, for the ENGINE layer — the same constant
 # standards.sh carries beside this file.
 WORKKIT_DIR=".workkit"
@@ -30,8 +43,8 @@ INBOX_NAME="inbox.md"
 
 usage() {
   printf 'usage: wk.sh note <text...>\n' >&2
-  printf '  appends "- <text>" to this repo'"'"'s %s/%s, or to ~/%s/%s outside one\n' \
-    "$WORKKIT_DIR" "$INBOX_NAME" "$WORKKIT_DIR" "$INBOX_NAME" >&2
+  printf '  appends "- <text>" to this repo'"'"'s %s/%s, or to the tower repo'"'"'s outside one\n' \
+    "$WORKKIT_DIR" "$INBOX_NAME" >&2
 }
 
 # The participation test the hooks use: the committed settings.json is the
@@ -101,10 +114,22 @@ cmd_note() {
   root="$(find_repo_root)"
   if [[ -n "$root" ]]; then
     file="$root/$WORKKIT_DIR/$INBOX_NAME"
+  elif wk_home_ready; then
+    # Outside every project: the tower repo's own inbox, which is where the
+    # captures that belong to no project are triaged from. `wk_home_ready` and
+    # not the presence of a `.git` — a foreign repo sitting at that path is
+    # refused here exactly as it is everywhere else in the engine.
+    file="$WK_HOME_INBOX"
+  elif [[ "$(wk_home_state)" == 'other' ]]; then
+    # Something else is at the clone's path. Nothing is written into somebody
+    # else's repo, here or anywhere else in the engine.
+    printf 'wk: %s is not the home repo'"'"'s clone — move it aside, then `workkit setup`; captures outside a project land in the tower repo'"'"'s inbox\n' "$WK_HOME_DIR" >&2
+    exit 1
   else
-    # The user's own workflow folder, addressed exactly as standards.sh
-    # addresses its settings file there.
-    file="${WORKFLOW_HOME:-${HOME:-}/$WORKKIT_DIR}/$INBOX_NAME"
+    # Nothing to append to, and this command creates nothing global: a thought
+    # written into a folder no triage run reads is a thought lost quietly.
+    printf 'wk: there is no home yet — `workkit setup` creates the tower repo, and captures outside a project land in its inbox\n' >&2
+    exit 1
   fi
 
   append_note "$file" "$note"

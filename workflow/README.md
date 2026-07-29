@@ -10,12 +10,11 @@ The agent-agnostic core of the issue workflow. It knows nothing about Claude Cod
 | `templates/github-workflows/` | `checks.yml`, the CI workflow installed into a repo's `.github/workflows/` — the `test` job runs the suite on every pull request, the `changelog` job holds the `[Unreleased]` section to the entry format. Installed once; the repo's copy is its own to extend and is never overwritten, except that the `changelog` job is appended once to a workflow healed before it existed |
 | `templates/inbox.md` · `templates/session.md` | The two gitignored working files seeded into a participating repo's `.workkit/`. A file that already has content is never overwritten |
 | `workkit.sh` | The one command: `setup` · `update [--auto]` · `doctor` · `publish` · `enable` · `decline` · `note` — the front door to everything below |
-| `lib.sh` | Sourced helpers the home-repo machinery shares: where `~/.workkit` is, a safe JSON edit, a slug out of a git remote, and a voice that delegates to whichever caller sourced it |
-| `home.sh` | Sourced: the home repo's lifecycle — the login, the private repo, converting `~/.workkit` into its clone in place, the schema files, Discussions, Pages, the project list, the doctor lines |
+| `lib.sh` | Sourced helpers the home-repo machinery shares: the global layer's addresses (`~/.workkit`, the tower clone in it, its config and its build output), a safe JSON edit, a slug out of a git remote, and a voice that delegates to whichever caller sourced it |
+| `home.sh` | Sourced: the home repo's lifecycle — the login, the private repo, the clone into `~/.workkit/tower`, seeding the tower project into an empty one, its install, Discussions, Pages, the doctor lines |
 | `discussions.sh` | Sourced: the home repo's Discussions API (GraphQL through `gh`) — enabling, resolving and caching the repo and category ids, posting a summary, reading prior summaries back |
-| `publish.sh` | Builds the tower's app from this checkout and publishes it from the home repo's `docs/`, with the board snapshot baked in only when `site.board` says so |
+| `publish.sh` | Builds the tower project in `~/.workkit/tower` and pushes the output to the home repo's `gh-pages` branch, with the board snapshot baked in only when `site.board` says so |
 | `site-data.js` | The snapshot the published site can ship with: one sweep of the roster and the board, written only when something other than the timestamp changed |
-| `templates/home/` | The home repo's two committed files — `workkit.json` (the fixed schema) and the `.gitignore` that keeps the machine-local layer out of it |
 | `wk.sh` | The capture CLI: `wk.sh note <text...>` appends one bullet to the right inbox |
 | `changelog.js` | Machine SSOT for the CHANGELOG entry rules, and the CLI both guarding hooks call: `node changelog.js <file> [--added-only] [--staged] [--unreleased-only]` |
 | `changelog-links.js` | Release-time backfill of each entry's commit link and contributor handle: `node changelog-links.js [--file X] [--range A..B] [--dry-run]` |
@@ -29,7 +28,7 @@ git clone <this repo> && cd workkit
 ./workflow/workkit.sh setup
 ```
 
-`setup` installs the plugin from this checkout when the `claude` CLI is present and does not have it (a machine without that CLI gets a named skip, never a failure), checks that `gh` is installed and authenticated, points the engine's address at this folder, installs the 9am schedule through `jobs/install.sh`, creates the home repo and makes `~/.workkit` its clone, says where the tower is started, offers to enable the repo the shell is standing in, and symlinks itself to `~/.local/bin/workkit`. Where that directory is not on the PATH it prints the one `export` line to add — it never edits a shell rc. Every step checks before acting, so a second `setup` reports nothing to do.
+`setup` installs the plugin from this checkout when the `claude` CLI is present and does not have it (a machine without that CLI gets a named skip, never a failure), checks that `gh` is installed and authenticated, points the engine's address at this folder, installs the 9am schedule through `jobs/install.sh`, creates the home repo and clones the tower project into `~/.workkit/tower`, says where the tower is started, offers to enable the repo the shell is standing in, and symlinks itself to `~/.local/bin/workkit`. Where that directory is not on the PATH it prints the one `export` line to add — it never edits a shell rc. Every step checks before acting, so a second `setup` reports nothing to do.
 
 | Command | What it does |
 |---|---|
@@ -37,8 +36,8 @@ git clone <this repo> && cd workkit
 | `workkit setup` | the wizard above — the only path that installs a schedule for the first time |
 | `workkit update` | re-runs the machine-side installs: the engine address, the `~/.local/bin` symlink, and the schedule |
 | `workkit update --auto` | the quiet variant the standards hook runs; prints only what it changed |
-| `workkit doctor` | reports drift — plugin, gh, both links, schedule vintage, the roster count, the home clone's state (missing · not a clone · another remote · ahead/behind/diverged), this repo's state — with the fix command for anything out of its reach |
-| `workkit publish` | builds the dashboard and publishes it from the home repo; the daily job runs the same script after the brief |
+| `workkit doctor` | reports drift — plugin, gh, both links, schedule vintage, the roster count, the tower clone's state (unset · absent · clone · other, plus ahead/behind/diverged), this repo's state — with the fix command for anything out of its reach |
+| `workkit publish` | builds the tower project and pushes the site to the home repo's `gh-pages` branch; the daily job runs the same script after the brief |
 | `workkit enable [repo]` · `workkit decline [repo]` | `standards.sh --enable` / `--decline` under the one name |
 | `workkit note <text...>` | `wk.sh note`, unchanged |
 
@@ -57,7 +56,7 @@ The drift question is answered by `jobs/install.sh --check`, which renders and c
 bash ~/.claude/workkit/wk.sh note fix the tower poller
 ```
 
-The words after `note` join with spaces, so the call works unquoted, and the bullet lands in the inbox of the repo the shell is standing in — decided by a walk UP from the current directory to the first ancestor whose `.workkit/settings.json` says the repo participates. Standing outside one, it lands in the user's own `~/.workkit/inbox.md`. A missing inbox is created from `templates/inbox.md`, so a hand-made file reads exactly like a seeded one; existing content is only ever appended to. No arguments, an unknown subcommand, or an empty note prints usage on stderr and exits 1. Triage drains both inboxes into issues.
+The words after `note` join with spaces, so the call works unquoted, and the bullet lands in the inbox of the repo the shell is standing in — decided by a walk UP from the current directory to the first ancestor whose `.workkit/settings.json` says the repo participates. Standing outside one, it lands in the tower repo's own inbox — and where there is no clone yet it says so on stderr and exits 1, rather than writing a thought into a folder no triage run reads. A missing inbox is created from `templates/inbox.md`, so a hand-made file reads exactly like a seeded one; existing content is only ever appended to. No arguments, an unknown subcommand, or an empty note prints usage on stderr and exits 1. Triage drains both inboxes into issues.
 
 Putting it on the PATH or behind an alias is the user's own shell config (dotfiles) — the heal maintains the address below and nothing beyond it.
 
@@ -84,40 +83,46 @@ Same filename, one mental model, two owners.
 | File | Owner | Holds |
 |---|---|---|
 | `<repo>/.workkit/settings.json` | the project (committed) | `{ "version": 1, "enabled": true }` — the repo's yes. `"enabled": false` is the project's deliberate no |
-| `~/.workkit/settings.json` (`$WORKFLOW_HOME` overrides) | one developer (never committed — gitignored inside the home clone) | `{ "version": 1, "repos": { "<absolute repo root>": "enabled" \| "declined" }, "home": "<owner>/<repo>", "homeCache": { … } }` — the machine's roster, this developer's declines, the home repo, and the cached GitHub node ids |
-| `~/.workkit/workkit.json` | every machine (committed to the home repo) | `{ "version": 1, "projects": { "<owner>/<repo>": { "name": … } }, "site": { "url": … }, "preferences": {} }` — membership by SLUG, so it travels; the roster's paths do not |
+| `~/.workkit/settings.json` (`$WORKFLOW_HOME` overrides) | one developer (never committed — `~/.workkit` is a plain folder, not a repo) | `{ "version": 1, "repos": { "<absolute repo root>": "enabled" \| "declined" }, "home": "<owner>/<repo>", "homeCache": { … } }` — the machine's roster, this developer's declines, the home repo, and the cached GitHub node ids |
+| `~/.workkit/tower/config/workkit.json` | every machine (committed to the home repo) | `{ "site": { "url": …, "board": false } }` — the published dashboard's options, and nothing generated: the board data is baked at publish time, never committed |
 
 Never-asked and declined are personal, not project facts (owner ruling, 2026-07-24): a teammate seeing `enabled: false` in a shared repo would read it as the project declining when it was one developer undecided. Only a real yes belongs in the repo.
 
 **The roster.** Every heal (and every `--enable`) records the repo it is standing in under `repos` as `"enabled"` and drops any listed path that has gone away, lost its committed file, or whose committed file now says `enabled: false`. The registration takes the same `settings.json.lock` mutex a decline does — and so does every other writer of that file, the home slug and the cached GitHub node ids among them (`wk_take_settings_lock` in `lib.sh` is its single home) — so sessions opening at once in several repos all land on the roster. A `"declined"` entry is a decision and is never pruned. The list is an INDEX, not the answer — the committed per-repo file stays the SSOT of membership — and it is what the tower reads instead of walking a filesystem root, so a repo this machine has never opened is simply not on its dashboard. Registration is silent; `workkit doctor` reports the count.
 
-**The home repo.** `"home": "<owner>/<repo>"` names the private GitHub repo whose issues hold the work that belongs to no single project — the cross-project and business queue, and the nursery for projects that do not exist yet. Unset, triage says so and leaves global entries in the inbox. Full doctrine: `docs/project-state.md` § The global layer.
+**The home repo.** `"home": "<owner>/<repo>"` names the private GitHub repo whose issues hold the work that belongs to no single project — the cross-project and business queue, and the nursery for projects that do not exist yet. Unset, triage says so and leaves global entries where they are. Full doctrine: `docs/project-state.md` § The global layer.
 
 ## The home repo's lifecycle
 
-`~/.workkit` is a folder AND the home repo's clone. `workkit setup` is the only thing that makes it one, and `home.sh` is where each step lives:
+`~/.workkit` is a plain folder, and the ONE git repo in it is `~/.workkit/tower` — the home repo's clone, and the tower dashboard as a real project. `workkit setup` is the only thing that makes it, and `home.sh` is where each step lives:
 
 1. **The login** — `gh api user`. Without one, setup prints `gh auth login` and moves on; nothing is guessed.
 2. **The repo** — one confirm line, then `gh repo create <login>/workkit --private`. A repo that already exists is the current one, never an error: a second machine finds the same home.
-3. **The folder, converted IN PLACE** — an empty folder is cloned; a folder that predates the repo gets `git init`, the remote, and a first commit of the schema files ONLY, so the machine-local files are untracked by construction (the `.gitignore` is written before the first `git add`); a folder that is already the clone is a no-op; and a folder pointing at a DIFFERENT remote stops the home steps with a warning — someone else's repo is never adopted. A remote that already has history is joined, not overwritten.
-4. **The schema files** — `workkit.json` (`{ version, projects, site, preferences }`) and the home `.gitignore`, each written once and never overwritten.
-5. **Discussions** — enabled through the GraphQL API. The three summary categories (Daily, Weekly, Monthly) are CHECKED, never created: GitHub has no `createDiscussionCategory` mutation (probed against the live schema, 2026-07-28), so a missing category gets a one-time pointer at the page that makes it, and the summaries publish in the repo's default category until it exists.
-6. **Pages** — `POST repos/<slug>/pages` for branch `main`, path `/docs`. A refusal (a private repo on a plan without Pages) warns with the fix and setup carries on.
+3. **The clone** — a plain `git clone` into `~/.workkit/tower`. Nothing is ever converted or adopted: an absent path is cloned, the right clone is a no-op, and ANYTHING else already there (a repo pointing elsewhere, a folder somebody made) stops the home steps with a warning naming what it found. A repo GitHub just created is empty and clones with a warning git prints and this step swallows — that is the ordinary first-setup case.
+4. **The seed**, only into an empty clone — this checkout's `tower/app` copied in whole, minus what a working checkout accretes (`node_modules` at any depth, the lockfile, `.omega`, `dist`, `.env`); the project's own `README.md`/`AGENTS.md`/`CLAUDE.md` travel with it, because the repo they land in is a real repo. On top of the copy the seed writes three things: `config/workkit.json` (`{ site: { url, board } }`), the repo's own `.workkit/settings.json` opt-in with the ignore rules that keep its working files out, and every `file:` dependency spec repointed at the ABSOLUTE path it resolved to from this checkout — recorded in the manifest's description the way omega-brand records its own. A clone another machine already seeded is left exactly as it is.
+5. **The install** — `npm install` in the clone, so the daily publish has something to build with. It runs on BOTH clone paths, because a project that travelled from another machine arrives without its `node_modules`; a tree that already carries `node_modules/.bin/omega` is a skip, so re-running costs nothing. Absent tooling is an honest warning naming what did not install, never a failure.
+6. **Discussions** — enabled through the GraphQL API. The three summary categories (Daily, Weekly, Monthly) are CHECKED, never created: GitHub has no `createDiscussionCategory` mutation (probed against the live schema, 2026-07-28), so a missing category gets a one-time pointer at the page that makes it, and the summaries publish in the repo's default category until it exists.
+7. **Pages** — `POST repos/<slug>/pages` for branch `gh-pages`, path `/`. The branch need not exist yet; the first publish makes it. A refusal (a private repo on a plan without Pages) warns with the fix and setup carries on.
+8. **The first commit** — `chore(home): seed the tower project`, pushed.
 
-Every step is idempotent and the whole sequence is safe to re-run. Afterwards the heal keeps `workkit.json`'s `projects` current — the repo's slug where the roster writes its path — and never commits or pushes it; the daily publish does that.
+Every step is idempotent and the whole sequence is safe to re-run: a second setup finds the clone and reports rather than acting. Afterwards the heal owes the global layer nothing but the machine roster — the clone is a participating repo, healed by standing in it like any other.
 
-**Two deviations from the issue's Spec, both forced by what the API actually offers:**
+**Two shapes the API forced, both proved against the live schema:**
 
-- The built site lives at **`docs/`**, not `site/`. The Pages API's `source.path` takes exactly two values, `/` and `/docs` (`"enum":["/","/docs"]`), so no other subdirectory can be served from a branch.
 - Discussion **categories are checked and fallen back on**, not created, because no mutation exists to create one.
+- The Pages source path is `/` or `/docs` and nothing else (`"enum":["/","/docs"]`), which is why the site is served from the ROOT of its own branch rather than from a folder named for the rule.
 
 ## Publishing the dashboard
 
-`publish.sh` builds `tower/app` from THIS checkout, mirrors the output into `~/.workkit/docs/`, writes the CNAME from `workkit.json`'s `site.url`, and commits and pushes it as one `chore(site): publish <date>`.
+`publish.sh` pulls the clone, builds it, and pushes the OUTPUT to the home repo's `gh-pages` branch — so nothing generated is ever committed as source and the default branch stays the project.
 
-**The board snapshot is off by default.** GitHub Pages is PUBLIC even when the repo serving it is private, and `docs/data/board.json` is every issue title across every repo on the roster — so baking it in is the owner's published-board call and nobody else's. `workkit.json`'s `site.board` is the whole switch: only `true` writes the snapshot, and flipping it back to `false` removes the one already published.
+The build runs in the APP, not at the brand root: `omega build` is a command of `@omega.js/web` and resolves only inside `apps/web` (at the root the `omega` bin dispatches to `@omega.js/manager`, which has no build at all — probed 2026-07-29). So the build is `npm --prefix ~/.workkit/tower/apps/web run build`, and it writes `apps/web/dist/`.
 
-The build is LOCAL and never a GitHub Action: the app consumes `@omega.js/*` by `file:` spec from a sibling omega checkout, which no CI runner has. On a machine without that checkout `npm install` still exits 0 and leaves dangling symlinks under `node_modules/@omega.js` (probed 2026-07-28), so the tooling check is the presence of `tower/app/node_modules/.bin/omega` — an install's success proves nothing. Every reason not to publish (no home clone, no tooling, nothing changed) is a named skip with exit 0; only a build or copy that actually failed exits non-zero.
+The push uses a temporary `git worktree`, so main's working tree is never checked out over, and force-with-lease onto `gh-pages` alone — the branch carries nothing but generated files, so a rewrite is what a rebuild IS, and the lease still refuses to overwrite a push this machine has not seen. Any SOURCE change the day left in the clone (a config edit) is committed and pushed to main separately, as one `chore(site): publish <date>`. The pull is `--rebase --autostash`, and a pull that cannot finish — a divergence, an offline machine, a refused auth — publishes nothing and says the clone could not catch up; the engine never forces main. The autostash's own failure is caught too: a rebase that lands while the stash it took conflicts on the way back exits 0 over a tree full of conflict markers, so the surviving stash entry is checked for, the tree is put back exactly as the run found it, and nothing is built, committed or pushed. A `config/workkit.json` that does not parse is refused the same way rather than read as an absent one.
+
+**The board snapshot is off by default.** GitHub Pages is PUBLIC even when the repo serving it is private, and `data/board.json` is every issue title across every repo on the roster — so baking it in is the owner's published-board call and nobody else's. `config/workkit.json`'s `site.board` is the whole switch: only `true` writes the snapshot, and flipping it back to `false` removes the one already published. `site.url` set writes the CNAME into the published branch.
+
+The build is LOCAL and never a GitHub Action: the app consumes `@omega.js/*` by `file:` spec from a sibling omega checkout, which no CI runner has. On a machine without that checkout `npm install` still exits 0 and leaves dangling symlinks under `node_modules/@omega.js` (probed 2026-07-28), so the tooling check is the presence of `~/.workkit/tower/node_modules/.bin/omega` — an install's success proves nothing. Every reason not to publish (no home clone, no tooling, a clone that could not catch up, a conflicting autostash, an unparseable config, nothing changed) is a named skip with exit 0; only a build or copy that actually failed exits non-zero.
 
 `workkit publish` runs it on demand, a human's `workkit update` runs it too, and `jobs/claude-daily.sh` runs it after the morning brief — never before, and never in `update --auto`: a session start has no business spending minutes on an app build.
 

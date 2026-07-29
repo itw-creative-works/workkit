@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 # workflow/home.sh — the home repo's lifecycle. SOURCED, never executed.
 #
-# `~/.workkit` starts as a folder one machine writes to. Issue #27 makes it a
-# CLONE of a private repo — `<login>/workkit` — so the things that belong to no
-# single project have a home: the opted-in project slugs, the published
-# dashboard, the summaries' destination, the preferences.
+# `~/.workkit` is a PLAIN folder holding this machine's own state, and it is
+# never a git repo (issue #77). The one git repo in the global layer is
+# `~/.workkit/tower` — the clone of a private `<login>/workkit`, seeded from
+# this checkout's `tower/app` and shaped like every other omega site project:
+# a brand root with `apps/`, `config/` and its own `.gitignore`.
 #
-# Two layers in one folder, and the .gitignore is the boundary:
-#   committed      workkit.json (the shared truth) · docs/ (the built site)
-#   machine-local  settings.json (paths, declines, roster, home slug, id cache)
-#                  and inbox.md — one machine's own knowledge, never travelling
+# The boundary is the folder, not a .gitignore:
+#   ~/.workkit/          settings.json (roster, declines, home slug, id cache)
+#                        and jobs/ — one machine's own knowledge, never travelling
+#   ~/.workkit/tower/    the project: its source, its config/workkit.json site
+#                        options, and its own `.workkit/` working files
 #
-# WHO CREATES WHAT. Creating the repo, converting the folder, enabling
+# The built site never lands on main at all: it is pushed to the repo's
+# `gh-pages` branch, which Pages serves from the branch root.
+#
+# WHO CREATES WHAT. Creating the repo, cloning it, seeding it, enabling
 # Discussions and Pages happen in `workkit setup` and NOWHERE else (issue #71's
 # doctrine): the daily path and the session hook only ever read, write, commit
 # and push a home that a human already made.
@@ -21,6 +26,17 @@
 # The repo's fixed name under the login. One name, so a second machine running
 # setup finds the repo that exists rather than making another.
 WK_HOME_REPO_NAME='workkit'
+
+# The branch the built site is published to. Pages serves a branch's ROOT, so
+# nothing on main is ever named for a Pages rule and no build output is ever
+# committed as source.
+WK_HOME_PAGES_BRANCH='gh-pages'
+
+# The seed's source of truth: this checkout's tower/app, resolved from the
+# engine's own location so a moved or symlinked checkout still finds it. There
+# is no stored second template — the app IS the template. The override is the
+# suite's seam.
+WK_TOWER_APP="${WORKKIT_TOWER_APP:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../tower/app" 2>/dev/null && pwd -P || printf '')}"
 
 # The remote, and the one seam the suite needs: pointed at a local bare repo,
 # every clone, fetch and push in this file runs fully offline. Unset on a real
@@ -38,10 +54,10 @@ wk_home_slug() { wk_json_get "$WK_HOME_SETTINGS" '.home'; }
 wk_home_set_slug() {
   local locked=0 rc=0
   # The engine seeds this file on every run, so it is normally already here;
-  # this covers the one order where it is not — a folder that was CLONED rather
-  # than converted, which arrives carrying only the repo's own files.
+  # this covers the one order where it is not — a machine whose first workkit
+  # command is `setup`, before any heal has written the user folder.
   if [[ ! -f "$WK_HOME_SETTINGS" ]]; then
-    mkdir -p "$WK_HOME_DIR" 2>/dev/null || return 1
+    mkdir -p "$WK_USER_DIR" 2>/dev/null || return 1
     printf '{\n  "version": 1,\n  "repos": {}\n}\n' >"$WK_HOME_SETTINGS" 2>/dev/null || return 1
   fi
   # The shared mutex, for the same reason every other writer of this file takes
@@ -67,19 +83,19 @@ wk_home_matches() {
   [[ "$(wk_slug_from_remote "$actual")" == "$slug" ]]
 }
 
-# What the folder IS, in one word — the answer doctor, publish and the summaries
-# step all branch on.
+# What `~/.workkit/tower` IS, in one word — the answer doctor, publish and the
+# summaries step all branch on.
 #
-#   unset    no home slug configured; the folder is whatever it was
-#   nogit    a slug is configured, the folder is not a git repo yet
-#   foreign  the folder is a git repo pointing at a DIFFERENT remote
+#   unset    no home slug configured; nothing has been decided
+#   absent   a slug is configured and there is no tower folder — setup clones it
 #   clone    the folder is the home repo's clone
+#   other    something else is at that path — never adopted, never converted
 wk_home_state() {
   local slug
   slug="$(wk_home_slug)"
   [[ -n "$slug" ]] || { printf 'unset'; return 0; }
-  if [[ ! -d "$WK_HOME_DIR/.git" ]]; then printf 'nogit'; return 0; fi
-  if wk_home_matches "$slug"; then printf 'clone'; else printf 'foreign'; fi
+  if [[ ! -e "$WK_HOME_DIR" ]]; then printf 'absent'; return 0; fi
+  if wk_home_matches "$slug"; then printf 'clone'; else printf 'other'; fi
 }
 
 # True when there is a home clone to read, write or push — the one guard the
@@ -105,123 +121,209 @@ wk_home_ensure_repo() {
   return 0
 }
 
-# The folder becomes the clone, in whichever of the four states it is in.
+# The clone, made the plain way: `git clone` into a path that does not exist.
 #
-# The conversion is IN PLACE and additive in BOTH directions: a folder that
-# predates the repo keeps every file it has, and the files the repo already
-# carries are checked out into it — a second machine converting its own folder
-# joins the home rather than proposing to empty it. Only the schema files are
-# ever committed; the machine-local ones are untracked by construction, because
-# .gitignore is written before the first `git add`.
+# NOTHING is ever converted or adopted. `~/.workkit/tower` is a name only this
+# engine gives, so an absent path is the ordinary case and anything already
+# sitting there is somebody else's — a repo pointing elsewhere, or a folder a
+# person made. Both stop the home steps rather than being taken over.
 #
-# Returns 0 (converted or already), 1 (could not), 3 (a foreign remote — the
-# one state that stops the home steps: adopting someone else's repo would push
-# this machine's settings into it).
-wk_home_convert() {
-  local slug="$1" url existing
+# `~/.workkit` itself is only ever mkdir'd: it is a plain folder, and a
+# `git init` there would make the whole global layer a repo.
+#
+# Returns 0 (cloned, or already the clone), 1 (could not clone), 3 (something
+# else is in the way — the one state that stops the rest of the home steps).
+wk_home_clone() {
+  local slug="$1" url existing out
   url="$(wk_home_remote_url "$slug")"
 
-  if [[ -d "$WK_HOME_DIR/.git" ]]; then
-    if ! wk_home_matches "$slug"; then
-      existing="$(wk_home_clone_slug)"
-      wk_say_warn "home: $WK_HOME_DIR is already a git repo pointing at ${existing:-another remote} — leaving it alone; move it aside if $slug should live there"
-      return 3
-    fi
-    wk_say_skip "home: $WK_HOME_DIR is the clone of $slug"
-    return 0
-  fi
-
-  # Nothing there, or nothing but an empty directory: the plain case.
-  if [[ ! -e "$WK_HOME_DIR" ]] || [[ -z "$(ls -A "$WK_HOME_DIR" 2>/dev/null)" ]]; then
-    rmdir "$WK_HOME_DIR" 2>/dev/null || true
-    if git clone -q "$url" "$WK_HOME_DIR" 2>/dev/null; then
-      wk_say_ok "home: cloned $slug into $WK_HOME_DIR"
+  if [[ -e "$WK_HOME_DIR" ]]; then
+    if wk_home_matches "$slug"; then
+      wk_say_skip "home: $WK_HOME_DIR is the clone of $slug"
       return 0
     fi
-    # An empty repo has nothing to clone on some git versions; init instead and
-    # let the push below give it its first commit.
-    mkdir -p "$WK_HOME_DIR"
+    existing="$(wk_home_clone_slug)"
+    if [[ -n "$existing" ]]; then
+      wk_say_warn "home: $WK_HOME_DIR is a git repo pointing at $existing — leaving it alone; move it aside if $slug should live there"
+    else
+      wk_say_warn "home: $WK_HOME_DIR already exists and is not a clone of $slug — leaving it alone; move it aside, then run \`workkit setup\` again"
+    fi
+    return 3
   fi
 
-  git -C "$WK_HOME_DIR" init -q 2>/dev/null || { wk_say_warn "home: could not git init $WK_HOME_DIR"; return 1; }
-  git -C "$WK_HOME_DIR" symbolic-ref HEAD refs/heads/main 2>/dev/null || true
-  git -C "$WK_HOME_DIR" remote add origin "$url" 2>/dev/null \
-    || git -C "$WK_HOME_DIR" remote set-url origin "$url" 2>/dev/null || true
-
-  # A repo that already has history (a second machine converting its own folder)
-  # is joined rather than overwritten: reset moves the branch onto what the
-  # remote has and leaves every local file exactly where it is.
-  #
-  # And then the CHECKOUT, which is what makes the join whole. Reset alone moves
-  # the branch and the index only, so every file the remote carries and this
-  # folder lacks reads as DELETED — the next `git add -A` would stage those
-  # deletions and the first push would empty the home repo of the other
-  # machine's work. Checking HEAD out materializes them instead. Nothing local
-  # is clobbered: the only paths it writes are the tracked ones, and the
-  # machine-local files are untracked by construction.
-  if git -C "$WK_HOME_DIR" fetch -q origin 2>/dev/null \
-    && git -C "$WK_HOME_DIR" rev-parse --verify -q origin/main >/dev/null 2>&1; then
-    git -C "$WK_HOME_DIR" reset -q origin/main 2>/dev/null || true
-    git -C "$WK_HOME_DIR" checkout -q HEAD -- . 2>/dev/null || true
-    git -C "$WK_HOME_DIR" branch --set-upstream-to=origin/main main 2>/dev/null || true
-  fi
-
-  wk_say_ok "home: $WK_HOME_DIR is now the clone of $slug — its machine-local files stay untracked"
+  mkdir -p "$WK_USER_DIR" 2>/dev/null || { wk_say_warn "home: could not create $WK_USER_DIR"; return 1; }
+  # A repo GitHub just created is empty, and git clones it fine — with a warning
+  # on stderr about an empty repository and no branch checked out. That warning
+  # is the expected first-setup case, so the output is swallowed and only the
+  # exit status is read; the seed below gives the clone its first commit.
+  out="$(git clone -q "$url" "$WK_HOME_DIR" 2>&1)" || {
+    wk_say_warn "home: could not clone $slug into $WK_HOME_DIR — \`git clone $url $WK_HOME_DIR\` reports why"
+    return 1
+  }
+  wk_say_ok "home: cloned $slug into $WK_HOME_DIR"
   return 0
 }
 
-# The two committed files. workkit.json is written ONCE and never overwritten —
-# it accrues the project slugs, and the copy the conversion just checked out of
-# the remote is another machine's work, so a template written over it would push
-# that work away.
+# Whether the clone is EMPTY — a repo with no commit of its own, which is the
+# only state the seed may write into. A clone that already carries the project
+# is another machine's work and is never re-seeded.
+wk_home_empty() {
+  [[ -d "$WK_HOME_DIR/.git" ]] || return 1
+  git -C "$WK_HOME_DIR" rev-parse --verify -q HEAD >/dev/null 2>&1 && return 1
+  return 0
+}
+
+# Every `file:` dependency spec in one package.json, repointed at the absolute
+# path it resolves to from the manifest it was COPIED FROM.
 #
-# The .gitignore is the one file this function keeps CURRENT: a version of the
-# engine that learns of a new machine-local path has to be able to add it to a
-# folder that already has the file, or that path starts being committed. The
-# lines someone added themselves are left exactly where they are — only the
-# template lines that are missing are appended.
-wk_home_write_files() {
-  local templates="${WK_TEMPLATES_DIR:-$(dirname "${BASH_SOURCE[0]}")/templates}/home"
-  local wrote=0 ignore="$WK_HOME_DIR/.gitignore" line added=''
+# The relative spec is truth in this checkout and nonsense in the clone: it
+# counts directories up from `tower/app`, and the clone sits under `~/.workkit`.
+# Committing the absolute path is the local-era acceptance the omega brand
+# monorepo already makes for itself — the specs flip to registry ranges when
+# OMEGA publishes, and that is the day this rewrite stops being needed.
+#
+# Usage: wk_home_repoint_file_specs <seeded package.json> <source package dir>
+wk_home_repoint_file_specs() {
+  local pkg="$1" srcdir="$2" specs name spec rel abs
+  [[ -f "$pkg" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
 
-  if [[ ! -f "$WK_HOME_CONFIG" ]]; then
-    if [[ -f "$templates/workkit.json" ]]; then
-      cp "$templates/workkit.json" "$WK_HOME_CONFIG" && wrote=1
-    else
-      wk_say_warn "home: the workkit.json template is missing at $templates — this checkout is incomplete"
-      return 1
+  specs="$(jq -r '
+    [(.dependencies // {}), (.devDependencies // {})]
+    | add // {}
+    | to_entries[]
+    | select(.value | startswith("file:"))
+    | "\(.key)\t\(.value)"' "$pkg" 2>/dev/null || true)"
+
+  while IFS="$(printf '\t')" read -r name spec; do
+    [[ -n "$name" ]] || continue
+    rel="${spec#file:}"
+    # `cd` rather than string arithmetic: the target is a real directory on this
+    # machine, and only the filesystem can resolve `../..` through symlinks.
+    abs="$(cd "$srcdir/$rel" 2>/dev/null && pwd -P || printf '')"
+    if [[ -z "$abs" ]]; then
+      wk_say_warn "home: the seeded $name still points at $spec — nothing resolves it from $srcdir, so the tower project cannot build until it does"
+      continue
     fi
-  fi
-  if [[ ! -f "$templates/gitignore" ]]; then
-    wk_say_warn "home: the .gitignore template is missing at $templates — this checkout is incomplete"
+    wk_json_edit "$pkg" --arg n "$name" --arg v "file:$abs" '
+      (if (.dependencies // {} | has($n)) then .dependencies[$n] = $v else . end)
+      | (if (.devDependencies // {} | has($n)) then .devDependencies[$n] = $v else . end)' \
+      >/dev/null 2>&1 || true
+  done <<<"$specs"
+  return 0
+}
+
+# The seed: this checkout's `tower/app` becomes the clone's whole contents.
+#
+# The app IS the template (the Spec's "no stored second template"), so the copy
+# is a plain one minus what a checkout accretes — the installed dependencies,
+# the lockfile, the build output and the omega run machinery. The project's own
+# AGENTS.md, CLAUDE.md and README.md travel WITH it: they are the tower
+# project's docs and the repo they land in is a real repo.
+#
+# On top of the copy the seed writes the three things the clone needs and the
+# checkout has no reason to carry: the site options, the repo's opt-in, and the
+# absolute `file:` specs.
+wk_home_seed() {
+  local pkg app_pkg ignore
+
+  [[ -n "$WK_TOWER_APP" && -d "$WK_TOWER_APP" ]] || {
+    wk_say_warn "home: the tower app is missing at ${WK_TOWER_APP:-this checkout} — nothing to seed the project from"
     return 1
-  fi
-  if [[ ! -f "$ignore" ]]; then
-    cp "$templates/gitignore" "$ignore" && wrote=1
-  else
-    # A file whose last line has no newline would fuse with the first rule
-    # appended after it, and an ignore rule spelled `caches/jobs/` matches
-    # nothing at all.
-    if [[ -s "$ignore" ]] && [[ -n "$(tail -c 1 "$ignore")" ]]; then
-      printf '\n' >>"$ignore"
-    fi
-    # Comments and blank lines are the template's own prose, not rules: they are
-    # never appended to a file someone already keeps.
-    while IFS= read -r line || [[ -n "$line" ]]; do
-      if [[ -z "$line" ]] || [[ "$line" == '#'* ]]; then continue; fi
-      if grep -qxF -- "$line" "$ignore" 2>/dev/null; then continue; fi
-      added="$added $line"
-      printf '%s\n' "$line" >>"$ignore"
-    done <"$templates/gitignore"
+  }
+
+  # `tar` rather than `cp -R` with deletions after: the exclusions have to hold
+  # at every depth (a nested node_modules under apps/*), and a copy that landed
+  # a gigabyte of dependencies first would be slow before it was wrong.
+  (cd "$WK_TOWER_APP" && tar -cf - \
+    --exclude './node_modules' --exclude '*/node_modules' \
+    --exclude './package-lock.json' --exclude '*/package-lock.json' \
+    --exclude './.omega' --exclude '*/.omega' \
+    --exclude './.cache' --exclude '*/.cache' \
+    --exclude './.temp' --exclude '*/.temp' \
+    --exclude './dist' --exclude '*/dist' \
+    --exclude './.env' --exclude '*/.env' \
+    .) | (cd "$WK_HOME_DIR" && tar -xf -) || {
+    wk_say_warn "home: could not copy the tower app into $WK_HOME_DIR"
+    return 1
+  }
+
+  # The manifests, root first and then every app: each spec resolves from the
+  # directory of the manifest it was copied from, never from the clone.
+  wk_home_repoint_file_specs "$WK_HOME_DIR/package.json" "$WK_TOWER_APP"
+  for pkg in "$WK_HOME_DIR"/apps/*/package.json; do
+    [[ -f "$pkg" ]] || continue
+    app_pkg="${pkg#"$WK_HOME_DIR"/}"
+    wk_home_repoint_file_specs "$pkg" "$WK_TOWER_APP/$(dirname "$app_pkg")"
+  done
+
+  # The description says what the manifest now carries, the way the omega brand
+  # monorepo's own does — a reader opening this repo on another machine has to
+  # learn from the file itself why its dependencies name a path.
+  if [[ -f "$WK_HOME_DIR/package.json" ]] && command -v jq >/dev/null 2>&1; then
+    wk_json_edit "$WK_HOME_DIR/package.json" \
+      --arg note ' Local era: the @omega.js frameworks resolve by absolute file: link into the omega monorepo on the machine that seeded this repo, until OMEGA publishes.' \
+      '.description = ((.description // "") + $note)' >/dev/null 2>&1 || true
   fi
 
-  if [[ -n "$added" ]]; then
-    wk_say_ok "home: added the ignore rules this engine version needs ($(printf '%s' "${added# }" | sed 's/ /, /g')) to $ignore"
+  # The site options, inside the project like every other omega config. Written
+  # only when the app carries none of its own, so a tower/app that grows one
+  # stays the single source.
+  if [[ ! -f "$WK_HOME_CONFIG" ]]; then
+    mkdir -p "$(dirname "$WK_HOME_CONFIG")" 2>/dev/null || true
+    printf '{\n  "site": {\n    "url": null,\n    "board": false\n  }\n}\n' >"$WK_HOME_CONFIG" \
+      || { wk_say_warn "home: could not write $WK_HOME_CONFIG"; return 1; }
   fi
-  if [[ "$wrote" -eq 1 ]]; then
-    wk_say_ok "home: wrote the schema files (workkit.json, .gitignore) in $WK_HOME_DIR"
-  elif [[ -z "$added" ]]; then
-    wk_say_skip "home: the schema files are in place"
+
+  # The tower repo is a repo: it joins the pipeline the way every other one
+  # does, which is what makes its issues the cross-project home and its
+  # `.workkit/inbox.md` the place a capture outside any repo lands.
+  mkdir -p "$WK_HOME_DIR/.workkit" 2>/dev/null || true
+  if [[ ! -f "$WK_HOME_DIR/.workkit/settings.json" ]]; then
+    printf '{\n  "version": 1,\n  "enabled": true\n}\n' >"$WK_HOME_DIR/.workkit/settings.json" || true
+  fi
+
+  # The working files under `.workkit/` are one session's, never the repo's —
+  # the same boundary every participating repo keeps, and the heal writes it
+  # into a repo it is healing. This clone is seeded before any heal sees it.
+  ignore="$WK_HOME_DIR/.gitignore"
+  if [[ -s "$ignore" ]] && [[ -n "$(tail -c 1 "$ignore")" ]]; then printf '\n' >>"$ignore"; fi
+  {
+    printf '\n# The workflow'"'"'s working files — one session'"'"'s, never the repo'"'"'s.\n'
+    printf '%s\n' '.workkit/*'
+    printf '%s\n' '!.workkit/settings.json'
+  } >>"$ignore"
+
+  wk_say_ok "home: seeded the tower project in $WK_HOME_DIR from $WK_TOWER_APP"
+  return 0
+}
+
+# The project's dependencies, so the daily publish has something to build with.
+# Absent tooling is an honest skip: the publish checks for the same binary and
+# says the same thing.
+#
+# Run on BOTH setup paths — the seed and the clone another machine already
+# seeded, which arrives with the project and none of its dependencies. An
+# installed tree is the gate below: the binary already being there means there
+# is nothing to install, so a second setup costs nothing.
+wk_home_install() {
+  if [[ -x "$WK_HOME_DIR/node_modules/.bin/omega" ]]; then
+    wk_say_skip "home: the tower project's dependencies are already installed in $WK_HOME_DIR"
+    return 0
+  fi
+  if ! command -v npm >/dev/null 2>&1; then
+    wk_say_skip "home: npm is not on this machine — the tower project's dependencies are not installed, so nothing publishes from here yet"
+    return 0
+  fi
+  wk_say_info "home: installing the tower project's dependencies in $WK_HOME_DIR"
+  npm --prefix "$WK_HOME_DIR" install >/dev/null 2>&1 || true
+  # The exit status proves nothing (probed 2026-07-28: an install with no omega
+  # checkout to resolve still exits 0 and leaves dangling symlinks), so the
+  # binary itself is the check — the same one publish.sh makes.
+  if [[ -x "$WK_HOME_DIR/node_modules/.bin/omega" ]]; then
+    wk_say_ok "home: the tower project can build here"
+  else
+    wk_say_warn "home: the tower project's build tooling did not install (no node_modules/.bin/omega) — its @omega.js deps resolve by file: link into the omega monorepo, so nothing publishes until that checkout is reachable"
   fi
   return 0
 }
@@ -279,8 +381,18 @@ wk_home_discussions() {
   return 0
 }
 
-# Pages, serving the built dashboard from `docs/` on the default branch — the
-# only subdirectory shape the API accepts (`source.path` is `/` or `/docs`).
+# Pages, serving the built dashboard from the ROOT of the `gh-pages` branch.
+#
+# The API's `source.path` takes exactly two values, `/` and `/docs` (probed
+# against the live schema 2026-07-28, `"enum":["/","/docs"]`) — and a branch
+# that carries nothing but the build has no reason to bury it in a folder, so
+# the path is `/` and the branch carries the whole answer.
+#
+# The branch need not exist yet: Pages accepts a source pointing at one that
+# does not, and simply serves nothing until the first publish pushes it. That
+# order is what keeps setup out of the branch-creating business (issue #71) —
+# the publish makes the branch, because pushing output is its job.
+#
 # A refusal is the ordinary case on a plan without private Pages: it warns with
 # the fix and setup carries on.
 wk_home_pages() {
@@ -292,18 +404,18 @@ wk_home_pages() {
     return 0
   fi
   out="$(gh api -X POST "repos/$slug/pages" \
-    -f 'source[branch]=main' -f 'source[path]=/docs' 2>&1)" || {
+    -f "source[branch]=$WK_HOME_PAGES_BRANCH" -f 'source[path]=/' 2>&1)" || {
     wk_say_warn "home: could not enable GitHub Pages on $slug — a private repo needs a paid plan for Pages; make the repo public or enable it at https://github.com/$slug/settings/pages"
     return 0
   }
-  wk_say_ok "home: GitHub Pages serves $slug from main /docs"
+  wk_say_ok "home: GitHub Pages serves $slug from $WK_HOME_PAGES_BRANCH /"
   return 0
 }
 
 # The whole home half of the wizard, in the Spec's order. Every step is
 # idempotent and every failure warns and continues — setup never dies mid-way —
-# with one exception: a folder pointing at someone else's remote stops the rest,
-# because every step after it would write into that repo.
+# with one exception: something already sitting at the clone's path stops the
+# rest, because every step after it would write into whatever that is.
 wk_home_setup() {
   local login slug rc=0
 
@@ -338,55 +450,30 @@ wk_home_setup() {
   esac
 
   rc=0
-  wk_home_convert "$slug" || rc=$?
-  # 3 is the foreign remote, 1 is a conversion that could not finish. Neither
+  wk_home_clone "$slug" || rc=$?
+  # 3 is something else at the path, 1 is a clone that could not finish. Neither
   # leaves anything the steps below could safely write to.
   [[ "$rc" -eq 0 ]] || return 0
 
-  wk_home_write_files || return 0
   wk_home_set_slug "$slug" >/dev/null 2>&1 || true
+
+  # An empty clone is a repo GitHub just made, and the only state the seed may
+  # write into. A clone that already carries the project came from another
+  # machine and is left exactly as it is.
+  if wk_home_empty; then
+    wk_home_seed || return 0
+    wk_home_install
+    wk_home_discussions "$slug"
+    wk_home_pages "$slug"
+    wk_home_commit_push 'chore(home): seed the tower project' || true
+    return 0
+  fi
+
+  wk_say_skip "home: the tower project is already in $WK_HOME_DIR"
+  # The second machine's path: the project travelled, its dependencies did not.
+  wk_home_install
   wk_home_discussions "$slug"
   wk_home_pages "$slug"
-  wk_home_commit_push 'chore(home): the schema files' || true
-  return 0
-}
-
-# ── The project list ──────────────────────────────────────────────────────────
-
-# One repo's slug in workkit.json's `projects`, added on enable or heal and
-# removed when the repo says `enabled: false`. SLUGS, never paths: the file
-# travels between machines and a path does not (the machine-local roster in
-# settings.json keeps those).
-#
-# Writes nothing anywhere but the home clone's workkit.json, and nothing at all
-# when the value is already what it should be — a heal that changed nothing
-# leaves the file untouched, so the daily publish has nothing to commit.
-#
-# The CALLER holds the settings mutex: this is a read-modify-write like the
-# roster's, and the two run in the same heal.
-wk_home_upsert_project() {
-  local slug="$1" name="$2" current
-  wk_home_ready || return 0
-  [[ -f "$WK_HOME_CONFIG" ]] || return 0
-  [[ -n "$slug" ]] || return 0
-
-  current="$(jq -r --arg s "$slug" '.projects[$s].name // empty' "$WK_HOME_CONFIG" 2>/dev/null || true)"
-  [[ "$current" == "$name" ]] && return 0
-
-  wk_json_edit "$WK_HOME_CONFIG" --arg s "$slug" --arg n "$name" \
-    '.projects = ((.projects // {}) + { ($s): { name: $n } })' >/dev/null 2>&1 || true
-  return 0
-}
-
-wk_home_remove_project() {
-  local slug="$1"
-  wk_home_ready || return 0
-  [[ -f "$WK_HOME_CONFIG" ]] || return 0
-  [[ -n "$slug" ]] || return 0
-
-  jq -e --arg s "$slug" '(.projects // {}) | has($s)' "$WK_HOME_CONFIG" >/dev/null 2>&1 || return 0
-  wk_json_edit "$WK_HOME_CONFIG" --arg s "$slug" \
-    '.projects = ((.projects // {}) | del(.[$s]))' >/dev/null 2>&1 || true
   return 0
 }
 
@@ -401,13 +488,19 @@ wk_home_doctor() {
   state="$(wk_home_state)"
   case "$state" in
     unset)
-      wk_say_info "home: not set — \`workkit setup\` creates the private home repo and makes $WK_HOME_DIR its clone"
+      wk_say_info "home: not set — \`workkit setup\` creates the private home repo and clones it into $WK_HOME_DIR"
       return 0 ;;
-    nogit)
-      wk_say_warn "home: $slug is configured but $WK_HOME_DIR is not a clone of it — run \`workkit setup\` to convert the folder in place"
+    absent)
+      wk_say_warn "home: $slug is configured but nothing is cloned at $WK_HOME_DIR — run \`workkit setup\` to clone and seed it"
       return 1 ;;
-    foreign)
-      wk_say_warn "home: $WK_HOME_DIR is a git repo pointing at $(wk_home_clone_slug), not $slug — move it aside, then run \`workkit setup\`"
+    other)
+      local sitting
+      sitting="$(wk_home_clone_slug)"
+      if [[ -n "$sitting" ]]; then
+        wk_say_warn "home: $WK_HOME_DIR is a git repo pointing at $sitting, not $slug — move it aside, then run \`workkit setup\`"
+      else
+        wk_say_warn "home: $WK_HOME_DIR exists and is not a clone of $slug — move it aside, then run \`workkit setup\`"
+      fi
       return 1 ;;
   esac
 

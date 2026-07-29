@@ -9,21 +9,31 @@
 # on `set -e` would change the behavior of the script that sourced it.
 
 # ── The addresses ─────────────────────────────────────────────────────────────
-# The user's workflow folder, which issue #27 turns into a clone of the home
-# repo. WORKFLOW_HOME is the same override the rest of the engine honors — the
-# suite points it at a fixture, so nothing here ever reaches the real one.
-WK_HOME_DIR="${WORKFLOW_HOME:-${HOME:-}/.workkit}"
-# Machine-local: paths, declines, the roster, the home slug, the id cache. Named
-# settings.json still (issue #27 Spec, deviation 2) and gitignored in the clone.
-WK_HOME_SETTINGS="$WK_HOME_DIR/settings.json"
-# Committed: the opted-in project slugs, the site settings, the preferences.
-WK_HOME_CONFIG="$WK_HOME_DIR/workkit.json"
-# The built site the home repo publishes, and the folder Pages serves. `docs/`
-# rather than `site/`: the Pages API's `source.path` takes exactly two values,
-# `/` and `/docs` (probed against the live schema 2026-07-28, `"enum":["/",
-# "/docs"]`), so a subdirectory named anything else cannot be served from the
-# branch at all.
-WK_HOME_SITE="$WK_HOME_DIR/docs"
+# The user's workflow folder — a PLAIN folder and never a git repo (issue #77).
+# It holds this machine's own state and nothing versioned: the roster, the
+# declines, the home slug, the id cache, and the job state under jobs/.
+# WORKFLOW_HOME is the same override the rest of the engine honors — the suite
+# points it at a fixture, so nothing here ever reaches the real one.
+WK_USER_DIR="${WORKFLOW_HOME:-${HOME:-}/.workkit}"
+# Machine-local: paths, declines, the roster, the home slug, the id cache.
+WK_HOME_SETTINGS="$WK_USER_DIR/settings.json"
+
+# The ONE git repo in the global layer: the clone of `<login>/workkit`, seeded
+# from this checkout's tower/app and shaped like every other omega site project.
+# Everything versioned lives inside it, so the folder above stays a plain one.
+WK_HOME_DIR="$WK_USER_DIR/tower"
+# The site options, committed inside the project the way every omega project
+# carries its config: `site.url` and `site.board`.
+WK_HOME_CONFIG="$WK_HOME_DIR/config/workkit.json"
+# The one app in the brand root, and the build output it leaves. Proved against
+# the real tower/app 2026-07-29: `omega build` is a command of @omega.js/web and
+# resolves only inside the APP (at the brand root the `omega` bin dispatches to
+# @omega.js/manager, which has no build), and it writes `dist/` beside src/.
+WK_HOME_APP="$WK_HOME_DIR/apps/web"
+WK_HOME_DIST="$WK_HOME_APP/dist"
+# The user-level captures: the tower repo participates in the pipeline like any
+# other repo, so they land in its own gitignored working folder.
+WK_HOME_INBOX="$WK_HOME_DIR/.workkit/inbox.md"
 
 # ── Voice ─────────────────────────────────────────────────────────────────────
 # Each caller already has one — workkit.sh's say_* on stdout, standards.sh's

@@ -12,19 +12,17 @@ Label vocabulary (SSOT: `~/.claude/workkit/labels.json`, and every repo's own `g
 
 ## Marker (opens the inbox)
 
-Before reading anything, record that triage is running — the `safety/inbox-guard` hook checks this marker before allowing a read of `.workkit/inbox.md`, which is the owner's scratchpad at every other moment. The marker is keyed to the repo root, or to `$HOME` outside a repo, which is the user-level inbox's home:
+Before reading anything, record that triage is running — the `safety/inbox-guard` hook checks this marker before allowing a read of `.workkit/inbox.md`, which is the owner's scratchpad at every other moment. The marker is keyed to the repo root the inbox belongs to:
 
 ```sh
 mkdir -p "${TMPDIR:-/tmp}/claude-triage-marker" && touch "${TMPDIR:-/tmp}/claude-triage-marker/$({ git rev-parse --show-toplevel 2>/dev/null || echo "$HOME"; } | tr -d '\n' | shasum | cut -d' ' -f1)"
 ```
 
-Draining the user-level `~/.workkit/inbox.md` from inside a repo needs the `$HOME`-keyed marker too — run the same line with `cd "$HOME"` first (or `git rev-parse` replaced by `echo "$HOME"`).
-
 ## Sources to drain
 
 1. **Open `status:inbox` issues** on the cwd repo — `gh issue list --state open --label status:inbox --json number,title,body,labels`.
 2. **`.workkit/inbox.md`** — the local, gitignored capture file (offline moments, free-form dumps).
-3. **`~/.workkit/inbox.md`** — the user-level inbox the capture CLI (`wk.sh note`) writes outside a participating repo; drained the same way, each entry routed to the repo it belongs to.
+3. **The tower clone's `.workkit/inbox.md`** (`~/.workkit/tower/.workkit/inbox.md`) — where the capture CLI (`wk.sh note`) writes outside every participating repo; it is a repo like any other, so the same marker line run from that root opens it. Drained the same way, each entry routed to the repo it belongs to.
 4. **Mid-chat note dumps** — same routing, no file needed first.
 
 Split every source into discrete entries. A wall of mixed notes fans out to MANY destinations — never route a mixed dump as one blob.

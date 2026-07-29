@@ -21,10 +21,18 @@ const mkTmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wk-')
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
 // A temp tree holding a participating repo, a nested subdirectory, an outside
-// directory, and the home the fallback writes to.
-const makeTree = ({ settings = '{ "version": 1, "enabled": true }\n' } = {}) => {
+// directory, and the home the tower clone sits under. `tower: false` is the
+// machine that has never run `workkit setup` — the one case with nowhere at all
+// to put a note (issue #77); `tower: 'foreign'` is somebody else's repo sitting
+// at that path, which is never written into.
+//
+// The clone is a REAL git repo with the home repo's origin, because which
+// folder counts as the home is the engine's own `wk_home_ready` question — a
+// bare `.git` directory is not the answer.
+const makeTree = ({ settings = '{ "version": 1, "enabled": true }\n', tower = true } = {}) => {
   const dir = mkTmp();
   const repo = path.join(dir, 'repo');
+  const towerDir = path.join(dir, 'home', W, 'tower');
   fs.mkdirSync(path.join(repo, 'sub', 'deep'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'outside'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'home'), { recursive: true });
@@ -32,14 +40,30 @@ const makeTree = ({ settings = '{ "version": 1, "enabled": true }\n' } = {}) => 
     fs.mkdirSync(path.join(repo, W), { recursive: true });
     fs.writeFileSync(path.join(repo, W, 'settings.json'), settings);
   }
+  fs.mkdirSync(path.join(dir, 'home', W), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'home', W, 'settings.json'),
+    `${JSON.stringify({ version: 1, repos: {}, home: 'owner/workkit' }, null, 2)}\n`,
+  );
+  if (tower) {
+    const origin = tower === 'foreign'
+      ? 'https://github.com/someone/else.git'
+      : 'https://github.com/owner/workkit.git';
+    fs.mkdirSync(towerDir, { recursive: true });
+    spawnSync('git', ['init', '-q', '-b', 'main', towerDir], { encoding: 'utf8' });
+    spawnSync('git', ['-C', towerDir, 'remote', 'add', 'origin', origin], { encoding: 'utf8' });
+    fs.mkdirSync(path.join(towerDir, W), { recursive: true });
+    fs.writeFileSync(path.join(towerDir, W, 'settings.json'), '{ "version": 1, "enabled": true }\n');
+  }
   return {
     dir,
     repo,
     deep: path.join(repo, 'sub', 'deep'),
     outside: path.join(dir, 'outside'),
     home: path.join(dir, 'home'),
+    tower: towerDir,
     repoInbox: path.join(repo, W, 'inbox.md'),
-    userInbox: path.join(dir, 'home', W, 'inbox.md'),
+    towerInbox: path.join(towerDir, W, 'inbox.md'),
   };
 };
 
@@ -64,7 +88,7 @@ const run = async () => {
     assertEq(code, 0, 'exit 0');
     assert(out.includes(t.repoInbox), `names where it filed, got: ${out}`);
     assert(read(t.repoInbox).endsWith('- a repo thought\n'), 'the bullet is there');
-    assert(!fs.existsSync(t.userInbox), 'and the user inbox was not touched');
+    assert(!fs.existsSync(t.towerInbox), 'and the tower repo’s inbox was not touched');
     cleanup(t.dir);
   });
 
@@ -76,20 +100,43 @@ const run = async () => {
     cleanup(t.dir);
   });
 
-  await test('a non-participating cwd falls back to the user inbox', async () => {
+  await test('a non-participating cwd falls back to the tower repo’s inbox', async () => {
+    // There is no user-level inbox any more: a capture that belongs to no
+    // project belongs to the repo whose issues are the cross-project home.
     const t = makeTree();
     assertEq(runScript(t.outside, ['note', 'a stray thought'], { home: t.home }).code, 0, 'exit 0');
-    assert(read(t.userInbox).includes('- a stray thought\n'), 'filed under HOME');
+    assert(read(t.towerInbox).includes('- a stray thought\n'), 'filed in the tower repo');
+    assert(!fs.existsSync(path.join(t.home, W, 'inbox.md')), 'and nothing is written at the user level');
     assert(!fs.existsSync(t.repoInbox), 'the repo inbox stayed out of it');
     cleanup(t.dir);
   });
 
   await test('a repo whose settings say enabled:false is not a participating repo', async () => {
-    // The deliberate no. The note still has somewhere to go — the user inbox.
+    // The deliberate no. The note still has somewhere to go — the tower repo.
     const t = makeTree({ settings: '{ "version": 1, "enabled": false }\n' });
     assertEq(runScript(t.deep, ['note', 'declined repo'], { home: t.home }).code, 0, 'exit 0');
-    assert(read(t.userInbox).includes('- declined repo\n'), 'filed under HOME');
+    assert(read(t.towerInbox).includes('- declined repo\n'), 'filed in the tower repo');
     assert(!fs.existsSync(t.repoInbox), 'and never into the repo that said no');
+    cleanup(t.dir);
+  });
+
+  await test('with no tower repo yet, the note is refused rather than written nowhere', async () => {
+    const t = makeTree({ tower: false });
+    const { code, err } = runScript(t.outside, ['note', 'nowhere to go'], { home: t.home });
+    assertEq(code, 1, 'the caller learns the thought was not filed');
+    assert(/workkit setup/.test(err), `and which command makes a home, got: ${err}`);
+    assert(!fs.existsSync(path.join(t.home, W, 'inbox.md')), 'nothing is created at the user level');
+    cleanup(t.dir);
+  });
+
+  await test('a foreign repo sitting at the clone’s path is refused, not written into', async () => {
+    // The engine never adopts what it finds at ~/.workkit/tower. A `.git`
+    // directory is not the test — being the home repo's clone is.
+    const t = makeTree({ tower: 'foreign' });
+    const { code, err } = runScript(t.outside, ['note', 'not yours'], { home: t.home });
+    assertEq(code, 1, 'the caller learns the thought was not filed');
+    assert(/not the home repo/.test(err), `it says whose folder that is not, got: ${err}`);
+    assert(!fs.existsSync(t.towerInbox), 'and nothing was written into somebody else’s repo');
     cleanup(t.dir);
   });
 

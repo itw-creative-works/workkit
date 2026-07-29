@@ -738,76 +738,40 @@ const run = async () => {
     cleanup(home); cleanup(stub.dir);
   });
 
-  // The home repo's half of the same fact: the roster keys a repo by PATH for
-  // this machine, workkit.json keys it by SLUG for every machine (issue #27).
-  // A `~/.workkit` that is a clone of the home repo, made without a network:
-  // the heal only ever reads and writes files in it.
-  const makeHomeClone = () => {
-    const home = mkTmp();
-    spawnSync('git', ['init', '-q'], { cwd: home });
-    spawnSync('git', ['remote', 'add', 'origin', 'https://github.com/owner/workkit.git'], { cwd: home });
-    fs.writeFileSync(path.join(home, 'settings.json'), `${JSON.stringify({ version: 1, repos: {}, home: 'owner/workkit' }, null, 2)}\n`);
-    fs.writeFileSync(path.join(home, 'workkit.json'), `${JSON.stringify({
-      version: 1, projects: {}, site: { url: null }, preferences: {},
-    }, null, 2)}\n`);
-    return home;
-  };
-  const projectsOf = (home) => JSON.parse(fs.readFileSync(path.join(home, 'workkit.json'), 'utf8')).projects;
-
-  await test('a heal writes the repo’s slug into the home repo’s project list', () => {
-    const repo = makeRepo();
-    const home = makeHomeClone();
-    const stub = makeGhStub({ authed: false });
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
-    assertEq(code, 0, 'exit 0');
-    assertEq(projectsOf(home)['ian/repo'].name, path.basename(fs.realpathSync(repo)), 'the slug carries the repo’s name');
-    assert(!/projects/.test(output), `and like the roster, it is silent: ${output}`);
-    cleanup(repo); cleanup(home); cleanup(stub.dir);
-  });
-
-  await test('the heal never commits or pushes what it wrote there', () => {
-    // Repo creation, commits and pushes belong to setup and to the daily
-    // publish. A session-start hook that pushed would be writing to GitHub.
-    const repo = makeRepo();
-    const home = makeHomeClone();
-    const stub = makeGhStub({ authed: false });
-    runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
-    const log = spawnSync('git', ['-C', home, 'log', '--oneline'], { encoding: 'utf8' });
-    assert(!log.stdout.trim(), `no commit was made: ${log.stdout}`);
-    const status = spawnSync('git', ['-C', home, 'status', '--short'], { encoding: 'utf8' }).stdout;
-    assert(/workkit\.json/.test(status), `the change is left for the publish to commit: ${status}`);
-    cleanup(repo); cleanup(home); cleanup(stub.dir);
-  });
-
-  await test('a repo that turned itself off leaves the project list too', () => {
-    const repo = makeRepo();
-    const off = makeRepo({ settings: '{ "version": 1, "enabled": false }\n' });
-    const home = makeHomeClone();
-    fs.writeFileSync(path.join(home, 'settings.json'), `${JSON.stringify({
-      version: 1, repos: { [fs.realpathSync(off)]: 'enabled' }, home: 'owner/workkit',
-    }, null, 2)}\n`);
-    fs.writeFileSync(path.join(home, 'workkit.json'), `${JSON.stringify({
-      version: 1, projects: { 'ian/repo': { name: 'gone-quiet' }, 'other/kept': { name: 'kept' } }, site: { url: null }, preferences: {},
-    }, null, 2)}\n`);
-
-    const stub = makeGhStub({ authed: false });
-    runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
-    const projects = projectsOf(home);
-    assertEq(projects['other/kept'].name, 'kept', 'a slug this machine has no repo for stays — slugs are portable, paths are not');
-    // Both repos carry the same fixture remote, so the healed repo re-adds the
-    // slug the disabled one lost: what the assertion proves is the removal ran
-    // and left the rest of the list alone.
-    assertEq(Object.keys(projects).sort().join(','), 'ian/repo,other/kept', 'and nothing else was disturbed');
-    cleanup(repo); cleanup(off); cleanup(home); cleanup(stub.dir);
-  });
-
-  await test('a ~/.workkit that is not a home clone gets no project list', () => {
+  // The global layer's half of the same fact used to be a committed project
+  // list in the home repo. Issue #77 retired it: the dashboard's board data is
+  // baked from this machine's roster at publish time and never committed as
+  // source, so the heal owes the global layer nothing but the roster above.
+  await test('the heal writes nothing into the global layer but the roster', () => {
     const repo = makeRepo();
     const home = mkTmp();
     const stub = makeGhStub({ authed: false });
     const { code } = runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
-    assertEq(code, 0, 'the heal is unbothered');
-    assert(!fs.existsSync(path.join(home, 'workkit.json')), 'nothing is created to hold a project list');
+    assertEq(code, 0, 'exit 0');
+
+    const left = fs.readdirSync(home).sort();
+    assertEq(left.join(','), 'settings.json', `only the machine state: ${left.join(', ')}`);
+    assertEq(rosterOf(home)[fs.realpathSync(repo)], 'enabled', 'and the roster is the thing it wrote');
+    cleanup(repo); cleanup(home); cleanup(stub.dir);
+  });
+
+  await test('a ~/.workkit holding a tower clone is not touched by the heal', () => {
+    // The tower repo is a repo like any other: it is healed by standing IN it,
+    // never by a heal of some other repo reaching across into it.
+    const repo = makeRepo();
+    const home = mkTmp();
+    const tower = path.join(home, 'tower');
+    fs.mkdirSync(tower, { recursive: true });
+    spawnSync('git', ['init', '-q'], { cwd: tower });
+    spawnSync('git', ['remote', 'add', 'origin', 'https://github.com/owner/workkit.git'], { cwd: tower });
+    fs.writeFileSync(path.join(home, 'settings.json'), `${JSON.stringify({ version: 1, repos: {}, home: 'owner/workkit' }, null, 2)}\n`);
+
+    const stub = makeGhStub({ authed: false });
+    runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
+    const status = spawnSync('git', ['-C', tower, 'status', '--short'], { encoding: 'utf8' }).stdout;
+    assertEq(status.trim(), '', `nothing was written into the clone: ${status}`);
+    const log = spawnSync('git', ['-C', tower, 'log', '--oneline'], { encoding: 'utf8' });
+    assert(!log.stdout.trim(), `and nothing was committed there: ${log.stdout}`);
     cleanup(repo); cleanup(home); cleanup(stub.dir);
   });
 

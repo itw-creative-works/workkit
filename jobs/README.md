@@ -1,6 +1,6 @@
 # The jobs
 
-Scheduled work the kit runs on this machine. **One job, at 9am, in three steps.** The **summaries step** goes first: it writes the day that just ended up and publishes it as a Discussion on the home repo. Then the **brief** reads the same payload the tower's Brief page draws and hands it to Claude for a plain-language digest, arriving as a desktop notification. Last, the **publish** rebuilds the dashboard and pushes it to the home repo — after the brief has already been sent, so nothing about a build can delay nine o'clock.
+Scheduled work the kit runs on this machine. **One job, at 9am, in three steps.** The **summaries step** goes first: it writes the day that just ended up and publishes it as a Discussion on the home repo. Then the **brief** reads the same payload the tower's Brief page draws and hands it to Claude for a plain-language digest, arriving as a desktop notification. Last, the **publish** rebuilds the tower project in `~/.workkit/tower` and pushes the site to the home repo's `gh-pages` branch — after the brief has already been sent, so nothing about a build can delay nine o'clock.
 
 That order is the whole reason there is one cron and not two: the morning is meant to read a record that already includes the day behind it. The window is a rolling 24 hours either way, so the reflection covers the same span — only its phase moves.
 
@@ -61,7 +61,7 @@ Where it counted from is one file the module owns, `~/.workkit/jobs/cc-news.json
 
 ## The summaries step
 
-`claude-nightly.sh` writes the day that just ended up and PUBLISHES it: a Discussion on the home repo named in `~/.workkit/settings.json`, never a file (owner ruling, 2026-07-28: generated records are never files — not on a machine, not in a repo). The daily summary goes in the `Daily` category, a weekly rollup on a Sunday, a monthly on the 1st, each titled `<cadence>: <date>`.
+`claude-nightly.sh` writes the day that just ended up and PUBLISHES it: a Discussion on the home repo named in `~/.workkit/settings.json` — over the API, so a machine with no clone still publishes — never a file (owner ruling, 2026-07-28: generated records are never files — not on a machine, not in a repo). The daily summary goes in the `Daily` category, a weekly rollup on a Sunday, a monthly on the 1st, each titled `<cadence>: <date>`.
 
 A rollup's inputs are the summaries ALREADY PUBLISHED, read back through the API — never the transcripts again, which the days already read. `workflow/discussions.sh` is the one place that speaks that API: it resolves the repository and category node ids, caches them in the machine-local settings (refreshed on a miss), posts, and lists.
 
@@ -77,7 +77,7 @@ Every reason not to publish is one timestamped block in `~/Library/Logs/claude-n
 
 ## The publish step
 
-After the brief is sent, `claude-daily.sh` runs `workflow/publish.sh --quiet`: the dashboard is rebuilt from this checkout and pushed to the home repo, where GitHub Pages serves it. It runs LAST and only for the brief (a `claude-daily.sh <message>` run publishes nothing), it is bounded by the same 15-minute `timeout`, and its every reason not to publish — no home repo, no build tooling, nothing changed — is a silent skip. A failure is logged as `[publish exit N — the brief was already sent]` and changes nothing about the morning. The mechanics are the engine's: `workflow/README.md` § Publishing the dashboard.
+After the brief is sent, `claude-daily.sh` runs `workflow/publish.sh --quiet`: the tower project in `~/.workkit/tower` is rebuilt and its output pushed to the home repo's `gh-pages` branch, where GitHub Pages serves it. It runs LAST and only for the brief (a `claude-daily.sh <message>` run publishes nothing), it is bounded by the same 15-minute `timeout`, and its every reason not to publish — no home repo, no build tooling, a diverged clone, nothing changed — is a silent skip. A failure is logged as `[publish exit N — the brief was already sent]` and changes nothing about the morning. The mechanics are the engine's: `workflow/README.md` § Publishing the dashboard.
 
 ## Tests
 

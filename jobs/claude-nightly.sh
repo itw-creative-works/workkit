@@ -62,7 +62,9 @@ note() {
 }
 
 # The engine's home-repo libraries. A checkout missing them has no way to reach
-# the destination, which reads exactly like having no destination.
+# the destination, which reads exactly like having no destination. The
+# destination is the REPO, never the clone: a summary is a Discussion, posted
+# over the API, so a machine whose ~/.workkit/tower is missing still publishes.
 if [[ -f "$ENGINE_DIR/lib.sh" && -f "$ENGINE_DIR/discussions.sh" && -f "$ENGINE_DIR/home.sh" ]]; then
   # shellcheck source=../workflow/lib.sh
   . "$ENGINE_DIR/lib.sh"

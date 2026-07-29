@@ -35,11 +35,6 @@
 #                  the machine-local index the tower reads instead of walking a
 #                  filesystem root, and drop any listed path that is gone or has
 #                  since said `enabled: false`. Silent; `workkit doctor` counts it.
-#   6b. projects — the same membership told to every machine instead of this
-#                  one: the repo's SLUG in the home clone's workkit.json, and
-#                  the removal of any slug that has since said `enabled: false`.
-#                  Only where a home clone exists; never creates and never
-#                  pushes — the daily publish commits what this writes.
 #   7. hooks     — assert the hook layer beside this engine is alive: every hook
 #                  wired in hooks.json resolves to a script that exists, is
 #                  executable, and parses, and the tools they call are present.
@@ -70,20 +65,16 @@ TEMPLATES_DIR="$SCRIPT_DIR/templates"
 FORMS_DIR="$TEMPLATES_DIR/issue-forms"
 CHANGELOG_LINTER="$SCRIPT_DIR/changelog.js"
 
-# The home repo's library, for the one thing the heal owes it: the opted-in
-# repo's SLUG in workkit.json's project list. Sourced when it is there and
-# skipped when it is not — a checkout without it still heals every repo it can,
-# and nothing here creates a home (issue #71's doctrine: only `workkit setup`
-# creates). Sourcing runs nothing.
-HOME_LIBS=1
-for _lib in lib.sh discussions.sh home.sh; do
-  if [[ -f "$SCRIPT_DIR/$_lib" ]]; then
-    # shellcheck source=/dev/null
-    . "$SCRIPT_DIR/$_lib"
-  else
-    HOME_LIBS=0
-  fi
-done
+# The engine's shared helpers, for the one thing the heal borrows: the settings
+# mutex every writer of the user file takes. The heal owes the global layer
+# nothing else — the roster is machine-local and the tower repo is a repo like
+# any other, healed by standing in it. Sourced when it is there and skipped when
+# it is not, so a checkout without it still heals every repo it can. Sourcing
+# runs nothing.
+if [[ -f "$SCRIPT_DIR/lib.sh" ]]; then
+  # shellcheck source=./lib.sh
+  . "$SCRIPT_DIR/lib.sh"
+fi
 
 # The hook layer that ships beside this engine. The engine runs fine without it
 # (it is installed alone wherever someone scripts the standard directly), so the
@@ -391,45 +382,6 @@ record_decline() {
 #
 # Best effort throughout — no jq, no settings file, or a settings file nobody
 # can parse each leave the roster as it is. The heal never fails over its index.
-# The slugs register_in_roster found had said `enabled: false`, for the sibling
-# below to drop from the home repo's project list. A global because the two run
-# in one heal and the prune loop is the only place that learns them.
-home_stale_slugs=''
-
-# The home repo's half of the roster: this repo's SLUG in workkit.json's
-# `projects`, and the removal of any slug whose repo has since said no.
-#
-# The roster (settings.json) and the project list (workkit.json) are the two
-# halves of the same fact told to two audiences — paths for this machine, slugs
-# for every machine — which is why this runs beside register_in_roster and under
-# the same mutex.
-#
-# It never creates, clones or pushes: a machine with no home clone does nothing
-# at all here, and the commit of what it writes belongs to the daily publish. A
-# heal that pushed would put the hook path in the business of writing to GitHub.
-register_home_project() {
-  local slug name locked=0 stale
-
-  [[ "$HOME_LIBS" -eq 1 ]] || return 0
-  command -v jq >/dev/null 2>&1 || return 0
-  wk_home_ready || return 0
-
-  slug="$(wk_repo_slug "$root")"
-  name="$(basename "$root")"
-
-  if wk_take_settings_lock; then locked=1; fi
-  # Removals FIRST: the repo being healed is the authority on its own slug, and
-  # two checkouts of one repo (or two paths for it) would otherwise let a stale
-  # entry delete the registration this run just made.
-  while IFS= read -r stale; do
-    [[ -n "$stale" ]] || continue
-    wk_home_remove_project "$stale"
-  done <<<"$home_stale_slugs"
-  [[ -n "$slug" ]] && wk_home_upsert_project "$slug" "$name"
-  if [ "$locked" -eq 1 ]; then wk_drop_settings_lock; fi
-  return 0
-}
-
 register_in_roster() {
   local keys key stale='' stale_json flag locked=0
 
@@ -463,12 +415,6 @@ register_in_roster() {
     flag="$(jq -r 'if has("enabled") then (.enabled | tostring) else "absent" end' "$key/$REPO_SETTINGS" 2>/dev/null || true)"
     if [[ "$flag" == "false" ]]; then
       stale="$stale$key"$'\n'
-      # A repo that said no is off the home repo's project list too. A path that
-      # simply went away is NOT: slugs are portable truth and paths are not, so
-      # another machine's copy of that repo keeps its place (issue #27 Spec).
-      if [[ "$HOME_LIBS" -eq 1 ]]; then
-        home_stale_slugs="$home_stale_slugs$(wk_repo_slug "$key")"$'\n'
-      fi
     fi
   done <<<"$keys"
 
@@ -1163,7 +1109,6 @@ esac
 
 log_info "standards: $root"
 register_in_roster
-register_home_project
 ensure_workflow_ignored
 ensure_gitignore_basics
 ensure_local_file inbox.md

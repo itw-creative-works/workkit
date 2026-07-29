@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#77](../../issues/77) — `~/.workkit` is a plain folder again, and the one git repo in the global layer is `~/.workkit/tower` — the home repo, seeded from this kit's `tower/app` as a real site project. Its `config/workkit.json` holds the site options, its inbox takes user-level captures, and the dashboard publishes to `gh-pages`.
+
 ## [0.11.0] - 2026-07-28
 
 ### Changed

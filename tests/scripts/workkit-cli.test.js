@@ -534,7 +534,8 @@ const run = async () => {
     fs.writeFileSync(settings, JSON.stringify(parsed, null, 2));
     const named = runCli(world, ['doctor'], { cwd: repo }).out;
     assert(/home: owner\/private-home/.test(named), `it reports the home repo once it is named, got: ${named}`);
-    assert(/is not a clone of it/.test(named), `and that the folder is not its clone yet, got: ${named}`);
+    assert(/nothing is cloned at/.test(named), `and that the tower is not cloned yet, got: ${named}`);
+    assert(/tower/.test(named), 'naming the path setup would clone it into');
     cleanup(world.root); cleanup(repo);
   });
 

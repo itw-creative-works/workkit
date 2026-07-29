@@ -8,8 +8,9 @@
 // beside the built pages. Same libs as the tower and the morning brief, so the
 // three cannot tell different stories about the same issues.
 //
-// It is written only when the home repo's workkit.json says `site.board: true`
-// — publish.sh holds that gate. Pages is public even on a private repo, so
+// It is written only when the tower project's config/workkit.json says
+// `site.board: true` — publish.sh holds that gate. Pages is public even on a
+// private repo, so
 // baking every issue title of every repo into the site is the owner's call, and
 // the default is off.
 //

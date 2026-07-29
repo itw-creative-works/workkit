@@ -73,9 +73,10 @@ ENGINE_LINK="$CLAUDE_HOME/workkit"
 # `home` repo both live here. Read by `doctor`, written only by the engine.
 USER_SETTINGS="${WORKFLOW_HOME:-${HOME:-}/.workkit}/settings.json"
 
-# The home repo's lifecycle — creating it, converting ~/.workkit into its clone,
-# Discussions, Pages, the project list, the doctor lines. Sourced rather than
-# shelled out to, so its steps speak in this command's own voice (lib.sh's
+# The home repo's lifecycle — creating it, cloning it into ~/.workkit/tower,
+# seeding the tower project, Discussions, Pages, the doctor lines. Sourced
+# rather than shelled out to, so its steps speak in this command's own voice
+# (lib.sh's
 # wk_say_* delegate to the say_* below). Each file is a library: sourcing them
 # runs nothing.
 #
@@ -372,10 +373,10 @@ report_globals() {
 
 }
 
-# The home repo half of setup: the private repo, the folder that becomes its
-# clone, its two schema files, Discussions and Pages. A machine without the
-# libraries (an incomplete checkout) is told which command to run once it has
-# them, rather than silently getting no home.
+# The home repo half of setup: the private repo, the clone at ~/.workkit/tower,
+# the tower project seeded into it, its dependencies, Discussions and Pages. A
+# machine without the libraries (an incomplete checkout) is told which command
+# to run once it has them, rather than silently getting no home.
 home_steps() {
   if [[ "$HOME_LIBS" -ne 1 ]]; then
     say_warn "home: the home-repo library is missing beside $SCRIPT_DIR — this checkout is incomplete"

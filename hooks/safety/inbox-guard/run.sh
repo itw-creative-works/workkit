@@ -8,8 +8,9 @@
 # The sanctioned path leaves a marker: the workkit:triage skill touches
 # ${TMPDIR:-/tmp}/claude-triage-marker/<sha of the anchor> before it reads
 # anything, the same recipe the workkit:review skill uses for the commit gate.
-# The ANCHOR is the inbox's repo root, or — outside a repo, which is where the
-# user-level ~/.workkit/inbox.md lives — the .workkit directory's own parent.
+# The ANCHOR is the inbox's repo root — including the tower clone's, where the
+# captures made outside every project land — or, for an inbox in no repo at
+# all, the .workkit directory's own parent.
 # A marker newer than 30 minutes means a triage run is under way and every read
 # is allowed; a missing or older one blocks.
 #
@@ -124,11 +125,12 @@ if [ "${grep_dir_probe:-0}" = 1 ] && [ ! -f "$inbox_path" ]; then
   exit 0
 fi
 
-# What the marker is keyed to: the inbox's own repo root, or — outside a repo —
-# the .workkit directory's own parent, which for ~/.workkit/inbox.md is $HOME.
-# The user-level inbox lives there, and $HOME is not a git repo, so without the
-# fallback that inbox would be read with no marker check at all. The triage
-# skill's recipe falls back the same way, so both sides name the same file.
+# What the marker is keyed to: the inbox's own repo root — the tower clone's
+# included, since the captures that belong to no project land in a repo like
+# any other — or, for an inbox in no repo at all, the .workkit directory's own
+# parent. Without that fallback such an inbox would be read with no marker
+# check at all. The triage skill's recipe falls back the same way, so both
+# sides name the same file.
 inbox_parent="$(dirname "$(dirname "$inbox_path")")"
 probe="$(dirname "$inbox_path")"
 if [ ! -d "$probe" ]; then
