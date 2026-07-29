@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-07-29
+
 ### Changed
 
-- [#80](../../issues/80) — The machine's `~/.workkit` splits by who writes each file: `settings.json` is hand-edited and holds one nested `site` key (`repo`, the new all-or-nothing `publish` switch, `url`), `.repos.json` carries the roster and the declines, and `.cache.json` carries the GitHub node ids and the upstream-news cursor.
+- [#80](../../issues/80) [`737c8c4`](../../commit/737c8c4) Thanks [@ianwieds]! — The machine's `~/.workkit` splits by who writes each file: `settings.json` is hand-edited and holds one nested `site` key (`repo`, the new all-or-nothing `publish` switch, `url`), `.repos.json` carries the roster and the declines, and `.cache.json` carries the GitHub node ids and the upstream-news cursor.
 
 ## [0.13.1] - 2026-07-29
 
