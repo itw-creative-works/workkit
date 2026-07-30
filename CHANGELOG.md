@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#85](../../issues/85) — `workkit setup` publishes the dashboard before it exits whenever the switch ends on, freshly answered or already true, and a fresh yes is asked one follow-up for the custom domain, so the first site carries its CNAME.
+
 ## [0.16.0] - 2026-07-29
 
 ### Changed

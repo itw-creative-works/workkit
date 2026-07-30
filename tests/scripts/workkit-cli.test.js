@@ -138,14 +138,20 @@ const seedSettings = (world, site) => {
  * uses for the engine's libraries. Sourcing the script with `help` loads every
  * function and prints the map, which is thrown away.
  */
-const inCli = (world, script) => {
+const inCli = (world, script, { input = '' } = {}) => {
   const driver = `. ${JSON.stringify(CLI)} help >/dev/null\n${script}`;
   const res = spawnSync('bash', ['-c', driver], {
-    cwd: world.root, env: world.env, input: '', encoding: 'utf8', timeout: 30000,
+    cwd: world.root, env: world.env, input, encoding: 'utf8', timeout: 30000,
   });
   assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
+
+// The one thing a piped test cannot hand a prompt is a terminal. Prepended to
+// an `inCli` script, this answers the CLI's own `interactive` check yes while
+// the answers arrive on stdin — the prompt, the read and the write are all the
+// real thing.
+const AT_TERMINAL = 'interactive() { return 0; }';
 
 /**
  * A partial checkout: this CLI COPIED (never symlinked — the link chain now
@@ -606,6 +612,84 @@ const run = async () => {
     inCli(world, 'set_site_publish false');
     assert(!fs.existsSync(lock), 'a run that took the lock drops it again');
     cleanup(world.root);
+  });
+
+  await test('a fresh yes is asked for the custom domain, and what is typed is written', () => {
+    // The terminal check is the ONE thing a piped test cannot satisfy, so the
+    // question step is called with `interactive` answering yes and the answers
+    // arriving on stdin — everything else is the real function (issue #85).
+    const world = mkWorld();
+    const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
+    const lock = path.join(world.env.WORKFLOW_HOME, '.state.lock');
+
+    const { code, out } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'y\ntower.example.com\n' });
+    assertEq(code, 0, `exit 0, got: ${out}`);
+    assert(/Custom domain for the site\? \[enter for none\]/.test(out), `the follow-up is put, got: ${out}`);
+    const site = JSON.parse(fs.readFileSync(file, 'utf8')).site;
+    assertEq(site.publish, true, 'the yes landed');
+    assertEq(site.url, 'tower.example.com', 'and the domain beside it');
+    assertEq(site.repo, 'owner/workkit', 'the rest of the site options are untouched');
+    assert(!fs.existsSync(lock), 'the domain write gave the state mutex back');
+    cleanup(world.root);
+  });
+
+  await test('an empty domain answer leaves the plain github.io address', () => {
+    // Nothing written means `site.url` stays null, and publish.sh writes no
+    // CNAME — enter IS an answer.
+    const world = mkWorld();
+    const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
+    const { out } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'y\n\n' });
+    const site = JSON.parse(fs.readFileSync(file, 'utf8')).site;
+    assert(/Custom domain for the site\? \[enter for none\]/.test(out), `the follow-up was put, got: ${out}`);
+    assertEq(site.publish, true, 'the yes is still recorded');
+    assertEq(site.url, null, 'and no domain is invented');
+    assert(/publishing is on/.test(out), `the publish answer still speaks, got: ${out}`);
+    cleanup(world.root);
+  });
+
+  await test('a no is never asked about a domain', () => {
+    const world = mkWorld();
+    const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
+    const { out } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'n\ntyped.example.com\n' });
+    assert(!/Custom domain/.test(out), `no follow-up on the no leg, got: ${out}`);
+    assertEq(JSON.parse(fs.readFileSync(file, 'utf8')).site.url, null, 'and nothing was read into the file');
+    cleanup(world.root);
+  });
+
+  await test('an already-answered machine is asked about the domain no more than about the switch', () => {
+    // The domain question rides the FRESH yes only: a machine that said yes
+    // last week changes its domain by hand edit, as it does today.
+    const world = mkWorld();
+    const file = seedSettings(world, { repo: 'owner/workkit', publish: true, url: null });
+    const before = fs.readFileSync(file, 'utf8');
+    const { out } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'sneaky.example.com\n' });
+    assert(!/Custom domain/.test(out), `no question, got: ${out}`);
+    assertEq(fs.readFileSync(file, 'utf8'), before, 'and the owner’s file is exactly as it was');
+    cleanup(world.root);
+  });
+
+  group('workkit setup: the site publish');
+
+  await test('the switch ending on publishes before setup exits', () => {
+    // Already true is an answer, and a piped run is not a reason to hold the
+    // site back — the publish is not a question (issue #85). The engine's own
+    // script names why it stopped, which is how the call is seen from here.
+    const world = mkWorld();
+    seedSettings(world, { repo: 'owner/workkit', publish: true, url: null });
+    const { code, out } = runCli(world, ['setup']);
+    assertEq(code, 0, 'exit 0');
+    assert(/publish: nothing is cloned at/.test(out), `publish.sh ran and named its own skip, got: ${out}`);
+    cleanup(world.root);
+  });
+
+  await test('an off or unanswered switch adds no publish at all', () => {
+    for (const publish of [false, null]) {
+      const world = mkWorld();
+      seedSettings(world, { repo: 'owner/workkit', publish, url: null });
+      const { out } = runCli(world, ['setup']);
+      assert(!/^.*publish: /m.test(out), `${publish} publishes nothing, got: ${out}`);
+      cleanup(world.root);
+    }
   });
 
   group('workkit publish');

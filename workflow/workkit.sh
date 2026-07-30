@@ -365,8 +365,17 @@ offer_repo() {
 # asked again, null (or no key at all) is a machine that has never been asked.
 # Every reader still treats anything but `true` as off, so an unanswered machine
 # publishes nothing while it waits.
+#
+# What the step LEAVES the switch reading, for the caller that acts on it:
+# 'true' when publishing is on — freshly answered yes or already true — 'false'
+# on a fresh no, and empty for every other ending, including every skip.
+# `cmd_setup` publishes on 'true' and adds nothing at all otherwise (issue #85).
+SITE_PUBLISH=''
+
 offer_site_publish() {
   local current
+  # Reset at entry: only THIS run's ending may publish, never a stale value.
+  SITE_PUBLISH=''
 
   # The whole step reads and writes the machine's settings file through the
   # engine's library — the same reader, the same JSON edit, the same mutex every
@@ -402,7 +411,7 @@ offer_site_publish() {
   fi
 
   case "$current" in
-    true)  say_skip "site: publishing is on — edit \`site.publish\` in $WK_HOME_SETTINGS to change it"; return 0 ;;
+    true)  SITE_PUBLISH=true; say_skip "site: publishing is on — edit \`site.publish\` in $WK_HOME_SETTINGS to change it"; return 0 ;;
     false) say_skip "site: publishing is off — edit \`site.publish\` in $WK_HOME_SETTINGS to change it"; return 0 ;;
   esac
 
@@ -419,17 +428,39 @@ offer_site_publish() {
     *) value=false ;;
   esac
   set_site_publish "$value"
+  SITE_PUBLISH="$value"
+
+  # The domain rides the FRESH yes and nothing else: it is the one moment the
+  # answer is free — the site has never been built, so no address is in use yet
+  # — and asking on every later run would nag a machine that already said yes.
+  # An already-answered machine changes its domain by hand edit, as it does
+  # today. Nothing to ask either when a domain is already recorded.
+  if [[ "$value" == 'true' ]] && [[ "$(jq -r '.site.url | tostring' "$WK_HOME_SETTINGS" 2>/dev/null || printf 'null')" == 'null' ]]; then
+    ask_site_url
+  fi
+}
+
+# The custom domain, asked right after the fresh yes. Empty input is an answer
+# too — it means the plain github.io address, so nothing is written, `site.url`
+# stays null and publish.sh writes no CNAME. Whatever is typed is taken at its
+# word: publish.sh already strips a scheme prefix on its way to the CNAME, and
+# the shape of a domain is not this command's to judge.
+ask_site_url() {
+  local answer=""
+
+  printf 'Custom domain for the site? [enter for none] '
+  read -r answer || true
+  [[ -n "$answer" ]] || return 0
+  set_site_url "$answer"
 }
 
 # Record the answer. A whole-file read-modify-write on the file a heal in
 # another session may be writing at the same moment, so it takes the engine's
 # one state mutex exactly as wk_home_set_slug does.
 set_site_publish() {
-  local value="$1" locked=0 rc=0
+  local value="$1" rc=0
 
-  if wk_take_state_lock; then locked=1; fi
-  wk_json_edit "$WK_HOME_SETTINGS" --argjson v "$value" '.site = ((.site // {}) + { publish: $v })' || rc=$?
-  if [[ "$locked" -eq 1 ]]; then wk_drop_state_lock; fi
+  write_site_option publish "$value" || rc=$?
 
   if [[ "$rc" -ne 0 ]]; then
     say_warn "site: the answer could not be written to $WK_HOME_SETTINGS — set \`site.publish\` there by hand"
@@ -441,6 +472,33 @@ set_site_publish() {
     say_ok "site: publishing stays off — set \`site.publish\` to true in $WK_HOME_SETTINGS whenever you want the dashboard live"
   fi
   return 0
+}
+
+# The same write for the domain, in the same voice.
+set_site_url() {
+  local url="$1" rc=0
+
+  write_site_option url "$(printf '%s' "$url" | jq -R .)" || rc=$?
+
+  if [[ "$rc" -ne 0 ]]; then
+    say_warn "site: the domain could not be written to $WK_HOME_SETTINGS — set \`site.url\` there by hand"
+    return 0
+  fi
+  say_ok "site: the site answers at $url — the publish writes the CNAME, and the DNS record is yours to point at GitHub Pages"
+  return 0
+}
+
+# The one guarded write of a site option: the whole-file read-modify-write both
+# answers make, under the engine's one state mutex. `value` is JSON — a bare
+# `true`, or a jq-encoded string.
+write_site_option() {
+  local key="$1" value="$2" locked=0 rc=0
+
+  if wk_take_state_lock; then locked=1; fi
+  wk_json_edit "$WK_HOME_SETTINGS" --arg k "$key" --argjson v "$value" '.site = ((.site // {}) + { ($k): $v })' || rc=$?
+  if [[ "$locked" -eq 1 ]]; then wk_drop_state_lock; fi
+
+  return "$rc"
 }
 
 # The global layer, reported and never written: how many repos this machine has
@@ -496,6 +554,12 @@ cmd_setup() {
   install_cron
   home_steps
   offer_site_publish
+  # The switch ends on, so setup makes it real before it exits — the same call
+  # the human path of `update` already makes, and idempotent the way the rest of
+  # setup is: a re-run republishes (issue #85). Off, unanswered, or a step that
+  # skipped adds no call and says nothing further; publish.sh's own gate stays
+  # the single owner of the refusal.
+  if [[ "$SITE_PUBLISH" == 'true' ]]; then cmd_publish; fi
   tower_pointer
   offer_repo
   say_head "Setup is idempotent — re-run it any time. \`workkit doctor\` reports what is left."
