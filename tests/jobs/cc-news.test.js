@@ -2,9 +2,10 @@
 // Tests for jobs/cc-news.js — the upstream Claude Code entries the morning
 // brief carries, grouped by topic.
 //
-// The fetch is the injected exec seam answering with a fixture CHANGELOG, and
-// the mark file lives in a scratch workflow home, so nothing here reaches the
-// network or touches the real ~/.workkit.
+// BOTH reads are the injected exec seam: `curl` answers with a fixture
+// CHANGELOG, `gh` answers with a fixture board of published briefs. The home
+// repo is named in a scratch workflow home, so nothing here reaches the network
+// or touches the real ~/.workkit.
 //
 
 const fs = require('fs');
@@ -12,7 +13,7 @@ const os = require('os');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR } = require('../lib/harness');
 
-const { collectCcNews, renderCcNews, parseSections, topicOf, compareVersions } =
+const { collectCcNews, renderCcNews, renderVersionMark, parseSections, topicOf, compareVersions } =
   require(path.join(__dirname, '..', '..', 'jobs', 'cc-news.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'cc-news-'));
@@ -38,8 +39,16 @@ const CHANGELOG = `# Changelog
 - Bug fixes and reliability improvements
 `;
 
-/** A world: a scratch workflow home plus an exec seam serving the fixture. */
-const mkWorld = (text = CHANGELOG) => {
+const SLUG = 'owner/private-home';
+
+/**
+ * A world: a scratch workflow home naming a home repo, plus an exec seam that
+ * answers `curl` with the fixture CHANGELOG and `gh` with the fixture board.
+ *
+ * `slug: null` writes no settings file — a machine with no home repo, which is
+ * a board that cannot be read at all.
+ */
+const mkWorld = (text = CHANGELOG, { slug = SLUG } = {}) => {
   const home = mkTmp();
   const world = {
     home,
@@ -47,13 +56,28 @@ const mkWorld = (text = CHANGELOG) => {
     cacheFile: path.join(home, WORKKIT_DIR, '.cache.json'),
     calls: [],
     text,
-    fail: null,
+    fail: null,        // the curl read throws
+    ghFail: null,      // the board read throws
+    ghOut: null,       // raw board stdout, for the answers jq would not parse
+    discussions: [],   // what the home repo carries, newest first
   };
   world.exec = (cmd, args) => {
     world.calls.push([cmd, ...args]);
+    if (cmd === 'gh') {
+      if (world.ghFail) throw world.ghFail;
+      if (world.ghOut !== null) return world.ghOut;
+      return JSON.stringify({ data: { repository: { discussions: { nodes: world.discussions } } } });
+    }
     if (world.fail) throw world.fail;
     return world.text;
   };
+  fs.mkdirSync(world.workflowHome, { recursive: true });
+  if (slug) {
+    fs.writeFileSync(
+      path.join(world.workflowHome, 'settings.json'),
+      JSON.stringify({ version: 1, site: { repo: slug, publish: false, url: null } }),
+    );
+  }
   return world;
 };
 
@@ -63,15 +87,16 @@ const collectIn = (world) => collectCcNews({
   exec: world.exec,
 });
 
-// The cursor is one key in the machine's disposable cache file (issue #80), so
-// seeding and reading it both go through that key rather than the whole file.
-const seed = (world, version, rest = {}) => {
-  fs.mkdirSync(path.dirname(world.cacheFile), { recursive: true });
-  fs.writeFileSync(world.cacheFile, JSON.stringify({ ...rest, ccNews: { version } }));
+// The cursor is a line in the latest published brief (issue #86), so seeding it
+// means putting a brief on the board.
+const board = (world, version) => {
+  world.discussions = [{
+    title: 'brief: 2026-07-29',
+    body: `HEADLINE: yesterday happened.\nIN FLIGHT: nothing.\n\n${renderVersionMark(version)}\n`,
+  }];
 };
 
-const readCache = (world) => JSON.parse(fs.readFileSync(world.cacheFile, 'utf8'));
-const mark = (world) => readCache(world).ccNews.version;
+const ghCalls = (world) => world.calls.filter(([cmd]) => cmd === 'gh');
 
 const run = async () => {
   group('jobs/cc-news: parsing');
@@ -113,11 +138,12 @@ const run = async () => {
     assertEq(topicOf('Fixed multi-line paste collapsing into one line'), 'other', 'paste');
   });
 
-  group('jobs/cc-news: what is newer than the mark');
 
-  await test('every entry above the mark rides, each carrying its version and topic', () => {
+  group('jobs/cc-news: what is newer than the cursor');
+
+  await test('every entry above the cursor rides, each carrying its version and topic', () => {
     const world = mkWorld();
-    seed(world, '2.1.219');
+    board(world, '2.1.219');
     const news = collectIn(world);
     assertEq(news.matches.length, 2, 'both entries of the one newer release');
     assertEq(news.matches[0].version, '2.1.220', 'the version each shipped in');
@@ -127,18 +153,18 @@ const run = async () => {
     cleanup(world.home);
   });
 
-  await test('an older mark reaches back across releases, housekeeping included', () => {
+  await test('an older cursor reaches back across releases, housekeeping included', () => {
     const world = mkWorld();
-    seed(world, '2.1.218');
+    board(world, '2.1.218');
     const news = collectIn(world);
     assertEq(news.matches.length, 5, 'all five entries of the two newer releases');
     assert(news.matches.some((m) => /model picker/.test(m.entry)), 'the picker fix rides too — the digest judges, not the job');
     cleanup(world.home);
   });
 
-  await test('a mark at the latest release reports nothing', () => {
+  await test('a cursor at the latest release reports nothing', () => {
     const world = mkWorld();
-    seed(world, '2.1.220');
+    board(world, '2.1.220');
     const news = collectIn(world);
     assertEq(news.matches.length, 0, 'a quiet morning');
     assertEq(renderCcNews(news), '', 'and no block at all');
@@ -147,7 +173,7 @@ const run = async () => {
 
   await test('the block groups by topic, versions on every line', () => {
     const world = mkWorld();
-    seed(world, '2.1.219');
+    board(world, '2.1.219');
     const block = renderCcNews(collectIn(world));
     assert(/^\n--- CC NEWS ---\n/.test(block), 'it is a labeled block');
     assert(/since 2\.1\.219, by topic:/.test(block), 'saying where it counted from');
@@ -157,113 +183,188 @@ const run = async () => {
     cleanup(world.home);
   });
 
-  group('jobs/cc-news: the mark');
+  group('jobs/cc-news: the cursor is the board');
 
-  await test('a first run seeds the latest version and reports nothing', () => {
+  await test('the since is read off the latest published brief, over gh', () => {
+    const world = mkWorld();
+    board(world, '2.1.219');
+    assertEq(collectIn(world).since, '2.1.219', 'the line in the brief IS the cursor');
+    const calls = ghCalls(world);
+    assertEq(calls.length, 1, `one board read: ${JSON.stringify(calls)}`);
+    const argv = calls[0].join(' ');
+    assert(/api graphql/.test(argv), 'through the GraphQL API');
+    assert(argv.includes(`owner=${SLUG.split('/')[0]}`) && argv.includes(`name=${SLUG.split('/')[1]}`),
+      `against the home repo the settings name: ${argv}`);
+    assert(/discussions\(first:/.test(argv), 'asking for its discussions');
+    cleanup(world.home);
+  });
+
+  await test('the newest brief wins, and older ones are not consulted', () => {
+    const world = mkWorld();
+    world.discussions = [
+      { title: 'brief: 2026-07-29', body: renderVersionMark('2.1.219') },
+      { title: 'brief: 2026-07-28', body: renderVersionMark('2.1.100') },
+    ];
+    assertEq(collectIn(world).since, '2.1.219', 'the board is newest first and the first brief answers');
+    cleanup(world.home);
+  });
+
+  await test('a summary discussion is not a brief', () => {
+    // The daily summaries share the board. Only a `brief: ` title is a cursor.
+    const world = mkWorld();
+    world.discussions = [
+      { title: 'daily: 2026-07-29', body: renderVersionMark('2.1.100') },
+      { title: 'brief: 2026-07-28', body: renderVersionMark('2.1.219') },
+    ];
+    assertEq(collectIn(world).since, '2.1.219', 'the summary above it is passed over');
+    cleanup(world.home);
+  });
+
+  await test('a brief with no version line is passed over for one that has it', () => {
+    const world = mkWorld();
+    world.discussions = [
+      { title: 'brief: 2026-07-29', body: 'HEADLINE: nothing to see.\n' },
+      { title: 'brief: 2026-07-28', body: renderVersionMark('2.1.218') },
+    ];
+    assertEq(collectIn(world).since, '2.1.218', 'the line is what makes a brief a cursor');
+    cleanup(world.home);
+  });
+
+  await test('a brief far down a busy board is still the cursor', () => {
+    // Two posts a day share this board, and a morning whose send failed carries
+    // no line at all. A narrow read window lets the last line-carrying brief
+    // scroll out of view, which reads as an empty board and re-seeds the cursor
+    // — every entry in between never reported.
+    const world = mkWorld();
+    const filler = Array.from({ length: 60 }, (_, i) => (
+      { title: `daily: 2026-07-${i}`, body: 'a summary carries no cursor' }
+    ));
+    world.discussions = [...filler, { title: 'brief: 2026-06-01', body: renderVersionMark('2.1.218') }];
+    const news = collectIn(world);
+    assertEq(news.since, '2.1.218', 'sixty posts deep is still inside the window');
+    assertEq(news.matches.length, 5, 'so the entries in between are reported rather than seeded past');
+    assert(/discussions\(first:100/.test(ghCalls(world)[0].join(' ')), 'the window is the GraphQL maximum');
+    cleanup(world.home);
+  });
+
+  await test('the version line is the shape the runner publishes', () => {
+    assertEq(renderVersionMark('2.1.220'), '<!-- cc-news: 2.1.220 -->', 'greppable, and invisible when rendered');
+  });
+
+  group('jobs/cc-news: a first run seeds, it does not report');
+
+  await test('an empty board is a first run — nothing reported, the latest carried', () => {
     const world = mkWorld();
     const news = collectIn(world);
-    assertEq(news.since, null, 'this machine had never looked');
+    assertEq(news.since, null, 'nothing has ever been published');
     assertEq(news.matches.length, 0, 'so the history is not dumped into the brief');
-    news.commit();
-    assertEq(mark(world), '2.1.220', 'the mark is the latest');
+    assertEq(news.version, '2.1.220', 'and the brief about to publish carries the latest');
     cleanup(world.home);
   });
 
-  await test('the mark advances only when the caller commits', () => {
-    const world = mkWorld();
-    seed(world, '2.1.218');
+  await test('no home repo reads as a first run, and asks gh nothing', () => {
+    const world = mkWorld(CHANGELOG, { slug: null });
     const news = collectIn(world);
-    assertEq(mark(world), '2.1.218', 'gathering moved nothing');
-    news.commit();
-    assertEq(mark(world), '2.1.220', 'committing did');
-    // The next morning repeats nothing.
-    assertEq(collectIn(world).matches.length, 0, 'and the news is not reported twice');
+    assertEq(news.since, null, 'there is no board to read');
+    assertEq(ghCalls(world).length, 0, 'so nothing was asked of it');
+    assertEq(news.version, '2.1.220', 'the version is still there to publish');
     cleanup(world.home);
   });
 
-  await test('a run that never commits repeats the same news tomorrow', () => {
+  await test('the cursor never moves backwards', () => {
     const world = mkWorld();
-    seed(world, '2.1.218');
-    assertEq(collectIn(world).matches.length, 5, 'the morning that died');
-    assertEq(collectIn(world).matches.length, 5, 'reports the same five the next day');
-    cleanup(world.home);
-  });
-
-  await test('the mark never moves backwards', () => {
-    const world = mkWorld();
-    seed(world, '2.2.0');
+    board(world, '2.2.0');
     const news = collectIn(world);
-    assertEq(news.version, '2.2.0', 'an older source does not rewind the mark');
-    news.commit();
-    assertEq(mark(world), '2.2.0', 'as written');
+    assertEq(news.version, '2.2.0', 'an older source does not rewind the cursor');
     cleanup(world.home);
   });
 
-  group('jobs/cc-news: where the mark lives');
+  group('jobs/cc-news: nothing on this machine records the cursor');
 
-  await test('the mark lands in the machine\'s cache file, created when missing', () => {
+  await test('a run writes no cache file at all', () => {
     const world = mkWorld();
-    assert(!fs.existsSync(world.workflowHome), 'nothing exists yet');
-    collectIn(world).commit();
-    assertEq(path.basename(world.cacheFile), '.cache.json', 'the disposable file, never the hand-edited one');
-    assertEq(mark(world), '2.1.220', 'and the cursor is in it');
+    board(world, '2.1.218');
+    collectIn(world);
+    assert(!fs.existsSync(world.cacheFile), 'the disposable cache is not this module\'s home any more');
     cleanup(world.home);
   });
 
-  await test('committing keeps the other keys in the cache file', () => {
-    // The Discussions id cache shares this file, and a morning runs both steps:
-    // a plain write of the cursor would take the ids away with it.
+  await test('a pre-seeded ccNews key is left byte-identical', () => {
+    // No migration: the stale key is the owner's to remove, and no runner is
+    // allowed to read it, write it, or take it away.
     const world = mkWorld();
-    seed(world, '2.1.218', { homeCache: { 'owner/workkit': { repositoryId: 'R_1' } } });
-    collectIn(world).commit();
-    assertEq(mark(world), '2.1.220', 'the cursor advanced');
-    assertEq(readCache(world).homeCache['owner/workkit'].repositoryId, 'R_1', 'and the ids beside it survived');
+    board(world, '2.1.218');
+    const before = JSON.stringify({ ccNews: { version: '1.0.0' }, homeCache: { [SLUG]: { repositoryId: 'R_1' } } });
+    fs.writeFileSync(world.cacheFile, before);
+    const news = collectIn(world);
+    assertEq(news.since, '2.1.218', 'the board answered, not the file');
+    assertEq(fs.readFileSync(world.cacheFile, 'utf8'), before, 'and the file is untouched');
+    cleanup(world.home);
+  });
+
+  await test('there is no commit callback to call', () => {
+    const world = mkWorld();
+    board(world, '2.1.218');
+    assertEq(typeof collectIn(world).commit, 'undefined', 'the publish IS the commit — no function pretends to persist');
     cleanup(world.home);
   });
 
   group('jobs/cc-news: a failure is silent');
 
-  await test('a fetch that throws skips, leaving the mark alone', () => {
+  await test('a fetch that throws reports nothing and carries the cursor forward', () => {
     const world = mkWorld();
-    seed(world, '2.1.218');
+    board(world, '2.1.218');
     world.fail = new Error('curl: (6) Could not resolve host');
-    assertEq(collectIn(world), null, 'no news');
-    assertEq(renderCcNews(null), '', 'no block');
-    assertEq(mark(world), '2.1.218', 'the mark is untouched');
+    const news = collectIn(world);
+    assertEq(news.matches.length, 0, 'no news');
+    assertEq(renderCcNews(news), '', 'no block');
+    assertEq(news.version, '2.1.218', 'and the published line repeats the board\'s version rather than rewinding it');
     cleanup(world.home);
   });
 
   await test('an empty or unparseable body skips too', () => {
     const empty = mkWorld('');
-    assertEq(collectIn(empty), null, 'a non-200 curl -f prints nothing');
+    assertEq(collectIn(empty).version, null, 'a non-200 curl -f prints nothing, and there is no version to carry');
     cleanup(empty.home);
     const junk = mkWorld('<html><body>404: Not Found</body></html>\n');
-    assertEq(collectIn(junk), null, 'and a page that is not a changelog has no releases');
+    assertEq(collectIn(junk).matches.length, 0, 'and a page that is not a changelog has no releases');
     cleanup(junk.home);
   });
 
-  await test('a mark that cannot be written does not throw — the run repeats tomorrow', () => {
+  await test('a gh that refuses publishes no version line rather than re-seeding', () => {
+    // A board that could not be read is not an empty board. Seeding here would
+    // move the cursor to latest on a run that reported nothing, and everything
+    // the last good brief had yet to cover would be lost.
     const world = mkWorld();
-    seed(world, '2.1.218');
+    world.ghFail = new Error('gh: could not authenticate');
     const news = collectIn(world);
-    fs.chmodSync(world.cacheFile, 0o444);
-    try {
-      news.commit();
-    } finally {
-      fs.chmodSync(world.cacheFile, 0o644);
-    }
-    assertEq(mark(world), '2.1.218', 'the mark held');
-    assertEq(collectIn(world).matches.length, 5, 'and the news repeats rather than vetoing the brief');
+    assertEq(news.since, null, 'no board, no since');
+    assertEq(news.matches.length, 0, 'so nothing is reported');
+    assertEq(news.version, null, 'and no line publishes — the last brief\'s cursor stands');
     cleanup(world.home);
   });
 
-  await test('an unreadable mark file reads as a first run rather than throwing', () => {
+  await test('a board answer that is not the shape asked for is not a throw, and not a seed', () => {
     const world = mkWorld();
-    fs.mkdirSync(path.dirname(world.cacheFile), { recursive: true });
-    fs.writeFileSync(world.cacheFile, '{ not json');
-    const news = collectIn(world);
-    assertEq(news.since, null, 'treated as never looked');
-    assertEq(news.matches.length, 0, 'so it seeds instead of dumping');
+    world.ghOut = '{ not json';
+    const junk = collectIn(world);
+    assertEq(junk.since, null, 'nothing could be read');
+    assertEq(junk.version, null, 'and a failed read publishes no cursor');
+    cleanup(world.home);
+
+    const hidden = mkWorld();
+    hidden.ghOut = '{"data":{"repository":null}}';
+    const unseen = collectIn(hidden);
+    assertEq(unseen.since, null, 'and so is a repo the token cannot see');
+    assertEq(unseen.version, null, 'which is a failure too, not an empty board');
+    cleanup(hidden.home);
+  });
+
+  await test('an unreadable settings file reads as no home repo', () => {
+    const world = mkWorld();
+    fs.writeFileSync(path.join(world.workflowHome, 'settings.json'), '{ not json');
+    assertEq(collectIn(world).since, null, 'treated as never looked');
+    assertEq(ghCalls(world).length, 0, 'and nothing was asked of gh');
     cleanup(world.home);
   });
 

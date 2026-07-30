@@ -4,8 +4,8 @@
 # Summaries are published, never filed (owner ruling, 2026-07-28: generated
 # records are never files). The destination is a Discussion on the home repo, so
 # this is the one place that speaks GitHub's Discussions GraphQL — the setup
-# wizard uses it to turn Discussions on, the summaries step to post and to read
-# prior posts back.
+# wizard uses it to turn Discussions on, the summaries step and the morning
+# brief to post and to read prior posts back.
 #
 # WHAT THE API ACTUALLY OFFERS, probed against the live schema 2026-07-28:
 #   · `updateRepository(hasDiscussionsEnabled:)` — Discussions can be ENABLED.
@@ -83,9 +83,9 @@ wk_disc_meta() {
   fresh="$(wk_disc_fetch_meta "$slug")" || return 1
   [[ -n "$fresh" ]] || return 1
   # Under the shared mutex: this is a whole-file read-modify-write, and the
-  # cc-news cursor writes the same file in the same minute of a morning. Taking
-  # the lock is best effort like every other writer's — a cache that lost a race
-  # is re-fetched, never wrong.
+  # summaries step and the brief both reach it inside the same minute of a
+  # morning. Taking the lock is best effort like every other writer's — a cache
+  # that lost a race is re-fetched, never wrong.
   if [[ -d "$WK_USER_DIR" ]] || mkdir -p "$WK_USER_DIR" 2>/dev/null; then
     if wk_take_state_lock; then locked=1; fi
     [[ -f "$WK_HOME_CACHE" ]] || printf '{}\n' >"$WK_HOME_CACHE" 2>/dev/null || true
@@ -173,8 +173,9 @@ wk_disc_enable() {
   return 0
 }
 
-# Post one summary. The body comes from a FILE — a day's reflection is far past
-# what an argument list should carry, and `gh`'s `@file` form sends it verbatim.
+# Post one summary or brief. The body comes from a FILE — a day's reflection is
+# far past what an argument list should carry, and `gh`'s `@file` form sends it
+# verbatim.
 # Prints the discussion URL.
 #
 # The category is an ID, not a name: the caller resolves it with

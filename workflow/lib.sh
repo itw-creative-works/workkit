@@ -29,9 +29,10 @@ WK_HOME_SETTINGS="$WK_USER_DIR/settings.json"
 # declines the CLI records, under one `repos` map. Dot-named because it is not
 # the owner's to edit — the engine rewrites it on contact.
 WK_HOME_REPOS="$WK_USER_DIR/.repos.json"
-# .cache.json is DISPOSABLE: the Discussions GraphQL ids and the cc-news cursor.
-# Deleting it costs one round trip and one repeated brief; every reader rebuilds
-# what it does not find.
+# .cache.json is DISPOSABLE: the Discussions GraphQL ids, and since issue #86
+# nothing else — the upstream-news cursor moved onto the board, where a job that
+# runs from anywhere can read it. Deleting the file costs one round trip; every
+# reader rebuilds what it does not find.
 WK_HOME_CACHE="$WK_USER_DIR/.cache.json"
 
 # The ONE git repo in the global layer: the clone of `<login>/workkit`, seeded

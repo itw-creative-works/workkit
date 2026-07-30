@@ -10,6 +10,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 ### Changed
 
 - [#85](../../issues/85) — `workkit setup` publishes the dashboard before it exits whenever the switch ends on, freshly answered or already true, and a fresh yes is asked one follow-up for the custom domain, so the first site carries its CNAME.
+- [#86](../../issues/86) — The 9am brief publishes as a `brief: <date>` Discussion on the home repo carrying the upstream version it covered, and the news cursor is read back off that line instead of `~/.workkit/.cache.json`, so the job can run from anywhere; a runner that finds today's brief already posted skips it.
 
 ## [0.16.0] - 2026-07-29
 

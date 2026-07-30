@@ -17,19 +17,23 @@
 // the first when the second happened is worse than no brief at all.
 //
 // Pure gather: no writes, no Claude, no notification. `claude-daily.sh` owns the
-// sending. The one exception is `cc-news.js`, which owns a mark file of its own
-// and only moves it once the payload has printed.
+// sending — and, since issue #86, the publishing: the upstream-news cursor now
+// lives on the board, so the one thing this script leaves behind is the version
+// line the runner appends to the brief it publishes, written into the scratch
+// file named by `WORKKIT_BRIEF_MARK_FILE` and gone with the run.
 //
 // Usage:
 //   node jobs/brief-payload.js          // the payload on stdout
 //   composeBrief({ workflowHome, exec }) // offline, against fixtures
 //
 
+const fs = require('fs');
+
 const { discoverRepos } = require('../tower/api/lib/repos');
 const { fetchBoard } = require('../tower/api/lib/board');
 const { repoHealth } = require('../tower/api/lib/health');
 const { buildBrief } = require('../tower/api/lib/brief');
-const { collectCcNews, renderCcNews } = require('./cc-news');
+const { collectCcNews, renderCcNews, renderVersionMark } = require('./cc-news');
 
 // The digest instruction. It names the payload's sections rather than the shape
 // of a board file, and it fixes the FIRST line of the response: claude-daily.sh
@@ -118,13 +122,27 @@ const composeBrief = (opts = {}) => {
  */
 const render = (payload, news) => `${INSTRUCTION}\n\n${JSON.stringify(payload, null, 2)}\n${renderCcNews(news)}`;
 
+/**
+ * Hand the runner the version line to append to the brief it publishes, through
+ * the scratch file it named. Nothing durable is written here — the Discussion
+ * is what records the cursor, and a run whose news could not be read at all
+ * leaves the file empty so the runner publishes no line.
+ * @param {object} news what collectCcNews returned
+ */
+const writeVersionMark = (news) => {
+  const file = process.env.WORKKIT_BRIEF_MARK_FILE;
+  if (!file || !news || !news.version) return;
+  try {
+    fs.writeFileSync(file, `${renderVersionMark(news.version)}\n`);
+  } catch {
+    // Silent, like every other step of the news path: the brief already printed.
+  }
+};
+
 module.exports = { composeBrief, render, INSTRUCTION };
 
 if (require.main === module) {
   const news = collectCcNews();
   process.stdout.write(render(composeBrief(), news));
-  // Only now — a run that died before printing repeats the news tomorrow.
-  // A MANUAL run (claude-daily.sh --now) leaves the mark alone: testing the
-  // brief by hand must not consume news the 9am job has not reported yet.
-  if (news && !process.env.WORKKIT_BRIEF_MANUAL) news.commit();
+  writeVersionMark(news);
 }

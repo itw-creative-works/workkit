@@ -1,6 +1,6 @@
 # The jobs
 
-Scheduled work the kit runs on this machine. **One job, at 9am, in three steps.** The **summaries step** goes first: it writes the day that just ended up and publishes it as a Discussion on the home repo. Then the **brief** reads the same payload the tower's Brief page draws and hands it to Claude for a plain-language digest, arriving as a desktop notification. Last, the **publish** rebuilds the tower project in `~/.workkit/tower` and pushes the site to the home repo's `gh-pages` branch — after the brief has already been sent, so nothing about a build can delay nine o'clock.
+Scheduled work the kit runs on this machine. **One job, at 9am, in three steps.** The **summaries step** goes first: it writes the day that just ended up and publishes it as a Discussion on the home repo. Then the **brief** reads the same payload the tower's Brief page draws and hands it to Claude for a plain-language digest, which arrives as a desktop notification AND publishes as a Discussion beside the summaries — the durable copy, and the only place the upstream-news cursor is recorded. Last, the **publish** rebuilds the tower project in `~/.workkit/tower` and pushes the site to the home repo's `gh-pages` branch — after the brief has already been sent, so nothing about a build can delay nine o'clock.
 
 That order is the whole reason there is one cron and not two: the morning is meant to read a record that already includes the day behind it. The window is a rolling 24 hours either way, so the reflection covers the same span — only its phase moves.
 
@@ -21,8 +21,8 @@ Renders the plist for THIS checkout into `~/Library/LaunchAgents/` and loads it.
 | File | What |
 |---|---|
 | `brief-payload.js` | the morning payload, on stdout: the digest instruction, then the brief as JSON, then the upstream news. Pure gather — no Claude, no notification |
-| `cc-news.js` | every upstream Claude Code CHANGELOG entry since the last brief, organized by topic, and the cursor that remembers where it counted from |
-| `claude-daily.sh` | the entry point: runs the summaries step, sends the payload headless, appends the exchange to `~/Library/Logs/claude-daily.log`, notifies, then publishes the site |
+| `cc-news.js` | every upstream Claude Code CHANGELOG entry since the last brief, organized by topic, read back off the latest published brief |
+| `claude-daily.sh` | the entry point: runs the summaries step, sends the payload headless, appends the exchange to `~/Library/Logs/claude-daily.log`, notifies, posts the digest as a Discussion, then publishes the site |
 | `nightly-payload.js` | the summaries payload: the reflection instruction, then the day's transcript INDEX and commits as JSON — or, with `--cadence weekly\|monthly`, the rollup instruction over the prior summaries handed in on stdin. Pure gather |
 | `claude-nightly.sh` | the summaries step: composes the day, sends it, and posts it as a Discussion on the home repo — logging what it decided to `~/Library/Logs/claude-nightly.log` |
 | `com.workkit.claude-daily.plist` | the schedule — 9:00 AM daily, `{{WORKKIT_DIR}}` and `{{HOME}}` rendered at install |
@@ -30,7 +30,7 @@ Renders the plist for THIS checkout into `~/Library/LaunchAgents/` and loads it.
 
 ## Where the output goes
 
-**A job never writes into the checkout.** What runs here is machine state, not repo content: it belongs to the machine that ran it, so a clone is never dirtied and a second checkout never disagrees with the first. Two homes, and no third — state under `~/.workkit/jobs/` (the news mark today, whatever a later job needs to remember) and logs under `~/Library/Logs/`. Nothing a job GENERATES is written anywhere: a summary or a digest is a record, and records are published, never filed on a disk (the spec § The global layer). The payload scripts write nothing at all; they print.
+**A job never writes into the checkout.** What runs here is machine state, not repo content: it belongs to the machine that ran it, so a clone is never dirtied and a second checkout never disagrees with the first. Two homes, and no third — state under `~/.workkit/jobs/` (whatever a job needs to remember) and logs under `~/Library/Logs/`. Nothing a job GENERATES is written anywhere: a summary or a digest is a record, and records are published, never filed on a disk (the spec § The global layer). The payload scripts write nothing at all; they print.
 
 ## The payload
 
@@ -42,7 +42,7 @@ A sweep that failed prints as a failure (`ok: false` and its reason) and the dig
 
 Claude Code releases most days and its CHANGELOG is the only announcement, so `cc-news.js` reads that file — the raw one on the default branch, no token and no rate limit — and appends a `--- CC NEWS ---` block after the payload carrying every entry since the last brief, grouped by topic (the kit's own surfaces — hooks, agents, skills, plugins, settings, MCP, the statusline — then `other`). The job never judges which entries matter; the digest model does, with the board in view: a feature the kit could use, a change that breaks something it built, an improvement worth adopting. Finding out weeks late that a hook no longer matches the tool it hooks is the failure it exists to prevent.
 
-Where it counted from is one key the module owns, `ccNews` in the machine's disposable `~/.workkit/.cache.json`, and it advances only once the payload has printed — a morning that died repeats its news rather than losing it. A first run records the latest version and reports nothing: with no mark the honest "since" is the whole history, which would bury the brief. Every failure is silent (no network, a non-200, a body that is not a changelog): no block, the mark untouched, the brief still prints. `WORKKIT_CC_CHANGELOG` overrides the source — a seam for the suite, which points it at a file on disk.
+**Where it counted from lives on the board** (issue #86), not on this machine: every published brief carries one machine-readable line, `<!-- cc-news: <version> -->`, and the next morning reads the newest `brief: ` Discussion on the home repo back to find it. `jobs/cc-news.js` owns that line's shape — it renders it into the scratch file `WORKKIT_BRIEF_MARK_FILE` names and the runner appends the file verbatim, so the writer and the reader cannot drift. A first run finds no brief and reports nothing: with no cursor the honest "since" is the whole history, which would bury the brief; it lets the publish carry the latest version instead. Every failure is silent (no network, a non-200, a body that is not a changelog, a `gh` that refuses): no block, and the brief still prints. When the upstream read failed but the board had a version, that version rides forward unchanged, so the cursor never rewinds for want of a network. `WORKKIT_CC_CHANGELOG` overrides the source — a seam for the suite, which points it at a file on disk.
 
 ## The runner
 
@@ -55,9 +55,15 @@ Where it counted from is one key the module owns, `ccNews` in the machine's disp
 - **The send is capped**: haiku, effort low, `--safe-mode`, no tools, no session persistence, and a hard budget of $0.25.
 - **The notification is detached.** Notifly does not return until it is dismissed, and the job must never wait on a human. Its message is the response's first line, which is why the instruction fixes that line as `HEADLINE:`.
 
-`claude-daily.sh --now` (or `npm run brief`) runs the whole thing on demand — the same payload, the same send, the same log file and notification — so the brief can be tested without waiting for tomorrow. Its log block is stamped `(manual)`, and it sets `WORKKIT_BRIEF_MANUAL` so the upstream-news mark stays where it is: a run at noon must not swallow the news the 9am job has yet to report.
+`claude-daily.sh --now` (or `npm run brief`) runs the whole thing on demand — the same payload, the same send, the same log file and notification — so the brief can be tested without waiting for tomorrow. Its log block is stamped `(manual)` and it PUBLISHES NOTHING: a run at noon that posted `brief: <today>` would make the nine o'clock brief find its own post already there and skip, and would advance the cursor on news the scheduled run has yet to report.
 
 `NOTIFLY` overrides the notifier's path — a seam for the suite, so running the tests never puts a notification on screen.
+
+## The brief is published
+
+The notification is on top; the Discussion is the durable copy and the cloud-ready delivery (issue #86). Once the send returns, `claude-daily.sh` posts the digest response — the model's answer, never the payload it answered — to the home repo as `brief: <date>`, the same title convention the summaries keep. The category is asked for as `Brief` and answered by the default-category fallback, because categories cannot be created over the API; the read-back filters on the TITLE for that reason, since it cannot know which category a repo landed in. The body's last line is the upstream version the brief covered, and a run that never had a version publishes no line at all.
+
+**Check before post.** A brief already on the board under today's title is not posted twice — that is what lets this machine and a future cloud runner (issue #82) coexist. Only the scheduled brief publishes: a `claude-daily.sh <message>` run is the generic headless runner, `--now` is a rehearsal, and a send that failed has no digest worth keeping. Every other reason not to publish is one logged line and a zero return — `brief: no home repo configured — nothing published`, no `gh` or `jq`, an API that refused — because the morning already happened and a post that could not be made must never undo it.
 
 ## The summaries step
 
@@ -81,4 +87,4 @@ After the brief is sent, `claude-daily.sh` runs `workflow/publish.sh --quiet`: t
 
 ## Tests
 
-`tests/jobs/` runs all six against fixtures: a scratch `~/.workkit` carrying a fixture roster for the payloads, a fixture CHANGELOG for the news, a fixture projects tree with fixture mtimes for the transcript index, a fake `claude` and notifier plus a scratch `HOME` and `WORKFLOW_HOME` for the runners — the entry point's suite hands those same seams to the summaries step it calls — a `gh` answering the Discussions API with canned JSON, and a recording `launchctl` for the installer. Nothing in the suite reaches the network, files an issue, loads an agent, or writes outside its temp directory.
+`tests/jobs/` runs all six against fixtures: a scratch `~/.workkit` carrying a fixture roster for the payloads, a fixture CHANGELOG and a fixture board of published briefs for the news, a fixture projects tree with fixture mtimes for the transcript index, a fake `claude` and notifier plus a scratch `HOME` and `WORKFLOW_HOME` for the runners — the entry point's suite hands those same seams to the summaries step it calls — a `gh` answering the Discussions API with canned JSON, and a recording `launchctl` for the installer. Nothing in the suite reaches the network, files an issue, loads an agent, or writes outside its temp directory.

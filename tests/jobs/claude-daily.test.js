@@ -11,6 +11,13 @@
 // it has nowhere to publish, sends nothing, and the assertions below see only
 // the brief (the step's own suite covers the publishing).
 //
+// EVERY world carries a recording `gh` shim, and it lives in ~/.local/bin rather
+// than beside the others: the runner exports a PATH of its own beginning there
+// and including /opt/homebrew/bin, so a shim anywhere else would lose to the
+// real `gh` and this suite would reach GitHub. A world with nowhere to publish
+// gets one too — a skip is proved by a recorder that stayed silent, never by the
+// tool being absent, which no assertion could tell from a skip that never ran.
+//
 
 const fs = require('fs');
 const os = require('os');
@@ -22,8 +29,16 @@ const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-daily.sh');
 const { INSTRUCTION } = require(path.join(__dirname, '..', '..', 'jobs', 'brief-payload.js'));
 
+// A `gh` call that is the brief's business with the board — listing today's
+// posts, resolving a category, creating the Discussion.
+const BRIEF_GH = /discussions\(first|discussionCategories|createDiscussion/;
+
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'claude-daily-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
+
+// The date the runner titles its Discussion with is the LOCAL one (`date
+// '+%Y-%m-%d'`), which is not always today in UTC.
+const today = () => new Date().toLocaleDateString('en-CA');
 
 /**
  * A scratch home, a fake `claude` printing `response` and exiting `status`, and
@@ -31,15 +46,32 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
  *
  * `logsDir: false` leaves ~/Library/Logs out — the bare home the job has to
  * make its own log directory in.
+ * `home` is the home repo slug to name in the settings file; null is a machine
+ * with nowhere to publish, and it gets the same recording `gh` shim so the skip
+ * is something an assertion can see.
+ * `badSettings` writes a settings file that does not parse — the shape the site
+ * publish warns about rather than reading as a default.
+ * `posted` is what that repo's discussions already carry, as `{ title, body }`
+ * — the check-before-post guard's input, and the news cursor's.
+ * `ghFails` makes every API call refuse.
+ * `ccChangelog` is the upstream CHANGELOG the news read is pointed at.
  */
-const mkWorld = ({ response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n', status = 0, logsDir = true } = {}) => {
+const mkWorld = ({
+  response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n', status = 0, logsDir = true,
+  home: homeRepo = null, posted = [], ghFails = false, ccChangelog = null, badSettings = false,
+} = {}) => {
   const root = mkTmp();
   const bin = path.join(root, 'bin');
   const home = path.join(root, 'home');
   const workflowHome = path.join(root, 'workflow-home');
   fs.mkdirSync(bin, { recursive: true });
   fs.mkdirSync(workflowHome, { recursive: true });
-  fs.writeFileSync(path.join(workflowHome, 'settings.json'), JSON.stringify({ version: 1 }, null, 2));
+  fs.writeFileSync(
+    path.join(workflowHome, 'settings.json'),
+    badSettings
+      ? '{ "version": 1, "site": { "repo": '
+      : JSON.stringify({ version: 1, site: { repo: homeRepo, publish: false, url: null } }, null, 2),
+  );
   // ~/Library/Logs is a directory every macOS home already has; the fixture home
   // is bare, so it is created here rather than by the job.
   if (logsDir) fs.mkdirSync(path.join(home, 'Library', 'Logs'), { recursive: true });
@@ -62,6 +94,48 @@ const mkWorld = ({ response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n
   fs.chmodSync(claude, 0o755);
   fs.chmodSync(notifly, 0o755);
 
+  // The `gh` the publish speaks to, and the one the news cursor reads back
+  // through. EVERY world gets it, including the ones with nowhere to publish:
+  // a recorder that logged nothing is what proves a skip, and it also keeps the
+  // real `gh` off the path of a suite that must never reach GitHub.
+  const ghLog = path.join(root, 'gh-argv.log');
+  const bodyLog = path.join(root, 'posted-body.md');
+  const localBin = path.join(home, '.local', 'bin');
+  fs.mkdirSync(localBin, { recursive: true });
+  const nodes = posted.map(({ title, body = '' }) => JSON.stringify({
+    title, createdAt: `${today()}T09:00:00Z`, body,
+  })).join(',');
+  fs.writeFileSync(path.join(localBin, 'gh'), [
+    '#!/usr/bin/env bash',
+    recordArgv(ghLog),
+    ...(ghFails ? ['exit 1'] : []),
+    'all="$*"',
+    'case "$all" in',
+    '  *createDiscussion*)',
+    // The body travels as `@file` and the file goes away with the run, so
+    // what was published is kept here for the assertions.
+    `    for a in "$@"; do case "$a" in body=@*) cat "\${a#body=@}" >> ${JSON.stringify(bodyLog)} ;; esac; done`,
+    `    printf '%s' '{"data":{"createDiscussion":{"discussion":{"url":"https://github.com/owner/private-home/discussions/9"}}}}' ;;`,
+    '  *discussionCategories*)',
+    `    printf '%s' '{"data":{"repository":{"id":"R_kdt","hasDiscussionsEnabled":true,"discussionCategories":{"nodes":[{"id":"DIC_0","name":"General"}]}}}}' ;;`,
+    '  *"discussions(first"*)',
+    `    printf '%s' '{"data":{"repository":{"discussions":{"nodes":[${nodes}]}}}}' ;;`,
+    '  *) printf \'%s\' \'{}\' ;;',
+    'esac',
+    'exit 0',
+    '',
+  ].join('\n'));
+  fs.chmodSync(path.join(localBin, 'gh'), 0o755);
+
+  // The upstream CHANGELOG the news read is pointed at. `/dev/null` is the
+  // module's silent-skip path — an empty body, no version, no line.
+  let ccSource = 'file:///dev/null';
+  if (ccChangelog) {
+    const file = path.join(root, 'cc-changelog.md');
+    fs.writeFileSync(file, ccChangelog);
+    ccSource = `file://${file}`;
+  }
+
   return {
     root,
     home,
@@ -70,6 +144,13 @@ const mkWorld = ({ response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n
     nightlyLog: path.join(home, 'Library', 'Logs', 'claude-nightly.log'),
     calls: () => readArgv(claudeLog),
     notifs: () => readArgv(notifLog),
+    ghCalls: () => readArgv(ghLog),
+    // What the publish doctrine actually claims about a machine with nowhere to
+    // publish: no discussion is listed, resolved or created. A version probe or
+    // an auth check is not a brief reaching GitHub.
+    briefGhCalls: () => readArgv(ghLog).filter((c) => BRIEF_GH.test(c.join(' '))),
+    created: () => readArgv(ghLog).filter((c) => c.join(' ').includes('createDiscussion')),
+    postedBody: () => (fs.existsSync(bodyLog) ? fs.readFileSync(bodyLog, 'utf8') : ''),
     log: () => {
       const file = path.join(home, 'Library', 'Logs', 'claude-daily.log');
       return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
@@ -81,9 +162,7 @@ const mkWorld = ({ response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n
       PATH: `${bin}:${process.env.PATH}`,
       // The summaries step's one seam: where it looks for the home repo.
       WORKFLOW_HOME: workflowHome,
-      // The payload's upstream-news read stays off the network: an empty
-      // curl-readable source is the module's silent-skip path.
-      WORKKIT_CC_CHANGELOG: 'file:///dev/null',
+      WORKKIT_CC_CHANGELOG: ccSource,
     },
   };
 };
@@ -293,20 +372,148 @@ const run = async () => {
     assert(/publish exit %d — the brief was already sent/.test(text), 'a failure is logged, never fatal');
   });
 
+  // The site publish's own block, told apart from the brief's Discussion, which
+  // logs a line of its own about publishing right beside it. Every line
+  // publish.sh prints is prefixed `publish: ` — including the warnings no
+  // `--quiet` suppresses — and the brief's lines say `brief: … nothing
+  // published`, so the colon is what tells the two apart.
+  const SITE_BLOCK = /publish:/;
+
   await test('a machine with no home repo hears nothing about publishing', async () => {
     const world = mkWorld();
     const res = runJob(world);
     assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
-    assert(!/publish/.test(world.log()), `the log stays about the morning, got: ${world.log()}`);
+    assert(!SITE_BLOCK.test(world.log()), `the log stays about the morning, got: ${world.log()}`);
     assert(res.stdout.includes('HEADLINE: one thing today.'), 'and the brief is untouched');
     await settle();
     cleanup(world.root);
   });
 
-  await test('a message argument publishes nothing', () => {
+  await test('a message argument publishes no site', () => {
     const world = mkWorld();
     runJob(world, ['hello']);
-    assert(!/publish/.test(world.log()), 'the generic headless runner stays generic');
+    assert(!SITE_BLOCK.test(world.log()), 'the generic headless runner stays generic');
+    cleanup(world.root);
+  });
+
+  await test('a publish that warns is heard — the block is not scoped to its failures', () => {
+    // A settings file that does not parse is publish.sh's loudest guarded skip:
+    // it warns and exits 0, so an assertion looking only for a non-zero exit or
+    // a branch name would call the morning quiet.
+    const world = mkWorld({ badSettings: true });
+    const res = runJob(world);
+    assertEq(res.status, 0, `the morning is untouched: ${res.stderr}`);
+    const log = world.log();
+    assert(SITE_BLOCK.test(log), `the warning reached the log: ${log}`);
+    assert(/does not parse as JSON/.test(log), `and says what is wrong: ${log}`);
+    cleanup(world.root);
+  });
+
+  group('jobs/claude-daily: the brief is published');
+
+  const CC_CHANGELOG = '# Changelog\n\n## 2.1.220\n\n- Added a `DirectoryAdded` hook\n';
+
+  await test('the digest response is posted as a Discussion titled with the date', () => {
+    const world = mkWorld({ home: 'owner/private-home' });
+    const res = runJob(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    const created = world.created();
+    assertEq(created.length, 1, `one createDiscussion mutation: ${fmtCalls(world.ghCalls()).slice(0, 400)}`);
+    const argv = created[0].join(' ');
+    assert(argv.includes(`title=brief: ${today()}`), `the title carries the date: ${argv}`);
+    const body = world.postedBody();
+    assert(/HEADLINE: one thing today\./.test(body), `the digest response is the body: ${body}`);
+    assert(/IN FLIGHT: nothing\./.test(body), 'all of it, not just the headline');
+    assert(!body.includes('You are producing the owner'), 'and never the payload it answered');
+    assert(/posted brief: /.test(world.log()), `the log says it published: ${world.log()}`);
+    assert(/discussions\/9/.test(world.log()), 'and names the discussion');
+    cleanup(world.root);
+  });
+
+  await test('the body carries the upstream version it covered, one machine-readable line', () => {
+    const world = mkWorld({ home: 'owner/private-home', ccChangelog: CC_CHANGELOG });
+    runJob(world);
+    const body = world.postedBody();
+    assert(/<!-- cc-news: 2\.1\.220 -->/.test(body), `the cursor the next morning reads: ${body}`);
+    assert(body.indexOf('HEADLINE') < body.indexOf('<!-- cc-news'), 'after the digest, never in front of it');
+    cleanup(world.root);
+  });
+
+  await test('a run whose news could not be read publishes no version line', () => {
+    // Nothing on the board and nothing upstream: there has never been a version,
+    // so the brief carries none rather than inventing one.
+    const world = mkWorld({ home: 'owner/private-home' });
+    runJob(world);
+    assert(!/cc-news:/.test(world.postedBody()), `no line at all: ${world.postedBody()}`);
+    cleanup(world.root);
+  });
+
+  await test('a failed upstream read carries the board\'s version forward', () => {
+    const world = mkWorld({
+      home: 'owner/private-home',
+      posted: [{ title: 'brief: 2026-07-01', body: '<!-- cc-news: 2.1.219 -->' }],
+    });
+    runJob(world);
+    assert(/<!-- cc-news: 2\.1\.219 -->/.test(world.postedBody()),
+      `the cursor holds rather than rewinding: ${world.postedBody()}`);
+    cleanup(world.root);
+  });
+
+  await test('today\'s brief already on the board is not posted twice', async () => {
+    const world = mkWorld({ home: 'owner/private-home', posted: [{ title: `brief: ${today()}` }] });
+    const res = runJob(world);
+    assertEq(res.status, 0, 'exit 0');
+    assertEq(world.created().length, 0, `nothing was posted: ${fmtCalls(world.ghCalls()).slice(0, 400)}`);
+    assert(/already carries brief: /.test(world.log()), `and the log says so: ${world.log()}`);
+    assert(res.stdout.includes('HEADLINE: one thing today.'), 'the local morning happened anyway');
+    await notifiedMatching(world, /^HEADLINE: one thing today\.$/);
+    cleanup(world.root);
+  });
+
+  await test('an API that refuses is logged, and the morning is untouched', async () => {
+    const world = mkWorld({ home: 'owner/private-home', ghFails: true });
+    const res = runJob(world);
+    assertEq(res.status, 0, 'a brief that cannot be posted is still a brief');
+    assert(res.stdout.includes('HEADLINE: one thing today.'), 'it printed');
+    await notifiedMatching(world, /^HEADLINE: one thing today\.$/);
+    assert(/nothing posted/.test(world.log()), `the log says what happened: ${world.log()}`);
+    assert(!/posted brief: /.test(world.log()), 'and never claims to have published');
+    cleanup(world.root);
+  });
+
+  await test('no home repo is a named skip, and no discussion call is made', async () => {
+    const world = mkWorld();
+    const res = runJob(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assert(/brief: no home repo configured — nothing published/.test(world.log()),
+      `the log names the reason: ${world.log()}`);
+    assertEq(world.briefGhCalls().length, 0,
+      `the recorder on PATH stayed silent: ${fmtCalls(world.ghCalls()).slice(0, 400)}`);
+    await settle();
+    cleanup(world.root);
+  });
+
+  await test('a failed send publishes nothing — an error is not a digest', () => {
+    const world = mkWorld({ home: 'owner/private-home', response: 'budget exceeded', status: 3 });
+    const res = runJob(world);
+    assertEq(res.status, 3, 'the exit status carries through');
+    assertEq(world.created().length, 0, 'and no Discussion carries the failure');
+    cleanup(world.root);
+  });
+
+  await test('a message argument publishes no brief', () => {
+    const world = mkWorld({ home: 'owner/private-home' });
+    runJob(world, ['hello']);
+    assertEq(world.created().length, 0, 'the generic headless runner stays generic');
+    cleanup(world.root);
+  });
+
+  await test('the run leaves no cursor file behind on this machine', () => {
+    const world = mkWorld({ home: 'owner/private-home', ccChangelog: CC_CHANGELOG });
+    runJob(world);
+    assert(!fs.existsSync(path.join(world.workflowHome, '.cache.json'))
+      || !('ccNews' in JSON.parse(fs.readFileSync(path.join(world.workflowHome, '.cache.json'), 'utf8'))),
+    'the cursor is the Discussion — nothing writes ccNews any more');
     cleanup(world.root);
   });
 
@@ -327,6 +534,18 @@ const run = async () => {
     runJob(world, ['--now']);
     const log = world.log();
     assert(/── \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \(manual\) ──/.test(log), `stamped manual, got: ${log.slice(0, 120)}`);
+    cleanup(world.root);
+  });
+
+  await test('--now publishes nothing — a rehearsal must not claim the day', () => {
+    // A manual run at noon that posted `brief: <today>` would make the nine
+    // o'clock brief find its own post already there and skip, and would advance
+    // the cursor on news the scheduled run has yet to report.
+    const world = mkWorld({ home: 'owner/private-home', ccChangelog: '# Changelog\n\n## 2.1.220\n\n- Added a hook\n' });
+    const res = runJob(world, ['--now']);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assert(res.stdout.includes('HEADLINE: one thing today.'), 'the brief still ran end to end');
+    assertEq(world.created().length, 0, `and nothing was posted: ${fmtCalls(world.ghCalls()).slice(0, 300)}`);
     cleanup(world.root);
   });
 

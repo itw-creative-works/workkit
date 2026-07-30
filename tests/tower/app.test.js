@@ -1313,6 +1313,20 @@ const run = async () => {
     assertEq(answer.items[0].category, 'Summaries', 'the category rides along');
   });
 
+  await test('the morning briefs sharing the board are not summaries', async () => {
+    // The 9am job publishes its digest as a `brief: <date>` Discussion on the
+    // same repo, about one a day. Left in, they fill the card the summaries own.
+    const node = (title, i) => ({ title, url: `https://github.com/owner/workkit/discussions/${i}`, createdAt: '2026-07-28T09:00:00Z', category: { name: 'General' } });
+    const nodes = [];
+    for (let i = 0; i < 7; i++) nodes.push(node(`brief: 2026-07-${20 + i}`, i * 2), node(`daily: 2026-07-${20 + i}`, i * 2 + 1));
+    const fetchImpl = mkFetch(jsonResponse(200, { data: { repository: { discussions: { nodes } } } }));
+    const answer = await github.fetchSummaries('owner/workkit', { token: 't', fetch: fetchImpl });
+    assertEq(answer.items.length, 5, 'the card still fills, five summaries deep');
+    assert(answer.items.every((item) => /^daily: /.test(item.title)), `and every one of them is a summary: ${answer.items.map((i) => i.title).join(', ')}`);
+    const asked = Number((JSON.parse(fetchImpl.calls[0].options.body).query.match(/discussions\(first: (\d+)/) || [])[1]);
+    assert(asked > 5, `the read window is wide enough to filter from, got ${asked}`);
+  });
+
   group('tower/app: github — the one door');
 
   /** A fetch that answers the slug list from a path and everything else from GraphQL. */

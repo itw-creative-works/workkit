@@ -12,7 +12,7 @@ The agent-agnostic core of the issue workflow. It knows nothing about Claude Cod
 | `workkit.sh` | The one command: `setup` · `update [--auto]` · `doctor` · `publish` · `enable` · `decline` · `note` — the front door to everything below |
 | `lib.sh` | Sourced helpers the home-repo machinery shares: the global layer's addresses (`~/.workkit`, the tower clone in it, its config and its build output), a safe JSON edit, a slug out of a git remote, and a voice that delegates to whichever caller sourced it |
 | `home.sh` | Sourced: the home repo's lifecycle — the login, the private repo, the clone into `~/.workkit/tower`, seeding the tower project into an empty one, its install, Discussions, Pages, the doctor lines |
-| `discussions.sh` | Sourced: the home repo's Discussions API (GraphQL through `gh`) — enabling, resolving and caching the repo and category ids, posting a summary, reading prior summaries back |
+| `discussions.sh` | Sourced: the home repo's Discussions API (GraphQL through `gh`) — enabling, resolving and caching the repo and category ids, posting a summary or a brief, reading prior posts back |
 | `publish.sh` | Builds the tower project in `~/.workkit/tower` and pushes the output to the home repo's `gh-pages` branch — only when `site.publish` says so |
 | `site-repos.js` | The published site's ONE baked artifact: the list of `owner/name` slugs to sweep, from the same roster the tower and the brief read, plus the home repo under `home` |
 | `wk.sh` | The capture CLI: `wk.sh note <text...>` appends one bullet to the right inbox |
@@ -85,7 +85,7 @@ Same filename, one mental model, two owners.
 | `<repo>/.workkit/settings.json` | the project (committed) | `{ "version": 1, "enabled": true }` — the repo's yes. `"enabled": false` is the project's deliberate no |
 | `~/.workkit/settings.json` (`$WORKFLOW_HOME` overrides) | one developer, BY HAND | `{ "version": 1, "site": { "repo": "<owner>/<repo>", "publish": null, "url": null } }` — the site options and nothing else: the home repo the site publishes from, the all-or-nothing publish switch, and the custom domain (an absent key reads as off and as no URL). `publish` seeds NULL, the unanswered state — `true`/`false` are answers, and an interactive `workkit setup` asks for one once there is a home repo to publish from; `url` is asked for only in the same breath as a FRESH yes, and is a hand edit ever after |
 | `~/.workkit/.repos.json` | the engine | `{ "version": 1, "repos": { "<absolute repo root>": "enabled" \| "declined" } }` — the machine's roster and this developer's declines |
-| `~/.workkit/.cache.json` | the engine, disposably | `{ "homeCache": { … }, "ccNews": { "version": … } }` — the cached GitHub node ids and the upstream-news cursor. Safe to delete: every reader rebuilds what it does not find |
+| `~/.workkit/.cache.json` | the engine, disposably | `{ "homeCache": { … } }` — the cached GitHub node ids, and nothing else since the upstream-news cursor moved onto the board (issue #86). Safe to delete: every reader rebuilds what it does not find |
 
 The three are split by WHO WRITES THEM (issue #80). Anything a human types is in `settings.json`; anything the engine records is in a dot-named file beside it, which is how a reader knows at a glance that editing it is pointless. `settings.json` has one machine-written key — `site.repo`, which `workkit setup` records once — and nothing else in it is ever written by a run.
 

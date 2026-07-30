@@ -13,26 +13,35 @@
 // The source is the raw `CHANGELOG.md` on the default branch, not the releases
 // API: it is the same text without a token, a rate limit, or a schema.
 //
-// The seen mark is one key, `ccNews`, in the machine's disposable cache file
-// (`~/.workkit/.cache.json`, issue #80) — a cursor is exactly what that file is
-// for, and deleting it costs one repeated brief. It advances only when the
-// caller says the payload printed — a morning that died before the notification
-// REPEATS rather than losing the news.
+// THE CURSOR LIVES ON THE BOARD (issue #86). Where the last brief counted to is
+// read back off the home repo's Discussions: every published brief carries one
+// machine-readable line, `<!-- cc-news: <version> -->`, and the newest one is
+// the "since" this run diffs against. Nothing on this machine records it — the
+// job state that used to sit in `~/.workkit/.cache.json` was a local-only
+// limitation, and the publish IS the commit, so there is no callback to call.
 //
-// FIRST RUN SEEDS, IT DOES NOT REPORT. With no mark there is no "since", and
-// the honest answer for a machine that has never looked is the entire history —
-// hundreds of entries, which would bury the brief it was meant to inform. So a
-// first run records the latest version, reports nothing, and every morning
-// after is a true diff.
+// FIRST RUN SEEDS, IT DOES NOT REPORT. With no brief on the board there is no
+// "since", and the honest answer for a machine that has never looked is the
+// entire history — hundreds of entries, which would bury the brief it was meant
+// to inform. So a first run reports nothing and lets the publish carry the
+// latest version, and every morning after is a true diff.
 //
-// Every failure here is SILENT: no network, a non-200, an unparseable file, and
-// the brief prints without a CC NEWS block and without moving the mark. The
-// morning brief must never fail because GitHub was unreachable.
+// A BOARD THAT COULD NOT BE READ IS NOT AN EMPTY BOARD. A `gh` that refuses or
+// answers something else is a FAILED read, and a failed read reports nothing AND
+// publishes no version line: the last brief that carried one stays the newest
+// cursor, so the next good morning still diffs against it. Only a board that
+// genuinely carries no brief seeds.
+//
+// Every failure here is SILENT: no network, a non-200, an unparseable file, a
+// `gh` that refuses, and the brief prints without a CC NEWS block. The morning
+// brief must never fail because GitHub was unreachable. When the upstream read
+// failed but the board had a version, that version rides forward unchanged —
+// the cursor never goes backward for want of a network.
 //
 // Usage:
-//   const { collectCcNews } = require('./cc-news');
-//   const news = collectCcNews();          // null, or { version, matches, commit }
-//   if (news) news.commit();               // after the payload printed
+//   const { collectCcNews, renderVersionMark } = require('./cc-news');
+//   const news = collectCcNews();          // { version, since, matches }
+//   renderVersionMark(news.version);       // the line the published brief carries
 //
 
 const fs = require('fs');
@@ -41,10 +50,33 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const WORKKIT_DIR = '.workkit';
-// The machine's disposable file, and this module's one key in it. Never inside
-// a checkout, and never in the hand-edited settings.json beside it.
-const CACHE_FILE = '.cache.json';
-const CACHE_KEY = 'ccNews';
+// The hand-edited file that names the home repo — the board the cursor lives on.
+const SETTINGS_FILE = 'settings.json';
+
+// The published briefs, by the title `claude-daily.sh` gives them, and the line
+// each one carries. THIS MODULE OWNS THE LINE'S SHAPE: the runner never writes
+// it by hand, it appends the file `renderVersionMark` was rendered into, so the
+// writer and the reader cannot drift.
+const BRIEF_TITLE_PREFIX = 'brief: ';
+const MARK_RE = /<!--\s*cc-news:\s*(\d+(?:\.\d+)*)\s*-->/;
+const renderVersionMark = (version) => `<!-- cc-news: ${version} -->`;
+
+// The briefs on the home repo, newest first. No category argument: a brief
+// publishes in whatever category the repo's fallback resolved to, and the title
+// is what says it is a brief.
+//
+// 100 is the GraphQL page maximum, and the window has to be wide because the
+// board is SHARED: the summaries post beside the briefs, and a run of mornings
+// whose send failed carries no version line at all. A narrow window lets the
+// last line-carrying brief scroll out of view, which reads as an empty board and
+// re-seeds the cursor — every entry in between silently never reported.
+const BRIEF_QUERY = `query($owner:String!,$name:String!){
+  repository(owner:$owner,name:$name){
+    discussions(first:100, orderBy:{field:CREATED_AT, direction:DESC}){
+      nodes { title body }
+    }
+  }
+}`;
 
 // `WORKKIT_CC_CHANGELOG` overrides the source — a seam for the suite, which
 // points it at a `file://` fixture so running the tests never reaches the
@@ -125,49 +157,97 @@ const parseSections = (text) => {
 /** The topic an entry files under — the first TOPICS match, or 'other'. */
 const topicOf = (entry) => (TOPICS.find(({ re }) => re.test(entry)) || { name: 'other' }).name;
 
-/** The whole cache file, or an empty object when it is absent or unreadable. */
-const readCache = (file) => {
+/** The home repo's slug, or null when this machine has no home repo. */
+const homeSlug = (workflowHome) => {
   try {
-    const cache = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return cache && typeof cache === 'object' ? cache : {};
+    const settings = JSON.parse(fs.readFileSync(path.join(workflowHome, SETTINGS_FILE), 'utf8'));
+    const repo = settings && settings.site && settings.site.repo;
+    return typeof repo === 'string' && repo.includes('/') ? repo : null;
   } catch {
-    return {};
+    return null;
   }
 };
 
-/** The recorded last-seen version, or null when this machine has never looked. */
-const readMark = (file) => {
-  const mark = readCache(file)[CACHE_KEY];
-  return mark && typeof mark.version === 'string' ? mark.version : null;
+/**
+ * The board, read TRI-STATE. A version is a cursor; `ok` with no version is a
+ * board that genuinely carries no brief (a first run, and a machine with no home
+ * repo, which has no board and never will); `ok: false` is a read that FAILED —
+ * a `gh` that refused, an answer that is not the shape asked for — where the
+ * board's real contents are unknown and must not be mistaken for empty.
+ * @returns {{ok: boolean, version: string|null}}
+ */
+const readBoardVersion = (workflowHome, exec) => {
+  const slug = homeSlug(workflowHome);
+  if (!slug) return { ok: true, version: null };
+  const [owner, name] = slug.split('/');
+
+  let out;
+  try {
+    out = exec('gh', ['api', 'graphql', '-f', `owner=${owner}`, '-f', `name=${name}`, '-f', `query=${BRIEF_QUERY}`]);
+  } catch {
+    return { ok: false, version: null };
+  }
+
+  let nodes;
+  try {
+    nodes = JSON.parse(out).data.repository.discussions.nodes;
+  } catch {
+    return { ok: false, version: null };
+  }
+  if (!Array.isArray(nodes)) return { ok: false, version: null };
+
+  for (const node of nodes) {
+    if (!node || typeof node.title !== 'string') continue;
+    if (!node.title.startsWith(BRIEF_TITLE_PREFIX)) continue;
+    const found = MARK_RE.exec(typeof node.body === 'string' ? node.body : '');
+    // A brief published before the line existed is passed over, not treated
+    // as a cursor of its own — the next one down may still carry a version.
+    if (found) return { ok: true, version: found[1] };
+  }
+  return { ok: true, version: null };
 };
 
 /**
  * Every upstream entry since the last brief, each carrying its topic.
  *
+ * Always answers — there is no failure return. `version` is what the brief
+ * about to be published should record (null when nothing has ever been read),
+ * `since` is where this run counted from, and `matches` is empty whenever there
+ * is nothing to say. A board that could not be read answers null to all three:
+ * no report, and no line, so the last published cursor stands.
+ *
  * @param {object} [opts]
  * @param {string} [opts.workflowHome] the user's ~/.workkit
  * @param {string} [opts.home] overrides ~ for the default above
  * @param {string} [opts.source] the CHANGELOG URL (or any curl-readable path)
- * @param {Function} [opts.exec] (cmd, args) => stdout — the curl seam
- * @returns {{version: string, since: string|null, matches: Array<{version: string, topic: string, entry: string}>, commit: Function}|null}
+ * @param {Function} [opts.exec] (cmd, args) => stdout — the curl and gh seam
+ * @returns {{version: string|null, since: string|null, matches: Array<{version: string, topic: string, entry: string}>}}
  */
 const collectCcNews = (opts = {}) => {
   const home = opts.home || os.homedir();
-  const workflowHome = opts.workflowHome || path.join(home, WORKKIT_DIR);
-  const cacheFile = path.join(workflowHome, CACHE_FILE);
+  const workflowHome = opts.workflowHome
+    || process.env.WORKFLOW_HOME
+    || path.join(home, WORKKIT_DIR);
   const exec = opts.exec || defaultExec;
 
-  const text = fetchChangelog(opts.source || SOURCE, exec);
-  if (!text) return null;
+  const board = readBoardVersion(workflowHome, exec);
+  // The board could not be read. Reporting nothing is the easy half; the half
+  // that matters is publishing NO version line, so the newest cursor stays the
+  // one the last good brief carried instead of being re-seeded to latest.
+  if (!board.ok) return { version: null, since: null, matches: [] };
+  const since = board.version;
 
-  const sections = parseSections(text);
-  if (sections.length === 0) return null;
+  const text = fetchChangelog(opts.source || SOURCE, exec);
+  const sections = text ? parseSections(text) : [];
+  // The upstream read failed, or served something that is not a changelog. The
+  // board's version rides forward so the brief about to publish does not rewind
+  // the cursor for everyone who reads it next.
+  if (sections.length === 0) return { version: since, since, matches: [] };
 
   const latest = sections
     .map((s) => s.version)
     .reduce((a, b) => (compareVersions(a, b) >= 0 ? a : b));
 
-  const since = readMark(cacheFile);
   const matches = [];
   if (since) {
     for (const section of sections) {
@@ -178,32 +258,11 @@ const collectCcNews = (opts = {}) => {
     }
   }
 
-  // Never move the mark backwards: a source that briefly served an older file
+  // Never move the cursor backwards: a source that briefly served an older file
   // would otherwise re-report everything between.
   const version = since && compareVersions(since, latest) > 0 ? since : latest;
 
-  return {
-    version,
-    since,
-    matches,
-    /** Record what this run reported. The caller calls it once the brief printed. */
-    commit: () => {
-      // An unwritable mark must not veto the brief the payload already printed —
-      // the run simply repeats tomorrow, which is the failure semantics anyway.
-      //
-      // Read-modify-WRITE, never a plain write: the Discussions id cache shares
-      // this file, and a morning that ran both would otherwise drop whichever
-      // key it did not own.
-      try {
-        const cache = readCache(cacheFile);
-        cache[CACHE_KEY] = { version, updatedAt: new Date().toISOString() };
-        fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
-        fs.writeFileSync(cacheFile, `${JSON.stringify(cache, null, 2)}\n`);
-      } catch {
-        // silent by design — see the header
-      }
-    },
-  };
+  return { version, since, matches };
 };
 
 /**
@@ -224,4 +283,13 @@ const renderCcNews = (news) => {
   return `\n--- CC NEWS ---\nEverything Claude Code shipped since ${news.since}, by topic:\n${groups.join('\n')}\n`;
 };
 
-module.exports = { collectCcNews, renderCcNews, parseSections, topicOf, compareVersions, SOURCE };
+module.exports = {
+  collectCcNews,
+  renderCcNews,
+  renderVersionMark,
+  parseSections,
+  topicOf,
+  compareVersions,
+  BRIEF_TITLE_PREFIX,
+  SOURCE,
+};

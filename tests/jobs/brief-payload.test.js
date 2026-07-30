@@ -38,6 +38,52 @@ const ccFixture = (home) => {
   return file;
 };
 
+/**
+ * A world for the news path: a scratch HOME naming a home repo, a `gh` shim
+ * that answers the board read out of a file this suite rewrites, the CHANGELOG
+ * on disk, and the scratch mark file the runner would name. Nothing here
+ * reaches GitHub — the shim is first on PATH and never calls out.
+ */
+const mkNewsWorld = () => {
+  const home = mkTmp();
+  const bin = path.join(home, 'bin');
+  const boardFile = path.join(home, 'board.json');
+  const markFile = path.join(home, 'cc-version');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.mkdirSync(path.join(home, '.workkit'), { recursive: true });
+  fs.writeFileSync(
+    path.join(home, '.workkit', 'settings.json'),
+    JSON.stringify({ version: 1, site: { repo: 'owner/private-home', publish: false, url: null } }),
+  );
+
+  const setBoard = (nodes) => fs.writeFileSync(
+    boardFile,
+    JSON.stringify({ data: { repository: { discussions: { nodes } } } }),
+  );
+  setBoard([]);
+  fs.writeFileSync(path.join(bin, 'gh'), `#!/usr/bin/env bash\ncat ${JSON.stringify(boardFile)}\n`);
+  fs.chmodSync(path.join(bin, 'gh'), 0o755);
+
+  return {
+    home,
+    ccFile: ccFixture(home),
+    /** What the last run handed the runner to append to the published brief. */
+    mark: () => (fs.existsSync(markFile) ? fs.readFileSync(markFile, 'utf8') : ''),
+    /** The brief the runner would have posted, now on the board. */
+    publish: (version) => setBoard([{
+      title: 'brief: 2026-07-29',
+      body: `HEADLINE: yesterday happened.\n\n<!-- cc-news: ${version} -->\n`,
+    }]),
+    env: {
+      ...process.env,
+      HOME: home,
+      PATH: `${bin}:${process.env.PATH}`,
+      WORKKIT_CC_CHANGELOG: `file://${ccFixture(home)}`,
+      WORKKIT_BRIEF_MARK_FILE: markFile,
+    },
+  };
+};
+
 const issueNode = (number, labels) => ({
   number,
   title: `issue ${number}`,
@@ -227,53 +273,48 @@ const run = async () => {
     assert(/^CC NEWS: only when a CC NEWS block is present/m.test(INSTRUCTION), 'and the response shape has its line');
   });
 
-  await test('a first run seeds the mark and prints no block; the next run prints one', () => {
-    const home = mkTmp();
-    const env = { ...process.env, HOME: home, WORKKIT_CC_CHANGELOG: `file://${ccFixture(home)}` };
-    const first = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
+
+  await test('a first run prints no block and hands the runner the latest version', () => {
+    // The cursor is a line in the latest published brief (issue #86), so the
+    // world here is an empty board and a scratch mark file — never the network.
+    const world = mkNewsWorld();
+    const first = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
     assertEq(first.status, 0, `exit 0 — stderr: ${first.stderr}`);
     // Past the instruction, which names the block it is explaining.
     assert(!/--- CC NEWS ---/.test(first.stdout.slice(INSTRUCTION.length)), 'the first morning does not dump the history');
-    assertEq(
-      JSON.parse(fs.readFileSync(path.join(home, '.workkit', '.cache.json'), 'utf8')).ccNews.version,
-      '2.1.219',
-      'it recorded the latest instead',
-    );
+    assertEq(world.mark(), '<!-- cc-news: 2.1.219 -->\n', 'the version line the published brief will carry');
 
-    fs.writeFileSync(ccFixture(home), `# Changelog\n\n## 2.1.220\n\n- Added a \`DirectoryAdded\` hook\n- Bug fixes\n${CC_CHANGELOG}`);
-    const second = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
+    // The brief that publish would have made, now on the board — and a release
+    // above it upstream.
+    world.publish('2.1.219');
+    fs.writeFileSync(world.ccFile, `# Changelog\n\n## 2.1.220\n\n- Added a \`DirectoryAdded\` hook\n- Bug fixes\n${CC_CHANGELOG}`);
+    const second = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
     assertEq(second.status, 0, `exit 0 — stderr: ${second.stderr}`);
     assert(/--- CC NEWS ---/.test(second.stdout.slice(INSTRUCTION.length)), 'the new release is flagged');
     assert(/\[hooks\]\n2\.1\.220 — Added a `DirectoryAdded` hook/.test(second.stdout), 'with the entry under its topic');
     assert(/\[other\]\n2\.1\.220 — Bug fixes/.test(second.stdout), 'and the housekeeping rides under other — the digest judges, not the job');
-    cleanup(home);
+    assertEq(world.mark(), '<!-- cc-news: 2.1.220 -->\n', 'and the cursor the next brief publishes has advanced');
+    cleanup(world.home);
   });
 
-  await test('a manual run reports the news but leaves the mark where it is', () => {
-    // `claude-daily.sh --now` exists for testing the brief; consuming the news
-    // there would mean the 9am job never reports it.
-    const home = mkTmp();
-    const env = { ...process.env, HOME: home, WORKKIT_CC_CHANGELOG: `file://${ccFixture(home)}` };
-    const markFile = path.join(home, '.workkit', '.cache.json');
-    spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
-    fs.writeFileSync(ccFixture(home), `# Changelog\n\n## 2.1.220\n\n- Added a \`DirectoryAdded\` hook\n${CC_CHANGELOG}`);
+  await test('nothing on this machine records the cursor', () => {
+    const world = mkNewsWorld();
+    spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
+    assert(!fs.existsSync(path.join(world.home, '.workkit', '.cache.json')),
+      'the disposable cache is not where the news cursor lives any more');
+    cleanup(world.home);
+  });
 
-    const manual = spawnSync('node', [SCRIPT], {
-      encoding: 'utf8', timeout: 60000, env: { ...env, WORKKIT_BRIEF_MANUAL: '1' },
-    });
-    assertEq(manual.status, 0, `exit 0 — stderr: ${manual.stderr}`);
-    assert(/--- CC NEWS ---/.test(manual.stdout.slice(INSTRUCTION.length)), 'the manual run still sees the news');
-    assertEq(
-      JSON.parse(fs.readFileSync(markFile, 'utf8')).ccNews.version, '2.1.219',
-      'and the mark is untouched',
-    );
-
-    spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
-    assertEq(
-      JSON.parse(fs.readFileSync(markFile, 'utf8')).ccNews.version, '2.1.220',
-      'the scheduled run still advances it',
-    );
-    cleanup(home);
+  await test('with no mark file named, the script still prints its brief', () => {
+    // The runner names the file; a human running `node jobs/brief-payload.js`
+    // does not, and the payload is the whole point of the script.
+    const world = mkNewsWorld();
+    const env = { ...world.env };
+    delete env.WORKKIT_BRIEF_MARK_FILE;
+    const res = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assert(res.stdout.startsWith(INSTRUCTION), 'the payload printed');
+    cleanup(world.home);
   });
 
   return summary();
