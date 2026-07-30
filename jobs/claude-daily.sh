@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Daily Claude job — the one cron this kit runs. It writes up the day that just
-# ended (claude-nightly.sh), then sends the morning brief to Claude Code
-# headless, logs the exchange, fires a desktop notification with the response,
-# and PUBLISHES that response as a Discussion on the home repo (issue #86) —
-# the durable copy, and the line the next morning reads its cursor from.
+# ended (claude-nightly.sh), then TRIGGERS the brief in the cloud (issue #82) —
+# and only when that dispatch cannot be made does it send the morning brief to
+# Claude Code headless here, log the exchange, fire a desktop notification with
+# the response, and PUBLISH that response as a Discussion on the home repo
+# (issue #86) — the durable copy, and the line the next morning reads its
+# cursor from.
 # Runs standalone or via launchd (sets its own PATH — launchd provides a bare env).
 # Usage: claude-daily.sh [--now | message]   (defaults to the brief-payload payload;
 #        --now is the on-demand brief, `npm run brief` — same pipeline, marked manual)
@@ -16,6 +18,15 @@ export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 
 # Resolve before any cd — BASH_SOURCE may be a relative path.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Posting the digest as a Discussion is shared with the cloud runner, so it
+# lives in one file both source (issue #82).
+# shellcheck source=./brief-publish.sh
+. "$SCRIPT_DIR/brief-publish.sh"
+
+# The workflow in this repo that runs the brief on a GitHub Actions runner. The
+# dispatch below names it; the file is .github/workflows/brief.yml.
+BRIEF_WORKFLOW='brief.yml'
 
 # Run from an empty scratch dir. Under launchd the default cwd is / and the job
 # is its own TCC identity (no inherited Terminal grants) — Claude Code's startup
@@ -110,6 +121,74 @@ if (( $# == 0 )); then
   fi
 fi
 
+# The brief's first choice is the CLOUD (issue #82): a `workflow_dispatch` on
+# this repo's brief.yml, which composes the same payload on a runner and
+# publishes the same Discussion. A laptop that is awake at nine gets the first
+# shot at it; the workflow's own cron is the backup for the morning it is not.
+#
+# Every reason the dispatch cannot be made — no network, a `gh` that is not
+# authenticated, a repo without the workflow — is a silent false, and the full
+# local brief runs instead. The delivery for the day is the Discussion either
+# way, so the dispatch line is the log's whole record of a cloud morning; a
+# desktop notification here would announce nothing the cloud has yet said.
+dispatch_brief() {
+  local engine="$SCRIPT_DIR/../workflow" slug
+  [[ -f "$engine/lib.sh" ]] || return 1
+  command -v gh >/dev/null 2>&1 || return 1
+  # In a subshell: this is one read of a helper, and sourcing the engine into
+  # the job's own shell for it would leak its every function and address.
+  slug="$(. "$engine/lib.sh"; wk_repo_slug "$SCRIPT_DIR/..")" || return 1
+  [[ -n "$slug" ]] || return 1
+  # The workflow existing is not the workflow WORKING: `gh workflow run` succeeds
+  # the moment the file is on the default branch, and a runner without the OAuth
+  # token composes nothing. Every morning in that window would be silently
+  # briefless — the laptop having handed the day away to a job that cannot do it.
+  # So the secret is checked on the same repo first, and anything but a listing
+  # that names it (gh refuses, the secret is absent) is the ordinary silent false
+  # that runs the whole brief here.
+  gh secret list --repo "$slug" 2>/dev/null | grep -qE '^CLAUDE_CODE_OAUTH_TOKEN([[:space:]]|$)' || return 1
+  gh workflow run "$BRIEF_WORKFLOW" --repo "$slug" >/dev/null 2>&1 || return 1
+  DISPATCH_LINE="brief: dispatched $BRIEF_WORKFLOW on $slug — the cloud runner composes and publishes today's brief"
+  note "$DISPATCH_LINE"
+  return 0
+}
+
+# The published dashboard: the tower project in ~/.workkit/tower, rebuilt and
+# pushed to the home repo's gh-pages branch. It runs LAST and only for the
+# brief, for the same reason the summaries run first and are allowed to fail:
+# the job exists to make sure nine o'clock says something, and a build is the
+# slowest thing here. Its every reason not to publish — `site.publish` off (the
+# default), no home repo, no build tooling, a diverged clone, nothing changed —
+# is a skip it logs and exits 0 on,
+# so only a real failure ever appears in this block.
+#
+# It runs on BOTH brief paths: the site is this machine's to build whether the
+# digest was composed here or in the cloud.
+publish_site() {
+  [[ -f "$SCRIPT_DIR/../workflow/publish.sh" ]] || return 0
+  local status=0 output
+  output="$(${TIMEOUT[@]+"${TIMEOUT[@]}"} bash "$SCRIPT_DIR/../workflow/publish.sh" --quiet 2>&1)" || status=$?
+  if (( status != 0 )); then
+    {
+      printf '── %s ──\n' "$LOG_STAMP"
+      printf '[publish exit %d — the brief was already sent]\n' "$status"
+      printf '%s\n\n' "$output"
+    } >> "$LOG_FILE"
+  elif [[ -n "$output" ]]; then
+    printf '── %s ──\n%s\n\n' "$LOG_STAMP" "$output" >> "$LOG_FILE"
+  fi
+  return 0
+}
+
+# The scheduled brief, and only that: a message argument is the generic headless
+# runner and `--now` is a rehearsal that publishes nothing, so neither may hand
+# the day to a runner that would publish.
+if (( $# == 0 )) && (( MANUAL == 0 )) && dispatch_brief; then
+  printf '%s\n' "$DISPATCH_LINE"
+  publish_site
+  exit 0
+fi
+
 # Default payload: the morning brief built from the tower's own libs
 # (jobs/brief-payload.js). Any argument overrides it — claude-daily.sh stays a
 # generic headless runner.
@@ -120,16 +199,23 @@ else
   # log and notify — a silent morning is the one failure mode this job
   # exists to prevent.
   PAYLOAD_STATUS=0
-  MESSAGE="$(node "$SCRIPT_DIR/brief-payload.js" 2>&1)" || PAYLOAD_STATUS=$?
+  # The composer's stderr is kept OUT of the payload: it carries the crash on a
+  # failure, and on a good run the one line naming repos the sweep could not read
+  # — a token whose reach is short. Either belongs in the log, neither in the
+  # message Claude is handed.
+  PAYLOAD_ERR_FILE="$SCRATCH_DIR/payload-err"
+  MESSAGE="$(node "$SCRIPT_DIR/brief-payload.js" 2>"$PAYLOAD_ERR_FILE")" || PAYLOAD_STATUS=$?
+  PAYLOAD_ERR="$(cat "$PAYLOAD_ERR_FILE" 2>/dev/null || true)"
   if (( PAYLOAD_STATUS != 0 )); then
     {
       printf '── %s ──\n' "$LOG_STAMP"
       printf '[brief-payload exit %d]\n' "$PAYLOAD_STATUS"
-      printf '%s\n\n' "$MESSAGE"
+      printf '%s\n\n' "$PAYLOAD_ERR"
     } >> "$LOG_FILE"
-    notify "❌ brief-payload exit $PAYLOAD_STATUS — $MESSAGE"
+    notify "❌ brief-payload exit $PAYLOAD_STATUS — $PAYLOAD_ERR"
     exit "$PAYLOAD_STATUS"
   fi
+  if [[ -n "$PAYLOAD_ERR" ]]; then note "$PAYLOAD_ERR"; fi
 fi
 
 STATUS=0
@@ -158,73 +244,16 @@ notify "$NOTIF_MSG"
 # The brief's durable copy, and the only place the upstream-news cursor is
 # recorded: a Discussion on the home repo carrying the digest response and the
 # `<!-- cc-news: <version> -->` line brief-payload.js rendered (issue #86).
-# Every reason not to publish is a logged line and a zero return — the morning
-# already happened, and a post that could not be made must never undo it.
-#
-# The CATEGORY is asked for by name and answered by the fallback: categories
-# cannot be created over the API, so `Brief` resolves to the repo's default
-# unless someone made one by hand. The read-back in cc-news.js filters on the
-# TITLE for the same reason — it cannot know which category a repo landed in.
+# jobs/brief-publish.sh does the posting — the cloud runner posts the same way
+# and there is one file that knows how — and this decides what to do with the
+# answer: every outcome is a logged line and a zero return, because the morning
+# already happened and a post that could not be made must never undo it.
 publish_brief() {
-  local engine="$SCRIPT_DIR/../workflow" slug date title posted body_file url
-  if [[ ! -f "$engine/lib.sh" || ! -f "$engine/discussions.sh" || ! -f "$engine/home.sh" ]]; then
-    note "brief: the engine's home-repo library is missing at $engine — nothing published"
-    return 0
-  fi
-  # shellcheck source=../workflow/lib.sh
-  . "$engine/lib.sh"
-  # shellcheck source=../workflow/discussions.sh
-  . "$engine/discussions.sh"
-  # shellcheck source=../workflow/home.sh
-  . "$engine/home.sh"
-
-  slug="$(wk_home_slug)" || slug=''
-  if [[ -z "$slug" ]]; then
-    note 'brief: no home repo configured — nothing published'
-    return 0
-  fi
-  if ! wk_disc_ready; then
-    note "brief: $slug is the home repo, but gh and jq are what reach it — nothing published"
-    return 0
-  fi
-
-  date="$(date '+%Y-%m-%d')"
-  # The prefix cc-news.js reads back by. Kept in step with BRIEF_TITLE_PREFIX
-  # there — the one literal this shell and that module both know.
-  title="brief: $date"
-
-  # Check before post: the scheduled run may fire twice, and a cloud runner
-  # (issue #82) may have already published today's. Either way the answer is the
-  # same, and it costs one call.
-  posted="$(wk_disc_list "$slug" 'Brief' "${date}T00:00:00Z")" || posted=''
-  if [[ -n "$posted" ]] \
-    && printf '%s' "$posted" | jq -e --arg t "$title" 'any(.[]; .title == $t)' >/dev/null 2>&1; then
-    note "brief: $slug already carries $title — nothing posted"
-    return 0
-  fi
-
-  body_file="$SCRATCH_DIR/brief.md"
-  printf '%s\n' "$RESPONSE" >"$body_file"
-  # The version line, verbatim from the module that owns its shape. An empty
-  # file is a run that had no version to carry, and it publishes no line.
-  if [[ -s "$MARK_FILE" ]]; then
-    printf '\n' >>"$body_file"
-    cat "$MARK_FILE" >>"$body_file"
-  fi
-
-  # One return covers two causes — the category read itself failed, or the repo
-  # answered with no categories at all — and this caller cannot tell them apart.
-  # Naming one of them would be a guess in the log, so it names neither.
-  if ! wk_disc_resolve_category "$slug" 'Brief'; then
-    note "brief: could not resolve a discussion category on $slug — nothing posted"
-    return 0
-  fi
-  url="$(wk_disc_create "$slug" "$WK_DISC_CATEGORY_ID" "$title" "$body_file")" || url=''
-  if [[ -z "$url" ]]; then
-    note "brief: $title could not be posted to $slug — nothing posted"
-    return 0
-  fi
-  note "brief: posted $title → $url"
+  local line
+  # The status is deliberately dropped: on this machine a post that did not land
+  # reads the same as one there was no reason to make, and both are the line.
+  line="$(wk_brief_publish "$SCRIPT_DIR/../workflow" "$RESPONSE" "$MARK_FILE" "$SCRATCH_DIR/brief.md")" || true
+  if [[ -n "$line" ]]; then note "$line"; fi
   return 0
 }
 
@@ -234,26 +263,8 @@ if (( $# == 0 )) && (( MANUAL == 0 )) && (( STATUS == 0 )); then
   publish_brief
 fi
 
-# The published dashboard: the tower project in ~/.workkit/tower, rebuilt and
-# pushed to the home repo's gh-pages branch. It runs LAST and only for the
-# brief, for the same reason the summaries run first and are allowed to fail:
-# the job exists to make sure nine o'clock says something, and a build is the
-# slowest thing here. Its every reason not to publish — `site.publish` off (the
-# default), no home repo, no build tooling, a diverged clone, nothing changed —
-# is a skip it logs and exits 0 on,
-# so only a real failure ever appears in this block.
-if (( $# == 0 )) && [[ -f "$SCRIPT_DIR/../workflow/publish.sh" ]]; then
-  PUBLISH_STATUS=0
-  PUBLISH_OUTPUT="$(${TIMEOUT[@]+"${TIMEOUT[@]}"} bash "$SCRIPT_DIR/../workflow/publish.sh" --quiet 2>&1)" || PUBLISH_STATUS=$?
-  if (( PUBLISH_STATUS != 0 )); then
-    {
-      printf '── %s ──\n' "$LOG_STAMP"
-      printf '[publish exit %d — the brief was already sent]\n' "$PUBLISH_STATUS"
-      printf '%s\n\n' "$PUBLISH_OUTPUT"
-    } >> "$LOG_FILE"
-  elif [[ -n "$PUBLISH_OUTPUT" ]]; then
-    printf '── %s ──\n%s\n\n' "$LOG_STAMP" "$PUBLISH_OUTPUT" >> "$LOG_FILE"
-  fi
+if (( $# == 0 )); then
+  publish_site
 fi
 
 printf '%s\n' "$RESPONSE"

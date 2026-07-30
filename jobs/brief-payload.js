@@ -73,6 +73,24 @@ Nothing else — no preamble, no advice, no restating the payload.
 --- BRIEF ---`;
 
 /**
+ * The repos the sweep could not read, said once on stderr.
+ *
+ * A PARTIAL sweep still answers `ok: true` — the board keeps every repo that
+ * came back and records the others as per-repo errors, which the payload does
+ * not carry. That is the shape a token whose scope is short takes: the brief
+ * reads clean and simply covers less than the roster. The one line here is what
+ * makes it visible, in the local log and the Actions log alike; stdout, which is
+ * the payload, is untouched.
+ *
+ * @param {{repos?: Array<{slug: string, error: string|null}>}} board the sweep
+ */
+const warnUnreadable = (board) => {
+  const unreadable = ((board && board.repos) || []).filter((r) => r && r.error);
+  if (!unreadable.length) return;
+  process.stderr.write(`brief: ${unreadable.length} repos unreadable: ${unreadable.map((r) => r.slug).join(', ')}\n`);
+};
+
+/**
  * The brief payload, assembled from the three reads the tower's endpoints make.
  *
  * Every option passes through to the libs untouched, which is what lets the
@@ -108,6 +126,7 @@ const composeBrief = (opts = {}) => {
   }
 
   const board = fetchBoard(repos, seam);
+  warnUnreadable(board);
   const health = {};
   for (const repo of repos) health[repo.path] = repoHealth(repo.path, seam);
 

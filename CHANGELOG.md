@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#82](../../issues/82) — The morning brief runs in the cloud: the 9am job triggers a GitHub Actions workflow that composes and publishes it from a runner, and only a dispatch that cannot be made brings the brief back to the laptop, so a closed lid no longer means a quiet morning.
+
 ## [0.17.0] - 2026-07-30
 
 ### Changed

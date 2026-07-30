@@ -156,6 +156,17 @@ const mkWorld = () => {
   return world;
 };
 
+// What the run wrote to stderr while `fn` ran. The line the composer prints
+// about unreadable repos goes there and nowhere else, so this is the only place
+// to read it back.
+const captureStderr = (fn) => {
+  const original = process.stderr.write.bind(process.stderr);
+  let text = '';
+  process.stderr.write = (chunk) => { text += chunk; return true; };
+  try { fn(); } finally { process.stderr.write = original; }
+  return text;
+};
+
 const composeIn = (world) => composeBrief({
   workflowHome: path.join(world.home, '.workkit'),
   home: world.home,
@@ -211,6 +222,28 @@ const run = async () => {
     assertEq(out.ok, false, 'the brief is not ok');
     assertEq(out.reason, 'gh not found', 'and says why');
     assertEq(out.counts.open, 0, 'with no invented work');
+    cleanup(world.root);
+  });
+
+  await test('a repo the sweep could not read is named on stderr', () => {
+    // The shape a short token scope takes: the board answers, ok stays true, and
+    // the repo it could not read is a per-repo error the payload never carries.
+    const world = mkWorld();
+    world.board = {
+      data: { r0: null },
+      errors: [{ type: 'NOT_FOUND', path: ['r0'], message: 'Could not resolve to a Repository' }],
+    };
+    let out;
+    const stderr = captureStderr(() => { out = composeIn(world); });
+    assertEq(out.ok, true, 'the sweep itself answered — this is not a failed morning');
+    assertEq(stderr, `brief: 1 repos unreadable: ${SLUG}\n`, `the gap is said out loud: ${JSON.stringify(stderr)}`);
+    cleanup(world.root);
+  });
+
+  await test('a clean sweep says nothing', () => {
+    const world = mkWorld();
+    const stderr = captureStderr(() => composeIn(world));
+    assertEq(stderr, '', `no line when every repo answered: ${JSON.stringify(stderr)}`);
     cleanup(world.root);
   });
 

@@ -55,10 +55,16 @@ const today = () => new Date().toLocaleDateString('en-CA');
  * — the check-before-post guard's input, and the news cursor's.
  * `ghFails` makes every API call refuse.
  * `ccChangelog` is the upstream CHANGELOG the news read is pointed at.
+ * `dispatch` is whether `gh workflow run` lands — false by default, which is
+ * the machine that cannot reach the cloud and runs the whole brief itself, and
+ * therefore the world every assertion about the local leg is made in.
+ * `secrets` is whether `gh secret list` names CLAUDE_CODE_OAUTH_TOKEN — true by
+ * default, the repo whose runner can actually compose the brief.
  */
 const mkWorld = ({
   response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n', status = 0, logsDir = true,
   home: homeRepo = null, posted = [], ghFails = false, ccChangelog = null, badSettings = false,
+  dispatch = false, secrets = true,
 } = {}) => {
   const root = mkTmp();
   const bin = path.join(root, 'bin');
@@ -111,6 +117,14 @@ const mkWorld = ({
     ...(ghFails ? ['exit 1'] : []),
     'all="$*"',
     'case "$all" in',
+    // The cloud trigger. A refusal is the ordinary world here: no network, no
+    // auth, no workflow — whatever the reason, the local brief runs.
+    `  "workflow run"*) exit ${dispatch ? 0 : 1} ;;`,
+    // The secrets the runner needs, checked before the day is handed to it. A
+    // repo carrying the workflow and not the token lists neither.
+    ...(secrets
+      ? ['  "secret list"*) printf \'%s\\n\' "CLAUDE_CODE_OAUTH_TOKEN\tUpdated 2026-07-01" "WORKKIT_HOME_TOKEN\tUpdated 2026-07-01" ;;']
+      : ['  "secret list"*) printf \'%s\\n\' "WORKKIT_HOME_TOKEN\tUpdated 2026-07-01" ;;']),
     '  *createDiscussion*)',
     // The body travels as `@file` and the file goes away with the run, so
     // what was published is kept here for the assertions.
@@ -150,6 +164,7 @@ const mkWorld = ({
     // an auth check is not a brief reaching GitHub.
     briefGhCalls: () => readArgv(ghLog).filter((c) => BRIEF_GH.test(c.join(' '))),
     created: () => readArgv(ghLog).filter((c) => c.join(' ').includes('createDiscussion')),
+    dispatched: () => readArgv(ghLog).filter((c) => c[0] === 'workflow' && c[1] === 'run'),
     postedBody: () => (fs.existsSync(bodyLog) ? fs.readFileSync(bodyLog, 'utf8') : ''),
     log: () => {
       const file = path.join(home, 'Library', 'Logs', 'claude-daily.log');
@@ -366,7 +381,9 @@ const run = async () => {
   await test('the publish runs after the brief, quietly, and never before it', () => {
     const text = fs.readFileSync(SCRIPT, 'utf8');
     const sent = text.indexOf('RESPONSE="$(claude -p');
-    const published = text.indexOf('workflow/publish.sh');
+    // The call, not the definition: the site publish is a function now, because
+    // the cloud-trigger path runs it too, and a function is defined up top.
+    const published = text.lastIndexOf('\n  publish_site\n');
     assert(sent !== -1 && published > sent, 'the brief is sent before anything is built');
     assert(/publish\.sh" --quiet/.test(text), 'and the daily run asks for the quiet variant');
     assert(/publish exit %d — the brief was already sent/.test(text), 'a failure is logged, never fatal');
@@ -514,6 +531,102 @@ const run = async () => {
     assert(!fs.existsSync(path.join(world.workflowHome, '.cache.json'))
       || !('ccNews' in JSON.parse(fs.readFileSync(path.join(world.workflowHome, '.cache.json'), 'utf8'))),
     'the cursor is the Discussion — nothing writes ccNews any more');
+    cleanup(world.root);
+  });
+
+  group('jobs/claude-daily: the cloud trigger');
+
+  // The brief's first choice is a workflow_dispatch on this repo (issue #82).
+  // Everything below is about which of the two legs a morning takes — never
+  // both, and never neither.
+
+  await test('a dispatch that lands hands the day to the cloud and composes nothing here', () => {
+    const world = mkWorld({ home: 'owner/private-home', dispatch: true });
+    const res = runJob(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+
+    const sent = world.dispatched();
+    assertEq(sent.length, 1, `one workflow run: ${fmtCalls(world.ghCalls()).slice(0, 400)}`);
+    assertEq(sent[0][2], 'brief.yml', 'and it names the brief workflow');
+    assertEq(sent[0][3], '--repo', 'on a repo');
+    assert(/^[^/\s]+\/[^/\s]+$/.test(sent[0][4] || ''), `named by slug: ${sent[0][4]}`);
+
+    assertEq(world.calls().length, 0, `claude never ran here: ${fmtCalls(world.calls()).slice(0, 200)}`);
+    assertEq(world.created().length, 0, 'and nothing was published from this machine');
+    assert(/dispatched brief\.yml on /.test(world.log()), `the log records the dispatch: ${world.log()}`);
+    assert(res.stdout.includes('dispatched brief.yml on'), 'and says so on screen');
+    cleanup(world.root);
+  });
+
+  await test('the summaries step still runs before the dispatch', () => {
+    const world = mkWorld({ home: 'owner/private-home', dispatch: true });
+    runJob(world);
+    assert(fs.existsSync(world.nightlyLog), 'yesterday is written up whether or not the brief is local');
+    cleanup(world.root);
+  });
+
+  await test('the site publish still runs after a dispatch — the site is this machine\'s', () => {
+    const world = mkWorld({ badSettings: true, dispatch: true });
+    const res = runJob(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assert(/does not parse as JSON/.test(world.log()), `the publish leg ran: ${world.log()}`);
+    cleanup(world.root);
+  });
+
+  await test('a dispatch that does not land runs the whole brief here', async () => {
+    const world = mkWorld({ home: 'owner/private-home' });
+    const res = runJob(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(world.dispatched().length, 1, 'the trigger was tried');
+    const calls = world.calls();
+    assertEq(calls.length, 1, `and the brief was composed here: ${fmtCalls(calls).slice(0, 200)}`);
+    assert(calls[0][1].startsWith(INSTRUCTION), 'the same payload as always');
+    assertEq(world.created().length, 1, 'and published from here');
+    await notifiedMatching(world, /^HEADLINE: one thing today\.$/);
+    cleanup(world.root);
+  });
+
+  await test('a repo without the OAuth secret is never handed the day', async () => {
+    // `gh workflow run` succeeds the moment the file is on the default branch,
+    // secrets or not — and a runner without the token composes nothing. The day
+    // stays here until the repo can actually do the work.
+    const world = mkWorld({ home: 'owner/private-home', dispatch: true, secrets: false });
+    const res = runJob(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(world.dispatched().length, 0, 'nothing was triggered');
+    const calls = world.calls();
+    assertEq(calls.length, 1, `the whole brief ran here: ${fmtCalls(calls).slice(0, 200)}`);
+    assert(calls[0][1].startsWith(INSTRUCTION), 'the same payload as always');
+    assertEq(world.created().length, 1, 'and was published from this machine');
+    await notifiedMatching(world, /^HEADLINE: one thing today\.$/);
+    cleanup(world.root);
+  });
+
+  await test('the secrets are checked on the repo the dispatch names', () => {
+    const world = mkWorld({ home: 'owner/private-home', dispatch: true });
+    runJob(world);
+    const checks = world.ghCalls().filter((c) => c[0] === 'secret' && c[1] === 'list');
+    assertEq(checks.length, 1, `one listing, on the scheduled morning only: ${fmtCalls(world.ghCalls()).slice(0, 400)}`);
+    assertEq(checks[0][2], '--repo', 'scoped to a repo');
+    assertEq(checks[0][3], world.dispatched()[0][4], 'the same slug the dispatch went to');
+    cleanup(world.root);
+  });
+
+  await test('--now never dispatches — a rehearsal must not hand the day to a runner', () => {
+    const world = mkWorld({ home: 'owner/private-home', dispatch: true });
+    const res = runJob(world, ['--now']);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(world.dispatched().length, 0, 'the cloud was never asked');
+    assertEq(world.calls().length, 1, 'the rehearsal ran here');
+    assertEq(world.created().length, 0, 'and published nothing, as it always did');
+    cleanup(world.root);
+  });
+
+  await test('a message argument never dispatches — the generic runner stays generic', () => {
+    const world = mkWorld({ home: 'owner/private-home', dispatch: true });
+    runJob(world, ['hello']);
+    assertEq(world.dispatched().length, 0, 'no workflow was triggered');
+    assertEq(world.calls()[0][1], 'hello', 'the message went straight to claude');
     cleanup(world.root);
   });
 

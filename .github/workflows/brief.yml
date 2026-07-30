@@ -1,0 +1,56 @@
+# The morning brief, run in the cloud (issue #82).
+#
+# The laptop's 9am job dispatches this workflow and then stays out of the way;
+# the schedule below is the backup for the morning the laptop is asleep. Both
+# can fire on one day without harm — the runner checks the board for today's
+# brief before it posts.
+#
+# The engine code lives in this repo, which is why the workflow does too. It
+# runs jobs/claude-cloud.sh and nothing else: the summaries step and the site
+# publish read this machine's git history, transcripts and home clone, none of
+# which exist on a runner.
+#
+# What it needs, set once on this repo:
+#   gh secret set CLAUDE_CODE_OAUTH_TOKEN    # `claude setup-token`
+#   gh secret set WORKKIT_HOME_TOKEN         # Discussions write + Contents read
+#                                            # on the home repo, AND Issues read
+#                                            # on every repo the published
+#                                            # data/repos.json names
+#   gh variable set WORKKIT_HOME_SLUG        # owner/name of the home repo
+# The built-in GITHUB_TOKEN reaches only this repo, which is why the home repo
+# needs a token of its own — and the runner sweeps the whole published roster
+# with that same token, so a repo it cannot read simply drops out of the board.
+# `gh auth token` (issue #88) satisfies the scope by construction; a fine-grained
+# PAT must select those repos with Issues: Read.
+
+name: brief
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 17:30 UTC — after the local 9am trigger window, so the laptop gets the
+    # first shot and this is the backup rather than a race.
+    - cron: '30 17 * * *'
+
+# One brief at a time: a dispatch and the cron landing together would otherwise
+# both compose, and only the check-before-post would tell them apart.
+concurrency:
+  group: brief
+  cancel-in-progress: false
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Install the Claude CLI
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Compose and publish the brief
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GH_TOKEN: ${{ secrets.WORKKIT_HOME_TOKEN }}
+          WORKKIT_HOME_SLUG: ${{ vars.WORKKIT_HOME_SLUG }}
+        run: bash jobs/claude-cloud.sh
