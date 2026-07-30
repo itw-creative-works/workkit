@@ -10,13 +10,14 @@
 # publish read this machine's git history, transcripts and home clone, none of
 # which exist on a runner.
 #
-# What it needs, set once on this repo:
-#   gh secret set CLAUDE_CODE_OAUTH_TOKEN    # `claude setup-token`
-#   gh secret set WORKKIT_HOME_TOKEN         # Discussions write + Contents read
-#                                            # on the home repo, AND Issues read
-#                                            # on every repo the published
-#                                            # data/repos.json names
-#   gh variable set WORKKIT_HOME_SLUG        # owner/name of the home repo
+# What it needs on this repo — `workkit setup` writes all three (issue #88), and
+# `workkit doctor` reports them, so none of this is a manual step any more:
+#   CLAUDE_CODE_OAUTH_TOKEN (secret)   # from `claude setup-token`
+#   WORKKIT_HOME_TOKEN (secret)        # Discussions write + Contents read
+#                                      # on the home repo, AND Issues read
+#                                      # on every repo the published
+#                                      # data/repos.json names
+#   WORKKIT_HOME_SLUG (variable)       # owner/name of the home repo
 # The built-in GITHUB_TOKEN reaches only this repo, which is why the home repo
 # needs a token of its own — and the runner sweeps the whole published roster
 # with that same token, so a repo it cannot read simply drops out of the board.

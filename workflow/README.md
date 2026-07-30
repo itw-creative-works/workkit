@@ -28,15 +28,15 @@ git clone <this repo> && cd workkit
 ./workflow/workkit.sh setup
 ```
 
-`setup` installs the plugin from this checkout when the `claude` CLI is present and does not have it (a machine without that CLI gets a named skip, never a failure), checks that `gh` is installed and authenticated, points the engine's address at this folder, installs the 9am schedule through `jobs/install.sh`, creates the home repo and clones the tower project into `~/.workkit/tower`, says where the tower is started, offers to enable the repo the shell is standing in, and symlinks itself to `~/.local/bin/workkit`. Where that directory is not on the PATH it prints the one `export` line to add — it never edits a shell rc. Every step checks before acting, so a second `setup` reports nothing to do.
+`setup` installs the plugin from this checkout when the `claude` CLI is present and does not have it (a machine without that CLI gets a named skip, never a failure), checks that `gh` is installed and authenticated, points the engine's address at this folder, installs the 9am schedule through `jobs/install.sh`, creates the home repo and clones the tower project into `~/.workkit/tower`, wires the cloud brief's secrets onto the repo this checkout's origin names, says where the tower is started, offers to enable the repo the shell is standing in, and symlinks itself to `~/.local/bin/workkit`. Where that directory is not on the PATH it prints the one `export` line to add — it never edits a shell rc. Every step checks before acting, so a second `setup` reports nothing to do.
 
 | Command | What it does |
 |---|---|
 | `workkit help` | the map (also what a bare `workkit` prints) |
 | `workkit setup` | the wizard above — the only path that installs a schedule for the first time |
 | `workkit update` | re-runs the machine-side installs: the engine address, the `~/.local/bin` symlink, and the schedule |
-| `workkit update --auto` | the quiet variant the standards hook runs; prints only what it changed |
-| `workkit doctor` | reports drift — plugin, gh, both links, schedule vintage, the roster count, the tower clone's state (unset · absent · clone · other, plus ahead/behind/diverged), this repo's state — with the fix command for anything out of its reach |
+| `workkit update --auto` | the quiet variant the standards hook runs; prints only what it changed, plus one warning line for a cloud secret that is missing or stale |
+| `workkit doctor` | reports drift — plugin, gh, both links, schedule vintage, the roster count, the tower clone's state (unset · absent · clone · other, plus ahead/behind/diverged), the cloud brief's secrets, this repo's state — with the fix command for anything out of its reach |
 | `workkit publish` | builds the tower project and pushes the site to the home repo's `gh-pages` branch; the daily job runs the same script after the brief |
 | `workkit enable [repo]` · `workkit decline [repo]` | `standards.sh --enable` / `--decline` under the one name |
 | `workkit note <text...>` | `wk.sh note`, unchanged |
@@ -117,6 +117,20 @@ Every step is idempotent and the whole sequence is safe to re-run: a second setu
 
 - Discussion **categories are checked and fallen back on**, not created, because no mutation exists to create one.
 - The Pages source path is `/` or `/docs` and nothing else (`"enum":["/","/docs"]`), which is why the site is served from the ROOT of its own branch rather than from a folder named for the rule.
+
+## The cloud brief's secrets
+
+The morning brief runs on a GitHub Actions runner (`.github/workflows/brief.yml`), which needs two repo secrets and one repo variable on the repo THIS checkout's origin names — the same slug the daily job's dispatch gates on. Setting them by hand was the last manual step of a from-zero install, so `setup` wires them (issue #88):
+
+| Value | What setup does |
+|---|---|
+| `CLAUDE_CODE_OAUTH_TOKEN` | absent, or last set more than ~11 months ago (the token lives about a year) → a `[y/N]` offer to run `claude setup-token`. A yes mints it and pipes it straight into `gh secret set`. Without a terminal the two commands are printed instead — the mint is a browser approval and cannot be automated |
+| `WORKKIT_HOME_TOKEN` | absent → set zero-click from `gh auth token`, no prompt (owner ruling 2026-07-30: maximum automation, and that login's broad reach is accepted). Present → left alone |
+| `WORKKIT_HOME_SLUG` | absent and a home repo is named in `~/.workkit/settings.json` → written with `gh variable set`; no home repo yet, or a variable listing that could not be read, is a skip that names it |
+
+**A token value only ever moves through a pipe.** It is held in one local on the way from the command that produced it to `gh secret set`'s stdin, and is never written to a file, passed as an argument, echoed, or logged.
+
+Reading comes first and decides everything: no `gh`, no `jq`, an incomplete checkout, no origin, or a `gh secret list` / `gh variable list` that did not come back as a JSON array is a NAMED SKIP, never a missing value — a repo that could not be read must never send someone to mint a token that is already there, and must never be written to either. Both listings are bounded (`timeout`/`gtimeout` when the machine has one, a bash watchdog when it does not, `WORKKIT_GH_TIMEOUT` seconds, default 10), because the daily `update --auto` runs them at session start and a captive portal answers the handshake and never the request; a bound that fires reads as an unreadable listing. Writes are not bounded — every one of them is on a path a human is sitting in front of. `workkit doctor` reports one line per value (set and fresh, missing, or stale, each with the command that fixes it) and counts the last two toward its attention total; the daily `workkit update --auto` never prompts and never mints — at most one warning line per value.
 
 ## Publishing the dashboard
 

@@ -84,14 +84,17 @@ The Discussion is the delivery, on the laptop and in the cloud alike; the notifi
 
 **The digest never reaches the Actions log.** It summarizes issues across private repos, and an Actions log belongs to a repo that could be made public one day. The log gets proof of life instead — the response's first line and its byte count — and a send that failed is logged as its exit status and what the CLI said on stderr, never the payload it was handed or the half-answer it stopped on. The Discussion is the delivery; the log is only the record that it happened.
 
-**What it needs, set once on this repo:**
+**What it needs, and `workkit setup` wires it** (issue #88). Two secrets and one variable, on this repo:
 
-```sh
-gh secret set CLAUDE_CODE_OAUTH_TOKEN    # `claude setup-token`, from the owner's subscription
-gh secret set WORKKIT_HOME_TOKEN         # Discussions write + Contents read on the home repo,
-                                         # AND Issues read on every repo the published roster names
-gh variable set WORKKIT_HOME_SLUG        # owner/name of the home repo
-```
+| Value | Scope it needs | How setup sets it |
+|---|---|---|
+| `CLAUDE_CODE_OAUTH_TOKEN` | the owner's Claude subscription | absent, or last set more than ~11 months ago (the token lives about a year), → a `[y/N]` offer to run `claude setup-token`; a yes mints it and pipes it straight into `gh secret set`. The browser approval is a human click, so without a terminal setup prints the two commands instead |
+| `WORKKIT_HOME_TOKEN` | Discussions write + Contents read on the home repo, AND Issues read on every repo the published roster names | absent → zero-click from `gh auth token`, no prompt |
+| `WORKKIT_HOME_SLUG` | — | absent → `gh variable set` from the home slug in `~/.workkit/settings.json` |
+
+A token value only ever moves through a pipe on its way to `gh secret set`'s stdin: it is never written to a file, passed as an argument, echoed, or logged. `workkit doctor` re-checks all three and warns on a value that is missing or past eleven months; the daily `workkit update --auto` warns and never mints.
+
+**The `gh auth token` tradeoff.** No API mints a scoped PAT, so the zero-click path pushes the CLI's own login — which typically carries full `repo` scope, far more than the brief needs. The owner accepted that on 2026-07-30 for the automation it buys. The least-privilege alternative is a hand-made fine-grained PAT with exactly the scopes in the table — Discussions write and Contents read on the home repo, Issues read on each swept repo — set with the same command setup uses, `gh secret set WORKKIT_HOME_TOKEN --repo <this repo>`; setup finds it present and leaves it alone from then on.
 
 The built-in `GITHUB_TOKEN` reaches only this repo, which is why the home repo needs a token of its own. **That one token also sweeps the board**, so its reach decides how much of the board there is: the runner asks for the issues of every slug in the published `data/repos.json` with it, and a repo it cannot read comes back as a per-repo error rather than an empty one — the composer prints `brief: <n> repos unreadable: <slugs>` on stderr, which is the line in the Actions log that says the scope is short. The zero-click `gh auth token` path (issue #88) satisfies this by construction, since it carries the CLI's own login; a hand-made fine-grained PAT must SELECT those repos and grant Issues: Read on them, on top of Discussions write and Contents read on the home repo. Nothing is ever written into the workflow file or the log — the workflow names its secrets and never echoes them.
 

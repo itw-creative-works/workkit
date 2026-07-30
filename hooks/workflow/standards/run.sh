@@ -122,8 +122,10 @@ fi
 # ~/.local/bin symlink, which is exactly what may not exist yet — and only ever
 # UPDATES a schedule a human already installed. Most session starts never reach
 # this line at all: the daily marker above returns first. The run it does make
-# costs a few short shell invocations and a plutil lint — no launchd call, no
-# network — and prints nothing when nothing drifted.
+# costs a few short shell invocations, a plutil lint, and the two read-only `gh`
+# calls behind the cloud-secrets report (issue #88) — no launchd call, and no
+# network beyond those two, which the CLI bounds so a stalled api.github.com
+# cannot hold a session start open. It prints nothing when nothing drifted.
 upkeep=""
 CLI="$ENGINE_DIR/workkit.sh"
 if [ -f "$CLI" ]; then

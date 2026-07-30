@@ -125,8 +125,9 @@ usage: workkit <command> [args]
   help                 this map
   setup                from zero on this machine: the plugin, gh, the 9am
                        schedule, the home repo and whether it publishes its
-                       dashboard, the tower pointer, this repo's opt-in, and
-                       the workkit symlink. Safe to re-run
+                       dashboard, the cloud brief's secrets, the tower pointer,
+                       this repo's opt-in, and the workkit symlink. Safe to
+                       re-run
   update [--auto]      re-run the machine-side installs: the engine address,
                        the symlink, and the schedule (only where one is already
                        installed). --auto is the quiet variant the standards
@@ -543,6 +544,313 @@ home_steps() {
   wk_home_setup
 }
 
+# ── The cloud secrets (issue #88) ─────────────────────────────────────────────
+# The cloud brief (.github/workflows/brief.yml) runs on two repo secrets and one
+# repo variable, and they live on the repo THIS checkout's origin names — the
+# same slug the daily job's dispatch gates on. Setting them by hand was the last
+# manual step of a from-zero install, so setup wires them and doctor reports
+# them.
+#
+# The one rule the whole block is built around: a token value goes from the
+# command that produced it to `gh secret set` through a pipe, held in a single
+# local on the way. It is never written to a file, echoed, or logged.
+SECRET_CLAUDE='CLAUDE_CODE_OAUTH_TOKEN'
+SECRET_HOME='WORKKIT_HOME_TOKEN'
+VAR_HOME_SLUG='WORKKIT_HOME_SLUG'
+
+# The OAuth token lives about a year, so ~11 months is the point where a refresh
+# is worth offering — early enough that a morning brief never meets the expiry.
+SECRET_MAX_AGE_DAYS=330
+
+# The repo the secrets live on: this checkout's origin. Empty for a checkout
+# with no origin, which is every fixture copy.
+workflow_slug() {
+  [[ "$HOME_LIBS" -eq 1 ]] || return 0
+  wk_repo_slug "$KIT_DIR"
+}
+
+# The two listings below are the only network the daily path makes — the
+# standards hook calls `update --auto` at session start — so they get an upper
+# bound: a captive portal answers the TCP handshake and never the request, and
+# an unbounded `gh` there would hold a session open for as long as it liked.
+# macOS ships no coreutils `timeout`, so one is used when the machine has it and
+# a bash watchdog stands in when it does not. A bound that fires looks exactly
+# like a listing that could not be read, which every caller already treats as a
+# named skip. Only the READS are bounded: a write cut in half is worse than a
+# write that waits, and every write is on a path a human is sitting in front of.
+SECRETS_TIMEOUT="${WORKKIT_GH_TIMEOUT:-10}"
+bounded_read() {
+  local watchdog pid rc=0
+  if command -v timeout >/dev/null 2>&1; then timeout "$SECRETS_TIMEOUT" "$@"; return $?; fi
+  if command -v gtimeout >/dev/null 2>&1; then gtimeout "$SECRETS_TIMEOUT" "$@"; return $?; fi
+  "$@" &
+  pid=$!
+  # The subshell's own stdout goes to /dev/null on purpose: inside a command
+  # substitution a background `sleep` holding the capture pipe open would
+  # outlive the very call this is here to bound.
+  ( sleep "$SECRETS_TIMEOUT"; kill -TERM "$pid" ) >/dev/null 2>&1 &
+  watchdog=$!
+  wait "$pid" || rc=$?
+  kill -TERM "$watchdog" >/dev/null 2>&1 || true
+  wait "$watchdog" 2>/dev/null || true
+  return "$rc"
+}
+
+# `gh secret list --json name,updatedAt` for the repo, or nothing at all — an
+# unauthenticated gh, a repo without Actions, no network. The caller tells the
+# two apart by asking jq whether what came back is an array.
+secrets_json() {
+  bounded_read gh secret list --repo "$1" --json name,updatedAt 2>/dev/null || true
+}
+
+# The same shape for the repo's variables, and the same rule: what comes back is
+# a listing only when it is a JSON array. Anything else — an empty answer, an
+# error, a bound that fired — means UNREADABLE, never "the variable is absent".
+variables_json() {
+  bounded_read gh variable list --repo "$1" --json name 2>/dev/null || true
+}
+
+# Whether a listing came back at all.
+is_listing() {
+  printf '%s' "$1" | jq -e 'type == "array"' >/dev/null 2>&1
+}
+
+# How many whole days ago a secret was last set: a number, `unknown` for a
+# timestamp jq could not read, and NOTHING when the repo has no such secret —
+# absent is the state every caller acts on first.
+secret_age_days() {
+  printf '%s' "$1" | jq -r --arg n "$2" '
+    map(select(.name == $n)) | .[0] // empty
+    | (try (.updatedAt | sub("\\.[0-9]+"; "") | fromdateiso8601) catch null) as $t
+    | if $t == null then "unknown" else (((now - $t) / 86400) | floor | tostring) end
+  ' 2>/dev/null || true
+}
+
+# The token out of `claude setup-token`'s output. The mint prints its progress
+# around the value, so the shape is what identifies it: an `sk-ant-` token if
+# there is one, otherwise the last line that is nothing but a long opaque
+# string. Colors are stripped first — a terminal mint arrives wrapped in them.
+extract_token() {
+  local text token
+  text="$(printf '%s' "$1" | tr -d '\r' | sed $'s/\033\\[[0-9;]*m//g')"
+  token="$(printf '%s\n' "$text" | grep -oE 'sk-ant-[A-Za-z0-9_-]+' | tail -1 || true)"
+  if [[ -z "$token" ]]; then
+    token="$(printf '%s\n' "$text" | grep -oE '^[[:space:]]*[A-Za-z0-9_-]{24,}[[:space:]]*$' | tail -1 || true)"
+  fi
+  printf '%s' "${token//[[:space:]]/}"
+}
+
+# Mint and push in one move. `claude setup-token`'s stdout is captured because
+# the token is in it; its stderr stays on the terminal, which is where the
+# browser approval talks to the human.
+mint_claude_token() {
+  local slug="$1" raw token rc=0
+
+  say_info "secrets: running \`claude setup-token\` — approve it in the browser, and the token goes straight to $slug"
+  # Only stdout is captured, because the token is in it. That the approval
+  # itself renders on stderr — and so stays visible while stdout is held — is
+  # OBSERVED behavior, not a contract the CLI documents: a version that moved
+  # the prompt to stdout would look like a stall here. It is a recoverable one.
+  # Ctrl-C ends the run, and every path out of this function prints the two
+  # commands that do the same thing by hand.
+  raw="$(claude setup-token)" || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    say_warn "secrets: \`claude setup-token\` did not finish (exit $rc) — run it by hand, then \`gh secret set $SECRET_CLAUDE --repo $slug\`"
+    return 0
+  fi
+
+  token="$(extract_token "$raw")"
+  if [[ -z "$token" ]]; then
+    say_warn "secrets: \`claude setup-token\` printed no token this run — run it by hand, then \`gh secret set $SECRET_CLAUDE --repo $slug\`"
+    return 0
+  fi
+
+  if ! printf '%s' "$token" | gh secret set "$SECRET_CLAUDE" --repo "$slug" >/dev/null 2>&1; then
+    say_warn "secrets: $SECRET_CLAUDE could not be written to $slug — run \`gh secret set $SECRET_CLAUDE --repo $slug\` by hand"
+    return 0
+  fi
+  say_ok "secrets: $SECRET_CLAUDE is set on $slug — the value went from the mint to the secret and nowhere else"
+}
+
+# The offer, put only to a terminal: the mint is a browser approval, so a piped
+# or backgrounded run gets the two commands instead. Default no, like every
+# other question this command asks.
+offer_claude_token() {
+  local slug="$1" reason="$2" answer=''
+
+  if ! command -v claude >/dev/null 2>&1; then
+    say_skip "secrets: $SECRET_CLAUDE $reason on $slug — minting it needs the claude CLI"
+    return 0
+  fi
+  if ! interactive; then
+    say_info "secrets: $SECRET_CLAUDE $reason on $slug — run these two at a terminal:
+    claude setup-token
+    gh secret set $SECRET_CLAUDE --repo $slug"
+    return 0
+  fi
+
+  printf '%s %s on %s. Mint one now with `claude setup-token`? [y/N] ' "$SECRET_CLAUDE" "$reason" "$slug"
+  read -r answer || true
+  case "$answer" in
+    y|Y|yes|YES) mint_claude_token "$slug" ;;
+    *) say_skip "secrets: $SECRET_CLAUDE left as it is — \`workkit setup\` offers again" ;;
+  esac
+}
+
+# The home token, zero-click (owner ruling 2026-07-30): the CLI's own login is
+# already a token that reaches the home repo and the swept boards, and there is
+# no API that mints a narrower one. The tradeoff — that login's full reach — and
+# the least-privilege alternative are in jobs/README.md.
+push_home_token() {
+  local slug="$1" token='' rc=0
+
+  token="$(gh auth token 2>/dev/null)" || rc=$?
+  if [[ "$rc" -ne 0 || -z "$token" ]]; then
+    say_warn "secrets: $SECRET_HOME is not set on $slug and \`gh auth token\` returned nothing — run \`gh auth login\`, then re-run \`workkit setup\`"
+    return 0
+  fi
+  if ! printf '%s' "$token" | gh secret set "$SECRET_HOME" --repo "$slug" >/dev/null 2>&1; then
+    say_warn "secrets: $SECRET_HOME could not be written to $slug — run \`gh auth token | gh secret set $SECRET_HOME --repo $slug\` by hand"
+    return 0
+  fi
+  say_ok "secrets: $SECRET_HOME is set on $slug from this machine's gh login — it carries that login's reach (jobs/README.md names the narrower alternative)"
+}
+
+# The variable is not a secret and its value is already known, so there is
+# nothing to ask: a machine that names a home repo gets it written.
+push_home_slug_var() {
+  local slug="$1" home names
+
+  names="$(variables_json "$slug")"
+  if ! is_listing "$names"; then
+    say_skip "secrets: $slug's variables could not be read — \`gh variable list --repo $slug\` says why"
+    return 0
+  fi
+  if printf '%s' "$names" | jq -e --arg n "$VAR_HOME_SLUG" 'any(.[]; .name == $n)' >/dev/null 2>&1; then
+    say_skip "secrets: $VAR_HOME_SLUG is set on $slug"
+    return 0
+  fi
+
+  home="$(wk_home_slug 2>/dev/null || true)"
+  if [[ -z "$home" ]]; then
+    say_skip "secrets: $VAR_HOME_SLUG is not set on $slug and this machine names no home repo — setup's home step makes one"
+    return 0
+  fi
+  if ! gh variable set "$VAR_HOME_SLUG" --repo "$slug" --body "$home" >/dev/null 2>&1; then
+    say_warn "secrets: $VAR_HOME_SLUG could not be written to $slug — run \`gh variable set $VAR_HOME_SLUG --repo $slug --body $home\` by hand"
+    return 0
+  fi
+  say_ok "secrets: $VAR_HOME_SLUG is set to $home on $slug"
+}
+
+# Everything the block needs before it can say anything true: gh, jq, an origin,
+# and a listing that came back. Each failure is a named skip — none of them is
+# drift, and a run that cannot read the repo must never report a missing secret.
+# Sets SECRETS_SLUG and SECRETS_JSON for the caller.
+SECRETS_SLUG=''
+SECRETS_JSON=''
+secrets_precheck() {
+  SECRETS_SLUG=''
+  SECRETS_JSON=''
+
+  if ! command -v gh >/dev/null 2>&1; then
+    say_skip "secrets: the cloud brief's secrets need gh"
+    return 1
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    say_skip "secrets: reading the cloud brief's secrets needs jq"
+    return 1
+  fi
+  # Two different missing things, told apart: a checkout without the home-repo
+  # library cannot resolve a slug at all, which is not the same as a checkout
+  # that resolved one and found no origin.
+  if [[ "$HOME_LIBS" -ne 1 ]]; then
+    say_skip "secrets: the home-repo library is missing beside $SCRIPT_DIR — this checkout cannot name the repo the cloud brief's secrets live on"
+    return 1
+  fi
+  SECRETS_SLUG="$(workflow_slug)"
+  if [[ -z "$SECRETS_SLUG" ]]; then
+    say_skip "secrets: this checkout has no GitHub origin — the cloud brief's secrets live on the repo it names"
+    return 1
+  fi
+
+  SECRETS_JSON="$(secrets_json "$SECRETS_SLUG")"
+  if ! is_listing "$SECRETS_JSON"; then
+    say_skip "secrets: $SECRETS_SLUG's secrets could not be read — \`gh secret list --repo $SECRETS_SLUG\` says why"
+    return 1
+  fi
+  return 0
+}
+
+# The setup step: act on what is missing or stale, and stay silent about what is
+# set and fresh. Running it twice equals running it once.
+secrets_step() {
+  local age
+
+  secrets_precheck || return 0
+
+  age="$(secret_age_days "$SECRETS_JSON" "$SECRET_CLAUDE")"
+  if [[ -z "$age" ]]; then
+    offer_claude_token "$SECRETS_SLUG" "is not set"
+  elif [[ "$age" != 'unknown' ]] && (( age > SECRET_MAX_AGE_DAYS )); then
+    offer_claude_token "$SECRETS_SLUG" "was set $age days ago and the token lives about a year"
+  else
+    say_skip "secrets: $SECRET_CLAUDE is set on $SECRETS_SLUG"
+  fi
+
+  age="$(secret_age_days "$SECRETS_JSON" "$SECRET_HOME")"
+  if [[ -z "$age" ]]; then
+    push_home_token "$SECRETS_SLUG"
+  else
+    say_skip "secrets: $SECRET_HOME is set on $SECRETS_SLUG"
+  fi
+
+  push_home_slug_var "$SECRETS_SLUG"
+}
+
+# The report, in two voices. `doctor` says one line per value and returns how
+# many need attention; `update` — including the daily --auto run, which never
+# prompts and never mints — says nothing but the warnings.
+secrets_report() {
+  local mode="$1" age attention=0 name
+
+  secrets_precheck || return 0
+
+  for name in "$SECRET_CLAUDE" "$SECRET_HOME"; do
+    age="$(secret_age_days "$SECRETS_JSON" "$name")"
+    if [[ -z "$age" ]]; then
+      say_warn "secrets: $name is not set on $SECRETS_SLUG — run \`workkit setup\`"
+      attention=$((attention + 1))
+    elif [[ "$age" != 'unknown' ]] && (( age > SECRET_MAX_AGE_DAYS )); then
+      say_warn "secrets: $name on $SECRETS_SLUG was set $age days ago — run \`workkit setup\` to refresh it"
+      attention=$((attention + 1))
+    elif [[ "$mode" == 'doctor' ]]; then
+      if [[ "$age" == 'unknown' ]]; then
+        say_ok "secrets: $name is set on $SECRETS_SLUG"
+      else
+        say_ok "secrets: $name is set on $SECRETS_SLUG ($age days ago)"
+      fi
+    fi
+  done
+
+  local names
+  names="$(variables_json "$SECRETS_SLUG")"
+  if ! is_listing "$names"; then
+    # Unreadable is not absent: a run that cannot see the variable must not send
+    # a human to set one that is already there, and must not count as drift.
+    if [[ "$mode" == 'doctor' ]]; then
+      say_skip "secrets: $SECRETS_SLUG's variables could not be read — \`gh variable list --repo $SECRETS_SLUG\` says why"
+    fi
+  elif printf '%s' "$names" | jq -e --arg n "$VAR_HOME_SLUG" 'any(.[]; .name == $n)' >/dev/null 2>&1; then
+    if [[ "$mode" == 'doctor' ]]; then say_ok "secrets: $VAR_HOME_SLUG is set on $SECRETS_SLUG"; fi
+  else
+    say_warn "secrets: $VAR_HOME_SLUG is not set on $SECRETS_SLUG — run \`workkit setup\`"
+    attention=$((attention + 1))
+  fi
+
+  return "$attention"
+}
+
 # ── The commands ──────────────────────────────────────────────────────────────
 
 cmd_setup() {
@@ -553,6 +861,9 @@ cmd_setup() {
   link_command
   install_cron
   home_steps
+  # After the home steps, because the variable it writes is the home slug they
+  # settle.
+  secrets_step
   offer_site_publish
   # The switch ends on, so setup makes it real before it exits — the same call
   # the human path of `update` already makes, and idempotent the way the rest of
@@ -606,6 +917,9 @@ cmd_update() {
   refresh_engine_link
   link_command
   update_cron
+  # Reported, never wired: the daily --auto run is the one path that must not
+  # prompt or mint, so a missing value is a line and nothing else.
+  secrets_report update || true
 
   # The published site is rebuilt from THIS checkout, so a human's update is
   # also how a shipped tower improvement reaches it. The automatic path leaves
@@ -697,6 +1011,10 @@ cmd_doctor() {
     wk_home_doctor || home_attention=$?
     attention=$((attention + home_attention))
   fi
+
+  local secrets_attention=0
+  secrets_report doctor || secrets_attention=$?
+  attention=$((attention + secrets_attention))
 
   local state
   state="$(bash "$STANDARDS" --state "$PWD" 2>/dev/null | tail -1 || printf 'nogit')"

@@ -32,7 +32,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 
 ## Install
 
-From zero: clone, then `./workflow/workkit.sh setup` — the plugin, `gh`, the 9am schedule, the home repo (`<login>/workkit`, cloned and seeded into `~/.workkit/tower`), whether that home publishes its dashboard (`site.publish`, asked once and never re-asked — a fresh yes also asks the domain, and a switch left on publishes the site before the run exits), this repo's opt-in, and the `~/.local/bin/workkit` symlink, each checked before it acts. The plugin alone is still two lines:
+From zero: clone, then `./workflow/workkit.sh setup` — the plugin, `gh`, the 9am schedule, the home repo (`<login>/workkit`, cloned and seeded into `~/.workkit/tower`), whether that home publishes its dashboard (`site.publish`, asked once and never re-asked — a fresh yes also asks the domain, and a switch left on publishes the site before the run exits), the cloud brief's two secrets and its one variable on the repo this checkout's origin names (issue #88: `CLAUDE_CODE_OAUTH_TOKEN` behind a `[y/N]` mint offer since the approval is a browser click, and re-offered past ~11 months; `WORKKIT_HOME_TOKEN` zero-click from `gh auth token`; `WORKKIT_HOME_SLUG` from the home slug — each value piped into `gh secret set` and never written, echoed or logged, and a listing that cannot be read is a skip rather than a missing secret), this repo's opt-in, and the `~/.local/bin/workkit` symlink, each checked before it acts. The plugin alone is still two lines:
 
 ```sh
 claude plugin marketplace add <path-to-checkout>

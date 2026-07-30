@@ -66,7 +66,7 @@ git clone <this repo> && cd workkit
 ./workflow/workkit.sh setup
 ```
 
-`setup` installs the plugin from this checkout, checks `gh`, loads the 9am daily-brief schedule (macOS launchd), creates your private HOME REPO and clones the tower project into `~/.workkit/tower`, offers to enable the repo you are standing in, and puts `workkit` on your PATH at `~/.local/bin` — printing the `export` line to add when that directory is not on it, never editing a shell rc. It is safe to re-run: every step checks before acting. `workkit doctor` reports what is set up and what has drifted; `workkit help` is the map.
+`setup` installs the plugin from this checkout, checks `gh`, loads the 9am daily-brief schedule (macOS launchd), creates your private HOME REPO and clones the tower project into `~/.workkit/tower`, wires the cloud brief's two secrets and its one variable onto this repo (the Claude token is minted only if you say yes at the prompt; the other two are set from what your machine already knows), offers to enable the repo you are standing in, and puts `workkit` on your PATH at `~/.local/bin` — printing the `export` line to add when that directory is not on it, never editing a shell rc. It is safe to re-run: every step checks before acting. `workkit doctor` reports what is set up and what has drifted; `workkit help` is the map.
 
 The plugin alone is still two lines, if that is all you want:
 

@@ -35,14 +35,32 @@ const writeStub = (file, lines) => {
   fs.chmodSync(file, 0o755);
 };
 
+// A secret listing as `gh secret list --json name,updatedAt` renders it. `days`
+// is how long ago the secret was last set — the only thing the age check reads.
+const secretList = (secrets) => JSON.stringify(secrets.map(({ name, days }) => ({
+  name,
+  updatedAt: new Date(Date.now() - days * 86400000).toISOString().replace(/\.\d+Z$/, 'Z'),
+})));
+
 /**
  * A scratch machine. `claude` reports the plugin as installed or not,
  * `gh auth status` succeeds or fails, and `launchctl print` always answers "not
  * loaded" so an install path bootstraps. `binOnPath` puts ~/.local/bin on PATH,
  * which is the difference between a doctor that is all green and one asking for
  * a shell-rc line.
+ *
+ * The cloud-secrets world (issue #88) is the same machine with a `gh` that can
+ * answer for a repo's secrets and variables: `secrets`/`variables` null is the
+ * default gh — it prints nothing, which is every unreadable repo — and an array
+ * is a listing. `secret set` and `auth token` are recorded the same way, and
+ * what arrived on a `secret set`'s STDIN is kept, because the piping is the
+ * whole point of that step. `claudeToken` is what a stub `claude setup-token`
+ * prints; it is fiction, and the only token any of this ever handles.
  */
-const mkWorld = ({ pluginInstalled = false, ghAuthed = true, claude = true, binOnPath = false } = {}) => {
+const mkWorld = ({
+  pluginInstalled = false, ghAuthed = true, claude = true, binOnPath = false,
+  secrets = null, variables = null, authToken = '', claudeToken = '',
+} = {}) => {
   const root = mkTmp();
   const bin = path.join(root, 'bin');
   const home = path.join(root, 'home');
@@ -59,12 +77,43 @@ const mkWorld = ({ pluginInstalled = false, ghAuthed = true, claude = true, binO
       'if [[ "$1" == \'plugin\' && "$2" == \'list\' ]]; then',
       `  printf '%s\\n' '${pluginInstalled ? '[{ "id": "workkit@workkit" }]' : '[]'}'`,
       'fi',
+      'if [[ "$1" == \'setup-token\' ]]; then',
+      '  printf \'%s\\n\' \'Paste this into the browser…\' >&2',
+      ...(claudeToken ? [`  printf '%s\\n' '${claudeToken}'`] : []),
+      'fi',
       'exit 0',
     ]);
   }
 
   const ghLog = path.join(root, 'gh-argv.log');
-  writeStub(path.join(bin, 'gh'), [recordArgv(ghLog), `exit ${ghAuthed ? 0 : 1}`]);
+  const stdinDir = path.join(root, 'gh-stdin');
+  fs.mkdirSync(stdinDir, { recursive: true });
+  writeStub(path.join(bin, 'gh'), [
+    recordArgv(ghLog),
+    'if [[ "$1" == \'secret\' && "$2" == \'set\' ]]; then',
+    `  cat > "${stdinDir}/$3"`,
+    '  exit 0',
+    'fi',
+    ...(secrets ? [
+      'if [[ "$1" == \'secret\' && "$2" == \'list\' ]]; then',
+      `  printf '%s\\n' '${secretList(secrets)}'`,
+      '  exit 0',
+      'fi',
+    ] : []),
+    ...(variables ? [
+      'if [[ "$1" == \'variable\' && "$2" == \'list\' ]]; then',
+      `  printf '%s\\n' '${JSON.stringify(variables.map((name) => ({ name })))}'`,
+      '  exit 0',
+      'fi',
+    ] : []),
+    ...(authToken ? [
+      'if [[ "$1" == \'auth\' && "$2" == \'token\' ]]; then',
+      `  printf '%s\\n' '${authToken}'`,
+      '  exit 0',
+      'fi',
+    ] : []),
+    `exit ${ghAuthed ? 0 : 1}`,
+  ]);
 
   const agents = path.join(home, 'Library', 'LaunchAgents');
   const localBin = path.join(home, '.local', 'bin');
@@ -79,6 +128,13 @@ const mkWorld = ({ pluginInstalled = false, ghAuthed = true, claude = true, binO
     plist: (label = LABEL) => path.join(agents, `${label}.plist`),
     launchctl: () => readArgv(launchctlLog),
     claudeCalls: () => readArgv(claudeLog),
+    ghCalls: () => readArgv(ghLog),
+    // What was piped into `gh secret set <name>`, or undefined when the secret
+    // was never written.
+    secretStdin: (name) => {
+      const file = path.join(stdinDir, name);
+      return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined;
+    },
     seedPlist: (label, text) => {
       fs.mkdirSync(agents, { recursive: true });
       fs.writeFileSync(path.join(agents, `${label}.plist`), text);
@@ -167,6 +223,21 @@ const mkPartialKit = ({ installer } = {}) => {
     fs.mkdirSync(path.join(kit, 'jobs'), { recursive: true });
     writeStub(path.join(kit, 'jobs', 'install.sh'), installer);
   }
+  return { kit, script: path.join(kit, 'workflow', 'workkit.sh') };
+};
+
+/**
+ * A checkout of the ENGINE that has an origin of its own. The cloud secrets
+ * live on the repo THIS checkout's origin names, so a run that is to resolve a
+ * slug has to stand in a kit that has one. The whole `workflow/` is copied
+ * because the CLI sources its libraries; nothing else is, so the schedule step
+ * is the named skip a partial checkout already gets.
+ */
+const mkKit = (slug) => {
+  const kit = mkTmp();
+  fs.cpSync(WORKFLOW_DIR, path.join(kit, 'workflow'), { recursive: true });
+  spawnSync('git', ['init', '-q'], { cwd: kit });
+  spawnSync('git', ['remote', 'add', 'origin', `https://github.com/${slug}.git`], { cwd: kit });
   return { kit, script: path.join(kit, 'workflow', 'workkit.sh') };
 };
 
@@ -690,6 +761,277 @@ const run = async () => {
       assert(!/^.*publish: /m.test(out), `${publish} publishes nothing, got: ${out}`);
       cleanup(world.root);
     }
+  });
+
+  group('workkit setup: the cloud secrets');
+
+  // The fictional values these tests move around. Nothing here is a real token,
+  // and nothing here carries a vendor's prefix either — a committed literal
+  // shaped like a credential trips push protection for everyone who clones the
+  // repo. What is asserted is that the value went from the command that
+  // produced it to `gh secret set`'s stdin, and appeared nowhere else.
+  const MINTED = 'FAKEmintedTOKENvalue0123456789';
+  const LOGIN_TOKEN = 'gho_FAKEloginTOKENfakeLOGINtoken00';
+  const SLUG = 'owner/kit';
+
+  await test('a checkout with no origin is a named skip, and nothing is asked of GitHub', () => {
+    const world = mkWorld({ secrets: [] });
+    const { kit, script } = mkKit(SLUG);
+    fs.rmSync(path.join(kit, '.git'), { recursive: true, force: true });
+    const { code, out } = runCli(world, ['setup'], { script });
+    assertEq(code, 0, 'exit 0');
+    assert(/secrets: this checkout has no GitHub origin/.test(out), `it names the skip, got: ${out}`);
+    assert(!world.ghCalls().some((c) => isCall(c, 'secret')), `and asks about no repo's secrets: ${fmtCalls(world.ghCalls())}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('a listing that cannot be read is a skip, never a missing secret', () => {
+    // The default gh prints nothing for `secret list` — an unauthenticated CLI,
+    // a repo without Actions, no network. Reporting that as "not set" would
+    // send a human to mint a token that is already there.
+    const world = mkWorld();
+    const { kit, script } = mkKit(SLUG);
+    const { out } = runCli(world, ['setup'], { script });
+    assert(new RegExp(`secrets: ${SLUG}'s secrets could not be read`).test(out), `it says it could not read them, got: ${out}`);
+    assert(!/is not set/.test(out), `and claims nothing about what is on the repo, got: ${out}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('without a terminal, an absent Claude token gets the two commands, never a mint', () => {
+    const world = mkWorld({ secrets: [], variables: [] });
+    const { kit, script } = mkKit(SLUG);
+    const { code, out } = runCli(world, ['setup'], { script });
+    assertEq(code, 0, 'it finishes rather than waiting for an answer');
+    assert(out.includes('claude setup-token'), `it hands over the mint, got: ${out}`);
+    assert(out.includes(`gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo ${SLUG}`), 'and the command that pushes it');
+    assert(!world.claudeCalls().some((c) => isCall(c, 'setup-token')), `nothing was minted: ${fmtCalls(world.claudeCalls())}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('answered yes, the mint goes straight into the secret and is never printed', () => {
+    const world = mkWorld({ claudeToken: MINTED });
+    const { out, err } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${SLUG} 'is not set'`, { input: 'y\n' });
+    const calls = world.ghCalls();
+    assert(calls.some((c) => isCall(c, 'secret', 'set', 'CLAUDE_CODE_OAUTH_TOKEN', '--repo', SLUG)), `the secret is written on the named repo: ${fmtCalls(calls)}`);
+    assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), MINTED, 'and the value arrived on stdin — a pipe, not an argument');
+    assert(!calls.some((c) => c.includes(MINTED)), `the token is not an argument to anything: ${fmtCalls(calls)}`);
+    assert(!out.includes(MINTED) && !err.includes(MINTED), `and never reaches the terminal, got: ${out}${err}`);
+    assert(out.includes('is set on'), `the run says the secret is set, got: ${out}`);
+    cleanup(world.root);
+  });
+
+  await test('the default answer is no, and nothing is minted or written', () => {
+    const world = mkWorld({ claudeToken: MINTED });
+    const { out } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${SLUG} 'is not set'`, { input: '\n' });
+    assert(/left as it is/.test(out), `an empty answer is a no, got: ${out}`);
+    assert(!world.claudeCalls().some((c) => isCall(c, 'setup-token')), 'nothing was minted');
+    assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), undefined, 'and no secret was written');
+    cleanup(world.root);
+  });
+
+  await test('a mint that printed no token warns instead of writing an empty secret', () => {
+    // An empty `gh secret set` would overwrite a working token with nothing.
+    const world = mkWorld();
+    const { out } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${SLUG} 'is not set'`, { input: 'y\n' });
+    assert(/printed no token/.test(out), `it says what did not happen, got: ${out}`);
+    assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), undefined, 'and nothing was written');
+    cleanup(world.root);
+  });
+
+  await test('the token is found whatever shape the mint printed it in', () => {
+    // Two shapes the mint has been seen in: a bare opaque value on the last
+    // line, and the same value wrapped in a terminal's color codes. Both must
+    // reach the secret byte for byte — a stray escape in a pushed token is a
+    // cloud brief that fails to authenticate a month later.
+    const ESC = '\u001b';
+    for (const [shape, printed] of [
+      ['a bare opaque value', MINTED],
+      ['a value wrapped in color codes', `${ESC}[1;32m${MINTED}${ESC}[0m`],
+    ]) {
+      const world = mkWorld({ claudeToken: printed });
+      const { out, err } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${SLUG} 'is not set'`, { input: 'y\n' });
+      assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), MINTED, `${shape} arrives as the value alone`);
+      assert(!out.includes(MINTED) && !err.includes(MINTED), `and never reaches the terminal, got: ${out}${err}`);
+      cleanup(world.root);
+    }
+  });
+
+  await test('a vendor-prefixed token wins over any other line in the output', () => {
+    // The prefixed shape is what the mint prints today, so it is read first —
+    // asserted on the extraction itself, because a literal long enough to look
+    // like the real thing has no business in a committed file.
+    const world = mkWorld();
+    const { out } = inCli(world, `printf '%s' "$(extract_token 'approve it in the browser
+sk-ant-EXAMPLE
+FAKEtrailingLINEthatIsLongEnough')"`);
+    assertEq(out, 'sk-ant-EXAMPLE', 'the prefixed match, not the trailing opaque line');
+    cleanup(world.root);
+  });
+
+  await test('a token past eleven months is offered as a refresh; a fresh one is silent', () => {
+    const stale = mkWorld({ secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 400 }], variables: ['WORKKIT_HOME_SLUG'] });
+    const staleKit = mkKit(SLUG);
+    const staleOut = runCli(stale, ['setup'], { script: staleKit.script }).out;
+    assert(/CLAUDE_CODE_OAUTH_TOKEN was set 40\d days ago/.test(staleOut), `it names the age, got: ${staleOut}`);
+    assert(/lives about a year/.test(staleOut), 'and why that is worth a refresh');
+    cleanup(stale.root); cleanup(staleKit.kit);
+
+    const fresh = mkWorld({ secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 10 }], variables: ['WORKKIT_HOME_SLUG'] });
+    const freshKit = mkKit(SLUG);
+    const freshOut = runCli(fresh, ['setup'], { script: freshKit.script }).out;
+    assert(!/claude setup-token/.test(freshOut), `a fresh token is not offered again, got: ${freshOut}`);
+    assert(/CLAUDE_CODE_OAUTH_TOKEN is set on/.test(freshOut), 'it is reported as set, and nothing more');
+    cleanup(fresh.root); cleanup(freshKit.kit);
+  });
+
+  await test('the home token is set zero-click from the gh login, with no prompt at all', () => {
+    // Owner ruling 2026-07-30: maximum automation. A piped run — no terminal to
+    // ask — still writes it, which is what "no prompt" means here.
+    const world = mkWorld({ secrets: [], variables: ['WORKKIT_HOME_SLUG'], authToken: LOGIN_TOKEN });
+    const { kit, script } = mkKit(SLUG);
+    const { out } = runCli(world, ['setup'], { script });
+    const calls = world.ghCalls();
+    assert(calls.some((c) => isCall(c, 'auth', 'token')), `the login's own token is read: ${fmtCalls(calls)}`);
+    assert(calls.some((c) => isCall(c, 'secret', 'set', 'WORKKIT_HOME_TOKEN', '--repo', SLUG)), `and pushed to the repo: ${fmtCalls(calls)}`);
+    assertEq(world.secretStdin('WORKKIT_HOME_TOKEN'), LOGIN_TOKEN, 'through stdin');
+    assert(!out.includes(LOGIN_TOKEN), `and never printed, got: ${out}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('a home token already on the repo is left exactly as it is', () => {
+    const world = mkWorld({
+      secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }, { name: 'WORKKIT_HOME_TOKEN', days: 900 }],
+      variables: ['WORKKIT_HOME_SLUG'],
+      authToken: LOGIN_TOKEN,
+    });
+    const { kit, script } = mkKit(SLUG);
+    const { out } = runCli(world, ['setup'], { script });
+    assert(!world.ghCalls().some((c) => isCall(c, 'secret', 'set')), `no secret is rewritten: ${fmtCalls(world.ghCalls())}`);
+    assert(!/✓/.test(out.split('\n').filter((l) => l.includes('secrets:')).join('\n')), `and a set-up machine acts on nothing, got: ${out}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('the home slug variable is written from the machine’s settings, unasked', () => {
+    const world = mkWorld({ secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }, { name: 'WORKKIT_HOME_TOKEN', days: 3 }], variables: [] });
+    seedSettings(world, { repo: 'owner/home', publish: false, url: null });
+    const { kit, script } = mkKit(SLUG);
+    const { out } = runCli(world, ['setup'], { script });
+    assert(world.ghCalls().some((c) => isCall(c, 'variable', 'set', 'WORKKIT_HOME_SLUG', '--repo', SLUG, '--body', 'owner/home')), `the known value is written: ${fmtCalls(world.ghCalls())}`);
+    assert(/WORKKIT_HOME_SLUG is set to owner\/home/.test(out), `and reported, got: ${out}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('no home repo on the machine, no variable invented', () => {
+    const world = mkWorld({ secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }, { name: 'WORKKIT_HOME_TOKEN', days: 3 }], variables: [] });
+    seedSettings(world, { repo: null, publish: false, url: null });
+    const { kit, script } = mkKit(SLUG);
+    const { out } = runCli(world, ['setup'], { script });
+    assert(!world.ghCalls().some((c) => isCall(c, 'variable', 'set')), `nothing is guessed: ${fmtCalls(world.ghCalls())}`);
+    assert(/WORKKIT_HOME_SLUG is not set on .* names no home repo/.test(out), `it names the fix, got: ${out}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('a second setup writes none of them again', () => {
+    const world = mkWorld({
+      secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }, { name: 'WORKKIT_HOME_TOKEN', days: 3 }],
+      variables: ['WORKKIT_HOME_SLUG'],
+      authToken: LOGIN_TOKEN,
+    });
+    seedSettings(world, { repo: 'owner/home', publish: false, url: null });
+    const { kit, script } = mkKit(SLUG);
+    runCli(world, ['setup'], { script });
+    const before = world.ghCalls().filter((c) => isCall(c, 'secret', 'set') || isCall(c, 'variable', 'set')).length;
+    runCli(world, ['setup'], { script });
+    const after = world.ghCalls().filter((c) => isCall(c, 'secret', 'set') || isCall(c, 'variable', 'set')).length;
+    assertEq(after, before, 'running twice equals running once');
+    assertEq(before, 0, 'and a repo that already has all three is not written to at all');
+    cleanup(world.root); cleanup(kit);
+  });
+
+  group('workkit: the cloud secrets in the automatic and the report paths');
+
+  await test('update --auto warns about each missing value and prompts for none', () => {
+    const world = mkWorld({ secrets: [], variables: [], authToken: LOGIN_TOKEN, claudeToken: MINTED, binOnPath: true });
+    const { kit, script } = mkKit(SLUG);
+    const { code, out } = runCli(world, ['update', '--auto'], { script });
+    assertEq(code, 0, 'exit 0');
+    for (const name of ['CLAUDE_CODE_OAUTH_TOKEN', 'WORKKIT_HOME_TOKEN', 'WORKKIT_HOME_SLUG']) {
+      assert(new RegExp(`secrets: ${name} is not set on ${SLUG} — run \`workkit setup\``).test(out), `one line for ${name}, got: ${out}`);
+    }
+    assert(!world.claudeCalls().some((c) => isCall(c, 'setup-token')), 'the automatic path mints nothing');
+    assert(!world.ghCalls().some((c) => isCall(c, 'secret', 'set')), `and writes nothing: ${fmtCalls(world.ghCalls())}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('a variable listing that cannot be read is a skip, and never a write', () => {
+    // The same invariant the secret listing already holds: unreadable is not
+    // absent. A `gh` that answers for the secrets and not for the variables —
+    // an older CLI, a token without the scope — must not send a human to set a
+    // variable that is already there, and must not write one over it either.
+    const secrets = [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }, { name: 'WORKKIT_HOME_TOKEN', days: 3 }];
+
+    const auto = mkWorld({ secrets, variables: null, binOnPath: true });
+    const autoKit = mkKit(SLUG);
+    const autoOut = runCli(auto, ['update', '--auto'], { script: autoKit.script }).out;
+    assert(!/WORKKIT_HOME_SLUG/.test(autoOut), `the quiet path claims nothing about it, got: ${autoOut}`);
+    cleanup(auto.root); cleanup(autoKit.kit);
+
+    const world = mkWorld({ secrets, variables: null });
+    seedSettings(world, { repo: 'owner/home', publish: false, url: null });
+    const { kit, script } = mkKit(SLUG);
+    const { out } = runCli(world, ['setup'], { script });
+    assert(/secrets: owner\/kit's variables could not be read/.test(out), `setup names the skip, got: ${out}`);
+    assert(!world.ghCalls().some((c) => isCall(c, 'variable', 'set')), `and writes no variable: ${fmtCalls(world.ghCalls())}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('a listing that never answers is bounded, and the bound is a quiet skip', () => {
+    // A captive portal answers the handshake and never the request. The daily
+    // path runs this at session start, so an unbounded read would hold the
+    // session open for as long as the portal felt like it. `exec` matters: the
+    // stub must BE the process the bound signals, the way real gh is.
+    const world = mkWorld({ variables: [], binOnPath: true });
+    writeStub(path.join(world.root, 'bin', 'gh'), [
+      'if [[ "$1" == \'secret\' && "$2" == \'list\' ]]; then exec sleep 60; fi',
+      'exit 0',
+    ]);
+    world.env.WORKKIT_GH_TIMEOUT = '2';
+    const { kit, script } = mkKit(SLUG);
+    const started = Date.now();
+    const { code, out } = runCli(world, ['update', '--auto'], { script });
+    const elapsed = (Date.now() - started) / 1000;
+    assertEq(code, 0, 'exit 0');
+    assert(elapsed < 20, `the read is bounded rather than waited out, took ${elapsed}s`);
+    assert(!/secrets:/.test(out), `and the quiet path stays quiet about it, got: ${out}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('update --auto says nothing about secrets that are set and fresh', () => {
+    const world = mkWorld({
+      secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }, { name: 'WORKKIT_HOME_TOKEN', days: 3 }],
+      variables: ['WORKKIT_HOME_SLUG'],
+      binOnPath: true,
+    });
+    const { kit, script } = mkKit(SLUG);
+    const { out } = runCli(world, ['update', '--auto'], { script });
+    assert(!/secrets:/.test(out), `a session start hears nothing, got: ${out}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('doctor reports one line per value, and counts what needs attention', () => {
+    const world = mkWorld({
+      pluginInstalled: true,
+      binOnPath: true,
+      secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 400 }, { name: 'WORKKIT_HOME_TOKEN', days: 5 }],
+      variables: ['WORKKIT_HOME_SLUG'],
+    });
+    const { kit, script } = mkKit(SLUG);
+    const { out } = runCli(world, ['doctor'], { script });
+    assert(/⚠.*CLAUDE_CODE_OAUTH_TOKEN on .* was set 40\d days ago/.test(out), `the old one is a warning with its age, got: ${out}`);
+    assert(/✓.*WORKKIT_HOME_TOKEN is set on .* \(5 days ago\)/.test(out), `the fresh one is a check, got: ${out}`);
+    assert(/✓.*WORKKIT_HOME_SLUG is set on/.test(out), `and so is the variable, got: ${out}`);
+    assert(/item\(s\) need attention/.test(out), 'the stale token is counted');
+    cleanup(world.root); cleanup(kit);
   });
 
   group('workkit publish');
