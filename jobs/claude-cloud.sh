@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # jobs/claude-cloud.sh — the morning brief, composed and published from a
-# GitHub Actions runner (issue #82). Driven by .github/workflows/brief.yml.
+# GitHub Actions runner (issues #82, #91).
+#
+# It runs from the HOME REPO's checkout of itself. This file is the source, and
+# `workkit setup` seeds a copy of it — with brief-publish.sh, the composers and
+# the engine libraries they need — into `brief/` on `<login>/workkit`, beside
+# the `.github/workflows/brief.yml` that drives it. The plugin repo is
+# distributed to everyone who installs the kit, so it is the one place the
+# cloud brief's credentials must NOT live.
 #
 # The cloud sibling of claude-daily.sh's brief leg, and ONLY that leg. The
 # summaries step reads this machine's git log and its session transcripts, and
@@ -20,9 +27,17 @@
 # resolve `~/.workkit` through os.homedir() and honor no override, so this
 # script writes the synthetic settings and roster exactly where they look.
 #
-# Needs: gh (authenticated by GH_TOKEN), jq, git, node, and a `claude` on PATH
-# authenticated by CLAUDE_CODE_OAUTH_TOKEN. WORKKIT_HOME_SLUG names the home
-# repo — the board's home and where the brief is published.
+# Needs: gh, jq, git, node, and a `claude` on PATH authenticated by
+# CLAUDE_CODE_OAUTH_TOKEN. The home repo is the repo the run BELONGS to —
+# GITHUB_REPOSITORY, which Actions always sets — so nothing has to be told
+# which one it is.
+#
+# TWO TOKENS, TWO JOBS (issue #91). GH_TOKEN is the cross-repo one: the board
+# sweep and the gh-pages read of the published slug list, both reaching repos
+# this workflow does not run in. WORKKIT_POST_TOKEN is the workflow's built-in
+# GITHUB_TOKEN, which reaches this repo alone and is all the Discussion post
+# needs; it is exported for that one call and nothing else. A run handed
+# neither falls back to the other, which is what lets a rehearsal work with one.
 # Usage: claude-cloud.sh   (no arguments — the runner has one job)
 
 set -euo pipefail
@@ -65,18 +80,22 @@ note() { printf '%s\n' "$1"; }
 
 # The settings file the engine and the composers read the home repo from. An
 # existing one WINS — a runner that was handed a configured home does not get it
-# rewritten — and an absent one is written from the env var. With neither there
-# is no board to read and nowhere to publish, which is the one thing this script
-# refuses over rather than working around.
+# rewritten — and an absent one is written from the repo this run belongs to.
+#
+# GITHUB_REPOSITORY IS the home (issue #91): the workflow lives on the home repo
+# and nowhere else, so the run already knows which repo it is standing in and
+# nothing has to be configured to tell it. With neither that nor a settings file
+# there is no board to read and nowhere to publish, which is the one thing this
+# script refuses over rather than working around.
 if [[ ! -f "$SETTINGS" ]]; then
-  if [[ -z "${WORKKIT_HOME_SLUG:-}" ]]; then
-    printf 'claude-cloud: WORKKIT_HOME_SLUG is unset and %s does not exist — there is no home repo to sweep or publish to.\n' \
+  if [[ -z "${GITHUB_REPOSITORY:-}" ]]; then
+    printf 'claude-cloud: GITHUB_REPOSITORY is unset and %s does not exist — there is no home repo to sweep or publish to.\n' \
       "$SETTINGS" >&2
     exit 1
   fi
   mkdir -p "$WK_DIR"
-  printf '{\n  "version": 1,\n  "site": {\n    "repo": "%s"\n  }\n}\n' "$WORKKIT_HOME_SLUG" >"$SETTINGS"
-  note "settings: wrote $SETTINGS for $WORKKIT_HOME_SLUG"
+  printf '{\n  "version": 1,\n  "site": {\n    "repo": "%s"\n  }\n}\n' "$GITHUB_REPOSITORY" >"$SETTINGS"
+  note "settings: wrote $SETTINGS for $GITHUB_REPOSITORY"
 fi
 
 # jq is asked FIRST, on its own. It reads the home slug on the next line and
@@ -187,7 +206,17 @@ fi
 note "digest: $(printf '%s' "$RESPONSE" | head -1) (${#RESPONSE} bytes)"
 
 PUBLISH_STATUS=0
-PUBLISH_LINE="$(wk_brief_publish "$ENGINE" "$RESPONSE" "$MARK_FILE" "$SCRATCH_DIR/brief.md")" || PUBLISH_STATUS=$?
+# The one call that speaks to THIS repo, and the one that uses the workflow's
+# built-in token: the Discussion is posted where the run lives, so the
+# cross-repo secret has no business in it. The export is inside the capture's
+# subshell, so the sweep's token is untouched for anything after this.
+PUBLISH_LINE="$(
+  # An empty value is left alone rather than exported: `gh` reads an empty
+  # GH_TOKEN as a token, not as an absent one, and a run given only the
+  # cross-repo secret must keep it.
+  if [[ -n "${WORKKIT_POST_TOKEN:-}" ]]; then export GH_TOKEN="$WORKKIT_POST_TOKEN"; fi
+  wk_brief_publish "$ENGINE" "$RESPONSE" "$MARK_FILE" "$SCRATCH_DIR/brief.md"
+)" || PUBLISH_STATUS=$?
 if [[ -n "$PUBLISH_LINE" ]]; then note "$PUBLISH_LINE"; fi
 # 2 is nothing to post — today's brief is already on the board, or this runner
 # has nowhere to publish; both are ordinary mornings. 1 is a post that was

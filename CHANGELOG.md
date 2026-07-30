@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#91](../../issues/91) — The cloud brief runs on your home repo, not on this distributed one: setup seeds the workflow and the code it runs there and puts the two secrets on it, the Discussion is posted with the workflow's built-in token, and `doctor` warns when that seeded runner falls behind.
+
 ## [0.19.0] - 2026-07-30
 
 ### Added

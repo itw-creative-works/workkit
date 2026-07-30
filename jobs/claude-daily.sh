@@ -122,31 +122,42 @@ if (( $# == 0 )); then
 fi
 
 # The brief's first choice is the CLOUD (issue #82): a `workflow_dispatch` on
-# this repo's brief.yml, which composes the same payload on a runner and
+# the HOME repo's brief.yml, which composes the same payload on a runner and
 # publishes the same Discussion. A laptop that is awake at nine gets the first
 # shot at it; the workflow's own cron is the backup for the morning it is not.
 #
+# The home repo, not this checkout's (issue #91): the workflow and its secrets
+# live on `<login>/workkit`, because the plugin repo is distributed and a
+# consumer cannot set secrets on a repo they do not own. `workkit setup` seeds
+# the workflow there and writes the secrets there, so one slug answers both.
+#
 # Every reason the dispatch cannot be made — no network, a `gh` that is not
-# authenticated, a repo without the workflow — is a silent false, and the full
-# local brief runs instead. The delivery for the day is the Discussion either
-# way, so the dispatch line is the log's whole record of a cloud morning; a
-# desktop notification here would announce nothing the cloud has yet said.
+# authenticated, no home repo, a home repo without the workflow — is a silent
+# false, and the full local brief runs instead. The delivery for the day is the
+# Discussion either way, so the dispatch line is the log's whole record of a
+# cloud morning; a desktop notification here would announce nothing the cloud
+# has yet said.
 dispatch_brief() {
   local engine="$SCRIPT_DIR/../workflow" slug
-  [[ -f "$engine/lib.sh" ]] || return 1
+  [[ -f "$engine/lib.sh" && -f "$engine/home.sh" ]] || return 1
   command -v gh >/dev/null 2>&1 || return 1
   # In a subshell: this is one read of a helper, and sourcing the engine into
   # the job's own shell for it would leak its every function and address.
-  slug="$(. "$engine/lib.sh"; wk_repo_slug "$SCRIPT_DIR/..")" || return 1
+  slug="$(. "$engine/lib.sh"; . "$engine/home.sh"; wk_home_slug)" || return 1
   [[ -n "$slug" ]] || return 1
   # The workflow existing is not the workflow WORKING: `gh workflow run` succeeds
-  # the moment the file is on the default branch, and a runner without the OAuth
-  # token composes nothing. Every morning in that window would be silently
-  # briefless — the laptop having handed the day away to a job that cannot do it.
-  # So the secret is checked on the same repo first, and anything but a listing
-  # that names it (gh refuses, the secret is absent) is the ordinary silent false
-  # that runs the whole brief here.
-  gh secret list --repo "$slug" 2>/dev/null | grep -qE '^CLAUDE_CODE_OAUTH_TOKEN([[:space:]]|$)' || return 1
+  # the moment the file is on the default branch, and a runner missing either
+  # credential composes nothing worth having — no OAuth token and it composes
+  # nothing at all, no `WORKKIT_GITHUB_TOKEN` and it sweeps no board. Every
+  # morning in that window would be silently briefless — the laptop having handed
+  # the day away to a job that cannot do it. So BOTH secrets are checked on the
+  # same repo first, in one listing, and anything but a listing that names them
+  # (gh refuses, a secret is absent) is the ordinary silent false that runs the
+  # whole brief here.
+  local secrets
+  secrets="$(gh secret list --repo "$slug" 2>/dev/null)" || return 1
+  grep -qE '^CLAUDE_CODE_OAUTH_TOKEN([[:space:]]|$)' <<<"$secrets" || return 1
+  grep -qE '^WORKKIT_GITHUB_TOKEN([[:space:]]|$)' <<<"$secrets" || return 1
   gh workflow run "$BRIEF_WORKFLOW" --repo "$slug" >/dev/null 2>&1 || return 1
   DISPATCH_LINE="brief: dispatched $BRIEF_WORKFLOW on $slug — the cloud runner composes and publishes today's brief"
   note "$DISPATCH_LINE"

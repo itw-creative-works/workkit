@@ -38,7 +38,9 @@ const today = () => new Date().toLocaleDateString('en-CA');
  * A scratch HOME, a fake `claude` printing `response` and exiting `status`, and
  * a `gh` that answers the contents API and the Discussions GraphQL.
  *
- * `slugEnv` is WORKKIT_HOME_SLUG; null leaves it unset.
+ * `githubRepo` is GITHUB_REPOSITORY — the repo the run belongs to, which since
+ * issue #91 IS the home repo, because the workflow lives on it. Null leaves it
+ * unset.
  * `settings` is a settings file to plant before the run — the configured runner
  * whose file must win over the env var.
  * `siteRepos` is what gh-pages serves as data/repos.json; null is the file
@@ -52,8 +54,9 @@ const today = () => new Date().toLocaleDateString('en-CA');
  */
 const mkWorld = ({
   response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n', status = 0,
-  slugEnv = HOME_SLUG, settings = null, siteRepos = null, posted = [],
+  githubRepo = HOME_SLUG, settings = null, siteRepos = null, posted = [],
   ghFails = false, ccChangelog = null, boardBroken = false,
+  sweepToken = 'SWEEP-TOKEN', postToken = 'POST-TOKEN',
 } = {}) => {
   const root = mkTmp();
   const bin = path.join(root, 'bin');
@@ -82,6 +85,11 @@ const mkWorld = ({
 
   const ghLog = path.join(root, 'gh-argv.log');
   const bodyLog = path.join(root, 'posted-body.md');
+  // Which token each kind of call was made with. The two-token split (issue
+  // #91) is only real if the value `gh` would authenticate with differs between
+  // the cross-repo sweep and the post on this repo, and this is where that is
+  // visible: one line per call, `<kind> <token>`.
+  const tokenLog = path.join(root, 'gh-tokens.log');
   const nodes = posted.map(({ title, body = '' }) => JSON.stringify({
     title, createdAt: `${today()}T09:00:00Z`, body,
   })).join(',');
@@ -93,6 +101,11 @@ const mkWorld = ({
     recordArgv(ghLog),
     ...(ghFails ? ['exit 1'] : []),
     'all="$*"',
+    'case "$all" in',
+    `  *createDiscussion*) printf 'post %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
+    `  *"issues(states: OPEN"*) printf 'sweep %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
+    `  *contents/data/repos.json*) printf 'roster %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
+    'esac',
     'case "$all" in',
     '  *contents/data/repos.json*)',
     ...(encoded
@@ -144,10 +157,15 @@ const mkWorld = ({
     // roster in ~/.workkit. Every world here IS a runner; the one that is not
     // deletes this again.
     GITHUB_ACTIONS: 'true',
+    // The workflow's two: the cross-repo secret `gh` authenticates with by
+    // default, and the built-in token the post is made with.
+    GH_TOKEN: sweepToken,
+    WORKKIT_POST_TOKEN: postToken,
   };
   delete env.WORKFLOW_HOME;
-  if (slugEnv === null) delete env.WORKKIT_HOME_SLUG;
-  else env.WORKKIT_HOME_SLUG = slugEnv;
+  if (githubRepo === null) delete env.GITHUB_REPOSITORY;
+  else env.GITHUB_REPOSITORY = githubRepo;
+  if (postToken === null) delete env.WORKKIT_POST_TOKEN;
 
   return {
     root,
@@ -164,6 +182,12 @@ const mkWorld = ({
     ghCalls: () => readArgv(ghLog),
     created: () => readArgv(ghLog).filter((c) => c.join(' ').includes('createDiscussion')),
     postedBody: () => (fs.existsSync(bodyLog) ? fs.readFileSync(bodyLog, 'utf8') : ''),
+    // The token each kind of call carried, as `{ post, sweep, roster }` of the
+    // values seen — a Set per kind, so a leak between them is visible.
+    tokens: (kind) => {
+      const lines = fs.existsSync(tokenLog) ? fs.readFileSync(tokenLog, 'utf8').split('\n') : [];
+      return [...new Set(lines.filter((l) => l.startsWith(`${kind} `)).map((l) => l.slice(kind.length + 1)))];
+    },
     env,
   };
 };
@@ -239,19 +263,21 @@ const run = async () => {
 
   group('jobs/claude-cloud: the machine it makes');
 
-  await test('an absent settings file is written from WORKKIT_HOME_SLUG', () => {
+  await test('an absent settings file is written from the repo the run belongs to', () => {
+    // Issue #91: the workflow lives on the home repo, so GITHUB_REPOSITORY IS
+    // the home and nothing has to be configured to say which one it is.
     const world = mkWorld();
     const res = runJob(world);
     assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
-    assertEq(world.settings().site.repo, HOME_SLUG, 'the home repo the runner was told about');
+    assertEq(world.settings().site.repo, HOME_SLUG, 'the repo the runner is standing in');
     assert(res.stdout.includes('settings: wrote'), `and it says it wrote it: ${res.stdout}`);
     cleanup(world.root);
   });
 
-  await test('an existing settings file wins over the env var', () => {
+  await test('an existing settings file wins over the repo the run belongs to', () => {
     const world = mkWorld({
       settings: { version: 1, site: { repo: 'configured/home' } },
-      slugEnv: 'env/home',
+      githubRepo: 'env/home',
     });
     const res = runJob(world);
     assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
@@ -272,13 +298,19 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('neither a settings file nor the env var refuses the run', () => {
-    const world = mkWorld({ slugEnv: null });
+  await test('neither a settings file nor a repo to belong to refuses the run', () => {
+    const world = mkWorld({ githubRepo: null });
     const res = runJob(world);
     assertEq(res.status, 1, 'there is no board to sweep and nowhere to publish');
-    assert(/WORKKIT_HOME_SLUG/.test(res.stderr), `and it names what is missing: ${res.stderr}`);
+    assert(/GITHUB_REPOSITORY/.test(res.stderr), `and it names what is missing: ${res.stderr}`);
     assertEq(world.calls().length, 0, 'nothing was sent');
     cleanup(world.root);
+  });
+
+  await test('nothing anywhere reads WORKKIT_HOME_SLUG any more', () => {
+    // The retired variable (issue #91). A leftover read would look like a
+    // configured runner on the one machine that still had it set.
+    assert(!/WORKKIT_HOME_SLUG/.test(fs.readFileSync(SCRIPT, 'utf8')), 'the runner does not name it');
   });
 
   await test('the roster comes from the published slug list, and the composer reads it back', () => {
@@ -397,9 +429,45 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  group('jobs/claude-cloud: the two tokens');
+
+  await test('the post is made with the built-in token, the sweep with the secret', () => {
+    // Issue #91: the Discussion lands on the repo the run belongs to, so it
+    // needs nothing longer-lived than the workflow's own GITHUB_TOKEN. The
+    // cross-repo secret is for the board, and only the board.
+    const world = mkWorld({ siteRepos: { repos: ['a/one', HOME_SLUG], home: HOME_SLUG } });
+    const res = runJob(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(world.tokens('post').join(','), 'POST-TOKEN', 'the post carries the built-in token');
+    assertEq(world.tokens('sweep').join(','), 'SWEEP-TOKEN', 'the board sweep carries the secret');
+    assertEq(world.tokens('roster').join(','), 'SWEEP-TOKEN', 'and so does the published slug list');
+    cleanup(world.root);
+  });
+
+  await test('a run given no built-in token posts with the one it has', () => {
+    // The rehearsal shape, and the runner whose permissions block was not
+    // rendered: one token is enough, and an empty export would be read as a
+    // token rather than as an absent one.
+    const world = mkWorld({ postToken: null });
+    const res = runJob(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(world.tokens('post').join(','), 'SWEEP-TOKEN', 'the post falls back rather than losing its token');
+    cleanup(world.root);
+  });
+
   group('jobs/claude-cloud: the workflow that runs it');
 
-  const WORKFLOW = path.join(__dirname, '..', '..', '.github', 'workflows', 'brief.yml');
+  // The workflow is SEEDED onto the home repo (issue #91) and lives nowhere in
+  // this repo but here — the plugin is distributed, and a consumer cannot set
+  // secrets on a repo they do not own.
+  const WORKFLOW = path.join(__dirname, '..', '..', 'workflow', 'templates', 'github-workflows', 'brief.yml');
+
+  await test('the plugin repo carries no brief workflow of its own', () => {
+    assert(
+      !fs.existsSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'brief.yml')),
+      'the seeded copy on the home repo is the only live one',
+    );
+  });
 
   await test('brief.yml triggers on dispatch and on a cron backup', () => {
     const text = fs.readFileSync(WORKFLOW, 'utf8');
@@ -408,11 +476,17 @@ const run = async () => {
     assert(/^ {4}- cron: '[\d*/, ]+'$/m.test(text), 'and a cron is the backup');
   });
 
-  await test('it runs the cloud script, and that script is there', () => {
+  await test('it runs the cloud script at the path the seed puts it', () => {
     const text = fs.readFileSync(WORKFLOW, 'utf8');
-    const named = text.match(/run: bash (jobs\/[\w-]+\.sh)/);
-    assert(named, `the job runs a jobs script: ${text}`);
-    assert(fs.existsSync(path.join(__dirname, '..', '..', named[1])), `${named[1]} resolves from the repo root`);
+    const named = text.match(/run: bash (\S+\.sh)/);
+    assert(named, `the job runs a script: ${text}`);
+    // The seed's own list is what decides where that path is, so the workflow
+    // is checked against it rather than against a literal written twice.
+    const home = fs.readFileSync(path.join(__dirname, '..', '..', 'workflow', 'home.sh'), 'utf8');
+    const pair = home.match(/'(\S+):(\S+claude-cloud\.sh)'/);
+    assert(pair, `the seed list names the cloud script: ${home.slice(0, 200)}`);
+    assertEq(named[1], pair[2], 'the workflow runs the copy the seed writes');
+    assert(fs.existsSync(path.join(__dirname, '..', '..', pair[1])), `${pair[1]} is the source in this checkout`);
   });
 
   await test('a dispatch and the cron cannot run at once', () => {
@@ -420,13 +494,21 @@ const run = async () => {
     assert(/^concurrency:$/m.test(text) && /^ {2}group: \S+$/m.test(text), `a concurrency group is set: ${text}`);
   });
 
+  await test('the built-in token is granted the write the post needs', () => {
+    const text = fs.readFileSync(WORKFLOW, 'utf8');
+    assert(/^permissions:$/m.test(text), 'the workflow states its permissions');
+    assert(/^ {2}discussions: write$/m.test(text), 'and the Discussion post is what needs the grant');
+  });
+
   await test('the credentials are named, never written', () => {
     const text = fs.readFileSync(WORKFLOW, 'utf8');
-    for (const name of ['CLAUDE_CODE_OAUTH_TOKEN', 'GH_TOKEN', 'WORKKIT_HOME_SLUG']) {
+    for (const name of ['CLAUDE_CODE_OAUTH_TOKEN', 'GH_TOKEN', 'WORKKIT_POST_TOKEN']) {
       assert(text.includes(`${name}:`), `${name} reaches the script`);
     }
     assert(/CLAUDE_CODE_OAUTH_TOKEN: \$\{\{ secrets\./.test(text), 'the OAuth token is a secret reference');
-    assert(/GH_TOKEN: \$\{\{ secrets\./.test(text), 'and so is the home-repo token');
+    assert(/GH_TOKEN: \$\{\{ secrets\.WORKKIT_GITHUB_TOKEN \}\}/.test(text), 'the sweep gets the cross-repo secret');
+    assert(/WORKKIT_POST_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/.test(text), 'and the post gets the built-in one');
+    assert(!/WORKKIT_HOME_SLUG|WORKKIT_HOME_TOKEN/.test(text), 'the retired names are gone');
     // Anything that looks like a credential rather than a reference to one.
     assert(!/\b(gh[pousr]_|github_pat_|sk-ant-)[A-Za-z0-9_-]{8,}/.test(text), 'no credential is written into the file');
     assert(!/set -x/.test(text), 'and nothing traces the environment into the log');

@@ -544,33 +544,28 @@ home_steps() {
   wk_home_setup
 }
 
-# ── The cloud secrets (issue #88) ─────────────────────────────────────────────
-# The cloud brief (.github/workflows/brief.yml) runs on two repo secrets and one
-# repo variable, and they live on the repo THIS checkout's origin names — the
-# same slug the daily job's dispatch gates on. Setting them by hand was the last
-# manual step of a from-zero install, so setup wires them and doctor reports
-# them.
+# ── The cloud secrets (issues #88, #91) ───────────────────────────────────────
+# The cloud brief runs on two repo secrets, and they live on the HOME repo —
+# `<login>/workkit`, the repo setup made for this machine and seeded the
+# workflow into. Not on this checkout's own repo: the plugin is distributed to
+# everyone who installs the kit, and a consumer cannot set secrets on a repo
+# they do not own (issue #91). The home slug is also what the daily job's
+# dispatch gates on, so the two agree by construction.
 #
 # The one rule the whole block is built around: a token value goes from the
 # command that produced it to `gh secret set` through a pipe, held in a single
 # local on the way. It is never written to a file, echoed, or logged.
 SECRET_CLAUDE='CLAUDE_CODE_OAUTH_TOKEN'
-SECRET_HOME='WORKKIT_HOME_TOKEN'
-VAR_HOME_SLUG='WORKKIT_HOME_SLUG'
+# Only names STARTING with `GITHUB_` are refused by GitHub; one that contains it
+# is accepted, which is what lets this say plainly what it is.
+SECRET_HOME='WORKKIT_GITHUB_TOKEN'
 
 # The OAuth token lives about a year, so ~11 months is the point where a refresh
 # is worth offering — early enough that a morning brief never meets the expiry.
 SECRET_MAX_AGE_DAYS=330
 
-# The repo the secrets live on: this checkout's origin. Empty for a checkout
-# with no origin, which is every fixture copy.
-workflow_slug() {
-  [[ "$HOME_LIBS" -eq 1 ]] || return 0
-  wk_repo_slug "$KIT_DIR"
-}
-
-# The two listings below are the only network the daily path makes — the
-# standards hook calls `update --auto` at session start — so they get an upper
+# The listing below is the only network the daily path makes — the standards
+# hook calls `update --auto` at session start — so it gets an upper
 # bound: a captive portal answers the TCP handshake and never the request, and
 # an unbounded `gh` there would hold a session open for as long as it liked.
 # macOS ships no coreutils `timeout`, so one is used when the machine has it and
@@ -601,13 +596,6 @@ bounded_read() {
 # two apart by asking jq whether what came back is an array.
 secrets_json() {
   bounded_read gh secret list --repo "$1" --json name,updatedAt 2>/dev/null || true
-}
-
-# The same shape for the repo's variables, and the same rule: what comes back is
-# a listing only when it is a JSON array. Anything else — an empty answer, an
-# error, a bound that fired — means UNREADABLE, never "the variable is absent".
-variables_json() {
-  bounded_read gh variable list --repo "$1" --json name 2>/dev/null || true
 }
 
 # Whether a listing came back at all.
@@ -697,10 +685,12 @@ offer_claude_token() {
   esac
 }
 
-# The home token, zero-click (owner ruling 2026-07-30): the CLI's own login is
-# already a token that reaches the home repo and the swept boards, and there is
-# no API that mints a narrower one. The tradeoff — that login's full reach — and
-# the least-privilege alternative are in jobs/README.md.
+# The cross-repo token, zero-click (owner ruling 2026-07-30): the CLI's own
+# login already reaches every swept board, and there is no API that mints a
+# narrower one. It is the only credential that leaves the home repo — the
+# Discussion is posted with the workflow's built-in GITHUB_TOKEN. The tradeoff
+# — that login's full reach — and the least-privilege alternative are in
+# jobs/README.md.
 push_home_token() {
   local slug="$1" token='' rc=0
 
@@ -716,36 +706,9 @@ push_home_token() {
   say_ok "secrets: $SECRET_HOME is set on $slug from this machine's gh login — it carries that login's reach (jobs/README.md names the narrower alternative)"
 }
 
-# The variable is not a secret and its value is already known, so there is
-# nothing to ask: a machine that names a home repo gets it written.
-push_home_slug_var() {
-  local slug="$1" home names
-
-  names="$(variables_json "$slug")"
-  if ! is_listing "$names"; then
-    say_skip "secrets: $slug's variables could not be read — \`gh variable list --repo $slug\` says why"
-    return 0
-  fi
-  if printf '%s' "$names" | jq -e --arg n "$VAR_HOME_SLUG" 'any(.[]; .name == $n)' >/dev/null 2>&1; then
-    say_skip "secrets: $VAR_HOME_SLUG is set on $slug"
-    return 0
-  fi
-
-  home="$(wk_home_slug 2>/dev/null || true)"
-  if [[ -z "$home" ]]; then
-    say_skip "secrets: $VAR_HOME_SLUG is not set on $slug and this machine names no home repo — setup's home step makes one"
-    return 0
-  fi
-  if ! gh variable set "$VAR_HOME_SLUG" --repo "$slug" --body "$home" >/dev/null 2>&1; then
-    say_warn "secrets: $VAR_HOME_SLUG could not be written to $slug — run \`gh variable set $VAR_HOME_SLUG --repo $slug --body $home\` by hand"
-    return 0
-  fi
-  say_ok "secrets: $VAR_HOME_SLUG is set to $home on $slug"
-}
-
-# Everything the block needs before it can say anything true: gh, jq, an origin,
-# and a listing that came back. Each failure is a named skip — none of them is
-# drift, and a run that cannot read the repo must never report a missing secret.
+# Everything the block needs before it can say anything true: gh, jq, a home
+# repo, and a listing that came back. Each failure is a named skip — none of them
+# is drift, and a run that cannot read the repo must never report a missing secret.
 # Sets SECRETS_SLUG and SECRETS_JSON for the caller.
 SECRETS_SLUG=''
 SECRETS_JSON=''
@@ -762,15 +725,15 @@ secrets_precheck() {
     return 1
   fi
   # Two different missing things, told apart: a checkout without the home-repo
-  # library cannot resolve a slug at all, which is not the same as a checkout
-  # that resolved one and found no origin.
+  # library cannot resolve a slug at all, which is not the same as a machine
+  # that asked and has no home repo yet.
   if [[ "$HOME_LIBS" -ne 1 ]]; then
     say_skip "secrets: the home-repo library is missing beside $SCRIPT_DIR — this checkout cannot name the repo the cloud brief's secrets live on"
     return 1
   fi
-  SECRETS_SLUG="$(workflow_slug)"
+  SECRETS_SLUG="$(wk_home_slug 2>/dev/null || true)"
   if [[ -z "$SECRETS_SLUG" ]]; then
-    say_skip "secrets: this checkout has no GitHub origin — the cloud brief's secrets live on the repo it names"
+    say_skip "secrets: this machine names no home repo — the cloud brief's secrets live on it, and setup's home step makes one"
     return 1
   fi
 
@@ -804,8 +767,6 @@ secrets_step() {
   else
     say_skip "secrets: $SECRET_HOME is set on $SECRETS_SLUG"
   fi
-
-  push_home_slug_var "$SECRETS_SLUG"
 }
 
 # The report, in two voices. `doctor` says one line per value and returns how
@@ -833,21 +794,6 @@ secrets_report() {
     fi
   done
 
-  local names
-  names="$(variables_json "$SECRETS_SLUG")"
-  if ! is_listing "$names"; then
-    # Unreadable is not absent: a run that cannot see the variable must not send
-    # a human to set one that is already there, and must not count as drift.
-    if [[ "$mode" == 'doctor' ]]; then
-      say_skip "secrets: $SECRETS_SLUG's variables could not be read — \`gh variable list --repo $SECRETS_SLUG\` says why"
-    fi
-  elif printf '%s' "$names" | jq -e --arg n "$VAR_HOME_SLUG" 'any(.[]; .name == $n)' >/dev/null 2>&1; then
-    if [[ "$mode" == 'doctor' ]]; then say_ok "secrets: $VAR_HOME_SLUG is set on $SECRETS_SLUG"; fi
-  else
-    say_warn "secrets: $VAR_HOME_SLUG is not set on $SECRETS_SLUG — run \`workkit setup\`"
-    attention=$((attention + 1))
-  fi
-
   return "$attention"
 }
 
@@ -861,7 +807,7 @@ cmd_setup() {
   link_command
   install_cron
   home_steps
-  # After the home steps, because the variable it writes is the home slug they
+  # After the home steps, because the repo it writes to is the home repo they
   # settle.
   secrets_step
   offer_site_publish
@@ -1010,6 +956,11 @@ cmd_doctor() {
     local home_attention=0
     wk_home_doctor || home_attention=$?
     attention=$((attention + home_attention))
+    # The seeded cloud runner drifts on a `git pull` of this checkout, and only
+    # `setup` writes it back — so doctor is the one place that can notice.
+    local runner_attention=0
+    wk_home_runner_doctor || runner_attention=$?
+    attention=$((attention + runner_attention))
   fi
 
   local secrets_attention=0

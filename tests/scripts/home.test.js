@@ -27,6 +27,10 @@ const {
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
+// The plugin checkout the cloud brief's runner is seeded FROM (issue #91). The
+// real one, because the point of that seed is that the scripts a runner
+// executes are these scripts — a fixture would prove only that files copy.
+const KIT_DIR = path.join(__dirname, '..', '..');
 const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 
 const mkTmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'workkit-home-')));
@@ -215,6 +219,7 @@ const mkWorld = ({
       PATH: `${bin}:${BASE_PATH}:${path.dirname(process.execPath)}`,
       WORKFLOW_HOME: workflowHome,
       WORKKIT_TOWER_APP: tower.app,
+      WORKKIT_KIT_DIR: KIT_DIR,
       ...(remote ? { WORKKIT_HOME_REMOTE: remote } : {}),
     },
   };
@@ -509,6 +514,131 @@ const run = async () => {
     assert(/edited/.test(fs.readFileSync(path.join(check, 'README.md'), 'utf8')), 'the real change went');
     assert(!fs.existsSync(path.join(check, '.workkit')), 'and the scratchpad stayed home');
     assert(fs.existsSync(path.join(world.tower, '.workkit', 'scratch.md')), 'left where it was, not removed');
+    cleanup(world.root);
+  });
+
+  group('workflow/home: the cloud brief runner');
+
+  // Issue #91: the workflow and the code it runs are seeded onto the HOME repo,
+  // because the plugin repo is distributed and a consumer cannot set secrets on
+  // a repo they do not own. The checkout stays the one source; the clone
+  // carries a copy that a later setup refreshes.
+
+  /** The src:dest pairs the library ships, read from it rather than restated. */
+  const runnerPairs = () => fs.readFileSync(path.join(WORKFLOW_DIR, 'home.sh'), 'utf8')
+    .split('\n')
+    .map((l) => l.trim().match(/^'(\S+):(\S+)'$/))
+    .filter(Boolean)
+    .map((m) => ({ src: m[1], dest: m[2] }));
+
+  const seeded = (world) => {
+    if (!world.env.WORKKIT_HOME_REMOTE) world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
+    return inHome(world, 'wk_home_clone owner/workkit\nrc=0\nwk_home_seed_runner || rc=$?\nprintf "rc=%s\\n" "$rc"');
+  };
+
+  /**
+   * A COPY of this checkout's runner sources, so a test can change one of them
+   * — the drift a later setup exists to heal is drift in the checkout, and the
+   * real one is not a test's to edit.
+   */
+  const mkKitCopy = (root) => {
+    const kit = path.join(root, 'kit-copy');
+    for (const { src } of runnerPairs()) {
+      const dest = path.join(kit, src);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.copyFileSync(path.join(KIT_DIR, src), dest);
+    }
+    return kit;
+  };
+
+  await test('every file the runner needs lands in the clone, at the path the workflow names', () => {
+    const world = mkWorld();
+    const { out } = seeded(world);
+    assert(/rc=0/.test(out), `it wrote something: ${out}`);
+    for (const { src, dest } of runnerPairs()) {
+      assert(fs.existsSync(path.join(world.tower, dest)), `${dest} is in the clone`);
+      assertEq(
+        fs.readFileSync(path.join(world.tower, dest), 'utf8'),
+        fs.readFileSync(path.join(KIT_DIR, src), 'utf8'),
+        `${dest} is this checkout's ${src}, byte for byte`,
+      );
+    }
+    assert(fs.existsSync(path.join(world.tower, '.github', 'workflows', 'brief.yml')), 'the workflow is where Actions looks for it');
+    cleanup(world.root);
+  });
+
+  await test('the seeded runner composes without reaching back into the checkout', () => {
+    // The closure is the whole point: a require the seed missed would only fail
+    // on a runner, a morning later. Loading the seeded composer from the clone
+    // with the checkout invisible is what proves the list is complete.
+    const world = mkWorld();
+    seeded(world);
+    const entry = path.join(world.tower, 'brief', 'jobs', 'brief-payload.js');
+    const res = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(entry)})`], {
+      encoding: 'utf8', timeout: 30000,
+    });
+    assertEq(res.status, 0, `the seeded composer loads from the clone alone: ${res.stderr}`);
+    cleanup(world.root);
+  });
+
+  await test('a second seed writes nothing, and a changed source is picked up', () => {
+    const world = mkWorld();
+    seeded(world);
+    const dest = path.join(world.tower, 'brief', 'jobs', 'claude-cloud.sh');
+    const before = fs.statSync(dest).mtimeMs;
+
+    const again = seeded(world);
+    assert(/rc=2/.test(again.out), `nothing was written the second time: ${again.out}`);
+    assert(/is current/.test(again.out), `and it says so: ${again.out}`);
+    assertEq(fs.statSync(dest).mtimeMs, before, 'the file was not rewritten');
+
+    // Drift, the only reason the copy is ever touched again: the file in the
+    // clone no longer matches the checkout it came from.
+    fs.writeFileSync(dest, '# an older runner\n');
+    const refreshed = seeded(world);
+    assert(/rc=0/.test(refreshed.out), `the drift is healed: ${refreshed.out}`);
+    assertEq(
+      fs.readFileSync(dest, 'utf8'),
+      fs.readFileSync(path.join(KIT_DIR, 'jobs', 'claude-cloud.sh'), 'utf8'),
+      'back to the checkout’s copy',
+    );
+    cleanup(world.root);
+  });
+
+  await test('an incomplete checkout warns and seeds what it has', () => {
+    const world = mkWorld();
+    const partial = path.join(world.root, 'partial-kit');
+    fs.mkdirSync(path.join(partial, 'jobs'), { recursive: true });
+    fs.writeFileSync(path.join(partial, 'jobs', 'claude-cloud.sh'), '# the runner\n');
+    world.env.WORKKIT_KIT_DIR = partial;
+
+    const { out } = seeded(world);
+    assert(/runner is incomplete/.test(out), `it names the state: ${out}`);
+    assert(/brief-payload\.js/.test(out), `and what is missing: ${out}`);
+    assert(fs.existsSync(path.join(world.tower, 'brief', 'jobs', 'claude-cloud.sh')), 'what was there still landed');
+    cleanup(world.root);
+  });
+
+  await test('setup pushes the runner, and a checkout that moved on is its own commit', () => {
+    const world = mkWorld({ login: 'owner' });
+    const remote = mkRemote(world.root);
+    world.env.WORKKIT_HOME_REMOTE = remote;
+    world.env.WORKKIT_KIT_DIR = mkKitCopy(world.root);
+    setup(world);
+
+    const check = path.join(world.root, 'check');
+    spawnSync('git', ['clone', '-q', remote, check], { encoding: 'utf8' });
+    assert(fs.existsSync(path.join(check, '.github', 'workflows', 'brief.yml')), 'the workflow reached the home repo');
+    assert(fs.existsSync(path.join(check, 'brief', 'jobs', 'claude-cloud.sh')), 'and the script it runs');
+
+    // The checkout moves on, the way it does between releases. The next setup
+    // finds a seeded clone, refreshes the copy, and pushes that on its own.
+    fs.writeFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'claude-cloud.sh'), '# a newer runner\n');
+    const { out } = setup(world);
+    assert(/seeded the cloud brief/.test(out), `the refresh happened: ${out}`);
+    assertEq(fs.readFileSync(path.join(world.tower, 'brief', 'jobs', 'claude-cloud.sh'), 'utf8'), '# a newer runner\n', 'the clone carries the new one');
+    const subject = spawnSync('git', ['-C', world.tower, 'log', '-1', '--pretty=%s'], { encoding: 'utf8' }).stdout.trim();
+    assertEq(subject, 'chore(home): refresh the cloud brief runner', 'in a commit that says what it is');
     cleanup(world.root);
   });
 
@@ -814,6 +944,65 @@ const run = async () => {
     const { out } = inHome(world, 'rc=0; wk_home_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
     assert(/is behind/.test(out) && /pull --rebase/.test(out), `it names the fix, got: ${out}`);
     assert(/rc=1/.test(out), 'and counts');
+    cleanup(world.root);
+  });
+
+  // The seeded runner drifts on a `git pull` of the checkout and only setup
+  // writes it back, so doctor is the one place that can notice.
+  const runnerDoctor = (world) => inHome(world, 'rc=0; wk_home_runner_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
+
+  /** A world whose clone carries the runner, seeded from a copy of the checkout. */
+  const withRunner = () => {
+    const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
+    world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
+    world.env.WORKKIT_KIT_DIR = mkKitCopy(world.root);
+    inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed_runner');
+    return world;
+  };
+
+  await test('a seeded runner in step with the checkout is green', () => {
+    const world = withRunner();
+    const { out } = runnerDoctor(world);
+    assert(/runner: the cloud brief's runner in/.test(out) && /is current/.test(out), `it reports current, got: ${out}`);
+    assert(/rc=0/.test(out), 'and nothing needs attention');
+    cleanup(world.root);
+  });
+
+  await test('a seeded file the checkout has moved past is reported as behind', () => {
+    const world = withRunner();
+    // The checkout moved on — a `git pull` since the last setup.
+    fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'claude-cloud.sh'), '\n# a later change\n');
+    const { out } = runnerDoctor(world);
+    assert(/brief runner is behind this checkout/.test(out), `it names the drift, got: ${out}`);
+    assert(/1 of \d+ file\(s\) differ/.test(out), `and how much of it, got: ${out}`);
+    assert(/workkit setup/.test(out), 'and the command that heals it');
+    assert(/rc=1/.test(out), 'and counts');
+    cleanup(world.root);
+  });
+
+  await test('doctor only reads — it never writes the runner back or pushes', () => {
+    const world = withRunner();
+    const file = path.join(world.tower, 'brief', 'jobs', 'claude-cloud.sh');
+    fs.writeFileSync(file, '# an old copy\n');
+    runnerDoctor(world);
+    assertEq(fs.readFileSync(file, 'utf8'), '# an old copy\n', 'the clone is untouched — only setup writes it');
+    cleanup(world.root);
+  });
+
+  await test('no clone is a named skip, not a warning', () => {
+    const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
+    const { out } = runnerDoctor(world);
+    assert(/runner: no home clone at/.test(out), `it names what is missing, got: ${out}`);
+    assert(/rc=0/.test(out), 'and nothing to fix here — the home line already said it');
+    cleanup(world.root);
+  });
+
+  await test('an unreadable checkout is a named skip', () => {
+    const world = withRunner();
+    world.env.WORKKIT_KIT_DIR = path.join(world.root, 'not-a-checkout');
+    const { out } = runnerDoctor(world);
+    assert(/plugin checkout could not be resolved/.test(out), `it says why it cannot compare, got: ${out}`);
+    assert(/rc=0/.test(out), 'and counts as nothing needing attention');
     cleanup(world.root);
   });
 

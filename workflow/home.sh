@@ -18,10 +18,11 @@
 # The built site never lands on main at all: it is pushed to the repo's
 # `gh-pages` branch, which Pages serves from the branch root.
 #
-# WHO CREATES WHAT. Creating the repo, cloning it, seeding it, enabling
-# Discussions and Pages happen in `workkit setup` and NOWHERE else (issue #71's
-# doctrine): the daily path and the session hook only ever read, write, commit
-# and push a home that a human already made.
+# WHO CREATES WHAT. Creating the repo, cloning it, seeding it — the tower
+# project, and since issue #91 the cloud brief's runner and its workflow —
+# enabling Discussions and Pages happen in `workkit setup` and NOWHERE else
+# (issue #71's doctrine): the daily path and the session hook only ever read,
+# write, commit and push a home that a human already made.
 #
 # Needs: lib.sh and discussions.sh sourced first.
 
@@ -39,6 +40,40 @@ WK_HOME_PAGES_BRANCH='gh-pages'
 # is no stored second template — the app IS the template. The override is the
 # suite's seam.
 WK_TOWER_APP="${WORKKIT_TOWER_APP:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../tower/app" 2>/dev/null && pwd -P || printf '')}"
+
+# The plugin checkout this engine is part of — the source of the cloud brief's
+# runner, the way tower/app is the source of the project. Resolved the same way,
+# and overridden the same way for the suite.
+WK_KIT_DIR="${WORKKIT_KIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd -P || printf '')}"
+
+# The cloud brief's runner, seeded into the home repo (issue #91).
+#
+# `.github/workflows/brief.yml` and its secrets cannot live on the plugin repo:
+# that repo is distributed to everyone who installs the kit, and a consumer
+# cannot set secrets on a repo they do not own. So the workflow runs on the
+# HOME repo, and the code it runs is copied there — the checkout stays the one
+# source, and a `workkit setup` after this checkout changes refreshes the copy.
+#
+# `src:dest` pairs, both relative. Everything but the workflow file lands under
+# one folder with its checkout-relative subpath intact, so every relative
+# address inside those scripts — `../workflow` for the engine libraries,
+# `../tower/api/lib` for the composers' requires — resolves in the clone exactly
+# as it does here. The list IS the require closure of brief-payload.js plus what
+# claude-cloud.sh sources; a new require means a new line here.
+WK_HOME_RUNNER_FILES=(
+  'workflow/templates/github-workflows/brief.yml:.github/workflows/brief.yml'
+  'jobs/claude-cloud.sh:brief/jobs/claude-cloud.sh'
+  'jobs/brief-publish.sh:brief/jobs/brief-publish.sh'
+  'jobs/brief-payload.js:brief/jobs/brief-payload.js'
+  'jobs/cc-news.js:brief/jobs/cc-news.js'
+  'workflow/lib.sh:brief/workflow/lib.sh'
+  'workflow/discussions.sh:brief/workflow/discussions.sh'
+  'workflow/home.sh:brief/workflow/home.sh'
+  'tower/api/lib/repos.js:brief/tower/api/lib/repos.js'
+  'tower/api/lib/board.js:brief/tower/api/lib/board.js'
+  'tower/api/lib/health.js:brief/tower/api/lib/health.js'
+  'tower/api/lib/brief.js:brief/tower/api/lib/brief.js'
+)
 
 # The remote, and the one seam the suite needs: pointed at a local bare repo,
 # every clone, fetch and push in this file runs fully offline. Unset on a real
@@ -277,6 +312,50 @@ wk_home_seed() {
   return 0
 }
 
+# The cloud brief's runner, copied into the clone (issue #91).
+#
+# Unlike the project seed this runs on EVERY setup, empty clone or not: the
+# scripts are the checkout's, they change with it, and a home repo running last
+# month's runner is the failure this refresh exists to prevent. Idempotent by
+# content — a file already identical is not rewritten, so a second setup writes
+# nothing and leaves nothing to commit.
+#
+# Returns 0 (something changed), 2 (every file was already current), 1 (the
+# checkout could not be read — nothing was written).
+wk_home_seed_runner() {
+  local pair src dest changed=0 missing=''
+
+  [[ -n "$WK_KIT_DIR" && -d "$WK_KIT_DIR" ]] || {
+    wk_say_warn "home: the plugin checkout could not be resolved beside this engine — the cloud brief's runner was not seeded"
+    return 1
+  }
+
+  for pair in "${WK_HOME_RUNNER_FILES[@]}"; do
+    src="$WK_KIT_DIR/${pair%%:*}"
+    dest="$WK_HOME_DIR/${pair#*:}"
+    if [[ ! -f "$src" ]]; then missing="$missing ${pair%%:*}"; continue; fi
+    if cmp -s "$src" "$dest" 2>/dev/null; then continue; fi
+    mkdir -p "$(dirname "$dest")" 2>/dev/null || true
+    # -p, so a script the runner sources arrives with the mode it was written
+    # with rather than whatever this shell's umask would have given it.
+    cp -p "$src" "$dest" 2>/dev/null || {
+      wk_say_warn "home: could not write ${pair#*:} into $WK_HOME_DIR"
+      return 1
+    }
+    changed=$((changed + 1))
+  done
+
+  if [[ -n "$missing" ]]; then
+    wk_say_warn "home: this checkout is missing$missing — the cloud brief's runner is incomplete in $WK_HOME_DIR"
+  fi
+  if [[ "$changed" -eq 0 ]]; then
+    wk_say_skip "home: the cloud brief's runner in $WK_HOME_DIR is current"
+    return 2
+  fi
+  wk_say_ok "home: seeded the cloud brief's runner in $WK_HOME_DIR ($changed file(s) from $WK_KIT_DIR)"
+  return 0
+}
+
 # The project's dependencies, so the daily publish has something to build with.
 # Absent tooling is an honest skip: the publish checks for the same binary and
 # says the same thing.
@@ -454,6 +533,7 @@ wk_home_setup() {
   # machine and is left exactly as it is.
   if wk_home_empty; then
     wk_home_seed || return 0
+    wk_home_seed_runner || true
     wk_home_install
     wk_home_discussions "$slug"
     wk_home_pages "$slug"
@@ -463,6 +543,13 @@ wk_home_setup() {
 
   wk_say_skip "home: the tower project is already in $WK_HOME_DIR"
   # The second machine's path: the project travelled, its dependencies did not.
+  # The runner is refreshed here too, and pushed on its own — the project seed
+  # is a one-time write, the runner tracks a checkout that keeps changing.
+  rc=0
+  wk_home_seed_runner || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    wk_home_commit_push 'chore(home): refresh the cloud brief runner' || true
+  fi
   wk_home_install
   wk_home_discussions "$slug"
   wk_home_pages "$slug"
@@ -512,5 +599,45 @@ wk_home_doctor() {
     return 1
   fi
   wk_say_ok "home: $slug — $WK_HOME_DIR is its clone"
+  return 0
+}
+
+# The cloud brief's runner, checked rather than written (issue #91).
+#
+# `wk_home_seed_runner` runs only from `workkit setup`, so a `git pull` of this
+# checkout leaves the home repo running last week's copy with nothing to say so.
+# This is the line that says it. It only ever READS: only setup writes into the
+# clone, and the fix it names is that same setup.
+#
+# Returns 1 when the seeded copy is behind, 0 otherwise (current, or a skip).
+wk_home_runner_doctor() {
+  local pair src dest behind=0 compared=0
+
+  wk_home_ready || {
+    wk_say_skip "runner: no home clone at $WK_HOME_DIR — nothing to compare the cloud brief's runner against"
+    return 0
+  }
+  [[ -n "$WK_KIT_DIR" && -d "$WK_KIT_DIR" ]] || {
+    wk_say_skip "runner: the plugin checkout could not be resolved beside this engine — the cloud brief's runner cannot be compared"
+    return 0
+  }
+
+  for pair in "${WK_HOME_RUNNER_FILES[@]}"; do
+    src="$WK_KIT_DIR/${pair%%:*}"
+    dest="$WK_HOME_DIR/${pair#*:}"
+    [[ -f "$src" ]] || continue
+    compared=$((compared + 1))
+    cmp -s "$src" "$dest" 2>/dev/null || behind=$((behind + 1))
+  done
+
+  if [[ "$compared" -eq 0 ]]; then
+    wk_say_skip "runner: this checkout carries none of the cloud brief's runner files — nothing to compare"
+    return 0
+  fi
+  if [[ "$behind" -gt 0 ]]; then
+    wk_say_warn "runner: the home repo's brief runner is behind this checkout ($behind of $compared file(s) differ) — run \`workkit setup\`"
+    return 1
+  fi
+  wk_say_ok "runner: the cloud brief's runner in $WK_HOME_DIR is current with this checkout"
   return 0
 }

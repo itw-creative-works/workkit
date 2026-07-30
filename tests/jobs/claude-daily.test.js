@@ -58,13 +58,13 @@ const today = () => new Date().toLocaleDateString('en-CA');
  * `dispatch` is whether `gh workflow run` lands — false by default, which is
  * the machine that cannot reach the cloud and runs the whole brief itself, and
  * therefore the world every assertion about the local leg is made in.
- * `secrets` is whether `gh secret list` names CLAUDE_CODE_OAUTH_TOKEN — true by
- * default, the repo whose runner can actually compose the brief.
+ * `secrets` is the names `gh secret list` reports — both by default, the repo
+ * whose runner can actually compose the brief and sweep the board.
  */
 const mkWorld = ({
   response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n', status = 0, logsDir = true,
   home: homeRepo = null, posted = [], ghFails = false, ccChangelog = null, badSettings = false,
-  dispatch = false, secrets = true,
+  dispatch = false, secrets = ['CLAUDE_CODE_OAUTH_TOKEN', 'WORKKIT_GITHUB_TOKEN'],
 } = {}) => {
   const root = mkTmp();
   const bin = path.join(root, 'bin');
@@ -120,11 +120,9 @@ const mkWorld = ({
     // The cloud trigger. A refusal is the ordinary world here: no network, no
     // auth, no workflow — whatever the reason, the local brief runs.
     `  "workflow run"*) exit ${dispatch ? 0 : 1} ;;`,
-    // The secrets the runner needs, checked before the day is handed to it. A
-    // repo carrying the workflow and not the token lists neither.
-    ...(secrets
-      ? ['  "secret list"*) printf \'%s\\n\' "CLAUDE_CODE_OAUTH_TOKEN\tUpdated 2026-07-01" "WORKKIT_HOME_TOKEN\tUpdated 2026-07-01" ;;']
-      : ['  "secret list"*) printf \'%s\\n\' "WORKKIT_HOME_TOKEN\tUpdated 2026-07-01" ;;']),
+    // The secrets the runner needs, checked before the day is handed to it. Both
+    // are required, so each world names exactly the ones it carries.
+    `  "secret list"*) printf '%s\\n'${secrets.map((n) => ` "${n}\tUpdated 2026-07-01"`).join('')} ;;`,
     '  *createDiscussion*)',
     // The body travels as `@file` and the file goes away with the run, so
     // what was published is kept here for the assertions.
@@ -549,7 +547,9 @@ const run = async () => {
     assertEq(sent.length, 1, `one workflow run: ${fmtCalls(world.ghCalls()).slice(0, 400)}`);
     assertEq(sent[0][2], 'brief.yml', 'and it names the brief workflow');
     assertEq(sent[0][3], '--repo', 'on a repo');
-    assert(/^[^/\s]+\/[^/\s]+$/.test(sent[0][4] || ''), `named by slug: ${sent[0][4]}`);
+    // The HOME repo (issue #91), which is where setup seeded the workflow and
+    // wrote the secrets — never this checkout's own, which is distributed.
+    assertEq(sent[0][4], 'owner/private-home', 'the home repo this machine is configured for');
 
     assertEq(world.calls().length, 0, `claude never ran here: ${fmtCalls(world.calls()).slice(0, 200)}`);
     assertEq(world.created().length, 0, 'and nothing was published from this machine');
@@ -590,7 +590,7 @@ const run = async () => {
     // `gh workflow run` succeeds the moment the file is on the default branch,
     // secrets or not — and a runner without the token composes nothing. The day
     // stays here until the repo can actually do the work.
-    const world = mkWorld({ home: 'owner/private-home', dispatch: true, secrets: false });
+    const world = mkWorld({ home: 'owner/private-home', dispatch: true, secrets: ['WORKKIT_GITHUB_TOKEN'] });
     const res = runJob(world);
     assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
     assertEq(world.dispatched().length, 0, 'nothing was triggered');
@@ -598,6 +598,46 @@ const run = async () => {
     assertEq(calls.length, 1, `the whole brief ran here: ${fmtCalls(calls).slice(0, 200)}`);
     assert(calls[0][1].startsWith(INSTRUCTION), 'the same payload as always');
     assertEq(world.created().length, 1, 'and was published from this machine');
+    await notifiedMatching(world, /^HEADLINE: one thing today\.$/);
+    cleanup(world.root);
+  });
+
+  await test('a repo without the board token is never handed the day either', async () => {
+    // The OAuth token alone buys a runner that composes — over an empty board.
+    // `WORKKIT_GITHUB_TOKEN` is the credential every issue read uses, so a
+    // morning without it is a digest about nothing. Both names, or the day stays.
+    const world = mkWorld({ home: 'owner/private-home', dispatch: true, secrets: ['CLAUDE_CODE_OAUTH_TOKEN'] });
+    const res = runJob(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(world.dispatched().length, 0, 'nothing was triggered');
+    const calls = world.calls();
+    assertEq(calls.length, 1, `the whole brief ran here: ${fmtCalls(calls).slice(0, 200)}`);
+    assert(calls[0][1].startsWith(INSTRUCTION), 'the same payload as always');
+    assertEq(world.created().length, 1, 'and was published from this machine');
+    await notifiedMatching(world, /^HEADLINE: one thing today\.$/);
+    cleanup(world.root);
+  });
+
+  await test('both secret names present is what lets the day go to the cloud', () => {
+    // The positive half of the pair: the default world carries both, and it is
+    // the only shape that dispatches.
+    const world = mkWorld({ home: 'owner/private-home', dispatch: true });
+    runJob(world);
+    assertEq(world.dispatched().length, 1, 'the day was handed over');
+    assertEq(world.calls().length, 0, 'and nothing was composed here');
+    cleanup(world.root);
+  });
+
+  await test('a machine with no home repo never dispatches, and briefs here', async () => {
+    // Issue #91: the workflow and its secrets live on the home repo, so a
+    // machine that has none has nowhere to hand the day to. A silent false, and
+    // the local leg exactly as before.
+    const world = mkWorld({ home: null, dispatch: true });
+    const res = runJob(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(world.dispatched().length, 0, 'nothing was triggered');
+    assert(!/dispatched/.test(world.log()), `and nothing was claimed: ${world.log()}`);
+    assertEq(world.calls().length, 1, 'the whole brief ran here');
     await notifiedMatching(world, /^HEADLINE: one thing today\.$/);
     cleanup(world.root);
   });

@@ -1,0 +1,71 @@
+# The morning brief, run in the cloud (issues #82, #91).
+#
+# THIS FILE LIVES ON THE HOME REPO, never on the plugin repo. The plugin is
+# distributed to everyone who installs the kit, and a consumer cannot set
+# secrets on a repo they do not own — so the cloud brief runs where the
+# credentials can honestly live: `<login>/workkit`, this machine's own home
+# repo. `workkit setup` seeds this file and the scripts it runs into the home
+# clone (workflow/home.sh), and the plugin checkout stays their one source.
+#
+# The laptop's 9am job dispatches this workflow and then stays out of the way;
+# the schedule below is the backup for the morning the laptop is asleep. Both
+# can fire on one day without harm — the runner checks the board for today's
+# brief before it posts.
+#
+# It runs brief/jobs/claude-cloud.sh and nothing else: the summaries step and
+# the site publish read a machine's git history, transcripts and home clone,
+# none of which exist on a runner.
+#
+# TWO TOKENS, TWO JOBS.
+#   GITHUB_TOKEN         the workflow's own, reaching this repo alone. It posts
+#                        the Discussion — the brief lands on the repo the run
+#                        belongs to, so nothing longer-lived is needed for it.
+#                        `permissions:` below is what grants the write.
+#   WORKKIT_GITHUB_TOKEN a secret, and the only one that leaves this repo: the
+#                        cross-repo board sweep (Issues: Read on every repo the
+#                        published data/repos.json names) and the gh-pages read
+#                        of that list. A repo it cannot read drops out of the
+#                        board rather than failing the run.
+# `workkit setup` writes it from `gh auth token`, and `workkit doctor` reports
+# it; jobs/README.md names the narrower alternative.
+#
+# The other secret is CLAUDE_CODE_OAUTH_TOKEN, from `claude setup-token` —
+# without it the runner composes nothing, which is why the laptop checks for it
+# before it hands the day over.
+
+name: brief
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 17:30 UTC — after the local 9am trigger window, so the laptop gets the
+    # first shot and this is the backup rather than a race.
+    - cron: '30 17 * * *'
+
+# The built-in token's reach, and the whole reason the post needs no secret.
+permissions:
+  contents: read
+  discussions: write
+
+# One brief at a time: a dispatch and the cron landing together would otherwise
+# both compose, and only the check-before-post would tell them apart.
+concurrency:
+  group: brief
+  cancel-in-progress: false
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Install the Claude CLI
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Compose and publish the brief
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GH_TOKEN: ${{ secrets.WORKKIT_GITHUB_TOKEN }}
+          WORKKIT_POST_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash brief/jobs/claude-cloud.sh
