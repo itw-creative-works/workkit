@@ -46,6 +46,40 @@ WK_HOME_DIR="$WK_USER_DIR/tower"
 WK_HOME_APP="$WK_HOME_DIR/apps/web"
 WK_HOME_DIST="$WK_HOME_APP/dist"
 
+# ── Style ─────────────────────────────────────────────────────────────────────
+# One palette for every part of the engine that speaks to a person, so a color
+# is chosen once rather than per command (issue #90). Color is a TERMINAL's
+# affordance and nothing else's: a log file, a captured hook payload and a piped
+# run all get the plain glyph lines, byte for byte what they got before there
+# was any color at all — the glyphs (✓ · ℹ ⚠) carry the meaning either way.
+#
+# Three ways to say no, every one of them final: WORKKIT_COLOR=0, NO_COLOR set
+# (https://no-color.org), or a TERM that cannot render any of it. WORKKIT_COLOR=1
+# stands in for the ONE yes — a terminal on stdout — and for nothing else, so a
+# machine that asked for no color never gets some anyway; it is also what lets
+# the suite read the styled shape out of a pipe. (A shell with no TERM at all
+# reports `dumb`, which is why that check sits above the seam rather than under
+# it: the answer must not depend on whether a caller cleared the environment.)
+wk_color_on() {
+  [[ "${WORKKIT_COLOR:-}" != '0' ]] || return 1
+  [[ -z "${NO_COLOR:-}" ]] || return 1
+  [[ "${TERM:-}" != 'dumb' ]] || return 1
+  [[ "${WORKKIT_COLOR:-}" == '1' || -t 1 ]] || return 1
+  return 0
+}
+
+# Set the palette every say_* below interpolates. The codes stay BACKSLASH
+# literals rather than real escapes: each is used inside a printf FORMAT string,
+# which is what expands them, and the empty string is what a no-color run
+# interpolates instead.
+wk_set_palette() {
+  if wk_color_on; then
+    _G='\033[0;32m' _Y='\033[0;33m' _C='\033[0;36m' _D='\033[0;90m' _B='\033[1m' _N='\033[0m'
+  else
+    _G='' _Y='' _C='' _D='' _B='' _N=''
+  fi
+}
+
 # ── Voice ─────────────────────────────────────────────────────────────────────
 # Each caller already has one — workkit.sh's say_* on stdout, standards.sh's
 # log_* on stderr — and a library that printed in its own would make the same

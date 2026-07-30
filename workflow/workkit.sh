@@ -96,10 +96,13 @@ done
 
 # ── Output ────────────────────────────────────────────────────────────────────
 # Everything goes to STDOUT: this is a human command, and its one machine caller
-# (the standards hook) relays what it prints. Colors only for a terminal — the
-# hook puts this text into a session's context, where escape codes are noise.
-_G='\033[0;32m' _Y='\033[0;33m' _C='\033[0;36m' _D='\033[0;90m' _B='\033[1m' _N='\033[0m'
-if [[ ! -t 1 ]]; then _G='' _Y='' _C='' _D='' _B='' _N=''; fi
+# (the standards hook) relays what it prints. The palette is lib.sh's — one home
+# for the codes and for the question of whether to use them at all, and the
+# answer is no anywhere but a terminal, because the hook puts this text into a
+# session's context where escape codes are noise. A partial checkout with no
+# lib.sh beside this script still speaks; it speaks plainly.
+_G='' _Y='' _C='' _D='' _B='' _N=''
+if declare -f wk_set_palette >/dev/null 2>&1; then wk_set_palette; fi
 
 # --auto is the quiet variant: only ACTIONS and warnings speak, so a session
 # start that found nothing to do says nothing at all.
@@ -110,6 +113,11 @@ say_warn() { printf "${_Y}⚠${_N} %s\n" "$1"; }
 say_skip() { [[ "$QUIET" -eq 1 ]] || printf "${_D}· %s${_N}\n" "$1"; }
 say_info() { [[ "$QUIET" -eq 1 ]] || printf "${_C}ℹ${_N} %s\n" "$1"; }
 say_head() { [[ "$QUIET" -eq 1 ]] || printf "\n${_B}%s${_N}\n" "$1"; }
+# A run of steps under one title (issue #90). A full setup is ~25 lines, and
+# flat they read as one undifferentiated list; the blank line and the title are
+# what turn them into the handful of things setup actually does. The quiet
+# variant prints none of it — a session-start injection is warnings only.
+say_section() { [[ "$QUIET" -eq 1 ]] || printf "\n${_B}${_C}%s${_N}\n" "$1"; }
 
 # A step that needs a human answer must never block a script. Every prompt in
 # `setup` asks this first and prints the command instead when the answer cannot
@@ -634,7 +642,7 @@ extract_token() {
 mint_claude_token() {
   local slug="$1" raw token rc=0
 
-  say_info "secrets: running \`claude setup-token\` — approve it in the browser, and the token goes straight to $slug"
+  say_info "secrets: running \`claude setup-token\` — approve it in the browser, and the token goes straight to $slug, where the cloud brief runs"
   # Only stdout is captured, because the token is in it. That the approval
   # itself renders on stderr — and so stays visible while stdout is held — is
   # OBSERVED behavior, not a contract the CLI documents: a version that moved
@@ -703,7 +711,7 @@ push_home_token() {
     say_warn "secrets: $SECRET_HOME could not be written to $slug — run \`gh auth token | gh secret set $SECRET_HOME --repo $slug\` by hand"
     return 0
   fi
-  say_ok "secrets: $SECRET_HOME is set on $slug from this machine's gh login — it carries that login's reach (jobs/README.md names the narrower alternative)"
+  say_ok "secrets: $SECRET_HOME is set on $slug from this machine's gh login — the run on $slug reads every board with it, so it carries that login's reach (jobs/README.md names the narrower alternative)"
 }
 
 # Everything the block needs before it can say anything true: gh, jq, a home
@@ -728,12 +736,12 @@ secrets_precheck() {
   # library cannot resolve a slug at all, which is not the same as a machine
   # that asked and has no home repo yet.
   if [[ "$HOME_LIBS" -ne 1 ]]; then
-    say_skip "secrets: the home-repo library is missing beside $SCRIPT_DIR — this checkout cannot name the repo the cloud brief's secrets live on"
+    say_skip "secrets: the home-repo library is missing beside $SCRIPT_DIR — this checkout cannot name the home repo the cloud brief's secrets live on"
     return 1
   fi
   SECRETS_SLUG="$(wk_home_slug 2>/dev/null || true)"
   if [[ -z "$SECRETS_SLUG" ]]; then
-    say_skip "secrets: this machine names no home repo — the cloud brief's secrets live on it, and setup's home step makes one"
+    say_skip "secrets: this machine names no home repo — the cloud brief runs there and posts the morning brief there, so its secrets live there too; setup's home step makes one"
     return 1
   fi
 
@@ -801,15 +809,26 @@ secrets_report() {
 
 cmd_setup() {
   say_head "workkit setup — $KIT_DIR"
+
+  say_section "This machine"
   install_plugin
   check_gh
   refresh_engine_link
   link_command
   install_cron
+  # The tower pointer is about this machine's dashboard, not the repo the shell
+  # stands in — it lives here, not under "This repo".
+  tower_pointer
+
+  say_section "Home repo"
   home_steps
+
+  say_section "Cloud brief secrets"
   # After the home steps, because the repo it writes to is the home repo they
   # settle.
   secrets_step
+
+  say_section "Dashboard site"
   offer_site_publish
   # The switch ends on, so setup makes it real before it exits — the same call
   # the human path of `update` already makes, and idempotent the way the rest of
@@ -817,7 +836,8 @@ cmd_setup() {
   # skipped adds no call and says nothing further; publish.sh's own gate stays
   # the single owner of the refusal.
   if [[ "$SITE_PUBLISH" == 'true' ]]; then cmd_publish; fi
-  tower_pointer
+
+  say_section "This repo"
   offer_repo
   say_head "Setup is idempotent — re-run it any time. \`workkit doctor\` reports what is left."
 }
@@ -893,6 +913,7 @@ cmd_doctor() {
   local attention=0
   say_head "workkit doctor — $KIT_DIR"
 
+  say_section "This machine"
   if command -v claude >/dev/null 2>&1; then
     if claude plugin list --json 2>/dev/null | grep -q "\"$PLUGIN_ID\""; then
       say_ok "plugin: $PLUGIN_ID is installed"
@@ -949,6 +970,7 @@ cmd_doctor() {
 
   # The home repo: whether one is named, whether the folder is its clone, and
   # where that clone stands against its upstream.
+  say_section "Home repo"
   if [[ "$HOME_LIBS" -ne 1 ]]; then
     say_warn "home: the home-repo library is missing beside $SCRIPT_DIR — this checkout is incomplete"
     attention=$((attention + 1))
@@ -963,10 +985,12 @@ cmd_doctor() {
     attention=$((attention + runner_attention))
   fi
 
+  say_section "Cloud brief secrets"
   local secrets_attention=0
   secrets_report doctor || secrets_attention=$?
   attention=$((attention + secrets_attention))
 
+  say_section "This repo"
   local state
   state="$(bash "$STANDARDS" --state "$PWD" 2>/dev/null | tail -1 || printf 'nogit')"
   case "$state" in

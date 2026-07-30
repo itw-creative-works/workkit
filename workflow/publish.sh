@@ -60,8 +60,9 @@ OMEGA_BIN="$WK_HOME_DIR/node_modules/.bin/omega"
 QUIET=0
 [[ "${1:-}" == "--quiet" ]] && QUIET=1
 
-_G='\033[0;32m' _Y='\033[0;33m' _C='\033[0;36m' _D='\033[0;90m' _N='\033[0m'
-if [[ ! -t 1 ]]; then _G='' _Y='' _C='' _D='' _N=''; fi
+# The palette is lib.sh's, sourced above — one home for the codes and for the
+# question of whether a run gets any (issue #90).
+wk_set_palette
 say_ok()   { printf "${_G}✓${_N} %s\n" "$1"; }
 say_warn() { printf "${_Y}⚠${_N} %s\n" "$1"; }
 say_info() { [[ "$QUIET" -eq 1 ]] || printf "${_C}ℹ${_N} %s\n" "$1"; }
