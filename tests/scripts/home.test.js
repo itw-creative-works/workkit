@@ -294,6 +294,22 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  await test('the slug write seeds the settings file when nothing has yet, with the switch unanswered', () => {
+    // The one order where setup runs before any heal: this function creates the
+    // hand-edited file itself. `publish` seeds NULL (issue #84) — the same
+    // unanswered state the heal's seed writes, so whichever wrote it first,
+    // setup still has a question to put.
+    const world = mkWorld({ settings: null });
+    const { code } = inHome(world, 'wk_home_set_slug owner/workkit');
+    assertEq(code, 0, 'exit 0');
+    const parsed = JSON.parse(fs.readFileSync(path.join(world.env.WORKFLOW_HOME, 'settings.json'), 'utf8'));
+    assertEq(parsed.site.repo, 'owner/workkit', 'the slug it was asked to record');
+    assert('publish' in parsed.site, 'the switch is spelled out');
+    assertEq(parsed.site.publish, null, 'and nobody has answered it');
+    assertEq(parsed.site.url, null, 'no custom domain');
+    cleanup(world.root);
+  });
+
   await test('a slug with nothing cloned is `absent`', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     assertEq(inHome(world, 'wk_home_state').out, 'absent', 'setup has the clone left to do');

@@ -124,7 +124,8 @@ usage: workkit <command> [args]
 
   help                 this map
   setup                from zero on this machine: the plugin, gh, the 9am
-                       schedule, the tower pointer, this repo's opt-in, and
+                       schedule, the home repo and whether it publishes its
+                       dashboard, the tower pointer, this repo's opt-in, and
                        the workkit symlink. Safe to re-run
   update [--auto]      re-run the machine-side installs: the engine address,
                        the symlink, and the schedule (only where one is already
@@ -354,6 +355,94 @@ offer_repo() {
   esac
 }
 
+# The site switch, asked once (issue #84). Setup builds the whole publish path —
+# the home repo, the clone, the tower project, its dependencies — and then left
+# `site.publish` seeded false, so going live meant knowing to hand-edit a file
+# nobody had been told about. Setup is the one command a human runs at a
+# terminal, so it is the one place the question can be put.
+#
+# The switch has THREE states: `true` and `false` are answers and are never
+# asked again, null (or no key at all) is a machine that has never been asked.
+# Every reader still treats anything but `true` as off, so an unanswered machine
+# publishes nothing while it waits.
+offer_site_publish() {
+  local current
+
+  # The whole step reads and writes the machine's settings file through the
+  # engine's library — the same reader, the same JSON edit, the same mutex every
+  # other writer of that file takes. Without it there is no safe write to make,
+  # and home_steps has already named the incomplete checkout.
+  if [[ "$HOME_LIBS" -ne 1 ]]; then
+    say_skip "site: the publish question needs the home-repo library beside $SCRIPT_DIR"
+    return 0
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    say_skip "site: reading the publish switch in $WK_HOME_SETTINGS needs jq"
+    return 0
+  fi
+  if [[ ! -f "$WK_HOME_SETTINGS" ]]; then
+    say_skip "site: $WK_HOME_SETTINGS does not exist yet — the first heal seeds it, and the next setup asks"
+    return 0
+  fi
+
+  # Read RAW rather than through wk_json_get: jq's `//` treats false as absent,
+  # and false is the one answer this step must be able to tell from silence.
+  # "null" is what an absent key and a null both render as — the same state.
+  current="$(jq -r '.site.publish | tostring' "$WK_HOME_SETTINGS" 2>/dev/null || printf '')"
+  if [[ -z "$current" ]]; then
+    say_warn "site: $WK_HOME_SETTINGS does not parse as JSON — the publish question was not asked; fix the file, then re-run \`workkit setup\`"
+    return 0
+  fi
+
+  # No home repo, nothing to publish from: the question would be about a site
+  # that has nowhere to go.
+  if [[ -z "$(wk_home_slug)" ]]; then
+    say_skip "site: no home repo yet — the publish question comes once there is one to publish from"
+    return 0
+  fi
+
+  case "$current" in
+    true)  say_skip "site: publishing is on — edit \`site.publish\` in $WK_HOME_SETTINGS to change it"; return 0 ;;
+    false) say_skip "site: publishing is off — edit \`site.publish\` in $WK_HOME_SETTINGS to change it"; return 0 ;;
+  esac
+
+  if ! interactive; then
+    say_info "site: nobody has been asked whether to publish the dashboard — a terminal run of \`workkit setup\` puts the question; until then nothing is published"
+    return 0
+  fi
+
+  local answer="" value=false
+  printf 'Publish the dashboard site to GitHub Pages? [y/N] '
+  read -r answer || true
+  case "$answer" in
+    y|Y|yes|YES) value=true ;;
+    *) value=false ;;
+  esac
+  set_site_publish "$value"
+}
+
+# Record the answer. A whole-file read-modify-write on the file a heal in
+# another session may be writing at the same moment, so it takes the engine's
+# one state mutex exactly as wk_home_set_slug does.
+set_site_publish() {
+  local value="$1" locked=0 rc=0
+
+  if wk_take_state_lock; then locked=1; fi
+  wk_json_edit "$WK_HOME_SETTINGS" --argjson v "$value" '.site = ((.site // {}) + { publish: $v })' || rc=$?
+  if [[ "$locked" -eq 1 ]]; then wk_drop_state_lock; fi
+
+  if [[ "$rc" -ne 0 ]]; then
+    say_warn "site: the answer could not be written to $WK_HOME_SETTINGS — set \`site.publish\` there by hand"
+    return 0
+  fi
+  if [[ "$value" == 'true' ]]; then
+    say_ok "site: publishing is on — \`workkit publish\` builds it now, and the daily job publishes after the morning brief (what Pages serves is public, even from a private repo)"
+  else
+    say_ok "site: publishing stays off — set \`site.publish\` to true in $WK_HOME_SETTINGS whenever you want the dashboard live"
+  fi
+  return 0
+}
+
 # The global layer, reported and never written: how many repos this machine has
 # registered in the roster (the engine maintains it on every heal), and whether a
 # home repo is named for the work that belongs to no single repo.
@@ -406,6 +495,7 @@ cmd_setup() {
   link_command
   install_cron
   home_steps
+  offer_site_publish
   tower_pointer
   offer_repo
   say_head "Setup is idempotent — re-run it any time. \`workkit doctor\` reports what is left."

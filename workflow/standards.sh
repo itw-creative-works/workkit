@@ -256,11 +256,16 @@ is_home_clone() {
 # The hand-edited file is seeded with the site options SPELLED OUT rather than
 # empty: someone opening it has to be able to see what there is to set, and a
 # `{ "version": 1 }` teaches nothing.
+#
+# `publish` seeds as NULL, never false (issue #84): the switch has three states,
+# and a seeded false is an answer nobody gave. `true`/`false` mean someone was
+# asked; null (like an absent key) means `workkit setup` still has a question to
+# put. Every reader treats anything but `true` as off, so the site stays unpublished either way.
 seed_user_settings() {
   local dir="${USER_SETTINGS%/*}"
   [[ -e "$USER_SETTINGS" ]] && return 0
   mkdir -p "$dir" 2>/dev/null || return 0
-  ( set -C; printf '{\n  "version": 1,\n  "site": {\n    "repo": null,\n    "publish": false,\n    "url": null\n  }\n}\n' 2>/dev/null >"$USER_SETTINGS" ) || return 0
+  ( set -C; printf '{\n  "version": 1,\n  "site": {\n    "repo": null,\n    "publish": null,\n    "url": null\n  }\n}\n' 2>/dev/null >"$USER_SETTINGS" ) || return 0
 }
 seed_user_settings
 

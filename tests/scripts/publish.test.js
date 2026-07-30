@@ -571,6 +571,17 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  await test('an unanswered switch reads as off — null is nobody having said yes', () => {
+    // What the seed now writes (issue #84): null means the question has not
+    // been put, and a machine waiting on an answer publishes nothing.
+    const world = mkWorld({ publish: null });
+    const { code, out } = publish(world);
+    assertEq(code, 0, 'exit 0 — unanswered is not broken');
+    assert(/`site.publish` is off/.test(out), `null is the off answer, got: ${out}`);
+    assertEq(fs.existsSync(world.dist), false, 'and nothing was built');
+    cleanup(world.root);
+  });
+
   await test('an absent switch reads as off — the default is not to publish', () => {
     const world = mkWorld();
     fs.writeFileSync(

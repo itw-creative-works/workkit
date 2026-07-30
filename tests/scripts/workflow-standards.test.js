@@ -622,7 +622,11 @@ const run = async () => {
     assertEq(parsed.version, 1, 'seeded with a version');
     assertEq(parsed.repos, undefined, 'the roster is not in the hand-edited file');
     assertEq(parsed.site.repo, null, 'the home repo is unset');
-    assertEq(parsed.site.publish, false, 'the site does not publish until someone says so');
+    // Null, not false: the switch has three states (issue #84), and a seeded
+    // false is an answer nobody gave — it is what setup reads to know there is
+    // still a question to put.
+    assert('publish' in parsed.site, 'the switch is spelled out');
+    assertEq(parsed.site.publish, null, 'and it is unanswered — nobody has been asked yet');
     assertEq(parsed.site.url, null, 'and there is no custom domain');
     cleanup(repo);
   });

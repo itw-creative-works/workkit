@@ -122,6 +122,31 @@ const mkRepo = ({ optIn = false } = {}) => {
 
 const installSchedule = (world) => spawnSync('bash', [JOBS_INSTALL], { env: world.env, encoding: 'utf8', timeout: 30000 });
 
+// The machine's hand-edited settings file, written the way a heal seeds it.
+// `site` is whatever the test wants the site options to be — a `publish` of
+// null is the unanswered switch, which is the state setup has a question about.
+const userSettings = (world) => path.join(world.env.WORKFLOW_HOME, 'settings.json');
+const seedSettings = (world, site) => {
+  const file = userSettings(world);
+  fs.mkdirSync(world.env.WORKFLOW_HOME, { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify({ version: 1, site }, null, 2)}\n`);
+  return file;
+};
+
+/**
+ * One of the CLI's own functions, called directly — the pattern home.test.js
+ * uses for the engine's libraries. Sourcing the script with `help` loads every
+ * function and prints the map, which is thrown away.
+ */
+const inCli = (world, script) => {
+  const driver = `. ${JSON.stringify(CLI)} help >/dev/null\n${script}`;
+  const res = spawnSync('bash', ['-c', driver], {
+    cwd: world.root, env: world.env, input: '', encoding: 'utf8', timeout: 30000,
+  });
+  assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
+  return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
+};
+
 /**
  * A partial checkout: this CLI COPIED (never symlinked — the link chain now
  * resolves back to the real one) into a `workflow/` beside whatever the test
@@ -489,6 +514,97 @@ const run = async () => {
     assertEq(code, 0, 'exit 0');
     assert(/home:/.test(out), `the home repo is part of setup, got: ${out}`);
     assert(!fs.existsSync(path.join(world.env.WORKFLOW_HOME, '.git')), 'and nothing was converted without an answer');
+    cleanup(world.root);
+  });
+
+  group('workkit setup: the site question');
+
+  await test('an unanswered switch is left unanswered where nobody can answer it', () => {
+    // Non-interactive is the piped run: the question waits for a terminal
+    // rather than being decided by silence, so a later `workkit setup` asks
+    // (issue #84).
+    const world = mkWorld();
+    const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
+    const before = fs.readFileSync(file, 'utf8');
+    const { code, out } = runCli(world, ['setup']);
+    assertEq(code, 0, 'exit 0');
+    assert(/site: nobody has been asked/.test(out), `it says the question is still open, got: ${out}`);
+    assert(/workkit setup/.test(out), 'and which run puts it');
+    assertEq(fs.readFileSync(file, 'utf8'), before, 'nothing was written on the machine’s behalf');
+    cleanup(world.root);
+  });
+
+  await test('an answered switch is never asked again, either way', () => {
+    for (const [answer, said] of [[true, 'publishing is on'], [false, 'publishing is off']]) {
+      const world = mkWorld();
+      const file = seedSettings(world, { repo: 'owner/workkit', publish: answer, url: null });
+      const before = fs.readFileSync(file, 'utf8');
+      const { out } = runCli(world, ['setup']);
+      assert(out.includes(`site: ${said}`), `${answer} reads back as the answer it is, got: ${out}`);
+      assert(!/nobody has been asked/.test(out), 'and the question is not put again');
+      assertEq(fs.readFileSync(file, 'utf8'), before, 'the file is left exactly as the owner has it');
+      cleanup(world.root);
+    }
+  });
+
+  await test('no home repo, no question — there would be nowhere to publish from', () => {
+    const world = mkWorld();
+    seedSettings(world, { repo: null, publish: null, url: null });
+    const { out } = runCli(world, ['setup']);
+    assert(/site: no home repo yet/.test(out), `it names why it did not ask, got: ${out}`);
+    assert(!/nobody has been asked/.test(out), 'and does not hold the question open against nothing');
+    cleanup(world.root);
+  });
+
+  await test('a settings file that does not parse is reported, never written over', () => {
+    const world = mkWorld();
+    const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
+    fs.writeFileSync(file, '{ "version": 1, "site": {\n');
+    const { code, out } = runCli(world, ['setup']);
+    assertEq(code, 0, 'a broken file is not a crash');
+    assert(/site: .*does not parse as JSON/.test(out), `it says what is wrong, got: ${out}`);
+    assertEq(fs.readFileSync(file, 'utf8'), '{ "version": 1, "site": {\n', 'and the owner’s file is untouched');
+    cleanup(world.root);
+  });
+
+  await test('the answer is recorded in the site options, and nothing else is', () => {
+    // The write path the prompt calls, exercised directly: a terminal is the
+    // one thing a test harness has no way to hand it.
+    const world = mkWorld();
+    const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: 'tower.example.com' });
+
+    const yes = inCli(world, 'set_site_publish true');
+    assertEq(yes.code, 0, `exit 0, got: ${yes.err}`);
+    let site = JSON.parse(fs.readFileSync(file, 'utf8')).site;
+    assertEq(site.publish, true, 'the yes is on disk');
+    assertEq(site.repo, 'owner/workkit', 'the home repo is still there');
+    assertEq(site.url, 'tower.example.com', 'and the custom domain');
+    assert(/site: publishing is on/.test(yes.out), `and it says what it did, got: ${yes.out}`);
+
+    const no = inCli(world, 'set_site_publish false');
+    site = JSON.parse(fs.readFileSync(file, 'utf8')).site;
+    assertEq(site.publish, false, 'a no is an answer too — false, not a missing key');
+    assert(/site: publishing stays off/.test(no.out), `and it says so, got: ${no.out}`);
+    cleanup(world.root);
+  });
+
+  await test('the write takes the state mutex, and gives it back', () => {
+    // The same whole-file read-modify-write every other writer of this file
+    // does, so it takes the one lock they all take (workflow/lib.sh).
+    const world = mkWorld();
+    const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
+    const lock = path.join(world.env.WORKFLOW_HOME, '.state.lock');
+    fs.mkdirSync(lock, { recursive: true });
+    const held = inCli(world, 'set_site_publish true');
+    // Held by someone else: the write still happens (the engine never stops a
+    // run on a lock), and the holder's lock is not removed by this one.
+    assertEq(held.code, 0, 'exit 0');
+    assert(fs.existsSync(lock), 'the lock is left to whoever took it');
+    assertEq(JSON.parse(fs.readFileSync(file, 'utf8')).site.publish, true, 'and the answer landed');
+
+    fs.rmdirSync(lock);
+    inCli(world, 'set_site_publish false');
+    assert(!fs.existsSync(lock), 'a run that took the lock drops it again');
     cleanup(world.root);
   });
 

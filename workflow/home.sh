@@ -62,7 +62,7 @@ wk_home_set_slug() {
   # command is `setup`, before any heal has written the user folder.
   if [[ ! -f "$WK_HOME_SETTINGS" ]]; then
     mkdir -p "$WK_USER_DIR" 2>/dev/null || return 1
-    printf '{\n  "version": 1,\n  "site": {\n    "repo": null,\n    "publish": false,\n    "url": null\n  }\n}\n' \
+    printf '{\n  "version": 1,\n  "site": {\n    "repo": null,\n    "publish": null,\n    "url": null\n  }\n}\n' \
       >"$WK_HOME_SETTINGS" 2>/dev/null || return 1
   fi
   # The shared mutex, for the same reason every other writer of the machine's

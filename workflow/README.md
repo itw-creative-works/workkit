@@ -83,7 +83,7 @@ Same filename, one mental model, two owners.
 | File | Owner | Holds |
 |---|---|---|
 | `<repo>/.workkit/settings.json` | the project (committed) | `{ "version": 1, "enabled": true }` — the repo's yes. `"enabled": false` is the project's deliberate no |
-| `~/.workkit/settings.json` (`$WORKFLOW_HOME` overrides) | one developer, BY HAND | `{ "version": 1, "site": { "repo": "<owner>/<repo>", "publish": false, "url": null } }` — the site options and nothing else: the home repo the site publishes from, the all-or-nothing publish switch, and the custom domain (an absent key reads as off and as no URL) |
+| `~/.workkit/settings.json` (`$WORKFLOW_HOME` overrides) | one developer, BY HAND | `{ "version": 1, "site": { "repo": "<owner>/<repo>", "publish": null, "url": null } }` — the site options and nothing else: the home repo the site publishes from, the all-or-nothing publish switch, and the custom domain (an absent key reads as off and as no URL). `publish` seeds NULL, the unanswered state — `true`/`false` are answers, and an interactive `workkit setup` asks for one once there is a home repo to publish from |
 | `~/.workkit/.repos.json` | the engine | `{ "version": 1, "repos": { "<absolute repo root>": "enabled" \| "declined" } }` — the machine's roster and this developer's declines |
 | `~/.workkit/.cache.json` | the engine, disposably | `{ "homeCache": { … }, "ccNews": { "version": … } }` — the cached GitHub node ids and the upstream-news cursor. Safe to delete: every reader rebuilds what it does not find |
 
@@ -107,6 +107,7 @@ Never-asked and declined are personal, not project facts (owner ruling, 2026-07-
 6. **Discussions** — enabled through the GraphQL API. The three summary categories (Daily, Weekly, Monthly) are CHECKED, never created: GitHub has no `createDiscussionCategory` mutation (probed against the live schema, 2026-07-28), so a missing category gets a one-time pointer at the page that makes it, and the summaries publish in the repo's default category until it exists.
 7. **Pages** — `POST repos/<slug>/pages` for branch `gh-pages`, path `/`. The branch need not exist yet; the first publish makes it. A refusal (a private repo on a plan without Pages) warns with the fix and setup carries on.
 8. **The first commit** — `chore(home): seed the tower project`, pushed.
+9. **The publish question** — setup built the whole publish path, so it asks the one thing left: publish the dashboard site to GitHub Pages? `[y/N]`, empty is no, and the answer is written to `site.publish` under the same state mutex every writer of that file takes. It is asked ONCE — `true` and `false` are both answers and are never asked again, and only the unanswered null (or no key at all) has a question left. No home repo, no terminal, no jq, no settings file, or a settings file that does not parse: a named skip (or warn, for the unparseable file) that leaves the switch unanswered and the file untouched, so a later interactive setup asks.
 
 Every step is idempotent and the whole sequence is safe to re-run: a second setup finds the clone and reports rather than acting. Afterwards the heal owes the global layer nothing but the machine roster — the clone is a participating repo, healed by standing in it like any other.
 
