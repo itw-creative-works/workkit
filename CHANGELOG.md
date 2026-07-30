@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-07-30
+
 ### Added
 
-- [#88](../../issues/88) — `workkit setup` wires the cloud brief's secrets: it offers to mint the Claude token straight into the repo secret, sets the home token and the home slug from what the machine already knows, and re-offers a token past eleven months. `doctor` reports all three; the daily `update --auto` only warns.
+- [#88](../../issues/88) [`eb3d1aa`](../../commit/eb3d1aa) Thanks [@ianwieds]! — `workkit setup` wires the cloud brief's secrets: it offers to mint the Claude token straight into the repo secret, sets the home token and the home slug from what the machine already knows, and re-offers a token past eleven months. `doctor` reports all three; the daily `update --auto` only warns.
 
 ## [0.18.0] - 2026-07-30
 
