@@ -2,7 +2,7 @@
   "name": "workkit",
   "displayName": "workkit",
   "description": "The issue-pipeline workflow system: standards heal, manager crew, guard hooks, and the workflow skills — for any repo.",
-  "version": "0.19.0",
+  "version": "0.19.1",
   "author": {
     "name": "ITW Creative Works",
     "url": "https://github.com/ITW-Creative-Works"
