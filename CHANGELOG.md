@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-07-29
+
 ### Changed
 
-- [#84](../../issues/84) — An interactive `workkit setup` asks whether to publish the dashboard to GitHub Pages and records the answer, so going live no longer means knowing to hand-edit a file; `site.publish` seeds as null, the unanswered state, and `true` or `false` is never asked again.
+- [#84](../../issues/84) [`adfbdec`](../../commit/adfbdec) Thanks [@ianwieds]! — An interactive `workkit setup` asks whether to publish the dashboard to GitHub Pages and records the answer, so going live no longer means knowing to hand-edit a file; `site.publish` seeds as null, the unanswered state, and `true` or `false` is never asked again.
 
 ## [0.15.0] - 2026-07-29
 
