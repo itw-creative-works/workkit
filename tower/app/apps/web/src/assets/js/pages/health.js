@@ -146,6 +146,9 @@ const render = (root, state) => {
 export default () => startPage({
   mount: 'tower-health',
   feeds: ['repos', 'board', 'health'],
+  // Unpushed, uncommitted and unreleased are facts about the working copies on
+  // this machine — a browser elsewhere cannot see them.
+  local: true,
   charts: true,
   render,
 });

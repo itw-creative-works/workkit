@@ -68,6 +68,12 @@ const run = async () => {
   const api = await load('api.js');
   delete globalThis.location;
   delete globalThis.window;
+  // github.js is the published half of the data layer and takes every seam it
+  // has as an argument — the token, `fetch`, the clock — so the whole of it,
+  // including the two async doors, answers under Node. token.js is markup plus
+  // one listener, and the markup half is pure.
+  const github = await load('github.js');
+  const token = await load('token.js');
 
   group('tower/app: format — values into markup');
 
@@ -194,6 +200,13 @@ const run = async () => {
     assert(linked.startsWith('<a') && linked.includes('href="/board"'), 'and a linked one is an anchor');
   });
 
+  await test('a tile with no reading says a dash and carries why as its tooltip', () => {
+    const cell = format.statCell('Live sessions', format.num(null), '/crew', format.LOCAL_ONLY_NOTICE);
+    assert(cell.includes('>—</h3>'), 'the value is a dash, never a fabricated 0');
+    assert(cell.includes(`title="${format.LOCAL_ONLY_NOTICE}"`), 'and the sentence behind it is one hover away');
+    assert(!format.statCell('Open', 3, '/board').includes('title='), 'a tile with a real number needs none');
+  });
+
   group('tower/app: format — the issue chips');
 
   await test('an issue shows exactly the chips it earns', () => {
@@ -239,6 +252,23 @@ const run = async () => {
     assertEq(state.repos(broken).length, 0, 'no roster from a failed read');
     assertEq(state.board(broken), null, 'and no board');
     assertEq(state.feed(broken, 'repos').reason, 'connection refused', 'while the reason survives for the page to show');
+  });
+
+  await test('a local-only slot is a designed state, not an unavailable feed', () => {
+    // The chrome's chip counts every feed that is not `ok` (the poller's own
+    // stale rule), so a published copy marking its machine-bound slots failed
+    // said "2 feeds unavailable" from first paint to last. The slot is `ok` and
+    // MARKED instead, and the marker is what the panels draw from.
+    const slot = state.localOnlySlot();
+    assertEq(slot.ok, true, 'nothing failed — this copy simply is not that machine');
+    assertEq(slot.localOnly, true, 'and the marker says which of the two it is');
+    assertEq(slot.reason, format.LOCAL_ONLY_NOTICE, 'carrying the one sentence, from its one home');
+    const published = { feeds: { board: { ok: true, data: {} }, sessions: slot, health: slot }, selectedRepo: '' };
+    assert(state.localOnly(published, 'sessions') && state.localOnly(published, 'health'), 'both machine-bound slots read as local-only');
+    assertEq(state.localOnly(published, 'board'), false, 'a feed that really answered does not');
+    assertEq(state.localOnly({ feeds: {}, selectedRepo: '' }, 'sessions'), false, 'and neither does one that has not answered yet');
+    assertEq(state.sessions(published).length, 0, 'the accessors still hand back nothing to draw');
+    assertEq(Object.keys(state.health(published)).length, 0, 'from either of them');
   });
 
   group('tower/app: state — the repo selection');
@@ -988,9 +1018,11 @@ const run = async () => {
       'and a card leaves the Building column the same way');
   });
 
-  await test('a published copy produces no move at all — there is no tower to write to', () => {
+  await test('a LOCKED copy produces no move at all — a write needs the token it has not been given', () => {
     assertEq(api.moveRequest(CARD, 'blocked', false), null, 'the gate is the payload’s, so no page can forget it');
-    assertEq(api.moveRequest(CARD, 'blocked'), null, 'and the default is the module’s own mode, which is published under these stubs');
+    assertEq(api.moveRequest(CARD, 'blocked'), null, 'and the default is the module’s own mode, which is locked under these stubs');
+    assertEq(api.WRITABLE, false, 'which is exactly what WRITABLE says');
+    assert(!api.LIVE, 'and it is not the tower question — a published copy with a token writes too');
   });
 
   await test('a drop carrying no issue is nothing, never a request with holes in it', () => {
@@ -1016,15 +1048,634 @@ const run = async () => {
     assertEq(answer.ok, true, 'and the answer arrives in the tower’s own result shape');
   });
 
-  await test('the published notice is the quiet line, in both voices', () => {
-    // The page runtime paints the markup in place of its body; the intake
-    // dialog paints it where its result would go. One sentence, one home, so
-    // the two surfaces cannot drift.
-    const markup = format.publishedNotice();
-    assert(format.PUBLISHED_NOTICE.includes('npm run tower') && format.PUBLISHED_NOTICE.includes('?api='), 'the plain sentence names both ways to get data');
-    assert(markup.includes('<code>npm run tower</code>') && markup.includes('<code>?api=</code>'), 'and the markup puts the commands in code voice');
-    assert(markup.includes('text-body-secondary'), 'drawn muted, like every other empty state');
-    assert(!markup.includes('alert'), 'and never as an alert — a published copy is not broken');
+  const fs = require('fs');
+
+  await test('the intake dialog is inert only where it has nothing to write with', () => {
+    // A locked copy needs a TOKEN, not a tower — telling it "live data needs a
+    // local tower" sends the one viewer who can fix it after the wrong thing.
+    // An unlocked one files for real, with the same token it reads with.
+    assert(format.LOCKED_NOTICE.includes('token'), 'the locked sentence asks for the token');
+    assert(!format.LOCKED_NOTICE.includes('npm run tower'), 'and does not send a viewer to install a tower');
+    assert(!/read-only/.test(format.LOCKED_NOTICE), 'and no longer calls the token read-only');
+    assertEq(format.READ_ONLY_NOTICE, undefined, 'the read-only sentence is gone — nothing it described is true any more');
+    const src = fs.readFileSync(path.join(libs, 'intake.js'), 'utf8');
+    assert(/if \(!WRITABLE\)[\s\S]{0,80}disableIntake\(dialog\)/.test(src), 'only a copy that cannot write is disabled');
+    assert(/lockedNotice\(\)/.test(src) && !/readOnlyNotice/.test(src), 'and the one sentence left is the locked one');
+    assert(/submitIntake\(payload\)/.test(src), 'the submit goes through the mode-aware write, never a tower URL');
+    assert(/readAnyFeed\('\/api\/repos'\)/.test(src), 'and the roster is read from whichever half is talking');
+  });
+
+  await test('the write paths follow the MODE — a tower is POSTed to, a published copy writes GitHub itself', () => {
+    const src = fs.readFileSync(path.join(libs, 'api.js'), 'utf8');
+    assert(/WRITABLE = MODE !== 'locked'/.test(src), 'everything but a locked copy can write');
+    assert(/moveIssueStatus\(move, githubContext\(\)\)[\s\S]{0,120}postJson\('\/api\/issues\/status', move\)/.test(src),
+      'the drag reaches GitHub in published mode and the tower on a machine');
+    assert(/createIssue\(payload, githubContext\(\)\)[\s\S]{0,80}postJson\('\/api\/intake', payload\)/.test(src),
+      'and so does the intake');
+  });
+
+  group('tower/app: github — the token this browser holds');
+
+  // A stand-in for localStorage: the two methods the module uses, and a way to
+  // make a browser that refuses storage entirely.
+  const mkStorage = (initial = {}, refuse = false) => {
+    const held = { ...initial };
+    const boom = () => { throw new Error('storage is disabled'); };
+    return {
+      held,
+      getItem: refuse ? boom : (key) => (key in held ? held[key] : null),
+      setItem: refuse ? boom : (key, value) => { held[key] = value; },
+      removeItem: refuse ? boom : (key) => { delete held[key]; },
+    };
+  };
+
+  await test('the token is read, written and forgotten in one place — localStorage, and nowhere else', () => {
+    const storage = mkStorage();
+    assertEq(github.readToken(storage), '', 'a fresh browser holds none');
+    github.writeToken(storage, '  fake-token-for-tests  ');
+    assertEq(storage.held[github.TOKEN_KEY], 'fake-token-for-tests', 'stored trimmed, under the one key');
+    assertEq(github.readToken(storage), 'fake-token-for-tests', 'and read back');
+    github.clearToken(storage);
+    assertEq(github.readToken(storage), '', 'forgetting it leaves nothing behind');
+    assertEq(Object.keys(storage.held).length, 0, 'not even the key');
+  });
+
+  await test('a browser that refuses storage is a viewer with no token, never a broken page', () => {
+    const storage = mkStorage({}, true);
+    assertEq(github.readToken(storage), '', 'the read is answered, not thrown');
+    assertEq(github.writeToken(storage, 'fake-token-for-tests'), 'fake-token-for-tests', 'and the write says what it tried to store');
+    assertEq(github.readToken(undefined), '', 'no storage object at all is the same answer');
+  });
+
+  await test('a browser that throws on the storage property itself still loads the page', () => {
+    // The documented failure is the ACCESS, not the read: a browser told to
+    // block all site data throws on `window.localStorage`. api.js touches it at
+    // module load and page.js at every Token click, so an unguarded access
+    // takes the whole bundle down rather than costing a token.
+    const hostile = {};
+    Object.defineProperty(hostile, 'localStorage', {
+      get() { throw new Error('storage is disabled'); },
+    });
+    assertEq(github.safeStorage(hostile), null, 'the access is answered, not thrown');
+    assertEq(github.readToken(github.safeStorage(hostile)), '', 'and the viewer simply holds no token');
+    assertEq(github.safeStorage({}), null, 'a global with no storage at all is the same answer');
+    assertEq(github.safeStorage(undefined), null, 'and so is no global');
+    for (const name of ['api.js', 'page.js', 'token.js']) {
+      const src = fs.readFileSync(path.join(libs, name), 'utf8');
+      assert(!/window\.localStorage/.test(src), `${name} reaches for storage only through the guard`);
+    }
+  });
+
+  await test('an empty value is a clear, not a stored blank', () => {
+    const storage = mkStorage({ [github.TOKEN_KEY]: 'fake-token-for-tests' });
+    assertEq(github.writeToken(storage, '   '), '', 'whitespace is nothing');
+    assertEq(github.readToken(storage), '', 'and the old one is gone rather than left in place');
+  });
+
+  group('tower/app: github — the wire');
+
+  /** A fetch stub: what it was called with, and what it answers. */
+  const mkFetch = (answer) => {
+    const calls = [];
+    const fn = async (url, options) => {
+      calls.push({ url, options });
+      return typeof answer === 'function' ? answer(url, options) : answer;
+    };
+    fn.calls = calls;
+    return fn;
+  };
+  const jsonResponse = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+
+  await test('with no token nothing is sent at all — the refusal comes before the request', async () => {
+    const fetchImpl = mkFetch(() => { throw new Error('a request was made'); });
+    const answer = await github.graphql('query {}', { token: '', fetch: fetchImpl });
+    assertEq(answer.ok, false, 'refused');
+    assertEq(fetchImpl.calls.length, 0, 'and GitHub was never reached');
+    assert(/no GitHub token/.test(answer.reason), `it says which of the failures it is, got: ${answer.reason}`);
+  });
+
+  await test('the token rides as a bearer on a POST to the GraphQL endpoint', async () => {
+    const fetchImpl = mkFetch(jsonResponse(200, { data: { r0: null } }));
+    await github.graphql('query { x }', { token: 'fake-token-for-tests', fetch: fetchImpl });
+    const call = fetchImpl.calls[0];
+    assertEq(call.url, 'https://api.github.com/graphql', 'the one URL this module writes');
+    assertEq(call.options.method, 'POST', 'GraphQL is a POST');
+    assertEq(call.options.headers.authorization, 'Bearer fake-token-for-tests', 'the token is the whole of the auth');
+    assertEq(JSON.parse(call.options.body).query, 'query { x }', 'and the document is the body');
+  });
+
+  await test('the four ways a request fails are told apart', async () => {
+    const refused = await github.graphql('q', { token: 't', fetch: mkFetch(jsonResponse(401, { message: 'Bad credentials' })) });
+    assertEq(refused.status, 401, 'the status survives');
+    assert(/refused the token/.test(refused.reason) && /Hand over one/.test(refused.reason), `it names the token and the fix, got: ${refused.reason}`);
+
+    const forbidden = await github.graphql('q', { token: 't', fetch: mkFetch(jsonResponse(403, {})) });
+    assert(/refused the token/.test(forbidden.reason), 'a 403 is the same story — the token does not cover these repos');
+
+    const down = await github.graphql('q', { token: 't', fetch: mkFetch(() => { throw new Error('network down'); }) });
+    assertEq(down.status, null, 'a transport failure has no status');
+    assert(/did not answer/.test(down.reason), `and says so, got: ${down.reason}`);
+
+    const empty = await github.graphql('q', { token: 't', fetch: mkFetch(jsonResponse(200, { errors: [{ message: 'Bad query' }] })) });
+    assertEq(empty.ok, false, 'a 200 carrying only errors is not an answer');
+    assertEq(empty.reason, 'Bad query', 'and GitHub’s own sentence is the reason');
+  });
+
+  await test('data AND errors together is a success — one bad repo does not blank the board', async () => {
+    const answer = await github.graphql('q', {
+      token: 't',
+      fetch: mkFetch(jsonResponse(200, { data: { r0: {}, r1: null }, errors: [{ path: ['r1'], message: 'Could not resolve' }] })),
+    });
+    assertEq(answer.ok, true, 'the partial answer is kept');
+    assertEq(answer.errors.length, 1, 'with the error for the caller to hang on its repo');
+  });
+
+  group('tower/app: github — the sweep is the tower’s own');
+
+  const apiBoard = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'board.js'));
+  const apiBrief = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'brief.js'));
+
+  const SWEEP = {
+    data: {
+      r0: {
+        issues: {
+          totalCount: 3,
+          nodes: [{
+            number: 81,
+            title: 'The live site works off-machine',
+            url: 'https://github.com/ITW-Creative-Works/workkit/issues/81',
+            body: 'the body',
+            createdAt: '2026-07-29T09:00:00Z',
+            updatedAt: '2026-07-29T10:00:00Z',
+            comments: { totalCount: 2 },
+            labels: { nodes: [{ name: 'status:building' }, { name: 'type:enhancement' }, { name: 'agent:ok' }, { name: 'area:tower' }] },
+            assignees: { nodes: [{ login: 'ianwieds' }] },
+          }],
+        },
+      },
+      r1: null,
+    },
+    errors: [{ path: ['r1'], message: 'Could not resolve to a Repository' }],
+  };
+  const SLUGS = ['ITW-Creative-Works/workkit', 'owner/gone'];
+
+  await test('the browser writes the same GraphQL document the tower does, byte for byte', () => {
+    assertEq(
+      github.buildBoardQuery(SLUGS),
+      apiBoard.buildQuery(SLUGS.map((slug) => slug.split('/'))),
+      'the two halves of the same sweep cannot ask different questions',
+    );
+  });
+
+  await test('the browser normalizes an answer into exactly what /api/board serves', () => {
+    const exec = (cmd, args) => {
+      if (args[0] === '--version') return 'gh version 2';
+      return JSON.stringify(SWEEP);
+    };
+    const fromTower = apiBoard.fetchBoard(SLUGS.map((slug) => ({ slug })), { exec });
+    const fromBrowser = github.normalizeBoard(SLUGS, SWEEP.data, SWEEP.errors);
+    assertEq(JSON.stringify(fromBrowser), JSON.stringify(fromTower), 'one payload shape, whichever side read it');
+    assertEq(fromBrowser.issues[0].status, 'building', 'the label vocabulary is parsed the same way');
+    assertEq(fromBrowser.issues[0].agentOk, true, 'agent:ok included');
+    assert(fromBrowser.repos[0].truncated, 'a repo over the page cap says so');
+    assertEq(fromBrowser.repos[1].error, 'Could not resolve to a Repository', 'and the unresolved repo carries its reason');
+  });
+
+  await test('the label groups the browser knows are the vocabulary’s own', () => {
+    const groups = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'workflow', 'labels.json'), 'utf8')).groups);
+    assertEq([...github.LABEL_GROUPS].sort().join(','), groups.sort().join(','),
+      'a group defined in the SSOT and missing here would be a group the published board cannot show');
+  });
+
+  await test('a body over the limit is cut and flagged, the same as the tower’s', () => {
+    const long = { data: { r0: { issues: { totalCount: 1, nodes: [{ number: 1, body: 'x'.repeat(5000), labels: { nodes: [] }, assignees: { nodes: [] }, comments: { totalCount: 0 } }] } } } };
+    const issue = github.normalizeBoard(['o/r'], long.data, []).issues[0];
+    assertEq(issue.body.length, 4000, 'cut at the same 4,000 characters');
+    assertEq(issue.bodyTruncated, true, 'and never cut silently');
+  });
+
+  await test('an empty roster is an empty board, not a request', async () => {
+    const fetchImpl = mkFetch(() => { throw new Error('a request was made'); });
+    const board = await github.fetchBoard([], { token: 't', fetch: fetchImpl });
+    assertEq(board.ok, true, 'a site that sweeps nothing is not a failure');
+    assertEq(fetchImpl.calls.length, 0, 'and nothing went out');
+  });
+
+  group('tower/app: github — the roster, the brief and the summaries');
+
+  await test('the baked list is names only, and junk in it is dropped', () => {
+    const parsed = github.parseSlugs({ repos: ['owner/workkit', 'nope', 42, null], home: 'owner/workkit' });
+    assertEq(parsed.repos.map((repo) => repo.slug).join(','), 'owner/workkit', 'only what is shaped like a slug');
+    assertEq(parsed.repos[0].name, 'workkit', 'named the way the roster names a repo');
+    assertEq(parsed.repos[0].path, '', 'with no path — a published copy has no machine under it');
+    assertEq(parsed.home, 'owner/workkit', 'and the home repo is named');
+    assertEq(github.parseSlugs(null).home, '', 'nothing at all parses to nothing, never undefined');
+  });
+
+  await test('a site published without its list says so rather than showing an empty board', async () => {
+    const answer = await github.fetchSlugs({ fetch: mkFetch({ ok: false, status: 404, json: async () => ({}) }) });
+    assertEq(answer.ok, false, 'a missing list is a failure to report');
+    assert(/published without its repo list/.test(answer.reason), `and it says which, got: ${answer.reason}`);
+  });
+
+  await test('the brief the browser builds is the brief the tower builds', () => {
+    const board = github.normalizeBoard(SLUGS, SWEEP.data, SWEEP.errors);
+    const stamp = '2026-07-29T11:00:00Z';
+    const mine = github.buildBrief(board, { generatedAt: stamp });
+    const theirs = apiBrief.buildBrief(board, {}, [], stamp);
+    assertEq(JSON.stringify({ ...mine, summaries: undefined }), JSON.stringify(theirs),
+      'the same sections, the same order, the same headline');
+    assertEq(mine.warnings.length, 0, 'the one section a browser cannot answer is empty rather than invented');
+  });
+
+  await test('the browser counts a claim by the brief’s definition, to the letter', () => {
+    const claimOf = (source) => (source.match(/claimed = \(issue\) => ([^;]+);/) || [])[1];
+    const briefSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'brief.js'), 'utf8');
+    const mine = fs.readFileSync(path.join(libs, 'github.js'), 'utf8');
+    assert(claimOf(briefSrc), 'the brief defines a claim in one expression');
+    assertEq(claimOf(mine), claimOf(briefSrc), 'and the published brief reads the same expression');
+  });
+
+  await test('a site with no home repo has nowhere to read summaries from, and says so', async () => {
+    const answer = await github.fetchSummaries('', { token: 't', fetch: mkFetch(() => { throw new Error('a request was made'); }) });
+    assertEq(answer.ok, false, 'not a failure of the read — a fact about the publish');
+    assert(/without a home repo/.test(answer.reason), `named as such, got: ${answer.reason}`);
+    assertEq(answer.items.length, 0, 'and no items');
+  });
+
+  await test('the summaries are the home repo’s latest Discussions', async () => {
+    const fetchImpl = mkFetch(jsonResponse(200, {
+      data: { repository: { discussions: { nodes: [{ title: 'Tuesday', url: 'https://github.com/owner/workkit/discussions/4', createdAt: '2026-07-28T09:00:00Z', category: { name: 'Summaries' } }, null] } } },
+    }));
+    const answer = await github.fetchSummaries('owner/workkit', { token: 't', fetch: fetchImpl });
+    assert(JSON.parse(fetchImpl.calls[0].options.body).query.includes('repository(owner: "owner", name: "workkit")'), 'it asks the home repo');
+    assertEq(answer.items.length, 1, 'a null node is not a summary');
+    assertEq(answer.items[0].category, 'Summaries', 'the category rides along');
+  });
+
+  group('tower/app: github — the one door');
+
+  /** A fetch that answers the slug list from a path and everything else from GraphQL. */
+  const mkSiteFetch = (list, graphqlBody) => mkFetch((url) => (url === 'data/repos.json'
+    ? jsonResponse(200, list)
+    : jsonResponse(200, graphqlBody)));
+
+  await test('the roster feed is the baked list, and costs GitHub nothing', async () => {
+    const fetchImpl = mkSiteFetch({ repos: ['owner/workkit'], home: 'owner/workkit' }, {});
+    const answer = await github.readFeed('/api/repos', { token: 't', fetch: fetchImpl });
+    assertEq(answer.ok, true, 'answered');
+    assertEq(answer.data[0].slug, 'owner/workkit', 'the roster, in the shape every page reads');
+    assertEq(fetchImpl.calls.length, 1, 'one read of a static file, and no GraphQL at all');
+  });
+
+  await test('the board feed is a live sweep with the viewer’s token', async () => {
+    const fetchImpl = mkSiteFetch({ repos: ['ITW-Creative-Works/workkit'], home: '' }, { data: SWEEP.data });
+    const answer = await github.readFeed('/api/board', { token: 'fake-token-for-tests', fetch: fetchImpl });
+    assertEq(answer.ok, true, 'answered');
+    assertEq(answer.data.issues[0].number, 81, 'with the issues GitHub just returned');
+    assertEq(fetchImpl.calls[1].options.headers.authorization, 'Bearer fake-token-for-tests', 'unlocked by the token and nothing else');
+  });
+
+  await test('the brief feed is that sweep plus the summaries', async () => {
+    const fetchImpl = mkFetch((url, options) => {
+      if (url === 'data/repos.json') return jsonResponse(200, { repos: ['ITW-Creative-Works/workkit'], home: 'owner/workkit' });
+      return jsonResponse(200, JSON.parse(options.body).query.includes('discussions')
+        ? { data: { repository: { discussions: { nodes: [{ title: 'Tuesday', url: 'u', createdAt: '2026-07-28T09:00:00Z', category: null }] } } } }
+        : { data: SWEEP.data });
+    });
+    const answer = await github.readFeed('/api/brief', { token: 't', fetch: fetchImpl, generatedAt: '2026-07-29T11:00:00Z' });
+    assertEq(answer.ok, true, 'answered');
+    assertEq(answer.data.counts.inFlight, 1, 'the sections are built from the sweep');
+    assertEq(answer.data.summaries.items[0].title, 'Tuesday', 'and the summaries ride with it');
+  });
+
+  await test('a failed sweep is a failed feed, never an empty board', async () => {
+    const fetchImpl = mkFetch((url) => (url === 'data/repos.json'
+      ? jsonResponse(200, { repos: ['owner/workkit'], home: '' })
+      : jsonResponse(401, { message: 'Bad credentials' })));
+    const answer = await github.readFeed('/api/board', { token: 'stale', fetch: fetchImpl });
+    assertEq(answer.ok, false, 'the page shows the reason, not six confident zeros');
+    assert(/refused the token/.test(answer.reason), `and the reason is the token, got: ${answer.reason}`);
+  });
+
+  await test('a refused token survives the read as a refusal, not as a generic failure', async () => {
+    // The status is what the runtime acts on: a token GitHub refused is the one
+    // failure a new token fixes, so the page answers it with the prompt. It has
+    // to reach the feed result to be acted on at all.
+    const refuse = (status) => mkFetch((url) => (url === 'data/repos.json'
+      ? jsonResponse(200, { repos: ['owner/workkit'], home: 'owner/workkit' })
+      : jsonResponse(status, { message: 'Bad credentials' })));
+    for (const feedPath of ['/api/board', '/api/brief']) {
+      const answer = await github.readFeed(feedPath, { token: 'expired', fetch: refuse(401) });
+      assertEq(answer.status, 401, `${feedPath} carries the status GitHub refused it with`);
+      assert(github.isTokenRefusal(answer), `and ${feedPath} reads as a token refusal`);
+    }
+    assert(github.isTokenRefusal(await github.readFeed('/api/board', { token: 'narrow', fetch: refuse(403) })), 'a 403 is the same answer — the token does not cover these repos');
+    const down = await github.readFeed('/api/board', { token: 't', fetch: refuse(500) });
+    assert(!github.isTokenRefusal(down), 'a server failure is not the token’s fault and must not ask for a new one');
+    assert(!github.isTokenRefusal({ ok: true, status: 200 }), 'and neither is a read that worked');
+  });
+
+  await test('the refusal names the fix that exists — there is no form under it', async () => {
+    const answer = await github.graphql('query {}', {
+      token: 'expired',
+      fetch: async () => jsonResponse(401, { message: 'Bad credentials' }),
+    });
+    assert(!/below/.test(answer.reason), `the sentence points at no control beneath it, got: ${answer.reason}`);
+    assert(/Hand over one that does/.test(answer.reason), 'it asks for a token that covers the repositories');
+  });
+
+  await test('a machine-bound feed asked of the published side is answered as one', async () => {
+    const fetchImpl = mkSiteFetch({ repos: [], home: '' }, {});
+    const answer = await github.readFeed('/api/telemetry', { token: 't', fetch: fetchImpl });
+    assertEq(answer.ok, false, 'a published copy cannot read this machine');
+    assert(/published copy can read/.test(answer.reason), `and says so, got: ${answer.reason}`);
+  });
+
+  group('tower/app: github — the two writes');
+
+  // The tower's own source is the reference for both writes: the published site
+  // must relabel and file exactly what the endpoint on the machine does, and
+  // the two live on opposite sides of the copy boundary (issue #77).
+  const serverSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'api', 'server.js'), 'utf8');
+
+  await test('the browser writes the endpoint’s own move — the old status off, the new one on, nothing else touched', () => {
+    assertEq(
+      github.nextLabels([{ name: 'status:specced' }, { name: 'type:enhancement' }, { name: 'priority:high' }], 'specced', 'building').join(','),
+      'type:enhancement,priority:high,status:building',
+      'every label that is not the status survives the move',
+    );
+    assertEq(github.nextLabels(['status:building'], 'building', 'blocked').join(','), 'status:blocked', 'the one status is replaced, never doubled');
+    assertEq(github.nextLabels(['type:bug', 'status:blocked'], 'building', 'blocked').join(','), 'type:bug,status:blocked', 'a destination already carried is not added twice');
+    assertEq(github.nextLabels(null, 'specced', 'building').join(','), 'status:building', 'an issue answering with no labels still lands on its column');
+    // The semantics are the endpoint's, and this is where the two are held together.
+    assert(/--remove-label', `status:\$\{checked\.from\}`/.test(serverSrc), 'the tower removes the from label');
+    assert(/--add-label', `status:\$\{checked\.to\}`/.test(serverSrc), 'and adds the to label, in one call');
+  });
+
+  await test('a move is one PATCH of the issue, with the viewer’s token as the whole of the auth', async () => {
+    const fetchImpl = mkFetch((url, options) => ((options && options.method) === 'PATCH'
+      ? jsonResponse(200, { number: 48 })
+      : jsonResponse(200, { number: 48, labels: [{ name: 'status:specced' }, { name: 'type:enhancement' }] })));
+    const answer = await github.moveIssueStatus({
+      repo: 'ITW/workkit', number: 48, from: 'specced', to: 'building',
+    }, { token: 'fake-token-for-tests', fetch: fetchImpl });
+
+    assertEq(fetchImpl.calls.length, 2, 'the labels the issue carries now, then the one write');
+    assertEq(fetchImpl.calls[0].url, 'https://api.github.com/repos/ITW/workkit/issues/48', 'read from the issue itself — the board’s copy is up to a minute old');
+    assertEq(fetchImpl.calls[0].options.method, 'GET', 'a read');
+    assertEq(fetchImpl.calls[1].url, 'https://api.github.com/repos/ITW/workkit/issues/48', 'and the write is the same resource');
+    assertEq(fetchImpl.calls[1].options.method, 'PATCH', 'one call, so the issue is never unlabelled nor twice-labelled');
+    assertEq(fetchImpl.calls[1].options.headers.authorization, 'Bearer fake-token-for-tests', 'the token is the whole of the auth');
+    assertEq(JSON.parse(fetchImpl.calls[1].options.body).labels.join(','), 'type:enhancement,status:building', 'carrying the set the move leaves behind');
+    assertEq(answer.ok, true, 'and the answer is the tower’s own result shape');
+    assertEq(answer.data.status, 'building', 'naming where the card landed');
+  });
+
+  await test('a write with no token reaches GitHub not at all', async () => {
+    const fetchImpl = mkFetch(() => { throw new Error('a request was made'); });
+    const move = await github.moveIssueStatus({ repo: 'o/r', number: 1, from: 'inbox', to: 'specced' }, { token: '', fetch: fetchImpl });
+    const filed = await github.createIssue({ repo: 'o/r', title: 'x' }, { token: '', fetch: fetchImpl });
+    assertEq(fetchImpl.calls.length, 0, 'neither write left the browser');
+    assert(/no GitHub token/.test(move.reason), `the move says which failure it is, got: ${move.reason}`);
+    assert(/no GitHub token/.test(filed.reason), `and so does the filing, got: ${filed.reason}`);
+  });
+
+  await test('a token that can only read is told so in words, and reads as a refusal', async () => {
+    // A read-only token gets through the move's READ and is refused on its write.
+    const forbidden = mkFetch((url, options) => ((options && options.method) === 'PATCH'
+      ? jsonResponse(403, { message: 'Resource not accessible by personal access token' })
+      : jsonResponse(200, { number: 1, labels: [{ name: 'status:inbox' }] })));
+    const answer = await github.moveIssueStatus({
+      repo: 'o/r', number: 1, from: 'inbox', to: 'specced',
+    }, { token: 'read-only', fetch: forbidden });
+    assertEq(answer.ok, false, 'the move did not land');
+    assert(/write/i.test(answer.reason) && /Issues: Read and write/.test(answer.reason),
+      `the viewer is told their token lacks write access and what to make instead, got: ${answer.reason}`);
+    assert(github.isTokenRefusal(answer), 'and a refused write is a token refusal like a refused read');
+
+    const expired = await github.createIssue({ repo: 'owner/workkit', title: 'x' }, {
+      token: 'expired',
+      fetch: mkFetch((url) => (url === 'data/repos.json'
+        ? jsonResponse(200, { repos: ['owner/workkit'], home: 'owner/workkit' })
+        : jsonResponse(401, { message: 'Bad credentials' }))),
+    });
+    assert(/expired/.test(expired.reason), `a 401 is the other story — the token itself, got: ${expired.reason}`);
+    assert(github.isTokenRefusal(expired), 'which the runtime answers with the prompt');
+  });
+
+  await test('a move GitHub would not accept leaves the board’s card where it was, with the reason', async () => {
+    const gone = await github.moveIssueStatus({ repo: 'o/r', number: 9, from: 'inbox', to: 'specced' }, {
+      token: 't', fetch: mkFetch(jsonResponse(404, { message: 'Not Found' })),
+    });
+    assertEq(gone.ok, false, 'the read of the issue failed, so nothing was written');
+    assert(/404/.test(gone.reason) && /Not Found/.test(gone.reason), `GitHub’s own sentence survives, got: ${gone.reason}`);
+  });
+
+  await test('a refused read is told in read words, and a refused write in write words', async () => {
+    const blindRead = mkFetch((url, options) => ((options && options.method) === 'PATCH'
+      ? jsonResponse(200, { number: 1 })
+      : jsonResponse(403, { message: 'Resource not accessible by personal access token' })));
+    const unseen = await github.moveIssueStatus({
+      repo: 'o/r', number: 1, from: 'inbox', to: 'specced',
+    }, { token: 'wrong-repos', fetch: blindRead });
+    assertEq(blindRead.calls.length, 1, 'a move that cannot read the issue never reaches the write');
+    assert(/read/i.test(unseen.reason) && !/Issues: Read and write/.test(unseen.reason),
+      `a token that cannot SEE the repository is not sent after write access, got: ${unseen.reason}`);
+
+    const blindWrite = mkFetch((url, options) => ((options && options.method) === 'PATCH'
+      ? jsonResponse(403, { message: 'Resource not accessible by personal access token' })
+      : jsonResponse(200, { number: 1, labels: [{ name: 'status:inbox' }] })));
+    const refused = await github.moveIssueStatus({
+      repo: 'o/r', number: 1, from: 'inbox', to: 'specced',
+    }, { token: 'read-only', fetch: blindWrite });
+    assert(/Issues: Read and write/.test(refused.reason), `and the write leg names the permission it wants, got: ${refused.reason}`);
+  });
+
+  await test('a read that answers without labels is not a base to write from', async () => {
+    // 200 with a body that will not parse: `rest` answers ok with null data, and
+    // relabelling off nothing would PATCH away every label the issue carries.
+    const fetchImpl = mkFetch((url, options) => ((options && options.method) === 'PATCH'
+      ? jsonResponse(200, { number: 48 })
+      : { ok: true, status: 200, json: async () => { throw new Error('Unexpected end of JSON input'); } }));
+    const answer = await github.moveIssueStatus({
+      repo: 'o/r', number: 48, from: 'specced', to: 'building',
+    }, { token: 't', fetch: fetchImpl });
+    assertEq(fetchImpl.calls.length, 1, 'the read happened and the write did not');
+    assertEq(answer.ok, false, 'and the move says it did not land');
+    assert(/labels/.test(answer.reason) && /nothing was changed/.test(answer.reason),
+      `the viewer is told what was missing and that the issue is untouched, got: ${answer.reason}`);
+  });
+
+  await test('a move refuses what the endpoint refuses, before anything is read', async () => {
+    const fetchImpl = mkFetch(() => { throw new Error('a request was made'); });
+    const refuse = async (move) => github.moveIssueStatus(move, { token: 't', fetch: fetchImpl });
+    const ok = { repo: 'o/r', number: 1, from: 'inbox', to: 'specced' };
+
+    assert(/nothing to move/.test((await refuse(null)).reason), 'no move at all');
+    assert(/positive integer/.test((await refuse({ ...ok, number: '1' })).reason), 'a number that is not one');
+    assert(/positive integer/.test((await refuse({ ...ok, number: 0 })).reason), 'and one that is not positive');
+    assert(/not a repository slug: r/.test((await refuse({ ...ok, repo: 'r' })).reason), 'a repo that is not a slug');
+    assert(/from is not a status: nowhere/.test((await refuse({ ...ok, from: 'nowhere' })).reason), 'a status the vocabulary does not define');
+    assert(/to is not a status: \(none\)/.test((await refuse({ ...ok, to: '' })).reason), 'and a destination that is blank');
+    assert(/already status:inbox/.test((await refuse({ ...ok, to: 'inbox' })).reason), 'a move to where the issue already is');
+    assertEq(fetchImpl.calls.length, 0, 'and every refusal came before GitHub was read at all');
+
+    // The rules restated across the copy boundary, pinned to the endpoint that owns them.
+    const statuses = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'workflow', 'labels.json'), 'utf8')).groups.status.values);
+    assertEq(github.MOVE_STATUSES.slice().sort().join(','), statuses.sort().join(','), 'the statuses a move may name are the vocabulary’s own');
+    assert(serverSrc.includes('issue number must be a positive integer'), 'the number rule is the endpoint’s');
+    assert(serverSrc.includes('not a repository slug:'), 'the slug rule is the endpoint’s');
+    assert(serverSrc.includes('the issue is already status:'), 'and so is the refusal of a move that is not one');
+  });
+
+  await test('intake files the issue the endpoint files — same labels, same default body', async () => {
+    const fetchImpl = mkFetch((url) => (url === 'data/repos.json'
+      ? jsonResponse(200, { repos: ['owner/workkit'], home: 'owner/workkit' })
+      : jsonResponse(201, { html_url: 'https://github.com/owner/workkit/issues/12' })));
+    const answer = await github.createIssue({ repo: 'OWNER/Workkit', title: '  a thought  ', body: '' }, { token: 'fake-token-for-tests', fetch: fetchImpl });
+
+    const call = fetchImpl.calls[1];
+    assertEq(call.url, 'https://api.github.com/repos/owner/workkit/issues', 'filed under the ROSTER’s spelling, as the endpoint does');
+    assertEq(call.options.method, 'POST', 'a create');
+    assertEq(call.options.headers.authorization, 'Bearer fake-token-for-tests', 'with the viewer’s token');
+    const sent = JSON.parse(call.options.body);
+    assertEq(sent.title, 'a thought', 'the title, trimmed');
+    assertEq(sent.body, github.DEFAULT_BODY, 'and the endpoint’s own default where a body was not typed');
+    assertEq(sent.labels.join(','), 'status:inbox,type:idea', 'captured, and typed as an idea until triage says otherwise');
+    assertEq(answer.ok, true, 'answered');
+    assertEq(answer.data.url, 'https://github.com/owner/workkit/issues/12', 'and the dialog gets the URL to link');
+
+    // The rules restated across the copy boundary, pinned to the endpoint that owns them.
+    assert(serverSrc.includes(`const DEFAULT_BODY = '${github.DEFAULT_BODY}'`), 'the default body is the endpoint’s');
+    assert(serverSrc.includes(`const TITLE_MAX = ${github.TITLE_MAX}`), 'the title cap is the endpoint’s');
+    assert(serverSrc.includes(`const BODY_MAX = ${github.BODY_MAX}`), 'the body cap is the endpoint’s');
+    for (const label of github.INTAKE_LABELS) assert(serverSrc.includes(`'--label', '${label}'`), `${label} is what the endpoint files with`);
+  });
+
+  await test('intake refuses what the endpoint refuses, before anything is filed', async () => {
+    const fetchImpl = mkFetch((url) => (url === 'data/repos.json'
+      ? jsonResponse(200, { repos: ['owner/workkit'], home: 'owner/workkit' })
+      : jsonResponse(201, { html_url: 'https://github.com/owner/workkit/issues/12' })));
+    const refuse = async (payload) => github.createIssue(payload, { token: 't', fetch: fetchImpl });
+
+    assert(/unknown repo: owner\/other/.test((await refuse({ repo: 'owner/other', title: 'x' })).reason), 'a repo this site does not sweep');
+    assert(/title is required/.test((await refuse({ repo: 'owner/workkit', title: '   ' })).reason), 'a blank title');
+    assert(/longer than 256/.test((await refuse({ repo: 'owner/workkit', title: 'x'.repeat(257) })).reason), 'a title past the cap');
+    assert(/longer than 4000/.test((await refuse({ repo: 'owner/workkit', title: 'x', body: 'b'.repeat(4001) })).reason), 'a body past it');
+    assert(fetchImpl.calls.every((call) => call.url === 'data/repos.json'), 'and every refusal came before GitHub was written to');
+  });
+
+  group('tower/app: api — the three modes');
+
+  await test('a tower outranks everything, and the token decides the rest', () => {
+    assertEq(api.decideMode('development', '', false), 'tower', 'a dev build reads the machine’s API');
+    assertEq(api.decideMode('production', 'http://box:8693', false), 'tower', 'and so does any build pointed at one');
+    assertEq(api.decideMode('production', '', true), 'github', 'a published copy with a token reads GitHub itself');
+    assertEq(api.decideMode('production', '', false), 'locked', 'and without one it has nothing to show but the prompt');
+    assertEq(api.MODE, 'locked', 'which is what the module itself decided under the stubs above');
+    assertEq(api.LIVE, false, 'LIVE stays the question of a TOWER — WRITABLE is the flag every write gates on');
+  });
+
+  await test('a published page arms only the feeds GitHub can answer', () => {
+    const feeds = api.githubPageFeeds(['repos', 'board', 'sessions', 'health', 'telemetry']);
+    assertEq(Object.keys(feeds).join(','), 'repos,board', 'the machine-bound three are simply absent');
+    assertEq(feeds.board.every, 60000, 'and the sweep keeps the board’s cadence — a GraphQL sweep is expensive');
+    assertEq(Object.keys(api.githubPageFeeds(['brief'])).join(','), 'brief', 'the brief is one of the three it can');
+  });
+
+  group('tower/app: token — the prompt that unlocks a published copy');
+
+  await test('the prompt says what to make, links where to make it, and hides what is typed', () => {
+    const markup = token.tokenPrompt();
+    assert(markup.includes(`href="${github.TOKEN_URL}"`), 'the creation page is one click away');
+    assert(markup.includes('Issues: Read and write'), 'it names the permissions, and the board moves cards, so writing issues is one');
+    assert(!/admin|workflow|contents/i.test(markup), 'and asks for nothing beyond the issues it manages');
+    assert(markup.includes('type="password"'), 'the field does not display the token');
+    assert(markup.includes('localStorage'), 'and it says where the token is kept');
+    assert(!token.tokenPrompt().includes('data-token-problem'), 'a first visit is not an error state');
+    assert(token.tokenPrompt('the token was refused').includes('the token was refused'), 'and a refusal is shown when there is one');
+  });
+
+  await test('nothing token-shaped is committed anywhere in the app', () => {
+    // The whole doctrine: the token is the VIEWER's, typed into their browser.
+    // A literal in the source would be published to anyone with the URL.
+    const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(dir, entry.name);
+      return entry.isDirectory() ? walk(full) : [full];
+    });
+    const src = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src');
+    for (const file of walk(src)) {
+      const text = fs.readFileSync(file, 'utf8');
+      assert(!/gh[pousr]_[A-Za-z0-9]{20,}/.test(text), `${path.basename(file)} carries no classic token`);
+      assert(!/github_pat_[A-Za-z0-9_]{20,}/.test(text), `${path.basename(file)} carries no fine-grained token`);
+    }
+  });
+
+  group('tower/app: the runtime’s published shape');
+
+  await test('the pages that read this machine say so instead of drawing empty', () => {
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    for (const name of ['crew.js', 'usage.js', 'health.js']) {
+      assert(/local: true/.test(fs.readFileSync(path.join(pages, name), 'utf8')), `${name} declares itself local-only`);
+    }
+    for (const name of ['index.js', 'board.js', 'brief.js']) {
+      assert(!/local: true/.test(fs.readFileSync(path.join(pages, name), 'utf8')), `${name} works off-machine and does not`);
+    }
+  });
+
+  await test('the runtime draws the prompt when locked and the local line when it cannot help', () => {
+    const source = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
+    assert(/MODE === 'locked'[\s\S]{0,200}tokenPrompt\(\)/.test(source), 'a locked copy is the prompt, whole page');
+    assert(/MODE === 'github' && options\.local[\s\S]{0,120}localOnlyNotice\(\)/.test(source), 'and a local-only page says where its data lives');
+    assert(source.includes('githubPageFeeds(options.feeds)') && source.includes('githubFetcher'),
+      'an unlocked copy polls GitHub through the same loop');
+    assert(/githubPageFeeds\(\[name\]\)\[name\]\) state\.feeds\[name\] = localOnlySlot\(\)/.test(source),
+      'and a feed only the machine can answer is filled with the marked slot rather than left spinning');
+  });
+
+  await test('a token GitHub refused puts the prompt back, carrying the refusal', () => {
+    // The reason used to be dumped on the page as a bare problem — on a page
+    // with no field in it. The prompt is the only place a token is typed, and
+    // `tokenPrompt(problem)` existed for exactly this and had no caller.
+    const source = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
+    assert(/isTokenRefusal/.test(source), 'the refusal is recognised by the one predicate that names it');
+    assert(/tokenPrompt\(refused\.reason\)[\s\S]{0,80}mountTokenPrompt\(body\)/.test(source),
+      'and the prompt is drawn with the reason and wired, not just written');
+    assert(/if \(!prompted\)/.test(source), 'once — re-mounting under a viewer mid-type would take what they typed away');
+  });
+
+  await test('the Overview says local-only where its machine-bound numbers would be', () => {
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'index.js'), 'utf8');
+    for (const cell of ['Live sessions', 'Unpushed', 'Unreleased']) {
+      assert(new RegExp(`machineStat\\(state, '(sessions|health)', '${cell}'`).test(source), `${cell} is a machine reading, and the tile knows it`);
+    }
+    assert(/machineStat = \(state, name, label, value, href\) => \(localOnly\(state, name\)[\s\S]{0,120}LOCAL_ONLY_NOTICE\)/.test(source),
+      'a local-only feed draws a dash with the sentence, never a 0 summed from an empty feed');
+    assert(/localOnly\(state, 'sessions'\)\) body = localOnlyNotice\(\)/.test(source), 'the crew panel says it too');
+    assert(/localOnly\(state, 'health'\)\) body = localOnlyNotice\(\)/.test(source),
+      'and so does the health panel, which is about readings and not about the roster it lists');
+  });
+
+  await test('the published Board drags like the local one — no read-only line left anywhere', () => {
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    assert(/draggable = \(issue\) => WRITABLE/.test(source), 'a card picks up wherever there is something to write with');
+    assert(!/READ_ONLY_NOTICE|readOnlyLine/.test(source), 'and the sentence that said it could not is gone with the state it described');
+    assert(!/never even renders this page/.test(source), 'and the file no longer claims the runtime skips it');
+    assert(/await state\.refresh\('board'\)/.test(source), 'a landed move is re-read, in published mode as on a machine');
+  });
+
+  await test('the Brief asks the mode which copy it is, never the payload’s shape', () => {
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'brief.js'), 'utf8');
+    assert(/warnings\(forRepo\(payload\.warnings \|\| \[\], selected\), MODE === 'github'\)/.test(source),
+      'the local-only line is drawn from MODE, the one signal every page reads');
+    assert(!/Boolean\(payload\.summaries\)/.test(source), 'an absent API key is not load-bearing any more');
+  });
+
+  await test('the chrome carries the Token button only where there is a token to forget', () => {
+    const published = chrome.chromeMarkup({ ...CHROME, tokenMode: true });
+    assert(published.includes('id="tower-token"'), 'a published copy can replace or clear its token');
+    assert(!chrome.chromeMarkup(CHROME).includes('id="tower-token"'), 'and a copy reading a tower has none');
   });
 
   return summary();

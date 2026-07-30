@@ -201,5 +201,8 @@ const render = (root, state) => {
 export default () => startPage({
   mount: 'tower-crew',
   feeds: ['repos', 'sessions', 'telemetry'],
+  // The crew is this machine's processes and transcripts, so a published copy
+  // has nothing to draw here whatever token it holds.
+  local: true,
   render,
 });

@@ -16,8 +16,23 @@
 // and moving one between the board's columns — for the same reason the feeds
 // are: a page decides WHEN to write, never where to.
 //
+// A PUBLISHED copy has no tower behind it and speaks GitHub itself instead
+// (github.js), with the viewer's token. So this module answers one more
+// question than it used to: not just where the tower is, but WHICH of the three
+// modes this copy is in — `tower` (a machine with the API), `github` (published
+// and unlocked) and `locked` (published, no token yet). The mode is decided
+// once, here, and every consumer reads it off `MODE`.
+//
+// Both halves READ and both halves WRITE: an unlocked published copy files and
+// moves issues exactly as the dashboard on the machine does, with the token it
+// already holds. So each of the four doors below picks its half by the mode and
+// answers in one shape, and a page module goes on knowing neither.
+//
 
 import { STATUSES } from './format.js';
+import {
+  readToken, readFeed, safeStorage, moveIssueStatus, createIssue,
+} from './github.js';
 
 /**
  * The API origin this page was explicitly pointed at, or '' for none. Two
@@ -70,14 +85,45 @@ const OVERRIDE = apiOverride(location.href, window);
 export const API_BASE = OVERRIDE || 'http://127.0.0.1:8693';
 
 /**
- * Whether this copy of the dashboard has a tower to read. False in a published
- * build that was not pointed at one: the pages keep their shape and say so,
- * and nothing polls (see `pageFeeds`).
+ * Which of the three modes this copy is in.
+ *
+ * A tower outranks everything: a development build, or any build pointed at an
+ * origin with `?api=`, reads the machine's API and never GitHub. Otherwise this
+ * is a published copy, and the token is the whole difference between a board
+ * and a prompt.
+ *
+ * @param {string} environment - `config.environment` for this build
+ * @param {string} override - the origin the page was pointed at, or ''
+ * @param {boolean} hasToken - whether this browser holds a GitHub token
+ * @returns {'tower'|'github'|'locked'}
  */
-export const LIVE = decideLive(
-  (typeof window.Configuration === 'object' && window.Configuration && window.Configuration.environment) || '',
-  OVERRIDE,
-);
+export function decideMode(environment, override, hasToken) {
+  if (decideLive(environment, override)) return 'tower';
+  return hasToken ? 'github' : 'locked';
+}
+
+const ENVIRONMENT = (typeof window.Configuration === 'object' && window.Configuration && window.Configuration.environment) || '';
+
+/** This copy's mode — `tower`, `github` or `locked`. */
+export const MODE = decideMode(ENVIRONMENT, OVERRIDE, Boolean(readToken(safeStorage(window))));
+
+/**
+ * Whether this copy of the dashboard has a TOWER to read. False in a published
+ * build that was not pointed at one — which is not the same as having no data:
+ * a published copy with a token reads GitHub directly. It is the question of
+ * WHICH half answers, and nothing else.
+ */
+export const LIVE = MODE === 'tower';
+
+/**
+ * Whether this copy can WRITE — file an issue, move a card.
+ *
+ * A tower writes through its endpoints and an unlocked published copy writes
+ * GitHub itself, so the only copy that cannot is the locked one: it holds no
+ * token, and the token is both the credential and the auth. This, not `LIVE`,
+ * is what every write path gates on.
+ */
+export const WRITABLE = MODE !== 'locked';
 
 /**
  * Every feed the API offers, with its path and its re-read interval. It lives
@@ -108,6 +154,60 @@ export const FEEDS = {
 export const pageFeeds = (names, live = LIVE) => (
   live ? Object.fromEntries(names.map((name) => [name, FEEDS[name]])) : {}
 );
+
+/**
+ * The three feeds a published copy can answer for itself, and the cadence it
+ * answers them at. Every one is a live GitHub call made by the browser, so the
+ * board's minute is the ceiling for all of them: the roster is a static file
+ * beside the pages, and the brief is that same sweep plus one Discussions read.
+ */
+export const GITHUB_FEEDS = {
+  repos: { path: '/api/repos', every: 300000 },
+  board: { path: '/api/board', every: 60000 },
+  brief: { path: '/api/brief', every: 60000 },
+};
+
+/**
+ * The feed table a PUBLISHED page arms — the feeds it asked for that GitHub can
+ * answer. A machine-bound feed (sessions, health, telemetry) is simply absent,
+ * and the runtime fills its slot with the local-only sentence rather than
+ * leaving the page waiting on a read that will never come.
+ *
+ * @param {string[]} names - the feeds the page reads
+ * @returns {object} the poller's feed table
+ */
+export const githubPageFeeds = (names) => Object.fromEntries(
+  names.filter((name) => GITHUB_FEEDS[name]).map((name) => [name, GITHUB_FEEDS[name]]),
+);
+
+/** The seams github.js needs, read fresh so a token stored mid-session is used at once. */
+const githubContext = () => ({
+  token: readToken(safeStorage(window)),
+  fetch: (url, options) => fetch(url, options),
+});
+
+/**
+ * The fetcher a published page hands the poller — the same contract
+ * `feedFetcher` has, answered from GitHub instead of from a tower.
+ *
+ * @param {string} path - '/api/board'
+ * @returns {Promise<any>} the feed's body
+ */
+export const githubFetcher = async (path) => unwrapFeed(await readFeed(path, githubContext()));
+
+/**
+ * One feed answer from whichever half is talking — the tower's API on a
+ * machine, GitHub in a published copy.
+ *
+ * The poller does not need this: the runtime hands it one fetcher or the other
+ * up front. What needs it is a read made OUTSIDE the loop — the intake dialog's
+ * roster, read when the dialog opens — which must work in both modes without
+ * the dialog knowing which it is in.
+ *
+ * @param {string} path - '/api/repos'
+ * @returns {Promise<{ok: boolean, data: any, status: number|null, reason: string|null}>}
+ */
+export const readAnyFeed = (path) => (MODE === 'github' ? readFeed(path, githubContext()) : fetchFeed(path));
 
 /**
  * Fetch one API path.
@@ -226,17 +326,18 @@ export const MOVABLE_STATUSES = STATUSES.map((status) => status.key).filter(Bool
  * What a drop becomes: the body the status endpoint takes, or null when the
  * drop is not a move at all.
  *
- * Pure, and the LIVE gate is one of the things it decides — a published copy
- * has no API to write to, so a drop there produces nothing rather than a
- * request that could never be answered.
+ * Pure, and the write gate is one of the things it decides — a LOCKED copy has
+ * nothing to write with, so a drop there produces nothing rather than a request
+ * that could never be answered. An unlocked published copy writes GitHub with
+ * the viewer's token, so its drops are real moves.
  *
  * @param {object} issue - the issue that was dragged
  * @param {string} to - the status of the column it was dropped on
- * @param {boolean} [live] - the mode, injectable for the suite
+ * @param {boolean} [writable] - the mode, injectable for the suite
  * @returns {{repo: string, number: number, from: string, to: string}|null}
  */
-export function moveRequest(issue, to, live = LIVE) {
-  if (!live || !issue) return null;
+export function moveRequest(issue, to, writable = WRITABLE) {
+  if (!writable || !issue) return null;
   if (!MOVABLE_STATUSES.includes(issue.status) || !MOVABLE_STATUSES.includes(to)) return null;
   if (issue.status === to) return null;
   return {
@@ -245,10 +346,22 @@ export function moveRequest(issue, to, live = LIVE) {
 }
 
 /**
- * Move one issue along the pipeline — the tower's second write path, and the
- * only one that changes an issue that already exists.
+ * Move one issue along the pipeline — the second write path, and the only one
+ * that changes an issue that already exists.
  *
  * @param {{repo: string, number: number, from: string, to: string}} move
  * @returns {Promise<{ok: boolean, data: any, status: number|null, reason: string|null}>}
  */
-export const postIssueStatus = (move) => postJson('/api/issues/status', move);
+export const postIssueStatus = (move) => (MODE === 'github'
+  ? moveIssueStatus(move, githubContext())
+  : postJson('/api/issues/status', move));
+
+/**
+ * File one issue — the first write path, and the dialog's whole job.
+ *
+ * @param {{repo: string, title: string, body: string}} payload
+ * @returns {Promise<{ok: boolean, data: any, status: number|null, reason: string|null}>}
+ */
+export const submitIntake = (payload) => (MODE === 'github'
+  ? createIssue(payload, githubContext())
+  : postJson('/api/intake', payload));

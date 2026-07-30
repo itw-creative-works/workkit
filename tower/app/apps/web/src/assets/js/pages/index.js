@@ -9,11 +9,11 @@
 
 import { startPage } from '../libs/tower/page.js';
 import {
-  issuesFor, reposFor, sessionsFor, board, health, feed,
+  issuesFor, reposFor, sessionsFor, board, health, feed, localOnly,
 } from '../libs/tower/state.js';
 import {
   esc, num, empty, problem, shortPath, statCell, statgrid, card, pill, cap,
-  modelBadge, STATUSES, statusColor,
+  modelBadge, STATUSES, statusColor, LOCAL_ONLY_NOTICE, localOnlyNotice,
 } from '../libs/tower/format.js';
 import { chartSlot, doughnutChart } from '__main_assets__/js/libs/charts.js';
 import { loading, swap } from '@omega.js/client/modules/live-page';
@@ -34,6 +34,16 @@ const total = (state, field) => reposFor(state)
 // make this number disagree with the brief's on exactly those issues.
 const claimed = (issue) => (issue.assignees || []).length > 0 || issue.agentWorking;
 
+// Three of the six numbers are the MACHINE's — the live crew and the state of
+// its working copies — and a published copy has no reading of them at all. The
+// tile says so: a dash with the local-only sentence as its tooltip, never the 0
+// that summing an empty feed would produce, because "no sessions running" and
+// "this cannot be read from here" are opposite facts and the second one must
+// not be reported as the first.
+const machineStat = (state, name, label, value, href) => (localOnly(state, name)
+  ? statCell(label, num(null), href, LOCAL_ONLY_NOTICE)
+  : statCell(label, value, href));
+
 const numbers = (state) => {
   const issues = issuesFor(state);
   return statgrid([
@@ -41,9 +51,9 @@ const numbers = (state) => {
     statCell('Blocked', issues.filter((issue) => issue.status === 'blocked').length, '/board'),
     statCell('In flight', issues.filter((issue) => issue.status === 'building'
       || (issue.status === 'specced' && claimed(issue))).length, '/board'),
-    statCell('Live sessions', sessionsFor(state).length, '/crew'),
-    statCell('Unpushed', total(state, 'unpushed'), '/health'),
-    statCell('Unreleased', total(state, 'unreleasedEntries'), '/health'),
+    machineStat(state, 'sessions', 'Live sessions', sessionsFor(state).length, '/crew'),
+    machineStat(state, 'health', 'Unpushed', total(state, 'unpushed'), '/health'),
+    machineStat(state, 'health', 'Unreleased', total(state, 'unreleasedEntries'), '/health'),
   ]);
 };
 
@@ -101,6 +111,8 @@ const crew = (state) => {
   const result = feed(state, 'sessions');
   let body;
   if (!result) body = loading('reading the crew…');
+  // A published copy has no crew to read — the sentence, not an empty table.
+  else if (localOnly(state, 'sessions')) body = localOnlyNotice();
   else if (!result.ok) body = problem(result.reason);
   else if (!live.length) body = empty('no live sessions');
   else {
@@ -157,7 +169,12 @@ const healthPanel = (state) => {
   const list = reposFor(state);
   const result = feed(state, 'repos');
   let body;
-  if (!result) body = loading('reading the roster…');
+  // The ROSTER answers off-machine — it is a list of names — but the readings
+  // this panel is about do not: uncommitted, unpushed and unreleased are read
+  // off working copies. So the panel is gated on `health`, not on the roster it
+  // would otherwise draw a full list of "no reading" rows from.
+  if (localOnly(state, 'health')) body = localOnlyNotice();
+  else if (!result) body = loading('reading the roster…');
   else if (!result.ok) body = problem(result.reason);
   else if (!list.length) body = empty('no repos in the roster — nothing has opted in under the roster root');
   else {

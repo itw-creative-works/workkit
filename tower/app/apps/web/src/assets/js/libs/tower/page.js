@@ -7,12 +7,17 @@
 // reads, and one `render(root, state)` — nothing else. The feed table itself
 // (paths and cadence) is api.js's, which is where every tower URL is written.
 //
-// A published copy has no tower to read (api.js's `LIVE`): it keeps its mount,
-// its sidebar and its topbar, arms no feeds, and says so where its data would
-// be.
+// A published copy keeps its mount, its sidebar and its topbar, and what it
+// draws into them is its MODE (api.js): unlocked, it polls GitHub itself with
+// the viewer's token, through the same feed names and the same paint loop;
+// locked, the token prompt is the whole page; and either way a page whose data
+// is this machine's — the crew, the spend, the working copies — says so instead
+// (`local: true`).
 //
-// Reading the state back out is state.js, which this file does not import: a
-// page asks the runtime to run it and asks state.js what the answers were.
+// Reading the state back out is state.js: a page asks the runtime to run it and
+// asks state.js what the answers were. The one thing this file takes from there
+// is the SHAPE of a slot it fills itself — the local-only stand-in, which lives
+// beside the reader that keys on it rather than being written twice.
 //
 // The polling itself is the framework's: `createFeedPoller` owns the declared
 // feed table, the in-flight count, the timestamp and the keep-last-good rule
@@ -32,8 +37,13 @@
 import omega from '@omega.js/client';
 import { createFeedPoller } from '@omega.js/client/modules/live-page';
 import { loadCharts } from '__main_assets__/js/libs/charts.js';
-import { feedFetcher, pageFeeds, LIVE } from './api.js';
-import { publishedNotice } from './format.js';
+import {
+  feedFetcher, githubFetcher, pageFeeds, githubPageFeeds, LIVE, MODE,
+} from './api.js';
+import { localOnlyNotice } from './format.js';
+import { localOnlySlot } from './state.js';
+import { clearToken, isTokenRefusal, safeStorage } from './github.js';
+import { tokenPrompt, mountTokenPrompt } from './token.js';
 import { chromeKey, chromeMarkup, statusMarkup } from './chrome.js';
 
 // ── The repo selection ─────────────────────────────────────────────────────
@@ -58,6 +68,8 @@ const writeSelectedRepo = (slug) => {
  * @param {string[]} options.feeds - which API feeds this page reads
  * @param {(root: HTMLElement, state: object) => void} options.render - draws the page body
  * @param {boolean} [options.charts] - whether to pull Chart.js in before the first paint
+ * @param {boolean} [options.local] - whether this page reads the machine itself,
+ *   and so has nothing to show in a published copy
  * @returns {Promise<void>}
  */
 export async function startPage(options) {
@@ -76,13 +88,19 @@ export async function startPage(options) {
   const chrome = host.querySelector('[data-tower-chrome]');
   const body = host.querySelector('[data-tower-body]');
 
-  // Published mode is read from the flag itself, never inferred from an empty
-  // feed table: a page that legitimately declares no feeds is still a live
-  // page. There is no tower to read, so no poller is created and no chrome is
-  // drawn — every control in it (the roster select, Refresh, the freshness
-  // stamp) needs a feed behind it.
-  if (!LIVE) {
-    body.innerHTML = publishedNotice();
+  // The mode is read from the flag itself, never inferred from an empty feed
+  // table: a page that legitimately declares no feeds is still a live page.
+  //
+  // Locked: no data of any kind is reachable, so the prompt is the page. No
+  // poller and no chrome — every control in it needs a feed behind it.
+  if (MODE === 'locked') {
+    body.innerHTML = tokenPrompt();
+    mountTokenPrompt(body);
+    return;
+  }
+  // Local-only: a token unlocks GitHub, and this page's data is not on GitHub.
+  if (MODE === 'github' && options.local) {
+    body.innerHTML = localOnlyNotice();
     return;
   }
 
@@ -90,8 +108,8 @@ export async function startPage(options) {
     // Only the feeds this page asked for: readAll reads the whole table and
     // start() arms a timer per entry, so a page never polls a feed it draws
     // nothing from.
-    feeds: pageFeeds(options.feeds),
-    fetcher: feedFetcher,
+    feeds: LIVE ? pageFeeds(options.feeds) : githubPageFeeds(options.feeds),
+    fetcher: LIVE ? feedFetcher : githubFetcher,
     onChange: () => paint(),
   });
 
@@ -100,11 +118,28 @@ export async function startPage(options) {
   // through one argument.
   const state = poller.state;
   state.selectedRepo = selectedRepo();
+  // A published page may ask for a feed only the machine can answer — the
+  // Overview's crew table and its health panel are the case. Their slot is
+  // filled up front, so the panel says why instead of spinning on a read that
+  // was never armed.
+  //
+  // The slot's shape is state.js's `localOnlySlot`, beside the `localOnly`
+  // reader every panel keys on — it is `ok` and marked rather than failed,
+  // because local-only is a designed state and the chrome's stale-feed chip
+  // counts failures.
+  if (MODE === 'github') {
+    state.tokenMode = true;
+    for (const name of options.feeds) {
+      if (!githubPageFeeds([name])[name]) state.feeds[name] = localOnlySlot();
+    }
+  }
   // A page that WRITES has to be able to read the result of its own write: the
   // board's poll is a minute away and the API caches the sweep for as long, so
   // a relabel that landed would otherwise be shown as the old state until both
   // expired. It rides the state object for the same reason the selection does —
-  // render(root, state) is the whole of a page module's argument list.
+  // render(root, state) is the whole of a page module's argument list. A
+  // published copy writes too, and re-reads through the same call: it has no
+  // cache to bypass, so a plain re-read of the sweep is already the fresh one.
   state.refresh = (name) => poller.read(name, true);
 
   // What the chrome's frame was last drawn from. A poll paints twice — once as
@@ -114,6 +149,8 @@ export async function startPage(options) {
   // changed; the status inside it is rewritten every paint, because that is the
   // half a poll actually changes.
   let painted = null;
+  // Whether the body is currently the token prompt rather than the page.
+  let prompted = false;
 
   function paint() {
     const key = chromeKey(state);
@@ -126,8 +163,37 @@ export async function startPage(options) {
         paint();
       });
       chrome.querySelector('#tower-refresh').addEventListener('click', () => poller.readAll(true));
+      const token = chrome.querySelector('#tower-token');
+      // Forgetting the token locks the copy again, and the next load is the
+      // prompt — which is also how a token is REPLACED, since the prompt is
+      // the only place one is typed.
+      if (token) {
+        token.addEventListener('click', () => {
+          clearToken(safeStorage(window));
+          location.reload();
+        });
+      }
     }
     chrome.querySelector('[data-tower-status]').innerHTML = statusMarkup(state, poller.staleFeeds());
+
+    // A token GitHub REFUSED is not a page problem but a token problem, and the
+    // only place a token is typed is the prompt — so the refusal is shown there,
+    // as the reason, rather than drawn as an alert on a page with no field in
+    // it. Mounted once: every feed fails the same way, and re-mounting under a
+    // viewer mid-type would take what they typed away.
+    if (MODE === 'github') {
+      const refused = Object.values(state.feeds).find(isTokenRefusal);
+      if (refused) {
+        if (!prompted) {
+          prompted = true;
+          body.innerHTML = tokenPrompt(refused.reason);
+          mountTokenPrompt(body);
+        }
+        return;
+      }
+      // A read landed after all — the page comes back.
+      prompted = false;
+    }
     options.render(body, state);
   }
 

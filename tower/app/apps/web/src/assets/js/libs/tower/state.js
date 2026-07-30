@@ -12,10 +12,37 @@
 // currently stands, because every poll replaces the object graph underneath.
 //
 
-import { issueKey } from './format.js';
+import { issueKey, LOCAL_ONLY_NOTICE } from './format.js';
 
 /** The raw result of one feed: `{ ok, data, status, reason }`, or null before its first read. */
 export const feed = (state, name) => state.feeds[name] || null;
+
+/**
+ * The slot a published copy holds for a feed only the machine can answer.
+ *
+ * A designed state, NOT a failure — which is the whole of its shape. The
+ * poller's stale rule counts every `ok: false`, so a slot marked failed made
+ * the chrome say "2 feeds unavailable" for the life of every published page;
+ * this one says `ok` and carries the marker instead, and the notice rides as
+ * its reason for whatever wants to draw it.
+ *
+ * @returns {object} a feed result in the runtime's own shape
+ */
+export const localOnlySlot = () => ({
+  ok: true, data: null, status: null, reason: LOCAL_ONLY_NOTICE, localOnly: true,
+});
+
+/**
+ * Whether a feed's slot is that stand-in rather than a read.
+ *
+ * What a panel keys on to say where the data lives instead of rendering the
+ * zero an empty feed would produce.
+ *
+ * @param {object} state the runtime's feed state
+ * @param {string} name the feed's name
+ * @returns {boolean}
+ */
+export const localOnly = (state, name) => Boolean((feed(state, name) || {}).localOnly);
 
 /** The roster, or [] when it has not answered. */
 export const repos = (state) => {

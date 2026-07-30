@@ -25,18 +25,27 @@ export const empty = (message) => `<p class="text-body-secondary mb-0">${esc(mes
 export const problem = (message) => `<div class="alert alert-warning mb-0">${esc(message)}</div>`;
 
 /**
- * What a published copy says in place of live data — one sentence, the single
- * home of it, shown by every surface that has no tower behind it (a page body,
- * the intake dialog). Not a failure — this build simply has no tower on the
- * other end — so it is written in the same muted voice as `empty`, never as an
- * alert.
+ * What a published copy says where a MACHINE-BOUND surface would be — the crew,
+ * the token spend and the per-repo git health are read off transcripts,
+ * processes and working copies, and a browser away from that machine has none
+ * of them. One sentence, one home, said by the whole page on those three pages
+ * and by the single panel on the Overview that shows the same data.
  */
-export const PUBLISHED_NOTICE = 'Live data needs a local tower (npm run tower), or point this page at one with ?api=.';
+export const LOCAL_ONLY_NOTICE = 'This reads the machine the tower runs on — its sessions, its transcripts, its working copies — so it is local only. Open the dashboard on that machine to see it.';
 
-/** That sentence as markup, with its two commands in code voice. */
-export const publishedNotice = () => `<p class="text-body-secondary mb-0">${esc(PUBLISHED_NOTICE)
-  .replace('npm run tower', '<code>npm run tower</code>')
-  .replace('?api=', '<code>?api=</code>')}</p>`;
+/** That sentence as markup, in the same muted voice as an empty state. */
+export const localOnlyNotice = () => `<p class="text-body-secondary mb-0">${esc(LOCAL_ONLY_NOTICE)}</p>`;
+
+/**
+ * What a LOCKED copy says where a write would be. It has no data at all yet, so
+ * the answer is "hand this one a token" — and once it has one there is nothing
+ * left to say: an unlocked copy files and moves issues with that token exactly
+ * as the dashboard on the machine does.
+ */
+export const LOCKED_NOTICE = 'This copy has no data until a GitHub token is added — open any page to hand one over. With one it files and moves issues just like the dashboard on your machine.';
+
+/** That sentence as markup. */
+export const lockedNotice = () => `<p class="text-body-secondary mb-0">${esc(LOCKED_NOTICE)}</p>`;
 
 /**
  * The one name for one issue: `repo#number`.
@@ -203,13 +212,18 @@ export const cap = (items, limit = 5) => {
  * A tile says one number: the label holds one line and the value is never
  * broken across lines, so a long one ends in an ellipsis rather than stacking
  * "v3.5.0" one character per row.
+ *
+ * `note` is the tile's tooltip — what a value that is NOT a number means. A
+ * dash is honest and mute, and the sentence behind it is the difference between
+ * "nothing is happening" and "this cannot be read from here".
  */
-export const statCell = (label, value, href) => {
+export const statCell = (label, value, href, note) => {
+  const title = note ? ` title="${esc(note)}"` : '';
   const inner = `<div class="classy-statgrid__label"><span class="classy-micro text-nowrap">${esc(label)}</span></div>
     <h3 class="classy-statgrid__value text-truncate">${esc(value)}</h3>`;
   return href
-    ? `<a class="classy-statgrid__cell text-reset text-decoration-none" href="${esc(href)}">${inner}</a>`
-    : `<div class="classy-statgrid__cell">${inner}</div>`;
+    ? `<a class="classy-statgrid__cell text-reset text-decoration-none" href="${esc(href)}"${title}>${inner}</a>`
+    : `<div class="classy-statgrid__cell"${title}>${inner}</div>`;
 };
 
 /**

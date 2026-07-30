@@ -2,9 +2,11 @@
 # workflow/publish.sh — build the tower project and publish it to gh-pages.
 #
 # The tower is two processes on this machine. The PUBLISHED tower is the same
-# app built to static files and served by GitHub Pages from the home repo — a
-# copy of the board readable from a phone, optionally with the sweep it shipped
-# with baked in (workflow/site-data.js, behind `site.board`).
+# app built to static files and served by GitHub Pages from the home repo — the
+# board readable from a phone, and NOTHING about it is baked in: the site reads
+# GitHub live from the browser with the viewer's own token (issue #81). The one
+# artifact this script writes beside the pages is the list of repo slugs to
+# sweep (workflow/site-repos.js) — `owner/name` strings, no data.
 #
 # WHAT IS BUILT is the clone itself, never this checkout: `~/.workkit/tower` is
 # the tower project, seeded from `tower/app` at setup and carrying its own
@@ -75,7 +77,7 @@ say_skip() { [[ "$QUIET" -eq 1 ]] || printf "${_D}· %s${_N}\n" "$1"; }
 # unreadable file as a machine with no home at all.
 if [[ -f "$WK_HOME_SETTINGS" ]] && command -v jq >/dev/null 2>&1 \
   && ! jq . "$WK_HOME_SETTINGS" >/dev/null 2>&1; then
-  say_warn "publish: $WK_HOME_SETTINGS does not parse as JSON — the site options (\`site.publish\`, \`site.board\`, \`site.url\`) cannot be read, so nothing was published; fix the file and run it again"
+  say_warn "publish: $WK_HOME_SETTINGS does not parse as JSON — the site options (\`site.publish\`, \`site.url\`) cannot be read, so nothing was published; fix the file and run it again"
   exit 0
 fi
 
@@ -208,20 +210,9 @@ else
   git -C "$WORKTREE" rm -rq --cached . >/dev/null 2>&1 || true
 fi
 
-# What the branch carried before this run, kept only long enough for the two
-# decisions that need it: whether a snapshot was taken away, and whether the
-# new one differs in anything but its timestamp.
-HAD_SNAPSHOT=0
-PREV_SNAPSHOT=''
-if [[ -f "$WORKTREE/data/board.json" ]]; then
-  HAD_SNAPSHOT=1
-  PREV_SNAPSHOT="$(mktemp)"
-  cp "$WORKTREE/data/board.json" "$PREV_SNAPSHOT"
-fi
-
 # ── The mirror ────────────────────────────────────────────────────────────────
 # The branch mirrors the build exactly, so a page the app stopped shipping stops
-# being served. Everything the engine adds (the snapshot, the CNAME, .nojekyll)
+# being served. Everything the engine adds (the slug list, the CNAME, .nojekyll)
 # is written after the mirror, never before. `.git` is the worktree's link file
 # and is the one thing the mirror must not touch.
 find "$WORKTREE" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} + 2>/dev/null || true
@@ -232,41 +223,29 @@ cp -R "$WK_HOME_DIST/." "$WORKTREE/" \
 # prefixed asset folders loses them to it.
 : >"$WORKTREE/.nojekyll"
 
-# ── The snapshot ──────────────────────────────────────────────────────────────
-# The published copy has no tower to read, so it can ship with one sweep of the
-# board — and that sweep is every issue title across every repo on the roster.
+# ── The slug list ─────────────────────────────────────────────────────────────
+# The one thing the site cannot work out for itself. Everything on the published
+# board is fetched live by the browser with the viewer's token; which
+# REPOSITORIES to sweep is this machine's roster, so it rides along as a list of
+# `owner/name` strings and nothing else — no titles, no labels, no counts.
 #
-# GitHub Pages is PUBLIC even when the repo serving it is private (there is no
-# private-Pages tier below Enterprise), so baking the board in publishes it to
-# anyone with the URL. That makes it the owner's call and nobody else's:
-# `site.board` in the machine settings file is DEFAULT OFF — an absent key reads
-# as off — and only `true` turns it on. Off, the snapshot is not written and one
-# already published is taken away: flipping the switch back has to un-publish
-# what it published.
-BAKE_BOARD="$(wk_json_get "$WK_HOME_SETTINGS" '.site.board')"
-if [[ "$BAKE_BOARD" != 'true' ]]; then
-  if [[ "$HAD_SNAPSHOT" -eq 1 ]]; then
-    say_info "publish: \`site.board\` is off — the published board snapshot was removed"
+# Written straight into the worktree, and carrying no stamp of any kind: an
+# unchanged roster produces a byte-identical file, git sees nothing staged, and
+# a machine publishing daily does not commit a file a day for the time of day.
+#
+# Without node the list cannot be composed, and a site published without it
+# would show the token prompt and then find no repos — so the run says so and
+# publishes the pages anyway, which is still a working site the moment node is
+# back.
+if command -v node >/dev/null 2>&1; then
+  if node "$SCRIPT_DIR/site-repos.js" "$WORKTREE/data/repos.json" "$WK_USER_DIR" >/dev/null 2>&1; then
+    say_info "publish: the repo list is at data/repos.json"
   else
-    say_skip "publish: \`site.board\` is off — the site publishes without a board snapshot (Pages is public even on a private repo)"
-  fi
-elif command -v node >/dev/null 2>&1; then
-  # The previous snapshot is put back FIRST so the writer can compare against
-  # it: it rewrites only when something other than the timestamp changed, and a
-  # board nobody touched must not become a commit a day just because time passed.
-  if [[ -n "$PREV_SNAPSHOT" ]]; then
-    mkdir -p "$WORKTREE/data"
-    cp "$PREV_SNAPSHOT" "$WORKTREE/data/board.json"
-  fi
-  if node "$SCRIPT_DIR/site-data.js" "$WORKTREE/data/board.json" >/dev/null 2>&1; then
-    say_info "publish: baked the board snapshot into data/board.json"
-  else
-    say_warn "publish: the board snapshot could not be composed — the site publishes without a fresh one"
+    say_warn "publish: the repo list could not be composed — the site publishes without one, and its pages will find no repos to sweep"
   fi
 else
-  say_skip "publish: node is not on this machine — no board snapshot is baked in"
+  say_skip "publish: node is not on this machine — the site publishes without its repo list, and its pages will find no repos to sweep"
 fi
-if [[ -n "$PREV_SNAPSHOT" ]]; then rm -f "$PREV_SNAPSHOT"; fi
 
 # ── The custom URL ────────────────────────────────────────────────────────────
 # `site.url` in the machine settings file is the whole configuration: set, it

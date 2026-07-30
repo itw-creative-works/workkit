@@ -228,6 +228,8 @@ const render = (root, state) => {
 export default () => startPage({
   mount: 'tower-usage',
   feeds: ['repos', 'telemetry'],
+  // Token spend is read off this machine's transcripts.
+  local: true,
   charts: true,
   render,
 });

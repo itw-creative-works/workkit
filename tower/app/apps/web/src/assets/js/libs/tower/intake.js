@@ -11,20 +11,24 @@
 // page that forgot would silently be the one page with a dead button.
 //
 // One rule shapes the failure handling: whatever the human typed survives. The
-// API is the only authority on whether an intake is valid, and its refusals
+// write is the only authority on whether an intake is valid, and its refusals
 // ('title is required', 'unknown repo: …') arrive as a sentence — so the
 // dialog shows that sentence and leaves the fields exactly as they were. Only
 // a filed issue clears the form.
 //
+// It files in a PUBLISHED copy too, with the viewer's token: `submitIntake` and
+// `readAnyFeed` pick the half that answers (api.js), and everything here is the
+// same either way.
+//
 
-import { fetchFeed, postJson, LIVE } from './api.js';
+import { readAnyFeed, submitIntake, WRITABLE } from './api.js';
 import { selectedRepo } from './page.js';
-import { esc, publishedNotice } from './format.js';
+import { esc, lockedNotice } from './format.js';
 
 /** The roster select, filled from /api/repos. An empty roster is a state, not an error. */
 const fillRepos = async (select) => {
   const wanted = select.value || selectedRepo();
-  const result = await fetchFeed('/api/repos');
+  const result = await readAnyFeed('/api/repos');
   const slugs = result.ok && Array.isArray(result.data) ? result.data.map((repo) => repo.slug).filter(Boolean) : [];
 
   if (!slugs.length) {
@@ -39,8 +43,10 @@ const fillRepos = async (select) => {
 const showResult = (host, markup) => { host.innerHTML = markup; };
 
 /**
- * The published shape of the affordance: filing needs the API's one write
- * path, and there is none here, so the form is inert and says why.
+ * The locked shape of the affordance: filing needs a token, and a locked copy
+ * has none — it has no roster to file against either, since even the slug list
+ * only becomes useful once something can be read with it. So the form is inert
+ * and says the one thing that fixes it: add a token.
  *
  * The topbar button stays ENABLED and still opens the dialog — that is the only
  * place the explanation can actually be read. A disabled button suppresses its
@@ -54,8 +60,8 @@ const disableIntake = (dialog) => {
     field.disabled = true;
   }
   const select = dialog.querySelector('[data-intake-repo]');
-  select.innerHTML = '<option value="">no roster without a tower</option>';
-  showResult(dialog.querySelector('[data-intake-result]'), publishedNotice());
+  select.innerHTML = '<option value="">no roster until a token is added</option>';
+  showResult(dialog.querySelector('[data-intake-result]'), lockedNotice());
 };
 
 /**
@@ -71,7 +77,7 @@ export function mountIntake(scope = document) {
   const dialog = scope.querySelector('#tower-intake');
   if (!dialog) return;
 
-  if (!LIVE) {
+  if (!WRITABLE) {
     disableIntake(dialog);
     return;
   }
@@ -100,7 +106,7 @@ export function mountIntake(scope = document) {
       title: form.querySelector('[name="title"]').value.trim(),
       body: form.querySelector('[name="body"]').value.trim(),
     };
-    const answer = await postJson('/api/intake', payload);
+    const answer = await submitIntake(payload);
 
     submit.disabled = false;
     submit.textContent = label;

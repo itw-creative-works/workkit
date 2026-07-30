@@ -40,8 +40,12 @@ const slugsOf = (state) => repos(state).map((repo) => repo.slug).filter(Boolean)
 export const chromeKey = (state) => [state.selectedRepo || '', ...slugsOf(state)].join('\n');
 
 /**
- * The chrome's frame: the repo selector, Refresh, and the empty region the
- * status is written into.
+ * The chrome's frame: the repo selector, Refresh, the Token button a published
+ * copy carries, and the empty region the status is written into.
+ *
+ * `state.tokenMode` is the runtime's word for "this copy runs on the viewer's
+ * own GitHub token" — the button is how that token is replaced or taken away,
+ * and a copy reading a tower has none to forget.
  *
  * @param {object} state - the runtime's feed state
  * @returns {string} markup
@@ -57,6 +61,7 @@ export const chromeMarkup = (state) => {
       </select>
     </label>
     <button class="btn btn-sm btn-outline-adaptive" type="button" id="tower-refresh">Refresh</button>
+    ${state.tokenMode ? '<button class="btn btn-sm btn-outline-adaptive" type="button" id="tower-token" title="Forget the GitHub token this browser holds">Token</button>' : ''}
     <div class="ms-auto d-flex align-items-center gap-2" data-tower-status></div>
   </div>`;
 };

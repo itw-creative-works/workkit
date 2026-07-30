@@ -38,14 +38,15 @@ const writeStub = (file, lines) => {
  * without the sibling omega checkout, where `npm install` exits 0 and still
  * leaves nothing that can build (probed 2026-07-28).
  * `buildFails` makes the build exit non-zero.
- * `board` is the owner's `site.board` call — the published board snapshot,
- * which is off unless a world says otherwise.
+ * `roster` is a list of repo folder names to register on this machine's roster,
+ * each a real git repo with a committed opt-in — what the published slug list
+ * is composed from.
  * `publish` is the owner's `site.publish` call, the all-or-nothing switch: the
  * ordinary world here has said yes, since every case below is about what a
  * publish DOES. The switch itself has its own tests.
  */
 const mkWorld = ({
-  tooling = true, buildFails = false, siteUrl = null, home = true, board = false,
+  tooling = true, buildFails = false, siteUrl = null, home = true, roster = [],
   publish: publishOn = true,
 } = {}) => {
   const root = mkTmp();
@@ -57,7 +58,7 @@ const mkWorld = ({
   fs.mkdirSync(homeDir, { recursive: true });
   fs.mkdirSync(workflowHome, { recursive: true });
 
-  // The engine and the libs the snapshot reads, copied so the run's engine is
+  // The engine and the libs the slug list reads, copied so the run's engine is
   // the copy and never this checkout.
   fs.mkdirSync(path.join(kit, 'tower'), { recursive: true });
   spawnSync('cp', ['-R', path.join(REPO_ROOT, 'workflow'), kit]);
@@ -86,9 +87,25 @@ const mkWorld = ({
   // the clone below is engine territory and carries nothing hand-written.
   const settings = {
     version: 1,
-    site: { repo: home ? 'owner/workkit' : null, publish: publishOn, url: siteUrl, board },
+    site: { repo: home ? 'owner/workkit' : null, publish: publishOn, url: siteUrl },
   };
   fs.writeFileSync(path.join(workflowHome, 'settings.json'), `${JSON.stringify(settings, null, 2)}\n`);
+
+  // The roster this machine has registered — the engine's own index, read by
+  // the same module the tower and the brief read it with. Each entry is a real
+  // repo: a committed opt-in, and an origin the slug is derived from.
+  if (roster.length) {
+    const registered = {};
+    for (const name of roster) {
+      const dir = path.join(root, 'repos', name);
+      fs.mkdirSync(path.join(dir, '.workkit'), { recursive: true });
+      fs.writeFileSync(path.join(dir, '.workkit', 'settings.json'), '{ "version": 1, "enabled": true }\n');
+      git(dir, 'init', '-q', '-b', 'main');
+      git(dir, 'remote', 'add', 'origin', `https://github.com/owner/${name}.git`);
+      registered[dir] = { registered: '2026-07-29' };
+    }
+    fs.writeFileSync(path.join(workflowHome, '.repos.json'), `${JSON.stringify({ version: 1, repos: registered }, null, 2)}\n`);
+  }
 
   const env = {
     HOME: homeDir,
@@ -302,22 +319,22 @@ const run = async () => {
   });
 
   await test('a settings file that does not parse refuses loudly instead of defaulting', () => {
-    // `site.board` and `site.url` decide what is published. An unreadable
-    // settings file read as an absent one would turn the board switch off and
-    // drop the CNAME without a word — and the same file names the home repo,
-    // so the refusal has to come before every other check.
-    const world = mkWorld({ board: true });
+    // `site.publish` and `site.url` decide what is published, and the same file
+    // names the home repo the slug list points at. An unreadable file read as an
+    // absent one would drop the CNAME and the home without a word, so the
+    // refusal has to come before every other check.
+    const world = mkWorld();
     publish(world);
-    assert(fs.existsSync(path.join(fromPages(world), 'data', 'board.json')), 'the board was published');
+    assert(fs.existsSync(path.join(fromPages(world), 'index.html')), 'the site was published');
     const before = spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim();
 
-    fs.writeFileSync(world.settings, '{ "site": { "board": true, }\n');
+    fs.writeFileSync(world.settings, '{ "site": { "publish": true, }\n');
     const { code, out } = publish(world);
     assertEq(code, 0, 'exit 0 — a file to fix is not a crash');
     assert(/does not parse as JSON/.test(out) && /settings\.json/.test(out), `it names the file, got: ${out}`);
     assert(!/no home repo/.test(out), `and never reads an unparseable file as a machine with no home, got: ${out}`);
     assertEq(spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim(), before,
-      'and the published site was not quietly rebuilt without its board');
+      'and the published site was not quietly rebuilt out of a file nobody can read');
     cleanup(world.root);
   });
 
@@ -423,51 +440,90 @@ const run = async () => {
 
   group('workflow/publish: the owner’s switches');
 
-  await test('the board snapshot is baked in beside the pages when the owner says so', () => {
-    const world = mkWorld({ board: true });
+  await test('the slug list is baked in beside the pages — names, and nothing else', () => {
+    const world = mkWorld({ roster: ['workkit', 'omega'] });
     publish(world);
-    const pages = fromPages(world);
-    const snapshot = JSON.parse(fs.readFileSync(path.join(pages, 'data', 'board.json'), 'utf8'));
-    assert(typeof snapshot.generatedAt === 'string', 'it is stamped');
-    assert(Array.isArray(snapshot.repos), 'it names the roster it swept');
-    assert(snapshot.board && typeof snapshot.board.ok === 'boolean', 'and carries the board with its own ok');
+    const list = JSON.parse(fs.readFileSync(path.join(fromPages(world), 'data', 'repos.json'), 'utf8'));
+    assertEq(list.repos.slice(0, 2).join(','), 'owner/omega,owner/workkit', 'every registered repo, as a slug');
+    assert(list.repos.includes('owner/workkit'), 'and the home repo rides along — its issues are the cross-project queue');
+    assertEq(list.home, 'owner/workkit', 'named again, because the summaries are Discussions on that one repo');
+    assertEq(Object.keys(list).sort().join(','), 'home,repos', 'and the file says nothing else at all');
     cleanup(world.root);
   });
 
-  await test('the board snapshot is OFF by default — Pages is public', () => {
-    // GitHub Pages serves to anyone with the URL even from a private repo, and
-    // the snapshot is every issue title across every repo on the roster.
-    const world = mkWorld();
+  await test('nothing but the names is published — no issue data ships with the site', () => {
+    // The whole doctrine of issue #81: Pages is public even from a private repo,
+    // and the published copy reads GitHub live with the viewer's own token. A
+    // baked board would be every issue title of every repo, served to anyone
+    // with the URL.
+    const world = mkWorld({ roster: ['workkit'] });
     const { code, out } = publish(world);
     assertEq(code, 0, `exit 0 — ${out}`);
     const pages = fromPages(world);
-    assert(!fs.existsSync(path.join(pages, 'data', 'board.json')), 'nothing about the board is published');
-    assert(fs.existsSync(path.join(pages, 'index.html')), 'and the dashboard itself still publishes');
+    assertEq(fs.readdirSync(path.join(pages, 'data')).join(','), 'repos.json', 'the data folder holds the slug list and nothing else');
+    assert(!fs.existsSync(path.join(pages, 'data', 'board.json')), 'no board snapshot');
+    const list = fs.readFileSync(path.join(pages, 'data', 'repos.json'), 'utf8');
+    assert(!/title|body|labels|issues/.test(list), `and nothing issue-shaped in the one file there is, got: ${list}`);
     cleanup(world.root);
   });
 
-  await test('turning the board off again un-publishes the snapshot', () => {
-    const world = mkWorld({ board: true });
+  await test('a machine with no roster publishes a list with the home repo in it', () => {
+    // A machine that has enabled nothing still has a home repo, and its issues
+    // are the cross-project queue — so the site is useful from the first
+    // publish rather than pointing at nothing.
+    const world = mkWorld();
     publish(world);
-    assert(fs.existsSync(path.join(fromPages(world), 'data', 'board.json')), 'it was published');
-
-    setSite(world, { board: false });
-    const { out } = publish(world);
-    assert(/was removed/.test(out), `it says what it took away, got: ${out}`);
-    assert(!fs.existsSync(path.join(fromPages(world), 'data', 'board.json')), 'and it is gone from what Pages serves');
+    const list = JSON.parse(fs.readFileSync(path.join(fromPages(world), 'data', 'repos.json'), 'utf8'));
+    assertEq(list.repos.join(','), 'owner/workkit', 'the home slug, and only it');
     cleanup(world.root);
   });
 
-  await test('an untouched board is not a commit a day', () => {
-    // The snapshot's stamp changes every run; its substance does not. A publish
-    // that would only move the timestamp must leave the branch alone.
-    const world = mkWorld({ board: true });
+  await test('an unchanged roster is not a commit a day', () => {
+    // The list carries no stamp of any kind, so a second publish writes the same
+    // bytes and the branch has nothing to move for.
+    const world = mkWorld({ roster: ['workkit'] });
     publish(world);
     const before = spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim();
     const { out } = publish(world);
     assert(/already current/.test(out), `the second run has nothing to say, got: ${out}`);
     assertEq(spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim(), before,
       'and the branch did not move');
+    cleanup(world.root);
+  });
+
+  await test('a repo joining the roster reaches the published list on the next publish', () => {
+    const world = mkWorld({ roster: ['workkit'] });
+    publish(world);
+    assertEq(JSON.parse(fs.readFileSync(path.join(fromPages(world), 'data', 'repos.json'), 'utf8')).repos.length, 1,
+      'one to start with');
+
+    const joined = path.join(world.root, 'repos', 'dotfiles');
+    fs.mkdirSync(path.join(joined, '.workkit'), { recursive: true });
+    fs.writeFileSync(path.join(joined, '.workkit', 'settings.json'), '{ "version": 1, "enabled": true }\n');
+    git(joined, 'init', '-q', '-b', 'main');
+    git(joined, 'remote', 'add', 'origin', 'https://github.com/owner/dotfiles.git');
+    const index = JSON.parse(fs.readFileSync(path.join(world.workflowHome, '.repos.json'), 'utf8'));
+    index.repos[joined] = { registered: '2026-07-29' };
+    fs.writeFileSync(path.join(world.workflowHome, '.repos.json'), `${JSON.stringify(index, null, 2)}\n`);
+
+    publish(world);
+    assert(JSON.parse(fs.readFileSync(path.join(fromPages(world), 'data', 'repos.json'), 'utf8')).repos.includes('owner/dotfiles'),
+      'the new repo is on the published list');
+    cleanup(world.root);
+  });
+
+  await test('no node — the site publishes and the skip says what it will be missing', () => {
+    const world = mkWorld();
+    const { code, out } = publish({
+      ...world,
+      // The build shim stays on the PATH — the case is a machine without node,
+      // not a machine that cannot build.
+      env: { ...world.env, PATH: `${path.join(world.root, 'bin')}:${binDirWithout('node')}` },
+    });
+    assertEq(code, 0, 'exit 0 — a missing tool is not a crash');
+    assert(/node is not on this machine/.test(out), `it names the tool, got: ${out}`);
+    assert(/no repos to sweep/.test(out), `and what the site will be missing, got: ${out}`);
+    assert(fs.existsSync(path.join(fromPages(world), 'index.html')), 'and the pages still publish');
     cleanup(world.root);
   });
 
@@ -484,8 +540,8 @@ const run = async () => {
   });
 
   await test('a site key carrying nothing but the switch publishes the defaults', () => {
-    // Nothing pre-creates the sub-keys, so absent ones have to read as url null
-    // and board false rather than as an error.
+    // Nothing pre-creates the sub-keys, so an absent `url` has to read as no
+    // CNAME rather than as an error.
     const world = mkWorld();
     fs.writeFileSync(
       world.settings,
@@ -495,7 +551,7 @@ const run = async () => {
     assertEq(code, 0, `exit 0 — ${out}`);
     const pages = fromPages(world);
     assert(fs.existsSync(path.join(pages, 'index.html')), 'the dashboard publishes');
-    assert(!fs.existsSync(path.join(pages, 'data', 'board.json')), 'with no board snapshot');
+    assert(fs.existsSync(path.join(pages, 'data', 'repos.json')), 'with its slug list');
     assert(!fs.existsSync(path.join(pages, 'CNAME')), 'and no CNAME');
     cleanup(world.root);
   });

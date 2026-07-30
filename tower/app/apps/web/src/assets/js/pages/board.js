@@ -15,18 +15,21 @@
 // the write is its `postIssueStatus`, and everything here is what the browser
 // contributes — which card was picked up, which column it landed on, and the
 // optimistic move that puts it there before the write has answered. A failed
-// write puts the card back and says why. In published mode there is no API and
-// no drag either; the runtime never even renders this page there, and the gate
-// inside `moveRequest` is what makes that true rather than incidental.
+// write puts the card back and says why. A PUBLISHED copy behaves identically:
+// the sweep is GitHub's and the browser makes it, and so is the write, with the
+// viewer's own token (libs/tower/github.js). The only copy that does not drag is
+// the locked one, which never reaches this page — the prompt is its whole body.
 //
 
 import { startPage } from '../libs/tower/page.js';
 import { issuesFor, board, feed, issueByKey } from '../libs/tower/state.js';
-import { esc, empty, problem, issueChips, STATUSES, statusColor } from '../libs/tower/format.js';
+import {
+  esc, empty, problem, issueChips, STATUSES, statusColor,
+} from '../libs/tower/format.js';
 import { loading, swap } from '@omega.js/client/modules/live-page';
 import { issueTrigger, externalLink } from '../libs/tower/modal.js';
 import { claimGlyph } from '../libs/tower/agent.js';
-import { LIVE, MOVABLE_STATUSES, moveRequest, postIssueStatus } from '../libs/tower/api.js';
+import { WRITABLE, MOVABLE_STATUSES, moveRequest, postIssueStatus } from '../libs/tower/api.js';
 
 // The filter names, which are also their URL parameter names. `repo` is not one
 // of them — the page chrome owns that globally and every page obeys it.
@@ -89,8 +92,8 @@ const toolbar = (issues, filters) => `<form class="d-flex flex-wrap align-items-
   <button class="btn btn-sm btn-outline-adaptive" type="button" id="board-clear">Clear filters</button>
 </form>`;
 
-/** Whether this card may be picked up — a live page, and a status to move from. */
-const draggable = (issue) => LIVE && MOVABLE_STATUSES.includes(issue.status);
+/** Whether this card may be picked up — something to write with, and a status to move from. */
+const draggable = (issue) => WRITABLE && MOVABLE_STATUSES.includes(issue.status);
 
 // priority:high floats to the top of its column; everything else keeps the
 // board's own order, which the sweep already returns most-recently-updated first.
