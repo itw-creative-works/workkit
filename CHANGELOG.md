@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-07-30
+
 ### Changed
 
-- [#90](../../issues/90) — `workkit setup` and `doctor` read as the handful of things they do: titled sections a blank line apart, color at a terminal and never in a log, and secrets lines naming the home repo as where the cloud brief runs and lands. `update --auto` is unchanged.
+- [#90](../../issues/90) [`bfad5eb`](../../commit/bfad5eb) Thanks [@ianwieds]! — `workkit setup` and `doctor` read as the handful of things they do: titled sections a blank line apart, color at a terminal and never in a log, and secrets lines naming the home repo as where the cloud brief runs and lands. `update --auto` is unchanged.
 
 ## [0.19.1] - 2026-07-30
 
