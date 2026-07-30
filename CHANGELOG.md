@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-07-29
+
 ### Changed
 
-- [#81](../../issues/81) — The published site bakes no data and works like the local one: a GitHub token in the browser unlocks Overview, Board and Brief off-machine, reads them and moves and files issues too; Crew, Usage and Health are local only. `site.board`, the board snapshot and `workflow/site-data.js` are gone.
+- [#81](../../issues/81) [`676d1e0`](../../commit/676d1e0) Thanks [@ianwieds]! — The published site bakes no data and works like the local one: a GitHub token in the browser unlocks Overview, Board and Brief off-machine, reads them and moves and files issues too; Crew, Usage and Health are local only. `site.board`, the board snapshot and `workflow/site-data.js` are gone.
 
 ## [0.14.0] - 2026-07-29
 
