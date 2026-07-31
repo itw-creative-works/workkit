@@ -30,6 +30,8 @@
 // so the whole module imports and answers under Node.
 //
 
+import { priorityRank } from './format.js';
+
 const GRAPHQL_URL = 'https://api.github.com/graphql';
 
 /** Where the viewer's token lives. One key, one browser, never sent anywhere but GitHub. */
@@ -458,9 +460,11 @@ const briefIssue = (issue) => ({
   assignees: issue.assignees || [],
 });
 
+// The three priority bands are format.js's — the same ones the Board sorts and
+// colours by — so the brief and the board can never disagree about what "high"
+// is. Only the tie-break differs: a brief section reads oldest first.
 const byUrgency = (a, b) => {
-  const rank = (issue) => (issue.priority === 'high' ? 0 : issue.priority === 'low' ? 2 : 1);
-  const spread = rank(a) - rank(b);
+  const spread = priorityRank(a.priority) - priorityRank(b.priority);
   if (spread !== 0) return spread;
   return String(a.updatedAt || '').localeCompare(String(b.updatedAt || ''));
 };

@@ -127,6 +127,14 @@
 .omega-tower-activity--working { color: var(--omega-ok); }
 .omega-tower-activity--idle { color: var(--omega-ink-faint, var(--bs-secondary-color)); }
 
+// The motion itself. `fa-spin` is Font Awesome's class and the theme ships Font
+// Awesome's ICONS without its stylesheet — the class named a rule that was never
+// in the bundle, which is why the glyph has been still since it shipped (#65).
+// The keyframes are the framework's own (`spin`, behind `.animation-spin`), so
+// this names the one thing left: which element turns, and how fast. A second
+// per turn matches the second the number beside it counts in.
+.omega-tower-activity .fa-spin { animation: spin 1s linear infinite; }
+
 // The role glyph at the top of a crew card, in that class's own colour (the
 // style attribute the markup writes). Bigger than the indicator, because it is
 // the first thing the card says.

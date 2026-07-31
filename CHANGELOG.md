@@ -7,6 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#66](https://github.com/ITW-Creative-Works/workkit/issues/66) — The tower's issue colours come from one place: status, type, and priority chips all draw from `format.js`'s tokens, the dialog says a status in its column's colour, columns read in three priority bands, and an empty panel is an icon above one line.
+
+### Fixed
+
+- [#65](https://github.com/ITW-Creative-Works/workkit/issues/65) — The tower's activity indicator is live again: a one-second clock patches the drawn indicators between feed polls, so a crew card's freshness counts up in seconds and goes green-to-gray-to-gone on time, and the spinning glyph has the animation rule the bundle never carried.
+- [#95](https://github.com/ITW-Creative-Works/workkit/issues/95) — `jobs/install.sh` no longer lets a rehearsal under a scratch `HOME` rewire the real 9am job: launchd is only asked to load anything when `$HOME` is the account's real home (`WORKKIT_LAUNCHD_OK=1` forces it), and an agent already loaded from some other plist path is re-registered instead of being reported current.
+
 ## [0.20.1] - 2026-07-30
 
 ### Fixed

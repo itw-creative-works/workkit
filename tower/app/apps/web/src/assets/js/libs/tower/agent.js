@@ -92,6 +92,45 @@ export const sinceLabel = (ms) => {
 };
 
 /**
+ * What an indicator should say THIS second, from the raw stamps alone.
+ *
+ * The ONE home of the arithmetic, because there are now two callers of it: the
+ * paint, which draws an indicator from a node, and the clock, which re-decides
+ * an already-drawn one every second from the stamps its markup carries
+ * (libs/tower/clock.js). Both hand over the same three fields under the same
+ * names — the `data-live-*` attributes, read back as an element's `dataset` —
+ * so neither side owns a threshold the other has to match.
+ *
+ * @param {{liveState?: string, liveTs?: string, liveAlive?: string}} data the
+ *   stamps, as the markup carries them
+ * @param {number} [now] ms epoch
+ * @returns {{phase: 'working'|'idle'|'none', age: string, title: string}}
+ */
+export const activityTick = (data, now = Date.now()) => {
+  const stamps = data || {};
+  const last = Number(stamps.liveTs);
+  const alive = Number(stamps.liveAlive);
+  return {
+    phase: activityPhase({ state: stamps.liveState, lastActivity: last }, now),
+    age: Number.isFinite(last) ? sinceLabel(now - last) : '',
+    title: Number.isFinite(alive) ? `running for ${sinceLabel(now - alive)}` : 'up for an unknown span',
+  };
+};
+
+/**
+ * The classes the indicator wears for a phase — its colour, and which of the
+ * two states it is in.
+ *
+ * Written once because the clock RE-writes it: a phase crossing between polls
+ * changes the class on an element the paint drew, and a second copy of the name
+ * here would be a colour that only changes on one of the two paths.
+ *
+ * @param {'working'|'idle'} phase
+ * @returns {string}
+ */
+export const activityClass = (phase) => `omega-tower-activity omega-tower-activity--${phase}`;
+
+/**
  * The indicator itself — one glyph, wordless.
  *
  * `working` spins in the theme's ok colour; `idle` is the same glyph, still and
@@ -106,7 +145,7 @@ export const sinceLabel = (ms) => {
  */
 export const activityIcon = (phase, title = '', label = '') => {
   if (phase !== 'working' && phase !== 'idle') return '';
-  return `<span class="omega-tower-activity omega-tower-activity--${esc(phase)}"${title ? ` title="${esc(title)}"` : ''}>
+  return `<span class="${esc(activityClass(phase))}"${title ? ` title="${esc(title)}"` : ''}>
     <i class="fa-solid fa-circle-notch${phase === 'working' ? ' fa-spin' : ''}" aria-hidden="true"></i>
     <span class="visually-hidden">${esc(label || phase)}</span>
   </span>`;
@@ -145,20 +184,31 @@ export const claimGlyph = (issue) => {
  * The hover text is the OTHER span — how long it has been up — because the one
  * on the card is already the freshness.
  *
+ * It carries its own STAMPS as well as the words made from them: a feed lands
+ * every ten seconds and this markup is drawn from it, but the numbers on it are
+ * seconds and have to move in between. The `data-live-*` attributes are what
+ * the second-by-second clock re-reads (libs/tower/clock.js) — the raw epochs
+ * and the state word, never a verdict, so the tick decides exactly what this
+ * paint decided and nothing on the page holds a threshold twice.
+ *
  * @param {object} entry a normalized node, carrying `lastActivity`/`aliveSince`
  * @param {number} [now] ms epoch
  * @returns {string} markup, or '' when the agent has been quiet too long
  */
 export const crewActivity = (entry, now = Date.now()) => {
-  const phase = activityPhase(entry, now);
-  if (phase === 'none') return '';
-  const alive = Number((entry || {}).aliveSince);
-  const title = Number.isFinite(alive) ? `running for ${sinceLabel(now - alive)}` : 'up for an unknown span';
   const last = Number((entry || {}).lastActivity);
-  const age = Number.isFinite(last) ? sinceLabel(now - last) : '';
-  return `<span class="d-inline-flex align-items-center gap-1">
+  const alive = Number((entry || {}).aliveSince);
+  // The stamps in the shape the markup carries them and the clock reads them
+  // back — an absent one stays absent rather than becoming the epoch.
+  const stamps = { liveState: (entry || {}).state || '' };
+  if (Number.isFinite(last)) stamps.liveTs = String(last);
+  if (Number.isFinite(alive)) stamps.liveAlive = String(alive);
+
+  const { phase, age, title } = activityTick(stamps, now);
+  if (phase === 'none') return '';
+  return `<span class="d-inline-flex align-items-center gap-1" data-live-state="${esc(stamps.liveState)}"${stamps.liveTs ? ` data-live-ts="${esc(stamps.liveTs)}"` : ''}${stamps.liveAlive ? ` data-live-alive="${esc(stamps.liveAlive)}"` : ''}>
     ${activityIcon(phase, title)}
-    ${age ? `<span class="classy-micro text-body-secondary">${esc(age)}</span>` : ''}
+    ${age ? `<span class="classy-micro text-body-secondary" data-live-age>${esc(age)}</span>` : ''}
   </span>`;
 };
 

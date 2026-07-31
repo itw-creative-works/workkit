@@ -182,7 +182,7 @@ const render = (root, state) => {
   let body;
   if (!live && !telemetry) body = loading('reading the crew…');
   else if (live && !live.ok && (!telemetry || !telemetry.ok)) body = problem(live.reason);
-  else if (!tree.length) body = empty(sessions(state).length ? 'no sessions in the selected repo' : 'no live sessions');
+  else if (!tree.length) body = empty(sessions(state).length ? 'no sessions in the selected repo' : 'no live sessions', 'fa-regular fa-moon');
   else body = `${numbers(tree)}${finishedSwitch(tree)}${tree.map((entry) => branch(entry, now)).join('')}`;
 
   // A repaint that changed nothing writes nothing, and then there is no switch

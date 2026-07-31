@@ -49,7 +49,7 @@ const releaseLag = (rows) => {
           <td class="text-end classy-micro">${esc(row.lastTag || 'never tagged')}</td>
         </tr>`).join('')}</tbody>
       </table></div>`
-    : empty('nothing is waiting to ship — every entry is released and every commit is pushed');
+    : empty('nothing is waiting to ship — every entry is released and every commit is pushed', 'fa-regular fa-circle-check');
   return card('Work sitting on the table', body, { chip: rows.length, alarm: rows.length > 0, class: 'mb-4' });
 };
 
@@ -60,7 +60,7 @@ const repoCard = (state, repo, alone) => {
 
   let body;
   if (!reading) {
-    body = empty('no reading yet');
+    body = empty('no reading yet', 'fa-regular fa-clock');
   } else if (reading.error) {
     // A repo that could not be read says so. Zeros would read as "clean".
     body = `<div class="alert alert-danger mb-0">${esc(reading.error)}</div>`;
@@ -107,7 +107,7 @@ const render = (root, state) => {
     return;
   }
   if (!list.length) {
-    swap(root, roster ? empty('no repos in the roster — nothing has opted in under the roster root') : loading('reading the roster…'));
+    swap(root, roster ? empty('no repos in the roster — nothing has opted in under the roster root', 'fa-regular fa-square-plus') : loading('reading the roster…'));
     return;
   }
 

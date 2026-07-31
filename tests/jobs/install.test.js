@@ -27,14 +27,24 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
 /**
  * A scratch home plus a `launchctl` recorder. `loaded` decides what
  * `launchctl print` answers for the agent this checkout installs — the
- * difference between one already running and one never bootstrapped.
+ * difference between one already running and one never bootstrapped — and
+ * `loadedPath` the plist that answer says the label is registered from, which
+ * is the checkout's own unless a test wants a stray registration.
+ *
+ * HOME here is never the account's home, so the installer's own guard would
+ * skip every launchctl call: `launchdOk` sets the override the guard reads, and
+ * every test that asserts on launchd behaviour is rehearsing against the
+ * recorder rather than the machine.
  */
-const mkWorld = ({ loaded = false } = {}) => {
+const mkWorld = ({ loaded = false, loadedPath = null, launchdOk = true } = {}) => {
   const root = mkTmp();
   const bin = path.join(root, 'bin');
   const home = path.join(root, 'home');
   fs.mkdirSync(bin, { recursive: true });
   fs.mkdirSync(home, { recursive: true });
+
+  const agents = path.join(home, 'Library', 'LaunchAgents');
+  const body = loadedPath === null ? path.join(agents, `${LABEL}.plist`) : loadedPath;
 
   const log = path.join(root, 'launchctl-argv.log');
   const stub = path.join(bin, 'launchctl');
@@ -43,7 +53,10 @@ const mkWorld = ({ loaded = false } = {}) => {
     recordArgv(log),
     'if [[ "$1" == \'print\' ]]; then',
     '  case "$2" in',
-    `    */${LABEL}) exit ${loaded ? 0 : 1} ;;`,
+    `    */${LABEL})`,
+    ...(loaded
+      ? [`      printf '\\tpath = %s\\n' '${body}'`, '      exit 0 ;;']
+      : ['      exit 1 ;;']),
     '  esac',
     '  exit 1',
     'fi',
@@ -52,7 +65,9 @@ const mkWorld = ({ loaded = false } = {}) => {
   ].join('\n'));
   fs.chmodSync(stub, 0o755);
 
-  const agents = path.join(home, 'Library', 'LaunchAgents');
+  const env = { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` };
+  if (launchdOk) env.WORKKIT_LAUNCHD_OK = '1';
+  else delete env.WORKKIT_LAUNCHD_OK;
 
   return {
     root,
@@ -61,7 +76,7 @@ const mkWorld = ({ loaded = false } = {}) => {
     plist: (label) => path.join(agents, `${label}.plist`),
     rendered: () => (fs.existsSync(agents) ? fs.readdirSync(agents).sort() : []),
     installed: path.join(agents, `${LABEL}.plist`),
-    env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` },
+    env,
   };
 };
 
@@ -157,6 +172,71 @@ const run = async () => {
     assert(!fs.readFileSync(world.installed, 'utf8').includes('stale'), 'the stale copy is replaced');
     const added = world.calls().slice(before);
     assert(added.some((c) => isCall(c, 'bootout', `gui/${process.getuid()}/${LABEL}`)), `and the running agent is booted out: ${fmtCalls(added)}`);
+    cleanup(world.root);
+  });
+
+  await test('an agent loaded from someone else’s plist is re-registered', () => {
+    const world = mkWorld({ loaded: true, loadedPath: '/somewhere/stale.plist' });
+    install(world);
+    const before = world.calls().length;
+
+    const res = install(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assert(/reloaded \(was registered from \/somewhere\/stale\.plist\)/.test(res.stdout), `it names the stray path: ${res.stdout}`);
+
+    const added = world.calls().slice(before);
+    assertEq(added.length, 3, `print, bootout, bootstrap: ${fmtCalls(added)}`);
+    assert(isCall(added[1], 'bootout', `gui/${process.getuid()}/${LABEL}`), `the stray registration goes first: ${fmtCalls(added)}`);
+    assert(isCall(added[2], 'bootstrap', `gui/${process.getuid()}`, world.plist(LABEL)), `then this checkout’s plist loads: ${fmtCalls(added)}`);
+    cleanup(world.root);
+  });
+
+  await test('a loaded agent whose path cannot be read is re-registered too', () => {
+    const world = mkWorld({ loaded: true, loadedPath: '' });
+    install(world);
+    const before = world.calls().length;
+
+    const res = install(world);
+    assert(/reloaded \(was registered from an unreadable path\)/.test(res.stdout), `it says what it could not read: ${res.stdout}`);
+    const added = world.calls().slice(before);
+    assert(added.some((c) => isCall(c, 'bootstrap', `gui/${process.getuid()}`, world.plist(LABEL))), `and loads this one: ${fmtCalls(added)}`);
+    cleanup(world.root);
+  });
+
+  group('jobs/install: the real-home guard');
+
+  await test('a run under a scratch home asks launchd for nothing', () => {
+    const world = mkWorld({ launchdOk: false });
+    const res = install(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(fmtCalls(world.calls()), '', 'not one launchctl call — the gui domain is the whole machine’s');
+    assert(/would boot.*\(skipped: HOME is not this account's home/.test(res.stdout), `and it says what it would have done: ${res.stdout}`);
+    assert(fs.existsSync(world.installed), 'the plist is still rendered into the scratch home');
+    cleanup(world.root);
+  });
+
+  await test('a scratch home with an installed plist still skips the load', () => {
+    const world = mkWorld({ loaded: false });
+    install(world);
+    const before = world.calls().length;
+
+    const res = spawnSync('bash', [SCRIPT], {
+      encoding: 'utf8',
+      timeout: 30000,
+      env: { ...world.env, WORKKIT_LAUNCHD_OK: '' },
+    });
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(fmtCalls(world.calls().slice(before)), '', 'launchd is not even asked whether it is loaded');
+    assert(/would bootstrap it \(plist unchanged\)/.test(res.stdout), `it says so: ${res.stdout}`);
+    cleanup(world.root);
+  });
+
+  await test('the override is what lets a fixture home talk to launchd', () => {
+    const world = mkWorld({ launchdOk: true });
+    const res = install(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assert(world.calls().some((c) => isCall(c, 'bootstrap', `gui/${process.getuid()}`, world.plist(LABEL))), `the calls happen: ${fmtCalls(world.calls())}`);
+    assert(!/skipped/.test(res.stdout), `and nothing is skipped: ${res.stdout}`);
     cleanup(world.root);
   });
 

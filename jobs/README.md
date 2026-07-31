@@ -29,7 +29,7 @@ Renders the plist for THIS checkout into `~/Library/LaunchAgents/` and loads it.
 | `nightly-payload.js` | the summaries payload: the reflection instruction, then the day's transcript INDEX and commits as JSON — or, with `--cadence weekly\|monthly`, the rollup instruction over the prior summaries handed in on stdin. Pure gather |
 | `claude-nightly.sh` | the summaries step: composes the day, sends it, and posts it as a Discussion on the home repo — logging what it decided to `~/Library/Logs/claude-nightly.log` |
 | `com.workkit.claude-daily.plist` | the schedule — 9:00 AM daily, `{{WORKKIT_DIR}}` and `{{HOME}}` rendered at install |
-| `install.sh` | render, compare, and only on change copy and reload. `--check` is the same comparison as a report, touching neither disk nor launchd |
+| `install.sh` | render, compare, and only on change copy and reload — where "loaded" means loaded from THIS plist, so a label registered against some other path is re-registered rather than reported current. launchd is machine-global, so a run whose `$HOME` is not the account's real home renders and copies but asks launchd nothing, printing what it WOULD have loaded; `WORKKIT_LAUNCHD_OK=1` forces the calls (issue #95). `--check` is the same comparison as a report, touching neither disk nor launchd |
 
 ## Where the output goes
 

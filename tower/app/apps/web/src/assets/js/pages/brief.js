@@ -80,7 +80,7 @@ const issueRow = (issue) => issueItem(issue, `
 // read as a section that failed to load.
 const section = (heading, issues, nothing, alarm) => card(heading, issues.length
   ? `<ul class="list-unstyled mb-0">${issues.map(issueRow).join('')}</ul>`
-  : empty(nothing), {
+  : empty(nothing, 'fa-regular fa-circle-check'), {
   chip: issues.length,
   alarm: Boolean(alarm) && issues.length > 0,
   class: `mb-4${alarm && issues.length ? ' border-danger' : ''}`,
@@ -116,8 +116,8 @@ const summaries = (payload) => {
   const read = payload.summaries;
   if (!read) return '';
   let body;
-  if (!read.ok) body = empty(read.reason);
-  else if (!read.items.length) body = empty('nothing has been published yet');
+  if (!read.ok) body = empty(read.reason, 'fa-regular fa-comments');
+  else if (!read.items.length) body = empty('nothing has been published yet', 'fa-regular fa-comments');
   else body = `<ul class="list-unstyled mb-0">${read.items.map(summaryRow).join('')}</ul>`;
   return card('Published summaries', body, { chip: read.ok ? read.items.length : undefined, class: 'mb-4' });
 };
@@ -133,7 +133,7 @@ const summaries = (payload) => {
 // hanging the sentence on it would make an absent key load-bearing.
 const warnings = (rows, published) => card('Work sitting on the table', rows.length
   ? table(rows)
-  : empty(published ? LOCAL_ONLY_NOTICE : 'nothing is waiting to ship — every repo is committed, pushed and released'), {
+  : empty(published ? LOCAL_ONLY_NOTICE : 'nothing is waiting to ship — every repo is committed, pushed and released', published ? 'fa-solid fa-laptop' : 'fa-regular fa-circle-check'), {
   chip: published ? undefined : rows.length,
   alarm: rows.length > 0,
   class: 'mb-0',

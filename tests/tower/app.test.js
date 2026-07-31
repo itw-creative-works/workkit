@@ -48,6 +48,82 @@ const ROSTER = [
   { slug: 'omega', path: '/repos/Omega/omega', name: 'omega' },
 ];
 
+// ── A DOM small enough to hold in your head ────────────────────────────────
+//
+// clock.js is the one tower module that walks a document, and these suites are
+// Node. The tower app carries no test dependency and this is not the place to
+// start one, so what follows is EXACTLY the operations `applyLive` performs and
+// nothing else: two kinds of selector, a dataset, a class name, one attribute,
+// one class toggle, one child wipe. It is a test double for the walk, not a
+// browser — what the glyph looks like while it turns stays a browser's answer
+// (the #24 ruling), and what this can prove is the lifecycle: which nodes a
+// tick touches, and how often it touches nothing.
+//
+// Every mutation is COUNTED, because the claim worth pinning about a timer
+// firing sixty times a minute is that an unchanged second writes nothing.
+
+/** `data-live-ts` → `liveTs`, the way a real dataset renames its attributes. */
+const camel = (attr) => attr.replace(/^data-/, '').replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+
+/** One element. `writes` counts every mutation; `wipes` counts child clears. */
+const el = (tag, className = '', data = {}) => {
+  const node = {
+    tag, text: '', dataset: { ...data }, attrs: {}, children: [], writes: 0, wipes: 0, classes: className,
+  };
+  Object.defineProperties(node, {
+    className: { get: () => node.classes, set: (value) => { node.classes = value; node.writes += 1; } },
+    textContent: { get: () => node.text, set: (value) => { node.text = value; node.writes += 1; } },
+  });
+  node.classList = {
+    // The real `toggle(name, force)` is a no-op when the class is already in
+    // the state asked for, so a phase that did not move costs nothing. Counting
+    // the call rather than the change would make this double lie about that.
+    toggle: (name, on) => {
+      const has = node.classes.split(' ').filter(Boolean);
+      if (has.includes(name) === !!on) return;
+      node.classes = (on ? [...has, name] : has.filter((one) => one !== name)).join(' ');
+      node.writes += 1;
+    },
+  };
+  node.getAttribute = (name) => (name in node.attrs ? node.attrs[name] : null);
+  node.setAttribute = (name, value) => { node.attrs[name] = value; node.writes += 1; };
+  node.removeAttribute = (name) => {
+    delete node.attrs[name];
+    delete node.dataset[camel(name)];
+    node.writes += 1;
+  };
+  node.replaceChildren = () => { node.children = []; node.wipes += 1; node.writes += 1; };
+  node.append = (...kids) => { node.children.push(...kids); return node; };
+  node.matches = (sel) => {
+    if (sel.startsWith('[')) return camel(sel.slice(1, -1)) in node.dataset;
+    if (sel.startsWith('.')) return node.classes.split(' ').includes(sel.slice(1));
+    return node.tag === sel;
+  };
+  node.querySelectorAll = (sel) => node.children.flatMap((kid) => (kid.matches(sel) ? [kid, ...kid.querySelectorAll(sel)] : kid.querySelectorAll(sel)));
+  node.querySelector = (sel) => node.querySelectorAll(sel)[0] || null;
+  return node;
+};
+
+/**
+ * One indicator as the paint left it — the node shape `agent.crewActivity`
+ * writes, built out of the double above. The test that uses it pins this shape
+ * against the real markup string, so the two cannot drift apart in silence.
+ */
+const drawnIndicator = ({ phase, stamps, age, title }) => {
+  const glyph = el('i', `fa-solid fa-circle-notch${phase === 'working' ? ' fa-spin' : ''}`);
+  const spoken = el('span', 'visually-hidden');
+  spoken.text = phase;
+  const icon = el('span', `omega-tower-activity omega-tower-activity--${phase}`).append(glyph, spoken);
+  icon.attrs.title = title;
+  const label = el('span', 'classy-micro text-body-secondary', { liveAge: '' });
+  label.text = age;
+  const wrapper = el('span', 'd-inline-flex align-items-center gap-1', stamps).append(icon, label);
+  // Nothing above is a tick — reset the counters so the first one starts at nil.
+  const parts = { wrapper, icon, glyph, spoken, label };
+  for (const part of Object.values(parts)) part.writes = 0;
+  return { ...parts, host: el('div').append(wrapper) };
+};
+
 const run = async () => {
   const format = await load('format.js');
   const state = await load('state.js');
@@ -55,6 +131,10 @@ const run = async () => {
   // agent.js is markup from a node and a clock — no DOM, so the indicator's
   // three states and its cutoff are askable here.
   const agent = await load('agent.js');
+  // clock.js walks a document but reaches for nothing at import time — the
+  // timer is armed inside startClock — so `applyLive` comes under Node against
+  // the small DOM double above.
+  const secondHand = await load('clock.js');
   // modal.js reaches for `document` only inside mountIssueModal, so everything
   // that shapes an issue into markup imports and answers under Node.
   const modal = await load('modal.js');
@@ -127,6 +207,84 @@ const run = async () => {
     assertEq(format.statusToken('nonsense'), '--omega-ink-muted', 'an unknown status is drawn, not dropped');
     assert(format.statusToken('building') !== format.statusToken(''),
       'in-flight work and the No-status column never share a colour');
+  });
+
+  await test('a priority is drawn from the theme, and the unlabelled middle is neutral', () => {
+    assertEq(format.priorityToken('high'), '--omega-accent', 'high takes the theme’s signal colour');
+    assertEq(format.priorityToken('low'), '--omega-ink-faint', 'and low the faint end');
+    assertEq(format.priorityToken(''), '--omega-ink-muted', 'normal priority is never written on an issue and is drawn neutral');
+    assertEq(format.priorityToken('nonsense'), '--omega-ink-muted', 'and so is a priority the vocabulary does not name');
+    // The two chips sit side by side in the dialog, so the LOUD end may not be
+    // borrowed: a priority chip in a pipeline colour would read as a status.
+    // The quiet end is shared with `parked` on purpose — a faint chip saying
+    // "low" and a faint one saying "parked" mean the same thing about urgency.
+    const statuses = format.STATUSES.map((status) => format.statusToken(status.key));
+    assert(!statuses.includes(format.priorityToken('high')), 'high never borrows a status colour');
+    assertEq(format.priorityToken('low'), format.statusToken('parked'), 'and the quiet end is the one the pipeline parks in');
+  });
+
+  await test('a status chip is the colour its Board column header carries', () => {
+    for (const status of format.STATUSES.filter((one) => one.key)) {
+      const chip = format.statusChip(status.key);
+      assert(chip.includes(`--omega-tone: ${format.statusColor(status.key)}`), `${status.key} is drawn in the column’s own token`);
+      assert(chip.includes('omega-badge-tone'), 'through the framework’s tone chip, never a colour of its own');
+      assert(chip.includes(`>${status.key}<`), 'labelled with the status itself');
+    }
+    assertEq(format.statusChip(''), '', 'an issue carrying no status draws no chip');
+    assert(!format.statusChip('<img src=x>').includes('<img'), 'a hostile status is escaped');
+  });
+
+  await test('a priority chip is drawn through the same system, at both ends', () => {
+    const high = format.priorityChip('high');
+    const low = format.priorityChip('low');
+    assert(high.includes('--omega-tone: var(--omega-accent)') && high.includes('>high<'), 'high in the signal colour');
+    assert(low.includes('--omega-tone: var(--omega-ink-faint)') && low.includes('>low<'), 'low in the faint one');
+    assert(high.includes('omega-badge-tone') && low.includes('omega-badge-tone'), 'both through the tone chip');
+    assertEq(format.priorityChip(''), '', 'the unlabelled middle draws nothing');
+    assertEq(format.priorityChip('nonsense'), '', 'and neither does a priority that is not one');
+  });
+
+  await test('a column reads in three priority bands, newest first inside each', () => {
+    const issue = (priority, updatedAt) => ({ priority, updatedAt });
+    const shuffled = [
+      issue('low', '2026-07-30'),
+      issue(null, '2026-07-28'),
+      issue('high', '2026-07-20'),
+      issue(null, '2026-07-29'),
+      issue('high', '2026-07-21'),
+      issue('low', '2026-07-31'),
+    ];
+    const sorted = [...shuffled].sort(format.byPriority);
+    assertEq(sorted.map((one) => one.priority || 'normal').join(','), 'high,high,normal,normal,low,low',
+      'high above the unlabelled middle, and low below it');
+    assertEq(sorted.map((one) => one.updatedAt).join(','), '2026-07-21,2026-07-20,2026-07-29,2026-07-28,2026-07-31,2026-07-30',
+      'and the band is broken by the most recently touched');
+    assert(format.byPriority(issue('high', '2026-07-01'), issue('low', '2026-07-31')) < 0,
+      'a stale high still outranks a fresh low');
+    assertEq(format.byPriority(issue(null, ''), issue(null, '')), 0, 'two issues with nothing to sort by tie');
+  });
+
+  await test('the Board sorts its columns with the shared comparator, not one of its own', () => {
+    // The band arithmetic is pinned above; this pins the PAGE to it. Without
+    // this, a silent revert to a date-only sort in board.js leaves every other
+    // test green and the issue's headline behavior gone.
+    const fs = require('fs');
+    const boardPage = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    assert(/import \{[^}]*byPriority[^}]*\} from '\.\.\/libs\/tower\/format\.js'/.test(boardPage),
+      'the comparator comes from format.js');
+    assert(boardPage.includes('.sort(byPriority)'), 'and the columns actually sort by it');
+  });
+
+  await test('an empty state is an icon above a line, and says which nothing it is', () => {
+    const state = format.empty('nothing here');
+    assert(state.includes('fa-regular fa-folder-open'), 'the neutral default icon');
+    assert(state.includes('aria-hidden="true"'), 'which is decorative — the line carries the meaning');
+    assert(state.includes('>nothing here<'), 'and the line itself');
+    assert(state.includes('text-body-secondary'), 'drawn in the theme’s quiet ink, never as an alarm');
+    const chosen = format.empty('no live sessions', 'fa-regular fa-moon');
+    assert(chosen.includes('fa-regular fa-moon') && !chosen.includes('fa-folder-open'), 'the caller’s icon replaces the default');
+    assert(!format.empty('<script>x</script>', '"><img src=x>').includes('<script>'), 'a hostile message is escaped');
+    assert(!format.empty('nothing', '"><img src=x>').includes('<img'), 'and so is an icon name');
   });
 
   await test('a model id falls in its family whatever it is decorated with', () => {
@@ -219,8 +377,35 @@ const run = async () => {
     assert(chips.includes('@ianwieds, @someone'), 'every assignee, each with its handle');
   });
 
+  await test('both ends of the priority scale are drawn through the one colour system', () => {
+    const ends = { high: '--omega-accent', low: '--omega-ink-faint' };
+    for (const [priority, token] of Object.entries(ends)) {
+      const chips = format.issueChips({ type: 'bug', priority });
+      assert(chips.includes(`--omega-tone: var(${token})`), `${priority} is drawn in its own token`);
+      assertEq(chips.includes(format.priorityChip(priority)), true, `${priority} is the chip format.js draws`);
+      assert(!chips.includes('classy-chip--accent'), 'and never a colour decided at the call site');
+    }
+    assert(!format.issueChips({ type: '', priority: '' }).includes('omega-badge-tone'),
+      'the unlabelled middle still draws no priority chip');
+  });
+
+  await test('a type is drawn through the one colour system, in ramp slots no other vocabulary holds', () => {
+    const slots = { bug: '--omega-chart-4', enhancement: '--omega-chart-3', idea: '--omega-chart-5' };
+    for (const [type, token] of Object.entries(slots)) {
+      const chips = format.issueChips({ type, priority: '' });
+      assert(chips.includes(`--omega-tone: var(${token})`), `${type} is drawn in its own slot`);
+      assertEq(chips.includes(format.typeChip(type)), true, `${type} is the chip format.js draws`);
+      assert(token !== format.statusToken(type) && token !== format.priorityToken('high'),
+        `${type}'s slot belongs to no status and not to high`);
+    }
+    const foreign = format.typeChip('question');
+    assert(foreign.includes('classy-chip') && !foreign.includes('omega-badge-tone'),
+      'a type outside the vocabulary stays a plain chip');
+    assertEq(format.typeChip(''), '', 'no type, no chip');
+  });
+
   await test('an issue with nothing to say draws no chips', () => {
-    const chips = format.issueChips({ type: '', priority: 'low', agentOk: false, assignees: [] });
+    const chips = format.issueChips({ type: '', priority: '', agentOk: false, assignees: [] });
     assert(!chips.includes('classy-chip'), 'no chip markup at all');
     assert(!chips.includes('@'), 'and no empty handle');
   });
@@ -604,6 +789,180 @@ const run = async () => {
     assert(agent.crewActivity({ state: 'working' }, NOW).includes('up for an unknown span'), 'a node with no times still says the honest thing');
   });
 
+  await test('a drawn indicator carries the stamps the clock reads back off it', () => {
+    // The defect this proves against: markup that carries only the WORDS made
+    // from the stamps. A feed lands every ten seconds; the second hand has to
+    // re-decide the phase and the age in between, and it has nothing to decide
+    // from unless the element itself holds the raw epochs.
+    const markup = agent.crewActivity({ state: 'working', lastActivity: NOW - 12000, aliveSince: NOW - 3 * 60000 }, NOW);
+    assert(markup.includes(`data-live-ts="${NOW - 12000}"`), 'the epoch it last moved, raw');
+    assert(markup.includes(`data-live-alive="${NOW - 3 * 60000}"`), 'and the one it started at');
+    assert(markup.includes('data-live-state="working"'), 'plus the state word, which the phase needs and no arithmetic can recover');
+    assert(markup.includes('data-live-age'), 'the age label is findable — it is the one text the tick rewrites');
+    const timeless = agent.crewActivity({ state: 'working' }, NOW);
+    assert(!timeless.includes('data-live-ts'), 'a node with no timestamp carries no stamp — an absent one must not become the epoch');
+  });
+
+  await test('the second hand decides exactly what the paint decided', () => {
+    // Same thresholds, one home: the tick reads the dataset the markup above
+    // wrote, and any drift between the two is a card whose colour and whose
+    // label disagree for up to ten seconds.
+    const stamps = (last, state = 'working') => ({ liveState: state, liveTs: String(NOW - last), liveAlive: String(NOW - 3 * 60000) });
+    assertEq(agent.activityTick(stamps(5000), NOW).phase, 'working', 'running and fresh');
+    assertEq(agent.activityTick(stamps(20000), NOW).phase, 'working', 'exactly two poll cycles still spins');
+    assertEq(agent.activityTick(stamps(20001), NOW).phase, 'idle', 'a millisecond past it goes gray');
+    assertEq(agent.activityTick(stamps(60000), NOW).phase, 'idle', 'exactly a minute is still on screen');
+    assertEq(agent.activityTick(stamps(60001), NOW).phase, 'none', 'and a millisecond past THAT is gone');
+    assertEq(agent.activityTick(stamps(2000, 'done'), NOW).phase, 'idle', 'the state word still decides the motion');
+    assertEq(agent.activityTick({ liveState: 'working' }, NOW).phase, 'working', 'a stampless element falls back to the word, as the paint does');
+    assertEq(agent.activityTick({}, NOW).phase, 'none', 'and an element carrying nothing draws nothing');
+  });
+
+  await test('a tick a second later moves the number, and one in the same second moves nothing', () => {
+    const stamps = { liveState: 'working', liveTs: String(NOW - 12000), liveAlive: String(NOW - 3 * 60000) };
+    const first = agent.activityTick(stamps, NOW);
+    assertEq(first.age, '12s', 'the seconds since it last moved');
+    assertEq(first.title, 'running for 3m', 'and how long it has been up, for the hover');
+    assertEq(agent.activityTick(stamps, NOW + 1000).age, '13s', 'a second later the label has moved');
+    // Idempotence is what makes a 1s timer cheap: the same second in gives the
+    // same answer out, so the DOM comparison behind every write finds nothing
+    // to do rather than recalculating a style sixty times a minute.
+    const again = agent.activityTick(stamps, NOW);
+    assertEq(again.age, first.age, 'the same second in, the same label out');
+    assertEq(again.phase, first.phase, 'and the same phase');
+    assertEq(again.title, first.title, 'and the same hover text');
+  });
+
+  await test('the classes the phase wears are written once, for both the paint and the tick', () => {
+    assert(agent.activityIcon('working').includes(`class="${agent.activityClass('working')}"`), 'the paint draws them from the one helper');
+    assertEq(agent.activityClass('idle'), 'omega-tower-activity omega-tower-activity--idle', 'and a phase crossing has one name to write');
+  });
+
+  await test('the second hand has one home, and it is not a page', () => {
+    const fs = require('fs');
+    const clock = fs.readFileSync(path.join(libs, 'clock.js'), 'utf8');
+    assert(clock.includes('setInterval'), 'the timer lives in clock.js');
+    assert(/import \{[^}]*activityTick[^}]*\} from '\.\/agent\.js'/.test(clock), 'and it re-decides through the shared arithmetic rather than a copy of the thresholds');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    for (const name of fs.readdirSync(pages).filter((file) => file.endsWith('.js'))) {
+      assert(!fs.readFileSync(path.join(pages, name), 'utf8').includes('setInterval'), `${name} runs no clock of its own`);
+    }
+    assert(fs.readFileSync(path.join(libs, 'page.js'), 'utf8').includes('startClock(document.body)'), 'the runtime arms it once, over the whole document — the dialogs carry indicators and sit outside the page mount');
+  });
+
+  await test('the paint and the double draw the same node — the selectors the tick walks by', () => {
+    // What keeps the fake DOM below honest: every hook applyLive reaches for is
+    // one the real builder actually writes. If crewActivity renames one of
+    // these, this fails here rather than leaving the lifecycle test passing
+    // against a shape that no longer exists.
+    const markup = agent.crewActivity({ state: 'working', lastActivity: NOW - 12000, aliveSince: NOW - 3 * 60000 }, NOW);
+    assert(markup.includes('data-live-ts='), 'the wrapper the walk finds');
+    assert(markup.includes('class="omega-tower-activity omega-tower-activity--working"'), 'the icon the tick re-classes');
+    assert(markup.includes('<i class="fa-solid fa-circle-notch fa-spin"'), 'the glyph it toggles the motion on');
+    assert(markup.includes('class="visually-hidden">working<'), 'the word it keeps in step with the colour');
+    assert(markup.includes('data-live-age'), 'and the label it rewrites');
+  });
+
+  await test('a tick a second later moves the label and touches nothing else', () => {
+    const drawn = drawnIndicator({
+      phase: 'working', age: '12s', title: 'running for 3m',
+      stamps: { liveState: 'working', liveTs: String(NOW - 12000), liveAlive: String(NOW - 3 * 60000) },
+    });
+    secondHand.applyLive(drawn.host, NOW + 1000);
+    assertEq(drawn.label.textContent, '13s', 'the number moved');
+    assertEq(drawn.label.writes, 1, 'in one write');
+    assertEq(drawn.icon.writes, 0, 'the icon was left alone — same phase, same hover text');
+    assertEq(drawn.glyph.writes, 0, 'and the glyph never stopped turning');
+    assertEq(drawn.wrapper.wipes, 0, 'nothing was replaced');
+    assertEq(drawn.host.querySelector('[data-live-ts]'), drawn.wrapper, 'the element the walk finds is the same object it found before');
+    assertEq(drawn.icon.querySelector('i'), drawn.glyph, 'and so is the glyph under it — a replaced node is a restarted animation');
+  });
+
+  await test('a tick in the same second writes nothing at all', () => {
+    const drawn = drawnIndicator({
+      phase: 'working', age: '12s', title: 'running for 3m',
+      stamps: { liveState: 'working', liveTs: String(NOW - 12000), liveAlive: String(NOW - 3 * 60000) },
+    });
+    secondHand.applyLive(drawn.host, NOW);
+    secondHand.applyLive(drawn.host, NOW);
+    const writes = [drawn.wrapper, drawn.icon, drawn.glyph, drawn.spoken, drawn.label].map((part) => part.writes);
+    assertEq(writes.join(','), '0,0,0,0,0', 'every mutation is behind a comparison, so a second that says the same thing costs nothing');
+  });
+
+  await test('the idle crossing flips the classes on the element that is already there', () => {
+    const drawn = drawnIndicator({
+      phase: 'working', age: '20s', title: 'running for 3m',
+      stamps: { liveState: 'working', liveTs: String(NOW - 20000), liveAlive: String(NOW - 3 * 60000) },
+    });
+    secondHand.applyLive(drawn.host, NOW + 1);
+    assertEq(drawn.icon.className, 'omega-tower-activity omega-tower-activity--idle', 'the colour went gray');
+    assertEq(drawn.glyph.className, 'fa-solid fa-circle-notch', 'the motion stopped');
+    assertEq(drawn.spoken.textContent, 'idle', 'and what a screen reader hears went with it');
+    assertEq(drawn.wrapper.wipes, 0, 'in place — the crossing replaced no node');
+    assertEq(drawn.icon.querySelector('i'), drawn.glyph, 'it is the same glyph, restyled');
+  });
+
+  await test('the sixtieth second empties the wrapper and takes it out of the walk', () => {
+    const drawn = drawnIndicator({
+      phase: 'idle', age: '60s', title: 'running for 3m',
+      stamps: { liveState: 'done', liveTs: String(NOW - 60000), liveAlive: String(NOW - 3 * 60000) },
+    });
+    secondHand.applyLive(drawn.host, NOW + 1);
+    assertEq(drawn.wrapper.wipes, 1, 'past the cutoff the indicator is not gray, it is gone');
+    assertEq(drawn.wrapper.children.length, 0, 'the glyph and its label with it');
+    assertEq(drawn.wrapper.dataset.liveTs, undefined, 'and the stamp is gone too');
+    assertEq(drawn.host.querySelectorAll('[data-live-ts]').length, 0, 'so the walk no longer finds it — only a paint can bring it back');
+    secondHand.applyLive(drawn.host, NOW + 120000);
+    assertEq(drawn.wrapper.wipes, 1, 'and every later tick passes it by');
+  });
+
+  await test('the agent dialog carries the stamps too, so an open one ages like the card behind it', () => {
+    // The defect this proves against: the dialog drew the bare glyph, with no
+    // stamps on it, so it was the one surface the second hand could not reach —
+    // a dialog left open showed a green spinning circle for an agent that had
+    // been quiet for ten minutes.
+    const body = modal.agentDialog({
+      id: 'a1', role: 'worker', state: 'working', lastActivity: NOW - 6000, aliveSince: NOW - 4 * 60000,
+    }, NOW).body;
+    assert(body.includes(`data-live-ts="${NOW - 6000}"`), 'the stamp the tick reads back');
+    assert(body.includes('data-live-state="working"'), 'and the state word it decides the motion from');
+    assert(body.includes('data-live-age'), 'plus the label the tick rewrites');
+  });
+
+  await test('the Overview draws its state cell with the one shared builder, stamps and all', () => {
+    // The defect this proves against: a SECOND hand-rolled copy of the crew
+    // card's wrapper. The Overview built its own span around the bare glyph, so
+    // its indicator carried no stamps, the second hand walked straight past it,
+    // and the landing page's numbers sat still while the Crew page's moved.
+    const fs = require('fs');
+    const overview = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'index.js'), 'utf8');
+    assert(!overview.includes('activityIcon('), 'it wraps nothing of its own around the bare glyph');
+    // And what that builder hands it, for a session in the shape /api/crew
+    // sends one — the stamps are the whole point of the delegation.
+    const cell = agent.crewActivity({ state: 'working', lastActivity: NOW - 4000, aliveSince: NOW - 90000 }, NOW);
+    assert(cell.includes(`data-live-ts="${NOW - 4000}"`), 'so the Overview markup carries the stamp the tick reads back');
+    assert(cell.includes('data-live-age'), 'and the label the tick rewrites');
+  });
+
+  await test('the class the glyph spins on names a rule that exists', () => {
+    // The defect this proves against: `fa-spin` is Font Awesome's class and the
+    // theme ships its icons WITHOUT its stylesheet, so the markup asked for an
+    // animation nothing in the bundle defined and the glyph was still from the
+    // day it shipped. Whether it visibly turns is a browser's answer; that the
+    // rule is in the sheet at all is this one's.
+    const fs = require('fs');
+    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
+    const rule = /\.omega-tower-activity \.fa-spin \{ animation: (\S+) /.exec(sheet);
+    assert(rule, 'the indicator gives its own glyph the animation');
+    assertEq(rule[1], 'spin', 'reusing the keyframes the framework already ships');
+    // Anchored on the block that disables THIS animation, not on the sheet's
+    // first `prefers-reduced-motion` — an unrelated reduced-motion block added
+    // higher up would otherwise fail a rule that is perfectly well ordered.
+    const disable = /@media \(prefers-reduced-motion: reduce\) \{\s*\.omega-tower-activity \.fa-spin \{ animation: none; \}/.exec(sheet);
+    assert(disable, 'and reduced motion turns this animation off by name');
+    assert(disable.index > sheet.indexOf('.omega-tower-activity .fa-spin {'), 'after the rule it overrides, so it still wins the tie');
+  });
+
   await test('every role has its own glyph, in the colour that class is drawn in everywhere else', () => {
     const roles = ['manager', 'worker', 'scout', 'verifier', 'advisor', 'reviewer'];
     const glyphs = roles.map((name) => agent.roleGlyph(name));
@@ -625,7 +984,7 @@ const run = async () => {
     const boardPage = fs.readFileSync(path.join(pages, 'board.js'), 'utf8');
     assert(/import \{[^}]*claimGlyph[^}]*\} from '\.\.\/libs\/tower\/agent\.js'/.test(boardPage), 'the Board takes the claim glyph AND its gate from the same lib');
     const overview = fs.readFileSync(path.join(pages, 'index.js'), 'utf8');
-    assert(/import \{[^}]*activityPhase[^}]*\} from '\.\.\/libs\/tower\/agent\.js'/.test(overview), 'and the Overview\'s crew table draws the same indicator rather than a pill of its own');
+    assert(/import \{[^}]*crewActivity[^}]*\} from '\.\.\/libs\/tower\/agent\.js'/.test(overview), 'and the Overview\'s crew table draws the same indicator — the same builder, not a pill or a wrapper of its own');
     assert(!/pill\((?:[^)]*)working/.test(overview), 'no page decides on its own what a working agent looks like');
     for (const name of fs.readdirSync(pages).filter((file) => file.endsWith('.js'))) {
       const source = fs.readFileSync(path.join(pages, name), 'utf8');
@@ -693,6 +1052,15 @@ const run = async () => {
     assertEq(rendered[rendered.length - 1], ISSUE.body, 'the renderer is handed the raw body, markdown and all');
     assert(parts.body.includes(`<div class="omega-tower-issue__body"><p data-rendered>${ISSUE.body}</p></div>`), 'and what it answers is the body of the dialog');
     assert(parts.body.includes('2 comments on GitHub'), 'and where the conversation is');
+  });
+
+  await test('the dialog’s status chip is the colour of the column the card came from', () => {
+    const parts = modal.issueDialog(ISSUE, render);
+    assert(parts.body.includes(format.statusChip('specced')), 'the dialog draws format.js’s status chip');
+    assert(parts.body.includes(`--omega-tone: ${format.statusColor('specced')}`),
+      'so the dialog and the Board column header say specced in one colour');
+    const bare = modal.issueDialog({ ...ISSUE, status: '', priority: '', type: '' }, render);
+    assert(!bare.body.includes('omega-badge-tone'), 'and an issue with no status carries no status chip');
   });
 
   await test('an issue with nothing on it still opens', () => {

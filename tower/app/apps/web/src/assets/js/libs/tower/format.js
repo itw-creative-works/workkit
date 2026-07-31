@@ -18,8 +18,20 @@ export const esc = (value) => String(value === null || value === undefined ? '' 
 /** A count that may legitimately be unknown — null renders as a dash, not 0. */
 export const num = (value) => (value === null || value === undefined ? '—' : String(value));
 
-/** One "nothing here" line, in the theme's muted voice. */
-export const empty = (message) => `<p class="text-body-secondary mb-0">${esc(message)}</p>`;
+/**
+ * One "nothing here" state — a muted icon above one line.
+ *
+ * Quiet on purpose: an empty column and an empty panel are the normal condition
+ * of a board that is up to date, so it is drawn in the theme's secondary ink at
+ * half opacity and never as an alarm. The icon is the caller's, because "no
+ * live sessions" and "nothing is waiting to ship" are different kinds of
+ * nothing; the default is the neutral one, and every icon is the framework's
+ * Font Awesome, decorative, with the line itself carrying the meaning.
+ */
+export const empty = (message, icon = 'fa-regular fa-folder-open') => `<div class="text-center text-body-secondary py-3">
+  <i class="${esc(icon)} fa-lg d-block mb-2 opacity-50" aria-hidden="true"></i>
+  <p class="classy-micro mb-0">${esc(message)}</p>
+</div>`;
 
 /** The line a page shows where a section would be when its feed did not answer. */
 export const problem = (message) => `<div class="alert alert-warning mb-0">${esc(message)}</div>`;
@@ -114,6 +126,85 @@ export const statusToken = (key) => ({
 
 /** The resolved colour for a status — CSS custom properties, so dark mode follows. */
 export const statusColor = (key) => `var(${statusToken(key)})`;
+
+//
+// ── Priority ───────────────────────────────────────────────────────────────
+//
+// `priority:high|low` is a group of its own, and the middle of it is the label
+// that is ABSENT — normal priority is never written on an issue, so there are
+// three bands and only two of them have a name to draw.
+//
+// A priority chip and a status chip sit side by side in the issue dialog, so
+// the ATTENTION end may not be borrowed from the pipeline: high takes the
+// theme's signal accent, which no status is drawn in, and a `high` chip
+// therefore can never be misread as a status. The quiet end shares `parked`'s
+// faint ink deliberately — the two say the same thing about urgency, and the
+// alternative, the muted ink every plain chip already carries, would leave a
+// `low` chip indistinguishable from an undyed one.
+//
+
+/** The theme token a priority is drawn in; the unlabelled middle is neutral. */
+export const priorityToken = (key) => ({
+  high: '--omega-accent',
+  low: '--omega-ink-faint',
+}[key] || '--omega-ink-muted');
+
+/** Where a priority sorts: high first, the unlabelled middle next, low last. */
+export const priorityRank = (key) => (key === 'high' ? 0 : key === 'low' ? 2 : 1);
+
+/**
+ * The order issues are read in inside one Board column — the three priority
+ * bands, most recently updated first within each.
+ *
+ * Pure, and here rather than in the page, because the band definition is the
+ * same one `priorityToken` colours and the brief's own sort ranks.
+ */
+export const byPriority = (a, b) => {
+  const spread = priorityRank(a.priority) - priorityRank(b.priority);
+  if (spread !== 0) return spread;
+  return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
+};
+
+/**
+ * One chip painted in a theme token.
+ *
+ * The framework's tone chip is the mechanism — `.omega-badge-tone` paints
+ * whatever `--omega-tone` holds — and the token is set inline instead of by an
+ * `.omega-tone-N` class, because status and priority are drawn from the theme's
+ * semantic slots rather than from the categorical ramp. `text-uppercase` puts
+ * back the case the tone chip turns off for model ids: these labels are words,
+ * and they sit in a row with plain chips that are uppercase.
+ */
+const toneChip = (label, token) => `<span class="classy-chip omega-badge-tone text-uppercase" style="--omega-tone: var(${token});">${esc(label)}</span>`;
+
+/**
+ * The chip for an issue's status — the same colour the Board's column header
+ * draws that status in, so the dialog and the column agree.
+ */
+export const statusChip = (status) => (status ? toneChip(status, statusToken(status)) : '');
+
+/** The chip for an issue's priority. The unlabelled middle draws nothing. */
+export const priorityChip = (priority) => (priority === 'high' || priority === 'low' ? toneChip(priority, priorityToken(priority)) : '');
+
+/**
+ * The theme token a type is drawn in. A type is an identity, not a signal, so
+ * it draws from the categorical ramp — and only from slots no status or
+ * priority speaks in (`inbox` holds chart-2, `high` holds the accent, which is
+ * chart-1), for the same reason `high` may not borrow a status colour: two
+ * vocabularies in one row must never share a hue.
+ */
+export const typeToken = (key) => ({
+  bug: '--omega-chart-4',
+  enhancement: '--omega-chart-3',
+  idea: '--omega-chart-5',
+}[key]);
+
+/** The chip for an issue's type. A type outside the vocabulary stays plain. */
+export const typeChip = (type) => {
+  if (!type) return '';
+  const token = typeToken(type);
+  return token ? toneChip(type, token) : `<span class="classy-chip">${esc(type)}</span>`;
+};
 
 //
 // ── Models and agent classes ───────────────────────────────────────────────
@@ -260,8 +351,8 @@ export const card = (heading, body, options = {}) => `<div class="card ${options
 </div>`;
 
 /**
- * The chips that label one issue — its type, whether it is high priority,
- * whether an agent may take it, and who holds it.
+ * The chips that label one issue — its type, its priority, whether an agent
+ * may take it, and who holds it.
  *
  * One row of markup for the Board's cards and the Brief's list, which say the
  * same four things about the same issue and had drifted into two copies of it.
@@ -271,8 +362,8 @@ export const card = (heading, body, options = {}) => `<div class="card ${options
  * @returns {string} markup
  */
 export const issueChips = (issue, extraClass = '') => `<span class="d-flex flex-wrap align-items-center gap-1${extraClass ? ` ${extraClass}` : ''}">
-  ${issue.type ? `<span class="classy-chip">${esc(issue.type)}</span>` : ''}
-  ${issue.priority === 'high' ? '<span class="classy-chip classy-chip--accent">high</span>' : ''}
+  ${typeChip(issue.type)}
+  ${priorityChip(issue.priority)}
   ${issue.agentOk ? '<span class="classy-chip">agent:ok</span>' : ''}
   ${(issue.assignees || []).length ? `<span class="classy-micro">@${esc(issue.assignees.join(', @'))}</span>` : ''}
 </span>`;

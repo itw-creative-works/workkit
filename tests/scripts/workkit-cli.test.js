@@ -143,6 +143,12 @@ const mkWorld = ({
       PATH: `${binOnPath ? `${localBin}:` : ''}${bin}:${BASE_PATH}`,
       WORKFLOW_HOME: path.join(root, 'workflow-home'),
       WORKFLOW_CLAUDE_HOME: path.join(home, '.claude'),
+      // HOME here is a scratch directory, which jobs/install.sh refuses to load
+      // a schedule from — launchd is machine-global, so a fake home is exactly
+      // the run it guards against (issue #95). launchctl on this PATH is a
+      // recorder, so this world says out loud that it is the rehearsal the
+      // override exists for; the guard itself is pinned in tests/jobs.
+      WORKKIT_LAUNCHD_OK: '1',
     },
   };
 };

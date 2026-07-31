@@ -126,7 +126,7 @@ const cacheCell = (tokens) => {
 };
 
 const sessionTable = (usage) => {
-  if (!usage.sessions.length) return empty('no per-session detail in this payload');
+  if (!usage.sessions.length) return empty('no per-session detail in this payload', 'fa-regular fa-rectangle-list');
   return `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
     <thead><tr><th>session</th><th>class</th><th>model</th><th class="text-end">tokens</th><th class="text-end">cache</th><th class="text-end">cost</th></tr></thead>
     <tbody>${usage.sessions.map((session) => `<tr>
@@ -150,10 +150,10 @@ const ranked = (rows) => Math.max(160, 40 + rows * 32);
 const charts = (usage) => {
   const height = ranked(Math.max(usage.byModel.length, usage.byClass.length));
   return `<div class="row g-4 mb-4">
-  <div class="col-12 col-xl-6">${card('Tokens by model', usage.byModel.length ? chartSlot('usage-model', height) : empty('no model breakdown yet'), { class: 'h-100' })}</div>
-  <div class="col-12 col-xl-6">${card('Tokens by agent class', usage.byClass.length ? chartSlot('usage-class', height) : empty('no class breakdown yet'), { class: 'h-100' })}</div>
-  <div class="col-12 col-xl-8">${card('Tokens over time', usage.overTime.length ? chartSlot('usage-time', 240) : empty('no history yet'), { class: 'h-100' })}</div>
-  <div class="col-12 col-xl-4">${card('Cache read versus fresh', (usage.cacheRead + usage.fresh) ? chartSlot('usage-cache', 240) : empty('no split yet'), { class: 'h-100' })}</div>
+  <div class="col-12 col-xl-6">${card('Tokens by model', usage.byModel.length ? chartSlot('usage-model', height) : empty('no model breakdown yet', 'fa-regular fa-chart-bar'), { class: 'h-100' })}</div>
+  <div class="col-12 col-xl-6">${card('Tokens by agent class', usage.byClass.length ? chartSlot('usage-class', height) : empty('no class breakdown yet', 'fa-regular fa-chart-bar'), { class: 'h-100' })}</div>
+  <div class="col-12 col-xl-8">${card('Tokens over time', usage.overTime.length ? chartSlot('usage-time', 240) : empty('no history yet', 'fa-regular fa-chart-bar'), { class: 'h-100' })}</div>
+  <div class="col-12 col-xl-4">${card('Cache read versus fresh', (usage.cacheRead + usage.fresh) ? chartSlot('usage-cache', 240) : empty('no split yet', 'fa-regular fa-chart-bar'), { class: 'h-100' })}</div>
 </div>`;
 };
 
@@ -217,7 +217,7 @@ const render = (root, state) => {
 
   const usage = readUsage(result);
   if (!usage) {
-    swap(root, empty('the telemetry endpoint answered with nothing to chart'));
+    swap(root, empty('the telemetry endpoint answered with nothing to chart', 'fa-regular fa-chart-bar'));
     return;
   }
 

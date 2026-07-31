@@ -32,9 +32,9 @@
 //
 
 import {
-  esc, issueChips, compact, money, modelBadge, classBadge, shortPath, issueKey,
+  esc, issueChips, statusChip, compact, money, modelBadge, classBadge, shortPath, issueKey,
 } from './format.js';
-import { activityPhase, activityIcon, sinceLabel, roleIcon } from './agent.js';
+import { crewActivity, sinceLabel, roleIcon } from './agent.js';
 
 /** The issues the current markup can open, keyed `repo#number`. */
 const registry = new Map();
@@ -133,7 +133,7 @@ export const issueDialog = (issue, renderBody) => {
       <span class="d-block">${esc(issue.title)}</span>`,
     actions: externalLink(issue.url),
     body: `<div class="d-flex flex-wrap align-items-center gap-1 mb-2">
-        ${issue.status ? `<span class="classy-chip">${esc(issue.status)}</span>` : ''}
+        ${statusChip(issue.status)}
         ${issueChips(issue)}
       </div>
       <p class="classy-micro text-body-secondary">${esc(meta.join(' · '))}</p>
@@ -266,6 +266,13 @@ const clock = (ms) => (Number.isFinite(Number(ms)) ? new Date(Number(ms)).toLoca
  * Pure — a node and a `now` in, two markup strings out — so the suite can ask
  * what it says about a session that has spent nothing without a browser.
  *
+ * The indicator in the header is `agent.crewActivity`, the same stamped builder
+ * the Crew page and the Overview draw (#65): a dialog is opened once and can be
+ * left open for minutes, so its glyph has to age on the second hand like every
+ * other surface rather than freezing at whatever it said when it was opened.
+ * That is also why the clock is armed over the whole document body — these two
+ * dialogs live in the LAYOUT, outside the page mount the paint writes into.
+ *
  * @param {object} entry - a normalized crew node with `label` and `role`
  * @param {number} [now] - ms epoch
  * @returns {{title: string, body: string}}
@@ -284,7 +291,7 @@ export const agentDialog = (entry, now = Date.now()) => {
         ${classBadge(entry.role || entry.agentClass)}
         ${modelBadge(entry.model)}
         ${entry.effort ? `<span class="classy-chip">${esc(entry.effort)}</span>` : ''}
-        ${activityIcon(activityPhase(entry, now))}
+        ${crewActivity(entry, now)}
       </div>
       ${detail('Last tool', entry.lastTool ? `${esc(entry.lastTool)}${Number.isFinite(tool) ? ` <span class="classy-micro text-body-secondary">${esc(sinceLabel(now - tool))} ago</span>` : ''}` : '')}
       ${detail('Last activity', Number.isFinite(last) ? `${esc(sinceLabel(now - last))} ago` : '')}

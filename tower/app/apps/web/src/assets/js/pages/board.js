@@ -25,7 +25,7 @@
 import { startPage } from '../libs/tower/page.js';
 import { issuesFor, board, feed, issueByKey } from '../libs/tower/state.js';
 import {
-  esc, empty, problem, issueChips, STATUSES, statusColor,
+  esc, empty, problem, issueChips, STATUSES, statusColor, byPriority,
 } from '../libs/tower/format.js';
 import { loading, swap } from '@omega.js/client/modules/live-page';
 import { issueTrigger, externalLink } from '../libs/tower/modal.js';
@@ -96,14 +96,6 @@ const toolbar = (issues, filters) => `<form class="d-flex flex-wrap align-items-
 /** Whether this card may be picked up — something to write with, and a status to move from. */
 const draggable = (issue) => WRITABLE && MOVABLE_STATUSES.includes(issue.status);
 
-// priority:high floats to the top of its column; everything else keeps the
-// board's own order, which the sweep already returns most-recently-updated first.
-const order = (a, b) => {
-  const high = (issue) => (issue.priority === 'high' ? 0 : 1);
-  if (high(a) !== high(b)) return high(a) - high(b);
-  return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
-};
-
 // A card OPENS the issue in the dialog; GitHub is reached only through the
 // button in its corner, which shows while the card is hovered or focused.
 //
@@ -143,7 +135,7 @@ const column = (status, issues, showRepo) => `<section${MOVABLE_STATUSES.include
     <span>${esc(status.label)}</span>
     <span class="classy-chip">${issues.length}</span>
   </div>
-  ${issues.length ? issues.map((issue) => issueCard(issue, showRepo)).join('') : empty('nothing here')}
+  ${issues.length ? issues.map((issue) => issueCard(issue, showRepo)).join('') : empty('nothing here', 'fa-regular fa-square-check')}
 </section>`;
 
 // `.omega-tower-board` is the sideways-scrolling strip; how WIDE a column is belongs
@@ -153,8 +145,12 @@ const column = (status, issues, showRepo) => `<section${MOVABLE_STATUSES.include
 // scrollbar to say so. At 11rem the columns fit the main region down to a laptop
 // width, they still stretch to fill a wide one, and the strip goes on scrolling
 // when the window is genuinely too narrow for the board.
+//
+// A column reads in three priority bands — high, then the unlabelled middle,
+// then low — most recently updated first inside each. The comparator is
+// format.js's (`byPriority`), the same module that colours those bands.
 const columns = (shown, showRepo) => `<div class="omega-tower-board" style="grid-auto-columns: minmax(11rem, 1fr);">
-  ${STATUSES.map((status) => column(status, shown.filter((issue) => (issue.status || '') === status.key).sort(order), showRepo)).join('')}
+  ${STATUSES.map((status) => column(status, shown.filter((issue) => (issue.status || '') === status.key).sort(byPriority), showRepo)).join('')}
 </div>`;
 
 // The denominator, so a filtered board never reads as an empty one: how many
@@ -186,7 +182,7 @@ const render = (root, state) => {
   let body;
   if (!result) body = loading('reading the board…');
   else if (!result.ok) body = problem(result.reason);
-  else if (!board(state)) body = empty('the board answered with nothing');
+  else if (!board(state)) body = empty('the board answered with nothing', 'fa-regular fa-rectangle-list');
   else body = `${moveError ? problem(moveError) : ''}${counts(shown.length, all.length, state.selectedRepo)}${columns(shown, showRepo)}`;
 
   // The page repaints every poll, and a repaint must not take the caret out of

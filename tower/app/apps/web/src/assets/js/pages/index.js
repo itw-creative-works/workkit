@@ -18,7 +18,7 @@ import {
 import { chartSlot, doughnutChart } from '__main_assets__/js/libs/charts.js';
 import { loading, swap } from '@omega.js/client/modules/live-page';
 import { issueItem, externalLink } from '../libs/tower/modal.js';
-import { activityPhase, activityIcon, sinceLabel } from '../libs/tower/agent.js';
+import { crewActivity } from '../libs/tower/agent.js';
 
 /** Sum a health field across the repos in play; nulls (unknowable) are skipped. */
 const total = (state, field) => reposFor(state)
@@ -81,7 +81,7 @@ const waiting = (state) => {
         </span>
         ${externalLink(issue.url)}
       `, { inner: 'py-1 d-flex align-items-start gap-2' })).join('')}</ul>${seeMore(hidden, '/board')}`
-    : empty('nothing is waiting on you');
+    : empty('nothing is waiting on you', 'fa-regular fa-circle-check');
   return card('Waiting on you', body, {
     chip: blocked.length,
     alarm: blocked.length > 0,
@@ -94,14 +94,19 @@ const waiting = (state) => {
 // and the Board draw, so one agent reads the same on every surface (#46). The
 // states the glyph does not name — idle, stale, unknown — keep their pill,
 // because a word is the only thing that tells those two apart.
+//
+// The indicator itself is `agent.crewActivity` — the Crew page's builder, not a
+// second copy of it (#65). This page used to wrap the bare glyph in its own
+// span, which cost it the `data-live-*` stamps that markup carries, and the
+// second hand ticks exactly what carries them: the Overview's numbers stood
+// still while the Crew page's counted up. The hover text comes with the builder
+// (how long it has been up, not what it last did) because the tick rewrites
+// that attribute every second from the same arithmetic — a sentence written
+// only here would survive one second and no more.
 const stateCell = (session, now) => {
-  const phase = activityPhase(session, now);
-  if (phase === 'none') return pill(session.state === 'stale' ? 'danger' : 'warn', session.state || 'unknown');
-  const age = Number.isFinite(Number(session.lastActivity)) ? sinceLabel(now - Number(session.lastActivity)) : '';
-  return `<span class="d-inline-flex align-items-center gap-1">
-    ${activityIcon(phase, `${esc(session.state || 'unknown')} — last moved ${age || 'at an unknown time'}`)}
-    ${age ? `<span class="classy-micro text-body-secondary">${esc(age)}</span>` : ''}
-  </span>`;
+  // Empty is the builder saying `none` — quiet too long to draw at all.
+  const indicator = crewActivity(session, now);
+  return indicator || pill(session.state === 'stale' ? 'danger' : 'warn', session.state || 'unknown');
 };
 
 const crew = (state) => {
@@ -114,7 +119,7 @@ const crew = (state) => {
   // A published copy has no crew to read — the sentence, not an empty table.
   else if (localOnly(state, 'sessions')) body = localOnlyNotice();
   else if (!result.ok) body = problem(result.reason);
-  else if (!live.length) body = empty('no live sessions');
+  else if (!live.length) body = empty('no live sessions', 'fa-regular fa-moon');
   else {
     // The chat name WRAPS. It used to carry `text-truncate`, which on a table
     // cell only sets `white-space: nowrap` — the cell cannot shrink, so one
@@ -176,7 +181,7 @@ const healthPanel = (state) => {
   if (localOnly(state, 'health')) body = localOnlyNotice();
   else if (!result) body = loading('reading the roster…');
   else if (!result.ok) body = problem(result.reason);
-  else if (!list.length) body = empty('no repos in the roster — nothing has opted in under the roster root');
+  else if (!list.length) body = empty('no repos in the roster — nothing has opted in under the roster root', 'fa-regular fa-square-plus');
   else {
     const ranked = [...list].sort((a, b) => trouble(health(state)[b.path]) - trouble(health(state)[a.path]));
     const { shown, hidden } = cap(ranked);

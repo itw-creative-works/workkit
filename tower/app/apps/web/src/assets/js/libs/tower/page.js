@@ -33,6 +33,11 @@
 // file rewrites the frame only when what it shows changed, so a poll passing
 // under an open `<select>` no longer closes it.
 //
+// Beside the loop, and never part of it, runs the second hand (clock.js): the
+// one thing on the tower measured in seconds is an agent's freshness, and it
+// moves between polls by PATCHING what the last paint drew rather than by
+// asking for another one.
+//
 
 import omega from '@omega.js/client';
 import { createFeedPoller } from '@omega.js/client/modules/live-page';
@@ -47,6 +52,7 @@ import {
   isLocalHost, towerDownNotice, openTokenModal, hideTokenModal,
 } from './token.js';
 import { chromeKey, chromeMarkup, statusMarkup } from './chrome.js';
+import { startClock } from './clock.js';
 
 // ── The repo selection ─────────────────────────────────────────────────────
 
@@ -212,6 +218,17 @@ export async function startPage(options) {
 
   // First paint before anything answers, so the page is never a blank region.
   paint();
+
+  // The paint loop moves at the feeds' pace, and the freshness on a crew card
+  // is measured in seconds — so the second hand runs beside it, patching the
+  // drawn indicators in place rather than repainting anything (clock.js).
+  //
+  // Over the DOCUMENT, not over `body`: the two dialogs are part of the layout
+  // and sit outside the page mount entirely, and an agent dialog left open has
+  // the same glyph on it as the card behind it (modal.agentDialog). The walk
+  // finds indicators by their stamps wherever they were drawn, so the wider
+  // host costs one `querySelectorAll` a second and reaches all of them.
+  startClock(document.body);
 
   if (options.charts) {
     await loadCharts();
