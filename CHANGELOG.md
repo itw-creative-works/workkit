@@ -7,6 +7,17 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#115](../../issues/115) — The ship skill waits on the CI run of every direct push and reports a red run loudly at the top of its summary.
+- [#113](../../issues/113) — Turning `site.publish` off now takes the published site down — the `gh-pages` branch is deleted and Pages disabled — instead of leaving a site nobody updates.
+
+### Fixed
+
+- [#111](../../issues/111) — The repo list on the home repo's default branch is refreshed by every publish run, whether or not a site is published, so the cloud brief's roster stays current either way.
+- [#114](../../issues/114) — The four tests that assumed a Mac answer for the machine they run on: the launchd cases name themselves as skips where `launchctl` is not there, the no-gh case builds the absence it needs, and the gate's tree check waits for the process to go instead of reading one instant.
+- [#112](../../issues/112) — The roster's readers ask for the branch it is actually on — the published pointer carries it, the cloud runner reads the repo's default branch — instead of assuming `main`.
+
 ## [0.21.1] - 2026-07-31
 
 ### Security

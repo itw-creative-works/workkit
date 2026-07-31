@@ -11,7 +11,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, WORKKIT_DIR: W } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, hasLaunchd, WORKKIT_DIR: W } = require('../lib/harness');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'workflow', 'standards', 'run.sh');
 
@@ -359,21 +359,6 @@ const run = async () => {
     return dir;
   };
 
-  await test('a repo’s daily run corrects a schedule left by another checkout', () => {
-    const repo = makeRepo();
-    const home = mkTmp();
-    const shim = launchctlShim();
-    const plist = seedStalePlist(home);
-    const { code, stdout, cacheDir } = runHook(repo, { home, pathPrefix: shim });
-    assertEq(code, 0, 'exit 0');
-    const body = fs.readFileSync(plist, 'utf8');
-    assert(!body.includes('older checkout'), 'the plist is re-rendered for this checkout');
-    assert(body.includes('com.workkit.claude-daily'), 'and it is the real one');
-    const ctx = JSON.parse(stdout).hookSpecificOutput.additionalContext;
-    assert(ctx.includes('schedule:'), `the session hears what was corrected, got: ${ctx}`);
-    cleanup(repo); cleanup(cacheDir); cleanup(home); cleanup(shim);
-  });
-
   await test('a machine with no schedule installed never gets one', () => {
     // The whole cron boundary: the hook UPDATES what a human installed and
     // installs nothing fresh.
@@ -395,6 +380,31 @@ const run = async () => {
     assertEq(second.stdout, '', `upkeep with nothing to do adds no noise, got: ${second.stdout}`);
     cleanup(repo); cleanup(home); cleanup(first.cacheDir); cleanup(second.cacheDir);
   });
+
+  // The plist itself is launchd's, and the engine re-renders one only where
+  // launchd is (`schedule: launchd is macOS — nothing to keep current here`).
+  // Off that machine there is no schedule to correct, so the case is named as a
+  // skip rather than asserted against a capability that is not there (#114).
+  if (hasLaunchd()) {
+    group('workflow:standards — the schedule it keeps current');
+
+    await test('a repo’s daily run corrects a schedule left by another checkout', () => {
+      const repo = makeRepo();
+      const home = mkTmp();
+      const shim = launchctlShim();
+      const plist = seedStalePlist(home);
+      const { code, stdout, cacheDir } = runHook(repo, { home, pathPrefix: shim });
+      assertEq(code, 0, 'exit 0');
+      const body = fs.readFileSync(plist, 'utf8');
+      assert(!body.includes('older checkout'), 'the plist is re-rendered for this checkout');
+      assert(body.includes('com.workkit.claude-daily'), 'and it is the real one');
+      const ctx = JSON.parse(stdout).hookSpecificOutput.additionalContext;
+      assert(ctx.includes('schedule:'), `the session hears what was corrected, got: ${ctx}`);
+      cleanup(repo); cleanup(cacheDir); cleanup(home); cleanup(shim);
+    });
+  } else {
+    group('workflow:standards — the schedule it keeps current — skipped, launchd is macOS (#114)');
+  }
 
   group('workflow:standards — offline');
 

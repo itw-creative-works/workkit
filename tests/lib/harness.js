@@ -65,6 +65,14 @@ const skipSuite = (reason) => {
   throw err;
 };
 
+// The scheduling capability the 9am job is built on. A test that asserts what
+// launchd does needs launchd to exist — where it does not, there is no schedule
+// to keep current and the case says so instead of failing. The engine itself
+// branches on `uname -s` ("launchd is macOS"), so the detector mirrors that
+// exact question rather than probing PATH for launchctl: the two must never
+// disagree about which branch the code under test takes (issue #114).
+const hasLaunchd = () => process.platform === 'darwin';
+
 // Snapshot + reset the running totals for THIS file, returning what it accrued.
 // The runner sums these across files. Resetting lets each file report cleanly.
 const summary = () => {
@@ -88,4 +96,4 @@ const selfRun = (runner) => {
     });
 };
 
-module.exports = { group, test, assert, assertEq, skipSuite, selfRun, summary, WORKKIT_DIR };
+module.exports = { group, test, assert, assertEq, skipSuite, selfRun, summary, hasLaunchd, WORKKIT_DIR };

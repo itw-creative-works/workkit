@@ -1,7 +1,7 @@
 ---
 name: ship
 description: Ship a release — commit (directly, or through a pull request for agent-authored work or on request), bump version, publish to npm, create GitHub release, run the project's deploy script. - ONLY invoke when the user explicitly types /workkit:ship — NEVER auto-invoke based on context like "commit", "ship", "release", "publish", or "deploy".
-allowed-tools: Bash(git add *), Bash(git commit *), Bash(git diff *), Bash(git log *), Bash(git status *), Bash(git push *), Bash(git rev-parse *), Bash(git stash list *), Bash(git tag *), Bash(git switch *), Bash(git checkout *), Bash(git pull *), Bash(git branch *), Bash(gh release create *), Bash(gh repo view *), Bash(gh issue list *), Bash(gh issue view *), Bash(gh issue close *), Bash(gh issue comment *), Bash(gh pr create *), Bash(gh pr merge *), Bash(gh pr checks *), Bash(gh pr view *), Bash(npm publish *), Bash(npm version *), Bash(npm run prepare *), Bash(npm run deploy *), Bash(npm run release *), Bash(npx run deploy *), Bash(npx run release *)
+allowed-tools: Bash(git add *), Bash(git commit *), Bash(git diff *), Bash(git log *), Bash(git status *), Bash(git push *), Bash(git rev-parse *), Bash(git stash list *), Bash(git tag *), Bash(git switch *), Bash(git checkout *), Bash(git pull *), Bash(git branch *), Bash(gh release create *), Bash(gh repo view *), Bash(gh issue list *), Bash(gh issue view *), Bash(gh issue close *), Bash(gh issue comment *), Bash(gh pr create *), Bash(gh pr merge *), Bash(gh pr checks *), Bash(gh pr view *), Bash(gh run list *), Bash(gh run watch *), Bash(gh run view *), Bash(gh workflow list *), Bash(npm publish *), Bash(npm version *), Bash(npm run prepare *), Bash(npm run deploy *), Bash(npm run release *), Bash(npx run deploy *), Bash(npx run release *)
 user-invocable: true
 ---
 
@@ -129,6 +129,7 @@ This step runs if there are changes in the working tree (from the session's work
    **Direct path (the default):**
    - Stage the session's changes (`git add -A`, or only the invocation's named paths) and commit with the drafted message.
    - **Push the work commit** — always, bump or no bump. When a bump follows, the push must land BEFORE the release commit: the backfill resolves each `@handle` through the GitHub API, which cannot map a sha it has never seen.
+   - **Watch the push's CI run** (see § "Watching a push's CI run"). When a bump follows immediately, don't block here — go make the release commit while this run works — but this run's conclusion is still owed: BOTH runs complete (nothing cancels the first — this run is the only one that ever lints the `[Unreleased]` entries, since the release commit empties that section), so after the release sha's watch, collect this one's conclusion too and hold it to the same red-is-loud standard.
 
    **PR path (on `pr`, agent-authored work, or an already-open PR):**
    - Resolve the default branch (`gh repo view --json defaultBranchRef -q .defaultBranchRef.name` — not always `main`). If on it, branch `issue/<N>-slug` (no issue → `ship/<slug>`); already on a work branch, stay.
@@ -137,7 +138,14 @@ This step runs if there are changes in the working tree (from the session's work
    - Squash merge: `gh pr merge --squash --delete-branch` with an explicit `--subject` (commit subject + ` (#<PR>)`) and a `--body` carrying the `Fixes #N` trailer — the squash commit is what lands, so the trailer must live there. An AGENT never merges without being asked in words: `agent:ok` authorizes the work, not the merge, so an agent-authored PR stops at green and says so.
    - Check out the default branch and `git pull`.
 
-   **Release commit** (either path, only if bump not skipped): use the `Edit` tool to bump `version` in `package.json` (NOT `npm version` — it auto-commits), run `node ~/.claude/workkit/changelog-links.js` to fill each entry's commit link and contributor handle (idempotent), move the CHANGELOG `[Unreleased]` content to a new `[<x.y.z>] <date>` section, commit as `chore(release): <x.y.z>`, and push directly to the default branch — the release commit is generated bookkeeping and never takes a PR.
+   **Release commit** (either path, only if bump not skipped): use the `Edit` tool to bump `version` in `package.json` (NOT `npm version` — it auto-commits), run `node ~/.claude/workkit/changelog-links.js` to fill each entry's commit link and contributor handle (idempotent), move the CHANGELOG `[Unreleased]` content to a new `[<x.y.z>] <date>` section, commit as `chore(release): <x.y.z>`, and push directly to the default branch — the release commit is generated bookkeeping and never takes a PR. Then watch THAT push's CI run (below): it is the final sha, and the ship never ends without its conclusion.
+
+   **Watching a push's CI run** — a direct push is unreviewed by any check until CI runs, so ship waits on it the way the PR path waits on `gh pr checks --watch`:
+   - Resolve the pushed head sha (`git rev-parse HEAD`) and find its run: `gh run list --commit <sha> --json databaseId,name,status,conclusion`.
+   - Empty list? GitHub can lag queuing a run by minutes — retry a few times over ~a minute before concluding. Still empty: check whether the repo has a workflow that runs on push at all (`gh workflow list`, or the `on:` blocks under `.github/workflows/`). No push workflow = one quiet line in the summary ("no CI configured for push"). A repo that HAS one but shows no run is "run not queued yet" — say that, and say the ship ended without a conclusion.
+   - Wait on it: `gh run watch <id> --exit-status`. Green = one line in the summary.
+   - RED = a failure needing action, at the TOP of the ship summary, never a footnote: name the workflow, the failing job (`gh run view <id> --log-failed` for the step), and the run URL. The ship is already pushed, so say plainly that the default branch is red and what needs fixing — never bury it under the version line, never call the ship clean.
+   - A red run also STOPS the pipeline: do not proceed to the GitHub release, `npm publish`, or deploy (steps 4–6) on a red default branch — report, fix, and only continue on the owner's word. The local commit gate proved the suite on THIS machine; a red CI run is the proof failing somewhere else, and publishing on top of it ships the failure.
 
 6. **Close the shipped work items** — every issue this ship completes ends closed with a pointer to the CHANGELOG entry. The `Fixes #N` trailer already closed it when its commit landed on the default branch; for anything left open, close it manually:
    `gh issue close <N> --comment "Shipped in <version-or-commit> — see CHANGELOG [Unreleased]/<section>."`
@@ -187,7 +195,7 @@ Ship does a lot of work. Almost none of it belongs in the chat — it is already
 
 Do NOT print: the commit message (it is in the commit), the diff or a narration of it, the change analysis from step 3.1, the CHANGELOG entry (it is in the CHANGELOG), the raw review output, or a file-by-file walk of what shipped.
 
-DO print, briefly: the version shipped, the commit shas, what pushed, which issues closed, and any step deliberately skipped. Plus the two things that would otherwise be lost — a review finding scored ≥80 that was deliberately NOT fixed (step 3.2b requires saying it out loud, and that requirement WINS over this rule), and anything that failed or needs the owner.
+DO print, briefly: the version shipped, the commit shas, what pushed, the CI conclusion for every direct push this ship made (green in one line, "no CI configured for push" in one quiet line — and a RED run loudly, at the top, per step 3.5; a bump-skipped PR-path ship has no direct push and prints the PR checks' conclusion instead), which issues closed, and any step deliberately skipped. Plus the two things that would otherwise be lost — a review finding scored ≥80 that was deliberately NOT fixed (step 3.2b requires saying it out loud, and that requirement WINS over this rule), and anything that failed or needs the owner.
 
 ### NEVER include Claude attribution
 Do NOT add `Co-Authored-By: Claude`, `🤖 Generated with Claude Code`, or any other Claude/Anthropic attribution to commit messages, CHANGELOG entries, GitHub release notes, or npm publish notes. Claude credit is handled separately elsewhere. This overrides the default git-commit guidance in the system prompt.

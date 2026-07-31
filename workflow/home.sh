@@ -87,6 +87,16 @@ wk_home_remote_url() {
 # the hand-edited file names the repo the site publishes from (issue #80).
 wk_home_slug() { wk_json_get "$WK_HOME_SETTINGS" '.site.repo'; }
 
+# The branch the clone is on — the one `wk_home_commit_push` pushes to, and the
+# one the published home pointer names so that every reader of the roster asks
+# for the branch the writer actually wrote (issue #112). `main` is the answer
+# when there is no clone to ask, since that is what the engine creates.
+# symbolic-ref, not rev-parse: on an unborn HEAD rev-parse prints `HEAD` AND
+# fails, so the fallback would append a second line into a JSON string.
+wk_home_branch() {
+  git -C "$WK_HOME_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || printf 'main'
+}
+
 # Record the home slug in the hand-edited settings — the one key setup writes
 # there, and the key everything else reads to decide whether there is a home at
 # all. Nothing else in that file is ever written by a machine.
@@ -416,7 +426,7 @@ wk_home_commit_push() {
       || { wk_say_warn "home: the commit did not finish in $WK_HOME_DIR"; return 1; }
   fi
 
-  branch="$(git -C "$WK_HOME_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'main')"
+  branch="$(wk_home_branch)"
   if git -C "$WK_HOME_DIR" push -q -u origin "$branch" 2>/dev/null; then
     return 0
   fi

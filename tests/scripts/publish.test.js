@@ -44,10 +44,15 @@ const writeStub = (file, lines) => {
  * `publish` is the owner's `site.publish` call, the all-or-nothing switch: the
  * ordinary world here has said yes, since every case below is about what a
  * publish DOES. The switch itself has its own tests.
+ * `pages` is what the GitHub side answers when the teardown disables Pages
+ * (issue #113): `configured` is a delete that lands, `none` the 404 of a repo
+ * that never had it on.
+ * `branch` is the home repo's default branch — the one the clone is on and the
+ * one the roster is pushed to. Not every account's is `main` (issue #112).
  */
 const mkWorld = ({
   tooling = true, buildFails = false, siteUrl = null, home = true, roster = [],
-  publish: publishOn = true,
+  publish: publishOn = true, pages = 'configured', branch = 'main',
 } = {}) => {
   const root = mkTmp();
   const kit = path.join(root, 'kit');
@@ -80,8 +85,20 @@ const mkWorld = ({
       'exit 0',
     ]);
 
+  // The only thing this script asks `gh` for: disabling Pages when the site is
+  // taken down (issue #113). It records its argv, so a test can prove the call
+  // was made — and answers a 404 the way gh does for a repo with no Pages,
+  // which the teardown has to read as "already off" rather than as a failure.
+  const ghLog = path.join(root, 'gh-argv.log');
+  writeStub(path.join(bin, 'gh'), [
+    `printf '%s\\n' "$*" >> ${JSON.stringify(ghLog)}`,
+    ...(pages === 'none'
+      ? ['printf \'gh: Not Found (HTTP 404)\\n\' >&2', 'exit 1']
+      : ['exit 0']),
+  ]);
+
   const bare = path.join(root, 'remote.git');
-  spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare], { encoding: 'utf8' });
+  spawnSync('git', ['init', '-q', '--bare', '-b', branch, bare], { encoding: 'utf8' });
 
   // The site options are the USER'S and live beside the roster (issue #79) —
   // the clone below is engine territory and carries nothing hand-written.
@@ -124,11 +141,11 @@ const mkWorld = ({
     fs.writeFileSync(path.join(seed, 'apps', 'web', 'src', 'index.html'), '<html>the board</html>\n');
     fs.writeFileSync(path.join(seed, 'README.md'), '# the tower\n');
     fs.writeFileSync(path.join(seed, '.gitignore'), 'node_modules/\ndist/\n');
-    git(seed, 'init', '-q', '-b', 'main');
+    git(seed, 'init', '-q', '-b', branch);
     git(seed, 'add', '-A');
     git(seed, '-c', 'user.name=seed', '-c', 'user.email=seed@localhost', 'commit', '-q', '-m', 'chore(home): seed the tower project');
     git(seed, 'remote', 'add', 'origin', bare);
-    git(seed, 'push', '-q', '-u', 'origin', 'main');
+    git(seed, 'push', '-q', '-u', 'origin', branch);
     cleanup(seed);
 
     spawnSync('git', ['clone', '-q', bare, tower], { encoding: 'utf8' });
@@ -145,6 +162,7 @@ const mkWorld = ({
     // A tracked file of the project itself, for the cases about what the clone
     // carries rather than what the owner configured.
     source: path.join(tower, 'README.md'),
+    ghCalls: () => (fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8').trim().split('\n').filter(Boolean) : []),
     dist: path.join(tower, 'apps', 'web', 'dist'),
     env,
   };
@@ -496,7 +514,8 @@ const run = async () => {
     assert(!fs.existsSync(path.join(pages, 'data', 'board.json')), 'no board snapshot');
     const pointer = fs.readFileSync(path.join(pages, 'data', 'home.json'), 'utf8');
     assertEq(JSON.parse(pointer).home, 'owner/workkit', 'the repo the site is served from — which its own URL already names');
-    assertEq(Object.keys(JSON.parse(pointer)).join(','), 'home', 'and that one key');
+    assertEq(Object.keys(JSON.parse(pointer)).join(','), 'home,branch',
+      'and those two keys — the repo, and the branch of it the private roster is on (issue #112)');
     assert(!/title|body|labels|issues/.test(pointer), `nothing issue-shaped in the one file there is, got: ${pointer}`);
     cleanup(world.root);
   });
@@ -559,8 +578,53 @@ const run = async () => {
     });
     assertEq(code, 0, 'exit 0 — a missing tool is not a crash');
     assert(/node is not on this machine/.test(out), `it names the tool, got: ${out}`);
-    assert(/no repos to sweep/.test(out), `and what the site will be missing, got: ${out}`);
+    assert(/no repos to sweep/.test(out), `and what will be missing, got: ${out}`);
+    // Issue #111: the list feeds the cloud brief as well as the pages, so a skip
+    // that names only one reader understates by half what is now stale.
+    assert(/dashboard/.test(out) && /cloud brief/.test(out), `and both readers of it, got: ${out}`);
     assert(fs.existsSync(path.join(fromPages(world), 'index.html')), 'and the pages still publish');
+    cleanup(world.root);
+  });
+
+  await test('the roster is refreshed with the switch off — the cloud brief reads it too', () => {
+    // Issue #111: `data/repos.json` on the home repo's default branch is the
+    // cloud brief's roster as well as the dashboard's, and the two do not share
+    // a fate. A machine that publishes no site still owes the brief a current
+    // list, so the compose sits above the switch and above every build check.
+    const world = mkWorld({ publish: false, roster: ['workkit', 'omega'] });
+    const { code, out } = publish(world);
+    assertEq(code, 0, `exit 0 — ${out}`);
+    const list = JSON.parse(fs.readFileSync(path.join(onMain(world), 'data', 'repos.json'), 'utf8'));
+    assert(list.repos.includes('owner/omega'), `the list is on the default branch anyway: ${JSON.stringify(list)}`);
+    assertEq(fromPages(world), null, 'and nothing at all was pushed to gh-pages');
+    assertEq(fs.existsSync(world.dist), false, 'nor built');
+    cleanup(world.root);
+  });
+
+  await test('no build tooling still refreshes the roster', () => {
+    // The other half of the decoupling: the compose needs node, git and the
+    // clone, and nothing the build needs.
+    const world = mkWorld({ tooling: false, roster: ['workkit', 'omega'] });
+    const { code, out } = publish(world);
+    assertEq(code, 0, `exit 0 — ${out}`);
+    const list = JSON.parse(fs.readFileSync(path.join(onMain(world), 'data', 'repos.json'), 'utf8'));
+    assert(list.repos.includes('owner/omega'), `composed without a builder: ${JSON.stringify(list)}`);
+    assertEq(fromPages(world), null, 'and still nothing published');
+    cleanup(world.root);
+  });
+
+  await test('the home pointer names the branch the roster is on, not an assumed main', () => {
+    // Issue #112: the writer pushes whatever branch the clone is on, so the
+    // readers are TOLD which one rather than hardcoding it — a home repo whose
+    // default branch is not main 404s on every roster read otherwise.
+    const world = mkWorld({ branch: 'trunk', roster: ['workkit'] });
+    const { code, out } = publish(world);
+    assertEq(code, 0, `exit 0 — ${out}`);
+    const pointer = JSON.parse(fs.readFileSync(path.join(fromPages(world), 'data', 'home.json'), 'utf8'));
+    assertEq(pointer.branch, 'trunk', 'the branch the clone is on');
+    assertEq(pointer.home, 'owner/workkit', 'beside the repo it is a branch of');
+    assert(fs.existsSync(path.join(onMain(world), 'data', 'repos.json')),
+      'and that is where the roster actually landed');
     cleanup(world.root);
   });
 
@@ -648,21 +712,85 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('turning the switch off stops publishing, and leaves what Pages already serves', () => {
-    // Off means this machine does nothing — it does not mean the site is torn
-    // down. Un-publishing is `gh-pages` being removed by hand, deliberately.
-    const world = mkWorld();
+  await test('turning the switch off takes the published site down', () => {
+    // Issue #113: off governs the site's EXISTENCE, not only its updates — a
+    // site left serving forever made the all-or-nothing switch a half-truth. The
+    // branch is generated content, so the next yes rebuilds it from scratch.
+    const world = mkWorld({ roster: ['workkit'] });
     publish(world);
     assert(fs.existsSync(path.join(fromPages(world), 'index.html')), 'it published');
-    const before = spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim();
+
+    // A repo that joined between the two runs — the roster refresh rides the
+    // teardown run untouched (issue #111).
+    const joined = path.join(world.root, 'repos', 'dotfiles');
+    fs.mkdirSync(path.join(joined, '.workkit'), { recursive: true });
+    fs.writeFileSync(path.join(joined, '.workkit', 'settings.json'), '{ "version": 1, "enabled": true }\n');
+    git(joined, 'init', '-q', '-b', 'main');
+    git(joined, 'remote', 'add', 'origin', 'https://github.com/owner/dotfiles.git');
+    const index = JSON.parse(fs.readFileSync(path.join(world.workflowHome, '.repos.json'), 'utf8'));
+    index.repos[joined] = { registered: '2026-07-31' };
+    fs.writeFileSync(path.join(world.workflowHome, '.repos.json'), `${JSON.stringify(index, null, 2)}\n`);
 
     setSite(world, { publish: false });
-    fs.writeFileSync(path.join(world.tower, 'apps', 'web', 'src', 'index.html'), '<html>newer</html>\n');
+    const { code, out } = publish(world);
+    assertEq(code, 0, `exit 0 — ${out}`);
+    assertEq(fromPages(world), null, 'the branch Pages served is gone from the remote');
+    assert(/taken down/.test(out) && /gh-pages/.test(out), `and the run says what it removed, got: ${out}`);
+    assertEq(spawnSync('git', ['-C', world.tower, 'branch', '--list', 'gh-pages'], { encoding: 'utf8' }).stdout.trim(), '',
+      'the stale local copy of it goes too');
+    assert(world.ghCalls().some((argv) => /-X DELETE repos\/owner\/workkit\/pages/.test(argv)),
+      `Pages itself is disabled, not just left with nothing to serve: ${world.ghCalls().join(' | ')}`);
+    assert(/Pages is disabled/.test(out), `and that is said too, got: ${out}`);
+    assert(JSON.parse(fs.readFileSync(path.join(onMain(world), 'data', 'repos.json'), 'utf8')).repos.includes('owner/dotfiles'),
+      'while the roster refreshed as it always does');
+    cleanup(world.root);
+  });
+
+  await test('a machine that never published hears nothing about a teardown', () => {
+    const world = mkWorld({ publish: false });
     const { code, out } = publish(world);
     assertEq(code, 0, 'exit 0');
-    assert(/`site.publish` is off/.test(out), `it says why, got: ${out}`);
-    const after = spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim();
-    assertEq(after, before, 'the published branch is exactly where it was');
+    assert(!/taken down/.test(out) && !/Pages is disabled/.test(out) && !/nothing to disable/.test(out),
+      `nothing was removed, so nothing is reported, got: ${out}`);
+    assertEq(world.ghCalls().length, 0, 'and GitHub is never asked to disable Pages nobody enabled');
+    cleanup(world.root);
+  });
+
+  await test('Pages that was never configured is a 404 the teardown reads as already off', () => {
+    const world = mkWorld({ pages: 'none' });
+    publish(world);
+    setSite(world, { publish: false });
+    const { code, out } = publish(world);
+    assertEq(code, 0, 'a 404 is the answer "already off", not a failure');
+    assert(/nothing to disable/.test(out), `it says so, got: ${out}`);
+    assertEq(fromPages(world), null, 'and the branch came down all the same');
+    cleanup(world.root);
+  });
+
+  await test('a remote that cannot be reached is never read as a site that is not there', () => {
+    // Issue #111: `ls-remote` answers 2 for "no such branch" and 128 for a
+    // remote it could not reach, and reading the second as the first dropped the
+    // local branch and then failed at the push. The pull is pointed at a
+    // reachable copy of the remote so that the probe — and only the probe — is
+    // the thing that cannot connect.
+    const world = mkWorld();
+    publish(world);
+    const before = spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim();
+    const gone = path.join(world.root, 'gone.git');
+    git(world.tower, 'remote', 'add', 'live', world.bare);
+    git(world.tower, 'fetch', '-q', 'live');
+    git(world.tower, 'branch', '--set-upstream-to=live/main', 'main');
+    git(world.tower, 'remote', 'set-url', 'origin', gone);
+
+    // The clone is still the home repo's — origin is the address the settings
+    // name, and it is that address that has stopped answering.
+    const { code, out } = publish({ ...world, env: { ...world.env, WORKKIT_HOME_REMOTE: gone } });
+    assertEq(code, 0, `an unreachable remote is a skip, not a failure — ${out}`);
+    assert(/could not be reached/.test(out), `it names what happened, got: ${out}`);
+    assertEq(spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim(), before,
+      'the published branch is exactly where it was');
+    assert(spawnSync('git', ['-C', world.tower, 'branch', '--list', 'gh-pages'], { encoding: 'utf8' }).stdout.trim() !== '',
+      'and the local branch was not dropped on the way to a push that could never land');
     cleanup(world.root);
   });
 
@@ -676,6 +804,30 @@ const run = async () => {
     const main = onMain(world);
     assert(/edited/.test(fs.readFileSync(path.join(main, 'README.md'), 'utf8')),
       'the source change travelled with the publish');
+    cleanup(world.root);
+  });
+
+  await test('a source push that does not land still publishes the site, and is the exit code', () => {
+    const world = mkWorld();
+    // A remote that refuses every ref but the published branch: the source
+    // push cannot land, the pages push can.
+    const hook = path.join(world.bare, 'hooks', 'pre-receive');
+    fs.writeFileSync(hook, [
+      '#!/bin/sh',
+      'while read old new ref; do',
+      '  [ "$ref" = "refs/heads/gh-pages" ] || exit 1',
+      'done',
+      'exit 0',
+      '',
+    ].join('\n'));
+    fs.chmodSync(hook, 0o755);
+    fs.writeFileSync(world.source, '# the tower, edited\n');
+    const { code, out, err } = publish(world);
+    assertEq(code, 1, `the failed push surfaces as the exit code — ${out}${err}`);
+    assert(/could not push main/.test(out + err), `the failure is said out loud, got: ${out}${err}`);
+    const pages = fromPages(world);
+    assert(pages, 'the site still published');
+    assert(fs.existsSync(path.join(pages, 'index.html')), 'and carries the build');
     cleanup(world.root);
   });
 

@@ -1744,10 +1744,27 @@ const run = async () => {
     assertEq(fetchImpl.calls.length, 2, 'the pointer and the list, and no GraphQL at all');
     assertEq(fetchImpl.calls[0].url, 'data/home.json', 'the only file published beside the pages');
     assert(!fetchImpl.calls[0].options.headers.authorization, 'read unauthenticated — it says what the site’s own URL says');
-    assertEq(fetchImpl.calls[1].url, ROSTER_URL, 'and the list from the home repo’s default branch');
+    assertEq(fetchImpl.calls[1].url, ROSTER_URL,
+      'and the list from the home repo’s default branch — `main` here, which is what a pointer naming no branch falls back to (issue #112)');
     assertEq(fetchImpl.calls[1].options.headers.authorization, 'Bearer fake-token-for-tests', 'with the viewer’s token, because the list is private');
     assertEq(fetchImpl.calls[1].options.headers.accept, 'application/vnd.github.raw+json', 'asked for raw, so the answer is the file itself');
     assert(!fetchImpl.calls.some((call) => call.url === 'data/repos.json'), 'and never from the published site');
+  });
+
+  await test('the roster is read from the branch the pointer names, never an assumed main', async () => {
+    // Issue #112: the publish pushes whatever branch the home clone is on and
+    // says so in data/home.json. A home repo whose default branch is not `main`
+    // answered 404 to every roster read while this was hardcoded, and the board
+    // degraded to nothing without a word about why.
+    const fetchImpl = mkFetch((url) => {
+      if (url === 'data/home.json') return jsonResponse(200, { home: 'owner/workkit', branch: 'trunk' });
+      if (isRoster(url)) return jsonResponse(200, { repos: ['owner/workkit'], home: 'owner/workkit' });
+      return jsonResponse(200, {});
+    });
+    const answer = await github.fetchSlugs({ token: 'fake-token-for-tests', fetch: fetchImpl });
+    assertEq(answer.ok, true, 'the list is read');
+    assertEq(fetchImpl.calls[1].url, 'https://api.github.com/repos/owner/workkit/contents/data/repos.json?ref=trunk',
+      'from the branch the publish wrote it to');
   });
 
   await test('the board feed is a live sweep with the viewer’s token', async () => {

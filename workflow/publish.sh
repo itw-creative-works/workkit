@@ -6,7 +6,7 @@
 # board readable from a phone, and NOTHING about it is baked in: the site reads
 # GitHub live from the browser with the viewer's own token (issue #81). The one
 # artifact this script writes beside the pages is `data/home.json`, the home
-# repo's slug and nothing else (issue #110). The ROSTER — which repos the board
+# repo's slug and the branch the roster is on, nothing else (issues #110, #112). The ROSTER — which repos the board
 # sweeps — is written to the home repo's default branch instead, where the repo's
 # own privacy covers it, and every reader fetches it with a token it already
 # holds. Pages is public even from a private repo, so a list naming private
@@ -40,6 +40,17 @@
 # never touched, and the only forcing that ever happens is a lease onto that one
 # branch.
 #
+# WHAT THE SWITCH GOVERNS. `site.publish` decides the SITE, and since issue #113
+# it decides whether that site EXISTS rather than only whether it is updated: a
+# run that finds the switch off and a `gh-pages` branch still on the home repo
+# takes the site down — the branch is generated content and the next yes rebuilds
+# it from scratch. Two things are outside the switch. The roster is one (issue
+# #111): `data/repos.json` on the home repo's default branch is read by the CLOUD
+# BRIEF as well as by the published dashboard, so it is refreshed and pushed
+# ABOVE the gate and before any build tooling is asked for — it needs node, git
+# and the clone, and nothing that publishing needs. Whatever else the day changed
+# in the project rides with it, in the same commit.
+#
 # Every reason not to publish is a NAMED SKIP with exit 0 — no home repo, no
 # build tooling, a clone that could not catch up with its upstream, an
 # autostash that conflicted on the way back, a settings file that does not parse,
@@ -72,6 +83,53 @@ say_warn() { printf "${_Y}⚠${_N} %s\n" "$1"; }
 say_info() { [[ "$QUIET" -eq 1 ]] || printf "${_C}ℹ${_N} %s\n" "$1"; }
 say_skip() { [[ "$QUIET" -eq 1 ]] || printf "${_D}· %s${_N}\n" "$1"; }
 
+# Whether the home remote already carries the published branch — `present`,
+# `absent` or `unreachable`, and the three are told apart on purpose.
+# `--exit-code` answers 2 for a remote that replied with no such branch and 128
+# for one that could not be reached at all, and reading the second as the first
+# is what made an offline run drop its local ref and then fail at the push
+# (issue #111). It is also what keeps an offline run from tearing a site down it
+# cannot see.
+pages_remote_state() {
+  local rc=0
+  git -C "$WK_HOME_DIR" ls-remote --exit-code --heads origin "$WK_HOME_PAGES_BRANCH" >/dev/null 2>&1 || rc=$?
+  case "$rc" in
+    0) printf 'present' ;;
+    2) printf 'absent' ;;
+    *) printf 'unreachable' ;;
+  esac
+}
+
+# Take the published site down (issue #113). Called only when the switch is off
+# AND the remote still carries the branch, so a machine that never published
+# says nothing at all. The branch goes first, because that is what Pages serves:
+# once it is gone the site is already dark, and the Pages configuration is the
+# tidy-up. A local copy of the branch is dropped with it — it is generated
+# content, and leaving it behind is what makes the next orphan checkout refuse.
+site_teardown() {
+  local slug out rc=0
+  slug="$(wk_home_slug)"
+  if ! git -C "$WK_HOME_DIR" push -q origin --delete "$WK_HOME_PAGES_BRANCH" 2>/dev/null; then
+    say_warn "publish: could not delete $WK_HOME_PAGES_BRANCH on $slug — the site it serves is still up; \`git -C $WK_HOME_DIR push origin --delete $WK_HOME_PAGES_BRANCH\` reports why"
+    return 0
+  fi
+  say_ok "publish: the site is taken down — $slug's $WK_HOME_PAGES_BRANCH branch is deleted"
+  git -C "$WK_HOME_DIR" branch -qD "$WK_HOME_PAGES_BRANCH" >/dev/null 2>&1 || true
+
+  if ! command -v gh >/dev/null 2>&1; then
+    say_skip "publish: gh is not on this machine — Pages is still configured on $slug with nothing to serve; turn it off at https://github.com/$slug/settings/pages"
+    return 0
+  fi
+  out="$(gh api -X DELETE "repos/$slug/pages" 2>&1)" || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    say_ok "publish: Pages is disabled on $slug"
+  elif [[ "$out" == *404* ]]; then
+    say_skip "publish: Pages was not configured on $slug — there was nothing to disable"
+  else
+    say_warn "publish: could not disable Pages on $slug — the branch is gone, so it serves nothing, but the configuration is still there; turn it off at https://github.com/$slug/settings/pages"
+  fi
+}
+
 # ── The three things a publish needs ──────────────────────────────────────────
 
 # The site options decide what is published, so a settings file that does not
@@ -94,16 +152,15 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-# `site.publish` is the whole decision, and it is DEFAULT OFF — an absent key
-# reads as off, and only `true` publishes (issue #80). It is all or nothing: a
-# machine that has not said yes builds nothing and pushes nothing, whoever asked
-# for the run, because what Pages serves is public and saying so once is the
-# owner's to do. The engine takes that yes at its word and checks nothing else —
-# not the account's plan, not the repo's visibility (owner ruling, 2026-07-29).
-if [[ "$(wk_json_get "$WK_HOME_SETTINGS" '.site.publish')" != 'true' ]]; then
-  say_skip "publish: \`site.publish\` is off in $WK_HOME_SETTINGS — nothing is built or pushed; set it to true to publish the site (what Pages serves is public, even from a private repo)"
-  exit 0
-fi
+# `site.publish` is the whole decision about the site, and it is DEFAULT OFF —
+# an absent key reads as off, and only `true` publishes (issue #80). It is all or
+# nothing: a machine that has not said yes builds nothing and pushes nothing,
+# whoever asked for the run, because what Pages serves is public and saying so
+# once is the owner's to do. The engine takes that yes at its word and checks
+# nothing else — not the account's plan, not the repo's visibility (owner ruling,
+# 2026-07-29). It is READ here and ACTED ON below the roster: the answer decides
+# the site, and the roster is not part of the site (issue #111).
+PUBLISH_SITE="$(wk_json_get "$WK_HOME_SETTINGS" '.site.publish')"
 
 if ! wk_home_ready; then
   case "$(wk_home_state)" in
@@ -111,15 +168,6 @@ if ! wk_home_ready; then
     absent) say_skip "publish: nothing is cloned at $WK_HOME_DIR yet — \`workkit setup\` clones and seeds the tower project" ;;
     other)  say_warn "publish: $WK_HOME_DIR is not the home repo's clone — nothing is published out of somebody else's folder" ;;
   esac
-  exit 0
-fi
-
-if ! command -v npm >/dev/null 2>&1; then
-  say_skip "publish: npm is not on this machine — the dashboard cannot be built here"
-  exit 0
-fi
-if [[ ! -x "$OMEGA_BIN" ]]; then
-  say_skip "publish: the tower project's build tooling is not installed at $WK_HOME_DIR (no node_modules/.bin/omega — its @omega.js deps resolve by file: spec from a sibling omega checkout) — nothing is built here; \`npm --prefix $WK_HOME_DIR install\` on a machine with that checkout installs it"
   exit 0
 fi
 
@@ -164,6 +212,75 @@ if [[ "$(git -C "$WK_HOME_DIR" stash list 2>/dev/null || true)" != "$STASH_BEFOR
   exit 0
 fi
 
+# ── The roster ────────────────────────────────────────────────────────────────
+# Which REPOSITORIES the board sweeps is this machine's roster, and it names
+# private repos — so it is written to the home repo's default branch, which is
+# as private as that repo is, and never beside the pages (issue #110). The
+# published dashboard and the cloud brief both read it from there through the
+# GitHub API, each with a token it already holds.
+#
+# It is refreshed ABOVE the site switch and above every build check (issue #111),
+# because those two readers do not share a fate: the cloud brief sweeps this list
+# whether or not a site is published, so a machine with the switch off, or
+# without the tooling to build, still owes it a current one. What it needs is
+# node, git and the clone — nothing that publishing needs.
+#
+# It carries no stamp of any kind: an unchanged roster produces a byte-identical
+# file, git sees nothing staged, and a machine publishing daily does not commit a
+# file a day for the time of day.
+#
+# Without node the list cannot be composed, and the readers carry on with
+# whatever is already there — so the run says so and does everything else.
+if command -v node >/dev/null 2>&1; then
+  if node "$SCRIPT_DIR/site-repos.js" "$WK_HOME_DIR/data/repos.json" "$WK_USER_DIR" >/dev/null 2>&1; then
+    say_info "publish: the repo list is on $(wk_home_slug)'s default branch at data/repos.json"
+  else
+    say_warn "publish: the repo list could not be composed — the published dashboard and the cloud brief both read it, so both carry on with whatever list is already there, and a machine that has never composed one finds no repos to sweep"
+  fi
+else
+  say_skip "publish: node is not on this machine — the repo list cannot be refreshed, so the published dashboard and the cloud brief both carry on with whatever list is already there, and a machine that has never composed one finds no repos to sweep"
+fi
+
+# ── The source side ───────────────────────────────────────────────────────────
+# The roster just written, plus whatever else the day changed in the project
+# itself — an upstream file someone took by hand. Nothing staged means nothing to
+# say. A push that did not land is remembered rather than acted on: it is the
+# caller's failure to see, and it must not cost the site a publish it can still
+# make.
+SOURCE_RC=0
+if git -C "$WK_HOME_DIR" diff --quiet 2>/dev/null && git -C "$WK_HOME_DIR" diff --cached --quiet 2>/dev/null \
+  && [[ -z "$(git -C "$WK_HOME_DIR" ls-files --others --exclude-standard 2>/dev/null)" ]]; then
+  :
+elif ! wk_home_commit_push "chore(home): refresh the repo list"; then
+  # commit_push already said which half failed.
+  SOURCE_RC=1
+fi
+
+# ── The switch ────────────────────────────────────────────────────────────────
+# Off is not only "publish nothing today": it is "there is no site" (issue #113).
+# A branch still on the remote is a site still being served, so the run takes it
+# down — the branch is generated content, rebuilt from scratch by the next yes,
+# and nothing is lost. A machine that never published has nothing to remove and
+# hears nothing about it. Offline, whether it still serves a site is unknown, and
+# an unknown is never torn down.
+if [[ "$PUBLISH_SITE" != 'true' ]]; then
+  say_skip "publish: \`site.publish\` is off in $WK_HOME_SETTINGS — nothing is built or pushed; set it to true to publish the site (what Pages serves is public, even from a private repo)"
+  case "$(pages_remote_state)" in
+    present)     site_teardown ;;
+    unreachable) say_warn "publish: the home remote could not be reached, so whether it still serves a site is unknown — nothing was taken down; run it again when the network is back" ;;
+  esac
+  exit "$SOURCE_RC"
+fi
+
+if ! command -v npm >/dev/null 2>&1; then
+  say_skip "publish: npm is not on this machine — the dashboard cannot be built here"
+  exit "$SOURCE_RC"
+fi
+if [[ ! -x "$OMEGA_BIN" ]]; then
+  say_skip "publish: the tower project's build tooling is not installed at $WK_HOME_DIR (no node_modules/.bin/omega — its @omega.js deps resolve by file: spec from a sibling omega checkout) — nothing is built here; \`npm --prefix $WK_HOME_DIR install\` on a machine with that checkout installs it"
+  exit "$SOURCE_RC"
+fi
+
 # ── Build ─────────────────────────────────────────────────────────────────────
 
 say_info "publish: building the dashboard from $WK_HOME_APP"
@@ -187,10 +304,13 @@ fi
 # Discussions, which only `workkit setup` ever creates (issue #71).
 WORKTREE="$(mktemp -d)"
 rm -rf "$WORKTREE"
-BRANCH_EXISTED=0
-if git -C "$WK_HOME_DIR" ls-remote --exit-code --heads origin "$WK_HOME_PAGES_BRANCH" >/dev/null 2>&1; then
-  BRANCH_EXISTED=1
+PAGES_STATE="$(pages_remote_state)"
+if [[ "$PAGES_STATE" == 'unreachable' ]]; then
+  say_warn "publish: the home remote could not be reached to see whether it already carries $WK_HOME_PAGES_BRANCH — nothing was published and no local branch was touched; run it again when the network is back"
+  exit "$SOURCE_RC"
 fi
+BRANCH_EXISTED=0
+[[ "$PAGES_STATE" == 'present' ]] && BRANCH_EXISTED=1
 
 cleanup_worktree() {
   git -C "$WK_HOME_DIR" worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true
@@ -233,37 +353,16 @@ cp -R "$WK_HOME_DIST/." "$WORKTREE/" \
 
 # ── The home pointer ──────────────────────────────────────────────────────────
 # The ONE public artifact, and the only thing the site cannot work out for
-# itself: which repo is the home. Safe to publish because the site is SERVED from
-# that repo — its URL already names it — and it is the address the pages read the
-# private roster from, with the viewer's own token.
+# itself: which repo is the home, and which branch of it the private roster is
+# on. Safe to publish because the site is SERVED from that repo — its URL already
+# names it, and a branch name says nothing more once the repo is known — and it
+# is the address the pages read that roster from, with the viewer's own token.
+# The branch is carried rather than assumed because the writer pushes whatever
+# branch the clone is on, and a reader hardcoding `main` 404s on a home repo that
+# is not (issue #112).
 mkdir -p "$WORKTREE/data"
-printf '{"home":"%s"}\n' "$(wk_home_slug)" >"$WORKTREE/data/home.json"
+printf '{"home":"%s","branch":"%s"}\n' "$(wk_home_slug)" "$(wk_home_branch)" >"$WORKTREE/data/home.json"
 say_info "publish: the home pointer is at data/home.json"
-
-# ── The roster ────────────────────────────────────────────────────────────────
-# Which REPOSITORIES the board sweeps is this machine's roster, and it names
-# private repos — so it is written to the home repo's default branch, which is
-# as private as that repo is, and never beside the pages (issue #110). The
-# published dashboard and the cloud brief both read it from there through the
-# GitHub API, each with a token it already holds. It is committed by the source
-# side below, along with anything else the day changed in the project.
-#
-# It carries no stamp of any kind: an unchanged roster produces a byte-identical
-# file, git sees nothing staged, and a machine publishing daily does not commit a
-# file a day for the time of day.
-#
-# Without node the list cannot be composed, and the readers fall back to the
-# home repo alone — so the run says so and publishes the pages anyway, which is
-# still a working site the moment node is back.
-if command -v node >/dev/null 2>&1; then
-  if node "$SCRIPT_DIR/site-repos.js" "$WK_HOME_DIR/data/repos.json" "$WK_USER_DIR" >/dev/null 2>&1; then
-    say_info "publish: the repo list is on $(wk_home_slug)'s default branch at data/repos.json"
-  else
-    say_warn "publish: the repo list could not be composed — the site publishes without a fresh one, and its pages will find no repos to sweep"
-  fi
-else
-  say_skip "publish: node is not on this machine — the site publishes without a fresh repo list, and its pages will find no repos to sweep"
-fi
 
 # ── The custom URL ────────────────────────────────────────────────────────────
 # `site.url` in the machine settings file is the whole configuration: set, it
@@ -298,19 +397,10 @@ if ! git -C "$WORKTREE" diff --cached --quiet 2>/dev/null; then
   PUBLISHED=1
 fi
 
-# ── The source side ───────────────────────────────────────────────────────────
-# Whatever the day changed in the project itself — an upstream file someone
-# took by hand. Nothing staged means nothing to say.
-if git -C "$WK_HOME_DIR" diff --quiet 2>/dev/null && git -C "$WK_HOME_DIR" diff --cached --quiet 2>/dev/null \
-  && [[ -z "$(git -C "$WK_HOME_DIR" ls-files --others --exclude-standard 2>/dev/null)" ]]; then
-  :
-elif ! wk_home_commit_push "chore(site): publish $(date '+%Y-%m-%d')"; then
-  # commit_push already said which half failed; the site itself is published.
-  exit 1
-fi
-
 if [[ "$PUBLISHED" -eq 1 ]]; then
   say_ok "publish: the dashboard is published from $(wk_home_slug) on $WK_HOME_PAGES_BRANCH"
 else
   say_skip "publish: the published site is already current"
 fi
+
+exit "$SOURCE_RC"

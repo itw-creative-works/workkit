@@ -46,6 +46,8 @@ const today = () => new Date().toLocaleDateString('en-CA');
  * `siteRepos` is what the home repo's default branch carries as data/repos.json
  * — private, where gh-pages would be public (issue #110); null is the file being
  * absent, which is publishing that is off or has never run.
+ * `defaultBranch` is what GitHub answers for the home repo's default branch —
+ * the ref the roster is read from, asked for rather than assumed (issue #112).
  * `posted` is what the home repo's discussions already carry, as
  * `{ title, body }` — the check-before-post guard's input, and the cursor's.
  * `ghFails` makes every API call refuse.
@@ -56,7 +58,7 @@ const today = () => new Date().toLocaleDateString('en-CA');
 const mkWorld = ({
   response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n', status = 0,
   githubRepo = HOME_SLUG, settings = null, siteRepos = null, posted = [],
-  ghFails = false, ccChangelog = null, boardBroken = false,
+  ghFails = false, ccChangelog = null, boardBroken = false, defaultBranch = 'main',
   sweepToken = 'SWEEP-TOKEN', postToken = 'POST-TOKEN',
 } = {}) => {
   const root = mkTmp();
@@ -105,10 +107,14 @@ const mkWorld = ({
     'case "$all" in',
     `  *createDiscussion*) printf 'post %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
     `  *"issues(states: OPEN"*) printf 'sweep %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
-    `  *contents/data/repos.json\\?ref=main*) printf 'roster %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
+    `  *contents/data/repos.json*) printf 'roster %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
+    `  *.default_branch*) printf 'branch %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
     'esac',
     'case "$all" in',
-    '  *contents/data/repos.json\\?ref=main*)',
+    // The default branch, asked for before the roster is read (issue #112) —
+    // `gh api ... -q .default_branch` answers the bare string.
+    `  *.default_branch*) printf '%s\\n' ${JSON.stringify(defaultBranch)} ;;`,
+    `  *contents/data/repos.json\\?ref=${defaultBranch}*)`,
     ...(encoded
       // Wrapped at 60 characters, the way GitHub serves it — a decoder that
       // cannot take the newlines would pass against one long line.
@@ -328,6 +334,25 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  await test('the branch the roster is read from is asked for, never assumed to be main', () => {
+    // Issue #112: the publish pushes whatever branch the home clone is on. The
+    // published dashboard is told which one by data/home.json; a runner has no
+    // site to read that from, so it asks GitHub for the repo it is standing in —
+    // a hardcoded `main` was a 404 and a silently home-only board.
+    const world = mkWorld({
+      defaultBranch: 'trunk',
+      siteRepos: { repos: ['a/one', HOME_SLUG], home: HOME_SLUG },
+    });
+    const res = runJob(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assert(world.ghCalls().some((argv) => argv.includes(`repos/${HOME_SLUG}/contents/data/repos.json?ref=trunk`)),
+      `the roster is read from the branch GitHub named: ${fmtCalls(world.ghCalls())}`);
+    assert(world.roster().some((r) => r.slug === 'a/one'),
+      `and the list on it is the roster swept: ${JSON.stringify(world.roster())}`);
+    assert(!res.stdout.includes('sweeping the home repo alone'), `with no fallback in sight: ${res.stdout}`);
+    cleanup(world.root);
+  });
+
   await test('no slug list falls back to the home repo alone, and still composes', () => {
     const world = mkWorld();
     const res = runJob(world);
@@ -446,6 +471,7 @@ const run = async () => {
     assertEq(world.tokens('post').join(','), 'POST-TOKEN', 'the post carries the built-in token');
     assertEq(world.tokens('sweep').join(','), 'SWEEP-TOKEN', 'the board sweep carries the secret');
     assertEq(world.tokens('roster').join(','), 'SWEEP-TOKEN', 'and so does the published slug list');
+    assertEq(world.tokens('branch').join(','), 'SWEEP-TOKEN', 'and the default-branch read before it');
     cleanup(world.root);
   });
 

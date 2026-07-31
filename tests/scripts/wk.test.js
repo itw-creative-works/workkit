@@ -8,8 +8,8 @@
 //
 // The one seam is `gh`: filing a note outside every project creates an ISSUE
 // (issue #79), and no test may reach GitHub. PATH is pinned to a scratch bin
-// plus the system one — the real gh lives outside both — so a world without the
-// shim IS a machine without gh.
+// plus the system one, and the shim in that bin answers every call. The machine
+// that HAS no gh is built, not assumed — see basePathWithout below.
 //
 
 const path = require('path');
@@ -23,6 +23,30 @@ const SCRIPT = path.join(WORKFLOW_DIR, 'wk.sh');
 const TEMPLATE = fs.readFileSync(path.join(WORKFLOW_DIR, 'templates', 'inbox.md'), 'utf8');
 
 const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
+
+// A copy of the base PATH with one command left out of it. The "no gh" case
+// cannot ASSUME the machine has none — plenty of them ship it in /usr/bin (every
+// Ubuntu runner does, which is what made this case fail there, issue #114) — so
+// it makes the absence instead: one directory of symlinks to everything on the
+// base PATH except the named command, in first-wins order the way a PATH lookup
+// resolves.
+const basePathWithout = (dir, command) => {
+  const out = path.join(dir, `path-without-${command}`);
+  fs.mkdirSync(out, { recursive: true });
+  for (const entry of BASE_PATH.split(':')) {
+    let names = [];
+    try { names = fs.readdirSync(entry); } catch { continue; }
+    for (const name of names) {
+      if (name === command) continue;
+      try { fs.symlinkSync(path.join(entry, name), path.join(out, name)); } catch {}
+    }
+  }
+  // An empty mirror would make the absence assertion pass vacuously — the run
+  // would fail on the missing SHELL, not the missing command. `sh` proves the
+  // mirror is real before anything leans on it.
+  if (!fs.existsSync(path.join(out, 'sh'))) throw new Error(`basePathWithout built an unusable PATH at ${out}`);
+  return out;
+};
 
 const mkTmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wk-')));
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
@@ -237,7 +261,8 @@ const run = async () => {
 
   await test('no gh on the machine refuses the note rather than losing it', async () => {
     const t = makeTree({ gh: false });
-    const { code, err } = runScript(t.outside, ['note', 'no tooling here'], t);
+    const { code, err } = runScript(t.outside, ['note', 'no tooling here'], t,
+      { PATH: `${t.bin}:${basePathWithout(t.dir, 'gh')}` });
     assertEq(code, 1, 'exit 1');
     assert(/gh is not on this machine/.test(err), `it names what is missing, got: ${err}`);
     assert(/no tooling here/.test(err), 'and hands the thought back');

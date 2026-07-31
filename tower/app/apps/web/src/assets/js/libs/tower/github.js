@@ -51,16 +51,19 @@ export const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new
  */
 export const TOKEN_SCOPES = 'a fine-grained token: Repository permissions → Issues: Read and write, Metadata: Read, Discussions: Read, on the repositories this board covers — plus Contents: Read on the home repo, which is where the list of those repositories lives.';
 
-/** The baked artifact, and the only one: which repo is the home. Relative, so a project-path Pages site resolves it too. */
+/** The baked artifact, and the only one: which repo is the home, and which branch of it carries the roster. Relative, so a project-path Pages site resolves it too. */
 export const HOME_PATH = 'data/home.json';
 
 /** Where the roster lives — a path on the home repo, read through the API with the viewer's token. */
 export const ROSTER_PATH = 'data/repos.json';
 
 /**
- * The branch it is read from. Hardcoded because the home repo is created by the
- * engine (`workflow/home.sh`) and is always on `main`; asking GitHub for the
- * default branch would cost a request before the first row is drawn.
+ * The branch it is read from when the home pointer does not say.
+ *
+ * The publish names the branch it actually pushed to (issue #112), so nothing
+ * here has to assume; this is what a site published BEFORE that key existed
+ * falls back to, and it is what those sites were written by. Asking GitHub for
+ * the default branch instead would cost a request before the first row is drawn.
  */
 export const ROSTER_REF = 'main';
 
@@ -230,10 +233,14 @@ export const parseSlugs = (parsed) => {
  * Unauthenticated, because it is public and says nothing the site's own URL does
  * not: the repo it is served from.
  *
+ * It carries the BRANCH as well as the repo (issue #112): the publish pushes
+ * whatever branch the home clone is on, so the reader is told which one rather
+ * than assuming the account's default is named `main`.
+ *
  * @param {object} ctx
  * @param {Function} ctx.fetch
  * @param {string} [ctx.homePath]
- * @returns {Promise<{ok: boolean, home: string|null, status: number|null, reason: string|null}>}
+ * @returns {Promise<{ok: boolean, home: string|null, branch: string, status: number|null, reason: string|null}>}
  */
 export const fetchHome = async (ctx = {}) => {
   const url = ctx.homePath || HOME_PATH;
@@ -241,20 +248,23 @@ export const fetchHome = async (ctx = {}) => {
   try {
     response = await ctx.fetch(url, { headers: { accept: 'application/json' } });
   } catch (error) {
-    return { ok: false, home: null, status: null, reason: `${url} did not answer (${error.message})` };
+    return { ok: false, home: null, branch: ROSTER_REF, status: null, reason: `${url} did not answer (${error.message})` };
   }
   if (!response.ok) {
-    return { ok: false, home: null, status: response.status, reason: `${url} answered ${response.status} — this site was published without its home repo` };
+    return { ok: false, home: null, branch: ROSTER_REF, status: response.status, reason: `${url} answered ${response.status} — this site was published without its home repo` };
   }
   let parsed = null;
   try {
     parsed = await response.json();
   } catch (error) {
-    return { ok: false, home: null, status: response.status, reason: `${url} is not JSON (${error.message})` };
+    return { ok: false, home: null, branch: ROSTER_REF, status: response.status, reason: `${url} is not JSON (${error.message})` };
   }
   const home = parsed && typeof parsed.home === 'string' && parsed.home.includes('/') ? parsed.home : null;
-  if (!home) return { ok: false, home: null, status: response.status, reason: `${url} names no home repo, so there is nowhere to read the board's repositories from` };
-  return { ok: true, home, status: response.status, reason: null };
+  // A site published before the key existed says nothing about a branch, which
+  // is the one case the fallback is for.
+  const branch = (parsed && typeof parsed.branch === 'string' && parsed.branch) ? parsed.branch : ROSTER_REF;
+  if (!home) return { ok: false, home: null, branch, status: response.status, reason: `${url} names no home repo, so there is nowhere to read the board's repositories from` };
+  return { ok: true, home, branch, status: response.status, reason: null };
 };
 
 /**
@@ -279,7 +289,7 @@ export const fetchSlugs = async (ctx = {}) => {
   // The raw media type, so the answer is the file itself rather than GitHub's
   // envelope with the bytes base64'd inside it.
   const answer = await rest(
-    `/repos/${pointer.home}/contents/${ROSTER_PATH}?ref=${ROSTER_REF}`,
+    `/repos/${pointer.home}/contents/${ROSTER_PATH}?ref=${encodeURIComponent(pointer.branch)}`,
     ctx,
     { accept: 'application/vnd.github.raw+json' },
   );

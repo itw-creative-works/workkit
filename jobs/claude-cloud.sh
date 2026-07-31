@@ -121,16 +121,33 @@ fi
 # repo and the list names private repos (issue #110) — which changes nothing
 # here, since this read was always authenticated. The contents API answers with
 # a base64 body.
+#
+# WHICH branch is ASKED FOR, never assumed (issue #112): the writer pushes
+# whatever branch the home clone is on, and a runner hardcoding `main` reads a
+# 404 on a repo whose default branch is not — a silently home-only board. The
+# laptop's other reader is told the branch by the published pointer; a runner has
+# no site to read that from, so it asks GitHub for the repo it is standing in.
+# `main` is the fallback, because that is what the engine creates.
+home_default_branch() {
+  local slug="$1" branch
+  branch="$(gh api "repos/$slug" -q '.default_branch' 2>/dev/null || true)"
+  [[ -n "$branch" ]] || branch='main'
+  printf '%s' "$branch"
+}
+
 fetch_site_repos() {
-  local slug="$1" encoded
-  command -v gh >/dev/null 2>&1 || return 1
-  encoded="$(gh api "repos/$slug/contents/data/repos.json?ref=main" -q '.content' 2>/dev/null)" || return 1
+  local slug="$1" ref="$2" encoded
+  encoded="$(gh api "repos/$slug/contents/data/repos.json?ref=$ref" -q '.content' 2>/dev/null)" || return 1
   [[ -n "$encoded" ]] || return 1
   printf '%s' "$encoded" | tr -d '\n' | base64 -d 2>/dev/null || return 1
 }
 
 SITE_REPOS=''
-if ! SITE_REPOS="$(fetch_site_repos "$HOME_SLUG")"; then SITE_REPOS=''; fi
+HOME_BRANCH='main'
+if command -v gh >/dev/null 2>&1; then
+  HOME_BRANCH="$(home_default_branch "$HOME_SLUG")"
+  if ! SITE_REPOS="$(fetch_site_repos "$HOME_SLUG" "$HOME_BRANCH")"; then SITE_REPOS=''; fi
+fi
 SLUGS="$(printf '%s' "$SITE_REPOS" | jq -r '.repos[]? // empty' 2>/dev/null || true)"
 if [[ -z "$SLUGS" ]]; then
   # No published list — the site has never been published, or publishing is off.
@@ -138,7 +155,7 @@ if [[ -z "$SLUGS" ]]; then
   # are the cross-project queue, so a brief built from it is a real morning,
   # while an empty board would read as "nothing is waiting on you" — the one
   # thing a brief must never say when it simply did not look.
-  note "roster: no slug list on $HOME_SLUG (main data/repos.json) — sweeping the home repo alone"
+  note "roster: no slug list on $HOME_SLUG ($HOME_BRANCH data/repos.json) — sweeping the home repo alone"
   SLUGS="$HOME_SLUG"
 fi
 # The home repo is on the published list already; this covers the list that

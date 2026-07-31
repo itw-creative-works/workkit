@@ -145,7 +145,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('suite that outruns the gate deadline — exit 2, tree terminated (#93)', () => {
+  await test('suite that outruns the gate deadline — exit 2, tree terminated (#93)', async () => {
     // The failure this pins: a suite longer than the harness's hook timeout
     // used to get the hook cancelled, and a cancelled hook is silently ALLOW.
     // The gate now ends the run at its own deadline and bounces.
@@ -163,9 +163,24 @@ const run = async () => {
     assert(Date.now() - before < 15000, 'the gate decided well before the suite would have finished');
     assert(fs.existsSync(path.join(dir, 'gate.pid')), 'the suite had started before the deadline ended it');
     const pid = Number(fs.readFileSync(path.join(dir, 'gate.pid'), 'utf8').trim());
-    let alive = true;
-    try { process.kill(pid, 0); } catch { alive = false; }
-    assert(!alive, 'the suite process tree was ended, not left running');
+    // Ended is answered by WAITING for it, not by one instant. The gate kills
+    // the tree from the leaves up, so the process it recorded loses its parent
+    // in the same breath it is killed: until the kernel hands that orphan to
+    // init and init reaps it, the pid is a ZOMBIE — dead, and still answering
+    // kill(pid, 0). How long that gap lasts is the machine's business, and on a
+    // Linux runner it outlived the assertion (#114). A suite that was genuinely
+    // left running answers for its full 30 seconds, so neither exit is hidden:
+    // this waits for gone-or-zombie and names the state it found if it gets
+    // neither.
+    const state = () => (spawnSync('ps', ['-o', 'state=', '-p', String(pid)], { encoding: 'utf8' }).stdout || '').trim();
+    const gone = () => { try { process.kill(pid, 0); return false; } catch { return true; } };
+    let ended = gone() || state().startsWith('Z');
+    const until = Date.now() + 5000;
+    while (!ended && Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 50));
+      ended = gone() || state().startsWith('Z');
+    }
+    assert(ended, `the suite process tree was ended, not left running (ps state: ${state() || 'none'})`);
     cleanup(dir);
   });
 

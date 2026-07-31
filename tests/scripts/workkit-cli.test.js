@@ -14,7 +14,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, hasLaunchd, WORKKIT_DIR: W } = require('../lib/harness');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
@@ -436,16 +436,20 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('run by a human, a missing schedule names the command that installs it', () => {
-    const world = mkWorld();
-    const { out } = runCli(world, ['update']);
-    assert(out.includes('workkit setup'), `it points at setup, got: ${out}`);
-    assert(!fs.existsSync(world.plist()), 'and still installs nothing');
-    cleanup(world.root);
-  });
+  // Everything below is launchd's: a machine without `launchctl` has no
+  // schedule to name, install or keep current, and the engine says so itself
+  // rather than acting (`launchd is macOS`). The cases are named as skips there
+  // instead of asserting a capability that is not on the machine (#114).
+  if (hasLaunchd()) {
+    group('workkit update: the schedule (macOS)');
 
-  if (process.platform === 'darwin') {
-    group('workkit update --auto: the schedule (macOS)');
+    await test('run by a human, a missing schedule names the command that installs it', () => {
+      const world = mkWorld();
+      const { out } = runCli(world, ['update']);
+      assert(out.includes('workkit setup'), `it points at setup, got: ${out}`);
+      assert(!fs.existsSync(world.plist()), 'and still installs nothing');
+      cleanup(world.root);
+    });
 
     await test('a current schedule is left alone, and launchd is not asked', () => {
       const world = mkWorld();
@@ -516,7 +520,7 @@ const run = async () => {
       cleanup(world.root); cleanup(kit);
     });
   } else {
-    group('workkit update --auto: the schedule — skipped, launchd is macOS');
+    group('workkit update: the schedule — skipped, launchd is macOS (#114)');
   }
 
   group('workkit setup');
@@ -1034,13 +1038,15 @@ FAKEtrailingLINEthatIsLongEnough')"`);
 
   group('workkit publish');
 
-  await test('publish delegates to the engine’s script, which skips while the site is off', () => {
-    // `site.publish` is default off (issue #80), so an untouched machine is the
-    // switch's own named skip — the engine's reason, printed in this voice.
+  await test('publish delegates to the engine’s script, which skips an untouched machine', () => {
+    // An untouched machine has no home repo, and since issue #111 that is the
+    // first thing the engine asks for: the roster refresh needs the clone and
+    // runs above the publish switch, so a machine with neither hears about the
+    // one `workkit setup` fixes. The engine's reason, printed in this voice.
     const world = mkWorld();
     const { code, out } = runCli(world, ['publish']);
     assertEq(code, 0, 'a machine that publishes nothing is not broken');
-    assert(/publish: `site.publish` is off/.test(out), `the engine's own reason comes through, got: ${out}`);
+    assert(/publish: no home repo/.test(out), `the engine's own reason comes through, got: ${out}`);
     cleanup(world.root);
   });
 
