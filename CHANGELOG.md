@@ -7,13 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-07-30
+
 ### Changed
 
-- [#97](../../issues/97) — `workkit tower` (and `npm run tower` in the checkout) starts the whole tower — the JSON API and the dashboard together, replacing any previous instance on their ports, one interrupt ending both — instead of the API alone.
+- [#97](../../issues/97) [`690eea0`](../../commit/690eea0) Thanks [@ianwieds]! — `workkit tower` (and `npm run tower` in the checkout) starts the whole tower — the JSON API and the dashboard together, replacing any previous instance on their ports, one interrupt ending both — instead of the API alone.
 
 ### Fixed
 
-- [#98](../../issues/98) — The dashboard stopped bouncing to a sign-in gate it has no accounts for: the layout's gate-disarming key is spelled under the framework's current name for the settings blob, and a test pins the exact path.
+- [#98](../../issues/98) [`690eea0`](../../commit/690eea0) Thanks [@ianwieds]! — The dashboard stopped bouncing to a sign-in gate it has no accounts for: the layout's gate-disarming key is spelled under the framework's current name for the settings blob, and a test pins the exact path.
 
 ## [0.19.3] - 2026-07-30
 
