@@ -50,6 +50,7 @@ STANDARDS="$SCRIPT_DIR/standards.sh"
 CAPTURE="$SCRIPT_DIR/wk.sh"
 PUBLISH="$SCRIPT_DIR/publish.sh"
 JOBS_INSTALL="$KIT_DIR/jobs/install.sh"
+TOWER_START="$KIT_DIR/tower/start.sh"
 
 # The plugin, as `claude plugin list` names it, and the marketplace this repo is.
 PLUGIN_ID="workkit@workkit"
@@ -144,6 +145,8 @@ usage: workkit <command> [args]
                        that fixes anything out of reach
   publish              build the dashboard and publish it from the home repo
                        (the daily job does this after the morning brief)
+  tower                run the tower here — the JSON API and the dashboard
+                       together, until one interrupt ends both
   enable [repo]        write the repo's committed opt-in, then heal it
   decline [repo]       record this developer's no for the repo, personally
   note <text...>       append one bullet to the nearest inbox, or file it as an
@@ -335,7 +338,7 @@ check_gh() {
 # The tower is started, never installed: it is two long-running processes and
 # nothing schedules them. Setup's job is to say where they are.
 tower_pointer() {
-  say_info "tower: mission control is \`npm run tower\` in $KIT_DIR (the API on 8693); its dashboard is tower/app on 4300"
+  say_info "tower: mission control is \`workkit tower\` — the API on 8693 and the dashboard on 4300 together, replacing any previous instance"
 }
 
 # The repo the shell is standing in. Undecided is the only state with anything
@@ -1014,6 +1017,16 @@ case "${1:-help}" in
   update)  shift; cmd_update "$@" ;;
   doctor)  shift; cmd_doctor "$@" ;;
   publish) shift; cmd_publish "$@" ;;
+  tower)
+    shift
+    # The tower lives in the checkout, not the engine — a partial checkout
+    # that copied only workflow/ has nothing to run.
+    if [[ ! -f "$TOWER_START" ]]; then
+      printf 'workkit: no tower beside this engine (%s) — this command needs the workkit checkout\n' "$TOWER_START" >&2
+      exit 1
+    fi
+    exec bash "$TOWER_START"
+    ;;
   enable)  shift; exec bash "$STANDARDS" --enable "${1:-$PWD}" ;;
   decline) shift; exec bash "$STANDARDS" --decline "${1:-$PWD}" ;;
   note)    shift; exec bash "$CAPTURE" note "$@" ;;

@@ -1719,6 +1719,18 @@ const run = async () => {
     }
   });
 
+  await test('the layout disarms the auth gate under the framework’s CURRENT key', () => {
+    // The gate re-armed itself once (#98): the framework renamed the settings
+    // blob `web_manager` → `client`, the stale key resolved to nothing, and
+    // the admin chain’s `authenticated` policy silently won. The pin is on
+    // the exact key path, so the next rename fails here instead of on screen.
+    const layout = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src',
+      '_layouts', 'tower', 'page.html'), 'utf8');
+    assert(/client:\n  auth:\n    config:\n      policy: "disabled"/.test(layout),
+      'the client blob disables the auth policy, spelled exactly as the engine reads it');
+    assert(!layout.includes('web_manager:'), 'and the retired key is gone — it resolves to nothing');
+  });
+
   await test('the layout ships that dialog, and it cannot be dismissed onto an empty page', () => {
     const layout = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src',
       '_layouts', 'tower', 'page.html'), 'utf8');

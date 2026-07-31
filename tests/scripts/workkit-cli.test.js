@@ -1153,6 +1153,30 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     cleanup(world.root); cleanup(repo);
   });
 
+  await test('tower runs the whole tower — the start wrapper, with the checkout resolved', () => {
+    // The commands are injected the same way tower/start.sh's own suite does
+    // it, so the CLI path is proven end-to-end without opening a port.
+    const world = mkWorld();
+    const api = path.join(world.root, 'api.ran');
+    const app = path.join(world.root, 'app.ran');
+    const { code } = runCli(world, ['tower'], {
+      // Ports emptied so a test run never reclaims this machine's real tower.
+      env: { WORKKIT_TOWER_API: `echo x > '${api}'`, WORKKIT_TOWER_APP: `echo x > '${app}'`, WORKKIT_TOWER_PORTS: '' },
+    });
+    assertEq(code, 0, 'exit 0 once both halves ended');
+    assert(fs.existsSync(api) && fs.existsSync(app), 'both halves were started through the wrapper');
+    cleanup(world.root);
+  });
+
+  await test('tower in a partial checkout says what is missing instead of running nothing', () => {
+    const world = mkWorld();
+    const { script } = mkPartialKit();
+    const { code, err } = runCli(world, ['tower'], { script });
+    assertEq(code, 1, 'exit 1');
+    assert(err.includes('needs the workkit checkout'), `the error names the cause, got: ${err}`);
+    cleanup(world.root);
+  });
+
   await test('decline records the answer in the user’s own settings, not the repo’s', () => {
     const world = mkWorld();
     const repo = mkRepo();

@@ -73,10 +73,12 @@ A few things worth knowing before changing it:
 
 - **A page's JS is bound by its URL**, not by an import: `/board` loads
   `assets/js/pages/board.js`, and `/` loads `pages/index.js`.
-- **Consumer page frontmatter is meta-only.** The engine strips any key outside
-  `{meta, schema, theme, append, sitemap}` from a page under `src/pages/` and
-  warns. That is why the auth opt-out (`web_manager.auth.config.policy:
-  "disabled"`) lives in `src/_layouts/tower/page.html` — layouts are exempt.
+- **Consumer page frontmatter is machinery-limited.** The engine strips any key
+  outside `{meta, schema, theme, client, append, sitemap}` from a page under
+  `src/pages/` and warns. The auth opt-out (`client.auth.config.policy:
+  "disabled"` — the blob was named `web_manager` before the framework renamed
+  it, which is what issue #98 fixed) lives in `src/_layouts/tower/page.html` so
+  the six pages share one home.
 - **The nav is `_includes/backend/sections/sidebar.json`**, which replaces the
   framework's file wholesale. It is the `backend` spelling rather than `admin`
   because the shell layout picks the admin pair only for URLs containing

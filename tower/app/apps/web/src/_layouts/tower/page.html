@@ -5,19 +5,17 @@ layout: admin/core/minimal
 # dialog in its body (the topbar's button opens it, so it has to be on every
 # page). The key: the tower is a localhost
 # tool with no user accounts, and the admin layout chain it extends sets
-# `web_manager.auth.config.policy: "authenticated"` (plus an admin role), which
+# `client.auth.config.policy: "authenticated"` (plus an admin role), which
 # would bounce every page to a sign-in screen that has no Firebase behind it.
 # `policy: "disabled"` makes core/js/core/auth.js return before it looks at
 # anything (auth.js:17).
 #
-# Why a LAYOUT and not each page's own frontmatter: a consumer page's
-# frontmatter is meta-only — the engine's guard (engine.js, "the meta-only
-# guard") deletes every key outside {meta, schema, theme, append, sitemap}
-# from the cascade and warns, so `web_manager` set on a page is dropped before
-# it can resolve. Layouts are exempt, being theme voice. Verified by building:
-# with the key on the page, the build printed
-# "ignoring frontmatter content keys (web_manager)".
-web_manager:
+# `client:` is the framework's name for this blob (issue #98 — it used to be
+# `web_manager`, and the rename is what silently re-armed the gate: the stale
+# key resolved to nothing and the admin chain's policy won). The engine's
+# meta-only guard now admits {meta, schema, theme, client, append, sitemap}
+# on pages too, but the layout stays the one home so six pages cannot drift.
+client:
   auth:
     config:
       policy: "disabled"

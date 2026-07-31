@@ -6,12 +6,15 @@ It is two processes. `tower/api/` is a plain-Node JSON API with zero dependencie
 
 ## Run
 
-Both halves, in two terminals:
+One command, both halves (issue #97):
 
 ```sh
-npm run tower                                  # the API on http://127.0.0.1:8693
-cd tower/app/apps/web && npx omega dev         # the dashboard on https://localhost:4300
+workkit tower    # the API on http://127.0.0.1:8693 + the dashboard on https://localhost:4300
 ```
+
+`npm run tower` from the checkout root is the same thing — both run `tower/start.sh`. Running it RESTARTS the tower: anything already listening on either port is a previous instance and is replaced, with a line saying so — the ports belong to the tower, and a leftover server should never make the fresh one die on the address being in use.
+
+`tower/start.sh` starts the API and the dashboard's dev server together; one interrupt ends both, and either process ending takes the other with it. Each half can still be run alone (`node tower/api/server.js`, or `npm run dev` inside `tower/app`) when only one is wanted.
 
 The API answers on its own and is useful without the dashboard. The 9am job does not read it over HTTP — `jobs/brief-payload.js` composes the same payload from the same libs, so nothing has to be running at nine in the morning. The dashboard needs the API; with it down, every pane says so in a line and the page still draws.
 

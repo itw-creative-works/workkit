@@ -5,6 +5,6 @@
     "brief": "bash jobs/claude-daily.sh --now",
     "nightly": "bash jobs/claude-nightly.sh --now",
     "test": "node tests/run.js",
-    "tower": "node tower/api/server.js"
+    "tower": "bash tower/start.sh"
   }
 }

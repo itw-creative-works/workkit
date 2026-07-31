@@ -114,7 +114,7 @@ The first four are capability classes — the resolver hook gives each spawn its
 
 ### Tower — the dashboard
 
-Mission control over everything the system already knows, in two processes: `npm run tower` starts the JSON API on port 8693, and `npx omega dev` inside `tower/app/apps/web` serves the dashboard on 4300.
+Mission control over everything the system already knows, in two processes behind one command: `npm run tower` starts the JSON API on port 8693 and the dashboard on 4300 together.
 
 Six pages. **Overview** is the control room. **Board** is the full issue board across every repo, columns by `status:` label with filters. **Crew** draws the running Claude sessions as an org chart, each subagent under its parent with its class, model and token spend. **Usage** is where the tokens went — by model, by agent class, over thirty days, and what it cost. **Health** is per-repo unpushed, uncommitted and unreleased work. **Brief** is the morning read — the same payload the 9am job under `jobs/` sends. An intake dialog sits on the topbar of all six.
 
@@ -126,7 +126,7 @@ The 9am morning notification, and the one job on the clock. The summaries step g
 
 ### Engine — `workflow/`
 
-Plain shell and Node, no Claude Code knowledge: `workkit.sh` (the one command — `setup` · `update` · `doctor` · `publish` · `enable` · `decline` · `note`), `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `home.sh` + `discussions.sh` + `publish.sh` (the home repo's lifecycle, its Discussions API, and the gh-pages publish), `changelog.js` (the entry-format linter the hooks call), `changelog-links.js` (release-time commit links and contributor handles), `wk.sh` (the capture CLI — `wk.sh note "the thought"` drops a bullet into the nearest participating repo's inbox, or files an issue on the home repo outside one), and the templates a repo receives when it opts in.
+Plain shell and Node, no Claude Code knowledge: `workkit.sh` (the one command — `setup` · `update` · `doctor` · `publish` · `tower` · `enable` · `decline` · `note`), `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `home.sh` + `discussions.sh` + `publish.sh` (the home repo's lifecycle, its Discussions API, and the gh-pages publish), `changelog.js` (the entry-format linter the hooks call), `changelog-links.js` (release-time commit links and contributor handles), `wk.sh` (the capture CLI — `wk.sh note "the thought"` drops a bullet into the nearest participating repo's inbox, or files an issue on the home repo outside one), and the templates a repo receives when it opts in.
 
 ## The home repo
 
