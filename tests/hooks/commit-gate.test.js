@@ -39,12 +39,14 @@ const markerPath = (dir) => {
 const touchMarker = (dir) => fs.writeFileSync(markerPath(dir), '');
 const dropMarker = (dir) => { try { fs.rmSync(markerPath(dir)); } catch {} };
 
-const runHook = (cwd, command, spawnCwd) => {
+const runHook = (cwd, command, spawnCwd, extraEnv = {}) => {
   const input = JSON.stringify({ cwd, tool_input: { command } });
   const res = spawnSync('bash', [HOOK], {
     input,
     cwd: spawnCwd,
-    env: { ...process.env, HOME: os.homedir(), WORKFLOW_DIR },
+    env: {
+      ...process.env, HOME: os.homedir(), WORKFLOW_DIR, ...extraEnv,
+    },
     encoding: 'utf8',
     timeout: 60000,
   });
@@ -141,6 +143,45 @@ const run = async () => {
     const { code, stderr } = runHook(dir, 'git commit -m "x"');
     assertEq(code, 0, `green suite + review passes, stderr: ${stderr}`);
     cleanup(dir);
+  });
+
+  await test('suite that outruns the gate deadline — exit 2, tree terminated (#93)', () => {
+    // The failure this pins: a suite longer than the harness's hook timeout
+    // used to get the hook cancelled, and a cancelled hook is silently ALLOW.
+    // The gate now ends the run at its own deadline and bounces.
+    const dir = mkRepo();
+    stage(dir, 'package.json',
+      '{"scripts":{"test":"echo $$ > gate.pid && sleep 30"}}');
+    touchMarker(dir);
+    const before = Date.now();
+    // Deadline 2, not 1: bash's integer SECONDS can round a 1s deadline down
+    // toward the poll floor, ending the run before npm has written gate.pid.
+    const { code, stderr } = runHook(dir, 'git commit -m "x"', undefined,
+      { WORKKIT_GATE_TEST_DEADLINE: '2' });
+    assertEq(code, 2, 'an unproven suite must block, never allow');
+    assert(stderr.includes('deadline'), 'names the deadline as the reason');
+    assert(Date.now() - before < 15000, 'the gate decided well before the suite would have finished');
+    assert(fs.existsSync(path.join(dir, 'gate.pid')), 'the suite had started before the deadline ended it');
+    const pid = Number(fs.readFileSync(path.join(dir, 'gate.pid'), 'utf8').trim());
+    let alive = true;
+    try { process.kill(pid, 0); } catch { alive = false; }
+    assert(!alive, 'the suite process tree was ended, not left running');
+    cleanup(dir);
+  });
+
+  await test('the gate deadline sits under its declared hook timeout (#93)', () => {
+    // The invariant: the gate must decide BEFORE the harness would cancel it —
+    // a cancelled hook is a silent allow, which is the whole defect.
+    const hooksJson = JSON.parse(fs.readFileSync(
+      path.join(__dirname, '..', '..', 'hooks', 'hooks.json'), 'utf8'));
+    const entry = hooksJson.hooks.PreToolUse
+      .flatMap((m) => m.hooks)
+      .find((h) => h.command.includes('safety:commit-gate'));
+    assert(entry && entry.timeout > 0, 'the gate declares its own timeout');
+    const script = fs.readFileSync(HOOK, 'utf8');
+    const m = script.match(/WORKKIT_GATE_TEST_DEADLINE:-(\d+)/);
+    assert(m, 'the gate has a default deadline');
+    assert(Number(m[1]) < entry.timeout, 'and it fires before the harness cancels the hook');
   });
 
   group('commit-gate: new source files need tests (test-TYPE proxy)');

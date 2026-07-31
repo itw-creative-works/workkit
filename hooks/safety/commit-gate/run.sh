@@ -9,7 +9,11 @@
 #   3. CHANGELOG: entries this commit adds must match the entry format.
 #   4. Collapse on ship: a commit closing an issue (Fixes/Closes/Resolves #N)
 #      must stage the CHANGELOG.md entry it closes against.
-#   5. Tests: when the repo's package.json has a test script, it must pass.
+#   5. Tests: when the repo's package.json has a test script, it must pass —
+#      within the gate's own deadline (issue #93). Claude Code cancels a hook
+#      at its timeout and treats no-decision as allow, so a suite that outran
+#      the harness used to let the commit through untested. The gate now ends
+#      the run itself, under that ceiling, and BOUNCES instead.
 # Code-vs-docs classification matches the docs/change-tracker hook (same
 # definition in both, kept in sync by hand — no second consumer shape yet).
 # Fail open on anything that isn't clearly a violating commit.
@@ -288,15 +292,40 @@ if [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/CHANGELOG.md" ] \
 fi
 
 # 5. Tests must pass when the repo defines them (at the repo ROOT — the
-# session may sit in a subdirectory).
+# session may sit in a subdirectory). The run carries its own deadline, kept
+# under the hook's declared timeout (900s in hooks.json): a hook the harness
+# cancels returns no decision, and no decision is ALLOW — so without this, the
+# biggest suites are exactly where the gate stopped enforcing (issue #93).
+# Injectable so the suite can prove the bounce without an 840s wait.
+gate_end_tree() {
+  local pid kid
+  pid="$1"
+  for kid in $(pgrep -P "$pid" 2>/dev/null); do gate_end_tree "$kid"; done
+  kill -9 "$pid" 2>/dev/null || true
+}
 if [ -f "$repo_root/package.json" ] && jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
-  if ! out=$(cd "$repo_root" && npm test 2>&1); then
+  deadline="${WORKKIT_GATE_TEST_DEADLINE:-840}"
+  out_file=$(mktemp "${TMPDIR:-/tmp}/commit-gate-test.XXXXXX")
+  (cd "$repo_root" && npm test >"$out_file" 2>&1) &
+  test_pid=$!
+  start=$SECONDS
+  while kill -0 "$test_pid" 2>/dev/null && [ $((SECONDS - start)) -lt "$deadline" ]; do
+    sleep 0.2
+  done
+  if kill -0 "$test_pid" 2>/dev/null; then
+    gate_end_tree "$test_pid"
+    rm -f "$out_file"
+    block "the test suite was still running at the gate's ${deadline}s deadline, so the gate cannot prove it green. Run npm test yourself; if this repo's suite genuinely needs longer, raise WORKKIT_GATE_TEST_DEADLINE (and the hook's own timeout with it)."
+  fi
+  if ! wait "$test_pid"; then
     {
       echo "commit-gate: BLOCKED this commit — the test suite failed. Fix the failures, then commit. Last lines:"
-      printf '%s\n' "$out" | tail -15
+      tail -15 "$out_file"
     } >&2
+    rm -f "$out_file"
     exit 2
   fi
+  rm -f "$out_file"
 fi
 
 exit 0

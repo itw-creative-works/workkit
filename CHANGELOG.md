@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#93](../../issues/93) — The commit gate no longer fails open when a test suite outruns the hook timeout: the gate ends the run at its own deadline and bounces the commit, and its declared timeout grew to fit the slowest suites.
+
 ## [0.20.0] - 2026-07-30
 
 ### Changed

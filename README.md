@@ -94,7 +94,7 @@ Plugins load at startup, so a new (or restarted) session is what puts a change i
 | `manager/resolver` | before a subagent spawns | Picks that spawn's model from the tier ladder and your live session model |
 | `manager/profile` | every message | Reminds a capable session it is the MANAGER and should delegate |
 | `safety/vendor-guard` | before any edit | Blocks edits to generated, vendored, and gitignored files |
-| `safety/commit-gate` | before `git commit` | No commit unless tests pass, new source files come with tests, code carries a fresh review, and any CHANGELOG entry is in format. Heal bookkeeping (the version stamp and the current vendored linter, alone) skips the review and new-file checks |
+| `safety/commit-gate` | before `git commit` | No commit unless tests pass, new source files come with tests, code carries a fresh review, and any CHANGELOG entry is in format. A suite still running at the gate's own deadline is ended and the commit bounces, so a run the harness would cancel never slips through. Heal bookkeeping (the version stamp and the current vendored linter, alone) skips the review and new-file checks |
 | `safety/commit-language` | before `git commit` | Bounces kill/destroy/dead wording in commit messages, and off-format subject lines |
 | `safety/issue-guard` | before a `gh issue`/`gh pr` write, or a GraphQL discussion/issue mutation | Blocks outbound text carrying a local `.env` value or a token-shaped string — every repo is assumed public. Names the key or the kind, never the match |
 | `safety/inbox-guard` | before a read of the inbox | Keeps `.workkit/inbox.md` the owner's scratchpad: contents open only during a triage run; counting and appending stay free |
