@@ -22,10 +22,10 @@
 #                        belongs to, so nothing longer-lived is needed for it.
 #                        `permissions:` below is what grants the write.
 #   WORKKIT_GITHUB_TOKEN a secret, and the only one that leaves this repo: the
-#                        cross-repo board sweep (Issues: Read on every repo the
-#                        published data/repos.json names) and the gh-pages read
-#                        of that list. A repo it cannot read drops out of the
-#                        board rather than failing the run.
+#                        cross-repo board sweep (Issues: Read on every repo
+#                        data/repos.json names) and the read of that list from
+#                        this repo's default branch. A repo it cannot read drops
+#                        out of the board rather than failing the run.
 # `workkit setup` writes it from `gh auth token`, and `workkit doctor` reports
 # it; jobs/README.md names the narrower alternative.
 #

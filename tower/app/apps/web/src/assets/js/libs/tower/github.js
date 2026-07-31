@@ -2,9 +2,10 @@
 // The published site's data layer — GitHub, spoken from the browser.
 //
 // The local dashboard reads the tower API on this machine (api.js). A PUBLISHED
-// copy has no tower on the other end, and nothing is baked into it but the list
-// of repo slugs to sweep: every number on the page comes from a live GitHub call
-// made by the page itself (issue #81). The key that unlocks those calls is a
+// copy has no tower on the other end, and nothing is baked into it but the slug
+// of the home repo — which the site's own URL already names: every number on the
+// page, and the roster of repos to sweep with it, comes from a live GitHub call
+// made by the page itself (issues #81, #110). The key that unlocks those calls is a
 // fine-grained personal access token the viewer supplies, held in that browser's
 // localStorage and nowhere else — never in the repo, the built site, an engine
 // file or a URL. Without it the site has no data to show, which is what makes
@@ -43,12 +44,25 @@ export const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new
 /**
  * What that token needs to be able to do. The site MANAGES the issues it shows
  * — a card is dragged between columns and the dialog files one — so writing
- * issues is part of the ask; nothing else on a repository is.
+ * issues is part of the ask. Contents: Read is the one addition, and only on the
+ * home repo: the roster of repositories to sweep lives on its default branch
+ * rather than beside the public pages (issue #110), and the token is what reads
+ * it.
  */
-export const TOKEN_SCOPES = 'a fine-grained token: Repository permissions → Issues: Read and write, Metadata: Read, Discussions: Read, on the repositories this board covers.';
+export const TOKEN_SCOPES = 'a fine-grained token: Repository permissions → Issues: Read and write, Metadata: Read, Discussions: Read, on the repositories this board covers — plus Contents: Read on the home repo, which is where the list of those repositories lives.';
 
-/** The baked artifact, and the only one: which repos to sweep. Relative, so a project-path Pages site resolves it too. */
-export const SLUGS_PATH = 'data/repos.json';
+/** The baked artifact, and the only one: which repo is the home. Relative, so a project-path Pages site resolves it too. */
+export const HOME_PATH = 'data/home.json';
+
+/** Where the roster lives — a path on the home repo, read through the API with the viewer's token. */
+export const ROSTER_PATH = 'data/repos.json';
+
+/**
+ * The branch it is read from. Hardcoded because the home repo is created by the
+ * engine (`workflow/home.sh`) and is always on `main`; asking GitHub for the
+ * default branch would cost a request before the first row is drawn.
+ */
+export const ROSTER_REF = 'main';
 
 // Per repo, per request — GitHub caps a connection page at 100 (tower/api/lib/board.js).
 const PAGE_SIZE = 100;
@@ -190,7 +204,7 @@ export const graphql = async (query, ctx = {}) => {
 // ── The roster ─────────────────────────────────────────────────────────────
 
 /**
- * The baked slug list, as the roster shape every page already reads.
+ * The slug list, as the roster shape every page already reads.
  *
  * It carries names and nothing else: which repos this site sweeps, plus which
  * of them is the home repo the summaries are published on. A published roster
@@ -211,29 +225,74 @@ export const parseSlugs = (parsed) => {
 };
 
 /**
- * Read the baked slug list.
+ * The home repo's slug, from the one file published beside the pages.
+ *
+ * Unauthenticated, because it is public and says nothing the site's own URL does
+ * not: the repo it is served from.
  *
  * @param {object} ctx
  * @param {Function} ctx.fetch
- * @param {string} [ctx.slugsPath]
- * @returns {Promise<{ok: boolean, data: object|null, status: number|null, reason: string|null}>}
+ * @param {string} [ctx.homePath]
+ * @returns {Promise<{ok: boolean, home: string|null, status: number|null, reason: string|null}>}
  */
-export const fetchSlugs = async (ctx = {}) => {
-  const url = ctx.slugsPath || SLUGS_PATH;
+export const fetchHome = async (ctx = {}) => {
+  const url = ctx.homePath || HOME_PATH;
   let response;
   try {
     response = await ctx.fetch(url, { headers: { accept: 'application/json' } });
   } catch (error) {
-    return { ok: false, data: null, status: null, reason: `${url} did not answer (${error.message})` };
+    return { ok: false, home: null, status: null, reason: `${url} did not answer (${error.message})` };
   }
   if (!response.ok) {
-    return { ok: false, data: null, status: response.status, reason: `${url} answered ${response.status} — this site was published without its repo list` };
+    return { ok: false, home: null, status: response.status, reason: `${url} answered ${response.status} — this site was published without its home repo` };
   }
+  let parsed = null;
   try {
-    return { ok: true, data: parseSlugs(await response.json()), status: response.status, reason: null };
+    parsed = await response.json();
   } catch (error) {
-    return { ok: false, data: null, status: response.status, reason: `${url} is not JSON (${error.message})` };
+    return { ok: false, home: null, status: response.status, reason: `${url} is not JSON (${error.message})` };
   }
+  const home = parsed && typeof parsed.home === 'string' && parsed.home.includes('/') ? parsed.home : null;
+  if (!home) return { ok: false, home: null, status: response.status, reason: `${url} names no home repo, so there is nowhere to read the board's repositories from` };
+  return { ok: true, home, status: response.status, reason: null };
+};
+
+/**
+ * Read the roster: the repos this board covers.
+ *
+ * Two steps, because the list is PRIVATE (issue #110). Pages is public even when
+ * the repo serving it is not, so the names of the repositories on it are read
+ * from the home repo's default branch through the API — with the same viewer
+ * token the sweep uses, and refused in the same words when it does not reach.
+ * The only thing published beside the pages is which repo to ask.
+ *
+ * @param {object} ctx
+ * @param {string} ctx.token
+ * @param {Function} ctx.fetch
+ * @param {string} [ctx.homePath]
+ * @returns {Promise<{ok: boolean, data: object|null, status: number|null, reason: string|null}>}
+ */
+export const fetchSlugs = async (ctx = {}) => {
+  const pointer = await fetchHome(ctx);
+  if (!pointer.ok) return { ok: false, data: null, status: pointer.status, reason: pointer.reason };
+
+  // The raw media type, so the answer is the file itself rather than GitHub's
+  // envelope with the bytes base64'd inside it.
+  const answer = await rest(
+    `/repos/${pointer.home}/contents/${ROSTER_PATH}?ref=${ROSTER_REF}`,
+    ctx,
+    { accept: 'application/vnd.github.raw+json' },
+  );
+  if (!answer.ok) return { ok: false, data: null, status: answer.status, reason: answer.reason };
+  if (!answer.data || !Array.isArray(answer.data.repos)) {
+    return { ok: false, data: null, status: answer.status, reason: `${pointer.home} answered without a repo list at ${ROSTER_PATH} — the board has no repositories to sweep` };
+  }
+  return {
+    ok: true,
+    data: parseSlugs({ repos: answer.data.repos, home: answer.data.home || pointer.home }),
+    status: answer.status,
+    reason: null,
+  };
 };
 
 // ── The board ──────────────────────────────────────────────────────────────
@@ -527,12 +586,12 @@ export const buildBrief = (board, opts = {}) => {
  * `fetchFeed`, in the same four-key shape and with the same promise never to
  * throw.
  *
- * The slug list is read on every call rather than held: it is a static file
- * beside the pages, so re-reading it costs the browser cache and nothing else,
- * and a site republished under an open tab starts sweeping the new roster.
+ * The slug list is read on every call rather than held: it is one cached static
+ * file and one small API read, so re-reading it costs almost nothing, and a site
+ * republished under an open tab starts sweeping the new roster.
  *
  * @param {string} path - '/api/repos', '/api/board' or '/api/brief'
- * @param {object} ctx - `{ token, fetch, slugsPath, generatedAt }`
+ * @param {object} ctx - `{ token, fetch, homePath, generatedAt }`
  * @returns {Promise<{ok: boolean, data: any, status: number|null, reason: string|null}>}
  */
 export const readFeed = async (path, ctx = {}) => {
@@ -632,7 +691,7 @@ const readRefusal = (status) => (status === 403
  *
  * @param {string} path - the path under api.github.com
  * @param {object} ctx - `{ token, fetch }`
- * @param {object} [init] - `{ method, body }`; a body is sent as JSON
+ * @param {object} [init] - `{ method, body, accept }`; a body is sent as JSON
  * @returns {Promise<{ok: boolean, data: any, status: number|null, reason: string|null}>}
  */
 const rest = async (path, ctx = {}, init = {}) => {
@@ -646,7 +705,7 @@ const rest = async (path, ctx = {}, init = {}) => {
       method,
       headers: {
         authorization: `Bearer ${token}`,
-        accept: 'application/vnd.github+json',
+        accept: init.accept || 'application/vnd.github+json',
         ...(init.body ? { 'content-type': 'application/json' } : {}),
       },
       ...(init.body ? { body: JSON.stringify(init.body) } : {}),
@@ -716,8 +775,8 @@ export const MOVE_STATUSES = ['inbox', 'specced', 'building', 'blocked', 'parked
  * page is where these values come from, which is exactly why none of that is
  * assumed. The repo is checked for SHAPE rather than membership — unlike an
  * intake, whose repo is chosen in a dialog, a move's repo is one this site
- * swept, and confirming it against the baked list would cost a request the
- * move does not otherwise need.
+ * swept, and confirming it against the roster would cost the two reads that
+ * fetch it, which the move does not otherwise need.
  *
  * @param {object} move - `{ repo, number, from, to }`
  * @returns {{ok: boolean, reason?: string, repo?: string, number?: number, from?: string, to?: string}}
@@ -804,7 +863,7 @@ export const moveIssueStatus = async (move, ctx = {}) => {
  * carried.
  *
  * @param {object} payload - `{ repo, title, body }`
- * @param {string[]} slugs - the baked slug list
+ * @param {string[]} slugs - the roster this site sweeps
  * @returns {{ok: boolean, reason?: string, repo?: string, title?: string, body?: string}}
  */
 export const validateIntake = (payload, slugs) => {
@@ -824,7 +883,7 @@ export const validateIntake = (payload, slugs) => {
  * File one issue — the intake dialog, written straight to GitHub.
  *
  * @param {{repo: string, title: string, body: string}} payload - what the dialog holds
- * @param {object} ctx - `{ token, fetch, slugsPath }`
+ * @param {object} ctx - `{ token, fetch, homePath }`
  * @returns {Promise<{ok: boolean, data: any, status: number|null, reason: string|null}>}
  *   `data` is `{ ok: true, url }`, the endpoint's own answer, which the dialog links
  */

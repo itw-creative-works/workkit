@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Security
+
+- [#110](../../issues/110) — The published site no longer serves the list of repos it sweeps: the roster moves to the home repo's private default branch, the only public artifact is which repo that is, and every reader fetches the list with a token. Viewer tokens now need Contents: Read on the home repo.
+
 ## [0.21.0] - 2026-07-31
 
 ### Changed

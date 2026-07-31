@@ -408,6 +408,24 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  await test('a deleted remote branch is regenerated fresh despite the stale local one', () => {
+    // Issue #110: regenerating gh-pages (delete the remote, publish again) is
+    // the history scrub. The first publish leaves a LOCAL gh-pages branch in
+    // the clone, and an orphan checkout refuses a name that already exists —
+    // the script must drop the stale local branch first.
+    const world = mkWorld();
+    publish(world);
+    spawnSync('git', ['-C', world.bare, 'branch', '-D', 'gh-pages']);
+
+    const { code, out } = publish(world);
+    assertEq(code, 0, `exit 0 — ${out}`);
+    const pages = fromPages(world);
+    assert(pages, 'the branch is back');
+    const log = spawnSync('git', ['-C', pages, 'log', '--oneline'], { encoding: 'utf8' }).stdout.trim().split('\n');
+    assertEq(log.length, 1, `one commit, no old history: ${log.join(' | ')}`);
+    cleanup(world.root);
+  });
+
   await test('a page the build stopped shipping stops being published', () => {
     const world = mkWorld();
     publish(world);
@@ -440,10 +458,10 @@ const run = async () => {
 
   group('workflow/publish: the owner’s switches');
 
-  await test('the slug list is baked in beside the pages — names, and nothing else', () => {
+  await test('the slug list is written to the home repo’s default branch — names, and nothing else', () => {
     const world = mkWorld({ roster: ['workkit', 'omega'] });
     publish(world);
-    const list = JSON.parse(fs.readFileSync(path.join(fromPages(world), 'data', 'repos.json'), 'utf8'));
+    const list = JSON.parse(fs.readFileSync(path.join(onMain(world), 'data', 'repos.json'), 'utf8'));
     assertEq(list.repos.slice(0, 2).join(','), 'owner/omega,owner/workkit', 'every registered repo, as a slug');
     assert(list.repos.includes('owner/workkit'), 'and the home repo rides along — its issues are the cross-project queue');
     assertEq(list.home, 'owner/workkit', 'named again, because the summaries are Discussions on that one repo');
@@ -451,7 +469,21 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('nothing but the names is published — no issue data ships with the site', () => {
+  await test('the roster never reaches the published branch — Pages is public, and the names are not', () => {
+    // Issue #110: gh-pages is served to anyone with the URL even when the repo
+    // is private, so a file naming every private repo on this machine cannot be
+    // beside the pages. It lives on main, where the repo's own privacy covers
+    // it, and every reader fetches it with a token.
+    const world = mkWorld({ roster: ['workkit', 'omega'] });
+    publish(world);
+    const pages = fromPages(world);
+    assert(!fs.existsSync(path.join(pages, 'data', 'repos.json')), 'no roster on the published branch');
+    const published = spawnSync('git', ['-C', pages, 'ls-files'], { encoding: 'utf8' }).stdout;
+    assert(!/omega/.test(published), `and no private repo is named anywhere in what it carries: ${published}`);
+    cleanup(world.root);
+  });
+
+  await test('nothing but the home repo is published — no roster, no issue data', () => {
     // The whole doctrine of issue #81: Pages is public even from a private repo,
     // and the published copy reads GitHub live with the viewer's own token. A
     // baked board would be every issue title of every repo, served to anyone
@@ -460,41 +492,46 @@ const run = async () => {
     const { code, out } = publish(world);
     assertEq(code, 0, `exit 0 — ${out}`);
     const pages = fromPages(world);
-    assertEq(fs.readdirSync(path.join(pages, 'data')).join(','), 'repos.json', 'the data folder holds the slug list and nothing else');
+    assertEq(fs.readdirSync(path.join(pages, 'data')).join(','), 'home.json', 'the data folder holds the home pointer and nothing else');
     assert(!fs.existsSync(path.join(pages, 'data', 'board.json')), 'no board snapshot');
-    const list = fs.readFileSync(path.join(pages, 'data', 'repos.json'), 'utf8');
-    assert(!/title|body|labels|issues/.test(list), `and nothing issue-shaped in the one file there is, got: ${list}`);
+    const pointer = fs.readFileSync(path.join(pages, 'data', 'home.json'), 'utf8');
+    assertEq(JSON.parse(pointer).home, 'owner/workkit', 'the repo the site is served from — which its own URL already names');
+    assertEq(Object.keys(JSON.parse(pointer)).join(','), 'home', 'and that one key');
+    assert(!/title|body|labels|issues/.test(pointer), `nothing issue-shaped in the one file there is, got: ${pointer}`);
     cleanup(world.root);
   });
 
-  await test('a machine with no roster publishes a list with the home repo in it', () => {
+  await test('a machine with no roster writes a list with the home repo in it', () => {
     // A machine that has enabled nothing still has a home repo, and its issues
     // are the cross-project queue — so the site is useful from the first
     // publish rather than pointing at nothing.
     const world = mkWorld();
     publish(world);
-    const list = JSON.parse(fs.readFileSync(path.join(fromPages(world), 'data', 'repos.json'), 'utf8'));
+    const list = JSON.parse(fs.readFileSync(path.join(onMain(world), 'data', 'repos.json'), 'utf8'));
     assertEq(list.repos.join(','), 'owner/workkit', 'the home slug, and only it');
     cleanup(world.root);
   });
 
   await test('an unchanged roster is not a commit a day', () => {
     // The list carries no stamp of any kind, so a second publish writes the same
-    // bytes and the branch has nothing to move for.
+    // bytes and neither branch has anything to move for.
     const world = mkWorld({ roster: ['workkit'] });
     publish(world);
     const before = spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim();
+    const beforeMain = spawnSync('git', ['-C', world.bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim();
     const { out } = publish(world);
     assert(/already current/.test(out), `the second run has nothing to say, got: ${out}`);
     assertEq(spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim(), before,
       'and the branch did not move');
+    assertEq(spawnSync('git', ['-C', world.bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim(), beforeMain,
+      'nor did the one the roster is on');
     cleanup(world.root);
   });
 
-  await test('a repo joining the roster reaches the published list on the next publish', () => {
+  await test('a repo joining the roster reaches the list on the next publish', () => {
     const world = mkWorld({ roster: ['workkit'] });
     publish(world);
-    assertEq(JSON.parse(fs.readFileSync(path.join(fromPages(world), 'data', 'repos.json'), 'utf8')).repos.length, 1,
+    assertEq(JSON.parse(fs.readFileSync(path.join(onMain(world), 'data', 'repos.json'), 'utf8')).repos.length, 1,
       'one to start with');
 
     const joined = path.join(world.root, 'repos', 'dotfiles');
@@ -507,8 +544,8 @@ const run = async () => {
     fs.writeFileSync(path.join(world.workflowHome, '.repos.json'), `${JSON.stringify(index, null, 2)}\n`);
 
     publish(world);
-    assert(JSON.parse(fs.readFileSync(path.join(fromPages(world), 'data', 'repos.json'), 'utf8')).repos.includes('owner/dotfiles'),
-      'the new repo is on the published list');
+    assert(JSON.parse(fs.readFileSync(path.join(onMain(world), 'data', 'repos.json'), 'utf8')).repos.includes('owner/dotfiles'),
+      'the new repo is on the list the board sweeps');
     cleanup(world.root);
   });
 
@@ -551,7 +588,8 @@ const run = async () => {
     assertEq(code, 0, `exit 0 — ${out}`);
     const pages = fromPages(world);
     assert(fs.existsSync(path.join(pages, 'index.html')), 'the dashboard publishes');
-    assert(fs.existsSync(path.join(pages, 'data', 'repos.json')), 'with its slug list');
+    assert(fs.existsSync(path.join(pages, 'data', 'home.json')), 'with its home pointer');
+    assert(fs.existsSync(path.join(onMain(world), 'data', 'repos.json')), 'and its roster on main');
     assert(!fs.existsSync(path.join(pages, 'CNAME')), 'and no CNAME');
     cleanup(world.root);
   });

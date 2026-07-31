@@ -5,8 +5,12 @@
 # app built to static files and served by GitHub Pages from the home repo — the
 # board readable from a phone, and NOTHING about it is baked in: the site reads
 # GitHub live from the browser with the viewer's own token (issue #81). The one
-# artifact this script writes beside the pages is the list of repo slugs to
-# sweep (workflow/site-repos.js) — `owner/name` strings, no data.
+# artifact this script writes beside the pages is `data/home.json`, the home
+# repo's slug and nothing else (issue #110). The ROSTER — which repos the board
+# sweeps — is written to the home repo's default branch instead, where the repo's
+# own privacy covers it, and every reader fetches it with a token it already
+# holds. Pages is public even from a private repo, so a list naming private
+# repositories was the one thing beside the pages that could not stay there.
 #
 # WHAT IS BUILT is the clone itself, never this checkout: `~/.workkit/tower` is
 # the tower project, seeded from `tower/app` at setup and carrying its own
@@ -203,7 +207,10 @@ if [[ "$BRANCH_EXISTED" -eq 1 ]]; then
 else
   # No branch anywhere: a detached worktree, then an orphan on top of it. The
   # orphan is what keeps main's history out of a branch that carries only
-  # generated files.
+  # generated files. A stale LOCAL branch (left behind when the remote one was
+  # deleted to be regenerated) would make the orphan checkout refuse — the
+  # branch is generated content, so it is safe to drop first.
+  git -C "$WK_HOME_DIR" branch -qD "$WK_HOME_PAGES_BRANCH" 2>/dev/null || true
   git -C "$WK_HOME_DIR" worktree add -q --detach "$WORKTREE" 2>/dev/null \
     || { say_warn "publish: could not make a worktree beside $WK_HOME_DIR"; exit 1; }
   git -C "$WORKTREE" checkout -q --orphan "$WK_HOME_PAGES_BRANCH" 2>/dev/null \
@@ -213,9 +220,9 @@ fi
 
 # ── The mirror ────────────────────────────────────────────────────────────────
 # The branch mirrors the build exactly, so a page the app stopped shipping stops
-# being served. Everything the engine adds (the slug list, the CNAME, .nojekyll)
-# is written after the mirror, never before. `.git` is the worktree's link file
-# and is the one thing the mirror must not touch.
+# being served. Everything the engine adds (the home pointer, the CNAME,
+# .nojekyll) is written after the mirror, never before. `.git` is the worktree's
+# link file and is the one thing the mirror must not touch.
 find "$WORKTREE" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} + 2>/dev/null || true
 cp -R "$WK_HOME_DIST/." "$WORKTREE/" \
   || { say_warn "publish: could not copy the build into the $WK_HOME_PAGES_BRANCH worktree"; exit 1; }
@@ -224,28 +231,38 @@ cp -R "$WK_HOME_DIST/." "$WORKTREE/" \
 # prefixed asset folders loses them to it.
 : >"$WORKTREE/.nojekyll"
 
-# ── The slug list ─────────────────────────────────────────────────────────────
-# The one thing the site cannot work out for itself. Everything on the published
-# board is fetched live by the browser with the viewer's token; which
-# REPOSITORIES to sweep is this machine's roster, so it rides along as a list of
-# `owner/name` strings and nothing else — no titles, no labels, no counts.
+# ── The home pointer ──────────────────────────────────────────────────────────
+# The ONE public artifact, and the only thing the site cannot work out for
+# itself: which repo is the home. Safe to publish because the site is SERVED from
+# that repo — its URL already names it — and it is the address the pages read the
+# private roster from, with the viewer's own token.
+mkdir -p "$WORKTREE/data"
+printf '{"home":"%s"}\n' "$(wk_home_slug)" >"$WORKTREE/data/home.json"
+say_info "publish: the home pointer is at data/home.json"
+
+# ── The roster ────────────────────────────────────────────────────────────────
+# Which REPOSITORIES the board sweeps is this machine's roster, and it names
+# private repos — so it is written to the home repo's default branch, which is
+# as private as that repo is, and never beside the pages (issue #110). The
+# published dashboard and the cloud brief both read it from there through the
+# GitHub API, each with a token it already holds. It is committed by the source
+# side below, along with anything else the day changed in the project.
 #
-# Written straight into the worktree, and carrying no stamp of any kind: an
-# unchanged roster produces a byte-identical file, git sees nothing staged, and
-# a machine publishing daily does not commit a file a day for the time of day.
+# It carries no stamp of any kind: an unchanged roster produces a byte-identical
+# file, git sees nothing staged, and a machine publishing daily does not commit a
+# file a day for the time of day.
 #
-# Without node the list cannot be composed, and a site published without it
-# would show the token prompt and then find no repos — so the run says so and
-# publishes the pages anyway, which is still a working site the moment node is
-# back.
+# Without node the list cannot be composed, and the readers fall back to the
+# home repo alone — so the run says so and publishes the pages anyway, which is
+# still a working site the moment node is back.
 if command -v node >/dev/null 2>&1; then
-  if node "$SCRIPT_DIR/site-repos.js" "$WORKTREE/data/repos.json" "$WK_USER_DIR" >/dev/null 2>&1; then
-    say_info "publish: the repo list is at data/repos.json"
+  if node "$SCRIPT_DIR/site-repos.js" "$WK_HOME_DIR/data/repos.json" "$WK_USER_DIR" >/dev/null 2>&1; then
+    say_info "publish: the repo list is on $(wk_home_slug)'s default branch at data/repos.json"
   else
-    say_warn "publish: the repo list could not be composed — the site publishes without one, and its pages will find no repos to sweep"
+    say_warn "publish: the repo list could not be composed — the site publishes without a fresh one, and its pages will find no repos to sweep"
   fi
 else
-  say_skip "publish: node is not on this machine — the site publishes without its repo list, and its pages will find no repos to sweep"
+  say_skip "publish: node is not on this machine — the site publishes without a fresh repo list, and its pages will find no repos to sweep"
 fi
 
 # ── The custom URL ────────────────────────────────────────────────────────────

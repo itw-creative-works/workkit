@@ -43,8 +43,9 @@ const today = () => new Date().toLocaleDateString('en-CA');
  * unset.
  * `settings` is a settings file to plant before the run — the configured runner
  * whose file must win over the env var.
- * `siteRepos` is what gh-pages serves as data/repos.json; null is the file
- * being absent, which is publishing that is off or has never run.
+ * `siteRepos` is what the home repo's default branch carries as data/repos.json
+ * — private, where gh-pages would be public (issue #110); null is the file being
+ * absent, which is publishing that is off or has never run.
  * `posted` is what the home repo's discussions already carry, as
  * `{ title, body }` — the check-before-post guard's input, and the cursor's.
  * `ghFails` makes every API call refuse.
@@ -104,10 +105,10 @@ const mkWorld = ({
     'case "$all" in',
     `  *createDiscussion*) printf 'post %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
     `  *"issues(states: OPEN"*) printf 'sweep %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
-    `  *contents/data/repos.json*) printf 'roster %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
+    `  *contents/data/repos.json\\?ref=main*) printf 'roster %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
     'esac',
     'case "$all" in',
-    '  *contents/data/repos.json*)',
+    '  *contents/data/repos.json\\?ref=main*)',
     ...(encoded
       // Wrapped at 60 characters, the way GitHub serves it — a decoder that
       // cannot take the newlines would pass against one long line.
@@ -313,17 +314,21 @@ const run = async () => {
     assert(!/WORKKIT_HOME_SLUG/.test(fs.readFileSync(SCRIPT, 'utf8')), 'the runner does not name it');
   });
 
-  await test('the roster comes from the published slug list, and the composer reads it back', () => {
+  await test('the roster comes from the home repo’s own branch, and the composer reads it back', () => {
+    // Private, and read with the cross-repo token — never from gh-pages, which
+    // is public even on a private repo (issue #110).
     const world = mkWorld({ siteRepos: { repos: ['a/one', 'b/two', HOME_SLUG], home: HOME_SLUG } });
     const res = runJob(world);
     assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
     const slugs = world.roster().map((r) => r.slug).sort();
     assertEq(slugs.join(','), ['a/one', 'b/two', HOME_SLUG].sort().join(','),
-      `every published slug is on the roster: ${JSON.stringify(world.roster())}`);
+      `every slug on the list is on the roster: ${JSON.stringify(world.roster())}`);
+    assert(world.ghCalls().some((argv) => argv.includes(`repos/${HOME_SLUG}/contents/data/repos.json?ref=main`)),
+      `read from the default branch, not the public one: ${fmtCalls(world.ghCalls())}`);
     cleanup(world.root);
   });
 
-  await test('no published list falls back to the home repo alone, and still composes', () => {
+  await test('no slug list falls back to the home repo alone, and still composes', () => {
     const world = mkWorld();
     const res = runJob(world);
     assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);

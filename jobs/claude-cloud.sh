@@ -33,7 +33,7 @@
 # which one it is.
 #
 # TWO TOKENS, TWO JOBS (issue #91). GH_TOKEN is the cross-repo one: the board
-# sweep and the gh-pages read of the published slug list, both reaching repos
+# sweep and the read of the slug list on the home repo, both reaching repos
 # this workflow does not run in. WORKKIT_POST_TOKEN is the workflow's built-in
 # GITHUB_TOKEN, which reaches this repo alone and is all the Discussion post
 # needs; it is exported for that one call and nothing else. A run handed
@@ -114,14 +114,17 @@ if [[ -z "$HOME_SLUG" ]]; then
 fi
 
 # Which repos this brief covers. The roster is a machine's own knowledge and a
-# runner has none, so it is read from the one place the machine already
-# published it: `data/repos.json` on the home repo's gh-pages branch, the slug
-# list the published dashboard sweeps (workflow/site-repos.js writes it). The
-# contents API answers with a base64 body.
+# runner has none, so it is read from the one place the machine already wrote
+# it: `data/repos.json` on the home repo's DEFAULT branch, the slug list the
+# published dashboard sweeps (workflow/site-repos.js writes it). It is on main
+# rather than beside the pages because gh-pages is public even from a private
+# repo and the list names private repos (issue #110) — which changes nothing
+# here, since this read was always authenticated. The contents API answers with
+# a base64 body.
 fetch_site_repos() {
   local slug="$1" encoded
   command -v gh >/dev/null 2>&1 || return 1
-  encoded="$(gh api "repos/$slug/contents/data/repos.json?ref=gh-pages" -q '.content' 2>/dev/null)" || return 1
+  encoded="$(gh api "repos/$slug/contents/data/repos.json?ref=main" -q '.content' 2>/dev/null)" || return 1
   [[ -n "$encoded" ]] || return 1
   printf '%s' "$encoded" | tr -d '\n' | base64 -d 2>/dev/null || return 1
 }
@@ -135,7 +138,7 @@ if [[ -z "$SLUGS" ]]; then
   # are the cross-project queue, so a brief built from it is a real morning,
   # while an empty board would read as "nothing is waiting on you" — the one
   # thing a brief must never say when it simply did not look.
-  note "roster: no published slug list on $HOME_SLUG (gh-pages data/repos.json) — sweeping the home repo alone"
+  note "roster: no slug list on $HOME_SLUG (main data/repos.json) — sweeping the home repo alone"
   SLUGS="$HOME_SLUG"
 fi
 # The home repo is on the published list already; this covers the list that

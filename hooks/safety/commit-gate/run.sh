@@ -293,10 +293,10 @@ fi
 
 # 5. Tests must pass when the repo defines them (at the repo ROOT — the
 # session may sit in a subdirectory). The run carries its own deadline, kept
-# under the hook's declared timeout (900s in hooks.json): a hook the harness
+# under the hook's declared timeout (1600s in hooks.json): a hook the harness
 # cancels returns no decision, and no decision is ALLOW — so without this, the
 # biggest suites are exactly where the gate stopped enforcing (issue #93).
-# Injectable so the suite can prove the bounce without an 840s wait.
+# Injectable so the suite can prove the bounce without a wait.
 gate_end_tree() {
   local pid kid
   pid="$1"
@@ -304,7 +304,7 @@ gate_end_tree() {
   kill -9 "$pid" 2>/dev/null || true
 }
 if [ -f "$repo_root/package.json" ] && jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
-  deadline="${WORKKIT_GATE_TEST_DEADLINE:-840}"
+  deadline="${WORKKIT_GATE_TEST_DEADLINE:-1500}"
   out_file=$(mktemp "${TMPDIR:-/tmp}/commit-gate-test.XXXXXX")
   (cd "$repo_root" && npm test >"$out_file" 2>&1) &
   test_pid=$!

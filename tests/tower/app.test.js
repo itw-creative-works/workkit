@@ -1642,10 +1642,27 @@ const run = async () => {
     assertEq(github.parseSlugs(null).home, '', 'nothing at all parses to nothing, never undefined');
   });
 
-  await test('a site published without its list says so rather than showing an empty board', async () => {
-    const answer = await github.fetchSlugs({ fetch: mkFetch({ ok: false, status: 404, json: async () => ({}) }) });
+  await test('a home repo carrying no roster says so rather than showing an empty board', async () => {
+    // The list is on the home repo now (issue #110), so this is the read that
+    // can come back empty: a home that has never been published from.
+    const answer = await github.fetchSlugs({
+      token: 't',
+      fetch: mkFetch((url) => (url === 'data/home.json'
+        ? jsonResponse(200, { home: 'owner/workkit' })
+        : { ok: false, status: 404, json: async () => ({ message: 'Not Found' }) })),
+    });
     assertEq(answer.ok, false, 'a missing list is a failure to report');
-    assert(/published without its repo list/.test(answer.reason), `and it says which, got: ${answer.reason}`);
+    assert(/404/.test(answer.reason) && /Not Found/.test(answer.reason), `and GitHub’s own sentence survives, got: ${answer.reason}`);
+  });
+
+  await test('the roster is never read without a token — the list is private', async () => {
+    const fetchImpl = mkFetch((url) => (url === 'data/home.json'
+      ? jsonResponse(200, { home: 'owner/workkit' })
+      : jsonResponse(200, { repos: ['owner/workkit'], home: 'owner/workkit' })));
+    const answer = await github.fetchSlugs({ token: '', fetch: fetchImpl });
+    assertEq(answer.ok, false, 'there is nothing to read it with');
+    assert(/no GitHub token/.test(answer.reason), `the refusal is the one the prompt answers, got: ${answer.reason}`);
+    assertEq(fetchImpl.calls.length, 1, 'and the unauthenticated read stopped at the public pointer');
   });
 
   await test('the brief the browser builds is the brief the tower builds', () => {
@@ -1699,17 +1716,38 @@ const run = async () => {
 
   group('tower/app: github — the one door');
 
-  /** A fetch that answers the slug list from a path and everything else from GraphQL. */
-  const mkSiteFetch = (list, graphqlBody) => mkFetch((url) => (url === 'data/repos.json'
-    ? jsonResponse(200, list)
-    : jsonResponse(200, graphqlBody)));
+  /** Where the roster is read from: the home repo's default branch, through the API. */
+  const ROSTER_URL = 'https://api.github.com/repos/owner/workkit/contents/data/repos.json?ref=main';
 
-  await test('the roster feed is the baked list, and costs GitHub nothing', async () => {
+  /** Whether a URL is the roster read — the one call the private list costs. */
+  const isRoster = (url) => url.startsWith('https://api.github.com/') && url.includes('contents/data/repos.json');
+
+  /**
+   * A fetch that answers the home pointer from the site, the roster from the
+   * home repo, and everything else from GraphQL — the three reads a published
+   * page makes (issue #110).
+   */
+  const mkSiteFetch = (list, graphqlBody) => mkFetch((url) => {
+    if (url === 'data/home.json') return jsonResponse(200, { home: 'owner/workkit' });
+    if (isRoster(url)) return jsonResponse(200, list);
+    return jsonResponse(200, graphqlBody);
+  });
+
+  await test('the roster feed is the private list, read from the home repo with the viewer’s token', async () => {
+    // Issue #110: the site publishes only which repo is the home. The list of
+    // repositories is on that repo's default branch, and reading it is an
+    // authenticated call — nothing about the board's coverage is public.
     const fetchImpl = mkSiteFetch({ repos: ['owner/workkit'], home: 'owner/workkit' }, {});
-    const answer = await github.readFeed('/api/repos', { token: 't', fetch: fetchImpl });
+    const answer = await github.readFeed('/api/repos', { token: 'fake-token-for-tests', fetch: fetchImpl });
     assertEq(answer.ok, true, 'answered');
     assertEq(answer.data[0].slug, 'owner/workkit', 'the roster, in the shape every page reads');
-    assertEq(fetchImpl.calls.length, 1, 'one read of a static file, and no GraphQL at all');
+    assertEq(fetchImpl.calls.length, 2, 'the pointer and the list, and no GraphQL at all');
+    assertEq(fetchImpl.calls[0].url, 'data/home.json', 'the only file published beside the pages');
+    assert(!fetchImpl.calls[0].options.headers.authorization, 'read unauthenticated — it says what the site’s own URL says');
+    assertEq(fetchImpl.calls[1].url, ROSTER_URL, 'and the list from the home repo’s default branch');
+    assertEq(fetchImpl.calls[1].options.headers.authorization, 'Bearer fake-token-for-tests', 'with the viewer’s token, because the list is private');
+    assertEq(fetchImpl.calls[1].options.headers.accept, 'application/vnd.github.raw+json', 'asked for raw, so the answer is the file itself');
+    assert(!fetchImpl.calls.some((call) => call.url === 'data/repos.json'), 'and never from the published site');
   });
 
   await test('the board feed is a live sweep with the viewer’s token', async () => {
@@ -1717,12 +1755,23 @@ const run = async () => {
     const answer = await github.readFeed('/api/board', { token: 'fake-token-for-tests', fetch: fetchImpl });
     assertEq(answer.ok, true, 'answered');
     assertEq(answer.data.issues[0].number, 81, 'with the issues GitHub just returned');
-    assertEq(fetchImpl.calls[1].options.headers.authorization, 'Bearer fake-token-for-tests', 'unlocked by the token and nothing else');
+    assertEq(fetchImpl.calls[2].options.headers.authorization, 'Bearer fake-token-for-tests', 'unlocked by the token and nothing else');
+  });
+
+  await test('a site published without its home pointer says so, and reaches GitHub not at all', async () => {
+    const missing = mkFetch((url) => (url === 'data/home.json'
+      ? jsonResponse(404, {})
+      : jsonResponse(200, { repos: ['owner/workkit'], home: 'owner/workkit' })));
+    const answer = await github.readFeed('/api/board', { token: 't', fetch: missing });
+    assertEq(answer.ok, false, 'there is nowhere to read the roster from');
+    assert(/without its home repo/.test(answer.reason), `and it says which half is missing, got: ${answer.reason}`);
+    assertEq(missing.calls.length, 1, 'nothing was asked of GitHub');
   });
 
   await test('the brief feed is that sweep plus the summaries', async () => {
     const fetchImpl = mkFetch((url, options) => {
-      if (url === 'data/repos.json') return jsonResponse(200, { repos: ['ITW-Creative-Works/workkit'], home: 'owner/workkit' });
+      if (url === 'data/home.json') return jsonResponse(200, { home: 'owner/workkit' });
+      if (isRoster(url)) return jsonResponse(200, { repos: ['ITW-Creative-Works/workkit'], home: 'owner/workkit' });
       return jsonResponse(200, JSON.parse(options.body).query.includes('discussions')
         ? { data: { repository: { discussions: { nodes: [{ title: 'Tuesday', url: 'u', createdAt: '2026-07-28T09:00:00Z', category: null }] } } } }
         : { data: SWEEP.data });
@@ -1734,9 +1783,11 @@ const run = async () => {
   });
 
   await test('a failed sweep is a failed feed, never an empty board', async () => {
-    const fetchImpl = mkFetch((url) => (url === 'data/repos.json'
-      ? jsonResponse(200, { repos: ['owner/workkit'], home: '' })
-      : jsonResponse(401, { message: 'Bad credentials' })));
+    const fetchImpl = mkFetch((url) => {
+      if (url === 'data/home.json') return jsonResponse(200, { home: 'owner/workkit' });
+      if (isRoster(url)) return jsonResponse(200, { repos: ['owner/workkit'], home: '' });
+      return jsonResponse(401, { message: 'Bad credentials' });
+    });
     const answer = await github.readFeed('/api/board', { token: 'stale', fetch: fetchImpl });
     assertEq(answer.ok, false, 'the page shows the reason, not six confident zeros');
     assert(/refused the token/.test(answer.reason), `and the reason is the token, got: ${answer.reason}`);
@@ -1746,9 +1797,11 @@ const run = async () => {
     // The status is what the runtime acts on: a token GitHub refused is the one
     // failure a new token fixes, so the page answers it with the prompt. It has
     // to reach the feed result to be acted on at all.
-    const refuse = (status) => mkFetch((url) => (url === 'data/repos.json'
-      ? jsonResponse(200, { repos: ['owner/workkit'], home: 'owner/workkit' })
-      : jsonResponse(status, { message: 'Bad credentials' })));
+    const refuse = (status) => mkFetch((url) => {
+      if (url === 'data/home.json') return jsonResponse(200, { home: 'owner/workkit' });
+      if (isRoster(url)) return jsonResponse(200, { repos: ['owner/workkit'], home: 'owner/workkit' });
+      return jsonResponse(status, { message: 'Bad credentials' });
+    });
     for (const feedPath of ['/api/board', '/api/brief']) {
       const answer = await github.readFeed(feedPath, { token: 'expired', fetch: refuse(401) });
       assertEq(answer.status, 401, `${feedPath} carries the status GitHub refused it with`);
@@ -1758,6 +1811,15 @@ const run = async () => {
     const down = await github.readFeed('/api/board', { token: 't', fetch: refuse(500) });
     assert(!github.isTokenRefusal(down), 'a server failure is not the token’s fault and must not ask for a new one');
     assert(!github.isTokenRefusal({ ok: true, status: 200 }), 'and neither is a read that worked');
+
+    // The roster read is the FIRST thing the token is asked for (issue #110), so
+    // a token that cannot see the home repo has to reach the prompt too — not
+    // read as a site published without a list.
+    const blindRoster = mkFetch((url) => (url === 'data/home.json'
+      ? jsonResponse(200, { home: 'owner/workkit' })
+      : jsonResponse(403, { message: 'Resource not accessible by personal access token' })));
+    const unread = await github.readFeed('/api/board', { token: 'no-contents', fetch: blindRoster });
+    assert(github.isTokenRefusal(unread), `a token that cannot read the roster is a token refusal, got: ${unread.reason}`);
   });
 
   await test('the refusal names the fix that exists — there is no form under it', async () => {
@@ -1840,9 +1902,11 @@ const run = async () => {
 
     const expired = await github.createIssue({ repo: 'owner/workkit', title: 'x' }, {
       token: 'expired',
-      fetch: mkFetch((url) => (url === 'data/repos.json'
-        ? jsonResponse(200, { repos: ['owner/workkit'], home: 'owner/workkit' })
-        : jsonResponse(401, { message: 'Bad credentials' }))),
+      fetch: mkFetch((url) => {
+        if (url === 'data/home.json') return jsonResponse(200, { home: 'owner/workkit' });
+        if (isRoster(url)) return jsonResponse(200, { repos: ['owner/workkit'], home: 'owner/workkit' });
+        return jsonResponse(401, { message: 'Bad credentials' });
+      }),
     });
     assert(/expired/.test(expired.reason), `a 401 is the other story — the token itself, got: ${expired.reason}`);
     assert(github.isTokenRefusal(expired), 'which the runtime answers with the prompt');
@@ -1914,12 +1978,11 @@ const run = async () => {
   });
 
   await test('intake files the issue the endpoint files — same labels, same default body', async () => {
-    const fetchImpl = mkFetch((url) => (url === 'data/repos.json'
-      ? jsonResponse(200, { repos: ['owner/workkit'], home: 'owner/workkit' })
-      : jsonResponse(201, { html_url: 'https://github.com/owner/workkit/issues/12' })));
+    const fetchImpl = mkSiteFetch({ repos: ['owner/workkit'], home: 'owner/workkit' },
+      { html_url: 'https://github.com/owner/workkit/issues/12' });
     const answer = await github.createIssue({ repo: 'OWNER/Workkit', title: '  a thought  ', body: '' }, { token: 'fake-token-for-tests', fetch: fetchImpl });
 
-    const call = fetchImpl.calls[1];
+    const call = fetchImpl.calls[2];
     assertEq(call.url, 'https://api.github.com/repos/owner/workkit/issues', 'filed under the ROSTER’s spelling, as the endpoint does');
     assertEq(call.options.method, 'POST', 'a create');
     assertEq(call.options.headers.authorization, 'Bearer fake-token-for-tests', 'with the viewer’s token');
@@ -1938,16 +2001,16 @@ const run = async () => {
   });
 
   await test('intake refuses what the endpoint refuses, before anything is filed', async () => {
-    const fetchImpl = mkFetch((url) => (url === 'data/repos.json'
-      ? jsonResponse(200, { repos: ['owner/workkit'], home: 'owner/workkit' })
-      : jsonResponse(201, { html_url: 'https://github.com/owner/workkit/issues/12' })));
+    const fetchImpl = mkSiteFetch({ repos: ['owner/workkit'], home: 'owner/workkit' },
+      { html_url: 'https://github.com/owner/workkit/issues/12' });
     const refuse = async (payload) => github.createIssue(payload, { token: 't', fetch: fetchImpl });
 
     assert(/unknown repo: owner\/other/.test((await refuse({ repo: 'owner/other', title: 'x' })).reason), 'a repo this site does not sweep');
     assert(/title is required/.test((await refuse({ repo: 'owner/workkit', title: '   ' })).reason), 'a blank title');
     assert(/longer than 256/.test((await refuse({ repo: 'owner/workkit', title: 'x'.repeat(257) })).reason), 'a title past the cap');
     assert(/longer than 4000/.test((await refuse({ repo: 'owner/workkit', title: 'x', body: 'b'.repeat(4001) })).reason), 'a body past it');
-    assert(fetchImpl.calls.every((call) => call.url === 'data/repos.json'), 'and every refusal came before GitHub was written to');
+    assert(fetchImpl.calls.every((call) => call.url === 'data/home.json' || isRoster(call.url)),
+      'and every refusal came before GitHub was written to');
   });
 
   group('tower/app: api — the three modes');
@@ -1974,7 +2037,8 @@ const run = async () => {
     const markup = token.tokenPrompt();
     assert(markup.includes(`href="${github.TOKEN_URL}"`), 'the creation page is one click away');
     assert(markup.includes('Issues: Read and write'), 'it names the permissions, and the board moves cards, so writing issues is one');
-    assert(!/admin|workflow|contents/i.test(markup), 'and asks for nothing beyond the issues it manages');
+    assert(markup.includes('Contents: Read'), 'and the one read that is not an issue: the private roster on the home repo (issue #110)');
+    assert(!/admin|workflow/i.test(markup), 'and asks for nothing beyond that');
     assert(markup.includes('type="password"'), 'the field does not display the token');
     assert(markup.includes('localStorage'), 'and it says where the token is kept');
     assert(!token.tokenPrompt().includes('data-token-problem'), 'a first visit is not an error state');

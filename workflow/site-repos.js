@@ -1,16 +1,21 @@
 #!/usr/bin/env node
 //
-// The published site's ONE baked artifact: which repos it sweeps.
+// The roster the published site sweeps: which repos its board covers.
 //
-// Nothing else is baked. The published dashboard reads GitHub live from the
-// browser with the viewer's own token (issue #81) — every issue, every count,
-// every summary — so the only thing it cannot work out for itself is which
-// repositories this machine's board covers. That is a list of `owner/name`
-// strings and nothing more: no titles, no bodies, no labels, no counts. Pages
-// is public even on a private repo, and a list of repo names is the smallest
-// thing that makes the site work at all.
+// Nothing is baked into the site itself. The published dashboard reads GitHub
+// live from the browser with the viewer's own token (issue #81) — every issue,
+// every count, every summary — so the only thing it cannot work out for itself
+// is which repositories this machine's board covers. That is a list of
+// `owner/name` strings and nothing more: no titles, no bodies, no labels, no
+// counts.
 //
-// The roster is read through the tower's own module, so the site sweeps exactly
+// It is written to the HOME REPO's default branch and never beside the pages
+// (issue #110): Pages is public even from a private repo, and repo NAMES are
+// themselves private when the repos are. Readers fetch it through the GitHub
+// API — the browser with the viewer's token, the cloud brief with its own — and
+// the only thing published beside the pages is which repo to ask.
+//
+// The list is read through the tower's own module, so the site sweeps exactly
 // the repos the dashboard and the morning brief do; the home repo rides along
 // under `home`, which is where the published summaries are read from.
 //
