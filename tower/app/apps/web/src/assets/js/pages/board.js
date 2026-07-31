@@ -18,7 +18,8 @@
 // write puts the card back and says why. A PUBLISHED copy behaves identically:
 // the sweep is GitHub's and the browser makes it, and so is the write, with the
 // viewer's own token (libs/tower/github.js). The only copy that does not drag is
-// the locked one, which never reaches this page — the prompt is its whole body.
+// the locked one, which never draws its cards — the unlock dialog is open over
+// an empty board.
 //
 
 import { startPage } from '../libs/tower/page.js';

@@ -1051,16 +1051,18 @@ const run = async () => {
   const fs = require('fs');
 
   await test('the intake dialog is inert only where it has nothing to write with', () => {
-    // A locked copy needs a TOKEN, not a tower — telling it "live data needs a
-    // local tower" sends the one viewer who can fix it after the wrong thing.
-    // An unlocked one files for real, with the same token it reads with.
+    // A locked copy off this machine needs a TOKEN, not a tower — telling it
+    // "live data needs a local tower" sends the one viewer who can fix it after
+    // the wrong thing. An unlocked one files for real, with the same token it
+    // reads with. (On localhost the tower IS the answer — the test below.)
     assert(format.LOCKED_NOTICE.includes('token'), 'the locked sentence asks for the token');
     assert(!format.LOCKED_NOTICE.includes('npm run tower'), 'and does not send a viewer to install a tower');
     assert(!/read-only/.test(format.LOCKED_NOTICE), 'and no longer calls the token read-only');
     assertEq(format.READ_ONLY_NOTICE, undefined, 'the read-only sentence is gone — nothing it described is true any more');
     const src = fs.readFileSync(path.join(libs, 'intake.js'), 'utf8');
     assert(/if \(!WRITABLE\)[\s\S]{0,80}disableIntake\(dialog\)/.test(src), 'only a copy that cannot write is disabled');
-    assert(/lockedNotice\(\)/.test(src) && !/readOnlyNotice/.test(src), 'and the one sentence left is the locked one');
+    assert(/lockedIntakeNotice\(location\.hostname\)/.test(src) && !/readOnlyNotice/.test(src),
+      'and the sentence left is the locked one — which host it is said on is token.js’s fork (#89)');
     assert(/submitIntake\(payload\)/.test(src), 'the submit goes through the mode-aware write, never a tower URL');
     assert(/readAnyFeed\('\/api\/repos'\)/.test(src), 'and the roster is read from whichever half is talking');
   });
@@ -1611,6 +1613,125 @@ const run = async () => {
     assert(token.tokenPrompt('the token was refused').includes('the token was refused'), 'and a refusal is shown when there is one');
   });
 
+  await test('a locked copy on this machine is told the tower is down, and is never asked for a token', () => {
+    // The bug (#89): a locked page served from localhost asked for a GitHub
+    // token, which a local dashboard has no use for — the tower API holds the
+    // `gh` login. The fork is on the hostname alone; the MODE is untouched.
+    const markup = token.towerDownNotice('http://localhost:4300/board?repo=ITW/workkit');
+    for (const hostname of ['localhost', '127.0.0.1', '[::1]']) {
+      assert(token.isLocalHost(hostname), `${hostname} is this machine`);
+      assert(markup.includes('npm run tower'), `${hostname} is told how to start the tower`);
+      assert(!markup.includes('data-token-input') && !markup.includes('data-token-save'),
+        `${hostname} gets no field and no save button`);
+      assert(!markup.includes(github.TOKEN_URL), `${hostname} is not sent to GitHub to make a token`);
+    }
+  });
+
+  await test('the local notice carries the connect link, because starting the tower alone changes nothing', () => {
+    // The mode is decided from the BUILD, never from a probe (api.js): a locked
+    // page on this machine is a production build, so a reload after `npm run
+    // tower` is locked all over again. `?api=` is what flips decideLive, and it
+    // rides the URL through that reload.
+    const href = token.connectHref('http://localhost:4300/board?repo=ITW/workkit');
+    const url = new URL(href);
+    assertEq(url.searchParams.get('api'), 'http://127.0.0.1:8693', 'pointed at the tower’s own origin');
+    assertEq(url.searchParams.get('api'), api.API_BASE,
+      'which is api.js’s own default — the two copies of the origin cannot drift apart');
+    assertEq(url.searchParams.get('repo'), 'ITW/workkit', 'and every other parameter survives');
+    assertEq(url.pathname, '/board', 'on the page the viewer was already looking at');
+    assertEq(new URL(token.connectHref('http://localhost:4300/?api=http://box:8693')).searchParams.getAll('api').length, 1,
+      'an api already in the URL is replaced, never doubled');
+    assert(token.towerDownNotice('http://localhost:4300/board?repo=ITW/workkit').includes(`href="${format.esc(href)}"`),
+      'and the notice links to exactly that URL');
+    assertEq(api.decideMode('production', 'http://127.0.0.1:8693', false), 'tower',
+      'which is the override that unlocks the page — the advice resolves the state it appears in');
+  });
+
+  await test('the intake dialog tells the same story the body does, forked on the same predicate', () => {
+    assertEq(token.lockedIntakeNotice('localhost'), format.localLockedNotice(), 'on this machine it asks for the tower');
+    assert(format.LOCAL_LOCKED_NOTICE.includes('npm run tower'), 'in the same words, and no token among them');
+    assert(!/token/i.test(format.LOCAL_LOCKED_NOTICE), 'a local dialog never asks for one');
+    assertEq(token.lockedIntakeNotice('ianwieds.github.io'), format.lockedNotice(), 'and anywhere else it is the token wording, unchanged');
+
+    const source = fs.readFileSync(path.join(libs, 'intake.js'), 'utf8');
+    assert(/lockedIntakeNotice\(location\.hostname\)/.test(source), 'the dialog reads the fork rather than owning a second one');
+    assert(/no roster until the tower is running[\s\S]{0,60}no roster until a token is added/.test(source),
+      'and the empty roster forks with it, so the two halves of the dialog cannot disagree');
+  });
+
+  await test('a locked copy anywhere else opens the prompt in a dialog, byte for byte', () => {
+    // Where it is drawn moved (#96) — the prompt did not. It used to be the
+    // page body and is now the layout's static modal, so the proof that it is
+    // the same prompt moved with it: what the dialog is filled with is
+    // `tokenPrompt()` itself, and the reason a refusal carries is the only
+    // thing that ever differs.
+    for (const hostname of ['ianwieds.github.io', 'tower.example.com', '192.168.1.20']) {
+      assert(!token.isLocalHost(hostname), `${hostname} is not this machine`);
+    }
+
+    // The form is a stub the wiring can be read off: in the DOM every open
+    // writes fresh markup, so the listener count here is one per open.
+    const stored = [];
+    const reloads = [];
+    const input = { value: '  github_pat_TEST  ', focus: () => {} };
+    const form = {
+      listeners: [],
+      addEventListener: (type, fn) => form.listeners.push({ type, fn }),
+      querySelector: (sel) => (sel === '[data-token-input]' ? input : null),
+    };
+    const host = { innerHTML: '', querySelector: (sel) => (sel === '[data-token-form]' ? form : null) };
+    const dialog = { querySelector: (sel) => (sel === '[data-token-body]' ? host : null) };
+    const shown = [];
+    const hidden = [];
+    const instance = { show: () => shown.push(1), hide: () => hidden.push(1) };
+    const scope = { querySelector: (sel) => (sel === `#${token.TOKEN_MODAL}` ? dialog : null) };
+    // token.js reaches for `window` only inside these calls — the same
+    // stub the api.js load above uses, held just long enough to make them.
+    globalThis.window = { bootstrap: { Modal: { getOrCreateInstance: () => instance, getInstance: () => instance } }, localStorage: { setItem: (key, value) => stored.push(value), removeItem: () => {} } };
+    const hadLocation = 'location' in globalThis ? globalThis.location : undefined;
+    globalThis.location = { reload: () => reloads.push(1) };
+    try {
+      token.openTokenModal('', scope);
+      assertEq(host.innerHTML, token.tokenPrompt(), 'the dialog is filled with the prompt, unchanged');
+      assertEq(shown.length, 1, 'and opened — nothing was clicked, so the runtime opens it');
+      assertEq(form.listeners.length, 1, 'and WIRED — the open mounts the submit, not just the markup');
+      form.listeners[0].fn({ preventDefault: () => {} });
+      assertEq(stored.join(), 'github_pat_TEST', 'submitting stores what was typed, trimmed');
+      assertEq(reloads.length, 1, 'and reads the page again with it');
+      token.openTokenModal('the token was refused', scope);
+      assertEq(form.listeners.length, 2, 'a re-present wires its fresh markup too');
+      assertEq(host.innerHTML, token.tokenPrompt('the token was refused'), 'a refusal re-presents it carrying the reason');
+      assertEq(shown.length, 2, 'through the same one door');
+      token.hideTokenModal(scope);
+      assertEq(hidden.length, 1, 'and a read that landed after all takes it away again');
+
+      const empty = { querySelector: () => null };
+      const warn = console.warn;
+      console.warn = () => {};
+      token.openTokenModal('', empty);
+      token.hideTokenModal(empty);
+      console.warn = warn;
+      assertEq(shown.length, 2, 'a page without the layout’s dialog is left alone rather than thrown at');
+    } finally {
+      delete globalThis.window;
+      if (hadLocation === undefined) delete globalThis.location;
+      else globalThis.location = hadLocation;
+    }
+  });
+
+  await test('the layout ships that dialog, and it cannot be dismissed onto an empty page', () => {
+    const layout = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src',
+      '_layouts', 'tower', 'page.html'), 'utf8');
+    const start = layout.indexOf(`<div class="modal fade" id="${token.TOKEN_MODAL}"`);
+    assert(start !== -1, 'the id token.js opens is a plain Bootstrap modal in the layout — the intake dialog’s own mechanism');
+    const shell = layout.slice(start, layout.indexOf('<!-- Intake dialog.', start));
+    assert(shell.includes('data-token-body'), 'with the region the prompt is written into');
+    assert(shell.includes('data-bs-backdrop="static"') && shell.includes('data-bs-keyboard="false"'),
+      'and no way to dismiss it — behind it is a page with no data and no second place to type a token');
+    assert(!shell.includes('btn-close'), 'no close button either');
+    assert(shell.includes('aria-label="Unlock the board"'), 'the dialog names itself, since it carries no header of its own');
+  });
+
   await test('nothing token-shaped is committed anywhere in the app', () => {
     // The whole doctrine: the token is the VIEWER's, typed into their browser.
     // A literal in the source would be published to anyone with the URL.
@@ -1638,9 +1759,17 @@ const run = async () => {
     }
   });
 
-  await test('the runtime draws the prompt when locked and the local line when it cannot help', () => {
+  await test('the runtime opens the dialog when locked and draws the local line when it cannot help', () => {
     const source = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
-    assert(/MODE === 'locked'[\s\S]{0,200}tokenPrompt\(\)/.test(source), 'a locked copy is the prompt, whole page');
+    // The two arms of the locked state, on token.js's one predicate: on this
+    // machine the notice IS the body (#89), and anywhere else the shell is left
+    // alone and the prompt opens over it (#96) — nothing is written to the body
+    // there, because a locked copy has no data to stand in for.
+    assert(/MODE === 'locked'[\s\S]{0,80}isLocalHost\(location\.hostname\)\) body\.innerHTML = towerDownNotice\(location\.href\)/.test(source),
+      'a locked copy on this machine is the tower-down notice, whole page');
+    assert(/isLocalHost\(location\.hostname\)[\s\S]{0,120}else openTokenModal\(\);/.test(source),
+      'and anywhere else the prompt is opened as the dialog, not written into the page');
+    assert(!/body\.innerHTML = tokenPrompt/.test(source), 'the prompt is never the body again');
     assert(/MODE === 'github' && options\.local[\s\S]{0,120}localOnlyNotice\(\)/.test(source), 'and a local-only page says where its data lives');
     assert(source.includes('githubPageFeeds(options.feeds)') && source.includes('githubFetcher'),
       'an unlocked copy polls GitHub through the same loop');
@@ -1651,12 +1780,25 @@ const run = async () => {
   await test('a token GitHub refused puts the prompt back, carrying the refusal', () => {
     // The reason used to be dumped on the page as a bare problem — on a page
     // with no field in it. The prompt is the only place a token is typed, and
-    // `tokenPrompt(problem)` existed for exactly this and had no caller.
+    // `tokenPrompt(problem)` existed for exactly this and had no caller. It is
+    // the same dialog the locked copy opens (#96), over the page it was hiding.
     const source = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
     assert(/isTokenRefusal/.test(source), 'the refusal is recognised by the one predicate that names it');
-    assert(/tokenPrompt\(refused\.reason\)[\s\S]{0,80}mountTokenPrompt\(body\)/.test(source),
-      'and the prompt is drawn with the reason and wired, not just written');
-    assert(/if \(!prompted\)/.test(source), 'once — re-mounting under a viewer mid-type would take what they typed away');
+    assert(/openTokenModal\(refused\.reason\)/.test(source), 'and the prompt is opened with the reason in it');
+    assert(/if \(!prompted\)/.test(source), 'once — re-filling it under a viewer mid-type would take what they typed away');
+    assert(/if \(prompted\) hideTokenModal\(\)/.test(source),
+      'and a read that lands after all takes the dialog away, since nothing a viewer does can');
+  });
+
+  await test('an unlocked page opens no dialog at all', () => {
+    const source = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
+    // Every mention of the dialog in the runtime, in order: the import, the
+    // locked non-local arm, the refusal, and the read that clears it. A tower
+    // page and a working published one reach none of them.
+    assertEq((source.match(/openTokenModal\(/g) || []).length, 2, 'opened from the locked arm and from the refusal, nowhere else');
+    for (const call of source.split('\n').filter((line) => /openTokenModal\(/.test(line) && !line.startsWith('import'))) {
+      assert(/^\s*(else openTokenModal\(\);|openTokenModal\(refused\.reason\);)$/.test(call), `no third caller: ${call.trim()}`);
+    }
   });
 
   await test('the Overview says local-only where its machine-bound numbers would be', () => {

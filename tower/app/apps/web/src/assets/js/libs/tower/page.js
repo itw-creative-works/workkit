@@ -10,9 +10,9 @@
 // A published copy keeps its mount, its sidebar and its topbar, and what it
 // draws into them is its MODE (api.js): unlocked, it polls GitHub itself with
 // the viewer's token, through the same feed names and the same paint loop;
-// locked, the token prompt is the whole page; and either way a page whose data
-// is this machine's — the crew, the spend, the working copies — says so instead
-// (`local: true`).
+// locked, the shell stays and the unlock dialog opens over it; and either way
+// a page whose data is this machine's — the crew, the spend, the working
+// copies — says so instead (`local: true`).
 //
 // Reading the state back out is state.js: a page asks the runtime to run it and
 // asks state.js what the answers were. The one thing this file takes from there
@@ -43,7 +43,9 @@ import {
 import { localOnlyNotice } from './format.js';
 import { localOnlySlot } from './state.js';
 import { clearToken, isTokenRefusal, safeStorage } from './github.js';
-import { tokenPrompt, mountTokenPrompt } from './token.js';
+import {
+  isLocalHost, towerDownNotice, openTokenModal, hideTokenModal,
+} from './token.js';
 import { chromeKey, chromeMarkup, statusMarkup } from './chrome.js';
 
 // ── The repo selection ─────────────────────────────────────────────────────
@@ -91,11 +93,19 @@ export async function startPage(options) {
   // The mode is read from the flag itself, never inferred from an empty feed
   // table: a page that legitimately declares no feeds is still a live page.
   //
-  // Locked: no data of any kind is reachable, so the prompt is the page. No
-  // poller and no chrome — every control in it needs a feed behind it.
+  // Locked: no data of any kind is reachable, so there is no poller and no
+  // chrome — every control in the chrome needs a feed behind it. What the
+  // viewer is told forks on the hostname (issue #89), on token.js's one
+  // predicate. On THIS machine the tower is simply not connected, and that
+  // notice is the page body, carrying the link that points this page at it —
+  // there is no token to ask a local page for. Anywhere else the copy has not
+  // been unlocked, and the prompt opens as a dialog OVER the page rather than
+  // as the page (issue #96): the shell — sidebar, topbar, heading — stays where
+  // it was, and the body behind the dialog is left empty rather than filled
+  // with a stand-in for data that does not exist.
   if (MODE === 'locked') {
-    body.innerHTML = tokenPrompt();
-    mountTokenPrompt(body);
+    if (isLocalHost(location.hostname)) body.innerHTML = towerDownNotice(location.href);
+    else openTokenModal();
     return;
   }
   // Local-only: a token unlocks GitHub, and this page's data is not on GitHub.
@@ -149,7 +159,7 @@ export async function startPage(options) {
   // changed; the status inside it is rewritten every paint, because that is the
   // half a poll actually changes.
   let painted = null;
-  // Whether the body is currently the token prompt rather than the page.
+  // Whether the unlock dialog is currently up over the page.
   let prompted = false;
 
   function paint() {
@@ -179,19 +189,22 @@ export async function startPage(options) {
     // A token GitHub REFUSED is not a page problem but a token problem, and the
     // only place a token is typed is the prompt — so the refusal is shown there,
     // as the reason, rather than drawn as an alert on a page with no field in
-    // it. Mounted once: every feed fails the same way, and re-mounting under a
-    // viewer mid-type would take what they typed away.
+    // it. The same dialog the locked copy opens, over the same shell. Opened
+    // once: every feed fails the same way, and re-filling it under a viewer
+    // mid-type would take what they typed away.
     if (MODE === 'github') {
       const refused = Object.values(state.feeds).find(isTokenRefusal);
       if (refused) {
         if (!prompted) {
           prompted = true;
-          body.innerHTML = tokenPrompt(refused.reason);
-          mountTokenPrompt(body);
+          openTokenModal(refused.reason);
         }
         return;
       }
-      // A read landed after all — the page comes back.
+      // A read landed after all — the page comes back, and the dialog holding
+      // a refusal that is no longer true goes with it (a 403 is a rate limit
+      // as often as a bad token).
+      if (prompted) hideTokenModal();
       prompted = false;
     }
     options.render(body, state);

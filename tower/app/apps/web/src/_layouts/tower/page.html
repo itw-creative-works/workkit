@@ -76,6 +76,23 @@ meta:
   </div>
 </div>
 
+<!-- Unlock dialog.
+     A locked published copy opens this by itself (issue #96): the prompt used
+     to replace the page body, which took the shell away from a viewer who had
+     nothing to do but answer it. It is in the LAYOUT beside the other two
+     because the runtime opens it on whichever page was asked for, and it is
+     STATIC — no backdrop dismiss, no Escape, no close button — because a
+     dismissed prompt would leave a page with no data and no way to ask for
+     the token again, which is exactly what the inline prompt could not do.
+     libs/tower/token.js fills it with the same prompt markup and opens it. -->
+<div class="modal fade" id="tower-unlock" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-label="Unlock the board" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-body" data-token-body></div>
+    </div>
+  </div>
+</div>
+
 <!-- Intake dialog.
      It lives in the LAYOUT, not on a page, because the spec puts intake on the
      topbar of every page rather than behind a tab — and the topbar's button

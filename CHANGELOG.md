@@ -7,6 +7,14 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#96](../../issues/96) — The published dashboard asks for its token in a dialog instead of replacing the page: the shell stays and the unlock prompt opens over it, in the same modal the intake dialog uses, and a refused token re-presents it. The local tower-down notice is unchanged.
+
+### Fixed
+
+- [#89](../../issues/89) — A locked dashboard on this machine says the tower is not connected and gives the two steps that fix it — start it, then a link pointing the page at it — in its body and its intake dialog, instead of asking for a token. The published prompt is unchanged.
+
 ## [0.19.2] - 2026-07-30
 
 ### Changed

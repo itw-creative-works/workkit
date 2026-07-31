@@ -48,6 +48,16 @@ export const LOCKED_NOTICE = 'This copy has no data until a GitHub token is adde
 export const lockedNotice = () => `<p class="text-body-secondary mb-0">${esc(LOCKED_NOTICE)}</p>`;
 
 /**
+ * What a locked copy says where a write would be ON THIS MACHINE (issue #89).
+ * A local page has no use for a token — the tower API holds the `gh` login — so
+ * the answer is the same one its body gives: the tower is not there to read.
+ */
+export const LOCAL_LOCKED_NOTICE = 'This copy has no data until the tower API is running — start it with npm run tower and connect this page to it. Then it files and moves issues exactly as it does with a tower.';
+
+/** That sentence as markup. */
+export const localLockedNotice = () => `<p class="text-body-secondary mb-0">${esc(LOCAL_LOCKED_NOTICE)}</p>`;
+
+/**
  * The one name for one issue: `repo#number`.
  *
  * Three things spell it — the `data-issue` attribute a card carries, the dialog

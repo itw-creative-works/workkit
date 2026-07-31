@@ -23,7 +23,8 @@
 
 import { readAnyFeed, submitIntake, WRITABLE } from './api.js';
 import { selectedRepo } from './page.js';
-import { esc, lockedNotice } from './format.js';
+import { esc } from './format.js';
+import { isLocalHost, lockedIntakeNotice } from './token.js';
 
 /** The roster select, filled from /api/repos. An empty roster is a state, not an error. */
 const fillRepos = async (select) => {
@@ -46,7 +47,9 @@ const showResult = (host, markup) => { host.innerHTML = markup; };
  * The locked shape of the affordance: filing needs a token, and a locked copy
  * has none — it has no roster to file against either, since even the slug list
  * only becomes useful once something can be read with it. So the form is inert
- * and says the one thing that fixes it: add a token.
+ * and says the one thing that fixes it — which is not always a token: on this
+ * machine it is the tower API, so the notice and the empty roster fork the way
+ * the locked page body does, on token.js's one predicate (issue #89).
  *
  * The topbar button stays ENABLED and still opens the dialog — that is the only
  * place the explanation can actually be read. A disabled button suppresses its
@@ -60,8 +63,9 @@ const disableIntake = (dialog) => {
     field.disabled = true;
   }
   const select = dialog.querySelector('[data-intake-repo]');
-  select.innerHTML = '<option value="">no roster until a token is added</option>';
-  showResult(dialog.querySelector('[data-intake-result]'), lockedNotice());
+  const local = isLocalHost(location.hostname);
+  select.innerHTML = `<option value="">${local ? 'no roster until the tower is running' : 'no roster until a token is added'}</option>`;
+  showResult(dialog.querySelector('[data-intake-result]'), lockedIntakeNotice(location.hostname));
 };
 
 /**
