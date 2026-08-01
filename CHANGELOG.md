@@ -7,24 +7,26 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-07-31
+
 ### Added
 
-- [#87](../../issues/87) — The `workkit:state` skill loads this machine's global state when you ask for it — `~/.workkit`'s settings and roster first, and when there are none, the home repo and its private roster read back through the GitHub API — and always names the source it read.
-- [#92](../../issues/92) — `docs/history-purge.md` is the runbook for removing a leaked value from git history — the scoped rewrite, the verification, the human-run force push, and the local and server-side purges — pointed at from the ship skill's gotchas.
-- [#72](../../issues/72) — Until `workkit setup` has run, every session start now tells the agent to have you run it, in any directory and with no nag cache — a prompt, never an install.
-- [#83](../../issues/83) — The issue guard now scans `gh api` REST writes to issue and pull endpoints — a POST or PATCH, or an implied POST carrying fields — with the same env-value and token-shape scans, `--input` files included; reads of the same paths stay unblocked.
+- [#87](../../issues/87) [`754b569`](../../commit/754b569) Thanks [@ianwieds]! — The `workkit:state` skill loads this machine's global state when you ask for it — `~/.workkit`'s settings and roster first, and when there are none, the home repo and its private roster read back through the GitHub API — and always names the source it read.
+- [#92](../../issues/92) [`754b569`](../../commit/754b569) Thanks [@ianwieds]! — `docs/history-purge.md` is the runbook for removing a leaked value from git history — the scoped rewrite, the verification, the human-run force push, and the local and server-side purges — pointed at from the ship skill's gotchas.
+- [#72](../../issues/72) [`754b569`](../../commit/754b569) Thanks [@ianwieds]! — Until `workkit setup` has run, every session start now tells the agent to have you run it, in any directory and with no nag cache — a prompt, never an install.
+- [#83](../../issues/83) [`754b569`](../../commit/754b569) Thanks [@ianwieds]! — The issue guard now scans `gh api` REST writes to issue and pull endpoints — a POST or PATCH, or an implied POST carrying fields — with the same env-value and token-shape scans, `--input` files included; reads of the same paths stay unblocked.
 
 ### Changed
 
-- [#107](../../issues/107) — The morning is one script, `jobs/morning.sh`, run by both schedulers with every step gated by what its environment can do: the summaries and the site publish name their skip on a runner, and the brief is the cloud's alone — a dispatch that fails is a logged, briefless morning.
-- [#102](../../issues/102) — The `grill` skill is now `interview` — same interrogation, wired into speccing: an issue whose spec reads unclear is a trigger for it, and "grill me" stays a phrase it answers to.
-- [#94](../../issues/94) — Every skill description is now one trigger sentence under 300 characters, and a test reads the skills directory and fails when one grows past the cap.
-- [#62](../../issues/62) — A claimed spec is now flipped rather than tolerated: the standards heal moves an open `status:specced` issue with an assignee to `status:building` with a comment, and the brief and the whats-next skill sort issues by the status label alone.
+- [#107](../../issues/107) [`754b569`](../../commit/754b569) Thanks [@ianwieds]! — The morning is one script, `jobs/morning.sh`, run by both schedulers with every step gated by what its environment can do: the summaries and the site publish name their skip on a runner, and the brief is the cloud's alone — a dispatch that fails is a logged, briefless morning.
+- [#102](../../issues/102) [`754b569`](../../commit/754b569) Thanks [@ianwieds]! — The `grill` skill is now `interview` — same interrogation, wired into speccing: an issue whose spec reads unclear is a trigger for it, and "grill me" stays a phrase it answers to.
+- [#94](../../issues/94) [`754b569`](../../commit/754b569) Thanks [@ianwieds]! — Every skill description is now one trigger sentence under 300 characters, and a test reads the skills directory and fails when one grows past the cap.
+- [#62](../../issues/62) [`754b569`](../../commit/754b569) Thanks [@ianwieds]! — A claimed spec is now flipped rather than tolerated: the standards heal moves an open `status:specced` issue with an assignee to `status:building` with a comment, and the brief and the whats-next skill sort issues by the status label alone.
 
 ### Fixed
 
-- [#116](../../issues/116) — A roster that cannot be read no longer publishes an empty repo list over a good one: the composer tells a failure apart from a machine that registers nothing, and the publish keeps the list already there and warns.
-- [#108](../../issues/108) — An agent dialog left open now tells the same story as the card behind it: every paint refreshes it, so it spins while the agent works and decays only when it stops, and its freshness is said once — the header's ticking age, not the frozen row.
+- [#116](../../issues/116) [`754b569`](../../commit/754b569) Thanks [@ianwieds]! — A roster that cannot be read no longer publishes an empty repo list over a good one: the composer tells a failure apart from a machine that registers nothing, and the publish keeps the list already there and warns.
+- [#108](../../issues/108) [`754b569`](../../commit/754b569) Thanks [@ianwieds]! — An agent dialog left open now tells the same story as the card behind it: every paint refreshes it, so it spins while the agent works and decays only when it stops, and its freshness is said once — the header's ticking age, not the frozen row.
 
 ## [0.22.0] - 2026-07-31
 
