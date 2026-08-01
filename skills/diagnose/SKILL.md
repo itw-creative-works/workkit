@@ -1,6 +1,6 @@
 ---
 name: diagnose
-description: Feedback-loop-first debugging — no hypothesis-driven edits before a red-capable reproduction exists; tagged observation, falsifiable hypotheses. - Use when investigating a bug, a failing test, unexpected behavior, or a crash. Triggers on "diagnose", "debug this", "why is this failing", "why doesn't this work", "not working", "broken", "repro", "root cause".
+description: Reproduce-first debugging — a red-capable repro before any hypothesis or edit. - Use when investigating a bug, a failing test, unexpected behavior, or a crash. Triggers on "diagnose", "debug this", "why is this failing", "not working", "broken", "repro", "root cause".
 user-invocable: true
 ---
 

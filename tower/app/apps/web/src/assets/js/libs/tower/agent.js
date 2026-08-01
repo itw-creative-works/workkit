@@ -178,6 +178,27 @@ export const claimGlyph = (issue) => {
 };
 
 /**
+ * The stamps an indicator carries, from the node it is drawn from.
+ *
+ * The shape `data-live-*` is written in and read back as, in ONE place because
+ * there are two writers of it now: the paint below, which draws the element,
+ * and the agent dialog's refresh (modal.js), which rewrites those attributes on
+ * an element the paint drew rather than replacing it (#108). An absent stamp
+ * stays absent rather than becoming the epoch.
+ *
+ * @param {object} entry a normalized node, carrying `lastActivity`/`aliveSince`
+ * @returns {{liveState: string, liveTs?: string, liveAlive?: string}}
+ */
+export const liveStamps = (entry) => {
+  const last = Number((entry || {}).lastActivity);
+  const alive = Number((entry || {}).aliveSince);
+  const stamps = { liveState: (entry || {}).state || '' };
+  if (Number.isFinite(last)) stamps.liveTs = String(last);
+  if (Number.isFinite(alive)) stamps.liveAlive = String(alive);
+  return stamps;
+};
+
+/**
  * The indicator as a crew card wears it: the glyph, then how long since the
  * agent last moved.
  *
@@ -196,14 +217,7 @@ export const claimGlyph = (issue) => {
  * @returns {string} markup, or '' when the agent has been quiet too long
  */
 export const crewActivity = (entry, now = Date.now()) => {
-  const last = Number((entry || {}).lastActivity);
-  const alive = Number((entry || {}).aliveSince);
-  // The stamps in the shape the markup carries them and the clock reads them
-  // back — an absent one stays absent rather than becoming the epoch.
-  const stamps = { liveState: (entry || {}).state || '' };
-  if (Number.isFinite(last)) stamps.liveTs = String(last);
-  if (Number.isFinite(alive)) stamps.liveAlive = String(alive);
-
+  const stamps = liveStamps(entry);
   const { phase, age, title } = activityTick(stamps, now);
   if (phase === 'none') return '';
   return `<span class="d-inline-flex align-items-center gap-1" data-live-state="${esc(stamps.liveState)}"${stamps.liveTs ? ` data-live-ts="${esc(stamps.liveTs)}"` : ''}${stamps.liveAlive ? ` data-live-alive="${esc(stamps.liveAlive)}"` : ''}>

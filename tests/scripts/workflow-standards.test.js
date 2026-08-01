@@ -1935,6 +1935,94 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
+  group('standards.sh: the claimed-spec flip');
+
+  // status:specced is the authorization to start and the assignee is the claim,
+  // so an issue carrying both has started. The flip is what let the readers drop
+  // the claimed-specced tolerance (issue #62) — nothing flipped these before, so
+  // the transitional branch was permanent by default.
+  const SPECCED = 'status:specced';
+  const BUILDING = 'status:building';
+  const speccedStub = (carried, extra = {}) => makeGhStub({
+    labels: desiredLabels(), labeled: { [SPECCED]: carried }, ...extra,
+  });
+
+  await test('a specced issue with an assignee moves to building, with a comment', () => {
+    const repo = makeRepo();
+    const stub = speccedStub([{ number: 21, assignees: [{ login: 'someone' }] }]);
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 0, 'a flip is a heal, not a failure');
+    const edits = issueEdits(stub);
+    assertEq(edits.length, 1, `one flip, got: ${fmtCalls(ghCalls(stub))}`);
+    assert(hasPair(edits[0], '--remove-label', SPECCED), `specced ends, got: ${fmtCalls(edits)}`);
+    assert(hasPair(edits[0], '--add-label', BUILDING), `and building begins, got: ${fmtCalls(edits)}`);
+    const comments = ghCalls(stub).filter((c) => isCall(c, 'issue', 'comment'));
+    assertEq(comments.length, 1, `the flip is recorded on the issue, got: ${fmtCalls(ghCalls(stub))}`);
+    assert(comments[0].some((a) => /standards sweep/.test(a)), `naming the sweep, got: ${fmtCalls(comments)}`);
+    assert(output.includes('claims: flipped 1'), `and the run says so, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a specced issue nobody has claimed is left exactly as it is', () => {
+    const repo = makeRepo();
+    const stub = speccedStub([{ number: 22, assignees: [] }]);
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 0, 'exit 0');
+    assertEq(issueEdits(stub).length, 0, `an unclaimed spec is the ready queue, got: ${fmtCalls(ghCalls(stub))}`);
+    assert(!output.includes('claims: flipped'), `and nothing is claimed about it, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a repo without status:building is left alone rather than edited into a failure', () => {
+    // `gh issue edit` fails whole when it is handed a label the repo does not
+    // have, so a flip attempted blind is an error report on exactly the repos
+    // whose labels never reached GitHub.
+    const repo = makeRepo();
+    const stub = speccedStub([{ number: 23, assignees: [{ login: 'someone' }] }], {
+      labels: desiredLabels().filter((l) => l.name !== BUILDING),
+    });
+    const { code } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 0, 'exit 0');
+    assertEq(issueEdits(stub).length, 0, `no flip attempted, got: ${fmtCalls(ghCalls(stub))}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a released claim is not re-promoted by the flip that follows it', () => {
+    // The two sweeps run in one session and move issues in opposite directions.
+    // The release removes the assignee in the same edit that demotes the issue,
+    // so what it hands back carries no claim for the flip to find.
+    const repo = makeRepo();
+    const stub = makeGhStub({
+      labels: desiredLabels(),
+      labeled: {
+        [CLAIM]: [{
+          number: 24,
+          updatedAt: hoursAgo(30),
+          assignees: [{ login: 'someone' }],
+          labels: [{ name: CLAIM }, { name: BUILDING }, { name: 'type:bug' }],
+        }],
+        // What the release just made: specced again, and unassigned.
+        [SPECCED]: [{ number: 24, assignees: [] }],
+      },
+    });
+    const { code } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 0, 'exit 0');
+    const edits = issueEdits(stub);
+    assertEq(edits.length, 1, `the release, and nothing after it, got: ${fmtCalls(ghCalls(stub))}`);
+    assert(hasPair(edits[0], '--add-label', SPECCED), `the issue stays where the release put it, got: ${fmtCalls(edits)}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a failed specced query flips nothing and asks for another session', () => {
+    const repo = makeRepo();
+    const stub = speccedStub([{ number: 25, assignees: [{ login: 'someone' }] }], { labelQueryFails: true });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 1, 'an unfinished heal reports itself');
+    assertEq(issueEdits(stub).length, 0, 'an unreachable GitHub is not a claimed spec');
+    assert(output.includes('nothing was flipped'), `says what it did not do, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
   group('standards.sh: the hook layer self-check');
 
   // Every hook fails open by design, so a chmod-stripped script, a syntax

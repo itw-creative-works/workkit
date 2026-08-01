@@ -227,6 +227,113 @@ const run = async () => {
     assertEq(code, 0, `an anonymous operation is a query, got: ${stderr}`);
   });
 
+  group('issue-guard: the REST door');
+
+  await test('a POST creating an issue with a .env value — exit 2, names the KEY', () => {
+    const { code, stderr } = runHook(
+      `gh api -X POST repos/owner/name/issues -f title="auth fails" -f body="the token is ${SECRET}"`);
+    assertEq(code, 2, 'REST is the same egress as gh issue create');
+    assert(stderr.includes('API_SECRET'), 'names the key');
+    assert(!stderr.includes(SECRET), 'never echoes the value');
+  });
+
+  await test('a PATCH carrying a token shape — exit 2, names the kind', () => {
+    const token = `ghp_${'A1b2C3d4E5f6G7h8I9j0'}`;
+    const { code, stderr } = runHook(
+      `gh api --method PATCH /repos/owner/name/issues/12 -f body="use ${token} to retry"`);
+    assertEq(code, 2, 'editing a body is a write like any other');
+    assert(stderr.includes('GitHub token-shaped'), 'names the kind');
+    assert(!stderr.includes(token), 'never echoes the match');
+  });
+
+  await test('every issue and pull endpoint shape — exit 2', () => {
+    const token = `ghp_${'A1b2C3d4E5f6G7h8I9j0'}`;
+    for (const p of [
+      'repos/owner/name/issues',
+      'repos/owner/name/issues/12',
+      'repos/owner/name/issues/12/comments',
+      'repos/owner/name/issues/comments/9001',
+      'repos/owner/name/pulls',
+      'repos/owner/name/pulls/12',
+      'repos/owner/name/pulls/12/comments',
+      'repos/owner/name/pulls/comments/9001',
+      'repos/owner/name/pulls/12/reviews',
+      'https://api.github.com/repos/owner/name/issues/12/comments',
+    ]) {
+      assertEq(runHook(`gh api -X POST ${p} -f body="key ${token}"`).code, 2, `must block: ${p}`);
+    }
+  });
+
+  await test('no method flag at all is the implied POST gh makes — exit 2', () => {
+    // gh's method is GET until a field is given, and then it is POST — so a call
+    // with a body and no -X is a write, and the guard reads it as one.
+    const { code, stderr } = runHook(
+      `gh api repos/owner/name/issues/12/comments -f body="the key is ${SECRET}"`);
+    assertEq(code, 2, 'a field flag is the method');
+    assert(stderr.includes('API_SECRET'), 'names the key');
+  });
+
+  await test('--input CONTENT is dereferenced — exit 2', () => {
+    const file = path.join(CWD, 'rest-body.json');
+    fs.writeFileSync(file, `{ "body": "the key is ${SECRET}" }\n`);
+    const { code, stderr } = runHook(
+      `gh api -X POST repos/owner/name/issues/12/comments --input ${file}`);
+    assertEq(code, 2, 'the whole request body arrives in a file, and that is the outbound text');
+    assert(stderr.includes('API_SECRET'), 'names the key from the file content');
+  });
+
+  await test('-F body=@file is dereferenced on the REST door too — exit 2', () => {
+    const file = path.join(CWD, 'rest-comment.md');
+    fs.writeFileSync(file, `the key is ${SECRET}\n`);
+    const { code, stderr } = runHook(
+      `gh api -X POST repos/owner/name/issues/12/comments -F body=@${file}`);
+    assertEq(code, 2, 'the same @ form the GraphQL door already reads');
+    assert(stderr.includes('API_SECRET'), 'names the key from the file content');
+  });
+
+  await test('reads of the same paths — exit 0', () => {
+    const token = `ghp_${'A1b2C3d4E5f6G7h8I9j0'}`;
+    for (const c of [
+      'gh api repos/owner/name/issues',
+      'gh api repos/owner/name/issues/12/comments --paginate',
+      'gh api -X GET repos/owner/name/issues -f state=open',
+      'gh api --method GET repos/owner/name/pulls -f state=all',
+      `gh api repos/owner/name/issues/12 --jq .body -H "Authorization: token ${token}"`,
+    ]) {
+      const { code, stderr } = runHook(c);
+      assertEq(code, 0, `a read is never gated: ${c} — ${stderr}`);
+    }
+  });
+
+  await test('a body whose PROSE says -X GET does not disarm the scan — exit 2', () => {
+    const { code, stderr } = runHook(
+      `gh api repos/owner/name/issues/1/comments -f body='try curl -X GET foo: ${SECRET}'`);
+    assertEq(code, 2, 'the method flag is read before the first field, never from a field value');
+    assert(stderr.includes('API_SECRET'), 'names the key');
+  });
+
+  await test('a read chained with a write in one command is still a write — exit 2', () => {
+    const { code, stderr } = runHook(
+      `gh api -X GET repos/owner/name/issues > /tmp/x.json && gh api repos/owner/name/issues -f body="${SECRET}"`);
+    assertEq(code, 2, 'the read exemption only speaks for a single gh api call');
+    assert(stderr.includes('API_SECRET'), 'names the key');
+  });
+
+  await test('a POST to a path that is not issues or pulls — exit 0', () => {
+    const token = `ghp_${'A1b2C3d4E5f6G7h8I9j0'}`;
+    for (const p of ['repos/owner/name/dispatches', 'repos/owner/name/actions/workflows/brief.yml/dispatches']) {
+      const { code, stderr } = runHook(`gh api -X POST ${p} -f ref="${token}"`);
+      assertEq(code, 0, `nothing public-facing is written there: ${p} — ${stderr}`);
+    }
+  });
+
+  await test('a clean REST comment — exit 0', () => {
+    const { code, stderr } = runHook(
+      'gh api -X POST repos/owner/name/issues/12/comments -f body="specced, building now"');
+    assertEq(code, 0, `ordinary comment prose posts, got: ${stderr}`);
+    assertEq(stderr, '', 'silent');
+  });
+
   group('issue-guard: the repo root .env');
 
   await test("a root .env value, from a subdirectory cwd — exit 2, names the KEY", () => {

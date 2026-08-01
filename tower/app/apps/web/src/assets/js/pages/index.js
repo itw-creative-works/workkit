@@ -27,12 +27,11 @@ const total = (state, field) => reposFor(state)
   .reduce((sum, reading) => sum + (typeof reading[field] === 'number' ? reading[field] : 0), 0);
 
 // In flight is the brief's definition, to the letter (tower/api/lib/brief.js):
-// `status:building` IS in flight, and a CLAIMED specced issue counts too — the
-// shape the board carried before the fifth state existed. A claim is an
-// assignee OR the agent:working label, because an agent that took an issue
-// without assigning itself is still working it; counting only assignees would
-// make this number disagree with the brief's on exactly those issues.
-const claimed = (issue) => (issue.assignees || []).length > 0 || issue.agentWorking;
+// `status:building` IS in flight, and the label is the whole of it (issue #62).
+// A claim — an assignee, or the agent:working marker — says WHO holds an issue,
+// never which queue it is in: a claimed `status:specced` issue is a transient
+// the standards sweep flips, so counting it here would put the same issue in
+// two places and disagree with the brief the Brief page draws.
 
 // Three of the six numbers are the MACHINE's — the live crew and the state of
 // its working copies — and a published copy has no reading of them at all. The
@@ -49,8 +48,7 @@ const numbers = (state) => {
   return statgrid([
     statCell('Open issues', issues.length, '/board'),
     statCell('Blocked', issues.filter((issue) => issue.status === 'blocked').length, '/board'),
-    statCell('In flight', issues.filter((issue) => issue.status === 'building'
-      || (issue.status === 'specced' && claimed(issue))).length, '/board'),
+    statCell('In flight', issues.filter((issue) => issue.status === 'building').length, '/board'),
     machineStat(state, 'sessions', 'Live sessions', sessionsFor(state).length, '/crew'),
     machineStat(state, 'health', 'Unpushed', total(state, 'unpushed'), '/health'),
     machineStat(state, 'health', 'Unreleased', total(state, 'unreleasedEntries'), '/health'),

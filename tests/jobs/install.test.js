@@ -17,8 +17,9 @@ const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'install.sh');
 const REPO = path.join(__dirname, '..', '..');
 
 // The one agent this checkout installs — the 9am job, which runs the summaries
-// step and then the brief.
-const AGENT = { label: 'com.workkit.claude-daily', runner: 'claude-daily.sh', hour: '9' };
+// step and then the brief. The label is the schedule's name and outlives the
+// script it points at, which since issue #107 is the one morning entry point.
+const AGENT = { label: 'com.workkit.claude-daily', runner: 'morning.sh', hour: '9' };
 const LABEL = AGENT.label;
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'workkit-install-'));

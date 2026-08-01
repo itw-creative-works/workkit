@@ -1,13 +1,16 @@
 //
-// Tests for jobs/claude-cloud.sh — the brief as a GitHub Actions runner runs it
-// (issue #82).
+// Tests for jobs/morning.sh as a GITHUB ACTIONS RUNNER runs it (issues #82,
+// #107) — the same script the 9am launchd job runs, in the environment where
+// the brief is the step that can happen and the summaries and the publish are
+// named skips. The machine leg is morning-local.test.js.
 //
 // The runner is executed for real against a scratch HOME and a PATH farm: a
-// fake `claude` recording the argument vector it was given, and a `gh` that
-// answers the two APIs this script speaks — the contents API it reads the
-// published slug list from, and the Discussions GraphQL it publishes through.
-// `git`, `jq` and `node` are the real ones, because the roster this script
-// writes is only worth asserting if the tower's own composer reads it back.
+// fake `claude` recording the argument vector it was given, a recording
+// notifier, and a `gh` that answers the two APIs this path speaks — the
+// contents API it reads the published slug list from, and the Discussions
+// GraphQL it publishes through. `git`, `jq` and `node` are the real ones,
+// because the roster this script writes is only worth asserting if the tower's
+// own composer reads it back.
 //
 // HOME is the whole sandbox: the script resolves ~/.workkit from it exactly as
 // the Node composers do, so nothing here touches the real workflow folder, and
@@ -21,13 +24,13 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 
-const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-cloud.sh');
+const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'morning.sh');
 const { INSTRUCTION } = require(path.join(__dirname, '..', '..', 'jobs', 'brief-payload.js'));
 const { discoverRepos } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'repos'));
 
 const HOME_SLUG = 'owner/private-home';
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'claude-cloud-'));
+const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'morning-cloud-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 // The date the runner titles its Discussion with is the LOCAL one (`date
@@ -66,6 +69,9 @@ const mkWorld = ({
   const home = path.join(root, 'home');
   fs.mkdirSync(bin, { recursive: true });
   fs.mkdirSync(home, { recursive: true });
+  // A transcripts root, so the summaries skip below is proved by the question
+  // this script asks about GITHUB_ACTIONS rather than by an empty fixture home.
+  fs.mkdirSync(path.join(home, '.claude', 'projects'), { recursive: true });
 
   if (settings) {
     fs.mkdirSync(path.join(home, '.workkit'), { recursive: true });
@@ -85,6 +91,13 @@ const mkWorld = ({
     '',
   ].join('\n'));
   fs.chmodSync(claude, 0o755);
+
+  // A notifier that must never be reached: there is no desktop on a runner, and
+  // a recorder that stayed silent is the only way to assert it.
+  const notifLog = path.join(root, 'notifly-argv.log');
+  const notifly = path.join(bin, 'notifly');
+  fs.writeFileSync(notifly, ['#!/usr/bin/env bash', recordArgv(notifLog), 'exit 0', ''].join('\n'));
+  fs.chmodSync(notifly, 0o755);
 
   const ghLog = path.join(root, 'gh-argv.log');
   const bodyLog = path.join(root, 'posted-body.md');
@@ -159,10 +172,10 @@ const mkWorld = ({
     ...process.env,
     HOME: home,
     PATH: `${bin}:${process.env.PATH}`,
+    NOTIFLY: notifly,
     WORKKIT_CC_CHANGELOG: ccSource,
-    // The script refuses to run anywhere but a runner, because it rewrites the
-    // roster in ~/.workkit. Every world here IS a runner; the one that is not
-    // deletes this again.
+    // The variable Actions always sets, and the one the script asks which
+    // environment it woke up in. The world that is not a runner deletes it.
     GITHUB_ACTIONS: 'true',
     // The workflow's two: the cross-repo secret `gh` authenticates with by
     // default, and the built-in token the post is made with.
@@ -178,6 +191,7 @@ const mkWorld = ({
     root,
     home,
     workflowHome: path.join(home, '.workkit'),
+    nightlyLog: path.join(home, 'Library', 'Logs', 'claude-nightly.log'),
     settings: () => {
       const file = path.join(home, '.workkit', 'settings.json');
       return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
@@ -186,6 +200,7 @@ const mkWorld = ({
     // that proves the synthetic checkouts are ones they accept.
     roster: () => discoverRepos({ workflowHome: path.join(home, '.workkit'), home }),
     calls: () => readArgv(claudeLog),
+    notifs: () => readArgv(notifLog),
     ghCalls: () => readArgv(ghLog),
     created: () => readArgv(ghLog).filter((c) => c.join(' ').includes('createDiscussion')),
     postedBody: () => (fs.existsSync(bodyLog) ? fs.readFileSync(bodyLog, 'utf8') : ''),
@@ -221,7 +236,7 @@ const runJob = (world, args = []) => spawnSync('bash', [SCRIPT, ...args], {
 });
 
 const run = async () => {
-  group('jobs/claude-cloud: shape');
+  group('jobs/morning (cloud): shape');
 
   await test('bash -n — no syntax errors', () => {
     const res = spawnSync('bash', ['-n', SCRIPT], { encoding: 'utf8' });
@@ -232,19 +247,30 @@ const run = async () => {
     assert(fs.statSync(SCRIPT).mode & 0o111, 'the workflow runs it through bash, but a human runs it directly');
   });
 
-  await test('it is the brief leg alone — no summaries, no site publish, no notification', () => {
-    const text = fs.readFileSync(SCRIPT, 'utf8');
-    assert(!text.includes('claude-nightly.sh'), 'the summaries read a machine this runner is not');
-    assert(!text.includes('workflow/publish.sh'), 'and the site is built where the home clone lives');
-    assert(!/NOTIFLY|Notifly/.test(text), 'there is no desktop to notify');
+  await test('a runner runs the brief alone — the other two steps name their skip', () => {
+    // The capability gates from the cloud side (issue #107): the summaries read
+    // a machine's transcripts and git history, the publish builds the home
+    // clone, and a runner has neither. A named skip is what tells that apart
+    // from a step that quietly did nothing.
+    const world = mkWorld();
+    const res = runJob(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assert(/summaries: a GitHub Actions runner has no session transcripts/.test(res.stdout),
+      `the summaries step names its skip: ${res.stdout}`);
+    assert(!fs.existsSync(world.nightlyLog), 'and never started — there is no day here to write up');
+    assert(/publish: the site is built from the home clone/.test(res.stdout),
+      `the publish names its skip: ${res.stdout}`);
+    assertEq(world.notifs().length, 0, 'and nothing was notified — there is no desktop');
+    cleanup(world.root);
   });
 
-  group('jobs/claude-cloud: a runner only');
+  group('jobs/morning (cloud): a runner only');
 
-  await test('off a runner it refuses, and the machine’s roster is untouched', () => {
-    // The roster this script writes REPLACES what is there — on a laptop that is
+  await test('off a runner the cloud steps never run, and the machine’s roster is untouched', () => {
+    // The synthetic machine REPLACES what is in ~/.workkit — on a laptop that is
     // every registered repo and every recorded decline, swapped for synthetic
-    // cloud paths that would then live on the tower forever.
+    // cloud paths that would then live on the tower forever. GITHUB_ACTIONS is
+    // the gate on all of it.
     const world = mkWorld();
     const roster = path.join(world.home, '.workkit', '.repos.json');
     fs.mkdirSync(path.join(world.home, '.workkit'), { recursive: true });
@@ -256,19 +282,21 @@ const run = async () => {
       },
     }, null, 2);
     fs.writeFileSync(roster, before);
+    // The machine leg's own steps are that suite's business; here the run is
+    // only asked to leave ~/.workkit alone.
+    fs.rmSync(path.join(world.home, '.claude'), { recursive: true, force: true });
 
     const env = { ...world.env };
     delete env.GITHUB_ACTIONS;
-    const res = spawnSync('bash', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
+    spawnSync('bash', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
 
-    assertEq(res.status, 1, 'a local run refuses');
-    assert(/GITHUB_ACTIONS/.test(res.stderr), `and names the guard: ${res.stderr}`);
     assertEq(fs.readFileSync(roster, 'utf8'), before, 'the roster is byte-identical — nothing was registered or dropped');
-    assertEq(world.calls().length, 0, 'and nothing was sent');
+    assertEq(world.calls().length, 0, 'and nothing was sent: the day is dispatched from a machine, never composed on it');
+    assertEq(world.created().length, 0, 'nor published');
     cleanup(world.root);
   });
 
-  group('jobs/claude-cloud: the machine it makes');
+  group('jobs/morning (cloud): the machine it makes');
 
   await test('an absent settings file is written from the repo the run belongs to', () => {
     // Issue #91: the workflow lives on the home repo, so GITHUB_REPOSITORY IS
@@ -362,11 +390,11 @@ const run = async () => {
     assert(res.stdout.includes('sweeping the home repo alone'), `and it says so: ${res.stdout}`);
     const calls = world.calls();
     assertEq(calls.length, 1, `the brief was still composed: ${fmtCalls(calls).slice(0, 200)}`);
-    assert(calls[0][1].startsWith(INSTRUCTION), 'from the same payload the laptop sends');
+    assert(calls[0][1].startsWith(INSTRUCTION), 'from the payload the machine rehearses with');
     cleanup(world.root);
   });
 
-  await test('the budget rails are the laptop’s, unchanged', () => {
+  await test('the budget rails are the machine’s, unchanged', () => {
     const world = mkWorld();
     runJob(world);
     const argv = world.calls()[0];
@@ -394,7 +422,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  group('jobs/claude-cloud: publishing');
+  group('jobs/morning (cloud): publishing');
 
   await test('the digest is posted as a Discussion titled with the date', () => {
     const world = mkWorld({ ccChangelog: '# Changelog\n\n## 2.1.220\n\n- Added a `DirectoryAdded` hook\n' });
@@ -405,8 +433,27 @@ const run = async () => {
     assert(created[0].join(' ').includes(`title=brief: ${today()}`), 'the title carries the date');
     const body = world.postedBody();
     assert(/HEADLINE: one thing today\./.test(body), `the digest response is the body: ${body}`);
+    assert(!body.includes('You are producing the owner'), 'and never the payload it answered');
     assert(/<!-- cc-news: 2\.1\.220 -->/.test(body), `and the cursor the next morning reads: ${body}`);
+    assert(body.indexOf('HEADLINE') < body.indexOf('<!-- cc-news'), 'after the digest, never in front of it');
     assert(res.stdout.includes(`posted brief: ${today()}`), `the log says it published: ${res.stdout}`);
+    cleanup(world.root);
+  });
+
+  await test('a run whose news could not be read publishes no version line', () => {
+    // Nothing on the board and nothing upstream: there has never been a version,
+    // so the brief carries none rather than inventing one.
+    const world = mkWorld();
+    runJob(world);
+    assert(!/cc-news:/.test(world.postedBody()), `no line at all: ${world.postedBody()}`);
+    cleanup(world.root);
+  });
+
+  await test('a failed upstream read carries the board’s version forward', () => {
+    const world = mkWorld({ posted: [{ title: 'brief: 2026-07-01', body: '<!-- cc-news: 2.1.219 -->' }] });
+    runJob(world);
+    assert(/<!-- cc-news: 2\.1\.219 -->/.test(world.postedBody()),
+      `the cursor holds rather than rewinding: ${world.postedBody()}`);
     cleanup(world.root);
   });
 
@@ -436,7 +483,7 @@ const run = async () => {
   await test('today’s brief already on the board is not posted twice', () => {
     const world = mkWorld({ posted: [{ title: `brief: ${today()}` }] });
     const res = runJob(world);
-    assertEq(res.status, 0, 'an overlap with the laptop is an ordinary morning');
+    assertEq(res.status, 0, 'an overlap with the cron backup is an ordinary morning');
     assertEq(world.created().length, 0, `nothing was posted: ${fmtCalls(world.ghCalls()).slice(0, 400)}`);
     assert(res.stdout.includes('already carries brief: '), `and it says so: ${res.stdout}`);
     cleanup(world.root);
@@ -459,7 +506,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  group('jobs/claude-cloud: the two tokens');
+  group('jobs/morning (cloud): the two tokens');
 
   await test('the post is made with the built-in token, the sweep with the secret', () => {
     // Issue #91: the Discussion lands on the repo the run belongs to, so it
@@ -486,7 +533,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  group('jobs/claude-cloud: the workflow that runs it');
+  group('jobs/morning (cloud): the workflow that runs it');
 
   // The workflow is SEEDED onto the home repo (issue #91) and lives nowhere in
   // this repo but here — the plugin is distributed, and a consumer cannot set
@@ -503,19 +550,19 @@ const run = async () => {
   await test('brief.yml triggers on dispatch and on a cron backup', () => {
     const text = fs.readFileSync(WORKFLOW, 'utf8');
     assert(/^on:$/m.test(text), 'it has a trigger block');
-    assert(/^ {2}workflow_dispatch:$/m.test(text), 'the laptop dispatches it');
+    assert(/^ {2}workflow_dispatch:$/m.test(text), 'the machine dispatches it');
     assert(/^ {4}- cron: '[\d*/, ]+'$/m.test(text), 'and a cron is the backup');
   });
 
-  await test('it runs the cloud script at the path the seed puts it', () => {
+  await test('it runs the morning script at the path the seed puts it', () => {
     const text = fs.readFileSync(WORKFLOW, 'utf8');
     const named = text.match(/run: bash (\S+\.sh)/);
     assert(named, `the job runs a script: ${text}`);
     // The seed's own list is what decides where that path is, so the workflow
     // is checked against it rather than against a literal written twice.
     const home = fs.readFileSync(path.join(__dirname, '..', '..', 'workflow', 'home.sh'), 'utf8');
-    const pair = home.match(/'(\S+):(\S+claude-cloud\.sh)'/);
-    assert(pair, `the seed list names the cloud script: ${home.slice(0, 200)}`);
+    const pair = home.match(/'(\S+):(\S+morning\.sh)'/);
+    assert(pair, `the seed list names the morning script: ${home.slice(0, 200)}`);
     assertEq(named[1], pair[2], 'the workflow runs the copy the seed writes');
     assert(fs.existsSync(path.join(__dirname, '..', '..', pair[1])), `${pair[1]} is the source in this checkout`);
   });

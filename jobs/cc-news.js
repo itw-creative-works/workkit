@@ -53,7 +53,7 @@ const WORKKIT_DIR = '.workkit';
 // The hand-edited file that names the home repo — the board the cursor lives on.
 const SETTINGS_FILE = 'settings.json';
 
-// The published briefs, by the title `claude-daily.sh` gives them, and the line
+// The published briefs, by the title `brief-publish.sh` gives them, and the line
 // each one carries. THIS MODULE OWNS THE LINE'S SHAPE: the runner never writes
 // it by hand, it appends the file `renderVersionMark` was rendered into, so the
 // writer and the reader cannot drift.

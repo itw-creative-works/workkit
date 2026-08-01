@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Ship a release — commit (directly, or through a pull request for agent-authored work or on request), bump version, publish to npm, create GitHub release, run the project's deploy script. - ONLY invoke when the user explicitly types /workkit:ship — NEVER auto-invoke based on context like "commit", "ship", "release", "publish", or "deploy".
+description: Ship a release — commit (or open a pull request), bump the version, publish, create the GitHub release, run the deploy. - ONLY invoke when the user explicitly types /workkit:ship — NEVER auto-invoke on context like "commit", "ship", "release", "publish", or "deploy".
 allowed-tools: Bash(git add *), Bash(git commit *), Bash(git diff *), Bash(git log *), Bash(git status *), Bash(git push *), Bash(git rev-parse *), Bash(git stash list *), Bash(git tag *), Bash(git switch *), Bash(git checkout *), Bash(git pull *), Bash(git branch *), Bash(gh release create *), Bash(gh repo view *), Bash(gh issue list *), Bash(gh issue view *), Bash(gh issue close *), Bash(gh issue comment *), Bash(gh pr create *), Bash(gh pr merge *), Bash(gh pr checks *), Bash(gh pr view *), Bash(gh run list *), Bash(gh run watch *), Bash(gh run view *), Bash(gh workflow list *), Bash(npm publish *), Bash(npm version *), Bash(npm run prepare *), Bash(npm run deploy *), Bash(npm run release *), Bash(npx run deploy *), Bash(npx run release *)
 user-invocable: true
 ---
@@ -254,3 +254,4 @@ The rules (word cap, separator, the rest) live in `~/.claude/workkit/changelog.j
 - A squash merge REWRITES the sha — the branch commits never land on the default branch. Never run the changelog backfill before the merge: it would link shas that exist only on a deleted branch. Merge, pull the default branch, then backfill (2026-07-26: the reason the release commit follows the merge).
 - `gh pr merge --squash` without `--body` composes its own body from the branch commits — always pass `--subject` and `--body` explicitly so the `Fixes #N` trailer is guaranteed to be in the squash commit.
 - Skill `SKILL.md` files count as CODE to the `safety/commit-gate` hook — a "prose-only" skill edit still needs a fresh review marker; don't assume docs-only (2026-07-23: first retrofitted ship run).
+- A leaked value in history has a runbook: `docs/history-purge.md` — never improvise a rewrite.

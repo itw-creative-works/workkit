@@ -16,7 +16,7 @@
 // "gh could not answer" are opposite facts, and a morning that quietly reported
 // the first when the second happened is worse than no brief at all.
 //
-// Pure gather: no writes, no Claude, no notification. `claude-daily.sh` owns the
+// Pure gather: no writes, no Claude, no notification. `morning.sh` owns the
 // sending — and, since issue #86, the publishing: the upstream-news cursor now
 // lives on the board, so the one thing this script leaves behind is the version
 // line the runner appends to the brief it publishes, written into the scratch
@@ -36,15 +36,14 @@ const { buildBrief } = require('../tower/api/lib/brief');
 const { collectCcNews, renderCcNews, renderVersionMark } = require('./cc-news');
 
 // The digest instruction. It names the payload's sections rather than the shape
-// of a board file, and it fixes the FIRST line of the response: claude-daily.sh
-// puts that line in the desktop notification, which is the only part of the
-// morning most days get read at all.
+// of a board file, and it fixes the FIRST line of the response: morning.sh puts
+// that line in the desktop notification a local rehearsal fires and in the one
+// line of proof of life a runner writes to the Actions log.
 const INSTRUCTION = `You are producing the owner's MORNING KICKOFF from the brief payload below.
 
 The payload is the tower's daily brief as JSON. \`waiting\` is blocked on a
-decision from the owner, \`ready\` is specced and unclaimed, \`inFlight\` is
-building (or the legacy shape, specced and claimed), \`inbox\` is captured but
-not yet specced, and \`warnings\` is work sitting
+decision from the owner, \`ready\` is specced, \`inFlight\` is building,
+\`inbox\` is captured but not yet specced, and \`warnings\` is work sitting
 on the table per repo (uncommitted, unpushed, unreleased). \`ok: false\` means the
 sweep itself failed — report that and its \`reason\`, never a quiet morning.
 

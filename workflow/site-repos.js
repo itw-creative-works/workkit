@@ -28,7 +28,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { discoverRepos } = require('../tower/api/lib/repos');
+const { discoverRepos, readRoster } = require('../tower/api/lib/repos');
 
 /** Parse JSON from a file, or null when it is absent or unparseable. */
 const readJson = (file) => {
@@ -53,21 +53,25 @@ const readJson = (file) => {
  * @param {string} [opts.home] overrides ~ for the default
  * @param {Function} [opts.exec] (cmd, args) => stdout — the git seam
  * @returns {{repos: string[], home: string|null}}
+ * @throws when the roster could not be read, rather than composing an empty one
  */
 const composeSlugs = (opts = {}) => {
   const home = opts.home || os.homedir();
   const workflowHome = opts.workflowHome || path.join(home, '.workkit');
 
-  let slugs = [];
-  try {
-    slugs = discoverRepos({ workflowHome, home, exec: opts.exec })
-      .map((repo) => repo.slug)
-      .filter((slug) => typeof slug === 'string' && slug.includes('/'));
-  } catch {
-    // A roster that cannot be read is an empty one here: the site still
-    // publishes, and it says it has no repos rather than carrying a stale list.
-    slugs = [];
+  // A machine that registers nothing and a roster that cannot be READ compose
+  // the same empty list, and only one of them is true (issue #116). The failure
+  // is raised so the caller keeps whatever list is already published — the
+  // readers believe this file, and an empty one tells them there is no board.
+  // The genuinely empty machine still writes `[]`, which is what it has.
+  const { status } = readRoster(workflowHome);
+  if (status === 'unreadable') {
+    throw new Error(`the roster at ${path.join(workflowHome, '.repos.json')} could not be read`);
   }
+
+  const slugs = discoverRepos({ workflowHome, home, exec: opts.exec })
+    .map((repo) => repo.slug)
+    .filter((slug) => typeof slug === 'string' && slug.includes('/'));
 
   const settings = readJson(path.join(workflowHome, 'settings.json'));
   const site = (settings && settings.site) || {};
@@ -85,6 +89,7 @@ const composeSlugs = (opts = {}) => {
  * @param {string} outfile
  * @param {object} [opts] passed through to composeSlugs
  * @returns {boolean} whether the file was written
+ * @throws whatever composeSlugs raises — the outfile is untouched
  */
 const writeSlugs = (outfile, opts = {}) => {
   const next = composeSlugs(opts);
@@ -103,5 +108,10 @@ if (require.main === module) {
     process.stderr.write('usage: site-repos.js <outfile> [workflow-home]\n');
     process.exit(1);
   }
-  writeSlugs(outfile, { workflowHome: process.argv[3] || process.env.WORKFLOW_HOME || undefined });
+  try {
+    writeSlugs(outfile, { workflowHome: process.argv[3] || process.env.WORKFLOW_HOME || undefined });
+  } catch (err) {
+    process.stderr.write(`site-repos: ${err.message} — nothing was written\n`);
+    process.exit(1);
+  }
 }

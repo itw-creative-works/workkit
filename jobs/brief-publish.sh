@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # jobs/brief-publish.sh — publishing the morning brief. SOURCED, never executed.
 #
-# The one home of "post today's digest as a Discussion on the home repo". Two
-# runners call it — claude-daily.sh on the laptop and claude-cloud.sh on a
-# GitHub Actions runner (issue #82) — and they differ only in what they do with
-# the answer: the laptop logs every outcome and carries on, the cloud exits
-# non-zero on a post that did not land. So this prints ONE line saying what
-# happened and returns a status, and decides nothing about the run.
+# The one home of "post today's digest as a Discussion on the home repo", and
+# its one caller is morning.sh's CLOUD path (issues #82, #107): the digest is
+# published by whoever composed it, and the brief composes on a runner. So this
+# prints ONE line saying what happened and returns a status, and decides nothing
+# about the run — the caller is the one that turns a post which did not land
+# into a red one, because there the Actions log is the delivery.
 #
 # It sets no shell options and runs nothing at load. The engine libraries it
 # needs are sourced inside the function, which is normally called inside a

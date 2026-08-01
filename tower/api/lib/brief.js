@@ -13,8 +13,8 @@
 // The four sections answer the four questions a morning asks, in the order a
 // morning asks them:
 //   waiting    what is blocked on a human decision — the only thing that stops work
-//   ready      specced and unclaimed — what may be started right now
-//   inFlight   building, or the legacy shape: specced and assigned
+//   ready      specced — what may be started right now
+//   inFlight   building — the label is what says work has started
 //   warnings   work sitting on the table: uncommitted, unpushed, unreleased
 //
 // Usage:
@@ -91,14 +91,14 @@ const headlineFor = (counts) => {
  */
 const buildBrief = (board, health, repos, generatedAt) => {
   const issues = (board && Array.isArray(board.issues) ? board.issues : []).slice().sort(byUrgency);
-  const claimed = (issue) => (issue.assignees || []).length > 0 || issue.agentWorking;
 
   const waiting = issues.filter((i) => i.status === 'blocked').map(brief);
-  const ready = issues.filter((i) => i.status === 'specced' && !claimed(i)).map(brief);
-  // `status:building` IS in flight — the label is what says work has started.
-  // A claimed `specced` issue counts too, as the shape the board carried before
-  // the fifth state existed; it stays until the live issues have flipped.
-  const inFlight = issues.filter((i) => i.status === 'building' || (i.status === 'specced' && claimed(i))).map(brief);
+  // The label is the whole answer on both of these (issue #62): `specced` is a
+  // spec accepted and nothing started, `building` is work in flight. An
+  // assignee no longer moves an issue between them — a claimed `specced` issue
+  // is a transient the standards sweep flips, not a shape to be tolerated here.
+  const ready = issues.filter((i) => i.status === 'specced').map(brief);
+  const inFlight = issues.filter((i) => i.status === 'building').map(brief);
   const inbox = issues.filter((i) => i.status === 'inbox').map(brief);
 
   const warnings = [];

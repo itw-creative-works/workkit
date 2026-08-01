@@ -584,7 +584,7 @@ const run = async () => {
   await test('a second seed writes nothing, and a changed source is picked up', () => {
     const world = mkWorld();
     seeded(world);
-    const dest = path.join(world.tower, 'brief', 'jobs', 'claude-cloud.sh');
+    const dest = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
     const before = fs.statSync(dest).mtimeMs;
 
     const again = seeded(world);
@@ -599,7 +599,7 @@ const run = async () => {
     assert(/rc=0/.test(refreshed.out), `the drift is healed: ${refreshed.out}`);
     assertEq(
       fs.readFileSync(dest, 'utf8'),
-      fs.readFileSync(path.join(KIT_DIR, 'jobs', 'claude-cloud.sh'), 'utf8'),
+      fs.readFileSync(path.join(KIT_DIR, 'jobs', 'morning.sh'), 'utf8'),
       'back to the checkout’s copy',
     );
     cleanup(world.root);
@@ -609,13 +609,13 @@ const run = async () => {
     const world = mkWorld();
     const partial = path.join(world.root, 'partial-kit');
     fs.mkdirSync(path.join(partial, 'jobs'), { recursive: true });
-    fs.writeFileSync(path.join(partial, 'jobs', 'claude-cloud.sh'), '# the runner\n');
+    fs.writeFileSync(path.join(partial, 'jobs', 'morning.sh'), '# the runner\n');
     world.env.WORKKIT_KIT_DIR = partial;
 
     const { out } = seeded(world);
     assert(/runner is incomplete/.test(out), `it names the state: ${out}`);
     assert(/brief-payload\.js/.test(out), `and what is missing: ${out}`);
-    assert(fs.existsSync(path.join(world.tower, 'brief', 'jobs', 'claude-cloud.sh')), 'what was there still landed');
+    assert(fs.existsSync(path.join(world.tower, 'brief', 'jobs', 'morning.sh')), 'what was there still landed');
     cleanup(world.root);
   });
 
@@ -629,14 +629,14 @@ const run = async () => {
     const check = path.join(world.root, 'check');
     spawnSync('git', ['clone', '-q', remote, check], { encoding: 'utf8' });
     assert(fs.existsSync(path.join(check, '.github', 'workflows', 'brief.yml')), 'the workflow reached the home repo');
-    assert(fs.existsSync(path.join(check, 'brief', 'jobs', 'claude-cloud.sh')), 'and the script it runs');
+    assert(fs.existsSync(path.join(check, 'brief', 'jobs', 'morning.sh')), 'and the script it runs');
 
     // The checkout moves on, the way it does between releases. The next setup
     // finds a seeded clone, refreshes the copy, and pushes that on its own.
-    fs.writeFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'claude-cloud.sh'), '# a newer runner\n');
+    fs.writeFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.sh'), '# a newer runner\n');
     const { out } = setup(world);
     assert(/seeded the cloud brief/.test(out), `the refresh happened: ${out}`);
-    assertEq(fs.readFileSync(path.join(world.tower, 'brief', 'jobs', 'claude-cloud.sh'), 'utf8'), '# a newer runner\n', 'the clone carries the new one');
+    assertEq(fs.readFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.sh'), 'utf8'), '# a newer runner\n', 'the clone carries the new one');
     const subject = spawnSync('git', ['-C', world.tower, 'log', '-1', '--pretty=%s'], { encoding: 'utf8' }).stdout.trim();
     assertEq(subject, 'chore(home): refresh the cloud brief runner', 'in a commit that says what it is');
     cleanup(world.root);
@@ -971,7 +971,7 @@ const run = async () => {
   await test('a seeded file the checkout has moved past is reported as behind', () => {
     const world = withRunner();
     // The checkout moved on — a `git pull` since the last setup.
-    fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'claude-cloud.sh'), '\n# a later change\n');
+    fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.sh'), '\n# a later change\n');
     const { out } = runnerDoctor(world);
     assert(/brief runner is behind this checkout/.test(out), `it names the drift, got: ${out}`);
     assert(/1 of \d+ file\(s\) differ/.test(out), `and how much of it, got: ${out}`);
@@ -982,7 +982,7 @@ const run = async () => {
 
   await test('doctor only reads — it never writes the runner back or pushes', () => {
     const world = withRunner();
-    const file = path.join(world.tower, 'brief', 'jobs', 'claude-cloud.sh');
+    const file = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
     fs.writeFileSync(file, '# an old copy\n');
     runnerDoctor(world);
     assertEq(fs.readFileSync(file, 'utf8'), '# an old copy\n', 'the clone is untouched — only setup writes it');

@@ -67,7 +67,21 @@ const decline = (repo, workflowHome) => spawnSync('bash', [
 // WORKFLOW_HOME and WORKFLOW_CLAUDE_HOME always point somewhere disposable: the
 // user-level settings file and the engine's address symlink, both written by
 // the engine on every run, must never be the real ~/.workkit or ~/.claude.
-const runHook = (cwd, { cache, pathPrefix, home, workflowDir, workflowHome } = {}) => {
+// A machine that has run `workkit setup`, as far as the setup pester (#72) can
+// see it: the CLI symlink the wizard installs, pointed at this checkout's
+// engine — exactly what `workkit update` calls current. Every run seeds it
+// unless the test is exercising a machine that never ran setup (setup: false),
+// because a scratch HOME is otherwise indistinguishable from a fresh machine
+// and every case here would carry the pester.
+const seedSetup = (home) => {
+  const dir = path.join(home, '.local', 'bin');
+  fs.mkdirSync(dir, { recursive: true });
+  const link = path.join(dir, 'workkit');
+  if (!fs.existsSync(link)) fs.symlinkSync(path.join(WORKFLOW_DIR, 'workkit.sh'), link);
+  return link;
+};
+
+const runHook = (cwd, { cache, pathPrefix, home, workflowDir, workflowHome, setup = true } = {}) => {
   const cacheDir = cache || mkTmp();
   const env = {
     // A scratch HOME by default: the hook's daily run now also drives the
@@ -83,6 +97,7 @@ const runHook = (cwd, { cache, pathPrefix, home, workflowDir, workflowHome } = {
     WORKFLOW_HOME: workflowHome || path.join(mkTmp(), 'workflow-home'),
     WORKFLOW_CLAUDE_HOME: path.join(mkTmp(), 'claude-home'),
   };
+  if (setup) seedSetup(env.HOME);
   const dir = workflowDir === undefined ? WORKFLOW_DIR : workflowDir;
   if (dir !== null) env.WORKFLOW_DIR = dir;
   const res = spawnSync('bash', [HOOK], {
@@ -335,6 +350,59 @@ const run = async () => {
     assertEq(code, 0, 'exit 0');
     assertEq(stdout, '', `a project that turned it off hears nothing, got: ${stdout}`);
     cleanup(repo); cleanup(cacheDir); cleanup(engine);
+  });
+
+  group('workflow:standards — the setup pester (#72)');
+
+  const contextOf = (stdout) => JSON.parse(stdout).hookSpecificOutput.additionalContext;
+
+  await test('a machine that never ran setup is told to, every session', () => {
+    const repo = makeRepo();
+    const home = mkTmp();
+    const cache = mkTmp();
+    const first = runHook(repo, { home, cache, setup: false });
+    assertEq(first.code, 0, 'exit 0');
+    const ctx = contextOf(first.stdout);
+    assert(ctx.includes('SETUP:'), `the session hears it, got: ${ctx}`);
+    assert(ctx.includes('workkit.sh setup'), `and is given the exact command, got: ${ctx}`);
+    assert(ctx.includes('issue forms'), 'the heal report rides along with it');
+    // Second session, same day: the daily gate silences the heal, never the pester.
+    const second = runHook(repo, { home, cache, setup: false });
+    assert(contextOf(second.stdout).includes('workkit.sh setup'), `no nag cache, got: ${second.stdout}`);
+    assert(!second.stdout.includes('issue forms'), 'and the daily gate still holds for the heal');
+    cleanup(repo); cleanup(home); cleanup(cache);
+  });
+
+  await test('a set-up machine hears nothing about setup', () => {
+    const repo = makeRepo();
+    const home = mkTmp();
+    const first = runHook(repo, { home });
+    assert(!first.stdout.includes('SETUP:'), `the pester ends when setup has run, got: ${first.stdout}`);
+    const second = runHook(repo, { home });
+    assertEq(second.stdout, '', `and a quiet session stays quiet, got: ${second.stdout}`);
+    cleanup(repo); cleanup(home); cleanup(first.cacheDir); cleanup(second.cacheDir);
+  });
+
+  await test('setup is a machine question — the pester reaches a non-git cwd too', () => {
+    const dir = mkTmp();
+    const home = mkTmp();
+    const { code, stdout, cacheDir } = runHook(dir, { home, setup: false });
+    assertEq(code, 0, 'exit 0');
+    assert(contextOf(stdout).includes('workkit.sh setup'), `nothing about the machine needs a repo, got: ${stdout}`);
+    assert(!fs.existsSync(path.join(dir, '.github')), 'and still nothing written outside a repo');
+    cleanup(dir); cleanup(home); cleanup(cacheDir);
+  });
+
+  await test('a declined repo still hears the setup pester and nothing else', () => {
+    const repo = makeRepo({ optIn: false });
+    const home = mkTmp();
+    const workflowHome = mkTmp();
+    decline(repo, workflowHome);
+    const { stdout, cacheDir } = runHook(repo, { home, workflowHome, setup: false });
+    const ctx = contextOf(stdout);
+    assert(ctx.includes('workkit.sh setup'), `the machine question is not the repo's to decline, got: ${ctx}`);
+    assert(!ctx.includes('not in the issue workflow'), 'the decline still holds for the repo offer');
+    cleanup(repo); cleanup(home); cleanup(cacheDir); cleanup(workflowHome);
   });
 
   group('workflow:standards — machine-side upkeep');

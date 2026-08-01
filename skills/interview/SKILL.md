@@ -1,10 +1,10 @@
 ---
-name: grill
-description: Alignment interrogation — extract the decisions only the human can make, one question at a time, each with a recommended answer. - Use when starting ambiguous work, when a task has unstated requirements, when the user says "grill me", "ask me questions", "make sure we're aligned", "what do you need to know", or before committing to a design with open calls.
+name: interview
+description: Alignment interrogation — the decisions only the human can make, one at a time, each with a recommendation. - Use when starting ambiguous work, when a spec being written is at all unclear, or when the user says "interview me", "grill me", "ask me questions", "make sure we're aligned".
 user-invocable: true
 ---
 
-# Grill — extract the human's decisions, nothing else
+# Interview — extract the human's decisions, nothing else
 
 Find every decision the human actually owns, ask about ONLY those, and get each one settled with the least reading burden. The agent finds facts; the human makes calls.
 
@@ -26,7 +26,7 @@ Ask nothing open-ended. Each question states: the decision, the options, **your 
 
 - Durable ruling (a preference that outlives this task) → record it verbatim + dated in `AGENTS.md`/`docs/` if it is doctrine, else as a comment on the issue it binds (or offer to).
 - Rejected direction → note it; if it was a real proposal, close its issue as **not planned** with the ruling in a comment (or file one to close, if the proposal had no issue).
-- When no undecided question changes what you'd do next, SAY SO and stop grilling — done-criteria: zero open decisions that block the work.
+- When no undecided question changes what you'd do next, SAY SO and end the interview — done-criteria: zero open decisions that block the work.
 
 ## Never
 

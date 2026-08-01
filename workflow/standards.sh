@@ -31,6 +31,9 @@
 #                  agent:working with no activity for 24 hours loses the label
 #                  and its assignee, goes back from status:building to
 #                  status:specced, and gets a comment saying the sweep did it.
+#                  The other direction follows it: an open status:specced issue
+#                  with an assignee is a claim on an authorized spec — work in
+#                  flight — so it moves to status:building with its own comment.
 #   6a. roster   — record this repo's path under `repos` in the user settings,
 #                  the machine-local index the tower reads instead of walking a
 #                  filesystem root, and drop any listed path that is gone or has
@@ -1042,6 +1045,58 @@ sweep_stale_claims() {
   return 0
 }
 
+# ── 3c. A claimed spec is work in flight ──
+# `status:specced` is the authorization to start and the assignee is the claim,
+# so an open issue carrying both has STARTED: the spec's flip to
+# status:building happens the moment work does. Every surface reading the queue
+# used to tolerate the claimed-specced shape as in flight instead, which made a
+# transitional branch permanent because nothing ever flipped the issues. This
+# sweep is what flips them (issue #62), so the label says what is true and the
+# readers need no tolerance at all.
+#
+# It cannot fight the release sweep, which runs FIRST and removes the assignee
+# in the same edit that demotes an issue to specced: what it releases has no
+# claim left for this to promote. Neither ever sees the shape the other made.
+#
+# Fail-safe by shape, like the sweep above: only an ANSWER from GitHub licenses
+# a write, and a repo whose BUILDING_LABEL never reached GitHub is left alone
+# rather than edited into a whole-command failure.
+flip_claimed_specced() {
+  local issues claimed n moved=0 failed=0
+  command -v jq >/dev/null 2>&1 || return 0
+  command -v gh >/dev/null 2>&1 || return 0
+  gh auth status >/dev/null 2>&1 || return 0
+  git remote get-url origin >/dev/null 2>&1 || return 0
+  [[ -n "$existing_labels" ]] || return 0
+  jq -e --arg n "$BUILDING_LABEL" 'any(.[]; .name == $n)' <<<"$existing_labels" >/dev/null 2>&1 || return 0
+
+  if ! issues="$(gh issue list --state open --label "$SPECCED_LABEL" --json number,assignees --limit 100 2>/dev/null)"; then
+    log_warn "claims: could not list the issues carrying $SPECCED_LABEL — nothing was flipped"
+    needs_attention=1
+    return 0
+  fi
+
+  claimed="$(jq -r '.[] | select((.assignees | length) > 0) | .number' <<<"$issues" 2>/dev/null || true)"
+
+  while read -r n; do
+    [[ -n "$n" ]] || continue
+    if ! gh issue edit "$n" --remove-label "$SPECCED_LABEL" --add-label "$BUILDING_LABEL" >/dev/null 2>&1; then
+      log_warn "claims: could not flip #$n to $BUILDING_LABEL — left as it was"
+      failed=1
+      continue
+    fi
+    # The comment follows the edit, never precedes it: the issue's trail records
+    # what happened, not what was about to be tried.
+    gh issue comment "$n" --body "Flipped to $BUILDING_LABEL by the standards sweep: this issue was $SPECCED_LABEL with an assignee, which is a claim on an authorized spec — work in flight. If nobody is working on it, remove the assignee and put $SPECCED_LABEL back." >/dev/null 2>&1 \
+      || log_warn "claims: flipped #$n but could not comment on it"
+    moved=$((moved + 1))
+  done <<<"$claimed"
+
+  [[ "$failed" -eq 1 ]] && needs_attention=1
+  [[ "$moved" -gt 0 ]] && log_ok "claims: flipped $moved claimed $SPECCED_LABEL issue(s) to $BUILDING_LABEL"
+  return 0
+}
+
 # ── 4. Open issues carry conforming labels ──
 # A violation FLAGS THE RUN (owner ruling, 2026-07-28: a missing status is an
 # error, a double status is an error): templates can be installed before the
@@ -1213,6 +1268,7 @@ ensure_changelog_job
 ensure_branch_protection
 sync_labels
 sweep_stale_claims
+flip_claimed_specced
 check_issue_labels
 check_hook_layer
 

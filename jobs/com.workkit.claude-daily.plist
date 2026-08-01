@@ -7,7 +7,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/bin/bash</string>
-		<string>{{WORKKIT_DIR}}/jobs/claude-daily.sh</string>
+		<string>{{WORKKIT_DIR}}/jobs/morning.sh</string>
 	</array>
 	<key>StartCalendarInterval</key>
 	<dict>

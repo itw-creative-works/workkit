@@ -4,21 +4,25 @@
 # "Issue anatomy"): every repo workkit touches is assumed PUBLIC, so outbound
 # issue/PR text carries no secrets. This guard blocks a `gh issue
 # create|comment|edit|close|reopen` or `gh pr create|comment|edit|merge|close`
-# whose text holds something secret-shaped — and a `gh api graphql` call
-# carrying a discussion or issue mutation, which is the same egress by another
-# door (workflow/discussions.sh publishes summaries that way). The judgment
-# half — private business and personal detail, which no pattern can see —
-# stays prose.
+# whose text holds something secret-shaped — a `gh api graphql` call carrying a
+# discussion or issue mutation, which is the same egress by another door
+# (workflow/discussions.sh publishes summaries that way) — and a `gh api` REST
+# WRITE to an issue or pull endpoint, which is that same door once more (issue
+# #83). The judgment half — private business and personal detail, which no
+# pattern can see — stays prose.
 #
 # Scope: the whole command string (titles and bodies arrive as --title/--body
 # or as -f/-F/--field/--raw-field GraphQL variables, including the
 # `--body "$(cat <<'EOF' … )"` idiom), plus the CONTENT of a body path when it
-# exists — `--body-file <path>`, `-F <path>`, and the `-F body=@<path>` form a
-# mutation sends. A GraphQL QUERY writes nothing and is left alone; any other
-# command exits fast.
+# exists — `--body-file <path>`, `-F <path>`, `--input <path>`, and the
+# `-F body=@<path>` form a mutation sends. A GraphQL QUERY and a REST GET write
+# nothing and are left alone; any other command exits fast.
 # The limit of the GraphQL door: a mutation is recognized by the keyword in the
 # COMMAND TEXT, so a call that keeps its operation out of the command — `gh api
 # graphql --input <file>`, or a query held in a shell variable — is not seen.
+# The limit of the REST door is the same shape: the path and the method are read
+# from the command text, and a body that arrives on STDIN (`--input -`, a pipe)
+# is not a file this can open.
 #
 # Two secret sources:
 #   1. Local .env values — every KEY=value in .env and .env.*, in the session's
@@ -63,6 +67,42 @@ if [ "$outbound" = no ] \
   outbound=yes
 fi
 
+# The REST door (issue #83). `gh api` speaks REST as well as GraphQL, and the
+# issue and pull endpoints are the same egress: POST an issue, PATCH a body,
+# POST a comment or a review. The whole `repos/<o>/<n>/(issues|pulls)` tree is
+# matched by its prefix rather than endpoint by endpoint — every path below it
+# carries issue or PR text — with a leading slash and the full
+# `https://api.github.com/…` form both allowed.
+#
+# WHICH METHOD is the question, because gh's is implicit: GET by default, POST
+# the moment a field or an input is given. So a write is an explicit
+# `-X`/`--method` POST|PATCH|PUT, or one of those paths carrying a field or
+# input flag. An explicit method that is not one of those wins over the flags —
+# `--method GET` with `-f state=open` is a filtered LIST — and a bare path is a
+# read. Reads are never gated.
+#
+# The read exemption is deliberately narrow, because it is the one branch that
+# can UNSET the decision: the method flag is read only from the text BEFORE the
+# first field/input flag (a field VALUE may itself say `-X GET` — prose about a
+# curl command must not disarm the scan), and only when the command holds a
+# single `gh api` call (a read chained with a write in one command must not let
+# the read speak for both). A read whose method flag sits after its fields is
+# scanned like a write — the scan blocks nothing without a secret in it, so the
+# cost of over-classifying is nil and the miss it prevents is not.
+if [ "$outbound" = no ] \
+  && printf '%s' "$cmd" | grep -Eq '(^|[^[:alnum:]_./-])gh[[:space:]]+api([[:space:]]|$)' \
+  && printf '%s' "$cmd" | grep -Eq '(^|[^[:alnum:]_.-])(https://api\.github\.com/)?/?repos/[^/[:space:]]+/[^/[:space:]]+/(issues|pulls)([^[:alnum:]_-]|$)'; then
+  lead=$(printf '%s' "$cmd" | sed -E 's/[[:space:]](-[fF]|--field|--raw-field|--input)[=[:space:]].*$//')
+  apis=$(printf '%s' "$cmd" | grep -Eo '(^|[^[:alnum:]_./-])gh[[:space:]]+api([[:space:]]|$)' | wc -l | tr -d ' ')
+  if printf '%s' "$lead" | grep -Eqi '(^|[[:space:]])(-X|--method)[=[:space:]]+["'"'"']?(POST|PATCH|PUT)'; then
+    outbound=yes
+  elif [ "$apis" = 1 ] && printf '%s' "$lead" | grep -Eq '(^|[[:space:]])(-X|--method)[=[:space:]]'; then
+    outbound=no
+  elif printf '%s' "$cmd" | grep -Eq '(^|[[:space:]])(-[fF]|--field|--raw-field|--input)[=[:space:]]'; then
+    outbound=yes
+  fi
+fi
+
 [ "$outbound" = yes ] || exit 0
 
 cwd=$(jq -r '.cwd // ""' <<<"$input" || true)
@@ -71,6 +111,9 @@ cwd=$(jq -r '.cwd // ""' <<<"$input" || true)
 # --- The outbound text: the command, plus any body-file content. ---
 # `-F` is gh's shorthand for --body-file on these subcommands, so both
 # spellings are extracted; a path that does not resolve is simply skipped.
+# `--input <path>` is the REST door's whole request body in a file (issue #83),
+# read the same way — `--input -` names stdin, which resolves to no file and is
+# skipped like any other path that is not there.
 text="$cmd"
 add_file() {
   local bf="$1" file
@@ -89,7 +132,7 @@ $(cat "$file" 2>/dev/null || true)"
 while IFS= read -r bf; do
   add_file "$bf"
 done <<EOF
-$(printf '%s' "$cmd" | grep -Eo -- '(--body-file|--raw-field|--field|(^|[[:space:]])-F)[=[:space:]]+[^[:space:]]+' | sed -E 's/^[[:space:]]*(--body-file|--raw-field|--field|-F)[=[:space:]]+//' || true)
+$(printf '%s' "$cmd" | grep -Eo -- '(--body-file|--raw-field|--field|--input|(^|[[:space:]])-F)[=[:space:]]+[^[:space:]]+' | sed -E 's/^[[:space:]]*(--body-file|--raw-field|--field|--input|-F)[=[:space:]]+//' || true)
 EOF
 
 # The GraphQL variable form: `-F body=@<path>` sends the file verbatim, which is

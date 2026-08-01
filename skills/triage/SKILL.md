@@ -1,6 +1,6 @@
 ---
 name: triage
-description: Route every captured entry to its one correct home — relabel or comment on GitHub issues, hand cross-project items to the home repo — then print the Filed trail. - Use when the user says "triage", "file my notes", "empty the inbox", "process the inbox", "route the inbox", dumps a batch of notes and asks to file them, or when the state-check hook reports open status:inbox issues or a non-empty .workkit/inbox.md.
+description: Route every captured entry to its one home, then print the Filed trail. - Use when the user says "triage", "file my notes", "empty the inbox", or when the state-check hook reports open status:inbox issues or a non-empty .workkit/inbox.md.
 ---
 
 # Triage — drain the inbox, visibly

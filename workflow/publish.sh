@@ -59,7 +59,7 @@
 #
 # Usage: publish.sh [--quiet]
 # Called by: `workkit publish`, `workkit update` (a human's run), and
-#            jobs/claude-daily.sh after the brief has been sent.
+#            jobs/morning.sh after the brief has been sent.
 
 set -euo pipefail
 
@@ -231,6 +231,12 @@ fi
 #
 # Without node the list cannot be composed, and the readers carry on with
 # whatever is already there — so the run says so and does everything else.
+#
+# A compose that FAILS says the same thing: an unreadable roster leaves the
+# existing file exactly as it is rather than publishing an empty list over a good
+# one (issue #116), and this warns without touching the exit code — a
+# stale-but-good roster is the designed outcome, unlike the source push below,
+# whose failure loses work and is what SOURCE_RC carries.
 if command -v node >/dev/null 2>&1; then
   if node "$SCRIPT_DIR/site-repos.js" "$WK_HOME_DIR/data/repos.json" "$WK_USER_DIR" >/dev/null 2>&1; then
     say_info "publish: the repo list is on $(wk_home_slug)'s default branch at data/repos.json"

@@ -13,7 +13,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
-const { discoverRepos, slugFromRemote } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'repos.js'));
+const { discoverRepos, readRoster, slugFromRemote } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'repos.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-repos-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -292,6 +292,19 @@ const run = async () => {
 
     const tmp2 = mkTmp();
     assertEq(discoverRepos({ workflowHome: mkWorkflowHome(tmp2, null, '{ not json') }).length, 0, 'unparseable');
+    cleanup(tmp2);
+  });
+
+  await test('a reader cannot tell the three apart, and readRoster can', () => {
+    // Issue #116: absent and unparseable are the same empty board to a reader
+    // and two different things to a writer, so the file read says which.
+    const tmp = mkTmp();
+    assertEq(readRoster(path.join(tmp, 'nope')).status, 'missing', 'nothing registered yet');
+    assertEq(readRoster(mkWorkflowHome(tmp, null, { roster: { version: 1 } })).status, 'ok', 'a file that parses');
+    cleanup(tmp);
+
+    const tmp2 = mkTmp();
+    assertEq(readRoster(mkWorkflowHome(tmp2, null, { roster: '{ not json' })).status, 'unreadable', 'a file that does not');
     cleanup(tmp2);
   });
 

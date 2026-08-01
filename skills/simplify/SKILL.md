@@ -1,6 +1,6 @@
 ---
 name: simplify
-description: Test-gated simplification of recently-written code — fires only after tests pass, diff-scoped, keeps changes only if the same tests stay green. - Use ONLY when invoked (/workkit:simplify) or when the user asks to "simplify", "clean up this code", "reduce this", "tighten this up" after working code exists. NEVER fires proactively.
+description: Test-gated simplification of recently-written code — green before, the same tests green after, or the change reverts. - Use ONLY when invoked (/workkit:simplify) or when the user asks to "simplify", "clean up this code", "tighten this up". NEVER fires proactively.
 user-invocable: true
 ---
 

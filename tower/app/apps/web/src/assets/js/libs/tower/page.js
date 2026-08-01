@@ -53,6 +53,7 @@ import {
 } from './token.js';
 import { chromeKey, chromeMarkup, statusMarkup } from './chrome.js';
 import { startClock } from './clock.js';
+import { refreshAgentDialog } from './modal.js';
 
 // ── The repo selection ─────────────────────────────────────────────────────
 
@@ -214,6 +215,12 @@ export async function startPage(options) {
       prompted = false;
     }
     options.render(body, state);
+    // The page is drawn; so is anything the viewer has open OVER it. An agent
+    // dialog is filled once, from a registry the render above has just
+    // rewritten — refresh it here and it tells the same story as the card
+    // behind it, spinning while the agent works and decaying only when it
+    // stops (#108). Quiet on a page with no dialog open, which is most of them.
+    refreshAgentDialog();
   }
 
   // First paint before anything answers, so the page is never a blank region.

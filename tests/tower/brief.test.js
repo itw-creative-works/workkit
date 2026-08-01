@@ -41,7 +41,7 @@ const ROSTER = [
 const run = async () => {
   group('tower/brief: the four sections');
 
-  await test('blocked issues are what is waiting on you; specced splits by claim', () => {
+  await test('blocked issues are what is waiting on you; every specced issue is ready', () => {
     const board = boardOf([
       issue(1, { status: 'blocked' }),
       issue(2, { status: 'specced' }),
@@ -53,10 +53,11 @@ const run = async () => {
 
     assertEq(out.waiting.length, 1, 'one decision is waiting');
     assertEq(out.waiting[0].number, 1, 'the blocked one');
-    assertEq(out.ready.length, 1, 'one specced issue is unclaimed');
-    assertEq(out.ready[0].number, 2, 'the one with no assignee');
-    assertEq(out.inFlight.length, 1, 'one is claimed');
-    assertEq(out.inFlight[0].number, 3, 'the assigned one');
+    // Issue #62: an assignee no longer splits the specced queue. The status
+    // label is the whole answer, and a claimed spec is a transient the standards
+    // sweep flips to building — it is not a second in-flight shape.
+    assertEq(out.ready.map((i) => i.number).sort().join(','), '2,3', 'both specced issues are ready');
+    assertEq(out.inFlight.length, 0, 'nothing carries the label that says work started');
     assertEq(out.inbox.length, 1, 'the inbox is its own section');
     assertEq(out.counts.parked, 1, 'parked is counted but not listed — it is nobody’s morning');
     assertEq(out.generatedAt, STAMP, 'the stamp is the one passed in');
@@ -75,11 +76,17 @@ const run = async () => {
     assert(/2 issues are in flight/.test(out.headline), `the morning leads with them, got: ${out.headline}`);
   });
 
-  await test('an agent claim counts as in flight even with no assignee', () => {
-    const board = boardOf([issue(7, { status: 'specced', agentWorking: true })]);
+  await test('a claim of any kind is not a status — the label alone sorts the issue', () => {
+    // Issue #62: neither an assignee nor an agent's claim marker moves an issue
+    // out of the ready queue. Work that has started carries `status:building`,
+    // which is what the claim itself sets and what the standards sweep heals to.
+    const board = boardOf([
+      issue(7, { status: 'specced', agentWorking: true }),
+      issue(8, { status: 'building', agentWorking: true }),
+    ]);
     const out = buildBrief(board, {}, ROSTER, STAMP);
-    assertEq(out.ready.length, 0, 'not offered to a second worker');
-    assertEq(out.inFlight.length, 1, 'an agent holds it');
+    assertEq(out.ready.map((i) => i.number).join(','), '7', 'the spec is still a spec');
+    assertEq(out.inFlight.map((i) => i.number).join(','), '8', 'and only the label says otherwise');
   });
 
   await test('high priority leads, then the issue that has waited longest', () => {

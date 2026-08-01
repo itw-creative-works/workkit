@@ -47,6 +47,26 @@ const readJson = (file) => {
 };
 
 /**
+ * The roster file, read as three distinguishable answers: `ok` with what it
+ * holds, `missing` when this machine has registered nothing, and `unreadable`
+ * when the file is there and does not parse.
+ *
+ * A READER cannot tell the last two apart and does not need to — a roster it
+ * cannot read is a board with no repos on it, and the board still renders. A
+ * WRITER must (issue #116): composing the same empty list from a failure would
+ * publish it over a roster that was good.
+ *
+ * @param {string} workflowHome
+ * @returns {{status: 'ok'|'missing'|'unreadable', roster: object|null}}
+ */
+const readRoster = (workflowHome) => {
+  const file = path.join(workflowHome, '.repos.json');
+  if (!fs.existsSync(file)) return { status: 'missing', roster: null };
+  const roster = readJson(file);
+  return roster ? { status: 'ok', roster } : { status: 'unreadable', roster: null };
+};
+
+/**
  * `owner/repo` from a git remote URL, in either form git writes.
  *   git@github.com:owner/repo.git      ssh shorthand
  *   ssh://git@github.com/owner/repo    ssh URL
@@ -109,7 +129,7 @@ const discoverRepos = (opts = {}) => {
   const workflowHome = opts.workflowHome || path.join(home, WORKKIT_DIR);
   const exec = opts.exec || defaultExec;
 
-  const roster = readJson(path.join(workflowHome, '.repos.json'));
+  const { roster } = readRoster(workflowHome);
   const registered = roster && roster.repos;
 
   const found = [];
@@ -150,4 +170,4 @@ const discoverRepos = (opts = {}) => {
   return found;
 };
 
-module.exports = { discoverRepos, slugFromRemote };
+module.exports = { discoverRepos, readRoster, slugFromRemote };

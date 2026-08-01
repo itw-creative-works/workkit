@@ -19,11 +19,6 @@ input=$(cat)
 
 command -v jq >/dev/null 2>&1 || exit 0
 
-cwd=$(jq -r '.cwd // ""' <<<"$input" 2>/dev/null || true)
-[ -n "$cwd" ] || exit 0
-
-root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
-
 # The workflow engine is this kit's own workflow/ folder — resolve it from this
 # script's physical location, never through a symlink someone has to install
 # first. `pwd -P` resolves the link before the `..` walk, so the climb out of
@@ -33,6 +28,56 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 ENGINE_DIR="${WORKFLOW_DIR:-$SCRIPT_DIR/../../../workflow}"
 STANDARDS="$ENGINE_DIR/standards.sh"
 MANIFEST="$ENGINE_DIR/labels.json"
+
+# Setup pester (issue #72) — EVERY session until the machine is set up, with no
+# daily cache and no repo gate: the schedule, the home repo, and the CLI all
+# come from `workkit setup`, and a machine that never ran it is missing all of
+# them everywhere, not just in a participating repo. Still only a prompt — the
+# hook informs, the human runs the wizard (the #71 boundary).
+# The probe is the CLI the wizard installs: absent, dangling, or not executable
+# all mean the command is not there, and `setup` is the one step that fixes each
+# of them. A `~/.workkit` that exists without it is drift setup heals, so it
+# does not buy the machine out of the pester. Costs one stat; no gh, no engine.
+pester=""
+cli_link="$HOME/.local/bin/workkit"
+if [ ! -x "$cli_link" ]; then
+  # The command the user is told to paste resolves the ../.. climb first — the
+  # raw ENGINE_DIR string executes fine but reads like a bug.
+  engine_shown="$(cd "$ENGINE_DIR" 2>/dev/null && pwd -P || printf '%s' "$ENGINE_DIR")"
+  pester="SETUP: workkit is not set up on this machine ($cli_link is missing) — the daily brief, the home repo, and the workkit command are all absent until it is. Tell the user to run \`bash $engine_shown/workkit.sh setup\` before continuing with other work."
+fi
+
+# Every exit from here down goes through emit, so the pester rides along with
+# whatever else this hook has to say and is still heard on the sessions where
+# the hook would otherwise be silent. It leads: it is the instruction, and the
+# heal report is news.
+emit() {
+  local msg="${1:-}"
+  local ctx="$msg"
+  if [ -n "$pester" ]; then
+    if [ -n "$msg" ]; then
+      ctx="$pester
+
+$msg"
+    else
+      ctx="$pester"
+    fi
+  fi
+  if [ -n "$ctx" ]; then
+    jq -n --arg ctx "$ctx" '{
+      "hookSpecificOutput": {
+        "hookEventName": "SessionStart",
+        "additionalContext": $ctx
+      }
+    }'
+  fi
+  exit 0
+}
+
+cwd=$(jq -r '.cwd // ""' <<<"$input" 2>/dev/null || true)
+[ -n "$cwd" ] || emit
+
+root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || emit
 
 # A missing engine is a real state, not a no-op: a half-installed or partially
 # updated kit has this hook live while the engine beside it is incomplete. The
@@ -54,15 +99,9 @@ if [ -n "$broken" ]; then
   # and stays silent here too, the same way the engine honors it.
   # This hook sources nothing, so the directory name is spelled out; its SSOT is
   # WORKKIT_DIR in hooks/_lib.sh — change both together.
-  [ -f "$root/.workkit/settings.json" ] || exit 0
-  grep -qE '"enabled"[[:space:]]*:[[:space:]]*false' "$root/.workkit/settings.json" && exit 0
-  jq -n --arg ctx "$broken" '{
-    "hookSpecificOutput": {
-      "hookEventName": "SessionStart",
-      "additionalContext": $ctx
-    }
-  }'
-  exit 0
+  [ -f "$root/.workkit/settings.json" ] || emit
+  grep -qE '"enabled"[[:space:]]*:[[:space:]]*false' "$root/.workkit/settings.json" && emit
+  emit "$broken"
 fi
 
 # Participation gate — the engine owns the five states (enabled · disabled ·
@@ -79,16 +118,9 @@ case "$state" in
   enabled) ;;
   undecided)
     offer=$(bash "$STANDARDS" --announce "$root" 2>/dev/null || true)
-    [ -n "$offer" ] || exit 0
-    jq -n --arg ctx "$offer" '{
-      "hookSpecificOutput": {
-        "hookEventName": "SessionStart",
-        "additionalContext": $ctx
-      }
-    }'
-    exit 0
+    emit "$offer"
     ;;
-  *) exit 0 ;;
+  *) emit ;;
 esac
 
 # Daily cache marker, keyed by repo root.
@@ -100,7 +132,7 @@ marker="$cache_dir/$repo_key"
 today=$(date +%Y-%m-%d)
 
 if [ -f "$marker" ] && [ "$(cat "$marker" 2>/dev/null)" = "$today" ]; then
-  exit 0
+  emit
 fi
 
 # Never let a failing standards run wedge the session start — but never call a
@@ -163,12 +195,4 @@ $upkeep"
   fi
 fi
 
-[ -n "$msg" ] || exit 0
-
-jq -n --arg ctx "$msg" '{
-  "hookSpecificOutput": {
-    "hookEventName": "SessionStart",
-    "additionalContext": $ctx
-  }
-}'
-exit 0
+emit "$msg"

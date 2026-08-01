@@ -568,6 +568,26 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  await test('a roster that will not read keeps the list already published, and the run goes on', () => {
+    // Issue #116: a compose that FAILS is not a machine with no repos on it.
+    // The list stays exactly as the last good run left it — the readers believe
+    // this file — and the warn does not cost the run its exit code, because a
+    // stale-but-good roster is the designed outcome.
+    const world = mkWorld({ roster: ['workkit', 'omega'] });
+    publish(world);
+    const before = fs.readFileSync(path.join(onMain(world), 'data', 'repos.json'), 'utf8');
+    assert(/owner\/omega/.test(before), 'the good list is published first');
+
+    fs.writeFileSync(path.join(world.workflowHome, '.repos.json'), '{ not json');
+    const { code, out } = publish(world);
+    assertEq(code, 0, `exit 0 — a stale roster is not a failed run: ${out}`);
+    assert(/repo list could not be composed/.test(out), `and the run says so, got: ${out}`);
+    assertEq(fs.readFileSync(path.join(onMain(world), 'data', 'repos.json'), 'utf8'), before,
+      'the list on the default branch is byte for byte what it was');
+    assert(fs.existsSync(path.join(fromPages(world), 'index.html')), 'and the site published anyway');
+    cleanup(world.root);
+  });
+
   await test('no node — the site publishes and the skip says what it will be missing', () => {
     const world = mkWorld();
     const { code, out } = publish({

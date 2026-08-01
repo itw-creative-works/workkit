@@ -12,9 +12,10 @@
 # can fire on one day without harm — the runner checks the board for today's
 # brief before it posts.
 #
-# It runs brief/jobs/claude-cloud.sh and nothing else: the summaries step and
-# the site publish read a machine's git history, transcripts and home clone,
-# none of which exist on a runner.
+# It runs brief/jobs/morning.sh — the same script the laptop's 9am job runs, in
+# an environment where a different set of steps can run: the summaries and the
+# site publish read a machine's git history, transcripts and home clone, none of
+# which exist here, so they name their skip and the brief is what happens.
 #
 # TWO TOKENS, TWO JOBS.
 #   GITHUB_TOKEN         the workflow's own, reaching this repo alone. It posts
@@ -68,4 +69,4 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           GH_TOKEN: ${{ secrets.WORKKIT_GITHUB_TOKEN }}
           WORKKIT_POST_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash brief/jobs/claude-cloud.sh
+        run: bash brief/jobs/morning.sh

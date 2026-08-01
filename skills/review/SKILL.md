@@ -1,6 +1,6 @@
 ---
 name: review
-description: Multi-lens code review — parallel review lenses, a separate scorer pass, only findings ≥80 confidence reach the report. - Use when the user asks to "review this", "review the diff", "code review", "check my changes", "review the PR", or before shipping substantial work.
+description: Multi-lens code review — parallel lenses, a separate scorer, only findings ≥80 confidence reach the report. - Use when the user asks to "review this", "review the diff", "code review", "check my changes", "review the PR", or before shipping substantial work.
 user-invocable: true
 ---
 

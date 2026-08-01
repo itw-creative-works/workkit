@@ -1,6 +1,6 @@
 ---
 name: feature
-description: Scaled feature-development flow — explore, grill, propose approaches, gate on approval, build, review; ceremony scales with task size. - Use when starting a non-trivial feature or change ("build", "add", "implement", "create a feature"), or when invoked (/workkit:feature). Small fixes skip straight to build + verify.
+description: Scaled feature-development flow — explore, interview, propose, gate on approval, build, review; ceremony scales with the task. - Use when starting a non-trivial feature or change ("build", "add", "implement", "create a feature") or when invoked (/workkit:feature).
 user-invocable: true
 ---
 
@@ -10,7 +10,7 @@ Every phase exists to prevent a specific failure (building the wrong thing, miss
 
 ## 0a. Pipeline gate — build only from `status:specced`
 
-When the work has an issue, check its stage before anything else. Builds start ONLY from `status:specced` with a real `## Spec` (the implementation layer, or the literal `None needed — small item.`). An issue at `status:inbox` — or a specced one whose Spec is missing its implementation layer — gets the SPEC PASS first: a `workkit:scout` maps the territory, the spec drafts against the issue and the map, the manager reviews, the owner accepts; the deepened Spec lands on the issue and the label moves to `status:specced`. That flip IS the authorization; on an issue carrying `agent:ok` an agent may make it itself. Then build. Whatever you write onto the issue follows the anatomy rules (spec § Issue anatomy), including the introduction rule: the first mention of an outside project or repo carries a link and a one-line description of what it is.
+When the work has an issue, check its stage before anything else. Builds start ONLY from `status:specced` with a real `## Spec` (the implementation layer, or the literal `None needed — small item.`). An issue at `status:inbox` — or a specced one whose Spec is missing its implementation layer — gets the SPEC PASS first: a `workkit:scout` maps the territory, the spec drafts against the issue and the map — and a spec that reads at all unclear gets the [workkit:interview](../interview/SKILL.md) before acceptance — the manager reviews, the owner accepts; the deepened Spec lands on the issue and the label moves to `status:specced`. That flip IS the authorization; on an issue carrying `agent:ok` an agent may make it itself. Then build. Whatever you write onto the issue follows the anatomy rules (spec § Issue anatomy), including the introduction rule: the first mention of an outside project or repo carries a link and a one-line description of what it is.
 
 Claim the issue before working it: assign it to yourself, move it to `status:building`, AND add `agent:working` (`gh issue edit <N> --add-assignee @me --remove-label status:specced --add-label status:building,agent:working`), skip an issue already assigned to someone else, and re-read the label and the assignee at the moment you start — not at the moment you listed the queue. Remove `agent:working` when you release the issue, finished or not; a claim left behind is swept by the standards heal after 24 idle hours. `status:building` is not taken off by hand — it carries the work through verify and ship, and the ship close ends it. The `agent:working` label is what tells an agent claim from a human one — an agent runs `gh` as the owner, so the assignee cannot. (The road and the rules: the workkit plugin's README and `docs/project-state.md`.)
 
@@ -24,9 +24,9 @@ Claim the issue before working it: assign it to yourself, move it to `status:bui
 
 Map the territory before designing: dispatch Explore subagents that return **key-file LISTS, not content** — then read those files yourself. Find the existing utilities and patterns the feature must reuse (never propose new code where a suitable implementation exists). Note every consumer a contract change would imply (global §4).
 
-## 2. Clarify — grill, never skip
+## 2. Clarify — interview, never skip
 
-Run [workkit:grill](../grill/SKILL.md) on the open decisions (batch mode for independent ones). Standard+ tasks NEVER skip this phase — one round of "zero open decisions" is cheap; building the wrong thing is not.
+Run [workkit:interview](../interview/SKILL.md) on the open decisions (batch mode for independent ones). Standard+ tasks NEVER skip this phase — one round of "zero open decisions" is cheap; building the wrong thing is not.
 
 ## 3. Approaches (large only)
 

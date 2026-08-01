@@ -59,10 +59,10 @@ WK_KIT_DIR="${WORKKIT_KIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/n
 # address inside those scripts — `../workflow` for the engine libraries,
 # `../tower/api/lib` for the composers' requires — resolves in the clone exactly
 # as it does here. The list IS the require closure of brief-payload.js plus what
-# claude-cloud.sh sources; a new require means a new line here.
+# morning.sh sources on the cloud path; a new require means a new line here.
 WK_HOME_RUNNER_FILES=(
   'workflow/templates/github-workflows/brief.yml:.github/workflows/brief.yml'
-  'jobs/claude-cloud.sh:brief/jobs/claude-cloud.sh'
+  'jobs/morning.sh:brief/jobs/morning.sh'
   'jobs/brief-publish.sh:brief/jobs/brief-publish.sh'
   'jobs/brief-payload.js:brief/jobs/brief-payload.js'
   'jobs/cc-news.js:brief/jobs/cc-news.js'

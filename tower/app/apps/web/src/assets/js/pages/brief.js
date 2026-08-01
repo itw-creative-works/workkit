@@ -172,8 +172,8 @@ const render = (root, state) => {
     ${headline(payload, selected)}
     ${numbers(payload, lists, selected)}
     ${section('Waiting on you', lists.waiting, 'nothing is waiting on you', true)}
-    ${section('Ready to start', lists.ready, 'nothing is specced and unclaimed')}
-    ${section('In flight', lists.inFlight, 'nothing is claimed right now')}
+    ${section('Ready to start', lists.ready, 'nothing is specced')}
+    ${section('In flight', lists.inFlight, 'nothing is being built right now')}
     ${summaries(payload)}
     ${warnings(forRepo(payload.warnings || [], selected), MODE === 'github')}
   `);

@@ -538,8 +538,6 @@ const byUrgency = (a, b) => {
   return String(a.updatedAt || '').localeCompare(String(b.updatedAt || ''));
 };
 
-const claimed = (issue) => (issue.assignees || []).length > 0 || issue.agentWorking;
-
 /** The headline — the order of consequence, in the API's own words. */
 export const headlineFor = (counts) => {
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -561,8 +559,11 @@ export const buildBrief = (board, opts = {}) => {
   const issues = (board && Array.isArray(board.issues) ? board.issues : []).slice().sort(byUrgency);
 
   const waiting = issues.filter((i) => i.status === 'blocked').map(briefIssue);
-  const ready = issues.filter((i) => i.status === 'specced' && !claimed(i)).map(briefIssue);
-  const inFlight = issues.filter((i) => i.status === 'building' || (i.status === 'specced' && claimed(i))).map(briefIssue);
+  // The status label is the whole answer here as it is in the API's brief
+  // (issue #62): a claimed `specced` issue is a transient the standards sweep
+  // flips to `building`, never a second in-flight shape to be read for.
+  const ready = issues.filter((i) => i.status === 'specced').map(briefIssue);
+  const inFlight = issues.filter((i) => i.status === 'building').map(briefIssue);
   const inbox = issues.filter((i) => i.status === 'inbox').map(briefIssue);
 
   const counts = {

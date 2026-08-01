@@ -87,7 +87,7 @@ Plugins load at startup, so a new (or restarted) session is what puts a change i
 
 | Hook | When | What it does for you |
 |---|---|---|
-| `workflow/standards` | session opens | Brings an opted-in repo to the standard once a day: labels, issue templates, the required-checks CI workflow and its CHANGELOG lint, branch protection where it can, `.workkit/` seeded and ignored — then runs `workkit update --auto` to keep the machine's own installs current. Reports only what it fixed |
+| `workflow/standards` | session opens | Brings an opted-in repo to the standard once a day: labels, issue templates, the required-checks CI workflow and its CHANGELOG lint, branch protection where it can, `.workkit/` seeded and ignored — then runs `workkit update --auto` to keep the machine's own installs current. Reports only what it fixed — and until `workkit setup` has run on this machine, every session is told to ask you to run it |
 | `docs/state-check` | session opens | Tells you about open `status:inbox` issues, unfiled inbox notes, and document anomalies |
 | `docs/session` | session opens, compaction included | Hands the session back its `.workkit/session.md` — the task queue it keeps across a compaction or a restart — and says when the file has grown past being a queue |
 | `workflow/reload-guard` | session opens, then every message | Says once when the kit's agents, skills, or hook wiring changed after your session loaded — the case `/reload-plugins` exists for |
@@ -96,7 +96,7 @@ Plugins load at startup, so a new (or restarted) session is what puts a change i
 | `safety/vendor-guard` | before any edit | Blocks edits to generated, vendored, and gitignored files |
 | `safety/commit-gate` | before `git commit` | No commit unless tests pass, new source files come with tests, code carries a fresh review, and any CHANGELOG entry is in format. A suite still running at the gate's own deadline is ended and the commit bounces, so a run the harness would cancel never slips through. Heal bookkeeping (the version stamp and the current vendored linter, alone) skips the review and new-file checks |
 | `safety/commit-language` | before `git commit` | Bounces kill/destroy/dead wording in commit messages, and off-format subject lines |
-| `safety/issue-guard` | before a `gh issue`/`gh pr` write, or a GraphQL discussion/issue mutation | Blocks outbound text carrying a local `.env` value or a token-shaped string — every repo is assumed public. Names the key or the kind, never the match |
+| `safety/issue-guard` | before a `gh issue`/`gh pr` write, a GraphQL discussion/issue mutation, or a `gh api` REST write to an issue or pull endpoint | Blocks outbound text carrying a local `.env` value or a token-shaped string — every repo is assumed public. Names the key or the kind, never the match |
 | `safety/inbox-guard` | before a read of the inbox | Keeps `.workkit/inbox.md` the owner's scratchpad: contents open only during a triage run; counting and appending stay free |
 | `docs/board-guard` | after any edit | Holds `AGENTS.md` / `CLAUDE.md` to the document rules |
 | `docs/changelog-guard` | after any edit | Holds a CHANGELOG entry to one short linked paragraph |
@@ -110,7 +110,7 @@ The first four are capability classes — the resolver hook gives each spawn its
 
 ### Skills — the part you (or Claude) trigger with words
 
-`workkit:feature` · `workkit:grill` · `workkit:diagnose` · `workkit:review` · `workkit:simplify` · `workkit:triage` · `workkit:whats-next` · `workkit:migrate` · `workkit:ship`. Most load themselves when your message matches their triggers; you can also type them as `/workkit:<name>`.
+`workkit:feature` · `workkit:interview` · `workkit:diagnose` · `workkit:review` · `workkit:simplify` · `workkit:triage` · `workkit:whats-next` · `workkit:state` · `workkit:migrate` · `workkit:ship`. Most load themselves when your message matches their triggers; you can also type them as `/workkit:<name>`.
 
 ### Tower — the dashboard
 
@@ -122,7 +122,7 @@ A view over the system's own data, with two deliberate write paths: filing an is
 
 ### The daily brief (jobs/)
 
-The 9am morning notification, and the one job on the clock. The summaries step goes first — `jobs/claude-nightly.sh` writes the day that just ended up and publishes it as a Discussion on your home repo, with a weekly rollup on a Sunday and a monthly on the 1st, each reading its inputs back from the API. Then the brief — and by default the laptop only rings the bell: `jobs/claude-daily.sh` dispatches the `brief.yml` GitHub Actions workflow **on your own home repo**, where `workkit setup` seeded it along with the code it runs and the two secrets it needs, and a cloud runner composes the brief, sends it through headless Claude, and publishes it as a `brief: <date>` Discussion, so a closed lid no longer means a quiet morning (a 17:30 UTC cron backs the trigger up). Only when the dispatch cannot be made — no network, no secrets yet — does the laptop run the brief itself: `jobs/brief-payload.js` assembles the same brief the tower serves, straight from the libraries, headless Claude digests it on a capped budget, a desktop notification carries the headline, and the same Discussion is posted from here. Last it rebuilds the tower project and pushes the site to the home repo's `gh-pages` branch, after the brief has gone, so a build can never delay nine o'clock. `bash jobs/install.sh` renders the launchd plist and loads the schedule (macOS, re-run safe). Detail: [`jobs/README.md`](jobs/README.md).
+The morning on the clock, and **one script for it — `jobs/morning.sh`, run by both schedulers**, your machine's 9am agent and the GitHub Actions workflow on your home repo. Each of its three steps asks whether the place it woke up in can do that step, and says so by name when it cannot. The summaries go first, on your machine, where the transcripts and the git history are — `jobs/claude-nightly.sh` writes the day that just ended up and publishes it as a Discussion on your home repo, with a weekly rollup on a Sunday and a monthly on the 1st, each reading its inputs back from the API. Then the brief, which runs **in the cloud**: it needs the board-sweeping token, and that lives on your home repo, so here the step is the trigger and nothing else — `workkit setup` seeded the workflow, the code it runs and the two secrets there, and the runner composes the brief, sends it through headless Claude on a capped budget, and publishes it as a `brief: <date>` Discussion, so a closed lid no longer means a quiet morning (a 17:30 UTC cron backs the trigger up). A trigger that cannot be made is a briefless morning with the reason in the log, never a half-brief composed from what your machine could reach; `npm run brief` composes and sends one here whenever you want to see it. Last it rebuilds the tower project and pushes the site to the home repo's `gh-pages` branch, after the brief has gone, so a build can never delay nine o'clock. `bash jobs/install.sh` renders the launchd plist and loads the schedule (macOS, re-run safe). Detail: [`jobs/README.md`](jobs/README.md).
 
 ### Engine — `workflow/`
 
@@ -142,11 +142,11 @@ Participation is deliberate. `workkit enable <repo>` writes that repo's `.workki
 .claude-plugin/   plugin.json + marketplace.json (this repo is its own marketplace)
 hooks/            hooks.json + the hook groups, resolved via ${CLAUDE_PLUGIN_ROOT}
 agents/           the crew (namespaced workkit:<name>)
-skills/           the nine workflow skills (namespaced workkit:<name>)
+skills/           the ten workflow skills (namespaced workkit:<name>)
 workflow/         the agent-agnostic engine
 tower/            mission control — api/ (the JSON API) + app/ (the OMEGA dashboard)
 jobs/             the 9am job — summaries, brief, publish: payload builders, runners, launchd schedule
-docs/             project-state.md (the spec) · agents.md (the crew contract)
+docs/             project-state.md (the spec) · agents.md (the crew contract) · history-purge.md (the rewrite runbook)
 tests/            npm test
 ```
 
