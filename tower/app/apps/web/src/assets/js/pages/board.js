@@ -1,18 +1,20 @@
 //
 // Board — every open issue on the roster, in columns by `status:`.
 //
-// The six columns are the five status labels plus one for issues carrying no
-// status at all: those exist, they are the ones triage has not reached, and a
-// board that hides them tells a comfortable lie about how much is in the queue.
+// The five columns are the five status labels. An open issue carrying none of
+// them is not a sixth place to be — it is a fault the pipeline forbids and the
+// daily heal repairs — so it is drawn as the danger alert above the board
+// (format.js's `noStatusAlert`), named and linked, and nowhere else: not as a
+// card, not in a column count, not in the denominator below (#118).
 //
 // The filters live in the URL query alongside the chrome's `?repo=`, so a
 // filtered board is a link someone else can open. They are read back out of the
 // URL on every draw, which also makes the 60-second repaint harmless: the
 // toolbar is rebuilt from the URL, not from whatever the DOM last held.
 //
-// A card is DRAGGED between the five status columns, and the drop really
-// relabels the issue: the payload and the mode gate are api.js's `moveRequest`,
-// the write is its `postIssueStatus`, and everything here is what the browser
+// A card is DRAGGED between those columns, and the drop really relabels the
+// issue: the payload and the mode gate are api.js's `moveRequest`, the write is
+// its `postIssueStatus`, and everything here is what the browser
 // contributes — which card was picked up, which column it landed on, and the
 // optimistic move that puts it there before the write has answered. A failed
 // write puts the card back and says why. A PUBLISHED copy behaves identically:
@@ -24,8 +26,9 @@
 
 import { startPage } from '../libs/tower/page.js';
 import { issuesFor, board, feed, issueByKey } from '../libs/tower/state.js';
+import { selectedSlugs } from '../libs/tower/scope.js';
 import {
-  esc, empty, problem, issueChips, STATUSES, statusColor, byPriority,
+  esc, empty, problem, issueChips, STATUSES, statusColor, byPriority, noStatusAlert,
 } from '../libs/tower/format.js';
 import { loading, swap } from '@omega.js/client/modules/live-page';
 import { issueTrigger, externalLink } from '../libs/tower/modal.js';
@@ -111,10 +114,10 @@ const draggable = (issue) => WRITABLE && MOVABLE_STATUSES.includes(issue.status)
 // what it looks like, when it is earned and what it says to a screen reader are
 // one decision, and it is made in the lib the Crew page draws from too.
 //
-// A card carrying one of the five statuses is draggable; the one in the "No
-// status" column is not, because there is no label to take off it. The card's
-// `data-issue` key is what the drop reads back — the same key the dialog
-// registry uses, so the two never mean different things.
+// Every card the board draws carries one of the five statuses, so every card is
+// draggable wherever there is something to write with. The card's `data-issue`
+// key is what the drop reads back — the same key the dialog registry uses, so
+// the two never mean different things.
 const issueCard = (issue, showRepo) => `<div class="card omega-tower-issue omega-interactive omega-interactive--lift mb-2${issue.status === 'blocked' ? ' border-danger' : ''}"${draggable(issue) ? ' draggable="true"' : ''} ${issueTrigger(issue)}>
   <div class="card-body p-3 d-flex flex-column">
     <div class="d-flex align-items-start gap-2">
@@ -127,10 +130,10 @@ const issueCard = (issue, showRepo) => `<div class="card omega-tower-issue omega
   </div>
 </div>`;
 
-// A column is a drop target only when it names a status to move TO, which the
-// "No status" column does not. `pb-2` is the air between the title and the rule
-// under it — the head is a flex row and its border sits on the text without it.
-const column = (status, issues, showRepo) => `<section${MOVABLE_STATUSES.includes(status.key) ? ` data-column="${esc(status.key)}"` : ''}>
+// Every column names a status to move TO, so every one of them takes a drop.
+// `pb-2` is the air between the title and the rule under it — the head is a
+// flex row and its border sits on the text without it.
+const column = (status, issues, showRepo) => `<section data-column="${esc(status.key)}">
   <div class="classy-panel-head mb-3 pb-2" style="border-bottom: 2px solid ${statusColor(status.key)};">
     <span>${esc(status.label)}</span>
     <span class="classy-chip">${issues.length}</span>
@@ -141,7 +144,7 @@ const column = (status, issues, showRepo) => `<section${MOVABLE_STATUSES.include
 // `.omega-tower-board` is the sideways-scrolling strip; how WIDE a column is belongs
 // here, because it is a function of how many the pipeline has. At the
 // stylesheet's 15rem floor the strip is wider than an ordinary main region,
-// which put Parked half off the edge and No status past it with only an overlay
+// which put the right-hand columns half off the edge with only an overlay
 // scrollbar to say so. At 11rem the columns fit the main region down to a laptop
 // width, they still stretch to fill a wide one, and the strip goes on scrolling
 // when the window is genuinely too narrow for the board.
@@ -150,14 +153,21 @@ const column = (status, issues, showRepo) => `<section${MOVABLE_STATUSES.include
 // then low — most recently updated first inside each. The comparator is
 // format.js's (`byPriority`), the same module that colours those bands.
 const columns = (shown, showRepo) => `<div class="omega-tower-board" style="grid-auto-columns: minmax(11rem, 1fr);">
-  ${STATUSES.map((status) => column(status, shown.filter((issue) => (issue.status || '') === status.key).sort(byPriority), showRepo)).join('')}
+  ${STATUSES.map((status) => column(status, shown.filter((issue) => issue.status === status.key).sort(byPriority), showRepo)).join('')}
 </div>`;
 
 // The denominator, so a filtered board never reads as an empty one: how many
-// are on screen, how many exist in scope, and how many the filters removed.
+// are on screen, how many the COLUMNS hold in scope, and how many the filters
+// removed. An unlabelled issue is in none of those three numbers — it is drawn
+// in the alert above and nowhere else, and counting it here would leave the
+// line describing a card that is not on the page.
 const counts = (shown, total, selected) => {
   const hidden = total - shown;
-  const scope = selected ? `in ${esc(selected)}` : 'across every repo';
+  // The scope is a SET (#104): every repo, one of them, or the subset the URL
+  // names — and a subset says how many rather than listing them into the line.
+  let scope = 'across every repo';
+  if (selected.length === 1) scope = `in ${esc(selected[0])}`;
+  else if (selected.length > 1) scope = `across ${selected.length} repos`;
   const tail = hidden > 0 ? ` — ${hidden} filtered out` : '';
   return `<p class="classy-micro text-body-secondary mb-2">showing ${shown} of ${total} open issue${total === 1 ? '' : 's'} ${scope}${tail}</p>`;
 };
@@ -175,15 +185,23 @@ let moveError = null;
 const render = (root, state) => {
   const result = feed(state, 'board');
   const all = issuesFor(state);
+  // The board IS the labelled issues. The rest are the alert's, and the toolbar
+  // never narrows that: a type filter hiding a pipeline fault would be the
+  // comfortable lie the sixth column was there to prevent.
+  const labelled = all.filter((issue) => issue.status);
   const filters = readFilters();
-  const shown = all.filter((issue) => matches(issue, filters));
-  const showRepo = !state.selectedRepo;
+  const shown = labelled.filter((issue) => matches(issue, filters));
+  const selected = selectedSlugs(state);
+  // The repo column is dropped only when every card on the board is from the
+  // same repo — one selected slug. A subset still mixes repos and still needs
+  // saying which is which.
+  const showRepo = selected.length !== 1;
 
   let body;
   if (!result) body = loading('reading the board…');
   else if (!result.ok) body = problem(result.reason);
   else if (!board(state)) body = empty('the board answered with nothing', 'fa-regular fa-rectangle-list');
-  else body = `${moveError ? problem(moveError) : ''}${counts(shown.length, all.length, state.selectedRepo)}${columns(shown, showRepo)}`;
+  else body = `${moveError ? problem(moveError) : ''}${noStatusAlert(all, showRepo)}${counts(shown.length, labelled.length, selected)}${columns(shown, showRepo)}`;
 
   // The page repaints every poll, and a repaint must not take the caret out of
   // the search box mid-word — so where the focus was is put back where it goes.
@@ -193,7 +211,7 @@ const render = (root, state) => {
   const focusId = focused && root.contains(focused) ? focused.id : null;
   const caret = focusId && typeof focused.selectionStart === 'number' ? focused.selectionStart : null;
 
-  if (!swap(root, `${toolbar(all, filters)}${body}`)) return;
+  if (!swap(root, `${toolbar(labelled, filters)}${body}`)) return;
 
   if (focusId) {
     const again = root.querySelector(`#${focusId}`);

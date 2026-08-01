@@ -20,14 +20,15 @@
 import { startPage } from '../libs/tower/page.js';
 import { MODE } from '../libs/tower/api.js';
 import { feed } from '../libs/tower/state.js';
+import { inScope, selectedSlugs } from '../libs/tower/scope.js';
 import {
   esc, num, empty, problem, issueChips, statCell, statgrid, card, LOCAL_ONLY_NOTICE,
 } from '../libs/tower/format.js';
 import { loading, swap } from '@omega.js/client/modules/live-page';
 import { issueItem, externalLink } from '../libs/tower/modal.js';
 
-/** The rows a section shows — narrowed to the selected repo when there is one. */
-const forRepo = (items, selected) => (selected ? items.filter((item) => item.repo === selected) : items);
+/** The rows a section shows — narrowed to the selected repos when any are named. */
+const forRepo = (items, selected) => items.filter((item) => inScope(selected, item.repo));
 
 // ── The head ───────────────────────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ const subhead = (payload, selected) => {
   const when = new Date(payload.generatedAt);
   const parts = [];
   if (!Number.isNaN(when.getTime())) parts.push(`built ${when.toLocaleTimeString()}`);
-  if (selected) parts.push('the headline counts every repo', `everything below it is narrowed to ${selected}`);
+  if (selected.length) parts.push('the headline counts every repo', `everything below it is narrowed to ${selected.join(', ')}`);
   return parts.length ? `<p class="classy-micro text-body-secondary mb-0">${esc(parts.join(' · '))}</p>` : '';
 };
 
@@ -54,12 +55,12 @@ const numbers = (payload, lists, selected) => statgrid([
   // `open` and `parked` are roster-wide totals with no list under them, so a
   // narrowed view cannot restate them: they say unknown rather than a number
   // that would be read as this repo's. The other four ARE the lists on screen.
-  statCell('Open', selected ? num(null) : payload.counts.open, '/board'),
+  statCell('Open', selected.length ? num(null) : payload.counts.open, '/board'),
   statCell('Waiting', lists.waiting.length, '/board'),
   statCell('Ready', lists.ready.length, '/board'),
   statCell('In flight', lists.inFlight.length, '/board'),
   statCell('Inbox', lists.inbox.length, '/board'),
-  statCell('Parked', selected ? num(null) : payload.counts.parked, '/board'),
+  statCell('Parked', selected.length ? num(null) : payload.counts.parked, '/board'),
 ]);
 
 // ── The sections ───────────────────────────────────────────────────────────
@@ -160,7 +161,7 @@ const render = (root, state) => {
   }
 
   const payload = result.data;
-  const selected = state.selectedRepo;
+  const selected = selectedSlugs(state);
   const lists = {
     waiting: forRepo(payload.waiting || [], selected),
     ready: forRepo(payload.ready || [], selected),
@@ -179,7 +180,7 @@ const render = (root, state) => {
   `);
 };
 
-// `repos` is the roster the chrome's repo selector is built from — the page
+// `repos` is the roster the sidebar's project selector is filled from — the page
 // reads no issue data from it, but without it there is no way to narrow the
 // brief.
 export default () => startPage({

@@ -21,7 +21,7 @@
 // the tick can never disagree with the render that drew the element.
 //
 
-import { activityTick, activityClass } from './agent.js';
+import { activityTick, activityClass, mutedClass, MUTED_CLASS } from './agent.js';
 
 /** How often the second hand moves. A second, because the label is in seconds. */
 const TICK_MS = 1000;
@@ -44,10 +44,20 @@ let timer = null;
  * @param {number} [now] ms epoch
  */
 export const applyLive = (host, now = Date.now()) => {
+  // The CARDS first, because the walk below takes an indicator past five
+  // minutes out of the DOM's stamps and this one decides from those stamps: a
+  // card whose agent has just gone muted (#99) has to be read while its
+  // indicator still carries the epoch that says so.
+  for (const element of host.querySelectorAll('[data-live-card]')) {
+    const live = element.querySelector('[data-live-ts]');
+    if (!live) continue;
+    element.classList.toggle(MUTED_CLASS, !!mutedClass(activityTick(live.dataset, now).phase));
+  }
+
   for (const element of host.querySelectorAll('[data-live-ts]')) {
     const { phase, age, title } = activityTick(element.dataset, now);
 
-    // Past the cutoff the indicator is not gray, it is GONE — and with its
+    // Past the last cutoff — five minutes — the indicator is GONE, and with its
     // stamp removed it drops out of this walk until a paint draws it again,
     // which is the only thing that can bring it back (a fresher timestamp
     // arrives with a feed, never with a tick).

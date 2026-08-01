@@ -42,6 +42,7 @@
 //
 
 const http = require('http');
+const path = require('path');
 const { execFileSync } = require('child_process');
 
 const { discoverRepos } = require('./lib/repos');
@@ -89,6 +90,13 @@ const MAX_REQUEST_BYTES = 64 * 1024;
 // The IPv6 loopback is listed BRACKETED: hostnameOf parses through new URL,
 // which rejects a bare `::1` but resolves `[::1]` to the form requests carry.
 const LOCAL_HOSTS = ['127.0.0.1', 'localhost', '[::1]'];
+
+// The checkout this process is RUNNING FROM — two levels up from tower/api.
+// A node process holds the code it started with, so a tower left running past
+// a pull serves endpoints that no longer match the repo (issue #64 was exactly
+// that). Comparing this checkout's HEAD against the one captured at boot is
+// what lets the page say so.
+const CHECKOUT = path.join(__dirname, '..', '..');
 
 const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
   encoding: 'utf8',
@@ -370,6 +378,32 @@ const createServer = (opts = {}) => {
     return out;
   });
 
+  // What this PROCESS is, as against what the checkout is now. The boot commit
+  // and the start time are captured once, here, because that is the only moment
+  // that can honestly answer them; the live head is read like every other live
+  // reading. Git being absent, or the checkout not being a repository, answers
+  // null on both sides — absence of proof is not staleness.
+  const startedAt = new Date().toISOString();
+  const headNow = () => {
+    try {
+      return exec('git', ['-C', CHECKOUT, 'rev-parse', 'HEAD']).trim() || null;
+    } catch {
+      return null;
+    }
+  };
+  const bootCommit = headNow();
+  const currentHead = cached(LIVE_TTL, headNow, (value) => value !== null);
+
+  // The per-repo map with one `meta` block beside it. FLAT rather than nested
+  // because every consumer of this endpoint reads a reading by repo path — an
+  // absolute path, so it can never be the string `meta` — and nesting would
+  // move every one of them. The brief is built from `health()` itself, which
+  // stays the map alone.
+  const healthPayload = () => ({
+    ...health(),
+    meta: { bootCommit, startedAt, currentHead: currentHead() },
+  });
+
   // The brief is assembled from the two slots above rather than from reads of
   // its own, so the morning notification and the Brief page cannot disagree:
   // they are the same board and the same health, one derivation.
@@ -512,7 +546,7 @@ const createServer = (opts = {}) => {
     if (pathname === '/api/repos') return sendJson(res, 200, roster({ fresh }));
     if (pathname === '/api/board') return sendJson(res, 200, board({ fresh }));
     if (pathname === '/api/sessions') return sendJson(res, 200, sessions());
-    if (pathname === '/api/health') return sendJson(res, 200, health());
+    if (pathname === '/api/health') return sendJson(res, 200, healthPayload());
     if (pathname === '/api/telemetry') return sendJson(res, 200, telemetry());
     if (pathname === '/api/brief') return sendJson(res, 200, brief());
 

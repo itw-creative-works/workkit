@@ -2,8 +2,9 @@
 // The page runtime every tower page boots into.
 //
 // It owns the things that are the same on all six pages: which feeds this page
-// arms, the repo selection held in `?repo=`, the chrome that lets you change
-// it, and the paint loop. A page module supplies a mount id, the feeds it
+// arms, the repo selection held in `?repo=`, the sidebar's project selector
+// that changes it and the nav links that carry it, and the paint loop. A page
+// module supplies a mount id, the feeds it
 // reads, and one `render(root, state)` — nothing else. The feed table itself
 // (paths and cadence) is api.js's, which is where every tower URL is written.
 //
@@ -28,10 +29,11 @@
 // The loop calls render() on every answer and on every tick; what reaches the
 // DOM is decided further down, by live-page's `swap` in each page's render, so
 // a tick that changed nothing leaves the page — and its focus, its scroll and
-// its open `details` — exactly as it was. The chrome above the body is held to
-// the same rule by its own means: chrome.js writes it in two pieces and this
-// file rewrites the frame only when what it shows changed, so a poll passing
-// under an open `<select>` no longer closes it.
+// its open `details` — exactly as it was. The chrome above the body and the
+// selector menu in the sidebar are held to the same rule by their own means:
+// each is markup from state with a KEY beside it (chrome.js, sidebar.js), and
+// this file rewrites either one only when what it shows changed, so a poll
+// passing under an open control no longer closes it.
 //
 // Beside the loop, and never part of it, runs the second hand (clock.js): the
 // one thing on the tower measured in seconds is an agent's freshness, and it
@@ -52,19 +54,93 @@ import {
   isLocalHost, towerDownNotice, openTokenModal, hideTokenModal,
 } from './token.js';
 import { chromeKey, chromeMarkup, statusMarkup } from './chrome.js';
+import { isScopedPath, scopedHref } from './scope.js';
+import { menuMarkup, selectorLabel, sidebarKey } from './sidebar.js';
 import { startClock } from './clock.js';
 import { refreshAgentDialog } from './modal.js';
 
 // ── The repo selection ─────────────────────────────────────────────────────
+//
+// One repo, a comma-separated subset of the roster, or nothing at all for every
+// repo — the URL is the only place it is ever written (issue #104). What the
+// value MEANS is scope.js's, which every page filters through; what is here is
+// the reading, the writing, and the sidebar the viewer changes it from.
 
-/** The repo the whole tower is narrowed to, or '' for all of them. */
+/** The `?repo=` value the whole tower is narrowed by, or '' for every repo. */
 export const selectedRepo = () => new URL(location.href).searchParams.get('repo') || '';
 
-const writeSelectedRepo = (slug) => {
-  const url = new URL(location.href);
-  if (slug) url.searchParams.set('repo', slug);
-  else url.searchParams.delete('repo');
-  history.replaceState(null, '', url);
+const writeSelectedRepo = (value) => history.replaceState(null, '', scopedHref(location.href, value));
+
+/**
+ * Put the current selection on every tower link in the sidebar.
+ *
+ * This is what makes the scope survive the nav: the sidebar is baked at build
+ * time with plain hrefs, so Overview → Board dropped the selection on the floor
+ * until the links carried it. Idempotent — a link already carrying one is
+ * rewritten, never appended to — and run on every paint as well as on every
+ * change, since the framework redraws its own shell on a rail collapse.
+ *
+ * @param {string} value - the `?repo=` value, '' for every repo
+ */
+const scopeNav = (value) => {
+  for (const link of document.querySelectorAll('#app-sidebar a[href]')) {
+    const href = link.getAttribute('href');
+    if (isScopedPath(href)) link.setAttribute('href', scopedHref(href, value));
+  }
+};
+
+/** The selector's toggle button, the framework's own node (sidebar.json turns it on). */
+const selectorButton = () => document.querySelector('#app-sidebar .classy-side__selector');
+
+/**
+ * The one node the runtime fills inside the framework's sidebar: the selector's
+ * dropdown menu.
+ *
+ * Reached through the BUTTON, never as a bare list in the sidebar — the nav is a `ul`
+ * too, and it is the menu's sibling one level up. Claimed with a data attribute
+ * on first fill, both as the marker that the menu is ours and as the handle the
+ * change listener re-finds it by after a repaint.
+ */
+const projectsHost = () => {
+  const button = selectorButton();
+  const menu = button && button.parentElement.querySelector(':scope > .dropdown-menu');
+  if (!menu) return null;
+  if (!menu.hasAttribute('data-tower-projects')) {
+    menu.setAttribute('data-tower-projects', '');
+    // Ticking a subset box must not close the menu it lives in. The rest of
+    // Bootstrap's dropdown — the toggle, the outside click, escape — is the
+    // theme bundle's data-api, untouched.
+    button.setAttribute('data-bs-auto-close', 'outside');
+    // The one item the theme ships is a placeholder (sidebar.json), and it is
+    // what the menu shows until the roster answers — an `href="#"` that would
+    // otherwise put a bare hash in the address bar of a page whose URL carries
+    // the selection.
+    menu.addEventListener('click', (event) => {
+      if (event.target.closest('a[href="#"]')) event.preventDefault();
+    });
+  }
+  return menu;
+};
+
+/**
+ * Put the current selection on the selector button.
+ *
+ * The button is the framework's markup and its classes are the contract — the
+ * nodes are PATCHED, never rebuilt, so the theme keeps owning how it looks.
+ *
+ * @param {object} state - the runtime's feed state
+ */
+const paintSelector = (state) => {
+  const button = selectorButton();
+  if (!button) return;
+  const { name, initial, env } = selectorLabel(state);
+  const set = (selector, text) => {
+    const node = button.querySelector(selector);
+    if (node) node.textContent = text;
+  };
+  set('.classy-side__selector-tile', initial);
+  set('.classy-side__selector-name', name);
+  set('.classy-side__selector-env', env);
 };
 
 // ── The runtime ────────────────────────────────────────────────────────────
@@ -96,6 +172,12 @@ export async function startPage(options) {
   host.innerHTML = '<div data-tower-chrome></div><div data-tower-body></div>';
   const chrome = host.querySelector('[data-tower-chrome]');
   const body = host.querySelector('[data-tower-body]');
+
+  // Before the mode forks: the nav carries the scope on every page, including
+  // the ones that draw nothing themselves — a locked copy, and a local-only
+  // page in a published one, are pages a viewer passes THROUGH, and a link that
+  // dropped the selection there would lose it for the rest of the session.
+  scopeNav(selectedRepo());
 
   // The mode is read from the flag itself, never inferred from an empty feed
   // table: a page that legitimately declares no feeds is still a live page.
@@ -166,19 +248,76 @@ export async function startPage(options) {
   // changed; the status inside it is rewritten every paint, because that is the
   // half a poll actually changes.
   let painted = null;
+  // What the sidebar's selector menu was last drawn from, held to the same rule
+  // and for the same reason: a poll landing must not rewrite the subset
+  // checkboxes under the pointer.
+  let paintedProjects = null;
+  // Whether the paint about to run was asked for by a control INSIDE the menu.
+  // An open menu is otherwise left alone until it closes — but the control that
+  // changed the scope is exactly the one whose menu has to redraw around it.
+  let scoped = false;
   // Whether the unlock dialog is currently up over the page.
   let prompted = false;
+
+  /** Narrow the whole tower to a `?repo=` value: the URL, the state, the nav, the paint. */
+  function applyScope(value) {
+    state.selectedRepo = value;
+    writeSelectedRepo(value);
+    scoped = true;
+    paint();
+    scoped = false;
+  }
+
+  // The sidebar's selector menu (sidebar.js). The entries and the subset boxes
+  // are wired per control on each rewrite — every rewrite replaces the nodes
+  // wholesale, so no listener ever stacks on a survivor.
+  function paintProjects() {
+    const projects = projectsHost();
+    if (!projects) return;
+    paintSelector(state);
+    const key = sidebarKey(state);
+    // Before the roster answers there is nothing to switch between, and the
+    // menu keeps the placeholder the theme baked rather than being emptied.
+    if (!key || key === paintedProjects) return;
+    // A menu the viewer has OPEN is not rewritten under their pointer by a poll
+    // landing behind it; the key is left unclaimed, so the redraw happens on the
+    // first paint after it closes. A scope change made from inside the menu is
+    // the exception — that redraw is the answer to their click.
+    if (projects.classList.contains('show') && !scoped) return;
+    paintedProjects = key;
+    projects.innerHTML = menuMarkup(state);
+    for (const entry of projects.querySelectorAll('[data-tower-scope]')) {
+      entry.addEventListener('click', () => {
+        applyScope(entry.getAttribute('data-tower-scope'));
+        // Picking a project is done with the menu; the subset boxes are the
+        // reason it does not close itself (`data-bs-auto-close="outside"`).
+        window.bootstrap.Dropdown.getOrCreateInstance(selectorButton()).hide();
+      });
+    }
+    for (const box of projects.querySelectorAll('[data-tower-scope-slug]')) {
+      box.addEventListener('change', () => {
+        const boxes = [...projects.querySelectorAll('[data-tower-scope-slug]')];
+        const chosen = boxes.filter((one) => one.checked).map((one) => one.getAttribute('data-tower-scope-slug'));
+        // Every box checked is every repo, which is what an ABSENT parameter
+        // already says — and so is no box at all, since a scope holding nothing
+        // is a board with nothing on it rather than a filter.
+        applyScope(chosen.length && chosen.length < boxes.length ? chosen.join(',') : '');
+        // The paint above rewrote the section, taking the box the keyboard was
+        // on with it — put focus back on its replacement so tabbing resumes in
+        // place. Narrowing to one repo removes the filter itself; then there is
+        // no replacement to focus.
+        const slug = box.getAttribute('data-tower-scope-slug');
+        const successor = projectsHost()?.querySelector(`[data-tower-scope-slug="${slug}"]`);
+        if (successor) successor.focus();
+      });
+    }
+  }
 
   function paint() {
     const key = chromeKey(state);
     if (key !== painted) {
       painted = key;
       chrome.innerHTML = chromeMarkup(state);
-      chrome.querySelector('#tower-repo').addEventListener('change', (event) => {
-        state.selectedRepo = event.target.value;
-        writeSelectedRepo(state.selectedRepo);
-        paint();
-      });
       chrome.querySelector('#tower-refresh').addEventListener('click', () => poller.readAll(true));
       const token = chrome.querySelector('#tower-token');
       // Forgetting the token locks the copy again, and the next load is the
@@ -192,6 +331,8 @@ export async function startPage(options) {
       }
     }
     chrome.querySelector('[data-tower-status]').innerHTML = statusMarkup(state, poller.staleFeeds());
+    paintProjects();
+    scopeNav(state.selectedRepo);
 
     // A token GitHub REFUSED is not a page problem but a token problem, and the
     // only place a token is typed is the prompt — so the refusal is shown there,

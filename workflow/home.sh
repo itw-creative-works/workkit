@@ -328,12 +328,33 @@ wk_home_seed() {
 # scripts are the checkout's, they change with it, and a home repo running last
 # month's runner is the failure this refresh exists to prevent. Idempotent by
 # content — a file already identical is not rewritten, so a second setup writes
-# nothing and leaves nothing to commit.
+# nothing and leaves nothing to commit — and by SUBTRACTION too: what the
+# manifest no longer names is removed (issue #117).
 #
 # Returns 0 (something changed), 2 (every file was already current), 1 (the
 # checkout could not be read — nothing was written).
+# The files under the clone's `brief/` that the manifest no longer names — one
+# definition shared by the seed (which removes them) and the doctor (which
+# counts them), so the two can never disagree on the word "current" (#117).
+# Prints one absolute path per line; symlinks are deliberately invisible
+# (`-type f` follows nothing), which is also what keeps the walk inside the
+# clone.
+wk_home_runner_retired() {
+  local found rel keep pair
+  [[ -d "$WK_HOME_DIR/brief" ]] || return 0
+  while IFS= read -r found; do
+    rel="${found#"$WK_HOME_DIR"/}"
+    keep=0
+    for pair in "${WK_HOME_RUNNER_FILES[@]}"; do
+      [[ "${pair#*:}" == "$rel" ]] && { keep=1; break; }
+    done
+    [[ "$keep" -eq 1 ]] && continue
+    printf '%s\n' "$found"
+  done < <(find "$WK_HOME_DIR/brief" -type f 2>/dev/null)
+}
+
 wk_home_seed_runner() {
-  local pair src dest changed=0 missing=''
+  local pair src dest found rel changed=0 removed=0 missing=''
 
   [[ -n "$WK_KIT_DIR" && -d "$WK_KIT_DIR" ]] || {
     wk_say_warn "home: the plugin checkout could not be resolved beside this engine — the cloud brief's runner was not seeded"
@@ -355,6 +376,29 @@ wk_home_seed_runner() {
     changed=$((changed + 1))
   done
 
+  # What the manifest stopped naming (issue #117). `brief/` in the clone is
+  # ENGINE territory — the clone carries no config of its own under it — so a
+  # file there the list does not name is one a rename left behind, and #107's
+  # rename of the entry script is exactly that: a clone seeded before it would
+  # keep the retired copy forever. Only `brief/` is walked; the workflow file
+  # is replaced by content above and everything else in the clone is the
+  # project's, never this function's to remove.
+  if [[ -d "$WK_HOME_DIR/brief" ]]; then
+    while IFS= read -r found; do
+      rel="${found#"$WK_HOME_DIR"/}"
+      rm -f "$found" 2>/dev/null || {
+        wk_say_warn "home: could not remove the retired $rel from $WK_HOME_DIR"
+        return 1
+      }
+      changed=$((changed + 1))
+      removed=$((removed + 1))
+    done < <(wk_home_runner_retired)
+    # And the folders a removal emptied — deepest first, so a nested one goes
+    # with its parent; rmdir refusing a folder that still holds something is
+    # the check, which is why the failures are the ones ignored here.
+    find "$WK_HOME_DIR/brief" -mindepth 1 -depth -type d -exec rmdir {} + >/dev/null 2>&1 || true
+  fi
+
   if [[ -n "$missing" ]]; then
     wk_say_warn "home: this checkout is missing$missing — the cloud brief's runner is incomplete in $WK_HOME_DIR"
   fi
@@ -362,7 +406,7 @@ wk_home_seed_runner() {
     wk_say_skip "home: the cloud brief's runner in $WK_HOME_DIR is current"
     return 2
   fi
-  wk_say_ok "home: seeded the cloud brief's runner in $WK_HOME_DIR ($changed file(s) from $WK_KIT_DIR)"
+  wk_say_ok "home: seeded the cloud brief's runner in $WK_HOME_DIR ($((changed - removed)) file(s) from $WK_KIT_DIR, $removed retired)"
   return 0
 }
 
@@ -621,7 +665,7 @@ wk_home_doctor() {
 #
 # Returns 1 when the seeded copy is behind, 0 otherwise (current, or a skip).
 wk_home_runner_doctor() {
-  local pair src dest behind=0 compared=0
+  local pair src dest behind=0 compared=0 retired=0
 
   wk_home_ready || {
     wk_say_skip "runner: no home clone at $WK_HOME_DIR — nothing to compare the cloud brief's runner against"
@@ -644,8 +688,16 @@ wk_home_runner_doctor() {
     wk_say_skip "runner: this checkout carries none of the cloud brief's runner files — nothing to compare"
     return 0
   fi
-  if [[ "$behind" -gt 0 ]]; then
-    wk_say_warn "runner: the home repo's brief runner is behind this checkout ($behind of $compared file(s) differ) — run \`workkit setup\`"
+
+  # Current means what the seed would leave alone — so a retired file awaiting
+  # the prune is drift too, counted through the same lister the seed removes
+  # from (#117).
+  retired=$(wk_home_runner_retired | awk 'END { print NR }')
+
+  if [[ "$behind" -gt 0 || "$retired" -gt 0 ]]; then
+    local detail="$behind of $compared file(s) differ"
+    [[ "$retired" -gt 0 ]] && detail="$detail, $retired retired file(s) await pruning"
+    wk_say_warn "runner: the home repo's brief runner is behind this checkout ($detail) — run \`workkit setup\`"
     return 1
   fi
   wk_say_ok "runner: the cloud brief's runner in $WK_HOME_DIR is current with this checkout"

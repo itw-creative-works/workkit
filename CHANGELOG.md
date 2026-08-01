@@ -7,6 +7,20 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#70](../../issues/70) — The Health page now names a tower API running older code than its checkout, with both short shas and the restart command, and says when the process started.
+
+### Changed
+
+- [#118](../../issues/118) — The Board's "No status" column is gone: an open issue carrying no `status:` label is now a danger alert above the five lanes, naming and linking every one of them, and it appears nowhere else on the page.
+- [#104](../../issues/104) — The tower's project switch is now the selector dropdown at the top of the sidebar, filled from the roster and carrying `?repo=` onto every nav link, and the selection accepts a comma-separated subset of the roster instead of one repo.
+- [#99](../../issues/99) — An agent that goes quiet is now muted after a minute and drawn for five, on the Crew page, the Overview's crew table and the open agent dialog, instead of leaving the page the moment the minute passed.
+
+### Fixed
+
+- [#117](../../issues/117) — The cloud brief's seed now removes a file under the home clone's `brief/` that the runner manifest no longer names, so a rename no longer leaves the retired copy there forever.
+
 ## [0.23.0] - 2026-07-31
 
 ### Added

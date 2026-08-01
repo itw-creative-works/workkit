@@ -21,14 +21,32 @@
 import { esc, badgeColor, classKey } from './format.js';
 
 /**
- * How long an agent may stay quiet before its indicator goes away entirely.
+ * How long an agent may stay quiet before its indicator goes MUTED.
  *
  * This is the INDICATOR's window and is not the liveness rule — the API's own
  * (45 minutes, sessions.js) decides whether a session is running at all. This
- * one decides whether the light is still worth showing, and a minute is the
- * span over which "it just did something" is still true.
+ * one decides how bright the light is, and a minute is the span over which "it
+ * just did something" is still true.
  */
 export const ACTIVITY_WINDOW_MS = 60 * 1000;
+
+/**
+ * How long a muted agent stays drawn at all.
+ *
+ * The minute above used to be both boundaries at once, so an agent that paused
+ * for ninety seconds — between turns, waiting on a tool, thinking — left the
+ * page outright and the Crew page said nobody was running while four agents
+ * were (#99). Five minutes is the span over which "it is still here" is true:
+ * long enough to cover a pause, short enough that a finished agent does not
+ * linger as a card nobody is watching.
+ */
+export const QUIET_WINDOW_MS = 5 * 60 * 1000;
+
+/**
+ * The class a muted surface wears — the framework's own faint body text, so the
+ * muted band costs no colour pairing of its own.
+ */
+export const MUTED_CLASS = 'text-body-secondary';
 
 /**
  * How recently the transcript must have moved for the glyph to SPIN.
@@ -44,15 +62,19 @@ export const ACTIVITY_WINDOW_MS = 60 * 1000;
 export const WORKING_MS = 20 * 1000;
 
 /**
- * Which of the three states an agent's indicator is in.
+ * Which of the four states an agent's indicator is in.
  *
  * - `working` — it is running and its transcript moved a poll or two ago.
  * - `idle` — it moved within the minute but has stopped, or is between turns.
- * - `none` — quiet longer than the minute: no indicator at all.
+ * - `quiet` — quiet longer than the minute: still drawn, muted.
+ * - `none` — quiet longer than the five: no indicator at all.
  *
- * The gray band is the whole point of the middle case: an agent that finished
+ * The gray band is the whole point of the middle cases: an agent that finished
  * ten seconds ago, and a session whose assertion has lapsed but whose file is
- * fresh, are both still worth showing — still, not spinning.
+ * fresh, are both still worth showing — still, not spinning — and one that has
+ * been silent a couple of minutes is worth showing FAINTLY rather than not at
+ * all, which is the difference between a page that says "nothing is running"
+ * and one that says "nothing has moved lately".
  *
  * A roster with no timestamps at all (`/api/sessions` before #46, or a session
  * whose transcript could not be probed) falls back to the state word alone,
@@ -60,7 +82,7 @@ export const WORKING_MS = 20 * 1000;
  *
  * @param {{state?: string, lastActivity?: number|null}} entry a normalized node
  * @param {number} [now] ms epoch
- * @returns {'working'|'idle'|'none'}
+ * @returns {'working'|'idle'|'quiet'|'none'}
  */
 export const activityPhase = (entry, now = Date.now()) => {
   const working = (entry || {}).state === 'working';
@@ -69,9 +91,33 @@ export const activityPhase = (entry, now = Date.now()) => {
   // A clock that disagrees with the API's reads negative — treat it as this
   // instant rather than as a session from the future.
   const quiet = Math.max(0, now - last);
-  if (quiet > ACTIVITY_WINDOW_MS) return 'none';
+  if (quiet > QUIET_WINDOW_MS) return 'none';
+  if (quiet > ACTIVITY_WINDOW_MS) return 'quiet';
   return working && quiet <= WORKING_MS ? 'working' : 'idle';
 };
+
+/**
+ * The muted class a phase calls for, or '' — the ONE place the two faint bands
+ * are named, because a card is muted by its page's paint and un-muted by the
+ * second hand, and a copy on either side is a card that stays gray after its
+ * agent came back.
+ *
+ * `none` counts as muted: the indicator is gone, and until a paint drops the
+ * card the honest thing left to say is that this one is not moving.
+ *
+ * @param {'working'|'idle'|'quiet'|'none'} phase
+ * @returns {string}
+ */
+export const mutedClass = (phase) => (phase === 'quiet' || phase === 'none' ? MUTED_CLASS : '');
+
+/**
+ * The muted class for a NODE — what a paint has in hand.
+ *
+ * @param {{state?: string, lastActivity?: number|null}} entry a normalized node
+ * @param {number} [now] ms epoch
+ * @returns {string}
+ */
+export const cardMuted = (entry, now = Date.now()) => mutedClass(activityPhase(entry, now));
 
 /**
  * A span as the shortest true thing to say about it: `12s`, `3m`, `2h`, `4d`.
@@ -104,7 +150,7 @@ export const sinceLabel = (ms) => {
  * @param {{liveState?: string, liveTs?: string, liveAlive?: string}} data the
  *   stamps, as the markup carries them
  * @param {number} [now] ms epoch
- * @returns {{phase: 'working'|'idle'|'none', age: string, title: string}}
+ * @returns {{phase: 'working'|'idle'|'quiet'|'none', age: string, title: string}}
  */
 export const activityTick = (data, now = Date.now()) => {
   const stamps = data || {};
@@ -125,7 +171,7 @@ export const activityTick = (data, now = Date.now()) => {
  * changes the class on an element the paint drew, and a second copy of the name
  * here would be a colour that only changes on one of the two paths.
  *
- * @param {'working'|'idle'} phase
+ * @param {'working'|'idle'|'quiet'} phase
  * @returns {string}
  */
 export const activityClass = (phase) => `omega-tower-activity omega-tower-activity--${phase}`;
@@ -133,18 +179,19 @@ export const activityClass = (phase) => `omega-tower-activity omega-tower-activi
 /**
  * The indicator itself — one glyph, wordless.
  *
- * `working` spins in the theme's ok colour; `idle` is the same glyph, still and
- * muted, so a card that just stopped keeps its shape instead of jumping. The
- * word is kept for a screen reader, which has no colour or motion to read.
+ * `working` spins in the theme's ok colour; `idle` and `quiet` are the same
+ * glyph, still and faint, so a card that just stopped keeps its shape instead of
+ * jumping. The word is kept for a screen reader, which has no colour or motion
+ * to read.
  *
- * @param {'working'|'idle'|'none'} phase
+ * @param {'working'|'idle'|'quiet'|'none'} phase
  * @param {string} [title] the hover text — how long it has been running
  * @param {string} [label] what a screen reader hears, when the phase is not
  *   the honest word for it: the Board's glyph means a CLAIM, not an idle agent
  * @returns {string} markup, or '' for `none`
  */
 export const activityIcon = (phase, title = '', label = '') => {
-  if (phase !== 'working' && phase !== 'idle') return '';
+  if (phase !== 'working' && phase !== 'idle' && phase !== 'quiet') return '';
   return `<span class="${esc(activityClass(phase))}"${title ? ` title="${esc(title)}"` : ''}>
     <i class="fa-solid fa-circle-notch${phase === 'working' ? ' fa-spin' : ''}" aria-hidden="true"></i>
     <span class="visually-hidden">${esc(label || phase)}</span>

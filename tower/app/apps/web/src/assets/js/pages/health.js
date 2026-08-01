@@ -11,11 +11,33 @@
 import { startPage } from '../libs/tower/page.js';
 import { issuesFor, reposFor, health, feed } from '../libs/tower/state.js';
 import {
-  esc, num, empty, problem, statCell, statgrid, card, STATUSES, statusColor,
+  esc, num, empty, problem, statCell, statgrid, card, statusBreakdown,
 } from '../libs/tower/format.js';
 import { chartSlot, barChart } from '__main_assets__/js/libs/charts.js';
 import { loading, swap } from '@omega.js/client/modules/live-page';
 import { issueItem, externalLink } from '../libs/tower/modal.js';
+
+// ── The process behind the page ────────────────────────────────────────────
+// The API holds the code it started with, so a tower left running past a pull
+// answers from the old one (issue #64 was exactly that, and nothing said so).
+// The meta block names both commits; they differ only when a restart is owed,
+// and either one absent says nothing at all.
+const short = (sha) => String(sha || '').slice(0, 7);
+
+const stale = (meta) => Boolean(meta && meta.bootCommit && meta.currentHead && meta.bootCommit !== meta.currentHead);
+
+const processLine = (meta) => {
+  if (!meta) return '';
+  const when = new Date(meta.startedAt);
+  const parts = [];
+  if (!Number.isNaN(when.getTime())) parts.push(`API started ${when.toLocaleString()}`);
+  if (meta.bootCommit) parts.push(`commit ${short(meta.bootCommit)}`);
+  return parts.length ? `<p class="classy-micro text-body-secondary mb-3">${esc(parts.join(' · '))}</p>` : '';
+};
+
+const restartNotice = (meta) => (stale(meta)
+  ? `<div class="mb-4">${problem(`the tower API is running commit ${short(meta.bootCommit)}, and the checkout is at ${short(meta.currentHead)} — restart it with npm run tower`)}</div>`
+  : '');
 
 /** One repo's open issues, from the board sweep, matched on its slug. */
 const issuesOf = (state, repo) => issuesFor(state).filter((issue) => issue.repo === repo.slug);
@@ -73,7 +95,7 @@ const repoCard = (state, repo, alone) => {
       statCell('Unreleased', num(reading.unreleasedEntries)),
       statCell('Last tag', reading.lastTag || '—'),
     ], 'mb-3')}
-      ${chartSlot(canvasId(repo), 180, STATUSES.map((status) => issues.filter((issue) => (issue.status || '') === status.key).length))}
+      ${chartSlot(canvasId(repo), 180, statusBreakdown(issues).values)}
       ${alone ? issueList(issues) : ''}`;
   }
 
@@ -114,8 +136,11 @@ const render = (root, state) => {
   // The charts are redrawn only when the markup carrying their canvases was
   // actually written — an unchanged tick leaves the drawn ones standing.
   const rows = lagRows(state);
+  const meta = health(state).meta;
   if (!swap(root, `
+    ${restartNotice(meta)}
     ${readings && !readings.ok ? `<div class="mb-4">${problem(readings.reason)}</div>` : ''}
+    ${processLine(meta)}
     ${releaseLag(rows)}
     <div class="row g-4">
       ${list.map((repo) => repoCard(state, repo, alone)).join('')}
@@ -134,12 +159,9 @@ const render = (root, state) => {
     const reading = health(state)[repo.path];
     if (!reading || reading.error) continue;
     const issues = issuesOf(state, repo);
-    barChart(canvasId(repo), {
-      labels: STATUSES.map((status) => status.label),
-      values: STATUSES.map((status) => issues.filter((issue) => (issue.status || '') === status.key).length),
-      colors: STATUSES.map((status) => statusColor(status.key)),
-      label: 'open issues',
-    });
+    // statusBreakdown, not a local series: an unlabeled issue is a visible bar
+    // beside the count that includes it, never a chart quietly summing short (#118).
+    barChart(canvasId(repo), { ...statusBreakdown(issues), label: 'open issues' });
   }
 };
 

@@ -100,11 +100,14 @@ export const money = (value) => {
 };
 
 //
-// The status pipeline, in the order the board reads left to right, plus the
-// column for issues carrying no status label at all. It mirrors the `status`
-// group in the workflow label SSOT the API reads, and is restated here only
-// because a column has to exist while it is EMPTY, which no amount of looking
-// at the data can tell you.
+// The status pipeline, in the order the board reads left to right. It mirrors
+// the `status` group in the workflow label SSOT the API reads, and is restated
+// here only because a column has to exist while it is EMPTY, which no amount of
+// looking at the data can tell you.
+//
+// Every entry is a place an issue LIVES. A missing `status:` label is not one
+// of those — it is a fault the pipeline forbids and the daily heal repairs — so
+// it is drawn as the alarm below rather than a sixth lane (#118).
 //
 export const STATUSES = [
   { key: 'inbox', label: 'Inbox' },
@@ -112,7 +115,6 @@ export const STATUSES = [
   { key: 'building', label: 'Building' },
   { key: 'blocked', label: 'Blocked' },
   { key: 'parked', label: 'Parked' },
-  { key: '', label: 'No status' },
 ];
 
 /** The theme token a status is drawn in, on cards and in charts. */
@@ -126,6 +128,62 @@ export const statusToken = (key) => ({
 
 /** The resolved colour for a status — CSS custom properties, so dark mode follows. */
 export const statusColor = (key) => `var(${statusToken(key)})`;
+
+/**
+ * The alarm the Board draws above its columns when open issues carry no
+ * `status:` label at all (#118).
+ *
+ * They used to be a sixth column, which said "here is where these live". They
+ * do not live anywhere: exactly one `status:` per open issue is the rule, the
+ * daily heal repairs a breach of it, and a lane makes the breach look like a
+ * resting place — while on a normal day taking board width to show nothing. So
+ * they are named, linked and counted here instead, in the theme's danger tone
+ * that no ordinary board state uses, and drawn NOWHERE else on the page.
+ *
+ * Here rather than in the page for the reason every other shape is: it is
+ * markup from values, and the suite can ask what a hostile title renders as.
+ * The issues handed in are the SCOPED ones (state.issuesFor) — an unlabelled
+ * issue in a repo the board is not showing is not this board's alarm.
+ *
+ * @param {object[]} issues - the open issues in scope
+ * @param {boolean} [showRepo] - whether the board is showing more than one repo
+ * @returns {string} markup, or nothing at all when every issue is labelled
+ */
+/**
+ * The status chart series — labels, values and colors in step, one entry per
+ * pipeline status, plus a "No status" slice ONLY while an unlabeled issue
+ * exists. The Board surfaces that state as its danger alert; a chart that
+ * silently dropped those issues would sum short of the open count beside it,
+ * so the slice keeps the ring and the number telling one story. Its color is
+ * the non-status fallback ink, which no pipeline status is drawn in.
+ *
+ * @param {object[]} issues - open issues, each carrying `status` ('' for none)
+ * @returns {{labels: string[], values: number[], colors: string[]}}
+ */
+export const statusBreakdown = (issues) => {
+  const all = issues || [];
+  const labels = STATUSES.map((status) => status.label);
+  const values = STATUSES.map((status) => all.filter((issue) => issue.status === status.key).length);
+  const colors = STATUSES.map((status) => statusColor(status.key));
+  const missing = all.filter((issue) => !issue.status).length;
+  if (missing) {
+    labels.push('No status');
+    values.push(missing);
+    colors.push(statusColor(''));
+  }
+  return { labels, values, colors };
+};
+
+export const noStatusAlert = (issues, showRepo = true) => {
+  const missing = (issues || []).filter((issue) => !issue.status);
+  if (!missing.length) return '';
+  return `<div class="alert alert-danger mb-3" role="alert">
+  <p class="mb-2">${missing.length} issue${missing.length === 1 ? ' carries' : 's carry'} no status label</p>
+  <ul class="list-unstyled mb-0">
+    ${missing.map((issue) => `<li><a href="${esc(issue.url)}" target="_blank" rel="noopener">${showRepo ? `${esc(issue.repo)} ` : ''}#${esc(issue.number)} — ${esc(issue.title)}</a></li>`).join('')}
+  </ul>
+</div>`;
+};
 
 //
 // ── Priority ───────────────────────────────────────────────────────────────

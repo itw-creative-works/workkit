@@ -25,6 +25,18 @@ const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-nightly.sh');
 // day for half the world's clocks.
 const today = () => new Date().toLocaleDateString('en-CA');
 
+// Every cadence title the runner would publish TODAY. The script adds the
+// weekly on a Sunday and the monthly on the 1st, so a test seeding "already
+// published" must cover all of them — seeding the daily alone reds the test
+// on exactly those days, when the rollup legitimately composes.
+const allPostedToday = () => {
+  const now = new Date();
+  const titles = [`daily: ${today()}`];
+  if (now.getDay() === 0) titles.push(`weekly: ${today()}`);
+  if (now.getDate() === 1) titles.push(`monthly: ${today()}`);
+  return titles;
+};
+
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'claude-nightly-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
@@ -337,7 +349,7 @@ const run = async () => {
   group('jobs/claude-nightly: the guards');
 
   await test('a day already published is not published twice', () => {
-    const world = mkWorld({ home: 'owner/private-home', posted: [`daily: ${today()}`] });
+    const world = mkWorld({ home: 'owner/private-home', posted: allPostedToday() });
     const res = runJob(world);
     assertEq(res.status, 0, 'exit 0');
     assert(/already carries the daily summary/.test(world.log()), `it says so: ${world.log()}`);

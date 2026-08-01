@@ -125,7 +125,11 @@
 }
 
 .omega-tower-activity--working { color: var(--omega-ok); }
-.omega-tower-activity--idle { color: var(--omega-ink-faint, var(--bs-secondary-color)); }
+// The still band and the muted one are the same gray: `idle` is the minute
+// after an agent stops, `quiet` the four after that (#99), and the difference
+// between them is the card around it, not the light.
+.omega-tower-activity--idle,
+.omega-tower-activity--quiet { color: var(--omega-ink-faint, var(--bs-secondary-color)); }
 
 // The motion itself. `fa-spin` is Font Awesome's class and the theme ships Font
 // Awesome's ICONS without its stylesheet — the class named a rule that was never

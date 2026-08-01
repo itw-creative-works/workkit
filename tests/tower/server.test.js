@@ -180,6 +180,29 @@ const raw = (client, { method = 'GET', path: p = '/', headers = {}, body = null 
 
 const ghCalls = (world, verb) => world.calls.filter((c) => c[0] === 'gh' && c[1] === verb);
 
+/** The repo tiles in a /api/health payload — everything that is not the meta block. */
+const tiles = (body) => Object.keys(body).filter((key) => key !== 'meta');
+
+/**
+ * Answer `git rev-parse HEAD` from a script instead of the real checkout: the
+ * first entry is what the boot capture sees, the last what every live read
+ * after it sees. An Error is thrown, which is git being absent or the checkout
+ * not being a repository. Everything else falls through to the world's seam.
+ */
+const scriptHead = (world, answers) => {
+  const inner = world.exec;
+  const queue = answers.slice();
+  world.exec = (cmd, args) => {
+    if (cmd === 'git' && args.includes('rev-parse') && args.includes('HEAD')) {
+      world.calls.push([cmd, ...args]);
+      const next = queue.length > 1 ? queue.shift() : queue[0];
+      if (next instanceof Error) throw next;
+      return `${next}\n`;
+    }
+    return inner(cmd, args);
+  };
+};
+
 const run = async () => {
   group('tower/api/server: the read endpoints');
 
@@ -246,11 +269,50 @@ const run = async () => {
     const c = await start(w);
     const { status, body } = await getJson(c, '/api/health');
     assertEq(status, 200, 'ok');
-    assertEq(Object.keys(body).length, 1, 'one tile');
+    assertEq(tiles(body).length, 1, 'one tile');
     const health = body[w.repo];
     assertEq(health.unreleasedEntries, 1, 'one [Unreleased] bullet');
     assertEq(health.uncommitted, 0, 'a clean fixture');
     assertEq(health.unpushed, null, 'no upstream is null, not zero');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('/api/health carries a meta block naming the process that is answering', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { body } = await getJson(c, '/api/health');
+    assert(body.meta && typeof body.meta === 'object', 'the payload carries a meta block');
+    assert(/^[0-9a-f]{40}$/.test(body.meta.bootCommit), 'the commit the process booted from');
+    assertEq(body.meta.currentHead, body.meta.bootCommit, 'and the checkout is at that same commit');
+    assert(!Number.isNaN(new Date(body.meta.startedAt).getTime()), 'with a readable start time');
+    assertEq(tiles(body).length, 1, 'beside the per-repo map, which is untouched');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a process older than its checkout shows the two commits differing', async () => {
+    const w = mkWorld();
+    // The #64 shape: the tower was started before the code on disk existed.
+    scriptHead(w, ['a'.repeat(40), 'b'.repeat(40)]);
+    const c = await start(w);
+    const { body } = await getJson(c, '/api/health');
+    assertEq(body.meta.bootCommit, 'a'.repeat(40), 'the boot capture is the OLD commit');
+    assertEq(body.meta.currentHead, 'b'.repeat(40), 'and the live read is what is on disk now');
+    assert(body.meta.bootCommit !== body.meta.currentHead, 'which is the staleness the page reads');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('git failing answers two nulls — absence of proof is not staleness', async () => {
+    const w = mkWorld();
+    scriptHead(w, [new Error('spawnSync git ENOENT')]);
+    const c = await start(w);
+    const { status, body } = await getJson(c, '/api/health');
+    assertEq(status, 200, 'the endpoint still answers');
+    assertEq(body.meta.bootCommit, null, 'nothing was captured at boot');
+    assertEq(body.meta.currentHead, null, 'and nothing can be read now');
+    assertEq(tiles(body).length, 1, 'the readings are unaffected');
     await c.stop();
     cleanup(w.root);
   });
@@ -893,7 +955,7 @@ const run = async () => {
     const repos = await getJson(c, '/api/repos');
     assertEq(repos.body.length, 0, 'empty');
     const health = await getJson(c, '/api/health');
-    assertEq(Object.keys(health.body).length, 0, 'no tiles, no error page');
+    assertEq(tiles(health.body).length, 0, 'no tiles, no error page');
     await c.stop();
     cleanup(w.root);
   });

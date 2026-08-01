@@ -83,8 +83,15 @@ A few things worth knowing before changing it:
   framework's file wholesale. It is the `backend` spelling rather than `admin`
   because the shell layout picks the admin pair only for URLs containing
   `/admin`, and the tower's pages sit at clean top-level URLs.
-- **The repo selector is page chrome, not the sidebar's `selector` block.** The
-  roster is fetched at runtime; the sidebar JSON is baked at build time.
+- **The project switch is the framework's SELECTOR module, filled at runtime**
+  — the dropdown the classy shell draws above the nav, turned on by the
+  `selector` block in that same sidebar JSON and filled by `libs/tower/
+  sidebar.js`, which `libs/tower/page.js` writes into the menu and wires. The
+  roster is fetched at runtime and the sidebar JSON is baked at build time, so
+  the one item in that block is a placeholder that makes Liquid ship the `ul`;
+  the entries are markup from the `repos` feed like everything else, and the
+  same page JS patches the button's label and rewrites the nav's own links to
+  carry `?repo=`.
 - **Charts, refreshing in place and markdown are the FRAMEWORK's.** The chart
   helpers come from `__main_assets__/js/libs/charts.js` (Chart.js is a
   dependency of `@omega.js/web`, dynamically imported into its own chunk — the

@@ -13,6 +13,7 @@
 //
 
 import { issueKey, LOCAL_ONLY_NOTICE } from './format.js';
+import { inScope, selectedSlugs } from './scope.js';
 
 /** The raw result of one feed: `{ ok, data, status, reason }`, or null before its first read. */
 export const feed = (state, name) => state.feeds[name] || null;
@@ -69,12 +70,16 @@ export const health = (state) => {
 };
 
 /** The roster entries the selection leaves in play. */
-export const reposFor = (state) => repos(state).filter((repo) => !state.selectedRepo || repo.slug === state.selectedRepo);
+export const reposFor = (state) => {
+  const slugs = selectedSlugs(state);
+  return repos(state).filter((repo) => inScope(slugs, repo.slug));
+};
 
 /** The open issues the selection leaves in play. */
 export const issuesFor = (state) => {
   const payload = board(state);
-  return ((payload && payload.issues) || []).filter((issue) => !state.selectedRepo || issue.repo === state.selectedRepo);
+  const slugs = selectedSlugs(state);
+  return ((payload && payload.issues) || []).filter((issue) => inScope(slugs, issue.repo));
 };
 
 /**
@@ -104,12 +109,13 @@ export const issueByKey = (state, key) => {
  *
  * @param {object} state the runtime's state
  * @param {string} cwd the working directory to place
- * @returns {boolean} true when nothing is selected, or when the cwd is the
- *   selected repo or sits under it
+ * @returns {boolean} true when nothing is selected, or when the cwd is one of
+ *   the selected repos or sits under one
  */
 export const inSelectedRepo = (state, cwd) => {
-  if (!state.selectedRepo) return true;
-  const paths = repos(state).filter((repo) => repo.slug === state.selectedRepo).map((repo) => repo.path);
+  const slugs = selectedSlugs(state);
+  if (!slugs.length) return true;
+  const paths = repos(state).filter((repo) => inScope(slugs, repo.slug)).map((repo) => repo.path);
   return paths.some((base) => cwd === base || String(cwd || '').startsWith(`${base}/`));
 };
 

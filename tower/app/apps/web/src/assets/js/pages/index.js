@@ -13,12 +13,12 @@ import {
 } from '../libs/tower/state.js';
 import {
   esc, num, empty, problem, shortPath, statCell, statgrid, card, pill, cap,
-  modelBadge, STATUSES, statusColor, LOCAL_ONLY_NOTICE, localOnlyNotice,
+  modelBadge, statusBreakdown, LOCAL_ONLY_NOTICE, localOnlyNotice,
 } from '../libs/tower/format.js';
 import { chartSlot, doughnutChart } from '__main_assets__/js/libs/charts.js';
 import { loading, swap } from '@omega.js/client/modules/live-page';
 import { issueItem, externalLink } from '../libs/tower/modal.js';
-import { crewActivity } from '../libs/tower/agent.js';
+import { crewActivity, cardMuted } from '../libs/tower/agent.js';
 
 /** Sum a health field across the repos in play; nulls (unknowable) are skipped. */
 const total = (state, field) => reposFor(state)
@@ -101,6 +101,9 @@ const waiting = (state) => {
 // (how long it has been up, not what it last did) because the tick rewrites
 // that attribute every second from the same arithmetic — a sentence written
 // only here would survive one second and no more.
+// The ROW goes muted with the glyph on it: a session quiet longer than a minute
+// stays in the table, faint, until five (#99). Same class as the crew card
+// wears, marked `data-live-card` so the second hand decides it too.
 const stateCell = (session, now) => {
   // Empty is the builder saying `none` — quiet too long to draw at all.
   const indicator = crewActivity(session, now);
@@ -127,7 +130,7 @@ const crew = (state) => {
     const { shown, hidden } = cap(live);
     body = `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
       <thead><tr><th>repo</th><th>chat</th><th>state</th><th>model</th></tr></thead>
-      <tbody>${shown.map((session) => `<tr>
+      <tbody>${shown.map((session) => `<tr class="${cardMuted(session, now)}" data-live-card>
         <td class="text-nowrap">${esc(shortPath(session.cwd))}</td>
         <td>${esc(session.chatName || '—')}</td>
         <td>${stateCell(session, now)}</td>
@@ -192,21 +195,17 @@ const healthPanel = (state) => {
 // doughnut: the question this panel answers is what SHARE of the queue is
 // blocked or unspecced, and a ring says a share where a row of bars said that
 // many unrelated heights. The box is taller than the bars needed because the legend
-// sits under the ring and carries the labels the axis used to.
-const statusSeries = (issues) => STATUSES.map((status) => issues.filter((issue) => (issue.status || '') === status.key).length);
-
+// sits under the ring and carries the labels the axis used to. The series is
+// statusBreakdown's, so an unlabeled issue is a visible slice rather than a
+// ring quietly summing short of the count beside it (#118).
 const shape = (state) => (issuesFor(state).length
-  ? card('The queue by status', chartSlot('overview-status', 260, statusSeries(issuesFor(state))), { class: 'mt-4' })
+  ? card('The queue by status', chartSlot('overview-status', 260, statusBreakdown(issuesFor(state)).values), { class: 'mt-4' })
   : '');
 
 const drawShape = (state) => {
   const issues = issuesFor(state);
   if (!issues.length) return;
-  doughnutChart('overview-status', {
-    labels: STATUSES.map((status) => status.label),
-    values: statusSeries(issues),
-    colors: STATUSES.map((status) => statusColor(status.key)),
-  });
+  doughnutChart('overview-status', statusBreakdown(issues));
 };
 
 /**

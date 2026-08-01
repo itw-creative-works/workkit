@@ -605,6 +605,48 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  await test('a file the manifest stopped naming is pruned from the clone', () => {
+    // Issue #117: #107 renamed the runner entry, and a clone seeded before it
+    // kept the old script forever. `brief/` in the clone is engine territory,
+    // so what the manifest no longer names is what a rename left behind.
+    const world = mkWorld();
+    seeded(world);
+    const retired = path.join(world.tower, 'brief', 'jobs', 'claude-cloud.sh');
+    const retiredDeep = path.join(world.tower, 'brief', 'gone', 'nested', 'old.js');
+    fs.writeFileSync(retired, '# last month’s runner\n');
+    fs.mkdirSync(path.dirname(retiredDeep), { recursive: true });
+    fs.writeFileSync(retiredDeep, '// also gone\n');
+
+    const pruned = seeded(world);
+    assert(/rc=0/.test(pruned.out), `the removal counts as a change: ${pruned.out}`);
+    assert(!fs.existsSync(retired), 'the retired script is gone');
+    assert(!fs.existsSync(retiredDeep), 'and so is one under a folder of its own');
+    assert(!fs.existsSync(path.join(world.tower, 'brief', 'gone')), 'the folder it emptied went with it');
+    for (const { dest } of runnerPairs()) {
+      assert(fs.existsSync(path.join(world.tower, dest)), `${dest}, which the manifest names, survived`);
+    }
+
+    // Idempotent: with nothing left to prune the run is a no-op again.
+    const again = seeded(world);
+    assert(/rc=2/.test(again.out), `a second run removes nothing: ${again.out}`);
+    cleanup(world.root);
+  });
+
+  await test('the prune touches nothing outside the runner folder', () => {
+    const world = mkWorld();
+    seeded(world);
+    const mine = path.join(world.tower, 'apps', 'web', 'src', 'notes.md');
+    fs.mkdirSync(path.dirname(mine), { recursive: true });
+    fs.writeFileSync(mine, '# the project’s own\n');
+    fs.writeFileSync(path.join(world.tower, 'README.md'), '# the home repo\n');
+
+    const again = seeded(world);
+    assert(/rc=2/.test(again.out), `nothing in the clone counted as a change: ${again.out}`);
+    assertEq(fs.readFileSync(mine, 'utf8'), '# the project’s own\n', 'the project’s file is untouched');
+    assert(fs.existsSync(path.join(world.tower, 'README.md')), 'and so is what sits at the root');
+    cleanup(world.root);
+  });
+
   await test('an incomplete checkout warns and seeds what it has', () => {
     const world = mkWorld();
     const partial = path.join(world.root, 'partial-kit');
@@ -977,6 +1019,20 @@ const run = async () => {
     assert(/1 of \d+ file\(s\) differ/.test(out), `and how much of it, got: ${out}`);
     assert(/workkit setup/.test(out), 'and the command that heals it');
     assert(/rc=1/.test(out), 'and counts');
+    cleanup(world.root);
+  });
+
+  await test('a retired file awaiting the prune is drift, not current', () => {
+    // #117: the seed now removes what the manifest stopped naming, so a clone
+    // holding such a file is one setup would still change — doctor must not
+    // call it current.
+    const world = withRunner();
+    const retired = path.join(world.tower, 'brief', 'jobs', 'claude-cloud.sh');
+    fs.writeFileSync(retired, '# last month’s runner\n');
+    const { out } = runnerDoctor(world);
+    assert(/1 retired file\(s\) await pruning/.test(out), `it names the leftover, got: ${out}`);
+    assert(/workkit setup/.test(out) && /rc=1/.test(out), `and warns, got: ${out}`);
+    assert(fs.existsSync(retired), 'doctor only reads — the file is still there');
     cleanup(world.root);
   });
 

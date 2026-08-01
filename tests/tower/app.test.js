@@ -123,10 +123,14 @@ const drawnIndicator = ({ phase, stamps, age, title }) => {
   const label = el('span', 'classy-micro text-body-secondary', { liveAge: '' });
   label.text = age;
   const wrapper = el('span', 'd-inline-flex align-items-center gap-1', stamps).append(icon, label);
+  // The CARD the indicator sits on, which a page marks so the tick can mute it
+  // when the agent goes quiet (#99) — the crew card and the Overview's row both
+  // carry `data-live-card`.
+  const card = el('div', 'card h-100', { liveCard: '' }).append(wrapper);
   // Nothing above is a tick — reset the counters so the first one starts at nil.
-  const parts = { wrapper, icon, glyph, spoken, label };
+  const parts = { wrapper, icon, glyph, spoken, label, card };
   for (const part of Object.values(parts)) part.writes = 0;
-  return { ...parts, host: el('div').append(wrapper) };
+  return { ...parts, host: el('div').append(card) };
 };
 
 /**
@@ -165,6 +169,10 @@ const run = async () => {
   // chrome.js is markup from state, like format.js — the DOM it goes into is
   // page.js's, which is why the split it describes is askable here.
   const chrome = await load('chrome.js');
+  // scope.js is the `?repo=` value read and written — strings and arrays, no
+  // DOM — and sidebar.js is markup from state, chrome.js's shape exactly.
+  const scope = await load('scope.js');
+  const sidebar = await load('sidebar.js');
   // api.js fixes its origin from `location` at import — stub it (and the
   // `window` override hatch) just long enough to load the module.
   globalThis.location = { href: 'http://localhost:4300/' };
@@ -218,10 +226,12 @@ const run = async () => {
   });
 
   await test('the board’s columns are the pipeline in order, Building between Specced and Blocked', () => {
-    assertEq(format.STATUSES.map((s) => s.key).join(','), 'inbox,specced,building,blocked,parked,',
-      'left to right, ending with the No-status column');
-    assertEq(format.STATUSES.map((s) => s.label).join(','), 'Inbox,Specced,Building,Blocked,Parked,No status',
+    assertEq(format.STATUSES.map((s) => s.key).join(','), 'inbox,specced,building,blocked,parked',
+      'left to right, and the pipeline is all of it');
+    assertEq(format.STATUSES.map((s) => s.label).join(','), 'Inbox,Specced,Building,Blocked,Parked',
       'and each column is titled the way a human reads it');
+    assertEq(format.STATUSES.length, 5, 'five lanes — a missing label is not a place an issue lives (#118)');
+    assert(!format.STATUSES.some((s) => !s.key), 'so no column stands for the absence of one');
   });
 
   await test('every status has a colour, and one the pipeline does not name still has one', () => {
@@ -230,7 +240,7 @@ const run = async () => {
     }
     assertEq(format.statusToken('nonsense'), '--omega-ink-muted', 'an unknown status is drawn, not dropped');
     assert(format.statusToken('building') !== format.statusToken(''),
-      'in-flight work and the No-status column never share a colour');
+      'in-flight work and a status the vocabulary does not name never share a colour');
   });
 
   await test('a priority is drawn from the theme, and the unlabelled middle is neutral', () => {
@@ -248,7 +258,7 @@ const run = async () => {
   });
 
   await test('a status chip is the colour its Board column header carries', () => {
-    for (const status of format.STATUSES.filter((one) => one.key)) {
+    for (const status of format.STATUSES) {
       const chip = format.statusChip(status.key);
       assert(chip.includes(`--omega-tone: ${format.statusColor(status.key)}`), `${status.key} is drawn in the column’s own token`);
       assert(chip.includes('omega-badge-tone'), 'through the framework’s tone chip, never a colour of its own');
@@ -256,6 +266,69 @@ const run = async () => {
     }
     assertEq(format.statusChip(''), '', 'an issue carrying no status draws no chip');
     assert(!format.statusChip('<img src=x>').includes('<img'), 'a hostile status is escaped');
+  });
+
+  // ── The alert that replaced the No-status column (#118) ──────────────────
+  //
+  // A missing `status:` label is a pipeline fault the daily heal repairs, not a
+  // place an issue lives, so it is drawn as an alarm above the board instead of
+  // a sixth lane. These are the questions that lane used to answer.
+
+  await test('issues carrying no status label become one danger alert, not a column', () => {
+    const markup = format.noStatusAlert([
+      { repo: 'ITW/workkit', number: 4, title: 'Wire the thing', url: 'https://github.com/ITW/workkit/issues/4' },
+      { repo: 'ITW/workkit', number: 9, title: 'Other thing', status: '', url: 'https://github.com/ITW/workkit/issues/9' },
+      { repo: 'ITW/workkit', number: 12, title: 'Fine', status: 'building', url: 'https://github.com/ITW/workkit/issues/12' },
+    ]);
+    assert(markup.includes('alert-danger'), 'in the theme’s danger tone, which no ordinary board state uses');
+    assert(markup.includes('2 issues carry no status label'), 'counting only the ones missing a label');
+    assert(markup.includes('href="https://github.com/ITW/workkit/issues/4"'), 'each one a link to its GitHub page');
+    assert(markup.includes('href="https://github.com/ITW/workkit/issues/9"'), 'including the one whose label is the empty string');
+    assert(!markup.includes('/issues/12'), 'and an issue that carries a status is not in it');
+    assert(markup.includes('target="_blank"') && markup.includes('rel="noopener"'), 'opening away from the board, like every other external link');
+  });
+
+  await test('the alert says the singular when there is one, and nothing at all when there are none', () => {
+    const one = format.noStatusAlert([{ repo: 'ITW/workkit', number: 4, title: 'Alone', url: 'u' }]);
+    assert(one.includes('1 issue carries no status label'), 'one issue is not "1 issues"');
+    assertEq(format.noStatusAlert([{ repo: 'ITW/workkit', number: 4, status: 'inbox', title: 'Fine', url: 'u' }]), '',
+      'a board whose every issue is labelled draws nothing — the normal day');
+    assertEq(format.noStatusAlert([]), '', 'and neither does an empty board');
+  });
+
+  await test('the alert names the repo only when the board is showing several', () => {
+    const issues = [{ repo: 'ITW/workkit', number: 4, title: 'Wire the thing', url: 'u' }];
+    const many = format.noStatusAlert(issues, true);
+    assert(many.includes('ITW/workkit') && many.includes('#4'), 'a multi-repo board qualifies the issue by repo, as its cards do');
+    const one = format.noStatusAlert(issues, false);
+    assert(!one.includes('ITW/workkit') && one.includes('#4'), 'and a single-repo board does not repeat what the whole page already says');
+  });
+
+  await test('a hostile title in the alert renders as text', () => {
+    const markup = format.noStatusAlert([{
+      repo: '<img src=x>', number: 4, title: '<script>alert(1)</script>', url: '" onmouseover="x',
+    }], true);
+    assert(!markup.includes('<script>'), 'the title is escaped');
+    assert(!markup.includes('<img'), 'and so is the repo slug');
+    assert(!markup.includes('" onmouseover="x"'), 'and a url cannot break out of its attribute');
+  });
+
+  await test('the chart series keeps unlabeled issues visible, and only while they exist', () => {
+    // #118: the Board surfaces a missing status as its danger alert; a chart
+    // that silently dropped those issues would sum short of the open count
+    // beside it. Hard-coded expectations either side of the boundary.
+    const clean = format.statusBreakdown([
+      { status: 'inbox' }, { status: 'building' }, { status: 'building' },
+    ]);
+    assertEq(clean.labels.join(','), 'Inbox,Specced,Building,Blocked,Parked', 'no drift means five slices, nothing more');
+    assertEq(clean.values.join(','), '1,0,2,0,0', 'each status counts its own');
+    assertEq(clean.labels.length, clean.colors.length, 'labels and colors stay in step');
+
+    const drifted = format.statusBreakdown([{ status: 'inbox' }, { status: '' }, {}]);
+    assertEq(drifted.labels[drifted.labels.length - 1], 'No status', 'an unlabeled issue is a visible slice');
+    assertEq(drifted.values.join(','), '1,0,0,0,0,2', 'counted, so the ring sums to the open count');
+    assertEq(drifted.values.reduce((sum, value) => sum + value, 0), 3, 'nothing dropped');
+    assert(drifted.colors[drifted.colors.length - 1] !== format.statusColor('blocked'), 'and its color is no pipeline status’s');
   });
 
   await test('a priority chip is drawn through the same system, at both ends', () => {
@@ -502,6 +575,22 @@ const run = async () => {
     assertEq(state.issuesFor(one)[0].repo, 'workkit', 'and only its issues');
   });
 
+  await test('a comma list narrows to the SUBSET it names, not to nothing', () => {
+    // The bug class #104 hunts: `?repo=` became a list, and any predicate still
+    // comparing it as one slug matches no repo at all and empties the page.
+    const roster = [...ROSTER, { slug: 'dotfiles', path: '/repos/dotfiles', name: 'dotfiles' }];
+    const two = mkState({
+      repos: roster,
+      board: { issues: [{ repo: 'workkit', number: 1 }, { repo: 'omega', number: 2 }, { repo: 'dotfiles', number: 3 }] },
+      sessions: [{ cwd: '/repos/ITW/workkit' }, { cwd: '/repos/Omega/omega/packages/web' }, { cwd: '/repos/dotfiles' }],
+    }, 'workkit,omega');
+    assertEq(state.reposFor(two).map((repo) => repo.slug).join('|'), 'workkit|omega', 'the two repos named');
+    assertEq(state.issuesFor(two).map((issue) => issue.number).join('|'), '1|2', 'their issues, and not the third repo’s');
+    assertEq(state.sessionsFor(two).length, 2, 'and the sessions under either of them');
+    assert(state.inSelectedRepo(two, '/repos/Omega/omega'), 'a cwd in the second repo of the list is in scope');
+    assert(!state.inSelectedRepo(two, '/repos/dotfiles'), 'and one outside the list is not');
+  });
+
   await test('a session is placed by its cwd — the defect the Crew page shipped with', () => {
     const one = mkState({ repos: ROSTER }, 'workkit');
     assert(state.inSelectedRepo(one, '/repos/ITW/workkit'), 'the repo root itself');
@@ -600,6 +689,33 @@ const run = async () => {
     assert(source.includes('data-column='), 'the columns are drop targets');
     assert(source.includes('moveError = answer.reason'), 'a refused write becomes the line the page shows');
     assert(source.includes('await state.refresh(\'board\')'), 'and a landed one forces the sweep the next poll would otherwise stale over');
+  });
+
+  await test('the no-status alert is drawn from the SCOPED issues, so a repo out of scope neither shows nor counts', () => {
+    // The alert is markup from values (format.js) and the narrowing is
+    // state.js's, so what the page contributes is handing one to the other —
+    // which is exactly what an out-of-scope unlabelled issue leaking onto the
+    // board would break.
+    const scoped = mkState({
+      repos: ROSTER,
+      board: {
+        issues: [
+          { repo: 'workkit', number: 1, title: 'In scope, no label', url: 'https://gh/workkit/1' },
+          { repo: 'omega', number: 2, title: 'Out of scope, no label', url: 'https://gh/omega/2' },
+        ],
+      },
+    }, 'workkit');
+    const markup = format.noStatusAlert(state.issuesFor(scoped), false);
+    assert(markup.includes('1 issue carries no status label'), 'only the one in scope is counted');
+    assert(markup.includes('https://gh/workkit/1'), 'and it is the one linked');
+    assert(!markup.includes('https://gh/omega/2'), 'the other repo’s is not on this board at all');
+
+    const fs = require('fs');
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    assert(/noStatusAlert\(all, showRepo\)/.test(source), 'the page hands the alert the scoped list, not the raw payload');
+    assert(/const labelled = all\.filter\(\(issue\) => issue\.status\)/.test(source),
+      'and the columns and their denominator are drawn from the labelled ones alone (#118)');
+    assert(!/No status/.test(source), 'the column that used to hold them is gone, comments and all');
   });
 
   group('tower/app: crew — the tree');
@@ -720,8 +836,8 @@ const run = async () => {
   await test('an agent that is moving is working, one that just stopped is idle, and a quiet one is gone', () => {
     assertEq(agent.activityPhase({ state: 'working', lastActivity: NOW - 5000 }, NOW), 'working', 'running and fresh');
     assertEq(agent.activityPhase({ state: 'done', lastActivity: NOW - 2000 }, NOW), 'idle', 'stopped, but only just');
-    assertEq(agent.activityPhase({ state: 'working', lastActivity: NOW - 5 * 60000 }, NOW), 'none', 'a session quiet five minutes shows nothing, whatever the API still calls it');
-    assertEq(agent.activityPhase({ state: 'done', lastActivity: NOW - 5 * 60000 }, NOW), 'none', 'and neither does one that finished five minutes ago');
+    assertEq(agent.activityPhase({ state: 'working', lastActivity: NOW - 10 * 60000 }, NOW), 'none', 'a session quiet ten minutes shows nothing, whatever the API still calls it');
+    assertEq(agent.activityPhase({ state: 'done', lastActivity: NOW - 10 * 60000 }, NOW), 'none', 'and neither does one that finished ten minutes ago');
   });
 
   await test('the gray band is reachable — the state word alone can never decide it', () => {
@@ -740,9 +856,33 @@ const run = async () => {
 
   await test('the cutoff is a minute, and the boundary belongs to the indicator', () => {
     assertEq(agent.ACTIVITY_WINDOW_MS, 60000, 'one minute');
-    assertEq(agent.activityPhase({ state: 'done', lastActivity: NOW - 60000 }, NOW), 'idle', 'exactly a minute is still shown');
-    assertEq(agent.activityPhase({ state: 'done', lastActivity: NOW - 60001 }, NOW), 'none', 'a millisecond past it is not');
-    assertEq(agent.activityPhase({ state: 'working', lastActivity: NOW - 61000 }, NOW), 'none', 'the word working does not exempt anything from it');
+    assertEq(agent.activityPhase({ state: 'done', lastActivity: NOW - 60000 }, NOW), 'idle', 'exactly a minute is still gray-but-live');
+    assertEq(agent.activityPhase({ state: 'done', lastActivity: NOW - 60001 }, NOW), 'quiet', 'a millisecond past it is muted, not gone');
+    assertEq(agent.activityPhase({ state: 'working', lastActivity: NOW - 61000 }, NOW), 'quiet', 'the word working does not exempt anything from it');
+  });
+
+  await test('a briefly quiet agent stays on the page for five minutes, muted (#99)', () => {
+    // The defect this proves against: one boundary for both questions. An agent
+    // that stops for ninety seconds — between turns, waiting on a tool — used
+    // to vanish from the Crew page outright, so the page said nobody was
+    // running while four agents were. Muted and still IS the honest middle.
+    assertEq(agent.QUIET_WINDOW_MS, 5 * 60000, 'five minutes before it leaves');
+    assertEq(agent.activityPhase({ state: 'working', lastActivity: NOW - 5000 }, NOW), 'working', 'inside the working window it still spins');
+    assertEq(agent.activityPhase({ state: 'working', lastActivity: NOW - 60000 }, NOW), 'idle', 'at the minute it is gray and still on the clock');
+    assertEq(agent.activityPhase({ state: 'working', lastActivity: NOW - 60001 }, NOW), 'quiet', 'a millisecond past the minute it goes muted');
+    assertEq(agent.activityPhase({ state: 'done', lastActivity: NOW - 3 * 60000 }, NOW), 'quiet', 'three minutes in it is still there');
+    assertEq(agent.activityPhase({ state: 'done', lastActivity: NOW - 5 * 60000 }, NOW), 'quiet', 'exactly five minutes is the last second it is drawn');
+    assertEq(agent.activityPhase({ state: 'done', lastActivity: NOW - (5 * 60000 + 1) }, NOW), 'none', 'and a millisecond past THAT it is gone');
+  });
+
+  await test('the muted band is a class the page already ships, on the card and on the row', () => {
+    assertEq(agent.mutedClass('working'), '', 'a working agent is not muted');
+    assertEq(agent.mutedClass('idle'), '', 'nor one that only just stopped');
+    assertEq(agent.mutedClass('quiet'), agent.MUTED_CLASS, 'a quiet one wears the muted class');
+    assertEq(agent.mutedClass('none'), agent.MUTED_CLASS, 'and so does one whose indicator has gone entirely');
+    assertEq(agent.MUTED_CLASS, 'text-body-secondary', 'the framework\'s own muted text class — no new colour pairing');
+    assertEq(agent.cardMuted({ state: 'working', lastActivity: NOW - 5000 }, NOW), '', 'a card draws it from the node it already has');
+    assertEq(agent.cardMuted({ state: 'working', lastActivity: NOW - 90000 }, NOW), agent.MUTED_CLASS, 'through the one arithmetic, never a second threshold');
   });
 
   await test('the Board draws the glyph only for work an agent actually holds', () => {
@@ -796,7 +936,9 @@ const run = async () => {
     const idle = agent.activityIcon('idle');
     assert(idle.includes('fa-circle-notch') && !idle.includes('fa-spin'), 'the same glyph, still');
     assert(!idle.includes('title='), 'with no hover text when none was given');
-    assertEq(agent.activityIcon('none'), '', 'and a quiet agent draws nothing at all');
+    const quiet = agent.activityIcon('quiet');
+    assert(quiet.includes('omega-tower-activity--quiet') && !quiet.includes('fa-spin'), 'the muted band is the same glyph, still');
+    assertEq(agent.activityIcon('none'), '', 'and an agent past the five minutes draws nothing at all');
     assert(agent.activityIcon('working').includes('visually-hidden'), 'the word survives for a screen reader, which has no colour to read');
   });
 
@@ -810,6 +952,10 @@ const run = async () => {
     assert(markup.includes('>12s<'), 'twelve seconds since it last moved');
     assert(markup.includes('title="running for 3m"'), 'and three minutes since it started');
     assertEq(agent.crewActivity({ state: 'done', lastActivity: NOW - 10 * 60000 }, NOW), '', 'a card whose agent went quiet loses the indicator entirely');
+    const muted = agent.crewActivity({ state: 'working', lastActivity: NOW - 90000, aliveSince: NOW - 3 * 60000 }, NOW);
+    assert(muted.includes('omega-tower-activity--quiet'), 'ninety seconds in, the glyph is still drawn — muted');
+    assert(!muted.includes('fa-spin'), 'and it has stopped turning');
+    assert(muted.includes('>1m<'), 'with the same age beside it as ever');
     assert(agent.crewActivity({ state: 'working' }, NOW).includes('up for an unknown span'), 'a node with no times still says the honest thing');
   });
 
@@ -835,8 +981,10 @@ const run = async () => {
     assertEq(agent.activityTick(stamps(5000), NOW).phase, 'working', 'running and fresh');
     assertEq(agent.activityTick(stamps(20000), NOW).phase, 'working', 'exactly two poll cycles still spins');
     assertEq(agent.activityTick(stamps(20001), NOW).phase, 'idle', 'a millisecond past it goes gray');
-    assertEq(agent.activityTick(stamps(60000), NOW).phase, 'idle', 'exactly a minute is still on screen');
-    assertEq(agent.activityTick(stamps(60001), NOW).phase, 'none', 'and a millisecond past THAT is gone');
+    assertEq(agent.activityTick(stamps(60000), NOW).phase, 'idle', 'exactly a minute is still on the clock');
+    assertEq(agent.activityTick(stamps(60001), NOW).phase, 'quiet', 'and a millisecond past THAT is muted');
+    assertEq(agent.activityTick(stamps(5 * 60000), NOW).phase, 'quiet', 'five minutes is the last second it is drawn');
+    assertEq(agent.activityTick(stamps(5 * 60000 + 1), NOW).phase, 'none', 'past five minutes it is gone');
     assertEq(agent.activityTick(stamps(2000, 'done'), NOW).phase, 'idle', 'the state word still decides the motion');
     assertEq(agent.activityTick({ liveState: 'working' }, NOW).phase, 'working', 'a stampless element falls back to the word, as the paint does');
     assertEq(agent.activityTick({}, NOW).phase, 'none', 'and an element carrying nothing draws nothing');
@@ -926,12 +1074,31 @@ const run = async () => {
     assertEq(drawn.icon.querySelector('i'), drawn.glyph, 'it is the same glyph, restyled');
   });
 
-  await test('the sixtieth second empties the wrapper and takes it out of the walk', () => {
+  await test('the sixtieth second mutes the card instead of taking it off the page (#99)', () => {
     const drawn = drawnIndicator({
       phase: 'idle', age: '60s', title: 'running for 3m',
       stamps: { liveState: 'done', liveTs: String(NOW - 60000), liveAlive: String(NOW - 3 * 60000) },
     });
     secondHand.applyLive(drawn.host, NOW + 1);
+    assertEq(drawn.wrapper.wipes, 0, 'the indicator is still there');
+    assertEq(drawn.icon.className, 'omega-tower-activity omega-tower-activity--quiet', 'wearing the muted band');
+    assertEq(drawn.spoken.textContent, 'quiet', 'and saying so to a screen reader');
+    assert(drawn.card.className.split(' ').includes('text-body-secondary'), 'the card it sits on is muted with it, live — not at the next poll');
+    assertEq(drawn.host.querySelectorAll('[data-live-ts]').length, 1, 'and it stays in the walk, so it can come back');
+    // Coming back is a fresher stamp, which a feed brings; the mute comes off
+    // the same second the phase does.
+    drawn.wrapper.dataset.liveTs = String(NOW - 1000);
+    secondHand.applyLive(drawn.host, NOW + 2);
+    assert(!drawn.card.className.split(' ').includes('text-body-secondary'), 'an agent that moves again is not muted a second longer');
+  });
+
+  await test('the five-minute mark empties the wrapper and takes it out of the walk', () => {
+    const drawn = drawnIndicator({
+      phase: 'quiet', age: '5m', title: 'running for 3m',
+      stamps: { liveState: 'done', liveTs: String(NOW - 5 * 60000), liveAlive: String(NOW - 3 * 60000) },
+    });
+    secondHand.applyLive(drawn.host, NOW + 1);
+    assert(drawn.card.className.split(' ').includes('text-body-secondary'), 'the card is muted on its way out');
     assertEq(drawn.wrapper.wipes, 1, 'past the cutoff the indicator is not gray, it is gone');
     assertEq(drawn.wrapper.children.length, 0, 'the glyph and its label with it');
     assertEq(drawn.wrapper.dataset.liveTs, undefined, 'and the stamp is gone too');
@@ -985,6 +1152,32 @@ const run = async () => {
     const disable = /@media \(prefers-reduced-motion: reduce\) \{\s*\.omega-tower-activity \.fa-spin \{ animation: none; \}/.exec(sheet);
     assert(disable, 'and reduced motion turns this animation off by name');
     assert(disable.index > sheet.indexOf('.omega-tower-activity .fa-spin {'), 'after the rule it overrides, so it still wins the tie');
+  });
+
+  await test('the muted band borrows the gray the still glyph already wears', () => {
+    // No new colour pairing for #99: the quiet phase names the SAME faint token
+    // the idle one does, so there is one gray on the tower rather than two.
+    const fs = require('fs');
+    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
+    const rule = /\.omega-tower-activity--idle,\s*\.omega-tower-activity--quiet \{ color: (.+?); \}/.exec(sheet);
+    assert(rule, 'the two bands share one rule');
+    assert(rule[1].includes('--omega-ink-faint'), 'and it is the theme\'s faint ink, not a hex of its own');
+  });
+
+  await test('both crew surfaces mark the card the tick mutes (#99)', () => {
+    // The defect this proves against: the mute drawn only at paint time. The
+    // feeds land every ten seconds and the crossing is measured in seconds, so
+    // the card has to carry the hook the second hand walks — the same bet the
+    // `data-live-*` stamps beside it make.
+    const fs = require('fs');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    for (const name of ['crew.js', 'index.js']) {
+      const source = fs.readFileSync(path.join(pages, name), 'utf8');
+      assert(source.includes('data-live-card'), `${name} marks the element that goes muted`);
+      assert(/import \{[^}]*cardMuted[^}]*\} from '\.\.\/libs\/tower\/agent\.js'/.test(source), `${name} draws that mute from the one arithmetic, never a threshold of its own`);
+    }
+    const clock = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'libs', 'tower', 'clock.js'), 'utf8');
+    assert(clock.includes('data-live-card'), 'and the second hand walks them');
   });
 
   await test('every role has its own glyph, in the colour that class is drawn in everywhere else', () => {
@@ -1273,12 +1466,12 @@ const run = async () => {
     assertEq(ended.rows.writes, 0, 'so the dialog is left saying what it last knew');
     secondHand.applyLive(ended.host, NOW + 25000);
     assertEq(ended.icon.className, 'omega-tower-activity omega-tower-activity--idle', 'and the second hand takes it gray');
-    secondHand.applyLive(ended.host, NOW + 90000);
+    secondHand.applyLive(ended.host, NOW + 6 * 60000);
     assertEq(ended.wrapper.children.length, 0, 'and then away');
   });
 
   await test('an indicator that aged out comes back when the agent does', () => {
-    const entry = { ...AGENT, id: 'agent-back', lastActivity: NOW - 90000 };
+    const entry = { ...AGENT, id: 'agent-back', lastActivity: NOW - 6 * 60000 };
     modal.agentTrigger(entry);
     // A dialog opened on an agent quiet past the cutoff has no indicator at all
     // — there is no element to patch, so the refresh redraws the header.
@@ -1362,30 +1555,32 @@ const run = async () => {
 
   const CHROME = { ...mkState({ repos: ROSTER }), pending: false, stamp: 'read 10:00:00' };
 
-  await test('the frame draws the roster, the selection and the region the status goes in', () => {
+  await test('the frame draws Refresh and the region the status goes in, and no repo control at all', () => {
     const frame = chrome.chromeMarkup(CHROME);
-    assert(frame.includes('<option value="workkit">workkit</option>'), 'every slug is an option');
-    assert(frame.includes('>All repos (2)<'), 'and the all-repos option counts them');
     assert(frame.includes('id="tower-refresh"'), 'Refresh is in the frame');
     assert(frame.includes('data-tower-status'), 'with an empty region the status is written into');
     assert(!frame.includes('spinner-border') && !frame.includes('read 10:00:00'), 'and nothing that changes on a read');
-    assert(chrome.chromeMarkup({ ...CHROME, selectedRepo: 'omega' }).includes('<option value="omega" selected>'), 'a selection is marked on its option');
+    // The selection moved to the sidebar (#104), where the nav that carries it
+    // from page to page is — the dropdown above the body is gone with it.
+    assert(!frame.includes('tower-repo') && !frame.includes('<select'), 'the repo dropdown is gone');
+    assert(!frame.includes('workkit'), 'and the frame names no repo at all');
   });
 
-  await test('a read leaves the frame — including the select — byte for byte the same', () => {
+  await test('a read leaves the frame byte for byte the same', () => {
     // The defect: the frame was rewritten on both halves of every poll, so a
-    // dropdown open when a read started was closed by the read landing.
+    // control open when a read started was closed by the read landing.
     const reading = { ...CHROME, pending: true, stamp: 'read 10:00:00' };
     const landed = { ...CHROME, pending: false, stamp: 'read 10:00:30' };
     assertEq(chrome.chromeMarkup(reading), chrome.chromeMarkup(landed), 'the same markup either way');
     assertEq(chrome.chromeKey(reading), chrome.chromeKey(landed), 'and the key the runtime compares says so');
   });
 
-  await test('the key changes for exactly the two things the frame shows', () => {
-    assert(chrome.chromeKey(CHROME) !== chrome.chromeKey({ ...CHROME, selectedRepo: 'omega' }), 'a new selection redraws it');
+  await test('the key changes for the one thing the frame still shows', () => {
+    assertEq(chrome.chromeKey(CHROME), chrome.chromeKey({ ...CHROME, selectedRepo: 'omega' }), 'a selection no longer touches this strip');
     const grown = { ...mkState({ repos: [...ROSTER, { slug: 'dotfiles', path: '/repos/dotfiles', name: 'dotfiles' }] }), pending: false };
-    assert(chrome.chromeKey(CHROME) !== chrome.chromeKey(grown), 'and so does a repo joining the roster');
-    assertEq(chrome.chromeKey(mkState({})), '', 'an unread roster is no key at all, never undefined');
+    assertEq(chrome.chromeKey(CHROME), chrome.chromeKey(grown), 'and neither does a repo joining the roster');
+    assert(chrome.chromeKey(CHROME) !== chrome.chromeKey({ ...CHROME, tokenMode: true }), 'the Token button is what redraws it');
+    assertEq(chrome.chromeKey(mkState({})), '', 'and an unread state is no key at all, never undefined');
   });
 
   await test('the status says whether a read is in flight and when the last one landed', () => {
@@ -1404,6 +1599,138 @@ const run = async () => {
     assert(two.includes('>2 feeds unavailable<'), 'two, plural');
     assert(!chrome.statusMarkup(CHROME, []).includes('classy-chip'), 'and a healthy read draws no chip');
     assert(!chrome.statusMarkup(CHROME, [{ name: 'x', reason: '<img src=x>' }]).includes('<img'), 'a hostile reason is escaped');
+  });
+
+  group('tower/app: scope — the selection in the URL');
+
+  await test('a `?repo=` value parses to the set of slugs it names', () => {
+    assertEq(scope.parseRepos('').length, 0, 'nothing selected is every repo');
+    assertEq(scope.parseRepos(null).length, 0, 'and so is an absent parameter');
+    assertEq(scope.parseRepos('workkit').join(','), 'workkit', 'one slug is one slug');
+    assertEq(scope.parseRepos('workkit,omega').join('|'), 'workkit|omega', 'a comma list is the subset, in the order it names it');
+    assertEq(scope.parseRepos(' workkit , omega ').join('|'), 'workkit|omega', 'whitespace around a slug is not part of it');
+    assertEq(scope.parseRepos('workkit,,omega,workkit').join('|'), 'workkit|omega', 'blanks drop and a repeat counts once');
+    assertEq(scope.parseRepos('ITW/workkit,Omega/omega').join('|'), 'ITW/workkit|Omega/omega', 'an owner/name slug survives whole');
+  });
+
+  await test('a set of slugs formats back to the value it was parsed from', () => {
+    assertEq(scope.formatRepos([]), '', 'every repo is written as no parameter at all');
+    assertEq(scope.formatRepos(['workkit']), 'workkit', 'one slug');
+    assertEq(scope.formatRepos(['workkit', 'omega']), 'workkit,omega', 'and a subset is comma-separated');
+    assertEq(scope.formatRepos(scope.parseRepos('workkit,omega')), 'workkit,omega', 'the round trip is the identity');
+    assertEq(scope.formatRepos([' workkit ', 'workkit']), 'workkit', 'and the same cleaning applies on the way out');
+  });
+
+  await test('the predicate takes a SET — one slug, several, or none at all', () => {
+    assert(scope.inScope([], 'workkit') && scope.inScope([], 'anything'), 'no selection leaves every repo in play');
+    assert(scope.inScope(['workkit'], 'workkit'), 'one slug is that repo');
+    assert(!scope.inScope(['workkit'], 'omega'), 'and only that repo');
+    const two = scope.parseRepos('workkit,omega');
+    assert(scope.inScope(two, 'workkit') && scope.inScope(two, 'omega'), 'a subset keeps every member');
+    assert(!scope.inScope(two, 'dotfiles'), 'and nothing else');
+  });
+
+  await test('the runtime reads its selection through the same parse', () => {
+    assertEq(scope.selectedSlugs({ selectedRepo: 'workkit,omega' }).length, 2, 'the raw query value is what state carries');
+    assertEq(scope.selectedSlugs({ selectedRepo: '' }).length, 0, 'empty is every repo');
+    assertEq(scope.selectedSlugs({}).length, 0, 'and so is a state with no selection on it yet');
+    assertEq(scope.selectedSlugs(null).length, 0, 'null never throws');
+  });
+
+  await test('a nav link carries the selection, and only the tower’s own pages are rewritten', () => {
+    assertEq(scope.scopedHref('/board', 'workkit'), '/board?repo=workkit', 'the value is set');
+    assertEq(scope.scopedHref('/board?repo=omega', 'workkit'), '/board?repo=workkit', 'a link already carrying one is rewritten, not appended to');
+    assertEq(scope.scopedHref('/board?repo=omega', ''), '/board', 'and an empty selection takes the parameter off');
+    assertEq(scope.scopedHref('/', 'workkit,omega'), '/?repo=workkit,omega', 'a subset stays readable — the comma is not escaped');
+    assertEq(scope.scopedHref('/board?api=http://127.0.0.1:8693', 'workkit'), '/board?api=http%3A%2F%2F127.0.0.1%3A8693&repo=workkit', 'another parameter is kept');
+    assertEq(scope.scopedHref(scope.scopedHref('/board', 'workkit'), 'workkit'), '/board?repo=workkit', 'rewriting twice writes the same link');
+    for (const href of ['/', '/board', '/crew', '/usage', '/health', '/brief', '/board/', '/board.html', '/board?repo=omega']) {
+      assert(scope.isScopedPath(href), `${href} is a tower page`);
+    }
+    for (const href of ['/dashboard/account', '/pricing', 'https://github.com/ITW-Creative-Works/workkit', '#']) {
+      assert(!scope.isScopedPath(href), `${href} is left alone`);
+    }
+    // The selector menu's placeholder: a hash-only href goes nowhere by design,
+    // and rewriting it would turn "stay here" into a navigation to Overview.
+    assert(!scope.isScopedPath('#anything'), 'a fragment is never a page');
+  });
+
+  group('tower/app: sidebar — the project selector');
+
+  await test('an unread roster fills nothing into the menu', () => {
+    assertEq(sidebar.menuMarkup(mkState({})), '', 'nothing to switch between yet — the theme’s placeholder stays');
+    assertEq(sidebar.sidebarKey(mkState({})), '', 'and the key says so, never undefined');
+  });
+
+  await test('the menu is one dropdown item per repo, under All projects', () => {
+    const markup = sidebar.menuMarkup(mkState({ repos: ROSTER }));
+    assert(markup.includes('data-tower-scope="workkit"') && markup.includes('data-tower-scope="omega"'), 'every slug is an entry');
+    assert(markup.includes('data-tower-scope=""'), 'and All projects is the empty selection');
+    assert(markup.includes('>All projects</button>'), 'named in words');
+    assert(/data-tower-scope=""[^>]*aria-current="true"/.test(markup), 'nothing selected marks All as the one in force');
+    assert(markup.includes('<button type="button" class="dropdown-item active" data-tower-scope=""'), 'in Bootstrap’s own dropdown-item shape');
+  });
+
+  await test('a selected repo is the marked item, and the subset filter is gone', () => {
+    const markup = sidebar.menuMarkup(mkState({ repos: ROSTER }, 'workkit'));
+    assert(/class="dropdown-item active" data-tower-scope="workkit"/.test(markup), 'the repo in force is marked');
+    assert(!/class="dropdown-item active" data-tower-scope=""/.test(markup), 'and All is not');
+    assert(!markup.includes('data-tower-scope-slug'), 'one repo is not a subset, so there is nothing to filter');
+  });
+
+  await test('all-projects mode carries the checkbox subset below a divider, checked to what is in force', () => {
+    const all = sidebar.menuMarkup(mkState({ repos: ROSTER }));
+    assert(all.includes('<hr class="dropdown-divider"/>'), 'the filter is separated from the entries above it');
+    assert(all.includes('data-tower-scope-slug="workkit"') && all.includes('data-tower-scope-slug="omega"'), 'a box per repo');
+    assertEq((all.match(/ checked/g) || []).length, 2, 'no selection means every repo is in play, and every box says so');
+    assert(all.includes('<label class="form-check-label classy-micro" for="tower-scope-0">workkit</label>'), 'each box carries its name, tied to it');
+
+    const subset = sidebar.menuMarkup(mkState({ repos: [...ROSTER, { slug: 'dotfiles', path: '/repos/dotfiles' }] }, 'workkit,omega'));
+    assert(/class="dropdown-item active" data-tower-scope=""/.test(subset), 'All stays the active entry — a subset is the whole board, narrowed');
+    assertEq((subset.match(/ checked/g) || []).length, 2, 'exactly the two the URL names');
+    assert(/data-tower-scope-slug="dotfiles"(?![^>]* checked)/.test(subset), 'the repo left out is unchecked');
+  });
+
+  await test('the selector button says which of the three modes is in force', () => {
+    const none = sidebar.selectorLabel(mkState({ repos: ROSTER }));
+    assertEq(none.name, 'All projects', 'no selection is the whole board');
+    assertEq(none.initial, 'A', 'and the tile is the name’s first character, upcased');
+    assert(none.env.includes('2'), 'the second line counts the roster behind it');
+
+    const one = sidebar.selectorLabel(mkState({ repos: ROSTER }, 'workkit'));
+    assertEq(one.name, 'workkit', 'one repo is named');
+    assertEq(one.initial, 'W', 'and it is its own initial');
+    assertEq(one.env, '1 of 2 repos', 'against the roster it was picked out of');
+
+    const many = sidebar.selectorLabel(mkState({ repos: [...ROSTER, { slug: 'dotfiles', path: '/x' }] }, 'workkit,omega'));
+    assertEq(many.name, '2 projects', 'a subset is counted, not listed');
+    assertEq(many.env, '2 of 3 repos', 'against the same roster');
+
+    const unread = sidebar.selectorLabel(mkState({}));
+    assertEq(unread.name, 'All projects', 'before the roster answers the button is not blank');
+    assert(!/\d/.test(unread.env), 'and it counts nothing it has not read');
+
+    // A shared link can name a repo the roster no longer carries. Every page
+    // narrows to nothing then, and the button NAMING that slug is what explains
+    // the empty board — reading "All projects" there would be a lie.
+    const offRoster = sidebar.selectorLabel(mkState({ repos: ROSTER }, 'gone/away'));
+    assertEq(offRoster.name, 'gone/away', 'an off-roster selection is still the selection');
+    assertEq(offRoster.env, '1 of 2 repos', 'counted against the roster it is not on');
+  });
+
+  await test('the menu is rewritten for the selection and the roster, and for nothing a poll does', () => {
+    const CHROME_STATE = mkState({ repos: ROSTER });
+    assertEq(sidebar.sidebarKey({ ...CHROME_STATE, pending: true, stamp: 'a' }), sidebar.sidebarKey({ ...CHROME_STATE, pending: false, stamp: 'b' }),
+      'a read landing is not a reason to redraw the boxes under the pointer');
+    assert(sidebar.sidebarKey(CHROME_STATE) !== sidebar.sidebarKey({ ...CHROME_STATE, selectedRepo: 'omega' }), 'a new selection redraws it');
+    const grown = mkState({ repos: [...ROSTER, { slug: 'dotfiles', path: '/repos/dotfiles' }] });
+    assert(sidebar.sidebarKey(CHROME_STATE) !== sidebar.sidebarKey(grown), 'and so does a repo joining the roster');
+  });
+
+  await test('a hostile slug is text, in the attribute and in the label', () => {
+    const markup = sidebar.menuMarkup(mkState({ repos: [{ slug: '"><img src=x>', path: '/x' }] }));
+    assert(!markup.includes('<img'), 'no markup comes through the roster');
+    assert(markup.includes('&quot;&gt;&lt;img src=x&gt;'), 'it is drawn as the text it is');
   });
 
   group('tower/app: api — the feed adapter');
@@ -1522,7 +1849,7 @@ const run = async () => {
 
   await test('the five columns that are a status are the only ones a card moves between', () => {
     assertEq(api.MOVABLE_STATUSES.join(','), 'inbox,specced,building,blocked,parked', 'the pipeline, from the column list itself');
-    assertEq(api.moveRequest(CARD, '', true), null, 'the No-status column is not a destination');
+    assertEq(api.moveRequest(CARD, '', true), null, 'the absence of a label is not a destination — nothing on the board names it');
     assertEq(api.moveRequest({ ...CARD, status: null }, 'inbox', true), null, 'and an issue triage has not reached has no label to remove');
     assertEq(api.moveRequest(CARD, 'shipped', true), null, 'a status the pipeline does not name is not one');
   });
@@ -2429,6 +2756,20 @@ const run = async () => {
       'and so does the health panel, which is about readings and not about the roster it lists');
   });
 
+  await test('the Health page names a tower older than its checkout, and nothing otherwise', () => {
+    // The page imports the framework, so it is out of reach of these suites
+    // (see the header) — what can be pinned is the source of the decision: the
+    // notice is drawn from BOTH commits being present and differing, which is
+    // what keeps an unreadable git and a published copy silent.
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'health.js'), 'utf8');
+    assert(/meta\.bootCommit && meta\.currentHead && meta\.bootCommit !== meta\.currentHead/.test(source),
+      'both shas present and differing is the whole condition');
+    assert(/stale\(meta\)[\s\S]{0,200}npm run tower/.test(source), 'and the notice it draws names the restart command');
+    assert(/restartNotice\(meta\)/.test(source), 'which the render actually places');
+    assert(/problem\(/.test(source), 'in the framework’s existing warning shape, no new colour pairing');
+    assert(/API started/.test(source), 'and the start time is on the page beside it');
+  });
+
   await test('the published Board drags like the local one — no read-only line left anywhere', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
     assert(/draggable = \(issue\) => WRITABLE/.test(source), 'a card picks up wherever there is something to write with');
@@ -2442,6 +2783,46 @@ const run = async () => {
     assert(/warnings\(forRepo\(payload\.warnings \|\| \[\], selected\), MODE === 'github'\)/.test(source),
       'the local-only line is drawn from MODE, the one signal every page reads');
     assert(!/Boolean\(payload\.summaries\)/.test(source), 'an absent API key is not load-bearing any more');
+  });
+
+  await test('the runtime fills the sidebar’s selector menu and carries the scope onto the nav', () => {
+    // page.js reaches for `document` at import and is out of reach of these
+    // suites (see the header), so what is pinned is the wiring: where the menu
+    // is written, what writes it, and that the nav links are rewritten on the
+    // selection AND on every paint — the two halves of #104's promise that
+    // moving Overview → Board keeps the scope.
+    const source = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
+    assert(/menuMarkup\(state\)/.test(source), 'the menu is markup from state, like the chrome');
+    assert(/sidebarKey\(state\)/.test(source), 'and it is rewritten only when what it shows changed');
+    assert(/classList\.contains\('show'\)/.test(source), 'never while the viewer has it open, unless the change came from inside it');
+    assert(/#app-sidebar \.classy-side__selector/.test(source), 'written into the framework’s own selector, reached through its button');
+    assert(!/#app-sidebar ul/.test(source), 'never as a bare sidebar ul — the nav is one too');
+    assert(/data-tower-projects/.test(source), 'and claimed with the one attribute the runtime marks it by');
+    assert(/data-bs-auto-close/.test(source), 'ticking a subset box does not close the menu it is in');
+    assert(/data-tower-scope\]/.test(source) && /data-tower-scope-slug/.test(source), 'both controls are wired — the entries and the subset boxes');
+    assert(/scopedHref\(/.test(source), 'the nav links are rewritten through the one formatter');
+    assert(/scopeNav\(/.test(source), 'and the rewrite has a name the paint and the change both call');
+    assert(!/tower-repo/.test(source), 'and the chrome’s dropdown is gone, handler and all');
+  });
+
+  await test('every page reads the selection as a SET, and no consumer compares it as a slug', () => {
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    // The Board's repo column and its denominator, and the Brief's narrowing,
+    // are the two pages that read the selection directly rather than through
+    // state.js — both converted to the set (#104).
+    const board = fs.readFileSync(path.join(pages, 'board.js'), 'utf8');
+    assert(/selectedSlugs\(state\)/.test(board), 'the Board asks for the slugs');
+    assert(!/state\.selectedRepo/.test(board), 'and never for the raw value it used to compare');
+    const brief = fs.readFileSync(path.join(pages, 'brief.js'), 'utf8');
+    assert(/selectedSlugs\(state\)/.test(brief), 'so does the Brief');
+    assert(!/state\.selectedRepo/.test(brief), 'and it compares nothing as a slug either');
+    // state.js is the rest of them — every page narrows through these three.
+    const reader = fs.readFileSync(path.join(libs, 'state.js'), 'utf8');
+    assertEq((reader.match(/selectedSlugs\(state\)/g) || []).length, 3, 'reposFor, issuesFor and inSelectedRepo, all through the one parse');
+    assert(!/state\.selectedRepo ===|repo\.slug === state\.selectedRepo/.test(reader), 'no equality against the raw value survives');
+    // The intake dialog pre-selects a repo, and a subset names no single one.
+    const intake = fs.readFileSync(path.join(libs, 'intake.js'), 'utf8');
+    assert(/selectedSlugs|parseRepos/.test(intake), 'the intake dialog parses it too');
   });
 
   await test('the chrome carries the Token button only where there is a token to forget', () => {

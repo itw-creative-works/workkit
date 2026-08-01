@@ -23,12 +23,17 @@
 
 import { readAnyFeed, submitIntake, WRITABLE } from './api.js';
 import { selectedRepo } from './page.js';
+import { parseRepos } from './scope.js';
 import { esc } from './format.js';
 import { isLocalHost, lockedIntakeNotice } from './token.js';
 
 /** The roster select, filled from /api/repos. An empty roster is a state, not an error. */
 const fillRepos = async (select) => {
-  const wanted = select.value || selectedRepo();
+  // The dialog files against ONE repo, so the page's scope pre-selects it only
+  // when the scope names exactly one — every repo, or a subset, names no
+  // particular repo to file into and the select opens on the roster's first.
+  const scoped = parseRepos(selectedRepo());
+  const wanted = select.value || (scoped.length === 1 ? scoped[0] : '');
   const result = await readAnyFeed('/api/repos');
   const slugs = result.ok && Array.isArray(result.data) ? result.data.map((repo) => repo.slug).filter(Boolean) : [];
 

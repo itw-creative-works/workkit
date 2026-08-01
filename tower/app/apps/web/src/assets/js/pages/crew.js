@@ -26,7 +26,7 @@ import { normalize, splitCrew, crewCount, rootLabel, connectorFlow } from '../li
 import {
   esc, empty, problem, compact, statCell, statgrid, card, pill, modelBadge, classBadge, shortPath,
 } from '../libs/tower/format.js';
-import { crewActivity, roleIcon } from '../libs/tower/agent.js';
+import { crewActivity, cardMuted, roleIcon } from '../libs/tower/agent.js';
 import { agentTrigger } from '../libs/tower/modal.js';
 import { loading, swap } from '@omega.js/client/modules/live-page';
 
@@ -73,7 +73,12 @@ const role = (entry, isRoot) => (isRoot ? 'manager' : entry.agentClass);
 // working agent is the spinning glyph beside the title (#46) and a pill saying
 // the same word twice; idle and stale are neither working nor fresh, and the
 // pill is the only thing that names them.
-const node = (entry, isRoot, now) => `<div class="card h-100 omega-interactive omega-interactive--lift" ${agentTrigger({ ...entry, label: label(entry, isRoot), role: role(entry, isRoot) })}>
+//
+// A card that has said nothing for a minute goes MUTED and stays put until five
+// (#99) — the mute is a class on the card itself, marked `data-live-card` so the
+// second hand can take it off the moment the agent moves again rather than at
+// the next poll.
+const node = (entry, isRoot, now) => `<div class="card h-100 omega-interactive omega-interactive--lift ${cardMuted(entry, now)}" data-live-card ${agentTrigger({ ...entry, label: label(entry, isRoot), role: role(entry, isRoot) })}>
   <div class="card-body p-3">
     <div class="text-center mb-2">${roleIcon(role(entry, isRoot))}</div>
     <div class="d-flex align-items-center gap-2 mb-1">

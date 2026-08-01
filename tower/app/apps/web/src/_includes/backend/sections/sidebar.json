@@ -10,15 +10,31 @@
 // backend pair is what renders. Both spellings feed the SAME markup include
 // (global/sections/app-sidebar.html), so nothing is lost by not being "admin".
 //
-// The repo SELECTOR is deliberately absent here: the roster is fetched from the
-// API at runtime, and this file is baked at build time — a static dropdown
-// could only ever list repos that were on the machine when the site was built.
-// The selector lives in each page's own chrome instead, rendered by the page JS
-// from /api/repos, and its choice is held in `?repo=`.
+// The project switch is the framework's SELECTOR module, enabled here and
+// filled at runtime: the theme draws the button and its dropdown above the nav,
+// and the page JS writes the menu into it (libs/tower/sidebar.js) from the same
+// `repos` feed the pages read — All projects, one entry per repo, and the
+// subset filter under a divider. Nothing about the roster can be baked, since
+// this file is built once and the roster is whatever repos are on the machine
+// when the page is open; the one dropdown item below is the placeholder that
+// makes Liquid ship the `ul` for the JS to fill. The choice is held in
+// `?repo=`, which the page JS also writes onto every link below so it survives
+// the nav (issue #104).
 {
   logo: {
     href: '/',
     class: 'filter-adaptive',
+  },
+  selector: {
+    enabled: true,
+    name: 'All projects',
+    env: 'every repo on the roster',
+    dropdown: [
+      {
+        label: 'All projects',
+        href: '#',
+      },
+    ],
   },
   links: [
     {

@@ -316,11 +316,12 @@ export async function postJson(path, payload) {
 
 /**
  * The statuses a card may be dragged between — the pipeline's five, taken from
- * the column list rather than written a second time. The board's last column,
- * "No status", is not one of them: a move is `from` one label `to` another, and
- * an issue triage has not reached carries neither end of that.
+ * the column list rather than written a second time. A move is `from` one label
+ * `to` another, so an issue triage has not reached is at neither end of one:
+ * the board draws it in an alert rather than a column, and no card of it exists
+ * to pick up (#118).
  */
-export const MOVABLE_STATUSES = STATUSES.map((status) => status.key).filter(Boolean);
+export const MOVABLE_STATUSES = STATUSES.map((status) => status.key);
 
 /**
  * What a drop becomes: the body the status endpoint takes, or null when the
