@@ -24,6 +24,28 @@ const LIB = path.join(__dirname, '..', '..', 'jobs', 'brief-dispatch.sh');
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'brief-dispatch-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
+const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
+
+// The "no gh" case cannot ASSUME the machine has none — every Ubuntu runner
+// ships it in /usr/bin (the wk.test.js lesson, issue #114) — so the absence is
+// built: one directory of symlinks to everything on the base PATH except gh.
+const basePathWithout = (dir, command) => {
+  const out = path.join(dir, `path-without-${command}`);
+  fs.mkdirSync(out, { recursive: true });
+  for (const entry of BASE_PATH.split(':')) {
+    let names = [];
+    try { names = fs.readdirSync(entry); } catch { continue; }
+    for (const name of names) {
+      if (name === command) continue;
+      try { fs.symlinkSync(path.join(entry, name), path.join(out, name)); } catch {}
+    }
+  }
+  // An empty mirror would pass the absence assertion vacuously — `sh` proves
+  // the mirror is real before anything leans on it.
+  if (!fs.existsSync(path.join(out, 'sh'))) throw new Error(`basePathWithout built an unusable PATH at ${out}`);
+  return out;
+};
+
 /**
  * A machine the dispatch can be asked of.
  *
@@ -71,9 +93,9 @@ const mkWorld = ({
       WORKFLOW_HOME: workflowHome,
       // Only the shim and the system tools. `jq` lives where the package
       // managers put it, so those directories are on the path — except in the
-      // world that has no `gh` at all, where the real one lives there too and
-      // the whole point is that the tool cannot be found.
-      PATH: gh ? `${bin}:/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin` : `${bin}:/usr/bin:/bin`,
+      // world that has no `gh` at all, which gets a mirror of the base PATH
+      // with gh left out, since a runner ships the real one in /usr/bin.
+      PATH: gh ? `${bin}:/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin` : `${bin}:${basePathWithout(root, 'gh')}`,
     },
   };
 };
