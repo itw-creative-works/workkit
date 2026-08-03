@@ -17,6 +17,9 @@
 //   inFlight   building — the label is what says work has started
 //   warnings   work sitting on the table: uncommitted, unpushed, unreleased
 //
+// `nextUp` is the same board asked one question further: of everything open,
+// the few things this morning could actually move, per repo.
+//
 // Usage:
 //   const { buildBrief } = require('./brief');
 //   buildBrief(board, health, repos);
@@ -51,6 +54,51 @@ const byUrgency = (a, b) => {
   const spread = rank(a) - rank(b);
   if (spread !== 0) return spread;
   return String(a.updatedAt || '').localeCompare(String(b.updatedAt || ''));
+};
+
+// How many items one repo offers a morning. A ranked list is only useful while
+// it is short: past three the section stops being "what to work on next" and
+// becomes the board again, which the brief already carries in full.
+const NEXT_UP_PER_REPO = 3;
+
+/**
+ * What to work on next, per repo — the ranked few, in the order the whats-next
+ * skill reads a board in.
+ *
+ * `blocked` leads because it is waiting on the OWNER: a decision nobody makes
+ * stops everything downstream of it, and it is the only kind of item a morning
+ * can clear without opening an editor. `specced` follows in the same urgency
+ * order every other section uses, since an accepted spec is what may be started
+ * right now. Nothing else is actionable at nine in the morning — `building` is
+ * already somebody's and `inbox` is not a decision yet.
+ *
+ * Grouping is by repo because a morning is spent in one repo at a time, and the
+ * repos arrive in the order their leading item does. A repo with nothing
+ * actionable is left out rather than listed empty.
+ *
+ * @param {object[]} issues the sweep, already sorted byUrgency
+ * @returns {Array<{repo: string, items: object[]}>}
+ */
+const nextUpFrom = (issues) => {
+  const actionable = [
+    ...issues.filter((i) => i.status === 'blocked'),
+    ...issues.filter((i) => i.status === 'specced'),
+  ];
+  const byRepo = new Map();
+  for (const issue of actionable) {
+    const items = byRepo.get(issue.repo) || [];
+    if (items.length >= NEXT_UP_PER_REPO) continue;
+    items.push({
+      number: issue.number,
+      title: issue.title,
+      repo: issue.repo,
+      status: issue.status || null,
+      priority: issue.priority || null,
+      url: issue.url,
+    });
+    byRepo.set(issue.repo, items);
+  }
+  return [...byRepo].map(([repo, items]) => ({ repo, items }));
 };
 
 /** The repo's display name — its slug when it has one, else its folder name. */
@@ -137,6 +185,7 @@ const buildBrief = (board, health, repos, generatedAt) => {
     generatedAt: generatedAt || new Date().toISOString(),
     headline: headlineFor(counts),
     counts,
+    nextUp: nextUpFrom(issues),
     waiting,
     ready,
     inFlight,

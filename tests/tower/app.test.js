@@ -2050,7 +2050,10 @@ const run = async () => {
     data: {
       r0: {
         issues: {
-          totalCount: 3,
+          // totalCount stays ahead of the node count so the truncation flag has
+          // something to say; the blocked + specced pair keeps the brief-parity
+          // comparison's nextUp non-empty rather than vacuously equal.
+          totalCount: 5,
           nodes: [{
             number: 81,
             title: 'The live site works off-machine',
@@ -2061,6 +2064,26 @@ const run = async () => {
             comments: { totalCount: 2 },
             labels: { nodes: [{ name: 'status:building' }, { name: 'type:enhancement' }, { name: 'agent:ok' }, { name: 'area:tower' }] },
             assignees: { nodes: [{ login: 'ianwieds' }] },
+          }, {
+            number: 82,
+            title: 'A decision is waiting',
+            url: 'https://github.com/ITW-Creative-Works/workkit/issues/82',
+            body: 'the question',
+            createdAt: '2026-07-28T09:00:00Z',
+            updatedAt: '2026-07-28T10:00:00Z',
+            comments: { totalCount: 1 },
+            labels: { nodes: [{ name: 'status:blocked' }, { name: 'type:bug' }, { name: 'priority:high' }] },
+            assignees: { nodes: [] },
+          }, {
+            number: 83,
+            title: 'An accepted spec sits ready',
+            url: 'https://github.com/ITW-Creative-Works/workkit/issues/83',
+            body: 'the spec',
+            createdAt: '2026-07-27T09:00:00Z',
+            updatedAt: '2026-07-27T10:00:00Z',
+            comments: { totalCount: 0 },
+            labels: { nodes: [{ name: 'status:specced' }, { name: 'type:enhancement' }] },
+            assignees: { nodes: [] },
           }],
         },
       },
@@ -2153,6 +2176,8 @@ const run = async () => {
     const theirs = apiBrief.buildBrief(board, {}, [], stamp);
     assertEq(JSON.stringify({ ...mine, summaries: undefined }), JSON.stringify(theirs),
       'the same sections, the same order, the same headline');
+    assertEq(mine.nextUp[0].items.map((i) => i.number).join(','), '82,83',
+      'and nextUp has entries to compare — blocked before specced, so the parity is not vacuous');
     assertEq(mine.warnings.length, 0, 'the one section a browser cannot answer is empty rather than invented');
   });
 
@@ -2783,6 +2808,18 @@ const run = async () => {
     assert(/warnings\(forRepo\(payload\.warnings \|\| \[\], selected\), MODE === 'github'\)/.test(source),
       'the local-only line is drawn from MODE, the one signal every page reads');
     assert(!/Boolean\(payload\.summaries\)/.test(source), 'an absent API key is not load-bearing any more');
+  });
+
+  await test('the Brief draws what to work on next, and yesterday, only when the payload carries them', () => {
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const source = fs.readFileSync(path.join(pages, 'brief.js'), 'utf8');
+    assert(/nextUp\(forRepo\(payload\.nextUp \|\| \[\], selected\)\)/.test(source),
+      'the ranked list is narrowed by the same selection every other section is');
+    assert(/summaryCard\('What yesterday produced', payload\.findings\)/.test(source), 'the findings card is drawn from the key');
+    assert(/summaryCard\('The week', payload\.week\)/.test(source), 'and the week from its own');
+    assert(/const summaryCard = \(heading, item\) => \(item \?/.test(source),
+      'an absent or null key draws nothing at all — a brief that could not read one says less, never something untrue');
+    assert(/externalLink\(item\.url\)/.test(source), 'every row links to the thing it names');
   });
 
   await test('the runtime fills the sidebar’s selector menu and carries the scope onto the nav', () => {

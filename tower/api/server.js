@@ -51,6 +51,7 @@ const { listSessions } = require('./lib/sessions');
 const { repoHealth } = require('./lib/health');
 const { collectTelemetry } = require('./lib/telemetry');
 const { buildBrief } = require('./lib/brief');
+const { briefSummaries } = require('./lib/summaries');
 
 // TOWER on a phone keypad is 86937; 8693 is what fits a port.
 const DEFAULT_PORT = 8693;
@@ -404,10 +405,22 @@ const createServer = (opts = {}) => {
     meta: { bootCommit, startedAt, currentHead: currentHead() },
   });
 
+  // The published summaries the brief names — a GraphQL round trip like the
+  // board's, and cached on the board's minute rather than on the live slots'
+  // five seconds: a page polling every ten would otherwise ask GitHub for
+  // yesterday's summary six times a minute to hear the same answer all day.
+  const summaries = cached(BOARD_TTL, () => briefSummaries({
+    workflowHome: opts.workflowHome,
+    home: opts.home,
+    exec,
+  }));
+
   // The brief is assembled from the two slots above rather than from reads of
   // its own, so the morning notification and the Brief page cannot disagree:
-  // they are the same board and the same health, one derivation.
-  const brief = () => buildBrief(board(), health(), roster());
+  // they are the same board and the same health, one derivation. The summaries
+  // attach onto it exactly as the 9am job attaches them (jobs/brief-payload.js),
+  // which is what keeps the two payloads one shape.
+  const brief = () => Object.assign(buildBrief(board(), health(), roster()), summaries());
 
   /** The roster's slugs — what both write paths judge a repo against. */
   const slugsNow = () => roster().map((r) => r.slug).filter(Boolean);

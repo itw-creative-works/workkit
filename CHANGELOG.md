@@ -7,6 +7,14 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#54](../../issues/54) — `workkit brief` dispatches today's cloud brief on demand (`--local` rehearses here), and the brief gains three sections: a per-repo "work on this next" list, yesterday's summary Discussion, and the weekly rollup on Mondays.
+
+### Fixed
+
+- [#124](../../issues/124) — The aliveSince test assertion is now a two-sided recency window, so the suite no longer loses a birth-time clock race on CI runners.
+
 ## [0.26.0] - 2026-08-02
 
 ### Added

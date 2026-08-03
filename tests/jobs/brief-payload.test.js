@@ -138,6 +138,9 @@ const mkWorld = () => {
       },
     },
     ghMissing: false,
+    // The home repo's Discussions, as the summaries read finds them. Empty until
+    // a test publishes something, and unreachable only when it says so.
+    discussions: [],
   };
   fs.mkdirSync(world.home, { recursive: true });
 
@@ -148,6 +151,12 @@ const mkWorld = () => {
       return 'gh version 2.0.0\n';
     }
     if (cmd === 'gh' && args[0] === 'api') {
+      // The two GraphQL reads a morning makes, told apart by the query itself:
+      // the board sweep, and the summaries published on the home repo.
+      if (args.join(' ').includes('discussions(first')) {
+        if (world.discussionsError) throw world.discussionsError;
+        return JSON.stringify({ data: { repository: { discussions: { nodes: world.discussions } } } });
+      }
       if (world.boardError) throw world.boardError;
       return JSON.stringify(world.board);
     }
@@ -167,12 +176,30 @@ const captureStderr = (fn) => {
   return text;
 };
 
-const composeIn = (world) => composeBrief({
+const composeIn = (world, generatedAt = STAMP) => composeBrief({
   workflowHome: path.join(world.home, '.workkit'),
   home: world.home,
-  generatedAt: STAMP,
+  generatedAt,
   exec: world.exec,
 });
+
+// The machine's hand-edited settings, naming the home repo the summaries are
+// published on. A world without one is a machine that has no board at all.
+const nameHomeRepo = (world, repo = 'owner/private-home') => fs.writeFileSync(
+  path.join(world.home, '.workkit', 'settings.json'),
+  JSON.stringify({ version: 1, site: { repo, publish: false, url: null } }),
+);
+
+const discussion = (title, day) => ({
+  title,
+  url: `https://github.com/owner/private-home/discussions/${title.replace(/\W+/g, '')}`,
+  createdAt: `${day}T09:00:00Z`,
+});
+
+// Local noon, so the weekday is the same one wherever this suite runs.
+const localNoon = (y, m, d) => new Date(y, m - 1, d, 12, 0, 0).toISOString();
+const MONDAY = localNoon(2026, 8, 3);
+const TUESDAY = localNoon(2026, 8, 4);
 
 const run = async () => {
   group('jobs/brief-payload: composition');
@@ -210,6 +237,68 @@ const run = async () => {
     const out = composeIn(world);
     assertEq(out.counts.open, 0, 'nothing is swept');
     assertEq(out.warnings.length, 0, 'and nothing is on the table');
+    cleanup(world.root);
+  });
+
+  await test('what to work on next rides through the whole composition', () => {
+    const world = mkWorld();
+    const out = composeIn(world);
+    assertEq(out.nextUp.length, 1, 'the one repo has actionable work');
+    assertEq(out.nextUp[0].repo, SLUG, 'named by its slug');
+    assertEq(out.nextUp[0].items.map((i) => i.number).join(','), '18,17',
+      'the decision waiting on the owner leads, then the accepted spec');
+    cleanup(world.root);
+  });
+
+  group('jobs/brief-payload: yesterday and the week');
+
+  await test('the newest daily summary is the findings, every morning', () => {
+    const world = mkWorld();
+    nameHomeRepo(world);
+    world.discussions = [
+      discussion('brief: 2026-08-03', '2026-08-03'),
+      discussion('daily: 2026-08-02', '2026-08-02'),
+      discussion('weekly: 2026-08-02', '2026-08-02'),
+    ];
+    const out = composeIn(world, TUESDAY);
+    assertEq(out.findings.title, 'daily: 2026-08-02', 'what yesterday produced, said by the artifact that recorded it');
+    assert(out.findings.url.includes('/discussions/'), `and its link: ${out.findings.url}`);
+    assert(!('week' in out), 'and a Tuesday carries no rollup at all');
+    cleanup(world.root);
+  });
+
+  await test('Monday, and only Monday, also carries the week', () => {
+    const world = mkWorld();
+    nameHomeRepo(world);
+    world.discussions = [discussion('daily: 2026-08-02', '2026-08-02'), discussion('weekly: 2026-08-02', '2026-08-02')];
+    const monday = composeIn(world, MONDAY);
+    assertEq(monday.week.title, 'weekly: 2026-08-02', 'one brief a day, richer on a Monday');
+    assertEq(monday.findings.title, 'daily: 2026-08-02', 'beside the day before');
+    assert(!('week' in composeIn(world, TUESDAY)), 'the day after asks for no rollup');
+    cleanup(world.root);
+  });
+
+  await test('unreachable Discussions still compose a brief, and the gap is named', () => {
+    const world = mkWorld();
+    nameHomeRepo(world);
+    world.discussionsError = new Error('gh: not authenticated');
+    let out;
+    const stderr = captureStderr(() => { out = composeIn(world, MONDAY); });
+    assertEq(out.ok, true, 'the morning is not lost to a summary nobody could read');
+    assertEq(out.counts.open, 2, 'and the board is all there');
+    assertEq(out.findings, null, 'the key says there was nothing to read');
+    assertEq(out.week, null, 'and so does the rollup');
+    assert(/^brief: no daily summary could be read from owner\/private-home$/m.test(stderr), `the skip is named: ${JSON.stringify(stderr)}`);
+    assert(/^brief: it is Monday and no weekly rollup could be read from owner\/private-home$/m.test(stderr), `both of them: ${JSON.stringify(stderr)}`);
+    cleanup(world.root);
+  });
+
+  await test('a machine with no home repo says nothing about summaries', () => {
+    // It has no board to have read — a fact about the machine, not a gap in
+    // this morning, and a line every day would be noise.
+    const world = mkWorld();
+    const stderr = captureStderr(() => composeIn(world, MONDAY));
+    assertEq(stderr, '', `nothing is said: ${JSON.stringify(stderr)}`);
     cleanup(world.root);
   });
 
@@ -279,6 +368,19 @@ const run = async () => {
     assertEq(parsed.headline, composeIn(world).headline, 'so does the headline');
     assert(/\n  "counts": \{/.test(json), 'indented, not one line — a human reads this over a shoulder');
     cleanup(world.root);
+  });
+
+  await test('the instruction describes the new keys and gives each one a section', () => {
+    assert(/`nextUp` is the same board asked one question further/.test(INSTRUCTION), 'the payload description explains nextUp');
+    assert(/`findings` is the newest daily summary/.test(INSTRUCTION), 'and the findings');
+    assert(/`week` is the weekly rollup, which rides on Mondays/.test(INSTRUCTION), 'and when the week rides');
+    assert(/^WORK ON THIS NEXT: `nextUp`/m.test(INSTRUCTION), 'the response shape has its ranked list');
+    assert(/^YESTERDAY: one line/m.test(INSTRUCTION), 'a line for what yesterday produced');
+    assert(/^THE WEEK: one line/m.test(INSTRUCTION), 'and one for the week');
+    for (const section of ['WORK ON THIS NEXT', 'YESTERDAY', 'THE WEEK']) {
+      assert(new RegExp(`^${section}:[^]*?Omit the section\\n?entirely`, 'm').test(INSTRUCTION),
+        `${section} is omitted when there is nothing to say`);
+    }
   });
 
   await test('run as a script it prints a payload and exits 0', () => {

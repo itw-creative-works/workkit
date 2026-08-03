@@ -16,6 +16,12 @@
 // draws: the summaries published as Discussions on the home repo, which only
 // that side can read, and no warnings, which only the machine can answer.
 //
+// The cards that name a summary (issue #54) hang on the payload's own keys,
+// which the COMPOSED brief carries and the browser's does not — the machine's
+// side reads the newest daily and, on a Monday, the weekly rollup, while a
+// published copy answers the same question with its own summaries card. An
+// absent key draws nothing either way.
+//
 
 import { startPage } from '../libs/tower/page.js';
 import { MODE } from '../libs/tower/api.js';
@@ -86,6 +92,47 @@ const section = (heading, issues, nothing, alarm) => card(heading, issues.length
   alarm: Boolean(alarm) && issues.length > 0,
   class: `mb-4${alarm && issues.length ? ' border-danger' : ''}`,
 });
+
+// ── What this morning could move ───────────────────────────────────────────
+
+// The board asked one question further (issue #54): per repo, the few open items
+// a morning could actually move — decisions first, then accepted specs, three at
+// most. The rank is the API's (tower/api/lib/brief.js); this only draws it, one
+// short list per repo, so a morning reads down its own repo rather than across a
+// merged pile.
+const nextRow = (item) => `<li class="py-2 d-flex align-items-start gap-2">
+  <span class="flex-grow-1">
+    <span class="classy-micro d-block">#${esc(item.number)} · ${esc(item.status || 'open')}${item.priority ? ` · ${esc(item.priority)} priority` : ''}</span>
+    <span class="d-block">${esc(item.title)}</span>
+  </span>
+  ${externalLink(item.url)}
+</li>`;
+
+const nextRepo = (entry) => `<div class="mb-3">
+  <p class="classy-micro text-body-secondary mb-1">${esc(entry.repo)}</p>
+  <ul class="list-unstyled mb-0">${(entry.items || []).map(nextRow).join('')}</ul>
+</div>`;
+
+const nextUp = (rows) => card('Work on this next', rows.length
+  ? `<div class="mb-n3">${rows.map(nextRepo).join('')}</div>`
+  : empty('there is nothing waiting on a decision and nothing specced to start', 'fa-regular fa-circle-check'), {
+  chip: rows.reduce((total, entry) => total + (entry.items || []).length, 0),
+  class: 'mb-4',
+});
+
+// ── Yesterday, and the week ────────────────────────────────────────────────
+
+// The summaries the nightly job publishes, named and linked rather than
+// restated: the artifact that recorded the day is the thing worth opening.
+// A key that is absent or null draws no card at all — a brief composed where
+// Discussions were unreachable says less, never something untrue.
+const summaryCard = (heading, item) => (item ? card(heading, `<div class="d-flex align-items-start gap-2">
+  <span class="flex-grow-1">
+    <span class="classy-micro d-block">${esc(item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '')}</span>
+    <a href="${esc(item.url)}" target="_blank" rel="noopener">${esc(item.title)}</a>
+  </span>
+  ${externalLink(item.url)}
+</div>`, { class: 'mb-4' }) : '');
 
 // The same three numbers the Health page ranks repos by, as the brief's closing
 // line: what is done and not delivered.
@@ -172,9 +219,12 @@ const render = (root, state) => {
   swap(root, `
     ${headline(payload, selected)}
     ${numbers(payload, lists, selected)}
+    ${nextUp(forRepo(payload.nextUp || [], selected))}
     ${section('Waiting on you', lists.waiting, 'nothing is waiting on you', true)}
     ${section('Ready to start', lists.ready, 'nothing is specced')}
     ${section('In flight', lists.inFlight, 'nothing is being built right now')}
+    ${summaryCard('What yesterday produced', payload.findings)}
+    ${summaryCard('The week', payload.week)}
     ${summaries(payload)}
     ${warnings(forRepo(payload.warnings || [], selected), MODE === 'github')}
   `);

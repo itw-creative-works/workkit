@@ -173,7 +173,15 @@ const run = async () => {
     assertEq(s.transcript, file, 'the transcript the state was read from');
     const quiet = Date.now() - s.lastActivity;
     assert(quiet > 4 * MINUTE && quiet < 6 * MINUTE, `lastActivity is the transcript mtime — five minutes ago, got ${Math.round(quiet / 1000)}s`);
-    assert(typeof s.aliveSince === 'number' && s.aliveSince <= Date.now(), 'aliveSince is when the file was created');
+    // The birth time is platform-shaped: APFS pulls it back to the aged mtime,
+    // ext4 keeps creation time, which can round a moment past the Date.now()
+    // sampled here. The window covers both ends instead of a one-sided <= now.
+    assert(
+      typeof s.aliveSince === 'number'
+        && s.aliveSince > Date.now() - 6 * MINUTE
+        && s.aliveSince < Date.now() + 2000,
+      'aliveSince is when the file was created — within the fixture\'s life',
+    );
     cleanup(w.root);
   });
 

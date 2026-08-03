@@ -51,6 +51,11 @@ CAPTURE="$SCRIPT_DIR/wk.sh"
 PUBLISH="$SCRIPT_DIR/publish.sh"
 JOBS_INSTALL="$KIT_DIR/jobs/install.sh"
 TOWER_START="$KIT_DIR/tower/start.sh"
+# The morning, and the one function that hands it to the cloud — the same two
+# files the 9am schedule runs, so `workkit brief` is that morning on demand
+# rather than a second way of doing it.
+MORNING="$KIT_DIR/jobs/morning.sh"
+BRIEF_DISPATCH="$KIT_DIR/jobs/brief-dispatch.sh"
 
 # The plugin, as `claude plugin list` names it, and the marketplace this repo is.
 PLUGIN_ID="workkit@workkit"
@@ -145,6 +150,10 @@ usage: workkit <command> [args]
                        that fixes anything out of reach
   publish              build the dashboard and publish it from the home repo
                        (the daily job does this after the morning brief)
+  brief [--local]      ask for today's brief now: the same cloud run the 9am
+                       schedule dispatches. --local runs the local morning
+                       instead — composed and sent from this machine, the
+                       brief never posted to the home repo
   tower                run the tower here — the JSON API and the dashboard
                        together, until one interrupt ends both
   enable [repo]        write the repo's committed opt-in, then heal it
@@ -912,6 +921,41 @@ cmd_publish() {
   return 0
 }
 
+# Today's brief, asked for now (issue #54). The scheduled morning dispatches the
+# cloud run and this is that same dispatch, through the same one function — the
+# difference is who is listening. Nine o'clock logs a refusal and carries on;
+# a human standing at a terminal is told, and the command fails.
+#
+# `--local` is the rehearsal the job already has: the full local morning, with
+# the brief composed and sent from this machine and never posted to the home
+# repo. The morning's other steps still run where they can — the summaries can
+# post their Discussion and the site publish still fires when it is switched on.
+cmd_brief() {
+  if [[ "${1:-}" == '--local' ]]; then
+    if [[ ! -f "$MORNING" ]]; then
+      printf 'workkit: no morning job beside this engine (%s) — this command needs the workkit checkout\n' "$MORNING" >&2
+      exit 1
+    fi
+    exec bash "$MORNING" --now
+  fi
+  if [[ $# -gt 0 ]]; then
+    printf 'workkit: brief takes --local or nothing, not %s\n' "$1" >&2
+    exit 1
+  fi
+  if [[ ! -f "$BRIEF_DISPATCH" ]]; then
+    printf 'workkit: no brief dispatch beside this engine (%s) — this command needs the workkit checkout\n' "$BRIEF_DISPATCH" >&2
+    exit 1
+  fi
+  # shellcheck source=../jobs/brief-dispatch.sh
+  . "$BRIEF_DISPATCH"
+  if ! dispatch_brief; then
+    say_warn "brief: the day could not be handed to the cloud — $DISPATCH_REASON"
+    exit 1
+  fi
+  say_ok "$DISPATCH_LINE"
+  say_info "watch it: https://github.com/$DISPATCH_SLUG/actions/workflows/$BRIEF_WORKFLOW"
+}
+
 cmd_doctor() {
   local attention=0
   say_head "workkit doctor — $KIT_DIR"
@@ -1017,6 +1061,7 @@ case "${1:-help}" in
   update)  shift; cmd_update "$@" ;;
   doctor)  shift; cmd_doctor "$@" ;;
   publish) shift; cmd_publish "$@" ;;
+  brief)   shift; cmd_brief "$@" ;;
   tower)
     shift
     # The tower lives in the checkout, not the engine — a partial checkout

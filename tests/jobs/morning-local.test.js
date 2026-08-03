@@ -530,6 +530,22 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  await test('a checkout missing brief-dispatch.sh is a briefless morning, not an abort', async () => {
+    // The lib is sourced under `set -e`: without its own guard a partial
+    // checkout would end the morning at the source line, costing the publish.
+    const world = mkWorld({ home: 'owner/private-home', dispatch: true });
+    const stray = path.join(world.root, 'stray-jobs');
+    fs.mkdirSync(stray, { recursive: true });
+    fs.copyFileSync(SCRIPT, path.join(stray, 'morning.sh'));
+    const res = spawnSync('bash', [path.join(stray, 'morning.sh')], { encoding: 'utf8', timeout: 60000, env: world.env });
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(world.dispatched().length, 0, 'nothing was triggered');
+    assert(/partial checkout/.test(world.log()), `the reason names the missing lib: ${world.log()}`);
+    assert(/no brief this morning/.test(world.log()), `and the morning is briefless, not broken: ${world.log()}`);
+    await settle();
+    cleanup(world.root);
+  });
+
   await test('no secrets at all and an unlistable repo are told apart', async () => {
     // Both are briefless mornings, but the line's whole job is the honest why:
     // a successful listing that names nothing means setup never wired the

@@ -538,6 +538,34 @@ const byUrgency = (a, b) => {
   return String(a.updatedAt || '').localeCompare(String(b.updatedAt || ''));
 };
 
+// `nextUp` is that module's rule too, and restated for the same reason: the few
+// items a morning could move, per repo, decisions before accepted specs, three
+// at most. The published copy carries it because the payloads are one shape —
+// the suite compares them key for key.
+const NEXT_UP_PER_REPO = 3;
+
+const nextUpFrom = (issues) => {
+  const actionable = [
+    ...issues.filter((i) => i.status === 'blocked'),
+    ...issues.filter((i) => i.status === 'specced'),
+  ];
+  const byRepo = new Map();
+  for (const issue of actionable) {
+    const items = byRepo.get(issue.repo) || [];
+    if (items.length >= NEXT_UP_PER_REPO) continue;
+    items.push({
+      number: issue.number,
+      title: issue.title,
+      repo: issue.repo,
+      status: issue.status || null,
+      priority: issue.priority || null,
+      url: issue.url,
+    });
+    byRepo.set(issue.repo, items);
+  }
+  return [...byRepo].map(([repo, items]) => ({ repo, items }));
+};
+
 /** The headline — the order of consequence, in the API's own words. */
 export const headlineFor = (counts) => {
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -581,6 +609,7 @@ export const buildBrief = (board, opts = {}) => {
     generatedAt: opts.generatedAt || new Date().toISOString(),
     headline: headlineFor(counts),
     counts,
+    nextUp: nextUpFrom(issues),
     waiting,
     ready,
     inFlight,

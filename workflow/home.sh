@@ -78,6 +78,7 @@ WK_HOME_RUNNER_FILES=(
   'tower/api/lib/board.js:brief/tower/api/lib/board.js'
   'tower/api/lib/health.js:brief/tower/api/lib/health.js'
   'tower/api/lib/brief.js:brief/tower/api/lib/brief.js'
+  'tower/api/lib/summaries.js:brief/tower/api/lib/summaries.js'
 )
 
 # The remote, and the one seam the suite needs: pointed at a local bare repo,

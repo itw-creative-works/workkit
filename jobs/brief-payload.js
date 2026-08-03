@@ -33,6 +33,7 @@ const { discoverRepos } = require('../tower/api/lib/repos');
 const { fetchBoard } = require('../tower/api/lib/board');
 const { repoHealth } = require('../tower/api/lib/health');
 const { buildBrief } = require('../tower/api/lib/brief');
+const { briefSummaries, homeSlugFor } = require('../tower/api/lib/summaries');
 const { collectCcNews, renderCcNews, renderVersionMark } = require('./cc-news');
 
 // The digest instruction. It names the payload's sections rather than the shape
@@ -47,6 +48,12 @@ decision from the owner, \`ready\` is specced, \`inFlight\` is building,
 on the table per repo (uncommitted, unpushed, unreleased). \`ok: false\` means the
 sweep itself failed — report that and its \`reason\`, never a quiet morning.
 
+\`nextUp\` is the same board asked one question further: per repo, the few open
+items this morning could actually move — decisions first, then accepted specs.
+\`findings\` is the newest daily summary published on the home repo (what
+yesterday produced), and \`week\` is the weekly rollup, which rides on Mondays
+only. Either may be null or absent, which means there was none to read.
+
 A \`--- CC NEWS ---\` block may follow the payload: every upstream Claude Code
 CHANGELOG entry that shipped since the last brief, grouped by topic. You judge
 which matter — a new feature the kit could use, a change that could break
@@ -58,10 +65,16 @@ important thing today (<=120 chars total).
 Then these labeled sections, one line per item, tightest useful phrasing:
 WAITING ON YOU: every issue in \`waiting\` — these move only if the owner acts.
 IN FLIGHT: every issue in \`inFlight\`, saying which repo.
+WORK ON THIS NEXT: \`nextUp\`, one line per repo — "repo: #N title, #N title" in
+the order given. Omit the section entirely when \`nextUp\` is empty.
 TODAY'S TOP 3: your pick of the highest-leverage next actions, judged across
 \`ready\`, inbox pressure, and \`warnings\`. Number them.
 ON THE TABLE: only repos in \`warnings\`, as "repo: N uncommitted, N unpushed, N unreleased".
 INBOX: one line — \`counts.inbox\` captured items not yet specced; omit if zero.
+YESTERDAY: one line — \`findings.title\` and its \`findings.url\`. Omit the
+section entirely when \`findings\` is null.
+THE WEEK: one line — \`week.title\` and its \`week.url\`. Omit the section
+entirely when \`week\` is absent or null.
 CC NEWS: only when a CC NEWS block is present — NOT a restating of the block:
 name only the entries that matter to this kit (could break something we built,
 a feature or improvement we should adopt), each as "<version> — what it means
@@ -87,6 +100,34 @@ const warnUnreadable = (board) => {
   const unreadable = ((board && board.repos) || []).filter((r) => r && r.error);
   if (!unreadable.length) return;
   process.stderr.write(`brief: ${unreadable.length} repos unreadable: ${unreadable.map((r) => r.slug).join(', ')}\n`);
+};
+
+/**
+ * The published summaries, onto the payload — the ONE shape both readers of
+ * `buildBrief` attach, so the morning message and the Brief page carry the same
+ * two keys or neither (tower/api/lib/summaries.js owns the Monday rule).
+ *
+ * A summary that could not be read is a NAMED line on stderr and a null key,
+ * beside `warnUnreadable`'s: the brief still composes, and the log says which
+ * part of it is missing rather than leaving a morning quietly thinner. A machine
+ * with NO home repo says nothing at all — it has no board to have read, which is
+ * a fact about the machine rather than a gap in this morning.
+ *
+ * @param {object} payload what buildBrief returned
+ * @param {object} opts composeBrief's own options
+ * @returns {object} the same payload
+ */
+const attachSummaries = (payload, opts) => {
+  const summaries = briefSummaries({
+    generatedAt: payload.generatedAt,
+    workflowHome: opts.workflowHome,
+    home: opts.home,
+    exec: opts.exec,
+  });
+  const home = homeSlugFor(opts);
+  if (home && !summaries.findings) process.stderr.write(`brief: no daily summary could be read from ${home}\n`);
+  if (home && 'week' in summaries && !summaries.week) process.stderr.write(`brief: it is Monday and no weekly rollup could be read from ${home}\n`);
+  return Object.assign(payload, summaries);
 };
 
 /**
@@ -116,6 +157,11 @@ const composeBrief = (opts = {}) => {
   } catch (err) {
     // A read that threw leaves no roster to sweep, and an empty roster sweeps
     // clean — which would read as an empty board rather than as a broken read.
+    // No summaries are attached here. The read that just failed was of this
+    // machine's own state, and the home repo is named in the same folder — a
+    // brief that could not learn what repos exist has no business asking that
+    // folder a second question, and an ok:false payload is a report of a broken
+    // morning rather than a morning to be enriched.
     return buildBrief(
       { ok: false, reason: `the roster read failed: ${err.message}`, issues: [] },
       {},
@@ -129,7 +175,7 @@ const composeBrief = (opts = {}) => {
   const health = {};
   for (const repo of repos) health[repo.path] = repoHealth(repo.path, seam);
 
-  return buildBrief(board, health, repos, opts.generatedAt);
+  return attachSummaries(buildBrief(board, health, repos, opts.generatedAt), opts);
 };
 
 /**

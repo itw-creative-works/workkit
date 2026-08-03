@@ -101,7 +101,14 @@ const mkWorld = ({
     'fi',
     ...(secrets ? [
       'if [[ "$1" == \'secret\' && "$2" == \'list\' ]]; then',
-      `  printf '%s\\n' '${secretList(secrets)}'`,
+      // Shaped like the live tool, which answers JSON only when asked for it:
+      // the secrets wizard reads `--json name,updatedAt`, and the brief dispatch
+      // reads the plain listing, one `NAME<tab>Updated <date>` per line.
+      '  if [[ "$*" == *--json* ]]; then',
+      `    printf '%s\\n' '${secretList(secrets)}'`,
+      '  else',
+      `    printf '%s\\n'${secrets.map(({ name }) => ` '${name}\tUpdated 2026-07-01'`).join('')}`,
+      '  fi',
       '  exit 0',
       'fi',
     ] : []),
@@ -1163,6 +1170,80 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     assertEq(code, 0, 'exit 0');
     assert(fs.existsSync(path.join(repo, W, 'settings.json')), 'the repo’s yes is on disk');
     cleanup(world.root); cleanup(repo);
+  });
+
+  group('workkit brief: today’s brief, asked for now (issue #54)');
+
+  const BOTH_SECRETS = [
+    { name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 30 },
+    { name: 'WORKKIT_GITHUB_TOKEN', days: 30 },
+  ];
+
+  await test('brief dispatches the same cloud run the 9am schedule does', () => {
+    const world = mkWorld({ secrets: BOTH_SECRETS });
+    seedSettings(world, { repo: 'owner/private-home', publish: false, url: null });
+    const { code, out } = runCli(world, ['brief']);
+    assertEq(code, 0, `exit 0, got: ${out}`);
+    const sent = world.ghCalls().filter((c) => c[0] === 'workflow' && c[1] === 'run');
+    assertEq(sent.length, 1, `one workflow run: ${fmtCalls(world.ghCalls())}`);
+    assertEq(sent[0][2], 'brief.yml', 'the brief workflow');
+    assertEq(sent[0][4], 'owner/private-home', 'on the home repo, where the secrets live');
+    assert(/dispatched brief\.yml on owner\/private-home/.test(out), `it says the day went over: ${out}`);
+    assert(out.includes('https://github.com/owner/private-home/actions/workflows/brief.yml'),
+      `and where to watch it: ${out}`);
+    cleanup(world.root);
+  });
+
+  await test('a refusal is loud here — a human asked for this one now', () => {
+    // The scheduled morning logs the same reason and exits 0; at a terminal
+    // there is somebody to tell, so the command fails.
+    const world = mkWorld({ secrets: [{ name: 'WORKKIT_GITHUB_TOKEN', days: 30 }] });
+    seedSettings(world, { repo: 'owner/private-home', publish: false, url: null });
+    const { code, out } = runCli(world, ['brief']);
+    assertEq(code, 1, `exit 1, got: ${out}`);
+    assert(/does not carry CLAUDE_CODE_OAUTH_TOKEN/.test(out), `naming the reason: ${out}`);
+    assertEq(world.ghCalls().filter((c) => c[0] === 'workflow').length, 0, 'and no day went over');
+    cleanup(world.root);
+  });
+
+  await test('brief --local runs the morning here and dispatches nothing', () => {
+    const world = mkWorld({ secrets: BOTH_SECRETS });
+    seedSettings(world, { repo: 'owner/private-home', publish: false, url: null });
+    // The morning itself is the seam: this asserts the command reaches it with
+    // the rehearsal flag, not what a whole morning does (morning-local.test.js).
+    const { kit, script } = mkPartialKit();
+    const morningLog = path.join(kit, 'morning-argv.log');
+    fs.mkdirSync(path.join(kit, 'jobs'), { recursive: true });
+    writeStub(path.join(kit, 'jobs', 'morning.sh'), [recordArgv(morningLog), 'exit 0']);
+    const { code } = runCli(world, ['brief', '--local'], { script });
+    assertEq(code, 0, 'exit 0');
+    assertEq(readArgv(morningLog).map((c) => c.join(' ')).join('; '), '--now',
+      'the rehearsal — composed here, publishing nothing');
+    assertEq(world.ghCalls().filter((c) => c[0] === 'workflow').length, 0, 'and nothing was handed to a runner');
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('brief in a partial checkout says what is missing instead of running nothing', () => {
+    const world = mkWorld({ secrets: BOTH_SECRETS });
+    const { kit, script } = mkPartialKit();
+    const { code, err } = runCli(world, ['brief'], { script });
+    assertEq(code, 1, 'exit 1');
+    assert(err.includes('needs the workkit checkout'), `the error names the cause, got: ${err}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('brief takes --local or nothing at all', () => {
+    const world = mkWorld({ secrets: BOTH_SECRETS });
+    const { code, err } = runCli(world, ['brief', '--cloud']);
+    assertEq(code, 1, 'exit 1');
+    assert(err.includes('--local'), `and says what it does take, got: ${err}`);
+    cleanup(world.root);
+  });
+
+  await test('the map names the command', () => {
+    const world = mkWorld();
+    const { out } = runCli(world, ['help']);
+    assert(/^ {2}brief \[--local\]/m.test(out), `help lists it, got: ${out}`);
   });
 
   await test('tower runs the whole tower — the start wrapper, with the checkout resolved', () => {

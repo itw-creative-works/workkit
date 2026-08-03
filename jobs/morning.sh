@@ -43,10 +43,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE="$SCRIPT_DIR/../workflow"
 
-# The workflow on the home repo that runs this same script on a runner. The
-# dispatch below names it; setup seeds it as .github/workflows/brief.yml.
-BRIEF_WORKFLOW='brief.yml'
-
 # ── Where this run woke up ────────────────────────────────────────────────────
 
 # GITHUB_ACTIONS is the variable Actions always sets, and it is the gate on the
@@ -365,69 +361,6 @@ cloud_brief() {
   fi
 }
 
-# The scheduled brief on this machine is the DISPATCH and nothing more (issue
-# #107): a `workflow_dispatch` on the HOME repo's brief.yml, which runs this same
-# script on a runner with the credentials the compose and the sweep need.
-#
-# The home repo, not this checkout's (issue #91): the workflow and its secrets
-# live on `<login>/workkit`, because the plugin repo is distributed and a
-# consumer cannot set secrets on a repo they do not own. `workkit setup` seeds
-# the workflow there and writes the secrets there, so one slug answers both.
-#
-# Every reason it cannot be made is a NAMED line in the log and a briefless
-# morning — nothing is composed here to cover for it, so the log is the only
-# place that says why nine o'clock was quiet.
-DISPATCH_REASON=''
-DISPATCH_LINE=''
-dispatch_brief() {
-  local slug secrets
-  if [[ ! -f "$ENGINE/lib.sh" || ! -f "$ENGINE/home.sh" ]]; then
-    DISPATCH_REASON="the engine's home-repo library is missing at $ENGINE"
-    return 1
-  fi
-  if ! command -v gh >/dev/null 2>&1; then
-    DISPATCH_REASON='gh is not on this machine'
-    return 1
-  fi
-  # In a subshell: this is one read of a helper, and sourcing the engine into
-  # the job's own shell for it would leak its every function and address.
-  slug="$(. "$ENGINE/lib.sh"; . "$ENGINE/home.sh"; wk_home_slug)" || slug=''
-  if [[ -z "$slug" ]]; then
-    DISPATCH_REASON='no home repo is configured — `workkit setup` creates it'
-    return 1
-  fi
-  # The workflow existing is not the workflow WORKING: `gh workflow run` succeeds
-  # the moment the file is on the default branch, and a runner missing either
-  # credential composes nothing worth having — no OAuth token and it composes
-  # nothing at all, no `WORKKIT_GITHUB_TOKEN` and it sweeps no board. So BOTH
-  # secrets are checked on the same repo first, in one listing.
-  # A FAILED listing and an EMPTY one are different mornings: the first is a
-  # repo this token cannot read, the second a repo that truly has no secrets —
-  # and this line's whole job is saying honestly why nine o'clock was quiet.
-  if ! secrets="$(gh secret list --repo "$slug" 2>/dev/null)"; then
-    DISPATCH_REASON="the secrets on $slug could not be listed"
-    return 1
-  fi
-  if [[ -z "$secrets" ]]; then
-    DISPATCH_REASON="$slug carries no secrets — \`workkit setup\` wires both"
-    return 1
-  fi
-  if ! grep -qE '^CLAUDE_CODE_OAUTH_TOKEN([[:space:]]|$)' <<<"$secrets"; then
-    DISPATCH_REASON="$slug does not carry CLAUDE_CODE_OAUTH_TOKEN — a runner without it composes nothing"
-    return 1
-  fi
-  if ! grep -qE '^WORKKIT_GITHUB_TOKEN([[:space:]]|$)' <<<"$secrets"; then
-    DISPATCH_REASON="$slug does not carry WORKKIT_GITHUB_TOKEN — a runner without it sweeps no board"
-    return 1
-  fi
-  if ! gh workflow run "$BRIEF_WORKFLOW" --repo "$slug" >/dev/null 2>&1; then
-    DISPATCH_REASON="gh workflow run $BRIEF_WORKFLOW on $slug did not land"
-    return 1
-  fi
-  DISPATCH_LINE="brief: dispatched $BRIEF_WORKFLOW on $slug — the cloud runner composes and publishes today's brief"
-  return 0
-}
-
 # The brief composed and sent HERE, which on this machine is the rehearsal
 # (`--now`) and the generic headless runner (`morning.sh <message>`) — never the
 # scheduled morning, which hands the day over instead. It publishes nothing: a
@@ -486,6 +419,18 @@ if (( CLOUD )); then
   . "$SCRIPT_DIR/brief-publish.sh"
   cloud_brief
 elif (( $# == 0 )) && (( MANUAL == 0 )); then
+  # Sourced only where it is used, like the publish above: the dispatch is the
+  # scheduled morning's business alone, and `workkit brief` is the other caller
+  # of the same one function (issue #54).
+  # shellcheck source=./brief-dispatch.sh
+  # A checkout missing the lib is a refusal like any other, not an abort under
+  # set -e — the publish after this must still run.
+  if [[ -f "$SCRIPT_DIR/brief-dispatch.sh" ]]; then
+    . "$SCRIPT_DIR/brief-dispatch.sh"
+  else
+    DISPATCH_REASON="$SCRIPT_DIR/brief-dispatch.sh is missing — a partial checkout"
+    dispatch_brief() { return 1; }
+  fi
   if dispatch_brief; then
     note "$DISPATCH_LINE"
     printf '%s\n' "$DISPATCH_LINE"

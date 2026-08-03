@@ -100,6 +100,48 @@ const run = async () => {
     assertEq(out.ready.map((i) => i.number).join(','), '3,2,1,4', 'high, then oldest first, low last');
   });
 
+  group('tower/brief: what to work on next');
+
+  await test('blocked leads, then specced by priority — three per repo, no more', () => {
+    const board = boardOf([
+      issue(1, { status: 'specced', priority: 'high' }),
+      issue(2, { status: 'specced' }),
+      issue(3, { status: 'blocked' }),
+      issue(4, { status: 'specced', priority: 'low' }),
+      issue(5, { status: 'blocked', priority: 'high' }),
+    ]);
+    const out = buildBrief(board, {}, ROSTER, STAMP);
+    assertEq(out.nextUp.length, 1, 'one repo has actionable work');
+    assertEq(out.nextUp[0].repo, 'owner/repo', 'named by the slug the sweep carried');
+    assertEq(out.nextUp[0].items.map((i) => i.number).join(','), '5,3,1',
+      'the decisions first, highest priority leading, then the top spec');
+    assertEq(out.nextUp[0].items[0].status, 'blocked', 'each item says which it is');
+    assertEq(out.nextUp[0].items[0].priority, 'high', 'and how urgent');
+    assert(out.nextUp[0].items[0].url.includes('/issues/5'), 'and links to itself');
+  });
+
+  await test('every repo gets its own short list, in the order its leading item ranks', () => {
+    const board = boardOf([
+      issue(1, { repo: 'owner/second', status: 'specced' }),
+      issue(2, { repo: 'owner/first', status: 'blocked' }),
+      issue(3, { repo: 'owner/second', status: 'specced', priority: 'high' }),
+    ]);
+    const out = buildBrief(board, {}, ROSTER, STAMP);
+    assertEq(out.nextUp.map((r) => r.repo).join(','), 'owner/first,owner/second',
+      'the repo holding a decision comes first');
+    assertEq(out.nextUp[1].items.map((i) => i.number).join(','), '3,1', 'and each list is ranked on its own');
+  });
+
+  await test('a repo with nothing actionable is left out, never listed empty', () => {
+    const board = boardOf([
+      issue(1, { status: 'building' }),
+      issue(2, { status: 'inbox' }),
+      issue(3, { status: 'parked' }),
+    ]);
+    const out = buildBrief(board, {}, ROSTER, STAMP);
+    assertEq(out.nextUp.length, 0, 'work in flight is already somebody’s, and an inbox item is not a decision');
+  });
+
   group('tower/brief: warnings');
 
   await test('a repo with work on the table is named by slug and sorted by weight', () => {

@@ -91,6 +91,9 @@ const mkWorld = () => {
     board: {
       data: { r0: { issues: { totalCount: 2, nodes: [issueNode(17, ['status:specced', 'agent:ok']), issueNode(18, ['status:blocked', 'priority:high'])] } } },
     },
+    // What the home repo's Discussions carry — where the summaries are published.
+    // Empty is a machine whose board has nothing on it yet.
+    discussions: [],
     // What `gh issue create` does. Either a string to print or an Error to throw.
     createResult: `https://github.com/${SLUG}/issues/99\n`,
     // And what `gh issue edit` does — the relabel the board's drag performs.
@@ -107,7 +110,14 @@ const mkWorld = () => {
       if (world.ghMissing) throw new Error('spawnSync gh ENOENT');
       return 'gh version 2.0.0\n';
     }
-    if (cmd === 'gh' && args[0] === 'api') return JSON.stringify(world.board);
+    if (cmd === 'gh' && args[0] === 'api') {
+      // The board sweep and the home repo's summaries are both `gh api graphql`;
+      // the query is what tells them apart.
+      if (args.join(' ').includes('discussions(first')) {
+        return JSON.stringify({ data: { repository: { discussions: { nodes: world.discussions } } } });
+      }
+      return JSON.stringify(world.board);
+    }
     if (cmd === 'gh' && args[0] === 'issue') {
       const result = args[1] === 'edit' ? world.editResult : world.createResult;
       if (result instanceof Error) throw result;
@@ -232,6 +242,51 @@ const run = async () => {
     // The fixture repo has an unreleased CHANGELOG entry and no tag.
     assertEq(body.warnings.length, 1, 'the repo has work sitting on the table');
     assertEq(body.warnings[0].repo, SLUG, 'named by its slug');
+    // The same board asked one question further — what this morning could move.
+    assertEq(body.nextUp.length, 1, 'the one repo has actionable work');
+    assertEq(body.nextUp[0].items.map((i) => i.number).join(','), '18,17',
+      'the decision leads, then the accepted spec');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('/api/brief carries the published summaries, read once per board minute', async () => {
+    const w = mkWorld();
+    // The machine's hand-edited settings, naming the home repo the summaries are
+    // published on — without one there is no board of them to read.
+    fs.writeFileSync(
+      path.join(w.root, 'workflow-home', 'settings.json'),
+      JSON.stringify({ version: 1, site: { repo: 'owner/private-home', publish: false, url: null } }),
+    );
+    w.discussions = [
+      { title: 'brief: 2026-08-03', url: 'https://github.com/owner/private-home/discussions/3', createdAt: '2026-08-03T09:00:00Z' },
+      { title: 'daily: 2026-08-02', url: 'https://github.com/owner/private-home/discussions/2', createdAt: '2026-08-02T09:00:00Z' },
+    ];
+    const c = await start(w);
+    const { body } = await getJson(c, '/api/brief');
+    assertEq(body.findings.title, 'daily: 2026-08-02', 'what yesterday produced');
+    assertEq(body.findings.url, 'https://github.com/owner/private-home/discussions/2', 'linked to the post itself');
+    // The week rides on Mondays only, which is a fact about the day this suite
+    // runs on — the rule itself is summaries.test.js's.
+    assertEq('week' in body, new Date().getDay() === 1, 'and the rollup only on a Monday');
+
+    const asked = () => w.calls.filter((call) => call.join(' ').includes('discussions(first')).length;
+    const first = asked();
+    assert(first >= 1, 'the summaries were read');
+    await getJson(c, '/api/brief');
+    assertEq(asked(), first, 'a second poll inside the minute was served from memory');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a machine with no home repo still serves a brief', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    const { status, body } = await getJson(c, '/api/brief');
+    assertEq(status, 200, 'ok');
+    assertEq(body.findings, null, 'there is nowhere to read a summary from');
+    assertEq(w.calls.filter((call) => call.join(' ').includes('discussions(first')).length, 0,
+      'and nothing was asked of GitHub');
     await c.stop();
     cleanup(w.root);
   });
