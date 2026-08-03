@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#123](../../issues/123) — The home repo now gets the same heal as any participating repo: `standards.sh --home` syncs labels and issue forms inside the tower clone, invoked at setup and each morning's publish, committing and pushing only when the forms changed.
+
 ## [0.25.0] - 2026-08-02
 
 ### Added

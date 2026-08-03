@@ -212,6 +212,16 @@ if [[ "$(git -C "$WK_HOME_DIR" stash list 2>/dev/null || true)" != "$STASH_BEFOR
   exit 0
 fi
 
+# ── The home repo's own heal ──────────────────────────────────────────────────
+# The clone gets the standard every participating repo gets — its labels and its
+# issue forms (issue #123). It sits here, beside the roster and ABOVE the site
+# switch, for the roster's reason (issue #111): what makes the home repo fileable
+# into is owed whether or not a site is published, and a phone filing into a home
+# repo with no templates is a capture nobody's queue can see. It commits and
+# pushes only what it changed, so the ordinary morning's tree is untouched and
+# the roster below still finds nothing but its own edit.
+if [[ "$QUIET" -eq 1 ]]; then wk_home_heal --quiet; else wk_home_heal; fi
+
 # ── The roster ────────────────────────────────────────────────────────────────
 # Which REPOSITORIES the board sweeps is this machine's roster, and it names
 # private repos — so it is written to the home repo's default branch, which is

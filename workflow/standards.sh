@@ -46,7 +46,7 @@
 # own settings file. The engine's public address (~/.claude/workkit → this
 # folder) is written by a real heal, or by --engine-link on its own.
 #
-# Usage: bash standards.sh [--state|--announce|--enable|--decline|--engine-link] [repo_dir]
+# Usage: bash standards.sh [--state|--announce|--enable|--decline|--engine-link|--home] [repo_dir]
 #        (repo_dir defaults to the current directory)
 #
 #   (no mode)     heal the repo — but only if it is enabled (see participation)
@@ -56,6 +56,10 @@
 #   --enable      write the committed opt-in (enabled: true), then heal
 #   --decline     record "never ask about this repo again" in the USER settings
 #   --engine-link maintain the engine's address and nothing else (no repo needed)
+#   --home        heal the TOWER CLONE, and only it: the two heals a repo the
+#                 board files into needs (issue forms + labels) and none of the
+#                 session-state scaffolding. Refuses any other directory. The
+#                 engine calls it — no session ever opens in the clone
 #
 # The label step and the protection ask need jq/gh + auth + a remote. Without
 # them each says so quietly and moves on — an offline machine has nothing
@@ -130,7 +134,7 @@ log_info() { printf "  ${_C}ℹ %s${_N}\n" "$1" >&2; }
 
 mode="heal"
 case "${1:-}" in
-  --state|--announce|--enable|--decline|--engine-link) mode="${1#--}"; shift ;;
+  --state|--announce|--enable|--decline|--engine-link|--home) mode="${1#--}"; shift ;;
   --*) log_warn "standards: unknown option $1"; exit 1 ;;
 esac
 
@@ -1226,6 +1230,23 @@ state="$(resolve_state)"
 case "$mode" in
   state)    printf '%s\n' "$state"; exit 0 ;;
   announce) offer_line; printf '\n'; exit 0 ;;
+  # The tower clone's own heal (issue #123). The clone is engine territory and
+  # no session ever starts in it, so the two heals that make a repo FILEABLE
+  # INTO — the labels every queue reads and the forms that apply them — are run
+  # from the engine instead: `wk_home_heal` at setup and every morning. Same
+  # code as every other repo gets, which is the whole point; the difference is
+  # only which steps and who triggers them. The participation gate is not
+  # bypassed but INVERTED — this mode heals the clone and refuses anything
+  # else, so it can never write into a repo that has not said yes.
+  home)     if [[ "$state" != "home" ]]; then
+              log_warn "standards: $root is not the tower clone — --home heals the home repo and nothing else"
+              exit 1
+            fi
+            log_info "standards: $root (the home clone)"
+            ensure_issue_forms
+            sync_labels
+            [[ "$needs_attention" -eq 0 ]] || exit 1
+            exit 0 ;;
   decline)  if [[ "$state" == "home" ]]; then
               log_warn "standards: $root is the tower clone — engine territory, and it never participates (nothing recorded)"
               exit 1

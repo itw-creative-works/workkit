@@ -379,6 +379,11 @@ const run = async () => {
 
     const subject = spawnSync('git', ['-C', pages, 'log', '-1', '--pretty=%s'], { encoding: 'utf8' }).stdout.trim();
     assert(/^chore\(site\): publish \d{4}-\d{2}-\d{2}$/.test(subject), `one conventional subject, got: ${subject}`);
+
+    // The wiring itself, pinned: the daily publish heals the home repo's labels
+    // on the way (issue #123) — deleting the wk_home_heal call goes red here.
+    assert(world.ghCalls().some((argv) => /label list/.test(argv)),
+      `the publish healed the home repo's labels: ${world.ghCalls().join(' | ')}`);
     cleanup(world.root);
   });
 
@@ -772,7 +777,10 @@ const run = async () => {
     assertEq(code, 0, 'exit 0');
     assert(!/taken down/.test(out) && !/Pages is disabled/.test(out) && !/nothing to disable/.test(out),
       `nothing was removed, so nothing is reported, got: ${out}`);
-    assertEq(world.ghCalls().length, 0, 'and GitHub is never asked to disable Pages nobody enabled');
+    // Scoped to Pages: the run above the switch heals the home repo's labels
+    // (issue #123), so gh is spoken to on every publish — never about Pages.
+    assert(!world.ghCalls().some((argv) => /pages/.test(argv)),
+      `and GitHub is never asked to disable Pages nobody enabled: ${world.ghCalls().join(' | ')}`);
     cleanup(world.root);
   });
 

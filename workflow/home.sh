@@ -41,6 +41,11 @@ WK_HOME_PAGES_BRANCH='gh-pages'
 # suite's seam.
 WK_TOWER_APP="${WORKKIT_TOWER_APP:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../tower/app" 2>/dev/null && pwd -P || printf '')}"
 
+# The engine's own folder — where standards.sh sits, the script the clone's heal
+# is a scoped invocation of. Resolved from this file rather than from the kit
+# dir, because the engine travels as a folder and the heal is the engine's.
+WK_WORKFLOW_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || printf '')"
+
 # The plugin checkout this engine is part of — the source of the cloud brief's
 # runner, the way tower/app is the source of the project. Resolved the same way,
 # and overridden the same way for the suite.
@@ -478,6 +483,76 @@ wk_home_commit_push() {
   return 1
 }
 
+# The clone's own heal (issue #123): the home repo gets the SAME standard every
+# participating repo gets, from the same code, and only the trigger differs —
+# the session hook heals a repo somebody opens, and nobody ever opens a session
+# in the clone.
+#
+# Scoped to what makes a repo FILEABLE INTO: the labels every queue reads and
+# the issue forms that apply them. None of the session-state scaffolding — the
+# clone carries no `.workkit/`, no opt-in and no local files (issue #79) — which
+# is why this is `standards.sh --home` rather than the whole heal.
+#
+# The labels are a REMOTE write and leave nothing in the tree; the forms are
+# files. So the commit is asked for only when the FORMS changed, which is what
+# makes the second run write nothing, commit nothing and push nothing.
+#
+# Every failure is a named warning and exit 0: this runs inside the morning, and
+# a home repo that could not be healed costs the day nothing.
+#
+# Usage: wk_home_heal [--quiet]
+#   --quiet keeps the heal's own step-by-step lines out of an unattended log,
+#   the way the daily publish keeps its own: they are held and printed only when
+#   the run failed or actually changed something, which is the only morning
+#   where there is anything to read.
+wk_home_heal() {
+  local quiet=0 rc=0 out changed=0
+  [[ "${1:-}" == '--quiet' ]] && quiet=1
+  wk_home_ready || {
+    wk_say_warn "home: nothing is cloned at $WK_HOME_DIR — the home repo's labels and issue templates were not healed; \`workkit setup\` clones it"
+    return 0
+  }
+  [[ -n "$WK_WORKFLOW_DIR" && -f "$WK_WORKFLOW_DIR/standards.sh" ]] || {
+    wk_say_warn "home: the heal is missing at ${WK_WORKFLOW_DIR:-this engine}/standards.sh — the home repo's labels and issue templates were not healed"
+    return 0
+  }
+
+  # The heal speaks on stderr; it is captured so a quiet run can decide whether
+  # this morning has anything worth saying.
+  out="$(bash "$WK_WORKFLOW_DIR/standards.sh" --home "$WK_HOME_DIR" 2>&1)" || rc=$?
+
+  # The question is asked of the FORMS and of nothing else: they are the only
+  # thing this heal writes into the tree (the labels are a remote write), and a
+  # heal that read the whole tree would commit somebody's half-finished edit
+  # under a message about templates. Whatever else is dirty still rides the
+  # commit when there IS one — that is `wk_home_commit_push`'s contract, the
+  # same one the daily roster push already lives with.
+  if [[ -n "$(git -C "$WK_HOME_DIR" status --porcelain -- .github/ISSUE_TEMPLATE 2>/dev/null)" ]]; then
+    changed=1
+  fi
+
+  # A past run whose push failed left a commit stranded local — that is a change
+  # too: commit_push skips the empty commit and pushes what stayed behind.
+  if [[ "$changed" -eq 0 ]]; then
+    local ahead
+    ahead="$(git -C "$WK_HOME_DIR" rev-list --count '@{upstream}..HEAD' 2>/dev/null || echo 0)"
+    [[ "${ahead:-0}" -gt 0 ]] && changed=1
+  fi
+
+  if [[ -n "$out" ]] && [[ "$quiet" -eq 0 || "$rc" -ne 0 || "$changed" -eq 1 ]]; then
+    printf '%s\n' "$out" >&2
+  fi
+  if [[ "$rc" -ne 0 ]]; then
+    wk_say_warn "home: the heal of $WK_HOME_DIR did not finish — see the warning above; it runs again tomorrow"
+  fi
+
+  [[ "$changed" -eq 1 ]] || return 0
+  # commit_push already names which half failed; the morning carries on either
+  # way, and the ahead-of-origin check above pushes what stayed local tomorrow.
+  wk_home_commit_push 'chore(home): install the issue templates' || true
+  return 0
+}
+
 # Discussions on, and the cadence categories checked. Categories CANNOT be
 # created over the API (no createDiscussionCategory mutation exists — probed
 # 2026-07-28), so a missing one is a one-time pointer at the page that makes it,
@@ -592,6 +667,7 @@ wk_home_setup() {
     wk_home_discussions "$slug"
     wk_home_pages "$slug"
     wk_home_commit_push 'chore(home): seed the tower project' || true
+    wk_home_heal
     return 0
   fi
 
@@ -607,6 +683,7 @@ wk_home_setup() {
   wk_home_install
   wk_home_discussions "$slug"
   wk_home_pages "$slug"
+  wk_home_heal
   return 0
 }
 
