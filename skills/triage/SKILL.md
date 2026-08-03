@@ -1,6 +1,7 @@
 ---
 name: triage
-description: Route every captured entry to its one home, then print the Filed trail. - Use when the user says "triage", "file my notes", "empty the inbox", or when the state-check hook reports open status:inbox issues or a non-empty .workkit/inbox.md.
+description: Route every captured entry to its one home, then print the Filed trail; the merge mode sweeps the board and proposes merges. - Use when the user says "triage", "file my notes", "empty the inbox", asks to merge or dedupe the board, or when the state-check hook reports inbox items.
+argument-hint: "[merge]"
 ---
 
 # Triage — drain the inbox, visibly
@@ -33,12 +34,15 @@ Split every source into discrete entries. A wall of mixed notes fans out to MANY
 Before creating anything, **search what already exists** — open AND closed:
 `gh issue list --state all --search "<key words>"`.
 
+Then, before creating anything, apply the **filing litmus test**: *would closing an OPEN issue automatically mean this entry is done too?* Yes → it goes on THAT issue, as a checklist line in its Spec or as a comment. Only a no earns a new issue (spec § How big is one issue).
+
 | Entry is... | Route |
 |---|---|
 | Already covered by an existing issue | `gh issue comment <N>` on that issue — never a duplicate |
 | Already rejected (a closed **not planned** issue) | Cite the rejection in the Filed trail; do NOT re-file |
 | Actionable, spec written and accepted (or a small item — Spec is `None needed — small item.`) | Relabel to `status:specced` (+ `type:`, + `priority:` if clearly high/low). The flip AUTHORIZES the build — only make it when the spec is genuinely accepted |
-| Actionable, but it still needs design or detail | Leave it `status:inbox` and draft what you have into the `## Spec` (or a comment). Accepting that spec later is what earns `status:specced` |
+| Actionable, but it still needs design or detail | Leave it `status:inbox` and draft what you have into the `## Spec` (or a comment) — then QUEUE the interview and say so; a spec drafted whole is never presented for a bare yes (spec § Specs, the collaborative rule). Accepting that spec later is what earns `status:specced` |
+| A polish nit, docs nit, or cosmetic finding | A checklist line in the `## Spec` of the surface's open `polish: <surface>` issue — open one (`status:inbox` + `type:enhancement`) when none is open. Mechanics, including the freeze rule and "bugs never batch": spec § How big is one issue |
 | Waiting on the owner's decision | `status:blocked` + a comment naming the question |
 | Worth keeping, deliberately not now | `status:parked` |
 | Cross-project / business / no single repo | An issue on the **home repo** — the `site.repo` named in `~/.workkit/settings.json` (`docs/project-state.md` § The global layer). No `site.repo` set: leave the entry in the inbox and say so |
@@ -68,9 +72,21 @@ Filed:
 - ...
 ```
 
+## Merge mode (`/workkit:triage merge`)
+
+A separate mode: instead of draining the inbox, sweep the OPEN board and apply the same litmus test across the issues that already exist.
+
+1. List the open issues (`gh issue list --state open --json number,title,labels,body`) and read them.
+2. Group by the test — *would closing one of these automatically mean the other is done too?*
+3. Present a merge PLAN and stop: **merge these** (which survives, which closes, what moves), **attach that** (an issue that becomes a checklist line or a comment on another), **keep these separate** — with one line of why for every group, including the separations.
+4. Execute ONLY on the owner's approval, group by group. Content moves to the survivor BEFORE the close; a closed-as-merged issue gets a closing comment naming the survivor (`gh issue comment <N> --body "Merged into #<survivor>."` then `gh issue close <N>`). End with the Filed trail.
+
+This mode never runs unattended and never merges on its own judgment — a wrong merge buries a real bug.
+
 ## Rules
 
 - One home per entry (SSOT). If two homes seem right, pick the lowest-owning layer and point from the other.
+- An open `polish: <surface>` issue is a DESTINATION, never a capture to drain: it stays `status:inbox` while it collects, the drain never re-routes it, and the state-check announcing it is expected (spec § How big is one issue).
 - Exactly one `status:` label per open issue — removing the old one is part of every relabel.
 - Idempotent: re-running with nothing captured does nothing and says so.
 - Never invent priority. `priority:` is the owner's call unless the entry states urgency; absence = normal.

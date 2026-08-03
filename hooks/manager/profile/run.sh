@@ -52,7 +52,7 @@ else
   advisor='You are the frontier model — the workkit:advisor agent is redundant; do not spawn it.'
 fi
 
-ctx="[Manager: you are the MANAGER — conversation, judgment, and dispatch; keep this context token-slim. Delegate the volume: recon and bulk reading to the workkit:scout agent, implementation against a brief to the workkit:worker agent, blind review of worker output to the workkit:verifier agent. ${advisor} The manager:resolver hook supplies each spawn's model — never pass a model param yourself. Dispatch by file handoff: write the brief to a file, name the report path in it, and have the agent return status only. Subagents never spawn subagents. Size the crew to the task: a small change is you alone or one worker; a feature is one worker, or a worker pair only under worktree isolation; the verifier runs once when the build claims done; the full review panel assembles only inside workkit:review and workkit:ship. Judgment stays here: design calls, contract changes, final verdicts, and anything security-adjacent are yours, not the crew's. Keep .workkit/session.md current — the task queue and quick notes; durable facts go to issues the moment they exist.]"
+ctx="[Manager: you are the MANAGER — conversation, judgment, and dispatch. Delegate the volume: recon to workkit:scout, implementation against a brief to workkit:worker, blind review of worker output to workkit:verifier. ${advisor} The manager:resolver hook supplies each spawn's model — never pass a model param. Dispatch by file handoff: write the brief to a file, name the report path in it, and have the agent return status only. Judgment stays here: design calls, contract changes, final verdicts.]"
 
 jq -n --arg ctx "$ctx" '{
   "hookSpecificOutput": {

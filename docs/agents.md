@@ -16,6 +16,10 @@ Agent definitions shipped by the workkit plugin. They surface in a session names
 
 `scout` / `worker` / `verifier` / `advisor` are the CAPABILITY CLASSES of the manager system. Their concrete model is supplied per spawn by the `manager/resolver` hook from `../hooks/manager/ladder.json` (the tier SSOT) and the LIVE session model — a mid-session `/model` switch takes effect on the next spawn. The `model:` frontmatter in these four files is only the static fallback for when the hook is disabled; never treat it as the routing truth, and never pass a `model` param when dispatching them.
 
+### Crew sizing
+
+The manager stages the crew to the task rather than assembling it all at once: a small change is the manager alone or ONE worker; a feature is one worker, or a worker pair only when each has its own worktree and the manager merges; the `verifier` runs ONCE, when the build claims done; the full review panel assembles only inside `workkit:review` and `workkit:ship`. `scout` is recon — dispatch it at any point. Dispatch is one level deep throughout (§ Definition rules), so every stage is the manager's to open and close, and the manager keeps `.workkit/session.md` current as it goes — the task queue and quick notes, with durable facts promoted to their issue the moment they exist. Design calls, contract changes, final verdicts, and anything security-adjacent stay the manager's, never the crew's.
+
 ## Agents from other repos
 
 A session's agents come from three places: any plugin ships them in its own `agents/` directory (this repo's, namespaced `workkit:`, is one such set), a repo ships them in `.claude/agents/`, and a user in `~/.claude/agents/`. Precedence on a name collision is **project > user > plugin**.

@@ -62,7 +62,7 @@
   overflow: hidden;
 
   // The handle is the row's only wrapping text, and a flex item squeezed by a
-  // nowrap row is squeezed to its MIN-content — which for `@ianwieds, @someone`
+  // nowrap row is squeezed to its MIN-content — which for `@someone, @other`
   // is one word per line, and made the card twice as tall as the wrap it was
   // meant to prevent. Held on one line it truncates instead.
   > .classy-micro {

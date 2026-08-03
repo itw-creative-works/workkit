@@ -45,6 +45,8 @@ The `workkit:verifier` agent (never a finder in the same pass) scores every coll
 
 One consolidated report: findings **≥80** as actionable items (file:line, issue, fix); 40–79 compressed into a "lower confidence" note; below 40 dropped silently. End with a verdict: ship / fix-then-ship / rework. Done-criteria: every ≥80 finding names its file:line and concrete fix; no lens output pasted raw into chat.
 
+A finding that gets FILED rather than fixed now passes the filing litmus test first — *would closing an open issue automatically mean this is done too?* Yes → it attaches there, never as a sibling issue; polish-grade findings batch as checklist lines onto the surface's rolling `polish: <surface>` issue. The rules: `docs/project-state.md` § How big is one issue.
+
 ## 5. Marker (feeds the commit gate)
 
 After the report, record that review ran — the `safety/commit-gate` hook checks this marker before allowing a code commit:

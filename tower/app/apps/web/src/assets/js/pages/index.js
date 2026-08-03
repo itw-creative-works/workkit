@@ -1,6 +1,6 @@
 //
 // Overview — the landing page, and the one that has to read as a control room:
-// the six numbers, what is waiting on Ian, who is running, and which repos are
+// the six numbers, what is waiting on the owner, who is running, and which repos are
 // dirty, all above the fold.
 //
 // Bound to `/` by its filename: the engine derives a page's asset key from the
@@ -55,7 +55,7 @@ const numbers = (state) => {
   ]);
 };
 
-// What is waiting on Ian. It sits high, it is never collapsed, and it says so
+// What is waiting on the owner. It sits high, it is never collapsed, and it says so
 // even when the answer is "nothing" — a blank region would read as a bug.
 //
 // The alarm is spent only when something IS waiting: an empty strip carries no

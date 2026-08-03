@@ -79,7 +79,6 @@ const run = async () => {
     assert(ctx.includes('redundant'), 'frontier session should get the redundant clause');
     assert(!ctx.includes('Consult the workkit:advisor'), 'frontier session must not be told to consult');
     assert(ctx.includes('workkit:scout') && ctx.includes('workkit:worker') && ctx.includes('workkit:verifier'), 'crew names must be plugin-namespaced');
-    assert(ctx.includes('workkit:review') && ctx.includes('workkit:ship'), 'review-panel skills must be plugin-namespaced');
     assert(!ctx.includes('agents/README.md'), 'no personal-tree citation');
     assert(ctx.includes('brief file') || ctx.includes('write the brief to a file'), 'handoff convention inlined');
   });
@@ -114,22 +113,33 @@ const run = async () => {
     assertEq(out.stdout, '');
   });
 
-  group('manager-profile: crew staging');
-  await test('the injected context carries the staging sentence', () => {
+  group('manager-profile: the injection is the delegation core only');
+  await test('the four core clauses are present', () => {
     freshTmp();
     cacheSession('sess1', id('fable'));
     const ctx = contextOf(runHook(payload()));
-    assert(ctx.includes('Size the crew to the task'), 'no staging sentence');
-    assert(ctx.includes('the verifier runs once when the build claims done'), 'no verifier rule');
-    assert(ctx.includes('worktree isolation'), 'no pairing constraint');
+    assert(/recon/i.test(ctx) && /implementation/i.test(ctx) && /blind review/i.test(ctx), 'the delegation split is not stated');
+    assert(ctx.includes('never pass a model param'), 'the resolver rule is missing');
+    assert(ctx.includes('return status only'), 'the file-handoff rule is missing');
+    assert(/[Jj]udgment stays/.test(ctx), 'the judgment boundary is missing');
   });
-
-  await test('the injected context tells the manager to keep session.md current', () => {
+  await test('the content that moved to docs/agents.md is gone', () => {
     freshTmp();
     cacheSession('sess1', id('fable'));
     const ctx = contextOf(runHook(payload()));
-    assert(ctx.includes('.workkit/session.md'), 'the file the docs:session hook reads back is never named');
-    assert(/durable facts go to issues/.test(ctx), 'the light bar is not stated');
+    for (const moved of ['Size the crew', 'worktree isolation', 'review panel', '.workkit/session.md', 'Subagents never spawn']) {
+      assert(!ctx.includes(moved), `"${moved}" belongs in docs/agents.md, not the injection`);
+    }
+  });
+  await test('the injection stays under 600 characters on both rungs', () => {
+    // The workhorse branch is the longer one (its advisor clause), so the cap
+    // must be proven per rung — the frontier ctx alone leaves untested headroom.
+    for (const rung of ['fable', 'opus']) {
+      freshTmp();
+      cacheSession('sess1', id(rung));
+      const ctx = contextOf(runHook(payload()));
+      assert(ctx.length < 600, `${rung} injection is ${ctx.length} chars`);
+    }
   });
 
   group('manager-profile: layered overrides (repo > user > ladder)');
