@@ -7,15 +7,17 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-08-02
+
 ### Added
 
-- [#122](../../issues/122) — Capture discipline: real specs are built with the owner via interview before acceptance, new findings pass a filing litmus test (attach or create), polish nits roll up into one `polish: <surface>` issue per surface, and `/workkit:triage merge` sweeps the open board proposing merges it executes only on approval.
-- [#121](../../issues/121) — A new lint test fails any commit that puts a machine-specific path under `agents/`, `hooks/`, or `skills/`, naming the file and line.
+- [#122](../../issues/122) [`c15fa64`](../../commit/c15fa64) Thanks [@ianwieds]! — Capture discipline: real specs are built with the owner via interview before acceptance, new findings pass a filing litmus test (attach or create), polish nits roll up into one `polish: <surface>` issue per surface, and `/workkit:triage merge` sweeps the open board proposing merges it executes only on approval.
+- [#121](../../issues/121) [`c15fa64`](../../commit/c15fa64) Thanks [@ianwieds]! — A new lint test fails any commit that puts a machine-specific path under `agents/`, `hooks/`, or `skills/`, naming the file and line.
 
 ### Changed
 
-- [#119](../../issues/119) — The manager standing instruction injected on every prompt is half its old size, keeping only the delegation core; the crew-sizing rules moved to `docs/agents.md`.
-- [#120](../../issues/120) — AGENTS.md's Install and home-repo prose walls are now bullet lists, the close-guard row says it warns rather than blocks, and the "generic by construction" and "one mechanism, branching by environment" conventions are written down.
+- [#119](../../issues/119) [`c15fa64`](../../commit/c15fa64) Thanks [@ianwieds]! — The manager standing instruction injected on every prompt is half its old size, keeping only the delegation core; the crew-sizing rules moved to `docs/agents.md`.
+- [#120](../../issues/120) [`c15fa64`](../../commit/c15fa64) Thanks [@ianwieds]! — AGENTS.md's Install and home-repo prose walls are now bullet lists, the close-guard row says it warns rather than blocks, and the "generic by construction" and "one mechanism, branching by environment" conventions are written down.
 
 ## [0.24.0] - 2026-08-01
 
