@@ -7,13 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-08-03
+
 ### Added
 
-- [#55](../../issues/55) — The tower charts the board's history: each morning's brief carries a machine-readable stats line, the Overview draws the queue by status over time, closed per day, inbox depth and week-over-week deltas, and the Brief gains a seven-day sparkline row — locally and on the published copy alike.
+- [#55](../../issues/55) [`fcb0fc8`](../../commit/fcb0fc8) Thanks [@ianwieds]! — The tower charts the board's history: each morning's brief carries a machine-readable stats line, the Overview draws the queue by status over time, closed per day, inbox depth and week-over-week deltas, and the Brief gains a seven-day sparkline row — locally and on the published copy alike.
 
 ### Changed
 
-- [#125](../../issues/125) — The ship skill picks the version bump itself (patch for fixes, minor for new capability) and states the pick in the ship summary; only a breaking major asks.
+- [#125](../../issues/125) [`fcb0fc8`](../../commit/fcb0fc8) Thanks [@ianwieds]! — The ship skill picks the version bump itself (patch for fixes, minor for new capability) and states the pick in the ship summary; only a breaking major asks.
 
 ## [0.27.0] - 2026-08-03
 
