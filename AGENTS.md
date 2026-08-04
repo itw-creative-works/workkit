@@ -16,7 +16,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 ├── hooks/                # hooks.json + the hook groups, resolved via ${CLAUDE_PLUGIN_ROOT}
 │   ├── loader.sh         # name → path router (docs:board-guard → docs/board-guard/run.sh)
 │   ├── _lib.sh           # shared helpers (sourced, never executed)
-│   ├── docs/             # board-guard, changelog-guard, change-tracker, session, state-check
+│   ├── docs/             # board-guard, changelog-guard, change-tracker, session, session-guard, state-check
 │   ├── safety/           # vendor-guard, commit-gate, commit-language, issue-guard, inbox-guard
 │   ├── manager/          # resolver, profile + ladder.json (the tier SSOT)
 │   └── workflow/         # standards (the daily heal)
@@ -70,6 +70,7 @@ Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh`
 | `safety/inbox-guard` | PreToolUse (Read/Grep/Bash) | Blocks a read of `.workkit/inbox.md`'s contents outside a triage run — the owner's scratchpad, opened by the marker the `workkit:triage` skill records and stale after 30 minutes. Counting and appending stay open |
 | `docs/board-guard` | PostToolUse (Edit/Write) | Bounces `CLAUDE.md` / `AGENTS.md` writes that break the spec's document rules |
 | `docs/changelog-guard` | PostToolUse (Edit/Write) | Bounces a CHANGELOG entry that is an essay instead of one short linked paragraph — only entries the write ADDED |
+| `docs/session-guard` | PostToolUse (Edit/Write) | Bounces a write that leaves `.workkit/session.md` past either cap — a bullet over 350 chars, or the file over 40 content lines (#126). Judges the resulting file, which is why it is POST; the same bar `docs/session` warns at, and the `workkit:ship` prune is what normally keeps it under |
 | `docs/change-tracker` | Stop | Nags about uncommitted work, keeping the issue true, promoting findings out of `.workkit/`, and unfiled inbox notes |
 | `manager/close-guard` | Stop | Warns — never blocks — when a frontier session did the bulk editing itself, or when worker output ended the turn with no verifier pass; the warning is user-visible only and never continues the turn |
 

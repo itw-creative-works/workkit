@@ -42,7 +42,9 @@ grep -qE '"enabled"[[:space:]]*:[[:space:]]*false' "$SETTINGS" 2>/dev/null && ex
 
 # Content lines: non-blank, not a heading, not a blockquote note, not an HTML
 # comment — the template's own scaffolding is all four, so a freshly seeded file
-# counts zero and says nothing.
+# counts zero and says nothing. This count and the bar below also live in the
+# docs/session-guard hook, which bounces a write past the same bar — change both
+# together (a test asserts they still agree).
 # (grep -c prints its count even when exiting 1 on zero matches — don't add a
 # fallback echo or the count doubles.)
 lines=$(grep -cvE '^[[:space:]]*$|^[[:space:]]*#|^[[:space:]]*>|^[[:space:]]*<!--' "$SESSION_FILE" 2>/dev/null) || true
