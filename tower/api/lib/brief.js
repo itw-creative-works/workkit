@@ -101,6 +101,29 @@ const nextUpFrom = (issues) => {
   return [...byRepo].map(([repo, items]) => ({ repo, items }));
 };
 
+/**
+ * The sweep's per-repo counts, carried onto the brief: how big each repo's open
+ * board is, and how much of it closed in the last day.
+ *
+ * They ride the payload because the morning's stats line is composed from it
+ * (jobs/stats.js) and a chart drawn a month later can then say WHICH board grew
+ * rather than only that the total did. `open` is the repo's totalCount rather
+ * than the nodes it returned: a repo over the page cap is still that many
+ * issues open, and a series that dipped at the cap would be a lie about the day.
+ * A repo the sweep could not read is absent for the same reason — its zeros are
+ * not counts, and a false "0 open" published once dips its series forever.
+ *
+ * @param {{repos?: object[]}} board the sweep
+ * @returns {Array<{slug: string, open: number, closedDay: number}>}
+ */
+const repoCountsFrom = (board) => ((board && board.repos) || [])
+  .filter((repo) => !repo.error)
+  .map((repo) => ({
+    slug: repo.slug,
+    open: typeof repo.totalCount === 'number' ? repo.totalCount : (repo.count || 0),
+    closedDay: typeof repo.closedDay === 'number' ? repo.closedDay : 0,
+  }));
+
 /** The repo's display name — its slug when it has one, else its folder name. */
 const nameOf = (repos, repoPath) => {
   const match = (repos || []).find((r) => r.path === repoPath);
@@ -177,6 +200,8 @@ const buildBrief = (board, health, repos, generatedAt) => {
     parked: issues.filter((i) => i.status === 'parked').length,
   };
 
+  const repoCounts = repoCountsFrom(board);
+
   return {
     // A sweep that failed is reported as such rather than as an empty morning:
     // "nothing is waiting on you" and "gh could not answer" are opposite facts.
@@ -185,6 +210,10 @@ const buildBrief = (board, health, repos, generatedAt) => {
     generatedAt: generatedAt || new Date().toISOString(),
     headline: headlineFor(counts),
     counts,
+    // What the day SHIPPED, roster wide — the one number a count of the open
+    // board cannot carry, and the one a morning's chart is drawn from.
+    closedDay: repoCounts.reduce((sum, repo) => sum + repo.closedDay, 0),
+    repoCounts,
     nextUp: nextUpFrom(issues),
     waiting,
     ready,
@@ -194,4 +223,4 @@ const buildBrief = (board, health, repos, generatedAt) => {
   };
 };
 
-module.exports = { buildBrief, headlineFor };
+module.exports = { buildBrief, headlineFor, repoCountsFrom };

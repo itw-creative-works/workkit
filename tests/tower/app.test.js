@@ -462,6 +462,16 @@ const run = async () => {
     assert(!format.statCell('Open', 3, '/board').includes('title='), 'a tile with a real number needs none');
   });
 
+  await test('a tile wears a sub-line only when there is a comparison to draw', () => {
+    // Issue #55: how this number compares with a week ago, under it. A tile
+    // with no history behind it keeps exactly the shape it always had.
+    const cell = format.statCell('Open issues', 12, '/board', undefined, 'down 3 from last week');
+    assert(cell.includes('>down 3 from last week</p>'), 'the comparison is drawn as its own line');
+    assert(cell.indexOf('</h3>') < cell.indexOf('down 3'), 'under the number, not beside the label');
+    assert(!format.statCell('Open issues', 12, '/board').includes('<p'), 'and a tile with nothing to compare carries no line');
+    assert(format.statCell('Open', 1, '', undefined, '<img src=x>').includes('&lt;img'), 'a sub-line is escaped like every other value');
+  });
+
   group('tower/app: format — the issue chips');
 
   await test('an issue shows exactly the chips it earns', () => {
@@ -2086,12 +2096,29 @@ const run = async () => {
             assignees: { nodes: [] },
           }],
         },
+        // What the day CLOSED (issue #55) — two inside the 24-hour window and
+        // two outside it, so every comparison over this fixture is made against
+        // a real number rather than against two zeros that would agree whatever
+        // either side counted.
+        closed: {
+          nodes: [
+            { closedAt: '2026-07-29T08:00:00Z' },
+            { closedAt: '2026-07-28T12:00:00Z' },
+            { closedAt: '2026-07-28T10:59:00Z' },
+            { closedAt: null },
+          ],
+        },
       },
       r1: null,
     },
     errors: [{ path: ['r1'], message: 'Could not resolve to a Repository' }],
   };
   const SLUGS = ['ITW-Creative-Works/workkit', 'owner/gone'];
+
+  // The instant both sides measure that window back from. Stated rather than
+  // read off the clock: a day judged at whatever moment the suite runs is a
+  // window no fixture can sit either side of.
+  const CLOSED_NOW = Date.parse('2026-07-29T11:00:00Z');
 
   await test('the browser writes the same GraphQL document the tower does, byte for byte', () => {
     assertEq(
@@ -2106,13 +2133,33 @@ const run = async () => {
       if (args[0] === '--version') return 'gh version 2';
       return JSON.stringify(SWEEP);
     };
-    const fromTower = apiBoard.fetchBoard(SLUGS.map((slug) => ({ slug })), { exec });
-    const fromBrowser = github.normalizeBoard(SLUGS, SWEEP.data, SWEEP.errors);
+    const fromTower = apiBoard.fetchBoard(SLUGS.map((slug) => ({ slug })), { exec, now: CLOSED_NOW });
+    const fromBrowser = github.normalizeBoard(SLUGS, SWEEP.data, SWEEP.errors, CLOSED_NOW);
     assertEq(JSON.stringify(fromBrowser), JSON.stringify(fromTower), 'one payload shape, whichever side read it');
     assertEq(fromBrowser.issues[0].status, 'building', 'the label vocabulary is parsed the same way');
     assertEq(fromBrowser.issues[0].agentOk, true, 'agent:ok included');
     assert(fromBrowser.repos[0].truncated, 'a repo over the page cap says so');
     assertEq(fromBrowser.repos[1].error, 'Could not resolve to a Repository', 'and the unresolved repo carries its reason');
+  });
+
+  await test('the day’s closed count is the same number on both sides, and no closed issue enters the board', () => {
+    const fromBrowser = github.normalizeBoard(SLUGS, SWEEP.data, SWEEP.errors, CLOSED_NOW);
+    assertEq(fromBrowser.repos[0].closedDay, 2, 'two of the four closed inside the last 24 hours');
+    assertEq(github.closedSince(SWEEP.data.r0, CLOSED_NOW), apiBoard.closedSince(SWEEP.data.r0, CLOSED_NOW),
+      'and the browser counts them exactly as the tower does');
+    assertEq(fromBrowser.repos[1].closedDay, 0, 'a repo that did not resolve closed nothing');
+    assertEq(fromBrowser.issues.length, 3, 'the issue list is the OPEN board and nothing else');
+    assert(fromBrowser.issues.every((issue) => issue.status !== undefined), 'no closed issue rode in on the count');
+  });
+
+  await test('a closed issue one minute past the window is not this day’s', () => {
+    // The edge is stated on both sides of it rather than computed: 23h59 in,
+    // 24h01 out, at an instant this suite names.
+    const one = (closedAt) => github.normalizeBoard(['o/r'], { r0: { issues: { totalCount: 0, nodes: [] }, closed: { nodes: [{ closedAt }] } } }, [], CLOSED_NOW).repos[0].closedDay;
+    assertEq(one('2026-07-28T11:01:00Z'), 1, '23 hours 59 minutes ago counts');
+    assertEq(one('2026-07-28T10:59:00Z'), 0, '24 hours 1 minute ago does not');
+    assertEq(one('2026-07-30T11:00:00Z'), 0, 'and neither does a stamp from the future');
+    assertEq(one('not a date'), 0, 'nor one that is not a stamp');
   });
 
   await test('the label groups the browser knows are the vocabulary’s own', () => {
@@ -2170,15 +2217,71 @@ const run = async () => {
   });
 
   await test('the brief the browser builds is the brief the tower builds', () => {
-    const board = github.normalizeBoard(SLUGS, SWEEP.data, SWEEP.errors);
+    const board = github.normalizeBoard(SLUGS, SWEEP.data, SWEEP.errors, CLOSED_NOW);
     const stamp = '2026-07-29T11:00:00Z';
     const mine = github.buildBrief(board, { generatedAt: stamp });
     const theirs = apiBrief.buildBrief(board, {}, [], stamp);
-    assertEq(JSON.stringify({ ...mine, summaries: undefined }), JSON.stringify(theirs),
+    // `summaries` and `history` are ATTACHED after the build on the tower's
+    // side (server.js) and inside it here, so they are the two keys the
+    // comparison lifts out — everything buildBrief itself decides is compared.
+    assertEq(JSON.stringify({ ...mine, summaries: undefined, history: undefined }), JSON.stringify(theirs),
       'the same sections, the same order, the same headline');
     assertEq(mine.nextUp[0].items.map((i) => i.number).join(','), '82,83',
       'and nextUp has entries to compare — blocked before specced, so the parity is not vacuous');
+    assertEq(mine.closedDay, 2, 'the day’s closed count rides the payload, roster wide');
+    assertEq(mine.repoCounts[0].open, 5, 'and each repo’s open count is its totalCount, cap or no cap');
     assertEq(mine.warnings.length, 0, 'the one section a browser cannot answer is empty rather than invented');
+  });
+
+  await test('the history the browser parses is the history the tower parses', async () => {
+    // The same published briefs, read by both halves: the tower through `gh`,
+    // the browser through GraphQL. A drift in either parse would leave one
+    // surface drawing a chart the other cannot.
+    const fs = require('fs');
+    const os = require('os');
+    const apiHistory = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'history.js'));
+    const mark = (date, open, closedDay) => `<!-- workkit-stats: {"v":1,"date":"${date}","totals":{"open":${open},"waiting":1,"ready":2,"inFlight":0,"inbox":3,"parked":0},"closedDay":${closedDay},"repos":{"owner/repo":{"open":${open}}}} -->`;
+    const nodes = [
+      { title: 'brief: 2026-08-03', body: `HEADLINE: today.\n\n<!-- cc-news: 2.1.220 -->\n${mark('2026-08-03', 12, 4)}\n` },
+      { title: 'daily: 2026-08-03', body: `a summary, not a brief\n${mark('2026-08-03', 99, 9)}\n` },
+      { title: 'brief: 2026-08-02', body: 'HEADLINE: a morning before the block existed.\n' },
+      { title: 'brief: 2026-08-01', body: `HEADLINE: two days ago.\n${mark('2026-08-01', 15, 0)}\n` },
+    ];
+
+    const mine = github.normalizeHistory({ repository: { discussions: { nodes } } });
+    assertEq(mine.map((entry) => entry.date).join(','), '2026-08-01,2026-08-03', 'ascending, and the block-less morning is skipped');
+    assertEq(mine[1].totals.open, 12, 'the totals are read off the line');
+    assertEq(mine[1].closedDay, 4, 'and what the day closed');
+
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'app-history-'));
+    fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ version: 1, site: { repo: 'owner/private-home' } }));
+    const theirs = apiHistory.briefHistory({
+      workflowHome: home,
+      exec: () => JSON.stringify({ data: { repository: { discussions: { nodes } } } }),
+    });
+    fs.rmSync(home, { recursive: true, force: true });
+    assertEq(JSON.stringify(mine), JSON.stringify(theirs), 'one series, whichever side read it');
+
+    // And the read the browser makes asks for the body the line lives in — the
+    // summaries query does not, which is why this is a second document.
+    const fetchImpl = mkFetch(jsonResponse(200, { data: { repository: { discussions: { nodes } } } }));
+    const answer = await github.fetchHistory('owner/private-home', { token: 't', fetch: fetchImpl });
+    assert(JSON.parse(fetchImpl.calls[0].options.body).query.includes('nodes { title body }'), 'the history read asks for the body');
+    assertEq(answer.length, 2, 'and it comes back parsed');
+  });
+
+  await test('a history that could not be read is null, never an empty series', async () => {
+    // The two say opposite things: nothing published yet is a board with no
+    // history, and a refused read is a history nobody can see.
+    assertEq(await github.fetchHistory('', { token: 't', fetch: mkFetch(() => { throw new Error('a request was made'); }) }), null,
+      'a site published without a home repo has nowhere to read from');
+    assertEq(await github.fetchHistory('owner/workkit', { token: '', fetch: mkFetch(() => { throw new Error('a request was made'); }) }), null,
+      'and a browser with no token cannot ask');
+    const empty = await github.fetchHistory('owner/workkit', {
+      token: 't',
+      fetch: mkFetch(jsonResponse(200, { data: { repository: { discussions: { nodes: [] } } } })),
+    });
+    assertEq(empty.length, 0, 'a home repo with no published briefs yet is an empty series, not a failure');
   });
 
   await test('the browser sorts the queues by the brief’s rule, to the letter', () => {
@@ -2713,6 +2816,92 @@ const run = async () => {
       assert(!/gh[pousr]_[A-Za-z0-9]{20,}/.test(text), `${path.basename(file)} carries no classic token`);
       assert(!/github_pat_[A-Za-z0-9_]{20,}/.test(text), `${path.basename(file)} carries no fine-grained token`);
     }
+  });
+
+  group('tower/app: history — the board over time');
+
+  // The pages that DRAW these charts import the framework's chart module and
+  // are out of reach here (the note at the top of this file), so the logic they
+  // draw from lives in a lib and is asked its questions directly: what is the
+  // series, what changed since last week, and which of the three absences is
+  // this. The pages are pinned by reading their source, the way every other
+  // page claim in this suite is.
+
+  const history = await load('history.js');
+
+  /** A brief payload carrying the history the read-back returns. */
+  const withHistory = (entries) => ({ counts: { open: 0 }, history: entries });
+  const day = (date, totals, closedDay = 0) => ({ date, totals, closedDay, repos: {} });
+
+  await test('a series is one point per morning, labelled by day', () => {
+    const payload = withHistory([
+      day('2026-08-01', { open: 15, inbox: 5 }, 2),
+      day('2026-08-02', { open: 14, inbox: 4 }, 1),
+      day('2026-08-03', { open: 12, inbox: 3 }, 4),
+    ]);
+    const open = history.seriesOf(history.entriesOf(payload), 'open');
+    assertEq(open.values.join(','), '15,14,12', 'the values, in the order they happened');
+    assertEq(open.labels.join(','), '08-01,08-02,08-03', 'and the year is not on the axis three times');
+    assertEq(history.seriesOf(history.entriesOf(payload), 'closedDay').values.join(','), '2,1,4', 'closedDay is read off the entry, not the totals');
+    assertEq(history.seriesOf(history.entriesOf(payload), 'ready').values.join(','), '0,0,0', 'a total no morning recorded reads as zero, never NaN');
+  });
+
+  await test('the three absences are three different states, and none of them is a zero', () => {
+    assertEq(history.entriesOf(withHistory(null)).length, 0, 'a null history maps to nothing');
+    assert(history.unread(withHistory(null)), 'and it is UNREAD — the read failed or there is no home repo');
+    assert(!history.unread(withHistory([])), 'an empty list is a board with no published briefs yet, which is not the same');
+    assert(!history.hasSeries(withHistory([day('2026-08-03', { open: 1 })])), 'one point is a dot claiming to be a trend');
+    assert(history.hasSeries(withHistory([day('2026-08-02', { open: 2 }), day('2026-08-03', { open: 1 })])), 'two is a line');
+    assert(history.ACCRUES.includes('stats block') && history.UNREAD.includes('could not be read'),
+      'and each absence has its own sentence');
+  });
+
+  await test('last week is found by date, not by counting entries', () => {
+    // A morning whose brief never published leaves no point, so the seventh
+    // entry back can be a fortnight ago.
+    const entries = [
+      day('2026-07-20', { open: 20 }),
+      day('2026-07-27', { open: 15 }),
+      day('2026-08-01', { open: 14 }),
+      day('2026-08-03', { open: 12 }),
+    ];
+    const delta = history.weekDelta(entries, 'open');
+    assertEq(delta.from, 15, 'the nearest morning on or before seven days back');
+    assertEq(delta.to, 12, 'against today');
+    assertEq(delta.change, -3, 'three fewer open');
+    assertEq(delta.days, 7, 'seven days apart');
+    assertEq(history.deltaLine(delta), 'down 3 from last week', 'said in plain language');
+  });
+
+  await test('a comparison that does not exist is no line at all', () => {
+    assertEq(history.weekDelta([day('2026-08-03', { open: 1 })], 'open'), null, 'one point compares with nothing');
+    // Every point inside the week: a delta against the oldest would silently
+    // become "since the beginning" on a young board.
+    assertEq(history.weekDelta([day('2026-08-01', { open: 9 }), day('2026-08-03', { open: 4 })], 'open'), null,
+      'and a history younger than a week has no last week to compare with');
+    assertEq(history.deltaLine(null), '', 'so the tile carries no sub-line');
+  });
+
+  await test('a delta of nothing says so, and an older comparison says how old it is', () => {
+    const flat = history.weekDelta([day('2026-07-25', { open: 7 }), day('2026-08-03', { open: 7 })], 'open');
+    assertEq(history.deltaLine(flat), 'unchanged since 9 days ago', 'the gap is named when it is not a week');
+    const up = history.weekDelta([day('2026-07-27', { open: 4 }), day('2026-08-03', { open: 9 })], 'open');
+    assertEq(history.deltaLine(up), 'up 5 from last week', 'and a board that grew says up');
+  });
+
+  await test('both pages draw the history through the framework’s chart module, and neither invents a colour', () => {
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    for (const name of ['index.js', 'brief.js']) {
+      const source = fs.readFileSync(path.join(pages, name), 'utf8');
+      assert(/from '__main_assets__\/js\/libs\/charts\.js'/.test(source), `${name} draws through the framework module`);
+      assert(/chartSlot\(/.test(source), `${name} draws into the slot that says the figures are in the table when the chunk did not load`);
+      assert(/hasSeries\(/.test(source) && /ACCRUES/.test(source), `${name} says why a chart is absent rather than drawing an empty axis`);
+      // A raw colour would be one the theme cannot restate; the module's own
+      // ramp is what every other chart on the tower draws in.
+      assert(!/['"]#[0-9a-fA-F]{3,8}['"]/.test(source), `${name} names no colour of its own`);
+    }
+    assert(/feeds: \['repos', 'board', 'sessions', 'health', 'brief'\]/.test(fs.readFileSync(path.join(pages, 'index.js'), 'utf8')),
+      'and the Overview asks for the brief feed the history rides on');
   });
 
   group('tower/app: the runtime’s published shape');

@@ -31,7 +31,11 @@ import {
   esc, num, empty, problem, issueChips, statCell, statgrid, card, LOCAL_ONLY_NOTICE,
 } from '../libs/tower/format.js';
 import { loading, swap } from '@omega.js/client/modules/live-page';
+import { chartSlot, lineChart } from '__main_assets__/js/libs/charts.js';
 import { issueItem, externalLink } from '../libs/tower/modal.js';
+import {
+  entriesOf, hasSeries, unread, seriesOf, ACCRUES, UNREAD,
+} from '../libs/tower/history.js';
 
 /** The rows a section shows — narrowed to the selected repos when any are named. */
 const forRepo = (items, selected) => items.filter((item) => inScope(selected, item.repo));
@@ -68,6 +72,53 @@ const numbers = (payload, lists, selected) => statgrid([
   statCell('Inbox', lists.inbox.length, '/board'),
   statCell('Parked', selected.length ? num(null) : payload.counts.parked, '/board'),
 ]);
+
+// ── The week behind the numbers ────────────────────────────────────────────
+//
+// Three sparklines under the counts (issue #55): the last seven mornings of the
+// open board, what each of them closed, and how deep the inbox got. The history
+// is the published briefs read back, so it is ROSTER-wide like the headline —
+// a narrowed view does not rewrite it — and it says why it is empty rather than
+// drawing an axis with nothing on it.
+//
+// Small on purpose: these are the shape of a week beside today's numbers, not
+// the Overview's charts a second time.
+const SPARK_DAYS = 7;
+const SPARK_HEIGHT = 80;
+
+const sparkSeries = (payload, key) => {
+  const entries = entriesOf(payload);
+  return seriesOf(entries.slice(-SPARK_DAYS), key);
+};
+
+const SPARKS = [
+  ['brief-spark-open', 'open', 'Open'],
+  ['brief-spark-closed', 'closedDay', 'Closed a day'],
+  ['brief-spark-inbox', 'inbox', 'Inbox'],
+];
+
+const sparklines = (payload, selected) => {
+  // The history is roster-wide, and under a selection the subhead promises
+  // everything below it is narrowed — so the card names its own scope rather
+  // than let the page make a false claim about it.
+  const title = selected.length ? 'The week behind these numbers (every repo)' : 'The week behind these numbers';
+  if (unread(payload)) return card(title, empty(UNREAD, 'fa-regular fa-clock'), { class: 'mb-4' });
+  if (!hasSeries(payload)) return card(title, empty(ACCRUES, 'fa-regular fa-clock'), { class: 'mb-4' });
+  return card(title, `<div class="row g-3">
+    ${SPARKS.map(([id, key, label]) => `<div class="col-12 col-md-4">
+      <p class="classy-micro text-body-secondary mb-1">${esc(label)}</p>
+      ${chartSlot(id, SPARK_HEIGHT, sparkSeries(payload, key).values)}
+    </div>`).join('')}
+  </div>`, { class: 'mb-4' });
+};
+
+const drawSparklines = (payload) => {
+  if (!hasSeries(payload)) return;
+  for (const [id, key, label] of SPARKS) {
+    const series = sparkSeries(payload, key);
+    lineChart(id, { labels: series.labels, series: [{ label, values: series.values }] });
+  }
+};
 
 // ── The sections ───────────────────────────────────────────────────────────
 
@@ -216,9 +267,12 @@ const render = (root, state) => {
     inbox: forRepo(payload.inbox || [], selected),
   };
 
-  swap(root, `
+  // The charts are drawn only when the markup they live on was written: an
+  // unchanged tick leaves the existing canvases — and their instances — alone.
+  if (!swap(root, `
     ${headline(payload, selected)}
     ${numbers(payload, lists, selected)}
+    ${sparklines(payload, selected)}
     ${nextUp(forRepo(payload.nextUp || [], selected))}
     ${section('Waiting on you', lists.waiting, 'nothing is waiting on you', true)}
     ${section('Ready to start', lists.ready, 'nothing is specced')}
@@ -227,7 +281,9 @@ const render = (root, state) => {
     ${summaryCard('The week', payload.week)}
     ${summaries(payload)}
     ${warnings(forRepo(payload.warnings || [], selected), MODE === 'github')}
-  `);
+  `)) return;
+
+  drawSparklines(payload);
 };
 
 // `repos` is the roster the sidebar's project selector is filled from — the page
@@ -236,5 +292,6 @@ const render = (root, state) => {
 export default () => startPage({
   mount: 'tower-brief',
   feeds: ['repos', 'brief'],
+  charts: true,
   render,
 });

@@ -375,11 +375,16 @@ export const cap = (items, limit = 5) => {
  * `note` is the tile's tooltip — what a value that is NOT a number means. A
  * dash is honest and mute, and the sentence behind it is the difference between
  * "nothing is happening" and "this cannot be read from here".
+ *
+ * `sub` is one short line UNDER the number — how it compares with a week ago
+ * (issue #55). It is drawn only when there is something to say: a tile with no
+ * comparison keeps exactly the shape it had.
  */
-export const statCell = (label, value, href, note) => {
+export const statCell = (label, value, href, note, sub) => {
   const title = note ? ` title="${esc(note)}"` : '';
   const inner = `<div class="classy-statgrid__label"><span class="classy-micro text-nowrap">${esc(label)}</span></div>
-    <h3 class="classy-statgrid__value text-truncate">${esc(value)}</h3>`;
+    <h3 class="classy-statgrid__value text-truncate">${esc(value)}</h3>${sub ? `
+    <p class="classy-micro text-body-secondary mb-0 text-truncate">${esc(sub)}</p>` : ''}`;
   return href
     ? `<a class="classy-statgrid__cell text-reset text-decoration-none" href="${esc(href)}"${title}>${inner}</a>`
     : `<div class="classy-statgrid__cell"${title}>${inner}</div>`;

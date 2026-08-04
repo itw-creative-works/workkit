@@ -73,6 +73,13 @@ const PAGE_SIZE = 100;
 // How much of an issue body rides the sweep; the dialog reads it straight off.
 const BODY_LIMIT = 4000;
 
+// The closed issues a repo is asked for, and the window they are counted over —
+// tower/api/lib/board.js's numbers, restated for the copy-boundary reason every
+// other constant here is. The count is all that survives normalization: no
+// closed issue enters the board.
+const CLOSED_PAGE = 30;
+const CLOSED_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 // The label vocabulary's groups (workflow/labels.json, the SSOT the heal reads).
 // A group missing here is a group the published board cannot show, so the suite
 // holds this list against the file.
@@ -326,9 +333,24 @@ export const buildBoardQuery = (slugs) => {
         assignees(first: 5) { nodes { login } }
       }
     }
+    closed: issues(states: CLOSED, first: ${CLOSED_PAGE}, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes { closedAt }
+    }
   }`;
   });
   return `query {\n${fields.join('\n')}\n}\n`;
+};
+
+/** How many of a repo's closed issues were closed in the last 24 hours — the API's own count. */
+export const closedSince = (resolved, now) => {
+  const nodes = ((resolved || {}).closed || {}).nodes || [];
+  let count = 0;
+  for (const node of nodes) {
+    const at = Date.parse((node || {}).closedAt || '');
+    if (Number.isNaN(at)) continue;
+    if (now - at <= CLOSED_WINDOW_MS && at <= now) count += 1;
+  }
+  return count;
 };
 
 /** `group:value` labels into a map of group → values, keeping only the groups the vocabulary defines. */
@@ -364,9 +386,10 @@ export const errorsByAlias = (errors) => {
  * @param {string[]} slugs - the roster, in the order the aliases were built
  * @param {object} data - the answer's `data`
  * @param {object[]} errors - its `errors`, if any
+ * @param {number} [now] - epoch ms the day's closed count is measured back from
  * @returns {{ok: true, issues: object[], repos: object[]}}
  */
-export const normalizeBoard = (slugs, data, errors) => {
+export const normalizeBoard = (slugs, data, errors, now = Date.now()) => {
   const aliasErrors = errorsByAlias(errors);
   const issues = [];
   const repos = [];
@@ -382,6 +405,7 @@ export const normalizeBoard = (slugs, data, errors) => {
       count: nodes.length,
       totalCount: total,
       truncated: total > nodes.length,
+      closedDay: closedSince(resolved, now),
       error: aliasErrors[alias] || (resolved ? null : 'not resolved'),
     });
     for (const node of nodes) {
@@ -544,6 +568,18 @@ const byUrgency = (a, b) => {
 // the suite compares them key for key.
 const NEXT_UP_PER_REPO = 3;
 
+// The per-repo sweep counts the payload carries, and the roster-wide closed
+// count summed off them — that module's `repoCountsFrom`, restated. A published
+// copy carries them for the same reason it carries `nextUp`: the payloads are
+// one shape, and the suite compares them key for key.
+const repoCountsFrom = (board) => ((board && board.repos) || [])
+  .filter((repo) => !repo.error)
+  .map((repo) => ({
+    slug: repo.slug,
+    open: typeof repo.totalCount === 'number' ? repo.totalCount : (repo.count || 0),
+    closedDay: typeof repo.closedDay === 'number' ? repo.closedDay : 0,
+  }));
+
 const nextUpFrom = (issues) => {
   const actionable = [
     ...issues.filter((i) => i.status === 'blocked'),
@@ -603,12 +639,16 @@ export const buildBrief = (board, opts = {}) => {
     parked: issues.filter((i) => i.status === 'parked').length,
   };
 
+  const repoCounts = repoCountsFrom(board);
+
   return {
     ok: Boolean(board && board.ok),
     reason: board && board.ok === false ? (board.reason || 'the board sweep failed') : null,
     generatedAt: opts.generatedAt || new Date().toISOString(),
     headline: headlineFor(counts),
     counts,
+    closedDay: repoCounts.reduce((sum, repo) => sum + repo.closedDay, 0),
+    repoCounts,
     nextUp: nextUpFrom(issues),
     waiting,
     ready,
@@ -616,7 +656,88 @@ export const buildBrief = (board, opts = {}) => {
     inbox,
     warnings: [],
     summaries: opts.summaries || null,
+    history: opts.history || null,
   };
+};
+
+// ── The history ────────────────────────────────────────────────────────────
+//
+// The board over time, read back off the published briefs (issue #55). The
+// server reads exactly this (tower/api/lib/history.js) and this side cannot
+// import it, so the prefix, the pattern and the cap are restated and the suite
+// pins the parse against the server's own.
+
+/** The line a brief carries its day's numbers on — jobs/stats.js renders it. */
+const STATS_RE = /<!--\s*workkit-stats:\s*(\{.*\})\s*-->/;
+
+/** How many mornings a chart draws, and how wide the read that finds them is. */
+const HISTORY_LIMIT = 35;
+const HISTORY_WINDOW = 100;
+
+/** The same Discussions read the summaries make, WITH the body the line lives in. */
+export const buildHistoryQuery = (slug, first = HISTORY_WINDOW) => {
+  const [owner, name] = slug.split('/');
+  return `query {
+  repository(owner: "${owner}", name: "${name}") {
+    discussions(first: ${first}, orderBy: {field: CREATED_AT, direction: DESC}) {
+      nodes { title body }
+    }
+  }
+}
+`;
+};
+
+/** One brief body's stats block, or null — a brief published before the block is simply skipped. */
+export const parseStatsMark = (body) => {
+  const match = STATS_RE.exec(String(body || ''));
+  if (!match) return null;
+  let parsed = null;
+  try {
+    parsed = JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  if (typeof parsed.date !== 'string' || !parsed.date) return null;
+  if (!parsed.totals || typeof parsed.totals !== 'object') return null;
+  return {
+    date: parsed.date,
+    totals: parsed.totals,
+    closedDay: typeof parsed.closedDay === 'number' ? parsed.closedDay : 0,
+    repos: (parsed.repos && typeof parsed.repos === 'object') ? parsed.repos : {},
+  };
+};
+
+/** The discussion nodes, parsed into the history series — oldest first, the order a chart draws in. */
+export const normalizeHistory = (data) => {
+  const nodes = (((data || {}).repository || {}).discussions || {}).nodes || [];
+  const entries = [];
+  for (const node of nodes) {
+    if (!node || typeof node.title !== 'string') continue;
+    if (!node.title.startsWith(BRIEF_TITLE_PREFIX)) continue;
+    const stats = parseStatsMark(node.body);
+    if (stats) entries.push(stats);
+  }
+  return entries.slice(0, HISTORY_LIMIT).sort((a, b) => a.date.localeCompare(b.date));
+};
+
+/**
+ * The board over time, or null when it could not be read.
+ *
+ * NULL rather than an empty list, because the two say opposite things: a site
+ * whose home repo cannot be reached has no history to show, while a home repo
+ * whose briefs carry no stats line yet has a history that is genuinely empty —
+ * and the page says a different sentence for each.
+ *
+ * @param {string} home - the home repo slug, or ''
+ * @param {object} ctx
+ * @returns {Promise<Array<object>|null>}
+ */
+export const fetchHistory = async (home, ctx = {}) => {
+  if (!home) return null;
+  const answer = await graphql(buildHistoryQuery(home), ctx);
+  if (!answer.ok) return null;
+  return normalizeHistory(answer.data);
 };
 
 // ── The one door ───────────────────────────────────────────────────────────
@@ -651,8 +772,11 @@ export const readFeed = async (path, ctx = {}) => {
 
   if (path === '/api/brief') {
     const summaries = await fetchSummaries(home, ctx);
+    // The history rides the brief here exactly as it does on the tower's own
+    // endpoint, so the charts on Overview and Brief work off-machine too.
+    const history = await fetchHistory(home, ctx);
     return board.ok
-      ? { ok: true, data: buildBrief(board, { generatedAt: ctx.generatedAt, summaries }), status: 200, reason: null }
+      ? { ok: true, data: buildBrief(board, { generatedAt: ctx.generatedAt, summaries, history }), status: 200, reason: null }
       : { ok: false, data: null, status: board.status || null, reason: board.reason };
   }
 

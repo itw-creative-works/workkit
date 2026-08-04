@@ -165,6 +165,65 @@ const run = async () => {
     assertEq(out.warnings.length, 0, 'nothing to say is better than something to ignore');
   });
 
+  group('tower/brief: what the sweep counted, per repo');
+
+  // Issue #55: the payload carries the sweep's per-repo counts and the day's
+  // roster-wide closed total, because the morning's stats line is composed from
+  // this payload and a chart drawn a month later reads that line.
+
+  await test('the closed count is summed across the roster, and each repo keeps its own', () => {
+    const board = {
+      ok: true,
+      issues: [issue(1, { status: 'blocked' })],
+      repos: [
+        { slug: 'owner/workkit', count: 1, totalCount: 1, truncated: false, closedDay: 3, error: null },
+        { slug: 'owner/other', count: 0, totalCount: 0, truncated: false, closedDay: 2, error: null },
+      ],
+    };
+    const out = buildBrief(board, {}, ROSTER, STAMP);
+    assertEq(out.closedDay, 5, 'three and two closed yesterday');
+    assertEq(out.repoCounts.length, 2, 'one entry per repo the sweep answered for');
+    assertEq(out.repoCounts[0].slug, 'owner/workkit', 'named by slug, the way the stats line keys them');
+    assertEq(out.repoCounts[0].closedDay, 3, 'each repo keeps its own count');
+  });
+
+  await test('a repo the sweep could not read contributes no counts at all', () => {
+    // A one-morning token hiccup on one repo must not publish that repo as
+    // "0 open" — the stats line is the only store, so the false zero would be
+    // a permanent dip in its series. The unread repo is absent instead.
+    const board = {
+      ok: true,
+      issues: [],
+      repos: [
+        { slug: 'owner/workkit', count: 2, totalCount: 2, truncated: false, closedDay: 3, error: null },
+        { slug: 'owner/unread', count: 0, totalCount: 0, truncated: false, closedDay: 0, error: 'Could not resolve to a Repository' },
+      ],
+    };
+    const out = buildBrief(board, {}, ROSTER, STAMP);
+    assertEq(out.repoCounts.length, 1, 'only the repo the sweep answered for');
+    assertEq(out.repoCounts[0].slug, 'owner/workkit', 'the readable one');
+    assertEq(out.closedDay, 3, 'and the sum is over what was actually read');
+  });
+
+  await test('a repo over the page cap is still that many issues open', () => {
+    const board = {
+      ok: true,
+      issues: [],
+      repos: [{ slug: 'owner/workkit', count: 100, totalCount: 137, truncated: true, closedDay: 0, error: null }],
+    };
+    assertEq(buildBrief(board, {}, ROSTER, STAMP).repoCounts[0].open, 137,
+      'the open count is the totalCount — a series that dipped at the cap would be a lie about the day');
+  });
+
+  await test('a sweep that carries no counts at all reads as zero, never undefined', () => {
+    const out = buildBrief(boardOf([]), {}, ROSTER, STAMP);
+    assertEq(out.closedDay, 0, 'nothing closed');
+    assertEq(out.repoCounts.length, 0, 'and no repo entries to draw');
+    const older = buildBrief({ ok: true, issues: [], repos: [{ slug: 'owner/workkit', count: 2 }] }, {}, ROSTER, STAMP);
+    assertEq(older.repoCounts[0].open, 2, 'a repo entry without a totalCount falls back to what it returned');
+    assertEq(older.repoCounts[0].closedDay, 0, 'and one without a closed count closed nothing');
+  });
+
   group('tower/brief: the headline and the failed sweep');
 
   await test('the headline names the most consequential fact, in order', () => {

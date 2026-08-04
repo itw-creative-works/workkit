@@ -15,9 +15,13 @@ import {
   esc, num, empty, problem, shortPath, statCell, statgrid, card, pill, cap,
   modelBadge, statusBreakdown, LOCAL_ONLY_NOTICE, localOnlyNotice,
 } from '../libs/tower/format.js';
-import { chartSlot, doughnutChart } from '__main_assets__/js/libs/charts.js';
+import { chartSlot, doughnutChart, lineChart, barChart } from '__main_assets__/js/libs/charts.js';
+import {
+  entriesOf, hasSeries, unread, seriesOf, weekDelta, deltaLine, ACCRUES, UNREAD,
+} from '../libs/tower/history.js';
 import { loading, swap } from '@omega.js/client/modules/live-page';
 import { issueItem, externalLink } from '../libs/tower/modal.js';
+import { selectedSlugs } from '../libs/tower/scope.js';
 import { crewActivity, cardMuted } from '../libs/tower/agent.js';
 
 /** Sum a health field across the repos in play; nulls (unknowable) are skipped. */
@@ -43,12 +47,27 @@ const machineStat = (state, name, label, value, href) => (localOnly(state, name)
   ? statCell(label, num(null), href, LOCAL_ONLY_NOTICE)
   : statCell(label, value, href));
 
+// The brief payload, which is where the history rides — the same read the Brief
+// page makes, and the only feed that carries the mornings before this one.
+const briefPayload = (state) => {
+  const result = feed(state, 'brief');
+  return result && result.ok ? result.data : null;
+};
+
+// How a number compares with a week ago, as the tile's sub-line (issue #55).
+// The comparison is the HISTORY's, which is the board as the published briefs
+// recorded it — roster-wide, and simply absent until two mornings have gone
+// out. Under a repo selection the tiles above are narrowed, so the sub-lines
+// go quiet rather than sit a roster-wide delta under a per-repo number.
+const since = (entries, key) => deltaLine(weekDelta(entries, key));
+
 const numbers = (state) => {
   const issues = issuesFor(state);
+  const entries = selectedSlugs(state).length ? [] : entriesOf(briefPayload(state));
   return statgrid([
-    statCell('Open issues', issues.length, '/board'),
-    statCell('Blocked', issues.filter((issue) => issue.status === 'blocked').length, '/board'),
-    statCell('In flight', issues.filter((issue) => issue.status === 'building').length, '/board'),
+    statCell('Open issues', issues.length, '/board', undefined, since(entries, 'open')),
+    statCell('Blocked', issues.filter((issue) => issue.status === 'blocked').length, '/board', undefined, since(entries, 'waiting')),
+    statCell('In flight', issues.filter((issue) => issue.status === 'building').length, '/board', undefined, since(entries, 'inFlight')),
     machineStat(state, 'sessions', 'Live sessions', sessionsFor(state).length, '/crew'),
     machineStat(state, 'health', 'Unpushed', total(state, 'unpushed'), '/health'),
     machineStat(state, 'health', 'Unreleased', total(state, 'unreleasedEntries'), '/health'),
@@ -208,6 +227,61 @@ const drawShape = (state) => {
   doughnutChart('overview-status', statusBreakdown(issues));
 };
 
+// ── The board over time ────────────────────────────────────────────────────
+//
+// The history is the published briefs read back (issue #55): one point per
+// morning, and nothing at all before the first brief that carried a stats
+// block. So the three cards say WHY they are empty rather than drawing an axis
+// with nothing on it — a chart of one point is a dot claiming to be a trend.
+//
+// The four series are the queue's own, in the Board's order, and every colour
+// comes from the chart module's ramp: nothing here names a colour.
+
+const historyBody = (payload, id, height, key) => {
+  if (unread(payload)) return empty(UNREAD, 'fa-regular fa-clock');
+  if (!hasSeries(payload)) return empty(ACCRUES, 'fa-regular fa-clock');
+  // The stamp is the card's OWN series — it is what tells `swap` the markup
+  // changed on a data-only tick, so a card stamped with a neighbour's series
+  // would redraw on the wrong signal.
+  return chartSlot(id, height, seriesOf(entriesOf(payload), key).values);
+};
+
+const overTime = (state) => {
+  const payload = briefPayload(state);
+  const result = feed(state, 'brief');
+  // The feed has not answered yet — the cards are not drawn at all rather than
+  // drawn as an absence that a moment later turns into data.
+  if (!result) return '';
+  return `<div class="row g-4 mt-0">
+    <div class="col-12 col-xl-8">${card('The board over time', historyBody(payload, 'history-board', 240, 'open'), { class: 'h-100' })}</div>
+    <div class="col-12 col-xl-4">${card('Closed per day', historyBody(payload, 'history-closed', 240, 'closedDay'), { class: 'h-100' })}</div>
+    <div class="col-12">${card('Inbox depth', historyBody(payload, 'history-inbox', 180, 'inbox'), {})}</div>
+  </div>`;
+};
+
+const drawHistory = (state) => {
+  const payload = briefPayload(state);
+  if (!hasSeries(payload)) return;
+  const entries = entriesOf(payload);
+  const open = seriesOf(entries, 'open');
+
+  lineChart('history-board', {
+    labels: open.labels,
+    series: [
+      { label: 'waiting', values: seriesOf(entries, 'waiting').values },
+      { label: 'ready', values: seriesOf(entries, 'ready').values },
+      { label: 'in flight', values: seriesOf(entries, 'inFlight').values },
+      { label: 'inbox', values: seriesOf(entries, 'inbox').values },
+    ],
+  });
+
+  const closed = seriesOf(entries, 'closedDay');
+  barChart('history-closed', { labels: closed.labels, values: closed.values, label: 'closed' });
+
+  const inbox = seriesOf(entries, 'inbox');
+  lineChart('history-inbox', { labels: inbox.labels, series: [{ label: 'inbox', values: inbox.values }] });
+};
+
 /**
  * Draw the page.
  * @param {HTMLElement} root the page body
@@ -241,14 +315,19 @@ const render = (root, state) => {
       <div class="col-12 col-xl-6">${healthPanel(state)}</div>
     </div>
     ${shape(state)}
+    ${overTime(state)}
   `)) return;
 
   drawShape(state);
+  drawHistory(state);
 };
 
+// `brief` is read for its HISTORY — the mornings before this one, which no live
+// sweep can answer (issue #55). Its counts are not drawn here; the tiles above
+// are this minute's board.
 export default () => startPage({
   mount: 'tower-overview',
-  feeds: ['repos', 'board', 'sessions', 'health'],
+  feeds: ['repos', 'board', 'sessions', 'health', 'brief'],
   charts: true,
   render,
 });

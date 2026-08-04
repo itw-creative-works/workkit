@@ -52,6 +52,7 @@ const { repoHealth } = require('./lib/health');
 const { collectTelemetry } = require('./lib/telemetry');
 const { buildBrief } = require('./lib/brief');
 const { briefSummaries } = require('./lib/summaries');
+const { briefHistory } = require('./lib/history');
 
 // TOWER on a phone keypad is 86937; 8693 is what fits a port.
 const DEFAULT_PORT = 8693;
@@ -420,7 +421,27 @@ const createServer = (opts = {}) => {
   // they are the same board and the same health, one derivation. The summaries
   // attach onto it exactly as the 9am job attaches them (jobs/brief-payload.js),
   // which is what keeps the two payloads one shape.
-  const brief = () => Object.assign(buildBrief(board(), health(), roster()), summaries());
+  // The board over time, read back off the published briefs (issue #55) — a
+  // second GraphQL round trip on the same board the summaries come from, and
+  // cached on the same minute for the same reason. It is attached rather than
+  // built: the history is the mornings BEFORE this one, which no sweep of the
+  // live board can answer.
+  //
+  // A read that failed is null and says nothing on stderr, unlike the 9am job's
+  // named skip: this one runs every minute the tower is up, and a line per poll
+  // would bury the log it was meant to be visible in. The page draws the null as
+  // the sentence it means.
+  const history = cached(BOARD_TTL, () => briefHistory({
+    workflowHome: opts.workflowHome,
+    home: opts.home,
+    exec,
+  }));
+
+  const brief = () => Object.assign(
+    buildBrief(board(), health(), roster()),
+    summaries(),
+    { history: history() },
+  );
 
   /** The roster's slugs — what both write paths judge a repo against. */
   const slugsNow = () => roster().map((r) => r.slug).filter(Boolean);

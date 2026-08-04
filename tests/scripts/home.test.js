@@ -584,6 +584,17 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  await test('the manifest names every module the composer requires, the stats line included', () => {
+    // Issue #55: the morning's stats line is composed on the RUNNER, out of
+    // jobs/stats.js and the lib that owns its pattern. A manifest missing
+    // either is a cloud brief that publishes without the block, and a history
+    // that quietly stops accruing.
+    const dests = runnerPairs().map((pair) => pair.dest);
+    for (const dest of ['brief/jobs/stats.js', 'brief/tower/api/lib/history.js']) {
+      assert(dests.includes(dest), `${dest} is on the runner's list`);
+    }
+  });
+
   await test('the seeded runner composes without reaching back into the checkout', () => {
     // The closure is the whole point: a require the seed missed would only fail
     // on a runner, a morning later. Loading the seeded composer from the clone

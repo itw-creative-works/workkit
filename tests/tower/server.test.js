@@ -279,12 +279,38 @@ const run = async () => {
     cleanup(w.root);
   });
 
+  await test('/api/brief carries the board over time, read off the published briefs', async () => {
+    // Issue #55: the history is the only thing on this payload that a live
+    // sweep cannot answer — it is the mornings BEFORE this one, and each one
+    // recorded itself in the brief it published.
+    const w = mkWorld();
+    fs.writeFileSync(
+      path.join(w.root, 'workflow-home', 'settings.json'),
+      JSON.stringify({ version: 1, site: { repo: 'owner/private-home', publish: false, url: null } }),
+    );
+    const mark = (date, open) => `<!-- workkit-stats: {"v":1,"date":"${date}","totals":{"open":${open},"waiting":1,"ready":0,"inFlight":0,"inbox":2,"parked":0},"closedDay":3,"repos":{"owner/repo":{"open":${open}}}} -->`;
+    w.discussions = [
+      { title: 'brief: 2026-08-03', body: `HEADLINE: today.\n${mark('2026-08-03', 12)}\n` },
+      { title: 'brief: 2026-08-02', body: 'HEADLINE: a morning before the block existed.\n' },
+      { title: 'brief: 2026-08-01', body: `HEADLINE: two days ago.\n${mark('2026-08-01', 15)}\n` },
+    ];
+    const c = await start(w);
+    const { body } = await getJson(c, '/api/brief');
+    assertEq(body.history.length, 2, 'the two mornings that recorded themselves');
+    assertEq(body.history.map((entry) => entry.date).join(','), '2026-08-01,2026-08-03', 'oldest first, the order a chart draws in');
+    assertEq(body.history[1].totals.open, 12, 'and the numbers each one carried');
+    assertEq(body.closedDay, 0, 'while today’s closed count comes from the sweep, not from the history');
+    await c.stop();
+    cleanup(w.root);
+  });
+
   await test('a machine with no home repo still serves a brief', async () => {
     const w = mkWorld();
     const c = await start(w);
     const { status, body } = await getJson(c, '/api/brief');
     assertEq(status, 200, 'ok');
     assertEq(body.findings, null, 'there is nowhere to read a summary from');
+    assertEq(body.history, null, 'and no history — a read that could not be made is null, never an empty series');
     assertEq(w.calls.filter((call) => call.join(' ').includes('discussions(first')).length, 0,
       'and nothing was asked of GitHub');
     await c.stop();

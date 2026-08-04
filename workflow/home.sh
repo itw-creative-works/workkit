@@ -71,6 +71,7 @@ WK_HOME_RUNNER_FILES=(
   'jobs/brief-publish.sh:brief/jobs/brief-publish.sh'
   'jobs/brief-payload.js:brief/jobs/brief-payload.js'
   'jobs/cc-news.js:brief/jobs/cc-news.js'
+  'jobs/stats.js:brief/jobs/stats.js'
   'workflow/lib.sh:brief/workflow/lib.sh'
   'workflow/discussions.sh:brief/workflow/discussions.sh'
   'workflow/home.sh:brief/workflow/home.sh'
@@ -79,6 +80,7 @@ WK_HOME_RUNNER_FILES=(
   'tower/api/lib/health.js:brief/tower/api/lib/health.js'
   'tower/api/lib/brief.js:brief/tower/api/lib/brief.js'
   'tower/api/lib/summaries.js:brief/tower/api/lib/summaries.js'
+  'tower/api/lib/history.js:brief/tower/api/lib/history.js'
 )
 
 # The remote, and the one seam the suite needs: pointed at a local bare repo,

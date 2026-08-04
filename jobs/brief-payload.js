@@ -17,10 +17,11 @@
 // the first when the second happened is worse than no brief at all.
 //
 // Pure gather: no writes, no Claude, no notification. `morning.sh` owns the
-// sending — and, since issue #86, the publishing: the upstream-news cursor now
-// lives on the board, so the one thing this script leaves behind is the version
-// line the runner appends to the brief it publishes, written into the scratch
-// file named by `WORKKIT_BRIEF_MARK_FILE` and gone with the run.
+// sending — and, since issue #86, the publishing: what this script leaves
+// behind are the two lines the runner appends to the brief it publishes, the
+// upstream-news cursor and the day's stats (issue #55), both written into the
+// scratch file named by `WORKKIT_BRIEF_MARK_FILE` and gone with the run. Both
+// live on the published board rather than on this machine.
 //
 // Usage:
 //   node jobs/brief-payload.js          // the payload on stdout
@@ -35,6 +36,7 @@ const { repoHealth } = require('../tower/api/lib/health');
 const { buildBrief } = require('../tower/api/lib/brief');
 const { briefSummaries, homeSlugFor } = require('../tower/api/lib/summaries');
 const { collectCcNews, renderCcNews, renderVersionMark } = require('./cc-news');
+const { renderStatsMark } = require('./stats');
 
 // The digest instruction. It names the payload's sections rather than the shape
 // of a board file, and it fixes the FIRST line of the response: morning.sh puts
@@ -187,26 +189,38 @@ const composeBrief = (opts = {}) => {
 const render = (payload, news) => `${INSTRUCTION}\n\n${JSON.stringify(payload, null, 2)}\n${renderCcNews(news)}`;
 
 /**
- * Hand the runner the version line to append to the brief it publishes, through
- * the scratch file it named. Nothing durable is written here — the Discussion
- * is what records the cursor, and a run whose news could not be read at all
- * leaves the file empty so the runner publishes no line.
- * @param {object} news what collectCcNews returned
+ * Hand the runner the lines to append to the brief it publishes, through the
+ * scratch file it named.
+ *
+ * Two lines now, and each one rides only when it has something to say: the
+ * upstream-news cursor when the news could be read at all, and the day's stats
+ * (issue #55) whenever a payload was composed. Nothing durable is written here
+ * — the published Discussion is the store for both, which is why they leave
+ * together, in one file the runner appends verbatim.
+ *
+ * @param {object|null} news what collectCcNews returned
+ * @param {object|null} payload what composeBrief returned
  */
-const writeVersionMark = (news) => {
+const writeBriefMarks = (news, payload) => {
   const file = process.env.WORKKIT_BRIEF_MARK_FILE;
-  if (!file || !news || !news.version) return;
+  if (!file) return;
+  const lines = [];
+  if (news && news.version) lines.push(renderVersionMark(news.version));
+  const stats = renderStatsMark(payload);
+  if (stats) lines.push(stats);
+  if (!lines.length) return;
   try {
-    fs.writeFileSync(file, `${renderVersionMark(news.version)}\n`);
+    fs.writeFileSync(file, `${lines.join('\n')}\n`);
   } catch {
-    // Silent, like every other step of the news path: the brief already printed.
+    // Silent, like every other step of this path: the brief already printed.
   }
 };
 
-module.exports = { composeBrief, render, INSTRUCTION };
+module.exports = { composeBrief, render, writeBriefMarks, INSTRUCTION };
 
 if (require.main === module) {
   const news = collectCcNews();
-  process.stdout.write(render(composeBrief(), news));
-  writeVersionMark(news);
+  const payload = composeBrief();
+  process.stdout.write(render(payload, news));
+  writeBriefMarks(news, payload);
 }

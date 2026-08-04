@@ -49,15 +49,18 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
+const { BRIEF_TITLE_PREFIX } = require('../tower/api/lib/history');
+
 const WORKKIT_DIR = '.workkit';
 // The hand-edited file that names the home repo — the board the cursor lives on.
 const SETTINGS_FILE = 'settings.json';
 
-// The published briefs, by the title `brief-publish.sh` gives them, and the line
-// each one carries. THIS MODULE OWNS THE LINE'S SHAPE: the runner never writes
-// it by hand, it appends the file `renderVersionMark` was rendered into, so the
-// writer and the reader cannot drift.
-const BRIEF_TITLE_PREFIX = 'brief: ';
+// The published briefs, by the title `brief-publish.sh` gives them — read from
+// the module that owns that prefix now that a second reader shares it
+// (tower/api/lib/history.js, issue #55) — and the line each one carries. THIS
+// MODULE OWNS THE LINE'S SHAPE: the runner never writes it by hand, it appends
+// the file `renderVersionMark` was rendered into, so the writer and the reader
+// cannot drift.
 const MARK_RE = /<!--\s*cc-news:\s*(\d+(?:\.\d+)*)\s*-->/;
 const renderVersionMark = (version) => `<!-- cc-news: ${version} -->`;
 

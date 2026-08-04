@@ -7,7 +7,7 @@ user-invocable: true
 
 # Ship a Release
 
-Autonomous ship pipeline. Reads the project config, asks ONE question (bump type), then executes everything deterministically. No round-based questioning — just ship it.
+Autonomous ship pipeline. Reads the project config, picks the version bump itself (asking only when it believes the change is a breaking major), then executes everything deterministically. No round-based questioning — just ship it.
 
 ## Invocation args
 
@@ -37,11 +37,11 @@ Parse the user's invocation text BEFORE doing anything. Args pre-resolve decisio
 **Examples:**
 | Invocation | Bump | Files | Overrides |
 |---|---|---|---|
-| `/ship` | ask | all | none |
+| `/ship` | picked from the diff (ask only if major) | all | none |
 | `/ship patch` | patch | all | none |
 | `/ship minor no deploy` | minor | all | skip deploy (no prompt) |
 | `/ship patch no prepare` | patch | all | skip prepare |
-| `/ship src/ docs/` | ask | only those paths | none |
+| `/ship src/ docs/` | picked from the diff | only those paths | none |
 | `/ship patch publish` | patch | all | publish to npm |
 | `/ship minor deploy` | minor | all | deploy to production |
 | `/ship major publish deploy` | major | all | publish + deploy |
@@ -57,7 +57,7 @@ If all decisions are resolved by args (bump type given, file scope clear, no amb
    - The primary working directory (from the environment)
    - Any additional working directories
    - Repos you've run `git` commands in, edited files in, or `cd`'d into
-3. **If multiple repos have uncommitted changes or were edited this session, ASK which project to ship.** Don't guess — shipping the wrong repo is a hard-to-reverse mistake. This is the ONE exception to the "only ask bump type" rule.
+3. **If multiple repos have uncommitted changes or were edited this session, ASK which project to ship.** Don't guess — shipping the wrong repo is a hard-to-reverse mistake. This and a major bump are the only questions the pipeline ever asks.
 4. If only one repo was touched, or the user's intent is unambiguous, proceed without asking.
 
 Once the target is resolved, `cd` into that project's root (or the appropriate subdirectory like `functions/`) before continuing.
@@ -73,18 +73,17 @@ Once the target is resolved, `cd` into that project's root (or the appropriate s
 
 Also run `git log --oneline -5` to understand recent commit style.
 
-## Step 1: Ask bump type (THE ONLY QUESTION)
+## Step 1: Pick the bump type (ask ONLY for major)
 
 **Parse invocation args first.** If the user typed `/workkit:ship patch`, `/workkit:ship minor`, `/workkit:ship major`, or `/workkit:ship skip` — use that directly. Don't ask.
 
-If no bump type was given, ask ONE question with a recommended default:
-- Default to **patch** for bug fixes, config changes, prompt tweaks, dependency bumps, internal refactors
-- Default to **minor** for new features, new endpoints, new commands, new capabilities
-- Default to **major** for breaking changes
+If no bump type was given, PICK it from the session's changes and say which was picked in the ship summary (owner ruling, 2026-08-03 — no prompt):
+- **patch** for bug fixes, config changes, prompt tweaks, dependency bumps, internal refactors
+- **minor** for new features, new endpoints, new commands, new capabilities
 
-Options: **Patch** (0.0.X), **Minor** (0.X.0), **Major** (X.0.0), **Skip** (no bump). Put the recommended option first with "(Recommended)" suffix.
+The ONE exception is **major**: a breaking change is never assumed. When the analysis says the changes break consumers, ask — Options: **Major** (X.0.0), **Minor** (0.X.0), **Skip** (no bump), with Major first as "(Recommended)".
 
-This is the ONLY question the skill asks. Everything else is deterministic.
+Everything else is deterministic; no other bump question is ever asked.
 
 ## Step 2: Prepare (if applicable)
 

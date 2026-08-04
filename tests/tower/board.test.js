@@ -14,7 +14,7 @@ const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
 const REPO = path.join(__dirname, '..', '..');
-const { fetchBoard, buildQuery, labelGroups, LABELS_FILE, PAGE_SIZE, BODY_LIMIT } = require(path.join(REPO, 'tower', 'api', 'lib', 'board.js'));
+const { fetchBoard, buildQuery, labelGroups, LABELS_FILE, PAGE_SIZE, BODY_LIMIT, CLOSED_PAGE } = require(path.join(REPO, 'tower', 'api', 'lib', 'board.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-board-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -166,6 +166,59 @@ const run = async () => {
       'ITW-Creative-Works/workkit#17 ITW-Creative-Works/workkit#18 ianwieds/.dotfiles#22',
       'each issue carries its repo slug');
     assertEq(calls.filter((c) => c[1] === 'api').length, 1, 'ONE graphql call for the whole roster');
+  });
+
+  group('tower/board: what the day closed');
+
+  // Issue #55: the sweep gains a COUNT of the issues closed in the last 24
+  // hours, per repo — never the closed issues themselves. The clock is stated,
+  // because a 24-hour window judged at whatever moment the suite runs is a
+  // window no fixture can sit either side of.
+  const NOW = Date.parse('2026-07-29T11:00:00Z');
+  const closedAt = (...stamps) => ({ nodes: stamps.map((stamp) => ({ closedAt: stamp })) });
+
+  await test('the query asks each repo for its recently closed issues, and only their stamps', () => {
+    const q = buildQuery([['ITW-Creative-Works', 'workkit']]);
+    assert(q.includes('closed: issues(states: CLOSED'), 'an aliased second field');
+    assert(q.includes(`first: ${CLOSED_PAGE}`), 'with its own page size');
+    assert(/closed: issues\([^)]*\) \{\n\s*nodes \{ closedAt \}/.test(q), `and it selects nothing but closedAt: ${q}`);
+  });
+
+  await test('a repo reports how many issues it closed in the last day', () => {
+    const res = fetchBoard([ROSTER[0]], {
+      now: NOW,
+      exec: fakeGh({
+        data: {
+          r0: {
+            issues: { totalCount: 1, nodes: [issue(17)] },
+            // Three hours ago, 23h59 ago, 24h01 ago, tomorrow, and a stamp
+            // that is not one.
+            closed: closedAt('2026-07-29T08:00:00Z', '2026-07-28T11:01:00Z', '2026-07-28T10:59:00Z', '2026-07-30T09:00:00Z', null),
+          },
+        },
+      }),
+    });
+    assertEq(res.repos[0].closedDay, 2, 'the two inside the window, and neither edge case');
+  });
+
+  await test('a closed issue never enters the board', () => {
+    const res = fetchBoard([ROSTER[0]], {
+      now: NOW,
+      exec: fakeGh({
+        data: { r0: { issues: { totalCount: 1, nodes: [issue(17)] }, closed: closedAt('2026-07-29T08:00:00Z') } },
+      }),
+    });
+    assertEq(res.issues.length, 1, 'the issue list is the OPEN board, exactly as before');
+    assertEq(res.issues[0].number, 17, 'and it is the open issue');
+  });
+
+  await test('a repo that answered nothing closed nothing', () => {
+    const res = fetchBoard(ROSTER, {
+      now: NOW,
+      exec: fakeGh({ data: { r0: { issues: { totalCount: 0, nodes: [] } }, r1: null } }),
+    });
+    assertEq(res.repos[0].closedDay, 0, 'a repo with no closed field reads as zero, never undefined');
+    assertEq(res.repos[1].closedDay, 0, 'and so does one that did not resolve at all');
   });
 
   group('tower/board: the label vocabulary');

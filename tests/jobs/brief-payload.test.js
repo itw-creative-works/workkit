@@ -17,7 +17,8 @@ const { execFileSync, spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'brief-payload.js');
-const { composeBrief, render, INSTRUCTION } = require(SCRIPT);
+const { composeBrief, render, writeBriefMarks, INSTRUCTION } = require(SCRIPT);
+const { parseStatsMark } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'history.js'));
 
 const SLUG = 'ITW-Creative-Works/fixture';
 const STAMP = '2026-07-27T16:00:00.000Z';
@@ -417,7 +418,7 @@ const run = async () => {
     assertEq(first.status, 0, `exit 0 — stderr: ${first.stderr}`);
     // Past the instruction, which names the block it is explaining.
     assert(!/--- CC NEWS ---/.test(first.stdout.slice(INSTRUCTION.length)), 'the first morning does not dump the history');
-    assertEq(world.mark(), '<!-- cc-news: 2.1.219 -->\n', 'the version line the published brief will carry');
+    assertEq(world.mark().split('\n')[0], '<!-- cc-news: 2.1.219 -->', 'the version line the published brief will carry');
 
     // The brief that publish would have made, now on the board — and a release
     // above it upstream.
@@ -428,8 +429,59 @@ const run = async () => {
     assert(/--- CC NEWS ---/.test(second.stdout.slice(INSTRUCTION.length)), 'the new release is flagged');
     assert(/\[hooks\]\n2\.1\.220 — Added a `DirectoryAdded` hook/.test(second.stdout), 'with the entry under its topic');
     assert(/\[other\]\n2\.1\.220 — Bug fixes/.test(second.stdout), 'and the housekeeping rides under other — the digest judges, not the job');
-    assertEq(world.mark(), '<!-- cc-news: 2.1.220 -->\n', 'and the cursor the next brief publishes has advanced');
+    assertEq(world.mark().split('\n')[0], '<!-- cc-news: 2.1.220 -->', 'and the cursor the next brief publishes has advanced');
     cleanup(world.home);
+  });
+
+  await test('the mark file carries both lines — the cursor and the day’s stats', () => {
+    // Issue #55: the runner appends this file verbatim under the digest, so
+    // both lines the published brief is meant to carry leave together.
+    const world = mkNewsWorld();
+    const res = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    const lines = world.mark().trim().split('\n');
+    assertEq(lines.length, 2, `two lines, got: ${world.mark()}`);
+    assert(/^<!-- cc-news: /.test(lines[0]), `the cursor leads: ${lines[0]}`);
+    assert(/^<!-- workkit-stats: \{"v":1,"date":"\d{4}-\d{2}-\d{2}",/.test(lines[1]), `and the stats line follows: ${lines[1]}`);
+    assert(parseStatsMark(lines[1]), 'in the shape the read-back parses');
+    cleanup(world.home);
+  });
+
+  await test('the stats line rides even when there was no news to carry', () => {
+    // The two lines are independent: an upstream read that failed publishes no
+    // cursor, and the day's numbers are not the news's to take with it.
+    const world = mkNewsWorld();
+    const env = { ...world.env, WORKKIT_CC_CHANGELOG: 'file:///nowhere/at/all.md' };
+    const res = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    const lines = world.mark().trim().split('\n');
+    assertEq(lines.length, 1, `one line, got: ${world.mark()}`);
+    assert(/^<!-- workkit-stats: /.test(lines[0]), `and it is the day's numbers: ${lines[0]}`);
+    cleanup(world.home);
+  });
+
+  await test('the stats line says what the payload said, not what the day happened to be', () => {
+    // Composed directly, so the numbers are stated rather than swept: the line
+    // is the payload's own counts, and its date is the payload's own stamp.
+    const dir = mkTmp();
+    const file = path.join(dir, 'mark');
+    const before = process.env.WORKKIT_BRIEF_MARK_FILE;
+    process.env.WORKKIT_BRIEF_MARK_FILE = file;
+    writeBriefMarks(null, {
+      ok: true,
+      generatedAt: '2026-08-03T09:00:00.000Z',
+      counts: { open: 4, waiting: 1, ready: 1, inFlight: 1, inbox: 1, parked: 0 },
+      closedDay: 2,
+      repoCounts: [{ slug: 'owner/repo', open: 4, closedDay: 2 }],
+    });
+    if (before === undefined) delete process.env.WORKKIT_BRIEF_MARK_FILE;
+    else process.env.WORKKIT_BRIEF_MARK_FILE = before;
+    assertEq(
+      fs.readFileSync(file, 'utf8'),
+      '<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":4,"waiting":1,"ready":1,"inFlight":1,"inbox":1,"parked":0},"closedDay":2,"repos":{"owner/repo":{"open":4}}} -->\n',
+      'the line, exactly as the runner will append it',
+    );
+    cleanup(dir);
   });
 
   await test('nothing on this machine records the cursor', () => {

@@ -49,6 +49,15 @@ const PAGE_SIZE = 100;
 // and the rest is one click away on GitHub.
 const BODY_LIMIT = 4000;
 
+// The closed issues a repo is asked for, and the window they are counted over.
+// The sweep is about the OPEN board, and closed issues never enter it — what is
+// wanted is one number per repo, "how much shipped in the last day", which the
+// morning's stats line records and the history charts draw. Thirty is well past
+// a day's worth on any repo this board covers, and the count is what survives:
+// no closed issue is carried, so nothing downstream can start rendering one.
+const CLOSED_PAGE = 30;
+const CLOSED_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 const LABELS_FILE = path.join(__dirname, '..', '..', '..', 'workflow', 'labels.json');
 
 // stderr is piped, not ignored: gh writes its "gh auth login" guidance there,
@@ -108,8 +117,32 @@ const buildQuery = (slugs) => {
         assignees(first: 5) { nodes { login } }
       }
     }
+    closed: issues(states: CLOSED, first: ${CLOSED_PAGE}, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes { closedAt }
+    }
   }`);
   return `query {\n${fields.join('\n')}\n}\n`;
+};
+
+/**
+ * How many of a repo's closed issues were closed in the last 24 hours.
+ *
+ * The clock is an argument for the reason every other seam here is one: a count
+ * that depends on the hour the suite runs at is a count no test can state.
+ *
+ * @param {object} resolved the repo's resolved alias
+ * @param {number} now epoch ms the window is measured back from
+ * @returns {number}
+ */
+const closedSince = (resolved, now) => {
+  const nodes = ((resolved || {}).closed || {}).nodes || [];
+  let count = 0;
+  for (const node of nodes) {
+    const at = Date.parse((node || {}).closedAt || '');
+    if (Number.isNaN(at)) continue;
+    if (now - at <= CLOSED_WINDOW_MS && at <= now) count += 1;
+  }
+  return count;
 };
 
 /** JSON, or null when the text is not JSON (or is not there at all). */
@@ -162,11 +195,13 @@ const failureReason = (err) => {
  * @param {object} [opts]
  * @param {Function} [opts.exec] (cmd, args) => stdout — the `gh` seam
  * @param {string} [opts.labelsFile] override the vocabulary SSOT
+ * @param {number} [opts.now] epoch ms the day's closed count is measured back from
  * @returns {{ok: boolean, reason?: string, issues: object[], repos: object[]}}
  */
 const fetchBoard = (repos, opts = {}) => {
   const exec = opts.exec || defaultExec;
   const groups = labelGroups(opts.labelsFile);
+  const now = typeof opts.now === 'number' ? opts.now : Date.now();
 
   try {
     // Local and free — it answers "is gh installed", which no failure of the
@@ -212,6 +247,7 @@ const fetchBoard = (repos, opts = {}) => {
       count: nodes.length,
       totalCount: total,
       truncated: total > nodes.length,
+      closedDay: closedSince(resolved, now),
       error: aliasErrors[alias] || (resolved ? null : 'not resolved'),
     });
     for (const node of nodes) {
@@ -241,4 +277,4 @@ const fetchBoard = (repos, opts = {}) => {
   return { ok: true, issues, repos: repoEntries };
 };
 
-module.exports = { fetchBoard, buildQuery, parseLabels, labelGroups, errorsByAlias, PAGE_SIZE, BODY_LIMIT, LABELS_FILE };
+module.exports = { fetchBoard, buildQuery, parseLabels, labelGroups, errorsByAlias, closedSince, PAGE_SIZE, BODY_LIMIT, CLOSED_PAGE, CLOSED_WINDOW_MS, LABELS_FILE };
