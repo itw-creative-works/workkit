@@ -11,6 +11,22 @@
     id: "workkit",
     name: "Tower",
     description: "Mission control for the workkit issue workflow — the board, the crew, token usage, repo health, and the daily brief.",
+
+    // The one hex (issue #53): the framework composes both themes' accent
+    // ramps from it at build time (src/brand-tokens.js), so recoloring the
+    // whole dashboard is this line and no CSS.
+    color: "#E8853D",
+
+    images: {
+      // The mark is authored ONCE, at assets/logo/brandmark.svg; the assets
+      // service mints the variants into the gitignored .omega/assets and the
+      // web build's static channel bridges them to this path. The key is not
+      // auto-set by the mint — without it the sidebar stays text-only.
+      brandmark: "/assets/images/brand/brandmark.svg",
+      // The social preview: og/twitter tags fall back to the brandmark, an
+      // SVG no platform renders — this points them at the minted PNG instead.
+      social: "/assets/images/brand/social.png",
+    },
   },
 
   // The classy theme is what the whole dashboard is drawn in: omega-shell for

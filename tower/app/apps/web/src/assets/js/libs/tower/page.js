@@ -48,7 +48,7 @@ import {
   feedFetcher, githubFetcher, pageFeeds, githubPageFeeds, LIVE, MODE,
 } from './api.js';
 import { localOnlyNotice } from './format.js';
-import { localOnlySlot } from './state.js';
+import { board, localOnlySlot } from './state.js';
 import { clearToken, isTokenRefusal, safeStorage } from './github.js';
 import {
   isLocalHost, towerDownNotice, openTokenModal, hideTokenModal,
@@ -57,7 +57,7 @@ import { chromeKey, chromeMarkup, statusMarkup } from './chrome.js';
 import { isScopedPath, scopedHref } from './scope.js';
 import { menuMarkup, selectorLabel, sidebarKey } from './sidebar.js';
 import { startClock } from './clock.js';
-import { refreshAgentDialog } from './modal.js';
+import { holdBoard, refreshAgentDialog } from './modal.js';
 
 // ── The repo selection ─────────────────────────────────────────────────────
 //
@@ -355,6 +355,12 @@ export async function startPage(options) {
       if (prompted) hideTokenModal();
       prompted = false;
     }
+    // What an issue waits on and what it blocks are both read off the board this
+    // paint is drawing (#127), and the dialog that says them lives in the layout,
+    // outside the page mount. Handed over HERE, where every page's paint passes,
+    // so no page keeps a second copy of the payload for the dialog to read — and
+    // a page whose feeds carry no board hands over nothing.
+    holdBoard(board(state));
     options.render(body, state);
     // The page is drawn; so is anything the viewer has open OVER it. An agent
     // dialog is filled once, from a registry the render above has just

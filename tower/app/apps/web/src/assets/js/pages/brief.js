@@ -295,7 +295,7 @@ const render = (root, state) => {
 // brief.
 export default () => startPage({
   mount: 'tower-brief',
-  feeds: ['repos', 'brief'],
+  feeds: ['repos', 'brief', 'board'],
   charts: true,
   render,
 });

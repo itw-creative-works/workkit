@@ -1433,6 +1433,98 @@ const run = async () => {
     // renderer's, which escapes first (@omega.js/client's utilities suite).
   });
 
+  group('tower/app: modal — what an issue depends on');
+
+  // One board with one dependency in it, drawn twice over: #10 is what #11 and
+  // the cross-repo #12 are both waiting on. The second reference is written in
+  // another case on purpose — repo names are case-insensitive on GitHub and the
+  // inline `Depends on:` fallback is hand-typed, so the two spellings are one
+  // edge or the feature is a coin toss.
+  const BLOCKER = { ...ISSUE, number: 10, title: 'the one holding things up' };
+  const WAITER = {
+    ...ISSUE, number: 11, title: 'waiting on it', blockedBy: [{ repo: 'ITW/workkit', number: 10 }],
+  };
+  const ELSEWHERE = {
+    ...ISSUE, repo: 'ITW/other', number: 12, title: 'waiting from another repo', blockedBy: [{ repo: 'itw/WORKKIT', number: 10 }],
+  };
+  const BOARD = [BLOCKER, WAITER, ELSEWHERE];
+
+  await test('the board’s edges read both ways — what an issue waits on, and what waits on it', () => {
+    const waiting = modal.dependencies(WAITER, BOARD);
+    assertEq(waiting.waitsOn.length, 1, 'the waiter waits on one issue');
+    assertEq(waiting.waitsOn[0].number, 10, 'the blocker, as the board’s own object');
+    assertEq(waiting.blocks.length, 0, 'and nothing waits on it');
+
+    const blocker = modal.dependencies(BLOCKER, BOARD);
+    assertEq(blocker.waitsOn.length, 0, 'the blocker waits on nothing');
+    assertEq(blocker.blocks.map((one) => one.number).join(','), '11,12',
+      'and the inverse is read off the same payload — both of them, the cross-repo one included');
+  });
+
+  await test('a blocker the board is no longer carrying is satisfied, exactly as on a card', () => {
+    // The card's chip drops a blocker the sweep does not hold (format.waitsOnChips)
+    // because a closed one is nothing to wait for. The dialog may not answer that
+    // question a second way.
+    const gone = modal.dependencies({ ...ISSUE, number: 13, blockedBy: [{ repo: 'ITW/workkit', number: 999 }] }, BOARD);
+    assertEq(gone.waitsOn.length, 0, 'nothing to wait for');
+    assertEq(modal.dependencies(WAITER, []).waitsOn.length, 0, 'and a board that answered with nothing says nothing either');
+  });
+
+  await test('the dialog names both directions, each one opening the issue it names', () => {
+    const waiting = modal.issueDialog(WAITER, render, BOARD);
+    assert(waiting.body.includes('waits on'), 'the waiter says what it waits on');
+    assert(!waiting.body.includes('blocks'), 'and says nothing about blocking, since it blocks nothing');
+    assert(/data-issue="ITW\/workkit#10" role="button" tabindex="0">#10</.test(waiting.body),
+      'the blocker is named the short way in its own repo, and is the trigger that opens ITS dialog');
+
+    const blocker = modal.issueDialog(BLOCKER, render, BOARD);
+    assert(blocker.body.includes('blocks'), 'the blocker says what it is holding up');
+    assert(/data-issue="ITW\/workkit#11"[^>]*>#11</.test(blocker.body), 'the issue in the same repo, the short way');
+    assert(/data-issue="ITW\/other#12"[^>]*>ITW\/other#12</.test(blocker.body), 'and the one in another repo with its slug — `#12` there is a different issue');
+  });
+
+  await test('a dependency opens in the tower, never in a new tab', () => {
+    // The delegated listener ignores a click inside an `a[href]` — that is the
+    // card's escape hatch — so a reference drawn as an anchor would open the
+    // GitHub page instead of the dialog it is there to open.
+    const blocker = modal.issueDialog(BLOCKER, render, BOARD);
+    const start = blocker.body.indexOf('blocks');
+    assert(start > 0, 'the line is drawn');
+    const line = blocker.body.slice(start, blocker.body.indexOf('omega-tower-issue__body'));
+    assert(line.includes('#11'), 'and it is the one carrying the references');
+    assert(!line.includes('<a '), 'no anchor in it — an anchor would leave for GitHub instead');
+  });
+
+  await test('an issue that neither waits nor blocks draws no line at all', () => {
+    const alone = modal.issueDialog(ISSUE, render, BOARD);
+    assert(!alone.body.includes('waits on'), 'no label with nothing under it');
+    assert(!alone.body.includes('blocks'), 'in either direction');
+    assert(!alone.body.includes('gap-1 mb-3'),
+      'and no empty row where the line would have been — omission is the container, not just the words');
+    assert(!modal.issueDialog(WAITER, render).body.includes('waits on'),
+      'and a dialog handed no board at all says nothing rather than guessing');
+  });
+
+  await test('a hostile repo name reaches the dependency line as text', () => {
+    const nasty = modal.issueDialog(BLOCKER, render, [
+      BLOCKER, { ...WAITER, repo: '<img src=x onerror=alert(1)>' },
+    ]);
+    assert(!nasty.body.includes('<img'), 'the slug is escaped like every other remote value');
+  });
+
+  await test('the runtime hands the dialog the board the paint is drawing', () => {
+    // The dialog lives in the layout, outside the mount a paint writes into, and
+    // page.js is out of reach of these suites (see the header) — so what is
+    // pinned is the handover: every page's paint passes here, so no page keeps a
+    // second copy of the payload for the dialog to read.
+    const fs = require('fs');
+    const runtime = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
+    assert(/import \{[^}]*holdBoard[^}]*\} from '\.\/modal\.js'/.test(runtime), 'the runtime takes the handover from the dialog module');
+    assert(/^\s*holdBoard\(board\(state\)\);$/m.test(runtime), 'and hands it the board payload state.js reads back');
+    assert(runtime.search(/^\s*holdBoard\(board\(state\)\);$/m) < runtime.indexOf('options.render(body, state);'),
+      'before the render, so the page and its dialog are drawn from one payload');
+  });
+
   group('tower/app: modal — the agent dialog');
 
   const AGENT = {

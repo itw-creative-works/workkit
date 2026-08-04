@@ -20,6 +20,12 @@ Agent definitions shipped by the workkit plugin. They surface in a session names
 
 The manager stages the crew to the task rather than assembling it all at once: a small change is the manager alone or ONE worker; a feature is one worker, or a worker pair only when each has its own worktree and the manager merges; the `verifier` runs ONCE, when the build claims done; the full review panel assembles only inside `workkit:review` and `workkit:ship`. `scout` is recon — dispatch it at any point. Dispatch is one level deep throughout (§ Definition rules), so every stage is the manager's to open and close, and the manager keeps `.workkit/session.md` current as it goes — the task queue and quick notes, with durable facts promoted to their issue the moment they exist. Design calls, contract changes, final verdicts, and anything security-adjacent stay the manager's, never the crew's.
 
+### Parallel mode (opt-in)
+
+Several issues may be worked at once, but only when a `workkit:parallel` invocation turns that on; the default stays one issue at a time. It changes nothing about who dispatches — the session is still the only manager, and the concurrency lives in the WORKTREES.
+
+The manager groups the batch's issues before any spawn, by three forces in order: dependency edges (a blocker and its dependent never in different concurrent groups), then shared seams (issues touching one file or module group together, so no two worktrees write the same lines), then size balance. The grouping is recorded on each issue as its claim comment. Each group then gets ONE worker against ONE per-group brief on its own worktree and ONE blind verifier over that worktree's diff, and the group crews run concurrently. Merges are SERIAL — one group lands on the main tree at a time, the full suite green before the next begins, and a conflict is the landing group's to resolve on its worktree. One ship closes the batch by default: a single release carrying every group's CHANGELOG entries and closing every issue; a group whose result is urgent may ship alone, said out loud. The skill executes this; it is not a second set of rules.
+
 ## Agents from other repos
 
 A session's agents come from three places: any plugin ships them in its own `agents/` directory (this repo's, namespaced `workkit:`, is one such set), a repo ships them in `.claude/agents/`, and a user in `~/.claude/agents/`. Precedence on a name collision is **project > user > plugin**.

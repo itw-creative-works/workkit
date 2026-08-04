@@ -5,10 +5,10 @@
 // Before this, every issue on every page was an anchor to github.com, so the
 // only way to read one was to leave the dashboard. Now a click OPENS it here —
 // title, number, repo, status and chips, the body rendered, who holds it, when
-// it was filed and last touched, and how many comments are waiting — and GitHub
-// is reached only through the explicit external-link button, which is in the
-// dialog and on each card while it is hovered or focused. Nothing navigates by
-// accident.
+// it was filed and last touched, what it waits on and what it blocks, and how
+// many comments are waiting — and GitHub is reached only through the explicit
+// external-link button, which is in the dialog and on each card while it is
+// hovered or focused. Nothing navigates by accident.
 //
 // The dialog's markup is the LAYOUT's (_layouts/tower/page.html), like the
 // intake dialog's: the theme ships Bootstrap's modal and the tower supplies
@@ -109,6 +109,101 @@ const day = (value) => {
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString();
 };
 
+//
+// ── What an issue depends on ───────────────────────────────────────────────
+//
+// The Board's cards say what an issue is WAITING on (issue #103); the dialog is
+// where the issue is actually read, and it says both halves of the edge (#127):
+// what it waits on, and what is waiting on IT.
+//
+// Both come off the board payload already in memory — the same sweep the cards
+// judge a "waits on" chip against — so nothing is fetched and nothing is stored.
+// The inverse direction is read at the moment the dialog opens, by asking which
+// issues on that board name this one as a blocker; keeping it anywhere would be
+// a second copy of an edge the sweep already carries.
+//
+// A blocker the board is no longer holding is SATISFIED and drawn nowhere, which
+// is `waitsOnChips`'s rule and may not be answered here a second way: closed
+// issues leave the sweep, so being in it is the whole of the question.
+//
+
+/** The board payload the open dialog reads its dependencies out of. */
+let held = [];
+
+/**
+ * Hold the board payload the dependency line is derived from.
+ *
+ * Called by the paint (page.js), for the same reason the agent dialog's refresh
+ * is: a dialog lives in the layout, outside the mount a page's render writes
+ * into, and every page's paint passes through the runtime — so the payload is
+ * handed over once, there, rather than kept a second time by each page that
+ * opens an issue. A page whose feeds carry no board hands over nothing, and the
+ * dialog says nothing about dependencies rather than guessing at them.
+ *
+ * @param {object|null} payload - the board payload (state.js's `board`), or null
+ * @returns {void}
+ */
+export const holdBoard = (payload) => { held = (payload && payload.issues) || []; };
+
+/**
+ * What one issue waits on, and what waits on it — both read off one board.
+ *
+ * Pure, and answering in the BOARD's own issue objects rather than in the
+ * blocker references, because each one is drawn as a trigger that opens that
+ * issue's own dialog: the object is what the registry needs. Every comparison
+ * folds case, since repo names are case-insensitive on GitHub and the inline
+ * `Depends on:` fallback is hand-typed.
+ *
+ * @param {object} issue - the issue being read
+ * @param {object[]} [issues] - every open issue the sweep carries
+ * @returns {{waitsOn: object[], blocks: object[]}} the board's own issues
+ */
+export const dependencies = (issue, issues) => {
+  const board = issues || [];
+  const key = (ref) => issueKey(ref).toLowerCase();
+  const byKey = new Map(board.map((one) => [key(one), one]));
+  const self = key(issue);
+  return {
+    waitsOn: (issue.blockedBy || []).map((blocker) => byKey.get(key(blocker))).filter(Boolean),
+    blocks: board.filter((one) => (one.blockedBy || []).some((blocker) => key(blocker) === self)),
+  };
+};
+
+/**
+ * How one issue is named on another's line — the card's chip's own spelling: the
+ * short `#12` when the two share a repo, the whole key anywhere else, since
+ * `#12` in another repo is a different issue.
+ */
+const dependencyRef = (target, issue) => (String(target.repo).toLowerCase() === String(issue.repo).toLowerCase()
+  ? `#${target.number}`
+  : issueKey(target));
+
+/**
+ * One issue on the other end of an edge, as the chip that opens it.
+ *
+ * A SPAN and not an anchor: the delegated listener treats a link as the card's
+ * escape hatch to GitHub, so an anchor here would leave the dashboard rather
+ * than open the issue it names. The repo it carries is remote text like every
+ * other value on the dialog, and is escaped with the rest. The direction word
+ * lives in a sibling span a tab stop never reaches, so the chip carries it
+ * again as its accessible name.
+ */
+const dependencyChip = (target, issue, word) => `<span class="classy-chip omega-interactive" aria-label="${esc(`${word} ${dependencyRef(target, issue)}`)}" ${issueTrigger(target)}>${esc(dependencyRef(target, issue))}</span>`;
+
+/** One word of the line, in the muted voice the metadata above it is written in. */
+const dependencyWord = (word) => `<span class="classy-micro text-body-secondary">${esc(word)}</span>`;
+
+/** The dependency line, or nothing at all when the issue neither waits nor blocks. */
+const dependencyLine = (issue, issues) => {
+  const { waitsOn, blocks } = dependencies(issue, issues);
+  const group = (word, targets) => (targets.length
+    ? `${dependencyWord(word)}${targets.map((target) => dependencyChip(target, issue, word)).join('')}`
+    : '');
+  const parts = [group('waits on', waitsOn), group('blocks', blocks)].filter(Boolean);
+  if (!parts.length) return '';
+  return `<div class="d-flex flex-wrap align-items-center gap-1 mb-3">${parts.join(dependencyWord('·'))}</div>`;
+};
+
 /**
  * The three pieces of the dialog for one issue.
  *
@@ -119,9 +214,11 @@ const day = (value) => {
  * @param {(text: string) => string} renderBody - the markdown renderer, handed
  *   in by the mount: an issue body is hostile text, and what turns it into
  *   markup escapes first
+ * @param {object[]} [issues] - the board the dependency line is read off; the
+ *   mount hands over the one the paint is holding
  * @returns {{title: string, actions: string, body: string}}
  */
-export const issueDialog = (issue, renderBody) => {
+export const issueDialog = (issue, renderBody, issues) => {
   const rendered = renderBody(issue.body);
   const meta = [
     `filed ${day(issue.createdAt)}`,
@@ -138,6 +235,7 @@ export const issueDialog = (issue, renderBody) => {
         ${issueChips(issue)}
       </div>
       <p class="classy-micro text-body-secondary">${esc(meta.join(' · '))}</p>
+      ${dependencyLine(issue, issues)}
       <div class="omega-tower-issue__body">${rendered || '<p class="text-body-secondary mb-0">No description.</p>'}</div>
       ${issue.bodyTruncated ? '<p class="classy-micro text-body-secondary mt-2">The body is longer than this — the rest is on GitHub.</p>' : ''}
       <p class="mt-3 mb-0"><a href="${esc(issue.url)}" target="_blank" rel="noopener">${esc(issue.comments === 1 ? '1 comment' : `${issue.comments || 0} comments`)} on GitHub</a></p>`,
@@ -213,7 +311,7 @@ export function mountIssueModal({ render, scope = document } = {}) {
       console.warn(`[tower] no issue registered for ${key}`);
       return;
     }
-    const parts = issueDialog(issue, render);
+    const parts = issueDialog(issue, render, held);
     title.innerHTML = parts.title;
     actions.innerHTML = parts.actions;
     body.innerHTML = parts.body;
