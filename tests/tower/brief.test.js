@@ -142,6 +142,82 @@ const run = async () => {
     assertEq(out.nextUp.length, 0, 'work in flight is already somebody’s, and an inbox item is not a decision');
   });
 
+  group('tower/brief: what a morning waits on');
+
+  // Issue #103: a dependency is advisory — it changes no label — but it does
+  // change the ORDER a morning reads a repo in, and the item says what it is
+  // waiting for. Only a blocker the sweep can see is still open counts: the
+  // sweep is the open board, so an edge pointing outside it says nothing either
+  // way and is left to the graph.
+
+  const blockedByOf = (...keys) => ({
+    blockedBy: keys.map((key) => ({ repo: key.split('#')[0], number: Number(key.split('#')[1]) })),
+  });
+
+  await test('an issue waiting on an open one orders after everything unblocked in its repo', () => {
+    const board = boardOf([
+      issue(1, { status: 'blocked', priority: 'high', ...blockedByOf('owner/repo#9') }),
+      issue(2, { status: 'specced' }),
+      issue(9, { status: 'building' }),
+    ]);
+    const out = buildBrief(board, {}, ROSTER, STAMP);
+    assertEq(out.nextUp[0].items.map((i) => i.number).join(','), '2,1',
+      'the decision would have led, but nothing can move it until #9 does');
+    assertEq(out.nextUp[0].items[1].waitsOn.join(','), 'owner/repo#9', 'and it says what it waits for');
+    assertEq(out.nextUp[0].items[0].waitsOn.length, 0, 'an unblocked item waits on nothing, never undefined');
+  });
+
+  await test('a blocker is matched on the repo and the number together, never the number alone', () => {
+    const board = boardOf([
+      issue(1, { status: 'specced', ...blockedByOf('owner/other#9') }),
+      issue(2, { status: 'specced', ...blockedByOf('owner/elsewhere#9') }),
+      issue(9, { repo: 'owner/other', status: 'building' }),
+    ]);
+    const out = buildBrief(board, {}, ROSTER, STAMP);
+    const items = out.nextUp.find((entry) => entry.repo === 'owner/repo').items;
+    assertEq(items.map((i) => i.number).join(','), '2,1', 'the one whose blocker is really open is demoted');
+    assertEq(items[1].waitsOn.join(','), 'owner/other#9', 'named across repos, the way the board keys an issue');
+    assertEq(items[0].waitsOn.length, 0, 'and owner/elsewhere#9 is a different issue from owner/other#9');
+  });
+
+  await test('a blocker spelled in another case still counts — repo names are case-insensitive', () => {
+    const board = boardOf([
+      issue(1, { status: 'blocked', ...blockedByOf('OWNER/Repo#9') }),
+      issue(2, { status: 'specced' }),
+      issue(9, { status: 'building' }),
+    ]);
+    const out = buildBrief(board, {}, ROSTER, STAMP);
+    assertEq(out.nextUp[0].items.map((i) => i.number).join(','), '2,1',
+      'the hand-typed spelling is the same issue');
+    assertEq(out.nextUp[0].items[1].waitsOn.join(','), 'owner/repo#9',
+      'and waitsOn answers in the sweep’s spelling, not the hand-typed one');
+  });
+
+  await test('an edge pointing outside the sweep neither demotes nor is listed', () => {
+    // A closed issue and a repo this token cannot read look identical from
+    // here, so the edge says nothing rather than something invented.
+    const board = boardOf([
+      issue(1, { status: 'specced', ...blockedByOf('Omega-JS-Stack/omega#144') }),
+      issue(2, { status: 'specced' }),
+    ]);
+    const out = buildBrief(board, {}, ROSTER, STAMP);
+    assertEq(out.nextUp[0].items.map((i) => i.number).join(','), '1,2', 'the order the board gave them');
+    assertEq(out.nextUp[0].items[0].waitsOn.length, 0, 'and nothing is claimed about an unknown edge');
+  });
+
+  await test('the three a repo offers are the three that can move — a waiting item gives up its place', () => {
+    const board = boardOf([
+      issue(1, { status: 'blocked', ...blockedByOf('owner/repo#9') }),
+      issue(2, { status: 'specced' }),
+      issue(3, { status: 'specced' }),
+      issue(4, { status: 'specced' }),
+      issue(9, { status: 'building' }),
+    ]);
+    const out = buildBrief(board, {}, ROSTER, STAMP);
+    assertEq(out.nextUp[0].items.map((i) => i.number).join(','), '2,3,4',
+      'the cap is applied after the ordering, so the item held back is the blocked one');
+  });
+
   group('tower/brief: warnings');
 
   await test('a repo with work on the table is named by slug and sorted by weight', () => {

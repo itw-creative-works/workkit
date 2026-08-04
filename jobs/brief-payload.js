@@ -68,7 +68,8 @@ Then these labeled sections, one line per item, tightest useful phrasing:
 WAITING ON YOU: every issue in \`waiting\` — these move only if the owner acts.
 IN FLIGHT: every issue in \`inFlight\`, saying which repo.
 WORK ON THIS NEXT: \`nextUp\`, one line per repo — "repo: #N title, #N title" in
-the order given. Omit the section entirely when \`nextUp\` is empty.
+the order given; an item carrying \`waitsOn\` appends "(waits on #M)" so the
+morning knows why it sits last. Omit the section entirely when \`nextUp\` is empty.
 TODAY'S TOP 3: your pick of the highest-leverage next actions, judged across
 \`ready\`, inbox pressure, and \`warnings\`. Number them.
 ON THE TABLE: only repos in \`warnings\`, as "repo: N uncommitted, N unpushed, N unreleased".

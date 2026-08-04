@@ -376,6 +376,7 @@ const run = async () => {
     assert(/`findings` is the newest daily summary/.test(INSTRUCTION), 'and the findings');
     assert(/`week` is the weekly rollup, which rides on Mondays/.test(INSTRUCTION), 'and when the week rides');
     assert(/^WORK ON THIS NEXT: `nextUp`/m.test(INSTRUCTION), 'the response shape has its ranked list');
+    assert(/waits on/.test(INSTRUCTION), 'and the digest is told to say what an item waits on (#103)');
     assert(/^YESTERDAY: one line/m.test(INSTRUCTION), 'a line for what yesterday produced');
     assert(/^THE WEEK: one line/m.test(INSTRUCTION), 'and one for the week');
     for (const section of ['WORK ON THIS NEXT', 'YESTERDAY', 'THE WEEK']) {

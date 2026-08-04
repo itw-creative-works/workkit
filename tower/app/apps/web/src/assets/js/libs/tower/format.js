@@ -414,19 +414,45 @@ export const card = (heading, body, options = {}) => `<div class="card ${options
 </div>`;
 
 /**
- * The chips that label one issue — its type, its priority, whether an agent
- * may take it, and who holds it.
+ * The chips saying what an issue is WAITING on (issue #103) — one per blocker,
+ * and only while that blocker is still on the board.
+ *
+ * A dependency is advisory: nothing about the pipeline changes because of one,
+ * so it is drawn in the plain muted chip every undyed value uses rather than
+ * borrowing a status or priority hue. A blocker in the same repo is said the
+ * short way, the way the issue's own author would write it; one in another repo
+ * carries its slug, since `#12` there is a different issue.
+ *
+ * The blocker's repo is remote text like every other value here, so it is
+ * escaped along with the rest. Repo names are case-insensitive on GitHub and
+ * the inline fallback is hand-typed, so every comparison folds case.
+ *
+ * @param {object} issue one issue from /api/board or /api/brief
+ * @param {Set<string>} [open] the sweep's `repo#number` keys, lowercased
+ * @returns {string} markup, or nothing when it waits on nothing the board holds
+ */
+export const waitsOnChips = (issue, open) => (issue.blockedBy || [])
+  .filter((blocker) => open && open.has(issueKey(blocker).toLowerCase()))
+  .map((blocker) => `<span class="classy-chip">${esc(`waits on ${String(blocker.repo).toLowerCase() === String(issue.repo).toLowerCase() ? `#${blocker.number}` : issueKey(blocker)}`)}</span>`)
+  .join('');
+
+/**
+ * The chips that label one issue — its type, its priority, what it waits on,
+ * whether an agent may take it, and who holds it.
  *
  * One row of markup for the Board's cards and the Brief's list, which say the
- * same four things about the same issue and had drifted into two copies of it.
+ * same things about the same issue and had drifted into two copies of it.
  *
  * @param {object} issue one issue from /api/board or /api/brief
  * @param {string} [extraClass] spacing the caller's layout needs
+ * @param {Set<string>} [open] the sweep's `repo#number` keys — what a "waits on"
+ *   chip is judged against; without it the row says nothing about dependencies
  * @returns {string} markup
  */
-export const issueChips = (issue, extraClass = '') => `<span class="d-flex flex-wrap align-items-center gap-1${extraClass ? ` ${extraClass}` : ''}">
+export const issueChips = (issue, extraClass = '', open = null) => `<span class="d-flex flex-wrap align-items-center gap-1${extraClass ? ` ${extraClass}` : ''}">
   ${typeChip(issue.type)}
   ${priorityChip(issue.priority)}
+  ${waitsOnChips(issue, open)}
   ${issue.agentOk ? '<span class="classy-chip">agent:ok</span>' : ''}
   ${(issue.assignees || []).length ? `<span class="classy-micro">@${esc(issue.assignees.join(', @'))}</span>` : ''}
 </span>`;

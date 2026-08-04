@@ -9,13 +9,13 @@ description: Plain-language status digest of the repo's open issues, or across e
 
 ## Repo mode (default — a project repo is the cwd)
 
-One query does it: `gh issue list --state open --json number,title,labels,assignees --limit 100`.
+One query does it: `gh issue list --state open --json number,title,labels,assignees,blockedBy --limit 100`.
 Answer in this shape, plain language, one sentence per item:
 
 1. **Waiting on you** — `status:blocked` issues. Name the actual question for each (it is in a comment: `gh issue view <N> --comments`).
 2. **In flight** — `status:building` issues. Say who and what.
 3. **Up next** — `status:specced` issues, in priority order: `priority:high` first, then unlabeled (= normal), then `priority:low`. First 3–5.
-   Within one priority, order by dependency, risk, and reviewability: blockers first (work other issues wait on — a parent's open siblings and anything another issue names), then bugs, then shared seams (the file or module several queued items all touch), and only then dependent feature work. Say WHY the top item is top in the same sentence ("first because #12 waits on it"). This is the order the autonomy loop uses; the rule's home is `docs/project-state.md` § Queue semantics.
+   Within one priority, order by dependency, risk, and reviewability: blockers first (work other issues wait on — the native relationship where it exists, which the `blockedBy` field above carries, with a parent's open siblings, an inline `Depends on:` line and anything another issue names in prose as the fallback signal; an edge onto a CLOSED issue is satisfied and orders nothing), then bugs, then shared seams (the file or module several queued items all touch), and only then dependent feature work. Say WHY the top item is top in the same sentence ("first because #12 waits on it"). This is the order the autonomy loop uses; the rule's home is `docs/project-state.md` § Queue semantics.
 4. **Inbox** — the `status:inbox` count → offer the `workkit:triage` skill.
 
 Also mention `.workkit/` if a lease/notes file says this session or developer is mid-work on an issue (`.workkit/` is per-developer session state, not shared truth).

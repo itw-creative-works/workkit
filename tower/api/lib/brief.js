@@ -44,6 +44,7 @@ const brief = (issue) => ({
   priority: issue.priority || null,
   agentOk: Boolean(issue.agentOk),
   assignees: issue.assignees || [],
+  blockedBy: issue.blockedBy || [],
 });
 
 // High priority first, then the issue that has waited longest. `updatedAt` is
@@ -62,6 +63,15 @@ const byUrgency = (a, b) => {
 const NEXT_UP_PER_REPO = 3;
 
 /**
+ * The one name for one issue, `repo#number` — the browser's own idiom
+ * (libs/tower/format.js), on this side of the copy boundary.
+ *
+ * A dependency is matched on the PAIR and never on the number alone: the sweep
+ * is cross-repo, and `owner/a#12` and `owner/b#12` are two different issues.
+ */
+const issueKey = (issue) => `${issue.repo}#${issue.number}`;
+
+/**
  * What to work on next, per repo — the ranked few, in the order the whats-next
  * skill reads a board in.
  *
@@ -76,10 +86,26 @@ const NEXT_UP_PER_REPO = 3;
  * repos arrive in the order their leading item does. A repo with nothing
  * actionable is left out rather than listed empty.
  *
+ * An issue WAITING on another orders last inside its repo (issue #103), and
+ * says which ones it waits on. A blocker counts only where the sweep can see it
+ * is still open — the sweep IS the open board, so an edge whose target is in it
+ * is an edge nothing has satisfied. An edge pointing outside the sweep says
+ * nothing either way (a closed issue and a repo the token cannot read look
+ * identical from here), so it neither demotes its issue nor is listed. That is
+ * also why the cap is applied after the ordering rather than while filling: the
+ * item held back has to be the one that is waiting, not whichever arrived
+ * fourth.
+ *
  * @param {object[]} issues the sweep, already sorted byUrgency
  * @returns {Array<{repo: string, items: object[]}>}
  */
 const nextUpFrom = (issues) => {
+  // Repo names are case-insensitive on GitHub and the inline fallback is
+  // hand-typed, so the match folds case — and answers in the sweep's spelling.
+  const open = new Map(issues.map((issue) => [issueKey(issue).toLowerCase(), issueKey(issue)]));
+  const waitsOnFor = (issue) => (issue.blockedBy || [])
+    .map((blocker) => open.get(issueKey(blocker).toLowerCase()))
+    .filter(Boolean);
   const actionable = [
     ...issues.filter((i) => i.status === 'blocked'),
     ...issues.filter((i) => i.status === 'specced'),
@@ -87,7 +113,6 @@ const nextUpFrom = (issues) => {
   const byRepo = new Map();
   for (const issue of actionable) {
     const items = byRepo.get(issue.repo) || [];
-    if (items.length >= NEXT_UP_PER_REPO) continue;
     items.push({
       number: issue.number,
       title: issue.title,
@@ -95,10 +120,14 @@ const nextUpFrom = (issues) => {
       status: issue.status || null,
       priority: issue.priority || null,
       url: issue.url,
+      waitsOn: waitsOnFor(issue),
     });
     byRepo.set(issue.repo, items);
   }
-  return [...byRepo].map(([repo, items]) => ({ repo, items }));
+  return [...byRepo].map(([repo, items]) => ({
+    repo,
+    items: [...items.filter((i) => !i.waitsOn.length), ...items.filter((i) => i.waitsOn.length)].slice(0, NEXT_UP_PER_REPO),
+  }));
 };
 
 /**

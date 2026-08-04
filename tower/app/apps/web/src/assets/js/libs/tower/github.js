@@ -31,7 +31,7 @@
 // so the whole module imports and answers under Node.
 //
 
-import { priorityRank } from './format.js';
+import { priorityRank, issueKey } from './format.js';
 
 const GRAPHQL_URL = 'https://api.github.com/graphql';
 
@@ -331,6 +331,7 @@ export const buildBoardQuery = (slugs) => {
         comments { totalCount }
         labels(first: 20) { nodes { name } }
         assignees(first: 5) { nodes { login } }
+        blockedBy(first: 20) { nodes { number state repository { nameWithOwner } } }
       }
     }
     closed: issues(states: CLOSED, first: ${CLOSED_PAGE}, orderBy: {field: UPDATED_AT, direction: DESC}) {
@@ -365,6 +366,54 @@ export const parseLabels = (nodes) => {
     if (!LABEL_GROUPS.has(group)) continue;
     (out[group] = out[group] || []).push(name.slice(idx + 1));
   }
+  return out;
+};
+
+// The inline fallback for a dependency GitHub itself will not hold (issue #103)
+// — tower/api/lib/board.js's label and expression, restated for the copy-boundary
+// reason every other rule here is, and pinned against it by the suite.
+const DEPENDS_LABEL = 'depends on:';
+const DEPENDS_RE = /(?:^|[\s,;(])(?:([\w.-]+\/[\w.-]+))?#(\d+)\b/g;
+
+/**
+ * What one issue is WAITING on — the native edges merged with that inline
+ * fallback, in the API's own composition: a CLOSED edge is satisfied and never
+ * surfaces, an inline reference carries no state and counts until the line is
+ * edited away, and the same blocker written both ways is one edge.
+ *
+ * @param {object} node the issue node as GraphQL answered it
+ * @param {string} slug the repo it was swept from — what a bare `#<n>` means
+ * @returns {Array<{repo: string, number: number}>} empty when it waits on nothing
+ */
+export const blockersFor = (node, slug) => {
+  const out = [];
+  const seen = new Set();
+  const add = (repo, number) => {
+    const key = `${repo}#${number}`.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ repo, number });
+  };
+
+  for (const edge of ((node.blockedBy || {}).nodes || [])) {
+    if (!edge || edge.state !== 'OPEN' || typeof edge.number !== 'number') continue;
+    add(((edge.repository || {}).nameWithOwner) || slug, edge.number);
+  }
+
+  for (const line of String(node.body || '').split('\n')) {
+    const lower = line.toLowerCase();
+    // Issue bodies are markdown: a list bullet or bold marker around the label
+    // ("- Depends on:", "**Depends on:**") is the same line, still at its start.
+    if (!lower.trim().replace(/^[-*>\s]+/, '').startsWith(DEPENDS_LABEL)) continue;
+    const refs = line.slice(lower.indexOf(DEPENDS_LABEL) + DEPENDS_LABEL.length).replace(/^\*+/, '');
+    DEPENDS_RE.lastIndex = 0;
+    let match = DEPENDS_RE.exec(refs);
+    while (match) {
+      add(match[1] || slug, Number(match[2]));
+      match = DEPENDS_RE.exec(refs);
+    }
+  }
+
   return out;
 };
 
@@ -428,6 +477,7 @@ export const normalizeBoard = (slugs, data, errors, now = Date.now()) => {
         agentOk: agent.includes('ok'),
         agentWorking: agent.includes('working'),
         assignees: ((node.assignees || {}).nodes || []).map((a) => a.login),
+        blockedBy: blockersFor(node, slug),
       });
     }
   });
@@ -551,6 +601,7 @@ const briefIssue = (issue) => ({
   priority: issue.priority || null,
   agentOk: Boolean(issue.agentOk),
   assignees: issue.assignees || [],
+  blockedBy: issue.blockedBy || [],
 });
 
 // The three priority bands are format.js's — the same ones the Board sorts and
@@ -580,7 +631,17 @@ const repoCountsFrom = (board) => ((board && board.repos) || [])
     closedDay: typeof repo.closedDay === 'number' ? repo.closedDay : 0,
   }));
 
+// An issue waiting on another orders last inside its repo and says which ones
+// (issue #103) — that module's rule as well, down to which edges count: only a
+// blocker the sweep can see is still open, matched on the `repo#number` pair
+// rather than the number alone.
 const nextUpFrom = (issues) => {
+  // Repo names are case-insensitive on GitHub and the inline fallback is
+  // hand-typed, so the match folds case — and answers in the sweep's spelling.
+  const open = new Map(issues.map((issue) => [issueKey(issue).toLowerCase(), issueKey(issue)]));
+  const waitsOnFor = (issue) => (issue.blockedBy || [])
+    .map((blocker) => open.get(issueKey(blocker).toLowerCase()))
+    .filter(Boolean);
   const actionable = [
     ...issues.filter((i) => i.status === 'blocked'),
     ...issues.filter((i) => i.status === 'specced'),
@@ -588,7 +649,6 @@ const nextUpFrom = (issues) => {
   const byRepo = new Map();
   for (const issue of actionable) {
     const items = byRepo.get(issue.repo) || [];
-    if (items.length >= NEXT_UP_PER_REPO) continue;
     items.push({
       number: issue.number,
       title: issue.title,
@@ -596,10 +656,14 @@ const nextUpFrom = (issues) => {
       status: issue.status || null,
       priority: issue.priority || null,
       url: issue.url,
+      waitsOn: waitsOnFor(issue),
     });
     byRepo.set(issue.repo, items);
   }
-  return [...byRepo].map(([repo, items]) => ({ repo, items }));
+  return [...byRepo].map(([repo, items]) => ({
+    repo,
+    items: [...items.filter((i) => !i.waitsOn.length), ...items.filter((i) => i.waitsOn.length)].slice(0, NEXT_UP_PER_REPO),
+  }));
 };
 
 /** The headline — the order of consequence, in the API's own words. */

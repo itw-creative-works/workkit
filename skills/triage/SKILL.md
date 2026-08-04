@@ -24,8 +24,9 @@ mkdir -p "${TMPDIR:-/tmp}/claude-triage-marker" && touch "${TMPDIR:-/tmp}/claude
 1. **Open `status:inbox` issues** on the cwd repo — `gh issue list --state open --label status:inbox --json number,title,body,labels`.
 2. **`.workkit/inbox.md`** — the local, gitignored capture file (offline moments, free-form dumps).
 3. **Mid-chat note dumps** — same routing, no file needed first.
+4. **The HQ pass** (#100) — the home repo's own open `status:inbox` issues (`gh issue list --repo <site.repo> --state open --label status:inbox ...`, the `site.repo` in `~/.workkit/settings.json`), routed with the same table below, from any repo. This is how the nursery drains, since no session ever opens in the clone. When captures cluster around one project, propose graduation (§ Graduation). No `site.repo`, or HQ unreachable: name the skip in the Filed trail — never silent.
 
-A capture made outside every participating repo is already a `status:inbox` issue on the home repo — `wk.sh note` files it there directly, so there is nothing to drain for it here.
+A capture made outside every participating repo is already a `status:inbox` issue on the home repo — `wk.sh note` files it there directly, so the HQ pass is where it gets drained.
 
 Split every source into discrete entries. A wall of mixed notes fans out to MANY destinations — never route a mixed dump as one blob.
 
@@ -47,7 +48,7 @@ Then, before creating anything, apply the **filing litmus test**: *would closing
 | Worth keeping, deliberately not now | `status:parked` |
 | Cross-project / business / no single repo | An issue on the **home repo** — the `site.repo` named in `~/.workkit/settings.json` (`docs/project-state.md` § The global layer). No `site.repo` set: leave the entry in the inbox and say so |
 | Belongs to a DIFFERENT project | An issue on that repo (`gh issue create --repo <owner/name>`) |
-| An idea for a project that has no repo yet | A `type:idea` issue on the **home repo**, later notes as comments on it. Never create a repo or a folder — graduation is the owner's word |
+| An idea for a project that has no repo yet | A `type:idea` issue on the **home repo**, later notes as comments on it. Never create a repo or a folder here — graduation is the owner's word, proposed and executed per § Graduation |
 | A durable fact about how things work | The right `docs/*.md` (or AGENTS.md if doctrinal) — then close the issue pointing at it |
 | Needs the owner's yes/no before it is even accepted | Draft the proposal into the `## Spec`; label `status:blocked` with the question |
 
@@ -58,11 +59,19 @@ Relabel with one command so the status stays single:
 
 **Every issue body you create or route follows the anatomy** (spec § Issue anatomy): `## Description` then `## Spec`, both always present; a small item's Spec is the literal `None needed — small item.` The same section carries the introduction rule — the first mention of an outside project or repo, in a body or a comment, gets a link and a one-line description of what it is.
 
-**The home repo is optional.** With no `site.repo` key, or when a `gh` call against it fails, leave that entry in `.workkit/inbox.md` and say so in the Filed trail — never drop it, and never invent a destination.
+**The home repo is optional.** With no `site.repo` key, or when a `gh` call against it fails: an entry being routed TO the home repo stays in `.workkit/inbox.md` with the skip named in the Filed trail — never dropped, never given an invented destination — and the HQ pass itself names its skip the same way (its entries already live on HQ; there is nowhere to hold them locally).
 
 ## Draining `.workkit/inbox.md`
 
 Each entry becomes an issue (`gh issue create --label status:inbox,type:<kind>` then route it, or file it routed directly). Delete only the entries that actually landed somewhere; keep the file header. Offline: leave the file untouched and say the queue could not be reached.
+
+## Graduation (the HQ pass's proposal — #100)
+
+The system proposes, the owner creates; no automation ever makes a repo or moves an issue on its own. When HQ captures cluster around one project (several issues or comments naming the same not-yet-project), propose graduation in chat and wait for the owner's word.
+
+- **To an existing repo**: `gh issue transfer <n> <owner>/<repo>` where GitHub allows it (same owner or org); otherwise recreate the issue on the target with pointers both ways. Either way the HQ issue ends closed with a comment naming where it went.
+- **To a project with no repo**: the proposal names three things and asks them in chat — the repo name, the OWNER (the personal account or an org the owner belongs to, never assumed), and the visibility (private default). On the yes: `gh repo create <owner>/<name>`, clone beside the machine's other checkouts (the roster in `~/.workkit/.repos.json` records every enabled repo's absolute path — read it to learn this machine's layout), then ask the participation question (`workkit enable`) rather than assuming the opt-in. Then transfer the issues as above.
+- No standing "ripe for graduation" surface exists anywhere — this proposal is the mechanism, and the tower Board already shows HQ's issues.
 
 ## Always end with the Filed trail
 

@@ -17,7 +17,7 @@
 //
 
 /** What a page says where the charts would be until the history has two points. */
-export const ACCRUES = 'history accrues from the first published brief that carried a stats block — the charts start once two mornings have gone out';
+export const ACCRUES = 'charts appear after two published briefs';
 
 /** What a page says when the history could not be read at all. */
 export const UNREAD = 'the published briefs could not be read, so there is no history to draw';

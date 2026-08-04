@@ -151,9 +151,13 @@ const section = (heading, issues, nothing, alarm) => card(heading, issues.length
 // most. The rank is the API's (tower/api/lib/brief.js); this only draws it, one
 // short list per repo, so a morning reads down its own repo rather than across a
 // merged pile.
-const nextRow = (item) => `<li class="py-2 d-flex align-items-start gap-2">
+// An item that waits says so in the same line the Board's chip says it (#103):
+// the short `#N` when the blocker shares the repo, the whole key across repos.
+const waitsRef = (key, repo) => (key.toLowerCase().startsWith(`${String(repo).toLowerCase()}#`) ? key.slice(key.lastIndexOf('#')) : key);
+
+const nextRow = (item, repo) => `<li class="py-2 d-flex align-items-start gap-2">
   <span class="flex-grow-1">
-    <span class="classy-micro d-block">#${esc(item.number)} · ${esc(item.status || 'open')}${item.priority ? ` · ${esc(item.priority)} priority` : ''}</span>
+    <span class="classy-micro d-block">#${esc(item.number)} · ${esc(item.status || 'open')}${item.priority ? ` · ${esc(item.priority)} priority` : ''}${(item.waitsOn || []).length ? ` · waits on ${esc(item.waitsOn.map((key) => waitsRef(key, repo)).join(', '))}` : ''}</span>
     <span class="d-block">${esc(item.title)}</span>
   </span>
   ${externalLink(item.url)}
@@ -161,7 +165,7 @@ const nextRow = (item) => `<li class="py-2 d-flex align-items-start gap-2">
 
 const nextRepo = (entry) => `<div class="mb-3">
   <p class="classy-micro text-body-secondary mb-1">${esc(entry.repo)}</p>
-  <ul class="list-unstyled mb-0">${(entry.items || []).map(nextRow).join('')}</ul>
+  <ul class="list-unstyled mb-0">${(entry.items || []).map((item) => nextRow(item, entry.repo)).join('')}</ul>
 </div>`;
 
 const nextUp = (rows) => card('Work on this next', rows.length

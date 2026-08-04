@@ -511,6 +511,51 @@ const run = async () => {
     assertEq(format.typeChip(''), '', 'no type, no chip');
   });
 
+  await test('an issue waiting on one the board still holds wears a chip saying so', () => {
+    // Issue #103: advisory and nothing more — the chip is the plain muted one
+    // every undyed value wears, never a status or priority hue, and it is drawn
+    // only while the blocker is on the board the card sits on.
+    const issue = {
+      repo: 'owner/repo',
+      type: 'bug',
+      blockedBy: [{ repo: 'owner/repo', number: 12 }, { repo: 'other/repo', number: 3 }],
+    };
+    const open = new Set(['owner/repo#12', 'other/repo#3']);
+    const chips = format.issueChips(issue, '', open);
+    assert(chips.includes('<span class="classy-chip">waits on #12</span>'), 'a blocker in the same repo is said the short way');
+    assert(chips.includes('<span class="classy-chip">waits on other/repo#3</span>'), 'and one in another repo carries its slug');
+    assert(!format.waitsOnChips(issue, open).includes('omega-badge-tone'),
+      'in the plain muted chip, borrowing no status or priority colour');
+    assertEq(chips.includes(format.waitsOnChips(issue, open)), true, 'the row draws format.js’s own helper, not a second copy of it');
+  });
+
+  await test('a blocker spelled in another case is the same issue, said the short way', () => {
+    // Repo names are case-insensitive on GitHub, and the inline fallback is
+    // hand-typed — the chip must not vanish over a capital letter.
+    const issue = { repo: 'owner/repo', blockedBy: [{ repo: 'OWNER/Repo', number: 12 }] };
+    const chips = format.issueChips(issue, '', new Set(['owner/repo#12']));
+    assert(chips.includes('<span class="classy-chip">waits on #12</span>'),
+      'matched against the sweep and recognized as this repo despite the spelling');
+  });
+
+  await test('a blocker the board is not holding is drawn nowhere', () => {
+    const issue = { repo: 'owner/repo', blockedBy: [{ repo: 'owner/repo', number: 12 }] };
+    assertEq(format.issueChips(issue, '', new Set(['owner/repo#9'])).includes('waits on'), false,
+      'a closed dependency, or one outside the sweep, is not a chip');
+    assertEq(format.issueChips(issue).includes('waits on'), false, 'and a caller with no board to judge against draws none');
+    assertEq(format.waitsOnChips({}, new Set()), '', 'an issue with no edges at all draws nothing');
+  });
+
+  await test('a hostile blocker repo comes back as text', () => {
+    const chips = format.issueChips(
+      { repo: 'owner/repo', blockedBy: [{ repo: '<img src=x>/repo', number: 4 }] },
+      '',
+      new Set(['<img src=x>/repo#4']),
+    );
+    assert(!chips.includes('<img'), 'the blocker’s repo is remote data like every other value');
+    assert(chips.includes('&lt;img src=x&gt;/repo#4'), 'and shows as what it says');
+  });
+
   await test('an issue with nothing to say draws no chips', () => {
     const chips = format.issueChips({ type: '', priority: '', agentOk: false, assignees: [] });
     assert(!chips.includes('classy-chip'), 'no chip markup at all');
@@ -726,6 +771,64 @@ const run = async () => {
     assert(/const labelled = all\.filter\(\(issue\) => issue\.status\)/.test(source),
       'and the columns and their denominator are drawn from the labelled ones alone (#118)');
     assert(!/No status/.test(source), 'the column that used to hold them is gone, comments and all');
+  });
+
+  group('tower/app: board — the List | Graph toggle');
+
+  // The page imports the framework and the graph module, so it is out of reach
+  // of these suites (see the header) — what can be pinned is the source of the
+  // decisions, the way every other page-level claim here is. The picture ITSELF
+  // is pure and has a suite of its own: tests/tower/graphdef.test.js.
+
+  await test('which view is on screen lives in the URL, and `list` is written as nothing at all', () => {
+    const fs = require('fs');
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    assert(/const VIEWS = \['list', 'graph'\]/.test(source), 'two views, named');
+    assert(/searchParams\.get\('view'\)[\s\S]{0,120}VIEWS\.includes\(value\) \? value : 'list'/.test(source),
+      'the URL is read back and anything outside the two reads as the default, never as an empty page');
+    assert(/url\.searchParams\.set\('view', view\)[\s\S]{0,80}url\.searchParams\.delete\('view'\)/.test(source),
+      'the round trip writes the graph and takes the default off rather than leaving ?view=list behind');
+    assert(/history\.replaceState\(null, '', url\)/.test(source), 'through replaceState, like the filters beside it');
+    assert(/const view = readView\(\);/.test(source), 'and every paint re-reads it, so the 60-second repaint cannot revert the view');
+  });
+
+  await test('a filter never clears the view, and the view never clears a filter', () => {
+    const fs = require('fs');
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    assert(/const PARAMS = \['type', 'priority', 'agent', 'assignee', 'q'\]/.test(source),
+      'the view is not one of the filter parameters writeFilters deletes what it is not given');
+    assert(/writeView\(button\.dataset\.view\)/.test(source), 'the toggle writes only its own parameter');
+  });
+
+  await test('the toggle is two buttons and says which one is in force', () => {
+    const fs = require('fs');
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    assert(/aria-pressed="\$\{view === name\}"/.test(source), 'the active one is marked for a screen reader');
+    assert(/btn-\$\{view === name \? '' : 'outline-'\}adaptive/.test(source), 'and drawn filled against outlined, in the theme’s own button');
+    const toggle = source.slice(source.indexOf('const viewToggle'), source.indexOf('const toolbar'));
+    assert(/data-view="\$\{name\}"/.test(toggle), 'each button names the view it selects');
+    assert(!/style=|color:/.test(toggle), 'and nothing about it is coloured by hand — the framework’s classes are the whole of it');
+  });
+
+  await test('the graph is composed in the lib, drawn after the write, and says it is not the surface', () => {
+    const fs = require('fs');
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    assert(/import \{ boardGraph \} from '\.\.\/libs\/tower\/graphdef\.js'/.test(source), 'the definition comes from the lib');
+    assert(/import \{ loadGraph, graphReady, graphSlot, drawGraph \} from '__main_assets__\/js\/libs\/graph\.js'/.test(source),
+      'and the drawing from the framework’s graph module, which is the only place mermaid is named');
+    assert(/definition = boardGraph\(shown, sweep\)/.test(source),
+      'composed from the issues on screen and the whole sweep behind them');
+    assert(/graphSlot\('board-graph', GRAPH_HEIGHT, definition\)/.test(source),
+      'the slot carries the definition, which is the stamp swap compares on');
+    assert(/if \(!swap\(root[\s\S]*paintGraph\(root, state, definition\)/.test(source),
+      'so a repaint that wrote nothing never redraws the diagram');
+    assert(/cards open in the List view/.test(source), 'and the muted line says where the board is worked');
+    assert(/drawing = drawing\.then/.test(source),
+      'draws are serialized so a slower old render cannot land after a newer one and stand stale');
+    assert(/drawGraph\('board-graph', next\)\.catch/.test(source),
+      'a definition strict mermaid refuses says so in the host instead of leaving the box blank');
+    assert(/: empty\('nothing on this board waits on anything'/.test(source),
+      'an edge-less board shows the empty state, never an empty diagram');
   });
 
   group('tower/app: crew — the tree');
@@ -2078,22 +2181,41 @@ const run = async () => {
             number: 82,
             title: 'A decision is waiting',
             url: 'https://github.com/ITW-Creative-Works/workkit/issues/82',
-            body: 'the question',
+            // Every composition branch on the item that would otherwise LEAD
+            // nextUp (issue #103): an edge into a repo this sweep could not
+            // read (carried, never acted on), a closed edge (satisfied,
+            // nobody's payload), a native OPEN edge on an issue the sweep IS
+            // carrying (what demotes it), and the same edge written inline
+            // (one edge, not two). Demotion must reorder, or the parity
+            // comparison is two lists agreeing vacuously.
+            body: 'the question\n\nDepends on: #81\n',
             createdAt: '2026-07-28T09:00:00Z',
             updatedAt: '2026-07-28T10:00:00Z',
             comments: { totalCount: 1 },
             labels: { nodes: [{ name: 'status:blocked' }, { name: 'type:bug' }, { name: 'priority:high' }] },
             assignees: { nodes: [] },
+            blockedBy: {
+              nodes: [
+                { number: 7, state: 'OPEN', repository: { nameWithOwner: 'owner/gone' } },
+                { number: 40, state: 'CLOSED', repository: { nameWithOwner: 'ITW-Creative-Works/workkit' } },
+                { number: 81, state: 'OPEN', repository: { nameWithOwner: 'ITW-Creative-Works/workkit' } },
+              ],
+            },
           }, {
             number: 83,
             title: 'An accepted spec sits ready',
             url: 'https://github.com/ITW-Creative-Works/workkit/issues/83',
-            body: 'the spec',
+            // The cross-org fallback as it is really written: a markdown
+            // bullet around the label (#103). The edge points outside the
+            // sweep, so it is carried and never acted on — this item leads
+            // nextUp once #82 is demoted behind its open blocker.
+            body: 'the spec\n\n- Depends on: Omega-JS-Stack/omega#144\n',
             createdAt: '2026-07-27T09:00:00Z',
             updatedAt: '2026-07-27T10:00:00Z',
             comments: { totalCount: 0 },
             labels: { nodes: [{ name: 'status:specced' }, { name: 'type:enhancement' }] },
             assignees: { nodes: [] },
+            blockedBy: { nodes: [] },
           }],
         },
         // What the day CLOSED (issue #55) — two inside the 24-hour window and
@@ -2126,6 +2248,8 @@ const run = async () => {
       apiBoard.buildQuery(SLUGS.map((slug) => slug.split('/'))),
       'the two halves of the same sweep cannot ask different questions',
     );
+    assert(github.buildBoardQuery(SLUGS).includes('blockedBy(first: 20) { nodes { number state repository { nameWithOwner } } }'),
+      'and both of them ask what an issue is blocked by (#103), the blocker’s state included');
   });
 
   await test('the browser normalizes an answer into exactly what /api/board serves', () => {
@@ -2140,6 +2264,24 @@ const run = async () => {
     assertEq(fromBrowser.issues[0].agentOk, true, 'agent:ok included');
     assert(fromBrowser.repos[0].truncated, 'a repo over the page cap says so');
     assertEq(fromBrowser.repos[1].error, 'Could not resolve to a Repository', 'and the unresolved repo carries its reason');
+  });
+
+  await test('what an issue waits on is composed the same way on both sides', () => {
+    // The fixture exercises every branch of that composition, so the JSON
+    // comparison above is a real proof rather than two empty lists agreeing.
+    const keys = (issue) => issue.blockedBy.map((blocker) => `${blocker.repo}#${blocker.number}`).join(',');
+    const fromTower = apiBoard.fetchBoard(SLUGS.map((slug) => ({ slug })), {
+      exec: (cmd, args) => (args[0] === '--version' ? 'gh version 2' : JSON.stringify(SWEEP)),
+      now: CLOSED_NOW,
+    });
+    const fromBrowser = github.normalizeBoard(SLUGS, SWEEP.data, SWEEP.errors, CLOSED_NOW);
+    assertEq(fromBrowser.issues[0].blockedBy.length, 0, 'an issue depending on nothing carries the empty list');
+    assertEq(keys(fromBrowser.issues[1]), 'owner/gone#7,ITW-Creative-Works/workkit#81',
+      'the unreadable-repo edge is carried whole, the closed one is satisfied, and the edge written both ways is one edge');
+    assertEq(keys(fromBrowser.issues[2]), 'Omega-JS-Stack/omega#144',
+      'a bulleted Depends on: line is the same line — issue bodies are markdown');
+    assertEq(keys(fromBrowser.issues[1]), keys(fromTower.issues[1]), 'and the tower reads it identically');
+    assertEq(keys(fromBrowser.issues[2]), keys(fromTower.issues[2]), 'on every issue');
   });
 
   await test('the day’s closed count is the same number on both sides, and no closed issue enters the board', () => {
@@ -2226,8 +2368,12 @@ const run = async () => {
     // comparison lifts out — everything buildBrief itself decides is compared.
     assertEq(JSON.stringify({ ...mine, summaries: undefined, history: undefined }), JSON.stringify(theirs),
       'the same sections, the same order, the same headline');
-    assertEq(mine.nextUp[0].items.map((i) => i.number).join(','), '82,83',
-      'and nextUp has entries to compare — blocked before specced, so the parity is not vacuous');
+    assertEq(mine.nextUp[0].items.map((i) => i.number).join(','), '83,82',
+      'the blocked item would lead on status, so this order EXISTS only because demotion ran — on both sides');
+    assertEq(mine.nextUp[0].items[1].waitsOn.join(','), 'ITW-Creative-Works/workkit#81',
+      'the item waiting on an issue the sweep is carrying says so (#103)');
+    assertEq(mine.nextUp[0].items[0].waitsOn.length, 0,
+      'and an edge into a repo the sweep could not read claims nothing');
     assertEq(mine.closedDay, 2, 'the day’s closed count rides the payload, roster wide');
     assertEq(mine.repoCounts[0].open, 5, 'and each repo’s open count is its totalCount, cap or no cap');
     assertEq(mine.warnings.length, 0, 'the one section a browser cannot answer is empty rather than invented');
@@ -2852,7 +2998,7 @@ const run = async () => {
     assert(!history.unread(withHistory([])), 'an empty list is a board with no published briefs yet, which is not the same');
     assert(!history.hasSeries(withHistory([day('2026-08-03', { open: 1 })])), 'one point is a dot claiming to be a trend');
     assert(history.hasSeries(withHistory([day('2026-08-02', { open: 2 }), day('2026-08-03', { open: 1 })])), 'two is a line');
-    assert(history.ACCRUES.includes('stats block') && history.UNREAD.includes('could not be read'),
+    assert(history.ACCRUES.includes('published briefs') && history.UNREAD.includes('could not be read'),
       'and each absence has its own sentence');
   });
 

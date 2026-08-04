@@ -100,6 +100,64 @@ const parseLabels = (nodes, groups) => {
   return out;
 };
 
+// The inline fallback for a dependency GitHub itself will not hold (issue #103):
+// a `Depends on:` line in the issue body, naming `<owner>/<repo>#<n>` where the
+// edge crosses orgs and bare `#<n>` where it does not. The label is matched as
+// plain text at the head of a line, so a `#12` anywhere else in the body is not
+// a dependency, and the one expression below reads every reference on that line.
+const DEPENDS_LABEL = 'depends on:';
+const DEPENDS_RE = /(?:^|[\s,;(])(?:([\w.-]+\/[\w.-]+))?#(\d+)\b/g;
+
+/**
+ * What one issue is WAITING on: the native dependency edges GitHub keeps,
+ * merged with the inline fallback its body may carry (issue #103).
+ *
+ * A blocker that is CLOSED is satisfied — no ordering effect, nothing to draw —
+ * which is the whole reason the edge's `state` rides the sweep. An inline
+ * reference carries no state, so it counts as an edge until the line is edited
+ * away: native edges are the norm and the line is the rare cross-org case the
+ * API refuses to hold, so a stale one lingering is the accepted trade.
+ *
+ * @param {object} node the issue node as GraphQL answered it
+ * @param {string} slug the repo it was swept from — what a bare `#<n>` means
+ * @returns {Array<{repo: string, number: number}>} empty when it waits on nothing
+ */
+const blockersFor = (node, slug) => {
+  const out = [];
+  const seen = new Set();
+  // Repo names are case-insensitive on GitHub, so the same blocker written two
+  // ways is one edge; what is KEPT is the spelling the sweep answered with.
+  const add = (repo, number) => {
+    const key = `${repo}#${number}`.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ repo, number });
+  };
+
+  for (const edge of ((node.blockedBy || {}).nodes || [])) {
+    if (!edge || edge.state !== 'OPEN' || typeof edge.number !== 'number') continue;
+    add(((edge.repository || {}).nameWithOwner) || slug, edge.number);
+  }
+
+  // The WHOLE body, not the cut one the issue carries: a line past the body
+  // limit is still a dependency somebody wrote down.
+  for (const line of String(node.body || '').split('\n')) {
+    const lower = line.toLowerCase();
+    // Issue bodies are markdown: a list bullet or bold marker around the label
+    // ("- Depends on:", "**Depends on:**") is the same line, still at its start.
+    if (!lower.trim().replace(/^[-*>\s]+/, '').startsWith(DEPENDS_LABEL)) continue;
+    const refs = line.slice(lower.indexOf(DEPENDS_LABEL) + DEPENDS_LABEL.length).replace(/^\*+/, '');
+    DEPENDS_RE.lastIndex = 0;
+    let match = DEPENDS_RE.exec(refs);
+    while (match) {
+      add(match[1] || slug, Number(match[2]));
+      match = DEPENDS_RE.exec(refs);
+    }
+  }
+
+  return out;
+};
+
 /** The GraphQL document for a roster, one aliased field per repo. */
 const buildQuery = (slugs) => {
   const fields = slugs.map(([owner, name], i) => `  r${i}: repository(owner: "${owner}", name: "${name}") {
@@ -115,6 +173,7 @@ const buildQuery = (slugs) => {
         comments { totalCount }
         labels(first: 20) { nodes { name } }
         assignees(first: 5) { nodes { login } }
+        blockedBy(first: 20) { nodes { number state repository { nameWithOwner } } }
       }
     }
     closed: issues(states: CLOSED, first: ${CLOSED_PAGE}, orderBy: {field: UPDATED_AT, direction: DESC}) {
@@ -270,6 +329,7 @@ const fetchBoard = (repos, opts = {}) => {
         agentOk: agent.includes('ok'),
         agentWorking: agent.includes('working'),
         assignees: ((node.assignees || {}).nodes || []).map((a) => a.login),
+        blockedBy: blockersFor(node, repo.slug),
       });
     }
   });
@@ -277,4 +337,4 @@ const fetchBoard = (repos, opts = {}) => {
   return { ok: true, issues, repos: repoEntries };
 };
 
-module.exports = { fetchBoard, buildQuery, parseLabels, labelGroups, errorsByAlias, closedSince, PAGE_SIZE, BODY_LIMIT, CLOSED_PAGE, CLOSED_WINDOW_MS, LABELS_FILE };
+module.exports = { fetchBoard, buildQuery, parseLabels, labelGroups, errorsByAlias, closedSince, blockersFor, PAGE_SIZE, BODY_LIMIT, CLOSED_PAGE, CLOSED_WINDOW_MS, LABELS_FILE };
