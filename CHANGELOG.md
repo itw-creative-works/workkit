@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#130](../../issues/130) — The publish installs the clone's dependencies when its manifests moved: the sync reports a manifest write, and npm's own install stamp is the memory, so a switch-off run's leftover or a failed install is asked again the next morning instead of building against a stale tree.
+
 ## [0.32.0] - 2026-08-04
 
 ### Added

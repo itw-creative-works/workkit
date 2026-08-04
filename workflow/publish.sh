@@ -334,6 +334,52 @@ if [[ ! -x "$OMEGA_BIN" ]]; then
   exit "$SOURCE_RC"
 fi
 
+# ── The clone's dependencies ──────────────────────────────────────────────────
+# A sync that refreshed a MANIFEST leaves the clone one step behind itself: the
+# new package.json is there and nothing has installed it, so until issue #130
+# the first publish after a tower dependency change built against the tree the
+# last install left and failed loudly on the missing module, red every morning
+# until someone ran an install by hand. The sync says which kind of file it
+# wrote, so this runs exactly when a manifest moved and never on the ordinary
+# page-only refresh, where it would spend a minute for nothing.
+#
+# npm is not asked for again: the gate two steps above is that named skip, and
+# nothing between here and it can take npm away.
+#
+# A FAILED install aborts before the build, for the mint's reason — building
+# over a half-installed tree publishes a broken site. It leaves NO sticky
+# marker, unlike the mint, because npm's own stamp is the memory (#130 verify,
+# F1): the flag only says a manifest moved THIS run, and a run that wrote
+# manifests but ended before this step — the switch was off, or the install
+# itself failed — would leave the clone permanently behind if the flag were
+# the whole trigger. So the backstop compares each manifest against
+# node_modules/.package-lock.json, which npm rewrites on every install. The
+# sync copies with -p, so a synced manifest keeps its authored time — always
+# older than the stamp of any install that has already seen it, and newer than
+# one that has not.
+INSTALL_NEEDED="$WK_HOME_SYNC_MANIFESTS"
+INSTALL_STAMP="$WK_HOME_DIR/node_modules/.package-lock.json"
+if [[ "$INSTALL_NEEDED" -eq 0 ]]; then
+  for m in "$WK_HOME_DIR/package.json" "$WK_HOME_DIR"/apps/*/package.json; do
+    [[ -f "$m" ]] || continue
+    if [[ ! -f "$INSTALL_STAMP" || "$m" -nt "$INSTALL_STAMP" ]]; then
+      INSTALL_NEEDED=1
+      break
+    fi
+  done
+fi
+if [[ "$INSTALL_NEEDED" -eq 1 ]]; then
+  say_info "publish: installing the tower project's dependencies in $WK_HOME_DIR"
+  INSTALL_LOG="$(mktemp)"
+  if ! npm --prefix "$WK_HOME_DIR" install >"$INSTALL_LOG" 2>&1; then
+    say_warn "publish: the tower project's dependencies could not be installed in $WK_HOME_DIR — nothing was built or published, because a build over a half-installed tree is a broken site; \`npm --prefix $WK_HOME_DIR install\` reports it in full, and the last lines follow"
+    tail -20 "$INSTALL_LOG" >&2
+    rm -f "$INSTALL_LOG"
+    exit 1
+  fi
+  rm -f "$INSTALL_LOG"
+fi
+
 # ── The mint ──────────────────────────────────────────────────────────────────
 # The brand assets, minted from the one authored mark at `assets/logo` into the
 # gitignored `.omega/assets` the web build's static channel bridges. It runs at

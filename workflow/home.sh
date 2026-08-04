@@ -381,10 +381,18 @@ wk_home_seed() {
 # them, and a sweep that removed them could take a minted `.omega` tree with it.
 #
 # Returns 0 (something changed), 2 (already current), 1 (there was nothing to
-# sync from — a named skip, and the caller builds the clone as it is).
+# sync from — a named skip, and the caller builds the clone as it is), 3 (a
+# write failed mid-walk and the clone is part-refreshed).
+#
+# Whether a MANIFEST was among what it wrote comes back in
+# WK_HOME_SYNC_MANIFESTS, since the return code is already spoken for and a
+# `$(…)` capture would only carry one of the two answers (issue #130). Call it
+# DIRECTLY, the way publish.sh does — a sync run in a subshell says nothing.
+WK_HOME_SYNC_MANIFESTS=0
 wk_home_sync() {
-  local src rel dest want tmp top topname found excluded name prune=()
+  local src rel dest want tmp top topname found excluded name manifest prune=()
   local copied=0 removed=0 rc=0
+  WK_HOME_SYNC_MANIFESTS=0
 
   wk_home_ready || {
     wk_say_skip "sync: nothing is cloned at $WK_HOME_DIR — the tower project was not refreshed"
@@ -413,9 +421,11 @@ wk_home_sync() {
     rel="${src#"$WK_TOWER_APP"/}"
     dest="$WK_HOME_DIR/$rel"
     want="$src"
+    manifest=0
     # A manifest is composed first, so the comparison below is against what
     # would LAND rather than against the checkout's own relative specs.
     if [[ "$(basename "$rel")" == 'package.json' ]]; then
+      manifest=1
       want="$tmp/package.json"
       cp -p "$src" "$want" 2>/dev/null || {
         wk_say_warn "sync: could not stage $rel for comparison — the tower project in $WK_HOME_DIR is part-refreshed"
@@ -437,6 +447,7 @@ wk_home_sync() {
       rc=3
       break
     }
+    [[ "$manifest" -eq 1 ]] && WK_HOME_SYNC_MANIFESTS=1
     copied=$((copied + 1))
   done < <(find "$WK_TOWER_APP" \( "${prune[@]}" \) -prune -o -type f -print)
 

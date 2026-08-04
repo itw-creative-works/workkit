@@ -6,8 +6,9 @@
 // Two layers, and neither one touches the real ~/.workkit. The sync itself is
 // asked its questions as the library function it is, against fixture
 // directories and a clone of a local bare "GitHub". The WIRING — the sync ahead
-// of the build, the mint after a sync that changed something, the abort on a
-// mint that failed — is proved end to end through publish.sh in the same
+// of the build, the install after a sync that changed a manifest (issue #130),
+// the mint after a sync that changed something, the abort on a mint that
+// failed — is proved end to end through publish.sh in the same
 // scratch world the publish suite uses, with an `npm` shim for the build and a
 // stub `omega` for the mint. No omega, no network.
 //
@@ -170,8 +171,10 @@ const mtimes = (dir) => {
  *
  * `mintFails` makes that binary exit non-zero the way a mint over a broken SVG
  * would. `minted` seeds the clone with the output of a mint that already ran.
+ * `installFails` makes the `npm install` half of the shim exit non-zero, the
+ * way an unresolvable dependency would.
  */
-const mkPublishWorld = ({ mintFails = false, minted = false } = {}) => {
+const mkPublishWorld = ({ mintFails = false, minted = false, installFails = false } = {}) => {
   const root = mkTmp();
   const kit = path.join(root, 'kit');
   const bin = path.join(root, 'bin');
@@ -199,9 +202,19 @@ const mkPublishWorld = ({ mintFails = false, minted = false } = {}) => {
   write(path.join(app, 'apps', 'web', 'src', 'index.html'), '<html>the current board</html>\n');
   write(path.join(app, '.gitignore'), 'node_modules/\ndist/\n.omega/\n');
 
+  // The npm shim answers both calls a publish makes — the install of the
+  // clone's dependencies (issue #130) and the build of the app — and records
+  // its argv, so a test can prove which one ran and where.
+  const npmLog = path.join(root, 'npm.log');
   writeStub(path.join(bin, 'npm'), [
+    `printf '%s\\n' "$*" >> ${JSON.stringify(npmLog)}`,
     'prefix=""',
     'if [[ "$1" == "--prefix" ]]; then prefix="$2"; fi',
+    'if [[ "$*" == *install* ]]; then',
+    ...(installFails
+      ? ['  printf \'npm: ERESOLVE could not resolve @omega.js/web\\n\' >&2', '  exit 1']
+      : ['  mkdir -p "$prefix/node_modules"', '  touch "$prefix/node_modules/.package-lock.json"', '  exit 0']),
+    'fi',
     'mkdir -p "$prefix/dist"',
     'cp "$prefix/src/index.html" "$prefix/dist/index.html"',
     'exit 0',
@@ -254,6 +267,9 @@ const mkPublishWorld = ({ mintFails = false, minted = false } = {}) => {
     dist: path.join(tower, 'apps', 'web', 'dist'),
     mints: () => (fs.existsSync(mintLog)
       ? fs.readFileSync(mintLog, 'utf8').trim().split('\n').filter(Boolean)
+      : []),
+    npms: () => (fs.existsSync(npmLog)
+      ? fs.readFileSync(npmLog, 'utf8').trim().split('\n').filter(Boolean)
       : []),
     env: {
       HOME: homeDir,
@@ -397,7 +413,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  group('workflow/publish: the sync, then the mint, then the build');
+  group('workflow/publish: the sync, then the install, then the mint, then the build');
 
   await test('the clone is refreshed before it is built — the published page is the app’s', () => {
     const world = mkPublishWorld();
@@ -418,6 +434,93 @@ const run = async () => {
     spawnSync('git', ['clone', '-q', world.bare, main], { encoding: 'utf8' });
     assertEq(fs.readFileSync(path.join(main, 'apps', 'web', 'src', 'index.html'), 'utf8'),
       '<html>the current board</html>\n', 'main carries the project it just built');
+    cleanup(world.root);
+  });
+
+  await test('a sync that changed a manifest installs the clone’s dependencies', () => {
+    // The lag issue #130 closes: the sync brings the new package.json and
+    // nothing installs it, so the build that follows resolves against the tree
+    // the last install left.
+    const world = mkPublishWorld();
+    publish(world);
+    const before = world.npms().filter((call) => /install/.test(call)).length;
+
+    writeJson(path.join(world.app, 'apps', 'web', 'package.json'), {
+      name: 'workkit-tower-web', private: true, dependencies: { 'chart.js': '^4.0.0' },
+    });
+    const { code, out, err } = publish(world);
+    assertEq(code, 0, `exit 0 — ${out}${err}`);
+    const installs = world.npms().filter((call) => /install/.test(call));
+    assertEq(installs.length, before + 1, `one install for the manifest that moved: ${installs.join(' | ')}`);
+    assertEq(installs[installs.length - 1], `--prefix ${world.tower} install`,
+      'in the clone, which is the project the build runs out of');
+    cleanup(world.root);
+  });
+
+  await test('a sync that changed only a page installs nothing', () => {
+    const world = mkPublishWorld();
+    publish(world);
+    // The seeded clone's root manifest carries no `file:` transform yet, so the
+    // first sync composes one and that run does install — which is what makes
+    // the second run's silence mean something.
+    const before = world.npms().filter((call) => /install/.test(call)).length;
+    assertEq(before, 1, 'the first publish’s sync did write a manifest');
+
+    write(path.join(world.app, 'apps', 'web', 'src', 'index.html'), '<html>a newer board</html>\n');
+    const { code, out, err } = publish(world);
+    assertEq(code, 0, `exit 0 — ${out}${err}`);
+    assertEq(world.npms().filter((call) => /install/.test(call)).length, before,
+      'the ordinary morning does not reinstall the dependencies to publish a page');
+    const pages = fromPages(world);
+    assertEq(fs.readFileSync(path.join(pages, 'index.html'), 'utf8'), '<html>a newer board</html>\n',
+      'and the page still published');
+    cleanup(world.root);
+  });
+
+  await test('a manifest committed while the site was off is installed once the switch turns on', () => {
+    // The sync sits above the switch, so a switch-off run still writes and
+    // commits the refreshed manifests — and ends before the install. The flag
+    // dies with that process; the stamp comparison is what remembers.
+    const world = mkPublishWorld();
+    const settings = path.join(world.root, 'workflow-home', 'settings.json');
+    const current = JSON.parse(fs.readFileSync(settings, 'utf8'));
+    writeJson(settings, { ...current, site: { ...current.site, publish: false } });
+    publish(world);
+    assertEq(world.npms().filter((call) => /install/.test(call)).length, 0,
+      'the switch-off run synced but never reached the install');
+
+    writeJson(settings, { ...current, site: { ...current.site, publish: true } });
+    const { code, out, err } = publish(world);
+    assertEq(code, 0, `exit 0 — ${out}${err}`);
+    assertEq(world.npms().filter((call) => /install/.test(call)).length, 1,
+      'the first switched-on run installs the manifests the off run left newer than the stamp');
+    cleanup(world.root);
+  });
+
+  await test('a failed install is retried the next run, not skipped past', () => {
+    // No sticky marker like the mint's: the failed install left no stamp, so
+    // the manifests stay newer than the installed tree and the comparison
+    // keeps asking until an install succeeds.
+    const world = mkPublishWorld({ installFails: true });
+    publish(world);
+    const second = publish(world);
+    assert(second.code !== 0, `run 2 aborts too — the install is asked again, got exit ${second.code}`);
+    assertEq(world.npms().filter((call) => /install/.test(call)).length, 2,
+      'one attempt per run, not one ever');
+    assertEq(fromPages(world), null, 'and nothing published over the failure');
+    cleanup(world.root);
+  });
+
+  await test('an install that fails aborts the publish before the build, and says why', () => {
+    // The clone's manifests are the seed's, so the first sync composes them and
+    // the install is the next step — which cannot finish here.
+    const world = mkPublishWorld({ installFails: true });
+    const { code, out, err } = publish(world);
+    assert(code !== 0, `the caller can tell a failure from a skip — ${out}${err}`);
+    assert(/install/.test(out + err), `it names the step, got: ${out}${err}`);
+    assert(/ERESOLVE/.test(out + err), `and what npm said, got: ${out}${err}`);
+    assertEq(fs.existsSync(world.dist), false, 'nothing was built on a half-installed tree');
+    assertEq(fromPages(world), null, 'and nothing was published');
     cleanup(world.root);
   });
 
