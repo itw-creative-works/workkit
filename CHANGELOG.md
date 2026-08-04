@@ -7,11 +7,13 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-08-04
+
 ### Added
 
-- [#127](../../issues/127) — The issue dialog says what an issue waits on and what it blocks, both read off the board already in memory, each named issue opening its own dialog.
-- [#106](../../issues/106) — `workkit:parallel`, the opt-in eleventh skill: the manager groups a batch by dependency edges, seams, then size, runs a worktree-isolated crew per group concurrently, lands the groups serially with the suite green between, and one ship closes the batch.
-- [#53](../../issues/53) — The tower has a brand: one authored amber tower glyph and one hex in config, from which the omega assets service mints the sidebar mark, the favicon set, and the social image, and the theme composes both modes' accent ramps.
+- [#127](../../issues/127) [`96f8e1a`](../../commit/96f8e1a) Thanks [@ianwieds]! — The issue dialog says what an issue waits on and what it blocks, both read off the board already in memory, each named issue opening its own dialog.
+- [#106](../../issues/106) [`96f8e1a`](../../commit/96f8e1a) Thanks [@ianwieds]! — `workkit:parallel`, the opt-in eleventh skill: the manager groups a batch by dependency edges, seams, then size, runs a worktree-isolated crew per group concurrently, lands the groups serially with the suite green between, and one ship closes the batch.
+- [#53](../../issues/53) [`96f8e1a`](../../commit/96f8e1a) Thanks [@ianwieds]! — The tower has a brand: one authored amber tower glyph and one hex in config, from which the omega assets service mints the sidebar mark, the favicon set, and the social image, and the theme composes both modes' accent ramps.
 
 ## [0.30.1] - 2026-08-03
 
