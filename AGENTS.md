@@ -25,7 +25,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 ├── workflow/             # the agent-agnostic engine (labels.json, standards.sh, home.sh, publish.sh, changelog.js, templates)
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
 ├── jobs/                 # scheduled work — the 9am daily brief, its launchd plist, and install.sh
-├── docs/                 # project-state.md (the spec) · agents.md (the crew contract) · history-purge.md (the rewrite runbook)
+├── docs/                 # project-state.md (the spec) · agents.md (the crew contract) · cloud.md (remote provisioning) · history-purge.md (the rewrite runbook)
 ├── tests/                # Node runner + hook/script/tower suites (npm test)
 └── .workkit/             # settings.json is COMMITTED (this repo's own opt-in)
 ```

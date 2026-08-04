@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#69](../../issues/69) — `docs/cloud.md`: provisioning a remote session — what travels through git, the setup-script recipe, environment secrets, and what stays machine-bound with its cloud twin. The bootstrap itself is the personal repo's build, filed there.
+
 ## [0.30.0] - 2026-08-03
 
 ### Added
