@@ -7,10 +7,12 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-08-03
+
 ### Added
 
-- [#103](../../issues/103) — Issues can depend on each other, natively: `gh issue edit --add-blocked-by` writes an edge, the sweep reads it, `nextUp` and the digest order a waiting issue after its blocker, Board cards wear a "waits on" chip, and a List | Graph toggle draws the dependency graph.
-- [#100](../../issues/100) — Triage gains the HQ pass: every run drains the home repo's own `status:inbox` issues from any repo, and where captures cluster around one not-yet-project it proposes graduation — transfer or recreate onto a real repo, created and enabled only on the owner's word.
+- [#103](../../issues/103) [`7e2448f`](../../commit/7e2448f) Thanks [@ianwieds]! — Issues can depend on each other, natively: `gh issue edit --add-blocked-by` writes an edge, the sweep reads it, `nextUp` and the digest order a waiting issue after its blocker, Board cards wear a "waits on" chip, and a List | Graph toggle draws the dependency graph.
+- [#100](../../issues/100) [`7e2448f`](../../commit/7e2448f) Thanks [@ianwieds]! — Triage gains the HQ pass: every run drains the home repo's own `status:inbox` issues from any repo, and where captures cluster around one not-yet-project it proposes graduation — transfer or recreate onto a real repo, created and enabled only on the owner's word.
 
 ## [0.28.0] - 2026-08-03
 
