@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-08-03
+
 ### Added
 
-- [#126](../../issues/126) — session.md stays lean by machine: the `docs:session-guard` hook bounces a write leaving the file over 40 content lines or a bullet over 350 characters, ship's close step deletes the entries a ship completed, and the SessionStart injection keeps warning past the same bar.
+- [#126](../../issues/126) [`d8a0ee3`](../../commit/d8a0ee3) Thanks [@ianwieds]! — session.md stays lean by machine: the `docs:session-guard` hook bounces a write leaving the file over 40 content lines or a bullet over 350 characters, ship's close step deletes the entries a ship completed, and the SessionStart injection keeps warning past the same bar.
 
 ## [0.29.0] - 2026-08-03
 
