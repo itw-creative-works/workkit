@@ -30,6 +30,28 @@ const markdownIn = (dir) =>
     .filter((e) => e.isFile() && e.name.endsWith('.md'))
     .map((e) => path.join(e.parentPath || e.path, e.name));
 
+// The DIRECTORY is the roster every check below derives from: a skill added
+// tomorrow is checked the day it lands, and one removed stops being asked for.
+const skillFolders = () =>
+  fs.readdirSync(SKILLS_DIR, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .sort();
+
+// The section of a markdown file under one heading, up to the next heading of
+// the same or a higher level — the docs parity checks read one section each
+// rather than the whole file, so a name mentioned in prose elsewhere cannot
+// stand in for its row.
+const section = (file, heading) => {
+  const text = fs.readFileSync(file, 'utf8');
+  const level = heading.match(/^#+/)[0].length;
+  const start = text.indexOf(`\n${heading}`);
+  assert(start >= 0, `${path.relative(REPO, file)} has no "${heading}" heading`);
+  const rest = text.slice(start + 1 + heading.length);
+  const next = rest.search(new RegExp(`^#{1,${level}} `, 'm'));
+  return next < 0 ? rest : rest.slice(0, next);
+};
+
 const run = async () => {
   group('skills: the eleven folders');
   for (const name of SKILLS) {
@@ -40,11 +62,7 @@ const run = async () => {
     });
   }
   await test('no extra skill folders ship', () => {
-    const found = fs.readdirSync(SKILLS_DIR, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name)
-      .sort();
-    assertEq(found.join(','), [...SKILLS].sort().join(','), 'skills/ contents');
+    assertEq(skillFolders().join(','), [...SKILLS].sort().join(','), 'skills/ contents');
   });
 
   group('skills: description cap');
@@ -53,10 +71,7 @@ const run = async () => {
     // Enumerated from the DIRECTORY, not the roster above: a skill added
     // tomorrow is under the cap the day it lands, and a folder without a
     // SKILL.md fails here rather than quietly dropping out of the check.
-    const folders = fs.readdirSync(SKILLS_DIR, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name)
-      .sort();
+    const folders = skillFolders();
     assert(folders.length > 0, 'no skills found');
     const over = [];
     for (const name of folders) {
@@ -80,6 +95,25 @@ const run = async () => {
       }
     }
     assertEq(bad.join('; '), '', 'stale skill names');
+  });
+
+  group('skills: docs parity');
+
+  // The two places a reader meets the roster — AGENTS.md's table and the
+  // README's enumeration — are pinned to the FOLDERS, in both directions: a
+  // twelfth skill that lands without its row fails here, and so does a row
+  // left behind by a skill that went away (issue #128).
+  await test("AGENTS.md's Skills table lists exactly the skill folders", () => {
+    const rows = [...section(path.join(REPO, 'AGENTS.md'), '## Skills').matchAll(/^\| `([a-z-]+)` \|/gm)]
+      .map((m) => m[1])
+      .sort();
+    assertEq(rows.join(','), skillFolders().join(','), "AGENTS.md's Skills table rows");
+  });
+
+  await test("README.md's skills enumeration names exactly the skill folders", () => {
+    const named = [...section(path.join(REPO, 'README.md'), '### Skills').matchAll(/`\/?workkit:([a-z-]+)`/g)]
+      .map((m) => m[1]);
+    assertEq([...new Set(named)].sort().join(','), skillFolders().join(','), "README.md's skills enumeration");
   });
 
   group('skills + agents + docs: portability');

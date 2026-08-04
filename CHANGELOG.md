@@ -7,6 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#129](../../issues/129) — Every publish syncs the home clone from `tower/app` by content and mints the brand assets when it must; a failed mint or a part-refreshed sync aborts before anything publishes, and the failure is remembered until a mint succeeds. A ship whose diff touched the tower republishes the dashboard.
+- [#128](../../issues/128) — The skills docs are pinned to the directory: a test derives the skill list from `skills/` and fails when the AGENTS.md table or the README enumeration misses a skill or keeps a departed one.
+
 ## [0.31.0] - 2026-08-04
 
 ### Added

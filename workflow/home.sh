@@ -41,6 +41,16 @@ WK_HOME_PAGES_BRANCH='gh-pages'
 # suite's seam.
 WK_TOWER_APP="${WORKKIT_TOWER_APP:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../tower/app" 2>/dev/null && pwd -P || printf '')}"
 
+# What a copy of that app must never carry — the trees a working checkout
+# accretes, which is exactly what `tower/app/.gitignore` names. ONE list, read
+# by the seed's tar exclusions and by the sync's walk on both sides (issue
+# #129), so the two can never disagree about what "the project" is. Matched by
+# NAME at every depth: a nested `node_modules` under `apps/*` is the same
+# answer as the one at the root. `.git` and `.DS_Store` ride along beyond the
+# gitignore: the app has no `.git` and the clone's is never the sync's to look
+# inside, and `.DS_Store` is Finder litter no copy should carry.
+WK_TOWER_APP_EXCLUDE=(node_modules package-lock.json .omega .cache .temp dist .env .git .DS_Store)
+
 # The engine's own folder — where standards.sh sits, the script the clone's heal
 # is a scoped invocation of. Resolved from this file rather than from the kit
 # dir, because the engine travels as a folder and the heal is the engine's.
@@ -271,6 +281,33 @@ wk_home_repoint_file_specs() {
   return 0
 }
 
+# The whole transform ONE manifest gets on its way out of the checkout: the
+# `file:` specs repointed absolute, and — for the project root's manifest — the
+# note that says why they now name a path.
+#
+# It is a function rather than two inline blocks because the SYNC has to compose
+# the same thing (issue #129): a manifest compared against the RAW source
+# differs by construction, so a content sync that compared it that way would
+# rewrite it on every run forever. The sync applies this to a scratch copy and
+# compares THAT — what would land — against what is already there.
+#
+# Usage: wk_home_project_manifest <manifest> <source package dir> [--root]
+wk_home_project_manifest() {
+  local pkg="$1" srcdir="$2" root="${3:-}"
+  wk_home_repoint_file_specs "$pkg" "$srcdir"
+  [[ "$root" == '--root' ]] || return 0
+  [[ -f "$pkg" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+
+  # The description says what the manifest now carries, the way the omega brand
+  # monorepo's own does — a reader opening this repo on another machine has to
+  # learn from the file itself why its dependencies name a path.
+  wk_json_edit "$pkg" \
+    --arg note ' Local era: the @omega.js frameworks resolve by absolute file: link into the omega monorepo on the machine that seeded this repo, until OMEGA publishes.' \
+    '.description = ((.description // "") + $note)' >/dev/null 2>&1 || true
+  return 0
+}
+
 # The seed: this checkout's `tower/app` becomes the clone's whole contents.
 #
 # The app IS the template (the Spec's "no stored second template"), so the copy
@@ -285,7 +322,7 @@ wk_home_repoint_file_specs() {
 # participation flag to seed and no inbox to keep out of the commit. The one
 # thing the seed adds on top of the copy is the absolute `file:` specs.
 wk_home_seed() {
-  local pkg app_pkg
+  local pkg app_pkg name excludes=()
 
   [[ -n "$WK_TOWER_APP" && -d "$WK_TOWER_APP" ]] || {
     wk_say_warn "home: the tower app is missing at ${WK_TOWER_APP:-this checkout} — nothing to seed the project from"
@@ -294,39 +331,149 @@ wk_home_seed() {
 
   # `tar` rather than `cp -R` with deletions after: the exclusions have to hold
   # at every depth (a nested node_modules under apps/*), and a copy that landed
-  # a gigabyte of dependencies first would be slow before it was wrong.
-  (cd "$WK_TOWER_APP" && tar -cf - \
-    --exclude './node_modules' --exclude '*/node_modules' \
-    --exclude './package-lock.json' --exclude '*/package-lock.json' \
-    --exclude './.omega' --exclude '*/.omega' \
-    --exclude './.cache' --exclude '*/.cache' \
-    --exclude './.temp' --exclude '*/.temp' \
-    --exclude './dist' --exclude '*/dist' \
-    --exclude './.env' --exclude '*/.env' \
-    .) | (cd "$WK_HOME_DIR" && tar -xf -) || {
+  # a gigabyte of dependencies first would be slow before it was wrong. The
+  # names are the shared list, so the seed and the sync exclude the same set.
+  for name in "${WK_TOWER_APP_EXCLUDE[@]}"; do
+    excludes+=(--exclude "./$name" --exclude "*/$name")
+  done
+  (cd "$WK_TOWER_APP" && tar -cf - "${excludes[@]}" .) \
+    | (cd "$WK_HOME_DIR" && tar -xf -) || {
     wk_say_warn "home: could not copy the tower app into $WK_HOME_DIR"
     return 1
   }
 
   # The manifests, root first and then every app: each spec resolves from the
   # directory of the manifest it was copied from, never from the clone.
-  wk_home_repoint_file_specs "$WK_HOME_DIR/package.json" "$WK_TOWER_APP"
+  wk_home_project_manifest "$WK_HOME_DIR/package.json" "$WK_TOWER_APP" --root
   for pkg in "$WK_HOME_DIR"/apps/*/package.json; do
     [[ -f "$pkg" ]] || continue
     app_pkg="${pkg#"$WK_HOME_DIR"/}"
-    wk_home_repoint_file_specs "$pkg" "$WK_TOWER_APP/$(dirname "$app_pkg")"
+    wk_home_project_manifest "$pkg" "$WK_TOWER_APP/$(dirname "$app_pkg")"
   done
 
-  # The description says what the manifest now carries, the way the omega brand
-  # monorepo's own does — a reader opening this repo on another machine has to
-  # learn from the file itself why its dependencies name a path.
-  if [[ -f "$WK_HOME_DIR/package.json" ]] && command -v jq >/dev/null 2>&1; then
-    wk_json_edit "$WK_HOME_DIR/package.json" \
-      --arg note ' Local era: the @omega.js frameworks resolve by absolute file: link into the omega monorepo on the machine that seeded this repo, until OMEGA publishes.' \
-      '.description = ((.description // "") + $note)' >/dev/null 2>&1 || true
-  fi
-
   wk_say_ok "home: seeded the tower project in $WK_HOME_DIR from $WK_TOWER_APP"
+  return 0
+}
+
+# The clone's project, refreshed from this checkout's `tower/app` (issue #129).
+#
+# The seed is a ONE-TIME write — a clone that already carries the project is
+# never re-seeded, because it is another machine's work — so every tower
+# improvement made after the home repo was created stopped at the checkout, and
+# the published dashboard stayed at whatever the app looked like on seed day.
+# This is the catch-up, and the publish runs it ahead of the build.
+#
+# BY CONTENT, the way the cloud brief's runner is seeded: a file whose bytes
+# already match is not written, so a second run changes nothing and leaves
+# nothing to commit. The manifests are compared against what
+# `wk_home_project_manifest` would leave rather than against the raw source,
+# since the raw one differs by construction.
+#
+# WHAT IT MAY REMOVE is scoped to the top-level folders the app itself defines
+# (`apps/`, `assets/`, `config/` — whatever `tower/app` has). Inside those the
+# sync is the only writer, so a file the app stopped shipping is one an older
+# copy left behind and the build would still glob. The clone's ROOT is shared
+# territory — the runner's `brief/`, the heal's `.github/ISSUE_TEMPLATE/`, the
+# roster's `data/repos.json` all sit there — and mirroring it would mean
+# enumerating everything this function does NOT own, where the cost of an
+# omission is deleting another step's work. So a root-level file the app
+# retired is left alone. Emptied directories are left too: git tracks none of
+# them, and a sweep that removed them could take a minted `.omega` tree with it.
+#
+# Returns 0 (something changed), 2 (already current), 1 (there was nothing to
+# sync from — a named skip, and the caller builds the clone as it is).
+wk_home_sync() {
+  local src rel dest want tmp top topname found excluded name prune=()
+  local copied=0 removed=0 rc=0
+
+  wk_home_ready || {
+    wk_say_skip "sync: nothing is cloned at $WK_HOME_DIR — the tower project was not refreshed"
+    return 1
+  }
+  [[ -n "$WK_TOWER_APP" && -d "$WK_TOWER_APP" ]] || {
+    wk_say_skip "sync: the tower app is not beside this engine (${WK_TOWER_APP:-no tower/app was found}) — $WK_HOME_DIR is left exactly as it is"
+    return 1
+  }
+
+  # The walk's blindfold, built once and used on both sides. `-prune` is what
+  # does it: on a directory it stops the descent, and on a plain file it simply
+  # matches, so one list covers `node_modules` and `.env` alike.
+  for name in "${WK_TOWER_APP_EXCLUDE[@]}"; do
+    [[ "${#prune[@]}" -eq 0 ]] || prune+=(-o)
+    prune+=(-name "$name")
+  done
+
+  tmp="$(mktemp -d)" || {
+    wk_say_warn "sync: could not make a scratch directory — the tower project in $WK_HOME_DIR was not refreshed"
+    return 1
+  }
+
+  # Everything the app ships, in.
+  while IFS= read -r src; do
+    rel="${src#"$WK_TOWER_APP"/}"
+    dest="$WK_HOME_DIR/$rel"
+    want="$src"
+    # A manifest is composed first, so the comparison below is against what
+    # would LAND rather than against the checkout's own relative specs.
+    if [[ "$(basename "$rel")" == 'package.json' ]]; then
+      want="$tmp/package.json"
+      cp -p "$src" "$want" 2>/dev/null || {
+        wk_say_warn "sync: could not stage $rel for comparison — the tower project in $WK_HOME_DIR is part-refreshed"
+        rc=3
+        break
+      }
+      if [[ "$rel" == 'package.json' ]]; then
+        wk_home_project_manifest "$want" "$WK_TOWER_APP" --root
+      else
+        wk_home_project_manifest "$want" "$(dirname "$src")"
+      fi
+    fi
+    cmp -s "$want" "$dest" 2>/dev/null && continue
+    mkdir -p "$(dirname "$dest")" 2>/dev/null || true
+    # -p, so a file the project executes arrives with the mode it was written
+    # with rather than whatever this shell's umask would have given it.
+    cp -p "$want" "$dest" 2>/dev/null || {
+      wk_say_warn "sync: could not write $rel into $WK_HOME_DIR"
+      rc=3
+      break
+    }
+    copied=$((copied + 1))
+  done < <(find "$WK_TOWER_APP" \( "${prune[@]}" \) -prune -o -type f -print)
+
+  # rc=3 is a PART-refreshed clone — a mid-walk write failed — and the caller
+  # must not treat it as the benign "nothing to sync from" skip (rc=1): what
+  # landed before the failure is real, and committing or building it publishes
+  # half a refresh.
+  rm -rf "$tmp"
+  [[ "$rc" -eq 0 ]] || return "$rc"
+
+  # And what the app retired, out — inside its own folders and nowhere else.
+  for top in "$WK_TOWER_APP"/*/; do
+    [[ -d "$top" ]] || continue
+    topname="$(basename "$top")"
+    excluded=0
+    for name in "${WK_TOWER_APP_EXCLUDE[@]}"; do
+      [[ "$topname" == "$name" ]] && { excluded=1; break; }
+    done
+    [[ "$excluded" -eq 0 ]] || continue
+    [[ -d "$WK_HOME_DIR/$topname" ]] || continue
+
+    while IFS= read -r found; do
+      rel="${found#"$WK_HOME_DIR"/}"
+      [[ -f "$WK_TOWER_APP/$rel" ]] && continue
+      rm -f "$found" 2>/dev/null || {
+        wk_say_warn "sync: could not remove the retired $rel from $WK_HOME_DIR"
+        return 3
+      }
+      removed=$((removed + 1))
+    done < <(find "$WK_HOME_DIR/$topname" \( "${prune[@]}" \) -prune -o -type f -print)
+  done
+
+  if [[ $((copied + removed)) -eq 0 ]]; then
+    wk_say_skip "sync: the tower project in $WK_HOME_DIR is already current with $WK_TOWER_APP"
+    return 2
+  fi
+  wk_say_ok "sync: refreshed the tower project in $WK_HOME_DIR ($copied file(s) from $WK_TOWER_APP, $removed retired)"
   return 0
 }
 

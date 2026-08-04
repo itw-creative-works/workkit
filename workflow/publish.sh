@@ -222,6 +222,38 @@ fi
 # the roster below still finds nothing but its own edit.
 if [[ "$QUIET" -eq 1 ]]; then wk_home_heal --quiet; else wk_home_heal; fi
 
+# ── The sync ──────────────────────────────────────────────────────────────────
+# The clone is the project, seeded ONCE — so before issue #129 every tower
+# improvement made after the home repo was created stopped at the checkout, and
+# what Pages served was the app as it looked on seed day. The catch-up runs
+# here, by content: an unchanged file is not written, so a second run changes
+# nothing and there is nothing to commit.
+#
+# It sits ABOVE the source push rather than beside the build, because what it
+# writes is SOURCE: the refreshed project rides to the default branch in the
+# same commit the roster does, so the clone a second machine takes is a current
+# one and a run that ends at the switch does not leave a tree dirty until
+# tomorrow. Which puts it above the switch as well — the same place the roster
+# sits, and for the same reason: it needs git and the clone, and nothing that
+# publishing needs.
+#
+# A checkout with no `tower/app` beside its engine — a moved link target, a bare
+# engine folder — is a NAMED SKIP: the clone is built exactly as it is, which is
+# what every run before this one did.
+SYNC_CHANGED=0
+SYNC_RC=0
+wk_home_sync || SYNC_RC=$?
+[[ "$SYNC_RC" -eq 0 ]] && SYNC_CHANGED=1
+
+# A PART-refreshed clone (rc=3: a write failed mid-walk) never goes further:
+# committing and building half a refresh is exactly the broken-site publish the
+# mint's own abort exists to prevent. The named skip (rc=1) and already-current
+# (rc=2) both continue — the clone is whole in those, just not newer.
+if [[ "$SYNC_RC" -eq 3 ]]; then
+  say_warn "publish: the tower project in $WK_HOME_DIR is part-refreshed — nothing was committed, built or published; fix the write failure above and publish again"
+  exit 1
+fi
+
 # ── The roster ────────────────────────────────────────────────────────────────
 # Which REPOSITORIES the board sweeps is this machine's roster, and it names
 # private repos — so it is written to the home repo's default branch, which is
@@ -258,16 +290,21 @@ else
 fi
 
 # ── The source side ───────────────────────────────────────────────────────────
-# The roster just written, plus whatever else the day changed in the project
-# itself — an upstream file someone took by hand. Nothing staged means nothing to
-# say. A push that did not land is remembered rather than acted on: it is the
-# caller's failure to see, and it must not cost the site a publish it can still
-# make.
+# The roster just written, the project the sync just refreshed, plus whatever
+# else the day changed in the clone — an upstream file someone took by hand.
+# Nothing staged means nothing to say. A push that did not land is remembered
+# rather than acted on: it is the caller's failure to see, and it must not cost
+# the site a publish it can still make.
+#
+# The subject names whichever of the two was the reason there is a commit at
+# all; the other rides along, the way anything else dirty in the tree always has.
+SOURCE_SUBJECT='chore(home): refresh the repo list'
+[[ "$SYNC_CHANGED" -eq 1 ]] && SOURCE_SUBJECT='chore(home): sync the tower project'
 SOURCE_RC=0
 if git -C "$WK_HOME_DIR" diff --quiet 2>/dev/null && git -C "$WK_HOME_DIR" diff --cached --quiet 2>/dev/null \
   && [[ -z "$(git -C "$WK_HOME_DIR" ls-files --others --exclude-standard 2>/dev/null)" ]]; then
   :
-elif ! wk_home_commit_push "chore(home): refresh the repo list"; then
+elif ! wk_home_commit_push "$SOURCE_SUBJECT"; then
   # commit_push already said which half failed.
   SOURCE_RC=1
 fi
@@ -295,6 +332,39 @@ fi
 if [[ ! -x "$OMEGA_BIN" ]]; then
   say_skip "publish: the tower project's build tooling is not installed at $WK_HOME_DIR (no node_modules/.bin/omega — its @omega.js deps resolve by file: spec from a sibling omega checkout) — nothing is built here; \`npm --prefix $WK_HOME_DIR install\` on a machine with that checkout installs it"
   exit "$SOURCE_RC"
+fi
+
+# ── The mint ──────────────────────────────────────────────────────────────────
+# The brand assets, minted from the one authored mark at `assets/logo` into the
+# gitignored `.omega/assets` the web build's static channel bridges. It runs at
+# the BRAND ROOT, where the `omega` bin is the manager's and the assets service
+# lives — the mirror image of the build, which resolves only inside the app.
+#
+# THREE triggers, and no others: a sync that changed something (the authored
+# mark or the brand config may be what changed), a clone that has never minted
+# at all — which is every freshly seeded one, since `.omega` is among the trees
+# the seed leaves behind — and a marker left by a mint that FAILED. The marker
+# is what makes a failure sticky: the failing sync's changes were already
+# committed above, so tomorrow's run reads "already current" and would
+# otherwise mint nothing and publish straight over the failure. `.omega` is
+# gitignored in the clone, so the marker never reaches a commit.
+#
+# A mint that FAILS aborts, before the build rather than after it: the sidebar
+# and the og/twitter tags emit the minted paths unconditionally, so a build on
+# top of a failed mint publishes a public site with a broken logo. A stale site
+# beats that, and the exit code is what the daily job logs.
+MINT_FAILED_MARK="$WK_HOME_DIR/.omega/.mint-failed"
+if [[ "$SYNC_CHANGED" -eq 1 || ! -d "$WK_HOME_DIR/.omega/assets/logo" || -f "$MINT_FAILED_MARK" ]]; then
+  say_info "publish: minting the brand assets in $WK_HOME_DIR"
+  MINT_LOG="$(mktemp)"
+  if ! (cd "$WK_HOME_DIR" && "$OMEGA_BIN" --service=assets) >"$MINT_LOG" 2>&1; then
+    mkdir -p "$WK_HOME_DIR/.omega" && : >"$MINT_FAILED_MARK"
+    say_warn "publish: the brand assets could not be minted in $WK_HOME_DIR — nothing was built or published, because the sidebar and the social tags reference the minted paths unconditionally and a stale site beats one with a broken logo; the failure is remembered and every publish aborts here until a mint succeeds; the last lines follow"
+    tail -20 "$MINT_LOG" >&2
+    rm -f "$MINT_LOG"
+    exit 1
+  fi
+  rm -f "$MINT_LOG" "$MINT_FAILED_MARK"
 fi
 
 # ── Build ─────────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 ---
 name: ship
 description: Ship a release — commit (or open a pull request), bump the version, publish, create the GitHub release, run the deploy. - ONLY invoke when the user explicitly types /workkit:ship — NEVER auto-invoke on context like "commit", "ship", "release", "publish", or "deploy".
-allowed-tools: Bash(git add *), Bash(git commit *), Bash(git diff *), Bash(git log *), Bash(git status *), Bash(git push *), Bash(git rev-parse *), Bash(git stash list *), Bash(git tag *), Bash(git switch *), Bash(git checkout *), Bash(git pull *), Bash(git branch *), Bash(gh release create *), Bash(gh repo view *), Bash(gh issue list *), Bash(gh issue view *), Bash(gh issue close *), Bash(gh issue comment *), Bash(gh pr create *), Bash(gh pr merge *), Bash(gh pr checks *), Bash(gh pr view *), Bash(gh run list *), Bash(gh run watch *), Bash(gh run view *), Bash(gh workflow list *), Bash(npm publish *), Bash(npm version *), Bash(npm run prepare *), Bash(npm run deploy *), Bash(npm run release *), Bash(npx run deploy *), Bash(npx run release *)
+allowed-tools: Bash(git add *), Bash(git commit *), Bash(git diff *), Bash(git log *), Bash(git status *), Bash(git push *), Bash(git rev-parse *), Bash(git stash list *), Bash(git tag *), Bash(git switch *), Bash(git checkout *), Bash(git pull *), Bash(git branch *), Bash(gh release create *), Bash(gh repo view *), Bash(gh issue list *), Bash(gh issue view *), Bash(gh issue close *), Bash(gh issue comment *), Bash(gh pr create *), Bash(gh pr merge *), Bash(gh pr checks *), Bash(gh pr view *), Bash(gh run list *), Bash(gh run watch *), Bash(gh run view *), Bash(gh workflow list *), Bash(npm publish *), Bash(npm version *), Bash(npm run prepare *), Bash(npm run deploy *), Bash(npm run release *), Bash(npx run deploy *), Bash(npx run release *), Bash(workkit publish *)
 user-invocable: true
 ---
 
@@ -144,7 +144,7 @@ This step runs if there are changes in the working tree (from the session's work
    - Empty list? GitHub can lag queuing a run by minutes — retry a few times over ~a minute before concluding. Still empty: check whether the repo has a workflow that runs on push at all (`gh workflow list`, or the `on:` blocks under `.github/workflows/`). No push workflow = one quiet line in the summary ("no CI configured for push"). A repo that HAS one but shows no run is "run not queued yet" — say that, and say the ship ended without a conclusion.
    - Wait on it: `gh run watch <id> --exit-status`. Green = one line in the summary.
    - RED = a failure needing action, at the TOP of the ship summary, never a footnote: name the workflow, the failing job (`gh run view <id> --log-failed` for the step), and the run URL. The ship is already pushed, so say plainly that the default branch is red and what needs fixing — never bury it under the version line, never call the ship clean.
-   - A red run also STOPS the pipeline: do not proceed to the GitHub release, `npm publish`, or deploy (steps 4–6) on a red default branch — report, fix, and only continue on the owner's word. The local commit gate proved the suite on THIS machine; a red CI run is the proof failing somewhere else, and publishing on top of it ships the failure.
+   - A red run also STOPS the pipeline: do not proceed to the GitHub release, `npm publish`, deploy, or the dashboard republish (steps 4–7) on a red default branch — report, fix, and only continue on the owner's word. The local commit gate proved the suite on THIS machine; a red CI run is the proof failing somewhere else, and publishing on top of it ships the failure.
 
 6. **Close the shipped work items** — every issue this ship completes ends closed with a pointer to the CHANGELOG entry. The `Fixes #N` trailer already closed it when its commit landed on the default branch; for anything left open, close it manually:
    `gh issue close <N> --comment "Shipped in <version-or-commit> — see CHANGELOG [Unreleased]/<section>."`
@@ -187,6 +187,14 @@ If `scripts.deploy` exists, run `npm run deploy`. If only `scripts.release` exis
 **🚨 MANDATORY: Ask before deploying.** Deploy sends code to PRODUCTION. You MUST ask "Deploy to production?" and wait for an explicit "yes" UNLESS the user literally typed `deploy` in their `/workkit:ship deploy` invocation args. The word "deploy" must appear in the invocation — not in earlier conversation, not implied by context, not inferred from "ship it." No `deploy` in the args = you ask. Every time. No exceptions.
 
 If neither script exists, skip silently.
+
+## Step 7: Republish the dashboard (if the ship touched it)
+
+If the shipped diff touched `tower/app/`, `workflow/publish.sh` or `workflow/home.sh`, run `workkit publish` once the release commit's CI run is green — the published dashboard is built from the home clone, and only a publish carries this ship's change to it. Waiting for green is the point: a red default branch means what would be published is the failure. The daily 9am publish is the backstop, so a skip costs a day, never the change.
+
+Report the outcome in the ship summary in one line — published, or the named skip the run printed (`site.publish` off, no home clone, no build tooling, already current). A publish that FAILED is loud, like a red CI run: say what it said and that the site is still on the previous build.
+
+If the diff touched none of those paths, skip silently.
 
 ## Rules
 
