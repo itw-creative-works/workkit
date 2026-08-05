@@ -184,12 +184,12 @@ export const activityClass = (phase) => `omega-tower-activity omega-tower-activi
  * jumping. The word is kept for a screen reader, which has no colour or motion
  * to read.
  *
- * A GEAR, not the loader's notched ring (#137). Half the places this glyph is
- * drawn are STILL on purpose — the Board's claim carries no timestamps to spin
- * on — and a motionless loading spinner reads as a broken one wherever it is
- * seen. A gear says machinery either way: at rest, someone holds this; turning,
- * that agent is moving. It is also the honest shape to rotate, eight-fold
- * symmetric where the ring's gap advertises every pixel of a bad centre.
+ * A GEAR, not the loader's notched ring (#137). Some of the places this glyph
+ * is drawn are STILL on purpose — a specced claim is work at rest — and a
+ * motionless loading spinner reads as a broken one wherever it is seen. A gear
+ * says machinery either way: at rest, someone holds this; turning, the work is
+ * running. It is also the honest shape to rotate, eight-fold symmetric where
+ * the ring's gap advertises every pixel of a bad centre.
  *
  * @param {'working'|'idle'|'quiet'|'none'} phase
  * @param {string} [title] the hover text — how long it has been running
@@ -205,28 +205,35 @@ export const activityIcon = (phase, title = '', label = '') => {
   </span>`;
 };
 
-// The statuses a claim can sit on — the two the pipeline treats as authorized
-// to build. Anything earlier is still triage's, anything later has shipped.
-const CLAIMABLE = ['specced', 'building'];
+// The status a CLAIM at rest sits on. `building` used to sit beside it in this
+// gate, but a building card now draws unconditionally (#141), so the claim
+// gate's one status is `specced` — anything earlier is still triage's,
+// anything later has shipped or is already spinning above.
+const CLAIMABLE = ['specced'];
 
 /**
- * The Board's version of the glyph: an issue an agent HOLDS.
+ * The Board's version of the glyph: an issue an agent HOLDS, or work RUNNING.
  *
- * Drawn still, always: a board card carries no activity timestamps — nothing
- * here can know whether the agent holding it moved a second ago — so it says
- * someone has this one and nothing more, and says exactly that to a screen
- * reader rather than the word `idle`.
+ * A `building` card SPINS (owner ruling, #141): the status itself says the
+ * work is in motion, so the gear turns even though a board card carries no
+ * activity timestamps — and whether or not anyone is assigned yet, because
+ * `building` without a holder is still work in flight, not work at rest. A
+ * screen reader hears `building`, the honest word for it.
  *
- * The gate is both halves of the claim: an assignee, and a status the pipeline
- * treats as authorized to build (#46) — `specced` or `building`, which is where
- * claimed work sits once it starts (#60). An issue claimed while it is still in
- * triage is not work in flight.
+ * A `specced` claim stays STILL: both halves of the claim gate hold (#46) —
+ * an assignee, and a status the pipeline treats as authorized to build — and
+ * the still gear says someone has this one and nothing more, `claimed` to a
+ * screen reader rather than the word `idle`. An issue claimed while it is
+ * still in triage is not work in flight and draws nothing.
  *
  * @param {object} issue one issue from /api/board
- * @returns {string} markup, or '' when the issue is not claimed work
+ * @returns {string} markup, or '' when the issue is neither running nor claimed
  */
 export const claimGlyph = (issue) => {
   const held = ((issue || {}).assignees || []);
+  if ((issue || {}).status === 'building') {
+    return activityIcon('working', held.length ? `held by @${held.join(', @')}` : 'building', 'building');
+  }
   if (!CLAIMABLE.includes((issue || {}).status) || !held.length) return '';
   return activityIcon('idle', `held by @${held.join(', @')}`, 'claimed');
 };

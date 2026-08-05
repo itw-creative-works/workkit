@@ -1077,11 +1077,15 @@ const run = async () => {
     assertEq(agent.claimGlyph({}), '', 'and an issue with nothing on it draws nothing');
   });
 
-  await test('a claim on work already started carries the glyph too', () => {
+  await test('a building card spins the gear — the status says the work is in motion (#141)', () => {
     const building = agent.claimGlyph({ status: 'building', assignees: ['ianwieds'] });
-    assert(building.includes('omega-tower-activity--idle'), 'the glyph marks a claim, and claimed work lives in building');
-    assert(building.includes('title="held by @ianwieds"'), 'saying who has it there as well');
-    assertEq(agent.claimGlyph({ status: 'building', assignees: [] }), '', 'a building issue nobody holds still draws nothing');
+    assert(building.includes('omega-tower-activity--working'), 'a building issue wears the working glyph');
+    assert(building.includes('fa-spin'), 'and the gear turns');
+    assert(building.includes('title="held by @ianwieds"'), 'saying who has it');
+    assert(building.includes('<span class="visually-hidden">building</span>'), 'a screen reader hears the honest word');
+    const unheld = agent.claimGlyph({ status: 'building', assignees: [] });
+    assert(unheld.includes('fa-spin'), 'building without a holder is still work in flight, so it spins too');
+    assert(unheld.includes('title="building"'), 'with the status as its hover text, having no holder to name');
   });
 
   await test('a claim announces itself as a claim, not as an idle agent', () => {
@@ -1366,13 +1370,12 @@ const run = async () => {
 
   await test('the indicator is a gear, so a still one does not read as a broken spinner (#137)', () => {
     // The defect this proves against: the notched ring — the universal loading
-    // spinner — drawn STILL on every claimed Board card, which is what a board
-    // whose spinners "do not work" looks like. The Board's glyph is still on
-    // purpose (a claim carries no timestamps to spin on), so the fix is a shape
-    // that reads at rest.
-    const held = agent.claimGlyph({ status: 'building', assignees: ['ian'] });
+    // spinner — drawn STILL on a claimed Board card, which is what a board
+    // whose spinners "do not work" looks like. A specced claim is still on
+    // purpose (work at rest), so the fix is a shape that reads at rest.
+    const held = agent.claimGlyph({ status: 'specced', assignees: ['ian'] });
     assert(held.includes('fa-gear'), 'the Board says a claim with a gear at rest');
-    assert(!held.includes('fa-spin'), 'still, as it always was — nothing here knows whether that agent is moving');
+    assert(!held.includes('fa-spin'), 'still — a specced claim is held, not running');
     assert(agent.activityIcon('working').includes('fa-gear'), 'and the Crew turns the same one');
     for (const markup of [held, agent.activityIcon('working'), agent.activityIcon('quiet')]) {
       assert(!markup.includes('circle-notch'), 'the loader\'s ring is gone from every phase — one glyph, one story');
