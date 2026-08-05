@@ -45,7 +45,7 @@ import {
  */
 export const tokenPrompt = (problem = '') => `<div class="card">
   <div class="card-body">
-    <div class="classy-panel-head mb-3"><span>Unlock the board</span></div>
+    <div class="omega-panel-head mb-3"><span>Unlock the board</span></div>
     <p>This copy of the tower has no data of its own — it reads your GitHub issues live from your browser, and moves and files them there too. Hand it a token and it works exactly like the dashboard on your machine.</p>
     <p class="text-body-secondary">${esc(TOKEN_SCOPES)}</p>
     ${problem ? `<div class="alert alert-warning" data-token-problem>${esc(problem)}</div>` : ''}
@@ -100,7 +100,7 @@ export const connectHref = (href, origin = 'http://127.0.0.1:8693') => {
  */
 export const towerDownNotice = (href) => `<div class="card">
   <div class="card-body">
-    <div class="classy-panel-head mb-3"><span>The tower isn’t connected</span></div>
+    <div class="omega-panel-head mb-3"><span>The tower isn’t connected</span></div>
     <p>The tower API on this machine isn’t running, or this copy of the dashboard isn’t pointed at it.</p>
     <p class="text-body-secondary">Start it with <code>npm run tower</code> from the workkit checkout, then connect this page to it.</p>
     <a class="btn btn-adaptive btn-sm" href="${esc(connectHref(href))}">Connect to the tower</a>

@@ -120,7 +120,7 @@ const drawnIndicator = ({ phase, stamps, age, title }) => {
   spoken.text = phase;
   const icon = el('span', `omega-tower-activity omega-tower-activity--${phase}`).append(glyph, spoken);
   icon.attrs.title = title;
-  const label = el('span', 'classy-micro text-body-secondary', { liveAge: '' });
+  const label = el('span', 'omega-micro text-body-secondary', { liveAge: '' });
   label.text = age;
   const wrapper = el('span', 'd-inline-flex align-items-center gap-1', stamps).append(icon, label);
   // The CARD the indicator sits on, which a page marks so the tick can mute it
@@ -405,7 +405,7 @@ const run = async () => {
 
   await test('a badge is a chip in its tone, and its label is text', () => {
     const badge = format.modelBadge('claude-opus-5[1m]');
-    assert(badge.includes('classy-chip omega-badge-tone omega-tone-2'), 'the theme chip, in the opus tone');
+    assert(badge.includes('omega-chip omega-badge-tone omega-tone-2'), 'the theme chip, in the opus tone');
     assert(badge.includes('claude-opus-5[1m]'), 'labelled with the id itself');
     assertEq(format.badgeColor('opus'), 'var(--omega-chart-2)', 'and the chart reads the same tone as a token');
     assert(!format.classBadge('<img src=x>').includes('<img'), 'a hostile class name is escaped');
@@ -490,7 +490,7 @@ const run = async () => {
       const chips = format.issueChips({ type: 'bug', priority });
       assert(chips.includes(`--omega-tone: var(${token})`), `${priority} is drawn in its own token`);
       assertEq(chips.includes(format.priorityChip(priority)), true, `${priority} is the chip format.js draws`);
-      assert(!chips.includes('classy-chip--accent'), 'and never a colour decided at the call site');
+      assert(!chips.includes('omega-chip--accent'), 'and never a colour decided at the call site');
     }
     assert(!format.issueChips({ type: '', priority: '' }).includes('omega-badge-tone'),
       'the unlabelled middle still draws no priority chip');
@@ -506,7 +506,7 @@ const run = async () => {
         `${type}'s slot belongs to no status and not to high`);
     }
     const foreign = format.typeChip('question');
-    assert(foreign.includes('classy-chip') && !foreign.includes('omega-badge-tone'),
+    assert(foreign.includes('omega-chip') && !foreign.includes('omega-badge-tone'),
       'a type outside the vocabulary stays a plain chip');
     assertEq(format.typeChip(''), '', 'no type, no chip');
   });
@@ -546,7 +546,7 @@ const run = async () => {
 
   await test('the glyph is spaced off the word and sits on its optical centre (#136)', () => {
     // The defect this proves against: the chip is an inline-BLOCK — the theme's
-    // `.omega-badge-tone` sets it and comes after `.classy-chip`'s inline-flex
+    // `.omega-badge-tone` sets it and comes after `.omega-chip`'s inline-flex
     // at equal specificity — so the flex gap the markup was written against
     // never applied and the glyph rendered flush against the word. Both halves
     // of the fix are pinned by hand: neither is visible from Node, and both are
@@ -556,7 +556,7 @@ const run = async () => {
       assert(/<i class="fa-solid fa-[a-z-]+ me-1"/.test(chip), 'the glyph carries the framework\'s own margin utility, since there is no gap to inherit');
     }
     const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
-    const nudge = /\.classy-chip i\.fa-solid svg \{ vertical-align: (\S+?); \}/.exec(sheet);
+    const nudge = /\.omega-chip i\.fa-solid svg \{ vertical-align: (\S+?); \}/.exec(sheet);
     assert(nudge, 'and the sheet nudges the svg the renderer fills that `i` with — `.fa svg`, the framework\'s own rule, never reaches an `i` written `fa-solid` alone');
     assertEq(nudge[1], '-.125em', 'by the framework\'s own number, so a chip glyph sits where every other icon does');
   });
@@ -590,8 +590,8 @@ const run = async () => {
     };
     const open = new Set(['owner/repo#12', 'other/repo#3']);
     const chips = format.issueChips(issue, '', open);
-    assert(chips.includes('<span class="classy-chip">waits on #12</span>'), 'a blocker in the same repo is said the short way');
-    assert(chips.includes('<span class="classy-chip">waits on other/repo#3</span>'), 'and one in another repo carries its slug');
+    assert(chips.includes('<span class="omega-chip">waits on #12</span>'), 'a blocker in the same repo is said the short way');
+    assert(chips.includes('<span class="omega-chip">waits on other/repo#3</span>'), 'and one in another repo carries its slug');
     assert(!format.waitsOnChips(issue, open).includes('omega-badge-tone'),
       'in the plain muted chip, borrowing no status or priority colour');
     assertEq(chips.includes(format.waitsOnChips(issue, open)), true, 'the row draws format.js’s own helper, not a second copy of it');
@@ -602,7 +602,7 @@ const run = async () => {
     // hand-typed — the chip must not vanish over a capital letter.
     const issue = { repo: 'owner/repo', blockedBy: [{ repo: 'OWNER/Repo', number: 12 }] };
     const chips = format.issueChips(issue, '', new Set(['owner/repo#12']));
-    assert(chips.includes('<span class="classy-chip">waits on #12</span>'),
+    assert(chips.includes('<span class="omega-chip">waits on #12</span>'),
       'matched against the sweep and recognized as this repo despite the spelling');
   });
 
@@ -626,7 +626,7 @@ const run = async () => {
 
   await test('an issue with nothing to say draws no chips', () => {
     const chips = format.issueChips({ type: '', priority: '', agentOk: false, assignees: [] });
-    assert(!chips.includes('classy-chip'), 'no chip markup at all');
+    assert(!chips.includes('omega-chip'), 'no chip markup at all');
     assert(!chips.includes('@'), 'and no empty handle');
   });
 
@@ -1937,7 +1937,7 @@ const run = async () => {
     assert(one.includes('title="board: gh is not logged in"'), 'and the reason in the tooltip');
     const two = chrome.statusMarkup(CHROME, [{ name: 'board', reason: 'a' }, { name: 'health', reason: 'b' }]);
     assert(two.includes('>2 feeds unavailable<'), 'two, plural');
-    assert(!chrome.statusMarkup(CHROME, []).includes('classy-chip'), 'and a healthy read draws no chip');
+    assert(!chrome.statusMarkup(CHROME, []).includes('omega-chip'), 'and a healthy read draws no chip');
     assert(!chrome.statusMarkup(CHROME, [{ name: 'x', reason: '<img src=x>' }]).includes('<img'), 'a hostile reason is escaped');
   });
 
@@ -2023,7 +2023,7 @@ const run = async () => {
     assert(all.includes('<hr class="dropdown-divider"/>'), 'the filter is separated from the entries above it');
     assert(all.includes('data-tower-scope-slug="workkit"') && all.includes('data-tower-scope-slug="omega"'), 'a box per repo');
     assertEq((all.match(/ checked/g) || []).length, 2, 'no selection means every repo is in play, and every box says so');
-    assert(all.includes('<label class="form-check-label classy-micro" for="tower-scope-0">workkit</label>'), 'each box carries its name, tied to it');
+    assert(all.includes('<label class="form-check-label omega-micro" for="tower-scope-0">workkit</label>'), 'each box carries its name, tied to it');
 
     const subset = sidebar.menuMarkup(mkState({ repos: [...ROSTER, { slug: 'dotfiles', path: '/repos/dotfiles' }] }, 'workkit,omega'));
     assert(/class="dropdown-item active" data-tower-scope=""/.test(subset), 'All stays the active entry — a subset is the whole board, narrowed');
@@ -3394,7 +3394,7 @@ const run = async () => {
     assert(/menuMarkup\(state\)/.test(source), 'the menu is markup from state, like the chrome');
     assert(/sidebarKey\(state\)/.test(source), 'and it is rewritten only when what it shows changed');
     assert(/classList\.contains\('show'\)/.test(source), 'never while the viewer has it open, unless the change came from inside it');
-    assert(/#app-sidebar \.classy-side__selector/.test(source), 'written into the framework’s own selector, reached through its button');
+    assert(/#app-sidebar \.omega-side__selector/.test(source), 'written into the framework’s own selector, reached through its button');
     assert(!/#app-sidebar ul/.test(source), 'never as a bare sidebar ul — the nav is one too');
     assert(/data-tower-projects/.test(source), 'and claimed with the one attribute the runtime marks it by');
     assert(/data-bs-auto-close/.test(source), 'ticking a subset box does not close the menu it is in');

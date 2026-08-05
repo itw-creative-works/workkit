@@ -32,7 +32,7 @@ const processLine = (meta) => {
   const parts = [];
   if (!Number.isNaN(when.getTime())) parts.push(`API started ${when.toLocaleString()}`);
   if (meta.bootCommit) parts.push(`commit ${short(meta.bootCommit)}`);
-  return parts.length ? `<p class="classy-micro text-body-secondary mb-3">${esc(parts.join(' · '))}</p>` : '';
+  return parts.length ? `<p class="omega-micro text-body-secondary mb-3">${esc(parts.join(' · '))}</p>` : '';
 };
 
 const restartNotice = (meta) => (stale(meta)
@@ -68,7 +68,7 @@ const releaseLag = (rows) => {
           <td>${esc(row.repo.name)}</td>
           <td class="text-end">${esc(row.unreleased)}</td>
           <td class="text-end">${esc(row.unpushed)}</td>
-          <td class="text-end classy-micro">${esc(row.lastTag || 'never tagged')}</td>
+          <td class="text-end omega-micro">${esc(row.lastTag || 'never tagged')}</td>
         </tr>`).join('')}</tbody>
       </table></div>`
     : empty('nothing is waiting to ship — every entry is released and every commit is pushed', 'fa-regular fa-circle-check');
@@ -107,7 +107,7 @@ const repoCard = (state, repo, alone) => {
 // The single-repo view has the room to name the issues, not only count them.
 const issueList = (issues) => (issues.length
   ? `<ul class="list-unstyled mt-3 mb-0">${issues.map((issue) => issueItem(issue, `
-      <span class="classy-chip">${esc(issue.status || 'no status')}</span>
+      <span class="omega-chip">${esc(issue.status || 'no status')}</span>
       <span class="text-truncate flex-grow-1">#${esc(issue.number)} ${esc(issue.title)}</span>
       ${externalLink(issue.url)}
     `, { inner: 'py-1 d-flex gap-2 align-items-center' })).join('')}</ul>`

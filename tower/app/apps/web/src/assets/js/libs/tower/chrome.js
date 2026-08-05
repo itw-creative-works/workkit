@@ -59,8 +59,8 @@ export const chromeMarkup = (state) => `<div class="d-flex flex-wrap align-items
  * @param {{name: string, reason: string}[]} stale - the feeds that did not answer
  * @returns {string} markup
  */
-export const statusMarkup = (state, stale) => `<span class="classy-micro text-body-secondary d-flex align-items-center gap-2">
+export const statusMarkup = (state, stale) => `<span class="omega-micro text-body-secondary d-flex align-items-center gap-2">
     ${state.pending ? '<span class="spinner-border spinner-border-sm" role="status" aria-label="Reading"></span>' : ''}
     ${esc(state.stamp || 'reading…')}
   </span>
-  ${stale.length ? `<span class="classy-chip classy-chip--accent" title="${esc(stale.map((entry) => `${entry.name}: ${entry.reason}`).join(' · '))}">${stale.length} feed${stale.length === 1 ? '' : 's'} unavailable</span>` : ''}`;
+  ${stale.length ? `<span class="omega-chip omega-chip--accent" title="${esc(stale.map((entry) => `${entry.name}: ${entry.reason}`).join(' · '))}">${stale.length} feed${stale.length === 1 ? '' : 's'} unavailable</span>` : ''}`;

@@ -90,7 +90,7 @@ const scopeNav = (value) => {
 };
 
 /** The selector's toggle button, the framework's own node (sidebar.json turns it on). */
-const selectorButton = () => document.querySelector('#app-sidebar .classy-side__selector');
+const selectorButton = () => document.querySelector('#app-sidebar .omega-side__selector');
 
 /**
  * The one node the runtime fills inside the framework's sidebar: the selector's
@@ -138,9 +138,9 @@ const paintSelector = (state) => {
     const node = button.querySelector(selector);
     if (node) node.textContent = text;
   };
-  set('.classy-side__selector-tile', initial);
-  set('.classy-side__selector-name', name);
-  set('.classy-side__selector-env', env);
+  set('.omega-side__selector-tile', initial);
+  set('.omega-side__selector-name', name);
+  set('.omega-side__selector-env', env);
 };
 
 // ── The runtime ────────────────────────────────────────────────────────────

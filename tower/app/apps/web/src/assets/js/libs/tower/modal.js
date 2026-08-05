@@ -188,10 +188,10 @@ const dependencyRef = (target, issue) => (String(target.repo).toLowerCase() === 
  * lives in a sibling span a tab stop never reaches, so the chip carries it
  * again as its accessible name.
  */
-const dependencyChip = (target, issue, word) => `<span class="classy-chip omega-interactive" aria-label="${esc(`${word} ${dependencyRef(target, issue)}`)}" ${issueTrigger(target)}>${esc(dependencyRef(target, issue))}</span>`;
+const dependencyChip = (target, issue, word) => `<span class="omega-chip omega-interactive" aria-label="${esc(`${word} ${dependencyRef(target, issue)}`)}" ${issueTrigger(target)}>${esc(dependencyRef(target, issue))}</span>`;
 
 /** One word of the line, in the muted voice the metadata above it is written in. */
-const dependencyWord = (word) => `<span class="classy-micro text-body-secondary">${esc(word)}</span>`;
+const dependencyWord = (word) => `<span class="omega-micro text-body-secondary">${esc(word)}</span>`;
 
 /** The dependency line, or nothing at all when the issue neither waits nor blocks. */
 const dependencyLine = (issue, issues) => {
@@ -227,17 +227,17 @@ export const issueDialog = (issue, renderBody, issues) => {
   ];
 
   return {
-    title: `<span class="classy-micro d-block">${esc(issue.repo)} #${esc(issue.number)}</span>
+    title: `<span class="omega-micro d-block">${esc(issue.repo)} #${esc(issue.number)}</span>
       <span class="d-block">${esc(issue.title)}</span>`,
     actions: externalLink(issue.url),
     body: `<div class="d-flex flex-wrap align-items-center gap-1 mb-2">
         ${statusChip(issue.status)}
         ${issueChips(issue)}
       </div>
-      <p class="classy-micro text-body-secondary">${esc(meta.join(' · '))}</p>
+      <p class="omega-micro text-body-secondary">${esc(meta.join(' · '))}</p>
       ${dependencyLine(issue, issues)}
       <div class="omega-tower-issue__body">${rendered || '<p class="text-body-secondary mb-0">No description.</p>'}</div>
-      ${issue.bodyTruncated ? '<p class="classy-micro text-body-secondary mt-2">The body is longer than this — the rest is on GitHub.</p>' : ''}
+      ${issue.bodyTruncated ? '<p class="omega-micro text-body-secondary mt-2">The body is longer than this — the rest is on GitHub.</p>' : ''}
       <p class="mt-3 mb-0"><a href="${esc(issue.url)}" target="_blank" rel="noopener">${esc(issue.comments === 1 ? '1 comment' : `${issue.comments || 0} comments`)} on GitHub</a></p>`,
   };
 };
@@ -367,7 +367,7 @@ export const agentTrigger = (entry) => {
 /** One label/value row of the dialog, or '' when there is no value to show. */
 const detail = (label, value) => (value
   ? `<div class="d-flex justify-content-between gap-3 py-1 border-bottom">
-      <span class="classy-micro text-body-secondary">${esc(label)}</span>
+      <span class="omega-micro text-body-secondary">${esc(label)}</span>
       <span class="text-end">${value}</span>
     </div>`
   : '');
@@ -395,7 +395,7 @@ const clock = (ms) => (Number.isFinite(Number(ms)) ? new Date(Number(ms)).toLoca
 const agentHead = (entry, now) => `${roleIcon(entry.role || entry.agentClass)}
   ${classBadge(entry.role || entry.agentClass)}
   ${modelBadge(entry.model)}
-  ${entry.effort ? `<span class="classy-chip">${esc(entry.effort)}</span>` : ''}
+  ${entry.effort ? `<span class="omega-chip">${esc(entry.effort)}</span>` : ''}
   ${crewActivity(entry, now)}`;
 
 /**
@@ -410,7 +410,7 @@ const agentRows = (entry, now) => {
   const alive = Number(entry.aliveSince);
   const tool = Number(entry.lastToolAt);
 
-  return `${detail('Last tool', entry.lastTool ? `${esc(entry.lastTool)}${Number.isFinite(tool) ? ` <span class="classy-micro text-body-secondary">${esc(sinceLabel(now - tool))} ago</span>` : ''}` : '')}
+  return `${detail('Last tool', entry.lastTool ? `${esc(entry.lastTool)}${Number.isFinite(tool) ? ` <span class="omega-micro text-body-secondary">${esc(sinceLabel(now - tool))} ago</span>` : ''}` : '')}
     ${detail('Running for', Number.isFinite(alive) ? esc(sinceLabel(now - alive)) : '')}
     ${detail('Spawned', clock(alive) ? esc(clock(alive)) : '')}
     ${detail('Tokens in', usage ? esc(compact(usage.input)) : '')}
@@ -418,7 +418,7 @@ const agentRows = (entry, now) => {
     ${detail('Tokens total', entry.tokens === null || entry.tokens === undefined ? '' : esc(compact(entry.tokens)))}
     ${detail('Cost', entry.cost === null || entry.cost === undefined ? '' : esc(money(entry.cost)))}
     ${detail('Id', esc(entry.id || ''))}
-    ${detail('Transcript', entry.transcript ? `<code class="classy-micro">${esc(entry.transcript)}</code>` : '')}`;
+    ${detail('Transcript', entry.transcript ? `<code class="omega-micro">${esc(entry.transcript)}</code>` : '')}`;
 };
 
 /**
@@ -437,7 +437,7 @@ const agentRows = (entry, now) => {
  * @returns {{title: string, body: string}}
  */
 export const agentDialog = (entry, now = Date.now()) => ({
-  title: `<span class="classy-micro d-block">${esc(entry.role || 'agent')}${entry.cwd ? ` · ${esc(shortPath(entry.cwd))}` : ''}</span>
+  title: `<span class="omega-micro d-block">${esc(entry.role || 'agent')}${entry.cwd ? ` · ${esc(shortPath(entry.cwd))}` : ''}</span>
       <span class="d-block">${esc(entry.label || entry.id || 'agent')}</span>`,
   body: `<div class="d-flex flex-wrap align-items-center gap-2 mb-3" data-agent-head>${agentHead(entry, now)}</div>
       <div data-agent-rows>${agentRows(entry, now)}</div>`,

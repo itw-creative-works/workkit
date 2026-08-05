@@ -4,7 +4,7 @@
 // stay OMEGA's; only the data is ours.
 //
 // It is the BACKEND spelling, not the admin one, because the layout that picks
-// between them keys off the URL: themes/classy/_layouts/backend/core/base.html
+// between them keys off the URL: themes/base/_layouts/backend/core/base.html
 // includes admin/sections/sidebar.html only when `page.url contains "/admin"`.
 // The tower's pages live at clean top-level URLs (/, /board, /crew…), so the
 // backend pair is what renders. Both spellings feed the SAME markup include

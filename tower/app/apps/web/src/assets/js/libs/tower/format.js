@@ -30,7 +30,7 @@ export const num = (value) => (value === null || value === undefined ? '—' : S
  */
 export const empty = (message, icon = 'fa-regular fa-folder-open') => `<div class="text-center text-body-secondary py-3">
   <i class="${esc(icon)} fa-lg d-block mb-2 opacity-50" aria-hidden="true"></i>
-  <p class="classy-micro mb-0">${esc(message)}</p>
+  <p class="omega-micro mb-0">${esc(message)}</p>
 </div>`;
 
 /** The line a page shows where a section would be when its feed did not answer. */
@@ -274,7 +274,7 @@ const chipGlyph = (key) => (CHIP_GLYPHS[key] ? `<i class="fa-solid ${CHIP_GLYPHS
  * back the case the tone chip turns off for model ids: these labels are words,
  * and they sit in a row with plain chips that are uppercase.
  *
- * The chip is an inline-BLOCK, whatever `.classy-chip` says: the theme's
+ * The chip is an inline-BLOCK, whatever `.omega-chip` says: the theme's
  * `.omega-badge-tone` sets `display: inline-block` and comes after it at equal
  * specificity, so the chip's flex `gap` never applies and a glyph inside one is
  * laid out on the text's own line. That is why the glyph brings its own margin
@@ -285,7 +285,7 @@ const chipGlyph = (key) => (CHIP_GLYPHS[key] ? `<i class="fa-solid ${CHIP_GLYPHS
  * decision, and a status chip wearing none is that decision made rather than a
  * name that happens to be missing from the table.
  */
-const toneChip = (label, token, glyph = '') => `<span class="classy-chip omega-badge-tone text-uppercase" style="--omega-tone: var(${token});">${glyph}${esc(label)}</span>`;
+const toneChip = (label, token, glyph = '') => `<span class="omega-chip omega-badge-tone text-uppercase" style="--omega-tone: var(${token});">${glyph}${esc(label)}</span>`;
 
 /**
  * The chip for an issue's status — the same colour the Board's column header
@@ -317,7 +317,7 @@ export const typeToken = (key) => ({
 export const typeChip = (type) => {
   if (!type) return '';
   const token = typeToken(type);
-  return token ? toneChip(type, token, chipGlyph(type)) : `<span class="classy-chip">${esc(type)}</span>`;
+  return token ? toneChip(type, token, chipGlyph(type)) : `<span class="omega-chip">${esc(type)}</span>`;
 };
 
 //
@@ -394,7 +394,7 @@ const TONES = {
 export const badgeColor = (key) => (TONES[key] ? `var(--omega-chart-${TONES[key]})` : 'var(--omega-ink-muted)');
 
 /** One coloured chip. The label is the raw name — a model id is not a word. */
-export const badge = (key, label) => `<span class="classy-chip omega-badge-tone${TONES[key] ? ` omega-tone-${TONES[key]}` : ''}">${esc(label)}</span>`;
+export const badge = (key, label) => `<span class="omega-chip omega-badge-tone${TONES[key] ? ` omega-tone-${TONES[key]}` : ''}">${esc(label)}</span>`;
 
 /** The badge for a model id — an unknown model still gets one, saying so. */
 export const modelBadge = (model) => badge(modelKey(model), model || 'model unknown');
@@ -422,7 +422,7 @@ export const cap = (items, limit = 5) => {
 // ── The shapes that repeat ─────────────────────────────────────────────────
 
 /**
- * One classy-statgrid tile. `href` makes it a link to the page that owns it.
+ * One omega-statgrid tile. `href` makes it a link to the page that owns it.
  *
  * A tile says one number: the label holds one line and the value is never
  * broken across lines, so a long one ends in an ellipsis rather than stacking
@@ -438,32 +438,32 @@ export const cap = (items, limit = 5) => {
  */
 export const statCell = (label, value, href, note, sub) => {
   const title = note ? ` title="${esc(note)}"` : '';
-  const inner = `<div class="classy-statgrid__label"><span class="classy-micro text-nowrap">${esc(label)}</span></div>
-    <h3 class="classy-statgrid__value text-truncate">${esc(value)}</h3>${sub ? `
-    <p class="classy-micro text-body-secondary mb-0 text-truncate">${esc(sub)}</p>` : ''}`;
+  const inner = `<div class="omega-statgrid__label"><span class="omega-micro text-nowrap">${esc(label)}</span></div>
+    <h3 class="omega-statgrid__value text-truncate">${esc(value)}</h3>${sub ? `
+    <p class="omega-micro text-body-secondary mb-0 text-truncate">${esc(sub)}</p>` : ''}`;
   return href
-    ? `<a class="classy-statgrid__cell text-reset text-decoration-none" href="${esc(href)}"${title}>${inner}</a>`
-    : `<div class="classy-statgrid__cell"${title}>${inner}</div>`;
+    ? `<a class="omega-statgrid__cell text-reset text-decoration-none" href="${esc(href)}"${title}>${inner}</a>`
+    : `<div class="omega-statgrid__cell"${title}>${inner}</div>`;
 };
 
 /**
  * A row of tiles — as many per row as fit, so a narrow card wraps them.
  *
- * The reflow is the theme's own now: `.classy-statgrid` sizes off the
- * CONTAINER, with `--classy-statgrid-cols` as the ceiling, so a grid inside a
+ * The reflow is the theme's own now: `.omega-statgrid` sizes off the
+ * CONTAINER, with `--omega-statgrid-cols` as the ceiling, so a grid inside a
  * half-width repo card drops columns instead of overflowing.
  */
-export const statgrid = (cells, extraClass = 'mb-4') => `<div class="classy-statgrid ${extraClass}">
+export const statgrid = (cells, extraClass = 'mb-4') => `<div class="omega-statgrid ${extraClass}">
   ${cells.join('')}
 </div>`;
 
 /** A Bootstrap card with the theme's panel head. `chip` is an optional count. */
 export const card = (heading, body, options = {}) => `<div class="card ${options.class || ''}">
   <div class="card-body">
-    <div class="classy-panel-head mb-3">
+    <div class="omega-panel-head mb-3">
       <span class="text-truncate">${esc(heading)}</span>
-      ${options.chip === undefined ? '' : `<span class="classy-chip${options.alarm ? ' classy-chip--accent' : ''}">${esc(options.chip)}</span>`}
-      ${options.link ? `<a class="classy-chip text-decoration-none" href="${esc(options.link.href)}">${esc(options.link.label)}</a>` : ''}
+      ${options.chip === undefined ? '' : `<span class="omega-chip${options.alarm ? ' omega-chip--accent' : ''}">${esc(options.chip)}</span>`}
+      ${options.link ? `<a class="omega-chip text-decoration-none" href="${esc(options.link.href)}">${esc(options.link.label)}</a>` : ''}
     </div>
     ${body}
   </div>
@@ -489,7 +489,7 @@ export const card = (heading, body, options = {}) => `<div class="card ${options
  */
 export const waitsOnChips = (issue, open) => (issue.blockedBy || [])
   .filter((blocker) => open && open.has(issueKey(blocker).toLowerCase()))
-  .map((blocker) => `<span class="classy-chip">${esc(`waits on ${String(blocker.repo).toLowerCase() === String(issue.repo).toLowerCase() ? `#${blocker.number}` : issueKey(blocker)}`)}</span>`)
+  .map((blocker) => `<span class="omega-chip">${esc(`waits on ${String(blocker.repo).toLowerCase() === String(issue.repo).toLowerCase() ? `#${blocker.number}` : issueKey(blocker)}`)}</span>`)
   .join('');
 
 /**
@@ -509,9 +509,9 @@ export const issueChips = (issue, extraClass = '', open = null) => `<span class=
   ${typeChip(issue.type)}
   ${priorityChip(issue.priority)}
   ${waitsOnChips(issue, open)}
-  ${issue.agentOk ? '<span class="classy-chip">agent:ok</span>' : ''}
-  ${(issue.assignees || []).length ? `<span class="classy-micro">@${esc(issue.assignees.join(', @'))}</span>` : ''}
+  ${issue.agentOk ? '<span class="omega-chip">agent:ok</span>' : ''}
+  ${(issue.assignees || []).length ? `<span class="omega-micro">@${esc(issue.assignees.join(', @'))}</span>` : ''}
 </span>`;
 
 /** A status pill in the theme's three tones. */
-export const pill = (tone, label) => `<span class="classy-status classy-status--${esc(tone)}"><span class="classy-dot classy-dot--${esc(tone)}"></span>${esc(label)}</span>`;
+export const pill = (tone, label) => `<span class="omega-status omega-status--${esc(tone)}"><span class="omega-dot omega-dot--${esc(tone)}"></span>${esc(label)}</span>`;

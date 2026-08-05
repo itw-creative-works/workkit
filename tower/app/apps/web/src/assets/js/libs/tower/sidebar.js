@@ -2,7 +2,7 @@
 // The sidebar's project selector — the tower's one project switch.
 //
 // The switch is the FRAMEWORK's selector module, the dropdown that sits above
-// the nav in the classy shell (themes/classy/_includes/global/sections/
+// the nav in the base shell (themes/base/_includes/global/sections/
 // app-sidebar.html): a button carrying the current project and a menu of the
 // ones to switch to. The tower turns it on in its sidebar data and fills the
 // menu at runtime, because the nav is baked at build time and the roster is
@@ -62,7 +62,7 @@ const filter = (slugs, selected) => `<li><hr class="dropdown-divider"/></li>
     <li><h6 class="dropdown-header">Filter projects</h6></li>
     ${slugs.map((slug, index) => `<li class="form-check px-3">
       <input class="form-check-input" type="checkbox" id="tower-scope-${index}" data-tower-scope-slug="${esc(slug)}"${!selected.length || selected.includes(slug) ? ' checked' : ''}>
-      <label class="form-check-label classy-micro" for="tower-scope-${index}">${esc(slug)}</label>
+      <label class="form-check-label omega-micro" for="tower-scope-${index}">${esc(slug)}</label>
     </li>`).join('')}`;
 
 /**

@@ -84,7 +84,7 @@ const numbers = (state) => {
 // "see all" with no number would hide exactly the fact that matters when the
 // queue has grown.
 const seeMore = (hidden, href) => (hidden
-  ? `<p class="mt-2 mb-0"><a class="classy-micro text-decoration-none" href="${esc(href)}">see all — ${hidden} more on the board</a></p>`
+  ? `<p class="mt-2 mb-0"><a class="omega-micro text-decoration-none" href="${esc(href)}">see all — ${hidden} more on the board</a></p>`
   : '');
 
 const waiting = (state) => {
@@ -93,7 +93,7 @@ const waiting = (state) => {
   const body = blocked.length
     ? `<ul class="list-unstyled mb-0">${shown.map((issue) => issueItem(issue, `
         <span class="flex-grow-1">
-          <span class="classy-micro">${esc(issue.repo)} #${esc(issue.number)}</span>
+          <span class="omega-micro">${esc(issue.repo)} #${esc(issue.number)}</span>
           <span class="d-block">${esc(issue.title)}</span>
         </span>
         ${externalLink(issue.url)}
@@ -171,7 +171,7 @@ const healthLine = (repo, reading) => {
     ['unreleased', reading.unreleasedEntries],
   ].filter(([, value]) => typeof value === 'number' && value > 0);
   const detail = notes.length
-    ? notes.map(([label, value]) => `<span class="classy-chip me-1">${esc(label)} ${esc(num(value))}</span>`).join('')
+    ? notes.map(([label, value]) => `<span class="omega-chip me-1">${esc(label)} ${esc(num(value))}</span>`).join('')
     : pill('ok', 'clean');
   return `<li class="py-1 d-flex align-items-center gap-2">
     <span class="flex-grow-1 text-truncate">${esc(repo.name)}</span>

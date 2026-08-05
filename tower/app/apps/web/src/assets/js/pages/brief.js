@@ -53,7 +53,7 @@ const subhead = (payload, selected) => {
   const parts = [];
   if (!Number.isNaN(when.getTime())) parts.push(`built ${when.toLocaleTimeString()}`);
   if (selected.length) parts.push('the headline counts every repo', `everything below it is narrowed to ${selected.join(', ')}`);
-  return parts.length ? `<p class="classy-micro text-body-secondary mb-0">${esc(parts.join(' · '))}</p>` : '';
+  return parts.length ? `<p class="omega-micro text-body-secondary mb-0">${esc(parts.join(' · '))}</p>` : '';
 };
 
 const headline = (payload, selected) => `<div class="mb-4">
@@ -106,7 +106,7 @@ const sparklines = (payload, selected) => {
   if (!hasSeries(payload)) return card(title, empty(ACCRUES, 'fa-regular fa-clock'), { class: 'mb-4' });
   return card(title, `<div class="row g-3">
     ${SPARKS.map(([id, key, label]) => `<div class="col-12 col-md-4">
-      <p class="classy-micro text-body-secondary mb-1">${esc(label)}</p>
+      <p class="omega-micro text-body-secondary mb-1">${esc(label)}</p>
       ${chartSlot(id, SPARK_HEIGHT, sparkSeries(payload, key).values)}
     </div>`).join('')}
   </div>`, { class: 'mb-4' });
@@ -125,7 +125,7 @@ const drawSparklines = (payload) => {
 const issueRow = (issue) => issueItem(issue, `
   <div class="d-flex align-items-start gap-2">
     <span class="flex-grow-1">
-      <span class="classy-micro d-block">${esc(issue.repo)} #${esc(issue.number)}</span>
+      <span class="omega-micro d-block">${esc(issue.repo)} #${esc(issue.number)}</span>
       <span class="d-block">${esc(issue.title)}</span>
     </span>
     ${externalLink(issue.url)}
@@ -157,14 +157,14 @@ const waitsRef = (key, repo) => (key.toLowerCase().startsWith(`${String(repo).to
 
 const nextRow = (item, repo) => `<li class="py-2 d-flex align-items-start gap-2">
   <span class="flex-grow-1">
-    <span class="classy-micro d-block">#${esc(item.number)} · ${esc(item.status || 'open')}${item.priority ? ` · ${esc(item.priority)} priority` : ''}${(item.waitsOn || []).length ? ` · waits on ${esc(item.waitsOn.map((key) => waitsRef(key, repo)).join(', '))}` : ''}</span>
+    <span class="omega-micro d-block">#${esc(item.number)} · ${esc(item.status || 'open')}${item.priority ? ` · ${esc(item.priority)} priority` : ''}${(item.waitsOn || []).length ? ` · waits on ${esc(item.waitsOn.map((key) => waitsRef(key, repo)).join(', '))}` : ''}</span>
     <span class="d-block">${esc(item.title)}</span>
   </span>
   ${externalLink(item.url)}
 </li>`;
 
 const nextRepo = (entry) => `<div class="mb-3">
-  <p class="classy-micro text-body-secondary mb-1">${esc(entry.repo)}</p>
+  <p class="omega-micro text-body-secondary mb-1">${esc(entry.repo)}</p>
   <ul class="list-unstyled mb-0">${(entry.items || []).map((item) => nextRow(item, entry.repo)).join('')}</ul>
 </div>`;
 
@@ -183,7 +183,7 @@ const nextUp = (rows) => card('Work on this next', rows.length
 // Discussions were unreachable says less, never something untrue.
 const summaryCard = (heading, item) => (item ? card(heading, `<div class="d-flex align-items-start gap-2">
   <span class="flex-grow-1">
-    <span class="classy-micro d-block">${esc(item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '')}</span>
+    <span class="omega-micro d-block">${esc(item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '')}</span>
     <a href="${esc(item.url)}" target="_blank" rel="noopener">${esc(item.title)}</a>
   </span>
   ${externalLink(item.url)}
@@ -198,7 +198,7 @@ const table = (rows) => `<div class="table-responsive"><table class="table table
     <td class="text-end">${esc(row.uncommitted)}</td>
     <td class="text-end">${esc(row.unpushed)}</td>
     <td class="text-end">${esc(row.unreleased)}</td>
-    <td class="text-end classy-micro">${esc(row.lastTag || 'never tagged')}</td>
+    <td class="text-end omega-micro">${esc(row.lastTag || 'never tagged')}</td>
   </tr>`).join('')}</tbody>
 </table></div>`;
 
@@ -209,7 +209,7 @@ const table = (rows) => `<div class="table-responsive"><table class="table table
 // card exists only when the payload has the section at all.
 const summaryRow = (item) => `<li class="py-2 d-flex align-items-start gap-2">
   <span class="flex-grow-1">
-    <span class="classy-micro d-block">${esc([item.category, item.createdAt ? new Date(item.createdAt).toLocaleDateString() : ''].filter(Boolean).join(' · '))}</span>
+    <span class="omega-micro d-block">${esc([item.category, item.createdAt ? new Date(item.createdAt).toLocaleDateString() : ''].filter(Boolean).join(' · '))}</span>
     <span class="d-block">${esc(item.title)}</span>
   </span>
   ${externalLink(item.url)}

@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#140](../../issues/140) — The tower dashboard is restyled onto omega 0.21.0's rebuilt theme: every `classy-*` class the app composes is renamed to its `omega-*` equivalent, so the pages that rendered as bare text after the framework's base/skin rebuild draw correctly again.
+
 ## [0.33.0] - 2026-08-04
 
 ### Added

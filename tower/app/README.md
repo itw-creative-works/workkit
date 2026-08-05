@@ -84,7 +84,7 @@ A few things worth knowing before changing it:
   because the shell layout picks the admin pair only for URLs containing
   `/admin`, and the tower's pages sit at clean top-level URLs.
 - **The project switch is the framework's SELECTOR module, filled at runtime**
-  — the dropdown the classy shell draws above the nav, turned on by the
+  — the dropdown the base shell draws above the nav, turned on by the
   `selector` block in that same sidebar JSON and filled by `libs/tower/
   sidebar.js`, which `libs/tower/page.js` writes into the menu and wires. The
   roster is fetched at runtime and the sidebar JSON is baked at build time, so

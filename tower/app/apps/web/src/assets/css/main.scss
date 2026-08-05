@@ -2,8 +2,8 @@
 // the whole stock chain via the self-skipping omega:main import.
 //
 // It is nearly empty on purpose. The dashboard is drawn in the theme's own
-// vocabulary — omega-shell for the geometry, classy-side__* for the nav,
-// classy-statgrid for tiles, Bootstrap cards/tables/badges/forms for
+// vocabulary — omega-shell for the geometry, omega-side__* for the nav,
+// omega-statgrid for tiles, Bootstrap cards/tables/badges/forms for
 // everything else — so a rule here has to earn its place by naming what the
 // theme does not ship.
 @use 'omega:main';
@@ -65,7 +65,7 @@
   // nowrap row is squeezed to its MIN-content — which for `@someone, @other`
   // is one word per line, and made the card twice as tall as the wrap it was
   // meant to prevent. Held on one line it truncates instead.
-  > .classy-micro {
+  > .omega-micro {
     overflow: hidden;
     min-width: 0;
     text-overflow: ellipsis;
@@ -83,7 +83,7 @@
 // the element the line actually lays out: the renderer FILLS the `<i>` with the
 // svg, so the svg is what sits on the baseline. The horizontal half is the
 // markup's own `me-1` — the chip is an inline-block, with no gap to inherit.
-.classy-chip i.fa-solid svg { vertical-align: -.125em; }
+.omega-chip i.fa-solid svg { vertical-align: -.125em; }
 
 // ── The crew org chart's finished tier ─────────────────────────────────────
 //

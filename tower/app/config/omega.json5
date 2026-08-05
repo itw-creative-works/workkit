@@ -30,7 +30,7 @@
   },
 
   // The classy theme is what the whole dashboard is drawn in: omega-shell for
-  // the geometry, classy-side__* for the sidebar, classy-statgrid for tiles.
+  // the geometry, omega-side__* for the sidebar, omega-statgrid for tiles.
   theme: {
     id: "classy",
     appearance: "system",

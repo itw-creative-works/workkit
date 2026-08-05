@@ -276,7 +276,7 @@ export const crewActivity = (entry, now = Date.now()) => {
   if (phase === 'none') return '';
   return `<span class="d-inline-flex align-items-center gap-1" data-live-state="${esc(stamps.liveState)}"${stamps.liveTs ? ` data-live-ts="${esc(stamps.liveTs)}"` : ''}${stamps.liveAlive ? ` data-live-alive="${esc(stamps.liveAlive)}"` : ''}>
     ${activityIcon(phase, title)}
-    ${age ? `<span class="classy-micro text-body-secondary" data-live-age>${esc(age)}</span>` : ''}
+    ${age ? `<span class="omega-micro text-body-secondary" data-live-age>${esc(age)}</span>` : ''}
   </span>`;
 };
 

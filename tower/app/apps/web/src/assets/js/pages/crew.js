@@ -86,13 +86,13 @@ const node = (entry, isRoot, now) => `<div class="card h-100 omega-interactive o
       ${crewActivity(entry, now)}
       ${entry.state && entry.state !== 'done' && entry.state !== 'working' ? pill(tone(entry.state), entry.state) : ''}
     </div>
-    <div class="classy-micro text-body-secondary text-truncate">${esc(entry.id || 'no id')}</div>
+    <div class="omega-micro text-body-secondary text-truncate">${esc(entry.id || 'no id')}</div>
     <div class="d-flex flex-wrap align-items-center gap-1 my-2">
       ${classBadge(role(entry, isRoot))}
       ${modelBadge(entry.model)}
-      ${entry.effort ? `<span class="classy-chip">${esc(entry.effort)}</span>` : ''}
+      ${entry.effort ? `<span class="omega-chip">${esc(entry.effort)}</span>` : ''}
     </div>
-    <div class="classy-micro">${entry.tokens === null ? '<span class="text-body-secondary">tokens unknown</span>' : `${esc(compact(entry.tokens))} tokens`}</div>
+    <div class="omega-micro">${entry.tokens === null ? '<span class="text-body-secondary">tokens unknown</span>' : `${esc(compact(entry.tokens))} tokens`}</div>
   </div>
 </div>`;
 
@@ -115,7 +115,7 @@ const tier = (children, now) => `<div class="omega-org-chart__children">
 // part of the chart: an agent that has stopped is connected to nothing that is
 // still running.
 const finished = (children, now) => `<div class="mt-3">
-  <p class="classy-micro text-body-secondary mb-2">${children.length} finished subagent${children.length === 1 ? '' : 's'}</p>
+  <p class="omega-micro text-body-secondary mb-2">${children.length} finished subagent${children.length === 1 ? '' : 's'}</p>
   <div class="omega-tower-tree__done">
     ${children.map((child) => `<div class="omega-tower-tree__leaf">${node(child, false, now)}</div>`).join('')}
   </div>
@@ -127,9 +127,9 @@ const finished = (children, now) => `<div class="mt-3">
 const branch = (entry, now) => {
   const { working, done } = splitCrew(entry.children);
   return `<section class="mb-4">
-    <div class="classy-panel-head mb-2">
+    <div class="omega-panel-head mb-2">
       <span class="text-truncate">${esc(shortPath(entry.cwd) || 'no repo')}</span>
-      <span class="classy-chip">${working.length} working</span>
+      <span class="omega-chip">${working.length} working</span>
     </div>
     <div class="omega-org-chart">
       <div class="omega-org-chart__root">${node(entry, true, now)}</div>
@@ -163,7 +163,7 @@ const finishedSwitch = (tree) => {
   if (!done) return '';
   return `<div class="form-check form-switch mb-3">
     <input class="form-check-input" type="checkbox" role="switch" id="crew-finished"${showFinished ? ' checked' : ''}>
-    <label class="form-check-label classy-micro" for="crew-finished">Show ${done} finished subagent${done === 1 ? '' : 's'}</label>
+    <label class="form-check-label omega-micro" for="crew-finished">Show ${done} finished subagent${done === 1 ? '' : 's'}</label>
   </div>`;
 };
 

@@ -99,7 +99,7 @@ const matches = (issue, filters) => {
 const optionsFrom = (issues, pick) => [...new Set(issues.flatMap(pick).filter(Boolean))].sort();
 
 const select = (id, label, chosen, values) => `<label>
-  <span class="classy-micro d-block">${esc(label)}</span>
+  <span class="omega-micro d-block">${esc(label)}</span>
   <select class="form-select form-select-sm" id="${esc(id)}" data-filter="${esc(id.replace('board-', ''))}">
     <option value="">any</option>
     ${values.map((value) => `<option value="${esc(value)}"${value === chosen ? ' selected' : ''}>${esc(value)}</option>`).join('')}
@@ -116,14 +116,14 @@ const viewToggle = (view) => `<span class="btn-group btn-group-sm" role="group" 
 
 const toolbar = (issues, filters, view) => `<form class="d-flex flex-wrap align-items-end gap-2 mb-3" id="board-filters" onsubmit="return false">
   <label class="flex-grow-1">
-    <span class="classy-micro d-block">Search</span>
+    <span class="omega-micro d-block">Search</span>
     <input class="form-control form-control-sm" type="search" id="board-q" data-filter="q" value="${esc(filters.q)}" placeholder="title or number" aria-label="Search titles and numbers">
   </label>
   ${select('board-type', 'Type', filters.type, optionsFrom(issues, (issue) => [issue.type]))}
   ${select('board-priority', 'Priority', filters.priority, optionsFrom(issues, (issue) => [issue.priority]))}
   ${select('board-assignee', 'Assignee', filters.assignee, optionsFrom(issues, (issue) => issue.assignees || []))}
   <label>
-    <span class="classy-micro d-block">Agent</span>
+    <span class="omega-micro d-block">Agent</span>
     <select class="form-select form-select-sm" id="board-agent" data-filter="agent">
       <option value="">any</option>
       <option value="ok"${filters.agent === 'ok' ? ' selected' : ''}>agent:ok</option>
@@ -131,7 +131,7 @@ const toolbar = (issues, filters, view) => `<form class="d-flex flex-wrap align-
   </label>
   <button class="btn btn-sm btn-outline-adaptive" type="button" id="board-clear">Clear filters</button>
   <div>
-    <span class="classy-micro d-block">View</span>
+    <span class="omega-micro d-block">View</span>
     ${viewToggle(view)}
   </div>
 </form>`;
@@ -166,7 +166,7 @@ const draggable = (issue) => WRITABLE && MOVABLE_STATUSES.includes(issue.status)
 const issueCard = (issue, showRepo, open) => `<div class="card omega-tower-issue omega-interactive omega-interactive--lift mb-2${issue.status === 'blocked' ? ' border-danger' : ''}"${draggable(issue) ? ' draggable="true"' : ''} ${issueTrigger(issue)}>
   <div class="card-body p-3 d-flex flex-column">
     <div class="d-flex align-items-start gap-2">
-      <span class="classy-micro d-block flex-grow-1 text-truncate">${showRepo ? `${esc(issue.repo)} ` : ''}#${esc(issue.number)}</span>
+      <span class="omega-micro d-block flex-grow-1 text-truncate">${showRepo ? `${esc(issue.repo)} ` : ''}#${esc(issue.number)}</span>
       ${claimGlyph(issue)}
       ${externalLink(issue.url)}
     </div>
@@ -179,9 +179,9 @@ const issueCard = (issue, showRepo, open) => `<div class="card omega-tower-issue
 // `pb-2` is the air between the title and the rule under it — the head is a
 // flex row and its border sits on the text without it.
 const column = (status, issues, showRepo, open) => `<section data-column="${esc(status.key)}">
-  <div class="classy-panel-head mb-3 pb-2" style="border-bottom: 2px solid ${statusColor(status.key)};">
+  <div class="omega-panel-head mb-3 pb-2" style="border-bottom: 2px solid ${statusColor(status.key)};">
     <span>${esc(status.label)}</span>
-    <span class="classy-chip">${issues.length}</span>
+    <span class="omega-chip">${issues.length}</span>
   </div>
   ${issues.length ? issues.map((issue) => issueCard(issue, showRepo, open)).join('') : empty('nothing here', 'fa-regular fa-square-check')}
 </section>`;
@@ -214,7 +214,7 @@ const counts = (shown, total, selected) => {
   if (selected.length === 1) scope = `in ${esc(selected[0])}`;
   else if (selected.length > 1) scope = `across ${selected.length} repos`;
   const tail = hidden > 0 ? ` — ${hidden} filtered out` : '';
-  return `<p class="classy-micro text-body-secondary mb-2">showing ${shown} of ${total} open issue${total === 1 ? '' : 's'} ${scope}${tail}</p>`;
+  return `<p class="omega-micro text-body-secondary mb-2">showing ${shown} of ${total} open issue${total === 1 ? '' : 's'} ${scope}${tail}</p>`;
 };
 
 // ── The graph view ─────────────────────────────────────────────────────────
@@ -233,7 +233,7 @@ const GRAPH_HEIGHT = 420;
 
 const graph = (definition) => (definition
   ? `<div role="img" aria-label="Dependency graph of this board's issues">${graphSlot('board-graph', GRAPH_HEIGHT, definition)}</div>
-  <p class="classy-micro text-body-secondary mb-0 mt-2">dashed nodes are off this board · cards open in the List view</p>`
+  <p class="omega-micro text-body-secondary mb-0 mt-2">dashed nodes are off this board · cards open in the List view</p>`
   : empty('nothing on this board waits on anything', 'fa-solid fa-diagram-project'));
 
 /**
