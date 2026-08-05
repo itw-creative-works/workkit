@@ -66,13 +66,18 @@ const today = () => new Date().toLocaleDateString('en-CA');
  * morning rather than a local brief.
  * `secrets` is the names `gh secret list` reports — both by default, the repo
  * whose runner can actually compose the brief and sweep the board.
+ * `homeClone` gives the world a home clone at `<WORKFLOW_HOME>/tower` — the
+ * folder the reconcile step writes the cloud brief's runner into (issue #143).
+ * Its remote is a local bare repo (WORKKIT_HOME_REMOTE, the engine's own seam),
+ * so every clone, commit and push here runs offline and the real
+ * `~/.workkit/tower` is never touched.
  */
 const mkWorld = ({
   response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n', status = 0, logsDir = true,
   home: homeRepo = null, posted = [], ghFails = false, ccChangelog = null, badSettings = false,
   dispatch = false, secrets = ['CLAUDE_CODE_OAUTH_TOKEN', 'WORKKIT_GITHUB_TOKEN'],
   secretsUnlistable = false,
-  transcripts = true,
+  transcripts = true, homeClone = false,
 } = {}) => {
   const root = mkTmp();
   const bin = path.join(root, 'bin');
@@ -86,6 +91,19 @@ const mkWorld = ({
       ? '{ "version": 1, "site": { "repo": '
       : JSON.stringify({ version: 1, site: { repo: homeRepo, publish: false, url: null } }, null, 2),
   );
+  // The home clone the reconcile step refreshes (issue #143), and the tiny
+  // stand-in for `tower/app` the site publish syncs into it — the real project
+  // would only make this fixture slower, and neither step is the other's test.
+  const tower = path.join(workflowHome, 'tower');
+  let homeRemote = null;
+  if (homeClone) {
+    homeRemote = path.join(root, 'remote.git');
+    spawnSync('git', ['init', '-q', '--bare', '-b', 'main', homeRemote], { encoding: 'utf8' });
+    spawnSync('git', ['clone', '-q', homeRemote, tower], { encoding: 'utf8' });
+    fs.mkdirSync(path.join(root, 'tower-app'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'tower-app', 'package.json'), '{\n  "name": "tower-fixture"\n}\n');
+  }
+
   // ~/Library/Logs is a directory every macOS home already has; the fixture home
   // is bare, so it is created here rather than by the job.
   if (logsDir) fs.mkdirSync(path.join(home, 'Library', 'Logs'), { recursive: true });
@@ -166,6 +184,10 @@ const mkWorld = ({
     // The summaries step's one seam: where it looks for the home repo.
     WORKFLOW_HOME: workflowHome,
     WORKKIT_CC_CHANGELOG: ccSource,
+    ...(homeClone ? {
+      WORKKIT_HOME_REMOTE: homeRemote,
+      WORKKIT_TOWER_APP: path.join(root, 'tower-app'),
+    } : {}),
   };
   // This suite IS the machine's environment, and the script asks Actions' own
   // variable which one it woke up in.
@@ -175,6 +197,8 @@ const mkWorld = ({
     root,
     home,
     workflowHome,
+    tower,
+    homeRemote,
     notifly,
     nightlyLog: path.join(home, 'Library', 'Logs', 'claude-nightly.log'),
     calls: () => readArgv(claudeLog),
@@ -200,6 +224,25 @@ const runJob = (world, args = []) => spawnSync('bash', [SCRIPT, ...args], {
   timeout: 60000,
   env: world.env,
 });
+
+// The seeded copy as a checkout that has moved on leaves it: committed and
+// pushed, the way the last `workkit setup` left it, and a version behind.
+const STALE_RUNNER = '# last month’s runner\n';
+const plantStaleRunner = (world) => {
+  const file = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, STALE_RUNNER);
+  const git = (...args) => spawnSync('git', ['-C', world.tower, ...args], { encoding: 'utf8' });
+  git('add', '-A');
+  git('-c', 'user.name=seed', '-c', 'user.email=seed@localhost', 'commit', '-q', '-m', 'chore(home): seed the cloud brief runner');
+  git('push', '-q', '-u', 'origin', 'main');
+  return file;
+};
+
+const subjects = (dir) => spawnSync('git', ['-C', dir, 'log', '--pretty=%s'], { encoding: 'utf8' })
+  .stdout.split('\n').filter(Boolean);
+
+const REFRESH = 'chore(home): refresh the cloud brief runner';
 
 // The notification is fired detached on purpose — Notifly does not return until
 // it is dismissed, and the job must never wait on a human. So the job exits
@@ -412,6 +455,73 @@ const run = async () => {
     assertEq(calls.length, 1, `one send: ${fmtCalls(calls).slice(0, 160)}`);
     assertEq(calls[0][1], 'hello', 'the generic headless runner is still generic');
     assert(!fs.existsSync(world.nightlyLog), 'and the summaries step never ran at all');
+    cleanup(world.root);
+  });
+
+  group('jobs/morning (local): the cloud brief’s runner');
+
+  // Issue #143: the cloud composes the brief out of SEEDED COPIES of these
+  // scripts on the home repo, and until now only `workkit setup` refreshed
+  // them — so a checkout that moved on published stale briefs until somebody
+  // remembered. The morning reconciles them, ahead of the dispatch that
+  // consumes them.
+
+  await test('a seeded copy the checkout moved past is refreshed, committed and pushed', () => {
+    const world = mkWorld({ home: 'owner/private-home', dispatch: true, homeClone: true });
+    const dest = plantStaleRunner(world);
+
+    const res = runJob(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(
+      fs.readFileSync(dest, 'utf8'),
+      fs.readFileSync(SCRIPT, 'utf8'),
+      'the clone carries this checkout’s script, byte for byte',
+    );
+    assert(subjects(world.tower).includes(REFRESH), `in a commit that says what it is: ${subjects(world.tower).join(' | ')}`);
+    assert(subjects(world.homeRemote).includes(REFRESH), 'and the commit reached the home repo');
+
+    // Ordering is the whole point: the run the dispatch starts is the consumer
+    // of what this step just pushed.
+    const log = world.log();
+    assert(log.indexOf('seeded the cloud brief') < log.indexOf('dispatched brief.yml'),
+      `the reconcile lands before the day goes over: ${log}`);
+    cleanup(world.root);
+  });
+
+  await test('a runner already current writes nothing and commits nothing', () => {
+    const world = mkWorld({ home: 'owner/private-home', dispatch: true, homeClone: true });
+    const dest = plantStaleRunner(world);
+    runJob(world);
+    const written = fs.statSync(dest).mtimeMs;
+
+    const res = runJob(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(fs.statSync(dest).mtimeMs, written, 'the file was not rewritten');
+    assert(/runner in .* is current/.test(world.log()), `and the morning says so: ${world.log()}`);
+    assertEq(subjects(world.tower).filter((s) => s === REFRESH).length, 1,
+      `one refresh commit, not one a day: ${subjects(world.tower).join(' | ')}`);
+    cleanup(world.root);
+  });
+
+  await test('no home clone is a named skip, and the morning carries on', () => {
+    // Nothing is ever created, cloned or enabled by the daily path (issue #71):
+    // a machine that has not run `workkit setup` hears one line.
+    const world = mkWorld({ home: 'owner/private-home', dispatch: true });
+    const res = runJob(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assert(/runner: nothing is cloned at .*tower/.test(world.log()), `the log names the skip: ${world.log()}`);
+    assert(!fs.existsSync(world.tower), 'and nothing was cloned to make it go away');
+    assert(fs.existsSync(world.nightlyLog), 'the summaries step still ran');
+    assertEq(world.dispatched().length, 1, 'and the day still went over');
+    cleanup(world.root);
+  });
+
+  await test('a message argument reconciles nothing — the generic runner stays generic', () => {
+    const world = mkWorld({ home: 'owner/private-home', dispatch: true, homeClone: true });
+    const dest = plantStaleRunner(world);
+    runJob(world, ['hello']);
+    assertEq(fs.readFileSync(dest, 'utf8'), STALE_RUNNER, 'the clone was left exactly as it was');
+    assert(!/runner:/.test(world.log()), `and the step never ran: ${world.log()}`);
     cleanup(world.root);
   });
 

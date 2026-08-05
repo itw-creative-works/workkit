@@ -247,7 +247,7 @@ const run = async () => {
     assert(fs.statSync(SCRIPT).mode & 0o111, 'the workflow runs it through bash, but a human runs it directly');
   });
 
-  await test('a runner runs the brief alone — the other two steps name their skip', () => {
+  await test('a runner runs the brief alone — every other step names its skip', () => {
     // The capability gates from the cloud side (issue #107): the summaries read
     // a machine's transcripts and git history, the publish builds the home
     // clone, and a runner has neither. A named skip is what tells that apart
@@ -261,6 +261,32 @@ const run = async () => {
     assert(/publish: the site is built from the home clone/.test(res.stdout),
       `the publish names its skip: ${res.stdout}`);
     assertEq(world.notifs().length, 0, 'and nothing was notified — there is no desktop');
+    cleanup(world.root);
+  });
+
+  await test('a runner never reconciles the seeded copy it is running', () => {
+    // Issue #143: the machine refreshes the home repo's `brief/` copies from its
+    // checkout every morning. On a runner those copies ARE what is executing and
+    // there is no checkout to seed them from, so the step is a named skip — and
+    // a home clone sitting where the machine's would be is left untouched.
+    const world = mkWorld({ settings: { version: 1, site: { repo: HOME_SLUG } } });
+    const remote = path.join(world.root, 'remote.git');
+    spawnSync('git', ['init', '-q', '--bare', '-b', 'main', remote], { encoding: 'utf8' });
+    const clone = path.join(world.home, '.workkit', 'tower');
+    spawnSync('git', ['clone', '-q', remote, clone], { encoding: 'utf8' });
+    const seeded = path.join(clone, 'brief', 'jobs', 'morning.sh');
+    fs.mkdirSync(path.dirname(seeded), { recursive: true });
+    fs.writeFileSync(seeded, '# last month’s runner\n');
+    // The engine's own seam: with it the clone IS the home repo's clone, which
+    // is what a machine would reconcile.
+    world.env.WORKKIT_HOME_REMOTE = remote;
+
+    const res = runJob(world);
+    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assert(/runner: a runner IS the seeded copy of the cloud brief/.test(res.stdout),
+      `the step names its skip: ${res.stdout}`);
+    assertEq(fs.readFileSync(seeded, 'utf8'), '# last month’s runner\n',
+      'and nothing was seeded over the scripts this run is made of');
     cleanup(world.root);
   });
 

@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#143](../../issues/143) — The 9am morning now reconciles the cloud brief's seeded runner on the home repo, ahead of the dispatch that consumes it, so a checkout that moved on no longer publishes stale briefs until someone re-runs `workkit setup`. A copy already current writes and commits nothing.
+
 ## [0.33.3] - 2026-08-04
 
 ### Fixed

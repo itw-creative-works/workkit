@@ -1146,8 +1146,9 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  // The seeded runner drifts on a `git pull` of the checkout and only setup
-  // writes it back, so doctor is the one place that can notice.
+  // The seeded runner drifts on a `git pull` of the checkout; setup and the
+  // morning run write it back (#143), and doctor is the read-only check that
+  // reports drift the last morning could not heal.
   const runnerDoctor = (world) => inHome(world, 'rc=0; wk_home_runner_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
 
   /** A world whose clone carries the runner, seeded from a copy of the checkout. */
@@ -1198,7 +1199,7 @@ const run = async () => {
     const file = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
     fs.writeFileSync(file, '# an old copy\n');
     runnerDoctor(world);
-    assertEq(fs.readFileSync(file, 'utf8'), '# an old copy\n', 'the clone is untouched — only setup writes it');
+    assertEq(fs.readFileSync(file, 'utf8'), '# an old copy\n', 'the clone is untouched — the writers are setup and the morning run');
     cleanup(world.root);
   });
 

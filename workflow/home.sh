@@ -67,7 +67,8 @@ WK_KIT_DIR="${WORKKIT_KIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/n
 # that repo is distributed to everyone who installs the kit, and a consumer
 # cannot set secrets on a repo they do not own. So the workflow runs on the
 # HOME repo, and the code it runs is copied there — the checkout stays the one
-# source, and a `workkit setup` after this checkout changes refreshes the copy.
+# source, and the copy is refreshed from it by `workkit setup` and by every
+# morning run (issue #143), so a checkout that moved on is a day behind at most.
 #
 # `src:dest` pairs, both relative. Everything but the workflow file lands under
 # one folder with its checkout-relative subpath intact, so every relative
@@ -896,10 +897,12 @@ wk_home_doctor() {
 
 # The cloud brief's runner, checked rather than written (issue #91).
 #
-# `wk_home_seed_runner` runs only from `workkit setup`, so a `git pull` of this
-# checkout leaves the home repo running last week's copy with nothing to say so.
-# This is the line that says it. It only ever READS: only setup writes into the
-# clone, and the fix it names is that same setup.
+# Since issue #143 the morning reconciles the copy itself — `jobs/morning.sh`
+# calls `wk_home_seed_runner` every day, ahead of the dispatch — so what this
+# reports is drift the last morning could not heal: a machine whose job has not
+# run yet, or one whose home clone the reconcile named a skip on. It only ever
+# READS, and the fix it names is `workkit setup`, the one command that also
+# clones and creates.
 #
 # Returns 1 when the seeded copy is behind, 0 otherwise (current, or a skip).
 wk_home_runner_doctor() {

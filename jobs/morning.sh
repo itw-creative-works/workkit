@@ -4,16 +4,19 @@
 # Two schedulers run this same body: the 9am LaunchAgent on this machine
 # (com.workkit.claude-daily) and the brief.yml workflow `workkit setup` seeds
 # onto the home repo. There is no laptop script and cloud script — there are
-# three steps, and each one asks whether the environment it woke up in has what
+# four steps, and each one asks whether the environment it woke up in has what
 # that step needs. A step that cannot run here says so by name.
 #
 #   1 the summaries  need this machine's session transcripts and git history —
 #                    the Mac.
-#   2 the brief      needs the sweep token and the roster, which live on the
+#   2 the runner     is the cloud brief's seeded copy on the home repo,
+#                    reconciled from the checkout this script sits in — the Mac,
+#                    since on a runner that copy IS what is executing.
+#   3 the brief      needs the sweep token and the roster, which live on the
 #                    home repo — the CLOUD. Here the step is the dispatch and
 #                    nothing else: a dispatch that cannot be made is a logged,
 #                    briefless morning.
-#   3 the publish    needs the home clone and its build tooling — the Mac.
+#   4 the publish    needs the home clone and its build tooling — the Mac.
 #
 # The environments differ in three DELIBERATE ways, all about where the output
 # goes. On a runner the Actions log IS the delivery, so a failure there is loud
@@ -192,7 +195,87 @@ if (( $# == 0 )); then
   summaries
 fi
 
-# ── 2. The brief ──────────────────────────────────────────────────────────────
+# ── 2. The runner ─────────────────────────────────────────────────────────────
+
+# The cloud brief runs SEEDED COPIES of these scripts on the home repo, and
+# until issue #143 the only thing that ever refreshed them was `workkit setup`.
+# A checkout that moved on left the cloud composing last month's brief with
+# nothing to say so — which is how briefs went out for days without the stats
+# line the tower's history charts read back.
+#
+# So the morning reconciles it, the way it already reconciles every other seeded
+# surface: the tower project by the publish's sync, the home repo's labels and
+# forms by its heal, this machine's schedule by `workkit update --auto`. A new
+# seeded surface joins them here at birth.
+#
+# It runs BEFORE the dispatch, because the cloud run the dispatch starts is the
+# consumer of what this step just pushed.
+#
+# THE MACHINE'S ALONE: on a runner `brief/` IS the scripts executing, and there
+# is no checkout there to seed them from.
+#
+# Nothing is ever created, cloned or enabled here — that is setup's and only
+# setup's (issue #71). A machine with no home clone hears a named line and the
+# morning carries on, which is also what a push that did not land costs: the
+# commit stays local and the next run pushes it.
+reconcile_runner() {
+  if (( CLOUD )); then
+    note 'runner: a runner IS the seeded copy of the cloud brief — there is no checkout here to reconcile it from, skipped'
+    return 0
+  fi
+  if [[ ! -f "$ENGINE/lib.sh" || ! -f "$ENGINE/home.sh" ]]; then
+    note "runner: the engine libraries are missing at $ENGINE — the cloud brief's runner was not reconciled (a partial checkout)"
+    return 0
+  fi
+
+  local output status=0
+  # A subshell, and the libraries sourced inside it: they are sourced where they
+  # are used, like brief-dispatch.sh below, and this way their names never
+  # outlive the one step that needs them and everything the step says lands in
+  # the log block rather than on the scheduler's stdout.
+  #
+  # Two rules for bash 3.2 — the /bin/bash launchd runs — which re-parses this
+  # substitution with a scanner of its own: apostrophes stay PAIRED per line,
+  # comments included (an odd one reads as a quote opener and ends the
+  # substitution early), and case patterns wear BOTH parens, `(x)` not `x)`
+  # (a bare closing paren unbalances the substitution and dies at runtime).
+  output="$(
+    # shellcheck source=../workflow/lib.sh
+    . "$ENGINE/lib.sh"
+    # shellcheck source=../workflow/home.sh
+    . "$ENGINE/home.sh"
+    if ! wk_home_ready; then
+      case "$(wk_home_state)" in
+        (unset)  wk_say_skip "runner: no home repo — \`workkit setup\` creates one; nothing to reconcile" ;;
+        (absent) wk_say_skip "runner: nothing is cloned at $WK_HOME_DIR yet — the cloud brief runner was not reconciled; \`workkit setup\` clones it" ;;
+        (other)  wk_say_warn "runner: $WK_HOME_DIR is not the home repo's clone — nothing is reconciled in somebody else's folder" ;;
+      esac
+      exit 0
+    fi
+    rc=0
+    wk_home_seed_runner || rc=$?
+    # 0 is a copy that moved, the only answer worth a commit. 2 is a runner
+    # already current, which is every ordinary morning; 1 has already warned and
+    # left the clone exactly as it was.
+    [[ "$rc" -eq 0 ]] || exit 0
+    wk_home_commit_push 'chore(home): refresh the cloud brief runner' || true
+  )" || status=$?
+
+  if (( status != 0 )); then
+    note "$(printf 'runner: the reconcile exited %d — the morning continues\n%s' "$status" "$output")"
+  elif [[ -n "$output" ]]; then
+    note "$output"
+  fi
+  return 0
+}
+
+# The scheduled morning and the rehearsal reconcile it; the generic headless
+# runner is a prompt, and a prompt seeds nothing.
+if (( $# == 0 )); then
+  reconcile_runner
+fi
+
+# ── 3. The brief ──────────────────────────────────────────────────────────────
 
 # The payload, composed the same way in both environments: brief-payload.js
 # builds the tower's /api/brief without the tower. Its stderr is kept OUT of the
@@ -444,7 +527,7 @@ else
   local_send "$@"
 fi
 
-# ── 3. The publish ────────────────────────────────────────────────────────────
+# ── 4. The publish ────────────────────────────────────────────────────────────
 
 # The published dashboard: the tower project in ~/.workkit/tower, rebuilt and
 # pushed to the home repo's gh-pages branch. It runs LAST and only for the
