@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.33.2] - 2026-08-04
+
 ### Changed
 
-- [#141](../../issues/141) — A Board card on `status:building` spins its gear, held or not: the status itself says the work is in motion. A claimed specced card keeps the still gear, a claim at rest.
+- [#141](../../issues/141) [`0afa392`](../../commit/0afa392) Thanks [@ianwieds]! — A Board card on `status:building` spins its gear, held or not: the status itself says the work is in motion. A claimed specced card keeps the still gear, a claim at rest.
 
 ## [0.33.1] - 2026-08-04
 
