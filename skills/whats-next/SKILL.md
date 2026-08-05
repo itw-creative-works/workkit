@@ -1,6 +1,7 @@
 ---
 name: whats-next
 description: Plain-language status digest of the repo's open issues, or across every project via the roster — one sentence per item, tells and never does. - Use when the user asks "what's next", "where are we", "status", "what's left", "what am I waiting on".
+disallowed-tools: AskUserQuestion
 ---
 
 # What's Next — tell, don't do
@@ -33,5 +34,7 @@ Omit empty sections. No jargon without a plain-words gloss. Note `agent:ok` wher
 
 - Generated on demand, never stored — no digest files.
 - Plain sentences over tables; this is the "explain simpler" surface.
+- Every issue is RESTATED wherever it appears: number + one plain sentence of what it is. A bare "#10" is never an answer — the reader should never have to open the issue to know what the line means.
+- The reply IS the deliverable: end with the ranked suggested queue and STOP — never the AskUserQuestion tool (the frontmatter removes it). The owner picks in chat.
 - Offline or no `gh`: say so plainly, then report from `.workkit/` alone — never guess at the queue.
 - If nothing is in flight and nothing is blocked, say what is top of the queue and that it needs a go-ahead.

@@ -1,34 +1,52 @@
 ---
 name: interview
-description: Alignment interrogation — the decisions only the human can make, one at a time, each with a recommendation. - Use when starting ambiguous work, when a spec being written is at all unclear, or when the user says "interview me", "grill me", "ask me questions", "make sure we're aligned".
+description: Alignment grill — a categorized sweep of every assumption and decision the human owns, asked in chat rounds with recommendations, closing by writing the spec from the answers. - Use when starting ambiguous work, before accepting a real spec, or on "interview me", "grill me", "ask me questions".
 user-invocable: true
+disallowed-tools: AskUserQuestion
 ---
 
-# Interview — extract the human's decisions, nothing else
+# Interview — grill thoroughly, accept easily
 
-Find every decision the human actually owns, ask about ONLY those, and get each one settled with the least reading burden. The agent finds facts; the human makes calls.
+Two jobs, one mechanism: surface EVERY assumption and decision the human owns, and pre-work each one so answering is nearly effortless. The output is not a transcript — it is the `## Spec`, written from the answers. A thorough grill is what MAKES acceptance easy: the human authors every call one at a time, so reading the spec is recognition, not review.
 
 ## Rule zero: never ask what you can find out
 
-Before any question, exhaust your own means: read the code, the issues (open AND closed — a closed **not planned** issue is a recorded rejection), the docs, run the command. A question whose answer is discoverable is a failed question. The only legitimate questions are **decisions**: tradeoffs, preferences, scope calls, risk acceptance, naming that matters to the human.
+Facts are yours to find: read the code, the issues (open AND closed — a closed **not planned** issue is a recorded rejection), the docs, run the command. But rule zero filters FACTS, never DECISIONS. A tradeoff, preference, scope call, risk acceptance, or naming call stays a question even when you are confident you could guess the answer — a guessed decision is an assumption wearing a spec.
 
-## Every question carries a recommendation
+## The sweep: coverage is what makes it a grill
 
-Ask nothing open-ended. Each question states: the decision, the options, **your recommended option FIRST with one line of why** (label it "(Recommended)"). The human should be able to answer every question with "yes" — that's the quality bar for how well you've pre-worked it.
+Walk EVERY category against the task and collect the decisions each surfaces. Weak interviews ask only what blocks the next action; the questions nobody thought to ask are where misalignment lives.
 
-## Modes
+- **Scope** — what is in, what is explicitly OUT, the half-related thing the human may assume is included.
+- **Behavior & edge cases** — empty states, conflicts, ordering, the second run, the weird input.
+- **Failure** — loud or quiet, retry or stop, who hears about it and where.
+- **Surface & naming** — what the human sees, where, in what words; names that matter to them.
+- **Data & compatibility** — what is stored where, what migrates, what changes for existing consumers.
+- **Testing depth** — what proof this change deserves (global §6 sets the floor; the human sets appetite beyond it).
+- **Non-goals** — what is deliberately NOT being built, said out loud so it cannot creep back silently.
 
-- **Default — one at a time**: ask via AskUserQuestion, one question per call, highest-stakes first. Each answer may kill or spawn later questions — re-derive the list after every answer instead of marching through a fixed script.
-- **Batch** (user says "batch", or the questions are independent): group up to 4 independent questions per AskUserQuestion call. Never batch questions where one answer changes another.
-- **Frontier** (mid-work): ask ONLY questions that change your next action. Everything else gets your recommended default, stated in the report, reversible later.
+Size the sweep out loud and say it: a small item clears most categories with nothing to decide — name the cleared category, never pad it with filler; a subsystem gets multiple rounds. Filler questions are as much a failure as missing ones.
 
-## After each answer
+## How questions are asked: chat rounds, never a form
 
-- Durable ruling (a preference that outlives this task) → record it verbatim + dated in `AGENTS.md`/`docs/` if it is doctrine, else as a comment on the issue it binds (or offer to).
-- Rejected direction → note it; if it was a real proposal, close its issue as **not planned** with the ruling in a comment (or file one to close, if the proposal had no issue).
-- When no undecided question changes what you'd do next, SAY SO and end the interview — done-criteria: zero open decisions that block the work.
+- **In chat, as prose.** Never the AskUserQuestion tool (the frontmatter removes it). Numbered questions, batched in themed rounds of 3–5, highest-stakes round first.
+- **Every question carries a recommendation FIRST**, labeled "(Recommended)", one line of why, then the alternatives as plain outcomes. Quality bar: the human can answer most questions with "yes" or a single word.
+- **Re-derive between rounds.** Each round's answers may kill or spawn later questions — never march through a fixed script.
+- **Mid-build (frontier mode)**: ask only what changes the next action; everything else gets your recommended default, stated in the report, reversible later.
+
+## The close: the spec is written FROM the answers
+
+The interview is not done when the questions run out — it is done when the `## Spec` exists:
+
+1. Draft (or deepen) the issue's `## Spec` from the answers: each decision the human made lands as a spec statement in their terms; each category cleared with a default names that default.
+2. Post it and ask for acceptance in chat — a recognition pass, not a review.
+3. Durable rulings (preferences that outlive this task) get recorded verbatim + dated where they bind — `AGENTS.md`/`docs/` if doctrine, else a comment on the issue.
+4. Rejected directions get noted; a real proposal that died closes its issue as **not planned** with the ruling in a comment.
+
+Done-criteria: zero open decisions, and a spec the human accepted.
 
 ## Never
 
 - Never ask to reassure yourself ("shall I proceed?") — proceed, per the autonomy rules.
 - Never re-ask a decision recorded in the docs or on a closed issue — cite it instead.
+- Never hand over a finished spec draft for a yes WITHOUT the grill — the questions are what make the acceptance real (spec § Specs).

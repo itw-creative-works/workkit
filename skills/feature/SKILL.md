@@ -18,7 +18,11 @@ Claim the issue before working it: assign it to yourself, move it to `status:bui
 
 - **Trivial** (one file, no design choice, obvious spec): skip to phase 4. State "trivial — building directly."
 - **Standard** (a few files, some choices, clear goal): phases 1, 2, 4, 5 — skip formal proposals (3); state your chosen approach in one paragraph before building.
-- **Large** (new subsystem, architectural choice, multiple valid shapes): all phases.
+- **Large** (new subsystem, architectural choice, multiple valid shapes): all phases, inside plan mode.
+
+### Plan mode (large automatically, any size on request)
+
+A large task enters plan mode (EnterPlanMode) BEFORE exploring: the session goes read-only, phases 1–3 run inside it, and the plan approved at exit IS the phase-4 gate — the whole-system consideration happens where nothing can be edited yet. Any size enters it on the owner's word ("plan this", or the plan-mode toggle). Standard tasks without it keep the chat gate in phase 4.
 
 ## 1. Explore
 
@@ -26,7 +30,7 @@ Map the territory before designing: dispatch Explore subagents that return **key
 
 ## 2. Clarify — interview, never skip
 
-Run [workkit:interview](../interview/SKILL.md) on the open decisions (batch mode for independent ones). Standard+ tasks NEVER skip this phase — one round of "zero open decisions" is cheap; building the wrong thing is not.
+Run [workkit:interview](../interview/SKILL.md) — the full category sweep, asked in chat rounds, never the AskUserQuestion tool. It CLOSES by drafting the `## Spec` from the answers, so the interview and the spec pass are one motion. Standard+ tasks NEVER skip this phase — one round of "zero open decisions" is cheap; building the wrong thing is not.
 
 ## 3. Approaches (large only)
 
@@ -34,7 +38,7 @@ Produce 2–3 proposals with genuinely different mandates — **minimal** (small
 
 ## 4. Gate → build
 
-Standard/large: get explicit approval of the approach before writing code (plan mode's approval, or a stated go-ahead). Then build with the test obligation scaled per global §6 — red first where possible; tracer-bullet the thinnest end-to-end slice on large tasks (`js:patterns` `resources/tdd.md`).
+Standard/large: get explicit approval of the approach before writing code (large: the plan-mode approval at exit; standard: a stated go-ahead in chat). Then build with the test obligation scaled per global §6 — red first where possible; tracer-bullet the thinnest end-to-end slice on large tasks (`js:patterns` `resources/tdd.md`).
 
 ### Crew staging
 

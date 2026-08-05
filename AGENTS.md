@@ -86,8 +86,8 @@ Eleven, namespaced `workkit:<name>`, one `SKILL.md` each:
 
 | Skill | What it does |
 |---|---|
-| `feature` | The scaled build flow — explore, interview, propose, gate, build, review; builds only from `status:specced` |
-| `interview` | Alignment interrogation — one decision at a time, each with a recommendation; also the sharpener for a spec that reads unclear |
+| `feature` | The scaled build flow — explore, interview, propose, gate, build, review; large tasks run inside plan mode; builds only from `status:specced` |
+| `interview` | Alignment grill — a categorized sweep asked in chat rounds, every question carrying a recommendation; closes by writing the `## Spec` from the answers |
 | `diagnose` | Reproduce-first debugging |
 | `review` | Multi-lens code review: parallel lenses, a separate scorer, ≥80 threshold; leaves the marker the commit gate checks |
 | `simplify` | Test-gated cleanup of a fresh diff — green before AND after |
