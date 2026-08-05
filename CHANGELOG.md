@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.33.3] - 2026-08-04
+
 ### Fixed
 
-- [#142](../../issues/142) — Board and Crew polish: empty-state icons are centered, the card's top-right corner is one shared slot (gear flush at rest, the open button fading in over it on hover), and the crew role glyph wears the theme's icon tile in its per-role color.
+- [#142](../../issues/142) [`1ce6f9b`](../../commit/1ce6f9b) Thanks [@ianwieds]! — Board and Crew polish: empty-state icons are centered, the card's top-right corner is one shared slot (gear flush at rest, the open button fading in over it on hover), and the crew role glyph wears the theme's icon tile in its per-role color.
 
 ## [0.33.2] - 2026-08-04
 
