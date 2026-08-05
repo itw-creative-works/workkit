@@ -7,22 +7,24 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-08-04
+
 ### Added
 
-- [#136](../../issues/136) — Board cards and the issue dialog wear one glyph per type and priority, from a single mapping the pages may not bypass, spaced and centered on the chip's text.
-- [#134](../../issues/134) — A restarted or compacted session tells the owner the state carried over: a visible "say continue to resume" line at session start, and the injected state now ends with the manager's duty to open in plain words.
+- [#136](../../issues/136) [`1d649c0`](../../commit/1d649c0) Thanks [@ianwieds]! — Board cards and the issue dialog wear one glyph per type and priority, from a single mapping the pages may not bypass, spaced and centered on the chip's text.
+- [#134](../../issues/134) [`1d649c0`](../../commit/1d649c0) Thanks [@ianwieds]! — A restarted or compacted session tells the owner the state carried over: a visible "say continue to resume" line at session start, and the injected state now ends with the manager's duty to open in plain words.
 
 ### Changed
 
-- [#139](../../issues/139) — Questions to the owner are self-contained: briefed in chat first, full background in the question, options as plain outcomes; the rule lives in the crew contract and the manager injection.
-- [#133](../../issues/133) — The report half of the file-handoff convention flips to match reality: an agent's final message IS its report, and a report file is the explicit-ask exception; all five agent prompts and the review skill follow.
-- [#131](../../issues/131) — The crew contract draws the self-edit line: the manager edits inline only when doing it costs fewer tokens than briefing a worker; anything larger goes to a worker and its blind verify.
-- [#132](../../issues/132) — The change-tracker nags once per change: it fingerprints the tree (diff, untracked content, inbox) into `.workkit/` and stays silent on every stop where nothing moved.
-- [#138](../../issues/138) — `workkit tower` is quiet by default: child output filtered to problem lines plus one dashboard-URL announcement, `--verbose` restores the wall, and either half ending still ends both.
+- [#139](../../issues/139) [`1d649c0`](../../commit/1d649c0) Thanks [@ianwieds]! — Questions to the owner are self-contained: briefed in chat first, full background in the question, options as plain outcomes; the rule lives in the crew contract and the manager injection.
+- [#133](../../issues/133) [`1d649c0`](../../commit/1d649c0) Thanks [@ianwieds]! — The report half of the file-handoff convention flips to match reality: an agent's final message IS its report, and a report file is the explicit-ask exception; all five agent prompts and the review skill follow.
+- [#131](../../issues/131) [`1d649c0`](../../commit/1d649c0) Thanks [@ianwieds]! — The crew contract draws the self-edit line: the manager edits inline only when doing it costs fewer tokens than briefing a worker; anything larger goes to a worker and its blind verify.
+- [#132](../../issues/132) [`1d649c0`](../../commit/1d649c0) Thanks [@ianwieds]! — The change-tracker nags once per change: it fingerprints the tree (diff, untracked content, inbox) into `.workkit/` and stays silent on every stop where nothing moved.
+- [#138](../../issues/138) [`1d649c0`](../../commit/1d649c0) Thanks [@ianwieds]! — `workkit tower` is quiet by default: child output filtered to problem lines plus one dashboard-URL announcement, `--verbose` restores the wall, and either half ending still ends both.
 
 ### Fixed
 
-- [#137](../../issues/137) — The tower's activity glyph is a gear that turns about its own center: the Crew page's spinner no longer wobbles, and a claimed Board card's still glyph no longer reads as a broken loader.
+- [#137](../../issues/137) [`1d649c0`](../../commit/1d649c0) Thanks [@ianwieds]! — The tower's activity glyph is a gear that turns about its own center: the Crew page's spinner no longer wobbles, and a claimed Board card's still glyph no longer reads as a broken loader.
 
 ## [0.32.1] - 2026-08-04
 
