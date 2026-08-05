@@ -163,9 +163,16 @@ const draggable = (issue) => WRITABLE && MOVABLE_STATUSES.includes(issue.status)
 // the row is one line and clipped, so a "waits on #12" chip costs the card no
 // height at all, where a line of its own would make every blocked card taller
 // than its neighbours.
+//
+// The top row is NAMED because its right end is one slot rather than two: the
+// open button is lifted out of the flow into that corner where there is a
+// pointer to reveal it with, which is the sheet's job and needs an element to
+// position against (main.scss). It is the board card's row alone — the list
+// rows the Brief, the Overview and Health draw carry the same `omega-tower-issue`
+// class and their button stays in flow.
 const issueCard = (issue, showRepo, open) => `<div class="card omega-tower-issue omega-interactive omega-interactive--lift mb-2${issue.status === 'blocked' ? ' border-danger' : ''}"${draggable(issue) ? ' draggable="true"' : ''} ${issueTrigger(issue)}>
   <div class="card-body p-3 d-flex flex-column">
-    <div class="d-flex align-items-start gap-2">
+    <div class="d-flex align-items-start gap-2 omega-tower-issue__top">
       <span class="omega-micro d-block flex-grow-1 text-truncate">${showRepo ? `${esc(issue.repo)} ` : ''}#${esc(issue.number)}</span>
       ${claimGlyph(issue)}
       ${externalLink(issue.url)}

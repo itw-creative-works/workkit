@@ -85,6 +85,18 @@
 // markup's own `me-1` — the chip is an inline-block, with no gap to inherit.
 .omega-chip i.fa-solid svg { vertical-align: -.125em; }
 
+// ── The empty state's icon ─────────────────────────────────────────────────
+//
+// The glyph sat left of the line under it on every "nothing here" the tower
+// draws. `text-center` centres INLINE content, and this one is not: the icon
+// wants its own line, so the markup writes `d-block` (libs/tower/format.js) —
+// which beats the framework's `i[data-omega-fa] { display: inline-flex }` with
+// Bootstrap's `!important` and leaves a BLOCK box one em wide, hugging the left
+// edge whatever the text around it is aligned to. A block box of known width
+// centres the one way a block box can. Not `display: flex` in its place: the
+// utility is `!important` and this is the smaller thing to say.
+.omega-tower-empty i { margin-inline: auto; }
+
 // ── The crew org chart's finished tier ─────────────────────────────────────
 //
 // The chart itself is the framework's `.omega-org-chart` — root, children,
@@ -175,6 +187,11 @@
 // The role glyph at the top of a crew card, in that class's own colour (the
 // style attribute the markup writes). Bigger than the indicator, because it is
 // the first thing the card says.
+//
+// The BOX is the theme's own `.omega-icon-chip--neutral` — the markup wears
+// that utility, so this rule says only what the chip does not: the glyph size.
+// The per-role colour survives because it is an inline style, which beats the
+// chip's neutral ink.
 .omega-tower-role {
   font-size: 1.125rem;
   line-height: 1;
@@ -221,6 +238,48 @@
 
 @media (hover: none) {
   .omega-tower-external { opacity: 1; }
+}
+
+// ── The Board card's corner slot ───────────────────────────────────────────
+//
+// The top-right corner of a board card is ONE slot, not two. The button above
+// hides at `opacity: 0` and KEEPS its box, so a building card's spinning gear
+// sat one invisible-button-width in from the corner and read adrift. Lifting
+// the button out of the flow gives the corner back: the gear is the row's last
+// item and sits flush right, the button lands on top of it only while there is
+// a pointer or a keyboard on the card, and the gear fades out from under it so
+// the two never stack. Same .12s as the reveal it is paired with — one motion,
+// two properties.
+//
+// Under `(hover: hover)` rather than carved back out under `(hover: none)`:
+// the two are the whole of the media feature, and the fade needs three
+// selectors that a carve-out would have to repeat at matching specificity. A
+// touch screen keeps exactly the layout it has — button in flow, always
+// visible, gear beside it.
+//
+// Scoped to the board card's own row (`pages/board.js`), which is narrower
+// than `.omega-tower-issue`: the Brief, the Overview and Health draw list rows
+// under that same class with the button in flow, and the dialog header's copy
+// is not a card's reveal at all.
+@media (hover: hover) {
+  .omega-tower-issue__top { position: relative; }
+
+  .omega-tower-issue__top .omega-tower-external {
+    position: absolute;
+    right: 0;
+    top: 0;
+  }
+
+  // The slug span stops short of the corner the button lands in: with the
+  // anchor out of flow, a gear-less card's truncated slug would otherwise run
+  // under the revealed button's glyph. Padding the SPAN, not the row — padding
+  // the row would push the gear off the corner again.
+  .omega-tower-issue__top .omega-micro { padding-right: 1.5rem; }
+
+  .omega-tower-issue__top .omega-tower-activity { transition: opacity .12s ease-in-out; }
+
+  .omega-tower-issue:hover .omega-tower-issue__top .omega-tower-activity,
+  .omega-tower-issue:focus-within .omega-tower-issue__top .omega-tower-activity { opacity: 0; }
 }
 
 // An issue body is markdown rendered by the framework's `renderMarkdown` — the

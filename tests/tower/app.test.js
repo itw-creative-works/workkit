@@ -384,6 +384,22 @@ const run = async () => {
     assert(!format.empty('nothing', '"><img src=x>').includes('<img'), 'and so is an icon name');
   });
 
+  await test('that icon is centred by a rule of its own, over the line it sits above (#142)', () => {
+    // The defect this proves against: the glyph sat LEFT of the line under it,
+    // on every empty state the tower draws. `text-center` centres inline
+    // content and this icon is not inline — `d-block` is one of Bootstrap's
+    // `!important` utilities and beats the framework's
+    // `i[data-omega-fa] { display: inline-flex }`, which leaves a BLOCK box one
+    // em wide hugging the left edge whatever the text around it is aligned to.
+    // Neither half is visible from Node, so both are pinned by hand.
+    const fs = require('fs');
+    assert(format.empty('nothing here').includes('class="omega-tower-empty '), 'the helper carries the hook the sheet centres from');
+    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
+    const rule = /\.omega-tower-empty i \{ margin-inline: (\S+?); \}/.exec(sheet);
+    assert(rule, 'and the sheet centres the icon box — once, for every caller of the helper');
+    assertEq(rule[1], 'auto', 'the one way a block box of known width centres itself');
+  });
+
   await test('a model id falls in its family whatever it is decorated with', () => {
     assertEq(format.modelKey('claude-opus-5'), 'opus', 'the plain id');
     assertEq(format.modelKey('claude-opus-5[1m]'), 'opus', 'a context variant is the same model');
@@ -1434,6 +1450,29 @@ const run = async () => {
     assert(!agent.roleIcon('<img src=x>').includes('<img'), 'and a hostile class name is text');
   });
 
+  await test('that glyph wears the shell\'s tile, and keeps its own colour inside it (#142)', () => {
+    // A bare coloured glyph on a crew card, where every other icon in the shell
+    // sits in a small rounded square. The box is the THEME's — the markup wears
+    // `.omega-icon-chip--neutral` rather than the sheet hand-rolling the same
+    // tile — and only the box is borrowed: the colour is the role's, written
+    // inline by the markup, which beats the chip's neutral ink.
+    assert(agent.roleIcon('worker').includes('omega-icon-chip omega-icon-chip--neutral'), 'the markup wears the theme\'s own tile');
+    assert(agent.roleIcon('worker').includes(`color: ${format.badgeColor('worker')}`), 'and still writes the role colour inline');
+    const fs = require('fs');
+    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
+    const local = /\.omega-tower-role \{([^}]*)\}/.exec(sheet);
+    assert(local, 'the sheet still sizes the glyph');
+    for (const declaration of ['height', 'width', 'background', 'border-radius', 'color']) {
+      // Anchored to a declaration start so `line-height` does not read as `height`.
+      assert(!new RegExp(`(^|[\\s;])${declaration}:`).test(local[1]), `without redrawing what the chip ships (${declaration})`);
+    }
+    // The chip is inline-flex, which is what keeps BOTH placements: the crew
+    // card centres the tile with `text-center`, which reaches inline-level boxes
+    // and nothing else, and the agent dialog's head lays it out as one flex item.
+    const crewPage = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'crew.js'), 'utf8');
+    assert(/<div class="text-center mb-2">\$\{roleIcon\(/.test(crewPage), 'the crew card centres it as inline content');
+  });
+
   await test('the pages route their indicators through the one helper', () => {
     const fs = require('fs');
     const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
@@ -1496,6 +1535,50 @@ const run = async () => {
     assert(link.includes('class="omega-tower-external ms-2"'), 'the caller can place it');
     assert(link.includes('<i class="fa-solid fa-arrow-up-right-from-square"'), 'the glyph is the framework\'s one icon mechanism');
     assert(!link.includes('<svg'), 'and not a hand-drawn one the renderer never sees');
+  });
+
+  await test('on a Board card that button is the corner, not a neighbour of it (#142)', () => {
+    // The defect this proves against: the button hides at `opacity: 0` and
+    // KEEPS its box, so a building card's spinning gear sat one
+    // invisible-button-width in from the top-right corner and read adrift. The
+    // corner is ONE slot: the button leaves the flow into it, the gear becomes
+    // the row's last item, and the gear fades out from under the button while
+    // the card is hovered or focused so the two never stack.
+    const fs = require('fs');
+    const src = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src');
+    const boardPage = fs.readFileSync(path.join(src, 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    assert(boardPage.includes('omega-tower-issue__top'), 'the card names the row the corner is measured from');
+    // That row is the BOARD card's alone: the Brief, the Overview and Health
+    // draw list rows under the same `omega-tower-issue` class with the button in
+    // flow, and the rules below would fling it to the nearest positioned box.
+    for (const name of ['brief.js', 'health.js', 'index.js']) {
+      const page = fs.readFileSync(path.join(src, 'assets', 'js', 'pages', name), 'utf8');
+      assert(!page.includes('omega-tower-issue__top'), `${name} draws its rows without it`);
+    }
+
+    const sheet = fs.readFileSync(path.join(src, 'assets', 'css', 'main.scss'), 'utf8');
+    const block = /@media \(hover: hover\) \{\n([\s\S]*?)\n\}/.exec(sheet);
+    assert(block, 'and the mechanism is the sheet\'s, behind the pointer it needs');
+    assert(/\.omega-tower-issue__top \{ position: relative; \}/.test(block[1]), 'the row is the containing block');
+    const corner = /\.omega-tower-issue__top \.omega-tower-external \{([^}]*)\}/.exec(block[1]);
+    assert(corner, 'the button is placed against it');
+    for (const declaration of ['position: absolute', 'right: 0', 'top: 0']) {
+      assert(corner[1].includes(declaration), `out of the flow and into the corner (${declaration})`);
+    }
+    assert(/\.omega-tower-issue:hover \.omega-tower-issue__top \.omega-tower-activity,\s*\.omega-tower-issue:focus-within \.omega-tower-issue__top \.omega-tower-activity \{ opacity: 0; \}/.test(block[1]),
+      'and the gear under it fades on hover AND on focus, so a keyboard sees what a pointer does');
+    assert(block[1].includes('transition: opacity .12s ease-in-out'), 'at the same speed the reveal it is paired with runs');
+    assert(/\.omega-tower-issue__top \.omega-micro \{ padding-right: /.test(block[1]), 'and the slug span stops short of the corner, so a gear-less card\'s ellipsis never sits under the revealed button');
+    // Nothing here may take the button out of the accessibility tree — it is
+    // the card's one tab stop, and `:focus-visible` has to be able to show it.
+    assert(!/display: none|visibility: hidden/.test(block[1]), 'the button is faded, never hidden');
+    // A touch screen has no pointer to reveal anything with, so it keeps the
+    // in-flow layout: every word the sheet says about that row is in this block.
+    const elsewhere = sheet.slice(0, block.index) + sheet.slice(block.index + block[0].length);
+    assert(!elsewhere.includes('.omega-tower-issue__top'), 'and `(hover: none)` — the whole of the other side of that feature — is left as it was');
+    // The dialog header's copy of the button is a control in flow, not a
+    // card's reveal, and none of the above reaches it.
+    assert(sheet.includes('.modal-header .omega-tower-external { opacity: 1; }'), 'the dialog\'s button still simply shows');
   });
 
   await test('the dialog says everything the issue knows', () => {

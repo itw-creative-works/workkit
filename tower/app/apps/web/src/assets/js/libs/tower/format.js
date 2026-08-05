@@ -27,8 +27,12 @@ export const num = (value) => (value === null || value === undefined ? '—' : S
  * live sessions" and "nothing is waiting to ship" are different kinds of
  * nothing; the default is the neutral one, and every icon is the framework's
  * Font Awesome, decorative, with the line itself carrying the meaning.
+ *
+ * `omega-tower-empty` is the sheet's hook for the one thing `text-center`
+ * cannot do here: `d-block` makes the glyph's box a BLOCK one em wide, and a
+ * block box ignores the text alignment around it (main.scss).
  */
-export const empty = (message, icon = 'fa-regular fa-folder-open') => `<div class="text-center text-body-secondary py-3">
+export const empty = (message, icon = 'fa-regular fa-folder-open') => `<div class="omega-tower-empty text-center text-body-secondary py-3">
   <i class="${esc(icon)} fa-lg d-block mb-2 opacity-50" aria-hidden="true"></i>
   <p class="omega-micro mb-0">${esc(message)}</p>
 </div>`;

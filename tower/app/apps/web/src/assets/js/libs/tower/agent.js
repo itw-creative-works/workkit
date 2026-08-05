@@ -313,6 +313,6 @@ export const roleGlyph = (name) => ROLE_ICONS[classKey(name)] || ROLE_ICONS.othe
  * @param {string} name an agent class
  * @returns {string} markup
  */
-export const roleIcon = (name) => `<span class="omega-tower-role" style="color: ${badgeColor(classKey(name))}" title="${esc(name || 'unknown')}">
+export const roleIcon = (name) => `<span class="omega-tower-role omega-icon-chip omega-icon-chip--neutral" style="color: ${badgeColor(classKey(name))}" title="${esc(name || 'unknown')}">
   <i class="fa-solid ${esc(roleGlyph(name))}" aria-hidden="true"></i>
 </span>`;
