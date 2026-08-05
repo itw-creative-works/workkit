@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-08-05
+
 ### Changed
 
-- [#144](../../issues/144) — The interview now grills: a mandated category sweep asked in chat rounds with recommendations, closing by writing the `## Spec` from the answers. The feature skill enters plan mode on large tasks, whats-next ends in a ranked restated queue, and both skills block the AskUserQuestion tool.
+- [#144](../../issues/144) [`a69b639`](../../commit/a69b639) Thanks [@ianwieds]! — The interview now grills: a mandated category sweep asked in chat rounds with recommendations, closing by writing the `## Spec` from the answers. The feature skill enters plan mode on large tasks, whats-next ends in a ranked restated queue, and both skills block the AskUserQuestion tool.
 
 ## [0.33.4] - 2026-08-05
 
