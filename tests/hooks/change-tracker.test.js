@@ -34,6 +34,11 @@ const runHook = (cwd) => {
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
 };
 
+const writeScratch = (dir, body) => {
+  fs.mkdirSync(path.join(dir, W), { recursive: true });
+  fs.writeFileSync(path.join(dir, W, 'inbox.md'), body);
+};
+
 const cleanup = (dir) => {
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
 };
@@ -109,53 +114,148 @@ const run = async () => {
     );
   });
 
-  group('change-tracker: per-session dedupe');
+  group('change-tracker: repeat only when something changed');
 
-  // With a session_id, the hook nudges once per unique dirty state per session
-  // (marker in $TMPDIR/claude-change-tracker). Isolated TMPDIR per test so
-  // markers never leak into the real one.
-  const runHookSession = (cwd, sessionId, tmpdir) => {
-    const input = JSON.stringify({ cwd, stop_hook_active: false, session_id: sessionId });
-    const res = spawnSync('bash', [HOOK], {
-      input,
-      env: { ...process.env, HOME: os.homedir(), TMPDIR: tmpdir },
-      encoding: 'utf8',
-      timeout: 10000,
-    });
-    return { code: res.status, stdout: res.stdout || '' };
+  // The hook nudges once per fingerprint of the state it nags about — the
+  // porcelain status, the diff behind it, and the local inbox's content — and
+  // remembers the last one in the repo's own .workkit/ session state.
+  const STATE = path.join(W, '.change-tracker');
+
+  // A participating repo: .workkit/ exists and is gitignored, and app.js is
+  // committed so an edit to it moves the diff without moving the status line.
+  const mkStateRepo = () => {
+    const dir = mkTmpRepo();
+    fs.writeFileSync(path.join(dir, '.gitignore'), `${W}/*\n`);
+    fs.writeFileSync(path.join(dir, 'app.js'), 'one\n');
+    execSync('git add -A && git commit -m "app"', { cwd: dir, stdio: 'pipe' });
+    fs.mkdirSync(path.join(dir, W), { recursive: true });
+    return dir;
   };
 
-  await test('same dirty state twice — first blocks, second is silent', () => {
-    const dir = mkTmpRepo();
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-dedupe-'));
-    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
-    const first = runHookSession(dir, 'sess-dedupe-1', tmp);
+  const stateOf = (dir) => {
+    const file = path.join(dir, STATE);
+    return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim() : null;
+  };
+
+  await test('first stop with changes — blocks and records the fingerprint', () => {
+    const dir = mkStateRepo();
+    fs.writeFileSync(path.join(dir, 'app.js'), 'two\n');
+    const { stdout } = runHook(dir);
+    assert(stdout.includes('"block"'), 'the first stop on a new state nudges');
+    assert(stateOf(dir), `the fingerprint is recorded in ${STATE}`);
+    cleanup(dir);
+  });
+
+  await test('unchanged tree on the next stop — silent', () => {
+    const dir = mkStateRepo();
+    fs.writeFileSync(path.join(dir, 'app.js'), 'two\n');
+    const first = runHook(dir);
     assert(first.stdout.includes('"block"'), 'first run should block');
-    const second = runHookSession(dir, 'sess-dedupe-1', tmp);
-    assert(!second.stdout.includes('"block"'), 'unchanged dirty state should not re-block');
+    const before = stateOf(dir);
+    const second = runHook(dir);
+    assert(!second.stdout.includes('"block"'), 'nothing changed, so nothing to say');
     assertEq(second.code, 0, 'silent run should exit 0');
-    cleanup(dir); cleanup(tmp);
+    assertEq(stateOf(dir), before, 'the remembered fingerprint stands');
+    cleanup(dir);
   });
 
-  await test('tree changes between runs — re-blocks on the new state', () => {
-    const dir = mkTmpRepo();
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-dedupe-'));
-    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
-    runHookSession(dir, 'sess-dedupe-2', tmp);
+  await test('a new edit behind an identical status line — blocks again', () => {
+    const dir = mkStateRepo();
+    fs.writeFileSync(path.join(dir, 'app.js'), 'two\n');
+    runHook(dir);
+    const before = stateOf(dir);
+    // Same porcelain (' M app.js'), different content: only the diff sees it.
+    fs.writeFileSync(path.join(dir, 'app.js'), 'six\n');
+    const rerun = runHook(dir);
+    assert(rerun.stdout.includes('"block"'), 'a real edit re-arms the nudge');
+    assert(stateOf(dir) !== before, 'and the new fingerprint replaces the old');
+    cleanup(dir);
+  });
+
+  await test('a new file — blocks again', () => {
+    const dir = mkStateRepo();
+    fs.writeFileSync(path.join(dir, 'app.js'), 'two\n');
+    runHook(dir);
     fs.writeFileSync(path.join(dir, 'lib.js'), 'more code');
-    const rerun = runHookSession(dir, 'sess-dedupe-2', tmp);
-    assert(rerun.stdout.includes('"block"'), 'a NEW dirty state should re-arm the nudge');
-    cleanup(dir); cleanup(tmp);
+    const rerun = runHook(dir);
+    assert(rerun.stdout.includes('"block"'), 'a new file is a new state');
+    cleanup(dir);
   });
 
-  await test('same dirty state, different session — blocks independently', () => {
+  await test('an untracked file rewritten in place — blocks again', () => {
+    const dir = mkStateRepo();
+    fs.writeFileSync(path.join(dir, 'lib.js'), 'one\n');
+    const first = runHook(dir);
+    assert(first.stdout.includes('"block"'), 'the new file nudges');
+    const before = stateOf(dir);
+    // Same porcelain ('?? lib.js') and nothing in the diff at all — an
+    // untracked file's content lives only in the file, so building one across
+    // turns would go silent after the first nudge.
+    fs.writeFileSync(path.join(dir, 'lib.js'), 'two\n');
+    const rerun = runHook(dir);
+    assert(rerun.stdout.includes('"block"'), 'an edit to an untracked file re-arms the nudge');
+    assert(stateOf(dir) !== before, 'and the new fingerprint replaces the old');
+    cleanup(dir);
+  });
+
+  await test('a new local inbox entry — blocks again', () => {
+    const dir = mkStateRepo();
+    writeScratch(dir, '# inbox\n> header\n\na finding\n');
+    const first = runHook(dir);
+    assert(first.stdout.includes('SCRATCH: 1 unfiled'), 'first capture nudges');
+    assert(!runHook(dir).stdout.includes('"block"'), 'the same capture does not nudge twice');
+    writeScratch(dir, '# inbox\n> header\n\na finding\nanother finding\n');
+    const rerun = runHook(dir);
+    assert(rerun.stdout.includes('"block"'), 'a new capture re-arms the nudge');
+    assert(rerun.stdout.includes('SCRATCH: 2 unfiled'), 'and carries the new count');
+    cleanup(dir);
+  });
+
+  await test('clean tree, empty inbox — silent and no state file written', () => {
+    const dir = mkStateRepo();
+    const { code, stdout } = runHook(dir);
+    assertEq(code, 0, 'a clean repo exits 0');
+    assert(!stdout.includes('block'), 'nothing to nudge about');
+    assertEq(stateOf(dir), null, 'nothing to remember, so nothing is written');
+    cleanup(dir);
+  });
+
+  await test('the memory is the repo\'s, not the session\'s', () => {
+    const dir = mkStateRepo();
+    fs.writeFileSync(path.join(dir, 'app.js'), 'two\n');
+    const runSession = (sessionId) => {
+      const input = JSON.stringify({ cwd: dir, stop_hook_active: false, session_id: sessionId });
+      const res = spawnSync('bash', [HOOK], {
+        input,
+        env: { ...process.env, HOME: os.homedir() },
+        encoding: 'utf8',
+        timeout: 10000,
+      });
+      return res.stdout || '';
+    };
+    assert(runSession('sess-a').includes('"block"'), 'first session nudges');
+    assert(!runSession('sess-b').includes('"block"'), 'a second session over the same state stays silent');
+    cleanup(dir);
+  });
+
+  await test('no .workkit/ — nudges every stop and writes nothing', () => {
     const dir = mkTmpRepo();
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-dedupe-'));
     fs.writeFileSync(path.join(dir, 'app.js'), 'code');
-    runHookSession(dir, 'sess-a', tmp);
-    const other = runHookSession(dir, 'sess-b', tmp);
-    assert(other.stdout.includes('"block"'), 'dedupe is per-session, not global');
-    cleanup(dir); cleanup(tmp);
+    assert(runHook(dir).stdout.includes('"block"'), 'an undecided repo still hears it');
+    assert(runHook(dir).stdout.includes('"block"'), 'and hears it again — it has no memory');
+    assert(!fs.existsSync(path.join(dir, W)), 'an undecided repo is never written to');
+    cleanup(dir);
+  });
+
+  await test('.workkit/ present but not gitignored — nudges every stop, writes nothing', () => {
+    const dir = mkTmpRepo();
+    fs.mkdirSync(path.join(dir, W), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
+    assert(runHook(dir).stdout.includes('"block"'), 'the first stop nudges');
+    assert(runHook(dir).stdout.includes('"block"'), 'and so does the next — no memory without a gitignore');
+    assert(runHook(dir).stdout.includes('"block"'), 'and the one after that');
+    assertEq(stateOf(dir), null, 'the memory is never a file the repo would commit');
+    cleanup(dir);
   });
 
   group('change-tracker: fail-open / guards');
@@ -217,11 +317,6 @@ const run = async () => {
   });
 
   group('change-tracker: local .workkit/inbox.md');
-
-  const writeScratch = (dir, body) => {
-    fs.mkdirSync(path.join(dir, W), { recursive: true });
-    fs.writeFileSync(path.join(dir, W, 'inbox.md'), body);
-  };
 
   await test('clean tree + scratch entries — blocks with the count', () => {
     const dir = mkTmpRepo();

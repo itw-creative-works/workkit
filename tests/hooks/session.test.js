@@ -49,6 +49,7 @@ const runHook = (cwd, source = 'startup') => {
 };
 
 const ctxOf = (stdout) => JSON.parse(stdout).hookSpecificOutput.additionalContext;
+const msgOf = (stdout) => JSON.parse(stdout).systemMessage;
 
 const filled = (lines) => [
   '# Session',
@@ -101,6 +102,71 @@ const run = async () => {
     assert(!entry.matcher, 'no matcher — a compacted session is the case it exists for');
   });
 
+  group('session: the closing lines');
+
+  await test('the context ends with the owner resume line', () => {
+    const repo = mkRepo({ session: filled(['#12 — the board sweep, mid-build']) });
+    const ctx = ctxOf(runHook(repo).stdout);
+    assertEq(
+      ctx.split('\n').pop(),
+      'Owner: state carried over — say "continue" and this session resumes the queue above.',
+      'the last line is addressed to the owner',
+    );
+    cleanup(repo);
+  });
+
+  await test('the context carries the manager duty line', () => {
+    const repo = mkRepo({ session: filled(['#12 — mid-build']) });
+    const ctx = ctxOf(runHook(repo).stdout);
+    assert(
+      ctx.includes('Manager: open your first reply after a restart or compaction with this state in plain words.'),
+      'the first reply after a restart opens with the state',
+    );
+    cleanup(repo);
+  });
+
+  await test('the owner hears it — the resume line rides the visible channel too', () => {
+    const repo = mkRepo({ session: filled(['#12 — the board sweep, mid-build']) });
+    const { stdout } = runHook(repo);
+    assertEq(
+      msgOf(stdout),
+      'workkit: state carried over — say "continue" to resume the session queue',
+      'the systemMessage is the owner line',
+    );
+    cleanup(repo);
+  });
+
+  await test('a rule separates the file body from the closing lines', () => {
+    const repo = mkRepo({ session: filled(['#12 — mid-build']) });
+    const lines = ctxOf(runHook(repo).stdout).split('\n');
+    const rule = lines.indexOf('---');
+    assert(rule > 0, 'the injection carries a --- rule');
+    assert(lines.findIndex((l) => l.includes('#12 — mid-build')) < rule,
+      'the file body is above the rule');
+    assert(lines.findIndex((l) => l.startsWith('Manager:')) > rule,
+      'the closing lines are below it');
+    cleanup(repo);
+  });
+
+  await test('a silent path says nothing on either channel', () => {
+    const repo = mkRepo({ session: filled([]) });
+    const { code, stdout } = runHook(repo);
+    assertEq(code, 0, 'exit 0');
+    assertEq(stdout, '', 'no JSON at all — no context and no systemMessage');
+    cleanup(repo);
+  });
+
+  await test('the closing lines follow the oversize warning, owner last', () => {
+    const many = Array.from({ length: 45 }, (_, i) => `note ${i}`);
+    const repo = mkRepo({ session: filled(many) });
+    const ctx = ctxOf(runHook(repo).stdout);
+    assert(/queue, not a journal/.test(ctx), 'the warning is still there');
+    assert(ctx.indexOf('queue, not a journal') < ctx.indexOf('Manager: open your first reply'),
+      'the warning comes before the closing lines');
+    assert(ctx.trimEnd().endsWith('resumes the queue above.'), 'the owner line is still last');
+    cleanup(repo);
+  });
+
   group('session: silence');
 
   await test('no session.md at all — silent exit 0', () => {
@@ -124,6 +190,14 @@ const run = async () => {
     const { code, stdout } = runHook(repo);
     assertEq(code, 0, 'exit 0');
     assertEq(stdout, '', 'a freshly seeded file counts zero content lines');
+    cleanup(repo);
+  });
+
+  await test('a header-only session.md — silent, and the closing lines do not leak', () => {
+    const repo = mkRepo({ session: filled([]) });
+    const { code, stdout } = runHook(repo);
+    assertEq(code, 0, 'exit 0');
+    assertEq(stdout, '', 'headings alone say nothing — not even the owner line');
     cleanup(repo);
   });
 

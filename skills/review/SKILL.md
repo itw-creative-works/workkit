@@ -26,7 +26,7 @@ The light reviewer may return `NEEDS_FULL` (with one line of why) instead of a r
 
 ## 2. Lenses — parallel subagents
 
-Dispatch per the file-handoff convention: brief file + report path in the session scratchpad, status-only returns. Launch in ONE message:
+Dispatch per the file-handoff convention: the brief goes to a file in the session scratchpad, and each lens returns its full findings INLINE. Launch in ONE message:
 
 | Lens | Agent | Mandate |
 |---|---|---|
@@ -57,5 +57,5 @@ mkdir -p "${TMPDIR:-/tmp}/claude-review-marker" && touch "${TMPDIR:-/tmp}/claude
 
 ## Gotchas
 
-- Some lens agents cannot write the report file — the reviewer, `workkit:scout`, and `workkit:verifier` toolsets have no Write, and report writes have also been blocked by the harness. Accept the full report INLINE in the agent's return instead of re-dispatching; the file-handoff convention is the preference, not a hard requirement (2026-07-23: two of three lenses returned inline).
+- The inline return IS the convention (#133) — the reviewer, `workkit:scout`, and `workkit:verifier` toolsets have no Write anyway. A report FILE is the explicit-ask exception: name the path in the brief only when the output is a large artifact meant to be read selectively, and never ask a lens without Write for one.
 - Do not re-run a full panel over edits that merely implement findings the scorer already judged this session — that reviews the review's own output. A light verification pass ("does each edit implement its finding without contradictions?") is the honest check (2026-07-23).

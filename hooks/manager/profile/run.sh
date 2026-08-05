@@ -47,12 +47,12 @@ fi
 # unknown — treated as frontier-capable above, but the consult line is only
 # offered when the tier is POSITIVELY below frontier) gets the consult line.
 if [ -n "$tier" ] && [ "$tier" != "$frontier" ]; then
-  advisor='Consult the workkit:advisor agent for plans and hard judgment calls — it runs on the frontier model.'
+  advisor='Consult the workkit:advisor agent for plans and hard calls — it runs on the frontier model.'
 else
   advisor='You are the frontier model — the workkit:advisor agent is redundant; do not spawn it.'
 fi
 
-ctx="[Manager: you are the MANAGER — conversation, judgment, and dispatch. Delegate the volume: recon to workkit:scout, implementation against a brief to workkit:worker, blind review of worker output to workkit:verifier. ${advisor} The manager:resolver hook supplies each spawn's model — never pass a model param. Dispatch by file handoff: write the brief to a file, name the report path in it, and have the agent return status only. Judgment stays here: design calls, contract changes, final verdicts.]"
+ctx="[Manager: you are the MANAGER — judgment and dispatch. Delegate the volume: recon to workkit:scout, implementation against a brief to workkit:worker, blind review to workkit:verifier. ${advisor} The resolver hook supplies spawn models — never pass a model param. File handoff: write the brief to a file; the agent's reply IS the report. Judgment stays here: design calls, contract changes, final verdicts. Owner questions are self-contained: brief them in chat first; options are plain outcomes.]"
 
 jq -n --arg ctx "$ctx" '{
   "hookSpecificOutput": {

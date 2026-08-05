@@ -11,6 +11,19 @@
 # into the retired PROGRESS.md shape is the failure this hook would otherwise
 # feed, one session start at a time.
 #
+# The injection CLOSES, under a `---` rule that keeps them out of whatever
+# heading the file body trailed off in, with two lines, one per reader: the
+# session is told to open its first reply after a restart or compaction with
+# this state in plain words, and the owner — who cannot see that anything
+# survived — is told last that saying "continue" resumes the queue above.
+#
+# That owner line is also emitted as a top-level `systemMessage`, the one
+# channel a hook has to the user's screen (hooks reference § JSON output: a
+# universal field, every event, "shown to the user"), and the same channel the
+# manager close-guard and spawn-guard hooks warn on. `additionalContext` is
+# read by the MODEL alone, so the line addressed to the owner has to leave by
+# both doors or it never arrives.
+#
 # Silent for an absent file, a file holding only its header, and a repo that has
 # not opted in. Always exits 0 — a context injection must never cost a session.
 
@@ -62,7 +75,21 @@ if [ "$lines" -gt "$LIGHT_BAR" ]; then
 NOTE: session.md is $lines content lines (bar $LIGHT_BAR) — it is a queue, not a journal. Promote anything durable to its issue and prune the rest."
 fi
 
-jq -n --arg ctx "$msg" '{
+# The two closing lines (issue #134), one per reader, and only where the state
+# above them exists — a silent injection stays silent, on both channels. The
+# duty rides with the state it is about rather than with the manager
+# instruction, so it reaches a non-manager session too; the owner line is LAST,
+# the last thing read before the session's first reply, under the rule that
+# separates both from the file body.
+msg="$msg
+
+---
+Manager: open your first reply after a restart or compaction with this state in plain words.
+Owner: state carried over — say \"continue\" and this session resumes the queue above."
+
+jq -n --arg ctx "$msg" \
+  --arg owner 'workkit: state carried over — say "continue" to resume the session queue' '{
+  "systemMessage": $owner,
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
     "additionalContext": $ctx

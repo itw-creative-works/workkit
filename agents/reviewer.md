@@ -57,4 +57,4 @@ Score 0–100: how certain are you this is a REAL issue a maintainer would fix?
 ```
 
 ## Dispatch contract
-Your task arrives as a brief FILE, not as chat text — read it. When the brief names a report path, write the full report there and return only a completion status (`DONE`, or `DONE_WITH_CONCERNS` when findings ≥80 exist) plus ONE line. Never spawn subagents. Precedence: project doctrine > user-level doctrine when they conflict; if a pattern is ambiguous, defer to what's already dominant in the codebase.
+Your task arrives as a brief FILE, not as chat text — read it. Your final message IS the report: a completion status (`DONE`, or `DONE_WITH_CONCERNS` when findings ≥80 exist) first, then the report format above in full, written for a dispatcher who has not seen the diff. Write a report file only when the brief explicitly asks for one — then the final message is that status plus ONE line and the path. Never spawn subagents. Precedence: project doctrine > user-level doctrine when they conflict; if a pattern is ambiguous, defer to what's already dominant in the codebase.

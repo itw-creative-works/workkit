@@ -70,7 +70,11 @@ const run = async () => {
     for (const file of fs.readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md'))) {
       const text = fs.readFileSync(path.join(AGENTS_DIR, file), 'utf8');
       assert(text.includes('Never spawn subagents.'), `${file} does not state the no-subagents rule`);
-      assert(/report path/.test(text), `${file} does not state the report-path rule`);
+      assert(/final message IS the (report|write-up)/.test(text), `${file} does not state the inline-report rule`);
+      assert(
+        /report file only when the brief explicitly asks/.test(text),
+        `${file} does not state the report-file exception`
+      );
     }
   });
 

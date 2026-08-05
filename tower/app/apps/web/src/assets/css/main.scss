@@ -73,6 +73,18 @@
   }
 }
 
+// ── The chip glyph's optical centre ────────────────────────────────────────
+//
+// The framework drops an icon's svg a touch below the baseline so it reads
+// centred against the word beside it — `.fa svg { vertical-align: -.125em }` —
+// and the `<i>` a chip carries is written `fa-solid` alone, the family class
+// its renderer needs (libs/tower/format.js), which that selector never reaches.
+// The glyph sat visibly high in every chip because of it. Same number, said to
+// the element the line actually lays out: the renderer FILLS the `<i>` with the
+// svg, so the svg is what sits on the baseline. The horizontal half is the
+// markup's own `me-1` — the chip is an inline-block, with no gap to inherit.
+.classy-chip i.fa-solid svg { vertical-align: -.125em; }
+
 // ── The crew org chart's finished tier ─────────────────────────────────────
 //
 // The chart itself is the framework's `.omega-org-chart` — root, children,
@@ -130,6 +142,27 @@
 // between them is the card around it, not the light.
 .omega-tower-activity--idle,
 .omega-tower-activity--quiet { color: var(--omega-ink-faint, var(--bs-secondary-color)); }
+
+// The glyph's BOX, in every phase — what the motion below turns.
+//
+// The framework renders a Font Awesome icon by filling the `<i>` with a 1em
+// SVG (its icon renderer injects `width="1em" height="1em"`) and ships no box
+// rule of its own for the wrapper, so an `<i>` left alone is as tall as the
+// LINE it sits on: a replaced element resting on the baseline, with the
+// strut's leading underneath it. At .75rem on a 1.5 line-height that is an
+// 18px box holding a 12px glyph whose centre sits ~2px above the box's — and a
+// rotation turns about the BOX's centre, so the glyph swung in an orbit
+// instead of turning on the spot (#137). One square em, centred on the glyph:
+// the box IS the glyph, so its centre is the glyph's. Not scoped to `.fa-spin`
+// — the still glyph wears the same box, so a card does not resize on the
+// second the motion starts or stops.
+.omega-tower-activity i {
+  align-items: center;
+  display: flex;
+  height: 1em;
+  justify-content: center;
+  width: 1em;
+}
 
 // The motion itself. `fa-spin` is Font Awesome's class and the theme ships Font
 // Awesome's ICONS without its stylesheet — the class named a rule that was never

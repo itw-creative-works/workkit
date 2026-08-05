@@ -101,7 +101,7 @@ Plugins load at startup, so a new (or restarted) session is what puts a change i
 | `docs/board-guard` | after any edit | Holds `AGENTS.md` / `CLAUDE.md` to the document rules |
 | `docs/changelog-guard` | after any edit | Holds a CHANGELOG entry to one short linked paragraph |
 | `docs/session-guard` | after any edit | Holds `.workkit/session.md` to a lean task queue — bounces a write leaving it over 40 content lines or a bullet over 350 characters |
-| `docs/change-tracker` | when a reply finishes | Nags about uncommitted work, a stale issue, and unfiled notes |
+| `docs/change-tracker` | when a reply finishes | Nags about uncommitted work, a stale issue, and unfiled notes — once per change, then silent until something moves |
 
 ### Agents — the crew
 

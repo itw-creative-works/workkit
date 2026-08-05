@@ -154,7 +154,7 @@ usage: workkit <command> [args]
                        schedule dispatches. --local runs the local morning
                        instead — composed and sent from this machine, the
                        brief never posted to the home repo
-  tower                run the tower here — the JSON API and the dashboard
+  tower [--verbose]    run the tower here — the JSON API and the dashboard
                        together, until one interrupt ends both
   enable [repo]        write the repo's committed opt-in, then heal it
   decline [repo]       record this developer's no for the repo, personally
@@ -1070,7 +1070,7 @@ case "${1:-help}" in
       printf 'workkit: no tower beside this engine (%s) — this command needs the workkit checkout\n' "$TOWER_START" >&2
       exit 1
     fi
-    exec bash "$TOWER_START"
+    exec bash "$TOWER_START" "$@"
     ;;
   enable)  shift; exec bash "$STANDARDS" --enable "${1:-$PWD}" ;;
   decline) shift; exec bash "$STANDARDS" --decline "${1:-$PWD}" ;;

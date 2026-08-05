@@ -223,8 +223,49 @@ export const byPriority = (a, b) => {
   return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
 };
 
+//
+// ── The glyphs ─────────────────────────────────────────────────────────────
+//
+// What a `type:` and a `priority:` chip wear before their label (issue #136),
+// so a column of cards is read at a glance rather than word by word. One table
+// for both vocabularies, the way TONES below holds models and classes at once —
+// the keys are disjoint, so one table cannot be ambiguous, and the two chips
+// that sit side by side on every card cannot drift into two homes.
+//
+// The picks say the thing rather than encode it: the bug is a bug, an
+// enhancement is the wand that improves what is already there, an idea is the
+// lamp, and the priority ends are arrows pointing where the band sits. The lamp
+// is the advisor's role glyph too (agent.js), which is fine — a role glyph is
+// drawn on the Crew page and in the agent dialog, and no surface that draws an
+// issue chip shows one, so the two never say different things in one place.
+//
+// Free Font Awesome, every one of them, drawn by the framework's shared
+// renderer the same way every other glyph the tower writes is.
+//
+export const CHIP_GLYPHS = {
+  bug: 'fa-bug',
+  enhancement: 'fa-wand-magic-sparkles',
+  idea: 'fa-lightbulb',
+  high: 'fa-angles-up',
+  low: 'fa-angles-down',
+};
+
 /**
- * One chip painted in a theme token.
+ * The glyph markup for a chip, or nothing at all for a name that has none.
+ *
+ * Decorative beside the word it repeats, so it is out of the accessibility tree
+ * and is no new focus target; it takes no colour of its own, which leaves it in
+ * whatever tone the chip around it is painted.
+ *
+ * It carries its OWN spacing, the framework's `me-1`, because the chip it sits
+ * in is no flex row to gap (see below) — without it the glyph is flush against
+ * the word. The other half of sitting right is vertical, and that one is the
+ * sheet's: `main.scss` nudges the svg the renderer fills this `<i>` with.
+ */
+const chipGlyph = (key) => (CHIP_GLYPHS[key] ? `<i class="fa-solid ${CHIP_GLYPHS[key]} me-1" aria-hidden="true"></i>` : '');
+
+/**
+ * One chip painted in a theme token, optionally wearing a glyph.
  *
  * The framework's tone chip is the mechanism — `.omega-badge-tone` paints
  * whatever `--omega-tone` holds — and the token is set inline instead of by an
@@ -232,8 +273,19 @@ export const byPriority = (a, b) => {
  * semantic slots rather than from the categorical ramp. `text-uppercase` puts
  * back the case the tone chip turns off for model ids: these labels are words,
  * and they sit in a row with plain chips that are uppercase.
+ *
+ * The chip is an inline-BLOCK, whatever `.classy-chip` says: the theme's
+ * `.omega-badge-tone` sets `display: inline-block` and comes after it at equal
+ * specificity, so the chip's flex `gap` never applies and a glyph inside one is
+ * laid out on the text's own line. That is why the glyph brings its own margin
+ * (chipGlyph) instead of leaning on a gap that is not there — and the display
+ * is the theme's to own, so nothing here tries to change it back.
+ *
+ * The glyph is the caller's, not looked up here: WHICH chips wear one is a
+ * decision, and a status chip wearing none is that decision made rather than a
+ * name that happens to be missing from the table.
  */
-const toneChip = (label, token) => `<span class="classy-chip omega-badge-tone text-uppercase" style="--omega-tone: var(${token});">${esc(label)}</span>`;
+const toneChip = (label, token, glyph = '') => `<span class="classy-chip omega-badge-tone text-uppercase" style="--omega-tone: var(${token});">${glyph}${esc(label)}</span>`;
 
 /**
  * The chip for an issue's status — the same colour the Board's column header
@@ -242,7 +294,7 @@ const toneChip = (label, token) => `<span class="classy-chip omega-badge-tone te
 export const statusChip = (status) => (status ? toneChip(status, statusToken(status)) : '');
 
 /** The chip for an issue's priority. The unlabelled middle draws nothing. */
-export const priorityChip = (priority) => (priority === 'high' || priority === 'low' ? toneChip(priority, priorityToken(priority)) : '');
+export const priorityChip = (priority) => (priority === 'high' || priority === 'low' ? toneChip(priority, priorityToken(priority), chipGlyph(priority)) : '');
 
 /**
  * The theme token a type is drawn in. A type is an identity, not a signal, so
@@ -257,11 +309,15 @@ export const typeToken = (key) => ({
   idea: '--omega-chart-5',
 }[key]);
 
-/** The chip for an issue's type. A type outside the vocabulary stays plain. */
+/**
+ * The chip for an issue's type. A type outside the vocabulary stays plain — no
+ * colour and no glyph, since both are named per type and an unknown one has
+ * neither.
+ */
 export const typeChip = (type) => {
   if (!type) return '';
   const token = typeToken(type);
-  return token ? toneChip(type, token) : `<span class="classy-chip">${esc(type)}</span>`;
+  return token ? toneChip(type, token, chipGlyph(type)) : `<span class="classy-chip">${esc(type)}</span>`;
 };
 
 //

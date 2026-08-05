@@ -3,8 +3,8 @@
 # Nudges Claude to keep the work item (a GitHub issue) true, promote durable
 # findings out of .workkit/, and check doc-parity.
 # Prompt content lives in prompt.md (same directory).
-# Reads files only — never calls gh. A network round trip on every Stop is
-# latency nobody agreed to pay.
+# Reads files and writes one state file — never calls gh. A network round trip
+# on every Stop is latency nobody agreed to pay.
 
 set -euo pipefail
 
@@ -16,7 +16,6 @@ fi
 
 stop_hook_active=$(jq -r '.stop_hook_active // false' <<<"$input" || true)
 cwd=$(jq -r '.cwd // ""' <<<"$input" || true)
-session_id=$(jq -r '.session_id // ""' <<<"$input" || true)
 
 if [ "$stop_hook_active" = "true" ]; then
   exit 0
@@ -76,19 +75,55 @@ done <<<"$status"
 
 [ "$has_code_change" -eq 1 ] || [ "$inbox_count" -gt 0 ] || [ "$scratch_count" -gt 0 ] || exit 0
 
-# Dedupe: nudge once per unique dirty state per session. If the tree hasn't
-# changed since the last nudge, stay silent — a turn that touched nothing
-# (pure Q&A over a pre-existing dirty tree) shouldn't re-block every Stop.
-if [ -n "$session_id" ]; then
-  marker_dir="${TMPDIR:-/tmp}/claude-change-tracker"
-  mkdir -p "$marker_dir" 2>/dev/null || true
-  safe_session="${session_id//[^a-zA-Z0-9]/_}"
-  marker="$marker_dir/${safe_session}.last"
-  status_hash=$(printf '%s|inbox=%s|scratch=%s' "$status" "$inbox_count" "$scratch_count" | shasum 2>/dev/null | cut -d' ' -f1 || true)
-  if [ -n "$status_hash" ] && [ -f "$marker" ] && [ "$(cat "$marker" 2>/dev/null)" = "$status_hash" ]; then
-    exit 0
+# Repeat only when something changed (issue #132). The fingerprint covers what
+# the nudge is ABOUT — the porcelain status, the diff behind it, the content of
+# the untracked files, and the inboxes' content — and the one last nudged on is
+# remembered in .workkit/, this repo's session state. Same fingerprint means the
+# obligations were already stated for this exact state, so the Stop is silent; a
+# new edit (which the diff catches even when the status line is identical), a
+# new file, or a new capture makes a new fingerprint and one more nudge. No
+# clock: two identical trees fingerprint identically.
+fingerprint() {
+  printf '%s\n' "$status"
+  git diff HEAD 2>/dev/null || git diff 2>/dev/null || true
+  # An untracked file is a NAME in the status and nothing in the diff, so a file
+  # built up across turns would go silent after the first nudge. One pipeline,
+  # each file read once, empty list = empty contribution.
+  git ls-files --others --exclude-standard -z 2>/dev/null | sort -z | xargs -0 -r cat 2>/dev/null || true
+  # The two inboxes whose entries are counted above: one is gitignored by
+  # design, the other may be ignored too, so neither is reliably in the streams
+  # above — without this, an edit to an existing entry never re-fires.
+  cat "INBOX.md" ".workkit/inbox.md" 2>/dev/null || true
+}
+
+# Whatever digest this machine has — the input is a local listing, not an
+# adversarial one, so the point is only that equal states digest equally.
+digest() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum
+  else
+    cksum
+  fi | awk '{print $1}'
+}
+
+# A repo with no .workkit/ is UNDECIDED — never written to, so it has no memory
+# and hears the nudge every Stop, exactly as before. Same for a repo whose
+# .workkit/ is not gitignored: the memory is session state, never a file the
+# repo would be asked to commit, so an unignored path keeps the old behavior.
+state_file=".workkit/.change-tracker"
+if [ -d ".workkit" ] && git check-ignore -q "$state_file" 2>/dev/null; then
+  current=$(fingerprint | digest || true)
+  if [ -n "$current" ]; then
+    if [ "$(cat "$state_file" 2>/dev/null || true)" = "$current" ]; then
+      exit 0
+    fi
+    # The block carries the redirection error too — 2>/dev/null on the printf
+    # alone is set up after the failing redirect, so an unwritable .workkit/
+    # would spill the shell's own message onto the transcript.
+    { printf '%s\n' "$current" >"$state_file"; } 2>/dev/null || true
   fi
-  [ -n "$status_hash" ] && printf '%s' "$status_hash" >"$marker" 2>/dev/null || true
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

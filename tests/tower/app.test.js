@@ -115,7 +115,7 @@ const el = (tag, className = '', data = {}) => {
  * against the real markup string, so the two cannot drift apart in silence.
  */
 const drawnIndicator = ({ phase, stamps, age, title }) => {
-  const glyph = el('i', `fa-solid fa-circle-notch${phase === 'working' ? ' fa-spin' : ''}`);
+  const glyph = el('i', `fa-solid fa-gear${phase === 'working' ? ' fa-spin' : ''}`);
   const spoken = el('span', 'visually-hidden');
   spoken.text = phase;
   const icon = el('span', `omega-tower-activity omega-tower-activity--${phase}`).append(glyph, spoken);
@@ -509,6 +509,74 @@ const run = async () => {
     assert(foreign.includes('classy-chip') && !foreign.includes('omega-badge-tone'),
       'a type outside the vocabulary stays a plain chip');
     assertEq(format.typeChip(''), '', 'no type, no chip');
+  });
+
+  await test('every type and priority has one glyph, and one table is the whole of it (#136)', () => {
+    // Hard-coded on purpose: the glyphs are what makes a column of cards
+    // readable at a glance, and a silent re-pick is a different board. The
+    // table is the ONE home — the card and the dialog both read it, so a chip
+    // cannot say different things on the two surfaces.
+    assertEq(format.CHIP_GLYPHS.bug, 'fa-bug', 'a bug is a bug');
+    assertEq(format.CHIP_GLYPHS.enhancement, 'fa-wand-magic-sparkles', 'an enhancement is the wand');
+    assertEq(format.CHIP_GLYPHS.idea, 'fa-lightbulb', 'an idea is the lamp');
+    assertEq(format.CHIP_GLYPHS.high, 'fa-angles-up', 'high points up');
+    assertEq(format.CHIP_GLYPHS.low, 'fa-angles-down', 'and low points down');
+    const glyphs = Object.values(format.CHIP_GLYPHS);
+    assertEq(new Set(glyphs).size, glyphs.length, 'no two names share a glyph');
+    assertEq(Object.keys(format.CHIP_GLYPHS).sort().join(','), 'bug,enhancement,high,idea,low',
+      'and the table names the two vocabularies and nothing else');
+    for (const status of format.STATUSES) {
+      assert(!format.statusChip(status.key).includes('<i '), `a ${status.key} chip wears none — the column header already says it`);
+    }
+    assert(!format.typeChip('question').includes('<i '), 'and a type outside the vocabulary has neither colour nor glyph');
+  });
+
+  await test('a chip draws its glyph before the word, decorative and in the chip’s own colour (#136)', () => {
+    // This row IS the Board card's chip row — the page hands it the card's
+    // spacing and nothing more (pinned in the board suite below) — so what one
+    // card renders is what this renders.
+    const chips = format.issueChips({ type: 'bug', priority: 'high' }, 'mt-auto omega-tower-issue__chips');
+    assert(chips.includes('<i class="fa-solid fa-bug me-1" aria-hidden="true"></i>bug'), 'the type chip is glyph then word');
+    assert(chips.includes('<i class="fa-solid fa-angles-up me-1" aria-hidden="true"></i>high'), 'and so is the priority chip');
+    assert(!/<i [^>]*style=/.test(chips), 'the glyph takes no colour of its own — it inherits the chip’s tone');
+    assert(!/<i [^>]*tabindex|<i [^>]*role=/.test(chips), 'and it is no new focus target');
+    assert(!chips.includes('<svg'), 'drawn by the framework’s one icon mechanism, not a hand-cut one');
+    assert(!format.issueChips({ type: '', priority: '' }).includes('<i '), 'an issue with neither draws no glyph at all');
+  });
+
+  await test('the glyph is spaced off the word and sits on its optical centre (#136)', () => {
+    // The defect this proves against: the chip is an inline-BLOCK — the theme's
+    // `.omega-badge-tone` sets it and comes after `.classy-chip`'s inline-flex
+    // at equal specificity — so the flex gap the markup was written against
+    // never applied and the glyph rendered flush against the word. Both halves
+    // of the fix are pinned by hand: neither is visible from Node, and both are
+    // exactly the kind of thing a later edit drops without noticing.
+    const fs = require('fs');
+    for (const chip of [format.typeChip('bug'), format.priorityChip('low')]) {
+      assert(/<i class="fa-solid fa-[a-z-]+ me-1"/.test(chip), 'the glyph carries the framework\'s own margin utility, since there is no gap to inherit');
+    }
+    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
+    const nudge = /\.classy-chip i\.fa-solid svg \{ vertical-align: (\S+?); \}/.exec(sheet);
+    assert(nudge, 'and the sheet nudges the svg the renderer fills that `i` with — `.fa svg`, the framework\'s own rule, never reaches an `i` written `fa-solid` alone');
+    assertEq(nudge[1], '-.125em', 'by the framework\'s own number, so a chip glyph sits where every other icon does');
+  });
+
+  await test('the Board card draws that row, and no surface names a glyph of its own (#136)', () => {
+    const fs = require('fs');
+    const js = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js');
+    const source = fs.readFileSync(path.join(js, 'pages', 'board.js'), 'utf8');
+    assert(/import \{[^}]*issueChips[^}]*\} from '\.\.\/libs\/tower\/format\.js'/.test(source), 'the chips come from format.js');
+    assert(source.includes('${issueChips(issue, \'mt-auto omega-tower-issue__chips\', open)}'),
+      'and the card hands it spacing, never a chip of its own');
+    // Every name in the table against every surface that draws chips: a
+    // hand-written `<i class="fa-solid fa-lightbulb">` beside the row is a
+    // second table, and the drift starts the day the two disagree.
+    for (const surface of ['pages/board.js', 'pages/brief.js', 'libs/tower/modal.js']) {
+      const drawn = fs.readFileSync(path.join(js, ...surface.split('/')), 'utf8');
+      for (const glyph of Object.values(format.CHIP_GLYPHS)) {
+        assert(!drawn.includes(glyph), `${surface} names no chip glyph (${glyph}) — the table owns which picture means what`);
+      }
+    }
   });
 
   await test('an issue waiting on one the board still holds wears a chip saying so', () => {
@@ -1043,11 +1111,11 @@ const run = async () => {
 
   await test('the indicator is one wordless glyph, animated only while the agent is', () => {
     const working = agent.activityIcon('working', 'running for 3m');
-    assert(working.includes('fa-circle-notch') && working.includes('fa-spin'), 'the working glyph spins');
+    assert(working.includes('fa-gear') && working.includes('fa-spin'), 'the working glyph spins');
     assert(working.includes('omega-tower-activity--working'), 'and carries the class its colour is on');
     assert(working.includes('title="running for 3m"'), 'the hover text is how long it has been up');
     const idle = agent.activityIcon('idle');
-    assert(idle.includes('fa-circle-notch') && !idle.includes('fa-spin'), 'the same glyph, still');
+    assert(idle.includes('fa-gear') && !idle.includes('fa-spin'), 'the same glyph, still');
     assert(!idle.includes('title='), 'with no hover text when none was given');
     const quiet = agent.activityIcon('quiet');
     assert(quiet.includes('omega-tower-activity--quiet') && !quiet.includes('fa-spin'), 'the muted band is the same glyph, still');
@@ -1143,7 +1211,7 @@ const run = async () => {
     const markup = agent.crewActivity({ state: 'working', lastActivity: NOW - 12000, aliveSince: NOW - 3 * 60000 }, NOW);
     assert(markup.includes('data-live-ts='), 'the wrapper the walk finds');
     assert(markup.includes('class="omega-tower-activity omega-tower-activity--working"'), 'the icon the tick re-classes');
-    assert(markup.includes('<i class="fa-solid fa-circle-notch fa-spin"'), 'the glyph it toggles the motion on');
+    assert(markup.includes('<i class="fa-solid fa-gear fa-spin"'), 'the glyph it toggles the motion on');
     assert(markup.includes('class="visually-hidden">working<'), 'the word it keeps in step with the colour');
     assert(markup.includes('data-live-age'), 'and the label it rewrites');
   });
@@ -1181,7 +1249,7 @@ const run = async () => {
     });
     secondHand.applyLive(drawn.host, NOW + 1);
     assertEq(drawn.icon.className, 'omega-tower-activity omega-tower-activity--idle', 'the colour went gray');
-    assertEq(drawn.glyph.className, 'fa-solid fa-circle-notch', 'the motion stopped');
+    assertEq(drawn.glyph.className, 'fa-solid fa-gear', 'the motion stopped');
     assertEq(drawn.spoken.textContent, 'idle', 'and what a screen reader hears went with it');
     assertEq(drawn.wrapper.wipes, 0, 'in place — the crossing replaced no node');
     assertEq(drawn.icon.querySelector('i'), drawn.glyph, 'it is the same glyph, restyled');
@@ -1265,6 +1333,63 @@ const run = async () => {
     const disable = /@media \(prefers-reduced-motion: reduce\) \{\s*\.omega-tower-activity \.fa-spin \{ animation: none; \}/.exec(sheet);
     assert(disable, 'and reduced motion turns this animation off by name');
     assert(disable.index > sheet.indexOf('.omega-tower-activity .fa-spin {'), 'after the rule it overrides, so it still wins the tie');
+  });
+
+  await test('the glyph turns about its own centre, still or spinning (#137)', () => {
+    // The defect this proves against: the animation was on an `<i>` with no box
+    // of its own, so its size was the LINE it sat on — taller than the 1em SVG
+    // the framework's renderer fills it with, since a replaced element rests on
+    // the baseline with the strut's leading under it. A rotation turns about
+    // the box's centre, which sat ~2px below the glyph's at .75rem, so the
+    // glyph orbited instead of turning. The box has to BE the glyph.
+    const fs = require('fs');
+    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
+    const box = /\.omega-tower-activity i \{([^}]*)\}/.exec(sheet);
+    assert(box, 'the indicator sizes the glyph it draws');
+    for (const declaration of ['height: 1em', 'width: 1em']) {
+      assert(box[1].includes(declaration), `one square em (${declaration}), so the box's centre is the glyph's`);
+    }
+    for (const declaration of ['display: flex', 'align-items: center', 'justify-content: center']) {
+      assert(box[1].includes(declaration), `and the glyph is centred in it (${declaration}), never laid out on a baseline`);
+    }
+    assert(/^\.omega-tower-activity i \{/m.test(sheet), 'at the top level — a box behind a media query is a box half the readers do not get');
+    // The box is NOT the spinning phase's: the still glyph wears the same one,
+    // so a card keeps its size across the second the motion starts or stops.
+    const motion = /\.omega-tower-activity \.fa-spin \{ (.*?) \}/.exec(sheet);
+    assertEq(motion[1], 'animation: spin 1s linear infinite;', 'the phase rule says the motion and nothing about the box');
+    // And what the sheet is scoped to is what the markup actually draws — the
+    // rule missing its element is the whole of #65 and half of this one.
+    const working = agent.activityIcon('working', 'running for 3m');
+    assert(/class="omega-tower-activity[^"]*"/.test(working), 'the wrapper the box and the motion are both scoped under');
+    assert(/<i class="fa-solid fa-gear fa-spin"/.test(working), 'the `i` the box sizes, wearing the class the motion is on');
+  });
+
+  await test('the indicator is a gear, so a still one does not read as a broken spinner (#137)', () => {
+    // The defect this proves against: the notched ring — the universal loading
+    // spinner — drawn STILL on every claimed Board card, which is what a board
+    // whose spinners "do not work" looks like. The Board's glyph is still on
+    // purpose (a claim carries no timestamps to spin on), so the fix is a shape
+    // that reads at rest.
+    const held = agent.claimGlyph({ status: 'building', assignees: ['ian'] });
+    assert(held.includes('fa-gear'), 'the Board says a claim with a gear at rest');
+    assert(!held.includes('fa-spin'), 'still, as it always was — nothing here knows whether that agent is moving');
+    assert(agent.activityIcon('working').includes('fa-gear'), 'and the Crew turns the same one');
+    for (const markup of [held, agent.activityIcon('working'), agent.activityIcon('quiet')]) {
+      assert(!markup.includes('circle-notch'), 'the loader\'s ring is gone from every phase — one glyph, one story');
+    }
+  });
+
+  await test('the Board\'s loading spinner is the framework\'s, unshadowed (#137)', () => {
+    // Where the OTHER spinner on the page comes from: the framework's
+    // `loading()`, which draws Bootstrap's `.spinner-border` — animated by the
+    // bundle's own `@keyframes spinner-border`, nothing this app defines. It
+    // stays that way only while this sheet writes no rule of that name; a local
+    // override is exactly how a working spinner stops.
+    const fs = require('fs');
+    const page = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    assert(/import \{[^}]*loading[^}]*\} from '@omega\.js\/client\/modules\/live-page'/.test(page), 'the Board waits with the framework\'s spinner, not one of its own');
+    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
+    assert(!sheet.includes('.spinner-border'), 'and this sheet leaves it alone');
   });
 
   await test('the muted band borrows the gray the still glyph already wears', () => {
@@ -1391,6 +1516,16 @@ const run = async () => {
       'so the dialog and the Board column header say specced in one colour');
     const bare = modal.issueDialog({ ...ISSUE, status: '', priority: '', type: '' }, render);
     assert(!bare.body.includes('omega-badge-tone'), 'and an issue with no status carries no status chip');
+  });
+
+  await test('the dialog’s type and priority chips wear the card’s glyphs (#136)', () => {
+    const parts = modal.issueDialog({ ...ISSUE, type: 'idea', priority: 'low' }, render);
+    assert(parts.body.includes('<i class="fa-solid fa-lightbulb me-1" aria-hidden="true"></i>idea'), 'the type, glyph then word');
+    assert(parts.body.includes('<i class="fa-solid fa-angles-down me-1" aria-hidden="true"></i>low'), 'and the priority the same way');
+    assert(parts.body.includes(format.typeChip('idea')) && parts.body.includes(format.priorityChip('low')),
+      'both are format.js’s own chips, so the dialog and the card cannot draw one thing two ways');
+    const glyphs = Object.values(format.CHIP_GLYPHS).filter((glyph) => parts.body.includes(glyph));
+    assertEq(glyphs.length, 2, 'and exactly those two — the status chip sitting with them wears no glyph');
   });
 
   await test('an issue with nothing on it still opens', () => {

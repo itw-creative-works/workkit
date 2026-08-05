@@ -184,6 +184,13 @@ export const activityClass = (phase) => `omega-tower-activity omega-tower-activi
  * jumping. The word is kept for a screen reader, which has no colour or motion
  * to read.
  *
+ * A GEAR, not the loader's notched ring (#137). Half the places this glyph is
+ * drawn are STILL on purpose — the Board's claim carries no timestamps to spin
+ * on — and a motionless loading spinner reads as a broken one wherever it is
+ * seen. A gear says machinery either way: at rest, someone holds this; turning,
+ * that agent is moving. It is also the honest shape to rotate, eight-fold
+ * symmetric where the ring's gap advertises every pixel of a bad centre.
+ *
  * @param {'working'|'idle'|'quiet'|'none'} phase
  * @param {string} [title] the hover text — how long it has been running
  * @param {string} [label] what a screen reader hears, when the phase is not
@@ -193,7 +200,7 @@ export const activityClass = (phase) => `omega-tower-activity omega-tower-activi
 export const activityIcon = (phase, title = '', label = '') => {
   if (phase !== 'working' && phase !== 'idle' && phase !== 'quiet') return '';
   return `<span class="${esc(activityClass(phase))}"${title ? ` title="${esc(title)}"` : ''}>
-    <i class="fa-solid fa-circle-notch${phase === 'working' ? ' fa-spin' : ''}" aria-hidden="true"></i>
+    <i class="fa-solid fa-gear${phase === 'working' ? ' fa-spin' : ''}" aria-hidden="true"></i>
     <span class="visually-hidden">${esc(label || phase)}</span>
   </span>`;
 };

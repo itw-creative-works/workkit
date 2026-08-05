@@ -80,7 +80,7 @@ const run = async () => {
     assert(!ctx.includes('Consult the workkit:advisor'), 'frontier session must not be told to consult');
     assert(ctx.includes('workkit:scout') && ctx.includes('workkit:worker') && ctx.includes('workkit:verifier'), 'crew names must be plugin-namespaced');
     assert(!ctx.includes('agents/README.md'), 'no personal-tree citation');
-    assert(ctx.includes('brief file') || ctx.includes('write the brief to a file'), 'handoff convention inlined');
+    assert(ctx.includes('write the brief to a file'), 'handoff convention inlined');
   });
   await test('workhorse session injects with the consult clause', () => {
     freshTmp();
@@ -120,8 +120,9 @@ const run = async () => {
     const ctx = contextOf(runHook(payload()));
     assert(/recon/i.test(ctx) && /implementation/i.test(ctx) && /blind review/i.test(ctx), 'the delegation split is not stated');
     assert(ctx.includes('never pass a model param'), 'the resolver rule is missing');
-    assert(ctx.includes('return status only'), 'the file-handoff rule is missing');
+    assert(ctx.includes("the agent's reply IS the report"), 'the file-handoff rule is missing');
     assert(/[Jj]udgment stays/.test(ctx), 'the judgment boundary is missing');
+    assert(ctx.includes('self-contained'), 'the owner-question rule is missing');
   });
   await test('the content that moved to docs/agents.md is gone', () => {
     freshTmp();
