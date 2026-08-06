@@ -128,7 +128,7 @@ const run = async () => {
     freshTmp();
     cacheSession('sess1', id('fable'));
     const ctx = contextOf(runHook(payload()));
-    for (const moved of ['Size the crew', 'worktree isolation', 'review panel', '.workkit/session.md', 'Subagents never spawn']) {
+    for (const moved of ['Size the crew', 'worktree isolation', 'review panel', '.workkit/agents/session.md', 'Subagents never spawn']) {
       assert(!ctx.includes(moved), `"${moved}" belongs in docs/agents.md, not the injection`);
     }
   });

@@ -39,8 +39,8 @@ fi
 # This hook sources nothing, so the directory name is spelled out; its SSOT is
 # WORKKIT_DIR in hooks/_lib.sh — change both together.
 scratch_count=0
-if [ -f ".workkit/inbox.md" ]; then
-  scratch_count=$(grep -cv -e '^#' -e '^>' -e '^[[:space:]]*$' .workkit/inbox.md 2>/dev/null || true)
+if [ -f ".workkit/capture.md" ]; then
+  scratch_count=$(grep -cv -e '^#' -e '^>' -e '^[[:space:]]*$' .workkit/capture.md 2>/dev/null || true)
   case "$scratch_count" in ''|*[!0-9]*) scratch_count=0 ;; esac
 fi
 
@@ -77,8 +77,8 @@ done <<<"$status"
 
 # Repeat only when something changed (issue #132). The fingerprint covers what
 # the nudge is ABOUT — the porcelain status, the diff behind it, the content of
-# the untracked files, and the inboxes' content — and the one last nudged on is
-# remembered in .workkit/, this repo's session state. Same fingerprint means the
+# the untracked files, and the capture surfaces' content — and the one last
+# nudged on is remembered in .workkit/agents/, the agents' own state. Same fingerprint means the
 # obligations were already stated for this exact state, so the Stop is silent; a
 # new edit (which the diff catches even when the status line is identical), a
 # new file, or a new capture makes a new fingerprint and one more nudge. No
@@ -90,10 +90,10 @@ fingerprint() {
   # built up across turns would go silent after the first nudge. One pipeline,
   # each file read once, empty list = empty contribution.
   git ls-files --others --exclude-standard -z 2>/dev/null | sort -z | xargs -0 -r cat 2>/dev/null || true
-  # The two inboxes whose entries are counted above: one is gitignored by
-  # design, the other may be ignored too, so neither is reliably in the streams
-  # above — without this, an edit to an existing entry never re-fires.
-  cat "INBOX.md" ".workkit/inbox.md" 2>/dev/null || true
+  # The two capture surfaces whose entries are counted above: one is gitignored
+  # by design, the other may be ignored too, so neither is reliably in the
+  # streams above — without this, an edit to an existing entry never re-fires.
+  cat "INBOX.md" ".workkit/capture.md" 2>/dev/null || true
 }
 
 # Whatever digest this machine has — the input is a local listing, not an
@@ -112,7 +112,7 @@ digest() {
 # and hears the nudge every Stop, exactly as before. Same for a repo whose
 # .workkit/ is not gitignored: the memory is session state, never a file the
 # repo would be asked to commit, so an unignored path keeps the old behavior.
-state_file=".workkit/.change-tracker"
+state_file=".workkit/agents/.change-tracker"
 if [ -d ".workkit" ] && git check-ignore -q "$state_file" 2>/dev/null; then
   current=$(fingerprint | digest || true)
   if [ -n "$current" ]; then
@@ -122,7 +122,7 @@ if [ -d ".workkit" ] && git check-ignore -q "$state_file" 2>/dev/null; then
     # The block carries the redirection error too — 2>/dev/null on the printf
     # alone is set up after the failing redirect, so an unwritable .workkit/
     # would spill the shell's own message onto the transcript.
-    { printf '%s\n' "$current" >"$state_file"; } 2>/dev/null || true
+    { mkdir -p ".workkit/agents" && printf '%s\n' "$current" >"$state_file"; } 2>/dev/null || true
   fi
 fi
 
@@ -152,14 +152,14 @@ fi
 if [ "$scratch_count" -gt 0 ]; then
   CONTEXT="$CONTEXT
 
-SCRATCH: $scratch_count unfiled entries in $cwd/.workkit/inbox.md — surface the count and offer the workkit:triage skill. Filing stays deliberate: never drain the local inbox as a side effect."
+SCRATCH: $scratch_count unfiled entries in $cwd/.workkit/capture.md — surface the count and offer the workkit:triage skill. Filing stays deliberate: never drain the local capture file as a side effect."
 fi
 
 reason="Change tracker: uncommitted code changes detected."
 if [ "$has_code_change" -eq 0 ]; then
-  reason="Change tracker: unfiled inbox entries detected."
+  reason="Change tracker: unfiled entries detected."
 elif [ "$inbox_count" -gt 0 ] || [ "$scratch_count" -gt 0 ]; then
-  reason="Change tracker: uncommitted code changes + unfiled inbox entries detected."
+  reason="Change tracker: uncommitted code changes + unfiled entries detected."
 fi
 
 jq -n --arg ctx "$CONTEXT" --arg reason "$reason" '{

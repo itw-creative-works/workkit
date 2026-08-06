@@ -1,7 +1,7 @@
 //
 // Tests for workflow/wk.sh — the capture CLI.
 //
-// Every case runs the real script against a real temp tree: which inbox a note
+// Every case runs the real script against a real temp tree: which capture file a note
 // lands in is a question about directories and a settings file, so there is
 // nothing here worth stubbing. HOME points at a temp directory throughout, so
 // nothing can reach the developer's own repos.
@@ -20,7 +20,7 @@ const { group, test, assert, assertEq, summary, WORKKIT_DIR: W } = require('../l
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 const SCRIPT = path.join(WORKFLOW_DIR, 'wk.sh');
-const TEMPLATE = fs.readFileSync(path.join(WORKFLOW_DIR, 'templates', 'inbox.md'), 'utf8');
+const TEMPLATE = fs.readFileSync(path.join(WORKFLOW_DIR, 'templates', 'capture.md'), 'utf8');
 
 const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 
@@ -115,7 +115,7 @@ const makeTree = ({ settings = '{ "version": 1, "enabled": true }\n', tower = tr
     home: path.join(dir, 'home'),
     tower: towerDir,
     bin,
-    repoInbox: path.join(repo, W, 'inbox.md'),
+    repoCapture: path.join(repo, W, 'capture.md'),
     ghCalls: () => (fs.existsSync(ghLog)
       ? fs.readFileSync(ghLog, 'utf8').split('<<<CALL\n').slice(1).map((c) => c.split('\nCALL>>>\n')[0])
       : []),
@@ -140,14 +140,14 @@ const runScript = (cwd, args, { home, bin }, extraEnv = {}) => {
 const read = (file) => fs.readFileSync(file, 'utf8');
 
 const run = async () => {
-  group('wk.sh: which inbox a note lands in');
+  group('wk.sh: which capture file a note lands in');
 
-  await test('a note from inside a participating repo lands in the repo inbox', async () => {
+  await test('a note from inside a participating repo lands in the repo capture file', async () => {
     const t = makeTree();
     const { code, out } = runScript(t.repo, ['note', 'a repo thought'], t);
     assertEq(code, 0, 'exit 0');
-    assert(out.includes(t.repoInbox), `names where it filed, got: ${out}`);
-    assert(read(t.repoInbox).endsWith('- a repo thought\n'), 'the bullet is there');
+    assert(out.includes(t.repoCapture), `names where it filed, got: ${out}`);
+    assert(read(t.repoCapture).endsWith('- a repo thought\n'), 'the bullet is there');
     assertEq(t.ghCalls().length, 0, 'and nothing was filed on the home repo');
     cleanup(t.dir);
   });
@@ -155,13 +155,13 @@ const run = async () => {
   await test('the walk up from a subdirectory finds the repo root', async () => {
     const t = makeTree();
     assertEq(runScript(t.deep, ['note', 'from the depths'], t).code, 0, 'exit 0');
-    assert(read(t.repoInbox).includes('- from the depths\n'), 'filed at the root, not beside the cwd');
+    assert(read(t.repoCapture).includes('- from the depths\n'), 'filed at the root, not beside the cwd');
     assert(!fs.existsSync(path.join(t.deep, W)), 'nothing created in the subdirectory');
     cleanup(t.dir);
   });
 
   await test('a non-participating cwd files the note as an issue on the home repo', async () => {
-    // There is no inbox file outside a project any more (issue #79): a capture
+    // There is no capture file outside a project any more (issue #79): a capture
     // that belongs to no project goes straight to the queue triage would have
     // put it in.
     const t = makeTree();
@@ -181,7 +181,7 @@ const run = async () => {
       `the body is the spec's issue anatomy, got: ${body}`);
 
     assert(!fs.existsSync(path.join(t.tower, W)), 'and nothing at all is written into the clone');
-    assert(!fs.existsSync(t.repoInbox), 'the repo inbox stayed out of it');
+    assert(!fs.existsSync(t.repoCapture), 'the repo capture file stayed out of it');
     cleanup(t.dir);
   });
 
@@ -189,7 +189,7 @@ const run = async () => {
     // The walk up passes through $HOME, where `.workkit/settings.json` is the
     // MACHINE settings file (roster, site options, home slug). With no
     // `enabled` key it read as a legacy yes, and the note buffered into
-    // ~/.workkit/inbox.md — a file the spec says must not exist (issue #79).
+    // ~/.workkit/capture.md — a file the spec says must not exist (issue #79).
     const t = makeTree();
     const scratch = path.join(t.home, 'Documents', 'scratch');
     fs.mkdirSync(scratch, { recursive: true });
@@ -197,7 +197,7 @@ const run = async () => {
     assertEq(code, 0, `exit 0 — ${out}`);
     assert(out.includes('noted → https://github.com/owner/workkit/issues/7'), `filed as an issue, got: ${out}`);
     assertEq(t.ghCalls().length, 1, 'one gh call');
-    assert(!fs.existsSync(path.join(t.home, W, 'inbox.md')), 'and no user-level inbox file appeared');
+    assert(!fs.existsSync(path.join(t.home, W, 'capture.md')), 'and no user-level capture file appeared');
     cleanup(t.dir);
   });
 
@@ -274,7 +274,7 @@ const run = async () => {
     const t = makeTree({ settings: '{ "version": 1, "enabled": false }\n' });
     assertEq(runScript(t.deep, ['note', 'declined repo'], t).code, 0, 'exit 0');
     assert(t.ghCalls()[0].includes('declined repo'), 'filed on the home repo');
-    assert(!fs.existsSync(t.repoInbox), 'and never into the repo that said no');
+    assert(!fs.existsSync(t.repoCapture), 'and never into the repo that said no');
     cleanup(t.dir);
   });
 
@@ -283,7 +283,7 @@ const run = async () => {
     const { code, err } = runScript(t.outside, ['note', 'nowhere to go'], t);
     assertEq(code, 1, 'the caller learns the thought was not filed');
     assert(/workkit setup/.test(err), `and which command makes a home, got: ${err}`);
-    assert(!fs.existsSync(path.join(t.home, W, 'inbox.md')), 'nothing is created at the user level');
+    assert(!fs.existsSync(path.join(t.home, W, 'capture.md')), 'nothing is created at the user level');
     cleanup(t.dir);
   });
 
@@ -303,16 +303,16 @@ const run = async () => {
     // all is the repo's yes.
     const t = makeTree({ settings: '{ "version": 1 }\n' });
     assertEq(runScript(t.repo, ['note', 'legacy yes'], t).code, 0, 'exit 0');
-    assert(read(t.repoInbox).includes('- legacy yes\n'), 'filed in the repo');
+    assert(read(t.repoCapture).includes('- legacy yes\n'), 'filed in the repo');
     cleanup(t.dir);
   });
 
   group('wk.sh: what it writes');
 
-  await test('a missing inbox is created from the engine template', async () => {
+  await test('a missing capture file is created from the engine template', async () => {
     const t = makeTree();
     runScript(t.repo, ['note', 'first ever'], t);
-    const body = read(t.repoInbox);
+    const body = read(t.repoCapture);
     assert(body.startsWith(TEMPLATE), 'the header is the template, byte for byte');
     assert(body.endsWith('- first ever\n'), 'with the bullet appended after it');
     cleanup(t.dir);
@@ -321,18 +321,18 @@ const run = async () => {
   await test('existing content is preserved and the note appends', async () => {
     const t = makeTree();
     fs.mkdirSync(path.join(t.repo, W), { recursive: true });
-    fs.writeFileSync(t.repoInbox, '# inbox\n\n- an older note\n');
+    fs.writeFileSync(t.repoCapture, '# capture\n\n- an older note\n');
     runScript(t.repo, ['note', 'a newer note'], t);
-    assertEq(read(t.repoInbox), '# inbox\n\n- an older note\n- a newer note\n', 'appended, nothing lost');
+    assertEq(read(t.repoCapture), '# capture\n\n- an older note\n- a newer note\n', 'appended, nothing lost');
     cleanup(t.dir);
   });
 
   await test('a file with no trailing newline gets one before the bullet', async () => {
     const t = makeTree();
     fs.mkdirSync(path.join(t.repo, W), { recursive: true });
-    fs.writeFileSync(t.repoInbox, '- an unterminated note');
+    fs.writeFileSync(t.repoCapture, '- an unterminated note');
     runScript(t.repo, ['note', 'the next one'], t);
-    assertEq(read(t.repoInbox), '- an unterminated note\n- the next one\n', 'the entries stay separate lines');
+    assertEq(read(t.repoCapture), '- an unterminated note\n- the next one\n', 'the entries stay separate lines');
     cleanup(t.dir);
   });
 
@@ -340,7 +340,7 @@ const run = async () => {
     const t = makeTree();
     runScript(t.repo, ['note', 'one'], t);
     runScript(t.repo, ['note', 'two'], t);
-    assert(read(t.repoInbox).endsWith('- one\n- two\n'), 'in order, one per line');
+    assert(read(t.repoCapture).endsWith('- one\n- two\n'), 'in order, one per line');
     cleanup(t.dir);
   });
 
@@ -348,7 +348,7 @@ const run = async () => {
     // The unquoted call — the shell split it, and the script reassembles it.
     const t = makeTree();
     runScript(t.repo, ['note', 'fix', 'the', 'tower', 'poller'], t);
-    assert(read(t.repoInbox).endsWith('- fix the tower poller\n'), 'one bullet, one sentence');
+    assert(read(t.repoCapture).endsWith('- fix the tower poller\n'), 'one bullet, one sentence');
     cleanup(t.dir);
   });
 
@@ -359,7 +359,7 @@ const run = async () => {
     const { code, err } = runScript(t.repo, ['note'], t);
     assertEq(code, 1, 'exit 1');
     assert(err.includes('usage: wk.sh note'), `usage on stderr, got: ${err}`);
-    assert(!fs.existsSync(t.repoInbox), 'no inbox created');
+    assert(!fs.existsSync(t.repoCapture), 'no capture file created');
     cleanup(t.dir);
   });
 
@@ -367,7 +367,7 @@ const run = async () => {
     const t = makeTree();
     const { code } = runScript(t.repo, ['note', '   '], t);
     assertEq(code, 1, 'exit 1');
-    assert(!fs.existsSync(t.repoInbox), 'no inbox created');
+    assert(!fs.existsSync(t.repoCapture), 'no capture file created');
     cleanup(t.dir);
   });
 

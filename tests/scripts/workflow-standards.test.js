@@ -366,10 +366,10 @@ const run = async () => {
     runScript(repo, { pathPrefix: stub.binDir });
     fs.mkdirSync(path.join(repo, W), { recursive: true });
     fs.writeFileSync(path.join(repo, W, 'settings.json'), '{ "version": 1 }\n');
-    fs.writeFileSync(path.join(repo, W, 'inbox.md'), '- a note\n');
+    fs.writeFileSync(path.join(repo, W, 'capture.md'), '- a note\n');
     const ignored = (rel) => spawnSync('git', ['check-ignore', '-q', '--', rel], { cwd: repo }).status === 0;
     assert(!ignored(`${W}/settings.json`), 'settings.json is committable');
-    assert(ignored(`${W}/inbox.md`), 'the local inbox stays untracked');
+    assert(ignored(`${W}/capture.md`), 'the local capture file stays untracked');
     cleanup(repo); cleanup(stub.dir);
   });
 
@@ -419,7 +419,7 @@ const run = async () => {
     assertEq((ignore.match(IGNORE_GLOB_ALL) || []).length, 1, `no duplicate ${W}/* line`);
     const ignored = (rel) => spawnSync('git', ['check-ignore', '-q', '--', rel], { cwd: repo }).status === 0;
     assert(!ignored(`${W}/settings.json`), 'the opt-in file is committable');
-    assert(ignored(`${W}/inbox.md`), 'session state still ignored');
+    assert(ignored(`${W}/capture.md`), 'session state still ignored');
     assert(!stdout.includes('already ignored'), `the broken state is not reported as correct, got: ${stdout}`);
     cleanup(repo); cleanup(stub.dir);
   });
@@ -1317,29 +1317,29 @@ const run = async () => {
 
   group('standards.sh: local working files');
 
-  await test('creates .workkit/inbox.md with the capture header', () => {
+  await test('creates .workkit/capture.md with the capture header', () => {
     const repo = makeRepo();
     runScript(repo);
-    const inbox = path.join(repo, W, 'inbox.md');
-    assert(fs.existsSync(inbox), 'inbox created');
-    const text = fs.readFileSync(inbox, 'utf8');
+    const capture = path.join(repo, W, 'capture.md');
+    assert(fs.existsSync(capture), 'the capture file is created');
+    const text = fs.readFileSync(capture, 'utf8');
     assert(text.includes('Triage drains every entry'), 'header explains the drain');
     cleanup(repo);
   });
 
-  await test('never overwrites an inbox that has entries', () => {
+  await test('never overwrites a capture file that has entries', () => {
     const repo = makeRepo();
-    fs.writeFileSync(path.join(repo, W, 'inbox.md'), 'my precious note\n');
+    fs.writeFileSync(path.join(repo, W, 'capture.md'), 'my precious note\n');
     const { output: stdout } = runScript(repo);
-    assertEq(fs.readFileSync(path.join(repo, W, 'inbox.md'), 'utf8'), 'my precious note\n', 'existing content untouched');
+    assertEq(fs.readFileSync(path.join(repo, W, 'capture.md'), 'utf8'), 'my precious note\n', 'existing content untouched');
     assert(stdout.includes('already exists'), 'reported as a skip');
     cleanup(repo);
   });
 
-  await test('creates .workkit/session.md with its three fixed sections', () => {
+  await test('creates .workkit/agents/session.md with its three fixed sections', () => {
     const repo = makeRepo();
     runScript(repo);
-    const text = readFile(path.join(repo, W, 'session.md'));
+    const text = readFile(path.join(repo, W, 'agents', 'session.md'));
     assert(text.startsWith('# Session'), `titled Session, got: ${text.slice(0, 20)}`);
     for (const section of ['## Active', '## Queue', '## Notes']) {
       assert(text.includes(section), `${section} present`);
@@ -1356,7 +1356,7 @@ const run = async () => {
     // header is what tells the agent it is a queue and not a journal.
     const repo = makeRepo();
     runScript(repo);
-    const text = readFile(path.join(repo, W, 'session.md'));
+    const text = readFile(path.join(repo, W, 'agents', 'session.md'));
     assert(/compaction/i.test(text), 'names the job it does — surviving a compaction');
     assert(/40/.test(text), 'states the light bar');
     cleanup(repo);
@@ -1364,13 +1364,14 @@ const run = async () => {
 
   await test('never overwrites a session file that has content', () => {
     const repo = makeRepo();
-    fs.writeFileSync(path.join(repo, W, 'session.md'), '# Session\n\n## Active\n#42 — mid-flight\n');
+    fs.mkdirSync(path.join(repo, W, 'agents'), { recursive: true });
+    fs.writeFileSync(path.join(repo, W, 'agents', 'session.md'), '# Session\n\n## Active\n#42 — mid-flight\n');
     const { output: stdout } = runScript(repo);
     assert(
-      readFile(path.join(repo, W, 'session.md')).includes('#42 — mid-flight'),
+      readFile(path.join(repo, W, 'agents', 'session.md')).includes('#42 — mid-flight'),
       'the session in progress is never clobbered',
     );
-    assert(stdout.includes(`session: ${W}/session.md already exists`), `reported as a skip, got: ${stdout}`);
+    assert(stdout.includes(`session: ${W}/agents/session.md already exists`), `reported as a skip, got: ${stdout}`);
     cleanup(repo);
   });
 
@@ -2260,7 +2261,7 @@ const run = async () => {
     assertEq(res.status, 0, 'exit 0');
     assert(stdout.includes('jq not installed'), `says why the label step was skipped, got: ${stdout}`);
     assert(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'templates still installed');
-    assert(fs.existsSync(path.join(repo, W, 'inbox.md')), 'inbox still created');
+    assert(fs.existsSync(path.join(repo, W, 'capture.md')), 'the capture file is still created');
     assert(IGNORE_GLOB.test(readFile(path.join(repo, '.gitignore'))), 'gitignore still healed');
     cleanup(repo); cleanup(binDir);
   });

@@ -11,9 +11,9 @@ Work items live as **GitHub issues**. Triage is the ACTION that drains `status:i
 Label vocabulary (SSOT: `~/.claude/workkit/labels.json`, and every repo's own `gh label list`):
 `status:inbox|specced|building|blocked|parked` (exactly ONE per open issue — the PIPELINE, mapped in the workkit plugin's README) · `type:bug|enhancement|idea` · `priority:high|low` (absence = normal) · `agent:ok` (an agent may work it autonomously at every stage — spec, accept, build, ship).
 
-## Marker (opens the inbox)
+## Marker (opens the capture file)
 
-Before reading anything, record that triage is running — the `safety/inbox-guard` hook checks this marker before allowing a read of `.workkit/inbox.md` OR the rewrite that clears the drained entries, which is the only write this file ever takes from an agent (adding to it is the owner's alone). It is the owner's capture surface at every other moment. The marker is keyed to the repo root the inbox belongs to:
+Before reading anything, record that triage is running — the `safety/capture-guard` hook checks this marker before allowing a read of `.workkit/capture.md` OR the rewrite that clears the drained entries, which is the only write this file ever takes from an agent (adding to it is the owner's alone). It is the owner's capture surface at every other moment. The marker is keyed to the repo root the capture file belongs to:
 
 ```sh
 mkdir -p "${TMPDIR:-/tmp}/claude-triage-marker" && touch "${TMPDIR:-/tmp}/claude-triage-marker/$({ git rev-parse --show-toplevel 2>/dev/null || echo "$HOME"; } | tr -d '\n' | shasum | cut -d' ' -f1)"
@@ -22,7 +22,7 @@ mkdir -p "${TMPDIR:-/tmp}/claude-triage-marker" && touch "${TMPDIR:-/tmp}/claude
 ## Sources to drain
 
 1. **Open `status:inbox` issues** on the cwd repo — `gh issue list --state open --label status:inbox --json number,title,body,labels`.
-2. **`.workkit/inbox.md`** — the local, gitignored capture file (offline moments, free-form dumps).
+2. **`.workkit/capture.md`** — the local, gitignored capture file (offline moments, free-form dumps).
 3. **Mid-chat note dumps** — same routing, no file needed first.
 4. **The HQ pass** (#100) — the home repo's own open `status:inbox` issues (`gh issue list --repo <site.repo> --state open --label status:inbox ...`, the `site.repo` in `~/.workkit/settings.json`), routed with the same table below, from any repo. This is how the nursery drains, since no session ever opens in the clone. When captures cluster around one project, propose graduation (§ Graduation). No `site.repo`, or HQ unreachable: name the skip in the Filed trail — never silent.
 
@@ -46,7 +46,7 @@ Then, before creating anything, apply the **filing litmus test**: *would closing
 | A polish nit, docs nit, or cosmetic finding | A checklist line in the `## Spec` of the surface's open `polish: <surface>` issue — open one (`status:inbox` + `type:enhancement`) when none is open. Mechanics, including the freeze rule and "bugs never batch": spec § How big is one issue |
 | Waiting on the owner's decision | `status:blocked` + a comment naming the question |
 | Worth keeping, deliberately not now | `status:parked` |
-| Cross-project / business / no single repo | An issue on the **home repo** — the `site.repo` named in `~/.workkit/settings.json` (`docs/project-state.md` § The global layer). No `site.repo` set: leave the entry in the inbox and say so |
+| Cross-project / business / no single repo | An issue on the **home repo** — the `site.repo` named in `~/.workkit/settings.json` (`docs/project-state.md` § The global layer). No `site.repo` set: leave the entry in the capture file and say so |
 | Belongs to a DIFFERENT project | An issue on that repo (`gh issue create --repo <owner/name>`) |
 | An idea for a project that has no repo yet | A `type:idea` issue on the **home repo**, later notes as comments on it. Never create a repo or a folder here — graduation is the owner's word, proposed and executed per § Graduation |
 | A durable fact about how things work | The right `docs/*.md` (or AGENTS.md if doctrinal) — then close the issue pointing at it |
@@ -59,9 +59,9 @@ Relabel with one command so the status stays single:
 
 **Every issue body you create or route follows the anatomy** (spec § Issue anatomy): `## Description` then `## Spec`, both always present; a small item's Spec is the literal `None needed — small item.` The same section carries the introduction rule — the first mention of an outside project or repo, in a body or a comment, gets a link and a one-line description of what it is.
 
-**The home repo is optional.** With no `site.repo` key, or when a `gh` call against it fails: an entry being routed TO the home repo stays in `.workkit/inbox.md` with the skip named in the Filed trail — never dropped, never given an invented destination — and the HQ pass itself names its skip the same way (its entries already live on HQ; there is nowhere to hold them locally).
+**The home repo is optional.** With no `site.repo` key, or when a `gh` call against it fails: an entry being routed TO the home repo stays in `.workkit/capture.md` with the skip named in the Filed trail — never dropped, never given an invented destination — and the HQ pass itself names its skip the same way (its entries already live on HQ; there is nowhere to hold them locally).
 
-## Draining `.workkit/inbox.md`
+## Draining `.workkit/capture.md`
 
 Each entry becomes an issue (`gh issue create --label status:inbox,type:<kind>` then route it, or file it routed directly). Delete only the entries that actually landed somewhere; keep the file header. Offline: leave the file untouched and say the queue could not be reached.
 

@@ -1,6 +1,6 @@
 //
 // Tests for hooks/docs:state-check — the SessionStart hook that announces
-// open status:inbox issues, a non-empty .workkit/inbox.md, a content-bearing
+// open status:inbox issues, a non-empty .workkit/capture.md, a content-bearing
 // CLAUDE.md, and an oversized AGENTS.md. Silent when everything is current.
 //
 // The issue count is the hook's only network call; every test here runs with a
@@ -155,34 +155,34 @@ const run = async () => {
     cleanup(dir); cleanup(stub.dir);
   });
 
-  group('state-check: local .workkit/inbox.md');
+  group('state-check: local .workkit/capture.md');
 
-  await test('non-empty scratch inbox — announces it', () => {
+  await test('a non-empty capture file — announces it', () => {
     const dir = mkTmp();
     fs.mkdirSync(path.join(dir, W));
-    fs.writeFileSync(path.join(dir, W, 'inbox.md'), '# inbox\n> dump anything\n\nan idea\nanother\n');
+    fs.writeFileSync(path.join(dir, W, 'capture.md'), '# capture\n> dump anything\n\nan idea\nanother\n');
     const { stdout } = runHook(dir);
-    assert(stdout.includes('local inbox has entries'), `announces it, got: ${stdout}`);
+    assert(stdout.includes('the local capture file has entries'), `announces it, got: ${stdout}`);
     assert(stdout.includes('triage drains it'), 'names the drain');
     cleanup(dir);
   });
 
-  await test('header-only scratch inbox — silent', () => {
+  await test('a header-only capture file — silent', () => {
     const dir = mkTmp();
     fs.mkdirSync(path.join(dir, W));
-    fs.writeFileSync(path.join(dir, W, 'inbox.md'), '# inbox\n> dump anything here\n\n');
+    fs.writeFileSync(path.join(dir, W, 'capture.md'), '# capture\n> dump anything here\n\n');
     const { stdout } = runHook(dir);
     assertEq(stdout, '', 'headings/blockquotes/blanks are not entries');
     cleanup(dir);
   });
 
-  await test('inbox issues + scratch entries — both in one context', () => {
+  await test('inbox issues + captures — both in one context', () => {
     const repo = mkRepo();
     fs.mkdirSync(path.join(repo, W));
-    fs.writeFileSync(path.join(repo, W, 'inbox.md'), 'note\n');
+    fs.writeFileSync(path.join(repo, W, 'capture.md'), 'note\n');
     const stub = makeGhStub({ issues: [{ number: 4 }, { number: 5 }] });
     const { stdout } = runHook(repo, { pathPrefix: stub.binDir });
-    assert(stdout.includes('2 open status:inbox') && stdout.includes('local inbox has entries'), `both signals, got: ${stdout}`);
+    assert(stdout.includes('2 open status:inbox') && stdout.includes('the local capture file has entries'), `both signals, got: ${stdout}`);
     cleanup(repo); cleanup(stub.dir);
   });
 

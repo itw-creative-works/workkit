@@ -2,20 +2,20 @@
 # wk — the capture CLI (issue #13).
 #
 # One job: get a thought out of a human's head and into the right place with no
-# session and no agent. `wk.sh note "the thought"` appends a bullet to the inbox
-# of the repo the shell is standing in; standing outside every participating
-# repo it files the thought as an issue on the home repo instead. Triage drains
-# the inboxes into issues, and those issues are already there.
+# session and no agent. `wk.sh note "the thought"` appends a bullet to the
+# capture file of the repo the shell is standing in; standing outside every
+# participating repo it files the thought as an issue on the home repo instead.
+# Triage drains the capture files into issues, and those issues are already there.
 #
 # Usage: wk.sh note <text...>
 #
-# Which inbox is decided by a WALK UP from the current directory: the first
+# Which capture file is decided by a WALK UP from the current directory: the first
 # ancestor holding a participating `.workkit/settings.json` wins. That is a
 # directory walk rather than `git rev-parse` on purpose — the answer this needs
 # is "which participating repo am I in", and a nested checkout or a worktree
 # would make git's answer and the settings file's answer differ.
 #
-# There is no inbox file outside a project (issues #77, #79): the tower clone at
+# There is no capture file outside a project (issues #77, #79): the tower clone at
 # `~/.workkit/tower` is engine territory and carries no `.workkit/` at all, so a
 # capture that belongs to no project goes straight to the home repo's issues,
 # where triage would have put it anyway. That path needs the network, so it is
@@ -42,12 +42,12 @@ TEMPLATES_DIR="$SCRIPT_DIR/templates"
 # The workflow state directory's name, for the ENGINE layer — the same constant
 # standards.sh carries beside this file.
 WORKKIT_DIR=".workkit"
-INBOX_NAME="inbox.md"
+CAPTURE_NAME="capture.md"
 
 usage() {
   printf 'usage: wk.sh note <text...>\n' >&2
   printf '  appends "- <text>" to this repo'"'"'s %s/%s, or files an issue on the home repo outside one\n' \
-    "$WORKKIT_DIR" "$INBOX_NAME" >&2
+    "$WORKKIT_DIR" "$CAPTURE_NAME" >&2
 }
 
 # The participation test the hooks use: the committed settings.json is the
@@ -90,7 +90,7 @@ find_repo_root() {
 }
 
 # Append one bullet, creating the file from the engine's template when it is
-# missing so a hand-made inbox reads exactly like a seeded one. Never clobbers:
+# missing so a hand-made capture file reads exactly like a seeded one. Never clobbers:
 # a file whose last byte is not a newline gets one before the bullet, so the
 # entry cannot land on the end of somebody's unterminated line.
 append_note() {
@@ -98,10 +98,10 @@ append_note() {
 
   mkdir -p "$dir"
   if [[ ! -e "$file" ]]; then
-    if [[ -f "$TEMPLATES_DIR/$INBOX_NAME" ]]; then
-      cp "$TEMPLATES_DIR/$INBOX_NAME" "$file"
+    if [[ -f "$TEMPLATES_DIR/$CAPTURE_NAME" ]]; then
+      cp "$TEMPLATES_DIR/$CAPTURE_NAME" "$file"
     else
-      printf 'wk: template missing at %s/%s — reinstall the workflow core\n' "$TEMPLATES_DIR" "$INBOX_NAME" >&2
+      printf 'wk: template missing at %s/%s — reinstall the workflow core\n' "$TEMPLATES_DIR" "$CAPTURE_NAME" >&2
       return 1
     fi
   fi
@@ -178,7 +178,7 @@ cmd_note() {
 
   root="$(find_repo_root)"
   if [[ -n "$root" ]]; then
-    file="$root/$WORKKIT_DIR/$INBOX_NAME"
+    file="$root/$WORKKIT_DIR/$CAPTURE_NAME"
     append_note "$file" "$note"
     printf 'noted → %s\n' "$file"
     return 0

@@ -67,16 +67,16 @@ const run = async () => {
     assertEq(code, 0, '_attic writes are by design');
   });
 
-  await test('.workkit/ is exempt — session state and inbox (workflow spec, 2026-07-24)', () => {
+  await test('.workkit/ is exempt — agent state and the capture file (workflow spec, 2026-07-24)', () => {
     assertEq(runHook(`/repo/${W}/fable-cutover.md`).code, 0, `absolute ${W} is exempt`);
-    assertEq(runHook(`${W}/inbox.md`).code, 0, `relative ${W} is exempt`);
+    assertEq(runHook(`${W}/capture.md`).code, 0, `relative ${W} is exempt`);
     assertEq(runHook(`/repo/${W}/settings.json`).code, 0, 'the committed opt-in is editable');
   });
 
   await test('.workkit/ nested in a vendor directory still blocks (review regression)', () => {
     for (const p of [
       `/repo/node_modules/pkg/${W}/notes.md`,
-      `/repo/dist/${W}/inbox.md`,
+      `/repo/dist/${W}/capture.md`,
       `node_modules/pkg/${W}/settings.json`,
     ]) {
       assertEq(runHook(p).code, 2, `${p} is installed output, exception or not`);

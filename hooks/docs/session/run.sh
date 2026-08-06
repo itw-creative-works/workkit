@@ -1,6 +1,6 @@
 #!/bin/bash
 # docs:session — SessionStart hook (issue #56).
-# Hands the session its own task state back: `.workkit/session.md` is what keeps
+# Hands the session its own task state back: `.workkit/agents/session.md` is what keeps
 # the LOCAL AGENT on task across a compaction, a resume, or a restart, so it is
 # injected on EVERY source (no matcher) — the compaction case is the one the
 # file exists for, and it is the one that would be missed by a startup-only hook.
@@ -42,7 +42,7 @@ root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || root="$cwd"
 # This hook sources nothing, so the directory name is spelled out; its SSOT is
 # WORKKIT_DIR in hooks/_lib.sh — change both together.
 SETTINGS="$root/.workkit/settings.json"
-SESSION_FILE="$root/.workkit/session.md"
+SESSION_FILE="$root/.workkit/agents/session.md"
 
 # Participation gate. The committed settings.json is the repo's yes; a
 # deliberate `"enabled": false` is its no. An undecided repo has no session.md

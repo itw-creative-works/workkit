@@ -10,7 +10,7 @@
           },
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh safety:inbox-guard"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh safety:capture-guard"
           }
         ]
       },
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh safety:inbox-guard"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh safety:capture-guard"
           }
         ]
       },
@@ -54,7 +54,7 @@
           },
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh safety:inbox-guard"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh safety:capture-guard"
           }
         ]
       }

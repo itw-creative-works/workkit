@@ -1150,7 +1150,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     const { code, out } = runCli(world, ['note', 'fix', 'the', 'tower', 'poller'], { cwd: repo });
     assertEq(code, 0, 'exit 0');
     assert(out.includes('noted →'), `the capture CLI answered, got: ${out}`);
-    assert(fs.readFileSync(path.join(repo, W, 'inbox.md'), 'utf8').endsWith('- fix the tower poller\n'), 'one bullet, in the repo inbox');
+    assert(fs.readFileSync(path.join(repo, W, 'capture.md'), 'utf8').endsWith('- fix the tower poller\n'), 'one bullet, in the repo capture file');
     cleanup(world.root); cleanup(repo);
   });
 

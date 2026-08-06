@@ -320,7 +320,7 @@ wk_home_project_manifest() {
 # The clone is the app and nothing else (issue #79): the site options are the
 # user's and live in the machine settings file, and no `.workkit/` is ever
 # written here — the engine treats this path as the home BY PATH, so there is no
-# participation flag to seed and no inbox to keep out of the commit. The one
+# participation flag to seed and no capture file to keep out of the commit. The one
 # thing the seed adds on top of the copy is the absolute `file:` specs.
 wk_home_seed() {
   local pkg app_pkg name excludes=()

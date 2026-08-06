@@ -150,7 +150,7 @@ This step runs if there are changes in the working tree (from the session's work
    `gh issue close <N> --comment "Shipped in <version-or-commit> — see CHANGELOG [Unreleased]/<section>."`
    Issues that are only PARTLY addressed stay open — comment the progress instead.
    Release every claim this ship completes: remove `status:building` and `agent:working` from each closed issue (`gh issue edit <N> --remove-label status:building,agent:working`) — a trailer closes the issue but never touches labels, the spec says the ship close is what ENDS `status:building`, and a label left on closed issues stops meaning anything.
-   Then PRUNE the queue: if the repo participates, open `.workkit/session.md` and delete every entry this ship completed — the bullets about the issues just closed and about the release just cut. Their facts now live in the CHANGELOG and the closed issues; the file is the next session's task queue, not an archive of this one.
+   Then PRUNE the queue: if the repo participates, open `.workkit/agents/session.md` and delete every entry this ship completed — the bullets about the issues just closed and about the release just cut. Their facts now live in the CHANGELOG and the closed issues; the file is the next session's task queue, not an archive of this one.
 
 7. **Verify** — run `git status` to confirm the working tree is clean and `git log --oneline -2` shows the expected commits on the default branch.
 

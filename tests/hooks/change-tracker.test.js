@@ -36,7 +36,7 @@ const runHook = (cwd) => {
 
 const writeScratch = (dir, body) => {
   fs.mkdirSync(path.join(dir, W), { recursive: true });
-  fs.writeFileSync(path.join(dir, W, 'inbox.md'), body);
+  fs.writeFileSync(path.join(dir, W, 'capture.md'), body);
 };
 
 const cleanup = (dir) => {
@@ -100,13 +100,13 @@ const run = async () => {
     assert(/promote/i.test(content), 'should state the promotion rule');
   });
 
-  await test('prompt.md never offers the local inbox as a filing destination', () => {
+  await test('prompt.md never offers the capture file as a filing destination', () => {
     const content = fs.readFileSync(PROMPT, 'utf8');
-    // The inbox is the owner's capture surface (#145): a finding is filed as an
+    // capture.md is the owner's capture surface (#145): a finding is filed as an
     // issue, and where GitHub is out of reach it goes in chat, never here.
-    assert(/never write to `?\.workkit\/inbox\.md/i.test(content), 'the rule is stated outright');
-    for (const line of content.split('\n').filter((l) => /inbox\.md/.test(l))) {
-      assert(/never write to/i.test(line), `inbox.md is only ever named to forbid it, got: ${line}`);
+    assert(/never write to `?\.workkit\/capture\.md/i.test(content), 'the rule is stated outright');
+    for (const line of content.split('\n').filter((l) => /capture\.md/.test(l))) {
+      assert(/never write to/i.test(line), `capture.md is only ever named to forbid it, got: ${line}`);
     }
   });
 
@@ -127,9 +127,9 @@ const run = async () => {
   group('change-tracker: repeat only when something changed');
 
   // The hook nudges once per fingerprint of the state it nags about — the
-  // porcelain status, the diff behind it, and the local inbox's content — and
-  // remembers the last one in the repo's own .workkit/ session state.
-  const STATE = path.join(W, '.change-tracker');
+  // porcelain status, the diff behind it, and the capture file's content — and
+  // remembers the last one under the repo's own .workkit/agents/.
+  const STATE = path.join(W, 'agents', '.change-tracker');
 
   // A participating repo: .workkit/ exists and is gitignored, and app.js is
   // committed so an edit to it moves the diff without moving the status line.
@@ -208,20 +208,20 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('a new local inbox entry — blocks again', () => {
+  await test('a new capture entry — blocks again', () => {
     const dir = mkStateRepo();
-    writeScratch(dir, '# inbox\n> header\n\na finding\n');
+    writeScratch(dir, '# capture\n> header\n\na finding\n');
     const first = runHook(dir);
     assert(first.stdout.includes('SCRATCH: 1 unfiled'), 'first capture nudges');
     assert(!runHook(dir).stdout.includes('"block"'), 'the same capture does not nudge twice');
-    writeScratch(dir, '# inbox\n> header\n\na finding\nanother finding\n');
+    writeScratch(dir, '# capture\n> header\n\na finding\nanother finding\n');
     const rerun = runHook(dir);
     assert(rerun.stdout.includes('"block"'), 'a new capture re-arms the nudge');
     assert(rerun.stdout.includes('SCRATCH: 2 unfiled'), 'and carries the new count');
     cleanup(dir);
   });
 
-  await test('clean tree, empty inbox — silent and no state file written', () => {
+  await test('clean tree, empty capture file — silent and no state file written', () => {
     const dir = mkStateRepo();
     const { code, stdout } = runHook(dir);
     assertEq(code, 0, 'a clean repo exits 0');
@@ -326,25 +326,25 @@ const run = async () => {
     cleanup(dir);
   });
 
-  group('change-tracker: local .workkit/inbox.md');
+  group('change-tracker: local .workkit/capture.md');
 
   await test('clean tree + scratch entries — blocks with the count', () => {
     const dir = mkTmpRepo();
-    writeScratch(dir, '# inbox\n> header\n\na finding\nan idea\n');
+    writeScratch(dir, '# capture\n> header\n\na finding\nan idea\n');
     const { stdout } = runHook(dir);
-    assert(stdout.includes('"block"'), 'a non-empty local inbox nudges on its own');
+    assert(stdout.includes('"block"'), 'a non-empty capture file nudges on its own');
     assert(stdout.includes('SCRATCH: 2 unfiled'), `context carries the count, got: ${stdout.slice(0, 400)}`);
     assert(stdout.includes('workkit:triage'), 'offers the triage skill');
     assert(stdout.includes('never drain'), 'draining stays deliberate');
     cleanup(dir);
   });
 
-  await test('clean tree + header-only scratch inbox — no block', () => {
+  await test('clean tree + header-only capture file — no block', () => {
     const dir = mkTmpRepo();
-    writeScratch(dir, '# inbox\n> dump anything here\n\n');
+    writeScratch(dir, '# capture\n> dump anything here\n\n');
     const { code, stdout } = runHook(dir);
     assertEq(code, 0, 'exits 0');
-    assert(!stdout.includes('block'), 'no nudge for an empty local inbox');
+    assert(!stdout.includes('block'), 'no nudge for an empty capture file');
     cleanup(dir);
   });
 

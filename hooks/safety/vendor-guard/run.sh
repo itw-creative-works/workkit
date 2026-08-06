@@ -9,7 +9,7 @@
 # Designed exceptions (owner ruling, 2026-07-22, plan Q1: default-deny + tiny visible allowlist):
 #   _attic/ (gitignored holding pen, written on purpose — checked FIRST, since
 #   an attic may hold a parked dist/), .env / .env.* (secrets live there BECAUSE
-#   they're gitignored), and .workkit/ (session state and the local inbox,
+#   they're gitignored), and .workkit/ (agent state and the local capture file,
 #   gitignored by the workflow spec and written on purpose — 2026-07-24; only
 #   .workkit/settings.json is committed, and a tracked file never trips the
 #   gitignore check anyway). .workkit/ is checked AFTER the vendor/lockfile

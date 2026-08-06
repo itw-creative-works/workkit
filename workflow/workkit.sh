@@ -158,8 +158,8 @@ usage: workkit <command> [args]
                        together, until one interrupt ends both
   enable [repo]        write the repo's committed opt-in, then heal it
   decline [repo]       record this developer's no for the repo, personally
-  note <text...>       append one bullet to the nearest inbox, or file it as an
-                       issue on the home repo outside every project
+  note <text...>       append one bullet to the nearest capture file, or file it
+                       as an issue on the home repo outside every project
 
 The engine it drives lives beside this script; the spec both implement is
 docs/project-state.md in the checkout.

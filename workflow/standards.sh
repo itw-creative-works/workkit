@@ -580,7 +580,7 @@ append_gitignore_block() {
 ensure_workflow_ignored() {
   local file=".gitignore" lines="" offender
 
-  if git check-ignore -q -- "$WORKKIT_DIR/inbox.md" 2>/dev/null \
+  if git check-ignore -q -- "$WORKKIT_DIR/capture.md" 2>/dev/null \
     && ! git check-ignore -q -- "$REPO_SETTINGS" 2>/dev/null; then
     log_skip "gitignore: $WORKKIT_DIR/ already ignored"
     return 0
@@ -660,8 +660,13 @@ ensure_gitignore_basics() {
 # Both are gitignored per the pattern above, so creating them is free; having
 # them already on disk is what makes jotting a note or tracking the session
 # zero-friction. A file with content is NEVER overwritten.
+#
+# The template's name and the file's place in `.workkit/` are two different
+# things: the agents' own state lives under `agents/`, so a second argument
+# gives the destination when it is not the template's own name.
 ensure_local_file() {
-  local name="$1" label="${1%.md}" file="$WORKKIT_DIR/$1"
+  local name="$1" dest="${2:-$1}" label="${1%.md}"
+  local file="$WORKKIT_DIR/$dest"
 
   # -s, not -f: the promise is "never overwritten once it has CONTENT", so an
   # empty or truncated file gets its sections back instead of staying blank.
@@ -679,7 +684,7 @@ ensure_local_file() {
     return 0
   fi
 
-  mkdir -p "$WORKKIT_DIR"
+  mkdir -p "$(dirname "$file")"
   cp "$TEMPLATES_DIR/$name" "$file"
   log_ok "$label: created $file"
 }
@@ -1280,8 +1285,8 @@ ensure_engine_link
 register_in_roster
 ensure_workflow_ignored
 ensure_gitignore_basics
-ensure_local_file inbox.md
-ensure_local_file session.md
+ensure_local_file capture.md
+ensure_local_file session.md agents/session.md
 ensure_issue_forms
 ensure_ci_workflow
 ensure_changelog_linter

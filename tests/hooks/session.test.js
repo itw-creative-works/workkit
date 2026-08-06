@@ -1,6 +1,6 @@
 //
 // Tests for hooks/docs:session — the SessionStart hook that hands a session
-// back its own `.workkit/session.md`.
+// back its own `.workkit/agents/session.md`.
 //
 // Every case runs the real hook against a fixture repo. The hook reaches no
 // network and reads nothing outside the repo it is given, so there is nothing
@@ -33,7 +33,8 @@ const mkRepo = ({ session, optedIn = true, enabled = true } = {}) => {
     fs.writeFileSync(path.join(dir, W, 'settings.json'), JSON.stringify({ version: 1, enabled }));
   }
   if (session !== undefined) {
-    fs.writeFileSync(path.join(dir, W, 'session.md'), session);
+    fs.mkdirSync(path.join(dir, W, 'agents'), { recursive: true });
+    fs.writeFileSync(path.join(dir, W, 'agents', 'session.md'), session);
   }
   return dir;
 };
@@ -72,7 +73,7 @@ const run = async () => {
     assertEq(code, 0, 'exit 0');
     const ctx = ctxOf(stdout);
     assert(ctx.includes('#12 — the board sweep, mid-build'), 'the content is in the context');
-    assert(ctx.includes(`${W}/session.md`), 'the preamble names the file');
+    assert(ctx.includes(`${W}/agents/session.md`), 'the preamble names the file');
     assertEq(JSON.parse(stdout).hookSpecificOutput.hookEventName, 'SessionStart', 'correct event name');
     cleanup(repo);
   });

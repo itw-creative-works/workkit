@@ -1,6 +1,6 @@
 //
 // Tests for hooks/docs:session-guard — the PostToolUse hook that holds
-// `.workkit/session.md` to the shape of a queue: short bullets, few lines.
+// `.workkit/agents/session.md` to the shape of a queue: short bullets, few lines.
 //
 // Every case runs the real hook against a fixture file. The hook reads nothing
 // but the written file, so there is nothing to stub: the whole surface is the
@@ -18,14 +18,22 @@ const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'session-guard', 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'session-guard-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
+// The tmp root each fixture file was made under, so a cleanup does not have to
+// know how deep the file sits.
+const ROOTS = new Map();
+
 /** A session.md (or any other name/dir) holding `content`, returning its path. */
-const mkFile = (content, { dir = W, name = 'session.md' } = {}) => {
+const mkFile = (content, { dir = path.join(W, 'agents'), name = 'session.md' } = {}) => {
   const root = mkTmp();
   fs.mkdirSync(path.join(root, dir), { recursive: true });
   const file = path.join(root, dir, name);
   fs.writeFileSync(file, content);
+  ROOTS.set(file, root);
   return file;
 };
+
+/** Remove the tmp root `mkFile` created for `file`. */
+const cleanupFile = (file) => cleanup(ROOTS.get(file));
 
 const runHook = (filePath) => {
   const res = spawnSync('bash', [HOOK], {
@@ -62,7 +70,7 @@ const run = async () => {
     assert(stderr.includes('45 content lines'), `names the count, got: ${stderr}`);
     assert(stderr.includes('40'), `names the cap, got: ${stderr}`);
     assert(/queue, not a journal/.test(stderr), `says what the file is, got: ${stderr}`);
-    cleanup(path.dirname(path.dirname(file)));
+    cleanupFile(file);
   });
 
   await test('at the cap there is no bounce', () => {
@@ -70,7 +78,7 @@ const run = async () => {
     const { code, stderr } = runHook(file);
     assertEq(code, 0, `exit 0, got: ${stderr}`);
     assertEq(stderr, '', 'silent');
-    cleanup(path.dirname(path.dirname(file)));
+    cleanupFile(file);
   });
 
   await test('headings, blockquotes, comments and blank lines do not count', () => {
@@ -96,7 +104,7 @@ const run = async () => {
     ].join('\n'));
     const { code, stderr } = runHook(file);
     assertEq(code, 0, `exit 0, got: ${stderr}`);
-    cleanup(path.dirname(path.dirname(file)));
+    cleanupFile(file);
   });
 
   group('session-guard: the bullet cap');
@@ -109,7 +117,7 @@ const run = async () => {
     assert(stderr.includes(`${long.length} chars`), `names the length ${long.length}, got: ${stderr}`);
     assert(stderr.includes('350'), `names the cap, got: ${stderr}`);
     assert(stderr.includes('#126 the entry that would not stop'), `names the offending bullet, got: ${stderr}`);
-    cleanup(path.dirname(path.dirname(file)));
+    cleanupFile(file);
   });
 
   await test('a bullet at 350 chars passes', () => {
@@ -118,20 +126,20 @@ const run = async () => {
     const file = mkFile(doc([at]));
     const { code, stderr } = runHook(file);
     assertEq(code, 0, `exit 0, got: ${stderr}`);
-    cleanup(path.dirname(path.dirname(file)));
+    cleanupFile(file);
   });
 
   await test('an indented `*` bullet is judged too', () => {
     const file = mkFile(doc([`  * ${'y'.repeat(400)}`]));
     assertEq(runHook(file).code, 2, 'exit 2 blocks the write');
-    cleanup(path.dirname(path.dirname(file)));
+    cleanupFile(file);
   });
 
   await test('a long line that is not a bullet is not judged as one', () => {
     const file = mkFile(doc([`#126 ${'z'.repeat(400)}`]));
     const { code, stderr } = runHook(file);
     assertEq(code, 0, `exit 0, got: ${stderr}`);
-    cleanup(path.dirname(path.dirname(file)));
+    cleanupFile(file);
   });
 
   group('session-guard: scope');
@@ -142,24 +150,24 @@ const run = async () => {
     assertEq(code, 0, `exit 0, got: ${stderr}`);
     assertEq(stdout, '', 'says nothing');
     assertEq(stderr, '', 'silent');
-    cleanup(path.dirname(path.dirname(file)));
+    cleanupFile(file);
   });
 
-  await test('another file in .workkit is ignored, however long', () => {
-    const file = mkFile(doc(notes(60)), { name: 'inbox.md' });
+  await test('another file in .workkit/agents is ignored, however long', () => {
+    const file = mkFile(doc(notes(60)), { name: 'notes.md' });
     assertEq(runHook(file).code, 0, 'exit 0');
-    cleanup(path.dirname(path.dirname(file)));
+    cleanupFile(file);
   });
 
-  await test('a session.md outside .workkit is ignored, however long', () => {
+  await test('a session.md outside .workkit/agents is ignored, however long', () => {
     const file = mkFile(doc(notes(60)), { dir: 'docs' });
     assertEq(runHook(file).code, 0, 'exit 0');
-    cleanup(path.dirname(path.dirname(file)));
+    cleanupFile(file);
   });
 
   await test('a session.md that no longer exists — fail open', () => {
     const dir = mkTmp();
-    assertEq(runHook(path.join(dir, W, 'session.md')).code, 0, 'exit 0');
+    assertEq(runHook(path.join(dir, W, 'agents', 'session.md')).code, 0, 'exit 0');
     cleanup(dir);
   });
 

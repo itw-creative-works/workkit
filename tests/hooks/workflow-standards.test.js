@@ -179,7 +179,7 @@ const run = async () => {
   await test('a .workkit/ directory without settings.json is not an opt-in', () => {
     const repo = makeRepo({ optIn: false });
     fs.mkdirSync(path.join(repo, W), { recursive: true });
-    fs.writeFileSync(path.join(repo, W, 'inbox.md'), '- a note\n');
+    fs.writeFileSync(path.join(repo, W, 'capture.md'), '- a note\n');
     const { code, stdout, cacheDir } = runHook(repo);
     assertEq(code, 0, 'exit 0');
     assert(offerOf(stdout).includes('not in the issue workflow'), 'the committed settings.json is what opts a repo in');

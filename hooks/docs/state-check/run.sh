@@ -3,7 +3,7 @@
 # Announces project-state upkeep so nothing rots silently:
 #   1. open status:inbox issues on the cwd repo (the captured-but-unrouted
 #      queue — triage is the action that drains it)
-#   2. a non-empty .workkit/inbox.md (the local capture file)
+#   2. a non-empty .workkit/capture.md (the local capture file)
 #   3. a content-bearing CLAUDE.md (doctrine: content lives in AGENTS.md;
 #      CLAUDE.md is a one-line @AGENTS.md pointer)
 #   4. an oversized AGENTS.md (>250 lines — deep references belong in docs/)
@@ -102,14 +102,14 @@ if [ -n "$cwd" ] && command -v gh >/dev/null 2>&1 \
   fi
 fi
 
-# Local capture file — the offline/free-form half of the same inbox.
+# Local capture file — the offline/free-form half of the same intake.
 # This hook sources nothing, so the directory name is spelled out; its SSOT is
 # WORKKIT_DIR in hooks/_lib.sh — change both together.
-if [ -n "$cwd" ] && [ -f "$cwd/.workkit/inbox.md" ]; then
-  sn=$(count_entries "$cwd/.workkit/inbox.md")
+if [ -n "$cwd" ] && [ -f "$cwd/.workkit/capture.md" ]; then
+  sn=$(count_entries "$cwd/.workkit/capture.md")
   if [ "$sn" -gt 0 ]; then
     [ -n "$msg" ] && msg="$msg "
-    msg="${msg}SCRATCH: local inbox has entries ($cwd/.workkit/inbox.md) — triage drains it."
+    msg="${msg}SCRATCH: the local capture file has entries ($cwd/.workkit/capture.md) — triage drains it."
   fi
 fi
 

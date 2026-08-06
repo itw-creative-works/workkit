@@ -2,7 +2,7 @@
 
 **Hook type:** PostToolUse (Edit|Write)
 
-Holds `.workkit/session.md` to the shape it exists in: the task queue a compacted or restarted session reads first (the spec's `.workkit/` section, `docs/project-state.md`). Left alone it grows — an entry is appended per work batch, nothing removes one, and each entry thickens into a paragraph until the file is a journal of what already shipped, whose facts live in the CHANGELOG and the closed issue.
+Holds `.workkit/agents/session.md` to the shape it exists in: the task queue a compacted or restarted session reads first (the spec's `.workkit/` section, `docs/project-state.md`). Left alone it grows — an entry is appended per work batch, nothing removes one, and each entry thickens into a paragraph until the file is a journal of what already shipped, whose facts live in the CHANGELOG and the closed issue.
 
 ## What it bounces
 
@@ -15,7 +15,7 @@ The written file is judged, one write at a time. Either condition blocks with ex
 
 The message says what to do: promote anything durable to its issue or the CHANGELOG, delete what has already shipped, split or trim the oversized bullet.
 
-Everything else exits 0 in silence — another file, a `session.md` outside `.workkit`, a file that no longer exists, a machine without `jq`.
+Everything else exits 0 in silence — another file, a `session.md` outside `.workkit/agents`, a file that no longer exists, a machine without `jq`.
 
 ## Why PostToolUse
 

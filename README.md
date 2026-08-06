@@ -9,7 +9,7 @@ The issue-pipeline workflow system as a Claude Code plugin. Install it and every
 flowchart TB
     Form["issue form"] --> Inbox([status:inbox])
     Note["chat note"] --> Inbox
-    File[".workkit/inbox.md"] --> Inbox
+    File[".workkit/capture.md"] --> Inbox
     Inbox --> Triage["Triage<br>route it out of the inbox<br>/workkit:triage"]
     Triage -->|needs shaping| Spec["Write the spec"]
     Triage -->|not now| Parked([status:parked])
@@ -88,8 +88,8 @@ Plugins load at startup, so a new (or restarted) session is what puts a change i
 | Hook | When | What it does for you |
 |---|---|---|
 | `workflow/standards` | session opens | Brings an opted-in repo to the standard once a day: labels, issue templates, the required-checks CI workflow and its CHANGELOG lint, branch protection where it can, `.workkit/` seeded and ignored — then runs `workkit update --auto` to keep the machine's own installs current. Reports only what it fixed — and until `workkit setup` has run on this machine, every session is told to ask you to run it |
-| `docs/state-check` | session opens | Tells you about open `status:inbox` issues, unfiled inbox notes, and document anomalies |
-| `docs/session` | session opens, compaction included | Hands the session back its `.workkit/session.md` — the task queue it keeps across a compaction or a restart — and says when the file has grown past being a queue |
+| `docs/state-check` | session opens | Tells you about open `status:inbox` issues, unfiled captures, and document anomalies |
+| `docs/session` | session opens, compaction included | Hands the session back its `.workkit/agents/session.md` — the task queue it keeps across a compaction or a restart — and says when the file has grown past being a queue |
 | `workflow/reload-guard` | session opens, then every message | Says once when the kit's agents, skills, or hook wiring changed after your session loaded — the case `/reload-plugins` exists for |
 | `manager/resolver` | before a subagent spawns | Picks that spawn's model from the tier ladder and your live session model |
 | `manager/profile` | every message | Reminds a capable session it is the MANAGER and should delegate |
@@ -97,10 +97,10 @@ Plugins load at startup, so a new (or restarted) session is what puts a change i
 | `safety/commit-gate` | before `git commit` | No commit unless tests pass, new source files come with tests, code carries a fresh review, and any CHANGELOG entry is in format. A suite still running at the gate's own deadline is ended and the commit bounces, so a run the harness would cancel never slips through. Heal bookkeeping (the version stamp and the current vendored linter, alone) skips the review and new-file checks |
 | `safety/commit-language` | before `git commit` | Bounces kill/destroy/dead wording in commit messages, and off-format subject lines |
 | `safety/issue-guard` | before a `gh issue`/`gh pr` write, a GraphQL discussion/issue mutation, or a `gh api` REST write to an issue or pull endpoint | Blocks outbound text carrying a local `.env` value or a token-shaped string — every repo is assumed public. Names the key or the kind, never the match |
-| `safety/inbox-guard` | before a read or a write of the inbox | Keeps `.workkit/inbox.md` the owner's capture surface: reading it and clearing it open only during a triage run, adding to it never — counting stays free |
+| `safety/capture-guard` | before a read or a write of the capture file | Keeps `.workkit/capture.md` the owner's capture surface: reading it and clearing it open only during a triage run, adding to it never — counting stays free |
 | `docs/board-guard` | after any edit | Holds `AGENTS.md` / `CLAUDE.md` to the document rules |
 | `docs/changelog-guard` | after any edit | Holds a CHANGELOG entry to one short linked paragraph |
-| `docs/session-guard` | after any edit | Holds `.workkit/session.md` to a lean task queue — bounces a write leaving it over 40 content lines or a bullet over 350 characters |
+| `docs/session-guard` | after any edit | Holds `.workkit/agents/session.md` to a lean task queue — bounces a write leaving it over 40 content lines or a bullet over 350 characters |
 | `docs/change-tracker` | when a reply finishes | Nags about uncommitted work, a stale issue, and unfiled notes — once per change, then silent until something moves |
 
 ### Agents — the crew
@@ -127,7 +127,7 @@ The morning on the clock, and **one script for it — `jobs/morning.sh`, run by 
 
 ### Engine — `workflow/`
 
-Plain shell and Node, no Claude Code knowledge: `workkit.sh` (the one command — `setup` · `update` · `doctor` · `publish` · `tower` · `enable` · `decline` · `note`), `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `home.sh` + `discussions.sh` + `publish.sh` (the home repo's lifecycle, its Discussions API, and the gh-pages publish), `changelog.js` (the entry-format linter the hooks call), `changelog-links.js` (release-time commit links and contributor handles), `wk.sh` (the capture CLI — `wk.sh note "the thought"` drops a bullet into the nearest participating repo's inbox, or files an issue on the home repo outside one), and the templates a repo receives when it opts in.
+Plain shell and Node, no Claude Code knowledge: `workkit.sh` (the one command — `setup` · `update` · `doctor` · `publish` · `tower` · `enable` · `decline` · `note`), `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `home.sh` + `discussions.sh` + `publish.sh` (the home repo's lifecycle, its Discussions API, and the gh-pages publish), `changelog.js` (the entry-format linter the hooks call), `changelog-links.js` (release-time commit links and contributor handles), `wk.sh` (the capture CLI — `wk.sh note "the thought"` drops a bullet into the nearest participating repo's `capture.md`, or files an issue on the home repo outside one), and the templates a repo receives when it opts in.
 
 ## The home repo
 

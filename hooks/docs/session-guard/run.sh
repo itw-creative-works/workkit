@@ -1,6 +1,6 @@
 #!/bin/bash
 # docs:session-guard — PostToolUse hook (Edit|Write), issue #126.
-# Holds `.workkit/session.md` to the shape it exists in: a TASK QUEUE, read
+# Holds `.workkit/agents/session.md` to the shape it exists in: a TASK QUEUE, read
 # back on every session start, not a journal of what already shipped. Two caps,
 # both constants below — a bullet that has grown into a paragraph, and a file
 # that has grown into the retired PROGRESS.md.
@@ -29,7 +29,9 @@ file_path=$(jq -r '.tool_input.file_path // ""' <<<"$input" 2>/dev/null || true)
 # This hook sources nothing, so the directory name is spelled out; its SSOT is
 # WORKKIT_DIR in hooks/_lib.sh — change both together.
 [ "$(basename "$file_path")" = "session.md" ] || exit 0
-[ "$(basename "$(dirname "$file_path")")" = ".workkit" ] || exit 0
+session_dir="$(dirname "$file_path")"
+[ "$(basename "$session_dir")" = "agents" ] || exit 0
+[ "$(basename "$(dirname "$session_dir")")" = ".workkit" ] || exit 0
 [ -f "$file_path" ] || exit 0
 
 MAX_BULLET_CHARS=350
