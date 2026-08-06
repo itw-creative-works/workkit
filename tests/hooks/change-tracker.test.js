@@ -70,6 +70,32 @@ const run = async () => {
     cleanup(dir);
   });
 
+  await test('a script under a docs PATH is code — blocks (review finding)', () => {
+    // hooks/docs/*/run.sh is executable bash living under a docs directory.
+    // Seeded and committed first: an UNTRACKED directory collapses to its own
+    // name in porcelain output, which would classify as code for the wrong
+    // reason.
+    const dir = mkTmpRepo();
+    fs.mkdirSync(path.join(dir, 'hooks', 'docs', 'x'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'hooks', 'docs', 'x', 'run.sh'), '#!/bin/bash\necho hi\n');
+    execSync('git add -A && git commit -q -m "seed"', { cwd: dir, stdio: 'pipe' });
+    fs.writeFileSync(path.join(dir, 'hooks', 'docs', 'x', 'run.sh'), '#!/bin/bash\necho tweaked\n');
+    const { stdout } = runHook(dir);
+    assert(stdout.includes('"block"'), `a code extension wins over the docs path, got: ${stdout.slice(0, 200)}`);
+    cleanup(dir);
+  });
+
+  await test('a .md under a docs path is still docs — no block', () => {
+    const dir = mkTmpRepo();
+    fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'docs', 'notes.md'), '# notes\n');
+    execSync('git add -A && git commit -q -m "seed"', { cwd: dir, stdio: 'pipe' });
+    fs.writeFileSync(path.join(dir, 'docs', 'notes.md'), '# notes, edited\n');
+    const { stdout } = runHook(dir);
+    assert(!stdout.includes('"block"'), 'the docs basenames are unchanged');
+    cleanup(dir);
+  });
+
   await test('mixed code + docs — triggers block', () => {
     const dir = mkTmpRepo();
     fs.writeFileSync(path.join(dir, 'app.js'), 'code');

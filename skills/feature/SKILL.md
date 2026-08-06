@@ -61,4 +61,4 @@ gh issue comment <N> --body "<what to check, and where>"
 
 **This is where the flow ENDS.** Do not ship, and do not ask in chat whether to ship: the owner's word is what runs [workkit:ship](../ship/SKILL.md), and asking for it is the same as asking them to approve their own gate (spec § Labels). A failed check comes back here — fix it in place, re-comment, and the label does not move. The tree holds unshipped work while an item sits in qa, so the next item waits.
 
-The ONE exception is an issue carrying `agent:ok`: that label is the owner's word given in advance, so the flow runs straight through — no park, no `status:qa`, ship and close.
+The ONE exception is an issue carrying `agent:ok`: that label is the owner's word given in advance, so the park is a pass-through — flip to `status:qa` and comment as always, then perform the check yourself, ship and close in the same run. On that flip KEEP `agent:working` (`--remove-label status:building --add-label status:qa`): the claim holds because the agent is still working, and the ship close is what releases the labels (spec § the qa stage).

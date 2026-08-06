@@ -9,13 +9,22 @@
 #   3. CHANGELOG: entries this commit adds must match the entry format.
 #   4. Collapse on ship: a commit closing an issue (Fixes/Closes/Resolves #N)
 #      must stage the CHANGELOG.md entry it closes against.
-#   5. Tests: when the repo's package.json has a test script, it must pass —
-#      within the gate's own deadline (issue #93). Claude Code cancels a hook
-#      at its timeout and treats no-decision as allow, so a suite that outran
-#      the harness used to let the commit through untested. The gate now ends
-#      the run itself, under that ceiling, and BOUNCES instead.
+#   5. Tests: when the repo's package.json has a test script AND the commit
+#      carries CODE, the suite must pass — within the gate's own deadline
+#      (issue #93). Claude Code cancels a hook at its timeout and treats
+#      no-decision as allow, so a suite that outran the harness used to let the
+#      commit through untested. The gate now ends the run itself, under that
+#      ceiling, and BOUNCES instead. The code test is check 2's classification
+#      (issue #151), so a docs-only commit and a release commit's version stamp
+#      — a version-only bump in package.json or .claude-plugin/plugin.json —
+#      skip the suite. No untested code can land: every commit staging a code
+#      line still gates, and a release commit skips only because its tree is
+#      the previously gated tree plus generated bookkeeping — so by induction
+#      every tree that ever gained code was tested when it gained it.
 # Code-vs-docs classification matches the docs/change-tracker hook (same
-# definition in both, kept in sync by hand — no second consumer shape yet).
+# definition in both — a docs PATH, then a code extension winning over it, then
+# the docs basenames — kept in sync by hand, no second consumer shape yet); the
+# version-stamp carve-out below is the gate's alone and sits outside it.
 # Fail open on anything that isn't clearly a violating commit.
 
 set -euo pipefail
@@ -119,6 +128,31 @@ if [ -z "$files" ] && [ "$has_pathspec" -eq 0 ]; then
   exit 0
 fi
 
+# The release commit's version stamp (issue #151): the bump the release tooling
+# writes into the two files a repo keeps its version in — the ROOT package.json
+# and, for a plugin repo like this one, the ROOT .claude-plugin/plugin.json — is
+# generated bookkeeping, not code: the tree is the previously gated tree plus
+# that one key. Proved by content the way the stamp arm below is, only `version`
+# may differ from HEAD. A NEW file, unreadable or unparseable JSON, or any other
+# changed key is code again, and the paths are exact — a nested package.json is
+# never this.
+version_bump_only() {
+  local file head copy a b
+  file="$1"
+  head="$(cd "$repo_root" && git show "HEAD:$file" 2>/dev/null)" || return 1
+  # Judge the bytes the COMMIT will carry: the staged blob normally, the
+  # working tree under -a/--all.
+  if [ "$has_all_flag" -eq 1 ]; then
+    copy="$(cat "$repo_root/$file" 2>/dev/null)" || return 1
+  else
+    copy="$(cd "$repo_root" && git show ":$file" 2>/dev/null)" || return 1
+  fi
+  [ -n "$copy" ] || return 1
+  a="$(jq -Sc 'del(.version)' <<<"$head" 2>/dev/null)" || return 1
+  b="$(jq -Sc 'del(.version)' <<<"$copy" 2>/dev/null)" || return 1
+  [ -n "$a" ] && [ "$a" = "$b" ]
+}
+
 has_code=0
 [ "$has_pathspec" -eq 1 ] && has_code=1
 if [ -n "$files" ]; then
@@ -128,8 +162,23 @@ if [ -n "$files" ]; then
     case "$path" in
       docs/*|*/docs/*) is_doc=1 ;;
     esac
+    # A code EXTENSION wins over the docs path (same list check 1 uses): this
+    # repo keeps hooks/docs/*/run.sh, executable bash sitting under a docs
+    # directory, and classifying it as docs would let a hook change commit with
+    # no suite and no review marker.
+    case "$base" in
+      *.js|*.cjs|*.mjs|*.ts|*.jsx|*.tsx|*.sh|*.zsh|*.py|*.rb) is_doc=0 ;;
+    esac
+    # Docs basenames are docs wherever they live, extension arm included.
     case "$base" in
       *.md|CHANGELOG|CHANGELOG.*|LICENSE|LICENSE.*) is_doc=1 ;;
+    esac
+    # Not a doc, and not code either. Deliberately its own case: the classifier
+    # above stays in step with docs/change-tracker's, and this carve-out is the
+    # gate's alone.
+    case "$path" in
+      package.json|.claude-plugin/plugin.json)
+        if [ "$is_doc" -eq 0 ] && version_bump_only "$path"; then is_doc=1; fi ;;
     esac
     if [ "$is_doc" -eq 0 ]; then has_code=1; break; fi
   done <<<"$files"
@@ -291,11 +340,15 @@ if [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/CHANGELOG.md" ] \
   fi
 fi
 
-# 5. Tests must pass when the repo defines them (at the repo ROOT — the
-# session may sit in a subdirectory). The run carries its own deadline, kept
-# under the hook's declared timeout (1600s in hooks.json): a hook the harness
-# cancels returns no decision, and no decision is ALLOW — so without this, the
-# biggest suites are exactly where the gate stopped enforcing (issue #93).
+# 5. Tests must pass when the repo defines them and the commit carries CODE (at
+# the repo ROOT — the session may sit in a subdirectory). The code test is
+# check 2's, so a docs-only commit and a release commit's version stamps stand
+# the suite down; the header records why that lands no untested code (#151). A
+# pathspec commit is code by definition here, so it keeps gating strictly. The
+# run carries its own deadline, kept under the hook's declared timeout (1600s
+# in hooks.json): a hook the harness cancels returns no decision, and no
+# decision is ALLOW — so without this, the biggest suites are exactly where the
+# gate stopped enforcing (issue #93).
 # Injectable so the suite can prove the bounce without a wait.
 gate_end_tree() {
   local pid kid
@@ -303,7 +356,7 @@ gate_end_tree() {
   for kid in $(pgrep -P "$pid" 2>/dev/null); do gate_end_tree "$kid"; done
   kill -9 "$pid" 2>/dev/null || true
 }
-if [ -f "$repo_root/package.json" ] && jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
+if [ "$has_code" -eq 1 ] && [ -f "$repo_root/package.json" ] && jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
   deadline="${WORKKIT_GATE_TEST_DEADLINE:-1500}"
   out_file=$(mktemp "${TMPDIR:-/tmp}/commit-gate-test.XXXXXX")
   (cd "$repo_root" && npm test >"$out_file" 2>&1) &

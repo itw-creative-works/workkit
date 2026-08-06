@@ -20,7 +20,7 @@
           "color": "C47206"
         },
         "qa": {
-          "description": "Built and verified; waiting on the owner's check. Exactly one status: label per open issue.",
+          "description": "Built; awaiting its check (the agent's under agent:ok). Exactly one status: label per open issue.",
           "color": "12925C"
         },
         "blocked": {

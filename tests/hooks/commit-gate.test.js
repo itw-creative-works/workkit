@@ -646,6 +646,179 @@ const run = async () => {
     cleanup(dir);
   });
 
+  group('commit-gate: the suite runs only for commits carrying code (issue #151)');
+
+  // Every case here proves the RUN, not the exit code: the fixture's test
+  // script leaves a sentinel and then fails, so a suite that ran is visible as
+  // the file (and as the bounce), and a suite that stood down leaves neither.
+  const SENTINEL = 'suite-ran';
+  const pkg = (version, extra) => `${JSON.stringify({
+    name: 'fixture', version, scripts: { test: `touch ${SENTINEL} && exit 1` }, ...extra,
+  }, null, 2)}\n`;
+  const suiteRan = (dir) => fs.existsSync(path.join(dir, SENTINEL));
+
+  // package.json and a source file already committed, so each case stages only
+  // what it is about — and so the version bumps below have a HEAD copy to be
+  // judged against.
+  const mkReleaseRepo = () => {
+    const dir = mkRepo();
+    stage(dir, 'package.json', pkg('1.0.0'));
+    stage(dir, 'app.js', 'const x = 1;\n');
+    execSync('git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe' });
+    return dir;
+  };
+
+  await test('docs-only commit — the suite does not run', () => {
+    const dir = mkReleaseRepo();
+    stage(dir, 'README.md', '# docs\n');
+    dropMarker(dir);
+    const { code, stderr } = runHook(dir, 'git commit -m "docs: readme"');
+    assertEq(code, 0, `allowed, got: ${stderr}`);
+    assert(!suiteRan(dir), 'a docs-only commit never starts the suite');
+    cleanup(dir);
+  });
+
+  await test('version-only root package.json bump — the suite does not run', () => {
+    const dir = mkReleaseRepo();
+    stage(dir, 'package.json', pkg('1.0.1'));
+    dropMarker(dir);
+    const { code, stderr } = runHook(dir, 'git commit -m "chore(release): 1.0.1"');
+    assertEq(code, 0, `the release commit's shape passes, got: ${stderr}`);
+    assert(!suiteRan(dir), 'the version stamp is generated bookkeeping, not code');
+    cleanup(dir);
+  });
+
+  await test('version bump plus a second changed key — gates as code', () => {
+    const dir = mkReleaseRepo();
+    stage(dir, 'package.json', pkg('1.0.1', { description: 'now with a second change' }));
+    dropMarker(dir);
+    const first = runHook(dir, 'git commit -m "chore: bump"');
+    assertEq(first.code, 2, 'any second change restores code classification');
+    assert(first.stderr.includes('workkit:review'), `the review marker is demanded as today, got: ${first.stderr}`);
+    assert(!suiteRan(dir), 'the review bounce comes before the suite');
+    touchMarker(dir);
+    const second = runHook(dir, 'git commit -m "chore: bump"');
+    assertEq(second.code, 2, 'and past the marker the suite runs and its failure blocks');
+    assert(suiteRan(dir), 'the suite ran');
+    cleanup(dir);
+  });
+
+  await test('a code file alongside the version bump — the suite runs', () => {
+    const dir = mkReleaseRepo();
+    stage(dir, 'package.json', pkg('1.0.1'));
+    stage(dir, 'app.js', 'const x = 2;\n');
+    touchMarker(dir);
+    const { code, stderr } = runHook(dir, 'git commit -m "feat: thing"');
+    assertEq(code, 2, 'any staged code line still gates on the suite');
+    assert(stderr.includes('test suite failed'), `for the suite reason, got: ${stderr}`);
+    assert(suiteRan(dir), 'the suite ran');
+    cleanup(dir);
+  });
+
+  // The other file a repo keeps its version in — a plugin repo (this one
+  // included) bumps both in the same release commit.
+  const manifest = (version, extra) => `${JSON.stringify({
+    name: 'fixture', version, description: 'a plugin', ...extra,
+  }, null, 2)}\n`;
+
+  const mkPluginRepo = () => {
+    const dir = mkReleaseRepo();
+    stageDeep(dir, '.claude-plugin/plugin.json', manifest('1.0.0'));
+    execSync('git commit -q -m "manifest" --no-verify', { cwd: dir, stdio: 'pipe' });
+    return dir;
+  };
+
+  await test('version-only plugin.json bump — the suite does not run', () => {
+    const dir = mkPluginRepo();
+    stage(dir, 'package.json', pkg('1.0.1'));
+    stageDeep(dir, '.claude-plugin/plugin.json', manifest('1.0.1'));
+    dropMarker(dir);
+    const { code, stderr } = runHook(dir, 'git commit -m "chore(release): 1.0.1"');
+    assertEq(code, 0, `the plugin release commit's shape passes, got: ${stderr}`);
+    assert(!suiteRan(dir), 'both version stamps are bookkeeping, not code');
+    cleanup(dir);
+  });
+
+  await test('plugin.json version bump plus a second changed key — gates as code', () => {
+    const dir = mkPluginRepo();
+    stageDeep(dir, '.claude-plugin/plugin.json', manifest('1.0.1', { description: 'reworded' }));
+    dropMarker(dir);
+    const first = runHook(dir, 'git commit -m "chore: bump"');
+    assertEq(first.code, 2, 'any second change restores code classification');
+    assert(first.stderr.includes('workkit:review'), `the review marker is demanded, got: ${first.stderr}`);
+    touchMarker(dir);
+    const second = runHook(dir, 'git commit -m "chore: bump"');
+    assertEq(second.code, 2, 'and past the marker the suite runs and its failure blocks');
+    assert(suiteRan(dir), 'the suite ran');
+    cleanup(dir);
+  });
+
+  await test('a script under a docs PATH is code — the suite runs (review finding)', () => {
+    // hooks/docs/*/run.sh is executable bash living under a docs directory —
+    // six of them in this repo. Classifying it as docs would let a hook change
+    // commit with no suite and no review marker. Seeded first, then modified,
+    // so check 1 (new source needs tests) is not what answers.
+    const dir = mkReleaseRepo();
+    stageDeep(dir, 'hooks/docs/x/run.sh', '#!/bin/bash\necho hi\n');
+    execSync('git commit -q -m "hook" --no-verify', { cwd: dir, stdio: 'pipe' });
+    stageDeep(dir, 'hooks/docs/x/run.sh', '#!/bin/bash\necho tweaked\n');
+    dropMarker(dir);
+    const first = runHook(dir, 'git commit -m "fix: the hook"');
+    assertEq(first.code, 2, 'a code extension wins over the docs path');
+    assert(first.stderr.includes('workkit:review'), `the review marker is demanded, got: ${first.stderr}`);
+    touchMarker(dir);
+    const second = runHook(dir, 'git commit -m "fix: the hook"');
+    assertEq(second.code, 2, 'and the suite runs for it');
+    assert(suiteRan(dir), 'the suite ran');
+    cleanup(dir);
+  });
+
+  await test('a .md under a docs path is still docs — the suite does not run', () => {
+    const dir = mkReleaseRepo();
+    stageDeep(dir, 'docs/notes.md', '# notes\n');
+    dropMarker(dir);
+    const { code, stderr } = runHook(dir, 'git commit -m "docs: notes"');
+    assertEq(code, 0, `the docs basenames are unchanged, got: ${stderr}`);
+    assert(!suiteRan(dir), 'a docs file under docs/ still stands the suite down');
+    cleanup(dir);
+  });
+
+  await test('-am: the working tree decides the version bump, not the index', () => {
+    // The -a/--all arm of the helper: what the commit CARRIES is the working
+    // tree, so an edit past the version there is code even when the index holds
+    // a clean bump.
+    const clean = mkReleaseRepo();
+    stage(clean, 'package.json', pkg('1.0.1'));
+    dropMarker(clean);
+    const bump = runHook(clean, 'git commit -am "chore(release): 1.0.1"');
+    assertEq(bump.code, 0, `a -am version-only bump still passes, got: ${bump.stderr}`);
+    assert(!suiteRan(clean), 'and stands the suite down');
+    cleanup(clean);
+
+    const dir = mkReleaseRepo();
+    stage(dir, 'package.json', pkg('1.0.1'));
+    fs.writeFileSync(path.join(dir, 'package.json'), pkg('1.0.1', { description: 'edited past the bump' }));
+    touchMarker(dir);
+    const { code, stderr } = runHook(dir, 'git commit -am "chore(release): 1.0.1"');
+    assertEq(code, 2, 'the unstaged second change is what -a would carry');
+    assert(suiteRan(dir), `the suite ran, got: ${stderr}`);
+    cleanup(dir);
+  });
+
+  await test('a NESTED package.json version bump is code — the suite runs', () => {
+    // The carve-out is the root package.json alone; a workspace member's
+    // version is not the release tooling's stamp on this repo.
+    const dir = mkReleaseRepo();
+    stageDeep(dir, 'sub/package.json', pkg('1.0.0'));
+    execSync('git commit -q -m "sub" --no-verify', { cwd: dir, stdio: 'pipe' });
+    stageDeep(dir, 'sub/package.json', pkg('1.0.1'));
+    touchMarker(dir);
+    const { code, stderr } = runHook(dir, 'git commit -m "chore: bump sub"');
+    assertEq(code, 2, 'a nested package.json stays code');
+    assert(suiteRan(dir), `the suite ran, got: ${stderr}`);
+    cleanup(dir);
+  });
+
   group('commit-gate: wiring (loader + settings)');
 
   const LOADER = path.join(__dirname, '..', '..', 'hooks', 'loader.sh');

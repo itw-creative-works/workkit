@@ -91,7 +91,7 @@ If `scripts.prepare` exists, run `npm run prepare`. This builds outputs (compile
 
 Do NOT run `scripts.setup` — setup is environment/machine provisioning, not release work. A repo whose ship needs codegen expresses that as `prepare`.
 
-**No test step.** The skill never runs the test suite: the `safety/commit-gate` hook runs it deterministically on every commit — that is the single owner of test enforcement. A failing suite surfaces as a blocked commit in Step 3; fix the failure, never bypass the gate.
+**No test step.** The skill never runs the test suite: the `safety/commit-gate` hook runs it deterministically on every commit that carries code (issue #151 — docs-only commits and version-only bumps skip it) — that is the single owner of test enforcement. A failing suite surfaces as a blocked commit in Step 3; fix the failure, never bypass the gate. A ship whose commits are all no-code leans on the newest code-carrying commit's gate run, which is the proof publish check 3 reads.
 
 ## Step 3: Analyze, commit, and push
 
@@ -149,7 +149,7 @@ This step runs if there are changes in the working tree (from the session's work
 6. **Close the shipped work items** — every issue this ship completes ends closed with a pointer to the CHANGELOG entry. The `Fixes #N` trailer already closed it when its commit landed on the default branch; for anything left open, close it manually:
    `gh issue close <N> --comment "Shipped in <version-or-commit> — see CHANGELOG [Unreleased]/<section>."`
    Issues that are only PARTLY addressed stay open — comment the progress instead.
-   Release every claim this ship completes: remove whichever working labels the closed issue is carrying — `status:qa`, `status:building`, `agent:working` (`gh issue edit <N> --remove-label status:qa,status:building,agent:working`; naming a label the issue does not have is harmless). Both statuses are possible: the normal path parks at `status:qa` and ships from there, an `agent:ok` issue runs straight through and is still at `status:building`. A trailer closes the issue but never touches labels, the spec says the ship close is what ENDS the working stage, and a label left on closed issues stops meaning anything.
+   Release every claim this ship completes: remove whichever working labels the closed issue is carrying — `status:qa`, `status:building`, `agent:working` (`gh issue edit <N> --remove-label status:qa,status:building,agent:working`; naming a label the issue does not have is harmless). Both statuses are possible: the normal path parks at `status:qa` and ships from there, and an issue can still be at `status:building` when the ship reaches it. A trailer closes the issue but never touches labels, the spec says the ship close is what ENDS the working stage, and a label left on closed issues stops meaning anything.
    Then PRUNE the queue: if the repo participates, open `.workkit/agents/session.md` and delete every entry this ship completed — the bullets about the issues just closed and about the release just cut. Their facts now live in the CHANGELOG and the closed issues; the file is the next session's task queue, not an archive of this one.
 
 7. **Verify** — run `git status` to confirm the working tree is clean and `git log --oneline -2` shows the expected commits on the default branch.
@@ -171,7 +171,7 @@ If the package passes the publish safety checks below, ask "Publish to npm?" and
 
 1. **`private` field must be explicitly `false` or absent with publish signals.** If `private: true` → STOP with error. If `private` is not set at all (missing from package.json) → STOP with error. Missing `private` means the project never opted into publishing — treat it as private per convention.
 2. **Package must have publish intent signals.** At least ONE of: `files` field (tarball contents), `publishConfig` field. Without these, the package wasn't designed for npm distribution → STOP with error.
-3. **This ship's commit passed the `safety/commit-gate` hook** (the work commit, or the release commit on a bump-only ship) — its test run is the deterministic proof the suite is green. A commit made with hooks disabled doesn't count; refuse to publish.
+3. **This ship's latest code-carrying commit passed the `safety/commit-gate` hook** — its test run is the deterministic proof the suite is green. A commit whose staged diff carries no code (docs, or a version-only bump — the release commit's shape) skips the suite by design (issue #151); the proof for such a ship is the newest commit that DID carry code, gated when it landed. A commit made with hooks disabled doesn't count; refuse to publish.
 4. **Version bump must have been applied** this session.
 
 If all checks pass: `npm publish` (or `npm publish --access public` for scoped packages like `@scope/pkg`).
@@ -230,7 +230,7 @@ EOF
 ```
 
 ### The commit gates (safety/commit-gate + safety/commit-language hooks)
-Every `git commit` on this machine passes through the `safety/commit-gate` hook (PreToolUse on Bash): it runs `npm test` when the project defines one; when the commit ADDS source files it requires a test file in the same commit; and when CODE is staged it requires a review marker newer than the last commit — written by the `workkit:review` skill. The `safety/commit-language` hook adds three message checks: it bounces commit messages using kill/destroy/dead wording (use terminate/remove/stale), a subject line that is not Conventional Commits (`<type>(<scope>)?: <subject>`, type one of feat/fix/docs/chore/refactor/test, lowercase first word, ≤72 characters), and a subject naming a semver version outside the release commit `chore(release): <x.y.z>`. Consequences for shipping:
+Every `git commit` on this machine passes through the `safety/commit-gate` hook (PreToolUse on Bash): it runs `npm test` when the project defines one and the staged diff carries code (docs-only commits and version-only bumps skip it — issue #151); when the commit ADDS source files it requires a test file in the same commit; and when CODE is staged it requires a review marker newer than the last commit — written by the `workkit:review` skill. The `safety/commit-language` hook adds three message checks: it bounces commit messages using kill/destroy/dead wording (use terminate/remove/stale), a subject line that is not Conventional Commits (`<type>(<scope>)?: <subject>`, type one of feat/fix/docs/chore/refactor/test, lowercase first word, ≤72 characters), and a subject naming a semver version outside the release commit `chore(release): <x.y.z>`. Consequences for shipping:
 - Code changes need a fresh `workkit:review` run before Step 3's work commit. **Ship runs it itself in Step 3.2b** — you do not ask the user to run it first, and you never try to bypass the gate.
 - New source files ship WITH their tests in the same commit.
 - The hooks evaluate BEFORE a command runs, so a marker refresh must be its OWN Bash command — `touch <marker> && git commit ...` in one compound command never passes.
@@ -266,5 +266,5 @@ The rules (word cap, separator, the rest) live in `~/.claude/workkit/changelog.j
 - The review marker must be newer than the LAST commit, so the moment the work commit lands the marker is stale for the release commit — retouch the marker as its own command before `chore(release)` when the release commit stages anything code-classified (2026-07-23).
 - A squash merge REWRITES the sha — the branch commits never land on the default branch. Never run the changelog backfill before the merge: it would link shas that exist only on a deleted branch. Merge, pull the default branch, then backfill (2026-07-26: the reason the release commit follows the merge).
 - `gh pr merge --squash` without `--body` composes its own body from the branch commits — always pass `--subject` and `--body` explicitly so the `Fixes #N` trailer is guaranteed to be in the squash commit.
-- Skill `SKILL.md` files count as CODE to the `safety/commit-gate` hook — a "prose-only" skill edit still needs a fresh review marker; don't assume docs-only (2026-07-23: first retrofitted ship run).
+- Skill `SKILL.md` files classify as DOCS to the `safety/commit-gate` hook (the `*.md` basename arm) — the gate asks no review marker and, post-#151, runs no suite for a prose-only skill edit. The review skill's judgment still applies to substantive skill changes; the gate just cannot demand it.
 - A leaked value in history has a runbook: `docs/history-purge.md` — never improvise a rewrite.
