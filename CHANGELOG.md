@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.34.1] - 2026-08-05
+
 ### Fixed
 
-- [#145](../../issues/145) — The inbox guard now gates writes: the agent clears the owner's inbox only during a triage run and never appends to it, and the change-tracker stops offering the file as a filing fallback when GitHub is unreachable.
+- [#145](../../issues/145) [`c45b8a5`](../../commit/c45b8a5) Thanks [@ianwieds]! — The inbox guard now gates writes: the agent clears the owner's inbox only during a triage run and never appends to it, and the change-tracker stops offering the file as a filing fallback when GitHub is unreachable.
 
 ## [0.34.0] - 2026-08-05
 
