@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-08-05
+
 ### Changed
 
-- [#146](../../issues/146) — `.workkit/` splits by owner: `capture.md` is the owner's one editable file (renamed from `inbox.md`), all agent state lives under `agents/`, and the guard hook renames to `capture-guard`. No backwards compatibility; the three participating repos move by hand.
+- [#146](../../issues/146) [`1321700`](../../commit/1321700) Thanks [@ianwieds]! — `.workkit/` splits by owner: `capture.md` is the owner's one editable file (renamed from `inbox.md`), all agent state lives under `agents/`, and the guard hook renames to `capture-guard`. No backwards compatibility; the three participating repos move by hand.
 
 ## [0.34.1] - 2026-08-05
 
