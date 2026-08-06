@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#150](../../issues/150) — `workkit heal [repo]` re-runs the standards heal on the repo you stand in, or the one you name, without waiting for the session hook's once-a-day pass.
+
 ## [0.36.0] - 2026-08-05
 
 ### Added

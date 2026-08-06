@@ -129,7 +129,7 @@ The morning on the clock, and **one script for it — `jobs/morning.sh`, run by 
 
 ### Engine — `workflow/`
 
-Plain shell and Node, no Claude Code knowledge: `workkit.sh` (the one command — `setup` · `update` · `doctor` · `publish` · `tower` · `enable` · `decline` · `note`), `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `home.sh` + `discussions.sh` + `publish.sh` (the home repo's lifecycle, its Discussions API, and the gh-pages publish), `changelog.js` (the entry-format linter the hooks call), `changelog-links.js` (release-time commit links and contributor handles), `wk.sh` (the capture CLI — `wk.sh note "the thought"` drops a bullet into the nearest participating repo's `capture.md`, or files an issue on the home repo outside one), and the templates a repo receives when it opts in.
+Plain shell and Node, no Claude Code knowledge: `workkit.sh` (the one command — `setup` · `update` · `doctor` · `publish` · `tower` · `enable` · `decline` · `heal` · `note`), `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `home.sh` + `discussions.sh` + `publish.sh` (the home repo's lifecycle, its Discussions API, and the gh-pages publish), `changelog.js` (the entry-format linter the hooks call), `changelog-links.js` (release-time commit links and contributor handles), `wk.sh` (the capture CLI — `wk.sh note "the thought"` drops a bullet into the nearest participating repo's `capture.md`, or files an issue on the home repo outside one), and the templates a repo receives when it opts in.
 
 ## The home repo
 

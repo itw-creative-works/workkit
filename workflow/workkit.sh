@@ -158,6 +158,8 @@ usage: workkit <command> [args]
                        together, until one interrupt ends both
   enable [repo]        write the repo's committed opt-in, then heal it
   decline [repo]       record this developer's no for the repo, personally
+  heal [repo]          re-run the standards heal on the repo now — the same
+                       pass a session makes once a day, without the wait
   note <text...>       append one bullet to the nearest capture file, or file it
                        as an issue on the home repo outside every project
 
@@ -1074,6 +1076,7 @@ case "${1:-help}" in
     ;;
   enable)  shift; exec bash "$STANDARDS" --enable "${1:-$PWD}" ;;
   decline) shift; exec bash "$STANDARDS" --decline "${1:-$PWD}" ;;
+  heal)    shift; exec bash "$STANDARDS" "${1:-$PWD}" ;;
   note)    shift; exec bash "$CAPTURE" note "$@" ;;
   *)
     printf 'workkit: unknown command %s\n\n' "$1" >&2

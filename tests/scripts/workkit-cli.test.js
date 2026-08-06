@@ -261,7 +261,7 @@ const run = async () => {
     const world = mkWorld();
     const { code, out } = runCli(world, []);
     assertEq(code, 0, 'exit 0');
-    for (const word of ['usage: workkit', 'setup', 'update', 'doctor', 'enable', 'decline', 'note']) {
+    for (const word of ['usage: workkit', 'setup', 'update', 'doctor', 'enable', 'decline', 'heal [repo]', 'note']) {
       assert(out.includes(word), `the map names ${word}, got: ${out}`);
     }
     cleanup(world.root);
@@ -1170,6 +1170,19 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     assertEq(code, 0, 'exit 0');
     assert(fs.existsSync(path.join(repo, W, 'settings.json')), 'the repo’s yes is on disk');
     cleanup(world.root); cleanup(repo);
+  });
+
+  // The heal a session makes once a day, asked for now — so the assertion is
+  // that the pass RAN on the target, named or the one the shell stands in.
+  await test('heal runs the standards pass on the repo, named or the current one', () => {
+    const world = mkWorld();
+    const named = mkRepo({ optIn: true });
+    const here = mkRepo({ optIn: true });
+    assertEq(runCli(world, ['heal', named]).code, 0, 'exit 0 on a named repo');
+    assert(fs.existsSync(path.join(named, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'the named repo was healed');
+    assertEq(runCli(world, ['heal'], { cwd: here }).code, 0, 'exit 0 with no argument');
+    assert(fs.existsSync(path.join(here, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'and no argument heals the repo the shell is in');
+    cleanup(world.root); cleanup(named); cleanup(here);
   });
 
   group('workkit brief: today’s brief, asked for now (issue #54)');
