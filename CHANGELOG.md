@@ -7,14 +7,16 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-08-05
+
 ### Added
 
-- [#135](../../issues/135) — The pipeline gains `status:qa` between building and the close: built work parks in the working tree, the issue flips with a comment naming what to check, and the owner's word ships it. `agent:ok` is redefined as fully autonomous through the ship, so it never co-exists with `status:qa`.
+- [#135](../../issues/135) [`c663968`](../../commit/c663968) Thanks [@ianwieds]! — The pipeline gains `status:qa` between building and the close: built work parks in the working tree, the issue flips with a comment naming what to check, and the owner's word ships it. `agent:ok` is redefined as fully autonomous through the ship, so it never co-exists with `status:qa`.
 
 ### Changed
 
-- [#147](../../issues/147) — The ship skill now takes the owner's own word as its invocation — "ship it" runs it exactly as `/workkit:ship` does — while a passing mention does not, and an invocation authorizes that one ship alone.
-- [#149](../../issues/149) — A label colour is now unique within its group and shared across groups: `type:` becomes red/orange/purple, `priority:high` the alarm red, `priority:low` the faint gray, every hex its board token's light value. Status chips gain glyphs, and the tower's brand hex turns blue.
+- [#147](../../issues/147) [`c663968`](../../commit/c663968) Thanks [@ianwieds]! — The ship skill now takes the owner's own word as its invocation — "ship it" runs it exactly as `/workkit:ship` does — while a passing mention does not, and an invocation authorizes that one ship alone.
+- [#149](../../issues/149) [`c663968`](../../commit/c663968) Thanks [@ianwieds]! — A label colour is now unique within its group and shared across groups: `type:` becomes red/orange/purple, `priority:high` the alarm red, `priority:low` the faint gray, every hex its board token's light value. Status chips gain glyphs, and the tower's brand hex turns blue.
 
 ## [0.35.0] - 2026-08-05
 
