@@ -7,10 +7,12 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-08-06
+
 ### Changed
 
-- [#148](../../issues/148) — agent:ok now composes with status:qa: the qa stage belongs to every issue and the label decides who performs the check, the owner or the agent itself.
-- [#151](../../issues/151) — The commit gate runs the test suite only when the staged diff contains code: docs-only commits and a version-only bump in package.json or .claude-plugin/plugin.json skip it, any staged code line still gates, and a code extension now outranks a docs path, so `hooks/docs/*/run.sh` is code to both hooks.
+- [#148](../../issues/148) [`54483ff`](../../commit/54483ff) Thanks [@ianwieds]! — agent:ok now composes with status:qa: the qa stage belongs to every issue and the label decides who performs the check, the owner or the agent itself.
+- [#151](../../issues/151) [`54483ff`](../../commit/54483ff) Thanks [@ianwieds]! — The commit gate runs the test suite only when the staged diff contains code: docs-only commits and a version-only bump in package.json or .claude-plugin/plugin.json skip it, any staged code line still gates, and a code extension now outranks a docs path, so `hooks/docs/*/run.sh` is code to both hooks.
 
 ## [0.37.0] - 2026-08-06
 
