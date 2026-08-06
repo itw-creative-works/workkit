@@ -12,7 +12,7 @@ Every phase exists to prevent a specific failure (building the wrong thing, miss
 
 When the work has an issue, check its stage before anything else. Builds start ONLY from `status:specced` with a real `## Spec` (the implementation layer, or the literal `None needed — small item.`). An issue at `status:inbox` — or a specced one whose Spec is missing its implementation layer — gets the SPEC PASS first: a `workkit:scout` maps the territory, the spec drafts against the issue and the map — and any Spec beyond the literal `None needed — small item.` gets the [workkit:interview](../interview/SKILL.md) BEFORE acceptance is requested, never a whole draft handed over for a yes (spec § Specs; `agent:ok` issues are exempt) — the manager reviews, the owner accepts; the deepened Spec lands on the issue and the label moves to `status:specced`. That flip IS the authorization; on an issue carrying `agent:ok` an agent may make it itself. Then build. Whatever you write onto the issue follows the anatomy rules (spec § Issue anatomy), including the introduction rule: the first mention of an outside project or repo carries a link and a one-line description of what it is.
 
-Claim the issue before working it: assign it to yourself, move it to `status:building`, AND add `agent:working` (`gh issue edit <N> --add-assignee @me --remove-label status:specced --add-label status:building,agent:working`), skip an issue already assigned to someone else, and re-read the label and the assignee at the moment you start — not at the moment you listed the queue. Remove `agent:working` when you release the issue, finished or not; a claim left behind is swept by the standards heal after 24 idle hours. `status:building` is not taken off by hand — it carries the work through verify and ship, and the ship close ends it. The `agent:working` label is what tells an agent claim from a human one — an agent runs `gh` as the owner, so the assignee cannot. (The road and the rules: the workkit plugin's README and `docs/project-state.md`.)
+Claim the issue before working it: assign it to yourself, move it to `status:building`, AND add `agent:working` (`gh issue edit <N> --add-assignee @me --remove-label status:specced --add-label status:building,agent:working`), skip an issue already assigned to someone else, and re-read the label and the assignee at the moment you start — not at the moment you listed the queue. Remove `agent:working` when you release the issue, finished or not; a claim left behind is swept by the standards heal after 24 idle hours. `status:building` is not taken off by hand — it carries the work through build and verify, and phase 6 flips it to `status:qa`, which the ship close ends. The `agent:working` label is what tells an agent claim from a human one — an agent runs `gh` as the owner, so the assignee cannot. (The road and the rules: the workkit plugin's README and `docs/project-state.md`.)
 
 ## 0. Size the task — say the size out loud
 
@@ -47,3 +47,18 @@ Stage the class agents by phase, never all at once. Build = ONE `workkit:worker`
 ## 5. Verify + review
 
 Run the suite. Then [workkit:review](../review/SKILL.md) on the diff (trivial tasks: skip formal review; the green suite is the proof). Fix ≥80 findings before calling it done. Optional final pass: [workkit:simplify](../simplify/SKILL.md) — only after green. Done-criteria: suite green, review verdict "ship", the issue and docs updated per the doc-parity rules.
+
+## 6. Park at `status:qa` — the flow ends here, not at a ship
+
+Build done, tests green, review passed → the work STAYS IN THE WORKING TREE (uncommitted, or committed but unpushed). Flip the issue and say what to check:
+
+```
+gh issue edit <N> --remove-label status:building,agent:working --add-label status:qa
+gh issue comment <N> --body "<what to check, and where>"
+```
+
+`agent:working` comes off with the flip: the agent is done and the wait is the owner's, and a claim left standing is swept as stale after 24 idle hours. The assignee stays — the work is still in that tree. The comment is the whole handover: what changed, what to look at, and where to look at it — the page to open, the command to run, or the diff to read when the change has no surface. The flip is MECHANICAL — it is not a question, and it happens the moment the done-criteria above are met.
+
+**This is where the flow ENDS.** Do not ship, and do not ask in chat whether to ship: the owner's word is what runs [workkit:ship](../ship/SKILL.md), and asking for it is the same as asking them to approve their own gate (spec § Labels). A failed check comes back here — fix it in place, re-comment, and the label does not move. The tree holds unshipped work while an item sits in qa, so the next item waits.
+
+The ONE exception is an issue carrying `agent:ok`: that label is the owner's word given in advance, so the flow runs straight through — no park, no `status:qa`, ship and close.

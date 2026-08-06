@@ -251,6 +251,22 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  await test('a built item waiting on the owner is its own section, and ranks above the specs', () => {
+    // Issue #135: `status:qa` is the park a built item sits in until the owner
+    // checks it. The composed payload carries it exactly as the tower's does —
+    // its own bucket and count, and actionable in nextUp under the decisions.
+    const world = mkWorld();
+    world.board.data.r0.issues.totalCount = 3;
+    world.board.data.r0.issues.nodes.push(issueNode(19, ['status:qa']));
+    const out = composeIn(world);
+    assertEq(out.qa.map((i) => i.number).join(','), '19', 'the parked item is the qa section');
+    assertEq(out.counts.qa, 1, 'and its own count');
+    assertEq(out.inFlight.length, 0, 'never counted as work somebody is still on');
+    assertEq(out.nextUp[0].items.map((i) => i.number).join(','), '18,19,17',
+      'the decision, then the check the owner owes, then the accepted spec');
+    cleanup(world.root);
+  });
+
   group('jobs/brief-payload: yesterday and the week');
 
   await test('the newest daily summary is the findings, every morning', () => {
@@ -373,14 +389,21 @@ const run = async () => {
 
   await test('the instruction describes the new keys and gives each one a section', () => {
     assert(/`nextUp` is the same board asked one question further/.test(INSTRUCTION), 'the payload description explains nextUp');
+    assert(/`qa` is built and verified and waiting on the\nowner's check/.test(INSTRUCTION), 'the payload description explains qa (#135)');
+    assert(/^WAITING ON YOUR CHECK: every issue in `qa`/m.test(INSTRUCTION), 'and the response shape has its section');
     assert(/`findings` is the newest daily summary/.test(INSTRUCTION), 'and the findings');
     assert(/`week` is the weekly rollup, which rides on Mondays/.test(INSTRUCTION), 'and when the week rides');
     assert(/^WORK ON THIS NEXT: `nextUp`/m.test(INSTRUCTION), 'the response shape has its ranked list');
     assert(/waits on/.test(INSTRUCTION), 'and the digest is told to say what an item waits on (#103)');
     assert(/^YESTERDAY: one line/m.test(INSTRUCTION), 'a line for what yesterday produced');
     assert(/^THE WEEK: one line/m.test(INSTRUCTION), 'and one for the week');
-    for (const section of ['WORK ON THIS NEXT', 'YESTERDAY', 'THE WEEK']) {
-      assert(new RegExp(`^${section}:[^]*?Omit the section\\n?entirely`, 'm').test(INSTRUCTION),
+    // Each omit clause is looked for inside its OWN section: the instruction is
+    // split at every labeled header, so a section that lost the clause fails
+    // here instead of matching the next section's copy of it further down.
+    const chunks = INSTRUCTION.split(/\n(?=[A-Z][A-Z' 0-9]+:)/);
+    for (const section of ['WAITING ON YOUR CHECK', 'WORK ON THIS NEXT', 'YESTERDAY', 'THE WEEK']) {
+      const chunk = chunks.find((part) => part.startsWith(`${section}:`));
+      assert(chunk && /Omit\s+the\s+section\s+entirely/.test(chunk),
         `${section} is omitted when there is nothing to say`);
     }
   });
@@ -471,7 +494,7 @@ const run = async () => {
     writeBriefMarks(null, {
       ok: true,
       generatedAt: '2026-08-03T09:00:00.000Z',
-      counts: { open: 4, waiting: 1, ready: 1, inFlight: 1, inbox: 1, parked: 0 },
+      counts: { open: 4, waiting: 1, qa: 1, ready: 1, inFlight: 1, inbox: 1, parked: 0 },
       closedDay: 2,
       repoCounts: [{ slug: 'owner/repo', open: 4, closedDay: 2 }],
     });
@@ -479,7 +502,7 @@ const run = async () => {
     else process.env.WORKKIT_BRIEF_MARK_FILE = before;
     assertEq(
       fs.readFileSync(file, 'utf8'),
-      '<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":4,"waiting":1,"ready":1,"inFlight":1,"inbox":1,"parked":0},"closedDay":2,"repos":{"owner/repo":{"open":4}}} -->\n',
+      '<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":4,"waiting":1,"qa":1,"ready":1,"inFlight":1,"inbox":1,"parked":0},"closedDay":2,"repos":{"owner/repo":{"open":4}}} -->\n',
       'the line, exactly as the runner will append it',
     );
     cleanup(dir);

@@ -13,11 +13,12 @@ disallowed-tools: AskUserQuestion
 One query does it: `gh issue list --state open --json number,title,labels,assignees,blockedBy --limit 100`.
 Answer in this shape, plain language, one sentence per item:
 
-1. **Waiting on you** — `status:blocked` issues. Name the actual question for each (it is in a comment: `gh issue view <N> --comments`).
-2. **In flight** — `status:building` issues. Say who and what.
-3. **Up next** — `status:specced` issues, in priority order: `priority:high` first, then unlabeled (= normal), then `priority:low`. First 3–5.
+1. **Waiting on your check** — `status:qa` issues: built, verified, and parked in the working tree until you say "ship". Name what each one wants checked (it is in a comment: `gh issue view <N> --comments`). These lead because the tree holds their work, so nothing else finishes until they do.
+2. **Waiting on you** — `status:blocked` issues. Name the actual question for each (it is in a comment: `gh issue view <N> --comments`).
+3. **In flight** — `status:building` issues. Say who and what.
+4. **Up next** — `status:specced` issues, in priority order: `priority:high` first, then unlabeled (= normal), then `priority:low`. First 3–5.
    Within one priority, order by dependency, risk, and reviewability: blockers first (work other issues wait on — the native relationship where it exists, which the `blockedBy` field above carries, with a parent's open siblings, an inline `Depends on:` line and anything another issue names in prose as the fallback signal; an edge onto a CLOSED issue is satisfied and orders nothing), then bugs, then shared seams (the file or module several queued items all touch), and only then dependent feature work. Say WHY the top item is top in the same sentence ("first because #12 waits on it"). This is the order the autonomy loop uses; the rule's home is `docs/project-state.md` § Queue semantics.
-4. **Inbox** — the `status:inbox` count → offer the `workkit:triage` skill.
+5. **Inbox** — the `status:inbox` count → offer the `workkit:triage` skill.
 
 Also mention `.workkit/` if a lease/notes file says this session or developer is mid-work on an issue (`.workkit/` is per-developer session state, not shared truth).
 
@@ -26,7 +27,7 @@ Omit empty sections. No jargon without a plain-words gloss. Note `agent:ok` wher
 ## Global mode ("across all projects" / cwd is the home repo)
 
 1. Read the roster — the `repos` map in `~/.workkit/.repos.json`, every entry whose value is not `"declined"`. Its keys are absolute PATHS, not slugs: resolve each to `owner/name` through its git remote (`git -C <path> remote get-url origin`) before any `gh issue list --repo <owner/name> ...`. (The full state-reading recipe, including the published fallback, is the `workkit:state` skill's.) It is this machine's index; a repo it has never opened is not on it.
-2. Per project, ONE line: `<name> — <in-flight item or "idle">; blocked: <count or none>; specced: <count>`.
+2. Per project, ONE line: `<name> — <in-flight item or "idle">; waiting on your check: <count or none>; blocked: <count or none>; specced: <count>`.
 3. Then the home repo's own issues (`site.repo` in `~/.workkit/settings.json`), same shape as repo mode — that is where the cross-project and business queue lives. No `site.repo` set: say so.
 4. Flag unreachable repos (`(no remote)` / `(path missing)`) instead of skipping silently.
 

@@ -80,6 +80,7 @@ const renderStatsMark = (payload) => {
     totals: {
       open: counts.open || 0,
       waiting: counts.waiting || 0,
+      qa: counts.qa || 0,
       ready: counts.ready || 0,
       inFlight: counts.inFlight || 0,
       inbox: counts.inbox || 0,

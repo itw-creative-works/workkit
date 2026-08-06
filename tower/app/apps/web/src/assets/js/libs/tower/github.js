@@ -614,9 +614,9 @@ const byUrgency = (a, b) => {
 };
 
 // `nextUp` is that module's rule too, and restated for the same reason: the few
-// items a morning could move, per repo, decisions before accepted specs, three
-// at most. The published copy carries it because the payloads are one shape —
-// the suite compares them key for key.
+// items a morning could move, per repo — decisions, then the checks waiting on
+// the owner, then accepted specs — three at most. The published copy carries it
+// because the payloads are one shape — the suite compares them key for key.
 const NEXT_UP_PER_REPO = 3;
 
 // The per-repo sweep counts the payload carries, and the roster-wide closed
@@ -644,6 +644,7 @@ const nextUpFrom = (issues) => {
     .filter(Boolean);
   const actionable = [
     ...issues.filter((i) => i.status === 'blocked'),
+    ...issues.filter((i) => i.status === 'qa'),
     ...issues.filter((i) => i.status === 'specced'),
   ];
   const byRepo = new Map();
@@ -670,6 +671,7 @@ const nextUpFrom = (issues) => {
 export const headlineFor = (counts) => {
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   if (counts.waiting) return `${plural(counts.waiting, 'issue is', 'issues are')} waiting on a decision from you.`;
+  if (counts.qa) return `${plural(counts.qa, 'issue is', 'issues are')} built and waiting on your check.`;
   if (counts.inFlight) return `${plural(counts.inFlight, 'issue is', 'issues are')} in flight, and nothing is blocked.`;
   if (counts.ready) return `Nothing is blocked — ${plural(counts.ready, 'issue is', 'issues are')} specced and ready to start.`;
   if (counts.inbox) return `The board is clear of specced work; ${plural(counts.inbox, 'item is', 'items are')} sitting in the inbox.`;
@@ -687,6 +689,9 @@ export const buildBrief = (board, opts = {}) => {
   const issues = (board && Array.isArray(board.issues) ? board.issues : []).slice().sort(byUrgency);
 
   const waiting = issues.filter((i) => i.status === 'blocked').map(briefIssue);
+  // Its own section, the API's brief's rule (issue #135): a qa item is finished
+  // work waiting on the OWNER, not work somebody is still on.
+  const qa = issues.filter((i) => i.status === 'qa').map(briefIssue);
   // The status label is the whole answer here as it is in the API's brief
   // (issue #62): a claimed `specced` issue is a transient the standards sweep
   // flips to `building`, never a second in-flight shape to be read for.
@@ -697,6 +702,7 @@ export const buildBrief = (board, opts = {}) => {
   const counts = {
     open: issues.length,
     waiting: waiting.length,
+    qa: qa.length,
     ready: ready.length,
     inFlight: inFlight.length,
     inbox: inbox.length,
@@ -715,6 +721,7 @@ export const buildBrief = (board, opts = {}) => {
     repoCounts,
     nextUp: nextUpFrom(issues),
     waiting,
+    qa,
     ready,
     inFlight,
     inbox,
@@ -992,7 +999,7 @@ const SLUG_SHAPE = /^[\w.-]+\/[\w.-]+$/;
  * restated across the copy boundary for the reason the groups above are, and
  * pinned to `workflow/labels.json` by the suite.
  */
-export const MOVE_STATUSES = ['inbox', 'specced', 'building', 'blocked', 'parked'];
+export const MOVE_STATUSES = ['inbox', 'specced', 'building', 'qa', 'blocked', 'parked'];
 
 /**
  * What a move may do, or why it may not — the endpoint's `validateMove`, on

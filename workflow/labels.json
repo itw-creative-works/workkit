@@ -9,23 +9,27 @@
       "values": {
         "inbox": {
           "description": "Captured, nothing authorized — triage drains this state. Exactly one status: label per open issue.",
-          "color": "1D76DB"
+          "color": "0F8FA9"
         },
         "specced": {
           "description": "Spec written and accepted — building is authorized. Exactly one status: label per open issue.",
-          "color": "0E8A16"
+          "color": "7A45B5"
         },
         "building": {
-          "description": "Authorized and in flight, build through ship. Exactly one status: label per open issue.",
-          "color": "FBCA04"
+          "description": "Authorized and in flight — the work has started. Exactly one status: label per open issue.",
+          "color": "C47206"
+        },
+        "qa": {
+          "description": "Built and verified; waiting on the owner's check. Exactly one status: label per open issue.",
+          "color": "12925C"
         },
         "blocked": {
           "description": "Waiting on a human decision. Exactly one status: label per open issue. A comment names the question.",
-          "color": "B60205"
+          "color": "D92D20"
         },
         "parked": {
           "description": "Kept on purpose, not now. Exactly one status: label per open issue.",
-          "color": "6A737D"
+          "color": "A1A19E"
         }
       }
     },
@@ -35,9 +39,18 @@
       "summary": "What kind of thing the issue is. Exactly one type: label per open issue. Set at capture by the issue template, rarely changes.",
       "color": "8250DF",
       "values": {
-        "bug": { "description": "Something is broken. Exactly one type: label per open issue. Set at capture." },
-        "enhancement": { "description": "New or improved behavior. Exactly one type: label per open issue. Set at capture." },
-        "idea": { "description": "Unshaped thought worth keeping. Exactly one type: label per open issue. Set at capture." }
+        "bug": {
+          "description": "Something is broken. Exactly one type: label per open issue. Set at capture.",
+          "color": "B0416A"
+        },
+        "enhancement": {
+          "description": "New or improved behavior. Exactly one type: label per open issue. Set at capture.",
+          "color": "A06A08"
+        },
+        "idea": {
+          "description": "Unshaped thought worth keeping. Exactly one type: label per open issue. Set at capture.",
+          "color": "7A45B5"
+        }
       }
     },
     "priority": {
@@ -47,11 +60,11 @@
       "values": {
         "high": {
           "description": "Work this before unlabeled issues. Absence of a priority: label means normal.",
-          "color": "D93F0B"
+          "color": "D92D20"
         },
         "low": {
           "description": "Work this after unlabeled issues. Absence of a priority: label means normal.",
-          "color": "FEF2C0"
+          "color": "A1A19E"
         }
       }
     },

@@ -45,13 +45,15 @@ const { renderStatsMark } = require('./stats');
 const INSTRUCTION = `You are producing the owner's MORNING KICKOFF from the brief payload below.
 
 The payload is the tower's daily brief as JSON. \`waiting\` is blocked on a
-decision from the owner, \`ready\` is specced, \`inFlight\` is building,
+decision from the owner, \`qa\` is built and verified and waiting on the
+owner's check before it ships, \`ready\` is specced, \`inFlight\` is building,
 \`inbox\` is captured but not yet specced, and \`warnings\` is work sitting
 on the table per repo (uncommitted, unpushed, unreleased). \`ok: false\` means the
 sweep itself failed — report that and its \`reason\`, never a quiet morning.
 
 \`nextUp\` is the same board asked one question further: per repo, the few open
-items this morning could actually move — decisions first, then accepted specs.
+items this morning could actually move — decisions first, then the checks
+waiting on the owner, then accepted specs.
 \`findings\` is the newest daily summary published on the home repo (what
 yesterday produced), and \`week\` is the weekly rollup, which rides on Mondays
 only. Either may be null or absent, which means there was none to read.
@@ -66,6 +68,8 @@ Line 1 — the literal prefix "HEADLINE: " then one sentence, the single most
 important thing today (<=120 chars total).
 Then these labeled sections, one line per item, tightest useful phrasing:
 WAITING ON YOU: every issue in \`waiting\` — these move only if the owner acts.
+WAITING ON YOUR CHECK: every issue in \`qa\` — built and verified, and each one
+ships the moment the owner says so. Omit the section entirely when \`qa\` is empty.
 IN FLIGHT: every issue in \`inFlight\`, saying which repo.
 WORK ON THIS NEXT: \`nextUp\`, one line per repo — "repo: #N title, #N title" in
 the order given; an item carrying \`waitsOn\` appends "(waits on #M)" so the

@@ -37,7 +37,12 @@ const total = (state, field) => reposFor(state)
 // the standards sweep flips, so counting it here would put the same issue in
 // two places and disagree with the brief the Brief page draws.
 
-// Three of the six numbers are the MACHINE's — the live crew and the state of
+// QA sits between them because it is the OWNER's queue (issue #135): built work
+// parked on a check, which nothing ships past. Blocked is a decision to make and
+// QA is a check to give — two different asks of the same person, so they are two
+// tiles rather than one "waiting on you" number that hides which is which.
+
+// Three of the seven numbers are the MACHINE's — the live crew and the state of
 // its working copies — and a published copy has no reading of them at all. The
 // tile says so: a dash with the local-only sentence as its tooltip, never the 0
 // that summing an empty feed would produce, because "no sessions running" and
@@ -67,6 +72,7 @@ const numbers = (state) => {
   return statgrid([
     statCell('Open issues', issues.length, '/board', undefined, since(entries, 'open')),
     statCell('Blocked', issues.filter((issue) => issue.status === 'blocked').length, '/board', undefined, since(entries, 'waiting')),
+    statCell('QA', issues.filter((issue) => issue.status === 'qa').length, '/board', undefined, since(entries, 'qa')),
     statCell('In flight', issues.filter((issue) => issue.status === 'building').length, '/board', undefined, since(entries, 'inFlight')),
     machineStat(state, 'sessions', 'Live sessions', sessionsFor(state).length, '/crew'),
     machineStat(state, 'health', 'Unpushed', total(state, 'unpushed'), '/health'),
@@ -234,8 +240,9 @@ const drawShape = (state) => {
 // block. So the three cards say WHY they are empty rather than drawing an axis
 // with nothing on it — a chart of one point is a dot claiming to be a trend.
 //
-// The four series are the queue's own, in the Board's order, and every colour
-// comes from the chart module's ramp: nothing here names a colour.
+// The five series are the queue's own, in the Board's order — which is why `qa`
+// is last — and every colour comes from the chart module's ramp: nothing here
+// names a colour.
 
 const historyBody = (payload, id, height, key) => {
   if (unread(payload)) return empty(UNREAD, 'fa-regular fa-clock');
@@ -272,6 +279,7 @@ const drawHistory = (state) => {
       { label: 'ready', values: seriesOf(entries, 'ready').values },
       { label: 'in flight', values: seriesOf(entries, 'inFlight').values },
       { label: 'inbox', values: seriesOf(entries, 'inbox').values },
+      { label: 'qa', values: seriesOf(entries, 'qa').values },
     ],
   });
 
@@ -293,7 +301,7 @@ const render = (root, state) => {
 
   // The board is the section with a failure of its own to report: no gh, no
   // login, no network. It says so where the numbers would be rather than
-  // showing six confident zeros.
+  // showing seven confident zeros.
   let head;
   if (!result) head = `<div class="mb-4">${loading('reading the board…')}</div>`;
   else if (!result.ok) head = `<div class="mb-4">${problem(result.reason)}</div>`;

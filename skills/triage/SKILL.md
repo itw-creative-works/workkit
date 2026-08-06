@@ -9,7 +9,7 @@ argument-hint: "[merge]"
 Work items live as **GitHub issues**. Triage is the ACTION that drains `status:inbox`; it is not a state.
 
 Label vocabulary (SSOT: `~/.claude/workkit/labels.json`, and every repo's own `gh label list`):
-`status:inbox|specced|building|blocked|parked` (exactly ONE per open issue — the PIPELINE, mapped in the workkit plugin's README) · `type:bug|enhancement|idea` · `priority:high|low` (absence = normal) · `agent:ok` (an agent may work it autonomously at every stage — spec, accept, build, ship).
+`status:inbox|specced|building|qa|blocked|parked` (exactly ONE per open issue — the PIPELINE, mapped in the workkit plugin's README) · `type:bug|enhancement|idea` · `priority:high|low` (absence = normal) · `agent:ok` (an agent may work it autonomously at every stage — spec, accept, build, ship — so it never parks at `status:qa`).
 
 ## Marker (opens the capture file)
 

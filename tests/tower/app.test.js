@@ -225,12 +225,12 @@ const run = async () => {
     assertEq(format.shortPath(''), '', 'nothing in, nothing out');
   });
 
-  await test('the board’s columns are the pipeline in order, Building between Specced and Blocked', () => {
-    assertEq(format.STATUSES.map((s) => s.key).join(','), 'inbox,specced,building,blocked,parked',
+  await test('the board’s columns are the pipeline in order, QA at the end of it', () => {
+    assertEq(format.STATUSES.map((s) => s.key).join(','), 'inbox,specced,building,blocked,parked,qa',
       'left to right, and the pipeline is all of it');
-    assertEq(format.STATUSES.map((s) => s.label).join(','), 'Inbox,Specced,Building,Blocked,Parked',
+    assertEq(format.STATUSES.map((s) => s.label).join(','), 'Inbox,Specced,Building,Blocked,Parked,QA',
       'and each column is titled the way a human reads it');
-    assertEq(format.STATUSES.length, 5, 'five lanes — a missing label is not a place an issue lives (#118)');
+    assertEq(format.STATUSES.length, 6, 'six lanes — a missing label is not a place an issue lives (#118)');
     assert(!format.STATUSES.some((s) => !s.key), 'so no column stands for the absence of one');
   });
 
@@ -241,20 +241,29 @@ const run = async () => {
     assertEq(format.statusToken('nonsense'), '--omega-ink-muted', 'an unknown status is drawn, not dropped');
     assert(format.statusToken('building') !== format.statusToken(''),
       'in-flight work and a status the vocabulary does not name never share a colour');
+    // Issue #135: six lanes, six colours. A column header, a card chip and a
+    // chart slice are all read by hue, so two statuses sharing one would make
+    // the board say less than it draws.
+    const tokens = format.STATUSES.map((status) => format.statusToken(status.key));
+    assertEq(new Set(tokens).size, tokens.length, 'no two statuses are drawn in one colour');
+    assertEq(format.statusToken('qa'), '--omega-ok', 'qa wears the ok green — built and good, waiting on the owner');
+    assertEq(format.statusToken('specced'), '--omega-chart-3', 'and specced gives that green up for the categorical purple');
   });
 
   await test('a priority is drawn from the theme, and the unlabelled middle is neutral', () => {
-    assertEq(format.priorityToken('high'), '--omega-accent', 'high takes the theme’s signal colour');
+    assertEq(format.priorityToken('high'), '--omega-danger', 'high takes the theme’s alarm red');
     assertEq(format.priorityToken('low'), '--omega-ink-faint', 'and low the faint end');
     assertEq(format.priorityToken(''), '--omega-ink-muted', 'normal priority is never written on an issue and is drawn neutral');
     assertEq(format.priorityToken('nonsense'), '--omega-ink-muted', 'and so is a priority the vocabulary does not name');
-    // The two chips sit side by side in the dialog, so the LOUD end may not be
-    // borrowed: a priority chip in a pipeline colour would read as a status.
-    // The quiet end is shared with `parked` on purpose — a faint chip saying
-    // "low" and a faint one saying "parked" mean the same thing about urgency.
-    const statuses = format.STATUSES.map((status) => format.statusToken(status.key));
-    assert(!statuses.includes(format.priorityToken('high')), 'high never borrows a status colour');
+    // Both ends are shared with the status they say the same thing as (#149):
+    // a hue is unique inside a vocabulary and free across them, since every
+    // chip carries its own word and its own glyph. "High" and "blocked" are
+    // both the thing that wants attention; "low" and "parked" both say the
+    // opposite about urgency.
+    assertEq(format.priorityToken('high'), format.statusToken('blocked'), 'the loud end is the one the pipeline raises its hand in');
     assertEq(format.priorityToken('low'), format.statusToken('parked'), 'and the quiet end is the one the pipeline parks in');
+    assertEq(new Set([format.priorityToken('high'), format.priorityToken('low')]).size, 2,
+      'and the two ends of the one vocabulary are never the same colour');
   });
 
   await test('a status chip is the colour its Board column header carries', () => {
@@ -272,7 +281,7 @@ const run = async () => {
   //
   // A missing `status:` label is a pipeline fault the daily heal repairs, not a
   // place an issue lives, so it is drawn as an alarm above the board instead of
-  // a sixth lane. These are the questions that lane used to answer.
+  // a lane of its own. These are the questions that lane used to answer.
 
   await test('issues carrying no status label become one danger alert, not a column', () => {
     const markup = format.noStatusAlert([
@@ -320,13 +329,13 @@ const run = async () => {
     const clean = format.statusBreakdown([
       { status: 'inbox' }, { status: 'building' }, { status: 'building' },
     ]);
-    assertEq(clean.labels.join(','), 'Inbox,Specced,Building,Blocked,Parked', 'no drift means five slices, nothing more');
-    assertEq(clean.values.join(','), '1,0,2,0,0', 'each status counts its own');
+    assertEq(clean.labels.join(','), 'Inbox,Specced,Building,Blocked,Parked,QA', 'no drift means six slices, nothing more');
+    assertEq(clean.values.join(','), '1,0,2,0,0,0', 'each status counts its own');
     assertEq(clean.labels.length, clean.colors.length, 'labels and colors stay in step');
 
     const drifted = format.statusBreakdown([{ status: 'inbox' }, { status: '' }, {}]);
     assertEq(drifted.labels[drifted.labels.length - 1], 'No status', 'an unlabeled issue is a visible slice');
-    assertEq(drifted.values.join(','), '1,0,0,0,0,2', 'counted, so the ring sums to the open count');
+    assertEq(drifted.values.join(','), '1,0,0,0,0,0,2', 'counted, so the ring sums to the open count');
     assertEq(drifted.values.reduce((sum, value) => sum + value, 0), 3, 'nothing dropped');
     assert(drifted.colors[drifted.colors.length - 1] !== format.statusColor('blocked'), 'and its color is no pipeline status’s');
   });
@@ -334,7 +343,7 @@ const run = async () => {
   await test('a priority chip is drawn through the same system, at both ends', () => {
     const high = format.priorityChip('high');
     const low = format.priorityChip('low');
-    assert(high.includes('--omega-tone: var(--omega-accent)') && high.includes('>high<'), 'high in the signal colour');
+    assert(high.includes('--omega-tone: var(--omega-danger)') && high.includes('>high<'), 'high in the alarm colour');
     assert(low.includes('--omega-tone: var(--omega-ink-faint)') && low.includes('>low<'), 'low in the faint one');
     assert(high.includes('omega-badge-tone') && low.includes('omega-badge-tone'), 'both through the tone chip');
     assertEq(format.priorityChip(''), '', 'the unlabelled middle draws nothing');
@@ -501,7 +510,7 @@ const run = async () => {
   });
 
   await test('both ends of the priority scale are drawn through the one colour system', () => {
-    const ends = { high: '--omega-accent', low: '--omega-ink-faint' };
+    const ends = { high: '--omega-danger', low: '--omega-ink-faint' };
     for (const [priority, token] of Object.entries(ends)) {
       const chips = format.issueChips({ type: 'bug', priority });
       assert(chips.includes(`--omega-tone: var(${token})`), `${priority} is drawn in its own token`);
@@ -512,22 +521,26 @@ const run = async () => {
       'the unlabelled middle still draws no priority chip');
   });
 
-  await test('a type is drawn through the one colour system, in ramp slots no other vocabulary holds', () => {
-    const slots = { bug: '--omega-chart-4', enhancement: '--omega-chart-3', idea: '--omega-chart-5' };
+  await test('a type is drawn through the one colour system, in a ramp slot no other type holds', () => {
+    // #149: the rule is within-category uniqueness — three types, three hues.
+    // Across the categories a hue is free (`idea` and `specced` share the
+    // purple), because a chip says its own word and wears its own glyph.
+    const slots = { bug: '--omega-chart-4', enhancement: '--omega-chart-5', idea: '--omega-chart-3' };
     for (const [type, token] of Object.entries(slots)) {
       const chips = format.issueChips({ type, priority: '' });
       assert(chips.includes(`--omega-tone: var(${token})`), `${type} is drawn in its own slot`);
       assertEq(chips.includes(format.typeChip(type)), true, `${type} is the chip format.js draws`);
-      assert(token !== format.statusToken(type) && token !== format.priorityToken('high'),
-        `${type}'s slot belongs to no status and not to high`);
     }
+    const tokens = Object.keys(slots).map((type) => format.typeToken(type));
+    assertEq(new Set(tokens).size, tokens.length, 'no two types are drawn in one colour');
+    assertEq(format.typeToken('idea'), format.statusToken('specced'), 'and the purple is shared with the status that means authorized');
     const foreign = format.typeChip('question');
     assert(foreign.includes('omega-chip') && !foreign.includes('omega-badge-tone'),
       'a type outside the vocabulary stays a plain chip');
     assertEq(format.typeChip(''), '', 'no type, no chip');
   });
 
-  await test('every type and priority has one glyph, and one table is the whole of it (#136)', () => {
+  await test('every status, type and priority has one glyph, and one table is the whole of it (#136, #149)', () => {
     // Hard-coded on purpose: the glyphs are what makes a column of cards
     // readable at a glance, and a silent re-pick is a different board. The
     // table is the ONE home — the card and the dialog both read it, so a chip
@@ -537,12 +550,21 @@ const run = async () => {
     assertEq(format.CHIP_GLYPHS.idea, 'fa-lightbulb', 'an idea is the lamp');
     assertEq(format.CHIP_GLYPHS.high, 'fa-angles-up', 'high points up');
     assertEq(format.CHIP_GLYPHS.low, 'fa-angles-down', 'and low points down');
+    // #149: a status wears the act it names, which is also what lets it share
+    // a hue with a type or a priority without the two being read as one.
+    assertEq(format.CHIP_GLYPHS.inbox, 'fa-inbox', 'inbox is the tray it was captured into');
+    assertEq(format.CHIP_GLYPHS.specced, 'fa-clipboard-check', 'specced is the signed-off clipboard');
+    assertEq(format.CHIP_GLYPHS.building, 'fa-hammer', 'building is the hammer');
+    assertEq(format.CHIP_GLYPHS.qa, 'fa-eye', 'qa is the owner’s eye');
+    assertEq(format.CHIP_GLYPHS.blocked, 'fa-hand', 'blocked is the raised hand');
+    assertEq(format.CHIP_GLYPHS.parked, 'fa-circle-pause', 'and parked is the pause');
     const glyphs = Object.values(format.CHIP_GLYPHS);
     assertEq(new Set(glyphs).size, glyphs.length, 'no two names share a glyph');
-    assertEq(Object.keys(format.CHIP_GLYPHS).sort().join(','), 'bug,enhancement,high,idea,low',
-      'and the table names the two vocabularies and nothing else');
+    assertEq(Object.keys(format.CHIP_GLYPHS).sort().join(','), 'blocked,bug,building,enhancement,high,idea,inbox,low,parked,qa,specced',
+      'and the table names the three vocabularies and nothing else');
     for (const status of format.STATUSES) {
-      assert(!format.statusChip(status.key).includes('<i '), `a ${status.key} chip wears none — the column header already says it`);
+      assert(format.statusChip(status.key).includes(`<i class="fa-solid ${format.CHIP_GLYPHS[status.key]} me-1"`),
+        `a ${status.key} chip wears its own glyph`);
     }
     assert(!format.typeChip('question').includes('<i '), 'and a type outside the vocabulary has neither colour nor glyph');
   });
@@ -554,6 +576,8 @@ const run = async () => {
     const chips = format.issueChips({ type: 'bug', priority: 'high' }, 'mt-auto omega-tower-issue__chips');
     assert(chips.includes('<i class="fa-solid fa-bug me-1" aria-hidden="true"></i>bug'), 'the type chip is glyph then word');
     assert(chips.includes('<i class="fa-solid fa-angles-up me-1" aria-hidden="true"></i>high'), 'and so is the priority chip');
+    assert(format.statusChip('building').includes('<i class="fa-solid fa-hammer me-1" aria-hidden="true"></i>building'),
+      'and so is the status chip the dialog draws (#149)');
     assert(!/<i [^>]*style=/.test(chips), 'the glyph takes no colour of its own — it inherits the chip’s tone');
     assert(!/<i [^>]*tabindex|<i [^>]*role=/.test(chips), 'and it is no new focus target');
     assert(!chips.includes('<svg'), 'drawn by the framework’s one icon mechanism, not a hand-cut one');
@@ -1611,7 +1635,7 @@ const run = async () => {
     assert(parts.body.includes(format.typeChip('idea')) && parts.body.includes(format.priorityChip('low')),
       'both are format.js’s own chips, so the dialog and the card cannot draw one thing two ways');
     const glyphs = Object.values(format.CHIP_GLYPHS).filter((glyph) => parts.body.includes(glyph));
-    assertEq(glyphs.length, 2, 'and exactly those two — the status chip sitting with them wears no glyph');
+    assertEq(glyphs.length, 3, 'and exactly those three — the status chip sitting with them wears its own glyph (#149)');
   });
 
   await test('an issue with nothing on it still opens', () => {
@@ -2273,8 +2297,8 @@ const run = async () => {
       'where it came from rides along — the move removes one label and adds the other');
   });
 
-  await test('the five columns that are a status are the only ones a card moves between', () => {
-    assertEq(api.MOVABLE_STATUSES.join(','), 'inbox,specced,building,blocked,parked', 'the pipeline, from the column list itself');
+  await test('the six columns that are a status are the only ones a card moves between', () => {
+    assertEq(api.MOVABLE_STATUSES.join(','), 'inbox,specced,building,blocked,parked,qa', 'the pipeline, from the column list itself');
     assertEq(api.moveRequest(CARD, '', true), null, 'the absence of a label is not a destination — nothing on the board names it');
     assertEq(api.moveRequest({ ...CARD, status: null }, 'inbox', true), null, 'and an issue triage has not reached has no label to remove');
     assertEq(api.moveRequest(CARD, 'shipped', true), null, 'a status the pipeline does not name is not one');

@@ -12,10 +12,11 @@
     name: "Tower",
     description: "Mission control for the workkit issue workflow — the board, the crew, token usage, repo health, and the daily brief.",
 
-    // The one hex (issue #53): the framework composes both themes' accent
-    // ramps from it at build time (src/brand-tokens.js), so recoloring the
-    // whole dashboard is this line and no CSS.
-    color: "#E8853D",
+    // The one hex (issue #53, blue since #149): the framework composes both
+    // themes' accent ramps from it at build time (src/brand-tokens.js), so
+    // recoloring the whole dashboard is this line and no CSS. The authored
+    // brandmark is drawn in the same hex — one brand colour, not two.
+    color: "#2563EB",
 
     images: {
       // The mark is authored ONCE, at assets/logo/brandmark.svg; the assets

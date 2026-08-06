@@ -1,7 +1,7 @@
 ---
 name: ship
-description: Ship a release — commit (or open a pull request), bump the version, publish, create the GitHub release, run the deploy. - ONLY invoke when the user explicitly types /workkit:ship — NEVER auto-invoke on context like "commit", "ship", "release", "publish", or "deploy".
-allowed-tools: Bash(git add *), Bash(git commit *), Bash(git diff *), Bash(git log *), Bash(git status *), Bash(git push *), Bash(git rev-parse *), Bash(git stash list *), Bash(git tag *), Bash(git switch *), Bash(git checkout *), Bash(git pull *), Bash(git branch *), Bash(gh release create *), Bash(gh repo view *), Bash(gh issue list *), Bash(gh issue view *), Bash(gh issue close *), Bash(gh issue comment *), Bash(gh pr create *), Bash(gh pr merge *), Bash(gh pr checks *), Bash(gh pr view *), Bash(gh run list *), Bash(gh run watch *), Bash(gh run view *), Bash(gh workflow list *), Bash(npm publish *), Bash(npm version *), Bash(npm run prepare *), Bash(npm run deploy *), Bash(npm run release *), Bash(npx run deploy *), Bash(npx run release *), Bash(workkit publish *)
+description: Ship a release — commit (or PR), bump the version, publish, create the GitHub release, run the deploy. - Use when the OWNER commands a ship: /workkit:ship, or the word in their own message ("ship it", "ship this"). A passing mention ("we can ship later") is not it; an agent never self-invokes.
+allowed-tools: Bash(git add *), Bash(git commit *), Bash(git diff *), Bash(git log *), Bash(git status *), Bash(git push *), Bash(git rev-parse *), Bash(git stash list *), Bash(git tag *), Bash(git switch *), Bash(git checkout *), Bash(git pull *), Bash(git branch *), Bash(gh release create *), Bash(gh repo view *), Bash(gh issue list *), Bash(gh issue view *), Bash(gh issue close *), Bash(gh issue comment *), Bash(gh issue edit *), Bash(gh pr create *), Bash(gh pr merge *), Bash(gh pr checks *), Bash(gh pr view *), Bash(gh run list *), Bash(gh run watch *), Bash(gh run view *), Bash(gh workflow list *), Bash(npm publish *), Bash(npm version *), Bash(npm run prepare *), Bash(npm run deploy *), Bash(npm run release *), Bash(npx run deploy *), Bash(npx run release *), Bash(workkit publish *)
 user-invocable: true
 ---
 
@@ -149,7 +149,7 @@ This step runs if there are changes in the working tree (from the session's work
 6. **Close the shipped work items** — every issue this ship completes ends closed with a pointer to the CHANGELOG entry. The `Fixes #N` trailer already closed it when its commit landed on the default branch; for anything left open, close it manually:
    `gh issue close <N> --comment "Shipped in <version-or-commit> — see CHANGELOG [Unreleased]/<section>."`
    Issues that are only PARTLY addressed stay open — comment the progress instead.
-   Release every claim this ship completes: remove `status:building` and `agent:working` from each closed issue (`gh issue edit <N> --remove-label status:building,agent:working`) — a trailer closes the issue but never touches labels, the spec says the ship close is what ENDS `status:building`, and a label left on closed issues stops meaning anything.
+   Release every claim this ship completes: remove whichever working labels the closed issue is carrying — `status:qa`, `status:building`, `agent:working` (`gh issue edit <N> --remove-label status:qa,status:building,agent:working`; naming a label the issue does not have is harmless). Both statuses are possible: the normal path parks at `status:qa` and ships from there, an `agent:ok` issue runs straight through and is still at `status:building`. A trailer closes the issue but never touches labels, the spec says the ship close is what ENDS the working stage, and a label left on closed issues stops meaning anything.
    Then PRUNE the queue: if the repo participates, open `.workkit/agents/session.md` and delete every entry this ship completed — the bullets about the issues just closed and about the release just cut. Their facts now live in the CHANGELOG and the closed issues; the file is the next session's task queue, not an archive of this one.
 
 7. **Verify** — run `git status` to confirm the working tree is clean and `git log --oneline -2` shows the expected commits on the default branch.
@@ -197,6 +197,11 @@ Report the outcome in the ship summary in one line — published, or the named s
 If the diff touched none of those paths, skip silently.
 
 ## Rules
+
+### The owner's word is the invocation, and it authorizes that ship alone
+Nothing ships without the owner's word, and the word IS the permission (spec § Labels, issue #147): "ship" said as a command runs this skill exactly as `/workkit:ship` does, with no follow-up permission prompt and no re-asking in chat. What that word authorizes is THIS run and nothing after it — the next ship needs the next word.
+
+The skill never runs unattended and an agent never invokes it on its own: an item that is built and verified parks at `status:qa` with the check comment and waits (`workkit:feature`), and the agent does not ask in chat whether to ship. The one exception is an issue carrying `agent:ok`, where the label is the owner's word given in advance, per issue.
 
 ### The reply is the outcome, not the working
 Ship does a lot of work. Almost none of it belongs in the chat — it is already written where it is read from (owner ruling, 2026-07-25: "so it doesnt dump the commit message or details into the chat, we dont need that anymore").

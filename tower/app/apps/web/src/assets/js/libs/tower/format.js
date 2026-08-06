@@ -111,7 +111,7 @@ export const money = (value) => {
 //
 // Every entry is a place an issue LIVES. A missing `status:` label is not one
 // of those — it is a fault the pipeline forbids and the daily heal repairs — so
-// it is drawn as the alarm below rather than a sixth lane (#118).
+// it is drawn as the alarm below rather than a lane of its own (#118).
 //
 export const STATUSES = [
   { key: 'inbox', label: 'Inbox' },
@@ -119,13 +119,38 @@ export const STATUSES = [
   { key: 'building', label: 'Building' },
   { key: 'blocked', label: 'Blocked' },
   { key: 'parked', label: 'Parked' },
+  { key: 'qa', label: 'QA' },
 ];
 
-/** The theme token a status is drawn in, on cards and in charts. */
+/**
+ * The theme token a status is drawn in, on cards and in charts.
+ *
+ * `qa` wears the OK green (issue #135): the state means built and good, waiting
+ * only on the owner's confirmation, and the theme's success hue is what says
+ * that at a glance. `specced` gives that green up for the categorical purple —
+ * an authorization is a stage, not a verdict.
+ *
+ * Six lanes, six colours: WITHIN a vocabulary a hue never repeats, since a
+ * column header, a card chip and a chart slice are all read by hue. Across the
+ * vocabularies it may (issue #149) — `type:idea` shares this purple, `high` the
+ * alarm red `blocked` wears, `low` the faint ink `parked` is drawn in — because
+ * every chip carries its own word and its own glyph, so nothing is told apart
+ * by colour alone. The one slot a status may still not take is the muted ink an
+ * unknown key falls back to: a pipeline colour that is also the no-status
+ * fallback would make the alarm unreadable.
+ *
+ * These tokens are one HALF of a pairing: a label's colour on GitHub is the
+ * LIGHT-mode value of the token its status is drawn in here, so the board and
+ * the issue page agree. The hex side lives in `workflow/labels.json`, and the
+ * heal keeps existing labels on it — every fixed label, with no exception left:
+ * `priority:high` gave the brand accent up for the danger red, whose hex is the
+ * theme's own rather than something that varies per brand.
+ */
 export const statusToken = (key) => ({
   inbox: '--omega-chart-2',
-  specced: '--omega-ok',
+  specced: '--omega-chart-3',
   building: '--omega-warn',
+  qa: '--omega-ok',
   blocked: '--omega-danger',
   parked: '--omega-ink-faint',
 }[key] || '--omega-ink-muted');
@@ -137,9 +162,9 @@ export const statusColor = (key) => `var(${statusToken(key)})`;
  * The alarm the Board draws above its columns when open issues carry no
  * `status:` label at all (#118).
  *
- * They used to be a sixth column, which said "here is where these live". They
- * do not live anywhere: exactly one `status:` per open issue is the rule, the
- * daily heal repairs a breach of it, and a lane makes the breach look like a
+ * They used to be a column of their own, which said "here is where these live".
+ * They do not live anywhere: exactly one `status:` per open issue is the rule,
+ * the daily heal repairs a breach of it, and a lane makes the breach look like a
  * resting place — while on a normal day taking board width to show nothing. So
  * they are named, linked and counted here instead, in the theme's danger tone
  * that no ordinary board state uses, and drawn NOWHERE else on the page.
@@ -196,18 +221,19 @@ export const noStatusAlert = (issues, showRepo = true) => {
 // that is ABSENT — normal priority is never written on an issue, so there are
 // three bands and only two of them have a name to draw.
 //
-// A priority chip and a status chip sit side by side in the issue dialog, so
-// the ATTENTION end may not be borrowed from the pipeline: high takes the
-// theme's signal accent, which no status is drawn in, and a `high` chip
-// therefore can never be misread as a status. The quiet end shares `parked`'s
-// faint ink deliberately — the two say the same thing about urgency, and the
-// alternative, the muted ink every plain chip already carries, would leave a
-// `low` chip indistinguishable from an undyed one.
+// Both ends share the status they say the same thing as (issue #149): high
+// takes the theme's danger red, which `blocked` also wears, and low the faint
+// ink `parked` is drawn in. A priority chip and a status chip sit side by side
+// in the issue dialog, and each carries its own word and its own glyph, so a
+// shared hue reads as the shared urgency rather than as a second status —
+// while the alternative for the quiet end, the muted ink every plain chip
+// already carries, would leave a `low` chip indistinguishable from an undyed
+// one.
 //
 
 /** The theme token a priority is drawn in; the unlabelled middle is neutral. */
 export const priorityToken = (key) => ({
-  high: '--omega-accent',
+  high: '--omega-danger',
   low: '--omega-ink-faint',
 }[key] || '--omega-ink-muted');
 
@@ -230,23 +256,36 @@ export const byPriority = (a, b) => {
 //
 // ── The glyphs ─────────────────────────────────────────────────────────────
 //
-// What a `type:` and a `priority:` chip wear before their label (issue #136),
-// so a column of cards is read at a glance rather than word by word. One table
-// for both vocabularies, the way TONES below holds models and classes at once —
-// the keys are disjoint, so one table cannot be ambiguous, and the two chips
-// that sit side by side on every card cannot drift into two homes.
+// What a `status:`, a `type:` and a `priority:` chip wear before their label
+// (issues #136 and #149), so a column of cards is read at a glance rather than
+// word by word. One table for all three vocabularies, the way TONES below holds
+// models and classes at once — the keys are disjoint, so one table cannot be
+// ambiguous, and the chips that sit side by side on every card cannot drift
+// into three homes. The glyph is also what lets a hue be shared across the
+// vocabularies: the picture and the word are what tell a `high` chip from a
+// `blocked` one.
 //
 // The picks say the thing rather than encode it: the bug is a bug, an
 // enhancement is the wand that improves what is already there, an idea is the
-// lamp, and the priority ends are arrows pointing where the band sits. The lamp
-// is the advisor's role glyph too (agent.js), which is fine — a role glyph is
-// drawn on the Crew page and in the agent dialog, and no surface that draws an
-// issue chip shows one, so the two never say different things in one place.
+// lamp, the priority ends are arrows pointing where the band sits, and a status
+// is the act it names — the tray it was captured into, the clipboard its spec
+// was signed off on, the hammer, the eye the owner checks it with, the raised
+// hand, the pause. Three are a crew role's glyph too (agent.js) — the lamp is
+// the advisor's, the hammer the worker's, the clipboard the verifier's — which
+// is fine: a role glyph is drawn on the Crew page and in the agent dialog, and
+// no surface that draws an issue chip shows one, so the two never say different
+// things in one place.
 //
 // Free Font Awesome, every one of them, drawn by the framework's shared
 // renderer the same way every other glyph the tower writes is.
 //
 export const CHIP_GLYPHS = {
+  inbox: 'fa-inbox',
+  specced: 'fa-clipboard-check',
+  building: 'fa-hammer',
+  qa: 'fa-eye',
+  blocked: 'fa-hand',
+  parked: 'fa-circle-pause',
   bug: 'fa-bug',
   enhancement: 'fa-wand-magic-sparkles',
   idea: 'fa-lightbulb',
@@ -286,31 +325,33 @@ const chipGlyph = (key) => (CHIP_GLYPHS[key] ? `<i class="fa-solid ${CHIP_GLYPHS
  * is the theme's to own, so nothing here tries to change it back.
  *
  * The glyph is the caller's, not looked up here: WHICH chips wear one is a
- * decision, and a status chip wearing none is that decision made rather than a
- * name that happens to be missing from the table.
+ * decision, and a chip drawn from a name no vocabulary holds wearing none is
+ * that decision made rather than a name missing from the table by accident.
  */
 const toneChip = (label, token, glyph = '') => `<span class="omega-chip omega-badge-tone text-uppercase" style="--omega-tone: var(${token});">${glyph}${esc(label)}</span>`;
 
 /**
  * The chip for an issue's status — the same colour the Board's column header
- * draws that status in, so the dialog and the column agree.
+ * draws that status in, so the dialog and the column agree, wearing the glyph
+ * of the act it names (issue #149).
  */
-export const statusChip = (status) => (status ? toneChip(status, statusToken(status)) : '');
+export const statusChip = (status) => (status ? toneChip(status, statusToken(status), chipGlyph(status)) : '');
 
 /** The chip for an issue's priority. The unlabelled middle draws nothing. */
 export const priorityChip = (priority) => (priority === 'high' || priority === 'low' ? toneChip(priority, priorityToken(priority), chipGlyph(priority)) : '');
 
 /**
  * The theme token a type is drawn in. A type is an identity, not a signal, so
- * it draws from the categorical ramp — and only from slots no status or
- * priority speaks in (`inbox` holds chart-2, `high` holds the accent, which is
- * chart-1), for the same reason `high` may not borrow a status colour: two
- * vocabularies in one row must never share a hue.
+ * it draws from the categorical ramp — the deep red for the bug, the orange for
+ * the enhancement, the purple for the idea, three hues no two of which are the
+ * same. `specced` is drawn in that same purple (issue #149): a hue is unique
+ * within a vocabulary and free across them, since the type chip and the status
+ * chip beside it each carry their own word and their own glyph.
  */
 export const typeToken = (key) => ({
   bug: '--omega-chart-4',
-  enhancement: '--omega-chart-3',
-  idea: '--omega-chart-5',
+  enhancement: '--omega-chart-5',
+  idea: '--omega-chart-3',
 }[key]);
 
 /**

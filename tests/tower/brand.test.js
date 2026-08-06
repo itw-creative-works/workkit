@@ -22,9 +22,10 @@ const app = path.join(__dirname, '..', '..', 'tower', 'app');
 const MARK = path.join(app, 'assets', 'logo', 'brandmark.svg');
 const CONFIG = path.join(app, 'config', 'omega.json5');
 
-// The one hex (issue #53, owner decision 2026-08-03) — the config's `color`
-// composes both themes' accent ramps from it, and the mark is drawn in it.
-const AMBER = '#E8853D';
+// The one hex (issue #53, owner decision 2026-08-03; blue since #149) — the
+// config's `color` composes both themes' accent ramps from it, and the mark is
+// drawn in it. ONE hex for both: an accent the mark does not wear is two brands.
+const BRAND = '#2563EB';
 
 const run = async () => {
   group('tower/brand: the mark');
@@ -33,11 +34,11 @@ const run = async () => {
     assert(fs.existsSync(MARK), 'tower/app/assets/logo/brandmark.svg — the root of every derived asset');
   });
 
-  await test('it is one amber fill, square, and carries no text', () => {
+  await test('it is one brand fill, square, and carries no text', () => {
     const svg = fs.readFileSync(MARK, 'utf8');
     const fills = svg.match(/#[0-9A-Fa-f]{3,8}/g) || [];
     assert(fills.length > 0, 'the mark states its color');
-    assert(fills.every((hex) => hex.toUpperCase() === AMBER), `every fill is ${AMBER}, so the black variant reduces cleanly — found ${fills.join(', ')}`);
+    assert(fills.every((hex) => hex.toUpperCase() === BRAND), `every fill is ${BRAND}, so the black variant reduces cleanly — found ${fills.join(', ')}`);
 
     const viewBox = svg.match(/viewBox="0 0 (\d+) (\d+)"/);
     assert(viewBox, 'it declares a viewBox');
@@ -50,7 +51,7 @@ const run = async () => {
 
   await test('brand.color is the one hex', () => {
     const config = fs.readFileSync(CONFIG, 'utf8');
-    assert(new RegExp(`color:\\s*"${AMBER}"`).test(config), `brand.color: "${AMBER}" — the accent ramps are derived from it`);
+    assert(new RegExp(`color:\\s*"${BRAND}"`).test(config), `brand.color: "${BRAND}" — the accent ramps are derived from it`);
   });
 
   await test('brand.images.brandmark points at the path the web build bridges to', () => {

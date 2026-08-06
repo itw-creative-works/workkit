@@ -617,8 +617,8 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  await test('the vocabulary is the label SSOT’s own five, never a second copy', () => {
-    assertEq(MOVE_STATUSES.join(','), 'inbox,specced,building,blocked,parked', 'the pipeline, in its own order');
+  await test('the vocabulary is the label SSOT’s own six, never a second copy', () => {
+    assertEq(MOVE_STATUSES.join(','), 'inbox,specced,building,qa,blocked,parked', 'the pipeline, in its own order');
   });
 
   await test('a move into status:building is a valid move — in-flight work is a column like any other', async () => {

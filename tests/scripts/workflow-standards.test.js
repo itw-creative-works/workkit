@@ -247,7 +247,7 @@ const run = async () => {
 
   await test('exact values per group', () => {
     const values = (g) => Object.keys(MANIFEST.groups[g].values).sort().join(',');
-    assertEq(values('status'), 'blocked,building,inbox,parked,specced', 'status values');
+    assertEq(values('status'), 'blocked,building,inbox,parked,qa,specced', 'status values');
     assertEq(values('type'), 'bug,enhancement,idea', 'type values');
     assertEq(values('priority'), 'high,low', 'priority values');
     assertEq(values('agent'), 'ok,working', 'agent values');
@@ -277,6 +277,41 @@ const run = async () => {
     for (const { name, color } of desiredLabels()) {
       assert(/^[0-9A-Fa-f]{6}$/.test(color || ''), `${name} color must be bare 6-digit hex, got ${color}`);
     }
+  });
+
+  await test('a fixed label’s hex is its board token’s light value — the pairing, pinned', () => {
+    // A label's colour on GitHub is not free-chosen: it is the LIGHT-mode value
+    // of the theme token the tower draws that label in, so the board and the
+    // issue page agree. Only this half can be pinned here — the token values
+    // live in the omega framework — so an edit that breaks the pairing from the
+    // hex side fails loudly instead of drifting. Every fixed label is in it
+    // since #149: `priority:high` gave up the brand accent, which no fixed hex
+    // could track, for the danger red that `status:blocked` also wears.
+    const expected = {
+      status: {
+        inbox: '0F8FA9', specced: '7A45B5', building: 'C47206', qa: '12925C', blocked: 'D92D20', parked: 'A1A19E',
+      },
+      type: { bug: 'B0416A', enhancement: 'A06A08', idea: '7A45B5' },
+      priority: { high: 'D92D20', low: 'A1A19E' },
+    };
+    for (const [group, values] of Object.entries(expected)) {
+      for (const [value, color] of Object.entries(values)) {
+        assertEq(MANIFEST.groups[group].values[value].color, color, `${group}:${value} wears its token's light value`);
+      }
+    }
+  });
+
+  await test('a hex repeats across the groups but never inside one (#149)', () => {
+    // The rule the palette is built on: a colour is unique WITHIN a vocabulary,
+    // since a column header, a card chip and a chart slice are read by hue —
+    // and free across them, since every chip carries its own word and glyph.
+    for (const group of ['status', 'type', 'priority']) {
+      const colors = Object.values(MANIFEST.groups[group].values).map((body) => body.color.toUpperCase());
+      assertEq(new Set(colors).size, colors.length, `no two ${group}: labels share a colour`);
+    }
+    assertEq(MANIFEST.groups.type.values.idea.color, MANIFEST.groups.status.values.specced.color, 'idea and specced share the purple');
+    assertEq(MANIFEST.groups.priority.values.high.color, MANIFEST.groups.status.values.blocked.color, 'high and blocked share the alarm red');
+    assertEq(MANIFEST.groups.priority.values.low.color, MANIFEST.groups.status.values.parked.color, 'low and parked share the faint gray');
   });
 
   await test('status is exclusive and every status description says so', () => {

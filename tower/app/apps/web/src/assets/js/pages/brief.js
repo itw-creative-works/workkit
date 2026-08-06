@@ -1,7 +1,8 @@
 //
 // Brief — the morning read, in the order a morning asks: the headline, the
-// counts, what is waiting on a decision, what may be started, what is already
-// someone's, and the work sitting on the table.
+// counts, what is waiting on a decision, what is built and waiting on a check,
+// what may be started, what is already someone's, and the work sitting on the
+// table.
 //
 // The payload is one read of /api/brief, which the API assembles from the same
 // board sweep and per-repo health every other page reads (tower/api/lib/brief.js).
@@ -64,9 +65,10 @@ const headline = (payload, selected) => `<div class="mb-4">
 const numbers = (payload, lists, selected) => statgrid([
   // `open` and `parked` are roster-wide totals with no list under them, so a
   // narrowed view cannot restate them: they say unknown rather than a number
-  // that would be read as this repo's. The other four ARE the lists on screen.
+  // that would be read as this repo's. The other five ARE the lists on screen.
   statCell('Open', selected.length ? num(null) : payload.counts.open, '/board'),
   statCell('Waiting', lists.waiting.length, '/board'),
+  statCell('QA', lists.qa.length, '/board'),
   statCell('Ready', lists.ready.length, '/board'),
   statCell('In flight', lists.inFlight.length, '/board'),
   statCell('Inbox', lists.inbox.length, '/board'),
@@ -147,10 +149,10 @@ const section = (heading, issues, nothing, alarm) => card(heading, issues.length
 // ── What this morning could move ───────────────────────────────────────────
 
 // The board asked one question further (issue #54): per repo, the few open items
-// a morning could actually move — decisions first, then accepted specs, three at
-// most. The rank is the API's (tower/api/lib/brief.js); this only draws it, one
-// short list per repo, so a morning reads down its own repo rather than across a
-// merged pile.
+// a morning could actually move — decisions first, then the checks waiting on
+// the owner, then accepted specs, three at most. The rank is the API's
+// (tower/api/lib/brief.js); this only draws it, one short list per repo, so a
+// morning reads down its own repo rather than across a merged pile.
 // An item that waits says so in the same line the Board's chip says it (#103):
 // the short `#N` when the blocker shares the repo, the whole key across repos.
 const waitsRef = (key, repo) => (key.toLowerCase().startsWith(`${String(repo).toLowerCase()}#`) ? key.slice(key.lastIndexOf('#')) : key);
@@ -170,7 +172,7 @@ const nextRepo = (entry) => `<div class="mb-3">
 
 const nextUp = (rows) => card('Work on this next', rows.length
   ? `<div class="mb-n3">${rows.map(nextRepo).join('')}</div>`
-  : empty('there is nothing waiting on a decision and nothing specced to start', 'fa-regular fa-circle-check'), {
+  : empty('there is nothing waiting on you and nothing specced to start', 'fa-regular fa-circle-check'), {
   chip: rows.reduce((total, entry) => total + (entry.items || []).length, 0),
   class: 'mb-4',
 });
@@ -266,6 +268,7 @@ const render = (root, state) => {
   const selected = selectedSlugs(state);
   const lists = {
     waiting: forRepo(payload.waiting || [], selected),
+    qa: forRepo(payload.qa || [], selected),
     ready: forRepo(payload.ready || [], selected),
     inFlight: forRepo(payload.inFlight || [], selected),
     inbox: forRepo(payload.inbox || [], selected),
@@ -279,6 +282,7 @@ const render = (root, state) => {
     ${sparklines(payload, selected)}
     ${nextUp(forRepo(payload.nextUp || [], selected))}
     ${section('Waiting on you', lists.waiting, 'nothing is waiting on you', true)}
+    ${section('Waiting on your check', lists.qa, 'nothing is built and waiting on a check')}
     ${section('Ready to start', lists.ready, 'nothing is specced')}
     ${section('In flight', lists.inFlight, 'nothing is being built right now')}
     ${summaryCard('What yesterday produced', payload.findings)}

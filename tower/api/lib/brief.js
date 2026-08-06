@@ -10,9 +10,10 @@
 // module directly, through the same roster, board and health reads the server
 // makes, so the morning works whether or not a tower is running.
 //
-// The four sections answer the four questions a morning asks, in the order a
+// The five sections answer the five questions a morning asks, in the order a
 // morning asks them:
 //   waiting    what is blocked on a human decision — the only thing that stops work
+//   qa         built and verified, waiting on the owner's check before the ship
 //   ready      specced — what may be started right now
 //   inFlight   building — the label is what says work has started
 //   warnings   work sitting on the table: uncommitted, unpushed, unreleased
@@ -77,9 +78,11 @@ const issueKey = (issue) => `${issue.repo}#${issue.number}`;
  *
  * `blocked` leads because it is waiting on the OWNER: a decision nobody makes
  * stops everything downstream of it, and it is the only kind of item a morning
- * can clear without opening an editor. `specced` follows in the same urgency
- * order every other section uses, since an accepted spec is what may be started
- * right now. Nothing else is actionable at nine in the morning — `building` is
+ * can clear without opening an editor. `qa` follows for the same reason one
+ * rung down — built work parked on the owner's check, which nothing downstream
+ * of it ships past. `specced` comes last of the three in the same urgency order
+ * every other section uses, since an accepted spec is what may be started right
+ * now. Nothing else is actionable at nine in the morning — `building` is
  * already somebody's and `inbox` is not a decision yet.
  *
  * Grouping is by repo because a morning is spent in one repo at a time, and the
@@ -108,6 +111,7 @@ const nextUpFrom = (issues) => {
     .filter(Boolean);
   const actionable = [
     ...issues.filter((i) => i.status === 'blocked'),
+    ...issues.filter((i) => i.status === 'qa'),
     ...issues.filter((i) => i.status === 'specced'),
   ];
   const byRepo = new Map();
@@ -171,6 +175,7 @@ const nameOf = (repos, repoPath) => {
 const headlineFor = (counts) => {
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   if (counts.waiting) return `${plural(counts.waiting, 'issue is', 'issues are')} waiting on a decision from you.`;
+  if (counts.qa) return `${plural(counts.qa, 'issue is', 'issues are')} built and waiting on your check.`;
   if (counts.inFlight) return `${plural(counts.inFlight, 'issue is', 'issues are')} in flight, and nothing is blocked.`;
   if (counts.ready) return `Nothing is blocked — ${plural(counts.ready, 'issue is', 'issues are')} specced and ready to start.`;
   if (counts.inbox) return `The board is clear of specced work; ${plural(counts.inbox, 'item is', 'items are')} sitting in the inbox.`;
@@ -193,6 +198,10 @@ const buildBrief = (board, health, repos, generatedAt) => {
   const issues = (board && Array.isArray(board.issues) ? board.issues : []).slice().sort(byUrgency);
 
   const waiting = issues.filter((i) => i.status === 'blocked').map(brief);
+  // Its own section rather than a corner of `inFlight` (issue #135): a qa item
+  // is finished work waiting on the OWNER, which is the same kind of fact as
+  // `waiting` and the opposite of "somebody is on it".
+  const qa = issues.filter((i) => i.status === 'qa').map(brief);
   // The label is the whole answer on both of these (issue #62): `specced` is a
   // spec accepted and nothing started, `building` is work in flight. An
   // assignee no longer moves an issue between them — a claimed `specced` issue
@@ -223,6 +232,7 @@ const buildBrief = (board, health, repos, generatedAt) => {
   const counts = {
     open: issues.length,
     waiting: waiting.length,
+    qa: qa.length,
     ready: ready.length,
     inFlight: inFlight.length,
     inbox: inbox.length,
@@ -245,6 +255,7 @@ const buildBrief = (board, health, repos, generatedAt) => {
     repoCounts,
     nextUp: nextUpFrom(issues),
     waiting,
+    qa,
     ready,
     inFlight,
     inbox,

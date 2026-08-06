@@ -5,6 +5,7 @@ The working tree has uncommitted code/config changes. Work items live as GitHub 
 The issue is the record — its labels say where the work is, its comments carry the trail.
 
 - Work in flight → the issue is assigned to you (the assignment IS the claim) and carries exactly one `status:` label (`building` while the work runs, `blocked` when a human decision is pending — the question goes in a comment).
+- Work BUILT this turn → the issue is at `status:qa` with a comment naming what to check and where; it ships on the owner's word, never on yours. `agent:ok` issues skip the park.
 - Work shipped this turn → write the CHANGELOG `[Unreleased]` entry, then close the issue with a comment pointing at it (`Fixes #N` in the commit message does both).
 - New notes/ideas surfaced this turn → a `status:inbox` issue; print the `Filed:` trail for what you filed. If GitHub cannot be reached, put the finding in chat and stop there — the owner decides. Never write to `.workkit/capture.md`: it is the owner's capture surface, cleared only by a triage run.
 

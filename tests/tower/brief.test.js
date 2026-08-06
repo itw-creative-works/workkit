@@ -39,7 +39,7 @@ const ROSTER = [
 ];
 
 const run = async () => {
-  group('tower/brief: the four sections');
+  group('tower/brief: the five sections');
 
   await test('blocked issues are what is waiting on you; every specced issue is ready', () => {
     const board = boardOf([
@@ -48,6 +48,7 @@ const run = async () => {
       issue(3, { status: 'specced', assignees: ['ianwieds'] }),
       issue(4, { status: 'inbox' }),
       issue(5, { status: 'parked' }),
+      issue(6, { status: 'qa' }),
     ]);
     const out = buildBrief(board, {}, ROSTER, STAMP);
 
@@ -59,6 +60,10 @@ const run = async () => {
     assertEq(out.ready.map((i) => i.number).sort().join(','), '2,3', 'both specced issues are ready');
     assertEq(out.inFlight.length, 0, 'nothing carries the label that says work started');
     assertEq(out.inbox.length, 1, 'the inbox is its own section');
+    // Issue #135: qa is built work waiting on the OWNER, which is the same kind
+    // of fact as `waiting` and the opposite of "somebody is on it".
+    assertEq(out.qa.map((i) => i.number).join(','), '6', 'a built item waiting on a check is its own section');
+    assertEq(out.counts.qa, 1, 'and its own count');
     assertEq(out.counts.parked, 1, 'parked is counted but not listed — it is nobody’s morning');
     assertEq(out.generatedAt, STAMP, 'the stamp is the one passed in');
   });
@@ -130,6 +135,22 @@ const run = async () => {
     assertEq(out.nextUp.map((r) => r.repo).join(','), 'owner/first,owner/second',
       'the repo holding a decision comes first');
     assertEq(out.nextUp[1].items.map((i) => i.number).join(','), '3,1', 'and each list is ranked on its own');
+  });
+
+  // Issue #135: a qa item is actionable — it is a check the owner gives, and the
+  // work is parked in the tree until they do. It ranks under the decisions,
+  // because a decision nobody makes stops everything downstream of it, and above
+  // the specs, because nothing else finishes while the tree holds unshipped work.
+  await test('a check waiting on the owner ranks under the decisions and above the specs', () => {
+    const board = boardOf([
+      issue(1, { status: 'specced', priority: 'high' }),
+      issue(2, { status: 'qa' }),
+      issue(3, { status: 'blocked' }),
+    ]);
+    const out = buildBrief(board, {}, ROSTER, STAMP);
+    assertEq(out.nextUp[0].items.map((i) => i.number).join(','), '3,2,1',
+      'the decision, then the check, then the spec — even with the spec priority:high');
+    assertEq(out.nextUp[0].items[1].status, 'qa', 'and the check says which it is');
   });
 
   await test('a repo with nothing actionable is left out, never listed empty', () => {
@@ -303,7 +324,8 @@ const run = async () => {
   group('tower/brief: the headline and the failed sweep');
 
   await test('the headline names the most consequential fact, in order', () => {
-    assert(/waiting on a decision/.test(headlineFor({ waiting: 2, inFlight: 5, ready: 3, inbox: 1 })), 'a decision leads');
+    assert(/waiting on a decision/.test(headlineFor({ waiting: 2, qa: 4, inFlight: 5, ready: 3, inbox: 1 })), 'a decision leads');
+    assert(/waiting on your check/.test(headlineFor({ waiting: 0, qa: 4, inFlight: 5, ready: 3, inbox: 1 })), 'then the checks the owner owes');
     assert(/in flight/.test(headlineFor({ waiting: 0, inFlight: 1, ready: 3, inbox: 1 })), 'then what is running');
     assert(/ready to start/.test(headlineFor({ waiting: 0, inFlight: 0, ready: 3, inbox: 1 })), 'then what may be started');
     assert(/inbox/.test(headlineFor({ waiting: 0, inFlight: 0, ready: 0, inbox: 4 })), 'then the inbox');

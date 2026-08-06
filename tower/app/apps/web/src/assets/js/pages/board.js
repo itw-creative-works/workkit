@@ -1,11 +1,11 @@
 //
 // Board — every open issue on the roster, in columns by `status:`.
 //
-// The five columns are the five status labels. An open issue carrying none of
-// them is not a sixth place to be — it is a fault the pipeline forbids and the
-// daily heal repairs — so it is drawn as the danger alert above the board
-// (format.js's `noStatusAlert`), named and linked, and nowhere else: not as a
-// card, not in a column count, not in the denominator below (#118).
+// The columns are the status labels, in pipeline order. An open issue carrying
+// none of them is not a further place to be — it is a fault the pipeline forbids
+// and the daily heal repairs — so it is drawn as the danger alert above the
+// board (format.js's `noStatusAlert`), named and linked, and nowhere else: not
+// as a card, not in a column count, not in the denominator below (#118).
 //
 // The filters live in the URL query alongside the chrome's `?repo=`, so a
 // filtered board is a link someone else can open. They are read back out of the
@@ -154,10 +154,10 @@ const draggable = (issue) => WRITABLE && MOVABLE_STATUSES.includes(issue.status)
 // what it looks like, when it is earned and what it says to a screen reader are
 // one decision, and it is made in the lib the Crew page draws from too.
 //
-// Every card the board draws carries one of the five statuses, so every card is
-// draggable wherever there is something to write with. The card's `data-issue`
-// key is what the drop reads back — the same key the dialog registry uses, so
-// the two never mean different things.
+// Every card the board draws carries one of the pipeline statuses, so every
+// card is draggable wherever there is something to write with. The card's
+// `data-issue` key is what the drop reads back — the same key the dialog
+// registry uses, so the two never mean different things.
 //
 // What the card says about a DEPENDENCY rides that same chip row (issue #103):
 // the row is one line and clipped, so a "waits on #12" chip costs the card no
@@ -193,18 +193,19 @@ const column = (status, issues, showRepo, open) => `<section data-column="${esc(
   ${issues.length ? issues.map((issue) => issueCard(issue, showRepo, open)).join('') : empty('nothing here', 'fa-regular fa-square-check')}
 </section>`;
 
-// `.omega-tower-board` is the sideways-scrolling strip; how WIDE a column is belongs
-// here, because it is a function of how many the pipeline has. At the
+// `.omega-tower-board` is the sideways-scrolling strip; how WIDE a column is
+// belongs here, because it is a function of how many the pipeline has. At the
 // stylesheet's 15rem floor the strip is wider than an ordinary main region,
 // which put the right-hand columns half off the edge with only an overlay
-// scrollbar to say so. At 11rem the columns fit the main region down to a laptop
-// width, they still stretch to fill a wide one, and the strip goes on scrolling
-// when the window is genuinely too narrow for the board.
+// scrollbar to say so. Six columns at 9rem come to the same ~54rem five at 11rem
+// did: they fit the main region down to a laptop width, they still stretch to
+// fill a wide one, and the strip goes on scrolling when the window is genuinely
+// too narrow for the board.
 //
 // A column reads in three priority bands — high, then the unlabelled middle,
 // then low — most recently updated first inside each. The comparator is
 // format.js's (`byPriority`), the same module that colours those bands.
-const columns = (shown, showRepo, open) => `<div class="omega-tower-board" style="grid-auto-columns: minmax(11rem, 1fr);">
+const columns = (shown, showRepo, open) => `<div class="omega-tower-board" style="grid-auto-columns: minmax(9rem, 1fr);">
   ${STATUSES.map((status) => column(status, shown.filter((issue) => issue.status === status.key).sort(byPriority), showRepo, open)).join('')}
 </div>`;
 
@@ -301,7 +302,7 @@ const render = (root, state) => {
   const all = issuesFor(state);
   // The board IS the labelled issues. The rest are the alert's, and the toolbar
   // never narrows that: a type filter hiding a pipeline fault would be the
-  // comfortable lie the sixth column was there to prevent.
+  // comfortable lie a lane for them would tell.
   const labelled = all.filter((issue) => issue.status);
   const filters = readFilters();
   const shown = labelled.filter((issue) => matches(issue, filters));
