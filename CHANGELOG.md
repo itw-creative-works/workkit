@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#152](../../issues/152) — The worker and verifier class contracts now scope mid-work testing: a worker proves its change with the test files it touched, a verifier runs the narrowest command that checks the claim, and full suites belong to the commit gate alone.
+
 ## [0.38.0] - 2026-08-06
 
 ### Changed
