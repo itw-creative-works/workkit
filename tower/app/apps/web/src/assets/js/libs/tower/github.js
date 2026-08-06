@@ -706,7 +706,7 @@ export const buildBrief = (board, opts = {}) => {
     ready: ready.length,
     inFlight: inFlight.length,
     inbox: inbox.length,
-    parked: issues.filter((i) => i.status === 'parked').length,
+    backlog: issues.filter((i) => i.status === 'backlog').length,
   };
 
   const repoCounts = repoCountsFrom(board);
@@ -999,7 +999,7 @@ const SLUG_SHAPE = /^[\w.-]+\/[\w.-]+$/;
  * restated across the copy boundary for the reason the groups above are, and
  * pinned to `workflow/labels.json` by the suite.
  */
-export const MOVE_STATUSES = ['inbox', 'specced', 'building', 'qa', 'blocked', 'parked'];
+export const MOVE_STATUSES = ['inbox', 'specced', 'building', 'qa', 'blocked', 'backlog'];
 
 /**
  * What a move may do, or why it may not — the endpoint's `validateMove`, on

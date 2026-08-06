@@ -494,7 +494,7 @@ const run = async () => {
     writeBriefMarks(null, {
       ok: true,
       generatedAt: '2026-08-03T09:00:00.000Z',
-      counts: { open: 4, waiting: 1, qa: 1, ready: 1, inFlight: 1, inbox: 1, parked: 0 },
+      counts: { open: 4, waiting: 1, qa: 1, ready: 1, inFlight: 1, inbox: 1, backlog: 0 },
       closedDay: 2,
       repoCounts: [{ slug: 'owner/repo', open: 4, closedDay: 2 }],
     });
@@ -502,7 +502,7 @@ const run = async () => {
     else process.env.WORKKIT_BRIEF_MARK_FILE = before;
     assertEq(
       fs.readFileSync(file, 'utf8'),
-      '<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":4,"waiting":1,"qa":1,"ready":1,"inFlight":1,"inbox":1,"parked":0},"closedDay":2,"repos":{"owner/repo":{"open":4}}} -->\n',
+      '<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":4,"waiting":1,"qa":1,"ready":1,"inFlight":1,"inbox":1,"backlog":0},"closedDay":2,"repos":{"owner/repo":{"open":4}}} -->\n',
       'the line, exactly as the runner will append it',
     );
     cleanup(dir);

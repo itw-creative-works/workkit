@@ -288,7 +288,7 @@ const run = async () => {
       path.join(w.root, 'workflow-home', 'settings.json'),
       JSON.stringify({ version: 1, site: { repo: 'owner/private-home', publish: false, url: null } }),
     );
-    const mark = (date, open) => `<!-- workkit-stats: {"v":1,"date":"${date}","totals":{"open":${open},"waiting":1,"ready":0,"inFlight":0,"inbox":2,"parked":0},"closedDay":3,"repos":{"owner/repo":{"open":${open}}}} -->`;
+    const mark = (date, open) => `<!-- workkit-stats: {"v":1,"date":"${date}","totals":{"open":${open},"waiting":1,"ready":0,"inFlight":0,"inbox":2,"backlog":0},"closedDay":3,"repos":{"owner/repo":{"open":${open}}}} -->`;
     w.discussions = [
       { title: 'brief: 2026-08-03', body: `HEADLINE: today.\n${mark('2026-08-03', 12)}\n` },
       { title: 'brief: 2026-08-02', body: 'HEADLINE: a morning before the block existed.\n' },
@@ -618,7 +618,7 @@ const run = async () => {
   });
 
   await test('the vocabulary is the label SSOT’s own six, never a second copy', () => {
-    assertEq(MOVE_STATUSES.join(','), 'inbox,specced,building,qa,blocked,parked', 'the pipeline, in its own order');
+    assertEq(MOVE_STATUSES.join(','), 'inbox,specced,building,qa,blocked,backlog', 'the pipeline, in its own order');
   });
 
   await test('a move into status:building is a valid move — in-flight work is a column like any other', async () => {
@@ -691,7 +691,7 @@ const run = async () => {
     const worse = await postJson(c, MOVE, { ...validMove, from: '' });
     assertEq(worse.status, 400, 'and neither is none at all — the No-status column is not a move');
     assert(/from is not a status/.test(worse.body.reason), 'named too');
-    const label = await postJson(c, MOVE, { ...validMove, to: 'status:parked' });
+    const label = await postJson(c, MOVE, { ...validMove, to: 'status:backlog' });
     assertEq(label.status, 400, 'the value is a status, not a whole label');
     assertEq(ghCalls(w, 'issue').length, 0, 'gh never ran');
     await c.stop();

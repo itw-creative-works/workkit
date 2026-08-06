@@ -47,7 +47,7 @@ const run = async () => {
       issue(2, { status: 'specced' }),
       issue(3, { status: 'specced', assignees: ['ianwieds'] }),
       issue(4, { status: 'inbox' }),
-      issue(5, { status: 'parked' }),
+      issue(5, { status: 'backlog' }),
       issue(6, { status: 'qa' }),
     ]);
     const out = buildBrief(board, {}, ROSTER, STAMP);
@@ -64,7 +64,7 @@ const run = async () => {
     // of fact as `waiting` and the opposite of "somebody is on it".
     assertEq(out.qa.map((i) => i.number).join(','), '6', 'a built item waiting on a check is its own section');
     assertEq(out.counts.qa, 1, 'and its own count');
-    assertEq(out.counts.parked, 1, 'parked is counted but not listed — it is nobody’s morning');
+    assertEq(out.counts.backlog, 1, 'backlog is counted but not listed — it is nobody’s morning');
     assertEq(out.generatedAt, STAMP, 'the stamp is the one passed in');
   });
 
@@ -157,7 +157,7 @@ const run = async () => {
     const board = boardOf([
       issue(1, { status: 'building' }),
       issue(2, { status: 'inbox' }),
-      issue(3, { status: 'parked' }),
+      issue(3, { status: 'backlog' }),
     ]);
     const out = buildBrief(board, {}, ROSTER, STAMP);
     assertEq(out.nextUp.length, 0, 'work in flight is already somebody’s, and an inbox item is not a decision');

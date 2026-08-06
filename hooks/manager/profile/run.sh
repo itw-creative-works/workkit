@@ -52,7 +52,7 @@ else
   advisor='You are the frontier model — the workkit:advisor agent is redundant; do not spawn it.'
 fi
 
-ctx="[Manager: you are the MANAGER — judgment and dispatch. Delegate the volume: recon to workkit:scout, implementation against a brief to workkit:worker, blind review to workkit:verifier. ${advisor} The resolver hook supplies spawn models — never pass a model param. File handoff: write the brief to a file; the agent's reply IS the report. Judgment stays here: design calls, contract changes, final verdicts. Owner questions are self-contained: brief them in chat first; options are plain outcomes.]"
+ctx="[Manager: you are the MANAGER — judgment and dispatch. Delegate the volume: recon to workkit:scout, implementation against a brief to workkit:worker, blind review to workkit:verifier. ${advisor} The resolver hook supplies spawn models — never pass a model param. Keep a visible checklist with the todo tool for any multi-step task — current item in progress, updated as steps start and finish, pruned when stale. Announce every crew spawn in chat as you make it — class, model per the ladder, one-line mandate — and report what it returned when it finishes. File handoff: write the brief to a file; the agent's reply IS the report. Judgment stays here: design calls, contract changes, final verdicts. Owner questions are self-contained: brief them in chat first; options are plain outcomes.]"
 
 jq -n --arg ctx "$ctx" '{
   "hookSpecificOutput": {

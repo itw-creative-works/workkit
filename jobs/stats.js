@@ -84,7 +84,7 @@ const renderStatsMark = (payload) => {
       ready: counts.ready || 0,
       inFlight: counts.inFlight || 0,
       inbox: counts.inbox || 0,
-      parked: counts.parked || 0,
+      backlog: counts.backlog || 0,
     },
     closedDay: typeof payload.closedDay === 'number' ? payload.closedDay : 0,
     repos: perRepo(payload.repoCounts),

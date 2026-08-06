@@ -63,7 +63,7 @@ const headline = (payload, selected) => `<div class="mb-4">
 </div>`;
 
 const numbers = (payload, lists, selected) => statgrid([
-  // `open` and `parked` are roster-wide totals with no list under them, so a
+  // `open` and `backlog` are roster-wide totals with no list under them, so a
   // narrowed view cannot restate them: they say unknown rather than a number
   // that would be read as this repo's. The other five ARE the lists on screen.
   statCell('Open', selected.length ? num(null) : payload.counts.open, '/board'),
@@ -72,7 +72,7 @@ const numbers = (payload, lists, selected) => statgrid([
   statCell('Ready', lists.ready.length, '/board'),
   statCell('In flight', lists.inFlight.length, '/board'),
   statCell('Inbox', lists.inbox.length, '/board'),
-  statCell('Parked', selected.length ? num(null) : payload.counts.parked, '/board'),
+  statCell('Backlog', selected.length ? num(null) : payload.counts.backlog, '/board'),
 ]);
 
 // ── The week behind the numbers ────────────────────────────────────────────

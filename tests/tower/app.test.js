@@ -226,9 +226,9 @@ const run = async () => {
   });
 
   await test('the board’s columns are the pipeline in order, QA at the end of it', () => {
-    assertEq(format.STATUSES.map((s) => s.key).join(','), 'inbox,specced,building,blocked,parked,qa',
+    assertEq(format.STATUSES.map((s) => s.key).join(','), 'inbox,specced,building,blocked,backlog,qa',
       'left to right, and the pipeline is all of it');
-    assertEq(format.STATUSES.map((s) => s.label).join(','), 'Inbox,Specced,Building,Blocked,Parked,QA',
+    assertEq(format.STATUSES.map((s) => s.label).join(','), 'Inbox,Specced,Building,Blocked,Backlog,QA',
       'and each column is titled the way a human reads it');
     assertEq(format.STATUSES.length, 6, 'six lanes — a missing label is not a place an issue lives (#118)');
     assert(!format.STATUSES.some((s) => !s.key), 'so no column stands for the absence of one');
@@ -258,10 +258,10 @@ const run = async () => {
     // Both ends are shared with the status they say the same thing as (#149):
     // a hue is unique inside a vocabulary and free across them, since every
     // chip carries its own word and its own glyph. "High" and "blocked" are
-    // both the thing that wants attention; "low" and "parked" both say the
+    // both the thing that wants attention; "low" and "backlog" both say the
     // opposite about urgency.
     assertEq(format.priorityToken('high'), format.statusToken('blocked'), 'the loud end is the one the pipeline raises its hand in');
-    assertEq(format.priorityToken('low'), format.statusToken('parked'), 'and the quiet end is the one the pipeline parks in');
+    assertEq(format.priorityToken('low'), format.statusToken('backlog'), 'and the quiet end is the one the pipeline parks in');
     assertEq(new Set([format.priorityToken('high'), format.priorityToken('low')]).size, 2,
       'and the two ends of the one vocabulary are never the same colour');
   });
@@ -329,7 +329,7 @@ const run = async () => {
     const clean = format.statusBreakdown([
       { status: 'inbox' }, { status: 'building' }, { status: 'building' },
     ]);
-    assertEq(clean.labels.join(','), 'Inbox,Specced,Building,Blocked,Parked,QA', 'no drift means six slices, nothing more');
+    assertEq(clean.labels.join(','), 'Inbox,Specced,Building,Blocked,Backlog,QA', 'no drift means six slices, nothing more');
     assertEq(clean.values.join(','), '1,0,2,0,0,0', 'each status counts its own');
     assertEq(clean.labels.length, clean.colors.length, 'labels and colors stay in step');
 
@@ -557,10 +557,10 @@ const run = async () => {
     assertEq(format.CHIP_GLYPHS.building, 'fa-hammer', 'building is the hammer');
     assertEq(format.CHIP_GLYPHS.qa, 'fa-eye', 'qa is the owner’s eye');
     assertEq(format.CHIP_GLYPHS.blocked, 'fa-hand', 'blocked is the raised hand');
-    assertEq(format.CHIP_GLYPHS.parked, 'fa-circle-pause', 'and parked is the pause');
+    assertEq(format.CHIP_GLYPHS.backlog, 'fa-circle-pause', 'and backlog is the pause');
     const glyphs = Object.values(format.CHIP_GLYPHS);
     assertEq(new Set(glyphs).size, glyphs.length, 'no two names share a glyph');
-    assertEq(Object.keys(format.CHIP_GLYPHS).sort().join(','), 'blocked,bug,building,enhancement,high,idea,inbox,low,parked,qa,specced',
+    assertEq(Object.keys(format.CHIP_GLYPHS).sort().join(','), 'backlog,blocked,bug,building,enhancement,high,idea,inbox,low,qa,specced',
       'and the table names the three vocabularies and nothing else');
     for (const status of format.STATUSES) {
       assert(format.statusChip(status.key).includes(`<i class="fa-solid ${format.CHIP_GLYPHS[status.key]} me-1"`),
@@ -2298,7 +2298,7 @@ const run = async () => {
   });
 
   await test('the six columns that are a status are the only ones a card moves between', () => {
-    assertEq(api.MOVABLE_STATUSES.join(','), 'inbox,specced,building,blocked,parked,qa', 'the pipeline, from the column list itself');
+    assertEq(api.MOVABLE_STATUSES.join(','), 'inbox,specced,building,blocked,backlog,qa', 'the pipeline, from the column list itself');
     assertEq(api.moveRequest(CARD, '', true), null, 'the absence of a label is not a destination — nothing on the board names it');
     assertEq(api.moveRequest({ ...CARD, status: null }, 'inbox', true), null, 'and an issue triage has not reached has no label to remove');
     assertEq(api.moveRequest(CARD, 'shipped', true), null, 'a status the pipeline does not name is not one');
@@ -2723,7 +2723,7 @@ const run = async () => {
     const fs = require('fs');
     const os = require('os');
     const apiHistory = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'history.js'));
-    const mark = (date, open, closedDay) => `<!-- workkit-stats: {"v":1,"date":"${date}","totals":{"open":${open},"waiting":1,"ready":2,"inFlight":0,"inbox":3,"parked":0},"closedDay":${closedDay},"repos":{"owner/repo":{"open":${open}}}} -->`;
+    const mark = (date, open, closedDay) => `<!-- workkit-stats: {"v":1,"date":"${date}","totals":{"open":${open},"waiting":1,"ready":2,"inFlight":0,"inbox":3,"backlog":0},"closedDay":${closedDay},"repos":{"owner/repo":{"open":${open}}}} -->`;
     const nodes = [
       { title: 'brief: 2026-08-03', body: `HEADLINE: today.\n\n<!-- cc-news: 2.1.220 -->\n${mark('2026-08-03', 12, 4)}\n` },
       { title: 'daily: 2026-08-03', body: `a summary, not a brief\n${mark('2026-08-03', 99, 9)}\n` },

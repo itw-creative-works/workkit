@@ -27,7 +27,7 @@
           "description": "Waiting on a human decision. Exactly one status: label per open issue. A comment names the question.",
           "color": "D92D20"
         },
-        "parked": {
+        "backlog": {
           "description": "Kept on purpose, not now. Exactly one status: label per open issue.",
           "color": "A1A19E"
         }

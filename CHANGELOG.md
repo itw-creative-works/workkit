@@ -7,6 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#153](../../issues/153) — The kept-on-purpose status is renamed from status:parked to status:backlog across the label SSOT, the spec, the skills, and the tower; existing repos convert with a one-time label rename.
+- [#154](../../issues/154) — The manager profile now injects two visibility rules every prompt: keep a todo checklist current through multi-step work, and announce every crew spawn with its class, model, and mandate.
+
 ## [0.38.1] - 2026-08-06
 
 ### Changed

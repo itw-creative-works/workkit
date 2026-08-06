@@ -118,7 +118,7 @@ export const STATUSES = [
   { key: 'specced', label: 'Specced' },
   { key: 'building', label: 'Building' },
   { key: 'blocked', label: 'Blocked' },
-  { key: 'parked', label: 'Parked' },
+  { key: 'backlog', label: 'Backlog' },
   { key: 'qa', label: 'QA' },
 ];
 
@@ -133,7 +133,7 @@ export const STATUSES = [
  * Six lanes, six colours: WITHIN a vocabulary a hue never repeats, since a
  * column header, a card chip and a chart slice are all read by hue. Across the
  * vocabularies it may (issue #149) — `type:idea` shares this purple, `high` the
- * alarm red `blocked` wears, `low` the faint ink `parked` is drawn in — because
+ * alarm red `blocked` wears, `low` the faint ink `backlog` is drawn in — because
  * every chip carries its own word and its own glyph, so nothing is told apart
  * by colour alone. The one slot a status may still not take is the muted ink an
  * unknown key falls back to: a pipeline colour that is also the no-status
@@ -152,7 +152,7 @@ export const statusToken = (key) => ({
   building: '--omega-warn',
   qa: '--omega-ok',
   blocked: '--omega-danger',
-  parked: '--omega-ink-faint',
+  backlog: '--omega-ink-faint',
 }[key] || '--omega-ink-muted');
 
 /** The resolved colour for a status — CSS custom properties, so dark mode follows. */
@@ -223,7 +223,7 @@ export const noStatusAlert = (issues, showRepo = true) => {
 //
 // Both ends share the status they say the same thing as (issue #149): high
 // takes the theme's danger red, which `blocked` also wears, and low the faint
-// ink `parked` is drawn in. A priority chip and a status chip sit side by side
+// ink `backlog` is drawn in. A priority chip and a status chip sit side by side
 // in the issue dialog, and each carries its own word and its own glyph, so a
 // shared hue reads as the shared urgency rather than as a second status —
 // while the alternative for the quiet end, the muted ink every plain chip
@@ -285,7 +285,7 @@ export const CHIP_GLYPHS = {
   building: 'fa-hammer',
   qa: 'fa-eye',
   blocked: 'fa-hand',
-  parked: 'fa-circle-pause',
+  backlog: 'fa-circle-pause',
   bug: 'fa-bug',
   enhancement: 'fa-wand-magic-sparkles',
   idea: 'fa-lightbulb',

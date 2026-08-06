@@ -53,7 +53,7 @@ Repo instructions live in `AGENTS.md` (provider-agnostic); `CLAUDE.md` is exactl
 | `status:building` | Authorized and in flight — the work has started. Carried through build and verify, then the flip to `status:qa` — on an `agent:ok` issue too, where the agent performs the check itself and ships in the same run. |
 | `status:qa` | Built, tests green, review passed — waiting on the CHECK before the ship: the owner's normally, the agent's own on an `agent:ok` issue. The work sits in the working tree; the ship close ends it. |
 | `status:blocked` | Waiting on a human decision — the question lives in the issue body or a comment. |
-| `status:parked` | Kept on purpose, not now. |
+| `status:backlog` | Kept on purpose, not now. |
 | `type:bug` · `type:enhancement` · `type:idea` | What kind of thing it is — exactly one per open issue, like `status:`. Applied by the issue templates at capture (a dump is `type:idea`); rarely changes. (Native GitHub issue types are org-only, so labels carry this.) |
 | `priority:high` · `priority:low` | Order within the queue. **Absence = normal** — there is no `priority:normal` label. |
 | `agent:ok` | An agent may work this issue autonomously at every stage, the ship included — the owner's gate, exercised in advance at labeling time. Absence means humans only. |
@@ -64,7 +64,7 @@ Repo instructions live in `AGENTS.md` (provider-agnostic); `CLAUDE.md` is exactl
 - `area:*` is deliberately NOT bootstrapped — it is project-specific; a repo adds its own if it wants one. Adopt a group deliberately, never speculatively.
 - **A label rename is applied once, at rename time.** Moving every issue off a retired label — open and closed — and deleting it is the job of the rename itself, done by hand or by a one-off sweep. No standing code in the heal carries old vocabulary forward; `labels.json` describes the vocabulary as it is now.
 
-**The statuses read as a PIPELINE** — intent to implemented: `status:inbox` → `status:specced` → `status:building` (build → verify) → `status:qa` (the check — the owner's, or the agent's own under `agent:ok`) → closed against the CHANGELOG entry, with `blocked` and `parked` as side pockets — an answered `blocked` issue rejoins at `status:specced`, a revived `parked` one re-enters triage. The flip to `building` happens the moment work starts; the assignee is still the claim, and the label is what makes in-flight work visible on a board. Neither working label comes off by hand — the flip to `qa` is mechanical, and the ship close ends whichever one the issue is carrying.
+**The statuses read as a PIPELINE** — intent to implemented: `status:inbox` → `status:specced` → `status:building` (build → verify) → `status:qa` (the check — the owner's, or the agent's own under `agent:ok`) → closed against the CHANGELOG entry, with `blocked` and `backlog` as side pockets — an answered `blocked` issue rejoins at `status:specced`, a revived `backlog` one re-enters triage. The flip to `building` happens the moment work starts; the assignee is still the claim, and the label is what makes in-flight work visible on a board. Neither working label comes off by hand — the flip to `qa` is mechanical, and the ship close ends whichever one the issue is carrying.
 
 The one gate is the flip from `inbox` to `specced`, and it is a deliberate act: it says the `## Spec` is written, it is accepted, and building this is now authorized. Nobody flips it casually. A small item is specced the moment someone accepts it with the literal Spec `None needed — small item.`; a large one is specced when its implementation layer is written and accepted. "Accepted but not yet specced" is deliberately NOT a visible stage — it stays `status:inbox`, with a triage comment or a `priority:` label carrying that signal. The `workkit:feature` skill refuses to build an issue that is not `status:specced`. The visual map — the road and the crew that works it — is in the [README](../README.md).
 
@@ -191,7 +191,7 @@ Three things are deliberately NOT entries, because a guard that judges them boun
 - **A real spec is built WITH the owner, before acceptance is asked for.** Any Spec beyond the literal `None needed — small item.` is designed in conversation — the open decisions put one at a time, each with a recommendation (the `workkit:interview` skill is the mechanism). A spec the owner designed in live chat already satisfies this; what the rule forbids is a spec drafted whole and handed over for a bare yes, which makes the gate a rubber stamp. `agent:ok` issues are exempt — self-ratification is exactly what that grant means (see the label table above).
 - **Promotion**: when a spec's content is validated in practice, its durable parts move to `docs/<topic>.md` (with `AGENTS.md` pointing at them), and the issue closes citing that path. Docs follow validation, never intentions.
 - **Rejection** is closing the issue as **not planned** — the institutional no, at every scale. Nothing turned down leaves a file behind; the closed issue IS the record, and triage cites it instead of re-pitching (`gh issue list --state all --search ...`).
-- A design too large for one issue splits into sub-issues, each carrying its own `## Spec`. A design worth keeping but not now is `status:parked`, body intact.
+- A design too large for one issue splits into sub-issues, each carrying its own `## Spec`. A design worth keeping but not now is `status:backlog`, body intact.
 
 ## Handoffs
 
@@ -275,7 +275,7 @@ The `workkit:migrate` skill EXECUTES this recipe — it is the doer, and this se
 
 1. Run `bash ~/.claude/workkit/standards.sh --enable` in the repo — it writes `.workkit/settings.json` holding `{ "version": 1, "enabled": true }` (COMMIT it, that is the opt-in) and heals the repo in the same pass: labels, issue templates, `.workkit/` ignored, the capture and session files seeded.
 2. Read the whole board. Nothing is deleted; every line lands somewhere.
-3. `Now` + `Next` → issues, `status:specced` (the in-flight ones go to `status:building`, assigned). `Parked` → `status:parked`. `Blocked` GO gates → `status:blocked` with the question as a comment.
+3. `Now` + `Next` → issues, `status:specced` (the in-flight ones go to `status:building`, assigned). `Parked` → `status:backlog`. `Blocked` GO gates → `status:blocked` with the question as a comment.
 4. `Rulings` → `AGENTS.md`/`docs/` if doctrine, else a comment on the issue they bind.
 5. `Done` → deleted. CHANGELOG + git are the record.
 6. `INBOX.md` entries → issues with `status:inbox`, then run triage.

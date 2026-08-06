@@ -30,7 +30,7 @@ const mkHome = (repo = 'owner/private-home') => {
 };
 
 /** The line a morning publishes, as jobs/stats.js renders it. */
-const mark = (date, open, closedDay) => `<!-- workkit-stats: {"v":1,"date":"${date}","totals":{"open":${open},"waiting":1,"ready":2,"inFlight":0,"inbox":3,"parked":0},"closedDay":${closedDay},"repos":{"owner/repo":{"open":${open}}}} -->`;
+const mark = (date, open, closedDay) => `<!-- workkit-stats: {"v":1,"date":"${date}","totals":{"open":${open},"waiting":1,"ready":2,"inFlight":0,"inbox":3,"backlog":0},"closedDay":${closedDay},"repos":{"owner/repo":{"open":${open}}}} -->`;
 
 /** A published brief: a digest, the news cursor, then the stats line. */
 const brief = (date, open, closedDay) => ({

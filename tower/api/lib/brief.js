@@ -236,7 +236,7 @@ const buildBrief = (board, health, repos, generatedAt) => {
     ready: ready.length,
     inFlight: inFlight.length,
     inbox: inbox.length,
-    parked: issues.filter((i) => i.status === 'parked').length,
+    backlog: issues.filter((i) => i.status === 'backlog').length,
   };
 
   const repoCounts = repoCountsFrom(board);

@@ -124,6 +124,21 @@ const run = async () => {
     assert(/[Jj]udgment stays/.test(ctx), 'the judgment boundary is missing');
     assert(ctx.includes('self-contained'), 'the owner-question rule is missing');
   });
+  await test('the visibility rules are present on both rungs (#154)', () => {
+    // What a manager owes the chat while it delegates: the checklist that says
+    // where the work is, and the spawn narration that says who is on it. Both
+    // are stated for every session the profile injects into, not only the
+    // frontier one, since a workhorse manager delegates the same way.
+    for (const rung of ['fable', 'opus']) {
+      freshTmp();
+      cacheSession('sess1', id(rung));
+      const ctx = contextOf(runHook(payload()));
+      assert(ctx.includes('Keep a visible checklist with the todo tool for any multi-step task — current item in progress, updated as steps start and finish, pruned when stale.'),
+        `${rung}: the checklist rule is missing`);
+      assert(ctx.includes('Announce every crew spawn in chat as you make it — class, model per the ladder, one-line mandate — and report what it returned when it finishes.'),
+        `${rung}: the spawn-narration rule is missing`);
+    }
+  });
   await test('the content that moved to docs/agents.md is gone', () => {
     freshTmp();
     cacheSession('sess1', id('fable'));
@@ -132,14 +147,16 @@ const run = async () => {
       assert(!ctx.includes(moved), `"${moved}" belongs in docs/agents.md, not the injection`);
     }
   });
-  await test('the injection stays under 600 characters on both rungs', () => {
+  await test('the injection stays under 900 characters on both rungs', () => {
     // The workhorse branch is the longer one (its advisor clause), so the cap
     // must be proven per rung — the frontier ctx alone leaves untested headroom.
+    // The cap moved from 600 with the two visibility rules (#154); it is still
+    // a cap, so the next clause has to earn its place against it.
     for (const rung of ['fable', 'opus']) {
       freshTmp();
       cacheSession('sess1', id(rung));
       const ctx = contextOf(runHook(payload()));
-      assert(ctx.length < 600, `${rung} injection is ${ctx.length} chars`);
+      assert(ctx.length < 900, `${rung} injection is ${ctx.length} chars`);
     }
   });
 

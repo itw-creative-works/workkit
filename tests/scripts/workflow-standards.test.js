@@ -247,7 +247,7 @@ const run = async () => {
 
   await test('exact values per group', () => {
     const values = (g) => Object.keys(MANIFEST.groups[g].values).sort().join(',');
-    assertEq(values('status'), 'blocked,building,inbox,parked,qa,specced', 'status values');
+    assertEq(values('status'), 'backlog,blocked,building,inbox,qa,specced', 'status values');
     assertEq(values('type'), 'bug,enhancement,idea', 'type values');
     assertEq(values('priority'), 'high,low', 'priority values');
     assertEq(values('agent'), 'ok,working', 'agent values');
@@ -289,7 +289,7 @@ const run = async () => {
     // could track, for the danger red that `status:blocked` also wears.
     const expected = {
       status: {
-        inbox: '0F8FA9', specced: '7A45B5', building: 'C47206', qa: '12925C', blocked: 'D92D20', parked: 'A1A19E',
+        inbox: '0F8FA9', specced: '7A45B5', building: 'C47206', qa: '12925C', blocked: 'D92D20', backlog: 'A1A19E',
       },
       type: { bug: 'B0416A', enhancement: 'A06A08', idea: '7A45B5' },
       priority: { high: 'D92D20', low: 'A1A19E' },
@@ -311,7 +311,7 @@ const run = async () => {
     }
     assertEq(MANIFEST.groups.type.values.idea.color, MANIFEST.groups.status.values.specced.color, 'idea and specced share the purple');
     assertEq(MANIFEST.groups.priority.values.high.color, MANIFEST.groups.status.values.blocked.color, 'high and blocked share the alarm red');
-    assertEq(MANIFEST.groups.priority.values.low.color, MANIFEST.groups.status.values.parked.color, 'low and parked share the faint gray');
+    assertEq(MANIFEST.groups.priority.values.low.color, MANIFEST.groups.status.values.backlog.color, 'low and backlog share the faint gray');
   });
 
   await test('status is exclusive and every status description says so', () => {
@@ -1785,7 +1785,7 @@ const run = async () => {
         { number: 4, labels: [{ name: 'status:inbox' }, { name: 'status:specced' }, { name: 'type:bug' }] },
         { number: 5, labels: [{ name: 'status:specced' }, { name: 'type:bug' }, { name: 'priority:high' }, { name: 'priority:low' }] },
         { number: 6, labels: [{ name: 'status:specced' }, { name: 'type:enhancement' }] },
-        { number: 7, labels: [{ name: 'status:parked' }, { name: 'type:idea' }, { name: 'priority:low' }] },
+        { number: 7, labels: [{ name: 'status:backlog' }, { name: 'type:idea' }, { name: 'priority:low' }] },
         { number: 8, labels: [{ name: 'status:specced' }] },
         { number: 9, labels: [{ name: 'status:specced' }, { name: 'type:bug' }, { name: 'type:idea' }] },
       ],
@@ -1813,7 +1813,7 @@ const run = async () => {
       labels: desiredLabels(),
       issues: [
         { number: 1, labels: [{ name: 'status:specced' }, { name: 'type:bug' }] },
-        { number: 2, labels: [{ name: 'status:parked' }, { name: 'type:idea' }, { name: 'priority:high' }] },
+        { number: 2, labels: [{ name: 'status:backlog' }, { name: 'type:idea' }, { name: 'priority:high' }] },
       ],
     });
     const { output } = runScript(repo, { pathPrefix: stub.binDir });

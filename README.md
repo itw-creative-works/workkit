@@ -12,8 +12,8 @@ flowchart TB
     File[".workkit/capture.md"] --> Inbox
     Inbox --> Triage["Triage<br>route it out of the inbox<br>/workkit:triage"]
     Triage -->|needs shaping| Spec["Write the spec"]
-    Triage -->|not now| Parked([status:parked])
-    Parked -.->|revived| Triage
+    Triage -->|not now| Backlog([status:backlog])
+    Backlog -.->|revived| Triage
     Spec -->|accepted, or a small item| Specced([status:specced])
     Spec -->|a call to make| Blocked([status:blocked])
     Blocked -.->|answered| Spec
@@ -27,7 +27,7 @@ flowchart TB
     Ship --> Closed([closed])
 ```
 
-Capture puts an item in `status:inbox`; triage is what routes it out. Four labels sit on the road: the flip to `status:specced` is the go-ahead to build, `status:building` carries the work from the moment it starts, and `status:qa` is where it parks once it is built and verified — in your working tree, waiting on your check, until your word "ship" runs the ship and the close ends it. `blocked` and `parked` are side pockets: an answered question rejoins the road, a revived item goes back through triage. You still claim an issue by assigning it to yourself — the assignee is who holds it, the label is what makes it visible in flight. The letter of every hop — what each label means, who may flip it, how a claim expires: [`docs/project-state.md`](docs/project-state.md).
+Capture puts an item in `status:inbox`; triage is what routes it out. Four labels sit on the road: the flip to `status:specced` is the go-ahead to build, `status:building` carries the work from the moment it starts, and `status:qa` is where it parks once it is built and verified — in your working tree, waiting on your check, until your word "ship" runs the ship and the close ends it. `blocked` and `backlog` are side pockets: an answered question rejoins the road, a revived item goes back through triage. You still claim an issue by assigning it to yourself — the assignee is who holds it, the label is what makes it visible in flight. The letter of every hop — what each label means, who may flip it, how a claim expires: [`docs/project-state.md`](docs/project-state.md).
 
 ## The crew that works it
 

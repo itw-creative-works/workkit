@@ -9,7 +9,7 @@ argument-hint: "[merge]"
 Work items live as **GitHub issues**. Triage is the ACTION that drains `status:inbox`; it is not a state.
 
 Label vocabulary (SSOT: `~/.claude/workkit/labels.json`, and every repo's own `gh label list`):
-`status:inbox|specced|building|qa|blocked|parked` (exactly ONE per open issue — the PIPELINE, mapped in the workkit plugin's README) · `type:bug|enhancement|idea` · `priority:high|low` (absence = normal) · `agent:ok` (an agent may work it autonomously at every stage — spec, accept, build, the `status:qa` check, ship).
+`status:inbox|specced|building|qa|blocked|backlog` (exactly ONE per open issue — the PIPELINE, mapped in the workkit plugin's README) · `type:bug|enhancement|idea` · `priority:high|low` (absence = normal) · `agent:ok` (an agent may work it autonomously at every stage — spec, accept, build, the `status:qa` check, ship).
 
 ## Marker (opens the capture file)
 
@@ -45,7 +45,7 @@ Then, before creating anything, apply the **filing litmus test**: *would closing
 | Actionable, but it still needs design or detail | Leave it `status:inbox` and draft what you have into the `## Spec` (or a comment) — then QUEUE the interview and say so; a spec drafted whole is never presented for a bare yes (spec § Specs, the collaborative rule). Accepting that spec later is what earns `status:specced` |
 | A polish nit, docs nit, or cosmetic finding | A checklist line in the `## Spec` of the surface's open `polish: <surface>` issue — open one (`status:inbox` + `type:enhancement`) when none is open. Mechanics, including the freeze rule and "bugs never batch": spec § How big is one issue |
 | Waiting on the owner's decision | `status:blocked` + a comment naming the question |
-| Worth keeping, deliberately not now | `status:parked` |
+| Worth keeping, deliberately not now | `status:backlog` |
 | Cross-project / business / no single repo | An issue on the **home repo** — the `site.repo` named in `~/.workkit/settings.json` (`docs/project-state.md` § The global layer). No `site.repo` set: leave the entry in the capture file and say so |
 | Belongs to a DIFFERENT project | An issue on that repo (`gh issue create --repo <owner/name>`) |
 | An idea for a project that has no repo yet | A `type:idea` issue on the **home repo**, later notes as comments on it. Never create a repo or a folder here — graduation is the owner's word, proposed and executed per § Graduation |
