@@ -13,7 +13,7 @@ Label vocabulary (SSOT: `~/.claude/workkit/labels.json`, and every repo's own `g
 
 ## Marker (opens the inbox)
 
-Before reading anything, record that triage is running — the `safety/inbox-guard` hook checks this marker before allowing a read of `.workkit/inbox.md`, which is the owner's scratchpad at every other moment. The marker is keyed to the repo root the inbox belongs to:
+Before reading anything, record that triage is running — the `safety/inbox-guard` hook checks this marker before allowing a read of `.workkit/inbox.md` OR the rewrite that clears the drained entries, which is the only write this file ever takes from an agent (adding to it is the owner's alone). It is the owner's capture surface at every other moment. The marker is keyed to the repo root the inbox belongs to:
 
 ```sh
 mkdir -p "${TMPDIR:-/tmp}/claude-triage-marker" && touch "${TMPDIR:-/tmp}/claude-triage-marker/$({ git rev-parse --show-toplevel 2>/dev/null || echo "$HOME"; } | tr -d '\n' | shasum | cut -d' ' -f1)"

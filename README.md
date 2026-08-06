@@ -97,7 +97,7 @@ Plugins load at startup, so a new (or restarted) session is what puts a change i
 | `safety/commit-gate` | before `git commit` | No commit unless tests pass, new source files come with tests, code carries a fresh review, and any CHANGELOG entry is in format. A suite still running at the gate's own deadline is ended and the commit bounces, so a run the harness would cancel never slips through. Heal bookkeeping (the version stamp and the current vendored linter, alone) skips the review and new-file checks |
 | `safety/commit-language` | before `git commit` | Bounces kill/destroy/dead wording in commit messages, and off-format subject lines |
 | `safety/issue-guard` | before a `gh issue`/`gh pr` write, a GraphQL discussion/issue mutation, or a `gh api` REST write to an issue or pull endpoint | Blocks outbound text carrying a local `.env` value or a token-shaped string — every repo is assumed public. Names the key or the kind, never the match |
-| `safety/inbox-guard` | before a read of the inbox | Keeps `.workkit/inbox.md` the owner's scratchpad: contents open only during a triage run; counting and appending stay free |
+| `safety/inbox-guard` | before a read or a write of the inbox | Keeps `.workkit/inbox.md` the owner's capture surface: reading it and clearing it open only during a triage run, adding to it never — counting stays free |
 | `docs/board-guard` | after any edit | Holds `AGENTS.md` / `CLAUDE.md` to the document rules |
 | `docs/changelog-guard` | after any edit | Holds a CHANGELOG entry to one short linked paragraph |
 | `docs/session-guard` | after any edit | Holds `.workkit/session.md` to a lean task queue — bounces a write leaving it over 40 content lines or a bullet over 350 characters |

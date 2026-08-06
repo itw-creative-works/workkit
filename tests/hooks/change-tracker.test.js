@@ -100,6 +100,16 @@ const run = async () => {
     assert(/promote/i.test(content), 'should state the promotion rule');
   });
 
+  await test('prompt.md never offers the local inbox as a filing destination', () => {
+    const content = fs.readFileSync(PROMPT, 'utf8');
+    // The inbox is the owner's capture surface (#145): a finding is filed as an
+    // issue, and where GitHub is out of reach it goes in chat, never here.
+    assert(/never write to `?\.workkit\/inbox\.md/i.test(content), 'the rule is stated outright');
+    for (const line of content.split('\n').filter((l) => /inbox\.md/.test(l))) {
+      assert(/never write to/i.test(line), `inbox.md is only ever named to forbid it, got: ${line}`);
+    }
+  });
+
   await test('prompt.md carries no board instructions', () => {
     const content = fs.readFileSync(PROMPT, 'utf8');
     assert(!content.includes('PROGRESS.md'), 'the board is not the prompt\'s business anymore');

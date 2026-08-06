@@ -1,10 +1,11 @@
 /* eslint-disable no-console */
 //
 // Tests for hooks/safety/inbox-guard — the PreToolUse hook that keeps
-// .workkit/inbox.md the owner's scratchpad: its CONTENTS are read only during
-// a triage run, which the workkit:triage skill announces by touching a marker.
-// Counting and appending stay open; a missing or stale (>30 min) marker blocks
-// every read of the contents.
+// .workkit/inbox.md the owner's capture surface: its CONTENTS are read, and
+// its drained entries cleared, only during a triage run, which the
+// workkit:triage skill announces by touching a marker. A missing or stale
+// (>30 min) marker blocks every read and every rewrite; ADDING to the file is
+// never the agent's, marker or not. Counting stays open.
 //
 
 const fs = require('fs');
@@ -70,6 +71,8 @@ const runHook = (payload, env = {}) => {
 const read = (file) => runHook({ tool_name: 'Read', tool_input: { file_path: file } });
 const bash = (command) => runHook({ tool_name: 'Bash', tool_input: { command } });
 const grep = (tool_input) => runHook({ tool_name: 'Grep', tool_input });
+const edit = (file) => runHook({ tool_name: 'Edit', tool_input: { file_path: file } });
+const write = (file) => runHook({ tool_name: 'Write', tool_input: { file_path: file } });
 
 const run = async () => {
   group('inbox-guard: the Read path');
@@ -141,21 +144,173 @@ const run = async () => {
     }
   });
 
-  await test('appending a note — exit 0', () => {
-    clearMarker();
-    for (const c of [
-      `echo "- a thought" >> ${W}/inbox.md`,
-      `bash ~/.claude/workkit/wk.sh note "a thought"`,
-      `printf -- '- x\\n' >> ${W}/inbox.md`,
-    ]) {
-      const { code, stderr } = bash(c);
-      assertEq(code, 0, `appends stay open: ${c}, got: ${stderr}`);
-    }
-  });
-
   await test('a command naming another file — exit 0', () => {
     clearMarker();
     assertEq(bash(`cat ${W}/session.md`).code, 0, 'only the inbox is gated');
+  });
+
+  // The two halves of the path need not be contiguous: a `cd` into .workkit
+  // leaves the file named on its own, and that is the same read.
+  await test('a read split across a cd — exit 2', () => {
+    clearMarker();
+    assertEq(bash(`cd ${W} && cat inbox.md`).code, 2, 'the cd names the directory the read names the file');
+  });
+
+  await test('a split command that only counts — exit 0', () => {
+    clearMarker();
+    const { code, stderr } = bash(`cd ${W} && wc -l inbox.md`);
+    assertEq(code, 0, `counts stay open however they are spelled, got: ${stderr}`);
+  });
+
+  await test('an inbox.md with no .workkit anywhere — exit 0', () => {
+    clearMarker();
+    for (const c of ['echo x >> notes/inbox.md', 'cat notes/inbox.md']) {
+      const { code, stderr } = bash(c);
+      assertEq(code, 0, `somebody else's inbox is not ours: ${c}, got: ${stderr}`);
+    }
+  });
+
+  group('inbox-guard: the Edit and Write path');
+
+  // The drain is the one write the file takes from an agent, so Edit/Write
+  // ride the same marker the reads do.
+  await test('editing or writing the inbox with no marker — exit 2', () => {
+    clearMarker();
+    for (const call of [() => edit(INBOX), () => write(INBOX), () => edit(`${W}/inbox.md`)]) {
+      const { code, stderr } = call();
+      assertEq(code, 2, 'an unannounced write must block');
+      assert(stderr.includes('inbox-guard'), 'names itself');
+      assert(stderr.includes('triage'), 'names the sanctioned path');
+      // The branch is the rewrite gate, so the refusal names the rewrite —
+      // the append rule is a different act and a different message.
+      assert(stderr.includes('BLOCKED rewriting'), 'the message matches the act');
+    }
+  });
+
+  await test('editing or writing it with a fresh marker — exit 0', () => {
+    touchMarker();
+    for (const call of [() => edit(INBOX), () => write(INBOX)]) {
+      const { code, stderr } = call();
+      assertEq(code, 0, `the triage drain clears entries, got: ${stderr}`);
+    }
+  });
+
+  await test('writing another file in .workkit/ — exit 0', () => {
+    clearMarker();
+    assertEq(write(path.join(REPO, W, 'session.md')).code, 0, 'only the inbox is gated');
+  });
+
+  group('inbox-guard: the agent never adds to the inbox');
+
+  // Owner ruling, 2026-08-05: clear it on triage, never add to it. No marker
+  // opens an append — the marker means a DRAIN is running, not a capture.
+  await test('an append into the inbox — exit 2 with and without a marker', () => {
+    const appends = [
+      `echo "- a thought" >> ${W}/inbox.md`,
+      `echo "- a thought" >>${W}/inbox.md`,
+      `printf -- '- x\\n' >> "${W}/inbox.md"`,
+      `echo x | tee -a ${W}/inbox.md`,
+      `cd ${W} && echo hi >> inbox.md`,
+    ];
+    clearMarker();
+    for (const c of appends) {
+      const { code, stderr } = bash(c);
+      assertEq(code, 2, `an append is never the agent's: ${c}`);
+      assert(stderr.includes('never adds to it'), 'states the rule');
+    }
+    touchMarker();
+    for (const c of appends) {
+      assertEq(bash(c).code, 2, `and a triage run does not open it either: ${c}`);
+    }
+  });
+
+  await test('the capture CLI run by the agent — exit 2 with and without a marker', () => {
+    const captures = [
+      'bash ~/.claude/workkit/wk.sh note "a thought"',
+      'workkit note "a thought"',
+      'wk.sh note the thought',
+      'cd /tmp && wk note "a thought"',
+    ];
+    clearMarker();
+    for (const c of captures) {
+      const { code, stderr } = bash(c);
+      assertEq(code, 2, `capture is the owner's: ${c}`);
+      assert(stderr.includes('status:inbox'), 'points at the issue instead');
+    }
+    touchMarker();
+    for (const c of captures) {
+      assertEq(bash(c).code, 2, `and a triage run does not open it either: ${c}`);
+    }
+  });
+
+  // The CLI is caught where it is RUN, not where it is mentioned: prose about
+  // capture in an issue body, and a search for it, touch no inbox.
+  await test('the capture CLI merely named — exit 0', () => {
+    clearMarker();
+    for (const c of [
+      `gh issue create --body 'the owner runs wk.sh note "x" to capture'`,
+      'gh issue comment 1 --body "use workkit note for capture"',
+      'rg wk.sh note docs/',
+    ]) {
+      const { code, stderr } = bash(c);
+      assertEq(code, 0, `a mention runs nothing: ${c}, got: ${stderr}`);
+    }
+  });
+
+  await test('a rewrite of the inbox — marker-gated like a read', () => {
+    const rewrites = [
+      `echo x > ${W}/inbox.md`,
+      `echo x | tee ${W}/inbox.md`,
+      `sed -i '' 's/a/b/' ${W}/inbox.md`,
+      `perl -pi -e 's/a/b/' ${W}/inbox.md`,
+    ];
+    clearMarker();
+    for (const c of rewrites) {
+      assertEq(bash(c).code, 2, `a rewrite outside a triage run blocks: ${c}`);
+    }
+    touchMarker();
+    for (const c of rewrites) {
+      const { code, stderr } = bash(c);
+      assertEq(code, 0, `the drain rewrites freely: ${c}, got: ${stderr}`);
+    }
+  });
+
+  await test('a command redirecting elsewhere while naming the inbox — exit 0', () => {
+    clearMarker();
+    for (const c of [
+      `echo "${W}/inbox.md" > /dev/null`,
+      `echo "the inbox lives at ${W}/inbox.md" >> notes.txt`,
+      `ls -la ${W}/inbox.md`,
+    ]) {
+      const { code, stderr } = bash(c);
+      assertEq(code, 0, `only a write TO the inbox is gated: ${c}, got: ${stderr}`);
+    }
+  });
+
+  // tee, sed -i and perl -i are judged by their OWN argument: a pipeline whose
+  // writer points at another file writes to that file, whatever the command
+  // line mentions elsewhere.
+  await test('a writer keyword pointed at another file — exit 0', () => {
+    clearMarker();
+    for (const c of [
+      `wc -l ${W}/inbox.md | tee -a /tmp/log`,
+      `wc -l ${W}/inbox.md | tee /tmp/log`,
+      `ls ${W}/inbox.md; echo hi | tee -a other.log`,
+      `ls ${W}/inbox.md; sed -i '' s/a/b/ other.txt`,
+      `git log --oneline -- ${W}/inbox.md | tee changes.log`,
+    ]) {
+      const { code, stderr } = bash(c);
+      assertEq(code, 0, `the keyword's own target decides: ${c}, got: ${stderr}`);
+    }
+  });
+
+  await test('the same keywords pointed AT the inbox — still gated', () => {
+    clearMarker();
+    assertEq(bash(`tee -a ${W}/inbox.md`).code, 2, 'an append is never the agent\'s');
+    assertEq(bash(`sed -i '' s/a/b/ ${W}/inbox.md`).code, 2, 'a rewrite needs the marker');
+    touchMarker();
+    assertEq(bash(`tee -a ${W}/inbox.md`).code, 2, 'and no marker opens the append');
+    assertEq(bash(`sed -i '' s/a/b/ ${W}/inbox.md`).code, 0, 'while the drain rewrites freely');
   });
 
   group('inbox-guard: the Grep path');
@@ -280,6 +435,24 @@ const run = async () => {
     clearMarker(HOME_MARKER);
   });
 
+  await test('the braced HOME spelling resolves like the bare one', () => {
+    const forms = [`cat "$HOME/${W}/inbox.md"`, `cat "\${HOME}/${W}/inbox.md"`];
+    const call = (c) => runHook(
+      { cwd: REPO, tool_name: 'Bash', tool_input: { command: c } },
+      { HOME },
+    );
+    clearMarker(HOME_MARKER);
+    for (const c of forms) {
+      assertEq(call(c).code, 2, `braced or bare, the gate is the same: ${c}`);
+    }
+    touchMarker(0, HOME_MARKER);
+    for (const c of forms) {
+      const { code, stderr } = call(c);
+      assertEq(code, 0, `and the user inbox marker opens both: ${c}, got: ${stderr}`);
+    }
+    clearMarker(HOME_MARKER);
+  });
+
   await test("the skill's own recipe, run in $HOME, writes the file this hook checks", () => {
     clearMarker(HOME_MARKER);
     const skill = fs.readFileSync(
@@ -300,10 +473,10 @@ const run = async () => {
 
   group('inbox-guard: wiring and fail-open');
 
-  await test('hooks.json registers the guard on PreToolUse Read, Grep and Bash', () => {
+  await test('hooks.json registers the guard on every tool that reaches the inbox', () => {
     const wiring = JSON.parse(fs.readFileSync(
       path.join(__dirname, '..', '..', 'hooks', 'hooks.json'), 'utf8'));
-    for (const matcher of ['Read', 'Grep', 'Bash']) {
+    for (const matcher of ['Read', 'Grep', 'Bash', 'Edit', 'Write']) {
       const block = (wiring.hooks.PreToolUse || [])
         .find((b) => (b.matcher || '').split('|').includes(matcher));
       assert(block, `a PreToolUse ${matcher} block exists`);
@@ -341,8 +514,10 @@ const run = async () => {
 
   await test('another tool, a missing input, malformed JSON — exit 0', () => {
     for (const input of [
-      JSON.stringify({ tool_name: 'Write', cwd: REPO, tool_input: { file_path: INBOX } }),
+      JSON.stringify({ tool_name: 'Glob', cwd: REPO, tool_input: { pattern: '**/inbox.md' } }),
       JSON.stringify({ tool_name: 'Read', cwd: REPO, tool_input: {} }),
+      JSON.stringify({ tool_name: 'Write', cwd: REPO, tool_input: {} }),
+      JSON.stringify({ tool_name: 'Bash', cwd: REPO, tool_input: {} }),
       'not json',
     ]) {
       const res = spawnSync('bash', [HOOK], {

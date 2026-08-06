@@ -1,9 +1,11 @@
 #!/bin/bash
-# safety/inbox-guard — PreToolUse hook (Read|Grep|Bash)
-# `.workkit/inbox.md` is the owner's scratchpad: its CONTENTS are read during a
-# TRIAGE RUN and at no other time. Counting the entries, appending to it, and
-# seeing that it is non-empty all stay free — this guard blocks only the reads
-# that take the contents in.
+# safety/inbox-guard — PreToolUse hook (Read|Grep|Bash|Edit|Write)
+# `.workkit/inbox.md` is the owner's scratchpad. The agent's ONE sanctioned
+# touch is the TRIAGE DRAIN: during a triage run the contents are read and the
+# entries that landed somewhere are deleted. Outside that run the file is
+# neither read nor rewritten, and ADDING to it is never the agent's at all —
+# capture is the owner's (owner ruling, 2026-08-05: clear it on triage, never
+# add to it). Seeing that it is non-empty and counting the entries stay free.
 #
 # The sanctioned path leaves a marker: the workkit:triage skill touches
 # ${TMPDIR:-/tmp}/claude-triage-marker/<sha of the anchor> before it reads
@@ -12,17 +14,26 @@
 # repo, since there is no inbox outside one — or, for an inbox in no repo at
 # all, the .workkit directory's own parent.
 # A marker newer than 30 minutes means a triage run is under way and every read
-# is allowed; a missing or older one blocks.
+# and every rewrite is allowed; a missing or older one blocks.
 #
 # Scope:
 #   Read — .tool_input.file_path ending in .workkit/inbox.md
+#   Edit/Write — the same path: the drain rewriting the file, marker-gated
 #   Grep — .tool_input.path pointing AT that file or the directory holding it
 #          (when the inbox exists there and any glob can name it), or a
 #          .tool_input.glob naming the inbox. A broad repo-wide
 #          search stays open.
-#   Bash — .tool_input.command naming that path AND running a content-reading
-#          command (cat, head, tail, less, more, grep, sed, awk, bat). An
-#          append (`wk.sh note`, `>>`) or a count (`wc -l`) is not one.
+#   Bash — .tool_input.command running, against that path, either a
+#          content-reading command (cat, head, tail, less, more, grep, sed,
+#          awk, bat) or a rewrite (`>`, plain `tee`, `sed -i`, `perl -i`) —
+#          both marker-gated — or an APPEND (`>>`, `tee -a`) or the capture CLI
+#          in command position (`wk.sh note`, `workkit note`, which name no
+#          path at all), which no marker opens. A count (`wc -l`) and a bare
+#          mention are neither.
+# This is a SUBSTRING TRIPWIRE, not a sandbox: an interpreter-level write
+# (`python3 -c "open(...,'a')"`, `dd of=…`) and a case-folded path go through
+# untouched, deliberately — the guard exists to stop the honest reach, and
+# chasing the dishonest one would cost every legitimate command around it.
 # Fail open on the hook's OWN errors (no jq, no readable marker mtime or clock,
 # no anchor to key on at all) — a broken guard must never wedge the session.
 
@@ -46,8 +57,29 @@ INBOX_DIR="${INBOX_SUFFIX%/*}"
 INBOX_FILE="${INBOX_SUFFIX##*/}"
 MARKER_MAX_AGE=1800   # 30 minutes
 
-# The inbox this call names, as the hook finds it in the payload.
+# The inbox this call names, as the hook finds it in the payload, and what the
+# call would do to it — `read` or `write`, which decides the message.
 inbox_path=""
+mode="read"
+
+block_write() {
+  {
+    echo "inbox-guard: BLOCKED writing $INBOX_SUFFIX — it is the owner's capture surface, and the agent never adds to it."
+    echo "Its entries are cleared only by the triage drain: run the workkit:triage skill, which records the marker this guard checks. File a finding as a status:inbox issue with gh instead; where GitHub cannot be reached, put it in chat and let the owner decide."
+  } >&2
+  exit 2
+}
+
+# The marker-gated half of the same refusal: this call would REWRITE the file,
+# which is the drain's own act and nobody else's — so the message names that,
+# not the append rule.
+block_rewrite() {
+  {
+    echo "inbox-guard: BLOCKED rewriting $INBOX_SUFFIX — its entries are cleared only by the triage drain, and no drain is running."
+    echo "Run the workkit:triage skill, which records the marker this guard checks, and clear it there. Adding entries is never the agent's at all: file a finding as a status:inbox issue with gh instead."
+  } >&2
+  exit 2
+}
 
 case "$tool" in
   Read)
@@ -59,18 +91,66 @@ case "$tool" in
     esac
     inbox_path="$file_path"
     ;;
+  Edit|Write)
+    file_path=$(jq -r '.tool_input.file_path // ""' <<<"$input" || true)
+    [ -n "$file_path" ] || exit 0
+    case "$file_path" in
+      "$INBOX_SUFFIX"|*/"$INBOX_SUFFIX") ;;
+      *) exit 0 ;;
+    esac
+    inbox_path="$file_path"
+    mode="write"
+    ;;
   Bash)
     cmd=$(jq -r '.tool_input.command // ""' <<<"$input" || true)
     [ -n "$cmd" ] || exit 0
-    case "$cmd" in
-      *"$INBOX_SUFFIX"*) ;;
-      *) exit 0 ;;
-    esac
-    # A content-reading command, as a WORD — `wc -l`, an `echo … >>`, and the
-    # capture CLI all name the path without taking its contents in.
-    printf '%s' "$cmd" \
-      | grep -Eq '(^|[^[:alnum:]_./-])(cat|head|tail|less|more|grep|sed|awk|bat)([[:space:]]|$)' \
-      || exit 0
+    # The capture CLI writes to the nearest inbox without ever naming it, so it
+    # is caught ahead of the path filter every other shape passes through — but
+    # only where it is RUN: at the start of the command, after a separator, or
+    # through a path or interpreter prefix at either. Prose about the CLI in an
+    # issue body, and a search for it, write nothing.
+    if printf '%s' "$cmd" | grep -Eq \
+      '(^|[;&|`]|\$\()[[:space:]]*((bash|sh|zsh)[[:space:]]+)?([^[:space:]]*/)?(wk|workkit)(\.sh)?[[:space:]]+note([[:space:]]|$)'; then
+      block_write
+    fi
+    # A candidate when BOTH halves of the path are in the command, together or
+    # apart: `cd .workkit && cat inbox.md` is the same file by another
+    # spelling. An inbox.md with no .workkit anywhere is somebody else's.
+    case "$cmd" in *"$INBOX_DIR"*) ;; *) exit 0 ;; esac
+    case "$cmd" in *"$INBOX_FILE"*) ;; *) exit 0 ;; esac
+    # The path as a regex, so a TARGET can be told from a mention: a command
+    # writing elsewhere while naming the inbox is not a write to it. The
+    # directory prefix is optional, since the filter above already demanded the
+    # .workkit anchor somewhere in the command.
+    redirect_target="[[:space:]]*[\"']?([^[:space:]\"'<>|;&]*/)?${INBOX_FILE//./\\.}"
+    # The rest of one SIMPLE COMMAND, so a keyword below can be anchored to the
+    # inbox as its own argument: `tee -a other.log` in a pipeline that merely
+    # names the inbox appends to neither.
+    same_cmd="[^|;&]*"
+    # An append, which no marker opens, however it is spelled: `>>path`,
+    # `>> path`, `>>"path"`, or the `tee -a` that is the same act by hand.
+    if printf '%s' "$cmd" | grep -Eq ">>${redirect_target}" \
+      || printf '%s' "$cmd" | grep -Eq \
+        "(^|[^[:alnum:]_./-])tee[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(--append|-[[:alnum:]]*a)${same_cmd}${redirect_target}"; then
+      block_write
+    fi
+    # A rewrite, marker-gated like a read: a single `>` onto the inbox (the
+    # appends are blanked out first, since ERE cannot look behind), plain `tee`
+    # writing it, or an in-place editor run over it.
+    if printf '%s' "$cmd" | sed 's/>>/@@/g' | grep -Eq ">${redirect_target}" \
+      || printf '%s' "$cmd" | grep -Eq \
+        "(^|[^[:alnum:]_./-])tee([[:space:]]|\$)${same_cmd}${redirect_target}" \
+      || printf '%s' "$cmd" | grep -Eq \
+        "(^|[^[:alnum:]_./-])(sed|perl)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(--in-place|-[[:alnum:]]*i)${same_cmd}${redirect_target}"; then
+      mode="write"
+    # A content-reading command, as a WORD taking the inbox as its own
+    # argument — `wc -l` and a bare mention name the path without taking its
+    # contents in, and so does a reader pointed at another file. Checked after
+    # the rewrites, so an in-place `sed -i` is judged as the write it is.
+    elif ! printf '%s' "$cmd" | grep -Eq \
+      "(^|[^[:alnum:]_./-])(cat|head|tail|less|more|grep|sed|awk|bat)([[:space:]]|\$)${same_cmd}${redirect_target}"; then
+      exit 0
+    fi
     # The path as the command spells it, quotes and all stripped by the class.
     inbox_path=$(printf '%s' "$cmd" \
       | grep -Eo "[^[:space:]\"']*${INBOX_SUFFIX//./\\.}" | head -n 1 || true)
@@ -113,8 +193,9 @@ esac
 # relative path resolves against the session's directory, exactly as the tool
 # would resolve it.
 case "$inbox_path" in
-  '~/'*)     inbox_path="$HOME/${inbox_path#\~/}" ;;
-  '$HOME/'*) inbox_path="$HOME/${inbox_path#\$HOME/}" ;;
+  '~/'*)       inbox_path="$HOME/${inbox_path#\~/}" ;;
+  '$HOME/'*)   inbox_path="$HOME/${inbox_path#\$HOME/}" ;;
+  '${HOME}/'*) inbox_path="$HOME/${inbox_path#\$\{HOME\}/}" ;;
   /*) ;;
   *) inbox_path="$cwd/$inbox_path" ;;
 esac
@@ -157,8 +238,10 @@ if [ -f "$marker" ]; then
   fi
 fi
 
+[ "$mode" = "read" ] || block_rewrite
+
 {
   echo "inbox-guard: BLOCKED reading $INBOX_SUFFIX — it is the owner's scratchpad, and its contents are read only during a triage run."
-  echo "Run the workkit:triage skill, which records the marker this guard checks, and read it there. Counting the entries (wc -l) and appending to it stay open."
+  echo "Run the workkit:triage skill, which records the marker this guard checks, and read it there. Counting the entries (wc -l) stays open."
 } >&2
 exit 2
