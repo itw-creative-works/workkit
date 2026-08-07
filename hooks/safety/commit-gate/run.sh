@@ -46,10 +46,28 @@ cmd=$(jq -r '.tool_input.command // ""' <<<"$input" || true)
 hook_find_git_commit "$cmd"
 commit_clause="$HOOK_COMMIT_CLAUSE"
 saw_cd="$HOOK_SAW_CD"
+saw_stage="$HOOK_SAW_STAGE"
 
 block() {
   echo "commit-gate: BLOCKED this commit — $1" >&2
   exit 2
+}
+
+# A check that stands down says so on the channel a PreToolUse hook is actually
+# HEARD on (issue #155): stderr from a hook exiting 0 reaches the debug log
+# alone — never the transcript, never the model, which is how a silent skip
+# stayed invisible for a whole session. Same shape as manager/spawn-guard's
+# warning: a top-level `systemMessage` for the user plus `additionalContext`
+# for Claude, and NO permissionDecision, so the commit's fate is decided
+# exactly as it would be with this hook silent.
+stand_down() {
+  jq -n --arg m "$1" '{
+    "systemMessage": $m,
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "additionalContext": $m
+    }
+  }'
 }
 
 # A commit wrapped in an interpreter string (`sh -c "git commit …"`,
@@ -64,6 +82,12 @@ block() {
 # (git -C <path>, or cd earlier in the same command line) would be judged
 # against the wrong repo — fail closed and ask for a plain commit instead.
 [ "$saw_cd" -eq 1 ] && block "the command changes directory before committing; run a plain 'git commit' with the session already in the repo so the gate can see its staging."
+
+# A command that STAGES and commits in one call is ungateable by construction
+# (issue #155): the gate is PreToolUse, so it reads the index before the `git
+# add` has run — over a clean index every check stood down silently, and even a
+# populated one may gain files the gate never saw. Same ruling as -C and cd.
+[ "$saw_stage" -eq 1 ] && block "the command stages and commits in one call, so the gate cannot see what the commit will carry; stage first (its own command), then run a plain 'git commit'."
 
 # Walk the commit clause's tokens: detect -C/--git-dir/--work-tree/GIT_DIR=
 # (wrong-repo), -a/--all (include modified tracked files), and pathspec
@@ -125,6 +149,13 @@ files=$(printf '%s' "$files" | grep -v '^$' || true)
 # Pathspec commits (`git commit -m x src/foo.js`) bypass staging, so the file
 # list can't be derived — gate them strictly as code commits.
 if [ -z "$files" ] && [ "$has_pathspec" -eq 0 ]; then
+  # The gate never stands down SILENTLY (issue #155): skipping every check
+  # without saying so is how a whole session's commits went untested. The
+  # package.json probe sits on this path alone — by here the gate has already
+  # resolved a real commit clause, so it is not new work on every Bash command.
+  if [ -f "$repo_root/package.json" ] && jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
+    stand_down "commit-gate: nothing staged and no -a/pathspec — the gate has nothing to judge, so no check ran (suite included)."
+  fi
   exit 0
 fi
 
@@ -379,6 +410,10 @@ if [ "$has_code" -eq 1 ] && [ -f "$repo_root/package.json" ] && jq -e '.scripts.
     exit 2
   fi
   rm -f "$out_file"
+elif [ -f "$repo_root/package.json" ] && jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
+  # The stand-down is deliberate (#151) but never silent (#155): a repo that
+  # defines a suite hears why this commit did not run it.
+  stand_down "commit-gate: suite not run — the commit carries no code (docs-only or version-stamp-only), per #151."
 fi
 
 exit 0

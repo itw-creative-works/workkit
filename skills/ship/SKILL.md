@@ -126,7 +126,7 @@ This step runs if there are changes in the working tree (from the session's work
    A supervised session ships DIRECT: the local hook gates are the enforcement, and a PR would re-review work the gates already reviewed. The PR path is for work the local gates never saw — take it when the invocation says `pr`, when shipping agent-authored or unattended work, or when the session is on a work branch that already has a PR open.
 
    **Direct path (the default):**
-   - Stage the session's changes (`git add -A`, or only the invocation's named paths) and commit with the drafted message.
+   - Stage the session's changes as their OWN command (`git add -A`, or only the invocation's named paths), then commit with the drafted message in a second command — the gate reads the index before the command runs, so it bounces a compound that stages and commits in one call (#155).
    - **Push the work commit** — always, bump or no bump. When a bump follows, the push must land BEFORE the release commit: the backfill resolves each `@handle` through the GitHub API, which cannot map a sha it has never seen.
    - **Watch the push's CI run** (see § "Watching a push's CI run"). When a bump follows immediately, don't block here — go make the release commit while this run works — but this run's conclusion is still owed: BOTH runs complete (nothing cancels the first — this run is the only one that ever lints the `[Unreleased]` entries, since the release commit empties that section), so after the release sha's watch, collect this one's conclusion too and hold it to the same red-is-loud standard.
 
@@ -260,7 +260,7 @@ The rules (word cap, separator, the rest) live in `~/.claude/workkit/changelog.j
 
 ## Gotchas
 
-- A PreToolUse block stops the ENTIRE compound command — when the commit gate bounces `git add -A && git commit ...`, the `git add` never ran either; a later bare `git commit` picks up only what was staged BEFORE the bounce. Re-stage after every gate bounce (2026-07-23: a retry committed 2 of 21 files).
+- A PreToolUse block stops the ENTIRE compound command — when the gate bounces `git commit -m "..." && git push`, the push never ran either, and nothing after the bounced clause did. So a bounce leaves the tree exactly as it was: check `git status` before the retry rather than assuming the earlier clauses took effect (2026-07-23: a retry committed 2 of 21 files). Staging is never part of that compound anyway — the gate bounces a stage-and-commit call outright (#155), so `git add` is always its own command before the commit.
 - The `safety/commit-language` hook scans the commit message's quoted text — a message that literally NAMES the guarded words bounces, even when describing the hook itself. Describe the word list indirectly ("the non-neutral vocabulary from the AGENTS.md neutral-language rule") (2026-07-23: the hook blocked its own introduction commit).
 - The subject-format check reads the subject literally, which surprises twice: an acronym-initial subject bounces on the lowercase rule (`docs: README pointer` → `docs: point the readme at AGENTS.md`), and a dependency bump that names the new version bounces on the version rule outside `chore(release)` (`chore(deps): bump omega to 1.2.3` → `chore(deps): bump omega to the current minor`).
 - The review marker must be newer than the LAST commit, so the moment the work commit lands the marker is stale for the release commit — retouch the marker as its own command before `chore(release)` when the release commit stages anything code-classified (2026-07-23).

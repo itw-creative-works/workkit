@@ -123,6 +123,10 @@ _hook_span_is_commit() {
 # those prefix shapes had walked past the old first-word-is-git test).
 # Sets: HOOK_COMMIT_CLAUSE (the quote-stripped clause, empty if none),
 #       HOOK_SAW_CD (1 if ANY clause starts with `cd` — wrong-repo signal),
+#       HOOK_SAW_STAGE (1 if a git clause BEFORE the commit stages — add/rm/mv/
+#       stage — so the commit's content is decided by the same command line and
+#       cannot be read ahead of it; the walk breaks at the commit clause, so
+#       only clauses that change what the commit carries are seen),
 #       HOOK_WRAPPED_COMMIT (1 when an interpreter string carries the commit:
 #       `sh -c "git commit …"` / `eval "git commit …"` — the quote strip
 #       replaces that span with a placeholder, so the clause scan can never
@@ -137,6 +141,7 @@ _hook_span_is_commit() {
 hook_find_git_commit() {
   HOOK_COMMIT_CLAUSE=""
   HOOK_SAW_CD=0
+  HOOK_SAW_STAGE=0
   HOOK_WRAPPED_COMMIT=0
   local src stripped clause sub w pre expect saw_eval nc ci pi=0 had_glob=1
   src=$(hook_strip_heredocs "$1")
@@ -243,6 +248,11 @@ hook_find_git_commit() {
         *) sub="$1"; break ;;
       esac
     done
+    # A staging subcommand in the same command line, ahead of the commit: what
+    # the commit will carry is written by a clause that has not run yet.
+    case "$sub" in
+      add|rm|mv|stage) HOOK_SAW_STAGE=1 ;;
+    esac
     if [ "$sub" = "commit" ]; then HOOK_COMMIT_CLAUSE="$clause"; break; fi
     pi=$((pi + nc))
   done <<EOF

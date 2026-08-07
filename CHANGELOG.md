@@ -7,6 +7,14 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#155](../../issues/155) — The commit gate no longer silently skips a stage-and-commit compound: it fails closed on staging inside the commit command, and says so out loud whenever the suite stands down.
+
+### Changed
+
+- [#156](../../issues/156) — The whats-next digest opens with a per-label tally, gives every issue a one-to-two sentence brief, and ends with one explicit recommendation: the next item or a logical grouping.
+
 ## [0.39.0] - 2026-08-06
 
 ### Changed
