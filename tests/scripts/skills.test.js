@@ -99,15 +99,18 @@ const run = async () => {
 
   group('skills: docs parity');
 
-  // The two places a reader meets the roster — AGENTS.md's table and the
+  // The two places a reader meets the roster — AGENTS.md's list and the
   // README's enumeration — are pinned to the FOLDERS, in both directions: a
-  // twelfth skill that lands without its row fails here, and so does a row
-  // left behind by a skill that went away (issue #128).
-  await test("AGENTS.md's Skills table lists exactly the skill folders", () => {
-    const rows = [...section(path.join(REPO, 'AGENTS.md'), '## Skills').matchAll(/^\| `([a-z-]+)` \|/gm)]
+  // twelfth skill that lands without its name fails here, and so does a name
+  // left behind by a skill that went away (issue #128). AGENTS.md carries the
+  // bare names rather than a table since #161 — what each one DOES lives in its
+  // own SKILL.md — so the surface is every backticked plain name in the
+  // section, which `workkit:<name>` and `SKILL.md` are not.
+  await test("AGENTS.md's Skills section lists exactly the skill folders", () => {
+    const named = [...section(path.join(REPO, 'AGENTS.md'), '## Skills').matchAll(/`([a-z-]+)`/g)]
       .map((m) => m[1])
       .sort();
-    assertEq(rows.join(','), skillFolders().join(','), "AGENTS.md's Skills table rows");
+    assertEq([...new Set(named)].join(','), skillFolders().join(','), "AGENTS.md's skills list");
   });
 
   await test("README.md's skills enumeration names exactly the skill folders", () => {

@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#161](../../issues/161) — The AGENTS.md budget now judges line length as well as line count: board-guard bounces any line over 400 bytes, state-check announces it, and AGENTS.md itself becomes a pointer-only entry, its hook table and per-topic detail moved into the new docs/hooks.md and the folder READMEs.
+
 ## [0.41.0] - 2026-08-17
 
 ### Fixed

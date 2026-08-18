@@ -150,7 +150,7 @@ skills/           the eleven workflow skills (namespaced workkit:<name>)
 workflow/         the agent-agnostic engine
 tower/            mission control — api/ (the JSON API) + app/ (the OMEGA dashboard)
 jobs/             the 9am job — summaries, brief, publish: payload builders, runners, launchd schedule
-docs/             project-state.md (the spec) · agents.md (the crew contract) · history-purge.md (the rewrite runbook)
+docs/             project-state.md (the spec) · agents.md (the crew contract) · hooks.md (what each hook does) · history-purge.md (the rewrite runbook)
 tests/            npm test
 ```
 
@@ -159,4 +159,5 @@ tests/            npm test
 - [`docs/project-state.md`](docs/project-state.md) — the spec: labels, capture and triage, issue anatomy, queue semantics, `.workkit/`, plans, `_attic/`, the global layer, the migration recipe
 - [`AGENTS.md`](AGENTS.md) — architecture overview for agent sessions
 - [`docs/agents.md`](docs/agents.md) · [`workflow/README.md`](workflow/README.md) — the crew contract and the engine reference
+- [`docs/hooks.md`](docs/hooks.md) — what each hook does, one section apiece: when it fires, what it blocks, and where it stands down
 - [`jobs/README.md`](jobs/README.md) — the daily job: the summaries step, the brief, payloads, runners, schedule, install

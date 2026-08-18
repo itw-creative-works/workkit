@@ -249,6 +249,46 @@ const run = async () => {
     cleanup(dir);
   });
 
+  // The density half of the same budget (issue #161): a markdown paragraph is
+  // one source line, so a file well inside 250 lines still carries a book. The
+  // unit is BYTES, pinned with LC_ALL=C the way board-guard pins it.
+  await test('a dense AGENTS.md inside the line count — announces the density rule', () => {
+    const dir = mkTmp();
+    fs.writeFileSync(path.join(dir, 'AGENTS.md'), `# repo\n${'x'.repeat(2100)}\n${'line\n'.repeat(100)}`);
+    const { stdout } = runHook(dir);
+    assert(stdout.includes('1 line over 400 bytes'), `announces the dense line, got: ${stdout}`);
+    assert(stdout.includes('density rule'), 'names the rule');
+    assert(stdout.includes('board-guard'), 'says writes bounce until it fits');
+    assert(!stdout.includes('budget 250'), 'the line count is not the complaint');
+    cleanup(dir);
+  });
+
+  await test('several dense lines — the count is plural', () => {
+    const dir = mkTmp();
+    fs.writeFileSync(path.join(dir, 'AGENTS.md'), `# repo\n${`${'x'.repeat(500)}\n`.repeat(3)}`);
+    const { stdout } = runHook(dir);
+    assert(stdout.includes('3 lines over 400 bytes'), `counts them, got: ${stdout}`);
+    cleanup(dir);
+  });
+
+  await test('a 400-byte line — silent (the boundary passes)', () => {
+    const dir = mkTmp();
+    fs.writeFileSync(path.join(dir, 'AGENTS.md'), `# repo\n${'x'.repeat(400)}\n`);
+    const { stdout } = runHook(dir);
+    assert(!stdout.includes('AGENTS.md'), 'exactly 400 is within the budget');
+    cleanup(dir);
+  });
+
+  await test('a non-ASCII line — 370 characters, 410 bytes, and it counts', () => {
+    const dir = mkTmp();
+    const line = `${'x'.repeat(350)}${'—'.repeat(20)}`;
+    assertEq(Buffer.byteLength(line, 'utf8'), 410, 'the fixture is 410 bytes');
+    fs.writeFileSync(path.join(dir, 'AGENTS.md'), `# repo\n${line}\n`);
+    const { stdout } = runHook(dir);
+    assert(stdout.includes('1 line over 400 bytes'), `bytes decide it, got: ${stdout}`);
+    cleanup(dir);
+  });
+
   group('state-check: guards');
 
   group('state-check: the issue-count cache');

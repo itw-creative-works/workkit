@@ -6,7 +6,10 @@
 #   2. a non-empty .workkit/capture.md (the local capture file)
 #   3. a content-bearing CLAUDE.md (doctrine: content lives in AGENTS.md;
 #      CLAUDE.md is a one-line @AGENTS.md pointer)
-#   4. an oversized AGENTS.md (>250 lines — deep references belong in docs/)
+#   4. an AGENTS.md over either half of its budget — >250 lines, or any line
+#      over 400 BYTES (issue #161: a markdown paragraph is one source line, so
+#      a dense file passes the count) — deep references belong in docs/. The
+#      unit is pinned to bytes (LC_ALL=C), the way board-guard pins it.
 # This is the auto-heal trigger: every session that opens in a repo learns
 # immediately what needs attention — no manual sweeps. Detection is automatic;
 # the fixing stays agent-executed. Silent when everything is current.
@@ -129,6 +132,14 @@ if [ -n "$cwd" ] && [ -f "$cwd/AGENTS.md" ]; then
   if [ "${al:-0}" -gt 250 ]; then
     [ -n "$msg" ] && msg="$msg "
     msg="${msg}AGENTS.md is $al lines (budget 250) — move deep references to docs/<topic>.md and keep pointer lines; the board-guard hook bounces writes until it fits."
+  fi
+  # The density half of the same budget (issue #161): a file well inside 250
+  # lines still carries a book when its paragraphs are single source lines.
+  ad=$(LC_ALL=C awk 'length($0) > 400 { n++ } END { print n+0 }' "$cwd/AGENTS.md" 2>/dev/null) || ad=0
+  case "$ad" in ''|*[!0-9]*) ad=0 ;; esac
+  if [ "$ad" -gt 0 ]; then
+    [ -n "$msg" ] && msg="$msg "
+    msg="${msg}AGENTS.md has $ad line$([ "$ad" -eq 1 ] && echo '' || echo s) over 400 bytes (density rule) — bulletize them or move the detail to docs/<topic>.md; the board-guard hook bounces writes until it fits."
   fi
 fi
 

@@ -66,5 +66,6 @@ After **3 failed attempts** at the same obstacle, stop and return `BLOCKED` with
 - **Subagents NEVER spawn subagents.** One level of dispatch only — the main session is the only dispatcher (reference: https://code.claude.com/docs/en/sub-agents).
 - Frontmatter: `name`, `description`, `tools` (minimum set — the list is also what mechanically keeps an agent from spawning subagents), and for the class agents `model` (fallback only, § Classes) + `effort`.
 - **No knowledge in agent files** — agents define behavior and preloads; knowledge lives in skills/docs. The reviewer's "derive the checklist from live docs" pattern is the model.
+- **Every markdown file in `agents/` surfaces as an agent type**, which is why this document lives in `docs/` instead: a contract kept beside the definitions would become a definition.
 - **No machine-specific paths.** These files ship to any repo on any machine: no absolute paths, no pointers into a personal `~/.claude` tree beyond what every Claude Code install has.
 - Repo-doc entry point: AGENTS.md (CLAUDE.md is a one-line pointer in migrated repos; a repo that hasn't migrated may still carry content in CLAUDE.md — read whichever bears content).

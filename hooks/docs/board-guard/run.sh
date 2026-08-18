@@ -3,7 +3,13 @@
 # Enforces the document rules of the project-state spec v4 at write time,
 # two surfaces:
 #   CLAUDE.md — pointer doctrine: exactly a bare '@AGENTS.md' import, no content.
-#   AGENTS.md — size budget: ≤250 lines; the meat lives in docs/<topic>.md.
+#   AGENTS.md — size budget: ≤250 lines, AND density: no line over 400 BYTES.
+#     A markdown paragraph is ONE source line, so the line count alone let the
+#     file grow into a book while passing every check (issue #161). Both halves
+#     of the budget are judged here; the meat lives in docs/<topic>.md.
+#     The unit is bytes and the measure is pinned to it (LC_ALL=C): one-true-awk
+#     counts bytes and gawk counts characters under a UTF-8 locale, so an
+#     unpinned rule would judge the same file differently on macOS and Linux.
 # Violations exit 2 with a precise fix-list so the WRITING agent corrects
 # immediately — prevention at write time, not cleanup later.
 # Board checks retired with the board itself (spec v4): work-item state lives
@@ -55,6 +61,18 @@ fi
 if [ "$kind" = "agents" ]; then
   total=$(wc -l <"$file_path" | tr -d ' ')
   [ "$total" -le 250 ] || add "AGENTS BUDGET: $total lines (max 250) — AGENTS.md is the architectural overview; deep references move to docs/<topic>.md and AGENTS.md keeps a pointer line."
+
+  # Density: the same budget judged per line, in BYTES (LC_ALL=C). The first few
+  # offenders are named so the writing agent can go straight to them. An awk that
+  # fails names nothing rather than blocking on an empty read.
+  dense=$(LC_ALL=C awk '
+    length($0) > 400 {
+      n++
+      if (n <= 3) printf "%sline %d (%d bytes)", (n > 1 ? ", " : ""), NR, length($0)
+    }
+    END { if (n > 3) printf ", and %d more", n - 3 }
+  ' "$file_path" 2>/dev/null) || dense=""
+  [ -z "$dense" ] || add "AGENTS DENSITY: $dense — no line may exceed 400 bytes. A markdown paragraph is one source line, so AGENTS.md passes the 250-line budget while carrying a book. Bulletize those lines, or move the detail to docs/<topic>.md and keep a pointer here."
 fi
 
 if [ -n "$violations" ]; then

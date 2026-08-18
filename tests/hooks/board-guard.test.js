@@ -126,6 +126,78 @@ const run = async () => {
     cleanup(dir);
   });
 
+  group('board-guard: AGENTS.md density budget');
+
+  // A markdown paragraph is ONE source line, which is how a 137-line file came
+  // to carry three paragraphs over 2,000 bytes (issue #161). The line count and
+  // the line LENGTH are two halves of one budget, and the unit of the second is
+  // BYTES — pinned with LC_ALL=C, since one-true-awk and gawk disagree otherwise.
+  const longLine = (n) => 'x'.repeat(n);
+
+  await test('a 400-byte line — exit 0 (the boundary passes)', () => {
+    const dir = mkTmp();
+    const p = writeFile(dir, `# repo — overview\n${longLine(400)}\n`, 'AGENTS.md');
+    const { code, stderr } = runHook(p);
+    assertEq(code, 0, `400 bytes is within the density budget, stderr: ${stderr}`);
+    cleanup(dir);
+  });
+
+  await test('a 401-byte line — exit 2 AGENTS DENSITY naming the line and its length', () => {
+    const dir = mkTmp();
+    const p = writeFile(dir, `# repo — overview\n${longLine(401)}\n`, 'AGENTS.md');
+    const { code, stderr } = runHook(p);
+    assertEq(code, 2, 'one character over must block');
+    assert(stderr.includes('AGENTS DENSITY'), 'names the violation');
+    assert(stderr.includes('line 2 (401 bytes)'), `names the offender, got: ${stderr}`);
+    assert(stderr.includes('docs/'), 'tells the writer where the detail goes');
+    cleanup(dir);
+  });
+
+  await test('a 137-line file with a 3,000-byte line — the count passes, the density bounces', () => {
+    const dir = mkTmp();
+    const body = Array.from({ length: 135 }, (_, i) => `line ${i}`);
+    body.splice(60, 0, longLine(3000));
+    const p = writeFile(dir, `# repo — overview\n${body.join('\n')}\n`, 'AGENTS.md');
+    assertEq(fs.readFileSync(p, 'utf8').trimEnd().split('\n').length, 137, 'the fixture is 137 lines');
+    const { code, stderr } = runHook(p);
+    assertEq(code, 2, 'a dense file blocks even well inside 250 lines');
+    assert(!stderr.includes('AGENTS BUDGET'), `the line count is not the complaint, got: ${stderr}`);
+    assert(stderr.includes('line 62 (3000 bytes)'), `names the offender, got: ${stderr}`);
+    cleanup(dir);
+  });
+
+  await test('many offenders — the first three are named and the rest counted', () => {
+    const dir = mkTmp();
+    const p = writeFile(dir, `# repo — overview\n${Array.from({ length: 5 }, () => longLine(500)).join('\n')}\n`, 'AGENTS.md');
+    const { code, stderr } = runHook(p);
+    assertEq(code, 2, 'blocks');
+    for (const n of [2, 3, 4]) assert(stderr.includes(`line ${n} (500 bytes)`), `names line ${n}, got: ${stderr}`);
+    assert(!stderr.includes('line 5 (500 bytes)'), 'stops after the first few');
+    assert(stderr.includes('and 2 more'), `counts the rest, got: ${stderr}`);
+    cleanup(dir);
+  });
+
+  // The unit is bytes, so a line of prose with em-dashes in it is over budget
+  // while a character count still reads it as comfortably inside — 370
+  // characters, 410 bytes. The message has to name the number the rule judges.
+  await test('a non-ASCII line — judged in bytes, and the message says 410', () => {
+    const dir = mkTmp();
+    const line = `${'x'.repeat(350)}${'—'.repeat(20)}`;
+    assertEq(line.length, 370, 'the fixture is 370 characters');
+    assertEq(Buffer.byteLength(line, 'utf8'), 410, 'and 410 bytes');
+    const p = writeFile(dir, `# repo — overview\n${line}\n`, 'AGENTS.md');
+    const { code, stderr } = runHook(p);
+    assertEq(code, 2, 'over 400 BYTES blocks, whatever the character count says');
+    assert(stderr.includes('line 2 (410 bytes)'), `names the byte length, got: ${stderr}`);
+    cleanup(dir);
+  });
+
+  await test("this repo's own AGENTS.md passes the hardened guard", () => {
+    const p = path.join(__dirname, '..', '..', 'AGENTS.md');
+    const { code, stderr } = runHook(p);
+    assertEq(code, 0, `the TOC rewrite must satisfy both halves of the budget, stderr: ${stderr}`);
+  });
+
   group('board-guard: plans are no longer a surface');
 
   await test('markdown under plans/ passes silently — exit 0', () => {
