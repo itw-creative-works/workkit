@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.42.1] - 2026-08-17
+
 ### Added
 
-- [#162](../../issues/162) — A parity test pins the docs/hooks.md index, its detail sections, and AGENTS.md's spelled-out hook count to the wiring in hooks.json, both directions.
+- [#162](../../issues/162) [`973f65a`](../../commit/973f65a) Thanks [@ianwieds]! — A parity test pins the docs/hooks.md index, its detail sections, and AGENTS.md's spelled-out hook count to the wiring in hooks.json, both directions.
 
 ## [0.42.0] - 2026-08-17
 
