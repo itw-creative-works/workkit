@@ -1,10 +1,10 @@
 ---
-name: whats-next
+name: status
 description: Plain-language brief on the open issues, here or across every project — what each does in the product, the QA walkthrough, the queue in batches. - Use when the user asks "what's next", "where are we", "status", "what's left", "what am I waiting on", "what do I check", "qa walkthrough", "brief me".
 disallowed-tools: AskUserQuestion
 ---
 
-# What's Next — tell, don't do
+# Status — tell, don't do
 
 **READ-ONLY.** This skill answers; it never starts work, edits an issue, or "helpfully" begins the top item — and `qa` mode never closes one: the owner confirms a check in chat and the manager acts on it there. After answering, stop.
 
@@ -37,7 +37,7 @@ Omit empty sections. No jargon without a plain-words gloss. Note `agent:ok` wher
 
 ## Global mode ("across all projects" / cwd is the home repo)
 
-1. Read the roster — the `repos` map in `~/.workkit/.repos.json`, every entry whose value is not `"declined"`. Its keys are absolute PATHS, not slugs: resolve each to `owner/name` through its git remote (`git -C <path> remote get-url origin`) before any `gh issue list --repo <owner/name> ...`. (The full state-reading recipe, including the published fallback, is the `workkit:state` skill's.) It is this machine's index; a repo it has never opened is not on it.
+1. Read the roster — the `repos` map in `~/.workkit/.repos.json`, every entry whose value is not `"declined"`. Its keys are absolute PATHS, not slugs: resolve each to `owner/name` through its git remote (`git -C <path> remote get-url origin`) before any `gh issue list --repo <owner/name> ...`. (A machine missing these files: say so and answer from the cwd repo alone; the retired published-data recipe lives in git history — the state skill, removed in #163.) It is this machine's index; a repo it has never opened is not on it.
 2. Per project, ONE line: `<name> — <in-flight item or "idle">; waiting on your check: <count or none>; blocked: <count or none>; specced: <count>`.
 3. Then the home repo's own issues (`site.repo` in `~/.workkit/settings.json`), same shape as repo mode — that is where the cross-project and business queue lives. No `site.repo` set: say so.
 4. Flag unreachable repos (`(no remote)` / `(path missing)`) instead of skipping silently.

@@ -46,7 +46,7 @@ Stage the class agents by phase, never all at once. Build = ONE `workkit:worker`
 
 ## 5. Verify + review
 
-Run the suite. Then [workkit:review](../review/SKILL.md) on the diff (trivial tasks: skip formal review; the green suite is the proof). Fix ≥80 findings before calling it done. Optional final pass: [workkit:simplify](../simplify/SKILL.md) — only after green. Done-criteria: suite green, review verdict "ship", the issue and docs updated per the doc-parity rules.
+Run the suite. Then [workkit:review](../review/SKILL.md) on the diff (trivial tasks: skip formal review; the green suite is the proof). Fix ≥80 findings before calling it done. The review's simplification lens covers post-green cleanup. Done-criteria: suite green, review verdict "ship", the issue and docs updated per the doc-parity rules.
 
 ## 6. Park at `status:qa` — the flow ends here, not at a ship
 

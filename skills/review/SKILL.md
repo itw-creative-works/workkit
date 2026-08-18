@@ -1,6 +1,6 @@
 ---
 name: review
-description: Multi-lens code review — parallel lenses, a separate scorer, only findings ≥80 confidence reach the report. - Use when the user asks to "review this", "review the diff", "code review", "check my changes", "review the PR", or before shipping substantial work.
+description: Multi-lens code review — parallel lenses, a separate scorer, only findings ≥80 confidence reach the report. - Use when the user asks to "review this", "review the diff", "code review", "check my changes", "review the PR", "simplify this", or before shipping substantial work.
 user-invocable: true
 ---
 
@@ -15,7 +15,7 @@ Default: uncommitted changes (else the last commit); the user may name a range, 
 Two tiers. **Default is FULL.** An explicit invocation arg wins both ways: `/workkit:review light` forces light, `/workkit:review full` forces full.
 
 - **Full tier**: every applicable lens in §2, in parallel, plus the §3 scorer.
-- **Light tier**: ONE `workkit:verifier` agent carrying the combined finder mandate (bugs + compliance + spec-faithfulness, same brief discipline, still execution-verifies its claims), plus the §3 scorer. The scorer is never skipped — finder-never-scores is the integrity core of both tiers.
+- **Light tier**: ONE `workkit:verifier` agent carrying the combined finder mandate (bugs + compliance + spec-faithfulness + simplification, same brief discipline, still execution-verifies its claims), plus the §3 scorer. The scorer is never skipped — finder-never-scores is the integrity core of both tiers.
 
 Downgrade to light ONLY when ALL of these hold (any miss = stay full):
 1. Small diff: under ~150 changed lines AND ~5 files.
@@ -32,6 +32,7 @@ Dispatch per the file-handoff convention: the brief goes to a file in the sessio
 |---|---|---|
 | Compliance + spec | a user-level agent named `reviewer` if one exists (personal preloads), else `workkit:reviewer` | Derive checklist from live docs; Spec-faithfulness vs the task context |
 | Bugs | `workkit:scout` agent | Trace the diff for defects: logic, edge states, silent fallbacks — read surrounding code, not just the diff |
+| Simplification | `workkit:scout` agent | Run the deletion test over the diff's ADDITIONS (`js:patterns` `resources/code-design.md`): wrappers that add nothing, options with one caller, defensive branches for impossible states, needless indirection. Clarity over brevity — clearer sometimes means more lines, and an abstraction serving a NAMED second consumer is not clutter (global §3). Findings name the collapse, never apply it |
 | History | `workkit:scout` agent | `git log`/`blame` on touched files: does the diff fight a past fix, revert intent, or repeat a reverted approach? |
 | Firestore rules | `workkit:scout` agent | ONLY when the diff touches BEM/Firestore work: reads vs rules coverage both ways |
 

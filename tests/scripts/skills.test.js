@@ -1,4 +1,4 @@
-// Skills parity — the eleven workflow skills ship here, each folder's name is the
+// Skills parity — the nine workflow skills ship here, each folder's name is the
 // frontmatter name (plugin namespacing supplies the `workkit:` prefix), and
 // nothing under agents/ or skills/ still points at the dotfiles they came from.
 const path = require('path');
@@ -9,7 +9,7 @@ const REPO = path.join(__dirname, '..', '..');
 const SKILLS_DIR = path.join(REPO, 'skills');
 const AGENTS_DIR = path.join(REPO, 'agents');
 
-const SKILLS = ['feature', 'interview', 'diagnose', 'review', 'simplify', 'triage', 'whats-next', 'migrate', 'ship', 'state', 'parallel'];
+const SKILLS = ['feature', 'interview', 'diagnose', 'review', 'triage', 'status', 'migrate', 'ship', 'parallel'];
 
 // A description is a ROUTING line — the model reads every one of them on every
 // turn, so it stays one tight trigger sentence and the body carries the detail
@@ -53,7 +53,7 @@ const section = (file, heading) => {
 };
 
 const run = async () => {
-  group('skills: the eleven folders');
+  group('skills: the nine folders');
   for (const name of SKILLS) {
     await test(`${name}/SKILL.md exists and its frontmatter name matches the folder`, () => {
       const file = path.join(SKILLS_DIR, name, 'SKILL.md');
@@ -85,7 +85,7 @@ const run = async () => {
 
   group('skills: no `workflow:` skill names survive');
   await test('nothing under skills/ names a workflow: skill', () => {
-    // `workflow:standards` is the HOOK, and keeps its name — only the eleven
+    // `workflow:standards` is the HOOK, and keeps its name — only the
     // SKILL names moved to the workkit: prefix.
     const bad = [];
     for (const file of markdownIn(SKILLS_DIR)) {

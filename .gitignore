@@ -11,3 +11,6 @@ package-lock.json
 
 # Editor and environment files, ignored everywhere
 .env
+
+# Removed but not gone (workflow spec) — evicted files, never committed
+_attic/

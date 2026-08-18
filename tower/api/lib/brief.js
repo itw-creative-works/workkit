@@ -73,7 +73,7 @@ const NEXT_UP_PER_REPO = 3;
 const issueKey = (issue) => `${issue.repo}#${issue.number}`;
 
 /**
- * What to work on next, per repo — the ranked few, in the order the whats-next
+ * What to work on next, per repo — the ranked few, in the order the status
  * skill reads a board in.
  *
  * `blocked` leads because it is waiting on the OWNER: a decision nobody makes
