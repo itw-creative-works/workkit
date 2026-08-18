@@ -15,12 +15,16 @@
 # WORKKIT_TOWER_APP / WORKKIT_TOWER_PORTS) so the suite can run this script
 # without starting a server or touching the real ports.
 #
-# It is QUIET by default (issue #138): someone who typed `workkit tower`
-# asked for a dashboard, not for the dev server's log wall. Each half's
-# output is filtered to the lines that read like a problem, plus one line
-# naming the URL the dashboard came up on. `--verbose` — or
-# WORKKIT_TOWER_VERBOSE=1, for callers that pass no arguments, the way
-# `npm run tower` hands this script none — passes everything through.
+# It is quiet through STARTUP (issues #138, #158): someone who typed
+# `workkit tower` asked for a dashboard, not for the framework's boot wall. It
+# says it is starting, then both halves run filtered to the lines that read
+# like a problem, plus one line naming the URL the dashboard came up on — and
+# the app half turns loose at the first line omega tags `[web]`, which is its
+# dev server talking, or at that URL line if no such line ever comes. The
+# API half stays filtered for its whole life, and a short list of known-benign
+# lines is dropped in either phase. `--verbose` — or WORKKIT_TOWER_VERBOSE=1,
+# for callers that pass no arguments, the way `npm run tower` hands this
+# script none — passes everything through, raw, from the first line.
 #
 set -euo pipefail
 
@@ -39,6 +43,10 @@ for arg in "$@"; do
     -v|--verbose) VERBOSE=1 ;;
   esac
 done
+
+# The first thing a user sees, before the reclaim pass and in a verbose run
+# too: a quiet startup is otherwise a terminal with nothing on it at all.
+echo "tower: starting the dashboard…"
 
 # Ending a half means ending its TREE: npm and omega both put children between
 # the pid this script holds and the server that owns the port, and a plain
@@ -105,36 +113,75 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# What survives the quiet default: anything shaped like a problem. Everything
+# What survives the quiet phase: anything shaped like a problem. Everything
 # else — the cloudflare notes, the missing-key chatter, the build timings — is
 # the framework talking to its author, not to whoever wanted a dashboard.
 KEEP_RE='error|warn|fail|fatal|exception|EADDR|ENOENT|EACCES|not found|cannot find module|missing binding|segmentation fault|killed:|npm ERR!|taken|bumped|^[[:space:]]+at [^[:space:]]'
 
-# Read one half's combined output and print only what is worth reading: the
-# problem lines, plus — for the half that owns a port — one line naming the
-# URL it came up on, taken from the app's OWN announcement rather than
-# composed here, because the scheme is not fixed (omega serves https when a
-# mkcert pair exists and plain http when it does not).
+# What the keep net catches by accident (issue #158): known-benign lines whose
+# WORDING carries a trigger word. Both are the framework talking about itself —
+# the duplicate-class warning is two bundled copies of glib in omega's own
+# node_modules, ours to neither fix nor read, and the manager's check summary is
+# a passing run's bookkeeping. The summary is dropped only where it reports no
+# failures, so a run with real ones still reaches the terminal; the non-digit
+# before the zero is what keeps `10 failed` out of that exemption, and the loose
+# middle is because chalk wraps the parts of that line in escapes.
+NOISE_RE='^objc\[[0-9]+\]: Class .* is implemented in both|Results:.*[^0-9]0 failed'
+
+# Read one half's combined output and print what is worth reading, plus — for
+# the half that owns a port — one line naming the URL it came up on, taken from
+# the app's OWN announcement rather than composed here, because the scheme is
+# not fixed (omega serves https when a mkcert pair exists and plain http when
+# it does not).
+#
+# The half that owns a port also has a PHASE BOUNDARY (issue #158): everything
+# before it is the startup wall, which nobody asked for, and everything after
+# it is the dev server itself — its own boot lines, then the requests and
+# rebuilds, the running log of the thing the terminal is now watching. omega
+# tags every line it forwards from the web target `[web]` at column 0, so the
+# FIRST of those turns the half loose; the URL announce turns it loose too,
+# whichever lands first, which is the fallback if that tagging ever changes.
+# The manage cycle that runs BEFORE the dev server prints bracketed lines of
+# its own (`[11ty] Wrote…`), which is why the trigger is that one prefix and
+# not any bracket. The API half owns no port, so neither trigger applies to it
+# and it stays quiet for its whole life. The drop list applies in both phases;
+# the keep net only matters in the quiet one. A trigger line is judged in the
+# phase it OPENS — a `[web]` line is one of the lines the switch exists to
+# show — so the app's own URL line prints beside the announce rather than
+# being replaced by it.
 #
 # `read` takes one line at a time, so this is line-buffered by construction:
 # an error appears the moment the child writes it. EOF on the child's output
 # ends the loop, which is how this process dies with the child instead of
 # holding the pipe open.
 filter_output() {
-  local port line url_re announced=''
+  local port line url_re web_re announced='' flowing=''
   port="$1"
   # ANY url the half names, on whatever port it ended up on — omega bumps to
   # the next free port when the one it asked for is taken, and a match pinned
   # to the port we asked for leaves that run with a silent terminal. First one
   # wins; the port argument only says which half owns a dashboard to announce.
   url_re='(https?://[^[:space:]]*:[0-9]+)'
+  # The web target's own tag, at column 0 and nowhere else in the line. omega
+  # pads the tag to its widest target name (`[web    ]` beside a backend), so
+  # trailing spaces are tolerated; `[webhook]` still is not.
+  web_re='^\[web[[:space:]]*\][[:space:]]'
   shopt -s nocasematch
   while IFS= read -r line || [ -n "$line" ]; do
+    # Tested before the URL branch, so that branch owns BASH_REMATCH when it
+    # reads the URL out of a line carrying both.
+    if [ -n "$port" ] && [[ "$line" =~ $web_re ]]; then
+      flowing=1
+    fi
     if [ -n "$port" ] && [ -z "$announced" ] && [[ "$line" =~ $url_re ]]; then
       announced=1
+      flowing=1
       echo "tower: dashboard at ${BASH_REMATCH[1]}"
     fi
-    if [[ "$line" =~ $KEEP_RE ]]; then
+    if [[ "$line" =~ $NOISE_RE ]]; then
+      continue
+    fi
+    if [ -n "$flowing" ] || [[ "$line" =~ $KEEP_RE ]]; then
       echo "$line"
     fi
   done

@@ -166,10 +166,13 @@ const run = async () => {
       '{"scripts":{"test":"echo $$ > gate.pid && sleep 30"}}');
     touchMarker(dir);
     const before = Date.now();
-    // Deadline 2, not 1: bash's integer SECONDS can round a 1s deadline down
-    // toward the poll floor, ending the run before npm has written gate.pid.
+    // Deadline 5, not 1 or 2: bash's integer SECONDS can round a 1s deadline
+    // down toward the poll floor, and on a loaded machine (this suite running
+    // inside the real gate's own run) npm can take past 2s to boot the fake
+    // suite — either way gate.pid would not exist yet when the deadline ends
+    // the run. 5s stays far under the 15s decision assertion below.
     const { code, stderr } = runHook(dir, 'git commit -m "x"', undefined,
-      { WORKKIT_GATE_TEST_DEADLINE: '2' });
+      { WORKKIT_GATE_TEST_DEADLINE: '5' });
     assertEq(code, 2, 'an unproven suite must block, never allow');
     assert(stderr.includes('deadline'), 'names the deadline as the reason');
     assert(Date.now() - before < 15000, 'the gate decided well before the suite would have finished');
@@ -342,6 +345,67 @@ const run = async () => {
     assertEq(code, 2, 'directory-changing commits must fail closed');
     assert(stderr.includes('changes directory'), 'explains the cd rule');
     cleanup(dir);
+  });
+
+  await test('pushd / popd elsewhere && git commit — exit 2 fail closed (issue #159)', () => {
+    // pushd does the same repo-addressing job as cd and used to pass the
+    // detector outright, which is half of the combination that landed a commit
+    // through the gate with none of its checks applied.
+    for (const c of ['pushd /somewhere/else && git commit -m "feat: x"',
+      'pushd /somewhere/else >/dev/null && git commit -m "feat: x"',
+      'popd && git commit -m "feat: x"']) {
+      const dir = mkRepo();
+      const { code, stderr } = runHook(dir, c);
+      assertEq(code, 2, `directory-changing commits must fail closed: ${c}, got: ${stderr}`);
+      assert(stderr.includes('changes directory'), `explains the rule: ${c}, got: ${stderr}`);
+      cleanup(dir);
+    }
+  });
+
+  await test('a commit whose session cwd is in no repo — exit 2 fail closed (issue #159)', () => {
+    // The other half: a session sitting outside any repo (a background subagent's
+    // steady state) resolved no toplevel, so the gate stood down entirely.
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-norepo-'));
+    const { code, stderr } = runHook(outside, 'git commit -m "feat: x"');
+    assertEq(code, 2, `a commit the gate cannot place must not pass, got: ${stderr}`);
+    assert(stderr.includes('not inside a git repository'), `names the reason, got: ${stderr}`);
+    assert(stderr.includes('cd into the repo'), `and names the fix, got: ${stderr}`);
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
+
+  await test('a plain in-repo commit is untouched by the fail-closed (issue #159)', () => {
+    // The control for the two cases above: the ordinary shape still passes, so
+    // the new block is scoped to a cwd that resolves no repo.
+    const dir = mkRepo();
+    stage(dir, 'app.js', 'const x = 1;\n');
+    touchMarker(dir);
+    const { code, stderr } = runHook(dir, 'git commit -m "feat: thing"');
+    assertEq(code, 0, `a resolvable repo still passes, got: ${stderr}`);
+    cleanup(dir);
+  });
+
+  await test('a NON-commit command outside any repo stays silent (issue #159)', () => {
+    // The fail-closed sits after the commit-clause test, so ordinary Bash in a
+    // scratch directory hears nothing.
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-norepo-'));
+    const out = runHook(outside, 'ls -la && npm test');
+    assertEq(out.code, 0, `no commit clause, no verdict, got: ${out.stderr}`);
+    assertEq(out.stderr, '', 'and no message at all');
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
+
+  await test('a payload carrying NO cwd still fails open — exit 0 (issue #159)', () => {
+    // The one thing the fail-closed deliberately does not cover: with no cwd in
+    // the payload the gate is blind to WHERE the command runs, which is the
+    // hook's own defect rather than a command shape an agent can write — and
+    // blocking there would wedge every commit with nothing that could clear it.
+    const res = spawnSync('bash', [HOOK], {
+      input: JSON.stringify({ tool_input: { command: 'git commit -m "feat: x"' } }),
+      env: { ...process.env, HOME: os.homedir(), WORKFLOW_DIR },
+      encoding: 'utf8',
+      timeout: 60000,
+    });
+    assertEq(res.status, 0, `no cwd → fail open, got: ${res.stderr}`);
   });
 
   await test('pathspec commit with nothing staged — exit 2 (bypass closed)', () => {

@@ -7,10 +7,11 @@
     "apps/*"
   ],
   "scripts": {
-    "start": "omega",
+    "start": "omega dev",
     "dev": "omega dev",
     "build": "omega build",
-    "deploy": "omega deploy"
+    "deploy": "omega deploy",
+    "manage": "omega manage"
   },
   "devDependencies": {
     "@omega.js/manager": "file:../../../../Omega/omega/packages/manager"

@@ -88,6 +88,70 @@ const FAILURE_SHAPES = [
 
 const FAILING_APP = [...FAILURE_SHAPES.map((line) => `echo '${line}'`), 'exec sleep 30'].join('; ');
 
+// The macOS duplicate-library warning as it really arrives — two bundled copies
+// of glib in the framework's own node_modules, and the word "failures" that
+// carries it through the keep net.
+const OBJC_WARNING = 'objc[77855]: Class GNotificationCenterDelegate is implemented in both '
+  + '/Users/me/dev/omega/node_modules/sharp/build/Release/libvips-cpp.8.18.3.dylib (0x10ff3c2a8) and '
+  + '/Users/me/dev/omega/node_modules/canvas/build/Release/libgio-2.0.0.dylib (0x1103b8180). '
+  + 'This may cause spurious casting failures and mysterious crashes. '
+  + 'One of the duplicates must be removed or renamed.';
+
+// The lines the keep net catches on WORDING alone (#158) — that warning and a
+// passing check summary ("failed", "warned") — beside the two that must survive
+// them: a summary reporting real failures, and one with ten of them, which the
+// digit guard must not read as the zero it exempts.
+const BENIGN_APP = [
+  `echo '${OBJC_WARNING}'`,
+  "echo '  Results:   6 passed, 0 failed, 1 warned, 20 skipped'",
+  "echo '  Results:   4 passed, 2 failed, 1 warned, 20 skipped'",
+  "echo '  Results:   4 passed, 10 failed, 1 warned, 20 skipped'",
+  "echo 'Error: the board failed to load' >&2",
+  'exec sleep 30',
+].join('; ');
+
+// The app half's two phases in one run (#158), the way omega really prints
+// them: the manage cycle first — including the bracketed `[11ty]` lines of its
+// embedded build, which are NOT the web target and must not open the phase —
+// then the dev server, every line of it tagged `[web]` at column 0 from its
+// first boot line on. The tag is the boundary; the URL arrives later and still
+// gets its announce, beside its own raw line rather than instead of it.
+const WEB_APP = [
+  "echo '[11ty] Wrote 87 files in 1.24 seconds'",
+  "echo 'some manage step'",
+  "echo '[web] Using existing mkcert certificates'",
+  "echo '[web] Dev server: https://localhost:14300'",
+  `echo '${OBJC_WARNING}'`,
+  "echo '[web] watching for changes'",
+  'exec sleep 30',
+].join('; ');
+
+// The fallback the trigger keeps (#158): an app that never tags a line still
+// switches at the URL it names — the framework's boot wall, the URL line that
+// ends it, then the dev server actually serving. Only what comes after the
+// boundary belongs on the terminal — minus the drop list, which outlives it.
+const PHASED_APP = [
+  "echo 'omega: some build step'",
+  "echo 'Dev server: https://localhost:14300'",
+  "echo 'GET /index.html 200 in 12ms'",
+  `echo '${OBJC_WARNING}'`,
+  "echo '  Results:   6 passed, 0 failed, 1 warned, 20 skipped'",
+  "echo 'GET /assets/app.css 200 in 3ms'",
+  'exec sleep 30',
+].join('; ');
+
+// The API half owns no port, so it never announces and never leaves the quiet
+// phase — not on a line of its own carrying a URL, and not on one wearing the
+// app's `[web]` tag either. Its ordinary chatter is the wall nobody asked for,
+// first line to last.
+const CHATTY_API = [
+  "echo '[web] hello'",
+  "echo 'api: listening on http://127.0.0.1:18693'",
+  "echo 'api: board sweep done in 240ms'",
+  "echo 'Error: the sweep token is missing'",
+  'exec sleep 30',
+].join('; ');
+
 // The app coming up somewhere other than where it was asked to: omega takes
 // the next free port when its own is busy, and says so.
 const BUMPED_APP = [
@@ -260,6 +324,113 @@ const run = async () => {
       FAILURE_SHAPES.forEach((line) => {
         assert(text.includes(line), `"${line}" came through`);
       });
+    } finally {
+      child.kill('SIGKILL');
+      cleanup(dir);
+    }
+  });
+
+  await test('the known-benign lines are dropped, and a summary with real failures is not', async () => {
+    const dir = mkTmp();
+    const child = start(dir, 'exec sleep 30', BENIGN_APP, QUIET_PORTS, { capture: true });
+    const out = collect(child);
+    try {
+      // The error is the app half's last line, so seeing it means every line
+      // above it has been through the filter — and it is the keep net's own
+      // regression here, the way the quiet case above pins it.
+      assert(await until(() => /the board failed to load/.test(out())), 'the error line still came through');
+      const text = out();
+      assert(!/GNotificationCenterDelegate/.test(text), 'the duplicate-library warning did not');
+      assert(!/objc\[/.test(text), 'nor any of it');
+      assert(!/6 passed, 0 failed, 1 warned, 20 skipped/.test(text), 'nor the check summary of a run where nothing failed');
+      assert(/4 passed, 2 failed, 1 warned, 20 skipped/.test(text), 'a summary with real failures is still read out');
+      assert(/4 passed, 10 failed, 1 warned, 20 skipped/.test(text), 'ten of them too — the zero it exempts is a whole number');
+    } finally {
+      child.kill('SIGKILL');
+      cleanup(dir);
+    }
+  });
+
+  await test('it says it is starting before anything else — in a verbose run too', async () => {
+    // The quiet phase is otherwise a terminal with nothing on it at all
+    // (#158): omega builds for a while before it names a URL, and every line
+    // of that is filtered, so the run looked hung.
+    const dir = mkTmp();
+    const child = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { capture: true });
+    const out = collect(child);
+    const loud = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { capture: true, args: ['--verbose'] });
+    const loudOut = collect(loud);
+    try {
+      assert(await until(() => out().includes('\n')), 'the quiet run printed');
+      assertEq(out().split('\n')[0], 'tower: starting the dashboard…', 'and its very first line says so');
+      assert(await until(() => loudOut().includes('\n')), 'the verbose run printed');
+      assertEq(loudOut().split('\n')[0], 'tower: starting the dashboard…', 'the same first line — one story, both modes');
+    } finally {
+      child.kill('SIGKILL');
+      loud.kill('SIGKILL');
+      cleanup(dir);
+    }
+  });
+
+  await test('the web target\'s own tag is the phase boundary — the manage cycle before it is not', async () => {
+    const dir = mkTmp();
+    const child = start(dir, 'exec sleep 30', WEB_APP, QUIET_PORTS, { capture: true });
+    const out = collect(child);
+    try {
+      // The last line of the run, carrying no keep-net word at all, so seeing
+      // it is itself proof the switch happened.
+      assert(await until(() => /watching for changes/.test(out())), 'the app half was read to its last line');
+      const text = out();
+      assert(!/\[11ty\]/.test(text), "the manage cycle's own bracketed line stayed hidden");
+      assert(!/some manage step/.test(text), 'and did not open the phase for the line after it');
+      assert(/\[web\] Using existing mkcert certificates/.test(text), 'the first tagged line came through — no keep-net word in it');
+      assert(/tower: dashboard at https:\/\/localhost:14300/.test(text), 'the dashboard was still announced');
+      assertEq(text.match(/tower: dashboard at/g).length, 1, 'once');
+      assert(/\[web\] Dev server: https:\/\/localhost:14300/.test(text), "and the app's own URL line printed beside it, not instead of it");
+      assert(!/objc\[/.test(text), 'the drop list outlives the boundary — the objc warning is gone');
+    } finally {
+      child.kill('SIGKILL');
+      cleanup(dir);
+    }
+  });
+
+  await test('an app that never tags a line still switches at the URL it names', async () => {
+    const dir = mkTmp();
+    const child = start(dir, 'exec sleep 30', PHASED_APP, QUIET_PORTS, { capture: true });
+    const out = collect(child);
+    try {
+      // The last line of the run, and one that carries no keep-net word at all,
+      // so seeing it is itself proof the switch happened.
+      assert(await until(() => /app\.css/.test(out())), 'the app half was read to its last line');
+      const text = out();
+      assert(!/some build step/.test(text), 'the pre-announce build step stayed hidden');
+      assert(/GET \/index\.html 200 in 12ms/.test(text), 'the post-announce request came through');
+      assert(/GET \/assets\/app\.css 200 in 3ms/.test(text), 'and the one after it');
+      assert(!/objc\[/.test(text), 'the drop list outlives the boundary — the objc warning is gone');
+      assert(!/6 passed, 0 failed, 1 warned, 20 skipped/.test(text), 'and so is the passing check summary');
+      assert(/tower: dashboard at https:\/\/localhost:14300/.test(text), 'the dashboard was announced');
+      assertEq(text.match(/tower: dashboard at/g).length, 1, 'once');
+      // A trigger line is judged in the phase it OPENS, so the URL line prints
+      // as itself too — the announce stands beside it, naming the dashboard in
+      // the wrapper's own voice.
+      assert(/Dev server: https:\/\/localhost:14300/.test(text), "the app's own URL line came through as well");
+    } finally {
+      child.kill('SIGKILL');
+      cleanup(dir);
+    }
+  });
+
+  await test('the API half owns no port, so it never switches — chatter stays hidden for its whole life', async () => {
+    const dir = mkTmp();
+    const child = start(dir, CHATTY_API, 'exec sleep 30', QUIET_PORTS, { capture: true });
+    const out = collect(child);
+    try {
+      assert(await until(() => /sweep token is missing/.test(out())), 'its problem line came through');
+      const text = out();
+      assert(!/board sweep done/.test(text), 'its ordinary chatter did not');
+      assert(!/tower: dashboard at/.test(text), 'and a URL in ITS output announces nothing — it owns no dashboard');
+      assert(!/api: listening on/.test(text), 'so that line is just chatter too');
+      assert(!/\[web\] hello/.test(text), 'nor does the app half\'s tag open a phase over here');
     } finally {
       child.kill('SIGKILL');
       cleanup(dir);

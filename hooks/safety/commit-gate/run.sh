@@ -79,8 +79,10 @@ stand_down() {
 [ -n "$commit_clause" ] || exit 0
 
 # The gate classifies the repo it is STANDING in. A commit aimed elsewhere
-# (git -C <path>, or cd earlier in the same command line) would be judged
-# against the wrong repo — fail closed and ask for a plain commit instead.
+# (git -C <path>, or cd/pushd/popd earlier in the same command line) would be
+# judged against the wrong repo — fail closed and ask for a plain commit
+# instead. The pushd spelling is the same act by another word and used to walk
+# past this test (issue #159); the finder flags all three.
 [ "$saw_cd" -eq 1 ] && block "the command changes directory before committing; run a plain 'git commit' with the session already in the repo so the gate can see its staging."
 
 # A command that STAGES and commits in one call is ungateable by construction
@@ -132,13 +134,25 @@ for w in $commit_clause; do
   esac
 done
 
+# By here the command carries a real commit clause, so a cwd that resolves no
+# repository is not an ordinary Bash command passing through: it is a commit the
+# gate cannot place, and every check below would stand down over the wrong tree
+# or none at all. It fails CLOSED (issue #159) — a background subagent sits at
+# the session's primary directory, which is often no repo at all, so this was
+# every one of their commits. The one thing the gate keeps failing OPEN on is a
+# payload carrying no cwd at all: that is the hook's own blindness, not a
+# reachable command shape, and blocking on it would wedge every commit with no
+# action that could clear it.
+no_repo() {
+  block "the session's directory is not inside a git repository, so the gate cannot see what this commit would carry. cd into the repo's root as its own command first, then run a plain 'git commit' there."
+}
 cwd=$(jq -r '.cwd // ""' <<<"$input" || true)
 [ -n "$cwd" ] || exit 0
-cd "$cwd" 2>/dev/null || exit 0
-git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+cd "$cwd" 2>/dev/null || no_repo
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || no_repo
 # Everything below judges the REPO, not the session cwd — a session sitting in
 # a subdirectory must be gated identically (review 2026-07-23).
-repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || no_repo
 
 # Files going into the commit: staged, plus modified tracked files with -a/--all.
 files=$(git diff --cached --name-only 2>/dev/null || true)

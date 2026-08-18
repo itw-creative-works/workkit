@@ -27,4 +27,4 @@ Behavior stays EXACTLY the same — clarity over brevity (clearer sometimes mean
 
 ## 4. Gate out
 
-Re-run the SAME command from step 1. Green → keep. Red → revert the simplification entirely (`git checkout`/undo), report what broke — a failed simplification is a finding, not a starting point for repairs. Done-criteria: suite green on the simplified code, diff strictly smaller-or-clearer, nothing outside scope touched.
+Re-run the SAME command from step 1. Green → keep. Red → revert the simplification entirely by reverse-editing your own hunks (the safety/tree-guard hook blocks `git checkout`-style discards), report what broke — a failed simplification is a finding, not a starting point for repairs. Done-criteria: suite green on the simplified code, diff strictly smaller-or-clearer, nothing outside scope touched.

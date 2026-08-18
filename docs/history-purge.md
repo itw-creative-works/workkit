@@ -23,6 +23,8 @@ git stash          # only if the tree is dirty
 
 **Why:** `git filter-repo` rewrites the branch in place. The backup branch is the one command that makes the whole operation reversible, and it costs nothing. The stash matters because filter-repo refuses to run on a dirty tree.
 
+This runbook's stash and hard-reset steps are exactly what the safety/tree-guard hook blocks: run them prefixed with `WORKKIT_ALLOW_DISCARD=1` — this is the owner's deliberate discard the escape exists for.
+
 ## 3. Find the OLDEST commit that carries the value
 
 ```sh

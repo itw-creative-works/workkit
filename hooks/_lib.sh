@@ -122,7 +122,10 @@ _hook_span_is_commit() {
 # `git log --grep commit` is not a commit (hardening 2026-07-25; each of
 # those prefix shapes had walked past the old first-word-is-git test).
 # Sets: HOOK_COMMIT_CLAUSE (the quote-stripped clause, empty if none),
-#       HOOK_SAW_CD (1 if ANY clause starts with `cd` — wrong-repo signal),
+#       HOOK_SAW_CD (1 if ANY clause starts with `cd`, `pushd` or `popd` — the
+#       wrong-repo signal; all three address a different directory for what
+#       follows, and the pushd spelling used to walk straight past this test
+#       (issue #159)),
 #       HOOK_SAW_STAGE (1 if a git clause BEFORE the commit stages — add/rm/mv/
 #       stage — so the commit's content is decided by the same command line and
 #       cannot be read ahead of it; the walk breaks at the commit clause, so
@@ -175,7 +178,9 @@ hook_find_git_commit() {
         *) break ;;
       esac
     done
-    [ "${1:-}" = "cd" ] && HOOK_SAW_CD=1
+    case "${1:-}" in
+      cd|pushd|popd) HOOK_SAW_CD=1 ;;
+    esac
     # eval whose argument is a QUOTED span: the strip replaced the span with a
     # placeholder, so nothing below can read it — test the ORIGINAL span. A
     # quote character surviving here means the strip did not run (no perl, or
