@@ -7,10 +7,12 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-08-17
+
 ### Changed
 
-- [#163](../../issues/163) — The whats-next skill is renamed status (same triggers, same digest); the state skill retires to the now-gitignored `_attic/`, its published-data recipe recoverable from git history.
-- [#164](../../issues/164) — Simplification is now a review lens (the deletion test over the diff's additions, scored like every finding); the standalone simplify skill retires to the attic.
+- [#163](../../issues/163) [`6614a64`](../../commit/6614a64) Thanks [@ianwieds]! — The whats-next skill is renamed status (same triggers, same digest); the state skill retires to the now-gitignored `_attic/`, its published-data recipe recoverable from git history.
+- [#164](../../issues/164) [`6614a64`](../../commit/6614a64) Thanks [@ianwieds]! — Simplification is now a review lens (the deletion test over the diff's additions, scored like every finding); the standalone simplify skill retires to the attic.
 
 ## [0.42.1] - 2026-08-17
 
