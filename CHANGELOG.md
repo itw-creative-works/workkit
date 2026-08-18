@@ -7,18 +7,20 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-08-17
+
 ### Fixed
 
-- [#159](../../issues/159) — The commit gate now blocks a `pushd`-worded directory change the way it blocks `cd`, and fails closed with a named fix when a commit runs from outside any repository, instead of silently skipping every check.
+- [#159](../../issues/159) [`4b44293`](../../commit/4b44293) Thanks [@ianwieds]! — The commit gate now blocks a `pushd`-worded directory change the way it blocks `cd`, and fails closed with a named fix when a commit runs from outside any repository, instead of silently skipping every check.
 
 ### Added
 
-- [#157](../../issues/157) — A new tree-guard hook blocks tree-discarding git commands (`checkout` with paths, `switch --discard-changes`, `restore`, `stash`, `clean -f`, `reset --hard`) so an agent cannot erase another's uncommitted work; a deliberate discard escapes with `WORKKIT_ALLOW_DISCARD=1`.
+- [#157](../../issues/157) [`4b44293`](../../commit/4b44293) Thanks [@ianwieds]! — A new tree-guard hook blocks tree-discarding git commands (`checkout` with paths, `switch --discard-changes`, `restore`, `stash`, `clean -f`, `reset --hard`) so an agent cannot erase another's uncommitted work; a deliberate discard escapes with `WORKKIT_ALLOW_DISCARD=1`.
 
 ### Changed
 
-- [#158](../../issues/158) — The tower now opens with a starting line and shows the dev server's own logs: the app half turns loose at omega's first `[web]` line, hiding only the manage-cycle wall. A drop list removes known-benign noise like the `objc` warning.
-- [#160](../../issues/160) — The whats-next digest now briefs every issue by its outcome in the product, opens the owner-check section as a command-first QA walkthrough, groups the queue into themed batches, and gains `qa` and `build` modes.
+- [#158](../../issues/158) [`4b44293`](../../commit/4b44293) Thanks [@ianwieds]! — The tower now opens with a starting line and shows the dev server's own logs: the app half turns loose at omega's first `[web]` line, hiding only the manage-cycle wall. A drop list removes known-benign noise like the `objc` warning.
+- [#160](../../issues/160) [`4b44293`](../../commit/4b44293) Thanks [@ianwieds]! — The whats-next digest now briefs every issue by its outcome in the product, opens the owner-check section as a command-first QA walkthrough, groups the queue into themed batches, and gains `qa` and `build` modes.
 
 ## [0.40.0] - 2026-08-06
 
