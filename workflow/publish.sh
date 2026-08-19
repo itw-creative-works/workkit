@@ -415,10 +415,32 @@ fi
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 
+# The build emits its asset URLs from the site's ROOT, and a project site is not
+# served at one: `<owner>.github.io/<name>/` puts everything a path deeper, so a
+# build told nothing writes `/assets/...` and every one of them 404s (issue
+# #165). The publisher is the only side that knows the final address, so it
+# derives the prefix here and hands it over.
+#
+# `site.url` decides it, and decides it alone: a CNAME carries a HOST and can
+# never carry a path, so a custom domain serves at the domain's root (`/`) and
+# no custom domain means the default project address (`/<name>/`, the repo half
+# of the slug). Two cases, exhaustive, and neither asks GitHub anything — a
+# publish that cannot reach the network still builds the right URLs.
+#
+# `OMEGA_PATH_PREFIX` is the contract with the framework (omega#355). The build
+# does not read it yet, so this is INERT today; when omega ships support, the
+# published site heals on the next publish with nothing here to change.
+PATH_PREFIX='/'
+if [[ -z "$(wk_json_get "$WK_HOME_SETTINGS" '.site.url')" ]]; then
+  HOME_SLUG="$(wk_home_slug)"
+  PATH_PREFIX="/${HOME_SLUG##*/}/"
+fi
+
 say_info "publish: building the dashboard from $WK_HOME_APP"
+say_info "publish: the site serves at $PATH_PREFIX — the build is told so"
 BUILD_LOG="$(mktemp)"
 trap 'rm -f "$BUILD_LOG"' EXIT
-if ! npm --prefix "$WK_HOME_APP" run build >"$BUILD_LOG" 2>&1; then
+if ! OMEGA_PATH_PREFIX="$PATH_PREFIX" npm --prefix "$WK_HOME_APP" run build >"$BUILD_LOG" 2>&1; then
   say_warn "publish: the dashboard build failed — the last lines follow"
   tail -20 "$BUILD_LOG" >&2
   exit 1

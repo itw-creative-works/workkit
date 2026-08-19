@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#165](../../issues/165) — The publish derives the path the site serves under and hands it to the tower build as `OMEGA_PATH_PREFIX`, so a project-site publish stops emitting root-relative assets once omega reads it.
+
 ## [0.43.0] - 2026-08-17
 
 ### Changed

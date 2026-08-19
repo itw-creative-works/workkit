@@ -72,18 +72,26 @@ const mkWorld = ({
   // The build: an `npm --prefix <clone>/apps/web run build` that leaves what a
   // build leaves. Proved against the real app 2026-07-29: `omega build` is the
   // APP's command and it writes dist/ beside src/.
-  writeStub(path.join(bin, 'npm'), buildFails
-    ? ['printf \'omega: build failed\\n\' >&2', 'exit 1']
-    : [
-      'prefix=""',
-      'if [[ "$1" == "--prefix" ]]; then prefix="$2"; fi',
-      'mkdir -p "$prefix/dist/assets"',
-      // The output follows the SOURCE, so a test can change what the build
-      // ships the way a real change would: by editing the app.
-      'cp "$prefix/src/index.html" "$prefix/dist/index.html"',
-      'printf \'body{}\\n\' > "$prefix/dist/assets/app.css"',
-      'exit 0',
-    ]);
+  //
+  // It also records the path prefix its environment carried (issue #165), so a
+  // test can prove what the build was TOLD the site serves at. The build is the
+  // last npm call a publish makes, so the file holds the build's own value.
+  const prefixLog = path.join(root, 'prefix.log');
+  writeStub(path.join(bin, 'npm'), [
+    `printf '%s' "\${OMEGA_PATH_PREFIX:-unset}" > ${JSON.stringify(prefixLog)}`,
+    ...(buildFails
+      ? ['printf \'omega: build failed\\n\' >&2', 'exit 1']
+      : [
+        'prefix=""',
+        'if [[ "$1" == "--prefix" ]]; then prefix="$2"; fi',
+        'mkdir -p "$prefix/dist/assets"',
+        // The output follows the SOURCE, so a test can change what the build
+        // ships the way a real change would: by editing the app.
+        'cp "$prefix/src/index.html" "$prefix/dist/index.html"',
+        'printf \'body{}\\n\' > "$prefix/dist/assets/app.css"',
+        'exit 0',
+      ]),
+  ]);
 
   // The only thing this script asks `gh` for: disabling Pages when the site is
   // taken down (issue #113). It records its argv, so a test can prove the call
@@ -163,6 +171,7 @@ const mkWorld = ({
     // carries rather than what the owner configured.
     source: path.join(tower, 'README.md'),
     ghCalls: () => (fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8').trim().split('\n').filter(Boolean) : []),
+    buildPrefix: () => (fs.existsSync(prefixLog) ? fs.readFileSync(prefixLog, 'utf8') : null),
     dist: path.join(tower, 'apps', 'web', 'dist'),
     env,
   };
@@ -662,6 +671,28 @@ const run = async () => {
     setSite(world, { url: null });
     publish(world);
     assert(!fs.existsSync(path.join(fromPages(world), 'CNAME')), 'clearing it takes the file away');
+    cleanup(world.root);
+  });
+
+  await test('with no custom domain the build is told the project path it serves under', () => {
+    // Issue #165: a default Pages address is `<owner>.github.io/<name>/`, so a
+    // build that emits root-relative assets 404s on every one of them. The
+    // prefix is the repo's own name, from the slug the settings already carry.
+    const world = mkWorld();
+    const { code, out } = publish(world);
+    assertEq(code, 0, `exit 0 — ${out}`);
+    assertEq(world.buildPrefix(), '/workkit/', 'the build ran with the project site’s path');
+    assert(/\/workkit\//.test(out), `and the run says what the build got, got: ${out}`);
+    cleanup(world.root);
+  });
+
+  await test('a custom domain serves at the root, and the build is told so', () => {
+    // A CNAME cannot carry a path, so a set `site.url` is the whole of the
+    // answer: the site is at the domain's root and the prefix is `/`.
+    const world = mkWorld({ siteUrl: 'https://board.example.com' });
+    const { code, out } = publish(world);
+    assertEq(code, 0, `exit 0 — ${out}`);
+    assertEq(world.buildPrefix(), '/', 'the domain root, not the repo name');
     cleanup(world.root);
   });
 
