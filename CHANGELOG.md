@@ -7,6 +7,14 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#167](../../issues/167) Thanks [@ianwieds]! — The tower dashboard gets a Settings page owning the GitHub token: save, clear, the permissions it needs, and the classic `repo`-scoped token a two-owner board takes instead. It is the only page that works without one, so a tokenless landing routes there; the unlock dialog and Token button retire.
+
+### Changed
+
+- [#168](../../issues/168) Thanks [@ianwieds]! — The sidebar's project dropdown lists each project once: an All projects master row over one row per repo, the name scoping to that project alone and the box building a subset. The Filter projects section retires, the boxes hide on a single project, and a subset reads `N of M`.
+
 ## [0.43.1] - 2026-08-18
 
 ### Fixed

@@ -1,19 +1,26 @@
 //
-// The sidebar's project selector — the tower's one project switch.
+// The sidebar's project selector - the tower's one project switch.
 //
 // The switch is the FRAMEWORK's selector module, the dropdown that sits above
 // the nav in the base shell (themes/base/_includes/global/sections/
 // app-sidebar.html): a button carrying the current project and a menu of the
 // ones to switch to. The tower turns it on in its sidebar data and fills the
 // menu at runtime, because the nav is baked at build time and the roster is
-// whatever repos are on the machine when the page is open — one entry per repo
-// plus All projects, the active one marked, and under a divider the checkbox
-// subset that narrows the board to a few repos instead of one (`?repo=`).
+// whatever repos are on the machine when the page is open - an All projects
+// master row on top and ONE row per repo under it, the row in force marked.
+//
+// One list, never two (issue #168). Every repo used to appear twice, once as an
+// entry and again as a checkbox in a Filter projects section below, so a
+// fifteen-repo roster drew a thirty-row menu. The two questions live on the one
+// row now: its NAME scopes to that project alone, its BOX puts it in the subset
+// the board is narrowed to (`?repo=`). The boxes are only there while the whole
+// board is on screen - a subset is built by taking repos OUT of it, and a menu
+// showing one project has no whole board to take them out of.
 //
 // It is the selector rather than a list section because the selection is
 // GLOBAL: it belongs at the top of the shell, above the nav that carries it
 // from page to page, in the one control the theme already draws for exactly
-// this — not as a second nav below the first.
+// this - not as a second nav below the first.
 //
 // Pure string functions, like chrome.js: the runtime owns the DOM, this file
 // owns what goes in it, and `sidebarKey` is what tells the runtime the menu is
@@ -32,7 +39,7 @@ const slugsOf = (state) => repos(state).map((repo) => repo.slug).filter(Boolean)
  * What the selector is showing, as one comparable string.
  *
  * An unread roster has nothing to switch between, and says so with the empty
- * key — the menu keeps the placeholder the theme baked until it answers.
+ * key - the menu keeps the placeholder the theme baked until it answers.
  *
  * @param {object} state - the runtime's feed state
  * @returns {string}
@@ -42,35 +49,40 @@ export const sidebarKey = (state) => {
   return slugs.length ? [state.selectedRepo || '', ...slugs].join('\n') : '';
 };
 
-// One menu entry. A BUTTON rather than a link: the entry re-scopes the page in
-// place through `history.replaceState`, so there is no href for it to point at
-// and nothing for a middle click to open.
-const entry = (label, value, active) => `<li>
-      <button type="button" class="dropdown-item${active ? ' active' : ''}" data-tower-scope="${esc(value)}"${active ? ' aria-current="true"' : ''}>${esc(label)}</button>
+// A row's box: what puts one repo in the subset, or takes it out.
+//
+// Ticked while the whole board is in force, because every repo IS in play then
+// and unticking one is how a subset starts. No id and no `label` element: the
+// name beside it is a BUTTON with a job of its own, so the box carries its own
+// name for a screen reader rather than borrowing one. The button that opens the
+// menu carries `data-bs-auto-close="outside"` (page.js) so ticking does not
+// close it.
+const box = (slug, checked) => `<input class="form-check-input flex-shrink-0 ms-3" type="checkbox" data-tower-scope-slug="${esc(slug)}" aria-label="Include ${esc(slug)}"${checked ? ' checked' : ''}>`;
+
+// The master row's box, which says exactly what the boxes UNDER it say: every
+// one ticked is ticked, some of them is INDETERMINATE, none of them is empty.
+// It is derived from the ticked count rather than from the selection's length
+// so that a `?repo=` naming every repo - or naming repos the roster does not
+// carry - cannot leave the master disagreeing with the rows it summarises.
+//
+// Indeterminate is a DOM property and not something markup can say, so the
+// markup carries the marker and the runtime sets the property from it (page.js).
+const masterBox = (ticked, total) => `<input class="form-check-input flex-shrink-0 ms-3" type="checkbox" data-tower-scope-all aria-label="All projects"${ticked === total ? ' checked' : (ticked ? ' data-tower-indeterminate' : '')}>`;
+
+// One row: its box, when there is a subset to pick, and the name that scopes to
+// it alone. A BUTTON rather than a link: the name re-scopes the page in place
+// through `history.replaceState`, so there is no href for it to point at and
+// nothing for a middle click to open.
+const row = (label, value, active, control) => `<li class="d-flex align-items-center">
+      ${control}<button type="button" class="dropdown-item flex-grow-1${active ? ' active' : ''}" data-tower-scope="${esc(value)}"${active ? ' aria-current="true"' : ''}>${esc(label)}</button>
     </li>`;
 
-// The subset filter, at the foot of the same menu under a divider.
-//
-// It is checkboxes rather than a second list of entries: every repo already has
-// an entry above, and the boxes answer a different question — not "which repo"
-// but "which few". The button that opens the menu carries
-// `data-bs-auto-close="outside"` (page.js) so ticking one does not close it.
-//
-// Ids are positional because a slug is `owner/name` and an id may not be — the
-// slug itself rides on the data attribute, which the runtime reads.
-const filter = (slugs, selected) => `<li><hr class="dropdown-divider"/></li>
-    <li><h6 class="dropdown-header">Filter projects</h6></li>
-    ${slugs.map((slug, index) => `<li class="form-check px-3">
-      <input class="form-check-input" type="checkbox" id="tower-scope-${index}" data-tower-scope-slug="${esc(slug)}"${!selected.length || selected.includes(slug) ? ' checked' : ''}>
-      <label class="form-check-label omega-micro" for="tower-scope-${index}">${esc(slug)}</label>
-    </li>`).join('')}`;
-
 /**
- * The selector menu: All projects, one entry per repo, and the subset filter.
+ * The selector menu: the All projects master row, then one row per repo.
  *
- * All projects is the active entry whenever the selection is not exactly one
- * repo — a subset is still a view of the whole board, narrowed — which is also
- * what keeps the filter that made the subset on screen while it is in force.
+ * All projects is the active row whenever the selection is not exactly one
+ * repo - a subset is still a view of the whole board, narrowed - which is also
+ * what keeps the boxes that made the subset on screen while it is in force.
  *
  * @param {object} state - the runtime's feed state
  * @returns {string} the menu's `li` children, or '' before the roster answers
@@ -79,17 +91,18 @@ export const menuMarkup = (state) => {
   const slugs = slugsOf(state);
   if (!slugs.length) return '';
   const selected = selectedSlugs(state);
-  const all = selected.length !== 1;
-  return `${entry('All projects', '', all)}
-    ${slugs.map((slug) => entry(slug, slug, selected.length === 1 && selected[0] === slug)).join('')}
-    ${all ? filter(slugs, selected) : ''}`;
+  // One project in force is the one state with nothing to tick.
+  const single = selected.length === 1;
+  const ticks = slugs.filter((slug) => !selected.length || selected.includes(slug));
+  return `${row('All projects', '', !single, single ? '' : masterBox(ticks.length, slugs.length))}
+    ${slugs.map((slug) => row(slug, slug, single && selected[0] === slug, single ? '' : box(slug, ticks.includes(slug)))).join('')}`;
 };
 
 /**
  * What the selector BUTTON says about the current selection.
  *
  * The tile is the name's first character, the way the theme's own selector
- * spells it, and the second line is the honest count behind the name — the
+ * spells it, and the second line is the honest count behind the name - the
  * three modes read differently and the button is the only place a viewer sees
  * which one they are in without opening the menu.
  *
@@ -112,8 +125,19 @@ export const selectorLabel = (state) => {
     [name] = selected;
     env = `1 of ${total} repos`;
   } else if (selected.length > 1) {
-    name = `${selected.length} projects`;
-    env = `${selected.length} of ${total} repos`;
+    // The subset says its own arithmetic on the name line (issue #168), so the
+    // line under it says the half the count leaves out rather than the same
+    // sentence twice.
+    //
+    // Both lines are written only when the roster STANDS BEHIND them. The
+    // selection is raw, so its count can outrun the roster two ways - an unread
+    // roster counts nothing yet, and a shared `?repo=` can name repos this
+    // machine no longer carries - and either way there is nothing hidden to
+    // report: the board is already showing every repo it has. The count of what
+    // was chosen is still true, and that is what the name falls back to.
+    const hidden = total - selected.length;
+    name = hidden > 0 ? `${selected.length} of ${total} projects` : `${selected.length} projects`;
+    if (hidden > 0) env = `${hidden} hidden`;
   }
   return { name, initial: (name[0] || '?').toUpperCase(), env };
 };

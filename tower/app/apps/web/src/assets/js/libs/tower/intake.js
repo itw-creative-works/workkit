@@ -1,9 +1,9 @@
 //
-// Intake — the behavior behind the topbar's "File an issue" dialog.
+// Intake - the behavior behind the topbar's "File an issue" dialog.
 //
 // The dialog's markup and its opening are the theme's: _layouts/tower/page.html
 // ships the Bootstrap modal and topbar.json's button carries the data
-// attributes that open it. This module adds the two things markup cannot know —
+// attributes that open it. This module adds the two things markup cannot know -
 // the roster in the select, and what happens when the form is submitted.
 //
 // It is mounted from the main bundle, not from a page module, because the
@@ -12,7 +12,7 @@
 //
 // One rule shapes the failure handling: whatever the human typed survives. The
 // write is the only authority on whether an intake is valid, and its refusals
-// ('title is required', 'unknown repo: …') arrive as a sentence — so the
+// ('title is required', 'unknown repo: …') arrive as a sentence - so the
 // dialog shows that sentence and leaves the fields exactly as they were. Only
 // a filed issue clears the form.
 //
@@ -30,7 +30,7 @@ import { isLocalHost, lockedIntakeNotice } from './token.js';
 /** The roster select, filled from /api/repos. An empty roster is a state, not an error. */
 const fillRepos = async (select) => {
   // The dialog files against ONE repo, so the page's scope pre-selects it only
-  // when the scope names exactly one — every repo, or a subset, names no
+  // when the scope names exactly one - every repo, or a subset, names no
   // particular repo to file into and the select opens on the roster's first.
   const scoped = parseRepos(selectedRepo());
   const wanted = select.value || (scoped.length === 1 ? scoped[0] : '');
@@ -50,13 +50,13 @@ const showResult = (host, markup) => { host.innerHTML = markup; };
 
 /**
  * The locked shape of the affordance: filing needs a token, and a locked copy
- * has none — it has no roster to file against either, since even the slug list
+ * has none - it has no roster to file against either, since even the slug list
  * only becomes useful once something can be read with it. So the form is inert
- * and says the one thing that fixes it — which is not always a token: on this
+ * and says the one thing that fixes it - which is not always a token: on this
  * machine it is the tower API, so the notice and the empty roster fork the way
  * the locked page body does, on token.js's one predicate (issue #89).
  *
- * The topbar button stays ENABLED and still opens the dialog — that is the only
+ * The topbar button stays ENABLED and still opens the dialog - that is the only
  * place the explanation can actually be read. A disabled button suppresses its
  * own `title` tooltip in Chromium, and the dialog is opened by Bootstrap's
  * toggle, so a disabled trigger would leave the reason unreachable. What is
@@ -76,7 +76,7 @@ const disableIntake = (dialog) => {
 /**
  * Wire the intake dialog on this page.
  *
- * Idempotent by construction — it binds once to the one dialog the layout
+ * Idempotent by construction - it binds once to the one dialog the layout
  * ships, and does nothing at all on a page without it.
  *
  * @param {Document|HTMLElement} [scope] - where to look for the dialog
@@ -125,7 +125,7 @@ export function mountIntake(scope = document) {
       return;
     }
     const url = answer.data.url;
-    showResult(result, `<div class="alert alert-success mb-0">Filed — <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></div>`);
+    showResult(result, `<div class="alert alert-success mb-0">Filed - <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></div>`);
     form.querySelector('[name="title"]').value = '';
     form.querySelector('[name="body"]').value = '';
   });

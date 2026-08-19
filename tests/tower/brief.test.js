@@ -1,5 +1,5 @@
 //
-// Tests for tower/api/lib/brief.js — the daily brief.
+// Tests for tower/api/lib/brief.js - the daily brief.
 //
 // Pure assembly over the shapes the other libs already produce, so the fixtures
 // here are those shapes verbatim: a board sweep as fetchBoard returns it, and a
@@ -56,7 +56,7 @@ const run = async () => {
     assertEq(out.waiting[0].number, 1, 'the blocked one');
     // Issue #62: an assignee no longer splits the specced queue. The status
     // label is the whole answer, and a claimed spec is a transient the standards
-    // sweep flips to building — it is not a second in-flight shape.
+    // sweep flips to building - it is not a second in-flight shape.
     assertEq(out.ready.map((i) => i.number).sort().join(','), '2,3', 'both specced issues are ready');
     assertEq(out.inFlight.length, 0, 'nothing carries the label that says work started');
     assertEq(out.inbox.length, 1, 'the inbox is its own section');
@@ -64,7 +64,7 @@ const run = async () => {
     // of fact as `waiting` and the opposite of "somebody is on it".
     assertEq(out.qa.map((i) => i.number).join(','), '6', 'a built item waiting on a check is its own section');
     assertEq(out.counts.qa, 1, 'and its own count');
-    assertEq(out.counts.backlog, 1, 'backlog is counted but not listed — it is nobody’s morning');
+    assertEq(out.counts.backlog, 1, 'backlog is counted but not listed - it is nobody’s morning');
     assertEq(out.generatedAt, STAMP, 'the stamp is the one passed in');
   });
 
@@ -75,13 +75,13 @@ const run = async () => {
     ]);
     const out = buildBrief(board, {}, ROSTER, STAMP);
     assertEq(out.inFlight.map((i) => i.number).sort().join(','), '1,2',
-      'the label is what says work has started — the assignee only says who holds it');
+      'the label is what says work has started - the assignee only says who holds it');
     assertEq(out.counts.inFlight, 2, 'and the count the headline reads agrees');
     assertEq(out.ready.length, 0, 'work already started is never offered as ready');
     assert(/2 issues are in flight/.test(out.headline), `the morning leads with them, got: ${out.headline}`);
   });
 
-  await test('a claim of any kind is not a status — the label alone sorts the issue', () => {
+  await test('a claim of any kind is not a status - the label alone sorts the issue', () => {
     // Issue #62: neither an assignee nor an agent's claim marker moves an issue
     // out of the ready queue. Work that has started carries `status:building`,
     // which is what the claim itself sets and what the standards sweep heals to.
@@ -107,7 +107,7 @@ const run = async () => {
 
   group('tower/brief: what to work on next');
 
-  await test('blocked leads, then specced by priority — three per repo, no more', () => {
+  await test('blocked leads, then specced by priority - three per repo, no more', () => {
     const board = boardOf([
       issue(1, { status: 'specced', priority: 'high' }),
       issue(2, { status: 'specced' }),
@@ -137,7 +137,7 @@ const run = async () => {
     assertEq(out.nextUp[1].items.map((i) => i.number).join(','), '3,1', 'and each list is ranked on its own');
   });
 
-  // Issue #135: a qa item is actionable — it is a check the owner gives, and the
+  // Issue #135: a qa item is actionable - it is a check the owner gives, and the
   // work is parked in the tree until they do. It ranks under the decisions,
   // because a decision nobody makes stops everything downstream of it, and above
   // the specs, because nothing else finishes while the tree holds unshipped work.
@@ -149,7 +149,7 @@ const run = async () => {
     ]);
     const out = buildBrief(board, {}, ROSTER, STAMP);
     assertEq(out.nextUp[0].items.map((i) => i.number).join(','), '3,2,1',
-      'the decision, then the check, then the spec — even with the spec priority:high');
+      'the decision, then the check, then the spec - even with the spec priority:high');
     assertEq(out.nextUp[0].items[1].status, 'qa', 'and the check says which it is');
   });
 
@@ -165,7 +165,7 @@ const run = async () => {
 
   group('tower/brief: what a morning waits on');
 
-  // Issue #103: a dependency is advisory — it changes no label — but it does
+  // Issue #103: a dependency is advisory - it changes no label - but it does
   // change the ORDER a morning reads a repo in, and the item says what it is
   // waiting for. Only a blocker the sweep can see is still open counts: the
   // sweep is the open board, so an edge pointing outside it says nothing either
@@ -201,7 +201,7 @@ const run = async () => {
     assertEq(items[0].waitsOn.length, 0, 'and owner/elsewhere#9 is a different issue from owner/other#9');
   });
 
-  await test('a blocker spelled in another case still counts — repo names are case-insensitive', () => {
+  await test('a blocker spelled in another case still counts - repo names are case-insensitive', () => {
     const board = boardOf([
       issue(1, { status: 'blocked', ...blockedByOf('OWNER/Repo#9') }),
       issue(2, { status: 'specced' }),
@@ -226,7 +226,7 @@ const run = async () => {
     assertEq(out.nextUp[0].items[0].waitsOn.length, 0, 'and nothing is claimed about an unknown edge');
   });
 
-  await test('the three a repo offers are the three that can move — a waiting item gives up its place', () => {
+  await test('the three a repo offers are the three that can move - a waiting item gives up its place', () => {
     const board = boardOf([
       issue(1, { status: 'blocked', ...blockedByOf('owner/repo#9') }),
       issue(2, { status: 'specced' }),
@@ -286,7 +286,7 @@ const run = async () => {
 
   await test('a repo the sweep could not read contributes no counts at all', () => {
     // A one-morning token hiccup on one repo must not publish that repo as
-    // "0 open" — the stats line is the only store, so the false zero would be
+    // "0 open" - the stats line is the only store, so the false zero would be
     // a permanent dip in its series. The unread repo is absent instead.
     const board = {
       ok: true,
@@ -309,7 +309,7 @@ const run = async () => {
       repos: [{ slug: 'owner/workkit', count: 100, totalCount: 137, truncated: true, closedDay: 0, error: null }],
     };
     assertEq(buildBrief(board, {}, ROSTER, STAMP).repoCounts[0].open, 137,
-      'the open count is the totalCount — a series that dipped at the cap would be a lie about the day');
+      'the open count is the totalCount - a series that dipped at the cap would be a lie about the day');
   });
 
   await test('a sweep that carries no counts at all reads as zero, never undefined', () => {

@@ -1,5 +1,5 @@
 //
-// Tests for tower/api/lib/history.js — the published briefs, read back.
+// Tests for tower/api/lib/history.js - the published briefs, read back.
 //
 // The `gh` call is the module's one seam, so every case here is a fake exec
 // answering the Discussions query with a board of published briefs. Nothing
@@ -19,7 +19,7 @@ const { briefHistory, parseStatsMark, HISTORY_LIMIT, BRIEF_TITLE_PREFIX } = requ
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-history-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
-/** A scratch ~/.workkit naming a home repo — or naming none. */
+/** A scratch ~/.workkit naming a home repo - or naming none. */
 const mkHome = (repo = 'owner/private-home') => {
   const dir = mkTmp();
   fs.writeFileSync(

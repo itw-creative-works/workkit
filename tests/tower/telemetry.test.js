@@ -1,5 +1,5 @@
 //
-// Tests for tower/api/lib/telemetry.js — the token ledger read from transcripts.
+// Tests for tower/api/lib/telemetry.js - the token ledger read from transcripts.
 //
 // Everything is a fixture: a scratch ~/.claude projects tree written in the
 // exact shapes Claude Code uses (an assistant line carrying message.usage, a
@@ -157,7 +157,7 @@ const run = async () => {
   await test('one API response written as several lines is counted ONCE, by message.id', () => {
     const w = mkWorld();
     // Claude Code writes a line per content block, each repeating the same
-    // usage, and a resumed session replays its history — both must dedupe.
+    // usage, and a resumed session replays its history - both must dedupe.
     const line = assistantLine({ id: 'dup', input: 100, output: 20 });
     const file = mkSession(w, { lines: [line, line, assistantLine({ id: 'other', input: 1 }), line] });
     assertEq(readUsage(file).tokens.total, 121, 'the repeat is not a second charge');
@@ -200,7 +200,7 @@ const run = async () => {
 
   group('tower/telemetry: the incremental read');
 
-  await test('an append is read as an append — the file is never re-read from zero', () => {
+  await test('an append is read as an append - the file is never re-read from zero', () => {
     const w = mkWorld();
     const file = mkSession(w, { lines: [assistantLine({ id: 'a', input: 100 })] });
     const first = readUsage(file);
@@ -227,7 +227,7 @@ const run = async () => {
     });
     assertEq(readUsage(file).tokens.total, 200, 'both lines');
 
-    // Rewritten SHORTER — the stored offset now points past the end.
+    // Rewritten SHORTER - the stored offset now points past the end.
     fs.writeFileSync(file, `${assistantLine({ id: 'c', input: 7 })}\n`);
     const after = readUsage(file);
     assertEq(after.tokens.total, 7, 'the old totals were discarded, not added to');
@@ -307,7 +307,7 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  await test('one unpriced line makes the whole file unpriced — never a partial total', () => {
+  await test('one unpriced line makes the whole file unpriced - never a partial total', () => {
     const w = mkWorld();
     const file = mkSession(w, {
       lines: [
@@ -323,7 +323,7 @@ const run = async () => {
     const w = mkWorld();
     // Claude Code writes `<synthetic>` lines with an all-zero usage block for
     // messages it generated locally. One of those must not turn a fully priced
-    // session's cost to null — zero tokens cost zero at any rate.
+    // session's cost to null - zero tokens cost zero at any rate.
     const file = mkSession(w, {
       lines: [
         assistantLine({ id: 'p', model: PRICED, input: 1000000 }),
@@ -348,7 +348,7 @@ const run = async () => {
     // and the table carries the rate a human would write.
     const near = (n) => Math.round(n * 1e6);
     // claude-3-haiku is the one row taken from published cache rates instead,
-    // and they do NOT follow the multipliers — $0.03 against a derived $0.025.
+    // and they do NOT follow the multipliers - $0.03 against a derived $0.025.
     // The published number is what gets billed, so the table keeps it and this
     // check names the exception rather than bending the rate to fit.
     const published = new Set(['claude-3-haiku']);
@@ -370,7 +370,7 @@ const run = async () => {
     assertEq(PRICING['claude-sonnet-5'].input, 3, 'sonnet-5 carries the STANDARD rate, not the promotion through 2026-08-31');
   });
 
-  await test('a cache write is priced by its TTL — 1.25x input at 5 minutes, 2x at an hour', () => {
+  await test('a cache write is priced by its TTL - 1.25x input at 5 minutes, 2x at an hour', () => {
     const rate = PRICING['claude-opus-5'];
     // The whole write at each TTL, so the two rates are visible on their own.
     assertEq(costOf('claude-opus-5', {
@@ -396,7 +396,7 @@ const run = async () => {
       ],
     });
     const usage = readUsage(file);
-    assertEq(usage.tokens.cacheCreation, 1000000, 'the counter stays ONE total — the contract is untouched');
+    assertEq(usage.tokens.cacheCreation, 1000000, 'the counter stays ONE total - the contract is untouched');
     assertEq(usage.tokens.total, 1000000, 'and so does the token total');
     assertEq(usage.cost, 0.4 * rate.cacheCreation + 0.6 * rate.cacheCreation1h, 'the cost carries the split');
     cleanup(w.root);

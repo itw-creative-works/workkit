@@ -1,5 +1,5 @@
 //
-// Tests for the tower dashboard's browser JavaScript — the pure half of it.
+// Tests for the tower dashboard's browser JavaScript - the pure half of it.
 //
 // The app is ES modules written for a browser, and the suites here are Node, so
 // each lib is pulled in with a dynamic `import()`. That works for exactly the
@@ -7,11 +7,11 @@
 // values), `state.js` (what a feed said, and what the repo selection leaves in
 // play), `crew.js` (the crew tree) and `modal.js` (an issue as markup). The
 // runtime itself (page.js) and the intake dialog reach for `document` and
-// `window` at import time and are out of scope here by design — the logic
+// `window` at import time and are out of scope here by design - the logic
 // worth asserting was moved OUT of them into the modules above. `api.js` sits
 // in between: it reads `location` once at import to fix the API origin and
 // touches `fetch` only at call time, so two stubbed globals bring its feed
-// adapter — the one translation the runtime leans on — under test, along with
+// adapter - the one translation the runtime leans on - under test, along with
 // the live-versus-published decision it makes beside it (#26), which is
 // written as pure functions for exactly that reason.
 //
@@ -55,7 +55,7 @@ const ROSTER = [
 // start one, so what follows is EXACTLY the operations `applyLive` performs and
 // nothing else: two kinds of selector, a dataset, a class name, one attribute,
 // one class toggle, one child wipe. It is a test double for the walk, not a
-// browser — what the glyph looks like while it turns stays a browser's answer
+// browser - what the glyph looks like while it turns stays a browser's answer
 // (the #24 ruling), and what this can prove is the lifecycle: which nodes a
 // tick touches, and how often it touches nothing.
 //
@@ -75,7 +75,7 @@ const el = (tag, className = '', data = {}) => {
     textContent: { get: () => node.text, set: (value) => { node.text = value; node.writes += 1; } },
     // The agent dialog's refresh (#108) rewrites one half of itself wholesale
     // and patches the other, and the claim worth pinning is which half is
-    // which — so the double reads its own markup back, the way a comparison
+    // which - so the double reads its own markup back, the way a comparison
     // before a write has to.
     innerHTML: { get: () => node.html, set: (value) => { node.html = value; node.writes += 1; } },
   });
@@ -110,7 +110,7 @@ const el = (tag, className = '', data = {}) => {
 };
 
 /**
- * One indicator as the paint left it — the node shape `agent.crewActivity`
+ * One indicator as the paint left it - the node shape `agent.crewActivity`
  * writes, built out of the double above. The test that uses it pins this shape
  * against the real markup string, so the two cannot drift apart in silence.
  */
@@ -124,10 +124,10 @@ const drawnIndicator = ({ phase, stamps, age, title }) => {
   label.text = age;
   const wrapper = el('span', 'd-inline-flex align-items-center gap-1', stamps).append(icon, label);
   // The CARD the indicator sits on, which a page marks so the tick can mute it
-  // when the agent goes quiet (#99) — the crew card and the Overview's row both
+  // when the agent goes quiet (#99) - the crew card and the Overview's row both
   // carry `data-live-card`.
   const card = el('div', 'card h-100', { liveCard: '' }).append(wrapper);
-  // Nothing above is a tick — reset the counters so the first one starts at nil.
+  // Nothing above is a tick - reset the counters so the first one starts at nil.
   const parts = { wrapper, icon, glyph, spoken, label, card };
   for (const part of Object.values(parts)) part.writes = 0;
   return { ...parts, host: el('div').append(card) };
@@ -156,24 +156,24 @@ const run = async () => {
   const format = await load('format.js');
   const state = await load('state.js');
   const crew = await load('crew.js');
-  // agent.js is markup from a node and a clock — no DOM, so the indicator's
+  // agent.js is markup from a node and a clock - no DOM, so the indicator's
   // three states and its cutoff are askable here.
   const agent = await load('agent.js');
-  // clock.js walks a document but reaches for nothing at import time — the
-  // timer is armed inside startClock — so `applyLive` comes under Node against
+  // clock.js walks a document but reaches for nothing at import time - the
+  // timer is armed inside startClock - so `applyLive` comes under Node against
   // the small DOM double above.
   const secondHand = await load('clock.js');
   // modal.js reaches for `document` only inside mountIssueModal, so everything
   // that shapes an issue into markup imports and answers under Node.
   const modal = await load('modal.js');
-  // chrome.js is markup from state, like format.js — the DOM it goes into is
+  // chrome.js is markup from state, like format.js - the DOM it goes into is
   // page.js's, which is why the split it describes is askable here.
   const chrome = await load('chrome.js');
-  // scope.js is the `?repo=` value read and written — strings and arrays, no
-  // DOM — and sidebar.js is markup from state, chrome.js's shape exactly.
+  // scope.js is the `?repo=` value read and written - strings and arrays, no
+  // DOM - and sidebar.js is markup from state, chrome.js's shape exactly.
   const scope = await load('scope.js');
   const sidebar = await load('sidebar.js');
-  // api.js fixes its origin from `location` at import — stub it (and the
+  // api.js fixes its origin from `location` at import - stub it (and the
   // `window` override hatch) just long enough to load the module.
   globalThis.location = { href: 'http://localhost:4300/' };
   globalThis.window = {};
@@ -181,13 +181,13 @@ const run = async () => {
   delete globalThis.location;
   delete globalThis.window;
   // github.js is the published half of the data layer and takes every seam it
-  // has as an argument — the token, `fetch`, the clock — so the whole of it,
+  // has as an argument - the token, `fetch`, the clock - so the whole of it,
   // including the two async doors, answers under Node. token.js is markup plus
   // one listener, and the markup half is pure.
   const github = await load('github.js');
   const token = await load('token.js');
 
-  group('tower/app: format — values into markup');
+  group('tower/app: format - values into markup');
 
   await test('esc turns every markup character into text', () => {
     assertEq(format.esc('<img src=x onerror="alert(1)">'), '&lt;img src=x onerror=&quot;alert(1)&quot;&gt;', 'escaped');
@@ -198,8 +198,8 @@ const run = async () => {
 
   await test('num keeps a real zero and only shows a dash for the unknown', () => {
     assertEq(format.num(0), '0', 'zero open issues is a fact');
-    assertEq(format.num(null), '—', 'unknown is not zero');
-    assertEq(format.num(undefined), '—', 'and neither is absent');
+    assertEq(format.num(null), '-', 'unknown is not zero');
+    assertEq(format.num(undefined), '-', 'and neither is absent');
   });
 
   await test('compact scales at each threshold and refuses a non-number', () => {
@@ -208,15 +208,15 @@ const run = async () => {
     assertEq(format.compact(1234567), '1.23M', 'millions to two places');
     assertEq(format.compact(2500000000), '2.50B', 'billions too');
     assertEq(format.compact(-1500), '-1.5K', 'a negative scales the same way');
-    assertEq(format.compact('nope'), '—', 'a non-number is unknown, not NaN on the page');
+    assertEq(format.compact('nope'), '-', 'a non-number is unknown, not NaN on the page');
   });
 
   await test('money is precise where a cost is small and rounder where it is not', () => {
     assertEq(format.money(0.0125), '$0.013', 'three places under ten dollars');
     assertEq(format.money(42.5), '$42.50', 'two places above it');
     // An unpriced model is `null`, and every caller checks for it before asking
-    // for a dollar amount — what reaches here is always a number or a mistake.
-    assertEq(format.money('nope'), '—', 'a non-number is a dash, never $NaN');
+    // for a dollar amount - what reaches here is always a number or a mistake.
+    assertEq(format.money('nope'), '-', 'a non-number is a dash, never $NaN');
   });
 
   await test('shortPath names a repo by its last segment', () => {
@@ -230,7 +230,7 @@ const run = async () => {
       'left to right, and the pipeline is all of it');
     assertEq(format.STATUSES.map((s) => s.label).join(','), 'Inbox,Specced,Building,Blocked,Backlog,QA',
       'and each column is titled the way a human reads it');
-    assertEq(format.STATUSES.length, 6, 'six lanes — a missing label is not a place an issue lives (#118)');
+    assertEq(format.STATUSES.length, 6, 'six lanes - a missing label is not a place an issue lives (#118)');
     assert(!format.STATUSES.some((s) => !s.key), 'so no column stands for the absence of one');
   });
 
@@ -246,7 +246,7 @@ const run = async () => {
     // the board say less than it draws.
     const tokens = format.STATUSES.map((status) => format.statusToken(status.key));
     assertEq(new Set(tokens).size, tokens.length, 'no two statuses are drawn in one colour');
-    assertEq(format.statusToken('qa'), '--omega-ok', 'qa wears the ok green — built and good, waiting on the owner');
+    assertEq(format.statusToken('qa'), '--omega-ok', 'qa wears the ok green - built and good, waiting on the owner');
     assertEq(format.statusToken('specced'), '--omega-chart-3', 'and specced gives that green up for the categorical purple');
   });
 
@@ -301,7 +301,7 @@ const run = async () => {
     const one = format.noStatusAlert([{ repo: 'ITW/workkit', number: 4, title: 'Alone', url: 'u' }]);
     assert(one.includes('1 issue carries no status label'), 'one issue is not "1 issues"');
     assertEq(format.noStatusAlert([{ repo: 'ITW/workkit', number: 4, status: 'inbox', title: 'Fine', url: 'u' }]), '',
-      'a board whose every issue is labelled draws nothing — the normal day');
+      'a board whose every issue is labelled draws nothing - the normal day');
     assertEq(format.noStatusAlert([]), '', 'and neither does an empty board');
   });
 
@@ -384,7 +384,7 @@ const run = async () => {
   await test('an empty state is an icon above a line, and says which nothing it is', () => {
     const state = format.empty('nothing here');
     assert(state.includes('fa-regular fa-folder-open'), 'the neutral default icon');
-    assert(state.includes('aria-hidden="true"'), 'which is decorative — the line carries the meaning');
+    assert(state.includes('aria-hidden="true"'), 'which is decorative - the line carries the meaning');
     assert(state.includes('>nothing here<'), 'and the line itself');
     assert(state.includes('text-body-secondary'), 'drawn in the theme’s quiet ink, never as an alarm');
     const chosen = format.empty('no live sessions', 'fa-regular fa-moon');
@@ -396,7 +396,7 @@ const run = async () => {
   await test('that icon is centred by a rule of its own, over the line it sits above (#142)', () => {
     // The defect this proves against: the glyph sat LEFT of the line under it,
     // on every empty state the tower draws. `text-center` centres inline
-    // content and this icon is not inline — `d-block` is one of Bootstrap's
+    // content and this icon is not inline - `d-block` is one of Bootstrap's
     // `!important` utilities and beats the framework's
     // `i[data-omega-fa] { display: inline-flex }`, which leaves a BLOCK box one
     // em wide hugging the left edge whatever the text around it is aligned to.
@@ -405,7 +405,7 @@ const run = async () => {
     assert(format.empty('nothing here').includes('class="omega-tower-empty '), 'the helper carries the hook the sheet centres from');
     const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
     const rule = /\.omega-tower-empty i \{ margin-inline: (\S+?); \}/.exec(sheet);
-    assert(rule, 'and the sheet centres the icon box — once, for every caller of the helper');
+    assert(rule, 'and the sheet centres the icon box - once, for every caller of the helper');
     assertEq(rule[1], 'auto', 'the one way a block box of known width centres itself');
   });
 
@@ -450,7 +450,7 @@ const run = async () => {
     assert(!format.classBadge('general-purpose').includes('omega-tone-'), 'which is no tone class at all');
     // Sharing across the vocabularies is forced (ten names, six slots), so the
     // table pins WHO shares: the class chip and the model chip that sit
-    // together on a real crew card — the manager ladder's pairings — never
+    // together on a real crew card - the manager ladder's pairings - never
     // match (hooks/manager/ladder.json: manager and advisor run fable, scouts
     // sonnet, workers and verifiers opus; a reviewer inherits the session's
     // model, so it pairs with fable and opus both).
@@ -482,7 +482,7 @@ const run = async () => {
 
   await test('a tile with no reading says a dash and carries why as its tooltip', () => {
     const cell = format.statCell('Live sessions', format.num(null), '/crew', format.LOCAL_ONLY_NOTICE);
-    assert(cell.includes('>—</h3>'), 'the value is a dash, never a fabricated 0');
+    assert(cell.includes('>-</h3>'), 'the value is a dash, never a fabricated 0');
     assert(cell.includes(`title="${format.LOCAL_ONLY_NOTICE}"`), 'and the sentence behind it is one hover away');
     assert(!format.statCell('Open', 3, '/board').includes('title='), 'a tile with a real number needs none');
   });
@@ -497,7 +497,7 @@ const run = async () => {
     assert(format.statCell('Open', 1, '', undefined, '<img src=x>').includes('&lt;img'), 'a sub-line is escaped like every other value');
   });
 
-  group('tower/app: format — the issue chips');
+  group('tower/app: format - the issue chips');
 
   await test('an issue shows exactly the chips it earns', () => {
     const chips = format.issueChips({
@@ -522,7 +522,7 @@ const run = async () => {
   });
 
   await test('a type is drawn through the one colour system, in a ramp slot no other type holds', () => {
-    // #149: the rule is within-category uniqueness — three types, three hues.
+    // #149: the rule is within-category uniqueness - three types, three hues.
     // Across the categories a hue is free (`idea` and `specced` share the
     // purple), because a chip says its own word and wears its own glyph.
     const slots = { bug: '--omega-chart-4', enhancement: '--omega-chart-5', idea: '--omega-chart-3' };
@@ -543,7 +543,7 @@ const run = async () => {
   await test('every status, type and priority has one glyph, and one table is the whole of it (#136, #149)', () => {
     // Hard-coded on purpose: the glyphs are what makes a column of cards
     // readable at a glance, and a silent re-pick is a different board. The
-    // table is the ONE home — the card and the dialog both read it, so a chip
+    // table is the ONE home - the card and the dialog both read it, so a chip
     // cannot say different things on the two surfaces.
     assertEq(format.CHIP_GLYPHS.bug, 'fa-bug', 'a bug is a bug');
     assertEq(format.CHIP_GLYPHS.enhancement, 'fa-wand-magic-sparkles', 'an enhancement is the wand');
@@ -570,24 +570,24 @@ const run = async () => {
   });
 
   await test('a chip draws its glyph before the word, decorative and in the chip’s own colour (#136)', () => {
-    // This row IS the Board card's chip row — the page hands it the card's
-    // spacing and nothing more (pinned in the board suite below) — so what one
+    // This row IS the Board card's chip row - the page hands it the card's
+    // spacing and nothing more (pinned in the board suite below) - so what one
     // card renders is what this renders.
     const chips = format.issueChips({ type: 'bug', priority: 'high' }, 'mt-auto omega-tower-issue__chips');
     assert(chips.includes('<i class="fa-solid fa-bug me-1" aria-hidden="true"></i>bug'), 'the type chip is glyph then word');
     assert(chips.includes('<i class="fa-solid fa-angles-up me-1" aria-hidden="true"></i>high'), 'and so is the priority chip');
     assert(format.statusChip('building').includes('<i class="fa-solid fa-hammer me-1" aria-hidden="true"></i>building'),
       'and so is the status chip the dialog draws (#149)');
-    assert(!/<i [^>]*style=/.test(chips), 'the glyph takes no colour of its own — it inherits the chip’s tone');
+    assert(!/<i [^>]*style=/.test(chips), 'the glyph takes no colour of its own - it inherits the chip’s tone');
     assert(!/<i [^>]*tabindex|<i [^>]*role=/.test(chips), 'and it is no new focus target');
     assert(!chips.includes('<svg'), 'drawn by the framework’s one icon mechanism, not a hand-cut one');
     assert(!format.issueChips({ type: '', priority: '' }).includes('<i '), 'an issue with neither draws no glyph at all');
   });
 
   await test('the glyph is spaced off the word and sits on its optical centre (#136)', () => {
-    // The defect this proves against: the chip is an inline-BLOCK — the theme's
+    // The defect this proves against: the chip is an inline-BLOCK - the theme's
     // `.omega-badge-tone` sets it and comes after `.omega-chip`'s inline-flex
-    // at equal specificity — so the flex gap the markup was written against
+    // at equal specificity - so the flex gap the markup was written against
     // never applied and the glyph rendered flush against the word. Both halves
     // of the fix are pinned by hand: neither is visible from Node, and both are
     // exactly the kind of thing a later edit drops without noticing.
@@ -597,7 +597,7 @@ const run = async () => {
     }
     const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
     const nudge = /\.omega-chip i\.fa-solid svg \{ vertical-align: (\S+?); \}/.exec(sheet);
-    assert(nudge, 'and the sheet nudges the svg the renderer fills that `i` with — `.fa svg`, the framework\'s own rule, never reaches an `i` written `fa-solid` alone');
+    assert(nudge, 'and the sheet nudges the svg the renderer fills that `i` with - `.fa svg`, the framework\'s own rule, never reaches an `i` written `fa-solid` alone');
     assertEq(nudge[1], '-.125em', 'by the framework\'s own number, so a chip glyph sits where every other icon does');
   });
 
@@ -614,13 +614,13 @@ const run = async () => {
     for (const surface of ['pages/board.js', 'pages/brief.js', 'libs/tower/modal.js']) {
       const drawn = fs.readFileSync(path.join(js, ...surface.split('/')), 'utf8');
       for (const glyph of Object.values(format.CHIP_GLYPHS)) {
-        assert(!drawn.includes(glyph), `${surface} names no chip glyph (${glyph}) — the table owns which picture means what`);
+        assert(!drawn.includes(glyph), `${surface} names no chip glyph (${glyph}) - the table owns which picture means what`);
       }
     }
   });
 
   await test('an issue waiting on one the board still holds wears a chip saying so', () => {
-    // Issue #103: advisory and nothing more — the chip is the plain muted one
+    // Issue #103: advisory and nothing more - the chip is the plain muted one
     // every undyed value wears, never a status or priority hue, and it is drawn
     // only while the blocker is on the board the card sits on.
     const issue = {
@@ -639,7 +639,7 @@ const run = async () => {
 
   await test('a blocker spelled in another case is the same issue, said the short way', () => {
     // Repo names are case-insensitive on GitHub, and the inline fallback is
-    // hand-typed — the chip must not vanish over a capital letter.
+    // hand-typed - the chip must not vanish over a capital letter.
     const issue = { repo: 'owner/repo', blockedBy: [{ repo: 'OWNER/Repo', number: 12 }] };
     const chips = format.issueChips(issue, '', new Set(['owner/repo#12']));
     assert(chips.includes('<span class="omega-chip">waits on #12</span>'),
@@ -681,7 +681,7 @@ const run = async () => {
     assert(!format.issueChips({ type: 'bug' }).includes('gap-1 '), 'and nothing dangles when none is given');
   });
 
-  group('tower/app: state — what a feed said');
+  group('tower/app: state - what a feed said');
 
   await test('a feed that has not answered yet reads as empty, not as an error', () => {
     const empty = { feeds: {}, selectedRepo: '' };
@@ -692,7 +692,7 @@ const run = async () => {
     assertEq(Object.keys(state.health(empty)).length, 0, 'no readings');
   });
 
-  await test('a feed that failed reads as empty too — a page draws its own reason', () => {
+  await test('a feed that failed reads as empty too - a page draws its own reason', () => {
     const broken = { feeds: { repos: failed('connection refused'), board: failed('connection refused') }, selectedRepo: '' };
     assertEq(state.repos(broken).length, 0, 'no roster from a failed read');
     assertEq(state.board(broken), null, 'and no board');
@@ -705,7 +705,7 @@ const run = async () => {
     // said "2 feeds unavailable" from first paint to last. The slot is `ok` and
     // MARKED instead, and the marker is what the panels draw from.
     const slot = state.localOnlySlot();
-    assertEq(slot.ok, true, 'nothing failed — this copy simply is not that machine');
+    assertEq(slot.ok, true, 'nothing failed - this copy simply is not that machine');
     assertEq(slot.localOnly, true, 'and the marker says which of the two it is');
     assertEq(slot.reason, format.LOCAL_ONLY_NOTICE, 'carrying the one sentence, from its one home');
     const published = { feeds: { board: { ok: true, data: {} }, sessions: slot, health: slot }, selectedRepo: '' };
@@ -716,7 +716,7 @@ const run = async () => {
     assertEq(Object.keys(state.health(published)).length, 0, 'from either of them');
   });
 
-  group('tower/app: state — the repo selection');
+  group('tower/app: state - the repo selection');
 
   await test('with nothing selected every repo, issue and session is in play', () => {
     const all = mkState({
@@ -754,7 +754,7 @@ const run = async () => {
     assert(!state.inSelectedRepo(two, '/repos/dotfiles'), 'and one outside the list is not');
   });
 
-  await test('a session is placed by its cwd — the defect the Crew page shipped with', () => {
+  await test('a session is placed by its cwd - the defect the Crew page shipped with', () => {
     const one = mkState({ repos: ROSTER }, 'workkit');
     assert(state.inSelectedRepo(one, '/repos/ITW/workkit'), 'the repo root itself');
     assert(state.inSelectedRepo(one, '/repos/ITW/workkit/tower/api'), 'and anything under it');
@@ -782,7 +782,7 @@ const run = async () => {
     assertEq(state.sessionsFor(one).map((s) => s.session).join(''), 'ab', 'the two in the repo, in order');
   });
 
-  group('tower/app: state — the issue behind a dragged card');
+  group('tower/app: state - the issue behind a dragged card');
 
   /** A board feed as a poll writes it: a NEW object graph every time. */
   const mkBoardState = () => mkState({
@@ -802,7 +802,7 @@ const run = async () => {
     assertEq(state.issueByKey(mkState({}), 'ITW/workkit#48'), null, 'and a board that has not answered has no issues to find');
   });
 
-  await test('the key it looks up is the one a card carries — one spelling, three readers', () => {
+  await test('the key it looks up is the one a card carries - one spelling, three readers', () => {
     const live = mkBoardState();
     const [issue] = state.issuesFor(live);
     assertEq(format.issueKey(issue), 'ITW/workkit#48', 'the attribute value');
@@ -810,11 +810,11 @@ const run = async () => {
     assertEq(state.issueByKey(live, format.issueKey(issue)), issue, 'and what the drop resolves back to the same object');
   });
 
-  await test('the answer is the LIVE object — the regression a quiet poll used to cause', () => {
+  await test('the answer is the LIVE object - the regression a quiet poll used to cause', () => {
     // The defect: the Board resolved a drop against a map built when the page
     // was last PAINTED. A poll that changed no markup does not repaint, so the
     // map went on holding issue objects from a graph nothing draws from any
-    // more — the optimistic move mutated a detached object and the card sat
+    // more - the optimistic move mutated a detached object and the card sat
     // still until the write came back.
     const live = mkBoardState();
     const atPaint = state.issueByKey(live, 'ITW/workkit#48');
@@ -856,7 +856,7 @@ const run = async () => {
 
   await test('the no-status alert is drawn from the SCOPED issues, so a repo out of scope neither shows nor counts', () => {
     // The alert is markup from values (format.js) and the narrowing is
-    // state.js's, so what the page contributes is handing one to the other —
+    // state.js's, so what the page contributes is handing one to the other -
     // which is exactly what an out-of-scope unlabelled issue leaking onto the
     // board would break.
     const scoped = mkState({
@@ -881,10 +881,10 @@ const run = async () => {
     assert(!/No status/.test(source), 'the column that used to hold them is gone, comments and all');
   });
 
-  group('tower/app: board — the List | Graph toggle');
+  group('tower/app: board - the List | Graph toggle');
 
   // The page imports the framework and the graph module, so it is out of reach
-  // of these suites (see the header) — what can be pinned is the source of the
+  // of these suites (see the header) - what can be pinned is the source of the
   // decisions, the way every other page-level claim here is. The picture ITSELF
   // is pure and has a suite of its own: tests/tower/graphdef.test.js.
 
@@ -915,7 +915,7 @@ const run = async () => {
     assert(/btn-\$\{view === name \? '' : 'outline-'\}adaptive/.test(source), 'and drawn filled against outlined, in the theme’s own button');
     const toggle = source.slice(source.indexOf('const viewToggle'), source.indexOf('const toolbar'));
     assert(/data-view="\$\{name\}"/.test(toggle), 'each button names the view it selects');
-    assert(!/style=|color:/.test(toggle), 'and nothing about it is coloured by hand — the framework’s classes are the whole of it');
+    assert(!/style=|color:/.test(toggle), 'and nothing about it is coloured by hand - the framework’s classes are the whole of it');
   });
 
   await test('the graph is composed in the lib, drawn after the write, and says it is not the surface', () => {
@@ -939,7 +939,7 @@ const run = async () => {
       'an edge-less board shows the empty state, never an empty diagram');
   });
 
-  group('tower/app: crew — the tree');
+  group('tower/app: crew - the tree');
 
   await test('a telemetry session normalizes with its tokens and its subagents', () => {
     const node = crew.normalize({
@@ -960,7 +960,7 @@ const run = async () => {
     assertEq(node.children[0].tokens, 5, 'with its own spend');
   });
 
-  await test('a plain session row normalizes too — the fallback roster has no second tier', () => {
+  await test('a plain session row normalizes too - the fallback roster has no second tier', () => {
     const node = crew.normalize({
       claudePid: 700, session: 'sess-2', cwd: '/repos/Omega/omega', chatName: null, state: 'idle', model: null, effort: null,
     });
@@ -1007,7 +1007,7 @@ const run = async () => {
     assertEq(count.total, 0, 'and nobody at all');
   });
 
-  await test('both rosters land their moments on one scale — ms epochs, whichever way they were said', () => {
+  await test('both rosters land their moments on one scale - ms epochs, whichever way they were said', () => {
     const session = crew.normalize({
       session: 'sess-1', lastActivity: 1700000000000, aliveSince: 1699999000000, transcript: '/t/a.jsonl',
     });
@@ -1044,13 +1044,13 @@ const run = async () => {
     assertEq(crew.connectorFlow(1, 4), 'left', 'so is the near one');
     assertEq(crew.connectorFlow(2, 4), 'right', 'and the right half flows right');
     assertEq(crew.connectorFlow(3, 4), 'right', 'to the end of the row');
-    // An odd row has a card ON the trunk — its line is the drop, with no
+    // An odd row has a card ON the trunk - its line is the drop, with no
     // sideways run to have a direction at all.
     assertEq(crew.connectorFlow(1, 3), 'down', 'the middle of three is straight below the parent');
     assertEq(crew.connectorFlow(0, 1), 'down', 'and an only child is always straight below it');
   });
 
-  group('tower/app: agent — the activity indicator');
+  group('tower/app: agent - the activity indicator');
 
   const NOW = 1700000000000;
 
@@ -1061,14 +1061,14 @@ const run = async () => {
     assertEq(agent.activityPhase({ state: 'done', lastActivity: NOW - 10 * 60000 }, NOW), 'none', 'and neither does one that finished ten minutes ago');
   });
 
-  await test('the gray band is reachable — the state word alone can never decide it', () => {
+  await test('the gray band is reachable - the state word alone can never decide it', () => {
     // The defect this proves against: gating gray on `state !== 'working'`
     // makes it unreachable, because the API only drops that word after its own
-    // 45-minute window, decided from the SAME file time — by which point the
+    // 45-minute window, decided from the SAME file time - by which point the
     // indicator is long gone. Freshness decides the motion; the word is only
     // necessary for it.
     assertEq(agent.WORKING_MS, 20000, 'two poll cycles of the live feeds');
-    assertEq(agent.activityPhase({ state: 'working', lastActivity: NOW - 30000 }, NOW), 'idle', 'still called working by the API, but quiet half a minute — gray');
+    assertEq(agent.activityPhase({ state: 'working', lastActivity: NOW - 30000 }, NOW), 'idle', 'still called working by the API, but quiet half a minute - gray');
     assertEq(agent.activityPhase({ state: 'working', lastActivity: NOW - 20000 }, NOW), 'working', 'exactly two cycles still spins');
     assertEq(agent.activityPhase({ state: 'working', lastActivity: NOW - 20001 }, NOW), 'idle', 'a millisecond past it does not');
     assertEq(agent.activityPhase({ state: 'stale', lastActivity: NOW - 3000 }, NOW), 'idle', 'a lapsed assertion over a fresh transcript is gray, not gone');
@@ -1084,7 +1084,7 @@ const run = async () => {
 
   await test('a briefly quiet agent stays on the page for five minutes, muted (#99)', () => {
     // The defect this proves against: one boundary for both questions. An agent
-    // that stops for ninety seconds — between turns, waiting on a tool — used
+    // that stops for ninety seconds - between turns, waiting on a tool - used
     // to vanish from the Crew page outright, so the page said nobody was
     // running while four agents were. Muted and still IS the honest middle.
     assertEq(agent.QUIET_WINDOW_MS, 5 * 60000, 'five minutes before it leaves');
@@ -1101,7 +1101,7 @@ const run = async () => {
     assertEq(agent.mutedClass('idle'), '', 'nor one that only just stopped');
     assertEq(agent.mutedClass('quiet'), agent.MUTED_CLASS, 'a quiet one wears the muted class');
     assertEq(agent.mutedClass('none'), agent.MUTED_CLASS, 'and so does one whose indicator has gone entirely');
-    assertEq(agent.MUTED_CLASS, 'text-body-secondary', 'the framework\'s own muted text class — no new colour pairing');
+    assertEq(agent.MUTED_CLASS, 'text-body-secondary', 'the framework\'s own muted text class - no new colour pairing');
     assertEq(agent.cardMuted({ state: 'working', lastActivity: NOW - 5000 }, NOW), '', 'a card draws it from the node it already has');
     assertEq(agent.cardMuted({ state: 'working', lastActivity: NOW - 90000 }, NOW), agent.MUTED_CLASS, 'through the one arithmetic, never a second threshold');
   });
@@ -1117,7 +1117,7 @@ const run = async () => {
     assertEq(agent.claimGlyph({}), '', 'and an issue with nothing on it draws nothing');
   });
 
-  await test('a building card spins the gear — the status says the work is in motion (#141)', () => {
+  await test('a building card spins the gear - the status says the work is in motion (#141)', () => {
     const building = agent.claimGlyph({ status: 'building', assignees: ['ianwieds'] });
     assert(building.includes('omega-tower-activity--working'), 'a building issue wears the working glyph');
     assert(building.includes('fa-spin'), 'and the gear turns');
@@ -1178,7 +1178,7 @@ const run = async () => {
     assert(markup.includes('title="running for 3m"'), 'and three minutes since it started');
     assertEq(agent.crewActivity({ state: 'done', lastActivity: NOW - 10 * 60000 }, NOW), '', 'a card whose agent went quiet loses the indicator entirely');
     const muted = agent.crewActivity({ state: 'working', lastActivity: NOW - 90000, aliveSince: NOW - 3 * 60000 }, NOW);
-    assert(muted.includes('omega-tower-activity--quiet'), 'ninety seconds in, the glyph is still drawn — muted');
+    assert(muted.includes('omega-tower-activity--quiet'), 'ninety seconds in, the glyph is still drawn - muted');
     assert(!muted.includes('fa-spin'), 'and it has stopped turning');
     assert(muted.includes('>1m<'), 'with the same age beside it as ever');
     assert(agent.crewActivity({ state: 'working' }, NOW).includes('up for an unknown span'), 'a node with no times still says the honest thing');
@@ -1193,9 +1193,9 @@ const run = async () => {
     assert(markup.includes(`data-live-ts="${NOW - 12000}"`), 'the epoch it last moved, raw');
     assert(markup.includes(`data-live-alive="${NOW - 3 * 60000}"`), 'and the one it started at');
     assert(markup.includes('data-live-state="working"'), 'plus the state word, which the phase needs and no arithmetic can recover');
-    assert(markup.includes('data-live-age'), 'the age label is findable — it is the one text the tick rewrites');
+    assert(markup.includes('data-live-age'), 'the age label is findable - it is the one text the tick rewrites');
     const timeless = agent.crewActivity({ state: 'working' }, NOW);
-    assert(!timeless.includes('data-live-ts'), 'a node with no timestamp carries no stamp — an absent one must not become the epoch');
+    assert(!timeless.includes('data-live-ts'), 'a node with no timestamp carries no stamp - an absent one must not become the epoch');
   });
 
   await test('the second hand decides exactly what the paint decided', () => {
@@ -1244,10 +1244,10 @@ const run = async () => {
     for (const name of fs.readdirSync(pages).filter((file) => file.endsWith('.js'))) {
       assert(!fs.readFileSync(path.join(pages, name), 'utf8').includes('setInterval'), `${name} runs no clock of its own`);
     }
-    assert(fs.readFileSync(path.join(libs, 'page.js'), 'utf8').includes('startClock(document.body)'), 'the runtime arms it once, over the whole document — the dialogs carry indicators and sit outside the page mount');
+    assert(fs.readFileSync(path.join(libs, 'page.js'), 'utf8').includes('startClock(document.body)'), 'the runtime arms it once, over the whole document - the dialogs carry indicators and sit outside the page mount');
   });
 
-  await test('the paint and the double draw the same node — the selectors the tick walks by', () => {
+  await test('the paint and the double draw the same node - the selectors the tick walks by', () => {
     // What keeps the fake DOM below honest: every hook applyLive reaches for is
     // one the real builder actually writes. If crewActivity renames one of
     // these, this fails here rather than leaving the lifecycle test passing
@@ -1268,11 +1268,11 @@ const run = async () => {
     secondHand.applyLive(drawn.host, NOW + 1000);
     assertEq(drawn.label.textContent, '13s', 'the number moved');
     assertEq(drawn.label.writes, 1, 'in one write');
-    assertEq(drawn.icon.writes, 0, 'the icon was left alone — same phase, same hover text');
+    assertEq(drawn.icon.writes, 0, 'the icon was left alone - same phase, same hover text');
     assertEq(drawn.glyph.writes, 0, 'and the glyph never stopped turning');
     assertEq(drawn.wrapper.wipes, 0, 'nothing was replaced');
     assertEq(drawn.host.querySelector('[data-live-ts]'), drawn.wrapper, 'the element the walk finds is the same object it found before');
-    assertEq(drawn.icon.querySelector('i'), drawn.glyph, 'and so is the glyph under it — a replaced node is a restarted animation');
+    assertEq(drawn.icon.querySelector('i'), drawn.glyph, 'and so is the glyph under it - a replaced node is a restarted animation');
   });
 
   await test('a tick in the same second writes nothing at all', () => {
@@ -1295,7 +1295,7 @@ const run = async () => {
     assertEq(drawn.icon.className, 'omega-tower-activity omega-tower-activity--idle', 'the colour went gray');
     assertEq(drawn.glyph.className, 'fa-solid fa-gear', 'the motion stopped');
     assertEq(drawn.spoken.textContent, 'idle', 'and what a screen reader hears went with it');
-    assertEq(drawn.wrapper.wipes, 0, 'in place — the crossing replaced no node');
+    assertEq(drawn.wrapper.wipes, 0, 'in place - the crossing replaced no node');
     assertEq(drawn.icon.querySelector('i'), drawn.glyph, 'it is the same glyph, restyled');
   });
 
@@ -1308,7 +1308,7 @@ const run = async () => {
     assertEq(drawn.wrapper.wipes, 0, 'the indicator is still there');
     assertEq(drawn.icon.className, 'omega-tower-activity omega-tower-activity--quiet', 'wearing the muted band');
     assertEq(drawn.spoken.textContent, 'quiet', 'and saying so to a screen reader');
-    assert(drawn.card.className.split(' ').includes('text-body-secondary'), 'the card it sits on is muted with it, live — not at the next poll');
+    assert(drawn.card.className.split(' ').includes('text-body-secondary'), 'the card it sits on is muted with it, live - not at the next poll');
     assertEq(drawn.host.querySelectorAll('[data-live-ts]').length, 1, 'and it stays in the walk, so it can come back');
     // Coming back is a fresher stamp, which a feed brings; the mute comes off
     // the same second the phase does.
@@ -1327,14 +1327,14 @@ const run = async () => {
     assertEq(drawn.wrapper.wipes, 1, 'past the cutoff the indicator is not gray, it is gone');
     assertEq(drawn.wrapper.children.length, 0, 'the glyph and its label with it');
     assertEq(drawn.wrapper.dataset.liveTs, undefined, 'and the stamp is gone too');
-    assertEq(drawn.host.querySelectorAll('[data-live-ts]').length, 0, 'so the walk no longer finds it — only a paint can bring it back');
+    assertEq(drawn.host.querySelectorAll('[data-live-ts]').length, 0, 'so the walk no longer finds it - only a paint can bring it back');
     secondHand.applyLive(drawn.host, NOW + 120000);
     assertEq(drawn.wrapper.wipes, 1, 'and every later tick passes it by');
   });
 
   await test('the agent dialog carries the stamps too, so an open one ages like the card behind it', () => {
     // The defect this proves against: the dialog drew the bare glyph, with no
-    // stamps on it, so it was the one surface the second hand could not reach —
+    // stamps on it, so it was the one surface the second hand could not reach -
     // a dialog left open showed a green spinning circle for an agent that had
     // been quiet for ten minutes.
     const body = modal.agentDialog({
@@ -1354,7 +1354,7 @@ const run = async () => {
     const overview = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'index.js'), 'utf8');
     assert(!overview.includes('activityIcon('), 'it wraps nothing of its own around the bare glyph');
     // And what that builder hands it, for a session in the shape /api/crew
-    // sends one — the stamps are the whole point of the delegation.
+    // sends one - the stamps are the whole point of the delegation.
     const cell = agent.crewActivity({ state: 'working', lastActivity: NOW - 4000, aliveSince: NOW - 90000 }, NOW);
     assert(cell.includes(`data-live-ts="${NOW - 4000}"`), 'so the Overview markup carries the stamp the tick reads back');
     assert(cell.includes('data-live-age'), 'and the label the tick rewrites');
@@ -1372,7 +1372,7 @@ const run = async () => {
     assert(rule, 'the indicator gives its own glyph the animation');
     assertEq(rule[1], 'spin', 'reusing the keyframes the framework already ships');
     // Anchored on the block that disables THIS animation, not on the sheet's
-    // first `prefers-reduced-motion` — an unrelated reduced-motion block added
+    // first `prefers-reduced-motion` - an unrelated reduced-motion block added
     // higher up would otherwise fail a rule that is perfectly well ordered.
     const disable = /@media \(prefers-reduced-motion: reduce\) \{\s*\.omega-tower-activity \.fa-spin \{ animation: none; \}/.exec(sheet);
     assert(disable, 'and reduced motion turns this animation off by name');
@@ -1381,7 +1381,7 @@ const run = async () => {
 
   await test('the glyph turns about its own centre, still or spinning (#137)', () => {
     // The defect this proves against: the animation was on an `<i>` with no box
-    // of its own, so its size was the LINE it sat on — taller than the 1em SVG
+    // of its own, so its size was the LINE it sat on - taller than the 1em SVG
     // the framework's renderer fills it with, since a replaced element rests on
     // the baseline with the strut's leading under it. A rotation turns about
     // the box's centre, which sat ~2px below the glyph's at .75rem, so the
@@ -1396,12 +1396,12 @@ const run = async () => {
     for (const declaration of ['display: flex', 'align-items: center', 'justify-content: center']) {
       assert(box[1].includes(declaration), `and the glyph is centred in it (${declaration}), never laid out on a baseline`);
     }
-    assert(/^\.omega-tower-activity i \{/m.test(sheet), 'at the top level — a box behind a media query is a box half the readers do not get');
+    assert(/^\.omega-tower-activity i \{/m.test(sheet), 'at the top level - a box behind a media query is a box half the readers do not get');
     // The box is NOT the spinning phase's: the still glyph wears the same one,
     // so a card keeps its size across the second the motion starts or stops.
     const motion = /\.omega-tower-activity \.fa-spin \{ (.*?) \}/.exec(sheet);
     assertEq(motion[1], 'animation: spin 1s linear infinite;', 'the phase rule says the motion and nothing about the box');
-    // And what the sheet is scoped to is what the markup actually draws — the
+    // And what the sheet is scoped to is what the markup actually draws - the
     // rule missing its element is the whole of #65 and half of this one.
     const working = agent.activityIcon('working', 'running for 3m');
     assert(/class="omega-tower-activity[^"]*"/.test(working), 'the wrapper the box and the motion are both scoped under');
@@ -1409,22 +1409,22 @@ const run = async () => {
   });
 
   await test('the indicator is a gear, so a still one does not read as a broken spinner (#137)', () => {
-    // The defect this proves against: the notched ring — the universal loading
-    // spinner — drawn STILL on a claimed Board card, which is what a board
+    // The defect this proves against: the notched ring - the universal loading
+    // spinner - drawn STILL on a claimed Board card, which is what a board
     // whose spinners "do not work" looks like. A specced claim is still on
     // purpose (work at rest), so the fix is a shape that reads at rest.
     const held = agent.claimGlyph({ status: 'specced', assignees: ['ian'] });
     assert(held.includes('fa-gear'), 'the Board says a claim with a gear at rest');
-    assert(!held.includes('fa-spin'), 'still — a specced claim is held, not running');
+    assert(!held.includes('fa-spin'), 'still - a specced claim is held, not running');
     assert(agent.activityIcon('working').includes('fa-gear'), 'and the Crew turns the same one');
     for (const markup of [held, agent.activityIcon('working'), agent.activityIcon('quiet')]) {
-      assert(!markup.includes('circle-notch'), 'the loader\'s ring is gone from every phase — one glyph, one story');
+      assert(!markup.includes('circle-notch'), 'the loader\'s ring is gone from every phase - one glyph, one story');
     }
   });
 
   await test('the Board\'s loading spinner is the framework\'s, unshadowed (#137)', () => {
     // Where the OTHER spinner on the page comes from: the framework's
-    // `loading()`, which draws Bootstrap's `.spinner-border` — animated by the
+    // `loading()`, which draws Bootstrap's `.spinner-border` - animated by the
     // bundle's own `@keyframes spinner-border`, nothing this app defines. It
     // stays that way only while this sheet writes no rule of that name; a local
     // override is exactly how a working spinner stops.
@@ -1448,7 +1448,7 @@ const run = async () => {
   await test('both crew surfaces mark the card the tick mutes (#99)', () => {
     // The defect this proves against: the mute drawn only at paint time. The
     // feeds land every ten seconds and the crossing is measured in seconds, so
-    // the card has to carry the hook the second hand walks — the same bet the
+    // the card has to carry the hook the second hand walks - the same bet the
     // `data-live-*` stamps beside it make.
     const fs = require('fs');
     const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
@@ -1476,9 +1476,9 @@ const run = async () => {
 
   await test('that glyph wears the shell\'s tile, and keeps its own colour inside it (#142)', () => {
     // A bare coloured glyph on a crew card, where every other icon in the shell
-    // sits in a small rounded square. The box is the THEME's — the markup wears
+    // sits in a small rounded square. The box is the THEME's - the markup wears
     // `.omega-icon-chip--neutral` rather than the sheet hand-rolling the same
-    // tile — and only the box is borrowed: the colour is the role's, written
+    // tile - and only the box is borrowed: the colour is the role's, written
     // inline by the markup, which beats the chip's neutral ink.
     assert(agent.roleIcon('worker').includes('omega-icon-chip omega-icon-chip--neutral'), 'the markup wears the theme\'s own tile');
     assert(agent.roleIcon('worker').includes(`color: ${format.badgeColor('worker')}`), 'and still writes the role colour inline');
@@ -1505,15 +1505,15 @@ const run = async () => {
     const boardPage = fs.readFileSync(path.join(pages, 'board.js'), 'utf8');
     assert(/import \{[^}]*claimGlyph[^}]*\} from '\.\.\/libs\/tower\/agent\.js'/.test(boardPage), 'the Board takes the claim glyph AND its gate from the same lib');
     const overview = fs.readFileSync(path.join(pages, 'index.js'), 'utf8');
-    assert(/import \{[^}]*crewActivity[^}]*\} from '\.\.\/libs\/tower\/agent\.js'/.test(overview), 'and the Overview\'s crew table draws the same indicator — the same builder, not a pill or a wrapper of its own');
+    assert(/import \{[^}]*crewActivity[^}]*\} from '\.\.\/libs\/tower\/agent\.js'/.test(overview), 'and the Overview\'s crew table draws the same indicator - the same builder, not a pill or a wrapper of its own');
     assert(!/pill\((?:[^)]*)working/.test(overview), 'no page decides on its own what a working agent looks like');
     for (const name of fs.readdirSync(pages).filter((file) => file.endsWith('.js'))) {
       const source = fs.readFileSync(path.join(pages, name), 'utf8');
-      assert(!source.includes('fa-spin'), `${name} writes no glyph of its own — the helper owns what the indicator looks like`);
+      assert(!source.includes('fa-spin'), `${name} writes no glyph of its own - the helper owns what the indicator looks like`);
     }
   });
 
-  group('tower/app: modal — the issue dialog');
+  group('tower/app: modal - the issue dialog');
 
   const ISSUE = {
     repo: 'ITW/workkit',
@@ -1547,7 +1547,7 @@ const run = async () => {
     assert(attrs.includes('data-issue="ITW/workkit#31"'), 'the repo and number are the key');
     assert(attrs.includes('role="button"') && attrs.includes('tabindex="0"'), 'and it is reachable without a mouse');
     // The Board reads that same attribute back off a dragged card to find which
-    // issue was moved, so the key has exactly one spelling — format.js's.
+    // issue was moved, so the key has exactly one spelling - format.js's.
     assert(attrs.includes(`data-issue="${format.issueKey(ISSUE)}"`), 'and the shared key is what the attribute carries');
   });
 
@@ -1593,13 +1593,13 @@ const run = async () => {
       'and the gear under it fades on hover AND on focus, so a keyboard sees what a pointer does');
     assert(block[1].includes('transition: opacity .12s ease-in-out'), 'at the same speed the reveal it is paired with runs');
     assert(/\.omega-tower-issue__top \.omega-micro \{ padding-right: /.test(block[1]), 'and the slug span stops short of the corner, so a gear-less card\'s ellipsis never sits under the revealed button');
-    // Nothing here may take the button out of the accessibility tree — it is
+    // Nothing here may take the button out of the accessibility tree - it is
     // the card's one tab stop, and `:focus-visible` has to be able to show it.
     assert(!/display: none|visibility: hidden/.test(block[1]), 'the button is faded, never hidden');
     // A touch screen has no pointer to reveal anything with, so it keeps the
     // in-flow layout: every word the sheet says about that row is in this block.
     const elsewhere = sheet.slice(0, block.index) + sheet.slice(block.index + block[0].length);
-    assert(!elsewhere.includes('.omega-tower-issue__top'), 'and `(hover: none)` — the whole of the other side of that feature — is left as it was');
+    assert(!elsewhere.includes('.omega-tower-issue__top'), 'and `(hover: none)` - the whole of the other side of that feature - is left as it was');
     // The dialog header's copy of the button is a control in flow, not a
     // card's reveal, and none of the above reaches it.
     assert(sheet.includes('.modal-header .omega-tower-external { opacity: 1; }'), 'the dialog\'s button still simply shows');
@@ -1635,7 +1635,7 @@ const run = async () => {
     assert(parts.body.includes(format.typeChip('idea')) && parts.body.includes(format.priorityChip('low')),
       'both are format.js’s own chips, so the dialog and the card cannot draw one thing two ways');
     const glyphs = Object.values(format.CHIP_GLYPHS).filter((glyph) => parts.body.includes(glyph));
-    assertEq(glyphs.length, 3, 'and exactly those three — the status chip sitting with them wears its own glyph (#149)');
+    assertEq(glyphs.length, 3, 'and exactly those three - the status chip sitting with them wears its own glyph (#149)');
   });
 
   await test('an issue with nothing on it still opens', () => {
@@ -1643,7 +1643,7 @@ const run = async () => {
     assert(bare.body.includes('No description.'), 'an empty body says so');
     assert(bare.body.includes('unclaimed'), 'and nobody holding it says that');
     assert(bare.body.includes('0 comments'), 'a missing count is zero, not undefined');
-    assert(bare.body.includes('—'), 'and a missing date is a dash');
+    assert(bare.body.includes('-'), 'and a missing date is a dash');
   });
 
   await test('a truncated body admits it', () => {
@@ -1655,7 +1655,7 @@ const run = async () => {
     let thrown = null;
     try {
       // The scope stub keeps Node's missing `document` (the destructuring
-      // default) out of the way — the guard is what is under test.
+      // default) out of the way - the guard is what is under test.
       modal.mountIssueModal({ scope: {} });
     } catch (error) {
       thrown = error;
@@ -1674,15 +1674,15 @@ const run = async () => {
     assert(!nasty.title.includes('<img'), 'the title is escaped');
     assert(!nasty.body.includes('<b>me</b>'), 'the handle is escaped');
     assert(!nasty.body.includes('<i>x</i>'), 'and so is the status chip');
-    // The body is the ONE field this file does not escape itself — it is the
+    // The body is the ONE field this file does not escape itself - it is the
     // renderer's, which escapes first (@omega.js/client's utilities suite).
   });
 
-  group('tower/app: modal — what an issue depends on');
+  group('tower/app: modal - what an issue depends on');
 
   // One board with one dependency in it, drawn twice over: #10 is what #11 and
   // the cross-repo #12 are both waiting on. The second reference is written in
-  // another case on purpose — repo names are case-insensitive on GitHub and the
+  // another case on purpose - repo names are case-insensitive on GitHub and the
   // inline `Depends on:` fallback is hand-typed, so the two spellings are one
   // edge or the feature is a coin toss.
   const BLOCKER = { ...ISSUE, number: 10, title: 'the one holding things up' };
@@ -1694,7 +1694,7 @@ const run = async () => {
   };
   const BOARD = [BLOCKER, WAITER, ELSEWHERE];
 
-  await test('the board’s edges read both ways — what an issue waits on, and what waits on it', () => {
+  await test('the board’s edges read both ways - what an issue waits on, and what waits on it', () => {
     const waiting = modal.dependencies(WAITER, BOARD);
     assertEq(waiting.waitsOn.length, 1, 'the waiter waits on one issue');
     assertEq(waiting.waitsOn[0].number, 10, 'the blocker, as the board’s own object');
@@ -1703,7 +1703,7 @@ const run = async () => {
     const blocker = modal.dependencies(BLOCKER, BOARD);
     assertEq(blocker.waitsOn.length, 0, 'the blocker waits on nothing');
     assertEq(blocker.blocks.map((one) => one.number).join(','), '11,12',
-      'and the inverse is read off the same payload — both of them, the cross-repo one included');
+      'and the inverse is read off the same payload - both of them, the cross-repo one included');
   });
 
   await test('a blocker the board is no longer carrying is satisfied, exactly as on a card', () => {
@@ -1725,19 +1725,19 @@ const run = async () => {
     const blocker = modal.issueDialog(BLOCKER, render, BOARD);
     assert(blocker.body.includes('blocks'), 'the blocker says what it is holding up');
     assert(/data-issue="ITW\/workkit#11"[^>]*>#11</.test(blocker.body), 'the issue in the same repo, the short way');
-    assert(/data-issue="ITW\/other#12"[^>]*>ITW\/other#12</.test(blocker.body), 'and the one in another repo with its slug — `#12` there is a different issue');
+    assert(/data-issue="ITW\/other#12"[^>]*>ITW\/other#12</.test(blocker.body), 'and the one in another repo with its slug - `#12` there is a different issue');
   });
 
   await test('a dependency opens in the tower, never in a new tab', () => {
-    // The delegated listener ignores a click inside an `a[href]` — that is the
-    // card's escape hatch — so a reference drawn as an anchor would open the
+    // The delegated listener ignores a click inside an `a[href]` - that is the
+    // card's escape hatch - so a reference drawn as an anchor would open the
     // GitHub page instead of the dialog it is there to open.
     const blocker = modal.issueDialog(BLOCKER, render, BOARD);
     const start = blocker.body.indexOf('blocks');
     assert(start > 0, 'the line is drawn');
     const line = blocker.body.slice(start, blocker.body.indexOf('omega-tower-issue__body'));
     assert(line.includes('#11'), 'and it is the one carrying the references');
-    assert(!line.includes('<a '), 'no anchor in it — an anchor would leave for GitHub instead');
+    assert(!line.includes('<a '), 'no anchor in it - an anchor would leave for GitHub instead');
   });
 
   await test('an issue that neither waits nor blocks draws no line at all', () => {
@@ -1745,7 +1745,7 @@ const run = async () => {
     assert(!alone.body.includes('waits on'), 'no label with nothing under it');
     assert(!alone.body.includes('blocks'), 'in either direction');
     assert(!alone.body.includes('gap-1 mb-3'),
-      'and no empty row where the line would have been — omission is the container, not just the words');
+      'and no empty row where the line would have been - omission is the container, not just the words');
     assert(!modal.issueDialog(WAITER, render).body.includes('waits on'),
       'and a dialog handed no board at all says nothing rather than guessing');
   });
@@ -1759,7 +1759,7 @@ const run = async () => {
 
   await test('the runtime hands the dialog the board the paint is drawing', () => {
     // The dialog lives in the layout, outside the mount a paint writes into, and
-    // page.js is out of reach of these suites (see the header) — so what is
+    // page.js is out of reach of these suites (see the header) - so what is
     // pinned is the handover: every page's paint passes here, so no page keeps a
     // second copy of the payload for the dialog to read.
     const fs = require('fs');
@@ -1770,7 +1770,7 @@ const run = async () => {
       'before the render, so the page and its dialog are drawn from one payload');
   });
 
-  group('tower/app: modal — the agent dialog');
+  group('tower/app: modal - the agent dialog');
 
   const AGENT = {
     id: 'agent-k1',
@@ -1800,7 +1800,7 @@ const run = async () => {
     const parts = modal.agentDialog(AGENT, NOW);
     assert(parts.title.includes('worker') && parts.title.includes('workkit'), 'the role and the repo it is working in');
     assert(parts.body.includes('Edit') && parts.body.includes('9s ago'), 'the last tool and when it was called');
-    assert(parts.body.includes(`data-live-ts="${NOW - 4000}"`) && parts.body.includes('>4s<'), 'how fresh it is — the header\'s live age, the one thing on the dialog that moves');
+    assert(parts.body.includes(`data-live-ts="${NOW - 4000}"`) && parts.body.includes('>4s<'), 'how fresh it is - the header\'s live age, the one thing on the dialog that moves');
     assert(parts.body.includes('8m'), 'and how long it has been running');
     assert(parts.body.includes('400') && parts.body.includes('90'), 'the two token counters');
     assert(parts.body.includes('$0.420'), 'what it came to');
@@ -1829,7 +1829,7 @@ const run = async () => {
 
   await test('the dialog says how fresh the agent is ONCE, in the half that ages', () => {
     // The defect this proves against: the header's ticking age and a "Last
-    // activity" row frozen at open, two numbers for one fact — twenty seconds
+    // activity" row frozen at open, two numbers for one fact - twenty seconds
     // in, the row still said 4s while the header said 24s.
     const parts = modal.agentDialog(AGENT, NOW);
     assert(!parts.body.includes('Last activity'), 'the frozen row is gone');
@@ -1858,17 +1858,17 @@ const run = async () => {
 
     // Half a minute of work later, the paint has re-registered the same agent
     // with everything it did since. Without the refresh the dialog is still
-    // holding the stamps it opened with — gray at twenty seconds, gone at
-    // sixty — while the card behind it spins.
+    // holding the stamps it opened with - gray at twenty seconds, gone at
+    // sixty - while the card behind it spins.
     modal.agentTrigger({
       ...entry, lastActivity: NOW + 28000, lastTool: 'Bash', lastToolAt: NOW + 28000, tokens: 20000,
     });
     assertEq(modal.refreshAgentDialog(NOW + 30000, dialog.host), true, 'the open dialog was refreshed');
 
     assertEq(dialog.wrapper.dataset.liveTs, String(NOW + 28000), 'the dialog carries the stamp the feed brought');
-    assertEq(dialog.icon.className, 'omega-tower-activity omega-tower-activity--working', 'so it is working, two seconds after its last move — not idle, thirty-four seconds after the one it opened on');
+    assertEq(dialog.icon.className, 'omega-tower-activity omega-tower-activity--working', 'so it is working, two seconds after its last move - not idle, thirty-four seconds after the one it opened on');
     assertEq(dialog.label.textContent, '2s', 'and the age says the same');
-    assertEq(dialog.glyph.writes, 0, 'the glyph was neither replaced nor restyled — one unbroken spin across the paint');
+    assertEq(dialog.glyph.writes, 0, 'the glyph was neither replaced nor restyled - one unbroken spin across the paint');
     assertEq(dialog.wrapper.wipes, 0, 'nothing under the header was replaced');
     assertEq(dialog.head.writes, 0, 'and the header itself was patched, never rewritten');
     assert(dialog.rows.innerHTML.includes('Bash'), 'the rows are the fresh read too');
@@ -1902,7 +1902,7 @@ const run = async () => {
     // An agent that ended between polls stops being drawn, so the next paint
     // stops registering it. The honest thing is the last stamps it had: the
     // dialog keeps them and the second hand decays them exactly as it would on
-    // the card that is no longer there — gray, then gone.
+    // the card that is no longer there - gray, then gone.
     const ended = openAgentDialog({
       key: 'agent-ended',
       indicator: {
@@ -1924,12 +1924,12 @@ const run = async () => {
     const entry = { ...AGENT, id: 'agent-back', lastActivity: NOW - 6 * 60000 };
     modal.agentTrigger(entry);
     // A dialog opened on an agent quiet past the cutoff has no indicator at all
-    // — there is no element to patch, so the refresh redraws the header.
+    // - there is no element to patch, so the refresh redraws the header.
     const dialog = openAgentDialog({ key: 'agent-back', indicator: null });
     modal.agentTrigger({ ...entry, lastActivity: NOW });
     assertEq(modal.refreshAgentDialog(NOW, dialog.host), true, 'the refresh answers');
     assert(dialog.head.innerHTML.includes(`data-live-ts="${NOW}"`), 'and the header is drawn again, stamps and all');
-    assert(dialog.head.innerHTML.includes('fa-spin'), 'spinning — the agent is moving again');
+    assert(dialog.head.innerHTML.includes('fa-spin'), 'spinning - the agent is moving again');
   });
 
   await test('the paint is what refreshes it, on every page and not just the crew', () => {
@@ -1954,17 +1954,17 @@ const run = async () => {
     assert(/addEventListener\('hidden\.bs\.modal', \(\) => \{ delete body\.dataset\.agentOpen; \}\)/.test(source), 'and the close deletes it');
     const open = source.indexOf('body.dataset.agentOpen = key;');
     const shown = source.indexOf('.show()', open);
-    assert(open >= 0 && shown > open, 'the key is written before the dialog is shown — never a shown dialog without one');
+    assert(open >= 0 && shown > open, 'the key is written before the dialog is shown - never a shown dialog without one');
   });
 
-  group('tower/app: modal — an issue as a list item');
+  group('tower/app: modal - an issue as a list item');
 
   await test('a list item keeps its list semantics and puts the button inside it', () => {
     const item = modal.issueItem(ISSUE, '<span>body</span>', { item: 'py-1', inner: 'd-flex gap-2' });
     assert(/^<li class="omega-tower-issue py-1">/.test(item), 'the li carries the card class and the row\'s spacing');
     // The whole point: an <li> given a role stops being a list item, so the
     // role, the tab stop and the key the dialog opens on all sit one level in.
-    assert(!/<li[^>]*role=/.test(item), 'and no role at all — the list stays a list');
+    assert(!/<li[^>]*role=/.test(item), 'and no role at all - the list stays a list');
     assert(/<div class="omega-interactive d-flex gap-2" data-issue="ITW\/workkit#31" role="button" tabindex="0">/.test(item), 'the inner element is the click target, with the layout classes on it');
     assert(item.includes('<span>body</span>'), 'and the content is inside that');
   });
@@ -1980,7 +1980,7 @@ const run = async () => {
   // the two copies are held together here instead. The rule is the label and
   // nothing else (#62): a claim says who holds an issue, never which queue it
   // is in, so a page that counted claims too would put one issue in two places.
-  await test('the Overview counts in flight by the brief’s rule — the label alone', () => {
+  await test('the Overview counts in flight by the brief’s rule - the label alone', () => {
     const fs = require('fs');
     const overview = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'index.js'), 'utf8');
     const briefSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'brief.js'), 'utf8');
@@ -1991,7 +1991,7 @@ const run = async () => {
     assert(!/claimed\(/.test(overview), `no claim predicate is called on the page, got: ${(overview.match(/.*claimed\(.*/g) || []).join(' | ')}`);
   });
 
-  await test('every page that lists issues routes through it — no role on an li anywhere', () => {
+  await test('every page that lists issues routes through it - no role on an li anywhere', () => {
     const fs = require('fs');
     const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
     for (const name of fs.readdirSync(pages).filter((file) => file.endsWith('.js'))) {
@@ -2001,36 +2001,31 @@ const run = async () => {
     }
   });
 
-  group('tower/app: chrome — the strip above the body');
+  group('tower/app: chrome - the strip above the body');
 
   const CHROME = { ...mkState({ repos: ROSTER }), pending: false, stamp: 'read 10:00:00' };
 
-  await test('the frame draws Refresh and the region the status goes in, and no repo control at all', () => {
-    const frame = chrome.chromeMarkup(CHROME);
+  await test('the frame draws Refresh and the region the status goes in, and no other control at all', () => {
+    const frame = chrome.chromeMarkup();
     assert(frame.includes('id="tower-refresh"'), 'Refresh is in the frame');
     assert(frame.includes('data-tower-status'), 'with an empty region the status is written into');
     assert(!frame.includes('spinner-border') && !frame.includes('read 10:00:00'), 'and nothing that changes on a read');
     // The selection moved to the sidebar (#104), where the nav that carries it
-    // from page to page is — the dropdown above the body is gone with it.
+    // from page to page is - the dropdown above the body is gone with it.
     assert(!frame.includes('tower-repo') && !frame.includes('<select'), 'the repo dropdown is gone');
-    assert(!frame.includes('workkit'), 'and the frame names no repo at all');
+    // And the token moved to Settings (#167), which is where one is typed - the
+    // button that forgot it was the last thing in this strip that varied.
+    assert(!frame.includes('tower-token') && !/token/i.test(frame), 'and so is the Token button');
   });
 
-  await test('a read leaves the frame byte for byte the same', () => {
-    // The defect: the frame was rewritten on both halves of every poll, so a
-    // control open when a read started was closed by the read landing.
-    const reading = { ...CHROME, pending: true, stamp: 'read 10:00:00' };
-    const landed = { ...CHROME, pending: false, stamp: 'read 10:00:30' };
-    assertEq(chrome.chromeMarkup(reading), chrome.chromeMarkup(landed), 'the same markup either way');
-    assertEq(chrome.chromeKey(reading), chrome.chromeKey(landed), 'and the key the runtime compares says so');
-  });
-
-  await test('the key changes for the one thing the frame still shows', () => {
-    assertEq(chrome.chromeKey(CHROME), chrome.chromeKey({ ...CHROME, selectedRepo: 'omega' }), 'a selection no longer touches this strip');
-    const grown = { ...mkState({ repos: [...ROSTER, { slug: 'dotfiles', path: '/repos/dotfiles', name: 'dotfiles' }] }), pending: false };
-    assertEq(chrome.chromeKey(CHROME), chrome.chromeKey(grown), 'and neither does a repo joining the roster');
-    assert(chrome.chromeKey(CHROME) !== chrome.chromeKey({ ...CHROME, tokenMode: true }), 'the Token button is what redraws it');
-    assertEq(chrome.chromeKey(mkState({})), '', 'and an unread state is no key at all, never undefined');
+  await test('the frame takes no state, which is why the runtime writes it once', () => {
+    // The defect it was split in two for: the frame was rewritten on both halves
+    // of every poll, so a control open when a read started was closed by the
+    // read landing. Nothing on it varies now, so there is no key to compare -
+    // page.js writes it before the loop and never again.
+    assertEq(chrome.chromeMarkup.length, 0, 'it is called with nothing');
+    assertEq(chrome.chromeMarkup(), chrome.chromeMarkup(CHROME), 'and a state handed to it anyway changes nothing');
+    assertEq(chrome.chromeKey, undefined, 'the key is gone with the button it keyed on');
   });
 
   await test('the status says whether a read is in flight and when the last one landed', () => {
@@ -2051,7 +2046,7 @@ const run = async () => {
     assert(!chrome.statusMarkup(CHROME, [{ name: 'x', reason: '<img src=x>' }]).includes('<img'), 'a hostile reason is escaped');
   });
 
-  group('tower/app: scope — the selection in the URL');
+  group('tower/app: scope - the selection in the URL');
 
   await test('a `?repo=` value parses to the set of slugs it names', () => {
     assertEq(scope.parseRepos('').length, 0, 'nothing selected is every repo');
@@ -2071,7 +2066,7 @@ const run = async () => {
     assertEq(scope.formatRepos([' workkit ', 'workkit']), 'workkit', 'and the same cleaning applies on the way out');
   });
 
-  await test('the predicate takes a SET — one slug, several, or none at all', () => {
+  await test('the predicate takes a SET - one slug, several, or none at all', () => {
     assert(scope.inScope([], 'workkit') && scope.inScope([], 'anything'), 'no selection leaves every repo in play');
     assert(scope.inScope(['workkit'], 'workkit'), 'one slug is that repo');
     assert(!scope.inScope(['workkit'], 'omega'), 'and only that repo');
@@ -2091,7 +2086,7 @@ const run = async () => {
     assertEq(scope.scopedHref('/board', 'workkit'), '/board?repo=workkit', 'the value is set');
     assertEq(scope.scopedHref('/board?repo=omega', 'workkit'), '/board?repo=workkit', 'a link already carrying one is rewritten, not appended to');
     assertEq(scope.scopedHref('/board?repo=omega', ''), '/board', 'and an empty selection takes the parameter off');
-    assertEq(scope.scopedHref('/', 'workkit,omega'), '/?repo=workkit,omega', 'a subset stays readable — the comma is not escaped');
+    assertEq(scope.scopedHref('/', 'workkit,omega'), '/?repo=workkit,omega', 'a subset stays readable - the comma is not escaped');
     assertEq(scope.scopedHref('/board?api=http://127.0.0.1:8693', 'workkit'), '/board?api=http%3A%2F%2F127.0.0.1%3A8693&repo=workkit', 'another parameter is kept');
     assertEq(scope.scopedHref(scope.scopedHref('/board', 'workkit'), 'workkit'), '/board?repo=workkit', 'rewriting twice writes the same link');
     for (const href of ['/', '/board', '/crew', '/usage', '/health', '/brief', '/board/', '/board.html', '/board?repo=omega']) {
@@ -2105,40 +2100,65 @@ const run = async () => {
     assert(!scope.isScopedPath('#anything'), 'a fragment is never a page');
   });
 
-  group('tower/app: sidebar — the project selector');
+  group('tower/app: sidebar - the project selector');
 
   await test('an unread roster fills nothing into the menu', () => {
-    assertEq(sidebar.menuMarkup(mkState({})), '', 'nothing to switch between yet — the theme’s placeholder stays');
+    assertEq(sidebar.menuMarkup(mkState({})), '', 'nothing to switch between yet - the theme’s placeholder stays');
     assertEq(sidebar.sidebarKey(mkState({})), '', 'and the key says so, never undefined');
   });
 
-  await test('the menu is one dropdown item per repo, under All projects', () => {
+  await test('the menu is ONE row per repo, under the All projects master row', () => {
     const markup = sidebar.menuMarkup(mkState({ repos: ROSTER }));
-    assert(markup.includes('data-tower-scope="workkit"') && markup.includes('data-tower-scope="omega"'), 'every slug is an entry');
+    assert(markup.includes('data-tower-scope="workkit"') && markup.includes('data-tower-scope="omega"'), 'every slug is a row');
     assert(markup.includes('data-tower-scope=""'), 'and All projects is the empty selection');
     assert(markup.includes('>All projects</button>'), 'named in words');
     assert(/data-tower-scope=""[^>]*aria-current="true"/.test(markup), 'nothing selected marks All as the one in force');
-    assert(markup.includes('<button type="button" class="dropdown-item active" data-tower-scope=""'), 'in Bootstrap’s own dropdown-item shape');
+    assert(markup.includes('<button type="button" class="dropdown-item flex-grow-1 active" data-tower-scope=""'), 'in Bootstrap’s own dropdown-item shape');
+    // The whole point of #168: a repo appears once, not once as an entry and
+    // again as a checkbox in a second section below.
+    assertEq((markup.match(/<li /g) || []).length, ROSTER.length + 1, 'the roster plus the master row, and nothing else');
+    assertEq((markup.match(/>workkit</g) || []).length, 1, 'each repo is named exactly once');
+    assert(!/Filter projects|dropdown-header|dropdown-divider/.test(markup), 'there is no second section to divide off');
   });
 
-  await test('a selected repo is the marked item, and the subset filter is gone', () => {
+  await test('a single project is the marked row, and the boxes are gone with it', () => {
     const markup = sidebar.menuMarkup(mkState({ repos: ROSTER }, 'workkit'));
-    assert(/class="dropdown-item active" data-tower-scope="workkit"/.test(markup), 'the repo in force is marked');
-    assert(!/class="dropdown-item active" data-tower-scope=""/.test(markup), 'and All is not');
-    assert(!markup.includes('data-tower-scope-slug'), 'one repo is not a subset, so there is nothing to filter');
+    assert(/class="dropdown-item flex-grow-1 active" data-tower-scope="workkit"/.test(markup), 'the repo in force is marked');
+    assert(!/flex-grow-1 active" data-tower-scope=""/.test(markup), 'and All is not');
+    assert(!markup.includes('data-tower-scope-slug'), 'one repo is not a subset, so there is nothing to tick');
+    assert(!markup.includes('data-tower-scope-all'), 'and no master box either - the whole board is not on screen to narrow');
+    assertEq((markup.match(/<li /g) || []).length, ROSTER.length + 1, 'the rows themselves stay, so All projects is one click back');
   });
 
-  await test('all-projects mode carries the checkbox subset below a divider, checked to what is in force', () => {
+  await test('a box rides every row while the board is the whole one, or a subset of it', () => {
     const all = sidebar.menuMarkup(mkState({ repos: ROSTER }));
-    assert(all.includes('<hr class="dropdown-divider"/>'), 'the filter is separated from the entries above it');
     assert(all.includes('data-tower-scope-slug="workkit"') && all.includes('data-tower-scope-slug="omega"'), 'a box per repo');
-    assertEq((all.match(/ checked/g) || []).length, 2, 'no selection means every repo is in play, and every box says so');
-    assert(all.includes('<label class="form-check-label omega-micro" for="tower-scope-0">workkit</label>'), 'each box carries its name, tied to it');
+    assert(all.includes('data-tower-scope-all'), 'and the master box on the row above them');
+    assertEq((all.match(/ checked/g) || []).length, 3, 'every repo is in play, and every box says so - the master with them');
+    assert(!all.includes('data-tower-indeterminate'), 'nothing is half-selected when everything is selected');
+    assert(all.includes('aria-label="Include workkit"'), 'each box names what ticking it does - the name beside it is a button, not its label');
 
     const subset = sidebar.menuMarkup(mkState({ repos: [...ROSTER, { slug: 'dotfiles', path: '/repos/dotfiles' }] }, 'workkit,omega'));
-    assert(/class="dropdown-item active" data-tower-scope=""/.test(subset), 'All stays the active entry — a subset is the whole board, narrowed');
+    assert(/flex-grow-1 active" data-tower-scope=""/.test(subset), 'All stays the active row - a subset is the whole board, narrowed');
     assertEq((subset.match(/ checked/g) || []).length, 2, 'exactly the two the URL names');
     assert(/data-tower-scope-slug="dotfiles"(?![^>]* checked)/.test(subset), 'the repo left out is unchecked');
+    assert(/data-tower-scope-all[^>]* data-tower-indeterminate/.test(subset), 'and the master row is neither on nor off, which the runtime sets as the property');
+  });
+
+  await test('the master box says what the boxes under it say, whatever the URL names', () => {
+    // A shared `?repo=` can name every repo on the roster - a "subset" that is
+    // the whole board. Half-ticking the master there would be a lie about rows
+    // that are all ticked.
+    const whole = sidebar.menuMarkup(mkState({ repos: ROSTER }, 'workkit,omega'));
+    assert(!whole.includes('data-tower-indeterminate'), 'a subset naming every repo leaves nothing out');
+    assert(/data-tower-scope-all[^>]* checked/.test(whole), 'so the master is ticked, like every row under it');
+    assertEq((whole.match(/ checked/g) || []).length, 3, 'and the rows are ticked too');
+
+    // The other end: a link naming only repos this machine no longer carries.
+    // No row is ticked, so the master is neither ticked nor half-ticked.
+    const gone = sidebar.menuMarkup(mkState({ repos: ROSTER }, 'gone/away,also/gone'));
+    assertEq((gone.match(/ checked/g) || []).length, 0, 'nothing on the roster is in play');
+    assert(!gone.includes('data-tower-indeterminate'), 'and half-ticked would claim something is');
   });
 
   await test('the selector button says which of the three modes is in force', () => {
@@ -2153,8 +2173,8 @@ const run = async () => {
     assertEq(one.env, '1 of 2 repos', 'against the roster it was picked out of');
 
     const many = sidebar.selectorLabel(mkState({ repos: [...ROSTER, { slug: 'dotfiles', path: '/x' }] }, 'workkit,omega'));
-    assertEq(many.name, '2 projects', 'a subset is counted, not listed');
-    assertEq(many.env, '2 of 3 repos', 'against the same roster');
+    assertEq(many.name, '2 of 3 projects', 'a subset says its own arithmetic on the trigger (#168), never All projects');
+    assertEq(many.env, '1 hidden', 'and the line under it says the half the count leaves out');
 
     const unread = sidebar.selectorLabel(mkState({}));
     assertEq(unread.name, 'All projects', 'before the roster answers the button is not blank');
@@ -2162,10 +2182,23 @@ const run = async () => {
 
     // A shared link can name a repo the roster no longer carries. Every page
     // narrows to nothing then, and the button NAMING that slug is what explains
-    // the empty board — reading "All projects" there would be a lie.
+    // the empty board - reading "All projects" there would be a lie.
     const offRoster = sidebar.selectorLabel(mkState({ repos: ROSTER }, 'gone/away'));
     assertEq(offRoster.name, 'gone/away', 'an off-roster selection is still the selection');
     assertEq(offRoster.env, '1 of 2 repos', 'counted against the roster it is not on');
+  });
+
+  await test('a subset never counts against a roster that cannot answer for it', () => {
+    // Two ways the raw selection outruns the roster, and neither of them may
+    // put a negative number on the button.
+    const early = sidebar.selectorLabel(mkState({}, 'workkit,omega'));
+    assertEq(early.name, '2 projects', 'before the roster answers, the count of what was chosen is all there is to say');
+    assert(!/\d/.test(early.env), 'and the line under it counts nothing it has not read');
+
+    const stale = sidebar.selectorLabel(mkState({ repos: ROSTER }, 'workkit,omega,gone/away'));
+    assertEq(stale.name, '3 projects', 'a link naming more repos than the roster carries is still 3 chosen, never 3 of 2');
+    assertEq(stale.env, 'all 2 repos on the roster', 'with nothing hidden behind it - the board is showing every repo it has');
+    for (const label of [early, stale]) assert(!label.env.includes('-') && !label.name.includes('-'), 'and no line goes negative');
   });
 
   await test('the menu is rewritten for the selection and the roster, and for nothing a poll does', () => {
@@ -2183,7 +2216,7 @@ const run = async () => {
     assert(markup.includes('&quot;&gt;&lt;img src=x&gt;'), 'it is drawn as the text it is');
   });
 
-  group('tower/app: api — the feed adapter');
+  group('tower/app: api - the feed adapter');
 
   // The one translation the runtime leans on: the tower's four-key result
   // shape into the framework poller's fetcher contract (resolve with the body,
@@ -2215,7 +2248,7 @@ const run = async () => {
   });
 
   await test('the fetcher composes fetchFeed and the unwrap, both ways', async () => {
-    // Node ships its own global fetch and the suites share one process —
+    // Node ships its own global fetch and the suites share one process -
     // restore it, never delete it.
     const realFetch = globalThis.fetch;
     let body;
@@ -2239,7 +2272,7 @@ const run = async () => {
     assertEq(thrown && thrown.code, 200, 'with the HTTP status it arrived under');
   });
 
-  group('tower/app: api — live versus published');
+  group('tower/app: api - live versus published');
 
   await test('an origin is taken from the query first, then the console hatch', () => {
     assertEq(api.apiOverride('http://tower.example/board?api=http://box:8693/', {}), 'http://box:8693', 'the query wins, trailing slash trimmed');
@@ -2271,35 +2304,35 @@ const run = async () => {
     assertEq(api.LIVE, false, 'which is what the module itself decided under the stubs above');
   });
 
-  await test('a published page arms no feeds at all — zero doomed requests', () => {
+  await test('a published page arms no feeds at all - zero doomed requests', () => {
     // The runtime gates on `LIVE`, never on the size of this table: a live page
     // is allowed to declare no feeds, and must not be mistaken for a published
     // one. The table is emptied here as well so that nothing is armed even if a
     // caller reaches it in published mode.
     assertEq(Object.keys(api.pageFeeds(['repos', 'board'], false)).length, 0, 'nothing for the poller to poll');
-    assertEq(Object.keys(api.pageFeeds([], true)).length, 0, 'and a live page declaring none is empty too — which is why the mode is read from the flag');
+    assertEq(Object.keys(api.pageFeeds([], true)).length, 0, 'and a live page declaring none is empty too - which is why the mode is read from the flag');
   });
 
   await test('a live page arms exactly the feeds it asked for, each with its path', () => {
     const feeds = api.pageFeeds(['repos', 'board'], true);
     assertEq(Object.keys(feeds).join(','), 'repos,board', 'those two');
     assertEq(feeds.board.path, '/api/board', 'with the API path written here and nowhere else');
-    assertEq(feeds.board.every, 60000, 'and the board\'s slower cadence — a gh sweep is expensive');
+    assertEq(feeds.board.every, 60000, 'and the board\'s slower cadence - a gh sweep is expensive');
   });
 
-  group('tower/app: api — the board’s drop, as a payload');
+  group('tower/app: api - the board’s drop, as a payload');
 
   const CARD = { repo: 'ITW/workkit', number: 48, status: 'specced' };
 
   await test('a drop on another column becomes the endpoint’s four fields', () => {
     assertEq(JSON.stringify(api.moveRequest(CARD, 'blocked', true)),
       '{"repo":"ITW/workkit","number":48,"from":"specced","to":"blocked"}',
-      'where it came from rides along — the move removes one label and adds the other');
+      'where it came from rides along - the move removes one label and adds the other');
   });
 
   await test('the six columns that are a status are the only ones a card moves between', () => {
     assertEq(api.MOVABLE_STATUSES.join(','), 'inbox,specced,building,blocked,backlog,qa', 'the pipeline, from the column list itself');
-    assertEq(api.moveRequest(CARD, '', true), null, 'the absence of a label is not a destination — nothing on the board names it');
+    assertEq(api.moveRequest(CARD, '', true), null, 'the absence of a label is not a destination - nothing on the board names it');
     assertEq(api.moveRequest({ ...CARD, status: null }, 'inbox', true), null, 'and an issue triage has not reached has no label to remove');
     assertEq(api.moveRequest(CARD, 'shipped', true), null, 'a status the pipeline does not name is not one');
   });
@@ -2308,7 +2341,7 @@ const run = async () => {
     assertEq(api.moveRequest(CARD, 'specced', true), null, 'nothing to write');
   });
 
-  await test('starting work is a drop like any other — specced to building is a payload', () => {
+  await test('starting work is a drop like any other - specced to building is a payload', () => {
     assertEq(JSON.stringify(api.moveRequest(CARD, 'building', true)),
       '{"repo":"ITW/workkit","number":48,"from":"specced","to":"building"}',
       'the flip that puts an issue in flight');
@@ -2317,18 +2350,18 @@ const run = async () => {
       'and a card leaves the Building column the same way');
   });
 
-  await test('a LOCKED copy produces no move at all — a write needs the token it has not been given', () => {
+  await test('a LOCKED copy produces no move at all - a write needs the token it has not been given', () => {
     assertEq(api.moveRequest(CARD, 'blocked', false), null, 'the gate is the payload’s, so no page can forget it');
     assertEq(api.moveRequest(CARD, 'blocked'), null, 'and the default is the module’s own mode, which is locked under these stubs');
     assertEq(api.WRITABLE, false, 'which is exactly what WRITABLE says');
-    assert(!api.LIVE, 'and it is not the tower question — a published copy with a token writes too');
+    assert(!api.LIVE, 'and it is not the tower question - a published copy with a token writes too');
   });
 
   await test('a drop carrying no issue is nothing, never a request with holes in it', () => {
     assertEq(api.moveRequest(null, 'blocked', true), null, 'a key the paint no longer knows');
   });
 
-  await test('the move is POSTed to the status endpoint as JSON — the page names no URL', async () => {
+  await test('the move is POSTed to the status endpoint as JSON - the page names no URL', async () => {
     const realFetch = globalThis.fetch;
     let seen = null;
     let answer;
@@ -2350,23 +2383,23 @@ const run = async () => {
   const fs = require('fs');
 
   await test('the intake dialog is inert only where it has nothing to write with', () => {
-    // A locked copy off this machine needs a TOKEN, not a tower — telling it
+    // A locked copy off this machine needs a TOKEN, not a tower - telling it
     // "live data needs a local tower" sends the one viewer who can fix it after
     // the wrong thing. An unlocked one files for real, with the same token it
-    // reads with. (On localhost the tower IS the answer — the test below.)
+    // reads with. (On localhost the tower IS the answer - the test below.)
     assert(format.LOCKED_NOTICE.includes('token'), 'the locked sentence asks for the token');
     assert(!format.LOCKED_NOTICE.includes('npm run tower'), 'and does not send a viewer to install a tower');
     assert(!/read-only/.test(format.LOCKED_NOTICE), 'and no longer calls the token read-only');
-    assertEq(format.READ_ONLY_NOTICE, undefined, 'the read-only sentence is gone — nothing it described is true any more');
+    assertEq(format.READ_ONLY_NOTICE, undefined, 'the read-only sentence is gone - nothing it described is true any more');
     const src = fs.readFileSync(path.join(libs, 'intake.js'), 'utf8');
     assert(/if \(!WRITABLE\)[\s\S]{0,80}disableIntake\(dialog\)/.test(src), 'only a copy that cannot write is disabled');
     assert(/lockedIntakeNotice\(location\.hostname\)/.test(src) && !/readOnlyNotice/.test(src),
-      'and the sentence left is the locked one — which host it is said on is token.js’s fork (#89)');
+      'and the sentence left is the locked one - which host it is said on is token.js’s fork (#89)');
     assert(/submitIntake\(payload\)/.test(src), 'the submit goes through the mode-aware write, never a tower URL');
     assert(/readAnyFeed\('\/api\/repos'\)/.test(src), 'and the roster is read from whichever half is talking');
   });
 
-  await test('the write paths follow the MODE — a tower is POSTed to, a published copy writes GitHub itself', () => {
+  await test('the write paths follow the MODE - a tower is POSTed to, a published copy writes GitHub itself', () => {
     const src = fs.readFileSync(path.join(libs, 'api.js'), 'utf8');
     assert(/WRITABLE = MODE !== 'locked'/.test(src), 'everything but a locked copy can write');
     assert(/moveIssueStatus\(move, githubContext\(\)\)[\s\S]{0,120}postJson\('\/api\/issues\/status', move\)/.test(src),
@@ -2375,7 +2408,7 @@ const run = async () => {
       'and so does the intake');
   });
 
-  group('tower/app: github — the token this browser holds');
+  group('tower/app: github - the token this browser holds');
 
   // A stand-in for localStorage: the two methods the module uses, and a way to
   // make a browser that refuses storage entirely.
@@ -2390,7 +2423,7 @@ const run = async () => {
     };
   };
 
-  await test('the token is read, written and forgotten in one place — localStorage, and nowhere else', () => {
+  await test('the token is read, written and forgotten in one place - localStorage, and nowhere else', () => {
     const storage = mkStorage();
     assertEq(github.readToken(storage), '', 'a fresh browser holds none');
     github.writeToken(storage, '  fake-token-for-tests  ');
@@ -2433,7 +2466,7 @@ const run = async () => {
     assertEq(github.readToken(storage), '', 'and the old one is gone rather than left in place');
   });
 
-  group('tower/app: github — the wire');
+  group('tower/app: github - the wire');
 
   /** A fetch stub: what it was called with, and what it answers. */
   const mkFetch = (answer) => {
@@ -2447,7 +2480,7 @@ const run = async () => {
   };
   const jsonResponse = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
 
-  await test('with no token nothing is sent at all — the refusal comes before the request', async () => {
+  await test('with no token nothing is sent at all - the refusal comes before the request', async () => {
     const fetchImpl = mkFetch(() => { throw new Error('a request was made'); });
     const answer = await github.graphql('query {}', { token: '', fetch: fetchImpl });
     assertEq(answer.ok, false, 'refused');
@@ -2471,7 +2504,7 @@ const run = async () => {
     assert(/refused the token/.test(refused.reason) && /Hand over one/.test(refused.reason), `it names the token and the fix, got: ${refused.reason}`);
 
     const forbidden = await github.graphql('q', { token: 't', fetch: mkFetch(jsonResponse(403, {})) });
-    assert(/refused the token/.test(forbidden.reason), 'a 403 is the same story — the token does not cover these repos');
+    assert(/refused the token/.test(forbidden.reason), 'a 403 is the same story - the token does not cover these repos');
 
     const down = await github.graphql('q', { token: 't', fetch: mkFetch(() => { throw new Error('network down'); }) });
     assertEq(down.status, null, 'a transport failure has no status');
@@ -2482,7 +2515,7 @@ const run = async () => {
     assertEq(empty.reason, 'Bad query', 'and GitHub’s own sentence is the reason');
   });
 
-  await test('data AND errors together is a success — one bad repo does not blank the board', async () => {
+  await test('data AND errors together is a success - one bad repo does not blank the board', async () => {
     const answer = await github.graphql('q', {
       token: 't',
       fetch: mkFetch(jsonResponse(200, { data: { r0: {}, r1: null }, errors: [{ path: ['r1'], message: 'Could not resolve' }] })),
@@ -2491,7 +2524,7 @@ const run = async () => {
     assertEq(answer.errors.length, 1, 'with the error for the caller to hang on its repo');
   });
 
-  group('tower/app: github — the sweep is the tower’s own');
+  group('tower/app: github - the sweep is the tower’s own');
 
   const apiBoard = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'board.js'));
   const apiBrief = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'brief.js'));
@@ -2544,7 +2577,7 @@ const run = async () => {
             url: 'https://github.com/ITW-Creative-Works/workkit/issues/83',
             // The cross-org fallback as it is really written: a markdown
             // bullet around the label (#103). The edge points outside the
-            // sweep, so it is carried and never acted on — this item leads
+            // sweep, so it is carried and never acted on - this item leads
             // nextUp once #82 is demoted behind its open blocker.
             body: 'the spec\n\n- Depends on: Omega-JS-Stack/omega#144\n',
             createdAt: '2026-07-27T09:00:00Z',
@@ -2555,7 +2588,7 @@ const run = async () => {
             blockedBy: { nodes: [] },
           }],
         },
-        // What the day CLOSED (issue #55) — two inside the 24-hour window and
+        // What the day CLOSED (issue #55) - two inside the 24-hour window and
         // two outside it, so every comparison over this fixture is made against
         // a real number rather than against two zeros that would agree whatever
         // either side counted.
@@ -2616,7 +2649,7 @@ const run = async () => {
     assertEq(keys(fromBrowser.issues[1]), 'owner/gone#7,ITW-Creative-Works/workkit#81',
       'the unreadable-repo edge is carried whole, the closed one is satisfied, and the edge written both ways is one edge');
     assertEq(keys(fromBrowser.issues[2]), 'Omega-JS-Stack/omega#144',
-      'a bulleted Depends on: line is the same line — issue bodies are markdown');
+      'a bulleted Depends on: line is the same line - issue bodies are markdown');
     assertEq(keys(fromBrowser.issues[1]), keys(fromTower.issues[1]), 'and the tower reads it identically');
     assertEq(keys(fromBrowser.issues[2]), keys(fromTower.issues[2]), 'on every issue');
   });
@@ -2661,13 +2694,13 @@ const run = async () => {
     assertEq(fetchImpl.calls.length, 0, 'and nothing went out');
   });
 
-  group('tower/app: github — the roster, the brief and the summaries');
+  group('tower/app: github - the roster, the brief and the summaries');
 
   await test('the baked list is names only, and junk in it is dropped', () => {
     const parsed = github.parseSlugs({ repos: ['owner/workkit', 'nope', 42, null], home: 'owner/workkit' });
     assertEq(parsed.repos.map((repo) => repo.slug).join(','), 'owner/workkit', 'only what is shaped like a slug');
     assertEq(parsed.repos[0].name, 'workkit', 'named the way the roster names a repo');
-    assertEq(parsed.repos[0].path, '', 'with no path — a published copy has no machine under it');
+    assertEq(parsed.repos[0].path, '', 'with no path - a published copy has no machine under it');
     assertEq(parsed.home, 'owner/workkit', 'and the home repo is named');
     assertEq(github.parseSlugs(null).home, '', 'nothing at all parses to nothing, never undefined');
   });
@@ -2685,7 +2718,7 @@ const run = async () => {
     assert(/404/.test(answer.reason) && /Not Found/.test(answer.reason), `and GitHub’s own sentence survives, got: ${answer.reason}`);
   });
 
-  await test('the roster is never read without a token — the list is private', async () => {
+  await test('the roster is never read without a token - the list is private', async () => {
     const fetchImpl = mkFetch((url) => (url === 'data/home.json'
       ? jsonResponse(200, { home: 'owner/workkit' })
       : jsonResponse(200, { repos: ['owner/workkit'], home: 'owner/workkit' })));
@@ -2702,11 +2735,11 @@ const run = async () => {
     const theirs = apiBrief.buildBrief(board, {}, [], stamp);
     // `summaries` and `history` are ATTACHED after the build on the tower's
     // side (server.js) and inside it here, so they are the two keys the
-    // comparison lifts out — everything buildBrief itself decides is compared.
+    // comparison lifts out - everything buildBrief itself decides is compared.
     assertEq(JSON.stringify({ ...mine, summaries: undefined, history: undefined }), JSON.stringify(theirs),
       'the same sections, the same order, the same headline');
     assertEq(mine.nextUp[0].items.map((i) => i.number).join(','), '83,82',
-      'the blocked item would lead on status, so this order EXISTS only because demotion ran — on both sides');
+      'the blocked item would lead on status, so this order EXISTS only because demotion ran - on both sides');
     assertEq(mine.nextUp[0].items[1].waitsOn.join(','), 'ITW-Creative-Works/workkit#81',
       'the item waiting on an issue the sweep is carrying says so (#103)');
     assertEq(mine.nextUp[0].items[0].waitsOn.length, 0,
@@ -2745,7 +2778,7 @@ const run = async () => {
     fs.rmSync(home, { recursive: true, force: true });
     assertEq(JSON.stringify(mine), JSON.stringify(theirs), 'one series, whichever side read it');
 
-    // And the read the browser makes asks for the body the line lives in — the
+    // And the read the browser makes asks for the body the line lives in - the
     // summaries query does not, which is why this is a second document.
     const fetchImpl = mkFetch(jsonResponse(200, { data: { repository: { discussions: { nodes } } } }));
     const answer = await github.fetchHistory('owner/private-home', { token: 't', fetch: fetchImpl });
@@ -2778,7 +2811,7 @@ const run = async () => {
 
   await test('a site with no home repo has nowhere to read summaries from, and says so', async () => {
     const answer = await github.fetchSummaries('', { token: 't', fetch: mkFetch(() => { throw new Error('a request was made'); }) });
-    assertEq(answer.ok, false, 'not a failure of the read — a fact about the publish');
+    assertEq(answer.ok, false, 'not a failure of the read - a fact about the publish');
     assert(/without a home repo/.test(answer.reason), `named as such, got: ${answer.reason}`);
     assertEq(answer.items.length, 0, 'and no items');
   });
@@ -2807,17 +2840,17 @@ const run = async () => {
     assert(asked > 5, `the read window is wide enough to filter from, got ${asked}`);
   });
 
-  group('tower/app: github — the one door');
+  group('tower/app: github - the one door');
 
   /** Where the roster is read from: the home repo's default branch, through the API. */
   const ROSTER_URL = 'https://api.github.com/repos/owner/workkit/contents/data/repos.json?ref=main';
 
-  /** Whether a URL is the roster read — the one call the private list costs. */
+  /** Whether a URL is the roster read - the one call the private list costs. */
   const isRoster = (url) => url.startsWith('https://api.github.com/') && url.includes('contents/data/repos.json');
 
   /**
    * A fetch that answers the home pointer from the site, the roster from the
-   * home repo, and everything else from GraphQL — the three reads a published
+   * home repo, and everything else from GraphQL - the three reads a published
    * page makes (issue #110).
    */
   const mkSiteFetch = (list, graphqlBody) => mkFetch((url) => {
@@ -2829,16 +2862,16 @@ const run = async () => {
   await test('the roster feed is the private list, read from the home repo with the viewer’s token', async () => {
     // Issue #110: the site publishes only which repo is the home. The list of
     // repositories is on that repo's default branch, and reading it is an
-    // authenticated call — nothing about the board's coverage is public.
+    // authenticated call - nothing about the board's coverage is public.
     const fetchImpl = mkSiteFetch({ repos: ['owner/workkit'], home: 'owner/workkit' }, {});
     const answer = await github.readFeed('/api/repos', { token: 'fake-token-for-tests', fetch: fetchImpl });
     assertEq(answer.ok, true, 'answered');
     assertEq(answer.data[0].slug, 'owner/workkit', 'the roster, in the shape every page reads');
     assertEq(fetchImpl.calls.length, 2, 'the pointer and the list, and no GraphQL at all');
     assertEq(fetchImpl.calls[0].url, 'data/home.json', 'the only file published beside the pages');
-    assert(!fetchImpl.calls[0].options.headers.authorization, 'read unauthenticated — it says what the site’s own URL says');
+    assert(!fetchImpl.calls[0].options.headers.authorization, 'read unauthenticated - it says what the site’s own URL says');
     assertEq(fetchImpl.calls[1].url, ROSTER_URL,
-      'and the list from the home repo’s default branch — `main` here, which is what a pointer naming no branch falls back to (issue #112)');
+      'and the list from the home repo’s default branch - `main` here, which is what a pointer naming no branch falls back to (issue #112)');
     assertEq(fetchImpl.calls[1].options.headers.authorization, 'Bearer fake-token-for-tests', 'with the viewer’s token, because the list is private');
     assertEq(fetchImpl.calls[1].options.headers.accept, 'application/vnd.github.raw+json', 'asked for raw, so the answer is the file itself');
     assert(!fetchImpl.calls.some((call) => call.url === 'data/repos.json'), 'and never from the published site');
@@ -2917,13 +2950,13 @@ const run = async () => {
       assertEq(answer.status, 401, `${feedPath} carries the status GitHub refused it with`);
       assert(github.isTokenRefusal(answer), `and ${feedPath} reads as a token refusal`);
     }
-    assert(github.isTokenRefusal(await github.readFeed('/api/board', { token: 'narrow', fetch: refuse(403) })), 'a 403 is the same answer — the token does not cover these repos');
+    assert(github.isTokenRefusal(await github.readFeed('/api/board', { token: 'narrow', fetch: refuse(403) })), 'a 403 is the same answer - the token does not cover these repos');
     const down = await github.readFeed('/api/board', { token: 't', fetch: refuse(500) });
     assert(!github.isTokenRefusal(down), 'a server failure is not the token’s fault and must not ask for a new one');
     assert(!github.isTokenRefusal({ ok: true, status: 200 }), 'and neither is a read that worked');
 
     // The roster read is the FIRST thing the token is asked for (issue #110), so
-    // a token that cannot see the home repo has to reach the prompt too — not
+    // a token that cannot see the home repo has to reach the prompt too - not
     // read as a site published without a list.
     const blindRoster = mkFetch((url) => (url === 'data/home.json'
       ? jsonResponse(200, { home: 'owner/workkit' })
@@ -2932,7 +2965,7 @@ const run = async () => {
     assert(github.isTokenRefusal(unread), `a token that cannot read the roster is a token refusal, got: ${unread.reason}`);
   });
 
-  await test('the refusal names the fix that exists — there is no form under it', async () => {
+  await test('the refusal names the fix that exists - there is no form under it', async () => {
     const answer = await github.graphql('query {}', {
       token: 'expired',
       fetch: async () => jsonResponse(401, { message: 'Bad credentials' }),
@@ -2948,14 +2981,14 @@ const run = async () => {
     assert(/published copy can read/.test(answer.reason), `and says so, got: ${answer.reason}`);
   });
 
-  group('tower/app: github — the two writes');
+  group('tower/app: github - the two writes');
 
   // The tower's own source is the reference for both writes: the published site
   // must relabel and file exactly what the endpoint on the machine does, and
   // the two live on opposite sides of the copy boundary (issue #77).
   const serverSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'api', 'server.js'), 'utf8');
 
-  await test('the browser writes the endpoint’s own move — the old status off, the new one on, nothing else touched', () => {
+  await test('the browser writes the endpoint’s own move - the old status off, the new one on, nothing else touched', () => {
     assertEq(
       github.nextLabels([{ name: 'status:specced' }, { name: 'type:enhancement' }, { name: 'priority:high' }], 'specced', 'building').join(','),
       'type:enhancement,priority:high,status:building',
@@ -2978,7 +3011,7 @@ const run = async () => {
     }, { token: 'fake-token-for-tests', fetch: fetchImpl });
 
     assertEq(fetchImpl.calls.length, 2, 'the labels the issue carries now, then the one write');
-    assertEq(fetchImpl.calls[0].url, 'https://api.github.com/repos/ITW/workkit/issues/48', 'read from the issue itself — the board’s copy is up to a minute old');
+    assertEq(fetchImpl.calls[0].url, 'https://api.github.com/repos/ITW/workkit/issues/48', 'read from the issue itself - the board’s copy is up to a minute old');
     assertEq(fetchImpl.calls[0].options.method, 'GET', 'a read');
     assertEq(fetchImpl.calls[1].url, 'https://api.github.com/repos/ITW/workkit/issues/48', 'and the write is the same resource');
     assertEq(fetchImpl.calls[1].options.method, 'PATCH', 'one call, so the issue is never unlabelled nor twice-labelled');
@@ -3018,7 +3051,7 @@ const run = async () => {
         return jsonResponse(401, { message: 'Bad credentials' });
       }),
     });
-    assert(/expired/.test(expired.reason), `a 401 is the other story — the token itself, got: ${expired.reason}`);
+    assert(/expired/.test(expired.reason), `a 401 is the other story - the token itself, got: ${expired.reason}`);
     assert(github.isTokenRefusal(expired), 'which the runtime answers with the prompt');
   });
 
@@ -3087,7 +3120,7 @@ const run = async () => {
     assert(serverSrc.includes('the issue is already status:'), 'and so is the refusal of a move that is not one');
   });
 
-  await test('intake files the issue the endpoint files — same labels, same default body', async () => {
+  await test('intake files the issue the endpoint files - same labels, same default body', async () => {
     const fetchImpl = mkSiteFetch({ repos: ['owner/workkit'], home: 'owner/workkit' },
       { html_url: 'https://github.com/owner/workkit/issues/12' });
     const answer = await github.createIssue({ repo: 'OWNER/Workkit', title: '  a thought  ', body: '' }, { token: 'fake-token-for-tests', fetch: fetchImpl });
@@ -3123,7 +3156,7 @@ const run = async () => {
       'and every refusal came before GitHub was written to');
   });
 
-  group('tower/app: api — the three modes');
+  group('tower/app: api - the three modes');
 
   await test('a tower outranks everything, and the token decides the rest', () => {
     assertEq(api.decideMode('development', '', false), 'tower', 'a dev build reads the machine’s API');
@@ -3131,33 +3164,97 @@ const run = async () => {
     assertEq(api.decideMode('production', '', true), 'github', 'a published copy with a token reads GitHub itself');
     assertEq(api.decideMode('production', '', false), 'locked', 'and without one it has nothing to show but the prompt');
     assertEq(api.MODE, 'locked', 'which is what the module itself decided under the stubs above');
-    assertEq(api.LIVE, false, 'LIVE stays the question of a TOWER — WRITABLE is the flag every write gates on');
+    assertEq(api.LIVE, false, 'LIVE stays the question of a TOWER - WRITABLE is the flag every write gates on');
   });
 
   await test('a published page arms only the feeds GitHub can answer', () => {
     const feeds = api.githubPageFeeds(['repos', 'board', 'sessions', 'health', 'telemetry']);
     assertEq(Object.keys(feeds).join(','), 'repos,board', 'the machine-bound three are simply absent');
-    assertEq(feeds.board.every, 60000, 'and the sweep keeps the board’s cadence — a GraphQL sweep is expensive');
+    assertEq(feeds.board.every, 60000, 'and the sweep keeps the board’s cadence - a GraphQL sweep is expensive');
     assertEq(Object.keys(api.githubPageFeeds(['brief'])).join(','), 'brief', 'the brief is one of the three it can');
   });
 
-  group('tower/app: token — the prompt that unlocks a published copy');
+  group('tower/app: token - the card the Settings page owns');
 
-  await test('the prompt says what to make, links where to make it, and hides what is typed', () => {
-    const markup = token.tokenPrompt();
+  // The card as the two listeners see it: a form carrying the field and, where
+  // there is a token to forget, the Clear button. Exactly the nodes
+  // `mountTokenCard` reaches for and nothing else - what the card LOOKS like is
+  // the markup tests above, and a browser's answer besides.
+  const mkCardHost = (options = {}) => {
+    const input = {
+      value: options.value || '', focused: 0, focus() { input.focused += 1; },
+    };
+    const clear = options.clear === false ? null : {
+      listeners: [],
+      addEventListener: (type, fn) => clear.listeners.push({ type, fn }),
+      fire: () => clear.listeners.forEach((one) => one.fn()),
+    };
+    const form = {
+      listeners: [],
+      addEventListener: (type, fn) => form.listeners.push({ type, fn }),
+      querySelector: (sel) => {
+        if (sel === '[data-token-input]') return input;
+        if (sel === '[data-token-clear]') return clear;
+        return null;
+      },
+    };
+    const host = { querySelector: (sel) => (sel === '[data-token-form]' ? form : null) };
+    return {
+      host,
+      form,
+      input,
+      clear,
+      submit: () => form.listeners.forEach((one) => one.fn({ preventDefault: () => {} })),
+    };
+  };
+
+  await test('the card takes a token, hides what is typed, and links where to make one', () => {
+    const markup = token.tokenCard();
     assert(markup.includes(`href="${github.TOKEN_URL}"`), 'the creation page is one click away');
+    assert(markup.includes('type="password"'), 'the field does not display the token');
+    assert(markup.includes('<label class="form-label" for="tower-token-input">'), 'the field carries a real label');
+    assert(markup.includes('localStorage'), 'and it says where the token is kept');
+    assert(markup.includes('data-token-save'), 'with the save that stores it');
+    assert(!token.tokenCard().includes('data-token-problem'), 'a first visit is not an error state');
+    assert(token.tokenCard({ problem: 'the token was refused' }).includes('the token was refused'),
+      'and a refusal is shown when there is one');
+  });
+
+  await test('the clear button is drawn only where there is a token to forget', () => {
+    // The chrome's Token button, moved (#167): same rule, same reload behind
+    // it, on the page that also types the replacement.
+    const held = token.tokenCard({ held: true });
+    assert(held.includes('data-token-clear'), 'a browser holding one can forget it');
+    assert(held.includes('This browser holds a token.'), 'and is told that it holds one');
+    const none = token.tokenCard();
+    assert(!none.includes('data-token-clear'), 'a browser holding none has nothing to forget');
+    assert(none.includes('This browser holds no token yet.'), 'and is told that too');
+    assert(none.includes('data-token-input'), 'the field is on both - replacing a token is typing the next one');
+  });
+
+  await test('the guidance names the fine-grained permissions AND the classic token a two-owner board needs', () => {
+    const markup = token.tokenGuidance();
     assert(markup.includes('Issues: Read and write'), 'it names the permissions, and the board moves cards, so writing issues is one');
     assert(markup.includes('Contents: Read'), 'and the one read that is not an issue: the private roster on the home repo (issue #110)');
     assert(!/admin|workflow/i.test(markup), 'and asks for nothing beyond that');
-    assert(markup.includes('type="password"'), 'the field does not display the token');
-    assert(markup.includes('localStorage'), 'and it says where the token is kept');
-    assert(!token.tokenPrompt().includes('data-token-problem'), 'a first visit is not an error state');
-    assert(token.tokenPrompt('the token was refused').includes('the token was refused'), 'and a refusal is shown when there is one');
+    // A fine-grained token belongs to ONE resource owner, so a board spanning
+    // two cannot be read by one at all (#167) - the page says which token can.
+    assert(markup.includes('classic token with the repo scope'), 'the other kind is named');
+    assert(/two owners/.test(markup), 'with the one case that requires it');
+    assert(markup.includes(`href="${format.esc(github.TOKEN_CLASSIC_URL)}"`), 'and a link that makes one with the scope already ticked');
+    assert(github.TOKEN_CLASSIC_URL.includes('scopes=repo'), 'which is the repo scope and nothing wider');
+  });
+
+  await test('a copy with a TOWER behind it is told the token is not its credential', () => {
+    const note = token.towerTokenNote();
+    assert(/tower API on this machine/.test(note), 'the machine holds the gh login');
+    assert(/needs no token of its own/.test(note), 'so this copy needs nothing typed');
+    assert(/published copy/.test(note), 'and what is saved here is for the copy that does');
   });
 
   await test('a locked copy on this machine is told the tower is down, and is never asked for a token', () => {
     // The bug (#89): a locked page served from localhost asked for a GitHub
-    // token, which a local dashboard has no use for — the tower API holds the
+    // token, which a local dashboard has no use for - the tower API holds the
     // `gh` login. The fork is on the hostname alone; the MODE is untouched.
     const markup = token.towerDownNotice('http://localhost:4300/board?repo=ITW/workkit');
     for (const hostname of ['localhost', '127.0.0.1', '[::1]']) {
@@ -3178,7 +3275,7 @@ const run = async () => {
     const url = new URL(href);
     assertEq(url.searchParams.get('api'), 'http://127.0.0.1:8693', 'pointed at the tower’s own origin');
     assertEq(url.searchParams.get('api'), api.API_BASE,
-      'which is api.js’s own default — the two copies of the origin cannot drift apart');
+      'which is api.js’s own default - the two copies of the origin cannot drift apart');
     assertEq(url.searchParams.get('repo'), 'ITW/workkit', 'and every other parameter survives');
     assertEq(url.pathname, '/board', 'on the page the viewer was already looking at');
     assertEq(new URL(token.connectHref('http://localhost:4300/?api=http://box:8693')).searchParams.getAll('api').length, 1,
@@ -3186,7 +3283,7 @@ const run = async () => {
     assert(token.towerDownNotice('http://localhost:4300/board?repo=ITW/workkit').includes(`href="${format.esc(href)}"`),
       'and the notice links to exactly that URL');
     assertEq(api.decideMode('production', 'http://127.0.0.1:8693', false), 'tower',
-      'which is the override that unlocks the page — the advice resolves the state it appears in');
+      'which is the override that unlocks the page - the advice resolves the state it appears in');
   });
 
   await test('the intake dialog tells the same story the body does, forked on the same predicate', () => {
@@ -3201,64 +3298,53 @@ const run = async () => {
       'and the empty roster forks with it, so the two halves of the dialog cannot disagree');
   });
 
-  await test('a locked copy anywhere else opens the prompt in a dialog, byte for byte', () => {
-    // Where it is drawn moved (#96) — the prompt did not. It used to be the
-    // page body and is now the layout's static modal, so the proof that it is
-    // the same prompt moved with it: what the dialog is filled with is
-    // `tokenPrompt()` itself, and the reason a refusal carries is the only
-    // thing that ever differs.
+  await test('saving stores what was typed and reads the page again with it', () => {
     for (const hostname of ['ianwieds.github.io', 'tower.example.com', '192.168.1.20']) {
       assert(!token.isLocalHost(hostname), `${hostname} is not this machine`);
     }
 
-    // The form is a stub the wiring can be read off: in the DOM every open
-    // writes fresh markup, so the listener count here is one per open.
-    const stored = [];
+    // A stub the wiring can be read off: every paint that WROTE the card mounts
+    // it once (swap returns false otherwise), so the listener count here is one
+    // per mount.
+    const wired = mkCardHost({ value: '  github_pat_TEST  ' });
+    const storage = mkStorage();
     const reloads = [];
-    const input = { value: '  github_pat_TEST  ', focus: () => {} };
-    const form = {
-      listeners: [],
-      addEventListener: (type, fn) => form.listeners.push({ type, fn }),
-      querySelector: (sel) => (sel === '[data-token-input]' ? input : null),
-    };
-    const host = { innerHTML: '', querySelector: (sel) => (sel === '[data-token-form]' ? form : null) };
-    const dialog = { querySelector: (sel) => (sel === '[data-token-body]' ? host : null) };
-    const shown = [];
-    const hidden = [];
-    const instance = { show: () => shown.push(1), hide: () => hidden.push(1) };
-    const scope = { querySelector: (sel) => (sel === `#${token.TOKEN_MODAL}` ? dialog : null) };
-    // token.js reaches for `window` only inside these calls — the same
-    // stub the api.js load above uses, held just long enough to make them.
-    globalThis.window = { bootstrap: { Modal: { getOrCreateInstance: () => instance, getInstance: () => instance } }, localStorage: { setItem: (key, value) => stored.push(value), removeItem: () => {} } };
-    const hadLocation = 'location' in globalThis ? globalThis.location : undefined;
-    globalThis.location = { reload: () => reloads.push(1) };
-    try {
-      token.openTokenModal('', scope);
-      assertEq(host.innerHTML, token.tokenPrompt(), 'the dialog is filled with the prompt, unchanged');
-      assertEq(shown.length, 1, 'and opened — nothing was clicked, so the runtime opens it');
-      assertEq(form.listeners.length, 1, 'and WIRED — the open mounts the submit, not just the markup');
-      form.listeners[0].fn({ preventDefault: () => {} });
-      assertEq(stored.join(), 'github_pat_TEST', 'submitting stores what was typed, trimmed');
-      assertEq(reloads.length, 1, 'and reads the page again with it');
-      token.openTokenModal('the token was refused', scope);
-      assertEq(form.listeners.length, 2, 'a re-present wires its fresh markup too');
-      assertEq(host.innerHTML, token.tokenPrompt('the token was refused'), 'a refusal re-presents it carrying the reason');
-      assertEq(shown.length, 2, 'through the same one door');
-      token.hideTokenModal(scope);
-      assertEq(hidden.length, 1, 'and a read that landed after all takes it away again');
+    token.mountTokenCard(wired.host, { storage, reload: () => reloads.push(1) });
+    assertEq(wired.form.listeners.length, 1, 'the submit is wired');
+    assertEq(wired.clear.listeners.length, 1, 'and so is the clear beside it');
 
-      const empty = { querySelector: () => null };
-      const warn = console.warn;
-      console.warn = () => {};
-      token.openTokenModal('', empty);
-      token.hideTokenModal(empty);
-      console.warn = warn;
-      assertEq(shown.length, 2, 'a page without the layout’s dialog is left alone rather than thrown at');
-    } finally {
-      delete globalThis.window;
-      if (hadLocation === undefined) delete globalThis.location;
-      else globalThis.location = hadLocation;
-    }
+    wired.submit();
+    assertEq(storage.held[github.TOKEN_KEY], 'github_pat_TEST', 'submitting stores what was typed, trimmed');
+    assertEq(reloads.length, 1, 'and reads the page again with it - the mode is decided at module load');
+    assertEq(github.readToken(storage), 'github_pat_TEST', 'through the one door every other reader uses');
+  });
+
+  await test('a blank save leaves the stored token alone - Clear is what forgets one', () => {
+    // The trap: `writeToken(storage, '')` IS the clear, so asking it and
+    // reacting to the empty string it hands back would already have thrown the
+    // token away. The guard is before the call.
+    const storage = mkStorage({ [github.TOKEN_KEY]: 'fake-token-for-tests' });
+    const blank = mkCardHost({ value: '   ' });
+    const reloads = [];
+    token.mountTokenCard(blank.host, { storage, reload: () => reloads.push(1) });
+
+    blank.submit();
+    assertEq(github.readToken(storage), 'fake-token-for-tests', 'what this browser holds survives an empty submit');
+    assertEq(reloads.length, 0, 'and nothing reloads, since nothing changed');
+    assertEq(blank.input.focused, 1, 'the caret goes back in the field instead');
+
+    blank.clear.fire();
+    assertEq(github.readToken(storage), '', 'the Clear button is what forgets it');
+    assertEq(reloads.length, 1, 'and that reloads - a copy with no token is a different copy');
+  });
+
+  await test('a card with nothing to forget wires only the save', () => {
+    const none = mkCardHost({ value: 'ghp_TEST', clear: false });
+    token.mountTokenCard(none.host, { storage: mkStorage(), reload: () => {} });
+    assertEq(none.form.listeners.length, 1, 'one listener, on the form');
+    const bare = { querySelector: () => null };
+    token.mountTokenCard(bare, { storage: mkStorage(), reload: () => {} });
+    assert(true, 'and markup with no form in it at all is left alone rather than thrown at');
   });
 
   await test('the layout disarms the auth gate under the framework’s CURRENT key', () => {
@@ -3270,20 +3356,81 @@ const run = async () => {
       '_layouts', 'tower', 'page.html'), 'utf8');
     assert(/client:\n  auth:\n    config:\n      policy: "disabled"/.test(layout),
       'the client blob disables the auth policy, spelled exactly as the engine reads it');
-    assert(!layout.includes('web_manager:'), 'and the retired key is gone — it resolves to nothing');
+    assert(!layout.includes('web_manager:'), 'and the retired key is gone - it resolves to nothing');
   });
 
-  await test('the layout ships that dialog, and it cannot be dismissed onto an empty page', () => {
+  await test('the layout ships no unlock dialog any more, and nothing can open one', () => {
+    // It was a modal nothing could dismiss - static backdrop, no Escape, no
+    // close button - because behind it was a page with no data and no second
+    // place to type a token. The second place is now a page (#167), so the
+    // dialog is retired rather than merely made closable.
     const layout = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src',
       '_layouts', 'tower', 'page.html'), 'utf8');
-    const start = layout.indexOf(`<div class="modal fade" id="${token.TOKEN_MODAL}"`);
-    assert(start !== -1, 'the id token.js opens is a plain Bootstrap modal in the layout — the intake dialog’s own mechanism');
-    const shell = layout.slice(start, layout.indexOf('<!-- Intake dialog.', start));
-    assert(shell.includes('data-token-body'), 'with the region the prompt is written into');
-    assert(shell.includes('data-bs-backdrop="static"') && shell.includes('data-bs-keyboard="false"'),
-      'and no way to dismiss it — behind it is a page with no data and no second place to type a token');
-    assert(!shell.includes('btn-close'), 'no close button either');
-    assert(shell.includes('aria-label="Unlock the board"'), 'the dialog names itself, since it carries no header of its own');
+    assert(!layout.includes('id="tower-unlock"'), 'the dialog is gone from the layout');
+    assert(!layout.includes('data-token-body'), 'and so is the region the prompt was written into');
+    assert(!/data-bs-backdrop="static"/.test(layout), 'no undismissable dialog is left anywhere on the page');
+    for (const dialog of ['tower-issue', 'tower-agent', 'tower-intake']) {
+      assert(layout.includes(`id="${dialog}"`), `${dialog} is untouched`);
+      assert(layout.includes('data-bs-dismiss="modal"'), 'and every dialog the layout still ships can be closed');
+    }
+    for (const name of ['token.js', 'page.js']) {
+      const source = fs.readFileSync(path.join(libs, name), 'utf8');
+      assert(!/openTokenModal|hideTokenModal|TOKEN_MODAL|tokenPrompt/.test(source), `${name} has no opener left`);
+    }
+    for (const gone of ['openTokenModal', 'hideTokenModal', 'tokenPrompt', 'mountTokenPrompt', 'TOKEN_MODAL']) {
+      assertEq(token[gone], undefined, `${gone} is retired, not merely unused`);
+    }
+  });
+
+  await test('every other page points at Settings in one line, carrying the scope', () => {
+    const line = token.settingsNotice(scope.settingsHref('workkit'));
+    assert(line.includes('href="/settings?repo=workkit"'), 'the link is the Settings page, still narrowed to the same repo');
+    assert(line.includes('>Settings</a>'), 'named by the page it goes to, never "here"');
+    assertEq((line.match(/<p/g) || []).length, 1, 'one line, not a card - there is no data on this page to dress up');
+    assert(!line.includes('data-token-input'), 'and no second field: a token is typed in one place');
+    const refused = token.settingsNotice(scope.settingsHref(''), 'the token was refused');
+    assert(refused.includes('the token was refused'), 'a refusal is carried in the same line');
+    assert(!token.settingsNotice(scope.settingsHref('')).includes('undefined'), 'and no refusal draws no reason');
+    assert(!token.settingsNotice(scope.settingsHref(''), '<img src=x>').includes('<img'), 'a hostile reason is escaped');
+  });
+
+  await test('Settings is a tower page like the other six, so the nav carries the scope onto it', () => {
+    assert(scope.SCOPED_PATHS.includes('/settings'), 'it is one of the tower’s own pages');
+    assertEq(scope.SETTINGS_PATH, '/settings', 'at the one address the runtime navigates to by itself');
+    assert(scope.isScopedPath('/settings'), 'so a sidebar link to it is rewritten');
+    assertEq(scope.settingsHref('workkit,omega'), '/settings?repo=workkit,omega', 'with the whole subset');
+    assertEq(scope.settingsHref(''), '/settings', 'and no parameter at all for every repo');
+    assertEq(scope.settingsHref(''), scope.scopedHref(scope.SETTINGS_PATH, ''), 'through the one formatter every nav link uses');
+  });
+
+  await test('the Settings page exists, is in the sidebar, and is bound to its module', () => {
+    const src = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src');
+    const page = fs.readFileSync(path.join(src, 'pages', 'settings.md'), 'utf8');
+    assert(page.includes(`permalink: ${scope.SETTINGS_PATH}`), 'the page answers at the path the runtime sends viewers to');
+    assert(page.includes('<div id="tower-settings"></div>'), 'with the mount its module draws into');
+    assert(/meta:\n  title: "Settings"/.test(page), 'and a title of its own');
+
+    const sidebar = fs.readFileSync(path.join(src, '_includes', 'backend', 'sections', 'sidebar.json'), 'utf8');
+    assert(sidebar.includes(`href: '${scope.SETTINGS_PATH}'`), 'the nav carries an entry for it');
+    assert(/label: 'Settings'/.test(sidebar), 'named the way the pointer line names it');
+
+    const module = fs.readFileSync(path.join(src, 'assets', 'js', 'pages', 'settings.js'), 'utf8');
+    assert(/mount: 'tower-settings'/.test(module), 'the module claims that mount');
+    // The option itself, not the sentence about it in the header: a page that
+    // only TALKS about being tokenless is a page the runtime routes away from.
+    assert(/^ {2}tokenless: true,$/m.test(module), 'and declares itself the page that works without a token');
+    assert(/tokenCard\(\{ held, problem: state\.tokenProblem \}\)/.test(module),
+      'it draws the card from what this browser holds and from any refusal the runtime carried');
+    assert(/mountTokenCard\(root\)/.test(module), 'and wires it after the write');
+    assert(/LIVE \? towerTokenNote\(\) : ''/.test(module), 'a copy with a tower behind it is told the token is not its credential');
+    assert(/feeds: \['repos'\]/.test(module), 'the one feed it arms is the roster the sidebar’s selector is filled from');
+  });
+
+  await test('no other page declares itself tokenless - Settings is the only one that works locked', () => {
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    for (const name of fs.readdirSync(pages).filter((file) => file.endsWith('.js') && file !== 'settings.js')) {
+      assert(!/tokenless/.test(fs.readFileSync(path.join(pages, name), 'utf8')), `${name} needs a token like every other data page`);
+    }
   });
 
   await test('nothing token-shaped is committed anywhere in the app', () => {
@@ -3301,7 +3448,7 @@ const run = async () => {
     }
   });
 
-  group('tower/app: history — the board over time');
+  group('tower/app: history - the board over time');
 
   // The pages that DRAW these charts import the framework's chart module and
   // are out of reach here (the note at the top of this file), so the logic they
@@ -3331,7 +3478,7 @@ const run = async () => {
 
   await test('the three absences are three different states, and none of them is a zero', () => {
     assertEq(history.entriesOf(withHistory(null)).length, 0, 'a null history maps to nothing');
-    assert(history.unread(withHistory(null)), 'and it is UNREAD — the read failed or there is no home repo');
+    assert(history.unread(withHistory(null)), 'and it is UNREAD - the read failed or there is no home repo');
     assert(!history.unread(withHistory([])), 'an empty list is a board with no published briefs yet, which is not the same');
     assert(!history.hasSeries(withHistory([day('2026-08-03', { open: 1 })])), 'one point is a dot claiming to be a trend');
     assert(history.hasSeries(withHistory([day('2026-08-02', { open: 2 }), day('2026-08-03', { open: 1 })])), 'two is a line');
@@ -3399,17 +3546,22 @@ const run = async () => {
     }
   });
 
-  await test('the runtime opens the dialog when locked and draws the local line when it cannot help', () => {
+  await test('a tokenless landing is sent to Settings, and Settings draws itself where it lands', () => {
     const source = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
-    // The two arms of the locked state, on token.js's one predicate: on this
-    // machine the notice IS the body (#89), and anywhere else the shell is left
-    // alone and the prompt opens over it (#96) — nothing is written to the body
-    // there, because a locked copy has no data to stand in for.
-    assert(/MODE === 'locked'[\s\S]{0,80}isLocalHost\(location\.hostname\)\) body\.innerHTML = towerDownNotice\(location\.href\)/.test(source),
-      'a locked copy on this machine is the tower-down notice, whole page');
-    assert(/isLocalHost\(location\.hostname\)[\s\S]{0,120}else openTokenModal\(\);/.test(source),
-      'and anywhere else the prompt is opened as the dialog, not written into the page');
-    assert(!/body\.innerHTML = tokenPrompt/.test(source), 'the prompt is never the body again');
+    // The three arms of the locked state, in the order the runtime asks them.
+    // Settings FIRST (#167): it is the page the token is typed on, so it draws
+    // with nothing behind it - and it is asked before the hostname fork,
+    // because a viewer who opened Settings asked for it wherever this page was
+    // served from.
+    assert(/MODE === 'locked'[\s\S]{0,600}if \(options\.tokenless\) \{\n\s+options\.render\(body, \{ feeds: \{\}, selectedRepo: selectedRepo\(\) \}\);/.test(source),
+      'a locked Settings page is rendered, with an empty state and no poller');
+    assert(/isLocalHost\(location\.hostname\)\) \{\n\s+body\.innerHTML = towerDownNotice\(location\.href\)/.test(source),
+      'a locked copy on this machine is still the tower-down notice, whole page (#89)');
+    assert(/body\.innerHTML = settingsNotice\(settingsHref\(selectedRepo\(\)\)\);\n\s+location\.replace\(settingsHref\(selectedRepo\(\)\)\);/.test(source),
+      'and anywhere else the page says where the token goes and takes the viewer there');
+    assert(/location\.replace\(/.test(source) && !/location\.assign\(/.test(source),
+      'replace, so Back does not bounce off a page that has no data either');
+    assert(!/body\.innerHTML = tokenPrompt/.test(source), 'the prompt is never the body, and no longer exists to be one');
     assert(/MODE === 'github' && options\.local[\s\S]{0,120}localOnlyNotice\(\)/.test(source), 'and a local-only page says where its data lives');
     assert(source.includes('githubPageFeeds(options.feeds)') && source.includes('githubFetcher'),
       'an unlocked copy polls GitHub through the same loop');
@@ -3417,28 +3569,29 @@ const run = async () => {
       'and a feed only the machine can answer is filled with the marked slot rather than left spinning');
   });
 
-  await test('a token GitHub refused puts the prompt back, carrying the refusal', () => {
-    // The reason used to be dumped on the page as a bare problem — on a page
-    // with no field in it. The prompt is the only place a token is typed, and
-    // `tokenPrompt(problem)` existed for exactly this and had no caller. It is
-    // the same dialog the locked copy opens (#96), over the page it was hiding.
+  await test('a token GitHub refused is carried to the page that owns the token', () => {
+    // The reason used to be dumped on the page as a bare problem - on a page
+    // with no field in it - and then into a dialog nothing could dismiss. Now
+    // it goes where a token is typed: Settings reads it off the state and puts
+    // it in its own card, and every other page shows the line that points there.
     const source = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
     assert(/isTokenRefusal/.test(source), 'the refusal is recognised by the one predicate that names it');
-    assert(/openTokenModal\(refused\.reason\)/.test(source), 'and the prompt is opened with the reason in it');
-    assert(/if \(!prompted\)/.test(source), 'once — re-filling it under a viewer mid-type would take what they typed away');
-    assert(/if \(prompted\) hideTokenModal\(\)/.test(source),
-      'and a read that lands after all takes the dialog away, since nothing a viewer does can');
+    assert(/state\.tokenProblem = refused\.reason/.test(source), 'the reason rides the state, like the selection and the re-read do');
+    assert(/if \(!options\.tokenless\) \{\n\s+swap\(body, settingsNotice\(settingsHref\(state\.selectedRepo\), refused\.reason\)\);\n\s+return;/.test(source),
+      'every other page draws the pointer line instead of its data');
+    assert(/state\.tokenProblem = '';\n\s+if \(MODE === 'github'\)/.test(source),
+      'and a paint that finds no refusal clears it, so a 403 that was a rate limit stops being said');
+    assert(/swap\(body,/.test(source),
+      'written through swap like every page body, so a read landing after all draws the page back over it');
   });
 
-  await test('an unlocked page opens no dialog at all', () => {
+  await test('nothing in the runtime opens a dialog for a token any more', () => {
     const source = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
-    // Every mention of the dialog in the runtime, in order: the import, the
-    // locked non-local arm, the refusal, and the read that clears it. A tower
-    // page and a working published one reach none of them.
-    assertEq((source.match(/openTokenModal\(/g) || []).length, 2, 'opened from the locked arm and from the refusal, nowhere else');
-    for (const call of source.split('\n').filter((line) => /openTokenModal\(/.test(line) && !line.startsWith('import'))) {
-      assert(/^\s*(else openTokenModal\(\);|openTokenModal\(refused\.reason\);)$/.test(call), `no third caller: ${call.trim()}`);
-    }
+    assert(!/openTokenModal|hideTokenModal|prompted/.test(source), 'the opener, the closer and the flag between them are gone');
+    assert(!/clearToken|safeStorage/.test(source), 'and so is the chrome’s forget - the storage is Settings’ business now');
+    assertEq((source.match(/chromeMarkup\(\)/g) || []).length, 1, 'the chrome frame is written exactly once per page');
+    assert(!/chromeKey/.test(source), 'with no key to compare, since nothing on it varies');
+    assert(!/state\.tokenMode/.test(source), 'and no flag for a button that no longer exists');
   });
 
   await test('the Overview says local-only where its machine-bound numbers would be', () => {
@@ -3455,7 +3608,7 @@ const run = async () => {
 
   await test('the Health page names a tower older than its checkout, and nothing otherwise', () => {
     // The page imports the framework, so it is out of reach of these suites
-    // (see the header) — what can be pinned is the source of the decision: the
+    // (see the header) - what can be pinned is the source of the decision: the
     // notice is drawn from BOTH commits being present and differing, which is
     // what keeps an unreadable git and a published copy silent.
     const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'health.js'), 'utf8');
@@ -3467,7 +3620,7 @@ const run = async () => {
     assert(/API started/.test(source), 'and the start time is on the page beside it');
   });
 
-  await test('the published Board drags like the local one — no read-only line left anywhere', () => {
+  await test('the published Board drags like the local one - no read-only line left anywhere', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
     assert(/draggable = \(issue\) => WRITABLE/.test(source), 'a card picks up wherever there is something to write with');
     assert(!/READ_ONLY_NOTICE|readOnlyLine/.test(source), 'and the sentence that said it could not is gone with the state it described');
@@ -3490,7 +3643,7 @@ const run = async () => {
     assert(/summaryCard\('What yesterday produced', payload\.findings\)/.test(source), 'the findings card is drawn from the key');
     assert(/summaryCard\('The week', payload\.week\)/.test(source), 'and the week from its own');
     assert(/const summaryCard = \(heading, item\) => \(item \?/.test(source),
-      'an absent or null key draws nothing at all — a brief that could not read one says less, never something untrue');
+      'an absent or null key draws nothing at all - a brief that could not read one says less, never something untrue');
     assert(/externalLink\(item\.url\)/.test(source), 'every row links to the thing it names');
   });
 
@@ -3498,17 +3651,24 @@ const run = async () => {
     // page.js reaches for `document` at import and is out of reach of these
     // suites (see the header), so what is pinned is the wiring: where the menu
     // is written, what writes it, and that the nav links are rewritten on the
-    // selection AND on every paint — the two halves of #104's promise that
+    // selection AND on every paint - the two halves of #104's promise that
     // moving Overview → Board keeps the scope.
     const source = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
     assert(/menuMarkup\(state\)/.test(source), 'the menu is markup from state, like the chrome');
     assert(/sidebarKey\(state\)/.test(source), 'and it is rewritten only when what it shows changed');
     assert(/classList\.contains\('show'\)/.test(source), 'never while the viewer has it open, unless the change came from inside it');
     assert(/#app-sidebar \.omega-side__selector/.test(source), 'written into the framework’s own selector, reached through its button');
-    assert(!/#app-sidebar ul/.test(source), 'never as a bare sidebar ul — the nav is one too');
+    assert(!/#app-sidebar ul/.test(source), 'never as a bare sidebar ul - the nav is one too');
     assert(/data-tower-projects/.test(source), 'and claimed with the one attribute the runtime marks it by');
     assert(/data-bs-auto-close/.test(source), 'ticking a subset box does not close the menu it is in');
-    assert(/data-tower-scope\]/.test(source) && /data-tower-scope-slug/.test(source), 'both controls are wired — the entries and the subset boxes');
+    assert(/data-tower-scope\]/.test(source) && /data-tower-scope-slug/.test(source), 'both controls on a row are wired - the name and its box');
+    // The master row (#168): its box is the one control markup cannot fully
+    // describe, since indeterminate is a property, and ticking it in either
+    // state means the whole board.
+    assert(/data-tower-scope-all/.test(source), 'the master box is wired too');
+    assert(/indeterminate = .*hasAttribute\('data-tower-indeterminate'\)/.test(source), 'the marker sidebar.js writes becomes the DOM property');
+    assert(/applyScope\(''\)/.test(source), 'and ticking it goes back to every repo');
+    assert(/shown\.focus\(\)/.test(source), 'the rewrite takes the box the keyboard was on, so the master is re-found and focused like the slug boxes');
     assert(/scopedHref\(/.test(source), 'the nav links are rewritten through the one formatter');
     assert(/scopeNav\(/.test(source), 'and the rewrite has a name the paint and the change both call');
     assert(!/tower-repo/.test(source), 'and the chrome’s dropdown is gone, handler and all');
@@ -3518,14 +3678,14 @@ const run = async () => {
     const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
     // The Board's repo column and its denominator, and the Brief's narrowing,
     // are the two pages that read the selection directly rather than through
-    // state.js — both converted to the set (#104).
+    // state.js - both converted to the set (#104).
     const board = fs.readFileSync(path.join(pages, 'board.js'), 'utf8');
     assert(/selectedSlugs\(state\)/.test(board), 'the Board asks for the slugs');
     assert(!/state\.selectedRepo/.test(board), 'and never for the raw value it used to compare');
     const brief = fs.readFileSync(path.join(pages, 'brief.js'), 'utf8');
     assert(/selectedSlugs\(state\)/.test(brief), 'so does the Brief');
     assert(!/state\.selectedRepo/.test(brief), 'and it compares nothing as a slug either');
-    // state.js is the rest of them — every page narrows through these three.
+    // state.js is the rest of them - every page narrows through these three.
     const reader = fs.readFileSync(path.join(libs, 'state.js'), 'utf8');
     assertEq((reader.match(/selectedSlugs\(state\)/g) || []).length, 3, 'reposFor, issuesFor and inSelectedRepo, all through the one parse');
     assert(!/state\.selectedRepo ===|repo\.slug === state\.selectedRepo/.test(reader), 'no equality against the raw value survives');
@@ -3534,10 +3694,23 @@ const run = async () => {
     assert(/selectedSlugs|parseRepos/.test(intake), 'the intake dialog parses it too');
   });
 
-  await test('the chrome carries the Token button only where there is a token to forget', () => {
-    const published = chrome.chromeMarkup({ ...CHROME, tokenMode: true });
-    assert(published.includes('id="tower-token"'), 'a published copy can replace or clear its token');
-    assert(!chrome.chromeMarkup(CHROME).includes('id="tower-token"'), 'and a copy reading a tower has none');
+  await test('the token has one home, and it is the Settings page', () => {
+    // The button that forgot a token used to sit in the chrome of every page,
+    // and the field that typed one sat in a dialog over it. Both are one page
+    // now (#167), and the sentence the intake dialog says while locked points
+    // at it rather than at "any page".
+    assert(!chrome.chromeMarkup().includes('id="tower-token"'), 'no page chrome carries a token control');
+    assert(format.LOCKED_NOTICE.includes('Settings page'), 'the locked write notice names where a token goes');
+    assert(!/open any page/.test(format.LOCKED_NOTICE), 'and no longer says any page will do');
+    const src = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js');
+    const typed = [];
+    const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).forEach((entry) => {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/data-token-input|writeToken\(/.test(fs.readFileSync(full, 'utf8'))) typed.push(entry.name);
+    });
+    walk(src);
+    assertEq(typed.sort().join(','), 'github.js,token.js', 'a token is typed and stored in those two files and nowhere else');
   });
 
   return summary();

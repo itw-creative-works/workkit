@@ -1,9 +1,9 @@
 //
-// Board — every open issue on the roster, in columns by `status:`.
+// Board - every open issue on the roster, in columns by `status:`.
 //
 // The columns are the status labels, in pipeline order. An open issue carrying
-// none of them is not a further place to be — it is a fault the pipeline forbids
-// and the daily heal repairs — so it is drawn as the danger alert above the
+// none of them is not a further place to be - it is a fault the pipeline forbids
+// and the daily heal repairs - so it is drawn as the danger alert above the
 // board (format.js's `noStatusAlert`), named and linked, and nowhere else: not
 // as a card, not in a column count, not in the denominator below (#118).
 //
@@ -15,20 +15,20 @@
 // So does which VIEW is on screen (issue #103): the columns, or the dependency
 // graph the same issues draw. `?view=graph` is one more thing the URL carries
 // and the toolbar reads back, and the repo scope and every filter narrow both
-// views identically — the graph is the same board, drawn as arrows. The picture
+// views identically - the graph is the same board, drawn as arrows. The picture
 // itself is composed in `libs/tower/graphdef.js` and drawn by the framework's
 // graph module; what is here is the toggle, the slot and the sequencing.
 //
 // A card is DRAGGED between those columns, and the drop really relabels the
 // issue: the payload and the mode gate are api.js's `moveRequest`, the write is
 // its `postIssueStatus`, and everything here is what the browser
-// contributes — which card was picked up, which column it landed on, and the
+// contributes - which card was picked up, which column it landed on, and the
 // optimistic move that puts it there before the write has answered. A failed
 // write puts the card back and says why. A PUBLISHED copy behaves identically:
 // the sweep is GitHub's and the browser makes it, and so is the write, with the
 // viewer's own token (libs/tower/github.js). The only copy that does not drag is
-// the locked one, which never draws its cards — the unlock dialog is open over
-// an empty board.
+// the locked one, which never draws its cards - a locked viewer is routed to
+// the Settings page instead.
 //
 
 import { startPage } from '../libs/tower/page.js';
@@ -45,7 +45,7 @@ import { boardGraph } from '../libs/tower/graphdef.js';
 import { WRITABLE, MOVABLE_STATUSES, moveRequest, postIssueStatus } from '../libs/tower/api.js';
 
 // The filter names, which are also their URL parameter names. `repo` is not one
-// of them — the page chrome owns that globally and every page obeys it, and
+// of them - the page chrome owns that globally and every page obeys it, and
 // neither is `view`, which is not something a filter clears.
 const PARAMS = ['type', 'priority', 'agent', 'assignee', 'q'];
 
@@ -106,7 +106,7 @@ const select = (id, label, chosen, values) => `<label>
   </select>
 </label>`;
 
-// The view toggle — two real buttons rather than a select, because there are
+// The view toggle - two real buttons rather than a select, because there are
 // two of them and the one in force is worth seeing without opening anything.
 // The active one is the filled button and says `aria-pressed`, so what the eye
 // reads and what a screen reader is told are the same fact.
@@ -136,7 +136,7 @@ const toolbar = (issues, filters, view) => `<form class="d-flex flex-wrap align-
   </div>
 </form>`;
 
-/** Whether this card may be picked up — something to write with, and a status to move from. */
+/** Whether this card may be picked up - something to write with, and a status to move from. */
 const draggable = (issue) => WRITABLE && MOVABLE_STATUSES.includes(issue.status);
 
 // A card OPENS the issue in the dialog; GitHub is reached only through the
@@ -145,7 +145,7 @@ const draggable = (issue) => WRITABLE && MOVABLE_STATUSES.includes(issue.status)
 // Every card is the same size, which takes all three of its rows holding one
 // shape: the slug line truncates, the title is clamped to two lines
 // (`omega-tower-issue__title`), and the chips stay on one row
-// (`omega-tower-issue__chips`) — so the only remaining variation is a short
+// (`omega-tower-issue__chips`) - so the only remaining variation is a short
 // title, which the floor on `.omega-tower-board .omega-tower-issue` absorbs
 // while `mt-auto` keeps the chips against the bottom edge. Nothing is lost to
 // any of it: the card opens the dialog, which says the whole of all three.
@@ -156,7 +156,7 @@ const draggable = (issue) => WRITABLE && MOVABLE_STATUSES.includes(issue.status)
 //
 // Every card the board draws carries one of the pipeline statuses, so every
 // card is draggable wherever there is something to write with. The card's
-// `data-issue` key is what the drop reads back — the same key the dialog
+// `data-issue` key is what the drop reads back - the same key the dialog
 // registry uses, so the two never mean different things.
 //
 // What the card says about a DEPENDENCY rides that same chip row (issue #103):
@@ -167,7 +167,7 @@ const draggable = (issue) => WRITABLE && MOVABLE_STATUSES.includes(issue.status)
 // The top row is NAMED because its right end is one slot rather than two: the
 // open button is lifted out of the flow into that corner where there is a
 // pointer to reveal it with, which is the sheet's job and needs an element to
-// position against (main.scss). It is the board card's row alone — the list
+// position against (main.scss). It is the board card's row alone - the list
 // rows the Brief, the Overview and Health draw carry the same `omega-tower-issue`
 // class and their button stays in flow.
 const issueCard = (issue, showRepo, open) => `<div class="card omega-tower-issue omega-interactive omega-interactive--lift mb-2${issue.status === 'blocked' ? ' border-danger' : ''}"${draggable(issue) ? ' draggable="true"' : ''} ${issueTrigger(issue)}>
@@ -183,7 +183,7 @@ const issueCard = (issue, showRepo, open) => `<div class="card omega-tower-issue
 </div>`;
 
 // Every column names a status to move TO, so every one of them takes a drop.
-// `pb-2` is the air between the title and the rule under it — the head is a
+// `pb-2` is the air between the title and the rule under it - the head is a
 // flex row and its border sits on the text without it.
 const column = (status, issues, showRepo, open) => `<section data-column="${esc(status.key)}">
   <div class="omega-panel-head mb-3 pb-2" style="border-bottom: 2px solid ${statusColor(status.key)};">
@@ -202,8 +202,8 @@ const column = (status, issues, showRepo, open) => `<section data-column="${esc(
 // fill a wide one, and the strip goes on scrolling when the window is genuinely
 // too narrow for the board.
 //
-// A column reads in three priority bands — high, then the unlabelled middle,
-// then low — most recently updated first inside each. The comparator is
+// A column reads in three priority bands - high, then the unlabelled middle,
+// then low - most recently updated first inside each. The comparator is
 // format.js's (`byPriority`), the same module that colours those bands.
 const columns = (shown, showRepo, open) => `<div class="omega-tower-board" style="grid-auto-columns: minmax(9rem, 1fr);">
   ${STATUSES.map((status) => column(status, shown.filter((issue) => issue.status === status.key).sort(byPriority), showRepo, open)).join('')}
@@ -211,17 +211,17 @@ const columns = (shown, showRepo, open) => `<div class="omega-tower-board" style
 
 // The denominator, so a filtered board never reads as an empty one: how many
 // are on screen, how many the COLUMNS hold in scope, and how many the filters
-// removed. An unlabelled issue is in none of those three numbers — it is drawn
+// removed. An unlabelled issue is in none of those three numbers - it is drawn
 // in the alert above and nowhere else, and counting it here would leave the
 // line describing a card that is not on the page.
 const counts = (shown, total, selected) => {
   const hidden = total - shown;
   // The scope is a SET (#104): every repo, one of them, or the subset the URL
-  // names — and a subset says how many rather than listing them into the line.
+  // names - and a subset says how many rather than listing them into the line.
   let scope = 'across every repo';
   if (selected.length === 1) scope = `in ${esc(selected[0])}`;
   else if (selected.length > 1) scope = `across ${selected.length} repos`;
-  const tail = hidden > 0 ? ` — ${hidden} filtered out` : '';
+  const tail = hidden > 0 ? ` - ${hidden} filtered out` : '';
   return `<p class="omega-micro text-body-secondary mb-2">showing ${shown} of ${total} open issue${total === 1 ? '' : 's'} ${scope}${tail}</p>`;
 };
 
@@ -254,7 +254,7 @@ const graph = (definition) => (definition
  *
  * Draws are SERIALIZED and the newest definition wins: a filter keystroke can
  * re-compose mid-draw, and a slower old render landing last would stand stale
- * forever — swap compares what IT last wrote, so the next poll would never
+ * forever - swap compares what IT last wrote, so the next poll would never
  * repair the host. And the definition is composed from remote titles, so a
  * shape the sanitizer missed that strict mermaid refuses says so in the host
  * instead of leaving the reserved box blank.
@@ -276,7 +276,7 @@ const paintGraph = (root, state, definition) => {
       const host = document.getElementById('board-graph');
       if (!host) return;
       host.innerHTML = problem('the diagram could not be drawn');
-      // The wrapper's image role makes its contents presentational — right for
+      // The wrapper's image role makes its contents presentational - right for
       // an SVG, wrong for this message, which must be announced.
       const wrap = host.parentElement;
       if (wrap && wrap.getAttribute('role') === 'img') {
@@ -308,13 +308,13 @@ const render = (root, state) => {
   const shown = labelled.filter((issue) => matches(issue, filters));
   const selected = selectedSlugs(state);
   // The repo column is dropped only when every card on the board is from the
-  // same repo — one selected slug. A subset still mixes repos and still needs
+  // same repo - one selected slug. A subset still mixes repos and still needs
   // saying which is which.
   const showRepo = selected.length !== 1;
   // A blocker is unsatisfied while the SWEEP is still carrying it, and the sweep
   // is the whole payload rather than the scoped view: an issue waiting on one in
-  // a repo the selection hides is still waiting on it (issue #103). Lowercased —
-  // the chip's contract — since repo names are case-insensitive on GitHub.
+  // a repo the selection hides is still waiting on it (issue #103). Lowercased -
+  // the chip's contract - since repo names are case-insensitive on GitHub.
   const sweep = (board(state) || {}).issues || [];
   const open = new Set(sweep.map((issue) => issueKey(issue).toLowerCase()));
   const view = readView();
@@ -333,7 +333,7 @@ const render = (root, state) => {
   }
 
   // The page repaints every poll, and a repaint must not take the caret out of
-  // the search box mid-word — so where the focus was is put back where it goes.
+  // the search box mid-word - so where the focus was is put back where it goes.
   // A poll that changed nothing does not write at all (swap), and then there is
   // nothing to restore.
   const focused = document.activeElement;
@@ -352,7 +352,7 @@ const render = (root, state) => {
 
   const form = root.querySelector('#board-filters');
   // `input` covers both the search box and the selects, so one listener on the
-  // form is the whole toolbar — and every control is always in the markup.
+  // form is the whole toolbar - and every control is always in the markup.
   form.addEventListener('input', () => {
     const next = {};
     for (const control of form.querySelectorAll('[data-filter]')) next[control.dataset.filter] = control.value.trim();
@@ -372,8 +372,8 @@ const render = (root, state) => {
 
   wireDrag(root, state);
 
-  // Only ever after a write: `swap` returned above when the markup — the
-  // definition stamp included — was the one already on the page, so the
+  // Only ever after a write: `swap` returned above when the markup - the
+  // definition stamp included - was the one already on the page, so the
   // 60-second repaint leaves an unchanged diagram standing rather than
   // rendering the same picture again.
   if (view === 'graph' && definition) paintGraph(root, state, definition);
@@ -388,7 +388,7 @@ const render = (root, state) => {
  * listeners are exactly as long-lived as the listeners are.
  *
  * What is NOT held across paints is the data. A card carries its key, and the
- * issue behind it is looked up when the drop happens — every poll parses a new
+ * issue behind it is looked up when the drop happens - every poll parses a new
  * object graph into the feed, and a quiet poll (unchanged markup, so no repaint
  * and no rebinding) would otherwise leave these handlers holding issue objects
  * nothing draws from any more: the optimistic move would mutate a detached
@@ -435,7 +435,7 @@ const wireDrag = (root, state) => {
   }
 
   for (const section of root.querySelectorAll('[data-column]')) {
-    // A dragover that is not prevented means "not a drop target" — preventing it
+    // A dragover that is not prevented means "not a drop target" - preventing it
     // is how an element says it takes the drop at all.
     section.addEventListener('dragover', (event) => {
       event.preventDefault();

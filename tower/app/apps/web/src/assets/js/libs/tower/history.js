@@ -1,10 +1,10 @@
 //
-// The board over time — the payload's history turned into what a chart draws.
+// The board over time - the payload's history turned into what a chart draws.
 //
 // The history rides the brief payload (issue #55): one entry per published
 // morning, oldest first, each carrying that day's totals, what it closed and
 // its per-repo open counts. Every page that draws it asks the same two
-// questions — what is the series, and how does today compare with last week —
+// questions - what is the series, and how does today compare with last week -
 // so the answers live here, pure, rather than twice in two page modules.
 //
 // THREE ABSENCES, three different sentences, and none of them is a zero:
@@ -22,7 +22,7 @@ export const ACCRUES = 'charts appear after two published briefs';
 /** What a page says when the history could not be read at all. */
 export const UNREAD = 'the published briefs could not be read, so there is no history to draw';
 
-/** The entries a payload carries, or an empty list — never null, for the callers that map. */
+/** The entries a payload carries, or an empty list - never null, for the callers that map. */
 export const entriesOf = (payload) => {
   const history = payload && payload.history;
   return Array.isArray(history) ? history : [];
@@ -35,7 +35,7 @@ export const hasSeries = (payload) => entriesOf(payload).length >= 2;
 export const unread = (payload) => !payload || payload.history === null || payload.history === undefined;
 
 /**
- * One field of the totals, per day — the series a chart takes.
+ * One field of the totals, per day - the series a chart takes.
  *
  * The DATE is the label, short: a five-week axis of ISO stamps is unreadable at
  * chart width, and the year is the same on every point.
@@ -61,7 +61,7 @@ const WEEK = 7;
  * The entry ~7 days back is found by DATE rather than by counting entries: a
  * morning whose brief never published leaves no point, so the seventh entry
  * back can be a fortnight ago. The nearest entry on or before that date is the
- * honest comparison, and when none exists the answer is null — a delta against
+ * honest comparison, and when none exists the answer is null - a delta against
  * the oldest point this history happens to have would silently become "since
  * the beginning" on a young board.
  *
@@ -96,7 +96,7 @@ export const weekDelta = (entries, key) => {
 };
 
 /**
- * The delta as the sub-line a stat cell wears — plain language, and nothing at
+ * The delta as the sub-line a stat cell wears - plain language, and nothing at
  * all when there is nothing to say.
  *
  * @param {{change: number, days: number}|null} delta - what weekDelta returned

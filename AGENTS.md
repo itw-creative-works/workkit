@@ -65,7 +65,7 @@ Beside it live the label SSOT, the heal, the CHANGELOG linter, the capture CLI, 
 
 ## The tower (`tower/`)
 
-Mission control in two processes behind one command (`npm run tower`): the plain-Node JSON API on port 8693 (`tower/api/`, zero dependencies) and the OMEGA dashboard on 4300 that reads it cross-origin (`tower/app/`). Six pages — Overview, Board, Crew, Usage, Health, Brief — over the cross-repo issue board, the live Claude crew and its token spend, per-repo health, and the daily brief.
+Mission control in two processes behind one command (`npm run tower`): the plain-Node JSON API on port 8693 (`tower/api/`, zero dependencies) and the OMEGA dashboard on 4300 that reads it cross-origin (`tower/app/`). Seven pages — Overview, Board, Crew, Usage, Health, Brief, Settings — over the issue board, the live crew and its spend, per-repo health, the brief, and a published copy's token.
 
 A view, never a second store. The pages, the dependency graph, the telemetry, the two write paths, and the published copy that speaks GitHub from the browser: `tower/README.md`.
 

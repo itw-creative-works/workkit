@@ -1,5 +1,5 @@
 //
-// Tests for tower/api/server.js — the endpoints, the caches, the one write path.
+// Tests for tower/api/server.js - the endpoints, the caches, the one write path.
 //
 // The WHOLE server runs here, on port 0, against fixtures: a scratch ~/.workkit
 // whose roster lists one real git repo, a scratch marker directory and
@@ -55,7 +55,7 @@ const mkWorld = () => {
   git(repo, 'remote', 'add', 'origin', `git@github.com:${SLUG}.git`);
   fs.mkdirSync(path.join(repo, '.workkit'), { recursive: true });
   fs.writeFileSync(path.join(repo, '.workkit', 'settings.json'), JSON.stringify({ version: 7, enabled: true }));
-  fs.writeFileSync(path.join(repo, 'CHANGELOG.md'), '# Changelog\n\n## [Unreleased]\n\n- [#1](u) — One thing.\n');
+  fs.writeFileSync(path.join(repo, 'CHANGELOG.md'), '# Changelog\n\n## [Unreleased]\n\n- [#1](u) - One thing.\n');
   git(repo, 'add', '-A');
   git(repo, 'commit', '-qm', 'initial');
 
@@ -91,12 +91,12 @@ const mkWorld = () => {
     board: {
       data: { r0: { issues: { totalCount: 2, nodes: [issueNode(17, ['status:specced', 'agent:ok']), issueNode(18, ['status:blocked', 'priority:high'])] } } },
     },
-    // What the home repo's Discussions carry — where the summaries are published.
+    // What the home repo's Discussions carry - where the summaries are published.
     // Empty is a machine whose board has nothing on it yet.
     discussions: [],
     // What `gh issue create` does. Either a string to print or an Error to throw.
     createResult: `https://github.com/${SLUG}/issues/99\n`,
-    // And what `gh issue edit` does — the relabel the board's drag performs.
+    // And what `gh issue edit` does - the relabel the board's drag performs.
     editResult: `https://github.com/${SLUG}/issues/17\n`,
     // Flip to make the `gh --version` probe fail, as an unprovisioned machine does.
     ghMissing: false,
@@ -142,7 +142,7 @@ const listen = (server) => new Promise((resolve) => {
   });
 });
 
-/** The server options for a world — a live object, so a test may mutate it. */
+/** The server options for a world - a live object, so a test may mutate it. */
 const worldOpts = (world, opts = {}) => ({
   workflowHome: path.join(world.root, 'workflow-home'),
   markerDir: world.markerDir,
@@ -171,7 +171,7 @@ const postJson = async (client, p, payload) => {
 
 /**
  * A request built by hand. `fetch` will not let a caller set Host, and Host is
- * exactly what the allowlist judges — so the header cases speak http directly.
+ * exactly what the allowlist judges - so the header cases speak http directly.
  */
 const raw = (client, { method = 'GET', path: p = '/', headers = {}, body = null } = {}) => new Promise((resolve, reject) => {
   const req = http.request({ host: '127.0.0.1', port: client.port, method, path: p, headers }, (res) => {
@@ -190,7 +190,7 @@ const raw = (client, { method = 'GET', path: p = '/', headers = {}, body = null 
 
 const ghCalls = (world, verb) => world.calls.filter((c) => c[0] === 'gh' && c[1] === verb);
 
-/** The repo tiles in a /api/health payload — everything that is not the meta block. */
+/** The repo tiles in a /api/health payload - everything that is not the meta block. */
 const tiles = (body) => Object.keys(body).filter((key) => key !== 'meta');
 
 /**
@@ -242,7 +242,7 @@ const run = async () => {
     // The fixture repo has an unreleased CHANGELOG entry and no tag.
     assertEq(body.warnings.length, 1, 'the repo has work sitting on the table');
     assertEq(body.warnings[0].repo, SLUG, 'named by its slug');
-    // The same board asked one question further — what this morning could move.
+    // The same board asked one question further - what this morning could move.
     assertEq(body.nextUp.length, 1, 'the one repo has actionable work');
     assertEq(body.nextUp[0].items.map((i) => i.number).join(','), '18,17',
       'the decision leads, then the accepted spec');
@@ -253,7 +253,7 @@ const run = async () => {
   await test('/api/brief carries the published summaries, read once per board minute', async () => {
     const w = mkWorld();
     // The machine's hand-edited settings, naming the home repo the summaries are
-    // published on — without one there is no board of them to read.
+    // published on - without one there is no board of them to read.
     fs.writeFileSync(
       path.join(w.root, 'workflow-home', 'settings.json'),
       JSON.stringify({ version: 1, site: { repo: 'owner/private-home', publish: false, url: null } }),
@@ -267,7 +267,7 @@ const run = async () => {
     assertEq(body.findings.title, 'daily: 2026-08-02', 'what yesterday produced');
     assertEq(body.findings.url, 'https://github.com/owner/private-home/discussions/2', 'linked to the post itself');
     // The week rides on Mondays only, which is a fact about the day this suite
-    // runs on — the rule itself is summaries.test.js's.
+    // runs on - the rule itself is summaries.test.js's.
     assertEq('week' in body, new Date().getDay() === 1, 'and the rollup only on a Monday');
 
     const asked = () => w.calls.filter((call) => call.join(' ').includes('discussions(first')).length;
@@ -281,7 +281,7 @@ const run = async () => {
 
   await test('/api/brief carries the board over time, read off the published briefs', async () => {
     // Issue #55: the history is the only thing on this payload that a live
-    // sweep cannot answer — it is the mornings BEFORE this one, and each one
+    // sweep cannot answer - it is the mornings BEFORE this one, and each one
     // recorded itself in the brief it published.
     const w = mkWorld();
     fs.writeFileSync(
@@ -310,7 +310,7 @@ const run = async () => {
     const { status, body } = await getJson(c, '/api/brief');
     assertEq(status, 200, 'ok');
     assertEq(body.findings, null, 'there is nowhere to read a summary from');
-    assertEq(body.history, null, 'and no history — a read that could not be made is null, never an empty series');
+    assertEq(body.history, null, 'and no history - a read that could not be made is null, never an empty series');
     assertEq(w.calls.filter((call) => call.join(' ').includes('discussions(first')).length, 0,
       'and nothing was asked of GitHub');
     await c.stop();
@@ -385,7 +385,7 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  await test('git failing answers two nulls — absence of proof is not staleness', async () => {
+  await test('git failing answers two nulls - absence of proof is not staleness', async () => {
     const w = mkWorld();
     scriptHead(w, [new Error('spawnSync git ENOENT')]);
     const c = await start(w);
@@ -422,7 +422,7 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  await test('a failed sweep is NOT cached — the next read inside the TTL tries again', async () => {
+  await test('a failed sweep is NOT cached - the next read inside the TTL tries again', async () => {
     const w = mkWorld();
     w.ghMissing = true;
     const c = await start(w);
@@ -438,7 +438,7 @@ const run = async () => {
 
   await test('a failed roster read is not cached either, and still serves [] meanwhile', async () => {
     const w = mkWorld();
-    // A workflow home that is not a path makes the read throw — the "read
+    // A workflow home that is not a path makes the read throw - the "read
     // failed" case, which must not take the cache slot the way a genuinely
     // empty roster does.
     const opts = worldOpts(w, { workflowHome: 42 });
@@ -453,7 +453,7 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  await test('an empty roster IS cached — nothing found is an answer', async () => {
+  await test('an empty roster IS cached - nothing found is an answer', async () => {
     const w = mkWorld();
     const c = await start(w, { workflowHome: path.join(w.root, 'empty') });
     fs.mkdirSync(path.join(w.root, 'empty'), { recursive: true });
@@ -465,7 +465,7 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  await test('?fresh=1 bypasses and repopulates the cache — the refresh button works', async () => {
+  await test('?fresh=1 bypasses and repopulates the cache - the refresh button works', async () => {
     const w = mkWorld();
     const c = await start(w);
     await getJson(c, '/api/board');
@@ -496,7 +496,7 @@ const run = async () => {
     const [call] = ghCalls(w, 'issue');
     assertEq(call.join(' '),
       `gh issue create --repo ${SLUG} --title Watch the tower --body From the phone. --label status:inbox --label type:idea`,
-      'ARGV, not a shell string — title trimmed, both labels present');
+      'ARGV, not a shell string - title trimmed, both labels present');
     await c.stop();
     cleanup(w.root);
   });
@@ -527,7 +527,7 @@ const run = async () => {
     const w = mkWorld();
     const c = await start(w);
     // GitHub treats owner and repo names as case-insensitive, and the roster's
-    // slug is whatever case the git remote carries — so a payload written in
+    // slug is whatever case the git remote carries - so a payload written in
     // GitHub's canonical casing names the same repository.
     const { status, body } = await postJson(c, '/api/intake', { repo: SLUG.toUpperCase(), title: 'Shouted' });
     assertEq(status, 200, 'accepted');
@@ -612,7 +612,7 @@ const run = async () => {
     const [call] = ghCalls(w, 'issue');
     assertEq(call.join(' '),
       `gh issue edit 17 --repo ${SLUG} --remove-label status:specced --add-label status:blocked`,
-      'ARGV, not a shell string — and both halves of the move in ONE call, so the issue never carries two statuses');
+      'ARGV, not a shell string - and both halves of the move in ONE call, so the issue never carries two statuses');
     await c.stop();
     cleanup(w.root);
   });
@@ -621,7 +621,7 @@ const run = async () => {
     assertEq(MOVE_STATUSES.join(','), 'inbox,specced,building,qa,blocked,backlog', 'the pipeline, in its own order');
   });
 
-  await test('a move into status:building is a valid move — in-flight work is a column like any other', async () => {
+  await test('a move into status:building is a valid move - in-flight work is a column like any other', async () => {
     const w = mkWorld();
     const c = await start(w);
     const { status, body } = await postJson(c, MOVE, { ...validMove, to: 'building' });
@@ -635,7 +635,7 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  await test('a move out of status:building is valid too — the board can pull work back', async () => {
+  await test('a move out of status:building is valid too - the board can pull work back', async () => {
     const w = mkWorld();
     const c = await start(w);
     const { status, body } = await postJson(c, MOVE, { ...validMove, from: 'building', to: 'blocked' });
@@ -689,7 +689,7 @@ const run = async () => {
     assertEq(bad.status, 400, 'an invented status is not one');
     assert(/to is not a status/.test(bad.body.reason), 'and the end it was on is named');
     const worse = await postJson(c, MOVE, { ...validMove, from: '' });
-    assertEq(worse.status, 400, 'and neither is none at all — the No-status column is not a move');
+    assertEq(worse.status, 400, 'and neither is none at all - the No-status column is not a move');
     assert(/from is not a status/.test(worse.body.reason), 'named too');
     const label = await postJson(c, MOVE, { ...validMove, to: 'status:backlog' });
     assertEq(label.status, 400, 'the value is a status, not a whole label');
@@ -734,7 +734,7 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  await test('the preflight covers this POST too — one answer, both write paths', async () => {
+  await test('the preflight covers this POST too - one answer, both write paths', async () => {
     const w = mkWorld();
     const c = await start(w);
     const res = await raw(c, {
@@ -789,7 +789,7 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  await test('the endpoint is a write and nothing else — a GET of it is a 404', async () => {
+  await test('the endpoint is a write and nothing else - a GET of it is a 404', async () => {
     const w = mkWorld();
     const c = await start(w);
     const { status } = await getJson(c, MOVE);
@@ -808,7 +808,7 @@ const run = async () => {
     assert(/host not allowed/.test(res.text), 'the reason names it');
     const ok = await raw(c, { path: '/api/repos', headers: { host: `localhost:${c.port}` } });
     assertEq(ok.status, 200, 'localhost is on the list, port and all');
-    // The IPv6 loopback arrives bracketed — the allowlist must survive its own
+    // The IPv6 loopback arrives bracketed - the allowlist must survive its own
     // URL-parse normalization (a bare ::1 in the constant silently drops out).
     const six = await raw(c, { path: '/api/repos', headers: { host: `[::1]:${c.port}` } });
     assertEq(six.status, 200, 'the IPv6 loopback is local too');
@@ -1002,7 +1002,7 @@ const run = async () => {
 
   group('tower/api/server: the edges');
 
-  await test('the API serves no pages — / is a 404 like any other non-endpoint', async () => {
+  await test('the API serves no pages - / is a 404 like any other non-endpoint', async () => {
     const w = mkWorld();
     const c = await start(w);
     const root = await getJson(c, '/');
@@ -1025,7 +1025,7 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  await test('the defaults bind 127.0.0.1 on 8693 — Tailscale is the only way in', () => {
+  await test('the defaults bind 127.0.0.1 on 8693 - Tailscale is the only way in', () => {
     assertEq(DEFAULT_BIND, '127.0.0.1', 'localhost only, never 0.0.0.0');
     assertEq(DEFAULT_PORT, 8693, 'TOWER on a keypad');
   });

@@ -1,53 +1,38 @@
 //
-// The page chrome — the strip above every page body.
+// The page chrome - the strip above every page body.
 //
-// It carries Refresh, the Token button a published copy needs, the freshness
-// stamp and the chip that names a feed that did not answer. The repo selection
-// is NOT here (issue #104): it is global, it belongs beside the nav that
-// carries it from page to page, and it is drawn into the sidebar at runtime by
-// sidebar.js — a control drawn once per page above one page's body reads as a
-// property of that page.
+// It carries Refresh, the freshness stamp and the chip that names a feed that
+// did not answer. The repo selection is NOT here (issue #104): it is global, it
+// belongs beside the nav that carries it from page to page, and it is drawn
+// into the sidebar at runtime by sidebar.js - a control drawn once per page
+// above one page's body reads as a property of that page. Neither is the token
+// (issue #167): the Token button that forgot it now lives on the Settings page,
+// which is where a token is typed in the first place.
 //
 // The strip is written in TWO pieces because it is repainted at two different
-// rates. The frame — Refresh and Token — changes at most once a session. The
-// status — the spinner, the stamp, the stale chip — changes on every read,
-// twice per poll (once as it starts, once as it lands). Rebuilding the frame at
-// the status's rate re-created the controls under the pointer, so `chromeKey()`
-// says what the frame is showing and the runtime rewrites it only when that
-// answer changed.
+// rates. The frame - Refresh, and the region the status goes in - never changes
+// at all now that the Token button has left it, so the runtime writes it ONCE
+// per page and never again; rebuilding it at the status's rate re-created the
+// controls under the pointer, which is the defect that first split it in two.
+// The status - the spinner, the stamp, the stale chip - changes on every read,
+// twice per poll (once as it starts, once as it lands).
 //
-// Pure string functions, all three: the runtime owns the DOM, this file owns
-// what goes in it.
+// Pure string functions, both: the runtime owns the DOM, this file owns what
+// goes in it.
 //
 
 import { esc } from './format.js';
 
 /**
- * What the chrome's frame is showing, as one comparable string.
+ * The chrome's frame: Refresh, and the empty region the status is written into.
  *
- * Two states with the same key draw the same frame — which is the whole test
- * the runtime makes before touching it. The Token button is the only thing in
- * the frame that varies at all, so it is the whole key.
+ * It takes no state, which is the whole of why it is written once: nothing on
+ * it varies by page, by mode or by read.
  *
- * @param {object} state - the runtime's feed state
- * @returns {string}
- */
-export const chromeKey = (state) => (state.tokenMode ? 'token' : '');
-
-/**
- * The chrome's frame: Refresh, the Token button a published copy carries, and
- * the empty region the status is written into.
- *
- * `state.tokenMode` is the runtime's word for "this copy runs on the viewer's
- * own GitHub token" — the button is how that token is replaced or taken away,
- * and a copy reading a tower has none to forget.
- *
- * @param {object} state - the runtime's feed state
  * @returns {string} markup
  */
-export const chromeMarkup = (state) => `<div class="d-flex flex-wrap align-items-end gap-2 mb-4">
+export const chromeMarkup = () => `<div class="d-flex flex-wrap align-items-end gap-2 mb-4">
     <button class="btn btn-sm btn-outline-adaptive" type="button" id="tower-refresh">Refresh</button>
-    ${state.tokenMode ? '<button class="btn btn-sm btn-outline-adaptive" type="button" id="tower-token" title="Forget the GitHub token this browser holds">Token</button>' : ''}
     <div class="ms-auto d-flex align-items-center gap-2" data-tower-status></div>
   </div>`;
 

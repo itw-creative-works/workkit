@@ -1,11 +1,11 @@
 //
-// Tests for tower/api/lib/board.js — the cross-repo issue sweep.
+// Tests for tower/api/lib/board.js - the cross-repo issue sweep.
 //
 // `gh` is the one thing that cannot be exercised for real here: a live call
 // needs auth and the network, and the point of the seam is that the tower
 // renders without either. So the exec seam takes a fake that answers the two
-// commands the module issues, and every OTHER fact — the label vocabulary
-// especially — comes from the real in-repo workflow/labels.json.
+// commands the module issues, and every OTHER fact - the label vocabulary
+// especially - comes from the real in-repo workflow/labels.json.
 //
 
 const fs = require('fs');
@@ -35,7 +35,7 @@ const issue = (number, extra = {}) => ({
 /**
  * The error execFileSync throws on a non-zero exit: the message, the streams it
  * captured, and the status. `gh api graphql` exits 1 whenever the response
- * carries an errors array — WITH the complete payload on stdout — so this shape
+ * carries an errors array - WITH the complete payload on stdout - so this shape
  * is the difference between a partial board and a blank one.
  */
 const execError = (message, { stdout = '', stderr = '', status = 1, code = null } = {}) => {
@@ -73,13 +73,13 @@ const run = async () => {
     assertEq(res.issues.length, 0, 'no issues');
   });
 
-  await test('a lapsed token is judged from the sweep itself — no auth round trip per refresh', () => {
+  await test('a lapsed token is judged from the sweep itself - no auth round trip per refresh', () => {
     const calls = [];
     const res = fetchBoard(ROSTER, {
       exec: fakeGh({}, {
         calls,
         // The real shape of a bad token: gh prints the API's JSON to STDOUT and
-        // nothing useful to stderr — the reason must be judged from that stream.
+        // nothing useful to stderr - the reason must be judged from that stream.
         graphqlError: execError('Command failed: gh api graphql -f query=...', {
           stdout: '{"message":"Bad credentials","documentation_url":"https://docs.github.com/graphql","status":"401"}\n',
           stderr: '',
@@ -103,7 +103,7 @@ const run = async () => {
   await test('a roster with no slugs never calls graphql', () => {
     const calls = [];
     const res = fetchBoard([{ name: 'local', path: '/x/local', slug: null }], { exec: fakeGh({}, { calls }) });
-    assertEq(res.ok, true, 'ok — nothing to ask');
+    assertEq(res.ok, true, 'ok - nothing to ask');
     assertEq(res.issues.length, 0, 'no issues');
     assertEq(calls.filter((c) => c[1] === 'api').length, 0, 'no graphql call');
   });
@@ -116,7 +116,7 @@ const run = async () => {
     assert(q.includes('r1: repository(owner: "ianwieds", name: ".dotfiles")'), 'r1 alias');
     assert(q.includes('totalCount'), 'truncation is answerable');
     assert(q.includes(`first: ${PAGE_SIZE}`), 'the page cap is in the query');
-    // The dashboard's issue dialog reads these off the sweep — there is no
+    // The dashboard's issue dialog reads these off the sweep - there is no
     // second request behind a click.
     assert(q.includes('body'), 'the body the dialog renders');
     assert(q.includes('createdAt'), 'when it was filed');
@@ -171,7 +171,7 @@ const run = async () => {
   group('tower/board: what the day closed');
 
   // Issue #55: the sweep gains a COUNT of the issues closed in the last 24
-  // hours, per repo — never the closed issues themselves. The clock is stated,
+  // hours, per repo - never the closed issues themselves. The clock is stated,
   // because a 24-hour window judged at whatever moment the suite runs is a
   // window no fixture can sit either side of.
   const NOW = Date.parse('2026-07-29T11:00:00Z');
@@ -224,7 +224,7 @@ const run = async () => {
   group('tower/board: what an issue waits on');
 
   // Issue #103: the sweep carries GitHub's own dependency edges, merged with the
-  // inline `Depends on:` line the cross-org case is written as. Advisory only —
+  // inline `Depends on:` line the cross-org case is written as. Advisory only -
   // nothing here touches a label; the edges order a morning and badge a card.
   const blockedBy = (...edges) => ({
     nodes: edges.map(([number, state, repo]) => ({
@@ -251,7 +251,7 @@ const run = async () => {
       blockedBy: blockedBy([4, 'OPEN'], [5, 'CLOSED'], [9, 'OPEN', 'ianwieds/.dotfiles']),
     }));
     assertEq(waits(res), 'ITW-Creative-Works/workkit#4 ianwieds/.dotfiles#9',
-      'both open edges, each carrying the repo it lives in — a cross-repo blocker is not #9 here');
+      'both open edges, each carrying the repo it lives in - a cross-repo blocker is not #9 here');
     assert(!waits(res).includes('#5'), 'a dependency on a closed issue is satisfied');
   });
 
@@ -278,7 +278,7 @@ const run = async () => {
       body: '- Depends on: Omega-JS-Stack/omega#144\n\n**Depends on:** #6\n',
     }));
     assertEq(waits(res), 'Omega-JS-Stack/omega#144 ITW-Creative-Works/workkit#6',
-      'issue bodies are markdown — a bullet or bold around the label is the same line');
+      'issue bodies are markdown - a bullet or bold around the label is the same line');
   });
 
   await test('an issue depending on nothing carries an empty list, never a missing field', () => {
@@ -333,7 +333,7 @@ const run = async () => {
   // name and passes any status value through, so this case also passes without
   // the fifth label. The vocabulary itself is proven by the server and app
   // suites (MOVE_STATUSES, STATUSES).
-  await test('status:building parses like any other status — in-flight work reaches the board', () => {
+  await test('status:building parses like any other status - in-flight work reaches the board', () => {
     const res = fetchBoard([ROSTER[0]], {
       exec: fakeGh({
         data: {
@@ -383,7 +383,7 @@ const run = async () => {
 
   group('tower/board: a partial answer is kept');
 
-  await test('one unresolvable repo does not blank the board — gh exits 1 with the data on stdout', () => {
+  await test('one unresolvable repo does not blank the board - gh exits 1 with the data on stdout', () => {
     // Exactly what `gh api graphql` does when an alias fails: non-zero exit,
     // the complete payload for every other alias on stdout, the failure in an
     // errors array naming the alias.

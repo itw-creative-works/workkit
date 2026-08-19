@@ -1,7 +1,7 @@
 // The tower's brand layer. Deliberately TINY: only brand.id and brand.name are
 // required by the config schema (@omega.js/config src/schema.js), and the tower
 // is a localhost tool with no cloud project, no payments, no analytics and no
-// monitoring — so those sections are ABSENT rather than filled with nulls.
+// monitoring - so those sections are ABSENT rather than filled with nulls.
 //
 // LOCAL ERA: every @omega.js/* dependency is a relative file: spec into the
 // sibling Omega checkout (see tower/app/README.md). The specs flip to registry
@@ -10,22 +10,22 @@
   brand: {
     id: "workkit",
     name: "Tower",
-    description: "Mission control for the workkit issue workflow — the board, the crew, token usage, repo health, and the daily brief.",
+    description: "Mission control for the workkit issue workflow - the board, the crew, token usage, repo health, and the daily brief.",
 
     // The one hex (issue #53, blue since #149): the framework composes both
     // themes' accent ramps from it at build time (src/brand-tokens.js), so
     // recoloring the whole dashboard is this line and no CSS. The authored
-    // brandmark is drawn in the same hex — one brand colour, not two.
+    // brandmark is drawn in the same hex - one brand colour, not two.
     color: "#2563EB",
 
     images: {
       // The mark is authored ONCE, at assets/logo/brandmark.svg; the assets
       // service mints the variants into the gitignored .omega/assets and the
       // web build's static channel bridges them to this path. The key is not
-      // auto-set by the mint — without it the sidebar stays text-only.
+      // auto-set by the mint - without it the sidebar stays text-only.
       brandmark: "/assets/images/brand/brandmark.svg",
       // The social preview: og/twitter tags fall back to the brandmark, an
-      // SVG no platform renders — this points them at the minted PNG instead.
+      // SVG no platform renders - this points them at the minted PNG instead.
       social: "/assets/images/brand/social.png",
     },
   },
@@ -37,7 +37,7 @@
     appearance: "system",
   },
 
-  // Key presence = target enabled. Web only — the tower has no backend target
+  // Key presence = target enabled. Web only - the tower has no backend target
   // (its API is the plain Node server in tower/, on 8693). The port keeps the
   // family clear of its siblings: playground 4000, dailybuild 4100,
   // omega-brand 4200, tower 4300.

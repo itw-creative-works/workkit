@@ -1,10 +1,10 @@
 //
-// Tests for tower/api/lib/health.js — per-repo health.
+// Tests for tower/api/lib/health.js - per-repo health.
 //
 // Real git repositories throughout, including a real bare "origin" cloned
 // locally so the upstream cases are genuine: whether a branch has an upstream,
 // and how far ahead of it HEAD sits, is exactly the question a stub would beg.
-// No network — a local path is a perfectly good remote.
+// No network - a local path is a perfectly good remote.
 //
 
 const fs = require('fs');
@@ -58,12 +58,12 @@ const CHANGELOG = [
   '',
   '### Added',
   '',
-  '- [#17](../../issues/17) — The tower reads the board.',
-  '- [#18](../../issues/18) — The tower reads the crew.',
+  '- [#17](../../issues/17) - The tower reads the board.',
+  '- [#18](../../issues/18) - The tower reads the crew.',
   '',
   '## [1.0.0] - 2026-01-01',
   '',
-  '- [#1](../../issues/1) — An older entry, already released.',
+  '- [#1](../../issues/1) - An older entry, already released.',
   '',
 ].join('\n');
 
@@ -123,7 +123,7 @@ const run = async () => {
     const tmp = mkTmp();
     const dir = mkRepo(tmp);
     assertEq(repoHealth(dir).unreleasedEntries, 0, 'no file');
-    fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), '# Changelog\n\n## [Unreleased]\n\n## [1.0.0] - 2026-01-01\n\n- [#1](../../issues/1) — Shipped.\n');
+    fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), '# Changelog\n\n## [Unreleased]\n\n## [1.0.0] - 2026-01-01\n\n- [#1](../../issues/1) - Shipped.\n');
     assertEq(repoHealth(dir).unreleasedEntries, 0, 'just released');
     cleanup(tmp);
   });

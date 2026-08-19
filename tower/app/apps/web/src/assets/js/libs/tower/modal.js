@@ -1,12 +1,12 @@
 //
-// The tower's dialogs — what clicking an issue does, and what clicking a crew
+// The tower's dialogs - what clicking an issue does, and what clicking a crew
 // card does, everywhere on the tower.
 //
 // Before this, every issue on every page was an anchor to github.com, so the
-// only way to read one was to leave the dashboard. Now a click OPENS it here —
+// only way to read one was to leave the dashboard. Now a click OPENS it here -
 // title, number, repo, status and chips, the body rendered, who holds it, when
 // it was filed and last touched, what it waits on and what it blocks, and how
-// many comments are waiting — and GitHub is reached only through the explicit
+// many comments are waiting - and GitHub is reached only through the explicit
 // external-link button, which is in the dialog and on each card while it is
 // hovered or focused. Nothing navigates by accident.
 //
@@ -17,14 +17,14 @@
 // Click sites do not each need a listener. A card carries `data-issue` with a
 // `repo#number` key, `issueTrigger()` records the issue object under that key
 // as the markup is built, and ONE delegated listener on the document opens
-// whatever was clicked — so a page that repaints ten times a minute never
+// whatever was clicked - so a page that repaints ten times a minute never
 // rebinds anything, and a new click site is one attribute.
 //
 // Every field is attacker-controlled text: titles, bodies and handles come from
 // GitHub's API and are escaped (or run through the markdown renderer, which
 // escapes first) without exception.
 //
-// The renderer itself is the framework's — `omega.utilities().renderMarkdown`,
+// The renderer itself is the framework's - `omega.utilities().renderMarkdown`,
 // which this file never names. It is handed in at mount instead, from the main
 // bundle that already holds the client singleton, which is what keeps every
 // markup function here a pure string function the suite can ask questions of
@@ -47,7 +47,7 @@ const registry = new Map();
  * The attributes that make an element open the issue dialog.
  *
  * Registering happens HERE, as the markup is written, because the issue object
- * and its markup are made in the same breath — a page never has to keep a
+ * and its markup are made in the same breath - a page never has to keep a
  * second copy of its own list for the dialog to read.
  *
  * @param {object} issue - one issue from /api/board or /api/brief
@@ -60,22 +60,22 @@ export const issueTrigger = (issue) => {
 };
 
 /**
- * One issue as a list item — the shape three pages draw it in.
+ * One issue as a list item - the shape three pages draw it in.
  *
  * The interactive semantics sit on the INNER element, never on the `<li>`: an
  * `<li>` given `role="button"` stops being a list item, and a screen reader
- * loses the list — how many issues there are and which one it is on. The `<li>`
+ * loses the list - how many issues there are and which one it is on. The `<li>`
  * keeps `omega-tower-issue` (what the stylesheet reveals the external link
  * from, through `:hover` and `:focus-within`, which reach the inner element
  * either way) and stays bare; the inner div takes the click target's
  * `omega-interactive`, its layout AND spacing classes, and the trigger
- * attributes — padding on the `<li>` would leave a strip of row the hover
+ * attributes - padding on the `<li>` would leave a strip of row the hover
  * tint and the click never cover (issue #42's review, browser-verified).
  *
  * @param {object} issue - one issue from /api/board or /api/brief
  * @param {string} body - the item's content markup
  * @param {object} [classes]
- * @param {string} [classes.item] - extra classes for the `<li>` (rarely needed — spacing belongs on `inner`)
+ * @param {string} [classes.item] - extra classes for the `<li>` (rarely needed - spacing belongs on `inner`)
  * @param {string} [classes.inner] - classes for the interactive element (its layout and spacing)
  * @returns {string} markup
  */
@@ -90,7 +90,7 @@ export const issueItem = (issue, body, { item = '', inner = '' } = {}) => `<li c
  * `omega-tower-external` is what the stylesheet hides until a card is hovered
  * or focused; in the dialog it is passed no extra class and simply shows.
  *
- * The glyph is plain Font Awesome markup — the framework's shared renderer
+ * The glyph is plain Font Awesome markup - the framework's shared renderer
  * watches for inserted elements and draws it, which is what makes it work in
  * markup this file writes long after the page booted. The anchor carries the
  * label, so the icon itself is hidden from the accessibility tree.
@@ -103,10 +103,10 @@ export const externalLink = (url, extraClass = '') => `<a class="omega-tower-ext
   <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
 </a>`;
 
-/** A date as the dialog says it — the day, or a dash when there is no date. */
+/** A date as the dialog says it - the day, or a dash when there is no date. */
 const day = (value) => {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString();
+  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleDateString();
 };
 
 //
@@ -116,8 +116,8 @@ const day = (value) => {
 // where the issue is actually read, and it says both halves of the edge (#127):
 // what it waits on, and what is waiting on IT.
 //
-// Both come off the board payload already in memory — the same sweep the cards
-// judge a "waits on" chip against — so nothing is fetched and nothing is stored.
+// Both come off the board payload already in memory - the same sweep the cards
+// judge a "waits on" chip against - so nothing is fetched and nothing is stored.
 // The inverse direction is read at the moment the dialog opens, by asking which
 // issues on that board name this one as a blocker; keeping it anywhere would be
 // a second copy of an edge the sweep already carries.
@@ -135,7 +135,7 @@ let held = [];
  *
  * Called by the paint (page.js), for the same reason the agent dialog's refresh
  * is: a dialog lives in the layout, outside the mount a page's render writes
- * into, and every page's paint passes through the runtime — so the payload is
+ * into, and every page's paint passes through the runtime - so the payload is
  * handed over once, there, rather than kept a second time by each page that
  * opens an issue. A page whose feeds carry no board hands over nothing, and the
  * dialog says nothing about dependencies rather than guessing at them.
@@ -146,7 +146,7 @@ let held = [];
 export const holdBoard = (payload) => { held = (payload && payload.issues) || []; };
 
 /**
- * What one issue waits on, and what waits on it — both read off one board.
+ * What one issue waits on, and what waits on it - both read off one board.
  *
  * Pure, and answering in the BOARD's own issue objects rather than in the
  * blocker references, because each one is drawn as a trigger that opens that
@@ -170,7 +170,7 @@ export const dependencies = (issue, issues) => {
 };
 
 /**
- * How one issue is named on another's line — the card's chip's own spelling: the
+ * How one issue is named on another's line - the card's chip's own spelling: the
  * short `#12` when the two share a repo, the whole key anywhere else, since
  * `#12` in another repo is a different issue.
  */
@@ -207,7 +207,7 @@ const dependencyLine = (issue, issues) => {
 /**
  * The three pieces of the dialog for one issue.
  *
- * Pure — an issue in, three markup strings out — which is what lets the suite
+ * Pure - an issue in, three markup strings out - which is what lets the suite
  * ask what a hostile title renders as without a browser.
  *
  * @param {object} issue - one issue from /api/board or /api/brief
@@ -237,13 +237,13 @@ export const issueDialog = (issue, renderBody, issues) => {
       <p class="omega-micro text-body-secondary">${esc(meta.join(' · '))}</p>
       ${dependencyLine(issue, issues)}
       <div class="omega-tower-issue__body">${rendered || '<p class="text-body-secondary mb-0">No description.</p>'}</div>
-      ${issue.bodyTruncated ? '<p class="omega-micro text-body-secondary mt-2">The body is longer than this — the rest is on GitHub.</p>' : ''}
+      ${issue.bodyTruncated ? '<p class="omega-micro text-body-secondary mt-2">The body is longer than this - the rest is on GitHub.</p>' : ''}
       <p class="mt-3 mb-0"><a href="${esc(issue.url)}" target="_blank" rel="noopener">${esc(issue.comments === 1 ? '1 comment' : `${issue.comments || 0} comments`)} on GitHub</a></p>`,
   };
 };
 
 /**
- * The one pair of delegated listeners a dialog opens from — a click, and the
+ * The one pair of delegated listeners a dialog opens from - a click, and the
  * Enter/Space a div with a button role has to be given by hand.
  *
  * Delegated on the document so a page that repaints ten times a minute rebinds
@@ -255,7 +255,7 @@ export const issueDialog = (issue, renderBody, issues) => {
  */
 const openFrom = (attribute, open) => {
   const trigger = (event) => {
-    // A link inside a card is the card's escape hatch — the external-link
+    // A link inside a card is the card's escape hatch - the external-link
     // button and any link in the body keep their own behavior.
     if (event.target.closest('a[href]')) return null;
     return event.target.closest(`[data-${attribute}]`);
@@ -291,7 +291,7 @@ const openFrom = (attribute, open) => {
  */
 export function mountIssueModal({ render, scope = document } = {}) {
   // Without a renderer the dialog would mount fine and then throw inside the
-  // click listener — one interaction away from the mistake. Fail at the mount,
+  // click listener - one interaction away from the mistake. Fail at the mount,
   // where the missing argument is.
   if (typeof render !== 'function') throw new Error('mountIssueModal needs a render function for issue bodies');
   const dialog = scope.querySelector('#tower-issue');
@@ -305,7 +305,7 @@ export function mountIssueModal({ render, scope = document } = {}) {
   const open = (key) => {
     const issue = registry.get(key);
     // The registry is written by the same render that wrote the element, so a
-    // key with nothing behind it means the markup outlived its data — say so
+    // key with nothing behind it means the markup outlived its data - say so
     // rather than opening an empty dialog.
     if (!issue) {
       console.warn(`[tower] no issue registered for ${key}`);
@@ -325,7 +325,7 @@ export function mountIssueModal({ render, scope = document } = {}) {
 // ── The crew card's dialog ─────────────────────────────────────────────────
 //
 // The same machinery for the other thing the tower draws as a card: an agent.
-// A crew card shows what it IS; this says what it is doing — the tool it last
+// A crew card shows what it IS; this says what it is doing - the tool it last
 // reached for, what it has spent, how long it has been up, and where its
 // transcript is. Everything on it comes from the telemetry payload; a field the
 // payload does not carry is left OUT rather than drawn as a dash, because a row
@@ -333,8 +333,8 @@ export function mountIssueModal({ render, scope = document } = {}) {
 // spent anything.
 //
 // And it is a LIVE surface, not a snapshot (#108). Filled once at open it froze
-// at that instant's stamps — the dialogs live in the layout, outside the mount a
-// paint writes into — so the second hand, which only ever DECAYS what it walks,
+// at that instant's stamps - the dialogs live in the layout, outside the mount a
+// paint writes into - so the second hand, which only ever DECAYS what it walks,
 // took a dialog left open on a working agent gray at twenty seconds and empty at
 // sixty while the card behind it kept spinning. So every feed paint refreshes
 // whichever agent dialog is open (page.js's paint calls `refreshAgentDialog`),
@@ -344,7 +344,7 @@ export function mountIssueModal({ render, scope = document } = {}) {
 // Refreshing PATCHES rather than redraws, for the reason clock.js patches: an
 // `innerHTML` over the header would replace the glyph every ten seconds and
 // restart the animation it is meant to keep running. The body is written in two
-// halves for exactly that — a header carrying the stamped indicator, whose
+// halves for exactly that - a header carrying the stamped indicator, whose
 // `data-live-*` attributes the refresh rewrites and the shared tick then
 // re-decides, and a rows block, which holds no motion and is rewritten whole.
 //
@@ -380,7 +380,7 @@ const clock = (ms) => (Number.isFinite(Number(ms)) ? new Date(Number(ms)).toLoca
  * moves.
  *
  * The indicator is `agent.crewActivity`, the same stamped builder the Crew page
- * and the Overview draw (#65) — so the dialog carries the card's glyph, the
+ * and the Overview draw (#65) - so the dialog carries the card's glyph, the
  * card's age beside it, and the stamps both the second hand and the refresh
  * below read back. That age is also the ONLY place the dialog says how fresh
  * the agent is: there was a "Last activity" row saying the same span in words,
@@ -389,7 +389,7 @@ const clock = (ms) => (Number.isFinite(Number(ms)) ? new Date(Number(ms)).toLoca
  *
  * @param {object} entry - a normalized crew node with `label` and `role`
  * @param {number} now - ms epoch
- * @returns {string} markup — the header's CONTENTS, so a refresh can rewrite
+ * @returns {string} markup - the header's CONTENTS, so a refresh can rewrite
  *   them without replacing the element they sit in
  */
 const agentHead = (entry, now) => `${roleIcon(entry.role || entry.agentClass)}
@@ -424,7 +424,7 @@ const agentRows = (entry, now) => {
 /**
  * The two pieces of the dialog for one agent.
  *
- * Pure — a node and a `now` in, two markup strings out — so the suite can ask
+ * Pure - a node and a `now` in, two markup strings out - so the suite can ask
  * what it says about a session that has spent nothing without a browser.
  *
  * The body's two halves are named in the markup (`data-agent-head`,
@@ -444,7 +444,7 @@ export const agentDialog = (entry, now = Date.now()) => ({
 });
 
 // The dialog the mount bound, so a page's paint can refresh it without knowing
-// anything about the layout it lives in — the same reason the registry is here
+// anything about the layout it lives in - the same reason the registry is here
 // and not on a page.
 let agentHost = null;
 
@@ -455,7 +455,7 @@ let agentHost = null;
  * FEED lands, and the second in between is the second hand's job.
  *
  * Quiet in every case where there is nothing true to say. No dialog open, or a
- * key with nothing behind it, and it writes nothing at all — an agent that
+ * key with nothing behind it, and it writes nothing at all - an agent that
  * ENDED between polls stops being registered, and the honest thing to show is
  * the last stamps it had, which the second hand then decays to gray and to
  * nothing exactly as it would on the card that is no longer drawn either.
@@ -472,7 +472,7 @@ export const refreshAgentDialog = (now = Date.now(), host = agentHost) => {
 
   const rows = host.querySelector('[data-agent-rows]');
   const markup = agentRows(entry, now);
-  // A poll paints twice — once as the read starts and once as it lands — so the
+  // A poll paints twice - once as the read starts and once as it lands - so the
   // write is behind the comparison, like every write the second hand makes.
   if (rows && rows.innerHTML !== markup) rows.innerHTML = markup;
 
@@ -481,13 +481,13 @@ export const refreshAgentDialog = (now = Date.now(), host = agentHost) => {
   const live = head.querySelector('[data-live-ts]');
   const stamps = liveStamps(entry);
   // Patching keeps the glyph that is already turning; redrawing is for the case
-  // where there is no glyph to keep — the indicator aged out of the walk, or
+  // where there is no glyph to keep - the indicator aged out of the walk, or
   // the fresh entry carries no timestamp for the tick to read.
   if (live && stamps.liveTs) {
     for (const [name, value] of Object.entries(stamps)) {
       if (live.dataset[name] !== value) live.dataset[name] = value;
     }
-    // A stamp the fresh entry no longer carries comes OFF — the tick would
+    // A stamp the fresh entry no longer carries comes OFF - the tick would
     // otherwise keep reading a fact the agent stopped reporting.
     for (const name of ['liveTs', 'liveAlive']) {
       if (!(name in stamps) && name in live.dataset) delete live.dataset[name];
@@ -495,7 +495,7 @@ export const refreshAgentDialog = (now = Date.now(), host = agentHost) => {
     applyLive(head, now);
   } else {
     // The badges and the title are session-constant in the crew payload, so
-    // only this aged-out/returning branch redraws them — behind the same
+    // only this aged-out/returning branch redraws them - behind the same
     // comparison every other write makes.
     const fresh = agentHead(entry, now);
     if (head.innerHTML !== fresh) head.innerHTML = fresh;
@@ -522,7 +522,7 @@ export function mountAgentModal({ scope = document } = {}) {
   const body = dialog.querySelector('[data-agent-body]');
   agentHost = body;
 
-  // Which agent is on screen, written where the refresh can read it back — the
+  // Which agent is on screen, written where the refresh can read it back - the
   // dialog itself is the one thing that outlives every paint, so it is where
   // that fact belongs. A closed dialog carries no key and is refreshed by
   // nothing.

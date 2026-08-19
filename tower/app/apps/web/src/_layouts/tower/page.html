@@ -1,7 +1,7 @@
 ---
 layout: admin/core/minimal
 
-# Every tower page wears this — for one frontmatter key, and for the intake
+# Every tower page wears this - for one frontmatter key, and for the intake
 # dialog in its body (the topbar's button opens it, so it has to be on every
 # page). The key: the tower is a localhost
 # tool with no user accounts, and the admin layout chain it extends sets
@@ -10,11 +10,11 @@ layout: admin/core/minimal
 # `policy: "disabled"` makes core/js/core/auth.js return before it looks at
 # anything (auth.js:17).
 #
-# `client:` is the framework's name for this blob (issue #98 — it used to be
+# `client:` is the framework's name for this blob (issue #98 - it used to be
 # `web_manager`, and the rename is what silently re-armed the gate: the stale
 # key resolved to nothing and the admin chain's policy won). The engine's
 # meta-only guard now admits {meta, schema, theme, client, append, sitemap}
-# on pages too, but the layout stays the one home so six pages cannot drift.
+# on pages too, but the layout stays the one home so seven pages cannot drift.
 client:
   auth:
     config:
@@ -37,8 +37,8 @@ meta:
 <!-- Issue dialog.
      Clicking an issue anywhere on the tower opens this instead of leaving for
      github.com; the external-link button in the header is the only thing that
-     does. It is in the LAYOUT for the same reason the intake dialog is — issues
-     are clicked on four of the six pages, and one shell serves all of them.
+     does. It is in the LAYOUT for the same reason the intake dialog is - issues
+     are clicked on four of the seven pages, and one shell serves all of them.
      Every part of it is filled by libs/tower/modal.js, which is also the one
      place issue text is escaped. -->
 <div class="modal fade" id="tower-issue" tabindex="-1" aria-labelledby="tower-issue-label" aria-hidden="true">
@@ -74,26 +74,17 @@ meta:
   </div>
 </div>
 
-<!-- Unlock dialog.
-     A locked published copy opens this by itself (issue #96): the prompt used
-     to replace the page body, which took the shell away from a viewer who had
-     nothing to do but answer it. It is in the LAYOUT beside the other two
-     because the runtime opens it on whichever page was asked for, and it is
-     STATIC — no backdrop dismiss, no Escape, no close button — because a
-     dismissed prompt would leave a page with no data and no way to ask for
-     the token again, which is exactly what the inline prompt could not do.
-     libs/tower/token.js fills it with the same prompt markup and opens it. -->
-<div class="modal fade" id="tower-unlock" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-label="Unlock the board" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-body" data-token-body></div>
-    </div>
-  </div>
-</div>
+<!-- The unlock dialog is RETIRED (issue #167). A locked copy used to open a
+     static modal here - no backdrop dismiss, no Escape, no close button -
+     because a dismissed prompt left a page with no data and no second place to
+     type a token. The second place is now a page: /settings, in the sidebar,
+     which works without a token because it is where one is typed. So there is
+     nothing left to open over the page, and a tokenless landing is sent there
+     instead (libs/tower/page.js). -->
 
 <!-- Intake dialog.
      It lives in the LAYOUT, not on a page, because the spec puts intake on the
-     topbar of every page rather than behind a tab — and the topbar's button
+     topbar of every page rather than behind a tab - and the topbar's button
      (backend/sections/topbar.json) targets this id. Plain Bootstrap markup:
      the theme already ships the modal, and the only thing tower JS adds is the
      roster in the select and the POST behind the button. -->

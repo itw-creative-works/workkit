@@ -1,5 +1,5 @@
 //
-// Usage — where the tokens went: by model, by agent class, over time, how much
+// Usage - where the tokens went: by model, by agent class, over time, how much
 // of the input was a cache read rather than fresh, what it cost, and the
 // session inventory underneath.
 //
@@ -17,7 +17,7 @@
 // them over every transcript on the machine, subagents included, while
 // `sessions` lists only the handful of ROOT chats. This page used to fall back
 // to recomputing them from that list, which threw the real answer away and drew
-// a far smaller one — two models instead of five, one bar for the main chat
+// a far smaller one - two models instead of five, one bar for the main chat
 // instead of nine agent classes, a two-point line instead of thirty days. An
 // aggregate the endpoint did not send is the endpoint's defect, so the chart
 // says it has nothing rather than drawing a quieter wrong number.
@@ -25,7 +25,7 @@
 // The session list is read for two things: the inventory table, which is
 // per-session by definition, and the cache split and the cost, which the
 // endpoint does not aggregate. Those two sum the roots AND their subagents, so
-// they cover the same spend the charts do — the four numbers at the top of the
+// they cover the same spend the charts do - the four numbers at the top of the
 // page are one accounting, not two.
 //
 
@@ -44,8 +44,8 @@ const sortDown = (list) => [...list].sort((a, b) => b[1] - a[1]);
  * One of the endpoint's `{ label: tokens }` aggregates as sorted rows.
  *
  * A zero-token entry is dropped: an empty bar carries no information and takes
- * a row of the chart to say nothing. `<synthetic>` — Claude Code's locally
- * generated messages, which cost nothing and are billed to no model — is always
+ * a row of the chart to say nothing. `<synthetic>` - Claude Code's locally
+ * generated messages, which cost nothing and are billed to no model - is always
  * one of these.
  */
 const aggregate = (map) => sortDown(Object.entries(map)
@@ -62,7 +62,7 @@ const dayLabel = (day) => {
 const series = (list) => list.map((entry) => [String(entry.label), Number(entry.tokens) || 0]);
 
 /**
- * Every transcript the payload carries — each root session, and each subagent
+ * Every transcript the payload carries - each root session, and each subagent
  * it spawned. The endpoint's aggregates are computed over exactly this set, so
  * the two numbers derived here, the cache split and the cost, account for the
  * same tokens the charts show.
@@ -85,7 +85,7 @@ const readUsage = (result) => {
       title: session.chatName || '',
       model: session.model || 'unknown',
       // A root session IS the manager, which is what the endpoint's byClass
-      // calls it — the table and the class chart name the same tier the same way.
+      // calls it - the table and the class chart name the same tier the same way.
       agentClass: 'manager',
       cost: session.cost,
       tokens: session.tokens,
@@ -102,26 +102,26 @@ const readUsage = (result) => {
 const numbers = (usage) => {
   const total = usage.byModel.reduce((sum, [, value]) => sum + value, 0)
     || usage.cacheRead + usage.fresh;
-  const share = total ? `${((usage.cacheRead / total) * 100).toFixed(0)}%` : '—';
+  const share = total ? `${((usage.cacheRead / total) * 100).toFixed(0)}%` : '-';
   return statgrid([
-    statCell('Tokens', total ? compact(total) : '—'),
-    statCell('Cache reads', usage.cacheRead ? compact(usage.cacheRead) : '—'),
+    statCell('Tokens', total ? compact(total) : '-'),
+    statCell('Cache reads', usage.cacheRead ? compact(usage.cacheRead) : '-'),
     statCell('Cache share', share),
-    statCell('Estimated cost', usage.cost === null ? '—' : money(usage.cost)),
+    statCell('Estimated cost', usage.cost === null ? '-' : money(usage.cost)),
   ]);
 };
 
 // A session's cache column says one thing and it is worth seeing at a glance:
 // tokens that were READ from the cache are the cheap ones, and a session that
 // read none paid full price for its whole context. So the cell is the theme's
-// status pill — green for a read, red for a miss — rather than another number
+// status pill - green for a read, red for a miss - rather than another number
 // in a column of numbers.
 //
 // A session that has spent NOTHING gets neither. It has not missed the cache;
 // it has not asked it anything yet, and a red pill on a chat that has said one
 // word reads as a problem where there is none.
 const cacheCell = (tokens) => {
-  if (!tokens.cacheRead && !tokens.input) return '<span class="text-body-secondary">—</span>';
+  if (!tokens.cacheRead && !tokens.input) return '<span class="text-body-secondary">-</span>';
   return tokens.cacheRead > 0 ? pill('ok', compact(tokens.cacheRead)) : pill('danger', 'miss');
 };
 
@@ -130,17 +130,17 @@ const sessionTable = (usage) => {
   return `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
     <thead><tr><th>session</th><th>class</th><th>model</th><th class="text-end">tokens</th><th class="text-end">cache</th><th class="text-end">cost</th></tr></thead>
     <tbody>${usage.sessions.map((session) => `<tr>
-      <td>${esc(session.title || session.id || '—')}</td>
+      <td>${esc(session.title || session.id || '-')}</td>
       <td>${classBadge(session.agentClass)}</td>
       <td>${modelBadge(session.model)}</td>
       <td class="text-end">${esc(compact(session.tokens.total))}</td>
       <td class="text-end">${cacheCell(session.tokens)}</td>
-      <td class="text-end">${session.cost === null ? '—' : esc(money(session.cost))}</td>
+      <td class="text-end">${session.cost === null ? '-' : esc(money(session.cost))}</td>
     </tr>`).join('')}</tbody>
   </table></div>`;
 };
 
-// A ranked bar chart is as tall as it has rows — the class chart draws every
+// A ranked bar chart is as tall as it has rows - the class chart draws every
 // agent class the machine ran, and nine of them crushed into a fixed 240px box
 // would be nine unreadable slivers. The two charts share one height because
 // they sit side by side: the taller one sets it, and the shorter card is not
@@ -181,7 +181,7 @@ const drawCharts = (usage) => {
   }
   if (usage.overTime.length) {
     // Every one of the thirty days is on the axis, quiet ones at zero: the shape
-    // of a month — which days were busy and which were not — is the whole point,
+    // of a month - which days were busy and which were not - is the whole point,
     // and an axis of only the days that happened to be non-zero would compress
     // three weeks of silence into nothing.
     lineChart('usage-time', {

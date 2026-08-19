@@ -1,5 +1,5 @@
 //
-// Overview — the landing page, and the one that has to read as a control room:
+// Overview - the landing page, and the one that has to read as a control room:
 // the six numbers, what is waiting on the owner, who is running, and which repos are
 // dirty, all above the fold.
 //
@@ -32,18 +32,18 @@ const total = (state, field) => reposFor(state)
 
 // In flight is the brief's definition, to the letter (tower/api/lib/brief.js):
 // `status:building` IS in flight, and the label is the whole of it (issue #62).
-// A claim — an assignee, or the agent:working marker — says WHO holds an issue,
+// A claim - an assignee, or the agent:working marker - says WHO holds an issue,
 // never which queue it is in: a claimed `status:specced` issue is a transient
 // the standards sweep flips, so counting it here would put the same issue in
 // two places and disagree with the brief the Brief page draws.
 
 // QA sits between them because it is the OWNER's queue (issue #135): built work
 // parked on a check, which nothing ships past. Blocked is a decision to make and
-// QA is a check to give — two different asks of the same person, so they are two
+// QA is a check to give - two different asks of the same person, so they are two
 // tiles rather than one "waiting on you" number that hides which is which.
 
-// Three of the seven numbers are the MACHINE's — the live crew and the state of
-// its working copies — and a published copy has no reading of them at all. The
+// Three of the seven numbers are the MACHINE's - the live crew and the state of
+// its working copies - and a published copy has no reading of them at all. The
 // tile says so: a dash with the local-only sentence as its tooltip, never the 0
 // that summing an empty feed would produce, because "no sessions running" and
 // "this cannot be read from here" are opposite facts and the second one must
@@ -52,7 +52,7 @@ const machineStat = (state, name, label, value, href) => (localOnly(state, name)
   ? statCell(label, num(null), href, LOCAL_ONLY_NOTICE)
   : statCell(label, value, href));
 
-// The brief payload, which is where the history rides — the same read the Brief
+// The brief payload, which is where the history rides - the same read the Brief
 // page makes, and the only feed that carries the mornings before this one.
 const briefPayload = (state) => {
   const result = feed(state, 'brief');
@@ -61,7 +61,7 @@ const briefPayload = (state) => {
 
 // How a number compares with a week ago, as the tile's sub-line (issue #55).
 // The comparison is the HISTORY's, which is the board as the published briefs
-// recorded it — roster-wide, and simply absent until two mornings have gone
+// recorded it - roster-wide, and simply absent until two mornings have gone
 // out. Under a repo selection the tiles above are narrowed, so the sub-lines
 // go quiet rather than sit a roster-wide delta under a per-repo number.
 const since = (entries, key) => deltaLine(weekDelta(entries, key));
@@ -81,16 +81,16 @@ const numbers = (state) => {
 };
 
 // What is waiting on the owner. It sits high, it is never collapsed, and it says so
-// even when the answer is "nothing" — a blank region would read as a bug.
+// even when the answer is "nothing" - a blank region would read as a bug.
 //
 // The alarm is spent only when something IS waiting: an empty strip carries no
 // red border and no accent chip, because a dashboard that shouts at a clear
 // queue teaches you to stop reading it.
-// The rest of a capped list is on the Board, and the line says how many it is —
+// The rest of a capped list is on the Board, and the line says how many it is -
 // "see all" with no number would hide exactly the fact that matters when the
 // queue has grown.
 const seeMore = (hidden, href) => (hidden
-  ? `<p class="mt-2 mb-0"><a class="omega-micro text-decoration-none" href="${esc(href)}">see all — ${hidden} more on the board</a></p>`
+  ? `<p class="mt-2 mb-0"><a class="omega-micro text-decoration-none" href="${esc(href)}">see all - ${hidden} more on the board</a></p>`
   : '');
 
 const waiting = (state) => {
@@ -113,24 +113,24 @@ const waiting = (state) => {
 };
 
 // What a session's `state` column says. A session that is MOVING says it with
-// the crew's own glyph and how fresh it is — the same indicator the Crew page
+// the crew's own glyph and how fresh it is - the same indicator the Crew page
 // and the Board draw, so one agent reads the same on every surface (#46). The
-// states the glyph does not name — idle, stale, unknown — keep their pill,
+// states the glyph does not name - idle, stale, unknown - keep their pill,
 // because a word is the only thing that tells those two apart.
 //
-// The indicator itself is `agent.crewActivity` — the Crew page's builder, not a
+// The indicator itself is `agent.crewActivity` - the Crew page's builder, not a
 // second copy of it (#65). This page used to wrap the bare glyph in its own
 // span, which cost it the `data-live-*` stamps that markup carries, and the
 // second hand ticks exactly what carries them: the Overview's numbers stood
 // still while the Crew page's counted up. The hover text comes with the builder
 // (how long it has been up, not what it last did) because the tick rewrites
-// that attribute every second from the same arithmetic — a sentence written
+// that attribute every second from the same arithmetic - a sentence written
 // only here would survive one second and no more.
 // The ROW goes muted with the glyph on it: a session quiet longer than a minute
 // stays in the table, faint, until five (#99). Same class as the crew card
 // wears, marked `data-live-card` so the second hand decides it too.
 const stateCell = (session, now) => {
-  // Empty is the builder saying `none` — quiet too long to draw at all.
+  // Empty is the builder saying `none` - quiet too long to draw at all.
   const indicator = crewActivity(session, now);
   return indicator || pill(session.state === 'stale' ? 'danger' : 'warn', session.state || 'unknown');
 };
@@ -142,13 +142,13 @@ const crew = (state) => {
   const result = feed(state, 'sessions');
   let body;
   if (!result) body = loading('reading the crew…');
-  // A published copy has no crew to read — the sentence, not an empty table.
+  // A published copy has no crew to read - the sentence, not an empty table.
   else if (localOnly(state, 'sessions')) body = localOnlyNotice();
   else if (!result.ok) body = problem(result.reason);
   else if (!live.length) body = empty('no live sessions', 'fa-regular fa-moon');
   else {
     // The chat name WRAPS. It used to carry `text-truncate`, which on a table
-    // cell only sets `white-space: nowrap` — the cell cannot shrink, so one
+    // cell only sets `white-space: nowrap` - the cell cannot shrink, so one
     // long session name grew the table to twice its card and pushed the state
     // pill and the model out past the card's edge, reachable only by scrolling
     // the table sideways. Wrapping keeps every column inside the card.
@@ -157,9 +157,9 @@ const crew = (state) => {
       <thead><tr><th>repo</th><th>chat</th><th>state</th><th>model</th></tr></thead>
       <tbody>${shown.map((session) => `<tr class="${cardMuted(session, now)}" data-live-card>
         <td class="text-nowrap">${esc(shortPath(session.cwd))}</td>
-        <td>${esc(session.chatName || '—')}</td>
+        <td>${esc(session.chatName || '-')}</td>
         <td>${stateCell(session, now)}</td>
-        <td>${session.model ? modelBadge(session.model) : '—'}</td>
+        <td>${session.model ? modelBadge(session.model) : '-'}</td>
       </tr>`).join('')}</tbody>
     </table></div>${seeMore(hidden, '/crew')}`;
   }
@@ -169,7 +169,7 @@ const crew = (state) => {
 // A repo says only what is wrong with it, so a clean repo takes one line and
 // the eye lands on the dirty ones.
 const healthLine = (repo, reading) => {
-  if (!reading) return `<li class="py-1">${esc(repo.name)} <span class="text-body-secondary">— no reading</span></li>`;
+  if (!reading) return `<li class="py-1">${esc(repo.name)} <span class="text-body-secondary">- no reading</span></li>`;
   if (reading.error) return `<li class="py-1">${esc(repo.name)} <span class="text-danger">${esc(reading.error)}</span></li>`;
   const notes = [
     ['unpushed', reading.unpushed],
@@ -185,7 +185,7 @@ const healthLine = (repo, reading) => {
   </li>`;
 };
 
-// How much is wrong with a repo, as one number — what the capped list is
+// How much is wrong with a repo, as one number - what the capped list is
 // ordered by. A cap that kept the roster's own order would show five clean
 // repos and hide the dirty one, which is the only row on this panel anyone is
 // looking for; the full census is the Health page, one click away.
@@ -200,14 +200,14 @@ const healthPanel = (state) => {
   const list = reposFor(state);
   const result = feed(state, 'repos');
   let body;
-  // The ROSTER answers off-machine — it is a list of names — but the readings
+  // The ROSTER answers off-machine - it is a list of names - but the readings
   // this panel is about do not: uncommitted, unpushed and unreleased are read
   // off working copies. So the panel is gated on `health`, not on the roster it
   // would otherwise draw a full list of "no reading" rows from.
   if (localOnly(state, 'health')) body = localOnlyNotice();
   else if (!result) body = loading('reading the roster…');
   else if (!result.ok) body = problem(result.reason);
-  else if (!list.length) body = empty('no repos in the roster — nothing has opted in under the roster root', 'fa-regular fa-square-plus');
+  else if (!list.length) body = empty('no repos in the roster - nothing has opted in under the roster root', 'fa-regular fa-square-plus');
   else {
     const ranked = [...list].sort((a, b) => trouble(health(state)[b.path]) - trouble(health(state)[a.path]));
     const { shown, hidden } = cap(ranked);
@@ -216,7 +216,7 @@ const healthPanel = (state) => {
   return card('Health', body, { class: 'h-100', link: { href: '/health', label: 'all' } });
 };
 
-// Open issues by status — the same series the Board's columns count, as a
+// Open issues by status - the same series the Board's columns count, as a
 // doughnut: the question this panel answers is what SHARE of the queue is
 // blocked or unspecced, and a ring says a share where a row of bars said that
 // many unrelated heights. The box is taller than the bars needed because the legend
@@ -238,16 +238,16 @@ const drawShape = (state) => {
 // The history is the published briefs read back (issue #55): one point per
 // morning, and nothing at all before the first brief that carried a stats
 // block. So the three cards say WHY they are empty rather than drawing an axis
-// with nothing on it — a chart of one point is a dot claiming to be a trend.
+// with nothing on it - a chart of one point is a dot claiming to be a trend.
 //
-// The five series are the queue's own, in the Board's order — which is why `qa`
-// is last — and every colour comes from the chart module's ramp: nothing here
+// The five series are the queue's own, in the Board's order - which is why `qa`
+// is last - and every colour comes from the chart module's ramp: nothing here
 // names a colour.
 
 const historyBody = (payload, id, height, key) => {
   if (unread(payload)) return empty(UNREAD, 'fa-regular fa-clock');
   if (!hasSeries(payload)) return empty(ACCRUES, 'fa-regular fa-clock');
-  // The stamp is the card's OWN series — it is what tells `swap` the markup
+  // The stamp is the card's OWN series - it is what tells `swap` the markup
   // changed on a data-only tick, so a card stamped with a neighbour's series
   // would redraw on the wrong signal.
   return chartSlot(id, height, seriesOf(entriesOf(payload), key).values);
@@ -256,7 +256,7 @@ const historyBody = (payload, id, height, key) => {
 const overTime = (state) => {
   const payload = briefPayload(state);
   const result = feed(state, 'brief');
-  // The feed has not answered yet — the cards are not drawn at all rather than
+  // The feed has not answered yet - the cards are not drawn at all rather than
   // drawn as an absence that a moment later turns into data.
   if (!result) return '';
   return `<div class="row g-4 mt-0">
@@ -314,7 +314,7 @@ const render = (root, state) => {
   }
 
   // The chart is drawn only when the markup it lives on was actually written:
-  // an unchanged tick leaves the existing canvas — and its Chart.js instance —
+  // an unchanged tick leaves the existing canvas - and its Chart.js instance -
   // alone rather than tearing it down and building the same picture again.
   if (!swap(root, `
     ${head}
@@ -330,7 +330,7 @@ const render = (root, state) => {
   drawHistory(state);
 };
 
-// `brief` is read for its HISTORY — the mornings before this one, which no live
+// `brief` is read for its HISTORY - the mornings before this one, which no live
 // sweep can answer (issue #55). Its counts are not drawn here; the tiles above
 // are this minute's board.
 export default () => startPage({

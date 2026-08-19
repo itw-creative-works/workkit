@@ -1,10 +1,10 @@
 //
-// Tests for tower/api/lib/sessions.js — the live crew.
+// Tests for tower/api/lib/sessions.js - the live crew.
 //
 // Everything is a fixture: a scratch marker directory, a scratch ~/.claude
 // projects tree, a scratch statusline cache. The real TMPDIR markers belong to
 // the sessions actually running on this machine and are never touched, and `ps`
-// is the one call that cannot be faked with a file — it gets the exec seam.
+// is the one call that cannot be faked with a file - it gets the exec seam.
 //
 // The marker shapes here are the ones the claude:keep-awake hook writes:
 // a file named for the claude pid holding caffeinate=, cwd= and session=, and
@@ -99,14 +99,14 @@ const run = async () => {
 
   await test('a recycled caffeinate pid holding someone else reads stale', () => {
     const w = mkWorld();
-    // Same shape of command, a DIFFERENT claude pid — the whole-string match is
+    // Same shape of command, a DIFFERENT claude pid - the whole-string match is
     // what makes pid recycling detectable.
     mkMarker(w, 4003, { holds: 9999 });
     assertEq(list(w)[0].state, 'stale', 'the assertion is not ours');
     cleanup(w.root);
   });
 
-  await test('a stale session reads no transcript — chatName stays null', () => {
+  await test('a stale session reads no transcript - chatName stays null', () => {
     const w = mkWorld();
     mkMarker(w, 4004, { session: 'abc-4', live: false });
     mkTranscript(w, '/x/repo', 'abc-4', ['{"customTitle":"Never read"}']);
@@ -128,7 +128,7 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  await test('the threshold is honored — the same transcript flips with idleMinutes', () => {
+  await test('the threshold is honored - the same transcript flips with idleMinutes', () => {
     const w = mkWorld();
     mkMarker(w, 4103, { cwd: '/x/a', session: 'q' });
     mkTranscript(w, '/x/a', 'q', ['{}'], 30);
@@ -172,7 +172,7 @@ const run = async () => {
     const [s] = list(w);
     assertEq(s.transcript, file, 'the transcript the state was read from');
     const quiet = Date.now() - s.lastActivity;
-    assert(quiet > 4 * MINUTE && quiet < 6 * MINUTE, `lastActivity is the transcript mtime — five minutes ago, got ${Math.round(quiet / 1000)}s`);
+    assert(quiet > 4 * MINUTE && quiet < 6 * MINUTE, `lastActivity is the transcript mtime - five minutes ago, got ${Math.round(quiet / 1000)}s`);
     // The birth time is platform-shaped: APFS pulls it back to the aged mtime,
     // ext4 keeps creation time, which can round a moment past the Date.now()
     // sampled here. The window covers both ends instead of a one-sided <= now.
@@ -180,7 +180,7 @@ const run = async () => {
       typeof s.aliveSince === 'number'
         && s.aliveSince > Date.now() - 6 * MINUTE
         && s.aliveSince < Date.now() + 2000,
-      'aliveSince is when the file was created — within the fixture\'s life',
+      'aliveSince is when the file was created - within the fixture\'s life',
     );
     cleanup(w.root);
   });
@@ -246,7 +246,7 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  await test('a title only in the middle is missed — the read is bounded, never whole', () => {
+  await test('a title only in the middle is missed - the read is bounded, never whole', () => {
     const w = mkWorld();
     mkMarker(w, 4205, { cwd: '/x/mid', session: 'mid' });
     mkTranscript(w, '/x/mid', 'mid', [
@@ -314,12 +314,12 @@ const run = async () => {
 
   group('tower/sessions: what is skipped');
 
-  await test('only a name that is entirely digits is a marker — locks and stray files are not', () => {
+  await test('only a name that is entirely digits is a marker - locks and stray files are not', () => {
     const w = mkWorld();
     mkMarker(w, 4401, { cwd: '/x/i', session: 'ok' });
     mkTranscript(w, '/x/i', 'ok', ['{}']);
     // The acquire lock, a dot file whose remainder IS numeric, a stray file, and
-    // a pid-like name with a suffix. The numeric test is the whole filter — a
+    // a pid-like name with a suffix. The numeric test is the whole filter - a
     // separate dot guard would be redundant, since a leading dot fails it too.
     fs.mkdirSync(path.join(w.markerDir, '.4401.lock'));
     fs.writeFileSync(path.join(w.markerDir, '.12345'), 'caffeinate=1\ncwd=/x\nsession=s\n');

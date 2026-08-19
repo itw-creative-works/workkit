@@ -1,5 +1,5 @@
 # The tower app is its own npm root and its own OMEGA brand root, so it carries
-# its own ignore rules — the same set omega-brand uses. Two separate derived
+# its own ignore rules - the same set omega-brand uses. Two separate derived
 # trees have to be named (dist/ and .omega/), which is why this lives here
 # rather than as one line in the repo root's .gitignore.
 
@@ -16,5 +16,5 @@ dist/
 # Secrets
 .env
 
-# Run logs (truncated on every launch — never committed)
+# Run logs (truncated on every launch - never committed)
 logs/

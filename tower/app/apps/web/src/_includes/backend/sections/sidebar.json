@@ -1,6 +1,6 @@
 // The tower's nav. This file REPLACES the framework's packaged
 // backend/sections/sidebar.json wholesale (first-layer-wins on the _includes
-// layer) — the markup, the CSS, the rail collapse and the mobile drawer all
+// layer) - the markup, the CSS, the rail collapse and the mobile drawer all
 // stay OMEGA's; only the data is ours.
 //
 // It is the BACKEND spelling, not the admin one, because the layout that picks
@@ -13,8 +13,9 @@
 // The project switch is the framework's SELECTOR module, enabled here and
 // filled at runtime: the theme draws the button and its dropdown above the nav,
 // and the page JS writes the menu into it (libs/tower/sidebar.js) from the same
-// `repos` feed the pages read — All projects, one entry per repo, and the
-// subset filter under a divider. Nothing about the roster can be baked, since
+// `repos` feed the pages read - an All projects master row and one row per
+// repo, each row carrying the box that puts it in a subset (issue #168, one
+// list rather than two). Nothing about the roster can be baked, since
 // this file is built once and the roster is whatever repos are on the machine
 // when the page is open; the one dropdown item below is the placeholder that
 // makes Liquid ship the `ul` for the JS to fill. The choice is held in
@@ -70,6 +71,20 @@
       label: 'Brief',
       href: '/brief',
       icon: 'newspaper',
+    },
+    // Its own group, because it is the one page that is not a view of the
+    // board: it holds the GitHub token this browser reads GitHub with, which
+    // is what a published copy has instead of a tower (issue #167). It is also
+    // the one page a copy with no token can use, and the runtime sends a
+    // tokenless landing here.
+    {
+      header: true,
+      label: 'This browser',
+    },
+    {
+      label: 'Settings',
+      href: '/settings',
+      icon: 'gear',
     },
   ],
 }

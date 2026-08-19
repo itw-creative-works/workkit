@@ -1,5 +1,5 @@
 //
-// Crew — the running agents as an org chart: the main session at the root, its
+// Crew - the running agents as an org chart: the main session at the root, its
 // subagents beneath it by class, each node carrying its role, its model, its
 // state and its token spend.
 //
@@ -7,13 +7,13 @@
 // SUBAGENTS and tokens, so it draws the chart whenever it answers.
 // `/api/sessions` is the fallback: it knows which Claude sessions are running,
 // where, and whether they are working, which is the root tier without its
-// crews — so a telemetry failure costs the children, never the page.
+// crews - so a telemetry failure costs the children, never the page.
 //
 // A finished subagent is not crew: the session's transcript holds every one it
 // ever spawned, so the working ones are drawn and the rest are behind ONE
 // page-global switch at the top, off by default (libs/tower/crew.js does the
-// split). One switch rather than a fold per tree, because the question — "am I
-// looking at what is running, or at everything that ever ran?" — is asked of
+// split). One switch rather than a fold per tree, because the question - "am I
+// looking at what is running, or at everything that ever ran?" - is asked of
 // the page, not of a session.
 //
 // Every card is clickable: a click opens the agent dialog, which says what the
@@ -34,14 +34,14 @@ import { loading, swap } from '@omega.js/client/modules/live-page';
 const tone = (value) => ({ working: 'ok', idle: 'warn', stale: 'danger' }[value] || 'warn');
 
 // Whether the finished subagents are on screen. A module variable on purpose:
-// it has to survive the poll repaint — which rebuilds the whole page body every
-// ten seconds — and it does not have to survive a reload, where the honest
+// it has to survive the poll repaint - which rebuilds the whole page body every
+// ten seconds - and it does not have to survive a reload, where the honest
 // default is the live crew again.
 let showFinished = false;
 
 /**
  * The roster to draw: telemetry when it answers, the plain session list when it
- * does not. The selection in `?repo=` narrows both, by the root's cwd — a
+ * does not. The selection in `?repo=` narrows both, by the root's cwd - a
  * subagent belongs to whatever repo the session that spawned it is working in.
  *
  * @param {object} state the runtime's feed state
@@ -55,15 +55,15 @@ const roots = (state) => {
   return sessionsFor(state).map(normalize);
 };
 
-/** What a node is called, and the role it is playing — a root is a manager. */
+/** What a node is called, and the role it is playing - a root is a manager. */
 const label = (entry, isRoot) => (isRoot ? rootLabel(entry) : (entry.agentClass || 'subagent'));
 const role = (entry, isRoot) => (isRoot ? 'manager' : entry.agentClass);
 
-// A card leads with the ROLE — one glyph, centred at the top, in the colour
-// that class is drawn in everywhere else on the tower — and then with what the
+// A card leads with the ROLE - one glyph, centred at the top, in the colour
+// that class is drawn in everywhere else on the tower - and then with what the
 // node is. For a root that is where it is working and what the chat is called;
 // for a subagent it is the class, because a crew is read as roles and the agent
-// id is a uuid nothing recognizes — so the id demotes to the muted line under
+// id is a uuid nothing recognizes - so the id demotes to the muted line under
 // it, where it stays reachable for matching a card against a transcript.
 //
 // A root is a manager: that is the tier telemetry's byClass counts it as, so
@@ -75,7 +75,7 @@ const role = (entry, isRoot) => (isRoot ? 'manager' : entry.agentClass);
 // pill is the only thing that names them.
 //
 // A card that has said nothing for a minute goes MUTED and stays put until five
-// (#99) — the mute is a class on the card itself, marked `data-live-card` so the
+// (#99) - the mute is a class on the card itself, marked `data-live-card` so the
 // second hand can take it off the moment the agent moves again rather than at
 // the next poll.
 const node = (entry, isRoot, now) => `<div class="card h-100 omega-interactive omega-interactive--lift ${cardMuted(entry, now)}" data-live-card ${agentTrigger({ ...entry, label: label(entry, isRoot), role: role(entry, isRoot) })}>
@@ -98,8 +98,8 @@ const node = (entry, isRoot, now) => `<div class="card h-100 omega-interactive o
 
 // The chart's second tier: the session's working crew, hanging off the trunk
 // under the root. Every connector line on the chart is animated, and needs no
-// condition to be — splitCrew has already left only the working agents here.
-// The lines themselves are the framework's (`.omega-org-chart` — its data/org-chart
+// condition to be - splitCrew has already left only the working agents here.
+// The lines themselves are the framework's (`.omega-org-chart` - its data/org-chart
 // component's stylesheet, which a client-rendered tree gets by writing the same
 // class vocabulary); the markup supplies only the nesting they are drawn from,
 // and the one thing the framework cannot know: which WAY the line into each
@@ -110,7 +110,7 @@ const tier = (children, now) => `<div class="omega-org-chart__children">
 </div>`;
 
 // The finished crew, shown only while the page's switch is on. They are still
-// worth reaching — what ran and what it spent is the session's history — so the
+// worth reaching - what ran and what it spent is the session's history - so the
 // switch opens onto the same cards rather than a count. They are a LIST, not
 // part of the chart: an agent that has stopped is connected to nothing that is
 // still running.
@@ -152,7 +152,7 @@ const numbers = (tree) => {
     // The live count is the answer to "who is running"; the total says how much
     // history the parenthesis is folding away.
     statCell('Subagents', `${crew.working} (${crew.total})`),
-    statCell('Tokens', spend.length ? compact(spend.reduce((a, b) => a + b, 0)) : '—', '/usage'),
+    statCell('Tokens', spend.length ? compact(spend.reduce((a, b) => a + b, 0)) : '-', '/usage'),
   ]);
 };
 
@@ -191,7 +191,7 @@ const render = (root, state) => {
   else body = `${numbers(tree)}${finishedSwitch(tree)}${tree.map((entry) => branch(entry, now)).join('')}`;
 
   // A repaint that changed nothing writes nothing, and then there is no switch
-  // to rebind — the one in the DOM is still the one this render drew.
+  // to rebind - the one in the DOM is still the one this render drew.
   if (!swap(root, `${note}${card('Who is running', body)}`)) return;
 
   const toggle = root.querySelector('#crew-finished');

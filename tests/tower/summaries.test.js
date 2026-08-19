@@ -1,9 +1,9 @@
 //
-// Tests for tower/api/lib/summaries.js — the published summaries, read back.
+// Tests for tower/api/lib/summaries.js - the published summaries, read back.
 //
 // The `gh` call is the module's one seam, so every case here is a fake exec
 // answering the GraphQL query with a board of Discussions. Nothing reaches
-// GitHub, and the scratch ~/.workkit is what names the home repo — the real one
+// GitHub, and the scratch ~/.workkit is what names the home repo - the real one
 // is never read.
 //
 // The clock is injected the same way the brief's is: a Monday is a date this
@@ -20,7 +20,7 @@ const { briefSummaries, newestSummary, isMonday } = require(path.join(__dirname,
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-summaries-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
-/** A scratch ~/.workkit naming a home repo — or naming none. */
+/** A scratch ~/.workkit naming a home repo - or naming none. */
 const mkHome = (repo = 'owner/private-home') => {
   const dir = mkTmp();
   fs.writeFileSync(
@@ -44,7 +44,7 @@ const mkExec = (nodes, calls = []) => (cmd, args) => {
 };
 
 // Local noon, so the weekday is the same one in every timezone this suite could
-// run in — an ISO stamp at midnight would be the day before somewhere.
+// run in - an ISO stamp at midnight would be the day before somewhere.
 const localNoon = (y, m, d) => new Date(y, m - 1, d, 12, 0, 0).toISOString();
 const MONDAY = localNoon(2026, 8, 3);
 const TUESDAY = localNoon(2026, 8, 4);
@@ -71,7 +71,7 @@ const run = async () => {
     cleanup(home);
   });
 
-  await test('the title is what says what a post is — a brief is never a summary', () => {
+  await test('the title is what says what a post is - a brief is never a summary', () => {
     // The board is shared: the morning brief publishes beside the summaries, and
     // the category a summary lands in falls back on a repo that has no `Daily`.
     const home = mkHome();

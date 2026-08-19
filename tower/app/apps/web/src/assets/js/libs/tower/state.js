@@ -3,7 +3,7 @@
 // the repo selection leaves in play.
 //
 // It sits apart from the runtime (page.js) on purpose. Every function here is
-// pure — state in, an array or a boolean out, no DOM and no fetch — which is
+// pure - state in, an array or a boolean out, no DOM and no fetch - which is
 // what lets the suite import it under Node and ask it the questions the browser
 // used to be the only way to ask.
 //
@@ -21,7 +21,7 @@ export const feed = (state, name) => state.feeds[name] || null;
 /**
  * The slot a published copy holds for a feed only the machine can answer.
  *
- * A designed state, NOT a failure — which is the whole of its shape. The
+ * A designed state, NOT a failure - which is the whole of its shape. The
  * poller's stale rule counts every `ok: false`, so a slot marked failed made
  * the chrome say "2 feeds unavailable" for the life of every published page;
  * this one says `ok` and carries the marker instead, and the notice rides as
@@ -88,7 +88,7 @@ export const issuesFor = (state) => {
  *
  * This is the whole reason it exists rather than a caller keeping its own map.
  * Every poll parses a new object graph into the feed, so an issue object a
- * paint held on to is detached the moment a read lands — and a page that
+ * paint held on to is detached the moment a read lands - and a page that
  * mutates that detached object (the Board's optimistic move) changes nothing
  * anybody draws. Asking at the moment of the interaction, never at the moment
  * of the paint, is what makes the answer the live one.
@@ -103,7 +103,7 @@ export const issueByKey = (state, key) => {
 };
 
 /**
- * Whether a working directory sits in the repo the selection names — the one
+ * Whether a working directory sits in the repo the selection names - the one
  * rule that places anything with a `cwd`, so the pages that read a different
  * feed of sessions all place them the same way.
  *
@@ -119,5 +119,5 @@ export const inSelectedRepo = (state, cwd) => {
   return paths.some((base) => cwd === base || String(cwd || '').startsWith(`${base}/`));
 };
 
-/** The live sessions the selection leaves in play — a session is placed by its cwd. */
+/** The live sessions the selection leaves in play - a session is placed by its cwd. */
 export const sessionsFor = (state) => sessions(state).filter((session) => inSelectedRepo(state, session.cwd));

@@ -2,9 +2,9 @@
 // the whole stock chain via the self-skipping omega:main import.
 //
 // It is nearly empty on purpose. The dashboard is drawn in the theme's own
-// vocabulary — omega-shell for the geometry, omega-side__* for the nav,
+// vocabulary - omega-shell for the geometry, omega-side__* for the nav,
 // omega-statgrid for tiles, Bootstrap cards/tables/badges/forms for
-// everything else — so a rule here has to earn its place by naming what the
+// everything else - so a rule here has to earn its place by naming what the
 // theme does not ship.
 @use 'omega:main';
 
@@ -34,10 +34,10 @@
 
 // One card size, so the columns read as columns. Two rules do it: a floor that
 // lifts a one-line card to the height of a two-line one, and the clamp below
-// that stops a long title growing past it. Nothing is lost to either — the
+// that stops a long title growing past it. Nothing is lost to either - the
 // whole title is in the dialog the card opens.
-// 8.25rem is what a FULL card measures — a slug line, two lines of title and a
-// row of chips — so the floor lifts every shorter one to exactly that and no
+// 8.25rem is what a FULL card measures - a slug line, two lines of title and a
+// row of chips - so the floor lifts every shorter one to exactly that and no
 // card is left with dead space at the bottom of it.
 .omega-tower-board .omega-tower-issue { min-height: 8.25rem; }
 
@@ -54,7 +54,7 @@
 // piece that gives, ending in an ellipsis rather than being cut mid-word; the
 // whole of it is in the dialog the card opens.
 //
-// `!important` because Bootstrap's utilities are GENERATED with it — the row
+// `!important` because Bootstrap's utilities are GENERATED with it - the row
 // carries `.flex-wrap`, which no amount of specificity outranks, and the row is
 // shared with the Brief and the dialog, where wrapping is right.
 .omega-tower-issue__chips {
@@ -62,7 +62,7 @@
   overflow: hidden;
 
   // The handle is the row's only wrapping text, and a flex item squeezed by a
-  // nowrap row is squeezed to its MIN-content — which for `@someone, @other`
+  // nowrap row is squeezed to its MIN-content - which for `@someone, @other`
   // is one word per line, and made the card twice as tall as the wrap it was
   // meant to prevent. Held on one line it truncates instead.
   > .omega-micro {
@@ -76,20 +76,20 @@
 // ── The chip glyph's optical centre ────────────────────────────────────────
 //
 // The framework drops an icon's svg a touch below the baseline so it reads
-// centred against the word beside it — `.fa svg { vertical-align: -.125em }` —
+// centred against the word beside it - `.fa svg { vertical-align: -.125em }` -
 // and the `<i>` a chip carries is written `fa-solid` alone, the family class
 // its renderer needs (libs/tower/format.js), which that selector never reaches.
 // The glyph sat visibly high in every chip because of it. Same number, said to
 // the element the line actually lays out: the renderer FILLS the `<i>` with the
 // svg, so the svg is what sits on the baseline. The horizontal half is the
-// markup's own `me-1` — the chip is an inline-block, with no gap to inherit.
+// markup's own `me-1` - the chip is an inline-block, with no gap to inherit.
 .omega-chip i.fa-solid svg { vertical-align: -.125em; }
 
 // ── The empty state's icon ─────────────────────────────────────────────────
 //
 // The glyph sat left of the line under it on every "nothing here" the tower
 // draws. `text-center` centres INLINE content, and this one is not: the icon
-// wants its own line, so the markup writes `d-block` (libs/tower/format.js) —
+// wants its own line, so the markup writes `d-block` (libs/tower/format.js) -
 // which beats the framework's `i[data-omega-fa] { display: inline-flex }` with
 // Bootstrap's `!important` and leaves a BLOCK box one em wide, hugging the left
 // edge whatever the text around it is aligned to. A block box of known width
@@ -99,7 +99,7 @@
 
 // ── The crew org chart's finished tier ─────────────────────────────────────
 //
-// The chart itself is the framework's `.omega-org-chart` — root, children,
+// The chart itself is the framework's `.omega-org-chart` - root, children,
 // nodes and every animated connector between them. What is left here is the
 // one tier that is NOT part of the chart: the subagents that have stopped,
 // shown only while the page's switch is on. They are a plain wrapping list,
@@ -125,7 +125,7 @@
 // the half of a tree that sits right of the trunk and backwards for the half
 // that does not: a card on the left is REACHED by a line flowing left. The
 // markup says which side each child is on (libs/tower/crew.js connectorFlow)
-// and this reverses the ones that need it. Only in the wide layout — under
+// and this reverses the ones that need it. Only in the wide layout - under
 // 768px the tree is a spine flowing down with an elbow into each card, and
 // every one of those already runs the way the flow does.
 //
@@ -140,7 +140,7 @@
 //
 // One glyph, wordless: spinning in the ok colour while an agent is working,
 // still and faint for the minute after it stops (libs/tower/agent.js). Sized
-// under the text it sits beside — it is a light, not a word.
+// under the text it sits beside - it is a light, not a word.
 .omega-tower-activity {
   align-items: center;
   display: inline-flex;
@@ -155,18 +155,18 @@
 .omega-tower-activity--idle,
 .omega-tower-activity--quiet { color: var(--omega-ink-faint, var(--bs-secondary-color)); }
 
-// The glyph's BOX, in every phase — what the motion below turns.
+// The glyph's BOX, in every phase - what the motion below turns.
 //
 // The framework renders a Font Awesome icon by filling the `<i>` with a 1em
 // SVG (its icon renderer injects `width="1em" height="1em"`) and ships no box
 // rule of its own for the wrapper, so an `<i>` left alone is as tall as the
 // LINE it sits on: a replaced element resting on the baseline, with the
 // strut's leading underneath it. At .75rem on a 1.5 line-height that is an
-// 18px box holding a 12px glyph whose centre sits ~2px above the box's — and a
+// 18px box holding a 12px glyph whose centre sits ~2px above the box's - and a
 // rotation turns about the BOX's centre, so the glyph swung in an orbit
 // instead of turning on the spot (#137). One square em, centred on the glyph:
 // the box IS the glyph, so its centre is the glyph's. Not scoped to `.fa-spin`
-// — the still glyph wears the same box, so a card does not resize on the
+// - the still glyph wears the same box, so a card does not resize on the
 // second the motion starts or stops.
 .omega-tower-activity i {
   align-items: center;
@@ -177,7 +177,7 @@
 }
 
 // The motion itself. `fa-spin` is Font Awesome's class and the theme ships Font
-// Awesome's ICONS without its stylesheet — the class named a rule that was never
+// Awesome's ICONS without its stylesheet - the class named a rule that was never
 // in the bundle, which is why the glyph has been still since it shipped (#65).
 // The keyframes are the framework's own (`spin`, behind `.animation-spin`), so
 // this names the one thing left: which element turns, and how fast. A second
@@ -188,7 +188,7 @@
 // style attribute the markup writes). Bigger than the indicator, because it is
 // the first thing the card says.
 //
-// The BOX is the theme's own `.omega-icon-chip--neutral` — the markup wears
+// The BOX is the theme's own `.omega-icon-chip--neutral` - the markup wears
 // that utility, so this rule says only what the chip does not: the glyph size.
 // The per-role colour survives because it is an inline style, which beats the
 // chip's neutral ink.
@@ -212,7 +212,7 @@
 //
 // That a whole card is the click target is said with the framework's
 // `.omega-interactive` (plus `--lift` on the cards, which have edges to lift),
-// stamped in the page markup — so the only rule left here is the reveal.
+// stamped in the page markup - so the only rule left here is the reveal.
 //
 // The glyph is a Font Awesome icon, drawn at 1em in the current colour, so the
 // only thing left to say is how big an em is here: the button sits beside a
@@ -248,13 +248,13 @@
 // the button out of the flow gives the corner back: the gear is the row's last
 // item and sits flush right, the button lands on top of it only while there is
 // a pointer or a keyboard on the card, and the gear fades out from under it so
-// the two never stack. Same .12s as the reveal it is paired with — one motion,
+// the two never stack. Same .12s as the reveal it is paired with - one motion,
 // two properties.
 //
 // Under `(hover: hover)` rather than carved back out under `(hover: none)`:
 // the two are the whole of the media feature, and the fade needs three
 // selectors that a carve-out would have to repeat at matching specificity. A
-// touch screen keeps exactly the layout it has — button in flow, always
+// touch screen keeps exactly the layout it has - button in flow, always
 // visible, gear beside it.
 //
 // Scoped to the board card's own row (`pages/board.js`), which is narrower
@@ -272,7 +272,7 @@
 
   // The slug span stops short of the corner the button lands in: with the
   // anchor out of flow, a gear-less card's truncated slug would otherwise run
-  // under the revealed button's glyph. Padding the SPAN, not the row — padding
+  // under the revealed button's glyph. Padding the SPAN, not the row - padding
   // the row would push the gear off the corner again.
   .omega-tower-issue__top .omega-micro { padding-right: 1.5rem; }
 
@@ -282,7 +282,7 @@
   .omega-tower-issue:focus-within .omega-tower-issue__top .omega-tower-activity { opacity: 0; }
 }
 
-// An issue body is markdown rendered by the framework's `renderMarkdown` — the
+// An issue body is markdown rendered by the framework's `renderMarkdown` - the
 // code it carries needs the one thing Bootstrap does not give a bare `pre`: a
 // surface.
 .omega-tower-issue__body pre {

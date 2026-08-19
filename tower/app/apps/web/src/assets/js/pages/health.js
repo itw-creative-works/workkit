@@ -1,5 +1,5 @@
 //
-// Health — the repo tiles as a real page.
+// Health - the repo tiles as a real page.
 //
 // The release lag leads: unreleased CHANGELOG entries and unpushed commits are
 // work that is DONE and not delivered, which is the only thing on this page
@@ -36,13 +36,13 @@ const processLine = (meta) => {
 };
 
 const restartNotice = (meta) => (stale(meta)
-  ? `<div class="mb-4">${problem(`the tower API is running commit ${short(meta.bootCommit)}, and the checkout is at ${short(meta.currentHead)} — restart it with npm run tower`)}</div>`
+  ? `<div class="mb-4">${problem(`the tower API is running commit ${short(meta.bootCommit)}, and the checkout is at ${short(meta.currentHead)} - restart it with npm run tower`)}</div>`
   : '');
 
 /** One repo's open issues, from the board sweep, matched on its slug. */
 const issuesOf = (state, repo) => issuesFor(state).filter((issue) => issue.repo === repo.slug);
 
-/** A safe canvas id from a repo slug — ids cannot carry slashes or dots. */
+/** A safe canvas id from a repo slug - ids cannot carry slashes or dots. */
 const canvasId = (repo) => `health-${String(repo.slug || repo.path).replace(/[^a-zA-Z0-9]+/g, '-')}`;
 
 // ── The release lag ────────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ const releaseLag = (rows) => {
           <td class="text-end omega-micro">${esc(row.lastTag || 'never tagged')}</td>
         </tr>`).join('')}</tbody>
       </table></div>`
-    : empty('nothing is waiting to ship — every entry is released and every commit is pushed', 'fa-regular fa-circle-check');
+    : empty('nothing is waiting to ship - every entry is released and every commit is pushed', 'fa-regular fa-circle-check');
   return card('Work sitting on the table', body, { chip: rows.length, alarm: rows.length > 0, class: 'mb-4' });
 };
 
@@ -93,7 +93,7 @@ const repoCard = (state, repo, alone) => {
       statCell('Unpushed', num(reading.unpushed)),
       statCell('Uncommitted', num(reading.uncommitted)),
       statCell('Unreleased', num(reading.unreleasedEntries)),
-      statCell('Last tag', reading.lastTag || '—'),
+      statCell('Last tag', reading.lastTag || '-'),
     ], 'mb-3')}
       ${chartSlot(canvasId(repo), 180, statusBreakdown(issues).values)}
       ${alone ? issueList(issues) : ''}`;
@@ -129,12 +129,12 @@ const render = (root, state) => {
     return;
   }
   if (!list.length) {
-    swap(root, roster ? empty('no repos in the roster — nothing has opted in under the roster root', 'fa-regular fa-square-plus') : loading('reading the roster…'));
+    swap(root, roster ? empty('no repos in the roster - nothing has opted in under the roster root', 'fa-regular fa-square-plus') : loading('reading the roster…'));
     return;
   }
 
   // The charts are redrawn only when the markup carrying their canvases was
-  // actually written — an unchanged tick leaves the drawn ones standing.
+  // actually written - an unchanged tick leaves the drawn ones standing.
   const rows = lagRows(state);
   const meta = health(state).meta;
   if (!swap(root, `
@@ -169,7 +169,7 @@ export default () => startPage({
   mount: 'tower-health',
   feeds: ['repos', 'board', 'health'],
   // Unpushed, uncommitted and unreleased are facts about the working copies on
-  // this machine — a browser elsewhere cannot see them.
+  // this machine - a browser elsewhere cannot see them.
   local: true,
   charts: true,
   render,

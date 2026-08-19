@@ -1,5 +1,5 @@
 //
-// Tests for tower/api/lib/repos.js — the roster read.
+// Tests for tower/api/lib/repos.js - the roster read.
 //
 // The fixtures are REAL git repositories with real `origin` remotes (adding a
 // remote needs no network), because "what does git call this repo's origin" is
@@ -46,7 +46,7 @@ const mkRepo = (root, rel, { settings = { version: 7, enabled: true }, origin = 
  * hand-edited `settings.json` (the site options, `site.repo` among them).
  *
  * `repos` is the map verbatim when an object; an array of paths is the ordinary
- * case — every one registered as the engine writes it. `homeSlug` is what the
+ * case - every one registered as the engine writes it. `homeSlug` is what the
  * owner set as the repo the site publishes from, which is what by-path
  * discovery of the clone matches against. `roster` overrides the whole roster
  * file (a string is written raw).
@@ -82,7 +82,7 @@ const run = async () => {
     cleanup(tmp);
   });
 
-  await test('the roster is read from .repos.json — a `repos` key in settings.json is not one', () => {
+  await test('the roster is read from .repos.json - a `repos` key in settings.json is not one', () => {
     // The split (issue #80): the machine writes `.repos.json`, a human writes
     // `settings.json`, and the reader takes the roster from the file whose
     // writer maintains it. A leftover `repos` block in the hand-edited file is
@@ -106,7 +106,7 @@ const run = async () => {
     const listed = mkRepo(tmp, 'Owner/listed');
     mkRepo(tmp, 'Owner/unlisted');
     const found = discoverRepos({ workflowHome: mkWorkflowHome(tmp, [listed]) });
-    assertEq(names(found), 'listed', 'the roster is the whole list — nothing is walked');
+    assertEq(names(found), 'listed', 'the roster is the whole list - nothing is walked');
     cleanup(tmp);
   });
 
@@ -120,11 +120,11 @@ const run = async () => {
     const home = mkWorkflowHome(tmp, [yes, no, broken, none, gone]);
     assertEq(names(discoverRepos({ workflowHome: home })), 'yes', 'only the repo whose committed file still says yes');
     assertEq(fs.readFileSync(path.join(home, '.repos.json'), 'utf8').includes('gone'), true,
-      'and the reader never rewrites the index — pruning is the engine\'s');
+      'and the reader never rewrites the index - pruning is the engine\'s');
     cleanup(tmp);
   });
 
-  await test('the opt-in is anything but `enabled: false` — the engine reads it that way', () => {
+  await test('the opt-in is anything but `enabled: false` - the engine reads it that way', () => {
     // The engine's resolve_state is the SSOT of what enabled means: a committed
     // file that does not say false is a yes, which is how a legacy
     // `{ "version": 1 }` written before the key existed stays a member. Reading
@@ -150,7 +150,7 @@ const run = async () => {
     cleanup(tmp);
   });
 
-  await test('a hidden repo directory is listed — .dotfiles is a real repo', () => {
+  await test('a hidden repo directory is listed - .dotfiles is a real repo', () => {
     const tmp = mkTmp();
     const repo = mkRepo(tmp, 'Owner/.dotfiles');
     assertEq(names(discoverRepos({ workflowHome: mkWorkflowHome(tmp, [repo]) })), '.dotfiles', 'dot names are ordinary');
@@ -177,7 +177,7 @@ const run = async () => {
 
   await test('a tower path this user declined is not listed', () => {
     // By-path discovery has no committed file to read, so the decline in the
-    // roster is the only record of the answer — and it is an answer.
+    // roster is the only record of the answer - and it is an answer.
     const tmp = mkTmp();
     const home = mkWorkflowHome(tmp, {}, { homeSlug: 'owner/workkit' });
     const tower = path.join(home, 'tower');
@@ -270,7 +270,7 @@ const run = async () => {
     const tmp = mkTmp();
     const repo = mkRepo(tmp, 'Owner/local');
     const found = discoverRepos({ workflowHome: mkWorkflowHome(tmp, [repo]) });
-    assertEq(found.length, 1, 'still listed — health works locally');
+    assertEq(found.length, 1, 'still listed - health works locally');
     assertEq(found[0].slug, null, 'no slug');
     cleanup(tmp);
   });

@@ -1,5 +1,5 @@
 //
-// The dependency graph, as mermaid text — the Board's Graph view, composed
+// The dependency graph, as mermaid text - the Board's Graph view, composed
 // (issue #103).
 //
 // The graph MODULE takes a definition in and puts an SVG out
@@ -15,11 +15,11 @@
 //
 // Two lists come in, and the second one is not decoration. The scoped issues
 // are what the board is showing; the SWEEP is every open issue the payload
-// carries, and it is what makes a drawn issue's downstream visible — an issue
+// carries, and it is what makes a drawn issue's downstream visible - an issue
 // in a repo the scope hides, or filtered off this board, that waits on one of
 // these is still waiting on it, and the arrow out of the drawn node is the
 // whole point of the picture. Whatever the edge reaches that the board is not
-// showing is drawn as a STUB: the reference alone, dashed, never dropped —
+// showing is drawn as a STUB: the reference alone, dashed, never dropped -
 // silence there would draw a blocker as if it were free.
 //
 // Titles and repo slugs are REMOTE text, exactly as they are on a card. A
@@ -34,7 +34,7 @@ import { issueKey } from './format.js';
 /** How much of a title fits in a node before it stops being readable. */
 export const MAX_TITLE = 40;
 
-/** The mermaid class a stub node wears — dashed and faint, and NOT a colour. */
+/** The mermaid class a stub node wears - dashed and faint, and NOT a colour. */
 const STUB_CLASS = 'stub';
 
 /**
@@ -42,8 +42,8 @@ const STUB_CLASS = 'stub';
  * same node on every draw, and derived from the reference rather than from
  * where it happened to fall in an array.
  *
- * Lowercased for the same reason every other comparison here is — repo names
- * are case-insensitive on GitHub and the inline fallback is hand-typed — and
+ * Lowercased for the same reason every other comparison here is - repo names
+ * are case-insensitive on GitHub and the inline fallback is hand-typed - and
  * prefixed, so an id can never start with a digit or collide with a mermaid
  * keyword.
  *
@@ -59,7 +59,7 @@ const keyOf = (ref) => issueKey(ref).toLowerCase();
  * Text that cannot break out of the label it is put in.
  *
  * `"` closes the quoted string and `[]{}<>` are node shapes, `#…;` is mermaid's
- * entity escape and `|` an edge label — none of them survive. Whitespace folds
+ * entity escape and `|` an edge label - none of them survive. Whitespace folds
  * to single spaces, since a title carrying a newline would end the statement.
  */
 const safe = (text) => String(text === null || text === undefined ? '' : text)
@@ -89,7 +89,7 @@ const baseRepo = (issues) => {
 };
 
 /**
- * How one issue is referred to on this board: `#12`, or `owner/repo#12` —
+ * How one issue is referred to on this board: `#12`, or `owner/repo#12` -
  * `issueKey`'s spelling, with the remote halves put through the sanitizer and
  * the `#` supplied here, since a title's `#` is an entity escape and this one
  * is a number sign.
@@ -107,7 +107,7 @@ const nodeLine = (ref, base, issue) => {
   if (!issue) return `  ${nodeId(ref)}["${head}"]`;
   const title = clip(safe(issue.title));
   const status = safe(issue.status);
-  return `  ${nodeId(ref)}["${head}${title ? ` ${title}` : ''}${status ? ` — ${status}` : ''}"]`;
+  return `  ${nodeId(ref)}["${head}${title ? ` ${title}` : ''}${status ? ` - ${status}` : ''}"]`;
 };
 
 /**
@@ -115,7 +115,7 @@ const nodeLine = (ref, base, issue) => {
  *
  * The arrow runs blocker → dependent, which is the direction the picture is
  * read in: this one unblocks that one. Every pair is drawn once however many
- * ways it arrived — the sweep merges native edges with the inline fallback, and
+ * ways it arrived - the sweep merges native edges with the inline fallback, and
  * an edge into the drawn set is found from both ends here.
  *
  * @param {object[]} scoped - the issues the board is showing

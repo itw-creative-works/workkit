@@ -1,5 +1,5 @@
 //
-// Brief — the morning read, in the order a morning asks: the headline, the
+// Brief - the morning read, in the order a morning asks: the headline, the
 // counts, what is waiting on a decision, what is built and waiting on a check,
 // what may be started, what is already someone's, and the work sitting on the
 // table.
@@ -18,7 +18,7 @@
 // that side can read, and no warnings, which only the machine can answer.
 //
 // The cards that name a summary (issue #54) hang on the payload's own keys,
-// which the COMPOSED brief carries and the browser's does not — the machine's
+// which the COMPOSED brief carries and the browser's does not - the machine's
 // side reads the newest daily and, on a Monday, the weekly rollup, while a
 // published copy answers the same question with its own summaries card. An
 // absent key draws nothing either way.
@@ -38,7 +38,7 @@ import {
   entriesOf, hasSeries, unread, seriesOf, ACCRUES, UNREAD,
 } from '../libs/tower/history.js';
 
-/** The rows a section shows — narrowed to the selected repos when any are named. */
+/** The rows a section shows - narrowed to the selected repos when any are named. */
 const forRepo = (items, selected) => items.filter((item) => inScope(selected, item.repo));
 
 // ── The head ───────────────────────────────────────────────────────────────
@@ -46,7 +46,7 @@ const forRepo = (items, selected) => items.filter((item) => inScope(selected, it
 // When the brief was built, and what the selection has narrowed it to.
 //
 // The headline is the API's own sentence about the WHOLE roster, and the brief
-// and the 9am notification say it in the same words — so a narrowed view does
+// and the 9am notification say it in the same words - so a narrowed view does
 // not rewrite it, it says which scope it belongs to. Otherwise the largest line
 // on the page reads as this repo's and contradicts the lists under it.
 const subhead = (payload, selected) => {
@@ -79,8 +79,8 @@ const numbers = (payload, lists, selected) => statgrid([
 //
 // Three sparklines under the counts (issue #55): the last seven mornings of the
 // open board, what each of them closed, and how deep the inbox got. The history
-// is the published briefs read back, so it is ROSTER-wide like the headline —
-// a narrowed view does not rewrite it — and it says why it is empty rather than
+// is the published briefs read back, so it is ROSTER-wide like the headline -
+// a narrowed view does not rewrite it - and it says why it is empty rather than
 // drawing an axis with nothing on it.
 //
 // Small on purpose: these are the shape of a week beside today's numbers, not
@@ -101,7 +101,7 @@ const SPARKS = [
 
 const sparklines = (payload, selected) => {
   // The history is roster-wide, and under a selection the subhead promises
-  // everything below it is narrowed — so the card names its own scope rather
+  // everything below it is narrowed - so the card names its own scope rather
   // than let the page make a false claim about it.
   const title = selected.length ? 'The week behind these numbers (every repo)' : 'The week behind these numbers';
   if (unread(payload)) return card(title, empty(UNREAD, 'fa-regular fa-clock'), { class: 'mb-4' });
@@ -149,7 +149,7 @@ const section = (heading, issues, nothing, alarm) => card(heading, issues.length
 // ── What this morning could move ───────────────────────────────────────────
 
 // The board asked one question further (issue #54): per repo, the few open items
-// a morning could actually move — decisions first, then the checks waiting on
+// a morning could actually move - decisions first, then the checks waiting on
 // the owner, then accepted specs, three at most. The rank is the API's
 // (tower/api/lib/brief.js); this only draws it, one short list per repo, so a
 // morning reads down its own repo rather than across a merged pile.
@@ -181,7 +181,7 @@ const nextUp = (rows) => card('Work on this next', rows.length
 
 // The summaries the nightly job publishes, named and linked rather than
 // restated: the artifact that recorded the day is the thing worth opening.
-// A key that is absent or null draws no card at all — a brief composed where
+// A key that is absent or null draws no card at all - a brief composed where
 // Discussions were unreachable says less, never something untrue.
 const summaryCard = (heading, item) => (item ? card(heading, `<div class="d-flex align-items-start gap-2">
   <span class="flex-grow-1">
@@ -232,13 +232,13 @@ const summaries = (payload) => {
 // there would read as the best possible news, so it says where the answer lives
 // instead.
 //
-// Which copy this is comes from `MODE` — the one signal, decided in api.js and
+// Which copy this is comes from `MODE` - the one signal, decided in api.js and
 // read the same way on every page. The payload's own shape is not asked: whether
 // a brief happens to carry a `summaries` section is a fact about that read, and
 // hanging the sentence on it would make an absent key load-bearing.
 const warnings = (rows, published) => card('Work sitting on the table', rows.length
   ? table(rows)
-  : empty(published ? LOCAL_ONLY_NOTICE : 'nothing is waiting to ship — every repo is committed, pushed and released', published ? 'fa-solid fa-laptop' : 'fa-regular fa-circle-check'), {
+  : empty(published ? LOCAL_ONLY_NOTICE : 'nothing is waiting to ship - every repo is committed, pushed and released', published ? 'fa-solid fa-laptop' : 'fa-regular fa-circle-check'), {
   chip: published ? undefined : rows.length,
   alarm: rows.length > 0,
   class: 'mb-0',
@@ -275,7 +275,7 @@ const render = (root, state) => {
   };
 
   // The charts are drawn only when the markup they live on was written: an
-  // unchanged tick leaves the existing canvases — and their instances — alone.
+  // unchanged tick leaves the existing canvases - and their instances - alone.
   if (!swap(root, `
     ${headline(payload, selected)}
     ${numbers(payload, lists, selected)}
@@ -294,7 +294,7 @@ const render = (root, state) => {
   drawSparklines(payload);
 };
 
-// `repos` is the roster the sidebar's project selector is filled from — the page
+// `repos` is the roster the sidebar's project selector is filled from - the page
 // reads no issue data from it, but without it there is no way to narrow the
 // brief.
 export default () => startPage({

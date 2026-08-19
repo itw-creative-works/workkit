@@ -4,8 +4,8 @@
 // `libs/tower/graphdef.js` is the whole reason the Graph view is testable at
 // all: the graph module draws into a real DOM and node has none, but composing
 // the mermaid text is pure string work, so every question worth asking about
-// the picture — who is a node, which way the arrow runs, what a hostile title
-// becomes, what happens to an edge pointing off the board — is asked here.
+// the picture - who is a node, which way the arrow runs, what a hostile title
+// becomes, what happens to an edge pointing off the board - is asked here.
 //
 // An ES module written for a browser, so it is pulled in with a dynamic
 // `import()`, the way app.test.js reaches the other pure libs. It imports only
@@ -20,7 +20,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harn
 const libs = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'libs', 'tower');
 const load = (name) => import(pathToFileURL(path.join(libs, name)).href);
 
-/** One issue as the sweep normalizes it — `blockedBy` is always a list (#103). */
+/** One issue as the sweep normalizes it - `blockedBy` is always a list (#103). */
 const issue = (repo, number, extra = {}) => ({
   repo,
   number,
@@ -79,20 +79,20 @@ const run = async () => {
 
   await test('a node is its reference, its title and where it stands', () => {
     const def = boardGraph([issue('o/r', 1, { title: 'seed the runner', status: 'blocked' }), issue('o/r', 2, { blockedBy: [ref('o/r', 1)] })], []);
-    assert(def.includes('"#1 seed the runner — blocked"'), 'the status word rides the label line');
+    assert(def.includes('"#1 seed the runner - blocked"'), 'the status word rides the label line');
     assert(!def.includes('o/r#1'), 'a single-repo board says it the short way, as its cards do');
   });
 
   await test('a board showing several repos qualifies every node by repo', () => {
     const def = boardGraph([issue('o/r', 1), issue('other/repo', 2, { blockedBy: [ref('o/r', 1)] })], []);
-    assert(def.includes('"o/r#1 issue 1 — specced"'), 'the blocker carries its slug');
-    assert(def.includes('"other/repo#2 issue 2 — specced"'), 'and so does what it blocks');
+    assert(def.includes('"o/r#1 issue 1 - specced"'), 'the blocker carries its slug');
+    assert(def.includes('"other/repo#2 issue 2 - specced"'), 'and so does what it blocks');
   });
 
   await test('a long title is cut where a node stops being readable', () => {
     const long = 'a'.repeat(MAX_TITLE + 20);
     const def = boardGraph([issue('o/r', 1, { title: long }), issue('o/r', 2, { blockedBy: [ref('o/r', 1)] })], []);
-    assert(def.includes(`"#1 ${'a'.repeat(MAX_TITLE)}… — specced`), 'the tail becomes an ellipsis, and what follows the title still follows it');
+    assert(def.includes(`"#1 ${'a'.repeat(MAX_TITLE)}… - specced`), 'the tail becomes an ellipsis, and what follows the title still follows it');
     assert(!def.includes('a'.repeat(MAX_TITLE + 1)), 'and nothing longer survives');
   });
 
@@ -125,7 +125,7 @@ const run = async () => {
     const def = boardGraph([issue('o/r', 1, { title: 'first\nflowchart TD\nsecond' }), issue('o/r', 2, { blockedBy: [ref('o/r', 1)] })], []);
     const lines = def.split('\n');
     assertEq(lines.filter((line) => line.startsWith('flowchart')).length, 1, 'there is exactly one header statement');
-    assert(lines.some((line) => line.includes('"#1 first flowchart TD second — specced"')),
+    assert(lines.some((line) => line.includes('"#1 first flowchart TD second - specced"')),
       'the break folded into the one label instead of opening a statement of its own');
   });
 

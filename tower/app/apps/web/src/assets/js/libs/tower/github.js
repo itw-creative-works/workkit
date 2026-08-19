@@ -1,13 +1,13 @@
 //
-// The published site's data layer — GitHub, spoken from the browser.
+// The published site's data layer - GitHub, spoken from the browser.
 //
 // The local dashboard reads the tower API on this machine (api.js). A PUBLISHED
 // copy has no tower on the other end, and nothing is baked into it but the slug
-// of the home repo — which the site's own URL already names: every number on the
+// of the home repo - which the site's own URL already names: every number on the
 // page, and the roster of repos to sweep with it, comes from a live GitHub call
 // made by the page itself (issues #81, #110). The key that unlocks those calls is a
 // fine-grained personal access token the viewer supplies, held in that browser's
-// localStorage and nowhere else — never in the repo, the built site, an engine
+// localStorage and nowhere else - never in the repo, the built site, an engine
 // file or a URL. Without it the site has no data to show, which is what makes
 // the token the auth layer as well as the credential.
 //
@@ -16,8 +16,8 @@
 // the sweep, `/api/brief` is the morning payload. `readFeed` is the one door,
 // mirroring api.js's `fetchFeed` four-key result and its promise never to throw.
 // It WRITES with that token too: the published site works exactly like the
-// dashboard on the machine, so the two writes the tower has — moving a card and
-// filing an issue — are here as well, in the same shapes and behind the same
+// dashboard on the machine, so the two writes the tower has - moving a card and
+// filing an issue - are here as well, in the same shapes and behind the same
 // door discipline.
 //
 // Three things are RESTATED here rather than imported, for one reason: the app is
@@ -27,7 +27,7 @@
 // tower/api/lib/{board,brief}.js hold, and the suite pins the ones that can
 // drift.
 //
-// Every function takes its seams as arguments — the token, `fetch`, the clock —
+// Every function takes its seams as arguments - the token, `fetch`, the clock -
 // so the whole module imports and answers under Node.
 //
 
@@ -43,18 +43,32 @@ export const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new
 
 /**
  * What that token needs to be able to do. The site MANAGES the issues it shows
- * — a card is dragged between columns and the dialog files one — so writing
+ * - a card is dragged between columns and the dialog files one - so writing
  * issues is part of the ask. Contents: Read is the one addition, and only on the
  * home repo: the roster of repositories to sweep lives on its default branch
  * rather than beside the public pages (issue #110), and the token is what reads
  * it.
  */
-export const TOKEN_SCOPES = 'a fine-grained token: Repository permissions → Issues: Read and write, Metadata: Read, Discussions: Read, on the repositories this board covers — plus Contents: Read on the home repo, which is where the list of those repositories lives.';
+export const TOKEN_SCOPES = 'a fine-grained token: Repository permissions → Issues: Read and write, Metadata: Read, Discussions: Read, on the repositories this board covers - plus Contents: Read on the home repo, which is where the list of those repositories lives.';
+
+/** Where a viewer goes to make the other kind. */
+export const TOKEN_CLASSIC_URL = 'https://github.com/settings/tokens/new?scopes=repo&description=workkit%20tower';
+
+/**
+ * The other token that works, and the one board it is REQUIRED for (issue #167).
+ *
+ * A fine-grained token belongs to a single resource owner, so one cannot reach
+ * a board whose repositories are owned by two - a personal account and an
+ * organisation, say. A classic token is scoped to the ACCOUNT rather than to an
+ * owner: `repo` covers every repository that account can see, whoever owns it,
+ * and it is read and written through exactly the same calls.
+ */
+export const TOKEN_CLASSIC = 'a classic token with the repo scope works too - and it is the only one that does when this board spans two owners, since a fine-grained token belongs to a single resource owner.';
 
 /** The baked artifact, and the only one: which repo is the home, and which branch of it carries the roster. Relative, so a project-path Pages site resolves it too. */
 export const HOME_PATH = 'data/home.json';
 
-/** Where the roster lives — a path on the home repo, read through the API with the viewer's token. */
+/** Where the roster lives - a path on the home repo, read through the API with the viewer's token. */
 export const ROSTER_PATH = 'data/repos.json';
 
 /**
@@ -67,13 +81,13 @@ export const ROSTER_PATH = 'data/repos.json';
  */
 export const ROSTER_REF = 'main';
 
-// Per repo, per request — GitHub caps a connection page at 100 (tower/api/lib/board.js).
+// Per repo, per request - GitHub caps a connection page at 100 (tower/api/lib/board.js).
 const PAGE_SIZE = 100;
 
 // How much of an issue body rides the sweep; the dialog reads it straight off.
 const BODY_LIMIT = 4000;
 
-// The closed issues a repo is asked for, and the window they are counted over —
+// The closed issues a repo is asked for, and the window they are counted over -
 // tower/api/lib/board.js's numbers, restated for the copy-boundary reason every
 // other constant here is. The count is all that survives normalization: no
 // closed issue enters the board.
@@ -93,7 +107,7 @@ export const LABEL_GROUPS = new Set(['status', 'type', 'priority', 'agent']);
  * The GUARD is on the property access itself, not on the read through it: a
  * browser told to block all site data throws on `window.localStorage` rather
  * than answering null, and that access happens at module load in api.js and at
- * every Token click in page.js — an unguarded one takes the whole bundle down.
+ * every Token click in page.js - an unguarded one takes the whole bundle down.
  * A locked-down browser is a viewer with no token, not a broken page.
  *
  * @param {object} [scope] - the global carrying `localStorage`, if any
@@ -138,7 +152,7 @@ export const writeToken = (storage, value) => {
     if (token) storage.setItem(TOKEN_KEY, token);
     else storage.removeItem(TOKEN_KEY);
   } catch {
-    // A browser that refuses storage cannot be given a token. The prompt stays.
+    // A browser that refuses storage cannot be given a token. The page stays locked.
   }
   return token;
 };
@@ -149,14 +163,14 @@ export const clearToken = (storage) => writeToken(storage, '');
 // ── The wire ───────────────────────────────────────────────────────────────
 
 /** What the caller must be told when there is no token at all. */
-const NO_TOKEN = 'no GitHub token in this browser — add one to unlock the board';
+const NO_TOKEN = 'no GitHub token in this browser - add one to unlock the board';
 
 /**
  * One GraphQL request.
  *
  * Never throws, and reports the four ways it can fail apart: no token, a
  * transport failure, a status GitHub refused it with, and a body that is not
- * JSON. A payload carrying BOTH data and errors is a success — a roster with one
+ * JSON. A payload carrying BOTH data and errors is a success - a roster with one
  * unreadable repo is the ordinary shape, and the caller hangs each error on the
  * repo it names.
  *
@@ -198,7 +212,7 @@ export const graphql = async (query, ctx = {}) => {
       data: null,
       errors: [],
       status: response.status,
-      reason: `GitHub refused the token (${response.status}) — it may be expired, or it may not cover these repositories. Hand over one that does.`,
+      reason: `GitHub refused the token (${response.status}) - it may be expired, or it may not cover these repositories. Hand over one that does.`,
     };
   }
   if (!response.ok) {
@@ -218,7 +232,7 @@ export const graphql = async (query, ctx = {}) => {
  *
  * It carries names and nothing else: which repos this site sweeps, plus which
  * of them is the home repo the summaries are published on. A published roster
- * entry has no `path` — there is no machine under it — so the fields that place
+ * entry has no `path` - there is no machine under it - so the fields that place
  * a session by its working directory simply find nothing, which is correct: a
  * published copy has no sessions.
  *
@@ -258,7 +272,7 @@ export const fetchHome = async (ctx = {}) => {
     return { ok: false, home: null, branch: ROSTER_REF, status: null, reason: `${url} did not answer (${error.message})` };
   }
   if (!response.ok) {
-    return { ok: false, home: null, branch: ROSTER_REF, status: response.status, reason: `${url} answered ${response.status} — this site was published without its home repo` };
+    return { ok: false, home: null, branch: ROSTER_REF, status: response.status, reason: `${url} answered ${response.status} - this site was published without its home repo` };
   }
   let parsed = null;
   try {
@@ -279,7 +293,7 @@ export const fetchHome = async (ctx = {}) => {
  *
  * Two steps, because the list is PRIVATE (issue #110). Pages is public even when
  * the repo serving it is not, so the names of the repositories on it are read
- * from the home repo's default branch through the API — with the same viewer
+ * from the home repo's default branch through the API - with the same viewer
  * token the sweep uses, and refused in the same words when it does not reach.
  * The only thing published beside the pages is which repo to ask.
  *
@@ -302,7 +316,7 @@ export const fetchSlugs = async (ctx = {}) => {
   );
   if (!answer.ok) return { ok: false, data: null, status: answer.status, reason: answer.reason };
   if (!answer.data || !Array.isArray(answer.data.repos)) {
-    return { ok: false, data: null, status: answer.status, reason: `${pointer.home} answered without a repo list at ${ROSTER_PATH} — the board has no repositories to sweep` };
+    return { ok: false, data: null, status: answer.status, reason: `${pointer.home} answered without a repo list at ${ROSTER_PATH} - the board has no repositories to sweep` };
   }
   return {
     ok: true,
@@ -314,7 +328,7 @@ export const fetchSlugs = async (ctx = {}) => {
 
 // ── The board ──────────────────────────────────────────────────────────────
 
-/** The sweep, one aliased field per repo — one request whatever the roster's size. */
+/** The sweep, one aliased field per repo - one request whatever the roster's size. */
 export const buildBoardQuery = (slugs) => {
   const fields = slugs.map((slug, i) => {
     const [owner, name] = slug.split('/');
@@ -342,7 +356,7 @@ export const buildBoardQuery = (slugs) => {
   return `query {\n${fields.join('\n')}\n}\n`;
 };
 
-/** How many of a repo's closed issues were closed in the last 24 hours — the API's own count. */
+/** How many of a repo's closed issues were closed in the last 24 hours - the API's own count. */
 export const closedSince = (resolved, now) => {
   const nodes = ((resolved || {}).closed || {}).nodes || [];
   let count = 0;
@@ -370,19 +384,19 @@ export const parseLabels = (nodes) => {
 };
 
 // The inline fallback for a dependency GitHub itself will not hold (issue #103)
-// — tower/api/lib/board.js's label and expression, restated for the copy-boundary
+// - tower/api/lib/board.js's label and expression, restated for the copy-boundary
 // reason every other rule here is, and pinned against it by the suite.
 const DEPENDS_LABEL = 'depends on:';
 const DEPENDS_RE = /(?:^|[\s,;(])(?:([\w.-]+\/[\w.-]+))?#(\d+)\b/g;
 
 /**
- * What one issue is WAITING on — the native edges merged with that inline
+ * What one issue is WAITING on - the native edges merged with that inline
  * fallback, in the API's own composition: a CLOSED edge is satisfied and never
  * surfaces, an inline reference carries no state and counts until the line is
  * edited away, and the same blocker written both ways is one edge.
  *
  * @param {object} node the issue node as GraphQL answered it
- * @param {string} slug the repo it was swept from — what a bare `#<n>` means
+ * @param {string} slug the repo it was swept from - what a bare `#<n>` means
  * @returns {Array<{repo: string, number: number}>} empty when it waits on nothing
  */
 export const blockersFor = (node, slug) => {
@@ -490,7 +504,7 @@ export const normalizeBoard = (slugs, data, errors, now = Date.now()) => {
  *
  * The STATUS survives a failure alongside the reason, because one status is
  * acted on rather than read: a token GitHub refused is the one failure a new
- * token fixes, and the runtime turns it back into the prompt (page.js).
+ * token fixes, and the runtime carries it to the Settings page (page.js).
  *
  * @param {string[]} slugs
  * @param {object} ctx - `{ token, fetch }`
@@ -514,7 +528,7 @@ const REFUSED = [401, 403];
  * Whether a feed result is GitHub refusing the token itself.
  *
  * One home for the question, because two places ask it: the fetchers here and
- * the runtime, which answers a refusal with the prompt instead of a page problem.
+ * the runtime, which answers a refusal with the Settings pointer instead of a page problem.
  *
  * @param {{ok: boolean, status: number|null}} result - a feed result
  * @returns {boolean}
@@ -527,12 +541,12 @@ export const isTokenRefusal = (result) => Boolean(result) && result.ok === false
 // digest there too, as a Discussion titled `brief: <date>` (the prefix
 // `jobs/cc-news.js` reads its cursor back by), roughly one a day beside each
 // summary. GraphQL has no title filter, so the read asks for a wider window and
-// the prefix is dropped here — a card of five summaries, not five posts.
+// the prefix is dropped here - a card of five summaries, not five posts.
 const BRIEF_TITLE_PREFIX = 'brief: ';
 const SUMMARY_WINDOW = 20;
 const SUMMARY_LIMIT = 5;
 
-/** The latest Discussions on the home repo — where the daily summaries are published. */
+/** The latest Discussions on the home repo - where the daily summaries are published. */
 export const buildDiscussionsQuery = (slug, first = SUMMARY_LIMIT) => {
   const [owner, name] = slug.split('/');
   return `query {
@@ -583,7 +597,7 @@ export const fetchSummaries = async (home, ctx = {}) => {
 // rules, restated because that module is on the other side of the copy boundary.
 // `warnings` is the one thing this side cannot answer: uncommitted, unpushed and
 // unreleased are read off the working copies on a machine, and a browser has
-// none — so it is always empty here and the page says why rather than showing a
+// none - so it is always empty here and the page says why rather than showing a
 // clean table that would read as good news.
 
 const briefIssue = (issue) => ({
@@ -604,8 +618,8 @@ const briefIssue = (issue) => ({
   blockedBy: issue.blockedBy || [],
 });
 
-// The three priority bands are format.js's — the same ones the Board sorts and
-// colours by — so the brief and the board can never disagree about what "high"
+// The three priority bands are format.js's - the same ones the Board sorts and
+// colours by - so the brief and the board can never disagree about what "high"
 // is. Only the tie-break differs: a brief section reads oldest first.
 const byUrgency = (a, b) => {
   const spread = priorityRank(a.priority) - priorityRank(b.priority);
@@ -614,13 +628,13 @@ const byUrgency = (a, b) => {
 };
 
 // `nextUp` is that module's rule too, and restated for the same reason: the few
-// items a morning could move, per repo — decisions, then the checks waiting on
-// the owner, then accepted specs — three at most. The published copy carries it
-// because the payloads are one shape — the suite compares them key for key.
+// items a morning could move, per repo - decisions, then the checks waiting on
+// the owner, then accepted specs - three at most. The published copy carries it
+// because the payloads are one shape - the suite compares them key for key.
 const NEXT_UP_PER_REPO = 3;
 
 // The per-repo sweep counts the payload carries, and the roster-wide closed
-// count summed off them — that module's `repoCountsFrom`, restated. A published
+// count summed off them - that module's `repoCountsFrom`, restated. A published
 // copy carries them for the same reason it carries `nextUp`: the payloads are
 // one shape, and the suite compares them key for key.
 const repoCountsFrom = (board) => ((board && board.repos) || [])
@@ -632,12 +646,12 @@ const repoCountsFrom = (board) => ((board && board.repos) || [])
   }));
 
 // An issue waiting on another orders last inside its repo and says which ones
-// (issue #103) — that module's rule as well, down to which edges count: only a
+// (issue #103) - that module's rule as well, down to which edges count: only a
 // blocker the sweep can see is still open, matched on the `repo#number` pair
 // rather than the number alone.
 const nextUpFrom = (issues) => {
   // Repo names are case-insensitive on GitHub and the inline fallback is
-  // hand-typed, so the match folds case — and answers in the sweep's spelling.
+  // hand-typed, so the match folds case - and answers in the sweep's spelling.
   const open = new Map(issues.map((issue) => [issueKey(issue).toLowerCase(), issueKey(issue)]));
   const waitsOnFor = (issue) => (issue.blockedBy || [])
     .map((blocker) => open.get(issueKey(blocker).toLowerCase()))
@@ -667,15 +681,15 @@ const nextUpFrom = (issues) => {
   }));
 };
 
-/** The headline — the order of consequence, in the API's own words. */
+/** The headline - the order of consequence, in the API's own words. */
 export const headlineFor = (counts) => {
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   if (counts.waiting) return `${plural(counts.waiting, 'issue is', 'issues are')} waiting on a decision from you.`;
   if (counts.qa) return `${plural(counts.qa, 'issue is', 'issues are')} built and waiting on your check.`;
   if (counts.inFlight) return `${plural(counts.inFlight, 'issue is', 'issues are')} in flight, and nothing is blocked.`;
-  if (counts.ready) return `Nothing is blocked — ${plural(counts.ready, 'issue is', 'issues are')} specced and ready to start.`;
+  if (counts.ready) return `Nothing is blocked - ${plural(counts.ready, 'issue is', 'issues are')} specced and ready to start.`;
   if (counts.inbox) return `The board is clear of specced work; ${plural(counts.inbox, 'item is', 'items are')} sitting in the inbox.`;
-  return 'Nothing is waiting, in flight, or ready — the board is empty.';
+  return 'Nothing is waiting, in flight, or ready - the board is empty.';
 };
 
 /**
@@ -738,7 +752,7 @@ export const buildBrief = (board, opts = {}) => {
 // import it, so the prefix, the pattern and the cap are restated and the suite
 // pins the parse against the server's own.
 
-/** The line a brief carries its day's numbers on — jobs/stats.js renders it. */
+/** The line a brief carries its day's numbers on - jobs/stats.js renders it. */
 const STATS_RE = /<!--\s*workkit-stats:\s*(\{.*\})\s*-->/;
 
 /** How many mornings a chart draws, and how wide the read that finds them is. */
@@ -758,7 +772,7 @@ export const buildHistoryQuery = (slug, first = HISTORY_WINDOW) => {
 `;
 };
 
-/** One brief body's stats block, or null — a brief published before the block is simply skipped. */
+/** One brief body's stats block, or null - a brief published before the block is simply skipped. */
 export const parseStatsMark = (body) => {
   const match = STATS_RE.exec(String(body || ''));
   if (!match) return null;
@@ -779,7 +793,7 @@ export const parseStatsMark = (body) => {
   };
 };
 
-/** The discussion nodes, parsed into the history series — oldest first, the order a chart draws in. */
+/** The discussion nodes, parsed into the history series - oldest first, the order a chart draws in. */
 export const normalizeHistory = (data) => {
   const nodes = (((data || {}).repository || {}).discussions || {}).nodes || [];
   const entries = [];
@@ -797,7 +811,7 @@ export const normalizeHistory = (data) => {
  *
  * NULL rather than an empty list, because the two say opposite things: a site
  * whose home repo cannot be reached has no history to show, while a home repo
- * whose briefs carry no stats line yet has a history that is genuinely empty —
+ * whose briefs carry no stats line yet has a history that is genuinely empty -
  * and the page says a different sentence for each.
  *
  * @param {string} home - the home repo slug, or ''
@@ -814,7 +828,7 @@ export const fetchHistory = async (home, ctx = {}) => {
 // ── The one door ───────────────────────────────────────────────────────────
 
 /**
- * Answer one feed path against GitHub — the published half of api.js's
+ * Answer one feed path against GitHub - the published half of api.js's
  * `fetchFeed`, in the same four-key shape and with the same promise never to
  * throw.
  *
@@ -867,8 +881,8 @@ export const readFeed = async (path, ctx = {}) => {
 //
 // They speak REST where the reads speak GraphQL, for one reason: a GraphQL
 // mutation addresses a label by node ID, so each write would first have to look
-// up the issue's id and an id per label name. REST speaks label NAMES — the
-// vocabulary the columns, the sweep and workflow/labels.json already use — so a
+// up the issue's id and an id per label name. REST speaks label NAMES - the
+// vocabulary the columns, the sweep and workflow/labels.json already use - so a
 // write is the plainest call that can do the job. Same host, same bearer token,
 // same four-key result and the same promise never to throw.
 
@@ -893,7 +907,7 @@ export const DEFAULT_BODY = 'Filed from the tower.';
 export const INTAKE_LABELS = ['status:inbox', 'type:idea'];
 
 /**
- * What a refused WRITE means — which is not what a refused read means.
+ * What a refused WRITE means - which is not what a refused read means.
  *
  * A token that reads these repositories and cannot change them answers 403 on
  * the write and nothing else, and the viewer holding it has no way of knowing
@@ -904,11 +918,11 @@ export const INTAKE_LABELS = ['status:inbox', 'type:idea'];
  * @returns {string}
  */
 const writeRefusal = (status) => (status === 403
-  ? 'GitHub refused the write (403) — this token can read these repositories but not change them. Make one with Issues: Read and write, and hand that one over.'
-  : 'GitHub refused the token (401) — it is expired, or it is not a token any more. Hand over a fresh one.');
+  ? 'GitHub refused the write (403) - this token can read these repositories but not change them. Make one with Issues: Read and write, and hand that one over.'
+  : 'GitHub refused the token (401) - it is expired, or it is not a token any more. Hand over a fresh one.');
 
 /**
- * What a refused READ means — the other half, and the reason the two are split.
+ * What a refused READ means - the other half, and the reason the two are split.
  *
  * A write is two calls: the issue is read, then patched. A 403 on the READ says
  * the token cannot SEE that repository, and telling that viewer to make a token
@@ -918,8 +932,8 @@ const writeRefusal = (status) => (status === 403
  * @returns {string}
  */
 const readRefusal = (status) => (status === 403
-  ? 'GitHub refused the read (403) — this token does not cover that repository. Hand over one that does.'
-  : 'GitHub refused the token (401) — it is expired, or it is not a token any more. Hand over a fresh one.');
+  ? 'GitHub refused the read (403) - this token does not cover that repository. Hand over one that does.'
+  : 'GitHub refused the token (401) - it is expired, or it is not a token any more. Hand over a fresh one.');
 
 /**
  * One REST request.
@@ -962,7 +976,7 @@ const rest = async (path, ctx = {}, init = {}) => {
   }
   if (!response.ok) {
     // GitHub's own sentence is the useful half of a refusal that is not the
-    // token's fault — a deleted issue, a label the repo does not carry.
+    // token's fault - a deleted issue, a label the repo does not carry.
     const said = payload && payload.message;
     return { ok: false, data: null, status: response.status, reason: said ? `GitHub answered ${response.status}: ${said}` : `GitHub answered ${response.status}` };
   }
@@ -973,7 +987,7 @@ const rest = async (path, ctx = {}, init = {}) => {
  * The label set one move leaves behind: the old status off, the new one on,
  * every other label untouched.
  *
- * This is the endpoint's semantics exactly — `gh issue edit --remove-label
+ * This is the endpoint's semantics exactly - `gh issue edit --remove-label
  * status:<from> --add-label status:<to>`, one call so the issue is never
  * momentarily unlabelled and never momentarily carrying two statuses. Pure, so
  * the invariant is askable without a request.
@@ -995,20 +1009,20 @@ export const nextLabels = (current, from, to) => {
 const SLUG_SHAPE = /^[\w.-]+\/[\w.-]+$/;
 
 /**
- * The statuses a move may name — the label vocabulary's `status` group,
+ * The statuses a move may name - the label vocabulary's `status` group,
  * restated across the copy boundary for the reason the groups above are, and
  * pinned to `workflow/labels.json` by the suite.
  */
 export const MOVE_STATUSES = ['inbox', 'specced', 'building', 'qa', 'blocked', 'backlog'];
 
 /**
- * What a move may do, or why it may not — the endpoint's `validateMove`, on
+ * What a move may do, or why it may not - the endpoint's `validateMove`, on
  * this side of the copy boundary.
  *
  * The endpoint judges every field before `gh` is reached and trusts none of
  * them for being well formed; so does this, for the same reason: a drag on a
  * page is where these values come from, which is exactly why none of that is
- * assumed. The repo is checked for SHAPE rather than membership — unlike an
+ * assumed. The repo is checked for SHAPE rather than membership - unlike an
  * intake, whose repo is chosen in a dialog, a move's repo is one this site
  * swept, and confirming it against the roster would cost the two reads that
  * fetch it, which the move does not otherwise need.
@@ -1040,7 +1054,7 @@ export const validateMove = (move) => {
 };
 
 /**
- * Move one issue along the pipeline — the Board's drag, written straight to
+ * Move one issue along the pipeline - the Board's drag, written straight to
  * GitHub.
  *
  * Two calls, one mutation: REST replaces the whole label set, so the labels the
@@ -1072,7 +1086,7 @@ export const moveIssueStatus = async (move, ctx = {}) => {
       ok: false,
       data: null,
       status: read.status,
-      reason: 'GitHub answered the read without the issue’s labels, so the move had nothing safe to write from — nothing was changed.',
+      reason: 'GitHub answered the read without the issue’s labels, so the move had nothing safe to write from - nothing was changed.',
     };
   }
 
@@ -1088,7 +1102,7 @@ export const moveIssueStatus = async (move, ctx = {}) => {
 };
 
 /**
- * What an intake may do, or why it may not — the endpoint's `validateIntake`,
+ * What an intake may do, or why it may not - the endpoint's `validateIntake`,
  * on this side of the copy boundary.
  *
  * The repo is checked against the site's own slug list rather than pattern
@@ -1115,7 +1129,7 @@ export const validateIntake = (payload, slugs) => {
 };
 
 /**
- * File one issue — the intake dialog, written straight to GitHub.
+ * File one issue - the intake dialog, written straight to GitHub.
  *
  * @param {{repo: string, title: string, body: string}} payload - what the dialog holds
  * @param {object} ctx - `{ token, fetch, homePath }`
