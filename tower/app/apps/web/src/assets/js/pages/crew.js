@@ -28,6 +28,7 @@ import {
 } from '../libs/tower/format.js';
 import { crewActivity, cardMuted, roleIcon } from '../libs/tower/agent.js';
 import { agentTrigger } from '../libs/tower/modal.js';
+import { sitePath } from '../libs/tower/scope.js';
 import { loading, swap } from '@omega.js/client/modules/live-page';
 
 /** The tone a node's state is drawn in. */
@@ -152,7 +153,7 @@ const numbers = (tree) => {
     // The live count is the answer to "who is running"; the total says how much
     // history the parenthesis is folding away.
     statCell('Subagents', `${crew.working} (${crew.total})`),
-    statCell('Tokens', spend.length ? compact(spend.reduce((a, b) => a + b, 0)) : '-', '/usage'),
+    statCell('Tokens', spend.length ? compact(spend.reduce((a, b) => a + b, 0)) : '-', sitePath('/usage')),
   ]);
 };
 

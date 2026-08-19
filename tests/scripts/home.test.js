@@ -142,12 +142,18 @@ const mkWorld = ({
   // and no test in this suite runs a real build.
   // `npmLinksOn` is which invocation links the workspace bin — 1 is the ordinary
   // machine, 2 is the fresh tree npm needs two passes on, and 0 never links.
+  // The CWD is recorded beside the argv, one path a line: that is what an
+  // install is keyed from (issue #171), and a path out of mkdtemp holds no
+  // newline, so a line is framing enough here.
   const npmLog = path.join(root, 'npm-argv.log');
+  const npmCwdLog = path.join(root, 'npm-cwd.log');
   const npmCount = path.join(root, 'npm-count');
   fs.writeFileSync(path.join(bin, 'npm'), [
     '#!/usr/bin/env bash',
     recordArgv(npmLog),
-    'prefix=""',
+    `printf '%s\\n' "$PWD" >> ${JSON.stringify(npmCwdLog)}`,
+    // npm's own default: no --prefix means the project is the cwd.
+    'prefix="$PWD"',
     'if [[ "$1" == "--prefix" ]]; then prefix="$2"; fi',
     `n=$(( $(cat ${JSON.stringify(npmCount)} 2>/dev/null || printf 0) + 1 ))`,
     `printf '%s' "$n" > ${JSON.stringify(npmCount)}`,
@@ -229,6 +235,9 @@ const mkWorld = ({
     ghCalls: () => readArgv(ghLog),
     labels: () => JSON.parse(fs.readFileSync(labelsFile, 'utf8')),
     npmCalls: () => readArgv(npmLog),
+    npmCwds: () => (fs.existsSync(npmCwdLog)
+      ? fs.readFileSync(npmCwdLog, 'utf8').trim().split('\n').filter(Boolean)
+      : []),
     settings: () => JSON.parse(fs.readFileSync(path.join(workflowHome, 'settings.json'), 'utf8')),
     pkg: (rel = 'package.json') => JSON.parse(fs.readFileSync(path.join(workflowHome, 'tower', rel), 'utf8')),
     env: {
@@ -255,8 +264,11 @@ const inHome = (world, script, { input = '' } = {}) => {
     `. ${JSON.stringify(path.join(WORKFLOW_DIR, 'home.sh'))}`,
     script,
   ].join('\n');
+  // From the world's own root, never the caller's: a shim that keys anything
+  // off the cwd — as npm does — must key it off a scratch directory rather
+  // than this checkout.
   const res = spawnSync('bash', ['-c', driver], {
-    env: world.env, input, encoding: 'utf8', timeout: 30000,
+    cwd: world.root, env: world.env, input, encoding: 'utf8', timeout: 30000,
   });
   assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
@@ -787,6 +799,27 @@ const run = async () => {
     const again = setup(world);
     assert(/already installed/.test(again.out), `a second run costs nothing, got: ${again.out}`);
     assertEq(world.npmCalls().filter((c) => /install/.test(c)).length, 1, 'and npm ran exactly once');
+    cleanup(world.root);
+  });
+
+  await test('the install is keyed from the clone’s real path, symlinked ~/.workkit or not', () => {
+    // Issue #171, the same defect publish.sh carried (#166) and the FIRST
+    // install a fresh machine ever runs: `npm --prefix <link>/tower install`
+    // resolves the project through the link while keying the tree from the
+    // CALLER'S cwd, and the lockfile takes package paths outside the project
+    // root — a corrupt tree the next install dies inside arborist on.
+    const world = mkWorld({ login: 'owner' });
+    const link = path.join(world.root, 'linked-workkit');
+    fs.symlinkSync(world.workflowHome, link);
+    world.env.WORKFLOW_HOME = link;
+
+    const { code, out } = setup(world);
+    assertEq(code, 0, `exit 0 — ${out}`);
+    const cwds = world.npmCwds();
+    assertEq(cwds.length, 1, `one install, and its cwd recorded: ${cwds.join(' | ')}`);
+    assertEq(cwds[0], world.tower, 'the cwd is the clone with its links resolved');
+    assert(!world.npmCalls().some((c) => c.includes('--prefix')),
+      `and no --prefix keys the tree from elsewhere: ${fmtCalls(world.npmCalls())}`);
     cleanup(world.root);
   });
 

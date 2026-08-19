@@ -26,6 +26,10 @@
 # for callers that pass no arguments, the way `npm run tower` hands this
 # script none — passes everything through, raw, from the first line.
 #
+# Quiet is never silent about a boot that did not happen (issue #170): a half
+# that ends before the dashboard was announced says so, and names itself, so a
+# refusal is never a terminal that just returns to the prompt.
+#
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -95,8 +99,16 @@ FILTERS=()
 # Where the halves hand their output to their filters — one fifo each, made
 # and removed by this script.
 FIFO_DIR="$(mktemp -d "${TMPDIR:-/tmp}/workkit-tower.XXXXXX")"
+# Set the moment a take-down begins, because cleanup DESTROYS the evidence the
+# down-taker below reads: it removes the fifo directory, announce marker and
+# all, and ends both halves. Running from a signal's trap it does that while
+# the script is still inside its poll loop, so without this a tower that had
+# its dashboard and was then killed from the outside read as one that never
+# came up, and named whichever half its already-ended pids answered for.
+SHUTDOWN=''
 cleanup() {
   local pid
+  SHUTDOWN=1
   # Guarded, because macOS's bash 3.2 treats an empty array as unbound under
   # `set -u` — a signal landing before the first pid is recorded would
   # otherwise die inside its own trap.
@@ -113,10 +125,14 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# What survives the quiet phase: anything shaped like a problem. Everything
-# else — the cloudflare notes, the missing-key chatter, the build timings — is
-# the framework talking to its author, not to whoever wanted a dashboard.
-KEEP_RE='error|warn|fail|fatal|exception|EADDR|ENOENT|EACCES|not found|cannot find module|missing binding|segmentation fault|killed:|npm ERR!|taken|bumped|^[[:space:]]+at [^[:space:]]'
+# What survives the quiet phase: anything shaped like a problem, plus anything
+# the framework says in its OWN voice (issue #170) — omega prefixes the lines it
+# writes as itself, including the ones refusing to boot ("the monorepo
+# src-to-dist watch is not running"), which carry no problem word at all and
+# were dropped whole. Everything else — the missing-key chatter, the build
+# timings, the targets' own logs — is the toolchain talking to its author, not
+# to whoever wanted a dashboard.
+KEEP_RE='error|warn|fail|fatal|exception|EADDR|ENOENT|EACCES|not found|cannot find module|missing binding|segmentation fault|killed:|npm ERR!|taken|bumped|^omega: |^[[:space:]]+at [^[:space:]]'
 
 # What the keep net catches by accident (issue #158): known-benign lines whose
 # WORDING carries a trigger word. Both are the framework talking about itself —
@@ -176,6 +192,9 @@ filter_output() {
     if [ -n "$port" ] && [ -z "$announced" ] && [[ "$line" =~ $url_re ]]; then
       announced=1
       flowing=1
+      # The filter runs beside the script, not in it, so the fact that a
+      # dashboard was named is left where the down-taker below can read it.
+      : > "$FIFO_DIR/announced"
       echo "tower: dashboard at ${BASH_REMATCH[1]}"
     fi
     if [[ "$line" =~ $NOISE_RE ]]; then
@@ -234,4 +253,18 @@ fi
 while kill -0 "${PIDS[0]}" 2>/dev/null && kill -0 "${PIDS[1]}" 2>/dev/null; do
   sleep 1
 done
+
+# A half that ended before any dashboard was named did not shut down — it never
+# came up (issue #170). Say which one, and where the rest of what it printed is,
+# since a filtered run has by definition shown less than the whole of it. Only
+# in a filtered run: a verbose one already put every line on the terminal, and
+# announces nothing this could read. And only where nothing has taken the tower
+# down yet — a run ended from the outside is a shutdown, whatever it had
+# announced, and both the marker and the pids are gone by then anyway.
+if [ -z "$VERBOSE" ] && [ -z "$SHUTDOWN" ] && [ ! -e "$FIFO_DIR/announced" ]; then
+  ended='app'
+  kill -0 "${PIDS[0]}" 2>/dev/null || ended='API'
+  echo "tower: the $ended half ended before the dashboard came up — run \`npm run tower -- --verbose\` to see everything it printed" >&2
+fi
+
 cleanup

@@ -330,7 +330,7 @@ if ! command -v npm >/dev/null 2>&1; then
   exit "$SOURCE_RC"
 fi
 if [[ ! -x "$OMEGA_BIN" ]]; then
-  say_skip "publish: the tower project's build tooling is not installed at $WK_HOME_DIR (no node_modules/.bin/omega — its @omega.js deps resolve by file: spec from a sibling omega checkout) — nothing is built here; \`npm --prefix $WK_HOME_DIR install\` on a machine with that checkout installs it"
+  say_skip "publish: the tower project's build tooling is not installed at $WK_HOME_DIR (no node_modules/.bin/omega — its @omega.js deps resolve by file: spec from a sibling omega checkout) — nothing is built here; \`(cd -P $WK_HOME_DIR && npm install)\` on a machine with that checkout installs it"
   exit "$SOURCE_RC"
 fi
 
@@ -368,11 +368,17 @@ if [[ "$INSTALL_NEEDED" -eq 0 ]]; then
     fi
   done
 fi
+# The install runs INSIDE the clone, with its links resolved, and never with
+# `--prefix` (issue #166): `~/.workkit` is a symlink here, and npm given a
+# prefix resolves the project through the link while keying the tree from the
+# CALLER'S cwd. The lockfile took package paths outside the project root, the
+# apps/web workspace went extraneous, @omega.js/web never installed, and the
+# next run died inside arborist. `cd -P` is what makes the cwd physical.
 if [[ "$INSTALL_NEEDED" -eq 1 ]]; then
   say_info "publish: installing the tower project's dependencies in $WK_HOME_DIR"
   INSTALL_LOG="$(mktemp)"
-  if ! npm --prefix "$WK_HOME_DIR" install >"$INSTALL_LOG" 2>&1; then
-    say_warn "publish: the tower project's dependencies could not be installed in $WK_HOME_DIR — nothing was built or published, because a build over a half-installed tree is a broken site; \`npm --prefix $WK_HOME_DIR install\` reports it in full, and the last lines follow"
+  if ! (cd -P "$WK_HOME_DIR" && npm install) >"$INSTALL_LOG" 2>&1; then
+    say_warn "publish: the tower project's dependencies could not be installed in $WK_HOME_DIR — nothing was built or published, because a build over a half-installed tree is a broken site; \`npm install\` inside $WK_HOME_DIR reports it in full, and the last lines follow"
     tail -20 "$INSTALL_LOG" >&2
     rm -f "$INSTALL_LOG"
     exit 1
@@ -427,9 +433,10 @@ fi
 # of the slug). Two cases, exhaustive, and neither asks GitHub anything — a
 # publish that cannot reach the network still builds the right URLs.
 #
-# `OMEGA_PATH_PREFIX` is the contract with the framework (omega#355). The build
-# does not read it yet, so this is INERT today; when omega ships support, the
-# published site heals on the next publish with nothing here to change.
+# `OMEGA_PATH_PREFIX` is the contract with the framework (omega#355), and the
+# installed omega HONORS it: its engine registers the path-prefix transform
+# whenever the variable is set, so what is exported here is what the built
+# pages emit their URLs under.
 PATH_PREFIX='/'
 if [[ -z "$(wk_json_get "$WK_HOME_SETTINGS" '.site.url')" ]]; then
   HOME_SLUG="$(wk_home_slug)"

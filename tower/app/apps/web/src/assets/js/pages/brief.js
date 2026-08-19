@@ -27,7 +27,7 @@
 import { startPage } from '../libs/tower/page.js';
 import { MODE } from '../libs/tower/api.js';
 import { feed } from '../libs/tower/state.js';
-import { inScope, selectedSlugs } from '../libs/tower/scope.js';
+import { inScope, selectedSlugs, sitePath } from '../libs/tower/scope.js';
 import {
   esc, num, empty, problem, issueChips, statCell, statgrid, card, LOCAL_ONLY_NOTICE,
 } from '../libs/tower/format.js';
@@ -66,13 +66,13 @@ const numbers = (payload, lists, selected) => statgrid([
   // `open` and `backlog` are roster-wide totals with no list under them, so a
   // narrowed view cannot restate them: they say unknown rather than a number
   // that would be read as this repo's. The other five ARE the lists on screen.
-  statCell('Open', selected.length ? num(null) : payload.counts.open, '/board'),
-  statCell('Waiting', lists.waiting.length, '/board'),
-  statCell('QA', lists.qa.length, '/board'),
-  statCell('Ready', lists.ready.length, '/board'),
-  statCell('In flight', lists.inFlight.length, '/board'),
-  statCell('Inbox', lists.inbox.length, '/board'),
-  statCell('Backlog', selected.length ? num(null) : payload.counts.backlog, '/board'),
+  statCell('Open', selected.length ? num(null) : payload.counts.open, sitePath('/board')),
+  statCell('Waiting', lists.waiting.length, sitePath('/board')),
+  statCell('QA', lists.qa.length, sitePath('/board')),
+  statCell('Ready', lists.ready.length, sitePath('/board')),
+  statCell('In flight', lists.inFlight.length, sitePath('/board')),
+  statCell('Inbox', lists.inbox.length, sitePath('/board')),
+  statCell('Backlog', selected.length ? num(null) : payload.counts.backlog, sitePath('/board')),
 ]);
 
 // ── The week behind the numbers ────────────────────────────────────────────

@@ -595,7 +595,14 @@ wk_home_install() {
     return 0
   fi
   wk_say_info "home: installing the tower project's dependencies in $WK_HOME_DIR"
-  npm --prefix "$WK_HOME_DIR" install >/dev/null 2>&1 || true
+  # INSIDE the clone, links resolved, and never with `--prefix` (issue #171,
+  # the same defect publish.sh carried as #166): `~/.workkit` can be a symlink,
+  # and npm given a prefix resolves the project through the link while keying
+  # the tree from the CALLER'S cwd — a lockfile with package paths outside the
+  # project root, a workspace that reads extraneous, and an arborist crash on
+  # the next install. This is the FIRST install a machine ever runs, so the
+  # corruption would be there from the start. `cd -P` makes the cwd physical.
+  (cd -P "$WK_HOME_DIR" && npm install) >/dev/null 2>&1 || true
   # The exit status proves nothing (probed 2026-07-28: an install with no omega
   # checkout to resolve still exits 0 and leaves dangling symlinks), so the
   # binary itself is the check — the same one publish.sh makes.
@@ -606,7 +613,7 @@ wk_home_install() {
   # is one extra run over an installed tree, never a loop — if the bin is absent
   # after it, the warn below is the genuine failure.
   if [[ ! -x "$WK_HOME_DIR/node_modules/.bin/omega" ]]; then
-    npm --prefix "$WK_HOME_DIR" install >/dev/null 2>&1 || true
+    (cd -P "$WK_HOME_DIR" && npm install) >/dev/null 2>&1 || true
   fi
   if [[ -x "$WK_HOME_DIR/node_modules/.bin/omega" ]]; then
     wk_say_ok "home: the tower project can build here"

@@ -2100,6 +2100,73 @@ const run = async () => {
     assert(!scope.isScopedPath('#anything'), 'a fragment is never a page');
   });
 
+  /** A page built for a prefixed site: the stamp the build writes on `<html>`. */
+  const stamped = (prefix) => ({ documentElement: { dataset: prefix === null ? {} : { omegaPathPrefix: prefix } } });
+
+  /** Run under a simulated document (and page path), whatever the body does. */
+  const served = (document, pathname, body) => {
+    const realDocument = globalThis.document;
+    const realLocation = globalThis.location;
+    globalThis.document = document;
+    globalThis.location = { pathname };
+    try {
+      body();
+    } finally {
+      if (realDocument === undefined) delete globalThis.document;
+      else globalThis.document = realDocument;
+      if (realLocation === undefined) delete globalThis.location;
+      else globalThis.location = realLocation;
+    }
+  };
+
+  await test('a copy served under a path prefix keeps every URL the runtime builds inside it', () => {
+    // The published copy answers at `<owner>.github.io/<name>/`, and the build
+    // rewrites only the HTML it emits - a URL this app ASSEMBLES is its own to
+    // get right, and root-absolute ones walked off the site (issue #169). Where
+    // it is mounted is the BUILD's own answer, stamped on `<html>`, so the
+    // simulation is that stamp and nothing else.
+    served(stamped('/workkit'), '/workkit/board', () => {
+      assertEq(scope.basePath(), '/workkit', 'the prefix is the build’s stamp, read back off the document');
+      assertEq(scope.sitePath('/settings'), '/workkit/settings', 'and applying it is what every runtime URL goes through');
+      assertEq(scope.settingsHref('omega'), '/workkit/settings?repo=omega', 'the page the runtime navigates to by itself stays on the site, scope and all');
+      assertEq(scope.settingsHref(''), '/workkit/settings', 'with or without a selection on it');
+      assertEq(scope.scopedHref('/workkit/board', 'omega'), '/workkit/board?repo=omega', 'a nav link the build already prefixed is left where it is');
+      assertEq(scope.scopedHref('/board', 'omega'), '/workkit/board?repo=omega', 'and one it did not is put under the prefix rather than off the site');
+      assertEq(scope.scopedHref('/workkit/', 'omega'), '/workkit/?repo=omega', 'the brand lockup points at the prefixed Overview, never at the domain root');
+      assertEq(scope.pathOf('/workkit/board'), '/board', 'page identity is the path with the prefix taken off');
+      assertEq(scope.pathOf('/workkit/'), '/', 'and the prefix on its own is the Overview');
+      assert(scope.isScopedPath('/workkit/board') && scope.isScopedPath('/workkit/settings'), 'so a prefixed nav link is still one of the tower’s own pages');
+      assert(!scope.isScopedPath('/workkit/pricing'), 'and a prefixed link that is not is still left alone');
+    });
+    // The stamp is written only when there IS a prefix, so every absence says
+    // the same thing - and says it whatever the page path looks like. A copy
+    // opened at `/index.html` is the case a path-shaped guess got wrong.
+    served(stamped(null), '/index.html', () => {
+      assertEq(scope.basePath(), '', 'no stamp is no prefix, whatever the address bar says');
+      assertEq(scope.sitePath('/settings'), '/settings', 'so nothing a root-served copy builds is moved');
+      assertEq(scope.scopedHref('/board', 'omega'), '/board?repo=omega', 'and its nav links are the links they always were');
+      assert(scope.isScopedPath('/board'), 'page identity is untouched too');
+    });
+    served(stamped('/'), '/board', () => {
+      assertEq(scope.basePath(), '', 'a stamp naming the domain root is no prefix either');
+    });
+    assertEq(scope.basePath(), '', 'and a runtime with no document at all is at the root - never a crash');
+  });
+
+  await test('no page writes a link to another page as a bare root-absolute path', () => {
+    // The tiles, the see-all lines and the card links are drawn at runtime, so
+    // the build never sees them - every one of them names its page through
+    // `sitePath` or it points at the domain root from a copy that is not served
+    // there (issue #169).
+    const fs = require('fs');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const bare = /(?<!sitePath\()'\/(board|crew|usage|health|brief|settings)'/;
+    for (const name of fs.readdirSync(pages).filter((file) => file.endsWith('.js'))) {
+      const source = fs.readFileSync(path.join(pages, name), 'utf8');
+      assert(!bare.test(source), `${name} names no tower page as a bare path`);
+    }
+  });
+
   group('tower/app: sidebar - the project selector');
 
   await test('an unread roster fills nothing into the menu', () => {

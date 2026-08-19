@@ -21,7 +21,7 @@ import {
 } from '../libs/tower/history.js';
 import { loading, swap } from '@omega.js/client/modules/live-page';
 import { issueItem, externalLink } from '../libs/tower/modal.js';
-import { selectedSlugs } from '../libs/tower/scope.js';
+import { selectedSlugs, sitePath } from '../libs/tower/scope.js';
 import { crewActivity, cardMuted } from '../libs/tower/agent.js';
 
 /** Sum a health field across the repos in play; nulls (unknowable) are skipped. */
@@ -70,13 +70,13 @@ const numbers = (state) => {
   const issues = issuesFor(state);
   const entries = selectedSlugs(state).length ? [] : entriesOf(briefPayload(state));
   return statgrid([
-    statCell('Open issues', issues.length, '/board', undefined, since(entries, 'open')),
-    statCell('Blocked', issues.filter((issue) => issue.status === 'blocked').length, '/board', undefined, since(entries, 'waiting')),
-    statCell('QA', issues.filter((issue) => issue.status === 'qa').length, '/board', undefined, since(entries, 'qa')),
-    statCell('In flight', issues.filter((issue) => issue.status === 'building').length, '/board', undefined, since(entries, 'inFlight')),
-    machineStat(state, 'sessions', 'Live sessions', sessionsFor(state).length, '/crew'),
-    machineStat(state, 'health', 'Unpushed', total(state, 'unpushed'), '/health'),
-    machineStat(state, 'health', 'Unreleased', total(state, 'unreleasedEntries'), '/health'),
+    statCell('Open issues', issues.length, sitePath('/board'), undefined, since(entries, 'open')),
+    statCell('Blocked', issues.filter((issue) => issue.status === 'blocked').length, sitePath('/board'), undefined, since(entries, 'waiting')),
+    statCell('QA', issues.filter((issue) => issue.status === 'qa').length, sitePath('/board'), undefined, since(entries, 'qa')),
+    statCell('In flight', issues.filter((issue) => issue.status === 'building').length, sitePath('/board'), undefined, since(entries, 'inFlight')),
+    machineStat(state, 'sessions', 'Live sessions', sessionsFor(state).length, sitePath('/crew')),
+    machineStat(state, 'health', 'Unpushed', total(state, 'unpushed'), sitePath('/health')),
+    machineStat(state, 'health', 'Unreleased', total(state, 'unreleasedEntries'), sitePath('/health')),
   ]);
 };
 
@@ -103,7 +103,7 @@ const waiting = (state) => {
           <span class="d-block">${esc(issue.title)}</span>
         </span>
         ${externalLink(issue.url)}
-      `, { inner: 'py-1 d-flex align-items-start gap-2' })).join('')}</ul>${seeMore(hidden, '/board')}`
+      `, { inner: 'py-1 d-flex align-items-start gap-2' })).join('')}</ul>${seeMore(hidden, sitePath('/board'))}`
     : empty('nothing is waiting on you', 'fa-regular fa-circle-check');
   return card('Waiting on you', body, {
     chip: blocked.length,
@@ -161,9 +161,9 @@ const crew = (state) => {
         <td>${stateCell(session, now)}</td>
         <td>${session.model ? modelBadge(session.model) : '-'}</td>
       </tr>`).join('')}</tbody>
-    </table></div>${seeMore(hidden, '/crew')}`;
+    </table></div>${seeMore(hidden, sitePath('/crew'))}`;
   }
-  return card('Live crew', body, { class: 'h-100', link: { href: '/crew', label: 'all' } });
+  return card('Live crew', body, { class: 'h-100', link: { href: sitePath('/crew'), label: 'all' } });
 };
 
 // A repo says only what is wrong with it, so a clean repo takes one line and
@@ -211,9 +211,9 @@ const healthPanel = (state) => {
   else {
     const ranked = [...list].sort((a, b) => trouble(health(state)[b.path]) - trouble(health(state)[a.path]));
     const { shown, hidden } = cap(ranked);
-    body = `<ul class="list-unstyled mb-0">${shown.map((repo) => healthLine(repo, health(state)[repo.path])).join('')}</ul>${seeMore(hidden, '/health')}`;
+    body = `<ul class="list-unstyled mb-0">${shown.map((repo) => healthLine(repo, health(state)[repo.path])).join('')}</ul>${seeMore(hidden, sitePath('/health'))}`;
   }
-  return card('Health', body, { class: 'h-100', link: { href: '/health', label: 'all' } });
+  return card('Health', body, { class: 'h-100', link: { href: sitePath('/health'), label: 'all' } });
 };
 
 // Open issues by status - the same series the Board's columns count, as a

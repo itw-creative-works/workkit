@@ -14,6 +14,15 @@
 // suite ask the parse, the format and the predicate the questions the browser
 // used to be the only way to ask.
 //
+// And since every one of those links is a PATH, this is also where the tower
+// learns where it is served from (issue #169). A published copy answers under a
+// prefix - `<owner>.github.io/<name>/` - and the build rewrites only the URLs it
+// emits into the HTML; a URL the runtime assembles is this app's own to get
+// right, and a root-absolute one walks off the site. `basePath` reads the
+// prefix the build stamped on the page and `sitePath` is the one thing that
+// applies it, so every address the runtime builds comes out under it. On a
+// root-served copy the prefix is the empty string and nothing moves.
+//
 
 /**
  * Where the token is typed (issue #167) - the one page a copy holding none can
@@ -21,7 +30,13 @@
  */
 export const SETTINGS_PATH = '/settings';
 
-/** The tower's own pages - the links the sidebar carries the selection onto. */
+/**
+ * The tower's own pages - the links the sidebar carries the selection onto.
+ *
+ * These are page IDENTITIES, written from the site's root, and never an address
+ * on their own: what a copy under a prefix actually serves them at is
+ * `sitePath`'s answer, and `pathOf` is the way back to the identity.
+ */
 export const SCOPED_PATHS = ['/', '/board', '/crew', '/usage', '/health', '/brief', SETTINGS_PATH];
 
 /** A base for parsing a relative href; only the path and the query are ever read back. */
@@ -74,10 +89,63 @@ export const selectedSlugs = (state) => parseRepos(state && state.selectedRepo);
 export const inScope = (slugs, slug) => !slugs.length || slugs.includes(slug);
 
 /** The path an href points at, with the trailing slash and any `.html` taken off. */
-const pathOf = (href) => {
+const cleanPath = (href) => {
   const { pathname } = new URL(href, BASE);
   const clean = pathname.replace(/\.html$/, '').replace(/\/+$/, '');
   return clean || '/';
+};
+
+/**
+ * The prefix this copy of the tower is served under: '' at a site's root, and
+ * `/<name>` on a project Pages site.
+ *
+ * The build's own answer, read back off the page: `OMEGA_PATH_PREFIX` is what
+ * the publisher hands the build (workflow/publish.sh), and the build stamps the
+ * normalized value on `<html data-omega-path-prefix>` as it mounts every URL it
+ * emits (@omega.js/web's path-prefix pass, omega#355). Never guessed from the
+ * page's path: a path-shaped guess has to know which segment is the site and
+ * which is the page, and it gets `/index.html` - and a repo named after one of
+ * the pages - wrong. Every absence is the domain root, which is exactly what a
+ * root-served site ships: it is stamped only when there IS a prefix.
+ *
+ * The value is read off the DOM rather than through the framework's own reader
+ * (`__main_assets__/js/libs/path-prefix.js`, the same stamp) for api.js's
+ * reason: a framework import is a bundler specifier that would take this module
+ * out of reach of its own suite. The normalization mirrors the build's, since
+ * this reads an attribute rather than the value that was handed over.
+ *
+ * @returns {string} the prefix, with no trailing slash, or ''
+ */
+export const basePath = () => {
+  const stamped = (globalThis.document?.documentElement?.dataset?.omegaPathPrefix || '').trim();
+  if (!stamped) return '';
+  const prefix = `/${stamped}`.replace(/\/{2,}/g, '/').replace(/\/+$/, '');
+  return prefix === '/' ? '' : prefix;
+};
+
+/**
+ * One of the tower's paths, as THIS copy serves it - the one place the prefix is
+ * applied, and what every URL the runtime builds goes through.
+ *
+ * @param {string} path - a page path, written from the site's root
+ * @returns {string}
+ */
+export const sitePath = (path) => `${basePath()}${path}`;
+
+/**
+ * The tower page an href points at, as an identity: the prefix taken off, so a
+ * link the build wrote under one and a link written from the root are the same
+ * page. `sitePath` is the way back.
+ *
+ * @param {string} href - the link's href, relative or absolute
+ * @returns {string} the path, from the site's root
+ */
+export const pathOf = (href) => {
+  const clean = cleanPath(href);
+  const base = basePath();
+  if (!base) return clean;
+  if (clean === base) return '/';
+  return clean.startsWith(`${base}/`) ? clean.slice(base.length) : clean;
 };
 
 /**
@@ -101,6 +169,11 @@ export const isScopedPath = (href) => !href.startsWith('#') && SCOPED_PATHS.incl
  * and an empty selection takes the parameter off rather than leaving `?repo=`
  * behind.
  *
+ * The path comes back out through `sitePath`, so the link lands on this copy
+ * wherever it is served from - a link the build already prefixed keeps the
+ * prefix it has, and one written from the root is put under it rather than
+ * pointed off the site (issue #169).
+ *
  * @param {string} href - the link's href, relative or absolute
  * @param {string} value - the `?repo=` value, '' for every repo
  * @returns {string} the href, path and query only
@@ -113,7 +186,7 @@ export const scopedHref = (href, value) => {
   // through `searchParams`, and the query is a thing people copy out of the
   // address bar and paste to each other.
   const search = url.search.replace(/%2C/g, ',');
-  return `${url.pathname}${search}${url.hash}`;
+  return `${sitePath(pathOf(url.pathname))}${search}${url.hash}`;
 };
 
 /**

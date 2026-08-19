@@ -59,8 +59,9 @@ const collect = (child) => {
 const QUIET_PORTS = '18693 14300';
 
 // A stand-in for the dev server's log wall - the chatter someone who typed
-// `workkit tower` did not ask for, the two lines that matter, and the URL
-// omega announces twice (its https proxy, then the dev server itself).
+// `workkit tower` did not ask for, the two lines that matter, the one the
+// framework says in its own voice (kept since #170), and the URL omega
+// announces twice (its https proxy, then the dev server itself).
 const NOISY_APP = [
   "echo 'omega: no cloudflare account id configured, skipping'",
   "echo 'compiled 42 files in 1.2s'",
@@ -87,6 +88,27 @@ const FAILURE_SHAPES = [
 ];
 
 const FAILING_APP = [...FAILURE_SHAPES.map((line) => `echo '${line}'`), 'exec sleep 30'].join('; ');
+
+// A boot omega REFUSES (#170), the way it really prints one: its own prefix on
+// every line, not one of them carrying a keep-net word, then an exit. The old
+// filter dropped all of it and the run ended on a blank terminal.
+const REFUSING_APP = [
+  "echo 'omega: the monorepo src-to-dist watch is not running'",
+  "echo 'omega: dist is not built - start the watch in the monorepo root first'",
+  'exit 1',
+].join('; ');
+
+// The same shape on the API side, so the line that names the half is reading
+// which one ended rather than saying "app" every time.
+const REFUSING_API = ["echo 'omega: linked packages are read-only'", 'exit 1'].join('; ');
+
+// A half that ends AFTER the dashboard was announced: the run got what it came
+// for, so its ending is an ordinary shutdown and needs no explaining.
+const ANNOUNCED_APP = ["echo 'Dev server: https://localhost:14300'", 'sleep 0.3'].join('; ');
+
+// The same announce, on a half that then stays up - a tower doing its job,
+// waiting for whatever ends it from the outside.
+const ANNOUNCING_APP = ["echo 'Dev server: https://localhost:14300'", 'exec sleep 30'].join('; ');
 
 // The macOS duplicate-library warning as it really arrives - two bundled copies
 // of glib in the framework's own node_modules, and the word "failures" that
@@ -132,6 +154,7 @@ const WEB_APP = [
 // boundary belongs on the terminal - minus the drop list, which outlives it.
 const PHASED_APP = [
   "echo 'omega: some build step'",
+  "echo 'copying 12 assets'",
   "echo 'Dev server: https://localhost:14300'",
   "echo 'GET /index.html 200 in 12ms'",
   `echo '${OBJC_WARNING}'`,
@@ -306,8 +329,11 @@ const run = async () => {
       assert(/tower: dashboard at https:\/\/localhost:14300/.test(text), 'at the URL the app itself named');
       assertEq(text.match(/tower: dashboard at/g).length, 1, 'once, not once per URL the app printed');
       assert(/WARN missing key/.test(text), 'the warning came through too');
-      assert(!/cloudflare/.test(text), 'the framework chatter did not');
-      assert(!/compiled 42 files/.test(text), 'nor the build timings');
+      // The cost of #170, taken deliberately: the prefix is the whole test, so
+      // omega's benign notes ride in beside its refusals. A note is one line;
+      // a swallowed refusal is a blank terminal.
+      assert(/omega: no cloudflare account id configured/.test(text), 'and so did the line omega says as itself');
+      assert(!/compiled 42 files/.test(text), 'but not the build timings - the wall is still dropped');
     } finally {
       child.kill('SIGKILL');
       cleanup(dir);
@@ -324,6 +350,82 @@ const run = async () => {
       FAILURE_SHAPES.forEach((line) => {
         assert(text.includes(line), `"${line}" came through`);
       });
+    } finally {
+      child.kill('SIGKILL');
+      cleanup(dir);
+    }
+  });
+
+  await test('a refused boot reaches the terminal - the framework\'s own words, and the half that ended', async () => {
+    // The failure this pins (#170): omega's refusal carries none of the keep
+    // net's words, so every line of it was dropped, the app half died, the
+    // script took the API down with it, and the terminal showed only "starting
+    // the dashboard…" before the prompt came back.
+    const dir = mkTmp();
+    const child = start(dir, 'exec sleep 30', REFUSING_APP, QUIET_PORTS, { capture: true });
+    const out = collect(child);
+    try {
+      assert(await until(() => /ended before the dashboard/.test(out())), 'the run said a half ended before the dashboard came up');
+      const text = out();
+      assert(/omega: the monorepo src-to-dist watch is not running/.test(text), "the framework naming a problem came through");
+      assert(/omega: dist is not built/.test(text), 'and the remedy it printed with it');
+      assert(/the app half ended before the dashboard/.test(text), 'the line names which half ended');
+      assert(/--verbose/.test(text), 'and points at the run that shows everything');
+    } finally {
+      child.kill('SIGKILL');
+      cleanup(dir);
+    }
+  });
+
+  await test('the half named is the one that ended - the API side says so too', async () => {
+    const dir = mkTmp();
+    const child = start(dir, REFUSING_API, 'exec sleep 30', QUIET_PORTS, { capture: true });
+    const out = collect(child);
+    try {
+      assert(await until(() => /ended before the dashboard/.test(out())), 'the run explained itself');
+      const text = out();
+      assert(/the API half ended before the dashboard/.test(text), 'and named the half that actually ended');
+      assert(/omega: linked packages are read-only/.test(text), 'with its refusal above it');
+    } finally {
+      child.kill('SIGKILL');
+      cleanup(dir);
+    }
+  });
+
+  await test('a run that got its dashboard explains nothing when it ends', async () => {
+    const dir = mkTmp();
+    const child = start(dir, 'exec sleep 30', ANNOUNCED_APP, QUIET_PORTS, { capture: true });
+    const out = collect(child);
+    try {
+      assert(await until(() => child.exitCode !== null), 'the run ended when its app half did');
+      const text = out();
+      assert(/tower: dashboard at https:\/\/localhost:14300/.test(text), 'the dashboard had been announced');
+      assert(!/ended before the dashboard/.test(text), 'so its ending is ordinary shutdown, not a refusal to explain');
+    } finally {
+      child.kill('SIGKILL');
+      cleanup(dir);
+    }
+  });
+
+  await test('a signal to the script is a shutdown, not a boot that never happened', async () => {
+    // The failure this pins (#170 review): a TERM delivered to the script's own
+    // pid - a supervisor, a bare `kill <pid>` - runs cleanup from the trap,
+    // which removes the fifo directory and with it the announce marker. The
+    // block after the poll loop then read a run that HAD its dashboard as one
+    // that never came up, and named the wrong half besides, since cleanup had
+    // already ended both. The suite's first case sends this exact signal with
+    // the output discarded, which is why nothing caught it.
+    const dir = mkTmp();
+    const child = start(dir, 'exec sleep 30', ANNOUNCING_APP, QUIET_PORTS, { capture: true });
+    const out = collect(child);
+    const closed = new Promise((resolve) => { child.on('close', resolve); });
+    try {
+      assert(await until(() => /tower: dashboard at/.test(out())), 'the dashboard was announced');
+      child.kill('SIGTERM');
+      await closed;
+      const text = out();
+      assert(!/ended before the dashboard/.test(text), 'the interrupted run explained nothing - it got its dashboard');
+      assert(!/API half/.test(text), 'and named no half, least of all the wrong one');
     } finally {
       child.kill('SIGKILL');
       cleanup(dir);
@@ -403,7 +505,8 @@ const run = async () => {
       // so seeing it is itself proof the switch happened.
       assert(await until(() => /app\.css/.test(out())), 'the app half was read to its last line');
       const text = out();
-      assert(!/some build step/.test(text), 'the pre-announce build step stayed hidden');
+      assert(!/copying 12 assets/.test(text), 'the pre-announce chatter stayed hidden');
+      assert(/omega: some build step/.test(text), 'the line beside it did not - what omega says as itself is kept in either phase (#170)');
       assert(/GET \/index\.html 200 in 12ms/.test(text), 'the post-announce request came through');
       assert(/GET \/assets\/app\.css 200 in 3ms/.test(text), 'and the one after it');
       assert(!/objc\[/.test(text), 'the drop list outlives the boundary - the objc warning is gone');

@@ -204,11 +204,13 @@ const mkPublishWorld = ({ mintFails = false, minted = false, installFails = fals
 
   // The npm shim answers both calls a publish makes — the install of the
   // clone's dependencies (issue #130) and the build of the app — and records
-  // its argv, so a test can prove which one ran and where.
+  // its CWD and its argv, so a test can prove which one ran and where. The cwd
+  // is half the record because that is what an install is keyed from (issue
+  // #166): `--prefix` names the project, the cwd names the tree npm writes.
   const npmLog = path.join(root, 'npm.log');
   writeStub(path.join(bin, 'npm'), [
-    `printf '%s\\n' "$*" >> ${JSON.stringify(npmLog)}`,
-    'prefix=""',
+    `printf '%s|%s\\n' "$PWD" "$*" >> ${JSON.stringify(npmLog)}`,
+    'prefix="$PWD"',
     'if [[ "$1" == "--prefix" ]]; then prefix="$2"; fi',
     'if [[ "$*" == *install* ]]; then',
     ...(installFails
@@ -280,9 +282,12 @@ const mkPublishWorld = ({ mintFails = false, minted = false, installFails = fals
   };
 };
 
+// Run from the world's own root, never the caller's: the daily job invokes this
+// from wherever it woke up, and a shim that keys anything off the cwd must key
+// it off a scratch directory rather than this checkout.
 const publish = (world, args = []) => {
   const res = spawnSync('bash', [path.join(world.kit, 'workflow', 'publish.sh'), ...args], {
-    env: world.env, encoding: 'utf8', timeout: 60000,
+    cwd: world.root, env: world.env, encoding: 'utf8', timeout: 60000,
   });
   assert(res.status !== null, `publish finished (no timeout): ${res.error || ''}`);
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
@@ -452,8 +457,29 @@ const run = async () => {
     assertEq(code, 0, `exit 0 — ${out}${err}`);
     const installs = world.npms().filter((call) => /install/.test(call));
     assertEq(installs.length, before + 1, `one install for the manifest that moved: ${installs.join(' | ')}`);
-    assertEq(installs[installs.length - 1], `--prefix ${world.tower} install`,
+    assertEq(installs[installs.length - 1], `${world.tower}|install`,
       'in the clone, which is the project the build runs out of');
+    cleanup(world.root);
+  });
+
+  await test('the install is keyed from the clone’s real path, symlinked ~/.workkit or not', () => {
+    // Issue #166: `~/.workkit` is a symlink on the machine that publishes, and
+    // `npm --prefix <link>/tower install` resolved the project through the link
+    // while keying the tree from the CALLER'S cwd — the lockfile took package
+    // paths outside the project root, the workspace went extraneous, and the
+    // next run crashed arborist. An install run from inside the resolved path
+    // is the whole fix, so the cwd is what this pins.
+    const world = mkPublishWorld();
+    const link = path.join(world.root, 'linked-workkit');
+    fs.symlinkSync(path.join(world.root, 'workflow-home'), link);
+    world.env.WORKFLOW_HOME = link;
+
+    const { code, out, err } = publish(world);
+    assertEq(code, 0, `exit 0 — ${out}${err}`);
+    const installs = world.npms().filter((call) => /install/.test(call));
+    assertEq(installs.length, 1, `the seeded clone’s manifests are installed once: ${installs.join(' | ')}`);
+    assertEq(installs[0], `${world.tower}|install`,
+      'the cwd is the clone with its links resolved, and no --prefix keys the tree from elsewhere');
     cleanup(world.root);
   });
 

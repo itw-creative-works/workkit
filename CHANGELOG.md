@@ -7,6 +7,13 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#166](../../issues/166) — The publish installs the tower clone's dependencies from inside the clone's physical path instead of `npm --prefix`, which corrupted the lockfile through a symlinked `~/.workkit` and crashed the next run.
+- [#171](../../issues/171) — The setup's seed install of the tower clone gets the same treatment: both passes run from the clone's physical path, so a fresh machine can no longer lay down the corrupted tree.
+- [#169](../../issues/169) — The dashboard's runtime-built URLs (the Settings redirect, the scope rewrite, the page tiles) now read the build's path-prefix stamp off the document, so a copy published under a path like `/workkit/` stays on-site; a root-served copy is unchanged.
+- [#170](../../issues/170) — `npm run tower` no longer exits silently when omega refuses to boot: the quiet filter passes `omega:`-prefixed lines, and a half ending before the dashboard announce prints one line naming it and pointing at `--verbose`.
+
 ## [0.44.0] - 2026-08-19
 
 ### Added
