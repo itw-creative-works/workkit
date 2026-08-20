@@ -14,7 +14,9 @@ const os = require('os');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
-const { briefHistory, parseStatsMark, HISTORY_LIMIT, BRIEF_TITLE_PREFIX } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'history.js'));
+const {
+  briefHistory, briefFreshness, parseStatsMark, HISTORY_LIMIT, BRIEF_TITLE_PREFIX,
+} = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'history.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-history-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -132,6 +134,55 @@ const run = async () => {
     assertEq(BRIEF_TITLE_PREFIX, 'brief: ', 'the literal jobs/brief-publish.sh titles a brief with');
     const shell = fs.readFileSync(path.join(__dirname, '..', '..', 'jobs', 'brief-publish.sh'), 'utf8');
     assert(shell.includes('title="brief: $date"'), 'and the shell still writes exactly that');
+  });
+
+  group('tower/history: whether the cloud brief is still posting');
+
+  // Issue #172: the brief failed every morning for ten days and the dashboard
+  // looked normal the whole time. The answer was already in the read above -
+  // the newest entry's date - so this is arithmetic on it and nothing else.
+  const day = (date) => ({ date, totals: { open: 1 }, closedDay: 0, repos: {} });
+  const at = (stamp) => new Date(stamp);
+
+  await test('today’s morning and yesterday’s are both fresh', () => {
+    const now = at('2026-08-19T14:00:00Z');
+    assertEq(briefFreshness([day('2026-08-18'), day('2026-08-19')], now).state, 'fresh', 'this morning posted');
+    assertEq(briefFreshness([day('2026-08-18')], now).state, 'fresh',
+      'and so is yesterday’s - today’s run has not landed yet at every hour of the day');
+    assertEq(briefFreshness([day('2026-08-18')], now).date, '2026-08-18', 'the date rides either way');
+  });
+
+  await test('a morning older than yesterday is stale, and says which one it was', () => {
+    const out = briefFreshness([day('2026-08-09'), day('2026-08-17')], at('2026-08-19T09:05:00Z'));
+    assertEq(out.state, 'stale', 'two whole days is a brief that stopped running');
+    assertEq(out.date, '2026-08-17', 'the newest entry, not the oldest');
+  });
+
+  await test('calendar days, not 24-hour windows', () => {
+    // A brief posted at 09:00 and read at 09:05 the next morning is one day
+    // old, not 24 hours and five minutes - the post happens once a day.
+    assertEq(briefFreshness([day('2026-08-18')], at('2026-08-19T00:01:00Z')).state, 'fresh', 'a minute past midnight, yesterday still counts');
+    assertEq(briefFreshness([day('2026-08-17')], at('2026-08-19T23:59:00Z')).state, 'stale', 'and the day before yesterday never does');
+  });
+
+  await test('never published and unreadable are not each other, and neither is stale', () => {
+    const now = at('2026-08-19T09:00:00Z');
+    assertEq(briefFreshness([], now).state, 'never', 'a home repo that has published no brief yet');
+    assertEq(briefFreshness([], now).date, null, 'with no date to name');
+    assertEq(briefFreshness(null, now).state, 'unreadable', 'a read that failed says so - it is not a quiet morning');
+    assertEq(briefFreshness(undefined, now).state, 'unreadable', 'and neither is a payload that carries no history at all');
+    // A date the arithmetic cannot place is a date nothing can be judged
+    // against; fresh and stale would both be guesses.
+    assertEq(briefFreshness([{ date: 'the ninth of never', totals: {} }], now).state, 'unreadable', 'nor is an unplaceable date');
+  });
+
+  await test('the freshness is arithmetic on the read, never a second one', () => {
+    const home = mkHome();
+    const calls = [];
+    const out = briefHistory({ workflowHome: home, exec: mkExec([brief('2026-08-03', 12, 4)], calls) });
+    briefFreshness(out, at('2026-08-19T09:00:00Z'));
+    assertEq(calls.length, 1, 'the history read is the only round trip there is');
+    cleanup(home);
   });
 
   return summary();

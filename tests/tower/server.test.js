@@ -304,6 +304,68 @@ const run = async () => {
     cleanup(w.root);
   });
 
+  await test('/api/brief carries the mornings themselves, off that same read', async () => {
+    // Issue #181: the Brief page is the briefs now, and a body is the one thing
+    // on this payload nothing else could supply - the numbers above are what
+    // the same posts COUNTED, and the texts are what they said. Both readings
+    // come off the one Discussions read, so the archive costs no round trip.
+    const w = mkWorld();
+    fs.writeFileSync(
+      path.join(w.root, 'workflow-home', 'settings.json'),
+      JSON.stringify({ version: 1, site: { repo: 'owner/private-home', publish: false, url: null } }),
+    );
+    w.discussions = [
+      {
+        title: 'brief: 2026-08-03',
+        url: 'https://github.com/owner/private-home/discussions/3',
+        createdAt: '2026-08-03T09:00:00Z',
+        body: 'HEADLINE: today.\n<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":12}} -->\n',
+      },
+      {
+        title: 'daily: 2026-08-02', url: 'https://github.com/owner/private-home/discussions/2', createdAt: '2026-08-02T21:00:00Z', body: 'what yesterday produced',
+      },
+    ];
+    const c = await start(w);
+    const { body } = await getJson(c, '/api/brief');
+    assertEq(body.documents.length, 2, 'the morning and the summary beside it');
+    assertEq(body.documents[0].kind, 'brief', 'newest first, and each one says what it is');
+    assertEq(body.documents[0].body, 'HEADLINE: today.', 'carrying the text, with the machine markers off it');
+    assertEq(body.documents[0].url, 'https://github.com/owner/private-home/discussions/3', 'and the post it can be opened on');
+    assertEq(w.calls.filter((call) => call.join(' ').includes('discussions(first')).length, 2,
+      'the summaries read and the one the series and the archive share - the archive adds no round trip');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('/api/brief says how old the newest published brief is, off that same read', async () => {
+    // Issue #172: the cloud brief failed for ten mornings and nothing on the
+    // dashboard said so. The date was already in the history read, so the
+    // freshness rides beside it and costs no second round trip.
+    const w = mkWorld();
+    fs.writeFileSync(
+      path.join(w.root, 'workflow-home', 'settings.json'),
+      JSON.stringify({ version: 1, site: { repo: 'owner/private-home', publish: false, url: null } }),
+    );
+    const mark = (date) => `<!-- workkit-stats: {"v":1,"date":"${date}","totals":{"open":9,"waiting":0,"ready":0,"inFlight":0,"inbox":0,"backlog":0},"closedDay":0,"repos":{}} -->`;
+    w.discussions = [
+      { title: 'brief: 2026-08-03', body: `HEADLINE: the last morning that ran.\n${mark('2026-08-03')}\n` },
+    ];
+    const c = await start(w);
+    const { body } = await getJson(c, '/api/brief');
+    assertEq(body.briefFreshness.state, 'stale', 'the newest morning is long past');
+    assertEq(body.briefFreshness.date, '2026-08-03', 'and the payload names the day it was');
+    assertEq(w.calls.filter((call) => call.join(' ').includes('discussions(first')).length, 2,
+      'the summaries read and the history read, as before - the freshness adds no round trip of its own');
+
+    w.discussions = [];
+    const empty = await start(w);
+    assertEq((await getJson(empty, '/api/brief')).body.briefFreshness.state, 'never',
+      'a home repo that has published no brief carrying a block has never published one');
+    await empty.stop();
+    await c.stop();
+    cleanup(w.root);
+  });
+
   await test('a machine with no home repo still serves a brief', async () => {
     const w = mkWorld();
     const c = await start(w);
@@ -311,6 +373,7 @@ const run = async () => {
     assertEq(status, 200, 'ok');
     assertEq(body.findings, null, 'there is nowhere to read a summary from');
     assertEq(body.history, null, 'and no history - a read that could not be made is null, never an empty series');
+    assertEq(body.briefFreshness.state, 'unreadable', 'so the freshness is unreadable rather than stale or fine');
     assertEq(w.calls.filter((call) => call.join(' ').includes('discussions(first')).length, 0,
       'and nothing was asked of GitHub');
     await c.stop();

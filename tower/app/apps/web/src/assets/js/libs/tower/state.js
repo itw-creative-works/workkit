@@ -57,6 +57,17 @@ export const board = (state) => {
   return result && result.ok ? result.data : null;
 };
 
+/**
+ * The brief payload, or null - the feed the history rides on, and with it the
+ * one answer to whether this morning's brief posted at all (issue #172). Three
+ * pages read it: the Overview's charts, the Brief itself, and the Health page's
+ * stale-brief row.
+ */
+export const brief = (state) => {
+  const result = feed(state, 'brief');
+  return result && result.ok ? result.data : null;
+};
+
 /** The live sessions, or []. */
 export const sessions = (state) => {
   const result = feed(state, 'sessions');

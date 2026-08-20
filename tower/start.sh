@@ -48,6 +48,17 @@ for arg in "$@"; do
   esac
 done
 
+# Give the halves their COLORS back (issue #179). Each one writes to a fifo its
+# filter reads, so omega's logger sees a non-tty and turns its own colors off —
+# the terminal ends up with plain text even though this script strips nothing.
+# Told to force them, the framework colors again and the filter passes the
+# escapes through. Only when the TOWER's own stdout is a terminal: a run piped
+# or redirected into a file was asked for plain text, and a FORCE_COLOR the
+# caller already exported is theirs, including a deliberate 0.
+if [ -t 1 ] && [ -z "${FORCE_COLOR+set}" ]; then
+  export FORCE_COLOR=1
+fi
+
 # The first thing a user sees, before the reclaim pass and in a verbose run
 # too: a quiet startup is otherwise a terminal with nothing on it at all.
 echo "tower: starting the dashboard…"
@@ -166,12 +177,21 @@ NOISE_RE='^objc\[[0-9]+\]: Class .* is implemented in both|Results:.*[^0-9]0 fai
 # show — so the app's own URL line prints beside the announce rather than
 # being replaced by it.
 #
+# Every judgement is made on a COLOR-STRIPPED copy of the line and the ORIGINAL
+# is what prints (issue #179): with the halves forcing their colors on, a keep
+# word, omega's prefix and the `[web]` tag all arrive wrapped in escapes, and a
+# pattern anchored at column 0 sees the escape rather than the tag. The strip is
+# bash's own pattern substitution rather than a sed per line — one fork per line
+# of a dev server's log is a cost this loop should not carry — and it is why the
+# announce, which composes its line out of BASH_REMATCH, names a bare URL with
+# no escape trailing it.
+#
 # `read` takes one line at a time, so this is line-buffered by construction:
 # an error appears the moment the child writes it. EOF on the child's output
 # ends the loop, which is how this process dies with the child instead of
 # holding the pipe open.
 filter_output() {
-  local port line url_re web_re announced='' flowing=''
+  local port line plain url_re web_re announced='' flowing=''
   port="$1"
   # ANY url the half names, on whatever port it ended up on — omega bumps to
   # the next free port when the one it asked for is taken, and a match pinned
@@ -183,13 +203,17 @@ filter_output() {
   # trailing spaces are tolerated; `[webhook]` still is not.
   web_re='^\[web[[:space:]]*\][[:space:]]'
   shopt -s nocasematch
+  # extglob is what makes the strip below a pattern and not a literal: `*(...)`
+  # is the repeat the escape's digits and semicolons need.
+  shopt -s extglob
   while IFS= read -r line || [ -n "$line" ]; do
+    plain="${line//$'\033'\[*([0-9;])m/}"
     # Tested before the URL branch, so that branch owns BASH_REMATCH when it
     # reads the URL out of a line carrying both.
-    if [ -n "$port" ] && [[ "$line" =~ $web_re ]]; then
+    if [ -n "$port" ] && [[ "$plain" =~ $web_re ]]; then
       flowing=1
     fi
-    if [ -n "$port" ] && [ -z "$announced" ] && [[ "$line" =~ $url_re ]]; then
+    if [ -n "$port" ] && [ -z "$announced" ] && [[ "$plain" =~ $url_re ]]; then
       announced=1
       flowing=1
       # The filter runs beside the script, not in it, so the fact that a
@@ -197,10 +221,10 @@ filter_output() {
       : > "$FIFO_DIR/announced"
       echo "tower: dashboard at ${BASH_REMATCH[1]}"
     fi
-    if [[ "$line" =~ $NOISE_RE ]]; then
+    if [[ "$plain" =~ $NOISE_RE ]]; then
       continue
     fi
-    if [ -n "$flowing" ] || [[ "$line" =~ $KEEP_RE ]]; then
+    if [ -n "$flowing" ] || [[ "$plain" =~ $KEEP_RE ]]; then
       echo "$line"
     fi
   done

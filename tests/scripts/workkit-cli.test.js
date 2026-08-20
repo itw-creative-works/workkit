@@ -57,16 +57,23 @@ const secretList = (secrets) => JSON.stringify(secrets.map(({ name, days }) => (
  * what arrived on a `secret set`'s STDIN is kept, because the piping is the
  * whole point of that step. `claudeToken` is what a stub `claude setup-token`
  * prints; it is fiction, and the only token any of this ever handles.
+ *
+ * The mint stub is shaped like the CLI issue #174 was filed against: the whole
+ * screen — the browser message AND the paste-the-code prompt that follows it —
+ * is drawn on the terminal, and the token is the last thing on it. `mintExit`
+ * is a mint that did not finish.
  */
 const mkWorld = ({
   pluginInstalled = false, ghAuthed = true, claude = true, binOnPath = false,
-  secrets = null, authToken = '', claudeToken = '',
+  secrets = null, authToken = '', claudeToken = '', mintExit = 0,
 } = {}) => {
   const root = mkTmp();
   const bin = path.join(root, 'bin');
   const home = path.join(root, 'home');
+  const tmp = path.join(root, 'tmp');
   fs.mkdirSync(bin, { recursive: true });
   fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(tmp, { recursive: true });
 
   const launchctlLog = path.join(root, 'launchctl-argv.log');
   writeStub(path.join(bin, 'launchctl'), [recordArgv(launchctlLog), 'if [[ "$1" == \'print\' ]]; then exit 1; fi', 'exit 0']);
@@ -79,8 +86,10 @@ const mkWorld = ({
       `  printf '%s\\n' '${pluginInstalled ? '[{ "id": "workkit@workkit" }]' : '[]'}'`,
       'fi',
       'if [[ "$1" == \'setup-token\' ]]; then',
-      '  printf \'%s\\n\' \'Paste this into the browser…\' >&2',
+      '  printf \'%s\\n\' \'Opening your browser to approve this token…\' >&2',
+      '  printf \'%s\\n\' \'Paste the authorization code here:\'',
       ...(claudeToken ? [`  printf '%s\\n' '${claudeToken}'`] : []),
+      `  exit ${mintExit}`,
       'fi',
       'exit 0',
     ]);
@@ -127,6 +136,7 @@ const mkWorld = ({
   return {
     root,
     home,
+    bin,
     claudeHome: path.join(home, '.claude'),
     localBin,
     link: path.join(localBin, 'workkit'),
@@ -141,12 +151,18 @@ const mkWorld = ({
       const file = path.join(stdinDir, name);
       return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined;
     },
+    // What is left in this machine's TMPDIR. The mint's capture file is the
+    // only thing the CLI ever puts there, so anything at all is a leak.
+    tmpFiles: () => fs.readdirSync(tmp),
     seedPlist: (label, text) => {
       fs.mkdirSync(agents, { recursive: true });
       fs.writeFileSync(path.join(agents, `${label}.plist`), text);
     },
     env: {
       HOME: home,
+      // Scratch too: the mint writes its capture file here, and a test that
+      // asks whether one was left behind must be asking about this world's.
+      TMPDIR: tmp,
       PATH: `${binOnPath ? `${localBin}:` : ''}${bin}:${BASE_PATH}`,
       WORKFLOW_HOME: path.join(root, 'workflow-home'),
       WORKFLOW_CLAUDE_HOME: path.join(home, '.claude'),
@@ -205,12 +221,21 @@ const seedSettings = (world, site) => {
  * One of the CLI's own functions, called directly — the pattern home.test.js
  * uses for the engine's libraries. Sourcing the script with `help` loads every
  * function and prints the map, which is thrown away.
+ *
+ * The answers arrive on stdin from a FILE rather than through spawnSync's
+ * `input`: node's pipes are socketpairs on macOS, and BSD `script` — which the
+ * mint now runs the CLI under — refuses a socket for stdin outright. A file is
+ * still not a terminal, so every `interactive` check answers exactly as it did.
  */
 const inCli = (world, script, { input = '' } = {}) => {
   const driver = `. ${JSON.stringify(CLI)} help >/dev/null\n${script}`;
+  const stdinFile = path.join(world.root, 'inCli-stdin');
+  fs.writeFileSync(stdinFile, input);
+  const fd = fs.openSync(stdinFile, 'r');
   const res = spawnSync('bash', ['-c', driver], {
-    cwd: world.root, env: world.env, input, encoding: 'utf8', timeout: 30000,
+    cwd: world.root, env: world.env, stdio: [fd, 'pipe', 'pipe'], encoding: 'utf8', timeout: 30000,
   });
+  fs.closeSync(fd);
   assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
@@ -789,6 +814,14 @@ const run = async () => {
   // produced it to `gh secret set`'s stdin, and appeared nowhere else.
   const MINTED = 'FAKEmintedTOKENvalue0123456789';
   const LOGIN_TOKEN = 'gho_FAKEloginTOKENfakeLOGINtoken00';
+
+  // Since issue #174 the mint runs under a pty and its whole screen is teed to
+  // the terminal, so the CLI's own copy of the token is on stdout by design —
+  // that is the screen the human reads the paste prompt on. What must never
+  // happen is a SECOND copy: workkit printing the value on a line of its own.
+  // The CLI's lines are the pass-through; workkit's all start with a glyph.
+  const countOf = (text, needle) => text.split(needle).length - 1;
+  const workkitLines = (text) => text.split('\n').filter((l) => /^[✓⚠ℹ·]/.test(l)).join('\n');
   // The checkout's own origin, and the machine's home repo. They are different
   // slugs on purpose: since issue #91 the cloud secrets live on the SECOND one,
   // because the plugin repo is distributed to everyone who installs the kit and
@@ -848,14 +881,15 @@ const run = async () => {
     cleanup(world.root); cleanup(kit);
   });
 
-  await test('answered yes, the mint goes straight into the secret and is never printed', () => {
+  await test('answered yes, the mint goes straight into the secret and workkit prints it nowhere', () => {
     const world = mkWorld({ claudeToken: MINTED });
     const { out, err } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'y\n' });
     const calls = world.ghCalls();
     assert(calls.some((c) => isCall(c, 'secret', 'set', 'CLAUDE_CODE_OAUTH_TOKEN', '--repo', HOME)), `the secret is written on the named repo: ${fmtCalls(calls)}`);
     assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), MINTED, 'and the value arrived on stdin — a pipe, not an argument');
     assert(!calls.some((c) => c.includes(MINTED)), `the token is not an argument to anything: ${fmtCalls(calls)}`);
-    assert(!out.includes(MINTED) && !err.includes(MINTED), `and never reaches the terminal, got: ${out}${err}`);
+    assertEq(countOf(out + err, MINTED), 1, `it is on the terminal once — the CLI's own screen, and no copy of workkit's: ${out}${err}`);
+    assert(!workkitLines(out + err).includes(MINTED), `no line workkit printed carries it, got: ${workkitLines(out + err)}`);
     assert(out.includes('is set on'), `the run says the secret is set, got: ${out}`);
     cleanup(world.root);
   });
@@ -875,6 +909,7 @@ const run = async () => {
     const { out } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'y\n' });
     assert(/printed no token/.test(out), `it says what did not happen, got: ${out}`);
     assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), undefined, 'and nothing was written');
+    assertEq(world.tmpFiles().join(','), '', 'and the mint left no capture file behind');
     cleanup(world.root);
   });
 
@@ -891,7 +926,7 @@ const run = async () => {
       const world = mkWorld({ claudeToken: printed });
       const { out, err } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'y\n' });
       assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), MINTED, `${shape} arrives as the value alone`);
-      assert(!out.includes(MINTED) && !err.includes(MINTED), `and never reaches the terminal, got: ${out}${err}`);
+      assert(!workkitLines(out + err).includes(MINTED), `and no line workkit printed carries it, got: ${workkitLines(out + err)}`);
       cleanup(world.root);
     }
   });
@@ -980,6 +1015,173 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     assertEq(after, before, 'running twice equals running once');
     assertEq(before, 0, 'and a repo that already has both is not written to at all');
     cleanup(world.root); cleanup(kit);
+  });
+
+  group('workkit: the mint runs under a pty, and its capture file (issue #174)');
+
+  /** A machine whose home repo already carries a young Claude token. */
+  const mkMintWorld = (opts = {}) => mkHomeWorld({ secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }], ...opts });
+
+  await test('the CLI’s whole screen reaches the terminal, and the capture file is gone by the end', () => {
+    // The QA failure this fixes: the CLI draws its ENTIRE screen on stdout, so
+    // a captured stdout left the human with a blank line where the paste
+    // prompt should be. Both halves of the screen are asserted — the one the
+    // stub draws on stdout and the one it draws on stderr — because under the
+    // pty both are the same terminal.
+    const world = mkMintWorld({ claudeToken: MINTED });
+    const { out } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
+    assert(out.includes('Paste the authorization code here:'), `the prompt the CLI draws on stdout arrives, got: ${out}`);
+    assert(out.includes('Opening your browser to approve this token'), `and everything else it draws, got: ${out}`);
+    assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), MINTED, 'while the token is still caught and pushed on stdin');
+    assertEq(world.tmpFiles().join(','), '', 'and TMPDIR holds nothing afterwards');
+    cleanup(world.root);
+  });
+
+  await test('a mint that did not finish is named with its exit status, and leaves no capture behind', () => {
+    // The interrupt path in the shape a test can produce: the CLI ends without
+    // printing a token, its status crosses the pty wrapper, and the run says so
+    // rather than writing an empty secret.
+    const world = mkMintWorld({ mintExit: 3 });
+    const { out } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
+    assert(/did not finish \(exit 3\)/.test(out), `the child's own status is reported, got: ${out}`);
+    assert(out.includes(`gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo ${HOME}`), 'with the command that does it by hand');
+    assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), undefined, 'and nothing was written');
+    assertEq(world.tmpFiles().join(','), '', 'and TMPDIR holds nothing afterwards');
+    cleanup(world.root);
+  });
+
+  await test('a machine with no `script` utility is a named skip with the two commands, and asks nothing', () => {
+    // PATH is narrowed to the world's own shims AFTER the CLI is loaded: this
+    // machine has a `script`, and the run that has none cannot be staged any
+    // other way. The claude stub is in that same directory, so the check that
+    // fires is the one being tested.
+    const world = mkHomeWorld({ secrets: [], claudeToken: MINTED });
+    const { code, out } = inCli(world, `${AT_TERMINAL}\nPATH='${world.bin}'\noffer_claude_token ${HOME} 'is not set'`, { input: 'y\n' });
+    assertEq(code, 0, 'exit 0 — a machine that cannot mint is not a failed run');
+    assert(/needs the `script` utility/.test(out), `it names what is missing, got: ${out}`);
+    assert(out.includes('claude setup-token'), 'and hands over the mint');
+    assert(out.includes(`gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo ${HOME}`), 'and the command that pushes it');
+    assert(!/\[y\/N\]/.test(out), `the question is not even put, got: ${out}`);
+    assert(!world.claudeCalls().some((c) => isCall(c, 'setup-token')), `nothing was minted: ${fmtCalls(world.claudeCalls())}`);
+    cleanup(world.root);
+  });
+
+  await test('a GNU/util-linux `script` is spoken in its own syntax, and its -e carries the status back', () => {
+    // The other `script`. It takes the command in a different place, and only
+    // its `-e` returns the child's status — without it a mint that never ran
+    // would read as one that succeeded. This machine speaks the BSD syntax, so
+    // the GNU one is pinned against a stub shaped like the real utility (it
+    // answers `--version`, which BSD's refuses), the way the gh stub is shaped
+    // like the live API.
+    const gnuScript = (world) => {
+      const log = path.join(world.root, 'script-argv.log');
+      writeStub(path.join(world.bin, 'script'), [
+        recordArgv(log),
+        'if [[ "$1" == \'--version\' ]]; then printf \'%s\\n\' \'script from util-linux 2.38\'; exit 0; fi',
+        'e=0; cmd=\'\'; file=\'\'',
+        'while [[ "$#" -gt 0 ]]; do',
+        '  case "$1" in',
+        '    -q) shift ;;',
+        '    -e) e=1; shift ;;',
+        '    -c) cmd="$2"; shift 2 ;;',
+        '    *) file="$1"; shift ;;',
+        '  esac',
+        'done',
+        'set -o pipefail',
+        'rc=0; bash -c "$cmd" 2>&1 | tee "$file" || rc=$?',
+        'if [[ "$e" -eq 1 ]]; then exit "$rc"; fi',
+        'exit 0',
+      ]);
+      return () => readArgv(log);
+    };
+
+    const world = mkMintWorld({ claudeToken: MINTED });
+    const calls = gnuScript(world);
+    const { out } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
+    assert(calls().some((c) => c.includes('-c') && c.includes('claude setup-token')), `the command is passed the way GNU takes it: ${fmtCalls(calls())}`);
+    assert(calls().some((c) => c.includes('-e')), `with the flag that returns the child's status: ${fmtCalls(calls())}`);
+    assert(out.includes('Paste the authorization code here:'), `the screen still reaches the terminal, got: ${out}`);
+    assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), MINTED, 'and the token is caught and pushed on stdin');
+    assertEq(world.tmpFiles().join(','), '', 'with no capture file left behind');
+    cleanup(world.root);
+
+    const failed = mkMintWorld({ mintExit: 3 });
+    gnuScript(failed);
+    const failedOut = inCli(failed, `${AT_TERMINAL}\ncmd_setup --token`).out;
+    assert(/did not finish \(exit 3\)/.test(failedOut), `a mint that did not finish is seen through it, got: ${failedOut}`);
+    assertEq(failed.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), undefined, 'and nothing was written');
+    cleanup(failed.root);
+  });
+
+  group('workkit setup --token: the forced re-mint (issue #174)');
+
+  await test('a young secret is re-minted anyway — the flag IS the yes', () => {
+    // The token that goes bad while young (a lapsed subscription) is the case
+    // the age check cannot see: three days old, and nothing about it is stale.
+    // The terminal is the one thing this harness cannot hand a run, so the
+    // command is called with `interactive` answering yes; everything else —
+    // the flag, the parsing, the step — is the real thing.
+    const world = mkHomeWorld({ secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }], claudeToken: MINTED });
+    const { out, err } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
+    const calls = world.ghCalls();
+    assert(world.claudeCalls().some((c) => isCall(c, 'setup-token')), `the mint ran without being asked: ${fmtCalls(world.claudeCalls())}`);
+    assert(calls.some((c) => isCall(c, 'secret', 'set', 'CLAUDE_CODE_OAUTH_TOKEN', '--repo', HOME)), `and the secret is written on the home repo: ${fmtCalls(calls)}`);
+    assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), MINTED, 'through stdin — a pipe, not an argument');
+    assert(!workkitLines(out + err).includes(MINTED), `and no line workkit printed carries it, got: ${workkitLines(out + err)}`);
+    assert(!/\[y\/N\]/.test(out), `no question is put, got: ${out}`);
+    cleanup(world.root);
+  });
+
+  await test('it runs the token step and nothing else of setup', () => {
+    const world = mkHomeWorld({ secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }], claudeToken: MINTED });
+    const { out } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
+    assert(!world.claudeCalls().some((c) => isCall(c, 'plugin', 'install')), 'no plugin install');
+    assert(!fs.existsSync(world.link), 'no symlink written');
+    assert(!world.ghCalls().some((c) => isCall(c, 'secret', 'set', 'WORKKIT_GITHUB_TOKEN', '--repo', HOME)), 'and the other secret is left alone');
+    for (const title of ['This machine', 'Home repo', 'Dashboard site', 'This repo']) {
+      assert(!out.includes(title), `no "${title}" section, got: ${out}`);
+    }
+    cleanup(world.root);
+  });
+
+  await test('without a terminal it hands over the two commands and mints nothing', () => {
+    const world = mkHomeWorld({ secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }], claudeToken: MINTED });
+    const { kit, script } = mkKit(SLUG);
+    const { code, out } = runCli(world, ['setup', '--token'], { script });
+    assertEq(code, 0, 'it finishes rather than waiting for an approval nobody can give');
+    assert(out.includes('claude setup-token'), `it hands over the mint, got: ${out}`);
+    assert(out.includes(`gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo ${HOME}`), 'and the command that pushes it');
+    assert(!world.claudeCalls().some((c) => isCall(c, 'setup-token')), `nothing was minted: ${fmtCalls(world.claudeCalls())}`);
+    assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), undefined, 'and no secret was written');
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('a machine with no claude CLI is a named skip, not a failure', () => {
+    const world = mkHomeWorld({ secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }], claude: false });
+    const { code, out } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
+    assertEq(code, 0, 'exit 0');
+    assert(/needs the claude CLI/.test(out), `it names the skip, got: ${out}`);
+    assert(!world.ghCalls().some((c) => isCall(c, 'secret', 'set')), `and writes nothing: ${fmtCalls(world.ghCalls())}`);
+    cleanup(world.root);
+  });
+
+  await test('a machine with no home repo keeps the precheck’s own skip', () => {
+    const world = mkWorld({ secrets: [], claudeToken: MINTED });
+    seedSettings(world, { repo: null, publish: false, url: null });
+    const { code, out } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
+    assertEq(code, 0, 'exit 0');
+    assert(/secrets: this machine names no home repo/.test(out), `the precheck's skip stands, got: ${out}`);
+    assert(!world.claudeCalls().some((c) => isCall(c, 'setup-token')), 'and nothing is minted for a repo that does not exist');
+    cleanup(world.root);
+  });
+
+  await test('setup refuses an option it does not know, and the map names this one', () => {
+    const world = mkWorld();
+    const { code, err } = runCli(world, ['setup', '--everything']);
+    assertEq(code, 1, 'exit 1');
+    assert(err.includes('unknown option'), `says so, got: ${err}`);
+    assert(runCli(world, ['help']).out.includes('setup --token'), 'and help lists the flag it does know');
+    cleanup(world.root);
   });
 
   group('workkit: the cloud secrets in the automatic and the report paths');

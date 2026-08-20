@@ -1,117 +1,132 @@
 //
-// Health - the repo tiles as a real page.
+// Health - only what is broken.
 //
-// The release lag leads: unreleased CHANGELOG entries and unpushed commits are
-// work that is DONE and not delivered, which is the only thing on this page
-// that asks for a decision. It is ranked worst-first and drawn as a chart, so
-// the answer to "what should ship next" is the top bar. The per-repo cards
-// follow, each carrying its own numbers and its own open-issue split by status.
+// Every other page says what the work IS. This one says what is WRONG with the
+// machine the work happens on, and nothing else: a number that is fine has no
+// business here, and an unanswered issue is the Board's business rather than
+// this page's (issue #182). So there is no per-repo stat grid, no open or
+// blocked count and no status doughnut - what the page draws is a list of
+// problems, each one said as the problem it is and carrying the act that ends
+// it, and a repo in good order is not on the page at all.
+//
+// On a good morning that leaves nothing to draw, which is its own answer: the
+// page says the machine is clean in one line rather than going blank.
 //
 
 import { startPage } from '../libs/tower/page.js';
-import { issuesFor, reposFor, health, feed } from '../libs/tower/state.js';
-import {
-  esc, num, empty, problem, statCell, statgrid, card, statusBreakdown,
-} from '../libs/tower/format.js';
-import { chartSlot, barChart } from '__main_assets__/js/libs/charts.js';
-import { loading, swap } from '@omega.js/client/modules/live-page';
-import { issueItem, externalLink } from '../libs/tower/modal.js';
+import { reposFor, brief, health, feed } from '../libs/tower/state.js';
+import { esc, empty, problem, loading, card } from '../libs/tower/format.js';
+import { swap } from '@omega.js/client/modules/live-page';
+import { briefAlert } from '../libs/tower/history.js';
 
 // ── The process behind the page ────────────────────────────────────────────
 // The API holds the code it started with, so a tower left running past a pull
 // answers from the old one (issue #64 was exactly that, and nothing said so).
 // The meta block names both commits; they differ only when a restart is owed,
-// and either one absent says nothing at all.
+// and either one absent says nothing at all. The start time rides WITH the
+// notice rather than sitting on the page in its own right - on a tower that is
+// current it is a neutral fact, and beside a stale one it is how long the page
+// has been answering from the old code.
 const short = (sha) => String(sha || '').slice(0, 7);
 
 const stale = (meta) => Boolean(meta && meta.bootCommit && meta.currentHead && meta.bootCommit !== meta.currentHead);
 
 const processLine = (meta) => {
-  if (!meta) return '';
   const when = new Date(meta.startedAt);
-  const parts = [];
-  if (!Number.isNaN(when.getTime())) parts.push(`API started ${when.toLocaleString()}`);
-  if (meta.bootCommit) parts.push(`commit ${short(meta.bootCommit)}`);
-  return parts.length ? `<p class="omega-micro text-body-secondary mb-3">${esc(parts.join(' · '))}</p>` : '';
+  return Number.isNaN(when.getTime())
+    ? ''
+    : `<p class="omega-micro text-body-secondary mb-0">${esc(`API started ${when.toLocaleString()}`)}</p>`;
 };
 
 const restartNotice = (meta) => (stale(meta)
-  ? `<div class="mb-4">${problem(`the tower API is running commit ${short(meta.bootCommit)}, and the checkout is at ${short(meta.currentHead)} - restart it with npm run tower`)}</div>`
+  ? `<div class="mb-4">
+      ${problem(`the tower API is running commit ${short(meta.bootCommit)}, and the checkout is at ${short(meta.currentHead)} - restart it with npm run tower`)}
+      ${processLine(meta)}
+    </div>`
   : '');
 
-/** One repo's open issues, from the board sweep, matched on its slug. */
-const issuesOf = (state, repo) => issuesFor(state).filter((issue) => issue.repo === repo.slug);
-
-/** A safe canvas id from a repo slug - ids cannot carry slashes or dots. */
-const canvasId = (repo) => `health-${String(repo.slug || repo.path).replace(/[^a-zA-Z0-9]+/g, '-')}`;
-
-// ── The release lag ────────────────────────────────────────────────────────
-// "Work sitting on the table" is unreleased entries plus unpushed commits. A
-// repo with neither is not listed: this section is a queue, not a census.
-const lagRows = (state) => reposFor(state)
-  .map((repo) => {
-    const reading = health(state)[repo.path];
-    if (!reading || reading.error) return null;
-    const unreleased = typeof reading.unreleasedEntries === 'number' ? reading.unreleasedEntries : 0;
-    const unpushed = typeof reading.unpushed === 'number' ? reading.unpushed : 0;
-    return { repo, unreleased, unpushed, total: unreleased + unpushed, lastTag: reading.lastTag };
-  })
-  .filter((row) => row && row.total > 0)
-  .sort((a, b) => b.total - a.total);
-
-const releaseLag = (rows) => {
-  const body = rows.length
-    ? `${chartSlot('health-lag', 40 + rows.length * 32, rows.map((row) => row.total))}
-      <div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0">
-        <thead><tr><th>repo</th><th class="text-end">unreleased</th><th class="text-end">unpushed</th><th class="text-end">last tag</th></tr></thead>
-        <tbody>${rows.map((row) => `<tr>
-          <td>${esc(row.repo.name)}</td>
-          <td class="text-end">${esc(row.unreleased)}</td>
-          <td class="text-end">${esc(row.unpushed)}</td>
-          <td class="text-end omega-micro">${esc(row.lastTag || 'never tagged')}</td>
-        </tr>`).join('')}</tbody>
-      </table></div>`
-    : empty('nothing is waiting to ship - every entry is released and every commit is pushed', 'fa-regular fa-circle-check');
-  return card('Work sitting on the table', body, { chip: rows.length, alarm: rows.length > 0, class: 'mb-4' });
+// ── The morning that never came ────────────────────────────────────────────
+// The other thing that can be stale here (issue #172), and the one nothing on
+// the tower used to say: the CLOUD brief, which failed every day for ten days
+// behind a dashboard that looked healthy. This page is where a thing that
+// stopped working belongs, so the row leads it, naming the morning it last
+// posted. The sentence and the level are the lib's, shared with the Brief page.
+const briefRow = (state) => {
+  const alert = briefAlert(brief(state));
+  return alert ? `<div class="alert alert-${esc(alert.level)} mb-4">${esc(alert.text)}</div>` : '';
 };
 
-// ── One repo ───────────────────────────────────────────────────────────────
-const repoCard = (state, repo, alone) => {
-  const reading = health(state)[repo.path];
-  const issues = issuesOf(state, repo);
+// ── What is wrong with one working copy ────────────────────────────────────
+// Four states, each one a thing that is TRUE of the checkout right now, and
+// each paired with the single act that ends it. A reading with none of them is
+// a repo that never appears.
+//
+// `unpushed: null` is not a smaller number than 1: it means the branch has no
+// upstream, so every commit on it exists on this disk and nowhere else. The API
+// keeps that apart from "level with an upstream" for exactly this reason
+// (tower/api/lib/health.js), and a page comparing it with `> 0` would report the
+// checkout that was never pushed as the healthiest one on the list.
+const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
+const them = (count) => (count === 1 ? 'it' : 'them');
 
-  let body;
-  if (!reading) {
-    body = empty('no reading yet', 'fa-regular fa-clock');
-  } else if (reading.error) {
-    // A repo that could not be read says so. Zeros would read as "clean".
-    body = `<div class="alert alert-danger mb-0">${esc(reading.error)}</div>`;
-  } else {
-    body = `${statgrid([
-      statCell('Open issues', issues.length),
-      statCell('Blocked', issues.filter((issue) => issue.status === 'blocked').length),
-      statCell('Unpushed', num(reading.unpushed)),
-      statCell('Uncommitted', num(reading.uncommitted)),
-      statCell('Unreleased', num(reading.unreleasedEntries)),
-      statCell('Last tag', reading.lastTag || '-'),
-    ], 'mb-3')}
-      ${chartSlot(canvasId(repo), 180, statusBreakdown(issues).values)}
-      ${alone ? issueList(issues) : ''}`;
+const faultsOf = (reading) => {
+  const faults = [];
+  if (reading.uncommitted > 0) {
+    faults.push({
+      wrong: plural(reading.uncommitted, 'uncommitted file', 'uncommitted files'),
+      fix: `commit ${them(reading.uncommitted)}`,
+    });
   }
-
-  return `<div class="col-12 ${alone ? '' : 'col-xl-6'}">
-    ${card(repo.name, body, { class: 'h-100' })}
-  </div>`;
+  if (reading.unpushed === null) {
+    faults.push({ wrong: 'no upstream branch', fix: 'nothing here has ever been pushed - push it with git push -u' });
+  } else if (reading.unpushed > 0) {
+    faults.push({
+      wrong: plural(reading.unpushed, 'unpushed commit', 'unpushed commits'),
+      fix: `push ${them(reading.unpushed)}`,
+    });
+  }
+  if (reading.unreleasedEntries > 0) {
+    faults.push({
+      wrong: plural(reading.unreleasedEntries, 'unreleased CHANGELOG entry', 'unreleased CHANGELOG entries'),
+      fix: `release ${them(reading.unreleasedEntries)}`,
+    });
+  }
+  return faults;
 };
 
-// The single-repo view has the room to name the issues, not only count them.
-const issueList = (issues) => (issues.length
-  ? `<ul class="list-unstyled mt-3 mb-0">${issues.map((issue) => issueItem(issue, `
-      <span class="omega-chip">${esc(issue.status || 'no status')}</span>
-      <span class="text-truncate flex-grow-1">#${esc(issue.number)} ${esc(issue.title)}</span>
-      ${externalLink(issue.url)}
-    `, { inner: 'py-1 d-flex gap-2 align-items-center' })).join('')}</ul>`
-  : '');
+/**
+ * One repo's faults - what is wrong on each line, and under it what ends it.
+ *
+ * Stacked blocks rather than a list, because the only lists this app draws are
+ * of issues and every one of them goes through the modal helper (pinned in the
+ * app suite); a fault is a sentence with its remedy under it, not a row.
+ */
+const faultCard = (repo, faults) => `<div class="col-12 col-xl-6">
+  ${card(repo.name, faults.map((fault, index) => `<div${index === faults.length - 1 ? '' : ' class="mb-2"'}>
+    <p class="mb-0">${esc(fault.wrong)}</p>
+    <p class="omega-micro text-body-secondary mb-0">${esc(fault.fix)}</p>
+  </div>`).join(''), { chip: faults.length, alarm: true, class: 'h-100' })}
+</div>`;
+
+/**
+ * A checkout that could not be read at all - the loudest thing on the page.
+ *
+ * Louder than any count, because it is the state in which every OTHER line here
+ * is unknown: nothing on this page can say whether that repo is committed,
+ * pushed or released, so it is drawn as the alarm rather than as a card among
+ * the ones that carry numbers.
+ */
+const unreadable = (repo, reading) => `<div class="alert alert-danger mb-4" role="alert">
+  <p class="mb-1">${esc(`${repo.name} could not be read`)}</p>
+  <p class="omega-micro mb-0">${esc(reading.error)}</p>
+  <p class="omega-micro mb-0">nothing on this page knows the state of that checkout - open it and see</p>
+</div>`;
+
+/** What a machine with nothing wrong on it says, since a blank page says nothing. */
+const allClear = () => empty(
+  'Nothing is broken. Every repo is committed, pushed and released, and the brief is current.',
+  'fa-regular fa-circle-check',
+);
 
 /**
  * Draw the page.
@@ -121,8 +136,8 @@ const issueList = (issues) => (issues.length
 const render = (root, state) => {
   const roster = feed(state, 'repos');
   const readings = feed(state, 'health');
+  const briefFeed = feed(state, 'brief');
   const list = reposFor(state);
-  const alone = list.length === 1;
 
   if (roster && !roster.ok) {
     swap(root, problem(roster.reason));
@@ -132,45 +147,48 @@ const render = (root, state) => {
     swap(root, roster ? empty('no repos in the roster - nothing has opted in under the roster root', 'fa-regular fa-square-plus') : loading('reading the roster…'));
     return;
   }
-
-  // The charts are redrawn only when the markup carrying their canvases was
-  // actually written - an unchanged tick leaves the drawn ones standing.
-  const rows = lagRows(state);
-  const meta = health(state).meta;
-  if (!swap(root, `
-    ${restartNotice(meta)}
-    ${readings && !readings.ok ? `<div class="mb-4">${problem(readings.reason)}</div>` : ''}
-    ${processLine(meta)}
-    ${releaseLag(rows)}
-    <div class="row g-4">
-      ${list.map((repo) => repoCard(state, repo, alone)).join('')}
-    </div>
-  `)) return;
-
-  if (rows.length) {
-    barChart('health-lag', {
-      labels: rows.map((row) => row.repo.name),
-      values: rows.map((row) => row.total),
-      horizontal: true,
-      label: 'unreleased + unpushed',
-    });
+  // Before the readings land there is nothing to judge, and "nothing is broken"
+  // said over an unread machine is the one sentence this page must never say.
+  if (!readings) {
+    swap(root, loading('reading the working copies…'));
+    return;
   }
+
+  const broken = [];
+  const dirty = [];
   for (const repo of list) {
     const reading = health(state)[repo.path];
-    if (!reading || reading.error) continue;
-    const issues = issuesOf(state, repo);
-    // statusBreakdown, not a local series: an unlabeled issue is a visible bar
-    // beside the count that includes it, never a chart quietly summing short (#118).
-    barChart(canvasId(repo), { ...statusBreakdown(issues), label: 'open issues' });
+    // A repo the readings do not carry yet - the roster answered first. Not a
+    // fault, and not a clean bill either; it is simply not spoken for.
+    if (!reading) continue;
+    if (reading.error) broken.push(unreadable(repo, reading));
+    else {
+      const faults = faultsOf(reading);
+      if (faults.length) dirty.push(faultCard(repo, faults));
+    }
   }
+
+  const meta = health(state).meta;
+  // A brief feed that FAILED is a problem this page owns, like a failed health
+  // read: without it the stale-brief question is unanswerable (#182 verify).
+  const briefProblem = briefFeed && !briefFeed.ok ? `<div class="mb-4">${problem(briefFeed.reason)}</div>` : '';
+  const alarms = `${briefRow(state)}${restartNotice(meta)}${readings.ok ? '' : `<div class="mb-4">${problem(readings.reason)}</div>`}${briefProblem}${broken.join('')}`;
+  const body = `${alarms}${dirty.length ? `<div class="row g-4">${dirty.join('')}</div>` : ''}`;
+  // The all-clear names the brief as current, so it waits for the brief feed
+  // the way the whole page waits for the readings - "nothing is broken" said
+  // over an unanswered sweep is the sentence this page must never say.
+  swap(root, body || (briefFeed ? allClear() : loading('reading the brief history…')));
 };
 
 export default () => startPage({
   mount: 'tower-health',
-  feeds: ['repos', 'board', 'health'],
+  // Three feeds, one question each: which repos are in scope, what their
+  // working copies say, and whether the cloud brief still posts (#172). The
+  // board is not among them - an open issue is the Board's business, and this
+  // page reads no count of them.
+  feeds: ['repos', 'health', 'brief'],
   // Unpushed, uncommitted and unreleased are facts about the working copies on
   // this machine - a browser elsewhere cannot see them.
   local: true,
-  charts: true,
   render,
 });

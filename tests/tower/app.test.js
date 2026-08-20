@@ -690,6 +690,27 @@ const run = async () => {
     assertEq(state.board(empty), null, 'no board');
     assertEq(state.sessions(empty).length, 0, 'no crew');
     assertEq(Object.keys(state.health(empty)).length, 0, 'no readings');
+    assertEq(state.brief(empty), null, 'and no brief');
+  });
+
+  await test('the brief payload has one reader, and three pages take it from there', () => {
+    // The Overview's charts, the Brief itself and the Health page's stale-brief
+    // row (#172) all want the same feed's data; it is read here rather than
+    // copied into each page module.
+    const answered = mkState({ brief: { counts: { open: 3 } } });
+    assertEq(state.brief(answered).counts.open, 3, 'a feed that answered hands back its payload');
+    assertEq(state.brief({ feeds: { brief: failed('connection refused') }, selectedRepo: '' }), null,
+      'and a read that failed is null, never a payload with nothing in it');
+    const fs = require('fs');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    for (const name of ['index.js', 'health.js']) {
+      const source = fs.readFileSync(path.join(pages, name), 'utf8');
+      assert(/brief\(state\)/.test(source), `${name} reads it through the one accessor`);
+      // Asking the raw slot whether it has ANSWERED yet is a different question,
+      // and the Overview still asks it - what no page keeps is a second copy of
+      // the reader that turns the slot into the payload.
+      assert(!/briefPayload/.test(source), `${name} keeps no reader of its own`);
+    }
   });
 
   await test('a feed that failed reads as empty too - a page draws its own reason', () => {
@@ -1422,17 +1443,28 @@ const run = async () => {
     }
   });
 
-  await test('the Board\'s loading spinner is the framework\'s, unshadowed (#137)', () => {
-    // Where the OTHER spinner on the page comes from: the framework's
-    // `loading()`, which draws Bootstrap's `.spinner-border` - animated by the
-    // bundle's own `@keyframes spinner-border`, nothing this app defines. It
-    // stays that way only while this sheet writes no rule of that name; a local
-    // override is exactly how a working spinner stops.
+  await test('the loading ring is the framework\'s, placed centered by the tower (#137)', () => {
+    // The ring is still Bootstrap's `.spinner-border`, animated by the bundle's
+    // own `@keyframes spinner-border` - format.loading only PLACES it, centered
+    // over the space the content will take (owner ruling, 2026-08-19), because
+    // a spinner crushed into the top-left corner of a body reads as a misrender
+    // rather than a wait. It keeps spinning only while this sheet writes no
+    // rule of that name; a local override is exactly how a working spinner stops.
+    const markup = format.loading('reading the board…');
+    assert(markup.includes('spinner-border'), 'the ring is Bootstrap\'s, never one the tower draws itself');
+    assert(markup.includes('justify-content-center') && markup.includes('align-items-center'),
+      'centered both ways over the body it stands in for');
+    assert(markup.includes('role="status"'), 'announced as a wait, not read as content');
+    assert(markup.includes('reading the board…'), 'with the caller\'s line beneath it');
+    assert(format.loading('<b>x</b>').includes('&lt;b&gt;'), 'the line is escaped like every other interpolation');
     const fs = require('fs');
     const page = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
-    assert(/import \{[^}]*loading[^}]*\} from '@omega\.js\/client\/modules\/live-page'/.test(page), 'the Board waits with the framework\'s spinner, not one of its own');
+    assert(!/\bloading[^}]*\} from '@omega\.js\/client\/modules\/live-page'/.test(page),
+      'the Board takes the wait state from the shared vocabulary, not the framework\'s corner-flush inline one');
+    assert(/import \{[^}]*\bloading\b[^}]*\} from '\.\.\/libs\/tower\/format\.js'/.test(page),
+      'and it imports the tower\'s own');
     const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
-    assert(!sheet.includes('.spinner-border'), 'and this sheet leaves it alone');
+    assert(!sheet.includes('.spinner-border'), 'and this sheet leaves the animation alone');
   });
 
   await test('the muted band borrows the gray the still glyph already wears', () => {
@@ -1999,6 +2031,65 @@ const run = async () => {
       assert(!/<li[^>]*\$\{issueTrigger\(/.test(source), `${name} puts no trigger on an <li>`);
       if (source.includes('<li')) assert(source.includes('issueItem('), `${name} builds its interactive items through the helper`);
     }
+  });
+
+  group('tower/app: modal - a published brief or summary');
+
+  // Issue #181: the mornings the 9am job publishes could be read on github.com
+  // and nowhere else. The archive on the Brief page is a list of these cards,
+  // and each one opens the whole text in the dialog the issue cards open theirs
+  // in - so the same three questions are asked of it: is it a list item, is the
+  // remote text text, and does anything leave the dashboard by accident.
+  const DOCUMENT = {
+    kind: 'brief',
+    title: 'brief: 2026-08-19',
+    url: 'https://github.com/owner/home/discussions/7',
+    createdAt: '2026-08-19T09:00:00Z',
+    body: 'HEADLINE: two issues are waiting on you.\n\nIN FLIGHT: one.',
+  };
+
+  await test('a document card opens the dialog, names the post and links it', () => {
+    const item = modal.documentItem(DOCUMENT);
+    assert(/^<li class="omega-tower-issue">/.test(item), 'the card wears the class the stylesheet reveals the external link from');
+    assert(!/<li[^>]*role=/.test(item), 'and carries no role of its own - the archive stays a list');
+    assert(item.includes(`data-document="${DOCUMENT.url}" role="button" tabindex="0"`), 'the whole card is the trigger, keyed by the post it opens');
+    assert(item.includes(`href="${DOCUMENT.url}"`) && item.includes('omega-tower-external'),
+      'and github.com is reached only through the one button every card leaves by');
+  });
+
+  await test('a card is never a bare title row - it says what it is, when, and how it opens', () => {
+    const item = modal.documentItem({ ...DOCUMENT, kind: 'summary', title: 'daily: 2026-08-18' });
+    assert(item.includes('daily: 2026-08-18'), 'the title is on it');
+    assert(/summary · /.test(item), 'beside what kind of document it is and the day it was published');
+    assert(item.includes('HEADLINE: two issues are waiting on you.'), 'and its own first line, which is the only honest summary of it');
+  });
+
+  await test('the dialog is the whole text, through the renderer that escapes first', () => {
+    const seen = [];
+    const parts = modal.documentDialog(DOCUMENT, (text) => { seen.push(text); return '<p>rendered</p>'; });
+    assertEq(seen[0], DOCUMENT.body, 'the body is handed to the renderer whole - the card excerpt is not what opens');
+    assert(parts.body.includes('<p>rendered</p>'), 'and what comes back is what the dialog shows');
+    assert(parts.body.includes('omega-tower-issue__body'), 'in the surface the stylesheet gives a rendered body');
+    assert(parts.actions.includes(DOCUMENT.url), 'the header carries the one link that leaves for GitHub');
+    assert(parts.title.includes('brief: 2026-08-19'), 'and the title is the post’s own');
+  });
+
+  await test('a hostile title is text on the card and text in the dialog', () => {
+    const nasty = { ...DOCUMENT, title: '<img src=x onerror=alert(1)>', body: '' };
+    assert(!modal.documentItem(nasty).includes('<img'), 'a title off a Discussion is escaped on the card');
+    const parts = modal.documentDialog(nasty, () => '');
+    assert(!parts.title.includes('<img'), 'and in the dialog');
+    assert(parts.body.includes('published with nothing in it'), 'while a post with no text says so rather than opening blank');
+  });
+
+  await test('the card’s line is the document’s first line, plain and short', () => {
+    assertEq(modal.excerpt('# The heading\n\nthe rest of it'), 'The heading', 'the markdown that made it a heading is not drawn as text');
+    assertEq(modal.excerpt('> what somebody said'), 'what somebody said', 'nor the quote mark');
+    assertEq(modal.excerpt('\n\n   spaced    out   \nsecond line'), 'spaced out', 'the first line with something on it, whitespace collapsed');
+    assertEq(modal.excerpt(''), '', 'and nothing at all where there is nothing to say');
+    const long = modal.excerpt(`${'x'.repeat(400)}\nsecond`);
+    assert(long.length <= 180, `a card stays a card: ${long.length} characters`);
+    assert(long.endsWith('…'), 'and says that it trailed off');
   });
 
   group('tower/app: chrome - the strip above the body');
@@ -2800,11 +2891,13 @@ const run = async () => {
     const stamp = '2026-07-29T11:00:00Z';
     const mine = github.buildBrief(board, { generatedAt: stamp });
     const theirs = apiBrief.buildBrief(board, {}, [], stamp);
-    // `summaries` and `history` are ATTACHED after the build on the tower's
-    // side (server.js) and inside it here, so they are the two keys the
-    // comparison lifts out - everything buildBrief itself decides is compared.
-    assertEq(JSON.stringify({ ...mine, summaries: undefined, history: undefined }), JSON.stringify(theirs),
-      'the same sections, the same order, the same headline');
+    // `summaries`, `history`, `documents` and the freshness read off that
+    // history (#176) are ATTACHED after the build on the tower's side
+    // (server.js) and inside it here, so they are the four keys the comparison
+    // lifts out - everything buildBrief itself decides is compared.
+    assertEq(JSON.stringify({
+      ...mine, summaries: undefined, history: undefined, documents: undefined, briefFreshness: undefined,
+    }), JSON.stringify(theirs), 'the same sections, the same order, the same headline');
     assertEq(mine.nextUp[0].items.map((i) => i.number).join(','), '83,82',
       'the blocked item would lead on status, so this order EXISTS only because demotion ran - on both sides');
     assertEq(mine.nextUp[0].items[1].waitsOn.join(','), 'ITW-Creative-Works/workkit#81',
@@ -2846,25 +2939,70 @@ const run = async () => {
     assertEq(JSON.stringify(mine), JSON.stringify(theirs), 'one series, whichever side read it');
 
     // And the read the browser makes asks for the body the line lives in - the
-    // summaries query does not, which is why this is a second document.
+    // summaries query does not, which is why this is a second document. It asks
+    // for the post's URL and its day beside it (#181), because the archive that
+    // rides the same read names each document and links it back.
     const fetchImpl = mkFetch(jsonResponse(200, { data: { repository: { discussions: { nodes } } } }));
-    const answer = await github.fetchHistory('owner/private-home', { token: 't', fetch: fetchImpl });
-    assert(JSON.parse(fetchImpl.calls[0].options.body).query.includes('nodes { title body }'), 'the history read asks for the body');
-    assertEq(answer.length, 2, 'and it comes back parsed');
+    const answer = await github.fetchDiscussions('owner/private-home', { token: 't', fetch: fetchImpl });
+    assert(JSON.parse(fetchImpl.calls[0].options.body).query.includes('nodes { title url createdAt body }'), 'the history read asks for the body');
+    assertEq(answer.history.length, 2, 'and it comes back parsed');
+    assertEq(fetchImpl.calls.length, 1, 'the archive rides that one read - it is not a second round trip');
   });
 
-  await test('a history that could not be read is null, never an empty series', async () => {
+  await test('the archive the browser reads is the archive the tower reads', async () => {
+    // Issue #181: the same Discussions again, asked the other question - not
+    // what each morning counted but what it SAID. A drift in either parse would
+    // leave one copy of the Brief page showing a document the other cannot.
+    const fs = require('fs');
+    const os = require('os');
+    const apiDocuments = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'documents.js'));
+    const apiHistory = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'history.js'));
+    const nodes = [
+      {
+        title: 'brief: 2026-08-03',
+        url: 'https://github.com/owner/private-home/discussions/9',
+        createdAt: '2026-08-03T09:00:00Z',
+        body: 'HEADLINE: today.\n\n<!-- cc-news: 2.1.220 -->\n<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":12}} -->\n',
+      },
+      {
+        title: 'daily: 2026-08-02', url: 'https://github.com/owner/private-home/discussions/8', createdAt: '2026-08-02T21:00:00Z', body: 'what yesterday produced',
+      },
+      { title: '', url: 'https://github.com/owner/private-home/discussions/7', createdAt: null, body: 'a post with no title at all' },
+    ];
+
+    const mine = github.normalizeDocuments({ repository: { discussions: { nodes } } });
+    assertEq(mine.length, 2, 'a post with no title is no document');
+    assertEq(mine.map((doc) => doc.kind).join(','), 'brief,summary', 'the title says which kind each one is, as it does on the other side');
+    assertEq(mine[0].body, 'HEADLINE: today.', 'the machine markers come off - a renderer that escapes first would draw them as text');
+    assertEq(mine[0].url, 'https://github.com/owner/private-home/discussions/9', 'and each one links back to the post');
+
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'app-documents-'));
+    fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ version: 1, site: { repo: 'owner/private-home' } }));
+    const theirs = apiDocuments.documentsFrom(apiHistory.readDiscussions({
+      workflowHome: home,
+      exec: () => JSON.stringify({ data: { repository: { discussions: { nodes } } } }),
+    }));
+    fs.rmSync(home, { recursive: true, force: true });
+    assertEq(JSON.stringify(mine), JSON.stringify(theirs), 'one archive, whichever side read it');
+  });
+
+  await test('a read that could not be made is null, never an empty series and never an empty archive', async () => {
     // The two say opposite things: nothing published yet is a board with no
-    // history, and a refused read is a history nobody can see.
-    assertEq(await github.fetchHistory('', { token: 't', fetch: mkFetch(() => { throw new Error('a request was made'); }) }), null,
-      'a site published without a home repo has nowhere to read from');
-    assertEq(await github.fetchHistory('owner/workkit', { token: '', fetch: mkFetch(() => { throw new Error('a request was made'); }) }), null,
-      'and a browser with no token cannot ask');
-    const empty = await github.fetchHistory('owner/workkit', {
+    // history, and a refused read is a history nobody can see. Both halves of
+    // the one read answer it the same way (#181) - an archive drawn empty where
+    // the read failed would be the same lie the series refuses to tell.
+    const nowhere = await github.fetchDiscussions('', { token: 't', fetch: mkFetch(() => { throw new Error('a request was made'); }) });
+    assertEq(nowhere.history, null, 'a site published without a home repo has nowhere to read from');
+    assertEq(nowhere.documents, null, 'and no archive to read either');
+    const tokenless = await github.fetchDiscussions('owner/workkit', { token: '', fetch: mkFetch(() => { throw new Error('a request was made'); }) });
+    assertEq(tokenless.history, null, 'and a browser with no token cannot ask');
+    assertEq(tokenless.documents, null, 'for either of them');
+    const empty = await github.fetchDiscussions('owner/workkit', {
       token: 't',
       fetch: mkFetch(jsonResponse(200, { data: { repository: { discussions: { nodes: [] } } } })),
     });
-    assertEq(empty.length, 0, 'a home repo with no published briefs yet is an empty series, not a failure');
+    assertEq(empty.history.length, 0, 'a home repo with no published briefs yet is an empty series, not a failure');
+    assertEq(empty.documents.length, 0, 'and an empty archive, which is a different sentence from an unreadable one');
   });
 
   await test('the browser sorts the queues by the brief’s rule, to the letter', () => {
@@ -2990,6 +3128,9 @@ const run = async () => {
     assertEq(answer.ok, true, 'answered');
     assertEq(answer.data.counts.inFlight, 1, 'the sections are built from the sweep');
     assertEq(answer.data.summaries.items[0].title, 'Tuesday', 'and the summaries ride with it');
+    // And the documents the Brief page IS (#181), off the same board - a
+    // published copy draws that page from this key and nothing else.
+    assertEq(answer.data.documents[0].title, 'Tuesday', 'and the archive rides too');
   });
 
   await test('a failed sweep is a failed feed, never an empty board', async () => {
@@ -3586,19 +3727,124 @@ const run = async () => {
     assertEq(history.deltaLine(up), 'up 5 from last week', 'and a board that grew says up');
   });
 
-  await test('both pages draw the history through the framework’s chart module, and neither invents a colour', () => {
+  await test('the Overview draws the history through the framework’s chart module, and invents no colour', () => {
     const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
-    for (const name of ['index.js', 'brief.js']) {
-      const source = fs.readFileSync(path.join(pages, name), 'utf8');
-      assert(/from '__main_assets__\/js\/libs\/charts\.js'/.test(source), `${name} draws through the framework module`);
-      assert(/chartSlot\(/.test(source), `${name} draws into the slot that says the figures are in the table when the chunk did not load`);
-      assert(/hasSeries\(/.test(source) && /ACCRUES/.test(source), `${name} says why a chart is absent rather than drawing an empty axis`);
-      // A raw colour would be one the theme cannot restate; the module's own
-      // ramp is what every other chart on the tower draws in.
-      assert(!/['"]#[0-9a-fA-F]{3,8}['"]/.test(source), `${name} names no colour of its own`);
-    }
-    assert(/feeds: \['repos', 'board', 'sessions', 'health', 'brief'\]/.test(fs.readFileSync(path.join(pages, 'index.js'), 'utf8')),
+    const source = fs.readFileSync(path.join(pages, 'index.js'), 'utf8');
+    assert(/from '__main_assets__\/js\/libs\/charts\.js'/.test(source), 'index.js draws through the framework module');
+    assert(/chartSlot\(/.test(source), 'index.js draws into the slot that says the figures are in the table when the chunk did not load');
+    assert(/hasSeries\(/.test(source) && /ACCRUES/.test(source), 'index.js says why a chart is absent rather than drawing an empty axis');
+    // A raw colour would be one the theme cannot restate; the module's own
+    // ramp is what every other chart on the tower draws in.
+    assert(!/['"]#[0-9a-fA-F]{3,8}['"]/.test(source), 'index.js names no colour of its own');
+    assert(/feeds: \['repos', 'board', 'sessions', 'health', 'brief'\]/.test(source),
       'and the Overview asks for the brief feed the history rides on');
+    // The Brief drew the same series a second time, small, beside the same
+    // counts (#55). It draws no chart at all now (#181): the page is the
+    // mornings themselves, and the series read off them is the Overview's.
+    const brief = fs.readFileSync(path.join(pages, 'brief.js'), 'utf8');
+    assert(!/chartSlot\(|lineChart\(|charts\.js/.test(brief), 'and the Brief draws no chart of its own any more');
+  });
+
+  group('tower/app: has the cloud brief stopped posting');
+
+  // Issue #172: the cloud brief failed every morning for ten days and both
+  // pages went on looking normal. The API decides the state off its own history
+  // read (tower/api/lib/history.js); what is asked here is the LINE each state
+  // draws, since a state drawn as nothing is exactly the blindness this fixes.
+  const freshness = (state, date = null) => ({ counts: { open: 0 }, history: [], briefFreshness: { state, date } });
+
+  await test('a stale brief is a red line naming the morning it last posted', () => {
+    const alert = history.briefAlert(freshness('stale', '2026-08-09'));
+    assertEq(alert.level, 'danger', 'a brief that stopped running is an alarm, not a note');
+    assert(alert.text.includes('2026-08-09'), `the day it last posted is in the line: ${alert.text}`);
+    assert(/has not run since/.test(alert.text), 'and the line says what that means');
+  });
+
+  await test('a fresh brief draws nothing at all', () => {
+    assertEq(history.briefAlert(freshness('fresh', '2026-08-19')), null, 'a morning that posted is not news');
+    // A payload carrying no block at all was never asked the question, and an
+    // absent key draws nothing here as it does everywhere else on this payload.
+    assertEq(history.briefAlert({ counts: { open: 0 } }), null, 'and neither is a payload that was never asked the question');
+    assertEq(history.briefAlert(null), null, 'nor no payload at all');
+  });
+
+  await test('unreadable is never drawn as stale and never as fine', () => {
+    const alert = history.briefAlert(freshness('unreadable'));
+    assert(alert, 'a read that failed says so - silence would report it as a healthy morning');
+    assertEq(alert.level, 'warning', 'though it is not the alarm a stopped brief is - nothing is known either way');
+    assert(!/has not run since/.test(alert.text), 'and it makes no claim about when the last one posted');
+    assert(/could not be read/.test(alert.text), `it says the history could not be read: ${alert.text}`);
+  });
+
+  await test('never published says that, rather than borrowing either sentence', () => {
+    const alert = history.briefAlert(freshness('never'));
+    assertEq(alert.level, 'warning', 'a board waiting on its first brief is not an alarm');
+    assert(/never/.test(alert.text) || /no brief/.test(alert.text), `it says no brief has been published: ${alert.text}`);
+    assert(!/could not be read/.test(alert.text), 'and it does not claim the read failed');
+  });
+
+  // Issue #176: the line above was drawn on this machine only. A published copy
+  // builds its brief in the browser, so it was never asked the question at all -
+  // and away from the machine is exactly when a stopped brief goes unnoticed
+  // longest. The decision is mirrored into that build, and pinned here against
+  // the tower's own: a drift either way is one surface calling a dead brief
+  // healthy.
+  await test('the browser judges the mornings exactly as the tower judges them', () => {
+    const apiHistory = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'history.js'));
+    const day = (date) => ({ date, totals: { open: 1 }, closedDay: 0, repos: {} });
+    const cases = [
+      ['this morning posted', [day('2026-08-18'), day('2026-08-19')], '2026-08-19T14:00:00Z', 'fresh'],
+      ['and yesterday’s is fresh too - today’s run has not landed at every hour of the day', [day('2026-08-18')], '2026-08-19T14:00:00Z', 'fresh'],
+      ['a minute past midnight, yesterday still counts', [day('2026-08-18')], '2026-08-19T00:01:00Z', 'fresh'],
+      ['two whole days is a brief that stopped running', [day('2026-08-09'), day('2026-08-17')], '2026-08-19T09:05:00Z', 'stale'],
+      ['and the day before yesterday never counts, whatever the hour', [day('2026-08-17')], '2026-08-19T23:59:00Z', 'stale'],
+      ['a home repo that has published no brief yet', [], '2026-08-19T09:00:00Z', 'never'],
+      ['a read that failed is not a quiet morning', null, '2026-08-19T09:00:00Z', 'unreadable'],
+      ['nor is a date the arithmetic cannot place', [day('the ninth of never')], '2026-08-19T09:00:00Z', 'unreadable'],
+    ];
+    for (const [what, entries, now, state] of cases) {
+      const mine = github.briefFreshness(entries, now);
+      assertEq(mine.state, state, what);
+      assertEq(JSON.stringify(mine), JSON.stringify(apiHistory.briefFreshness(entries, new Date(now))),
+        `one verdict, whichever side judged it: ${what}`);
+    }
+  });
+
+  await test('the published payload carries that verdict, so the same banner is drawn off-machine', () => {
+    const stamp = '2026-08-19T09:05:00Z';
+    const board = { ok: true, issues: [], repos: [] };
+    const morning = (date) => [{ date, totals: { open: 1 }, closedDay: 0, repos: {} }];
+
+    const stopped = github.buildBrief(board, { generatedAt: stamp, history: morning('2026-08-09') });
+    assertEq(stopped.briefFreshness.state, 'stale', 'the browser judges the history it just read, not a second one');
+    const alert = history.briefAlert(stopped);
+    assertEq(alert.level, 'danger', 'and the one line-drawer answers the published payload as it answers the tower’s');
+    assert(alert.text.includes('2026-08-09'), `naming the morning it last posted: ${alert.text}`);
+
+    const posting = github.buildBrief(board, { generatedAt: stamp, history: morning('2026-08-18') });
+    assertEq(history.briefAlert(posting), null, 'a morning that posted draws nothing off-machine either');
+    // A read that failed carries no history at all - and a browser that could
+    // not reach the home repo knows nothing, which is not a healthy morning.
+    assertEq(github.buildBrief(board, { generatedAt: stamp }).briefFreshness.state, 'unreadable',
+      'and a history nobody could read says so rather than staying silent');
+  });
+
+  await test('both pages draw that line, and the Health page asks for the feed it rides on', () => {
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    for (const name of ['health.js', 'brief.js']) {
+      const source = fs.readFileSync(path.join(pages, name), 'utf8');
+      assert(/briefAlert\(/.test(source), `${name} draws the line from the one decision, never its own`);
+      assert(/alert-\$\{/.test(source), `${name} takes the colour from the level rather than fixing one`);
+      assert(/esc\(/.test(source), `${name} escapes it - the date came off a Discussion body`);
+    }
+    // A builder nothing PLACES is a line nobody sees, which is the whole of the
+    // blindness this fixes - so the markup each page writes is pinned too.
+    const health = fs.readFileSync(path.join(pages, 'health.js'), 'utf8');
+    assert(/\$\{briefRow\(state\)\}/.test(health), 'the Health page writes the row into the body it swaps in');
+    assert(/\$\{staleBanner\(payload\)\}/.test(fs.readFileSync(path.join(pages, 'brief.js'), 'utf8')),
+      'and the Brief page writes the banner into its own');
+    assert(/feeds: \[[^\]]*'brief'[^\]]*\]/.test(health),
+      'and the Health page arms the brief feed the freshness rides on');
   });
 
   group('tower/app: the runtime’s published shape');
@@ -3663,7 +3909,7 @@ const run = async () => {
 
   await test('the Overview says local-only where its machine-bound numbers would be', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'index.js'), 'utf8');
-    for (const cell of ['Live sessions', 'Unpushed', 'Unreleased']) {
+    for (const cell of ['Live sessions', 'Uncommitted', 'Unpushed', 'Unreleased']) {
       assert(new RegExp(`machineStat\\(state, '(sessions|health)', '${cell}'`).test(source), `${cell} is a machine reading, and the tile knows it`);
     }
     assert(/machineStat = \(state, name, label, value, href\) => \(localOnly\(state, name\)[\s\S]{0,120}LOCAL_ONLY_NOTICE\)/.test(source),
@@ -3687,6 +3933,64 @@ const run = async () => {
     assert(/API started/.test(source), 'and the start time is on the page beside it');
   });
 
+  group('tower/app: the Health page shows only what is broken (#182)');
+
+  // Issue #182: the page used to restate the board - a stat grid and a status
+  // doughnut per repo, with the real alarms mixed in among neutral numbers. A
+  // number that is FINE is not this page's business, and an unanswered issue is
+  // the Board's. The page imports the framework and is out of reach of these
+  // suites (see the header), so what is pinned is what the source draws from:
+  // the vocabulary it no longer speaks, the conditions that put a repo on it,
+  // and the one line a machine with nothing wrong shows.
+
+  const healthSource = () => fs.readFileSync(
+    path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'health.js'),
+    'utf8',
+  );
+
+  await test('the census is gone - no stat grid, no doughnut, no board feed', () => {
+    const source = healthSource();
+    // Each of these is another page's answer: the tiles and the chart are the
+    // Overview's, the open and blocked counts are the Board's. A rebuild that
+    // kept any of them is the page this issue is about.
+    for (const gone of ['statgrid', 'statCell', 'statusBreakdown', 'chartSlot', 'barChart', 'issuesFor', 'issueItem']) {
+      assert(!source.includes(gone), `${gone} draws a neutral number, and this page has none`);
+    }
+    assert(!/charts: true/.test(source), 'and with no chart on it the page stops pulling Chart.js in before its first paint');
+    assert(/feeds: \['repos', 'health', 'brief'\]/.test(source),
+      'it polls the three feeds a problem can come from, and no longer asks for the board it does not read');
+  });
+
+  await test('a repo is on the page only while a working copy is in a state, and every state names its remedy', () => {
+    const source = healthSource();
+    for (const condition of ['reading.uncommitted > 0', 'reading.unpushed > 0', 'reading.unreleasedEntries > 0', 'reading.error']) {
+      assert(source.includes(condition), `${condition} is one of the things that puts a repo on this page`);
+    }
+    // The API keeps "no upstream" and "level with one" apart on purpose
+    // (tower/api/lib/health.js), and a page comparing null with `> 0` would
+    // report a checkout that has never left this disk as fully pushed.
+    assert(source.includes('reading.unpushed === null'),
+      'a branch with no upstream is its own named state, never counted as pushed work');
+    // Naming a problem without naming what ends it is the old page's stat grid
+    // with a red border, so the two halves are counted against each other.
+    const wrongs = (source.match(/wrong:/g) || []).length;
+    assert(wrongs >= 4, `every state the page draws is a sentence about what is wrong (${wrongs})`);
+    assertEq((source.match(/fix:/g) || []).length, wrongs, 'and each one carries the act that resolves it');
+  });
+
+  await test('a machine with nothing wrong says so, and only then', () => {
+    const source = healthSource();
+    assert(/Nothing is broken/.test(source), 'the page is never empty - it says what the emptiness means');
+    assert(/committed, pushed and released/.test(source), 'naming the three states it just checked');
+    assert(source.includes('swap(root, body || (briefFeed ? allClear() : loading('),
+      'and that line is drawn only when the problems came to nothing - a page with one problem on it shows the problem alone');
+    // The all-clear's last clause is "the brief is current", so a brief feed
+    // that has not answered holds the sentence back, and one that FAILED is
+    // drawn as the problem it is (#182 verify, finding 1).
+    assert(source.includes('briefFeed && !briefFeed.ok'),
+      'a failed brief feed is a problem on this page, never a silent absence');
+  });
+
   await test('the published Board drags like the local one - no read-only line left anywhere', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
     assert(/draggable = \(issue\) => WRITABLE/.test(source), 'a card picks up wherever there is something to write with');
@@ -3695,23 +3999,42 @@ const run = async () => {
     assert(/await state\.refresh\('board'\)/.test(source), 'a landed move is re-read, in published mode as on a machine');
   });
 
-  await test('the Brief asks the mode which copy it is, never the payload’s shape', () => {
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'brief.js'), 'utf8');
-    assert(/warnings\(forRepo\(payload\.warnings \|\| \[\], selected\), MODE === 'github'\)/.test(source),
-      'the local-only line is drawn from MODE, the one signal every page reads');
-    assert(!/Boolean\(payload\.summaries\)/.test(source), 'an absent API key is not load-bearing any more');
-  });
-
-  await test('the Brief draws what to work on next, and yesterday, only when the payload carries them', () => {
+  // Issue #181: the Brief page mirrored the 9am notification and never showed
+  // the one thing a morning leaves behind - the brief itself. The page module
+  // imports the framework and is out of reach of these suites (see the header),
+  // so what is pinned is the source of each decision; the markup the archive is
+  // built from is modal.js's, and is asked real questions in its own group.
+  await test('the Brief page is the mornings themselves - the newest one open, the rest an archive', () => {
     const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
     const source = fs.readFileSync(path.join(pages, 'brief.js'), 'utf8');
-    assert(/nextUp\(forRepo\(payload\.nextUp \|\| \[\], selected\)\)/.test(source),
-      'the ranked list is narrowed by the same selection every other section is');
-    assert(/summaryCard\('What yesterday produced', payload\.findings\)/.test(source), 'the findings card is drawn from the key');
-    assert(/summaryCard\('The week', payload\.week\)/.test(source), 'and the week from its own');
-    assert(/const summaryCard = \(heading, item\) => \(item \?/.test(source),
-      'an absent or null key draws nothing at all - a brief that could not read one says less, never something untrue');
-    assert(/externalLink\(item\.url\)/.test(source), 'every row links to the thing it names');
+    assert(/documents\.find\(\(doc\) => doc\.kind === 'brief'\)/.test(source),
+      'the newest brief is the first brief on a newest-first payload, never a second sort');
+    assert(/\$\{newest \? latest\(newest\) : ''\}/.test(source), 'and it is drawn in place, or not at all when none was published');
+    assert(/documentBody\(doc, renderMarkdown\)/.test(source), 'its text goes through the escape-first renderer, like every remote body on the tower');
+    assert(/\$\{archive\(documents, newest\)\}/.test(source), 'with everything published before it under it');
+    assert(/documents\.filter\(\(doc\) => doc !== drawn\)/.test(source), 'the one already open is not also a card that opens it');
+    assert(/mountDocumentModal\(\{ render: renderMarkdown \}\)/.test(source), 'and the dialog those cards open is wired by the page that has them');
+  });
+
+  await test('a Brief that could not read the mornings says so, and never draws an empty archive', () => {
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const source = fs.readFileSync(path.join(pages, 'brief.js'), 'utf8');
+    assert(/Array\.isArray\(payload\.documents\) \? payload\.documents : null/.test(source),
+      'an absent or null key is the unreadable state, the posture the history beside it is read with');
+    assert(/if \(!documents\) \{[\s\S]{0,200}UNREAD/.test(source), 'which draws the sentence rather than an archive with nothing in it');
+    assert(/nothing else has been published yet/.test(source), 'while an archive that is genuinely empty says the opposite thing');
+  });
+
+  await test('everything else on the Brief is gone from it, not moved somewhere else on it', () => {
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const source = fs.readFileSync(path.join(pages, 'brief.js'), 'utf8');
+    // The Overview owns the charts, the Board owns the queue, Health owns the
+    // warnings. Each of these was a second drawing of one of them.
+    for (const dead of ['statgrid(', 'statCell(', 'payload.counts', 'payload.nextUp', 'payload.warnings', 'payload.findings', 'payload.week', 'payload.summaries', 'issueItem(', 'payload.headline']) {
+      assert(!source.includes(dead), `${dead} is gone from the Brief`);
+    }
+    assert(!/selectedSlugs\(|inScope\(/.test(source), 'and the repo selection with them - a morning is not a repo’s morning');
+    assert(/feeds: \['repos', 'brief'\]/.test(source), 'so the page arms the feed it draws and the roster the chrome needs, and no board');
   });
 
   await test('the runtime fills the sidebar’s selector menu and carries the scope onto the nav', () => {
@@ -3743,15 +4066,15 @@ const run = async () => {
 
   await test('every page reads the selection as a SET, and no consumer compares it as a slug', () => {
     const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
-    // The Board's repo column and its denominator, and the Brief's narrowing,
-    // are the two pages that read the selection directly rather than through
-    // state.js - both converted to the set (#104).
+    // The Board's repo column and its denominator is the one page left that
+    // reads the selection directly rather than through state.js, converted to
+    // the set (#104). The Brief read it too until it stopped being about the
+    // board at all (#181) - a published morning is roster-wide.
     const board = fs.readFileSync(path.join(pages, 'board.js'), 'utf8');
     assert(/selectedSlugs\(state\)/.test(board), 'the Board asks for the slugs');
     assert(!/state\.selectedRepo/.test(board), 'and never for the raw value it used to compare');
     const brief = fs.readFileSync(path.join(pages, 'brief.js'), 'utf8');
-    assert(/selectedSlugs\(state\)/.test(brief), 'so does the Brief');
-    assert(!/state\.selectedRepo/.test(brief), 'and it compares nothing as a slug either');
+    assert(!/state\.selectedRepo/.test(brief), 'and the Brief compares nothing as a slug either');
     // state.js is the rest of them - every page narrows through these three.
     const reader = fs.readFileSync(path.join(libs, 'state.js'), 'utf8');
     assertEq((reader.match(/selectedSlugs\(state\)/g) || []).length, 3, 'reposFor, issuesFor and inSelectedRepo, all through the one parse');

@@ -7,6 +7,26 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#173](../../issues/173) — The 9am job records the newest published brief's date in `~/.workkit/brief-status.json`, and the `docs:session` hook leads with one line when it is over a whole day old — a cloud brief that stopped posting is now named at session start, with no API call there.
+- [#172](../../issues/172) — The tower says when the cloud brief stops posting: `/api/brief` carries the newest published brief's date, off the history read it already makes, and the Health and Brief pages lead with a red line naming that day. A history never published, or unreadable, says so instead.
+- [#174](../../issues/174) — `workkit setup --token` forces the Claude token step: it re-mints `CLAUDE_CODE_OAUTH_TOKEN` however young the one there is. The mint now runs on the terminal's own screen under a pty, its paste-the-code prompt visible and the run endable; the token's capture file is gone on every exit.
+- [#178](../../issues/178) — `npm start` runs the tower: a `start` script aliasing `npm run tower`, so the default command and the named one do the same thing.
+
+### Changed
+
+- [#175](../../issues/175) — The checks workflow and both seeded templates run checkout and setup-node at v5, clearing the deprecated Node 20 notice every Actions run printed.
+- [#177](../../issues/177) — The tower's nav puts Health last and the Board wears its own bars-progress glyph. Every page's wait state is now a centered ring rather than a corner-flush line, and the Overview's stat grid gains an Uncommitted tile to sit even at eight.
+- [#181](../../issues/181) — The Brief page is the mornings themselves: the newest brief rendered in place, then every published brief and summary as a card opening its full text in an issues-style dialog. The texts ride the Discussions window both copies already fetched. The stat grid and issue lists left.
+- [#182](../../issues/182) — The Health page shows only what is broken: a card per dirty repo naming each fault and its remedy, an alert per unreadable checkout, the restart and stale-brief notices. Board numbers left the page, and a clean machine gets one all-clear line that waits for the feeds.
+- [#183](../../issues/183) — Overview's tiles and panel heads all point into the page that owns their depth, and every pointer carries the sidebar's repo selection — a narrowed tower no longer widens on click.
+
+### Fixed
+
+- [#179](../../issues/179) — `npm run tower` keeps omega's log colors: a tower on a terminal exports `FORCE_COLOR=1` into both halves, which the fifos behind its filter had turned off, and the filter now judges each line by a color-stripped copy while printing the original. A piped run stays plain.
+- [#176](../../issues/176) — A published dashboard copy now judges brief freshness itself: its browser build attaches the same verdict the tower's API computes, off the history it already reads, so the stale-brief banner draws away from the machine too.
+
 ## [0.44.1] - 2026-08-19
 
 ### Fixed

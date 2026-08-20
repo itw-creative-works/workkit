@@ -3,9 +3,12 @@
 // back its own `.workkit/agents/session.md`.
 //
 // Every case runs the real hook against a fixture repo. The hook reaches no
-// network and reads nothing outside the repo it is given, so there is nothing
-// to stub: the whole surface is the file, the committed settings.json, and the
-// light bar.
+// network, so there is nothing to stub: the whole surface is the file, the
+// committed settings.json, the light bar, and the cloud brief's marker.
+//
+// HOME is a scratch directory in every case — the marker the hook reads
+// (`~/.workkit/brief-status.json`, issue #173) lives there, and a suite pointed
+// at the real home would read whatever this machine's last morning wrote.
 //
 
 const fs = require('fs');
@@ -39,10 +42,39 @@ const mkRepo = ({ session, optedIn = true, enabled = true } = {}) => {
   return dir;
 };
 
-const runHook = (cwd, source = 'startup') => {
+// The home every case runs against unless it wants a marker: an empty scratch
+// directory, so `~/.workkit/brief-status.json` is absent and the brief half of
+// the hook says nothing.
+const BARE_HOME = mkTmp();
+
+/**
+ * A scratch home carrying the cloud brief's marker and the machine's settings.
+ * `marker` and `settings` are written VERBATIM — a case about a file that does
+ * not parse is one of the cases.
+ */
+const mkHome = ({ marker, settings } = {}) => {
+  const home = mkTmp();
+  fs.mkdirSync(path.join(home, W), { recursive: true });
+  if (marker !== undefined) fs.writeFileSync(path.join(home, W, 'brief-status.json'), marker);
+  if (settings !== undefined) fs.writeFileSync(path.join(home, W, 'settings.json'), settings);
+  return home;
+};
+
+// A date N whole days back, in UTC — the calendar the hook counts in.
+const daysAgo = (n) => new Date(Date.now() - (n * 86400000)).toISOString().slice(0, 10);
+
+// The marker the 9am job writes: a brief N days back, read off the board M days
+// back — which is today unless the case is about a machine that was off.
+const marker = (n, checkedDaysAgo = 0) => JSON.stringify({
+  version: 1,
+  lastBrief: daysAgo(n),
+  checkedAt: `${daysAgo(checkedDaysAgo)}T09:00:00Z`,
+});
+
+const runHook = (cwd, source = 'startup', home = BARE_HOME) => {
   const res = spawnSync('bash', [HOOK], {
     input: JSON.stringify({ cwd, source, hook_event_name: 'SessionStart' }),
-    env: { HOME: os.homedir(), PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin' },
+    env: { HOME: home, PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin' },
     encoding: 'utf8',
     timeout: 15000,
   });
@@ -221,7 +253,7 @@ const run = async () => {
   await test('no cwd in the payload — silent', () => {
     const res = spawnSync('bash', [HOOK], {
       input: JSON.stringify({ source: 'startup' }),
-      env: { HOME: os.homedir(), PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin' },
+      env: { HOME: BARE_HOME, PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin' },
       encoding: 'utf8',
       timeout: 15000,
     });
@@ -249,6 +281,198 @@ const run = async () => {
     assert(!/queue, not a journal/.test(ctx), '40 lines is still light');
     cleanup(repo);
   });
+
+  group('session: the cloud brief went quiet');
+
+  // Issue #173: the brief runs in the cloud and its failures are silent — ten
+  // mornings passed with nothing posted and no session knew. The 9am job leaves
+  // a marker; this hook is the reader, and it reads a FILE. No network, ever.
+
+  await test('a brief days old is named, with the fix and the check', () => {
+    const repo = mkRepo();
+    const home = mkHome({
+      marker: marker(10),
+      settings: JSON.stringify({ version: 1, site: { repo: 'owner/private-home' } }),
+    });
+    const { code, stdout } = runHook(repo, 'startup', home);
+    assertEq(code, 0, 'exit 0');
+    const ctx = ctxOf(stdout);
+    assert(ctx.includes(`cloud brief: last posted ${daysAgo(10)} (10 days ago)`),
+      `the line names the date and the gap: ${ctx}`);
+    assert(ctx.includes('workkit setup --token'), `the fix is the token mint: ${ctx}`);
+    assert(ctx.includes('gh run list --repo owner/private-home --workflow brief.yml'),
+      `and the check names the home repo: ${ctx}`);
+    cleanup(repo);
+    cleanup(home);
+  });
+
+  await test('the line rides alone — no session.md is still a session that hears it', () => {
+    const repo = mkRepo();
+    const home = mkHome({ marker: marker(4) });
+    const { stdout } = runHook(repo, 'startup', home);
+    const ctx = ctxOf(stdout);
+    assert(ctx.startsWith('cloud brief: last posted'), `the alert is the whole context: ${ctx}`);
+    assert(!ctx.includes('SESSION STATE'), 'there is no state to hand back');
+    // The owner line rides the visible channel only where there is state to
+    // resume; a stale brief is the manager's to report in its own words.
+    assert(!('systemMessage' in JSON.parse(stdout)),
+      `an alert-only injection speaks to the model alone: ${stdout}`);
+    cleanup(repo);
+    cleanup(home);
+  });
+
+  await test('a machine that has not checked in days names itself, not the runner', () => {
+    // The board is read by the 9am job and by nothing else, so a laptop shut for
+    // a long weekend has an old ANSWER, not a broken runner — and sending the
+    // owner to mint a token that was never the problem is the one way this line
+    // could cost more than it is worth.
+    const repo = mkRepo();
+    const home = mkHome({
+      marker: marker(10, 5),
+      settings: JSON.stringify({ version: 1, site: { repo: 'owner/private-home' } }),
+    });
+    const ctx = ctxOf(runHook(repo, 'startup', home).stdout);
+    assert(ctx.includes(`last posted ${daysAgo(10)} (10 days ago)`), `the staleness is still reported: ${ctx}`);
+    assert(ctx.includes(`this machine last checked ${daysAgo(5)}`), `and the marker's own age is named: ${ctx}`);
+    assert(!ctx.includes('fresh token'), 'the runner is not blamed for a machine that was off');
+    assert(!ctx.includes('workkit setup --token'), 'and no token is minted over it');
+    assert(ctx.includes('gh run list --repo owner/private-home --workflow brief.yml'),
+      `the check still rides — the runs are worth reading either way: ${ctx}`);
+    cleanup(repo);
+    cleanup(home);
+  });
+
+  await test('a check from yesterday is a current marker — the runner wording stands', () => {
+    const repo = mkRepo();
+    const home = mkHome({ marker: marker(9, 1) });
+    const ctx = ctxOf(runHook(repo, 'startup', home).stdout);
+    assert(ctx.includes('the runner likely needs a fresh token; fix: workkit setup --token'),
+      `one day is the ordinary morning on this side of the marker too: ${ctx}`);
+    assert(!ctx.includes('this machine last checked'), 'the machine is not blamed for a board it did read');
+    cleanup(repo);
+    cleanup(home);
+  });
+
+  await test('a marker with no checkedAt at all — silent', () => {
+    const repo = mkRepo();
+    const home = mkHome({ marker: JSON.stringify({ version: 1, lastBrief: daysAgo(8) }) });
+    assertEq(runHook(repo, 'startup', home).stdout, '',
+      'without knowing when it was written, the marker cannot say whose silence it is');
+    cleanup(repo);
+    cleanup(home);
+  });
+
+  await test('with no home repo named, the check clause is left off rather than guessed', () => {
+    const repo = mkRepo();
+    const home = mkHome({ marker: marker(3) });
+    const ctx = ctxOf(runHook(repo, 'startup', home).stdout);
+    assert(ctx.includes('workkit setup --token'), 'the fix is still there');
+    assert(!ctx.includes('gh run list'), `and nothing is invented to check: ${ctx}`);
+    cleanup(repo);
+    cleanup(home);
+  });
+
+  await test('the alert leads, and the session state keeps its own closing lines', () => {
+    const repo = mkRepo({ session: filled(['#12 — mid-build']) });
+    const home = mkHome({ marker: marker(5) });
+    const { stdout } = runHook(repo, 'startup', home);
+    const ctx = ctxOf(stdout);
+    assert(ctx.startsWith('cloud brief: last posted'), `the alert is first: ${ctx.slice(0, 80)}`);
+    assert(ctx.includes('#12 — mid-build'), 'the state is still handed back');
+    assert(ctx.trimEnd().endsWith('resumes the queue above.'), 'and the owner line is still last');
+    assertEq(
+      msgOf(stdout),
+      'workkit: state carried over — say "continue" to resume the session queue',
+      'the visible channel still carries the owner line',
+    );
+    cleanup(repo);
+    cleanup(home);
+  });
+
+  await test('a brief posted yesterday is not stale — one day is the ordinary morning', () => {
+    // The marker is written by the 9am job, and the cloud posts minutes after
+    // it: on any ordinary morning the newest brief on the board is yesterday's.
+    const repo = mkRepo();
+    const home = mkHome({ marker: marker(1) });
+    const { code, stdout } = runHook(repo, 'startup', home);
+    assertEq(code, 0, 'exit 0');
+    assertEq(stdout, '', 'says nothing');
+    cleanup(repo);
+    cleanup(home);
+  });
+
+  await test("today's brief says nothing at all", () => {
+    const repo = mkRepo();
+    const home = mkHome({ marker: marker(0) });
+    assertEq(runHook(repo, 'startup', home).stdout, '', 'says nothing');
+    cleanup(repo);
+    cleanup(home);
+  });
+
+  await test('two days is the first stale morning', () => {
+    const repo = mkRepo();
+    const home = mkHome({ marker: marker(2) });
+    const ctx = ctxOf(runHook(repo, 'startup', home).stdout);
+    assert(ctx.includes('(2 days ago)'), `the bar is one whole day: ${ctx}`);
+    cleanup(repo);
+    cleanup(home);
+  });
+
+  await test('no marker at all — silent, the machine that has never run the job', () => {
+    const repo = mkRepo();
+    const home = mkHome();
+    const { code, stdout } = runHook(repo, 'startup', home);
+    assertEq(code, 0, 'exit 0');
+    assertEq(stdout, '', 'nothing is claimed about a board nobody has read');
+    cleanup(repo);
+    cleanup(home);
+  });
+
+  await test('a marker that does not parse — silent', () => {
+    const repo = mkRepo();
+    const home = mkHome({ marker: '{ "version": 1, "lastBrief": ' });
+    const { code, stdout } = runHook(repo, 'startup', home);
+    assertEq(code, 0, 'exit 0');
+    assertEq(stdout, '', 'an unreadable marker is not a stale brief');
+    cleanup(repo);
+    cleanup(home);
+  });
+
+  await test('a marker whose date is not one — silent', () => {
+    const repo = mkRepo();
+    const home = mkHome({ marker: JSON.stringify({ version: 1, lastBrief: 'never' }) });
+    assertEq(runHook(repo, 'startup', home).stdout, '', 'nothing is counted from a non-date');
+    cleanup(repo);
+    cleanup(home);
+  });
+
+  await test('a marker dated in the future — silent', () => {
+    const repo = mkRepo();
+    const home = mkHome({ marker: JSON.stringify({ version: 1, lastBrief: daysAgo(-3) }) });
+    assertEq(runHook(repo, 'startup', home).stdout, '', 'a negative gap is nobody’s stale brief');
+    cleanup(repo);
+    cleanup(home);
+  });
+
+  await test('a repo that never opted in hears nothing about the brief either', () => {
+    const repo = mkRepo({ optedIn: false });
+    const home = mkHome({ marker: marker(9) });
+    const { code, stdout } = runHook(repo, 'startup', home);
+    assertEq(code, 0, 'exit 0');
+    assertEq(stdout, '', 'the participation gate is the whole hook’s gate');
+    cleanup(repo);
+    cleanup(home);
+  });
+
+  await test('the hook reaches no network — the marker is the only source', () => {
+    // Command position only: `gh run list` is in the message the line CARRIES,
+    // and the whole point is that this hook never runs it.
+    const text = fs.readFileSync(HOOK, 'utf8');
+    assert(!/(^|[;&|(]|\$\()\s*(gh|curl|git ls-remote)\b/m.test(text),
+      'a session start never waits on GitHub');
+  });
+
+  cleanup(BARE_HOME);
 };
 
 module.exports = async () => {

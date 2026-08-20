@@ -260,6 +260,13 @@ const run = async () => {
     assert(!fs.existsSync(world.nightlyLog), 'and never started — there is no day here to write up');
     assert(/publish: the site is built from the home clone/.test(res.stdout),
       `the publish names its skip: ${res.stdout}`);
+    // Issue #173: the stale-brief marker is read at session start on a MACHINE,
+    // and a runner's home dies with the job — there is nobody there to leave it
+    // for, and a marker written into that home would be thrown away unread.
+    assert(/marker: the brief marker is read at session start on a machine/.test(res.stdout),
+      `the marker step names its skip: ${res.stdout}`);
+    assert(!fs.existsSync(path.join(world.workflowHome, 'brief-status.json')),
+      'and nothing was written into the runner’s home');
     assertEq(world.notifs().length, 0, 'and nothing was notified — there is no desktop');
     cleanup(world.root);
   });

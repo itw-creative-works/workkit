@@ -35,9 +35,9 @@ import { startPage } from '../libs/tower/page.js';
 import { issuesFor, board, feed, issueByKey } from '../libs/tower/state.js';
 import { selectedSlugs } from '../libs/tower/scope.js';
 import {
-  esc, empty, problem, issueChips, issueKey, STATUSES, statusColor, byPriority, noStatusAlert,
+  esc, empty, problem, loading, issueChips, issueKey, STATUSES, statusColor, byPriority, noStatusAlert,
 } from '../libs/tower/format.js';
-import { loading, swap } from '@omega.js/client/modules/live-page';
+import { swap } from '@omega.js/client/modules/live-page';
 import { loadGraph, graphReady, graphSlot, drawGraph } from '__main_assets__/js/libs/graph.js';
 import { issueTrigger, externalLink } from '../libs/tower/modal.js';
 import { claimGlyph } from '../libs/tower/agent.js';

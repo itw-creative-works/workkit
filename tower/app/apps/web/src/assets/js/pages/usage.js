@@ -32,11 +32,11 @@
 import { startPage } from '../libs/tower/page.js';
 import { feed } from '../libs/tower/state.js';
 import {
-  esc, empty, problem, compact, money, statCell, statgrid, card, pill,
+  esc, empty, problem, loading, compact, money, statCell, statgrid, card, pill,
   modelKey, classKey, badgeColor, modelBadge, classBadge,
 } from '../libs/tower/format.js';
 import { chartSlot, barChart, doughnutChart, lineChart } from '__main_assets__/js/libs/charts.js';
-import { loading, swap } from '@omega.js/client/modules/live-page';
+import { swap } from '@omega.js/client/modules/live-page';
 
 const sortDown = (list) => [...list].sort((a, b) => b[1] - a[1]);
 

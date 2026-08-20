@@ -41,6 +41,21 @@ export const empty = (message, icon = 'fa-regular fa-folder-open') => `<div clas
 export const problem = (message) => `<div class="alert alert-warning mb-0">${esc(message)}</div>`;
 
 /**
+ * The wait state a body or section shows before its feed answers - the ring
+ * centered over the space the content will take, its line beneath it.
+ *
+ * Centered on purpose (owner ruling, 2026-08-19): the framework's inline
+ * loading() sits flush against the top-left corner of a page body, which reads
+ * as a misrender rather than a wait. The ring itself is still Bootstrap's
+ * `.spinner-border`, animated by the bundle's own keyframes (#137) - this
+ * wrapper places it, it never redraws it.
+ */
+export const loading = (message) => `<div class="d-flex flex-column align-items-center justify-content-center text-center gap-2 py-5 text-body-secondary" role="status">
+  <span class="spinner-border" aria-hidden="true"></span>
+  <p class="omega-micro mb-0">${esc(message)}</p>
+</div>`;
+
+/**
  * What a published copy says where a MACHINE-BOUND surface would be - the crew,
  * the token spend and the per-repo git health are read off transcripts,
  * processes and working copies, and a browser away from that machine has none

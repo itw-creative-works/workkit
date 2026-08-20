@@ -48,9 +48,12 @@
       icon: 'gauge-high',
     },
     {
+      // bars-progress, not table-columns: the rail's own collapse button
+      // draws the columns glyph, and two of one icon reads as one control
+      // (issue #177).
       label: 'Board',
       href: '/board',
-      icon: 'table-columns',
+      icon: 'bars-progress',
     },
     {
       label: 'Crew',
@@ -63,14 +66,16 @@
       icon: 'chart-simple',
     },
     {
-      label: 'Health',
-      href: '/health',
-      icon: 'heart-pulse',
-    },
-    {
       label: 'Brief',
       href: '/brief',
       icon: 'newspaper',
+    },
+    {
+      // Last in its group by charter (issue #177): Health is the page for
+      // what is broken, and the quiet days should not put it above the work.
+      label: 'Health',
+      href: '/health',
+      icon: 'heart-pulse',
     },
     // Its own group, because it is the one page that is not a view of the
     // board: it holds the GitHub token this browser reads GitHub with, which

@@ -52,7 +52,8 @@ const { repoHealth } = require('./lib/health');
 const { collectTelemetry } = require('./lib/telemetry');
 const { buildBrief } = require('./lib/brief');
 const { briefSummaries } = require('./lib/summaries');
-const { briefHistory } = require('./lib/history');
+const { readDiscussions, historyFrom, briefFreshness } = require('./lib/history');
+const { documentsFrom } = require('./lib/documents');
 
 // TOWER on a phone keypad is 86937; 8693 is what fits a port.
 const DEFAULT_PORT = 8693;
@@ -421,27 +422,42 @@ const createServer = (opts = {}) => {
   // they are the same board and the same health, one derivation. The summaries
   // attach onto it exactly as the 9am job attaches them (jobs/brief-payload.js),
   // which is what keeps the two payloads one shape.
-  // The board over time, read back off the published briefs (issue #55) — a
-  // second GraphQL round trip on the same board the summaries come from, and
-  // cached on the same minute for the same reason. It is attached rather than
-  // built: the history is the mornings BEFORE this one, which no sweep of the
-  // live board can answer.
+  // The published Discussions themselves (issues #55, #181) — a second GraphQL
+  // round trip on the same board the summaries come from, and cached on the same
+  // minute for the same reason. ONE read, because the three things drawn off it
+  // are three readings of one board: the mornings BEFORE this one, which no
+  // sweep of the live board can answer; how old the newest of them is; and the
+  // texts themselves, which are what the Brief page shows.
   //
   // A read that failed is null and says nothing on stderr, unlike the 9am job's
   // named skip: this one runs every minute the tower is up, and a line per poll
   // would bury the log it was meant to be visible in. The page draws the null as
   // the sentence it means.
-  const history = cached(BOARD_TTL, () => briefHistory({
+  const discussions = cached(BOARD_TTL, () => readDiscussions({
     workflowHome: opts.workflowHome,
     home: opts.home,
     exec,
   }));
 
-  const brief = () => Object.assign(
-    buildBrief(board(), health(), roster()),
-    summaries(),
-    { history: history() },
-  );
+  // Beside the series, the one question about it that is not a chart (#172):
+  // how old the newest published brief is. The cloud brief failed for ten
+  // mornings and every page went on looking normal, because the date that would
+  // have said so was already in the read above and nothing asked it. Derived
+  // from THAT array, never from a read of its own, so the charts and the alarm
+  // can never disagree about which morning was the last one.
+  const brief = () => {
+    const nodes = discussions();
+    const entries = nodes && historyFrom(nodes);
+    return Object.assign(
+      buildBrief(board(), health(), roster()),
+      summaries(),
+      {
+        history: entries,
+        briefFreshness: briefFreshness(entries),
+        documents: nodes && documentsFrom(nodes),
+      },
+    );
+  };
 
   /** The roster's slugs — what both write paths judge a repo against. */
   const slugsNow = () => roster().map((r) => r.slug).filter(Boolean);

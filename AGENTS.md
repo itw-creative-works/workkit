@@ -59,19 +59,19 @@ Nine, namespaced `workkit:<name>`: `feature` · `interview` · `diagnose` · `re
 
 ## The engine (`workflow/`)
 
-Agent-agnostic: shell + Node, no Claude Code knowledge, which is why the hooks call it rather than contain it. `workkit.sh` is the one command and the from-zero entry point — `setup` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `tower` · `enable` · `decline` · `heal` · `note`.
+Agent-agnostic: shell + Node, no Claude Code knowledge, which is why the hooks call it rather than contain it. `workkit.sh` is the one command and the from-zero entry point — `setup [--token]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `tower` · `enable` · `decline` · `heal` · `note`.
 
 Beside it live the label SSOT, the heal, the CHANGELOG linter, the capture CLI, the templates a repo receives on enable, and the home repo's whole lifecycle. Every file and every step: `workflow/README.md`.
 
 ## The tower (`tower/`)
 
-Mission control in two processes behind one command (`npm run tower`): the plain-Node JSON API on port 8693 (`tower/api/`, zero dependencies) and the OMEGA dashboard on 4300 that reads it cross-origin (`tower/app/`). Seven pages — Overview, Board, Crew, Usage, Health, Brief, Settings — over the issue board, the live crew and its spend, per-repo health, the brief, and a published copy's token.
+Mission control in two processes behind one command (`npm run tower`): the plain-Node JSON API on port 8693 (`tower/api/`, zero dependencies) and the OMEGA dashboard on 4300 that reads it cross-origin (`tower/app/`). Seven pages — Overview, Board, Crew, Usage, Brief, Health, Settings — over the board, the crew and its spend, the mornings, what is broken, and a published copy's token.
 
-A view, never a second store. The pages, the dependency graph, the telemetry, the two write paths, and the published copy that speaks GitHub from the browser: `tower/README.md`.
+A view, never a second store, one focus per page (#177): Overview surveys and points, Brief shows the mornings themselves, Health shows only what is broken and sits last in the nav. The pages, the dependency graph, the telemetry, the two write paths, and the published copy that speaks GitHub from the browser: `tower/README.md`.
 
 ## The jobs (`jobs/`)
 
-ONE job, at 9am, in four steps — the summaries, the runner reconcile, the brief, the publish — and ONE script that runs them (#107): `morning.sh`, the entry point both schedulers invoke, this machine's launchd agent and the seeded `brief.yml` on a runner.
+ONE job, at 9am, in five steps — the summaries, the runner reconcile, the brief, the publish, the stale-brief marker (#173) — and ONE script that runs them (#107): `morning.sh`, the entry point both schedulers invoke, this machine's launchd agent and the seeded `brief.yml` on a runner.
 
 Each step is gated by what the environment it woke up in can do; the brief itself runs in the CLOUD, on the home repo, since that is where the sweep token and the roster live. Every step, both environments, the payloads, the two tokens and the handover: `jobs/README.md`.
 

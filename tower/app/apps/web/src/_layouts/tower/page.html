@@ -74,6 +74,28 @@ meta:
   </div>
 </div>
 
+<!-- Document dialog.
+     Clicking a published brief or summary in the Brief page's archive opens
+     this: the whole text, markdown-rendered, with the one link that leaves for
+     github.com in the header. It sits beside the other two shells because the
+     layout is where every tower dialog's markup lives; the MOUNT that fills it
+     is the Brief page's own (pages/brief.js), since that is the one page an
+     archive is on. libs/tower/modal.js fills it. -->
+<div class="modal fade" id="tower-document" tabindex="-1" aria-labelledby="tower-document-label" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header align-items-start gap-2">
+        <h5 class="modal-title" id="tower-document-label" data-document-title></h5>
+        <span class="ms-auto d-flex align-items-center gap-2">
+          <span data-document-actions></span>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </span>
+      </div>
+      <div class="modal-body" data-document-body></div>
+    </div>
+  </div>
+</div>
+
 <!-- The unlock dialog is RETIRED (issue #167). A locked copy used to open a
      static modal here - no backdrop dismiss, no Escape, no close button -
      because a dismissed prompt left a page with no data and no second place to

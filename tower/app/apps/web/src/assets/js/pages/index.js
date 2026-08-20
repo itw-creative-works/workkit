@@ -9,20 +9,33 @@
 
 import { startPage } from '../libs/tower/page.js';
 import {
-  issuesFor, reposFor, sessionsFor, board, health, feed, localOnly,
+  issuesFor, reposFor, sessionsFor, board, brief, health, feed, localOnly,
 } from '../libs/tower/state.js';
 import {
-  esc, num, empty, problem, shortPath, statCell, statgrid, card, pill, cap,
+  esc, num, empty, problem, loading, shortPath, statCell, statgrid, card, pill, cap,
   modelBadge, statusBreakdown, LOCAL_ONLY_NOTICE, localOnlyNotice,
 } from '../libs/tower/format.js';
 import { chartSlot, doughnutChart, lineChart, barChart } from '__main_assets__/js/libs/charts.js';
 import {
   entriesOf, hasSeries, unread, seriesOf, weekDelta, deltaLine, ACCRUES, UNREAD,
 } from '../libs/tower/history.js';
-import { loading, swap } from '@omega.js/client/modules/live-page';
+import { swap } from '@omega.js/client/modules/live-page';
 import { issueItem, externalLink } from '../libs/tower/modal.js';
-import { selectedSlugs, sitePath } from '../libs/tower/scope.js';
+import { selectedSlugs, sitePath, scopedHref } from '../libs/tower/scope.js';
 import { crewActivity, cardMuted } from '../libs/tower/agent.js';
+
+// Every pointer this page draws - the tiles, the see-all lines, the panel
+// heads - keeps the repo selection. The sidebar's nav links are rewritten with
+// the current `?repo=` on every paint (libs/tower/page.js), and nothing does
+// that for a link inside the body: a tile that named its page bare would land
+// a reader who had narrowed to one repo back on the whole board, which is the
+// scope survival the nav already promises.
+//
+// `scopedHref` alone would suffice for correctness - it prefixes what it is
+// handed (issue #169) - but the inner `sitePath` stays because it is the
+// spelling the suite's bare-path guard looks for at every call site, and
+// `scopedHref` leaves an already-prefixed address where it is.
+const pointer = (state, href) => scopedHref(href, state.selectedRepo);
 
 /** Sum a health field across the repos in play; nulls (unknowable) are skipped. */
 const total = (state, field) => reposFor(state)
@@ -42,7 +55,7 @@ const total = (state, field) => reposFor(state)
 // QA is a check to give - two different asks of the same person, so they are two
 // tiles rather than one "waiting on you" number that hides which is which.
 
-// Three of the seven numbers are the MACHINE's - the live crew and the state of
+// Four of the eight numbers are the MACHINE's - the live crew and the state of
 // its working copies - and a published copy has no reading of them at all. The
 // tile says so: a dash with the local-only sentence as its tooltip, never the 0
 // that summing an empty feed would produce, because "no sessions running" and
@@ -51,13 +64,6 @@ const total = (state, field) => reposFor(state)
 const machineStat = (state, name, label, value, href) => (localOnly(state, name)
   ? statCell(label, num(null), href, LOCAL_ONLY_NOTICE)
   : statCell(label, value, href));
-
-// The brief payload, which is where the history rides - the same read the Brief
-// page makes, and the only feed that carries the mornings before this one.
-const briefPayload = (state) => {
-  const result = feed(state, 'brief');
-  return result && result.ok ? result.data : null;
-};
 
 // How a number compares with a week ago, as the tile's sub-line (issue #55).
 // The comparison is the HISTORY's, which is the board as the published briefs
@@ -68,15 +74,16 @@ const since = (entries, key) => deltaLine(weekDelta(entries, key));
 
 const numbers = (state) => {
   const issues = issuesFor(state);
-  const entries = selectedSlugs(state).length ? [] : entriesOf(briefPayload(state));
+  const entries = selectedSlugs(state).length ? [] : entriesOf(brief(state));
   return statgrid([
-    statCell('Open issues', issues.length, sitePath('/board'), undefined, since(entries, 'open')),
-    statCell('Blocked', issues.filter((issue) => issue.status === 'blocked').length, sitePath('/board'), undefined, since(entries, 'waiting')),
-    statCell('QA', issues.filter((issue) => issue.status === 'qa').length, sitePath('/board'), undefined, since(entries, 'qa')),
-    statCell('In flight', issues.filter((issue) => issue.status === 'building').length, sitePath('/board'), undefined, since(entries, 'inFlight')),
-    machineStat(state, 'sessions', 'Live sessions', sessionsFor(state).length, sitePath('/crew')),
-    machineStat(state, 'health', 'Unpushed', total(state, 'unpushed'), sitePath('/health')),
-    machineStat(state, 'health', 'Unreleased', total(state, 'unreleasedEntries'), sitePath('/health')),
+    statCell('Open issues', issues.length, pointer(state, sitePath('/board')), undefined, since(entries, 'open')),
+    statCell('Blocked', issues.filter((issue) => issue.status === 'blocked').length, pointer(state, sitePath('/board')), undefined, since(entries, 'waiting')),
+    statCell('QA', issues.filter((issue) => issue.status === 'qa').length, pointer(state, sitePath('/board')), undefined, since(entries, 'qa')),
+    statCell('In flight', issues.filter((issue) => issue.status === 'building').length, pointer(state, sitePath('/board')), undefined, since(entries, 'inFlight')),
+    machineStat(state, 'sessions', 'Live sessions', sessionsFor(state).length, pointer(state, sitePath('/crew'))),
+    machineStat(state, 'health', 'Uncommitted', total(state, 'uncommitted'), pointer(state, sitePath('/health'))),
+    machineStat(state, 'health', 'Unpushed', total(state, 'unpushed'), pointer(state, sitePath('/health'))),
+    machineStat(state, 'health', 'Unreleased', total(state, 'unreleasedEntries'), pointer(state, sitePath('/health'))),
   ]);
 };
 
@@ -103,12 +110,15 @@ const waiting = (state) => {
           <span class="d-block">${esc(issue.title)}</span>
         </span>
         ${externalLink(issue.url)}
-      `, { inner: 'py-1 d-flex align-items-start gap-2' })).join('')}</ul>${seeMore(hidden, sitePath('/board'))}`
+      `, { inner: 'py-1 d-flex align-items-start gap-2' })).join('')}</ul>${seeMore(hidden, pointer(state, sitePath('/board')))}`
     : empty('nothing is waiting on you', 'fa-regular fa-circle-check');
   return card('Waiting on you', body, {
     chip: blocked.length,
     alarm: blocked.length > 0,
     class: `mb-4${blocked.length ? ' border-danger' : ''}`,
+    // The head points home like every other panel's - the see-more line
+    // below only exists once the list is capped (issue #183).
+    link: { href: pointer(state, sitePath('/board')), label: 'board' },
   });
 };
 
@@ -161,9 +171,9 @@ const crew = (state) => {
         <td>${stateCell(session, now)}</td>
         <td>${session.model ? modelBadge(session.model) : '-'}</td>
       </tr>`).join('')}</tbody>
-    </table></div>${seeMore(hidden, sitePath('/crew'))}`;
+    </table></div>${seeMore(hidden, pointer(state, sitePath('/crew')))}`;
   }
-  return card('Live crew', body, { class: 'h-100', link: { href: sitePath('/crew'), label: 'all' } });
+  return card('Live crew', body, { class: 'h-100', link: { href: pointer(state, sitePath('/crew')), label: 'all' } });
 };
 
 // A repo says only what is wrong with it, so a clean repo takes one line and
@@ -211,9 +221,9 @@ const healthPanel = (state) => {
   else {
     const ranked = [...list].sort((a, b) => trouble(health(state)[b.path]) - trouble(health(state)[a.path]));
     const { shown, hidden } = cap(ranked);
-    body = `<ul class="list-unstyled mb-0">${shown.map((repo) => healthLine(repo, health(state)[repo.path])).join('')}</ul>${seeMore(hidden, sitePath('/health'))}`;
+    body = `<ul class="list-unstyled mb-0">${shown.map((repo) => healthLine(repo, health(state)[repo.path])).join('')}</ul>${seeMore(hidden, pointer(state, sitePath('/health')))}`;
   }
-  return card('Health', body, { class: 'h-100', link: { href: sitePath('/health'), label: 'all' } });
+  return card('Health', body, { class: 'h-100', link: { href: pointer(state, sitePath('/health')), label: 'all' } });
 };
 
 // Open issues by status - the same series the Board's columns count, as a
@@ -223,8 +233,17 @@ const healthPanel = (state) => {
 // sits under the ring and carries the labels the axis used to. The series is
 // statusBreakdown's, so an unlabeled issue is a visible slice rather than a
 // ring quietly summing short of the count beside it (#118).
+//
+// The head points at the Board, like every other panel here: a share is the
+// question this card answers and WHICH issues make up the slice is the next one,
+// which only the Board can answer. The chip says `board` rather than the `all`
+// its neighbours carry, because those two are pointing past a capped list and
+// this one caps nothing - `all` would promise a longer ring.
 const shape = (state) => (issuesFor(state).length
-  ? card('The queue by status', chartSlot('overview-status', 260, statusBreakdown(issuesFor(state)).values), { class: 'mt-4' })
+  ? card('The queue by status', chartSlot('overview-status', 260, statusBreakdown(issuesFor(state)).values), {
+    class: 'mt-4',
+    link: { href: pointer(state, sitePath('/board')), label: 'board' },
+  })
   : '');
 
 const drawShape = (state) => {
@@ -254,7 +273,7 @@ const historyBody = (payload, id, height, key) => {
 };
 
 const overTime = (state) => {
-  const payload = briefPayload(state);
+  const payload = brief(state);
   const result = feed(state, 'brief');
   // The feed has not answered yet - the cards are not drawn at all rather than
   // drawn as an absence that a moment later turns into data.
@@ -267,7 +286,7 @@ const overTime = (state) => {
 };
 
 const drawHistory = (state) => {
-  const payload = briefPayload(state);
+  const payload = brief(state);
   if (!hasSeries(payload)) return;
   const entries = entriesOf(payload);
   const open = seriesOf(entries, 'open');

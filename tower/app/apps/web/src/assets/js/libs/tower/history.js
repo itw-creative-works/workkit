@@ -3,9 +3,10 @@
 //
 // The history rides the brief payload (issue #55): one entry per published
 // morning, oldest first, each carrying that day's totals, what it closed and
-// its per-repo open counts. Every page that draws it asks the same two
-// questions - what is the series, and how does today compare with last week -
-// so the answers live here, pure, rather than twice in two page modules.
+// its per-repo open counts. Every page that draws it asks the same three
+// questions - what is the series, how does today compare with last week, and
+// did this morning's brief post at all (issue #172) - so the answers live here,
+// pure, rather than twice in two page modules.
 //
 // THREE ABSENCES, three different sentences, and none of them is a zero:
 //   null      the read failed, or this copy has no home repo to read from
@@ -108,4 +109,45 @@ export const deltaLine = (delta) => {
   if (delta.change === 0) return `unchanged since ${ago}`;
   const size = Math.abs(delta.change);
   return `${delta.change > 0 ? 'up' : 'down'} ${size} from ${ago}`;
+};
+
+// ── Whether the cloud brief is still posting ───────────────────────────────
+//
+// The same three absences, asked as a different question (issue #172): not
+// "what is there to draw" but "did this morning happen at all". The API decides
+// it off its own history read and carries the answer on the payload
+// (tower/api/lib/history.js); what lives here is the LINE a page draws for each
+// state, once, so the Health page and the Brief page cannot say it differently.
+
+// The two sentences that are not about a date. ACCRUES and UNREAD above are
+// exported because the pages say them where a chart would be; these are said
+// only by the line below, so they stay in here with it.
+const UNJUDGED = 'the published briefs could not be read, so whether the cloud brief is still posting is unknown';
+const UNPUBLISHED = 'no brief has ever been published - the cloud brief has not posted one yet';
+
+/**
+ * The line a page draws about the cloud brief, or null when there is nothing to
+ * say.
+ *
+ * NOTHING is the answer for a morning that posted, and for a payload carrying
+ * no freshness block at all - a published copy builds its brief in the browser
+ * and was never asked the question, and an absent key draws nothing here as it
+ * does everywhere else on this payload.
+ *
+ * The `level` is the alarm's, not the page's: a brief that STOPPED is a thing
+ * that broke, while a read that failed and a board with no briefs yet are both
+ * things worth saying and neither is red.
+ *
+ * @param {object} payload - the brief payload
+ * @returns {{level: string, text: string}|null}
+ */
+export const briefAlert = (payload) => {
+  const freshness = (payload && payload.briefFreshness) || null;
+  if (!freshness) return null;
+  if (freshness.state === 'stale') {
+    return { level: 'danger', text: `last brief posted ${freshness.date} - the cloud brief has not run since` };
+  }
+  if (freshness.state === 'unreadable') return { level: 'warning', text: UNJUDGED };
+  if (freshness.state === 'never') return { level: 'warning', text: UNPUBLISHED };
+  return null;
 };

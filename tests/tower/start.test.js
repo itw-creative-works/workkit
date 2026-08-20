@@ -38,13 +38,32 @@ const readPid = (file) => Number(fs.readFileSync(file, 'utf8').trim());
 
 // The port takeover is aimed at nothing unless a test says otherwise, so a
 // run here never touches whatever this machine really has on 8693/4300.
-const start = (dir, api, app, ports = '', { args = [], env = {}, capture = false } = {}) => spawn('bash', [SCRIPT, ...args], {
-  env: {
+const start = (dir, api, app, ports = '', { args = [], env = {}, capture = false } = {}) => {
+  const childEnv = {
     ...process.env, WORKKIT_TOWER_API: api, WORKKIT_TOWER_APP: app, WORKKIT_TOWER_PORTS: ports, ...env,
-  },
-  stdio: ['ignore', capture ? 'pipe' : 'ignore', capture ? 'pipe' : 'ignore'],
-  cwd: dir,
-});
+  };
+  // A FORCE_COLOR the OUTER shell exported would pass through the script
+  // untouched - spec-correct, and a red herring to every case that asserts
+  // what the tower itself decides. The caller-owned path has its own pty case.
+  if (!('FORCE_COLOR' in env)) delete childEnv.FORCE_COLOR;
+  return spawn('bash', [SCRIPT, ...args], {
+    env: childEnv,
+    stdio: ['ignore', capture ? 'pipe' : 'ignore', capture ? 'pipe' : 'ignore'],
+    cwd: dir,
+  });
+};
+
+// The stand-in listener the port cases hand the wrapper. It is node's own, and
+// `console.log(<number>)` PAINTS a number once FORCE_COLOR is set - which the
+// outer shell may well have exported. The port would then arrive wrapped in
+// escapes, the reclaim pass would look up a port that does not exist, and the
+// stand-in would ride out the whole run untouched. So the ambient value goes
+// first here too, the way start() drops it for the halves.
+const standIn = (code) => {
+  const childEnv = { ...process.env };
+  delete childEnv.FORCE_COLOR;
+  return spawn(process.execPath, ['-e', code], { env: childEnv, stdio: ['ignore', 'pipe', 'ignore'] });
+};
 
 // What the user actually sees: both streams of a captured run, in one string.
 const collect = (child) => {
@@ -183,6 +202,77 @@ const BUMPED_APP = [
   'exec sleep 30',
 ].join('; ');
 
+// A half painting its log the way omega really does once the tower has forced
+// its colors back on (#179). The escapes land on the very anchors the filter
+// judges by - the `omega: ` prefix and the `objc[` one at column 0, the `[web]`
+// tag, the URL - so a filter reading the raw line sees an escape where it
+// expects the anchor: the refusal and the tag stop matching, and the drop list
+// stops recognising the warning it exists to drop. One set of escape constants
+// serves the stub and the assertions both, so what is read back off the
+// terminal is compared against exactly what was printed into it.
+const RED = '\u001b[31m';
+const CYAN = '\u001b[36m';
+const GREEN = '\u001b[32m';
+const OFF = '\u001b[0m';
+
+const COLORED_APP = [
+  `printf '${RED}omega: the monorepo src-to-dist watch is not running${OFF}\\n'`,
+  `printf '${CYAN}${OBJC_WARNING}${OFF}\\n'`,
+  `printf '${RED}Error: the board failed to load${OFF}\\n'`,
+  "printf 'quiet chatter nobody typed the command for\\n'",
+  `printf '${CYAN}[web]${OFF} Using existing mkcert certificates\\n'`,
+  `printf '${CYAN}[web]${OFF} Dev server: ${GREEN}https://localhost:14300${OFF}\\n'`,
+  "printf 'GET /index.html 200 in 12ms\\n'",
+  'exec sleep 30',
+].join('; ');
+
+// A half that reports the one thing the FORCE_COLOR cases are about: what it
+// was handed. It WRITES that rather than printing it, since anything printed
+// goes through the filter, and it names a URL so a pty run has something to
+// wait for before it interrupts.
+const probeStub = (dir) => {
+  const seen = path.join(dir, 'force-color');
+  const stub = path.join(dir, 'probe.sh');
+  fs.writeFileSync(stub, [
+    '#!/usr/bin/env bash',
+    `printf '%s' "\${FORCE_COLOR-unset}" > '${seen}'`,
+    "echo 'Dev server: https://localhost:14300'",
+    'exec sleep 30',
+    '',
+  ].join('\n'));
+  return { app: `bash '${stub}'`, seen };
+};
+
+// A run under a REAL terminal. The tower's whole color decision is `[ -t 1 ]`,
+// which a piped run can never exercise - and piped is exactly the case that
+// must stay plain, so the positive half of it only shows up here. The expect
+// script waits for the announce and then ends the run the way a user does.
+const ptyRun = (dir, app, exports = []) => {
+  const runner = path.join(dir, 'runner.sh');
+  const script = path.join(dir, 'pty.exp');
+  fs.writeFileSync(runner, [
+    '#!/usr/bin/env bash',
+    // The suite may itself run under a shell that exports FORCE_COLOR; these
+    // cases assert the tower's own decision, so the ambient value goes first.
+    'unset FORCE_COLOR',
+    `export WORKKIT_TOWER_PORTS='${QUIET_PORTS}'`,
+    "export WORKKIT_TOWER_API='exec sleep 30'",
+    `export WORKKIT_TOWER_APP="${app}"`,
+    ...exports,
+    `exec bash '${SCRIPT}'`,
+    '',
+  ].join('\n'));
+  fs.writeFileSync(script, [
+    'set timeout 20',
+    `spawn bash ${runner}`,
+    'expect -re "dashboard at"',
+    'send \\003',
+    'expect eof',
+    '',
+  ].join('\n'));
+  return spawn('expect', [script], { stdio: ['ignore', 'pipe', 'pipe'] });
+};
+
 // The pty case needs a real terminal to send a real Ctrl-C down; expect is the
 // only portable way to get one, and a machine without it says so rather than
 // pretending the case ran.
@@ -272,9 +362,8 @@ const run = async () => {
   await test('a previous instance on a tower port is replaced, not collided with', async () => {
     // A stand-in for a leftover server: a child of THIS test listening on an
     // ephemeral port, handed to the wrapper as the tower's port.
-    const listener = spawn(process.execPath, ['-e',
-      "const s=require('net').createServer();s.listen(0,'127.0.0.1',()=>console.log(s.address().port));"],
-    { stdio: ['ignore', 'pipe', 'ignore'] });
+    const listener = standIn(
+      "const s=require('net').createServer();s.listen(0,'127.0.0.1',()=>console.log(s.address().port));");
     let port = '';
     listener.stdout.on('data', (chunk) => { port += chunk.toString(); });
     assert(await until(() => port.trim().length > 0), 'the stand-in took a port');
@@ -297,9 +386,8 @@ const run = async () => {
     // The failure this pins (#97 review, B1): reclaim's wait loop always
     // returned 0, so a TERM-resistant listener rode out the 5s deadline and
     // the fresh server died EADDRINUSE with nothing explaining why.
-    const listener = spawn(process.execPath, ['-e',
-      "process.on('SIGTERM',()=>{});const s=require('net').createServer();s.listen(0,'127.0.0.1',()=>console.log(s.address().port));"],
-    { stdio: ['ignore', 'pipe', 'ignore'] });
+    const listener = standIn(
+      "process.on('SIGTERM',()=>{});const s=require('net').createServer();s.listen(0,'127.0.0.1',()=>console.log(s.address().port));");
     let port = '';
     listener.stdout.on('data', (chunk) => { port += chunk.toString(); });
     assert(await until(() => port.trim().length > 0), 'the stubborn stand-in took a port');
@@ -585,7 +673,82 @@ const run = async () => {
     }
   });
 
+  await test('a colored log keeps its colors, and the filter still judges what is under them', async () => {
+    // The failure this pins (#179): once the halves are painting again, the
+    // escapes sit on the very anchors the filter matches. A filter reading the
+    // raw line finds an escape where `^omega: ` and `^objc[` should be, so the
+    // framework's refusal falls out of the keep net, the duplicate-library
+    // warning rides through on the word "failures" the drop list exists to
+    // forgive, and the tag no longer opens the flowing phase.
+    const dir = mkTmp();
+    const child = start(dir, 'exec sleep 30', COLORED_APP, QUIET_PORTS, { capture: true });
+    const out = collect(child);
+    try {
+      // The last line of the run, carrying no keep-net word, so seeing it is
+      // proof the colored tag opened the phase.
+      assert(await until(() => /index\.html/.test(out())), 'the untagged line after the tag came through');
+      const text = out();
+      assert(text.includes(`${RED}omega: the monorepo src-to-dist watch is not running${OFF}`),
+        'the colored refusal survived the quiet phase, escapes and all');
+      assert(text.includes(`${RED}Error: the board failed to load${OFF}`), 'and the colored error line with its own');
+      assert(!/objc\[/.test(text), 'the colored benign warning was still dropped - its prefix is read under the color');
+      assert(!/quiet chatter/.test(text), 'and the quiet phase is still quiet');
+      assert(text.includes(`${CYAN}[web]${OFF} Using existing mkcert certificates`), 'the colored tag line printed as itself');
+      const announce = text.split('\n').find((line) => line.startsWith('tower: dashboard at'));
+      assertEq(announce, 'tower: dashboard at https://localhost:14300',
+        'and the announce names the bare URL - the tower composes its own lines uncolored');
+    } finally {
+      child.kill('SIGKILL');
+      cleanup(dir);
+    }
+  });
+
+  await test('a tower that is not on a terminal hands its halves no FORCE_COLOR', async () => {
+    // The other half of #179: a run piped or redirected - this suite, a log
+    // file, a CI job - asked for plain text, and the halves must be left to
+    // decide as they always did.
+    const dir = mkTmp();
+    const { app, seen } = probeStub(dir);
+    const child = start(dir, 'exec sleep 30', app, QUIET_PORTS);
+    try {
+      assert(await until(() => fs.existsSync(seen)), 'the half started and reported what it was given');
+      assertEq(fs.readFileSync(seen, 'utf8'), 'unset', 'which is nothing at all');
+    } finally {
+      child.kill('SIGKILL');
+      cleanup(dir);
+    }
+  });
+
   if (hasExpect()) {
+    await test('a tower on a real terminal hands its halves the colors back', async () => {
+      // What #179 is actually about, and what only a pty can show: the half
+      // writes to a fifo, so it sees a non-tty and paints nothing unless it is
+      // told to. The tower is the one that knows a terminal is watching.
+      const dir = mkTmp();
+      const { app, seen } = probeStub(dir);
+      const child = ptyRun(dir, app);
+      try {
+        assert(await until(() => fs.existsSync(seen), 25000), 'the half started under the terminal');
+        assertEq(fs.readFileSync(seen, 'utf8'), '1', 'and was told to color its log');
+      } finally {
+        child.kill('SIGKILL');
+        cleanup(dir);
+      }
+    });
+
+    await test('a FORCE_COLOR the caller exported is the caller\'s - a deliberate 0 included', async () => {
+      const dir = mkTmp();
+      const { app, seen } = probeStub(dir);
+      const child = ptyRun(dir, app, ['export FORCE_COLOR=0']);
+      try {
+        assert(await until(() => fs.existsSync(seen), 25000), 'the half started under the terminal');
+        assertEq(fs.readFileSync(seen, 'utf8'), '0', 'with the answer its caller gave, not the one the tower would have');
+      } finally {
+        child.kill('SIGKILL');
+        cleanup(dir);
+      }
+    });
+
     await test('a real Ctrl-C ends it silently - no job-control lines under a terminal', async () => {
       // Only a pty shows this (#138 review, B1): the suite's own runs redirect
       // both streams and never signal, so bash's "Terminated: 15 … Done …"
@@ -626,6 +789,8 @@ const run = async () => {
       }
     });
   } else {
+    console.log('  \x1b[33m⊘ a tower on a real terminal hands its halves the colors back: expect is not installed\x1b[0m');
+    console.log('  \x1b[33m⊘ a FORCE_COLOR the caller exported is the caller\'s: expect is not installed\x1b[0m');
     console.log('  \x1b[33m⊘ a real Ctrl-C ends it silently: expect is not installed\x1b[0m');
   }
 

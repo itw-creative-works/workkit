@@ -9,6 +9,7 @@
 #   workkit help                the map
 #   workkit setup               from zero: plugin, gh, the schedule, the home
 #                               repo, the symlink
+#   workkit setup --token       that wizard's Claude-token step alone, forced
 #   workkit update [--auto]     re-run the machine-side installs
 #   workkit doctor              report drift, print the fix for what it cannot reach
 #   workkit publish             build and publish the dashboard from the home repo
@@ -142,6 +143,9 @@ usage: workkit <command> [args]
                        dashboard, the cloud brief's secrets, the tower pointer,
                        this repo's opt-in, and the workkit symlink. Safe to
                        re-run
+  setup --token        that wizard's Claude-token step alone, forced: mint a
+                       new CLAUDE_CODE_OAUTH_TOKEN and push it to the home
+                       repo, however young the one there is
   update [--auto]      re-run the machine-side installs: the engine address,
                        the symlink, and the schedule (only where one is already
                        installed). --auto is the quiet variant the standards
@@ -576,7 +580,9 @@ home_steps() {
 #
 # The one rule the whole block is built around: a token value goes from the
 # command that produced it to `gh secret set` through a pipe, held in a single
-# local on the way. It is never written to a file, echoed, or logged.
+# local on the way. It is never passed as an argument, echoed, or logged, and
+# the ONE file it may transit is the mint's own capture (issue #174) — 600 before
+# a byte lands in it, and gone the moment it has been read.
 SECRET_CLAUDE='CLAUDE_CODE_OAUTH_TOKEN'
 # Only names STARTING with `GITHUB_` are refused by GitHub; one that contains it
 # is accepted, which is what lets this say plainly what it is.
@@ -611,6 +617,25 @@ bounded_read() {
   kill -TERM "$watchdog" >/dev/null 2>&1 || true
   wait "$watchdog" 2>/dev/null || true
   return "$rc"
+}
+
+# A command run under a PTY, with everything it draws teed to both this terminal
+# and `capture`. The mint needs it (issue #174) and nothing else does. The two
+# `script` utilities take the command in different places, so the machine is
+# asked which one it speaks: only GNU/util-linux answers `--version` at all, and
+# only its `-e` returns the child's own exit status — without it a mint that
+# never ran would look like one that succeeded. macOS returns that status on its
+# own, but `-e` is asked for on the BSD side too: a no-op there, and the flag
+# that keeps a FreeBSD `script` from reading every mint as a success. GNU takes
+# the command as ONE string, so the words are joined for it: the mint is
+# `claude setup-token` and nothing here carries a space.
+run_under_pty() {
+  local capture="$1"; shift
+  if script --version >/dev/null 2>&1; then
+    script -q -e -c "$*" "$capture"
+  else
+    script -q -e "$capture" "$@"
+  fi
 }
 
 # `gh secret list --json name,updatedAt` for the repo, or nothing at all — an
@@ -650,20 +675,31 @@ extract_token() {
   printf '%s' "${token//[[:space:]]/}"
 }
 
-# Mint and push in one move. `claude setup-token`'s stdout is captured because
-# the token is in it; its stderr stays on the terminal, which is where the
-# browser approval talks to the human.
+# Mint and push in one move, with the mint under a PTY. The CLI draws its ENTIRE
+# screen on stdout — the browser-open message AND the paste-the-authorization-code
+# prompt that follows the approval — so a captured stdout leaves the human staring
+# at a blank line with nothing to answer and, in the CLI's raw keyboard mode,
+# no Ctrl-C either (issue #174). Under `script` that whole screen reaches the
+# terminal, a copy of it lands in the capture file, and an interrupt ends the run
+# like it ends any other command. The capture is the one file a token value may
+# transit: `mktemp` in TMPDIR, 600 before the mint writes a byte, read once and
+# removed — by a trap as well, so an interrupted mint leaves nothing behind.
+# From the extraction on the value is a local on its way to `gh secret set`'s
+# stdin, and every path out of here that did not push prints the two commands
+# that do the same thing by hand.
 mint_claude_token() {
-  local slug="$1" raw token rc=0
+  local slug="$1" capture raw token rc=0
+
+  capture="$(mktemp "${TMPDIR:-/tmp}/workkit-mint.XXXXXX")"
+  chmod 600 "$capture"
+  trap "rm -f '$capture'" INT TERM EXIT
 
   say_info "secrets: running \`claude setup-token\` — approve it in the browser, and the token goes straight to $slug, where the cloud brief runs"
-  # Only stdout is captured, because the token is in it. That the approval
-  # itself renders on stderr — and so stays visible while stdout is held — is
-  # OBSERVED behavior, not a contract the CLI documents: a version that moved
-  # the prompt to stdout would look like a stall here. It is a recoverable one.
-  # Ctrl-C ends the run, and every path out of this function prints the two
-  # commands that do the same thing by hand.
-  raw="$(claude setup-token)" || rc=$?
+  run_under_pty "$capture" claude setup-token || rc=$?
+  raw="$(cat "$capture" 2>/dev/null || true)"
+  rm -f "$capture"
+  trap - INT TERM EXIT
+
   if [[ "$rc" -ne 0 ]]; then
     say_warn "secrets: \`claude setup-token\` did not finish (exit $rc) — run it by hand, then \`gh secret set $SECRET_CLAUDE --repo $slug\`"
     return 0
@@ -679,25 +715,40 @@ mint_claude_token() {
     say_warn "secrets: $SECRET_CLAUDE could not be written to $slug — run \`gh secret set $SECRET_CLAUDE --repo $slug\` by hand"
     return 0
   fi
-  say_ok "secrets: $SECRET_CLAUDE is set on $slug — the value went from the mint to the secret and nowhere else"
+  say_ok "secrets: $SECRET_CLAUDE is set on $slug — the value went from the mint into the secret, and the file it passed through is gone"
 }
 
-# The offer, put only to a terminal: the mint is a browser approval, so a piped
-# or backgrounded run gets the two commands instead. Default no, like every
-# other question this command asks.
-offer_claude_token() {
-  local slug="$1" reason="$2" answer=''
+# The three things a mint needs and no run can supply for itself: the CLI that
+# performs it, the `script` utility that gives that CLI a terminal to draw its
+# screen on, and a terminal to approve it in — the mint is a browser approval,
+# so a piped or backgrounded run gets the two commands instead. Every answer is
+# the same whether the mint was offered or asked for outright, which is why they
+# live here rather than in either caller.
+can_mint_claude_token() {
+  local slug="$1" reason="$2"
 
   if ! command -v claude >/dev/null 2>&1; then
     say_skip "secrets: $SECRET_CLAUDE $reason on $slug — minting it needs the claude CLI"
-    return 0
+    return 1
+  fi
+  if ! command -v script >/dev/null 2>&1; then
+    say_skip "secrets: $SECRET_CLAUDE $reason on $slug — minting it needs the \`script\` utility, which gives \`claude setup-token\` the terminal it draws on: run \`claude setup-token\` by hand, then \`gh secret set $SECRET_CLAUDE --repo $slug\`"
+    return 1
   fi
   if ! interactive; then
     say_info "secrets: $SECRET_CLAUDE $reason on $slug — run these two at a terminal:
     claude setup-token
     gh secret set $SECRET_CLAUDE --repo $slug"
-    return 0
+    return 1
   fi
+  return 0
+}
+
+# The offer. Default no, like every other question this command asks.
+offer_claude_token() {
+  local slug="$1" reason="$2" answer=''
+
+  can_mint_claude_token "$slug" "$reason" || return 0
 
   printf '%s %s on %s. Mint one now with `claude setup-token`? [y/N] ' "$SECRET_CLAUDE" "$reason" "$slug"
   read -r answer || true
@@ -791,6 +842,18 @@ secrets_step() {
   fi
 }
 
+# `setup --token`: the mint on demand (issue #174). The step above acts on
+# ABSENT or old, which is everything the listing can see — and a token can go
+# bad while it is young, a subscription that lapsed under it being the case that
+# named this. So the flag IS the yes: no age to check, no question to put, and
+# nothing else of setup runs. The guards stay, because a mint still needs the
+# CLI and a terminal whatever asked for it.
+token_step() {
+  secrets_precheck || return 0
+  can_mint_claude_token "$SECRETS_SLUG" "is being re-minted" || return 0
+  mint_claude_token "$SECRETS_SLUG"
+}
+
 # The report, in two voices. `doctor` says one line per value and returns how
 # many need attention; `update` — including the daily --auto run, which never
 # prompts and never mints — says nothing but the warnings.
@@ -822,6 +885,16 @@ secrets_report() {
 # ── The commands ──────────────────────────────────────────────────────────────
 
 cmd_setup() {
+  case "${1:-}" in
+    --token)
+      say_head "workkit setup --token — the cloud brief's Claude token"
+      token_step
+      return 0
+      ;;
+    '') ;;
+    *) printf 'workkit setup: unknown option %s\n' "$1" >&2; return 1 ;;
+  esac
+
   say_head "workkit setup — $KIT_DIR"
 
   say_section "This machine"

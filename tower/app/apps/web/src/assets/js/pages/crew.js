@@ -24,12 +24,12 @@ import { startPage } from '../libs/tower/page.js';
 import { sessionsFor, sessions, feed, inSelectedRepo } from '../libs/tower/state.js';
 import { normalize, splitCrew, crewCount, rootLabel, connectorFlow } from '../libs/tower/crew.js';
 import {
-  esc, empty, problem, compact, statCell, statgrid, card, pill, modelBadge, classBadge, shortPath,
+  esc, empty, problem, loading, compact, statCell, statgrid, card, pill, modelBadge, classBadge, shortPath,
 } from '../libs/tower/format.js';
 import { crewActivity, cardMuted, roleIcon } from '../libs/tower/agent.js';
 import { agentTrigger } from '../libs/tower/modal.js';
 import { sitePath } from '../libs/tower/scope.js';
-import { loading, swap } from '@omega.js/client/modules/live-page';
+import { swap } from '@omega.js/client/modules/live-page';
 
 /** The tone a node's state is drawn in. */
 const tone = (value) => ({ working: 'ok', idle: 'warn', stale: 'danger' }[value] || 'warn');

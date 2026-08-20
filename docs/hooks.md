@@ -12,7 +12,7 @@ One line per hook; the section below it carries the detail.
 |---|---|---|
 | `workflow:standards` | SessionStart | The daily heal in a participating repo, the hook-layer self-check beside it, `workkit update --auto`, and the setup pester above every gate (#72) |
 | `docs:state-check` | SessionStart | Announces open `status:inbox` issues, a non-empty `.workkit/capture.md`, broken pointer files, an AGENTS.md over its line or density budget |
-| `docs:session` | SessionStart | Injects `.workkit/agents/session.md` — the queue a compacted session reads first — closing with one line for the manager and one for the owner (#134) |
+| `docs:session` | SessionStart | Injects `.workkit/agents/session.md` — the queue a compacted session reads first — closing with one line for the manager and one for the owner (#134), and leads with a line when the cloud brief has gone stale (#173) |
 | `workflow:reload-guard` | SessionStart + UserPromptSubmit | Nags once when a surface that loads at session start has changed — the case `/reload-plugins` exists for |
 | `manager:resolver` | PreToolUse (Task/Agent) | Supplies each crew spawn's model from `manager/ladder.json` and the live session model |
 | `manager:spawn-guard` | PreToolUse (Task/Agent) | Warns — never blocks — on a hand-passed spawn `model`, or a frontier session spawning the advisor |
@@ -55,6 +55,10 @@ One line per hook; the section below it carries the detail.
 - The manager is told to open its first reply in plain words with the state above.
 - The owner — who otherwise cannot see that anything survived — is told on the visible channel, a top-level `systemMessage`, that saying "continue" resumes the queue.
 - Silent for a header-only or absent file, closing lines and owner line included.
+- It also names a cloud brief that stopped arriving (#173): the 9am job records the newest published brief's date in `~/.workkit/brief-status.json`, and past one whole calendar day (UTC) the injection LEADS with one line — the date, the gap, `workkit setup --token` as the fix, and `gh run list --repo <home> --workflow brief.yml` as the check, the slug read from `~/.workkit/settings.json` and the clause left off rather than guessed.
+- The marker's OWN age is part of the answer: past the same bar, `checkedAt` older than a whole day swaps the diagnosis for `this machine last checked <date>` — a laptop that was off is not a token that expired — and the check clause rides either wording.
+- That half is a FILE read and nothing else — a session start never waits on the network. A marker that is missing, unreadable, or missing either date says nothing at all; the line rides alone in a repo with no session state, and alone it carries no `systemMessage`.
+- The one-whole-day bar is `FRESH_DAYS` in `tower/api/lib/history.js` (#172), which asks the same question for the tower's pages — change both together. What they count diverges on purpose: the tower reads briefs carrying a stats line, the marker counts any `brief: `-titled Discussion.
 
 ## `workflow:reload-guard` — SessionStart + UserPromptSubmit
 
