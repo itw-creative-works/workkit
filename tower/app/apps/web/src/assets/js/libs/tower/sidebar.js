@@ -22,6 +22,16 @@
 // from page to page, in the one control the theme already draws for exactly
 // this - not as a second nav below the first.
 //
+// One row per repo makes a long roster a long menu, and the two things that
+// answer that are written into the same rows. A SEARCH box sits above them
+// (issue #185) - the runtime hides the rows it does not match, which is why
+// nothing here knows about it: filtering is display, not state, and the markup
+// is the same list either way. A STAR rides each row (issue #186) and the ones
+// wearing it are drawn first, so the projects a viewer works in daily are at the
+// top of a fifteen-repo menu. Which ones those are comes in on `state.favorites`
+// like everything else this file draws from - the storage behind it is
+// favorites.js's, and the read of it is the runtime's.
+//
 // Pure string functions, like chrome.js: the runtime owns the DOM, this file
 // owns what goes in it, and `sidebarKey` is what tells the runtime the menu is
 // showing something new. The menu is only rewritten when that answer changes,
@@ -35,18 +45,40 @@ import { selectedSlugs } from './scope.js';
 /** The roster slugs, in roster order. */
 const slugsOf = (state) => repos(state).map((repo) => repo.slug).filter(Boolean);
 
+// Which of the roster's slugs are starred, in roster order. Read off the state
+// rather than off storage, and read DEFENSIVELY: the list comes from a
+// localStorage key a viewer can edit, and the runtime hands over whatever it
+// found there.
+const favoritesOf = (state) => {
+  const held = Array.isArray(state.favorites) ? state.favorites : [];
+  return slugsOf(state).filter((slug) => held.includes(slug));
+};
+
+// The roster with the favorites lifted out of it and put back on top. Roster
+// order holds inside each group, so a menu that is half starred still reads in
+// the order every other list on the tower is in.
+const orderedSlugs = (state) => {
+  const favored = favoritesOf(state);
+  return [...favored, ...slugsOf(state).filter((slug) => !favored.includes(slug))];
+};
+
 /**
  * What the selector is showing, as one comparable string.
  *
  * An unread roster has nothing to switch between, and says so with the empty
  * key - the menu keeps the placeholder the theme baked until it answers.
  *
+ * The stars are their own segment rather than left to the order below them: a
+ * roster of one, or a star put on the repo that is already first, changes which
+ * rows are marked without changing the sequence they are drawn in, and the key
+ * is what tells the runtime to draw them again.
+ *
  * @param {object} state - the runtime's feed state
  * @returns {string}
  */
 export const sidebarKey = (state) => {
-  const slugs = slugsOf(state);
-  return slugs.length ? [state.selectedRepo || '', ...slugs].join('\n') : '';
+  const slugs = orderedSlugs(state);
+  return slugs.length ? [state.selectedRepo || '', favoritesOf(state).join(','), ...slugs].join('\n') : '';
 };
 
 // A row's box: what puts one repo in the subset, or takes it out.
@@ -69,33 +101,60 @@ const box = (slug, checked) => `<input class="form-check-input flex-shrink-0 ms-
 // markup carries the marker and the runtime sets the property from it (page.js).
 const masterBox = (ticked, total) => `<input class="form-check-input flex-shrink-0 ms-3" type="checkbox" data-tower-scope-all aria-label="All projects"${ticked === total ? ' checked' : (ticked ? ' data-tower-indeterminate' : '')}>`;
 
-// One row: its box, when there is a subset to pick, and the name that scopes to
-// it alone. A BUTTON rather than a link: the name re-scopes the page in place
-// through `history.replaceState`, so there is no href for it to point at and
-// nothing for a middle click to open.
-const row = (label, value, active, control) => `<li class="d-flex align-items-center">
-      ${control}<button type="button" class="dropdown-item flex-grow-1${active ? ' active' : ''}" data-tower-scope="${esc(value)}"${active ? ' aria-current="true"' : ''}>${esc(label)}</button>
+// A row's star: what lifts one repo to the top of the menu, and what says it is
+// already up there. A BUTTON like the name beside it - a click changes what this
+// browser remembers and goes nowhere - carrying its own name for a screen
+// reader, since the word on the row belongs to the name button and the glyph in
+// here is decoration. Solid and warm when it is on, hollow and quiet when it is
+// not - two states that read apart down a column of fifteen rows.
+const star = (slug, on) => `<button type="button" class="btn btn-link btn-sm flex-shrink-0 px-2 py-0 ms-2 ${on ? 'text-warning' : 'text-body-secondary'}" data-tower-favorite="${esc(slug)}" aria-pressed="${on}" aria-label="Favorite ${esc(slug)}"><i class="fa-${on ? 'solid' : 'regular'} fa-star" aria-hidden="true"></i></button>`;
+
+// The box that narrows the list, above every row of it. Drawn only when there
+// are rows to narrow - a menu still showing the theme's placeholder has nothing
+// to search - and it says nothing about what typing in it DOES, because that is
+// the runtime's: rows are hidden and shown in place, so this is the same markup
+// whether a filter is in force or not.
+const search = () => `<li class="px-3 pb-2" data-tower-project-filter>
+      <input type="search" class="form-control form-control-sm" data-tower-project-search placeholder="Search projects" aria-label="Search projects" autocomplete="off">
+    </li>`;
+
+// One row: the controls that act ON the repo - its box, when there is a subset
+// to pick, and its star - then the name that scopes to it alone. A BUTTON rather
+// than a link: the name re-scopes the page in place through
+// `history.replaceState`, so there is no href for it to point at and nothing for
+// a middle click to open.
+const row = (label, value, active, controls) => `<li class="d-flex align-items-center">
+      ${controls}<button type="button" class="dropdown-item flex-grow-1${active ? ' active' : ''}" data-tower-scope="${esc(value)}"${active ? ' aria-current="true"' : ''}>${esc(label)}</button>
     </li>`;
 
 /**
- * The selector menu: the All projects master row, then one row per repo.
+ * The selector menu: the search box, the All projects master row, then one row
+ * per repo - the starred ones first.
  *
  * All projects is the active row whenever the selection is not exactly one
  * repo - a subset is still a view of the whole board, narrowed - which is also
- * what keeps the boxes that made the subset on screen while it is in force.
+ * what keeps the boxes that made the subset on screen while it is in force. It
+ * stays under the search box and above every repo, in both senses: it is the
+ * master row, and a filter is about the roster rather than about it.
  *
  * @param {object} state - the runtime's feed state
  * @returns {string} the menu's `li` children, or '' before the roster answers
  */
 export const menuMarkup = (state) => {
-  const slugs = slugsOf(state);
+  const slugs = orderedSlugs(state);
   if (!slugs.length) return '';
+  const favored = favoritesOf(state);
   const selected = selectedSlugs(state);
   // One project in force is the one state with nothing to tick.
   const single = selected.length === 1;
   const ticks = slugs.filter((slug) => !selected.length || selected.includes(slug));
-  return `${row('All projects', '', !single, single ? '' : masterBox(ticks.length, slugs.length))}
-    ${slugs.map((slug) => row(slug, slug, single && selected[0] === slug, single ? '' : box(slug, ticks.includes(slug)))).join('')}`;
+  // The star rides every row in all three modes; the box only while there is a
+  // subset to build.
+  const repoRow = (slug) => row(slug, slug, single && selected[0] === slug,
+    `${single ? '' : box(slug, ticks.includes(slug))}${star(slug, favored.includes(slug))}`);
+  return `${search()}
+    ${row('All projects', '', !single, single ? '' : masterBox(ticks.length, slugs.length))}
+    ${slugs.map(repoRow).join('')}`;
 };
 
 /**

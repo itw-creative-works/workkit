@@ -173,6 +173,9 @@ const run = async () => {
   // DOM - and sidebar.js is markup from state, chrome.js's shape exactly.
   const scope = await load('scope.js');
   const sidebar = await load('sidebar.js');
+  // favorites.js takes its storage as an argument, github.js's pattern, so the
+  // key, the junk tolerance and the toggle all answer under Node.
+  const favorites = await load('favorites.js');
   // api.js fixes its origin from `location` at import - stub it (and the
   // `window` override hatch) just long enough to load the module.
   globalThis.location = { href: 'http://localhost:4300/' };
@@ -217,6 +220,27 @@ const run = async () => {
     // An unpriced model is `null`, and every caller checks for it before asking
     // for a dollar amount - what reaches here is always a number or a mistake.
     assertEq(format.money('nope'), '-', 'a non-number is a dash, never $NaN');
+  });
+
+  await test('day draws the day, and the caller says what no date looks like', () => {
+    const stamp = '2026-08-19T09:00:00Z';
+    const drawn = format.day(stamp);
+    assert(drawn.includes('2026') && drawn !== stamp, `a timestamp is drawn as its day, never as the string it arrived as: ${drawn}`);
+    // The two surfaces want opposite things out of an absent date, which is why
+    // the fallback is an argument rather than a decision made here.
+    assertEq(format.day(''), '', 'a line that is only a date would rather be absent than be a dash');
+    assertEq(format.day(undefined), '', 'and an absent value is the same nothing');
+    assertEq(format.day('not a date', '-'), '-', 'while a labelled row asks for the dash it draws');
+    assertEq(format.day(undefined, '-'), '-', 'whatever shape the missing date arrived in');
+  });
+
+  await test('documentMeta is what a post is and when, and never a lone separator', () => {
+    const stamp = '2026-08-19T09:00:00Z';
+    assertEq(format.documentMeta({ kind: 'brief', createdAt: stamp }), `brief · ${format.day(stamp)}`,
+      'what it is and the day it was published');
+    assertEq(format.documentMeta({ kind: 'summary' }), 'summary', 'a post with no date is its kind alone');
+    assertEq(format.documentMeta({ createdAt: stamp }), format.day(stamp), 'and one with no kind is the day alone');
+    assertEq(format.documentMeta({}), '', 'a document that says neither says nothing at all');
   });
 
   await test('shortPath names a repo by its last segment', () => {
@@ -1651,6 +1675,15 @@ const run = async () => {
     assert(parts.body.includes('2 comments on GitHub'), 'and where the conversation is');
   });
 
+  await test('the dialog’s date rows say a dash where the issue carried no date', () => {
+    // The shared formatter leaves an unreadable date as nothing by default,
+    // because a document's meta line drops it - a row LABELLED "filed" has to
+    // say something, so the dialog asks for the dash it has always drawn.
+    const parts = modal.issueDialog({ ...ISSUE, createdAt: '', updatedAt: '' }, render);
+    assert(parts.body.includes('filed -') && parts.body.includes('updated -'),
+      'a labelled row says a dash rather than trailing off into nothing');
+  });
+
   await test('the dialog’s status chip is the colour of the column the card came from', () => {
     const parts = modal.issueDialog(ISSUE, render);
     assert(parts.body.includes(format.statusChip('specced')), 'the dialog draws format.js’s status chip');
@@ -2274,7 +2307,7 @@ const run = async () => {
     assert(markup.includes('<button type="button" class="dropdown-item flex-grow-1 active" data-tower-scope=""'), 'in Bootstrap’s own dropdown-item shape');
     // The whole point of #168: a repo appears once, not once as an entry and
     // again as a checkbox in a second section below.
-    assertEq((markup.match(/<li /g) || []).length, ROSTER.length + 1, 'the roster plus the master row, and nothing else');
+    assertEq((markup.match(/<li /g) || []).length, ROSTER.length + 2, 'the roster, the master row and the search box above them, and nothing else');
     assertEq((markup.match(/>workkit</g) || []).length, 1, 'each repo is named exactly once');
     assert(!/Filter projects|dropdown-header|dropdown-divider/.test(markup), 'there is no second section to divide off');
   });
@@ -2285,7 +2318,47 @@ const run = async () => {
     assert(!/flex-grow-1 active" data-tower-scope=""/.test(markup), 'and All is not');
     assert(!markup.includes('data-tower-scope-slug'), 'one repo is not a subset, so there is nothing to tick');
     assert(!markup.includes('data-tower-scope-all'), 'and no master box either - the whole board is not on screen to narrow');
-    assertEq((markup.match(/<li /g) || []).length, ROSTER.length + 1, 'the rows themselves stay, so All projects is one click back');
+    assertEq((markup.match(/<li /g) || []).length, ROSTER.length + 2, 'the rows themselves stay, so All projects is one click back');
+    assertEq((markup.match(/data-tower-favorite="/g) || []).length, ROSTER.length, 'and every row keeps its star - a favorite is not a scope');
+  });
+
+  await test('a search box sits above every row, once there are rows to narrow (#185)', () => {
+    const markup = sidebar.menuMarkup(mkState({ repos: ROSTER }));
+    assert(markup.indexOf('data-tower-project-search') < markup.indexOf('data-tower-scope='), 'it is the first thing in the menu, above All projects');
+    assert(markup.includes('<input type="search" class="form-control form-control-sm"'), 'a Bootstrap field, sized to the menu it sits in');
+    assert(markup.includes('placeholder="Search projects"'), 'named on screen');
+    assert(markup.includes('aria-label="Search projects"'), 'and to a screen reader, which has no placeholder to read');
+    assert(markup.includes('data-tower-project-filter'), 'its row carries the hook the sheet sticks to the top of the scroll');
+    // Filtering is the runtime's, in place: the markup is the same list either
+    // way, which is what keeps this module pure.
+    assert(!/d-none/.test(markup), 'no row is drawn hidden - a filter is display, not markup');
+    assertEq(sidebar.menuMarkup(mkState({ repos: [] })), '', 'a roster with nothing on it draws no box - there is nothing to search');
+  });
+
+  await test('every repo row carries a star, and the starred ones are drawn first (#186)', () => {
+    const none = sidebar.menuMarkup(mkState({ repos: ROSTER }));
+    assertEq((none.match(/data-tower-favorite="/g) || []).length, ROSTER.length, 'one star per repo, and none on the master row');
+    assert(/data-tower-favorite="workkit" aria-pressed="false"/.test(none), 'nothing is favorited until something says so');
+    assert(/class="[^"]*text-body-secondary" data-tower-favorite="workkit"/.test(none), 'a star that is off is the quiet gray');
+    assert(none.includes('<i class="fa-regular fa-star" aria-hidden="true">'), 'drawn hollow, and the glyph is decoration - the button carries the name');
+    assert(none.includes('aria-label="Favorite workkit"'), 'which is what the button says it does');
+
+    const kept = sidebar.menuMarkup({ ...mkState({ repos: ROSTER }), favorites: ['omega'] });
+    assert(/data-tower-favorite="omega" aria-pressed="true"/.test(kept), 'a favorite says so where a screen reader reads it');
+    assert(/class="[^"]*text-warning" data-tower-favorite="omega"/.test(kept), 'and wears the warm colour');
+    assert(kept.includes('<i class="fa-solid fa-star" aria-hidden="true">'), 'filled in');
+    assert(/data-tower-favorite="workkit" aria-pressed="false"/.test(kept), 'the rest are untouched');
+  });
+
+  await test('a favorite lifts its row to the top, and roster order holds inside each group', () => {
+    const roster = [...ROSTER, { slug: 'dotfiles', path: '/repos/dotfiles' }];
+    const rowsOf = (markup) => [...markup.matchAll(/data-tower-scope="([^"]*)"/g)].map((match) => match[1]);
+    assertEq(rowsOf(sidebar.menuMarkup(mkState({ repos: roster }))).join(','), ',workkit,omega,dotfiles', 'no favorites is the roster as it came, under the master row');
+    const kept = sidebar.menuMarkup({ ...mkState({ repos: roster }), favorites: ['dotfiles'] });
+    assertEq(rowsOf(kept).join(','), ',dotfiles,workkit,omega', 'the star goes first, and the two behind it keep their order');
+    const two = sidebar.menuMarkup({ ...mkState({ repos: roster }), favorites: ['dotfiles', 'workkit'] });
+    assertEq(rowsOf(two).join(','), ',workkit,dotfiles,omega', 'and two favorites are in the roster’s order too, never the order they were starred in');
+    assert(two.startsWith('<li class="px-3 pb-2" data-tower-project-filter'), 'the search box is still above all of it');
   });
 
   await test('a box rides every row while the board is the whole one, or a subset of it', () => {
@@ -2366,6 +2439,12 @@ const run = async () => {
     assert(sidebar.sidebarKey(CHROME_STATE) !== sidebar.sidebarKey({ ...CHROME_STATE, selectedRepo: 'omega' }), 'a new selection redraws it');
     const grown = mkState({ repos: [...ROSTER, { slug: 'dotfiles', path: '/repos/dotfiles' }] });
     assert(sidebar.sidebarKey(CHROME_STATE) !== sidebar.sidebarKey(grown), 'and so does a repo joining the roster');
+    assert(sidebar.sidebarKey(CHROME_STATE) !== sidebar.sidebarKey({ ...CHROME_STATE, favorites: ['omega'] }), 'a star redraws it too, so the toggle is on screen at the next paint');
+    // The case the key's own favorites segment is there for: a star that changes
+    // which row is MARKED without changing the order the rows come in.
+    const solo = mkState({ repos: [ROSTER[0]] });
+    assert(sidebar.sidebarKey(solo) !== sidebar.sidebarKey({ ...solo, favorites: ['workkit'] }), 'even when the row it marks was already first');
+    assertEq(sidebar.sidebarKey({ ...mkState({}), favorites: ['omega'] }), '', 'and an unread roster is still the empty key, stars or no stars');
   });
 
   await test('a hostile slug is text, in the attribute and in the label', () => {
@@ -2622,6 +2701,49 @@ const run = async () => {
     const storage = mkStorage({ [github.TOKEN_KEY]: 'fake-token-for-tests' });
     assertEq(github.writeToken(storage, '   '), '', 'whitespace is nothing');
     assertEq(github.readToken(storage), '', 'and the old one is gone rather than left in place');
+  });
+
+  group('tower/app: favorites - the projects pinned to the top');
+
+  await test('a favorite is stored under one key, as a list of slugs', () => {
+    const storage = mkStorage();
+    assertEq(favorites.FAVORITES_KEY, 'tower.favorites', 'the one key, named where both halves read it');
+    assertEq(favorites.readFavorites(storage).length, 0, 'a fresh browser has starred nothing');
+    assertEq(favorites.toggleFavorite(storage, 'ITW/workkit').join(','), 'ITW/workkit', 'the toggle answers with the list as it now stands');
+    assertEq(storage.held[favorites.FAVORITES_KEY], '["ITW/workkit"]', 'stored as JSON, so nothing else has to parse a format of its own');
+    assertEq(favorites.readFavorites(storage).join(','), 'ITW/workkit', 'and read back');
+    assertEq(favorites.toggleFavorite(storage, 'Omega/omega').join(','), 'ITW/workkit,Omega/omega', 'a second star joins the first, in the order they were kept');
+    assertEq(favorites.toggleFavorite(storage, 'ITW/workkit').join(','), 'Omega/omega', 'and the same star again takes it off');
+    assertEq(storage.held[favorites.FAVORITES_KEY], '["Omega/omega"]', 'which is what is left in storage');
+  });
+
+  await test('anything that is not a list of slugs is read as no favorites at all', () => {
+    // The key is hand-editable and outlives whatever version of the tower wrote
+    // it, and it is read on the first paint of every page - so junk costs the
+    // stars, never the page.
+    for (const junk of ['{not json', '{"workkit":true}', '"workkit"', '42', 'null', '']) {
+      assertEq(favorites.readFavorites(mkStorage({ [favorites.FAVORITES_KEY]: junk })).length, 0, `${junk || '(empty)'} is no favorites`);
+    }
+    const mixed = mkStorage({ [favorites.FAVORITES_KEY]: '["workkit", 7, null, {"a":1}, "", "omega"]' });
+    assertEq(favorites.readFavorites(mixed).join(','), 'workkit,omega', 'a list with rubbish in it keeps the slugs and drops the rest');
+  });
+
+  await test('a browser that blocks site data has no favorites, and is never thrown at', () => {
+    // The access itself is what throws (github.js), so the runtime hands over
+    // null and this has to answer for it: a viewer who cannot store a star sees
+    // none, and the menu keeps the order it had rather than pinning a project
+    // until the next reload.
+    const blocked = github.safeStorage((() => {
+      const hostile = {};
+      Object.defineProperty(hostile, 'localStorage', { get() { throw new Error('storage is disabled'); } });
+      return hostile;
+    })());
+    assertEq(blocked, null, 'the guard answers null rather than a storage');
+    assertEq(favorites.readFavorites(blocked).length, 0, 'so the list is empty');
+    assertEq(favorites.toggleFavorite(blocked, 'workkit').length, 0, 'and the toggle is a no-op that says so');
+    const refusing = mkStorage({}, true);
+    assertEq(favorites.readFavorites(refusing).length, 0, 'a storage that throws on the read is the same answer');
+    assertEq(favorites.toggleFavorite(refusing, 'workkit').length, 0, 'and one that throws on the write keeps the list it had');
   });
 
   group('tower/app: github - the wire');
@@ -3901,7 +4023,8 @@ const run = async () => {
   await test('nothing in the runtime opens a dialog for a token any more', () => {
     const source = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
     assert(!/openTokenModal|hideTokenModal|prompted/.test(source), 'the opener, the closer and the flag between them are gone');
-    assert(!/clearToken|safeStorage/.test(source), 'and so is the chrome’s forget - the storage is Settings’ business now');
+    assert(!/clearToken|readToken|writeToken/.test(source), 'and so is the chrome’s forget - the token’s storage is Settings’ business now');
+    assert(!/TOKEN_KEY/.test(source), 'the runtime names no token key at all; the storage it does reach is the favorites’ (#186)');
     assertEq((source.match(/chromeMarkup\(\)/g) || []).length, 1, 'the chrome frame is written exactly once per page');
     assert(!/chromeKey/.test(source), 'with no key to compare, since nothing on it varies');
     assert(!/state\.tokenMode/.test(source), 'and no flag for a button that no longer exists');
@@ -4053,15 +4176,77 @@ const run = async () => {
     assert(/data-bs-auto-close/.test(source), 'ticking a subset box does not close the menu it is in');
     assert(/data-tower-scope\]/.test(source) && /data-tower-scope-slug/.test(source), 'both controls on a row are wired - the name and its box');
     // The master row (#168): its box is the one control markup cannot fully
-    // describe, since indeterminate is a property, and ticking it in either
-    // state means the whole board.
+    // describe, since indeterminate is a property, and a click on it moves
+    // every box on the roster.
     assert(/data-tower-scope-all/.test(source), 'the master box is wired too');
     assert(/indeterminate = .*hasAttribute\('data-tower-indeterminate'\)/.test(source), 'the marker sidebar.js writes becomes the DOM property');
-    assert(/applyScope\(''\)/.test(source), 'and ticking it goes back to every repo');
-    assert(/shown\.focus\(\)/.test(source), 'the rewrite takes the box the keyboard was on, so the master is re-found and focused like the slug boxes');
+    assert(/applyScope\('', false\)/.test(source), 'and either state of it is the whole board');
     assert(/scopedHref\(/.test(source), 'the nav links are rewritten through the one formatter');
     assert(/scopeNav\(/.test(source), 'and the rewrite has a name the paint and the change both call');
     assert(!/tower-repo/.test(source), 'and the chrome’s dropdown is gone, handler and all');
+  });
+
+  await test('the menu’s search box narrows it without touching anything (#185)', () => {
+    const source = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
+    assert(/shown\.bs\.dropdown/.test(source), 'the box takes the keyboard the moment the menu opens');
+    assert(/hidden\.bs\.dropdown/.test(source), 'and closing it clears the filter');
+    assert(/search\.value = ''/.test(source) && /filterProjects\(menu, ''\)/.test(source), 'box emptied and every row unhidden, so the next open is the whole roster');
+    // The claim the whole feature rests on: filtering is DISPLAY. A row is
+    // hidden where it stands - nothing is re-scoped, nothing is stored and the
+    // menu is not rewritten, which is what keeps sidebar.js pure.
+    const filter = /const filterProjects = \(menu, text\) => \{([\s\S]*?)\n\};/.exec(source);
+    assert(filter, 'the filter is one named function');
+    assert(/classList\.toggle\('d-none'/.test(filter[1]), 'and it hides a row rather than removing it');
+    assert(!/applyScope|state\.|innerHTML|Storage/.test(filter[1]), 'writing no selection, no state and no markup');
+    // The keyboard, per rewrite with the rest of the wiring.
+    assert(/wireProjectKeys\(projects\)/.test(source), 'the keys are wired on each rewrite, so no listener stacks on a survivor');
+    assert(/ArrowDown/.test(source), 'Down in the box walks into the list');
+    assert(!/ArrowUp/.test(source), 'and the rows’ own arrows are wired nowhere - Bootstrap’s delegated handler owns that walk, and a second copy here would lose to it');
+    assert(/rows\[0\]\.click\(\)/.test(source), 'Enter in the box takes the row at the top of what is left');
+    assert(/event\.key\.length === 1/.test(source), 'and a character typed on a row puts the box back under it');
+    assert(/event\.key !== ' '/.test(source), 'except Space, which stays with the row it presses');
+    assert(!/'Escape'/.test(source), 'and Escape is compared against nowhere - it stays Bootstrap’s, closing the menu it always closed');
+  });
+
+  await test('a star is stored and repainted where it stands, and the open menu holds still (#186)', () => {
+    const source = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
+    assert(/readFavorites\(storage\)/.test(source), 'the list is read once, at the top of the page');
+    assert(/safeStorage\(window\)/.test(source), 'through the guard github.js already owns, since the property itself can throw');
+    assert(/state\.favorites = toggleFavorite\(storage, slug\)/.test(source), 'a click writes through the one module that owns the key, onto the state the menu is drawn from');
+    // A star is not a selection, and its click redraws NOTHING but its own
+    // button: a repaint from state would wipe a subset the boxes are mid-way
+    // through building, so the reorder waits for the close redraw.
+    const wiring = /for \(const mark of projects\.querySelectorAll\('\[data-tower-favorite\]'\)\) \{([\s\S]*?)\n    \}/.exec(source);
+    assert(wiring, 'the stars are wired in one loop');
+    assert(!/applyScope|writeSelectedRepo|hide\(\)/.test(wiring[1]), 'and it changes no scope and closes no menu');
+    assert(!/paint\(\)|innerHTML/.test(wiring[1]), 'and paints no menu - the open shape survives a star');
+    assert(/classList\.toggle\('text-warning', on\)/.test(wiring[1]), 'the button repaints in place: its colour');
+    assert(/aria-pressed', String\(on\)/.test(wiring[1]), 'its pressed state');
+    assert(/fa-\$\{on \? 'solid' : 'regular'\} fa-star/.test(wiring[1]), 'and its fill, matching what sidebar.js would draw');
+    // The name-click rewrite still carries the filter onto the box it draws.
+    assert(/const filter = projectSearch\(projects\)\?\.value \|\| ''/.test(source), 'the text in the box survives a rewrite');
+    assert(/filterProjects\(projects, filter\)/.test(source), 'and the rows are narrowed again before the viewer sees the redraw');
+  });
+
+  await test('the master box is a toggle, and an open menu keeps its shape while boxes move (#185)', () => {
+    const source = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
+    // The toggle: a click moves every box on the roster to the master's new
+    // state, in place - unticking it is how a subset is built up from nothing.
+    assert(/one\.checked = master\.checked/.test(source), 'a master click sets every slug box to its own new state');
+    assert(/master\.indeterminate = false;/.test(source), 'and leaves no half state behind');
+    // The shape: box clicks narrow the BOARD but never redraw the open menu -
+    // reaching exactly one tick must not collapse it to single mode under the
+    // pointer - so both handlers pass the no-reshape flag and tell the master
+    // in place instead.
+    assert(/chosen\.join\(','\) : '', false\)/.test(source), 'a slug box applies its scope without reshaping the menu');
+    assert(/master\.checked = chosen\.length === boxes\.length/.test(source), 'and updates the master summary where it stands');
+    assert(/master\.indeterminate = chosen\.length > 0 && chosen\.length < boxes\.length/.test(source), 'including the half state markup cannot say');
+    // The reshape happens at close, unconditionally: a build made and unmade
+    // leaves the key unchanged, so the key is dropped rather than compared.
+    const reshape = /data-tower-reshape'\)\) \{([\s\S]*?)\n    \}/.exec(source);
+    assert(reshape, 'the close redraw is wired once, behind its own claim marker');
+    assert(/hidden\.bs\.dropdown/.test(reshape[1]), 'on the same close event that clears the filter');
+    assert(/paintedProjects = null;/.test(reshape[1]) && /paintProjects\(\);/.test(reshape[1]), 'dropping the key so the redraw is unconditional');
   });
 
   await test('every page reads the selection as a SET, and no consumer compares it as a slug', () => {

@@ -50,7 +50,8 @@ import {
 } from './api.js';
 import { localOnlyNotice } from './format.js';
 import { board, localOnlySlot } from './state.js';
-import { isTokenRefusal } from './github.js';
+import { isTokenRefusal, safeStorage } from './github.js';
+import { readFavorites, toggleFavorite } from './favorites.js';
 import { isLocalHost, towerDownNotice, settingsNotice } from './token.js';
 import { chromeMarkup, statusMarkup } from './chrome.js';
 import { isScopedPath, scopedHref, settingsHref } from './scope.js';
@@ -117,8 +118,106 @@ const projectsHost = () => {
     menu.addEventListener('click', (event) => {
       if (event.target.closest('a[href="#"]')) event.preventDefault();
     });
+    // The box at the top of the menu is there to be typed in, so the keyboard
+    // goes to it the moment the menu opens - and what it holds is forgotten when
+    // the menu closes, so the next open is the whole roster again rather than
+    // yesterday's search. Both listeners hang on the BUTTON, which is where
+    // Bootstrap fires its dropdown events, and both are wired HERE: the rows
+    // inside the menu are rewritten many times over, the menu itself never is.
+    button.addEventListener('shown.bs.dropdown', () => {
+      // A tick later, not now: a keyboard open (ArrowDown on the button) has
+      // Bootstrap move focus to the first row AFTER this event fires, and the
+      // box is where the keyboard belongs however the menu was opened.
+      setTimeout(() => {
+        const search = projectSearch(menu);
+        if (search) search.focus();
+      }, 0);
+    });
+    button.addEventListener('hidden.bs.dropdown', () => {
+      const search = projectSearch(menu);
+      if (search) search.value = '';
+      filterProjects(menu, '');
+    });
   }
   return menu;
+};
+
+// ── The menu's search box ──────────────────────────────────────────────────
+//
+// Typing in it narrows the rows on screen and does nothing else (issue #185):
+// no state is written, no paint is asked for, and the markup is the same list it
+// was - a row the text does not name is hidden where it stands. That is why
+// sidebar.js knows nothing about any of this, and why a filter lives exactly as
+// long as the menu is open.
+
+/** The menu's search box, or null while the theme's placeholder is still up. */
+const projectSearch = (menu) => menu && menu.querySelector('[data-tower-project-search]');
+
+/**
+ * The repo rows' name buttons, in menu order.
+ *
+ * The master row is not one of them: All projects is what the rows are narrowed
+ * OUT of, so it is never filtered away - and the box's Down and Enter land on a
+ * repo row, the thing a typed search names.
+ */
+const projectRows = (menu) => [...menu.querySelectorAll('[data-tower-scope]:not([data-tower-scope=""])')];
+
+/** The rows a filter has left on screen. */
+const shownRows = (menu) => projectRows(menu).filter((entry) => !entry.closest('li').classList.contains('d-none'));
+
+/**
+ * Hide every row the text does not name, in place.
+ *
+ * @param {HTMLElement} menu - the claimed menu
+ * @param {string} text - what is in the box; '' is the whole roster back
+ */
+const filterProjects = (menu, text) => {
+  const needle = String(text || '').trim().toLowerCase();
+  for (const entry of projectRows(menu)) {
+    const slug = entry.getAttribute('data-tower-scope').toLowerCase();
+    entry.closest('li').classList.toggle('d-none', Boolean(needle) && !slug.includes(needle));
+  }
+};
+
+/**
+ * Wire the box and the rows to the keyboard, for one rewrite of the menu.
+ *
+ * The arrows BETWEEN rows are not wired here at all: Bootstrap's own dropdown
+ * handler, delegated from the document, already walks the visible
+ * `.dropdown-item`s - the master row among them, hidden rows skipped, the ends
+ * clamped - and it runs last, so anything written here about row arrows would
+ * lose to it anyway. What it leaves alone is an INPUT's keys, so the box's own
+ * Down and Enter are wired here, and a character typed on a row hands the
+ * keyboard back to the box. Escape is Bootstrap's and is not touched.
+ *
+ * @param {HTMLElement} menu - the claimed menu, just rewritten
+ */
+const wireProjectKeys = (menu) => {
+  const search = projectSearch(menu);
+  if (!search) return;
+  search.addEventListener('input', () => filterProjects(menu, search.value));
+  search.addEventListener('keydown', (event) => {
+    const rows = shownRows(menu);
+    if (!rows.length) return;
+    // Down walks into the list; Enter takes the row at the top of it, which is
+    // what typing until one row is left and pressing it means.
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      rows[0].focus();
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      rows[0].click();
+    }
+  });
+  for (const entry of projectRows(menu)) {
+    entry.addEventListener('keydown', (event) => {
+      // A character typed on a row is the start of a search, not a shortcut:
+      // the box takes the focus and the character lands in it, which is exactly
+      // why nothing is prevented here. Space stays with the row - it is how a
+      // button is pressed from the keyboard.
+      if (event.key.length === 1 && event.key !== ' ' && !event.ctrlKey && !event.metaKey && !event.altKey) search.focus();
+    });
+  }
 };
 
 /**
@@ -233,6 +332,13 @@ export async function startPage(options) {
   // through one argument.
   const state = poller.state;
   state.selectedRepo = selectedRepo();
+  // The projects this browser keeps at the top of the selector (issue #186).
+  // Read once, here, and carried on the same object for the same reason the
+  // selection is: the menu is markup from state, so the list has to be part of
+  // the state it is drawn from. The access is guarded because a browser told to
+  // block all site data throws on the property itself (github.js).
+  const storage = safeStorage(window);
+  state.favorites = readFavorites(storage);
   // A published page may ask for a feed only the machine can answer - the
   // Overview's crew table and its health panel are the case. Their slot is
   // filled up front, so the panel says why instead of spinning on a read that
@@ -268,15 +374,20 @@ export async function startPage(options) {
   // not rewrite the subset checkboxes under the pointer.
   let paintedProjects = null;
   // Whether the paint about to run was asked for by a control INSIDE the menu.
-  // An open menu is otherwise left alone until it closes - but the control that
-  // changed the scope is exactly the one whose menu has to redraw around it.
+  // An open menu is otherwise left alone until it closes - but a control that
+  // wants its menu redrawn around it (a name click, a star) says so here.
   let scoped = false;
 
-  /** Narrow the whole tower to a `?repo=` value: the URL, the state, the nav, the paint. */
-  function applyScope(value) {
+  /**
+   * Narrow the whole tower to a `?repo=` value: the URL, the state, the nav,
+   * the paint. The boxes pass `reshape` false: mid-build the menu must keep its
+   * shape - reaching exactly one tick must not collapse it to single mode under
+   * the pointer - so the board narrows now and the menu redraws on close.
+   */
+  function applyScope(value, reshape = true) {
     state.selectedRepo = value;
     writeSelectedRepo(value);
-    scoped = true;
+    scoped = reshape;
     paint();
     scoped = false;
   }
@@ -287,6 +398,18 @@ export async function startPage(options) {
   function paintProjects() {
     const projects = projectsHost();
     if (!projects) return;
+    // The reshape an open menu holds back happens the moment it closes: the
+    // key is dropped so the redraw is unconditional - a build the boxes made
+    // and then unmade leaves the same key behind, and the boxes still need
+    // drawing back to what the selection says. Wired once, on the runtime's
+    // first paint, after the claim-time listener that clears the filter.
+    if (!projects.hasAttribute('data-tower-reshape')) {
+      projects.setAttribute('data-tower-reshape', '');
+      selectorButton().addEventListener('hidden.bs.dropdown', () => {
+        paintedProjects = null;
+        paintProjects();
+      });
+    }
     paintSelector(state);
     const key = sidebarKey(state);
     // Before the roster answers there is nothing to switch between, and the
@@ -297,6 +420,10 @@ export async function startPage(options) {
     // first paint after it closes. A scope change made from inside the menu is
     // the exception - that redraw is the answer to their click.
     if (projects.classList.contains('show') && !scoped) return;
+    // A rewrite while the viewer is filtering - a box ticked, a star turned on -
+    // takes the search box with it, so what they typed is read off the old one
+    // and put back below, before they ever see the redraw.
+    const filter = projectSearch(projects)?.value || '';
     paintedProjects = key;
     projects.innerHTML = menuMarkup(state);
     for (const entry of projects.querySelectorAll('[data-tower-scope]')) {
@@ -308,24 +435,19 @@ export async function startPage(options) {
       });
     }
     // The master row's box. Indeterminate is a DOM PROPERTY - markup cannot say
-    // it - so the marker sidebar.js writes is turned into the property here, and
-    // whichever of the two states it was in, ticking it means the whole board.
+    // it - so the marker sidebar.js writes is turned into the property here. A
+    // TOGGLE both ways: ticking it fills the roster, unticking it empties the
+    // roster's boxes to build a subset up from nothing - and either way the
+    // board shows everything, since no boxes and all boxes are the same absent
+    // `?repo=`. The boxes are set in place, so the node under the keyboard
+    // survives its own click.
     const master = projects.querySelector('[data-tower-scope-all]');
     if (master) {
       master.indeterminate = master.hasAttribute('data-tower-indeterminate');
       master.addEventListener('change', () => {
-        applyScope('');
-        // A board that was ALREADY whole is not a new selection, so the menu was
-        // not rewritten and the box the click emptied is still on screen - put
-        // it back the way the markup for this state spells it. Either way the
-        // box is re-found and focused, like the slug boxes below: a rewrite
-        // takes the node the keyboard was on with it.
-        const shown = projectsHost()?.querySelector('[data-tower-scope-all]');
-        if (shown) {
-          shown.checked = true;
-          shown.indeterminate = false;
-          shown.focus();
-        }
+        for (const one of projects.querySelectorAll('[data-tower-scope-slug]')) one.checked = master.checked;
+        master.indeterminate = false;
+        applyScope('', false);
       });
     }
     for (const box of projects.querySelectorAll('[data-tower-scope-slug]')) {
@@ -335,15 +457,35 @@ export async function startPage(options) {
         // Every box checked is every repo, which is what an ABSENT parameter
         // already says - and so is no box at all, since a scope holding nothing
         // is a board with nothing on it rather than a filter.
-        applyScope(chosen.length && chosen.length < boxes.length ? chosen.join(',') : '');
-        // The paint above rewrote the section, taking the box the keyboard was
-        // on with it - put focus back on its replacement so tabbing resumes in
-        // place. Narrowing to one repo removes the filter itself; then there is
-        // no replacement to focus.
-        const slug = box.getAttribute('data-tower-scope-slug');
-        const successor = projectsHost()?.querySelector(`[data-tower-scope-slug="${slug}"]`);
-        if (successor) successor.focus();
+        applyScope(chosen.length && chosen.length < boxes.length ? chosen.join(',') : '', false);
+        // The menu kept its shape, so the master's summary of the roster is
+        // told here rather than redrawn.
+        master.checked = chosen.length === boxes.length;
+        master.indeterminate = chosen.length > 0 && chosen.length < boxes.length;
       });
+    }
+    // The stars (issue #186). A favorite is this browser's own: the click
+    // writes it to storage and redraws the BUTTON where it stands - the open
+    // menu keeps its shape here like it does for the boxes, since a repaint
+    // from state would wipe a subset mid-build, and the starred rows take
+    // their place at the top on the next open instead. It changes no scope, so
+    // `?repo=` is untouched and the menu stays open.
+    for (const mark of projects.querySelectorAll('[data-tower-favorite]')) {
+      mark.addEventListener('click', () => {
+        const slug = mark.getAttribute('data-tower-favorite');
+        state.favorites = toggleFavorite(storage, slug);
+        const on = state.favorites.includes(slug);
+        mark.classList.toggle('text-warning', on);
+        mark.classList.toggle('text-body-secondary', !on);
+        mark.setAttribute('aria-pressed', String(on));
+        mark.querySelector('i').className = `fa-${on ? 'solid' : 'regular'} fa-star`;
+      });
+    }
+    wireProjectKeys(projects);
+    if (filter) {
+      const search = projectSearch(projects);
+      if (search) search.value = filter;
+      filterProjects(projects, filter);
     }
   }
 

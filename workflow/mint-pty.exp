@@ -1,0 +1,19 @@
+# The token mint's PTY runner, when the run sits at a real terminal (issue
+# #187). The claude CLI holds its PTY in raw mode and DISCARDS the ^C byte, and
+# under raw passthrough no layer turns the key into a signal — so `interact`
+# binds the byte HERE, one layer out, before it is forwarded: the binding ends
+# the child and answers 130, the way an interrupt ends any other command. Every
+# other keystroke passes through untouched, which is what keeps the
+# paste-the-code prompt answerable.
+#
+# Everything the child draws is appended to the capture file the caller made
+# (600 before a byte is written — workkit.sh's mint owns its lifecycle). The
+# command and the capture arrive through the environment: run_under_pty speaks
+# for both callers, and the mint's words carry no spaces (workkit.sh says why).
+log_file -a $env(WK_PTY_CAPTURE)
+spawn {*}[split $env(WK_PTY_CMD) " "]
+interact {
+  "\003" { catch { exec kill [exp_pid] }; exit 130 }
+  eof return
+}
+exit [lindex [wait] 3]

@@ -620,18 +620,31 @@ bounded_read() {
 }
 
 # A command run under a PTY, with everything it draws teed to both this terminal
-# and `capture`. The mint needs it (issue #174) and nothing else does. The two
-# `script` utilities take the command in different places, so the machine is
-# asked which one it speaks: only GNU/util-linux answers `--version` at all, and
-# only its `-e` returns the child's own exit status — without it a mint that
-# never ran would look like one that succeeded. macOS returns that status on its
-# own, but `-e` is asked for on the BSD side too: a no-op there, and the flag
-# that keeps a FreeBSD `script` from reading every mint as a success. GNU takes
-# the command as ONE string, so the words are joined for it: the mint is
-# `claude setup-token` and nothing here carries a space.
+# and `capture`. The mint needs it (issue #174) and nothing else does.
+#
+# When the run sits at a real terminal and `expect` exists, expect drives the
+# PTY (`mint-pty.exp`, beside this script), for one reason (issue #187): Ctrl-C. The CLI holds its PTY in raw mode
+# and DISCARDS the ^C byte, and under raw passthrough no layer turns the key
+# into a signal — so the byte is caught one layer out, at this terminal, before
+# it is forwarded. The binding ends the child and answers 130, the way an
+# interrupt ends any other command; every other keystroke passes through, which
+# is what keeps the paste-the-code prompt answerable.
+#
+# Without expect, or without a terminal (the tests drive this with a file on
+# stdin), the two `script` utilities take the command in different places, so
+# the machine is asked which one it speaks: only GNU/util-linux answers
+# `--version` at all, and only its `-e` returns the child's own exit status —
+# without it a mint that never ran would look like one that succeeded. macOS
+# returns that status on its own, but `-e` is asked for on the BSD side too: a
+# no-op there, and the flag that keeps a FreeBSD `script` from reading every
+# mint as a success. GNU takes the command as ONE string, so the words are
+# joined for it: the mint is `claude setup-token` and nothing here carries a
+# space. Under bare `script` the ^C byte still reaches a child that ignores it.
 run_under_pty() {
   local capture="$1"; shift
-  if script --version >/dev/null 2>&1; then
+  if command -v expect >/dev/null 2>&1 && [[ -t 0 ]] && [[ -f "$SCRIPT_DIR/mint-pty.exp" ]]; then
+    WK_PTY_CAPTURE="$capture" WK_PTY_CMD="$*" expect "$SCRIPT_DIR/mint-pty.exp"
+  elif script --version >/dev/null 2>&1; then
     script -q -e -c "$*" "$capture"
   else
     script -q -e "$capture" "$@"
@@ -679,9 +692,10 @@ extract_token() {
 # screen on stdout — the browser-open message AND the paste-the-authorization-code
 # prompt that follows the approval — so a captured stdout leaves the human staring
 # at a blank line with nothing to answer and, in the CLI's raw keyboard mode,
-# no Ctrl-C either (issue #174). Under `script` that whole screen reaches the
-# terminal, a copy of it lands in the capture file, and an interrupt ends the run
-# like it ends any other command. The capture is the one file a token value may
+# no Ctrl-C either (issue #174). Under the PTY runner that whole screen reaches
+# the terminal, a copy of it lands in the capture file, and Ctrl-C ends the run
+# where the runner can catch it (run_under_pty, issue #187). The capture is the
+# one file a token value may
 # transit: `mktemp` in TMPDIR, 600 before the mint writes a byte, read once and
 # removed — by a trap as well, so an interrupted mint leaves nothing behind.
 # From the extraction on the value is a local on its way to `gh secret set`'s
@@ -719,7 +733,8 @@ mint_claude_token() {
 }
 
 # The three things a mint needs and no run can supply for itself: the CLI that
-# performs it, the `script` utility that gives that CLI a terminal to draw its
+# performs it, a PTY tool (`expect`, or `script` without the Ctrl-C escape) that
+# gives that CLI a terminal to draw its
 # screen on, and a terminal to approve it in — the mint is a browser approval,
 # so a piped or backgrounded run gets the two commands instead. Every answer is
 # the same whether the mint was offered or asked for outright, which is why they
@@ -731,8 +746,8 @@ can_mint_claude_token() {
     say_skip "secrets: $SECRET_CLAUDE $reason on $slug — minting it needs the claude CLI"
     return 1
   fi
-  if ! command -v script >/dev/null 2>&1; then
-    say_skip "secrets: $SECRET_CLAUDE $reason on $slug — minting it needs the \`script\` utility, which gives \`claude setup-token\` the terminal it draws on: run \`claude setup-token\` by hand, then \`gh secret set $SECRET_CLAUDE --repo $slug\`"
+  if ! command -v expect >/dev/null 2>&1 && ! command -v script >/dev/null 2>&1; then
+    say_skip "secrets: $SECRET_CLAUDE $reason on $slug — minting it needs \`expect\` or \`script\`, which give \`claude setup-token\` the terminal it draws on: run \`claude setup-token\` by hand, then \`gh secret set $SECRET_CLAUDE --repo $slug\`"
     return 1
   fi
   if ! interactive; then

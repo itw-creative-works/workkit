@@ -59,9 +59,11 @@ export const board = (state) => {
 
 /**
  * The brief payload, or null - the feed the history rides on, and with it the
- * one answer to whether this morning's brief posted at all (issue #172). Three
- * pages read it: the Overview's charts, the Brief itself, and the Health page's
- * stale-brief row.
+ * one answer to whether this morning's brief posted at all (issue #172). Two
+ * pages read it here: the Overview's charts and the Health page's stale-brief
+ * row. The Brief page reads the feed itself, because a read that has not
+ * answered and one that failed are two different pages there and this getter
+ * makes both of them null.
  */
 export const brief = (state) => {
   const result = feed(state, 'brief');

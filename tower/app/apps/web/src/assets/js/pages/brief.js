@@ -28,7 +28,7 @@
 import omega from '@omega.js/client';
 import { startPage } from '../libs/tower/page.js';
 import { feed } from '../libs/tower/state.js';
-import { esc, empty, problem, loading, card } from '../libs/tower/format.js';
+import { esc, empty, problem, loading, card, documentMeta } from '../libs/tower/format.js';
 import { swap } from '@omega.js/client/modules/live-page';
 import { documentItem, documentBody, mountDocumentModal } from '../libs/tower/modal.js';
 import { briefAlert } from '../libs/tower/history.js';
@@ -53,12 +53,6 @@ const staleBanner = (payload) => {
 
 // ── This morning ───────────────────────────────────────────────────────────
 
-/** A date as this page says it, or '' when the document carried none. */
-const day = (value) => {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString();
-};
-
 // The newest brief, open. It is the reason to come here, so it is not a card to
 // click - it is the page, with the link to the post itself beside it.
 //
@@ -66,7 +60,7 @@ const day = (value) => {
 // is a card's affordance and is invisible until the card is hovered, which is
 // right on a list of forty and wrong on the one document already open.
 const latest = (doc) => card(doc.title, `<p class="omega-micro text-body-secondary">
-    ${esc([doc.kind, day(doc.createdAt)].filter(Boolean).join(' · '))}
+    ${esc(documentMeta(doc))}
     ${doc.url ? `· <a href="${esc(doc.url)}" target="_blank" rel="noopener">open it on GitHub</a>` : ''}
   </p>
   ${documentBody(doc, renderMarkdown)}`, { class: 'mb-4' });

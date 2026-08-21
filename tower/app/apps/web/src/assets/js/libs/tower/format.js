@@ -118,6 +118,36 @@ export const money = (value) => {
   return `$${n.toFixed(n >= 10 ? 2 : 3)}`;
 };
 
+/**
+ * A timestamp as the day it fell on, in the reader's own locale.
+ *
+ * What a missing or unreadable date leaves behind is the CALLER's, because the
+ * two surfaces that draw one want opposite things: a dialog row labelled "filed"
+ * has to say something, so it says a dash, while a line that is only a date
+ * would rather be absent than be a dash, and passes nothing.
+ *
+ * @param {string} value - an ISO timestamp off the API
+ * @param {string} [fallback] - what to say when there is no date to say
+ * @returns {string} plain text, never markup
+ */
+export const day = (value, fallback = '') => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? fallback : date.toLocaleDateString();
+};
+
+/**
+ * What a published document is, and when it was published - the line above
+ * every title.
+ *
+ * Two surfaces spell it, the archive's cards and the newest brief open at the
+ * top of the page, so it is written once here for the reason the body they draw
+ * is written once: the same post in two places says one thing about itself.
+ *
+ * @param {object} doc - one entry of the brief payload's `documents`
+ * @returns {string} plain text, never markup
+ */
+export const documentMeta = (doc) => [doc.kind, day(doc.createdAt)].filter(Boolean).join(' · ');
+
 //
 // The status pipeline, in the order the board reads left to right. It mirrors
 // the `status` group in the workflow label SSOT the API reads, and is restated

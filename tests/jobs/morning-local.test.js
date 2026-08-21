@@ -818,6 +818,10 @@ const run = async () => {
     assert(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(marker.checkedAt),
       `and when it was checked: ${marker.checkedAt}`);
     assert(/marker: /.test(world.log()), `the log says what was recorded: ${world.log()}`);
+    // The file it was written as first is BESIDE it, so what lands is a rename
+    // - and the rename takes the name with it, leaving the directory the
+    // machine's settings live in with one file in it.
+    assert(!fs.existsSync(`${world.markerFile}.tmp`), 'and nothing is left beside it');
     cleanup(world.root);
   });
 
@@ -870,6 +874,17 @@ const run = async () => {
     // unbounded read here would hold the morning open for as long as it liked.
     const text = fs.readFileSync(SCRIPT, 'utf8');
     assert(/WORKKIT_GH_TIMEOUT/.test(text), 'the same bound the engine reads under, and the same knob');
+  });
+
+  await test('the marker is written beside itself, so what lands on it is a rename', () => {
+    // The hook may read the marker at any moment and half of one must never be
+    // among the things it can find. A move ACROSS filesystems is a copy and an
+    // unlink rather than a rename, and a copy is exactly that half - so the
+    // temp is written in the marker's own directory, never in the scratch.
+    const text = fs.readFileSync(SCRIPT, 'utf8');
+    assert(/>"\$marker\.tmp"/.test(text), 'the whole file is written beside the marker');
+    assert(/mv "\$marker\.tmp" "\$marker"/.test(text), 'and moved onto it from there');
+    assert(!/SCRATCH_DIR\/brief-status\.json/.test(text), 'nothing writes the marker into the scratch any more');
   });
 
   group('jobs/morning (local): the manual trigger');

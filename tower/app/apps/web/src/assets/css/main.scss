@@ -289,3 +289,30 @@
   background: var(--omega-surface-2, var(--bs-tertiary-bg));
   overflow-x: auto;
 }
+
+// ── The project selector's menu ────────────────────────────────────────────
+//
+// One row per repo (libs/tower/sidebar.js), so a roster of fifteen draws a menu
+// taller than the window and scrolls the PAGE behind it to read the bottom of
+// itself. It scrolls on its own instead, at three fifths of the viewport - short
+// enough to sit inside any window the shell fits in, long enough that a small
+// roster never grows a scrollbar it does not need.
+//
+// The search box above the rows (issue #185) is only useful while it is on
+// screen, so its row is stuck to the top of that scroll and the rows pass UNDER
+// it. Two things make it opaque rather than a list read through a list: the
+// menu's own background token, and its own top padding in place of the menu's -
+// a sticky row offset by the menu's padding leaves a band above itself for the
+// rows to show through.
+[data-tower-projects] {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-top: 0;
+}
+
+[data-tower-projects] [data-tower-project-filter] {
+  background: var(--bs-dropdown-bg);
+  padding-top: var(--bs-dropdown-padding-y, .5rem);
+  position: sticky;
+  top: 0;
+}

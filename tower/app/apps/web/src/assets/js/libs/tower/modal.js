@@ -34,6 +34,7 @@
 
 import {
   esc, issueChips, statusChip, compact, money, modelBadge, classBadge, shortPath, issueKey,
+  day, documentMeta,
 } from './format.js';
 import { crewActivity, liveStamps, sinceLabel, roleIcon } from './agent.js';
 import { applyLive } from './clock.js';
@@ -103,12 +104,6 @@ export const issueItem = (issue, body, { item = '', inner = '' } = {}) => `<li c
 export const externalLink = (url, extraClass = '') => `<a class="omega-tower-external${extraClass ? ` ${extraClass}` : ''}" href="${esc(url)}" target="_blank" rel="noopener" title="Open on GitHub" aria-label="Open on GitHub">
   <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
 </a>`;
-
-/** A date as the dialog says it - the day, or a dash when there is no date. */
-const day = (value) => {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleDateString();
-};
 
 //
 // ── What an issue depends on ───────────────────────────────────────────────
@@ -222,8 +217,8 @@ const dependencyLine = (issue, issues) => {
 export const issueDialog = (issue, renderBody, issues) => {
   const rendered = renderBody(issue.body);
   const meta = [
-    `filed ${day(issue.createdAt)}`,
-    `updated ${day(issue.updatedAt)}`,
+    `filed ${day(issue.createdAt, '-')}`,
+    `updated ${day(issue.updatedAt, '-')}`,
     (issue.assignees || []).length ? `held by @${(issue.assignees || []).join(', @')}` : 'unclaimed',
   ];
 
@@ -604,9 +599,6 @@ export const excerpt = (body) => {
   const plain = line.replace(/^(?:#{1,6}\s+|>\s*)/, '').replace(/\s+/g, ' ');
   return plain.length > EXCERPT_MAX ? `${plain.slice(0, EXCERPT_MAX - 1).trimEnd()}…` : plain;
 };
-
-/** What a document is, and when it was published - the line above every title. */
-const documentMeta = (doc) => [doc.kind, doc.createdAt ? day(doc.createdAt) : ''].filter(Boolean).join(' · ');
 
 /**
  * The text of one document, rendered.

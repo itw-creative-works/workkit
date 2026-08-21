@@ -659,21 +659,28 @@ record_brief_status() {
   esac
 
   mkdir -p "$wk_dir" 2>/dev/null || true
-  # Written whole and moved into place: the hook may read this file at any
-  # moment, and half a marker must never be one of the things it can find.
+  # Written whole BESIDE the marker and renamed onto it: the hook may read this
+  # file at any moment, and half a marker must never be one of the things it can
+  # find. Beside it and not in the scratch, because a move across filesystems is
+  # a copy and an unlink rather than a rename - and a copy is exactly the half
+  # file this is written this way to rule out.
   #
   # The move is GUARDED ON THE WRITE. A scratch file that filled the disk or lost
   # its directory is a truncated one, and moving that over a good marker is the
   # one way this step could destroy the very answer it exists to keep — the same
   # never-a-lie rule every skip above obeys, at the last step where it can break.
+  # A move that fails takes the temp with it: the marker's own directory is the
+  # machine's, and nothing half-written is left sitting in it.
   if ! printf '{\n  "version": 1,\n  "lastBrief": "%s",\n  "checkedAt": "%s"\n}\n' \
-    "$last" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >"$SCRATCH_DIR/brief-status.json" 2>/dev/null; then
-    note "marker: the marker could not be written in $SCRATCH_DIR — $marker was left as it was (the board says the newest brief is $last)"
+    "$last" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >"$marker.tmp" 2>/dev/null; then
+    rm -f "$marker.tmp" 2>/dev/null || true
+    note "marker: the marker could not be written in $wk_dir — $marker was left as it was (the board says the newest brief is $last)"
     return 0
   fi
-  if mv "$SCRATCH_DIR/brief-status.json" "$marker" 2>/dev/null; then
+  if mv "$marker.tmp" "$marker" 2>/dev/null; then
     note "marker: the newest brief on $slug is $last — recorded in $marker"
   else
+    rm -f "$marker.tmp" 2>/dev/null || true
     note "marker: $marker could not be written — the board says the newest brief is $last"
   fi
   return 0

@@ -7,6 +7,16 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#185](../../issues/185) — The tower's project selector gains a search box: typing narrows the rows, arrows walk what is left, Enter takes the top one, and the menu scrolls with the box pinned. The All projects box also unticks every row now, and boxes never reshape the open menu.
+- [#186](../../issues/186) — Projects can be starred in that menu, and the starred ones are drawn above the rest in roster order. A favorite lives in this browser's localStorage, changes no scope and never closes the menu.
+
+### Fixed
+
+- [#184](../../issues/184) — The 9am job's stale-brief marker is staged beside its final home, so the move into place is a same-filesystem rename and a half-written marker can never be read.
+- [#187](../../issues/187) — Ctrl-C ends the token mint again: the CLI discards the key in its raw screen, so at a real terminal the mint now runs under `expect`, which catches it one layer out. `script` stays the fallback.
+
 ## [0.45.0] - 2026-08-20
 
 ### Added

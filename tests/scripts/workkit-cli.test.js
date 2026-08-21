@@ -1050,15 +1050,15 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     cleanup(world.root);
   });
 
-  await test('a machine with no `script` utility is a named skip with the two commands, and asks nothing', () => {
+  await test('a machine with neither pty runner is a named skip with the two commands, and asks nothing', () => {
     // PATH is narrowed to the world's own shims AFTER the CLI is loaded: this
-    // machine has a `script`, and the run that has none cannot be staged any
-    // other way. The claude stub is in that same directory, so the check that
-    // fires is the one being tested.
+    // machine has a `script` (and maybe `expect`), and the run that has
+    // neither cannot be staged any other way. The claude stub is in that same
+    // directory, so the check that fires is the one being tested.
     const world = mkHomeWorld({ secrets: [], claudeToken: MINTED });
     const { code, out } = inCli(world, `${AT_TERMINAL}\nPATH='${world.bin}'\noffer_claude_token ${HOME} 'is not set'`, { input: 'y\n' });
     assertEq(code, 0, 'exit 0 — a machine that cannot mint is not a failed run');
-    assert(/needs the `script` utility/.test(out), `it names what is missing, got: ${out}`);
+    assert(/needs `expect` or `script`/.test(out), `it names both runners it is missing (#187), got: ${out}`);
     assert(out.includes('claude setup-token'), 'and hands over the mint');
     assert(out.includes(`gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo ${HOME}`), 'and the command that pushes it');
     assert(!/\[y\/N\]/.test(out), `the question is not even put, got: ${out}`);
