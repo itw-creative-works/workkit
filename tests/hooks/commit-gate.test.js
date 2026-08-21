@@ -214,6 +214,25 @@ const run = async () => {
     assert(Number(m[1]) < entry.timeout, 'and it fires before the harness cancels the hook');
   });
 
+  await test('the hook timeout leaves headroom for a raised per-repo budget (#189)', () => {
+    // Grown suites raise WORKKIT_GATE_TEST_DEADLINE in their own settings; the
+    // declared timeout must sit above any such raise or the harness cancels the
+    // hook mid-suite and the cancellation is a silent allow.
+    const hooksJson = JSON.parse(fs.readFileSync(
+      path.join(__dirname, '..', '..', 'hooks', 'hooks.json'), 'utf8'));
+    const entry = hooksJson.hooks.PreToolUse
+      .flatMap((m) => m.hooks)
+      .find((h) => h.command.includes('safety:commit-gate'));
+    assertEq(entry.timeout, 3000, 'the declared timeout is 3000s');
+    const script = fs.readFileSync(HOOK, 'utf8');
+    assert(/WORKKIT_GATE_TEST_DEADLINE:-1500/.test(script),
+      'the default budget stays 1500s for small repos');
+    assert(script.includes('.claude/settings.json'),
+      'the header names where a repo raises its budget');
+    assert(/\[ "\$deadline" -gt 2900 \].*deadline=2900/.test(script),
+      'an over-raise clamps back under the hook timeout');
+  });
+
   group('commit-gate: new source files need tests (test-TYPE proxy)');
 
   await test('new .js file, no test file staged — exit 2', () => {

@@ -89,6 +89,7 @@ One line per hook; the section below it carries the detail.
 - A check that stands down says so out loud, one visible line, instead of skipping in silence.
 - The suite runs only for a commit carrying CODE (#151). A docs-only commit, and a version-only bump in the root `package.json` or `.claude-plugin/plugin.json`, stand it down.
 - The suite run has its own deadline under the hook's declared timeout, so a suite the harness would cancel bounces the commit instead of slipping through.
+- A repo whose green suite outgrows the 1500s default raises `WORKKIT_GATE_TEST_DEADLINE` in its own `.claude/settings.json` env block, clamped at 2900s under the gate's 3000s hook timeout (#189).
 - A commit the gate cannot PLACE bounces as well (#159): the `pushd`/`popd` spelling of the directory change, which used to walk past the `cd` test, and a session directory inside no repository at all — a background subagent's steady state, where the gate used to stand down entirely.
 
 ## `safety:commit-language` — PreToolUse (Bash)

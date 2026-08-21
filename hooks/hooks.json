@@ -42,7 +42,7 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh safety:commit-gate",
-            "timeout": 1600
+            "timeout": 3000
           },
           {
             "type": "command",

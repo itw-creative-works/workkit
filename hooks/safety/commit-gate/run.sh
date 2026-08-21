@@ -21,6 +21,15 @@
 #      line still gates, and a release commit skips only because its tree is
 #      the previously gated tree plus generated bookkeeping — so by induction
 #      every tree that ever gained code was tested when it gained it.
+#      The run's budget is WORKKIT_GATE_TEST_DEADLINE (default 1500s), kept
+#      under the hook's declared timeout in hooks.json (3000s). A repo whose
+#      green suite outgrows the default raises the env var in its own
+#      .claude/settings.json env block (issue #189) — the default stays small
+#      so small repos still bounce a hung suite quickly, and the timeout's
+#      headroom is what makes a per-repo raise effective without touching
+#      this plugin. A raise above 2900s is clamped back, so the harness can
+#      never cancel the hook into a silent allow. Both the raise and a
+#      plugin update take effect on a session restart.
 # Code-vs-docs classification matches the docs/change-tracker hook (same
 # definition in both — a docs PATH, then a code extension winning over it, then
 # the docs basenames — kept in sync by hand, no second consumer shape yet); the
@@ -390,7 +399,7 @@ fi
 # check 2's, so a docs-only commit and a release commit's version stamps stand
 # the suite down; the header records why that lands no untested code (#151). A
 # pathspec commit is code by definition here, so it keeps gating strictly. The
-# run carries its own deadline, kept under the hook's declared timeout (1600s
+# run carries its own deadline, kept under the hook's declared timeout (3000s
 # in hooks.json): a hook the harness cancels returns no decision, and no
 # decision is ALLOW — so without this, the biggest suites are exactly where the
 # gate stopped enforcing (issue #93).
@@ -403,6 +412,10 @@ gate_end_tree() {
 }
 if [ "$has_code" -eq 1 ] && [ -f "$repo_root/package.json" ] && jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
   deadline="${WORKKIT_GATE_TEST_DEADLINE:-1500}"
+  # An over-raised budget would let the harness cancel the hook at its 3000s
+  # timeout first — no decision, and no decision is ALLOW (#93). Clamp so a
+  # misconfigured raise still bounces loudly instead of silently allowing.
+  [ "$deadline" -gt 2900 ] 2>/dev/null && deadline=2900
   out_file=$(mktemp "${TMPDIR:-/tmp}/commit-gate-test.XXXXXX")
   (cd "$repo_root" && npm test >"$out_file" 2>&1) &
   test_pid=$!
@@ -413,7 +426,7 @@ if [ "$has_code" -eq 1 ] && [ -f "$repo_root/package.json" ] && jq -e '.scripts.
   if kill -0 "$test_pid" 2>/dev/null; then
     gate_end_tree "$test_pid"
     rm -f "$out_file"
-    block "the test suite was still running at the gate's ${deadline}s deadline, so the gate cannot prove it green. Run npm test yourself; if this repo's suite genuinely needs longer, raise WORKKIT_GATE_TEST_DEADLINE (and the hook's own timeout with it)."
+    block "the test suite was still running at the gate's ${deadline}s deadline, so the gate cannot prove it green. Run npm test yourself; if this repo's suite genuinely needs longer, raise WORKKIT_GATE_TEST_DEADLINE in this repo's .claude/settings.json env block (2900s at most) and restart the session."
   fi
   if ! wait "$test_pid"; then
     {
