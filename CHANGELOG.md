@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.47.1] - 2026-08-21
+
 ### Fixed
 
-- [#189](../../issues/189) — The commit gate's suite budget now fits grown repos: the hook timeout rises to 3000s, and a repo raises `WORKKIT_GATE_TEST_DEADLINE` (default 1500s, clamped at 2900s) in its own settings env block. The bounce message now names that path.
+- [#189](../../issues/189) [`666ba4c`](../../commit/666ba4c) Thanks [@ianwieds]! — The commit gate's suite budget now fits grown repos: the hook timeout rises to 3000s, and a repo raises `WORKKIT_GATE_TEST_DEADLINE` (default 1500s, clamped at 2900s) in its own settings env block. The bounce message now names that path.
 
 ## [0.47.0] - 2026-08-20
 
