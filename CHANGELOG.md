@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-08-20
+
 ### Changed
 
-- [#188](../../issues/188) — Unticking every project box now shows an empty board instead of the whole one: none gets its own `?repo=~` value, the selector reads No projects with the hidden count, and a subset builds up from the empty slate.
+- [#188](../../issues/188) [`273d6fa`](../../commit/273d6fa) Thanks [@ianwieds]! — Unticking every project box now shows an empty board instead of the whole one: none gets its own `?repo=~` value, the selector reads No projects with the hidden count, and a subset builds up from the empty slate.
 
 ## [0.46.0] - 2026-08-20
 
