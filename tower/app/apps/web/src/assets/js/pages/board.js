@@ -33,7 +33,7 @@
 
 import { startPage } from '../libs/tower/page.js';
 import { issuesFor, board, feed, issueByKey } from '../libs/tower/state.js';
-import { selectedSlugs } from '../libs/tower/scope.js';
+import { isNone, selectedSlugs } from '../libs/tower/scope.js';
 import {
   esc, empty, problem, loading, issueChips, issueKey, STATUSES, statusColor, byPriority, noStatusAlert,
 } from '../libs/tower/format.js';
@@ -218,8 +218,10 @@ const counts = (shown, total, selected) => {
   const hidden = total - shown;
   // The scope is a SET (#104): every repo, one of them, or the subset the URL
   // names - and a subset says how many rather than listing them into the line.
+  // The none state (#188) is said in words, never as its tilde.
   let scope = 'across every repo';
-  if (selected.length === 1) scope = `in ${esc(selected[0])}`;
+  if (isNone(selected)) scope = 'with no projects selected';
+  else if (selected.length === 1) scope = `in ${esc(selected[0])}`;
   else if (selected.length > 1) scope = `across ${selected.length} repos`;
   const tail = hidden > 0 ? ` - ${hidden} filtered out` : '';
   return `<p class="omega-micro text-body-secondary mb-2">showing ${shown} of ${total} open issue${total === 1 ? '' : 's'} ${scope}${tail}</p>`;

@@ -2392,7 +2392,31 @@ const run = async () => {
     assert(!gone.includes('data-tower-indeterminate'), 'and half-ticked would claim something is');
   });
 
-  await test('the selector button says which of the three modes is in force', () => {
+  await test('unticking everything is the none state: boxes stay, nothing ticks, nothing is active (#188)', () => {
+    const markup = sidebar.menuMarkup(mkState({ repos: ROSTER }, scope.NONE));
+    assert(markup.includes('data-tower-scope-slug="workkit"'), 'the boxes stay on screen - the state is the start of a build, never single mode');
+    assert(!/ checked/.test(markup), 'and not one of them is ticked, the master included');
+    assert(!markup.includes('data-tower-indeterminate'), 'the master is plainly off, not half');
+    assert(!/aria-current/.test(markup), 'no row is in force - the board behind the menu is honestly empty');
+    const label = sidebar.selectorLabel(mkState({ repos: ROSTER }, scope.NONE));
+    assertEq(label.name, 'No projects', 'the trigger explains the empty board in words, never as a tilde');
+    assertEq(label.env, '2 hidden', 'and counts what the state hides');
+    // To every page the tilde is just a selection placing nothing - the state
+    // the pages already handle - and `isNone` is the one comparison door.
+    assertEq(scope.inScope(scope.parseRepos(scope.NONE), 'workkit'), false, 'no repo is in scope under it');
+    assert(scope.isNone(scope.parseRepos(scope.NONE)), 'the door answers for the parsed selection');
+    assertEq(scope.scopedHref('/board', scope.NONE), '/board?repo=~', 'and the URL carries the tilde itself, never %7E - a query is a thing people copy');
+    // The surfaces that SAY the state say it in words (the review pass caught
+    // the tilde escaping into all three).
+    const pagesDir = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const pageSrc = (name) => require('fs').readFileSync(path.join(pagesDir, name), 'utf8');
+    assert(/isNone\(selected\)\) scope = 'with no projects selected'/.test(pageSrc('board.js')), 'the Board count line says the none scope in words');
+    for (const page of ['index.js', 'health.js']) {
+      assert(/isNone\(selectedSlugs\(state\)\) \? 'no projects selected/.test(pageSrc(page)), `${page} tells an unticked roster apart from an empty one`);
+    }
+  });
+
+  await test('the selector button says which mode is in force', () => {
     const none = sidebar.selectorLabel(mkState({ repos: ROSTER }));
     assertEq(none.name, 'All projects', 'no selection is the whole board');
     assertEq(none.initial, 'A', 'and the tile is the name’s first character, upcased');
@@ -4180,7 +4204,7 @@ const run = async () => {
     // every box on the roster.
     assert(/data-tower-scope-all/.test(source), 'the master box is wired too');
     assert(/indeterminate = .*hasAttribute\('data-tower-indeterminate'\)/.test(source), 'the marker sidebar.js writes becomes the DOM property');
-    assert(/applyScope\('', false\)/.test(source), 'and either state of it is the whole board');
+    assert(/applyScope\(master\.checked \? '' : NONE, false\)/.test(source), 'ticking it is the whole board, unticking it the none scope (#188)');
     assert(/scopedHref\(/.test(source), 'the nav links are rewritten through the one formatter');
     assert(/scopeNav\(/.test(source), 'and the rewrite has a name the paint and the change both call');
     assert(!/tower-repo/.test(source), 'and the chrome’s dropdown is gone, handler and all');
@@ -4238,7 +4262,7 @@ const run = async () => {
     // reaching exactly one tick must not collapse it to single mode under the
     // pointer - so both handlers pass the no-reshape flag and tell the master
     // in place instead.
-    assert(/chosen\.join\(','\) : '', false\)/.test(source), 'a slug box applies its scope without reshaping the menu');
+    assert(/chosen\.join\(','\) : ''\) : NONE, false\)/.test(source), 'a slug box applies its scope - down to the none state (#188) - without reshaping the menu');
     assert(/master\.checked = chosen\.length === boxes\.length/.test(source), 'and updates the master summary where it stands');
     assert(/master\.indeterminate = chosen\.length > 0 && chosen\.length < boxes\.length/.test(source), 'including the half state markup cannot say');
     // The reshape happens at close, unconditionally: a build made and unmade

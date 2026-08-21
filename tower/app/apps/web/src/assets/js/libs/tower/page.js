@@ -54,7 +54,7 @@ import { isTokenRefusal, safeStorage } from './github.js';
 import { readFavorites, toggleFavorite } from './favorites.js';
 import { isLocalHost, towerDownNotice, settingsNotice } from './token.js';
 import { chromeMarkup, statusMarkup } from './chrome.js';
-import { isScopedPath, scopedHref, settingsHref } from './scope.js';
+import { isScopedPath, NONE, scopedHref, settingsHref } from './scope.js';
 import { menuMarkup, selectorLabel, sidebarKey } from './sidebar.js';
 import { startClock } from './clock.js';
 import { holdBoard, refreshAgentDialog } from './modal.js';
@@ -436,18 +436,17 @@ export async function startPage(options) {
     }
     // The master row's box. Indeterminate is a DOM PROPERTY - markup cannot say
     // it - so the marker sidebar.js writes is turned into the property here. A
-    // TOGGLE both ways: ticking it fills the roster, unticking it empties the
-    // roster's boxes to build a subset up from nothing - and either way the
-    // board shows everything, since no boxes and all boxes are the same absent
-    // `?repo=`. The boxes are set in place, so the node under the keyboard
-    // survives its own click.
+    // TOGGLE both ways: ticking it fills the roster and shows the whole board;
+    // unticking it empties every box AND the board (issue #188) - the none
+    // scope - which is where a subset builds up from. The boxes are set in
+    // place, so the node under the keyboard survives its own click.
     const master = projects.querySelector('[data-tower-scope-all]');
     if (master) {
       master.indeterminate = master.hasAttribute('data-tower-indeterminate');
       master.addEventListener('change', () => {
         for (const one of projects.querySelectorAll('[data-tower-scope-slug]')) one.checked = master.checked;
         master.indeterminate = false;
-        applyScope('', false);
+        applyScope(master.checked ? '' : NONE, false);
       });
     }
     for (const box of projects.querySelectorAll('[data-tower-scope-slug]')) {
@@ -455,9 +454,10 @@ export async function startPage(options) {
         const boxes = [...projects.querySelectorAll('[data-tower-scope-slug]')];
         const chosen = boxes.filter((one) => one.checked).map((one) => one.getAttribute('data-tower-scope-slug'));
         // Every box checked is every repo, which is what an ABSENT parameter
-        // already says - and so is no box at all, since a scope holding nothing
-        // is a board with nothing on it rather than a filter.
-        applyScope(chosen.length && chosen.length < boxes.length ? chosen.join(',') : '', false);
+        // already says. No box at all is the none scope (issue #188): what
+        // shows nothing is said in a value of its own, since the absent one is
+        // taken.
+        applyScope(chosen.length ? (chosen.length < boxes.length ? chosen.join(',') : '') : NONE, false);
         // The menu kept its shape, so the master's summary of the roster is
         // told here rather than redrawn.
         master.checked = chosen.length === boxes.length;

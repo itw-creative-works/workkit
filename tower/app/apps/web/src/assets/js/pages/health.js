@@ -15,6 +15,7 @@
 
 import { startPage } from '../libs/tower/page.js';
 import { reposFor, brief, health, feed } from '../libs/tower/state.js';
+import { isNone, selectedSlugs } from '../libs/tower/scope.js';
 import { esc, empty, problem, loading, card } from '../libs/tower/format.js';
 import { swap } from '@omega.js/client/modules/live-page';
 import { briefAlert } from '../libs/tower/history.js';
@@ -144,7 +145,9 @@ const render = (root, state) => {
     return;
   }
   if (!list.length) {
-    swap(root, roster ? empty('no repos in the roster - nothing has opted in under the roster root', 'fa-regular fa-square-plus') : loading('reading the roster…'));
+    // An empty SCOPED list has two honest readings (#188): everything
+    // unticked, or a roster with genuinely nothing on it.
+    swap(root, roster ? empty(isNone(selectedSlugs(state)) ? 'no projects selected - tick one in the project menu' : 'no repos in the roster - nothing has opted in under the roster root', 'fa-regular fa-square-plus') : loading('reading the roster…'));
     return;
   }
   // Before the readings land there is nothing to judge, and "nothing is broken"

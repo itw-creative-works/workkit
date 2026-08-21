@@ -43,6 +43,27 @@ export const SCOPED_PATHS = ['/', '/board', '/crew', '/usage', '/health', '/brie
 const BASE = 'http://tower.invalid';
 
 /**
+ * The `?repo=` value that means NO repos at all (issue #188) - what unticking
+ * every box writes. An ABSENT value already means every repo, so "none" needs a
+ * value of its own, and a tilde can never collide with a repo: GitHub names
+ * allow only letters, digits, `-`, `_` and `.`. It asks for no special parsing
+ * - a selection naming a repo the roster does not carry already places
+ * nothing, which is exactly what this state is - and `isNone` below is the one
+ * door for the surfaces that DRAW the state in words rather than filter by it.
+ */
+export const NONE = '~';
+
+/**
+ * Whether a parsed selection is the none state - what the surfaces that say
+ * "no projects selected" test, so no page ever compares against the tilde
+ * itself or prints it.
+ *
+ * @param {string[]} slugs - the selection, from `selectedSlugs`/`parseRepos`
+ * @returns {boolean}
+ */
+export const isNone = (slugs) => slugs.length === 1 && slugs[0] === NONE;
+
+/**
  * The slugs a `?repo=` value names, in the order it names them.
  *
  * Empty, absent or all-whitespace is the empty list, which every predicate
@@ -182,10 +203,11 @@ export const scopedHref = (href, value) => {
   const url = new URL(href, BASE);
   if (value) url.searchParams.set('repo', value);
   else url.searchParams.delete('repo');
-  // The separator is written as a comma, not as `%2C`: both read back the same
-  // through `searchParams`, and the query is a thing people copy out of the
-  // address bar and paste to each other.
-  const search = url.search.replace(/%2C/g, ',');
+  // The separator is written as a comma and the none state as its tilde, not
+  // as `%2C`/`%7E`: all of them read back the same through `searchParams`, and
+  // the query is a thing people copy out of the address bar and paste to each
+  // other.
+  const search = url.search.replace(/%2C/g, ',').replace(/%7E/g, '~');
   return `${sitePath(pathOf(url.pathname))}${search}${url.hash}`;
 };
 

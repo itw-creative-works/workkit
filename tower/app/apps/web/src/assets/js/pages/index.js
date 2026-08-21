@@ -21,7 +21,7 @@ import {
 } from '../libs/tower/history.js';
 import { swap } from '@omega.js/client/modules/live-page';
 import { issueItem, externalLink } from '../libs/tower/modal.js';
-import { selectedSlugs, sitePath, scopedHref } from '../libs/tower/scope.js';
+import { isNone, selectedSlugs, sitePath, scopedHref } from '../libs/tower/scope.js';
 import { crewActivity, cardMuted } from '../libs/tower/agent.js';
 
 // Every pointer this page draws - the tiles, the see-all lines, the panel
@@ -217,7 +217,9 @@ const healthPanel = (state) => {
   if (localOnly(state, 'health')) body = localOnlyNotice();
   else if (!result) body = loading('reading the roster…');
   else if (!result.ok) body = problem(result.reason);
-  else if (!list.length) body = empty('no repos in the roster - nothing has opted in under the roster root', 'fa-regular fa-square-plus');
+  // An empty SCOPED list has two honest readings (#188): everything unticked,
+  // or a roster with genuinely nothing on it.
+  else if (!list.length) body = empty(isNone(selectedSlugs(state)) ? 'no projects selected - tick one in the project menu' : 'no repos in the roster - nothing has opted in under the roster root', 'fa-regular fa-square-plus');
   else {
     const ranked = [...list].sort((a, b) => trouble(health(state)[b.path]) - trouble(health(state)[a.path]));
     const { shown, hidden } = cap(ranked);

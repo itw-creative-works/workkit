@@ -40,7 +40,7 @@
 
 import { esc } from './format.js';
 import { repos } from './state.js';
-import { selectedSlugs } from './scope.js';
+import { isNone, selectedSlugs } from './scope.js';
 
 /** The roster slugs, in roster order. */
 const slugsOf = (state) => repos(state).map((repo) => repo.slug).filter(Boolean);
@@ -135,7 +135,9 @@ const row = (label, value, active, controls) => `<li class="d-flex align-items-c
  * repo - a subset is still a view of the whole board, narrowed - which is also
  * what keeps the boxes that made the subset on screen while it is in force. It
  * stays under the search box and above every repo, in both senses: it is the
- * master row, and a filter is about the roster rather than about it.
+ * master row, and a filter is about the roster rather than about it. The none
+ * state is the one exception with no active row at all: nothing is in force,
+ * and the board behind the menu is honestly empty.
  *
  * @param {object} state - the runtime's feed state
  * @returns {string} the menu's `li` children, or '' before the roster answers
@@ -145,15 +147,18 @@ export const menuMarkup = (state) => {
   if (!slugs.length) return '';
   const favored = favoritesOf(state);
   const selected = selectedSlugs(state);
-  // One project in force is the one state with nothing to tick.
-  const single = selected.length === 1;
-  const ticks = slugs.filter((slug) => !selected.length || selected.includes(slug));
-  // The star rides every row in all three modes; the box only while there is a
+  // The none state keeps the boxes on screen with nothing ticked - it is the
+  // start of a build, not a project in force. One project IS in force is the
+  // one state with nothing to tick.
+  const none = isNone(selected);
+  const single = !none && selected.length === 1;
+  const ticks = none ? [] : slugs.filter((slug) => !selected.length || selected.includes(slug));
+  // The star rides every row in all the modes; the box only while there is a
   // subset to build.
   const repoRow = (slug) => row(slug, slug, single && selected[0] === slug,
     `${single ? '' : box(slug, ticks.includes(slug))}${star(slug, favored.includes(slug))}`);
   return `${search()}
-    ${row('All projects', '', !single, single ? '' : masterBox(ticks.length, slugs.length))}
+    ${row('All projects', '', !single && !none, single ? '' : masterBox(ticks.length, slugs.length))}
     ${slugs.map(repoRow).join('')}`;
 };
 
@@ -162,8 +167,8 @@ export const menuMarkup = (state) => {
  *
  * The tile is the name's first character, the way the theme's own selector
  * spells it, and the second line is the honest count behind the name - the
- * three modes read differently and the button is the only place a viewer sees
- * which one they are in without opening the menu.
+ * modes read differently and the button is the only place a viewer sees which
+ * one they are in without opening the menu.
  *
  * @param {object} state - the runtime's feed state
  * @returns {{name: string, initial: string, env: string}}
@@ -180,7 +185,12 @@ export const selectorLabel = (state) => {
   // Before the roster answers the count is not known, and the line says the
   // same thing the theme baked rather than a number nothing stands behind.
   let env = total ? `all ${total} repos on the roster` : 'every repo on the roster';
-  if (selected.length === 1) {
+  if (isNone(selected)) {
+    // The none state (issue #188): the trigger is what explains an empty
+    // board, so it says NO projects rather than naming a tilde.
+    name = 'No projects';
+    env = total ? `${total} hidden` : 'nothing selected';
+  } else if (selected.length === 1) {
     [name] = selected;
     env = `1 of ${total} repos`;
   } else if (selected.length > 1) {
