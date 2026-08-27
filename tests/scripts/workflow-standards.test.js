@@ -263,7 +263,7 @@ const run = async () => {
     assertEq(Object.keys(status).slice(0, 5).join(','), 'inbox,specced,building,qa,complete', 'the pipeline in order');
     assertEq(status.complete.description, 'QA passed, ready to ship. Exactly one status: label per open issue.', 'complete says QA passed');
     assertEq(status.complete.color, '12925C', 'complete wears the verdict green');
-    assertEq(status.qa.color, '6A7F2B', 'qa moved off it — qa only means waiting on the check');
+    assertEq(status.qa.color, 'B0416A', 'qa moved off it — qa only means waiting on the check');
   });
 
   await test('values are single lowercase words — no hyphens', () => {
@@ -302,9 +302,9 @@ const run = async () => {
     // could track, for the danger red that `status:blocked` also wears.
     const expected = {
       status: {
-        inbox: '0F8FA9', specced: '7A45B5', building: 'C47206', qa: '6A7F2B', complete: '12925C', blocked: 'D92D20', backlog: 'A1A19E',
+        inbox: '0F8FA9', specced: '7A45B5', building: 'C47206', qa: 'B0416A', complete: '12925C', blocked: 'D92D20', backlog: 'A1A19E',
       },
-      type: { bug: 'B0416A', enhancement: 'A06A08', idea: '7A45B5' },
+      type: { bug: 'D92D20', enhancement: 'A06A08', idea: '7A45B5' },
       priority: { high: 'D92D20', low: 'A1A19E' },
     };
     for (const [group, values] of Object.entries(expected)) {

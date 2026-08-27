@@ -84,6 +84,15 @@ export const ROSTER_REF = 'main';
 // Per repo, per request - GitHub caps a connection page at 100 (tower/api/lib/board.js).
 const PAGE_SIZE = 100;
 
+/**
+ * How many repos ride ONE request (issue #202) - tower/api/lib/board.js's
+ * measured number, restated for the copy-boundary reason every other constant
+ * here is, and pinned against it by the suite. The whole roster in one document
+ * is what GitHub refuses: it scores a query before running it, and a 23-repo
+ * sweep came back RESOURCE_LIMITS_EXCEEDED with every issue node null.
+ */
+export const REPOS_PER_REQUEST = 6;
+
 // How much of an issue body rides the sweep; the dialog reads it straight off.
 const BODY_LIMIT = 4000;
 
@@ -334,7 +343,7 @@ export const fetchSlugs = async (ctx = {}) => {
 
 // ── The board ──────────────────────────────────────────────────────────────
 
-/** The sweep, one aliased field per repo - one request whatever the roster's size. */
+/** The sweep, one aliased field per repo - one document per BATCH of them (#202). */
 export const buildBoardQuery = (slugs) => {
   const fields = slugs.map((slug, i) => {
     const [owner, name] = slug.split('/');
@@ -463,6 +472,14 @@ export const errorsByAlias = (errors) => {
   return map;
 };
 
+/** The FIRST message GitHub reported against an alias - the API's own, and what a dropped-node reason quotes. */
+export const firstErrorFor = (errors, alias) => {
+  for (const error of errors || []) {
+    if (Array.isArray(error.path) && error.path[0] === alias) return error.message || error.type || 'unknown error';
+  }
+  return 'no reason given';
+};
+
 /**
  * One GraphQL answer, normalized to the board payload the pages read.
  *
@@ -481,15 +498,22 @@ export const normalizeBoard = (slugs, data, errors, now = Date.now()) => {
     const alias = `r${i}`;
     const resolved = (data || {})[alias];
     const conn = (resolved || {}).issues || {};
-    const nodes = conn.nodes || [];
-    const total = typeof conn.totalCount === 'number' ? conn.totalCount : nodes.length;
+    const answered = conn.nodes || [];
+    // A NULL node is an issue GitHub could not deliver, and reading a field off
+    // one is what ended the tower's API (issue #202). It is skipped, counted,
+    // and said out loud on the repo it belongs to - the API's own guard, so the
+    // published board and the tower board drop it identically.
+    const nodes = answered.filter(Boolean);
+    const dropped = answered.length - nodes.length;
+    const total = typeof conn.totalCount === 'number' ? conn.totalCount : answered.length;
     repos.push({
       slug,
       count: nodes.length,
       totalCount: total,
-      truncated: total > nodes.length,
+      truncated: total > answered.length,
       closedDay: closedSince(resolved, now),
-      error: aliasErrors[alias] || (resolved ? null : 'not resolved'),
+      error: (dropped > 0 ? `GitHub dropped ${dropped} of ${answered.length} issues: ${firstErrorFor(errors, alias)}` : null)
+        || aliasErrors[alias] || (resolved ? null : 'not resolved'),
     });
     for (const node of nodes) {
       const parsed = parseLabels((node.labels || {}).nodes);
@@ -533,13 +557,33 @@ export const normalizeBoard = (slugs, data, errors, now = Date.now()) => {
  */
 export const fetchBoard = async (slugs, ctx = {}) => {
   if (!slugs.length) return { ok: true, issues: [], repos: [] };
-  const answer = await graphql(buildBoardQuery(slugs), ctx);
-  if (!answer.ok) {
+
+  const batches = [];
+  for (let offset = 0; offset < slugs.length; offset += REPOS_PER_REQUEST) {
+    batches.push(slugs.slice(offset, offset + REPOS_PER_REQUEST));
+  }
+  // Together, unlike the tower's, which has a cache in front of it and nothing
+  // to gain by racing: a page is drawing a board a viewer is waiting on, and the
+  // browser holds its own connection limit over them anyway.
+  const answers = await Promise.all(batches.map((batch) => graphql(buildBoardQuery(batch), ctx)));
+
+  const refused = answers.find((answer) => !answer.ok);
+  if (refused) {
     return {
-      ok: false, reason: answer.reason, status: answer.status, issues: [], repos: [],
+      ok: false, reason: refused.reason, status: refused.status, issues: [], repos: [],
     };
   }
-  return normalizeBoard(slugs, answer.data, answer.errors);
+
+  // The aliases restart at r0 in every answer, so each batch is normalized
+  // against its OWN slugs and the results are concatenated in roster order.
+  const issues = [];
+  const repos = [];
+  batches.forEach((batch, i) => {
+    const part = normalizeBoard(batch, answers[i].data, answers[i].errors);
+    issues.push(...part.issues);
+    repos.push(...part.repos);
+  });
+  return { ok: true, issues, repos };
 };
 
 /** The two statuses that mean the TOKEN is the problem, not the read. */

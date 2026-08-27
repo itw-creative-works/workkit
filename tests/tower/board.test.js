@@ -14,7 +14,7 @@ const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
 const REPO = path.join(__dirname, '..', '..');
-const { fetchBoard, buildQuery, labelGroups, LABELS_FILE, PAGE_SIZE, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE } = require(path.join(REPO, 'tower', 'api', 'lib', 'board.js'));
+const { fetchBoard, buildQuery, labelGroups, LABELS_FILE, PAGE_SIZE, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, REPOS_PER_REQUEST } = require(path.join(REPO, 'tower', 'api', 'lib', 'board.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-board-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -413,6 +413,108 @@ const run = async () => {
     assertEq(res.repos[0].totalCount, 140, 'the real total is reported');
     assertEq(res.repos[0].count, 3, 'what actually came back');
     assertEq(res.repos[1].truncated, false, 'r1 is complete');
+  });
+
+  group('tower/board: the sweep is batched');
+
+  // Issue #202: the whole roster in ONE request is what stopped working. At 23
+  // repos GitHub answers RESOURCE_LIMITS_EXCEEDED - every issue node null, an
+  // error per node - so the sweep asks for a handful of repos at a time and
+  // merges. The aliases restart at r0 in every request, which is the thing that
+  // can silently mis-attribute an issue, so the fake answers each request only
+  // for the repos THAT request named.
+  const bigRoster = (n) => Array.from({ length: n }, (_, i) => ({
+    name: `repo${i}`, path: `/x/repo${i}`, slug: `owner/repo${i}`,
+  }));
+
+  /** A fake `gh` that reads each request's own aliases back out of the query. */
+  const fakeBatched = (calls) => (cmd, args) => {
+    calls.push([cmd, ...args]);
+    if (args[0] === '--version') return 'gh version 2.0.0\n';
+    const query = args[args.length - 1];
+    const data = {};
+    const re = /(r\d+): repository\(owner: "[^"]+", name: "repo(\d+)"\)/g;
+    let match = re.exec(query);
+    while (match) {
+      // The issue number IS the repo's index, so a merge that mapped an alias
+      // back onto the wrong repo shows up as a mismatched pair.
+      data[match[1]] = { issues: { totalCount: 1, nodes: [issue(Number(match[2]))] } };
+      match = re.exec(query);
+    }
+    return JSON.stringify({ data });
+  };
+
+  await test('a roster longer than one batch is swept in one request per batch', () => {
+    const calls = [];
+    const res = fetchBoard(bigRoster(13), { exec: fakeBatched(calls) });
+    assertEq(REPOS_PER_REQUEST, 6, 'the measured batch size (issue #202)');
+    const queries = calls.filter((c) => c[1] === 'api');
+    assertEq(queries.length, 3, '13 repos at 6 a request is three requests, never one');
+    assertEq((queries[0][4].match(/repository\(/g) || []).length, REPOS_PER_REQUEST, 'the first request carries a full batch');
+    assertEq((queries[2][4].match(/repository\(/g) || []).length, 1, 'and the last carries the remainder');
+    assertEq(res.ok, true, 'ok');
+  });
+
+  await test('the batches merge back in roster order, each issue on the repo that answered it', () => {
+    const res = fetchBoard(bigRoster(13), { exec: fakeBatched([]) });
+    assertEq(res.repos.map((r) => r.slug).join(','), bigRoster(13).map((r) => r.slug).join(','),
+      'every repo is reported once, in the order the roster names them');
+    assertEq(res.issues.length, 13, 'and no batch was dropped');
+    assertEq(res.issues.map((i) => `${i.repo}#${i.number}`).join(' '),
+      bigRoster(13).map((r, i) => `${r.slug}#${i}`).join(' '),
+      'the aliases restart per request, so this is what proves the offset is applied');
+  });
+
+  await test('a request that fails outright still fails the sweep, batches or not', () => {
+    const res = fetchBoard(bigRoster(13), {
+      exec: (cmd, args) => {
+        if (args[0] === '--version') return 'gh version 2.0.0\n';
+        throw execError('HTTP 502', { stderr: 'gateway' });
+      },
+    });
+    assertEq(res.ok, false, 'nothing usable came back');
+    assert(/502/.test(res.reason), 'and the underlying message survives');
+  });
+
+  group('tower/board: a dropped issue node');
+
+  // Issue #202's crash itself: GitHub answers the shape of the board with every
+  // issue node NULL. Reading `node.labels` off one of those ended the API
+  // process and took the dashboard down with it.
+  await test('a null issue node is skipped and counted, never thrown on', () => {
+    const res = fetchBoard(ROSTER, {
+      exec: fakeGh({
+        data: {
+          r0: { issues: { totalCount: 3, nodes: [issue(17), null, null] } },
+          r1: { issues: { totalCount: 1, nodes: [issue(22)] } },
+        },
+        errors: [
+          { type: 'RESOURCE_LIMITS_EXCEEDED', path: ['r0', 'issues', 'nodes', 1], message: 'the query exceeded a limit' },
+          { type: 'RESOURCE_LIMITS_EXCEEDED', path: ['r0', 'issues', 'nodes', 2], message: 'and again' },
+        ],
+      }),
+    });
+    assertEq(res.ok, true, 'the board still renders');
+    assertEq(res.issues.map((i) => i.number).join(','), '17,22', 'the issues that arrived are normalized as usual');
+    assertEq(res.repos[0].count, 1, 'a dropped node is not an issue on the board');
+  });
+
+  await test('the repo it happened to says how much was dropped, so the Overview warns', () => {
+    const res = fetchBoard(ROSTER, {
+      exec: fakeGh({
+        data: {
+          r0: { issues: { totalCount: 3, nodes: [issue(17), null, null] } },
+          r1: { issues: { totalCount: 1, nodes: [issue(22)] } },
+        },
+        errors: [
+          { type: 'RESOURCE_LIMITS_EXCEEDED', path: ['r0', 'issues', 'nodes', 1], message: 'the query exceeded a limit' },
+          { type: 'RESOURCE_LIMITS_EXCEEDED', path: ['r0', 'issues', 'nodes', 2], message: 'and again' },
+        ],
+      }),
+    });
+    assertEq(res.repos[0].error, 'GitHub dropped 2 of 3 issues: the query exceeded a limit',
+      'the count and GitHub’s first word on it - the 464th says nothing the first did not');
+    assertEq(res.repos[1].error, null, 'and the repo that answered whole carries none');
   });
 
   group('tower/board: a partial answer is kept');

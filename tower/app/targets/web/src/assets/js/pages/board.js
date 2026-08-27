@@ -1,13 +1,14 @@
 //
 // Board - every open issue on the roster, in columns by `status:`.
 //
-// The columns are the status labels, in two regions (issue #196): the PIPELINE,
-// in stage order, which reads as a flow, and the side POCKETS beside it, which
-// are the states of waiting rather than stages of progress. An open issue carrying
-// none of them is not a further place to be - it is a fault the pipeline forbids
-// and the daily heal repairs - so it is drawn as the danger alert above the
-// board (format.js's `noStatusAlert`), named and linked, and nowhere else: not
-// as a card, not in a column count, not in the denominator below (#118).
+// The columns are the status labels, in two groups of one strip (issue #196):
+// the PIPELINE, in stage order, which reads as a flow, and the side POCKETS
+// beside it, which are the states of waiting rather than stages of progress. An
+// open issue carrying none of them is not a further place to be - it is a fault
+// the pipeline forbids and the daily heal repairs - so it is drawn as the danger
+// alert above the board (format.js's `noStatusAlert`), named and linked, and
+// nowhere else: not as a card, not in a column count, not in the denominator
+// below (#118).
 //
 // The filters live in the URL query alongside the chrome's `?repo=`, so a
 // filtered board is a link someone else can open. They are read back out of the
@@ -35,7 +36,7 @@
 
 import { startPage } from '../libs/tower/page.js';
 import { issuesFor, board, feed, issueByKey } from '../libs/tower/state.js';
-import { isNone, selectedSlugs } from '../libs/tower/scope.js';
+import { selectedSlugs } from '../libs/tower/scope.js';
 import {
   esc, empty, problem, loading, issueChips, issueKey, STATUSES, statusColor, byPriority, noStatusAlert, openQuestion,
 } from '../libs/tower/format.js';
@@ -202,60 +203,54 @@ const column = (status, issues, showRepo, open) => `<section data-column="${esc(
   ${issues.length ? issues.map((issue) => issueCard(issue, showRepo, open)).join('') : empty('nothing here', 'fa-regular fa-square-check')}
 </section>`;
 
-// `.omega-tower-board` is the sideways-scrolling strip; how WIDE a column is
-// belongs here, because it is a function of how many the pipeline has. At the
-// stylesheet's 15rem floor the strip is wider than an ordinary main region,
-// which put the right-hand columns half off the edge with only an overlay
-// scrollbar to say so. Columns at 9rem fit the main region down to a laptop
-// width, still stretch to fill a wide one, and the strip goes on scrolling when
-// the window is genuinely too narrow for the board.
+// A GROUP of lanes - each lane a cell of the ONE strip below, so every lane
+// header on the board is on one line (#196). No caption names the group (#203):
+// the pocket's aria-label says it to a screen reader, and the card face says it
+// to the eye.
 //
 // A column reads in three priority bands - high, then the unlabelled middle,
 // then low - most recently updated first inside each. The comparator is
 // format.js's (`byPriority`), the same module that colours those bands.
-const lanes = (statuses, shown, showRepo, open) => `<div class="omega-tower-board" style="grid-auto-columns: minmax(9rem, 1fr);">
-  ${statuses.map((status) => column(status, shown.filter((issue) => issue.status === status.key).sort(byPriority), showRepo, open)).join('')}
-</div>`;
+const lanes = (statuses, shown, showRepo, open) => statuses.map((status) => column(status, shown.filter((issue) => issue.status === status.key).sort(byPriority), showRepo, open)).join('');
 
-// The board is TWO regions (issue #196). The pipeline is the flow - inbox to
-// complete, in stage order, read left to right - and the side pockets are the
-// two states that are not stages: `blocked` and `backlog` are waiting, and a
-// lane of them standing in the middle of the flow made the board read as though
-// an issue progressed through them. Which lanes are which is the vocabulary's
-// own `pocket` flag (format.js), never a second list of statuses here.
+// The board is ONE strip in TWO groups (issue #196). The pipeline is the flow -
+// inbox to complete, in stage order, read left to right - and the pocket beside
+// it holds the two states that are not stages: `blocked` and `backlog` are
+// waiting, and a lane of them standing in the middle of the flow made the board
+// read as though an issue progressed through them. Which lanes are which is the
+// vocabulary's own `pocket` flag (format.js), never a second list of statuses
+// here.
 //
-// They sit side by side in the ratio of the lanes they hold - five to two - and
-// wrap onto their own row when there is no width for both, each strip scrolling
-// on its own. The pocket is set apart by the sheet's own rule and says in one
-// muted line what it is; every lane in it is a drop target like any other, so a
-// card is still dragged into and out of the pockets.
-const columns = (shown, showRepo, open) => `<div class="d-flex flex-wrap align-items-start gap-3">
-  <div style="flex: 5 1 30rem; min-width: 0;">
-    ${lanes(STATUSES.filter((status) => !status.pocket), shown, showRepo, open)}
+// Every lane is a track of the same grid, so all seven are one width and the
+// pocket's headers cannot sit lower than the pipeline's - which is what two
+// side-by-side strips did, each with its own padding above its own lanes. The
+// pocket is still a landmark of its own: it spans its lanes' tracks and borrows
+// them back through `subgrid`, so the region says what it is to a screen reader
+// and is drawn as a box (main.scss) while costing its lanes no width at all.
+//
+// The lane count is the vocabulary's, so the page hands the stylesheet the two
+// numbers it needs as custom properties - how many lanes the pipeline has and
+// how many the pocket has - and every track, span and card face is a class rule
+// reading them (#203). A vocabulary with a different split changes nothing
+// here and nothing there.
+const columns = (shown, showRepo, open) => {
+  const pipeline = STATUSES.filter((status) => !status.pocket);
+  const pocket = STATUSES.filter((status) => status.pocket);
+  return `<div class="omega-tower-board" style="--pipeline: ${pipeline.length}; --pocket: ${pocket.length};">
+  <div class="omega-tower-group omega-tower-group--pipeline">
+    ${lanes(pipeline, shown, showRepo, open)}
   </div>
-  <aside class="omega-tower-pockets p-3" style="flex: 2 1 14rem; min-width: 0;" aria-label="Waiting - not stages of the pipeline">
-    <p class="omega-micro text-body-secondary mb-2">waiting, not moving</p>
-    ${lanes(STATUSES.filter((status) => status.pocket), shown, showRepo, open)}
+  <aside class="omega-tower-group omega-tower-group--pocket" aria-label="Waiting - not stages of the pipeline">
+    ${lanes(pocket, shown, showRepo, open)}
   </aside>
 </div>`;
-
-// The denominator, so a filtered board never reads as an empty one: how many
-// are on screen, how many the COLUMNS hold in scope, and how many the filters
-// removed. An unlabelled issue is in none of those three numbers - it is drawn
-// in the alert above and nowhere else, and counting it here would leave the
-// line describing a card that is not on the page.
-const counts = (shown, total, selected) => {
-  const hidden = total - shown;
-  // The scope is a SET (#104): every repo, one of them, or the subset the URL
-  // names - and a subset says how many rather than listing them into the line.
-  // The none state (#188) is said in words, never as its tilde.
-  let scope = 'across every repo';
-  if (isNone(selected)) scope = 'with no projects selected';
-  else if (selected.length === 1) scope = `in ${esc(selected[0])}`;
-  else if (selected.length > 1) scope = `across ${selected.length} repos`;
-  const tail = hidden > 0 ? ` - ${hidden} filtered out` : '';
-  return `<p class="omega-micro text-body-secondary mb-2">showing ${shown} of ${total} open issue${total === 1 ? '' : 's'} ${scope}${tail}</p>`;
 };
+
+// The one number the lanes cannot say between them (#203): how many issues the
+// filters let through, out of how many the board holds in all. The scope is
+// the project picker's, so the line does not repeat it. An unlabelled issue
+// is in neither number - it is drawn in the alert above and nowhere else.
+const counts = (shown, total) => `<p class="omega-micro text-body-secondary mb-2">showing ${shown} out of ${total}</p>`;
 
 // ── The graph view ─────────────────────────────────────────────────────────
 //
@@ -361,7 +356,7 @@ const render = (root, state) => {
   else {
     if (view === 'graph') definition = boardGraph(shown, sweep);
     const drawn = view === 'graph' ? graph(definition) : columns(shown, showRepo, open);
-    body = `${moveError ? problem(moveError) : ''}${noStatusAlert(all, showRepo)}${counts(shown.length, labelled.length, selected)}${drawn}`;
+    body = `${moveError ? problem(moveError) : ''}${noStatusAlert(all, showRepo)}${counts(shown.length, labelled.length)}${drawn}`;
   }
 
   // The page repaints every poll, and a repaint must not take the caret out of

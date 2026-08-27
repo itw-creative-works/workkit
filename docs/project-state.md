@@ -218,7 +218,7 @@ Two surfaces, both generic. There is no assumed folder layout anywhere, and no p
 
 **2. The home repo** — one private GitHub repo, `<login>/workkit`, created by `workkit setup`, named in `~/.workkit/settings.json` as `site.repo`, and cloned at `~/.workkit/tower`. It is the queue for everything that belongs to no single repo, and its issues carry the standard's labels and issue anatomy like every other repo's.
 
-It is also a real PROJECT: the clone is the tower's dashboard, seeded from the kit's own `tower/app` and shaped like any other site project — a brand root with `apps/`, `config/`, its own `.gitignore`. Nothing generated is committed as source: there is no project list in it, and no build output on its default branch.
+It is also a real PROJECT: the clone is the tower's dashboard, seeded from the kit's own `tower/app` and shaped like any other site project — a brand root with `targets/`, `config/`, its own `.gitignore`. Nothing generated is committed as source: there is no project list in it, and no build output on its default branch.
 
 **The clone is ENGINE TERRITORY and is never hand-edited.** It carries no `.workkit/` of its own — no participation flag, no capture file — because the engine knows it BY PATH rather than by a committed file, and every user-owned option lives in `~/.workkit/settings.json` instead. The heal never registers it on the roster; the tower's board discovers it by that same path.
 

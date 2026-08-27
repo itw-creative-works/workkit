@@ -11,30 +11,54 @@
 // The board's columns. The theme has Bootstrap's grid, which wraps rows at
 // breakpoints; a kanban board wants ONE row that scrolls sideways and keeps
 // its column widths, which no theme utility expresses.
+//
+// ONE strip, every lane a track of the same grid, so all of them are one width
+// and every header is on one line (issue #196). The page hands over the two
+// numbers the vocabulary decides - `--pipeline` and `--pocket`, how many lanes
+// each group holds - and the tracks are read from them here: the pipeline's
+// lanes, a zero-width spacer, the pocket's lanes. The spacer buys the two cards
+// below a whole gutter of air between them on top of the lane gap. The padding
+// is the half gutter the card faces are drawn into, inside the scroll container
+// rather than overflowing it.
 .omega-tower-board {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(15rem, 1fr);
+  grid-template-columns: repeat(var(--pipeline), minmax(9rem, 1fr)) 0 repeat(var(--pocket), minmax(9rem, 1fr));
   gap: 1rem;
   overflow-x: auto;
-  padding-bottom: .5rem;
+  padding: .5rem;
 }
 
-// The side pockets (issue #196). `blocked` and `backlog` are states of waiting
-// rather than stages of progress, so they stand beside the pipeline in a region
-// of their own; a hairline and the theme's own radius are the whole of it. It is
-// an OUTLINE and not a tint, because the drop target inside it is what takes a
-// tint - a pocket painted in that same surface would swallow it.
-.omega-tower-pockets {
+// The two groups (issues #196, #203): the pipeline, and the side pocket where
+// `blocked` and `backlog` wait. Each is a CARD, but a card with real padding
+// and a border would take that space out of its first and last lane and shift
+// its headers, which is the misalignment #203 fixed. So a group borrows the
+// strip's own tracks (`subgrid`) and its lanes are the board's lanes to the
+// pixel, and its card face is an overlay drawn behind them - the theme's card
+// surface, hairline and radius, half a gutter out on every side, the same on
+// every side. Behind, not over: the lanes sit above it, and the drop tint on a
+// lane still shows.
+.omega-tower-group {
+  display: grid;
+  grid-template-columns: subgrid;
+  position: relative;
+}
+
+.omega-tower-group--pipeline { grid-column: 1 / span var(--pipeline); }
+.omega-tower-group--pocket { grid-column: calc(var(--pipeline) + 2) / span var(--pocket); }
+
+.omega-tower-group > * { position: relative; z-index: 1; }
+
+.omega-tower-group::before {
+  content: '';
+  position: absolute;
+  inset: -.5rem;
+  z-index: 0;
+  background: var(--bs-card-bg, transparent);
   border: 1px solid var(--omega-line, var(--bs-border-color));
   border-radius: var(--bs-border-radius, .375rem);
+  pointer-events: none;
 }
 
-// Dragging a card between the columns is how an issue is relabelled, and the
-// two states that needs are the ones the browser does not draw itself: the card
-// that was picked up fades so its origin is still readable, and the column under
-// the pointer takes a tint so the drop is aimed rather than guessed. Both are
-// added and removed by the Board's own handlers.
 .omega-tower-issue--dragging { opacity: .5; }
 
 .omega-tower-board [data-column].omega-tower-column--over {

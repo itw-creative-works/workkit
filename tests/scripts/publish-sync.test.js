@@ -44,7 +44,7 @@ const writeStub = (file, lines) => {
 
 /**
  * The checkout's `tower/app` — the real one's shape without its weight: a brand
- * root with apps/web, config/ and assets/, manifests carrying `file:` specs
+ * root with targets/web, config/ and assets/, manifests carrying `file:` specs
  * into a sibling framework, and every accretion a copy must leave behind
  * (node_modules at both levels, a lockfile, .omega, dist, a .env).
  */
@@ -58,11 +58,11 @@ const mkTowerApp = (root) => {
     name: 'workkit-tower',
     private: true,
     description: 'The tower UI.',
-    workspaces: ['apps/*'],
+    workspaces: ['targets/*'],
     scripts: { build: 'omega build' },
     devDependencies: { '@omega.js/manager': 'file:../../../omega/packages/manager' },
   });
-  writeJson(path.join(app, 'apps', 'web', 'package.json'), {
+  writeJson(path.join(app, 'targets', 'web', 'package.json'), {
     name: 'workkit-tower-web',
     private: true,
     dependencies: { '@omega.js/web': 'file:../../../../../omega/packages/web' },
@@ -73,14 +73,14 @@ const mkTowerApp = (root) => {
   write(path.join(app, 'README.md'), '# the tower\n');
   write(path.join(app, 'config', 'omega.json5'), '{ brand: { id: "workkit" } }\n');
   write(path.join(app, 'assets', 'logo', 'brandmark.svg'), '<svg/>\n');
-  write(path.join(app, 'apps', 'web', 'src', 'index.html'), '<html>the board</html>\n');
-  write(path.join(app, 'apps', 'web', 'src', 'pages', 'board.js'), 'export default 1;\n');
+  write(path.join(app, 'targets', 'web', 'src', 'index.html'), '<html>the board</html>\n');
+  write(path.join(app, 'targets', 'web', 'src', 'pages', 'board.js'), 'export default 1;\n');
 
   write(path.join(app, 'node_modules', '.bin', 'omega'), '#!/bin/sh\n');
-  write(path.join(app, 'apps', 'web', 'node_modules', 'x.js'), 'nested\n');
+  write(path.join(app, 'targets', 'web', 'node_modules', 'x.js'), 'nested\n');
   write(path.join(app, 'package-lock.json'), '{}\n');
   write(path.join(app, '.omega', 'runs', 'one.json'), '{}\n');
-  write(path.join(app, 'apps', 'web', 'dist', 'index.html'), 'stale build\n');
+  write(path.join(app, 'targets', 'web', 'dist', 'index.html'), 'stale build\n');
   write(path.join(app, '.env'), 'SECRET=1\n');
   write(path.join(app, '.cache', 'one.json'), '{}\n');
   write(path.join(app, '.temp', 'scratch.txt'), 'temp\n');
@@ -196,10 +196,10 @@ const mkPublishWorld = ({ mintFails = false, minted = false, installFails = fals
   writeJson(path.join(app, 'package.json'), {
     name: 'workkit-tower', private: true, description: 'The tower UI.', scripts: { build: 'omega build' },
   });
-  writeJson(path.join(app, 'apps', 'web', 'package.json'), { name: 'workkit-tower-web', private: true });
+  writeJson(path.join(app, 'targets', 'web', 'package.json'), { name: 'workkit-tower-web', private: true });
   write(path.join(app, 'config', 'omega.json5'), '{ brand: { id: "workkit" } }\n');
   write(path.join(app, 'assets', 'logo', 'brandmark.svg'), '<svg/>\n');
-  write(path.join(app, 'apps', 'web', 'src', 'index.html'), '<html>the current board</html>\n');
+  write(path.join(app, 'targets', 'web', 'src', 'index.html'), '<html>the current board</html>\n');
   write(path.join(app, '.gitignore'), 'node_modules/\ndist/\n.omega/\n');
 
   // The npm shim answers both calls a publish makes — the install of the
@@ -235,10 +235,10 @@ const mkPublishWorld = ({ mintFails = false, minted = false, installFails = fals
   writeJson(path.join(seed, 'package.json'), {
     name: 'workkit-tower', private: true, description: 'The tower UI.', scripts: { build: 'omega build' },
   });
-  writeJson(path.join(seed, 'apps', 'web', 'package.json'), { name: 'workkit-tower-web', private: true });
+  writeJson(path.join(seed, 'targets', 'web', 'package.json'), { name: 'workkit-tower-web', private: true });
   write(path.join(seed, 'config', 'omega.json5'), '{ brand: { id: "workkit" } }\n');
   write(path.join(seed, 'assets', 'logo', 'brandmark.svg'), '<svg/>\n');
-  write(path.join(seed, 'apps', 'web', 'src', 'index.html'), '<html>the board, as it was seeded</html>\n');
+  write(path.join(seed, 'targets', 'web', 'src', 'index.html'), '<html>the board, as it was seeded</html>\n');
   write(path.join(seed, '.gitignore'), 'node_modules/\ndist/\n.omega/\n');
   git(seed, 'init', '-q', '-b', 'main');
   git(seed, 'add', '-A');
@@ -266,7 +266,7 @@ const mkPublishWorld = ({ mintFails = false, minted = false, installFails = fals
     bare,
     tower,
     app,
-    dist: path.join(tower, 'apps', 'web', 'dist'),
+    dist: path.join(tower, 'targets', 'web', 'dist'),
     mints: () => (fs.existsSync(mintLog)
       ? fs.readFileSync(mintLog, 'utf8').trim().split('\n').filter(Boolean)
       : []),
@@ -307,14 +307,14 @@ const run = async () => {
     const world = mkSyncWorld();
     const { rc, out, err } = sync(world);
     assertEq(rc, 0, `something changed — ${out}${err}`);
-    assert(fs.existsSync(path.join(world.clone, 'apps', 'web', 'src', 'index.html')), 'the app travelled');
+    assert(fs.existsSync(path.join(world.clone, 'targets', 'web', 'src', 'index.html')), 'the app travelled');
     assert(fs.existsSync(path.join(world.clone, 'config', 'omega.json5')), 'and its config');
     assert(fs.existsSync(path.join(world.clone, 'assets', 'logo', 'brandmark.svg')), 'and the authored mark');
     assert(fs.existsSync(path.join(world.clone, '.env.example')), 'and the example env, which is not a secret');
 
     for (const gone of [
-      'node_modules/.bin/omega', 'apps/web/node_modules/x.js', 'package-lock.json',
-      '.omega/runs/one.json', 'apps/web/dist/index.html', '.env',
+      'node_modules/.bin/omega', 'targets/web/node_modules/x.js', 'package-lock.json',
+      '.omega/runs/one.json', 'targets/web/dist/index.html', '.env',
       '.cache/one.json', '.temp/scratch.txt', '.DS_Store',
     ]) {
       assert(!fs.existsSync(path.join(world.clone, gone)), `${gone} is never copied`);
@@ -341,15 +341,15 @@ const run = async () => {
     }
     const backdated = mtimes(world.clone);
 
-    write(path.join(world.app, 'apps', 'web', 'src', 'index.html'), '<html>a newer board</html>\n');
+    write(path.join(world.app, 'targets', 'web', 'src', 'index.html'), '<html>a newer board</html>\n');
     const { rc, out, err } = sync(world);
     assertEq(rc, 0, `the change is a change — ${out}${err}`);
-    assertEq(fs.readFileSync(path.join(world.clone, 'apps', 'web', 'src', 'index.html'), 'utf8'),
+    assertEq(fs.readFileSync(path.join(world.clone, 'targets', 'web', 'src', 'index.html'), 'utf8'),
       '<html>a newer board</html>\n', 'the edited file landed');
 
     const after = mtimes(world.clone);
     const rewritten = Object.keys(after).filter((rel) => after[rel] !== backdated[rel]);
-    assertEq(rewritten.join(','), 'apps/web/src/index.html',
+    assertEq(rewritten.join(','), 'targets/web/src/index.html',
       `and nothing else was written at all: ${rewritten.join(', ')}`);
     cleanup(world.root);
   });
@@ -377,7 +377,7 @@ const run = async () => {
     const world = mkSyncWorld();
     sync(world);
     const root = JSON.parse(fs.readFileSync(path.join(world.clone, 'package.json'), 'utf8'));
-    const web = JSON.parse(fs.readFileSync(path.join(world.clone, 'apps', 'web', 'package.json'), 'utf8'));
+    const web = JSON.parse(fs.readFileSync(path.join(world.clone, 'targets', 'web', 'package.json'), 'utf8'));
     assert(root.devDependencies['@omega.js/manager'].startsWith('file:/'),
       `an absolute path, got: ${root.devDependencies['@omega.js/manager']}`);
     assert(web.dependencies['@omega.js/web'].startsWith('file:/'),
@@ -391,7 +391,7 @@ const run = async () => {
     const world = mkSyncWorld();
     sync(world);
     // A page an older app shipped, inside a folder the app owns.
-    write(path.join(world.clone, 'apps', 'web', 'src', 'pages', 'retired.js'), 'export default 0;\n');
+    write(path.join(world.clone, 'targets', 'web', 'src', 'pages', 'retired.js'), 'export default 0;\n');
     // Everything else in the clone belongs to another step entirely.
     write(path.join(world.clone, 'brief', 'jobs', 'morning.sh'), '#!/bin/sh\n');
     write(path.join(world.clone, '.github', 'workflows', 'brief.yml'), 'name: brief\n');
@@ -399,7 +399,7 @@ const run = async () => {
 
     const { rc, out, err } = sync(world);
     assertEq(rc, 0, `the removal is a change — ${out}${err}`);
-    assert(!fs.existsSync(path.join(world.clone, 'apps', 'web', 'src', 'pages', 'retired.js')),
+    assert(!fs.existsSync(path.join(world.clone, 'targets', 'web', 'src', 'pages', 'retired.js')),
       'the retired page is gone');
     assert(fs.existsSync(path.join(world.clone, 'brief', 'jobs', 'morning.sh')), 'the runner is not the sync’s');
     assert(fs.existsSync(path.join(world.clone, '.github', 'workflows', 'brief.yml')), 'nor the workflow');
@@ -437,7 +437,7 @@ const run = async () => {
     publish(world);
     const main = path.join(world.root, 'main-check');
     spawnSync('git', ['clone', '-q', world.bare, main], { encoding: 'utf8' });
-    assertEq(fs.readFileSync(path.join(main, 'apps', 'web', 'src', 'index.html'), 'utf8'),
+    assertEq(fs.readFileSync(path.join(main, 'targets', 'web', 'src', 'index.html'), 'utf8'),
       '<html>the current board</html>\n', 'main carries the project it just built');
     cleanup(world.root);
   });
@@ -450,7 +450,7 @@ const run = async () => {
     publish(world);
     const before = world.npms().filter((call) => /install/.test(call)).length;
 
-    writeJson(path.join(world.app, 'apps', 'web', 'package.json'), {
+    writeJson(path.join(world.app, 'targets', 'web', 'package.json'), {
       name: 'workkit-tower-web', private: true, dependencies: { 'chart.js': '^4.0.0' },
     });
     const { code, out, err } = publish(world);
@@ -492,7 +492,7 @@ const run = async () => {
     const before = world.npms().filter((call) => /install/.test(call)).length;
     assertEq(before, 1, 'the first publish’s sync did write a manifest');
 
-    write(path.join(world.app, 'apps', 'web', 'src', 'index.html'), '<html>a newer board</html>\n');
+    write(path.join(world.app, 'targets', 'web', 'src', 'index.html'), '<html>a newer board</html>\n');
     const { code, out, err } = publish(world);
     assertEq(code, 0, `exit 0 — ${out}${err}`);
     assertEq(world.npms().filter((call) => /install/.test(call)).length, before,
@@ -617,8 +617,8 @@ const run = async () => {
     // as the "nothing to sync from" skip.
     const world = mkSyncWorld();
     sync(world);
-    fs.rmSync(path.join(world.app, 'apps', 'web', 'src', 'index.html'));
-    write(path.join(world.app, 'apps', 'web', 'src', 'index.html', 'a.txt'), 'now a dir\n');
+    fs.rmSync(path.join(world.app, 'targets', 'web', 'src', 'index.html'));
+    write(path.join(world.app, 'targets', 'web', 'src', 'index.html', 'a.txt'), 'now a dir\n');
     const { rc, out, err } = sync(world);
     assertEq(rc, 3, `a partial write is rc=3, distinct from the skip — ${out}${err}`);
     cleanup(world.root);
@@ -628,8 +628,8 @@ const run = async () => {
     const pworld = mkPublishWorld();
     publish(pworld);
     const mainBefore = spawnSync('git', ['ls-remote', pworld.bare, 'main'], { encoding: 'utf8' }).stdout;
-    fs.rmSync(path.join(pworld.app, 'apps', 'web', 'src', 'index.html'));
-    write(path.join(pworld.app, 'apps', 'web', 'src', 'index.html', 'a.txt'), 'now a dir\n');
+    fs.rmSync(path.join(pworld.app, 'targets', 'web', 'src', 'index.html'));
+    write(path.join(pworld.app, 'targets', 'web', 'src', 'index.html', 'a.txt'), 'now a dir\n');
     const aborted = publish(pworld);
     assert(aborted.code !== 0, `the publish aborts on a part-refreshed clone, got exit ${aborted.code}`);
     const mainAfter = spawnSync('git', ['ls-remote', pworld.bare, 'main'], { encoding: 'utf8' }).stdout;

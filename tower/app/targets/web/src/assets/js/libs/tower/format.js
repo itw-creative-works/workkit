@@ -179,12 +179,11 @@ export const STATUSES = [
  * `complete` wears the OK green (issue #196): the theme's success hue is a
  * VERDICT, and `complete` is the stage that carries one - QA passed, ready to
  * ship. `qa` held that green while it was the end of the pipeline (issue #135)
- * and gives it up to the stage after it for the olive of `--omega-chart-6`, the
- * one ramp slot no ISSUE vocabulary had taken - status, type and priority sit in
- * one chip row, and the models below share the ramp from the other end (TONES),
- * on pages no issue chip is drawn on; waiting on a check is a stage, not a
- * verdict. `specced` gave the same green up for the categorical purple, for the
- * same reason - an authorization is a stage, not a verdict.
+ * and gives it up to the stage after it for the magenta of `--omega-chart-4`
+ * (issue #203, off the olive), a hue no chip in any vocabulary wears now that
+ * `type:bug` took the danger red; waiting on a check is a stage, not a verdict.
+ * `specced` gave the same green up for the categorical purple, for the same
+ * reason - an authorization is a stage, not a verdict.
  *
  * Seven lanes, seven colours: WITHIN a vocabulary a hue never repeats, since a
  * column header, a card chip and a chart slice are all read by hue. Across the
@@ -206,7 +205,7 @@ export const statusToken = (key) => ({
   inbox: '--omega-chart-2',
   specced: '--omega-chart-3',
   building: '--omega-warn',
-  qa: '--omega-chart-6',
+  qa: '--omega-chart-4',
   complete: '--omega-ok',
   blocked: '--omega-danger',
   backlog: '--omega-ink-faint',
@@ -401,14 +400,14 @@ export const priorityChip = (priority) => (priority === 'high' || priority === '
 
 /**
  * The theme token a type is drawn in. A type is an identity, not a signal, so
- * it draws from the categorical ramp - the deep red for the bug, the orange for
- * the enhancement, the purple for the idea, three hues no two of which are the
- * same. `specced` is drawn in that same purple (issue #149): a hue is unique
+ * it draws the orange for the enhancement and the purple for the idea from the
+ * categorical ramp, and the bug wears the theme's own danger red (issue #203),
+ * three hues no two of which are the same. `specced` is drawn in that same purple (issue #149): a hue is unique
  * within a vocabulary and free across them, since the type chip and the status
  * chip beside it each carry their own word and their own glyph.
  */
 export const typeToken = (key) => ({
-  bug: '--omega-chart-4',
+  bug: '--omega-danger',
   enhancement: '--omega-chart-5',
   idea: '--omega-chart-3',
 }[key]);

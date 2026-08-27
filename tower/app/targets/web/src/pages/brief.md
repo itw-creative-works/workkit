@@ -6,11 +6,12 @@ meta:
   title: "Brief"
   description: "The daily brief, shared with the morning notification."
 
-theme:
-  header:
-    title:
-      content: "Brief"
-      icon: "newspaper"
+config:
+  theme:
+    header:
+      title:
+        content: "Brief"
+        icon: "newspaper"
 ---
 
 <div id="tower-brief"></div>

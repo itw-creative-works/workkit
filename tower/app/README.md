@@ -13,8 +13,10 @@ The data comes from the tower API - the plain Node server in `tower/api/`, on
 ```sh
 cd tower/app
 npm install          # its OWN npm root - see below
-cd apps/web && npx omega dev    # serving https://localhost:4300
+cd targets/web && npx omega dev # serving https://localhost:4300
 ```
+
+Dev and build write the same `targets/web/dist/`: an `omega build` run while the dev server is up leaves the server serving a production-stamped page (`environment: "production"`, no tower connection) until it re-renders. Restart the dev server after any build.
 
 The API is started separately, from the repo root with `npm run tower`, and both
 have to be up for the pages to carry data: with the API down every page still
@@ -25,8 +27,8 @@ dailybuild 4100, omega-brand 4200, tower 4300.
 
 ## Why this is its own npm root
 
-npm workspaces do not nest. `tower/app` declares `workspaces: ["apps/*"]` for
-its one web app, so it cannot also be a member of workkit's root
+npm workspaces do not nest. `tower/app` declares `workspaces: ["targets/*"]`
+for its one web target, so it cannot also be a member of workkit's root
 `package.json` - it gets its own `npm install`, and workkit's root install
 never reaches it.
 
@@ -38,7 +40,7 @@ Omega checkout, because OMEGA is not published yet:
 | package.json | dependency | spec |
 |---|---|---|
 | `tower/app/package.json` | `@omega.js/manager` | `file:../../../../Omega/omega/packages/manager` |
-| `tower/app/apps/web/package.json` | `@omega.js/web` | `file:../../../../../../Omega/omega/packages/web` |
+| `tower/app/targets/web/package.json` | `@omega.js/web` | `file:../../../../../../Omega/omega/packages/web` |
 
 Both resolve against `~/Developer/Repositories`, where workkit and Omega are
 siblings. The cost is accepted deliberately: **building the tower UI requires
@@ -55,9 +57,9 @@ nothing here imports through a path.
 tower/app/
 ├── package.json                 # brand root: workspaces + @omega.js/manager
 ├── config/omega.json5           # brand.id, brand.name, theme, port 4300
-└── apps/web/
+└── targets/web/
     ├── package.json             # @omega.js/web
-    ├── config/omega.json5       # targets only
+    ├── config/omega.json5       # the local layer - targets only
     └── src/
         ├── pages/*.md           # seven pages: one layout line, one mount div
         ├── _layouts/tower/page.html      # turns the admin auth gate off
@@ -73,12 +75,15 @@ A few things worth knowing before changing it:
 
 - **A page's JS is bound by its URL**, not by an import: `/board` loads
   `assets/js/pages/board.js`, and `/` loads `pages/index.js`.
-- **Consumer page frontmatter is machinery-limited.** The engine strips any key
-  outside `{meta, schema, theme, client, append, sitemap}` from a page under
-  `src/pages/` and warns. The auth opt-out (`client.auth.config.policy:
-  "disabled"` - the blob was named `web_manager` before the framework renamed
-  it, which is what issue #98 fixed) lives in `src/_layouts/tower/page.html` so
-  the seven pages share one home.
+- **Consumer page frontmatter is machinery-limited, and a config section goes
+  under `config:`.** The engine strips any key outside `{meta, schema, config,
+  append, sitemap, ...}` from a page under `src/pages/` and warns, and a config
+  section restated BARE fails the build outright - `meta` is the only one that
+  keeps its bare spelling, so each page's header block sits at `config.theme`.
+  The auth opt-out (`config.client.auth.config.policy: "disabled"` - the blob
+  was named `web_manager` before the framework renamed it, which is what issue
+  #98 fixed) lives in `src/_layouts/tower/page.html` so the seven pages share
+  one home.
 - **The nav is `_includes/backend/sections/sidebar.json`**, which replaces the
   framework's file wholesale. It is the `backend` spelling rather than `admin`
   because the shell layout picks the admin pair only for URLs containing

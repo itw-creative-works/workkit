@@ -6,7 +6,7 @@
 // CLONE rather than the checkout: `~/.workkit/tower` is a scratch clone of a
 // local bare "GitHub", seeded by hand with the shape a real seed leaves. Its
 // build tooling is a stub `omega` binary plus an `npm` shim that writes the
-// output a build would leave in apps/web/dist. No omega, no network.
+// output a build would leave in targets/web/dist. No omega, no network.
 //
 
 const fs = require('fs');
@@ -69,7 +69,7 @@ const mkWorld = ({
   spawnSync('cp', ['-R', path.join(REPO_ROOT, 'workflow'), kit]);
   spawnSync('cp', ['-R', path.join(REPO_ROOT, 'tower', 'api'), path.join(kit, 'tower')]);
 
-  // The build: an `npm --prefix <clone>/apps/web run build` that leaves what a
+  // The build: an `npm --prefix <clone>/targets/web run build` that leaves what a
   // build leaves. Proved against the real app 2026-07-29: `omega build` is the
   // APP's command and it writes dist/ beside src/.
   //
@@ -144,9 +144,9 @@ const mkWorld = ({
   // proves it can build here.
   if (home) {
     const seed = path.join(root, 'seed');
-    fs.mkdirSync(path.join(seed, 'apps', 'web', 'src'), { recursive: true });
+    fs.mkdirSync(path.join(seed, 'targets', 'web', 'src'), { recursive: true });
     fs.writeFileSync(path.join(seed, 'package.json'), '{ "name": "workkit-tower" }\n');
-    fs.writeFileSync(path.join(seed, 'apps', 'web', 'src', 'index.html'), '<html>the board</html>\n');
+    fs.writeFileSync(path.join(seed, 'targets', 'web', 'src', 'index.html'), '<html>the board</html>\n');
     fs.writeFileSync(path.join(seed, 'README.md'), '# the tower\n');
     fs.writeFileSync(path.join(seed, '.gitignore'), 'node_modules/\ndist/\n');
     git(seed, 'init', '-q', '-b', branch);
@@ -172,7 +172,7 @@ const mkWorld = ({
     source: path.join(tower, 'README.md'),
     ghCalls: () => (fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8').trim().split('\n').filter(Boolean) : []),
     buildPrefix: () => (fs.existsSync(prefixLog) ? fs.readFileSync(prefixLog, 'utf8') : null),
-    dist: path.join(tower, 'apps', 'web', 'dist'),
+    dist: path.join(tower, 'targets', 'web', 'dist'),
     env,
   };
 };
@@ -416,7 +416,7 @@ const run = async () => {
     publish(world);
     const branch = spawnSync('git', ['-C', world.tower, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
     assertEq(branch, 'main', 'the clone is still on main');
-    assert(fs.existsSync(path.join(world.tower, 'apps', 'web', 'src', 'index.html')), 'with its source where it was');
+    assert(fs.existsSync(path.join(world.tower, 'targets', 'web', 'src', 'index.html')), 'with its source where it was');
     const worktrees = spawnSync('git', ['-C', world.tower, 'worktree', 'list'], { encoding: 'utf8' }).stdout;
     assertEq(worktrees.trim().split('\n').length, 1, `the temporary worktree is cleaned up: ${worktrees}`);
     cleanup(world.root);
@@ -428,7 +428,7 @@ const run = async () => {
     const first = spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim();
 
     // Something the build now ships that it did not before.
-    fs.writeFileSync(path.join(world.tower, 'apps', 'web', 'src', 'index.html'), '<html>a newer board</html>\n');
+    fs.writeFileSync(path.join(world.tower, 'targets', 'web', 'src', 'index.html'), '<html>a newer board</html>\n');
     const { code, out } = publish(world);
     assertEq(code, 0, `exit 0 — ${out}`);
 

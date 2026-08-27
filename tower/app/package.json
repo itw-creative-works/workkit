@@ -2,9 +2,9 @@
   "name": "workkit-tower",
   "version": "1.0.0",
   "private": true,
-  "description": "The tower's UI - an OMEGA brand root whose one app is the mission control dashboard. Its own npm root: npm workspaces do not nest, so this is never folded into workkit's root package.json.",
+  "description": "The tower's UI - an OMEGA brand root whose one target is the mission control dashboard. Its own npm root: npm workspaces do not nest, so this is never folded into workkit's root package.json.",
   "workspaces": [
-    "apps/*"
+    "targets/*"
   ],
   "scripts": {
     "start": "omega dev",

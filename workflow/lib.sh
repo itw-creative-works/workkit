@@ -39,12 +39,13 @@ WK_HOME_CACHE="$WK_USER_DIR/.cache.json"
 # from this checkout's tower/app and shaped like every other omega site project.
 # Everything versioned lives inside it, so the folder above stays a plain one.
 WK_HOME_DIR="$WK_USER_DIR/tower"
-# The one app in the brand root, and the build output it leaves. Proved against
-# the real tower/app 2026-07-29: `omega build` is a command of @omega.js/web and
-# resolves only inside the APP (at the brand root the `omega` bin dispatches to
-# @omega.js/manager, which has no build), and it writes `dist/` beside src/.
-WK_HOME_APP="$WK_HOME_DIR/apps/web"
-WK_HOME_DIST="$WK_HOME_APP/dist"
+# The one target in the brand root, and the build output it leaves. Proved
+# against the real tower/app 2026-07-29: `omega build` is a command of
+# @omega.js/web and resolves only inside the TARGET (at the brand root the
+# `omega` bin dispatches to @omega.js/manager, which has no build), and it
+# writes `dist/` beside src/.
+WK_HOME_TARGET="$WK_HOME_DIR/targets/web"
+WK_HOME_DIST="$WK_HOME_TARGET/dist"
 
 # ── Style ─────────────────────────────────────────────────────────────────────
 # One palette for every part of the engine that speaks to a person, so a color

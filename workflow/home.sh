@@ -5,7 +5,7 @@
 # never a git repo (issue #77). The one git repo in the global layer is
 # `~/.workkit/tower` — the clone of a private `<login>/workkit`, seeded from
 # this checkout's `tower/app` and shaped like every other omega site project:
-# a brand root with `apps/`, `config/` and its own `.gitignore`.
+# a brand root with `targets/`, `config/` and its own `.gitignore`.
 #
 # The boundary is the folder, not a .gitignore:
 #   ~/.workkit/          settings.json (the site options, hand-edited),
@@ -45,7 +45,7 @@ WK_TOWER_APP="${WORKKIT_TOWER_APP:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../tower
 # accretes, which is exactly what `tower/app/.gitignore` names. ONE list, read
 # by the seed's tar exclusions and by the sync's walk on both sides (issue
 # #129), so the two can never disagree about what "the project" is. Matched by
-# NAME at every depth: a nested `node_modules` under `apps/*` is the same
+# NAME at every depth: a nested `node_modules` under `targets/*` is the same
 # answer as the one at the root. `.git` and `.DS_Store` ride along beyond the
 # gitignore: the app has no `.git` and the clone's is never the sync's to look
 # inside, and `.DS_Store` is Finder litter no copy should carry.
@@ -323,7 +323,7 @@ wk_home_project_manifest() {
 # participation flag to seed and no capture file to keep out of the commit. The one
 # thing the seed adds on top of the copy is the absolute `file:` specs.
 wk_home_seed() {
-  local pkg app_pkg name excludes=()
+  local pkg target_pkg name excludes=()
 
   [[ -n "$WK_TOWER_APP" && -d "$WK_TOWER_APP" ]] || {
     wk_say_warn "home: the tower app is missing at ${WK_TOWER_APP:-this checkout} — nothing to seed the project from"
@@ -331,7 +331,7 @@ wk_home_seed() {
   }
 
   # `tar` rather than `cp -R` with deletions after: the exclusions have to hold
-  # at every depth (a nested node_modules under apps/*), and a copy that landed
+  # at every depth (a nested node_modules under targets/*), and a copy that landed
   # a gigabyte of dependencies first would be slow before it was wrong. The
   # names are the shared list, so the seed and the sync exclude the same set.
   for name in "${WK_TOWER_APP_EXCLUDE[@]}"; do
@@ -343,13 +343,13 @@ wk_home_seed() {
     return 1
   }
 
-  # The manifests, root first and then every app: each spec resolves from the
+  # The manifests, root first and then every target: each spec resolves from the
   # directory of the manifest it was copied from, never from the clone.
   wk_home_project_manifest "$WK_HOME_DIR/package.json" "$WK_TOWER_APP" --root
-  for pkg in "$WK_HOME_DIR"/apps/*/package.json; do
+  for pkg in "$WK_HOME_DIR"/targets/*/package.json; do
     [[ -f "$pkg" ]] || continue
-    app_pkg="${pkg#"$WK_HOME_DIR"/}"
-    wk_home_project_manifest "$pkg" "$WK_TOWER_APP/$(dirname "$app_pkg")"
+    target_pkg="${pkg#"$WK_HOME_DIR"/}"
+    wk_home_project_manifest "$pkg" "$WK_TOWER_APP/$(dirname "$target_pkg")"
   done
 
   wk_say_ok "home: seeded the tower project in $WK_HOME_DIR from $WK_TOWER_APP"
@@ -371,7 +371,7 @@ wk_home_seed() {
 # since the raw one differs by construction.
 #
 # WHAT IT MAY REMOVE is scoped to the top-level folders the app itself defines
-# (`apps/`, `assets/`, `config/` — whatever `tower/app` has). Inside those the
+# (`targets/`, `assets/`, `config/` — whatever `tower/app` has). Inside those the
 # sync is the only writer, so a file the app stopped shipping is one an older
 # copy left behind and the build would still glob. The clone's ROOT is shared
 # territory — the runner's `brief/`, the heal's `.github/ISSUE_TEMPLATE/`, the

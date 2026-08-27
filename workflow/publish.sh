@@ -29,10 +29,10 @@
 # the exit status of an install — an install's success proves nothing.
 #
 # WHERE THE BUILD RUNS, probed against the real tower/app 2026-07-29: `build` is
-# a command of @omega.js/web and resolves only INSIDE the app — at the brand
+# a command of @omega.js/web and resolves only INSIDE the target — at the brand
 # root the `omega` bin dispatches to @omega.js/manager, which has no build at
-# all. So the build is `npm --prefix <clone>/apps/web run build`, and it writes
-# `apps/web/dist/`.
+# all. So the build is `npm --prefix <clone>/targets/web run build`, and it
+# writes `targets/web/dist/`.
 #
 # WHERE IT LANDS: the `gh-pages` branch, at its ROOT. Nothing built is ever
 # committed on main, and no folder on main is named for a Pages rule. The branch
@@ -360,7 +360,7 @@ fi
 INSTALL_NEEDED="$WK_HOME_SYNC_MANIFESTS"
 INSTALL_STAMP="$WK_HOME_DIR/node_modules/.package-lock.json"
 if [[ "$INSTALL_NEEDED" -eq 0 ]]; then
-  for m in "$WK_HOME_DIR/package.json" "$WK_HOME_DIR"/apps/*/package.json; do
+  for m in "$WK_HOME_DIR/package.json" "$WK_HOME_DIR"/targets/*/package.json; do
     [[ -f "$m" ]] || continue
     if [[ ! -f "$INSTALL_STAMP" || "$m" -nt "$INSTALL_STAMP" ]]; then
       INSTALL_NEEDED=1
@@ -372,7 +372,7 @@ fi
 # `--prefix` (issue #166): `~/.workkit` is a symlink here, and npm given a
 # prefix resolves the project through the link while keying the tree from the
 # CALLER'S cwd. The lockfile took package paths outside the project root, the
-# apps/web workspace went extraneous, @omega.js/web never installed, and the
+# targets/web workspace went extraneous, @omega.js/web never installed, and the
 # next run died inside arborist. `cd -P` is what makes the cwd physical.
 if [[ "$INSTALL_NEEDED" -eq 1 ]]; then
   say_info "publish: installing the tower project's dependencies in $WK_HOME_DIR"
@@ -443,11 +443,11 @@ if [[ -z "$(wk_json_get "$WK_HOME_SETTINGS" '.site.url')" ]]; then
   PATH_PREFIX="/${HOME_SLUG##*/}/"
 fi
 
-say_info "publish: building the dashboard from $WK_HOME_APP"
+say_info "publish: building the dashboard from $WK_HOME_TARGET"
 say_info "publish: the site serves at $PATH_PREFIX — the build is told so"
 BUILD_LOG="$(mktemp)"
 trap 'rm -f "$BUILD_LOG"' EXIT
-if ! OMEGA_PATH_PREFIX="$PATH_PREFIX" npm --prefix "$WK_HOME_APP" run build >"$BUILD_LOG" 2>&1; then
+if ! OMEGA_PATH_PREFIX="$PATH_PREFIX" npm --prefix "$WK_HOME_TARGET" run build >"$BUILD_LOG" 2>&1; then
   say_warn "publish: the dashboard build failed — the last lines follow"
   tail -20 "$BUILD_LOG" >&2
   exit 1

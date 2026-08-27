@@ -9,7 +9,7 @@
 // here touches the real ~/.workkit.
 //
 // The tower app the seed copies is a FIXTURE (WORKKIT_TOWER_APP) shaped like the
-// real one — a brand root with apps/web, config/, a .gitignore, and file: specs
+// real one — a brand root with targets/web, config/, a .gitignore, and file: specs
 // pointing at a fake sibling framework. No omega, no npm install, no build.
 //
 // The library is sourced by a one-line driver rather than executed — it is a
@@ -69,7 +69,7 @@ const mkRemote = (root, { seed = null } = {}) => {
 /**
  * The tower app the seed copies from — the real one's shape without its weight:
  * a brand root whose manifests carry `file:` specs into a sibling framework
- * checkout, an app under apps/web, and the accretions the seed must leave
+ * checkout, a target under targets/web, and the accretions the seed must leave
  * behind (node_modules at both levels, a lockfile, .omega, dist).
  */
 const mkTowerApp = (root) => {
@@ -82,11 +82,11 @@ const mkTowerApp = (root) => {
     name: 'workkit-tower',
     private: true,
     description: 'The tower UI.',
-    workspaces: ['apps/*'],
+    workspaces: ['targets/*'],
     scripts: { build: 'omega build' },
     devDependencies: { '@omega.js/manager': 'file:../../../omega/packages/manager' },
   });
-  writeJson(path.join(app, 'apps', 'web', 'package.json'), {
+  writeJson(path.join(app, 'targets', 'web', 'package.json'), {
     name: 'workkit-tower-web',
     private: true,
     dependencies: { '@omega.js/web': 'file:../../../../../omega/packages/web' },
@@ -97,19 +97,19 @@ const mkTowerApp = (root) => {
   fs.writeFileSync(path.join(app, 'AGENTS.md'), '# the tower — architecture\n');
   fs.mkdirSync(path.join(app, 'config'), { recursive: true });
   fs.writeFileSync(path.join(app, 'config', 'omega.json5'), '{ brand: { id: "workkit" } }\n');
-  fs.mkdirSync(path.join(app, 'apps', 'web', 'src'), { recursive: true });
-  fs.writeFileSync(path.join(app, 'apps', 'web', 'src', 'index.html'), '<html></html>\n');
+  fs.mkdirSync(path.join(app, 'targets', 'web', 'src'), { recursive: true });
+  fs.writeFileSync(path.join(app, 'targets', 'web', 'src', 'index.html'), '<html></html>\n');
 
   // Everything a working checkout accretes and a seed must not carry.
   fs.mkdirSync(path.join(app, 'node_modules', '.bin'), { recursive: true });
   fs.writeFileSync(path.join(app, 'node_modules', '.bin', 'omega'), '#!/bin/sh\n');
-  fs.mkdirSync(path.join(app, 'apps', 'web', 'node_modules'), { recursive: true });
-  fs.writeFileSync(path.join(app, 'apps', 'web', 'node_modules', 'x.js'), 'nested\n');
+  fs.mkdirSync(path.join(app, 'targets', 'web', 'node_modules'), { recursive: true });
+  fs.writeFileSync(path.join(app, 'targets', 'web', 'node_modules', 'x.js'), 'nested\n');
   fs.writeFileSync(path.join(app, 'package-lock.json'), '{}\n');
   fs.mkdirSync(path.join(app, '.omega', 'runs'), { recursive: true });
   fs.writeFileSync(path.join(app, '.omega', 'runs', 'one.json'), '{}\n');
-  fs.mkdirSync(path.join(app, 'apps', 'web', 'dist'), { recursive: true });
-  fs.writeFileSync(path.join(app, 'apps', 'web', 'dist', 'index.html'), 'stale build\n');
+  fs.mkdirSync(path.join(app, 'targets', 'web', 'dist'), { recursive: true });
+  fs.writeFileSync(path.join(app, 'targets', 'web', 'dist', 'index.html'), 'stale build\n');
 
   return { app, framework };
 };
@@ -434,16 +434,16 @@ const run = async () => {
     const { code, out } = inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed');
     assertEq(code, 0, `exit 0 — ${out}`);
 
-    assert(fs.existsSync(path.join(world.tower, 'apps', 'web', 'src', 'index.html')), 'the app travels');
+    assert(fs.existsSync(path.join(world.tower, 'targets', 'web', 'src', 'index.html')), 'the app travels');
     assert(fs.existsSync(path.join(world.tower, 'config', 'omega.json5')), 'and the brand config');
     assert(fs.existsSync(path.join(world.tower, 'README.md')), 'the project’s README is its own doc, so it travels too');
     assert(fs.existsSync(path.join(world.tower, 'AGENTS.md')), 'and its AGENTS.md');
 
     assert(!fs.existsSync(path.join(world.tower, 'node_modules')), 'the installed dependencies do not');
-    assert(!fs.existsSync(path.join(world.tower, 'apps', 'web', 'node_modules')), 'at any depth');
+    assert(!fs.existsSync(path.join(world.tower, 'targets', 'web', 'node_modules')), 'at any depth');
     assert(!fs.existsSync(path.join(world.tower, 'package-lock.json')), 'nor the lockfile');
     assert(!fs.existsSync(path.join(world.tower, '.omega')), 'nor the omega run machinery');
-    assert(!fs.existsSync(path.join(world.tower, 'apps', 'web', 'dist')), 'nor a stale build');
+    assert(!fs.existsSync(path.join(world.tower, 'targets', 'web', 'dist')), 'nor a stale build');
     assert(/seeded the tower project/.test(out), `and it says what it did, got: ${out}`);
     cleanup(world.root);
   });
@@ -462,7 +462,7 @@ const run = async () => {
       'the root manifest points at the framework this machine resolves it from',
     );
     assertEq(
-      world.pkg(path.join('apps', 'web', 'package.json')).dependencies['@omega.js/web'],
+      world.pkg(path.join('targets', 'web', 'package.json')).dependencies['@omega.js/web'],
       `file:${path.join(world.framework, 'web')}`,
       'and so does every app, resolved from ITS own directory',
     );
@@ -512,7 +512,7 @@ const run = async () => {
 
     const check = path.join(world.root, 'check');
     spawnSync('git', ['clone', '-q', remote, check], { encoding: 'utf8' });
-    assert(fs.existsSync(path.join(check, 'apps', 'web', 'src', 'index.html')), 'the push landed the project');
+    assert(fs.existsSync(path.join(check, 'targets', 'web', 'src', 'index.html')), 'the push landed the project');
     assert(fs.existsSync(path.join(check, 'config', 'omega.json5')), 'with the app’s own config');
     assert(!fs.existsSync(path.join(check, 'config', 'workkit.json')), 'and no site options of its own');
     assert(!fs.existsSync(path.join(check, '.workkit')), 'nor a .workkit/ folder in what a second machine clones');
@@ -675,7 +675,7 @@ const run = async () => {
   await test('the prune touches nothing outside the runner folder', () => {
     const world = mkWorld();
     seeded(world);
-    const mine = path.join(world.tower, 'apps', 'web', 'src', 'notes.md');
+    const mine = path.join(world.tower, 'targets', 'web', 'src', 'notes.md');
     fs.mkdirSync(path.dirname(mine), { recursive: true });
     fs.writeFileSync(mine, '# the project’s own\n');
     fs.writeFileSync(path.join(world.tower, 'README.md'), '# the home repo\n');
@@ -734,7 +734,7 @@ const run = async () => {
     const calls = world.ghCalls().map((c) => c.join(' '));
     assert(calls.some((c) => c.includes('repo create owner/workkit --private')), `the private repo is created: ${fmtCalls(world.ghCalls())}`);
     assertEq(world.settings().site.repo, 'owner/workkit', 'the home slug is recorded');
-    assert(fs.existsSync(path.join(world.tower, 'apps', 'web', 'src', 'index.html')), 'the project is seeded');
+    assert(fs.existsSync(path.join(world.tower, 'targets', 'web', 'src', 'index.html')), 'the project is seeded');
     assert(!fs.existsSync(path.join(world.tower, '.workkit')), 'and the clone carries no workflow folder of its own');
 
     assert(world.npmCalls().some((c) => c.join(' ').includes('install')), `the dependencies are installed once, here: ${fmtCalls(world.npmCalls())}`);
@@ -756,14 +756,14 @@ const run = async () => {
   await test('a second setup finds the clone and re-seeds nothing', () => {
     const world = mkWorld({ login: 'owner', repoExists: true, discussionsOn: true, pagesOn: true });
     setup(world);
-    fs.writeFileSync(path.join(world.tower, 'apps', 'web', 'src', 'index.html'), '<html>edited here</html>\n');
+    fs.writeFileSync(path.join(world.tower, 'targets', 'web', 'src', 'index.html'), '<html>edited here</html>\n');
     const head = spawnSync('git', ['-C', world.tower, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout;
 
     const { code, out } = setup(world);
     assertEq(code, 0, `exit 0 — ${out}`);
     assert(!/created the private repo/.test(out), `nothing is created twice, got: ${out}`);
     assert(/is the clone of/.test(out), `it reports the clone it found, got: ${out}`);
-    assertEq(fs.readFileSync(path.join(world.tower, 'apps', 'web', 'src', 'index.html'), 'utf8'),
+    assertEq(fs.readFileSync(path.join(world.tower, 'targets', 'web', 'src', 'index.html'), 'utf8'),
       '<html>edited here</html>\n', 'and what the project already carried survives');
     assertEq(spawnSync('git', ['-C', world.tower, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout, head, 'the repo is untouched');
     cleanup(world.root);
@@ -778,7 +778,7 @@ const run = async () => {
     assertEq(code, 0, `exit 0 — ${out}`);
     assertEq(fs.readFileSync(path.join(world.tower, 'README.md'), 'utf8'), '# from elsewhere\n',
       'the other machine’s project is the one here');
-    assert(!fs.existsSync(path.join(world.tower, 'apps')), 'and nothing was seeded over it');
+    assert(!fs.existsSync(path.join(world.tower, 'targets')), 'and nothing was seeded over it');
     assert(/already in/.test(out), `it says so, got: ${out}`);
     cleanup(world.root);
   });

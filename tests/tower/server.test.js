@@ -1093,6 +1093,33 @@ const run = async () => {
     assertEq(DEFAULT_PORT, 8693, 'TOWER on a keypad');
   });
 
+  // Issue #202: the sweep met a payload shape it did not expect - GitHub had
+  // nulled every issue node - and the throw ended the API process, which takes
+  // the dashboard down with it (tower/start.sh: either half ending ends both).
+  // A bug in a lib is a 500 on that request and nothing more.
+  await test('a handler that throws answers 500 and the process keeps serving', async () => {
+    const w = mkWorld();
+    // A shape no normalizer expects: the connection's nodes are not a list.
+    w.board = { data: { r0: { issues: { totalCount: 1, nodes: { nope: true } } } } };
+    const c = await start(w);
+    const said = [];
+    const wasError = console.error;
+    console.error = (line) => said.push(line);
+    try {
+      const board = await getJson(c, '/api/board');
+      assertEq(board.status, 500, 'the request that broke is the only thing that failed');
+      assertEq(board.body.ok, false, 'the soft shape everywhere');
+      assert(board.body.reason.length > 0, `and it carries the message, got: ${board.body.reason}`);
+      assertEq(said.length, 1, 'logged once, so the machine has a trail');
+      const repos = await getJson(c, '/api/repos');
+      assertEq(repos.status, 200, 'and the next request is answered by the same live process');
+    } finally {
+      console.error = wasError;
+    }
+    await c.stop();
+    cleanup(w.root);
+  });
+
   await test('an absent roster serves an empty one instead of crashing', async () => {
     const w = mkWorld();
     const c = await start(w, { workflowHome: path.join(w.root, 'absent') });

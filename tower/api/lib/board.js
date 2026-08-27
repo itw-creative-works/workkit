@@ -1,11 +1,14 @@
 //
 // The cross-repo issue sweep — the board's data, in one call.
 //
-// Every opted-in repo's open issues arrive from a SINGLE `gh api graphql`
-// request using per-repo aliases (`r0:`, `r1:`, …). One request instead of one
-// per repo is the whole point: the board is polled, and a roster of a dozen
-// repos would otherwise be a dozen round trips and a dozen rate-limit hits
-// every refresh.
+// Every opted-in repo's open issues arrive from `gh api graphql` using per-repo
+// aliases (`r0:`, `r1:`, …), a BATCH of repos to a request. Batching instead of
+// one request per repo is most of the point: the board is polled, and a roster
+// of a dozen repos would otherwise be a dozen round trips and a dozen
+// rate-limit hits every refresh. Asking for the whole roster at once is the
+// other half — GitHub refuses a query that is too much work in one go
+// (REPOS_PER_REQUEST says what that cost), and the aliases restart at `r0` in
+// every request, so a batch is mapped back onto the roster by its offset.
 //
 // The label vocabulary is not restated here. Group names come from
 // workflow/labels.json — the SSOT the standards heal also reads — so a new
@@ -41,6 +44,14 @@ const { execFileSync } = require('child_process');
 // Per repo, per request. GitHub caps a connection page at 100; a repo with more
 // open issues than that is reported truncated rather than silently short.
 const PAGE_SIZE = 100;
+
+// How many repos ride ONE request (issue #202). GitHub scores a query before it
+// runs it and refuses the ones that are too much work: measured 2026-08-26 on a
+// 23-repo roster, every repo alone passed and batches of 4 and of 8 passed with
+// zero nulls, while all 23 in one request came back RESOURCE_LIMITS_EXCEEDED —
+// 357 of 357 issue nodes null. Six is inside what passed with room for repos
+// that grow, and the roster is swept a batch at a time rather than whole.
+const REPOS_PER_REQUEST = 6;
 
 // How much of an issue body the sweep carries. The dashboard's issue dialog
 // reads the body straight off the board payload, so the whole roster's bodies
@@ -255,6 +266,22 @@ const errorsByAlias = (errors) => {
   return map;
 };
 
+/**
+ * The FIRST message GitHub reported against an alias — what a dropped-node
+ * reason quotes. The failure this exists for answers with one error per dropped
+ * node (464 of them on the roster that found it, issue #202); they all say the
+ * same thing, and one of them is what a repo entry has room for.
+ * @param {object[]} errors
+ * @param {string} alias
+ * @returns {string}
+ */
+const firstErrorFor = (errors, alias) => {
+  for (const e of errors || []) {
+    if (Array.isArray(e.path) && e.path[0] === alias) return e.message || e.type || 'unknown error';
+  }
+  return 'no reason given';
+};
+
 /** Why the sweep produced nothing usable, in the caller's terms. */
 const failureReason = (err) => {
   // A bad token surfaces on stdout ({"message":"Bad credentials","status":"401"})
@@ -271,8 +298,8 @@ const failureReason = (err) => {
  *
  * The result carries a `repos` array alongside the issues so a repo can report
  * what happened to it: `truncated: true` when it hit the page cap, and `error`
- * when its alias did not resolve. The issue list itself stays flat; the board
- * sorts and groups it.
+ * when its alias did not resolve or GitHub dropped issues out of its answer.
+ * The issue list itself stays flat; the board sorts and groups it.
  *
  * @param {Array<{slug: string|null}>} repos the roster (repos without a slug are skipped)
  * @param {object} [opts]
@@ -297,69 +324,84 @@ const fetchBoard = (repos, opts = {}) => {
   const withSlug = (repos || []).filter((r) => r && typeof r.slug === 'string' && r.slug.includes('/'));
   if (withSlug.length === 0) return { ok: true, issues: [], repos: [] };
 
-  let payload;
-  try {
-    const query = buildQuery(withSlug.map((r) => r.slug.split('/')));
-    payload = tryParse(exec('gh', ['api', 'graphql', '-f', `query=${query}`]));
-  } catch (err) {
-    // A non-zero exit still carries the response. Believe the payload, not the
-    // exit code: partial data is the normal shape of a roster with one bad repo.
-    payload = tryParse(err.stdout ? String(err.stdout) : '');
-    if (!payload || !payload.data) {
-      return { ok: false, reason: failureReason(err), issues: [], repos: [] };
-    }
-  }
-
-  if (!payload || !payload.data) {
-    return { ok: false, reason: 'gh graphql returned no data', issues: [], repos: [] };
-  }
-
-  const data = payload.data;
-  const aliasErrors = errorsByAlias(payload.errors);
   const issues = [];
   const repoEntries = [];
 
-  withSlug.forEach((repo, i) => {
-    const alias = `r${i}`;
-    const resolved = data[alias];
-    const conn = (resolved || {}).issues || {};
-    const nodes = conn.nodes || [];
-    const total = typeof conn.totalCount === 'number' ? conn.totalCount : nodes.length;
-    repoEntries.push({
-      slug: repo.slug,
-      count: nodes.length,
-      totalCount: total,
-      truncated: total > nodes.length,
-      closedDay: closedSince(resolved, now),
-      error: aliasErrors[alias] || (resolved ? null : 'not resolved'),
-    });
-    for (const node of nodes) {
-      const parsed = parseLabels((node.labels || {}).nodes, groups);
-      const agent = parsed.agent || [];
-      const body = String(node.body || '');
-      issues.push({
-        repo: repo.slug,
-        number: node.number,
-        title: node.title,
-        url: node.url,
-        body: body.slice(0, BODY_LIMIT),
-        bodyTruncated: body.length > BODY_LIMIT,
-        comments: ((node.comments || {}).totalCount) || 0,
-        lastComment: lastCommentOf(node),
-        createdAt: node.createdAt || null,
-        updatedAt: node.updatedAt,
-        status: (parsed.status || [])[0] || null,
-        type: (parsed.type || [])[0] || null,
-        priority: (parsed.priority || [])[0] || null,
-        agentOk: agent.includes('ok'),
-        agentWorking: agent.includes('working'),
-        assignees: ((node.assignees || {}).nodes || []).map((a) => a.login),
-        blockedBy: blockersFor(node, repo.slug),
-      });
+  // A batch at a time, in sequence. The requests are serial because the sweep
+  // runs behind one cached endpoint on a poll — three round trips one after the
+  // other is what the cache absorbs, and firing them together is how a roster
+  // this size meets a secondary rate limit instead of the resource one.
+  for (let offset = 0; offset < withSlug.length; offset += REPOS_PER_REQUEST) {
+    const batch = withSlug.slice(offset, offset + REPOS_PER_REQUEST);
+    let payload;
+    try {
+      const query = buildQuery(batch.map((r) => r.slug.split('/')));
+      payload = tryParse(exec('gh', ['api', 'graphql', '-f', `query=${query}`]));
+    } catch (err) {
+      // A non-zero exit still carries the response. Believe the payload, not the
+      // exit code: partial data is the normal shape of a roster with one bad repo.
+      payload = tryParse(err.stdout ? String(err.stdout) : '');
+      if (!payload || !payload.data) {
+        return { ok: false, reason: failureReason(err), issues: [], repos: [] };
+      }
     }
-  });
+
+    if (!payload || !payload.data) {
+      return { ok: false, reason: 'gh graphql returned no data', issues: [], repos: [] };
+    }
+
+    const data = payload.data;
+    const aliasErrors = errorsByAlias(payload.errors);
+
+    batch.forEach((repo, i) => {
+      const alias = `r${i}`;
+      const resolved = data[alias];
+      const conn = (resolved || {}).issues || {};
+      const answered = conn.nodes || [];
+      // A NULL node is an issue GitHub could not deliver, and reading a field off
+      // one is what ended this process (issue #202). It is skipped, counted, and
+      // said out loud on the repo it belongs to, so the board shows what arrived
+      // and the Overview's "showing N of M" warning fires over what did not.
+      const nodes = answered.filter(Boolean);
+      const dropped = answered.length - nodes.length;
+      const total = typeof conn.totalCount === 'number' ? conn.totalCount : answered.length;
+      repoEntries.push({
+        slug: repo.slug,
+        count: nodes.length,
+        totalCount: total,
+        truncated: total > answered.length,
+        closedDay: closedSince(resolved, now),
+        error: (dropped > 0 ? `GitHub dropped ${dropped} of ${answered.length} issues: ${firstErrorFor(payload.errors, alias)}` : null)
+          || aliasErrors[alias] || (resolved ? null : 'not resolved'),
+      });
+      for (const node of nodes) {
+        const parsed = parseLabels((node.labels || {}).nodes, groups);
+        const agent = parsed.agent || [];
+        const body = String(node.body || '');
+        issues.push({
+          repo: repo.slug,
+          number: node.number,
+          title: node.title,
+          url: node.url,
+          body: body.slice(0, BODY_LIMIT),
+          bodyTruncated: body.length > BODY_LIMIT,
+          comments: ((node.comments || {}).totalCount) || 0,
+          lastComment: lastCommentOf(node),
+          createdAt: node.createdAt || null,
+          updatedAt: node.updatedAt,
+          status: (parsed.status || [])[0] || null,
+          type: (parsed.type || [])[0] || null,
+          priority: (parsed.priority || [])[0] || null,
+          agentOk: agent.includes('ok'),
+          agentWorking: agent.includes('working'),
+          assignees: ((node.assignees || {}).nodes || []).map((a) => a.login),
+          blockedBy: blockersFor(node, repo.slug),
+        });
+      }
+    });
+  }
 
   return { ok: true, issues, repos: repoEntries };
 };
 
-module.exports = { fetchBoard, buildQuery, parseLabels, labelGroups, errorsByAlias, closedSince, blockersFor, lastCommentOf, PAGE_SIZE, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, CLOSED_WINDOW_MS, LABELS_FILE };
+module.exports = { fetchBoard, buildQuery, parseLabels, labelGroups, errorsByAlias, closedSince, blockersFor, lastCommentOf, REPOS_PER_REQUEST, PAGE_SIZE, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, CLOSED_WINDOW_MS, LABELS_FILE };

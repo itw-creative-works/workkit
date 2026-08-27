@@ -1,35 +1,34 @@
 ---
 layout: admin/core/minimal
 
-# Every tower page wears this - for one frontmatter key, and for the intake
-# dialog in its body (the topbar's button opens it, so it has to be on every
-# page). The key: the tower is a localhost
-# tool with no user accounts, and the admin layout chain it extends sets
-# `client.auth.config.policy: "authenticated"` (plus an admin role), which
-# would bounce every page to a sign-in screen that has no Firebase behind it.
-# `policy: "disabled"` makes core/js/core/auth.js return before it looks at
-# anything (auth.js:17).
-#
-# `client:` is the framework's name for this blob (issue #98 - it used to be
-# `web_manager`, and the rename is what silently re-armed the gate: the stale
-# key resolved to nothing and the admin chain's policy won). The engine's
-# meta-only guard now admits {meta, schema, theme, client, append, sitemap}
-# on pages too, but the layout stays the one home so seven pages cannot drift.
-client:
-  auth:
-    config:
-      policy: "disabled"
-  cookieConsent:
-    enabled: false
-  chatsy:
-    enabled: false
-  exitPopup:
-    enabled: false
-
 sitemap:
   include: false
 meta:
   index: false
+config:
+  # Every tower page wears this - for one frontmatter key, and for the intake
+  # dialog in its body (the topbar's button opens it, so it has to be on every
+  # page). The key: the tower is a localhost
+  # tool with no user accounts, and the admin layout chain it extends sets
+  # `client.auth.config.policy: "authenticated"` (plus an admin role), which
+  # would bounce every page to a sign-in screen that has no Firebase behind it.
+  # `policy: "disabled"` makes core/js/core/auth.js return before it looks at
+  # anything (auth.js:17).
+  #
+  # `client:` is the framework's name for this blob (issue #98 - it used to be
+  # `web_manager`, and the rename is what silently re-armed the gate: the stale
+  # key resolved to nothing and the admin chain's policy won). It rides under
+  # `config:` because that is where a page or layout overrides omega.json5
+  # (OMEGA #607 - `meta` is the only section that keeps its bare spelling), and
+  # the layout stays the one home so seven pages cannot drift.
+  client:
+    auth:
+      config:
+        policy: "disabled"
+    consent:
+      enabled: false
+    exitPopup:
+      enabled: false
 ---
 
 {{ content }}

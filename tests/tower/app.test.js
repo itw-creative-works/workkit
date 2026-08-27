@@ -31,7 +31,7 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
-const libs = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'libs', 'tower');
+const libs = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'libs', 'tower');
 const load = (name) => import(pathToFileURL(path.join(libs, name)).href);
 
 /** A runtime state in the shape startPage builds, with the feeds already read. */
@@ -281,7 +281,7 @@ const run = async () => {
     // verdict - `complete` is the check passed, and `qa` is now the waiting for
     // it, drawn in the one ramp slot no vocabulary had taken.
     assertEq(format.statusToken('complete'), '--omega-ok', 'complete wears the ok green - the check passed, ready to ship');
-    assertEq(format.statusToken('qa'), '--omega-chart-6', 'qa gives that green up for the olive - waiting on a check is no verdict');
+    assertEq(format.statusToken('qa'), '--omega-chart-4', 'qa gives that green up for the magenta - waiting on a check is no verdict (#203)');
     assertEq(format.statusToken('specced'), '--omega-chart-3', 'and specced gave it up for the categorical purple before either');
   });
 
@@ -413,7 +413,7 @@ const run = async () => {
     // this, a silent revert to a date-only sort in board.js leaves every other
     // test green and the issue's headline behavior gone.
     const fs = require('fs');
-    const boardPage = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    const boardPage = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
     assert(/import \{[^}]*byPriority[^}]*\} from '\.\.\/libs\/tower\/format\.js'/.test(boardPage),
       'the comparator comes from format.js');
     assert(boardPage.includes('.sort(byPriority)'), 'and the columns actually sort by it');
@@ -441,7 +441,7 @@ const run = async () => {
     // Neither half is visible from Node, so both are pinned by hand.
     const fs = require('fs');
     assert(format.empty('nothing here').includes('class="omega-tower-empty '), 'the helper carries the hook the sheet centres from');
-    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
+    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
     const rule = /\.omega-tower-empty i \{ margin-inline: (\S+?); \}/.exec(sheet);
     assert(rule, 'and the sheet centres the icon box - once, for every caller of the helper');
     assertEq(rule[1], 'auto', 'the one way a block box of known width centres itself');
@@ -563,7 +563,7 @@ const run = async () => {
     // #149: the rule is within-category uniqueness - three types, three hues.
     // Across the categories a hue is free (`idea` and `specced` share the
     // purple), because a chip says its own word and wears its own glyph.
-    const slots = { bug: '--omega-chart-4', enhancement: '--omega-chart-5', idea: '--omega-chart-3' };
+    const slots = { bug: '--omega-danger', enhancement: '--omega-chart-5', idea: '--omega-chart-3' };
     for (const [type, token] of Object.entries(slots)) {
       const chips = format.issueChips({ type, priority: '' });
       assert(chips.includes(`--omega-tone: var(${token})`), `${type} is drawn in its own slot`);
@@ -634,7 +634,7 @@ const run = async () => {
     for (const chip of [format.typeChip('bug'), format.priorityChip('low')]) {
       assert(/<i class="fa-solid fa-[a-z-]+ me-1"/.test(chip), 'the glyph carries the framework\'s own margin utility, since there is no gap to inherit');
     }
-    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
+    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
     const nudge = /\.omega-chip i\.fa-solid svg \{ vertical-align: (\S+?); \}/.exec(sheet);
     assert(nudge, 'and the sheet nudges the svg the renderer fills that `i` with - `.fa svg`, the framework\'s own rule, never reaches an `i` written `fa-solid` alone');
     assertEq(nudge[1], '-.125em', 'by the framework\'s own number, so a chip glyph sits where every other icon does');
@@ -642,7 +642,7 @@ const run = async () => {
 
   await test('the Board card draws that row, and no surface names a glyph of its own (#136)', () => {
     const fs = require('fs');
-    const js = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js');
+    const js = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js');
     const source = fs.readFileSync(path.join(js, 'pages', 'board.js'), 'utf8');
     assert(/import \{[^}]*issueChips[^}]*\} from '\.\.\/libs\/tower\/format\.js'/.test(source), 'the chips come from format.js');
     assert(source.includes('${issueChips(issue, \'mt-auto omega-tower-issue__chips\', open)}'),
@@ -760,7 +760,7 @@ const run = async () => {
     assertEq(state.brief({ feeds: { brief: failed('connection refused') }, selectedRepo: '' }), null,
       'and a read that failed is null, never a payload with nothing in it');
     const fs = require('fs');
-    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     for (const name of ['index.js', 'health.js']) {
       const source = fs.readFileSync(path.join(pages, name), 'utf8');
       assert(/brief\(state\)/.test(source), `${name} reads it through the one accessor`);
@@ -924,7 +924,7 @@ const run = async () => {
 
   await test('the Board resolves its drop at DROP time and holds no snapshot', () => {
     const fs = require('fs');
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
     assert(/const move = async \(key, to\) => \{\s*const issue = issueByKey\(state, key\);/.test(source), 'the issue is looked up when the drop happens');
     assert(!source.includes('new Map('), 'and nothing holds a per-paint map of them');
     assert(source.includes('draggable="true"'), 'the cards are draggable');
@@ -953,7 +953,7 @@ const run = async () => {
     assert(!markup.includes('https://gh/omega/2'), 'the other repo’s is not on this board at all');
 
     const fs = require('fs');
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
     assert(/noStatusAlert\(all, showRepo\)/.test(source), 'the page hands the alert the scoped list, not the raw payload');
     assert(/const labelled = all\.filter\(\(issue\) => issue\.status\)/.test(source),
       'and the columns and their denominator are drawn from the labelled ones alone (#118)');
@@ -969,7 +969,7 @@ const run = async () => {
 
   await test('which view is on screen lives in the URL, and `list` is written as nothing at all', () => {
     const fs = require('fs');
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
     assert(/const VIEWS = \['list', 'graph'\]/.test(source), 'two views, named');
     assert(/searchParams\.get\('view'\)[\s\S]{0,120}VIEWS\.includes\(value\) \? value : 'list'/.test(source),
       'the URL is read back and anything outside the two reads as the default, never as an empty page');
@@ -979,33 +979,57 @@ const run = async () => {
     assert(/const view = readView\(\);/.test(source), 'and every paint re-reads it, so the 60-second repaint cannot revert the view');
   });
 
-  await test('the board is two regions - the pipeline flows, the pockets wait (#196)', () => {
+  await test('the board is one strip in two groups - the pipeline flows, the pocket waits (#196)', () => {
     const fs = require('fs');
-    const src = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets');
+    const src = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets');
     const source = fs.readFileSync(path.join(src, 'js', 'pages', 'board.js'), 'utf8');
     // Which lanes are which is the vocabulary's flag, never a list here: a
     // second list of statuses on this page is the drift the flag exists to stop.
-    assert(/STATUSES\.filter\(\(status\) => !status\.pocket\)/.test(source), 'the pipeline region is the lanes that are stages');
-    assert(/STATUSES\.filter\(\(status\) => status\.pocket\)/.test(source), 'and the pocket region is the lanes that are not');
+    assert(/STATUSES\.filter\(\(status\) => !status\.pocket\)/.test(source), 'the pipeline group is the lanes that are stages');
+    assert(/STATUSES\.filter\(\(status\) => status\.pocket\)/.test(source), 'and the pocket group is the lanes that are not');
     assert(!/'blocked', 'backlog'|"blocked", "backlog"/.test(source), 'the page names neither of them itself');
-    assert(/<aside class="omega-tower-pockets[^"]*"[^>]*aria-label="Waiting/.test(source),
-      'the pocket is a region of its own and says what it is to a screen reader');
-    assert(/waiting, not moving/.test(source), 'and says it in a line on the page too');
-    // Both regions are drawn by ONE lane renderer, which is what keeps a pocket
+    // ONE grid holds all of them, sized by how many the vocabulary has, so every
+    // lane on the board is one width - two strips of their own were two widths.
+    assertEq((source.match(/class="omega-tower-board"/g) || []).length, 1, 'one strip holds every lane');
+    assert(/style="--pipeline: \$\{pipeline\.length\}; --pocket: \$\{pocket\.length\};"/.test(source),
+      'and the page hands the stylesheet the two lane counts as custom properties - never a count written by hand, never a layout inline (#203)');
+    assert(!/style="grid-/.test(source), 'no grid placement is written inline on this page');
+    assert(!/flex: \d/.test(source), 'the two flex regions that wrapped onto a row each - and their ratio - are gone');
+    // No caption names a group, and one line counts the board (#203): how many
+    // the filters let through out of how many it holds. The picker scopes.
+    assert(!/omega-tower-board__caption/.test(source), 'no caption cell names a group');
+    assert(/showing \$\{shown\} out of \$\{total\}/.test(source) && !/filtered out/.test(source) && !/across every repo/.test(source),
+      'the count line says "showing X out of Y" and nothing else - no scope words, the picker owns the scope');
+    assert(/<div class="omega-tower-group omega-tower-group--pipeline">/.test(source), 'the pipeline is a group card, placed by class');
+    assert(/<aside class="omega-tower-group omega-tower-group--pocket" aria-label="Waiting/.test(source),
+      'and the pocket is the second group card, still a landmark of its own, placed by class');
+    assert(!/<div class="card"><div class="card-body[^>]*>\$\{counts\(/.test(source), 'and no outer card wraps both groups - two cards, not a card in a card (#203)');
+    // Both groups are drawn by ONE lane renderer, which is what keeps a pocket
     // lane a drop target like any other - a card is dragged into and out of them.
-    assertEq((source.match(/const lanes = /g) || []).length, 1, 'one lane renderer draws both regions');
+    assertEq((source.match(/const lanes = /g) || []).length, 1, 'one lane renderer draws both groups');
     assert(/\$\{openQuestion\(issue\)\}/.test(source), 'and a card draws its open question from format.js, never a shape of its own');
 
     const sheet = fs.readFileSync(path.join(src, 'css', 'main.scss'), 'utf8');
-    assert(/\.omega-tower-pockets \{[^}]*border: 1px solid/.test(sheet),
-      'the pocket is set apart by an outline - a tint would swallow the drop tint of the lane inside it');
+    assert(/\.omega-tower-board \{[^}]*grid-template-columns: repeat\(var\(--pipeline\), minmax\(9rem, 1fr\)\) 0 repeat\(var\(--pocket\), minmax\(9rem, 1fr\)\);/.test(sheet),
+      'the strip’s tracks are read from the page’s two counts, with a zero-width spacer between the groups - one row, no caption row');
+    assert(!/grid-template-rows/.test(sheet.slice(sheet.indexOf('.omega-tower-board {'), sheet.indexOf('.omega-tower-issue--dragging'))), 'and the strip has no second row');
+    assert(/\.omega-tower-group \{[^}]*grid-template-columns: subgrid;/.test(sheet),
+      'a group borrows the strip’s own tracks, so its lanes are the board’s lanes to the pixel');
+    assert(/\.omega-tower-group--pipeline \{ grid-column: 1 \/ span var\(--pipeline\); \}/.test(sheet)
+      && /\.omega-tower-group--pocket \{ grid-column: calc\(var\(--pipeline\) \+ 2\) \/ span var\(--pocket\); \}/.test(sheet),
+      'and each group is placed by a class rule reading those counts, the pocket skipping the spacer track');
+    assert(/\.omega-tower-group::before \{[^}]*position: absolute;[^}]*inset: -\.5rem;[^}]*z-index: 0;[^}]*background: var\(--bs-card-bg[^}]*border: 1px solid/.test(sheet)
+      && /\.omega-tower-group > \* \{ position: relative; z-index: 1; \}/.test(sheet),
+      'and its card face is an overlay drawn behind the lanes with the SAME inset on every side, costing them no width and hiding no drop tint (#203)');
+    assert(!/omega-tower-pockets/.test(sheet), 'the pocket has no rule of its own beyond its placement');
+    assert(/\.omega-tower-board \{[^}]*padding: \.5rem;/.test(sheet), 'and the strip carries the half gutter the card faces are drawn into');
     assert(/\.omega-tower-issue__question \{[^}]*-webkit-line-clamp: 3/.test(sheet),
       'and the question is clamped, so the widest one cannot stand three cards tall');
   });
 
   await test('a filter never clears the view, and the view never clears a filter', () => {
     const fs = require('fs');
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
     assert(/const PARAMS = \['type', 'priority', 'agent', 'assignee', 'q'\]/.test(source),
       'the view is not one of the filter parameters writeFilters deletes what it is not given');
     assert(/writeView\(button\.dataset\.view\)/.test(source), 'the toggle writes only its own parameter');
@@ -1013,7 +1037,7 @@ const run = async () => {
 
   await test('the toggle is two buttons and says which one is in force', () => {
     const fs = require('fs');
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
     assert(/aria-pressed="\$\{view === name\}"/.test(source), 'the active one is marked for a screen reader');
     assert(/btn-\$\{view === name \? '' : 'outline-'\}adaptive/.test(source), 'and drawn filled against outlined, in the theme’s own button');
     const toggle = source.slice(source.indexOf('const viewToggle'), source.indexOf('const toolbar'));
@@ -1023,7 +1047,7 @@ const run = async () => {
 
   await test('the graph is composed in the lib, drawn after the write, and says it is not the surface', () => {
     const fs = require('fs');
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
     assert(/import \{ boardGraph \} from '\.\.\/libs\/tower\/graphdef\.js'/.test(source), 'the definition comes from the lib');
     assert(/import \{ loadGraph, graphReady, graphSlot, drawGraph \} from '__main_assets__\/js\/libs\/graph\.js'/.test(source),
       'and the drawing from the framework’s graph module, which is the only place mermaid is named');
@@ -1343,7 +1367,7 @@ const run = async () => {
     const clock = fs.readFileSync(path.join(libs, 'clock.js'), 'utf8');
     assert(clock.includes('setInterval'), 'the timer lives in clock.js');
     assert(/import \{[^}]*activityTick[^}]*\} from '\.\/agent\.js'/.test(clock), 'and it re-decides through the shared arithmetic rather than a copy of the thresholds');
-    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     for (const name of fs.readdirSync(pages).filter((file) => file.endsWith('.js'))) {
       assert(!fs.readFileSync(path.join(pages, name), 'utf8').includes('setInterval'), `${name} runs no clock of its own`);
     }
@@ -1454,7 +1478,7 @@ const run = async () => {
     // its indicator carried no stamps, the second hand walked straight past it,
     // and the landing page's numbers sat still while the Crew page's moved.
     const fs = require('fs');
-    const overview = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'index.js'), 'utf8');
+    const overview = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'index.js'), 'utf8');
     assert(!overview.includes('activityIcon('), 'it wraps nothing of its own around the bare glyph');
     // And what that builder hands it, for a session in the shape /api/crew
     // sends one - the stamps are the whole point of the delegation.
@@ -1470,7 +1494,7 @@ const run = async () => {
     // day it shipped. Whether it visibly turns is a browser's answer; that the
     // rule is in the sheet at all is this one's.
     const fs = require('fs');
-    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
+    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
     const rule = /\.omega-tower-activity \.fa-spin \{ animation: (\S+) /.exec(sheet);
     assert(rule, 'the indicator gives its own glyph the animation');
     assertEq(rule[1], 'spin', 'reusing the keyframes the framework already ships');
@@ -1490,7 +1514,7 @@ const run = async () => {
     // the box's centre, which sat ~2px below the glyph's at .75rem, so the
     // glyph orbited instead of turning. The box has to BE the glyph.
     const fs = require('fs');
-    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
+    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
     const box = /\.omega-tower-activity i \{([^}]*)\}/.exec(sheet);
     assert(box, 'the indicator sizes the glyph it draws');
     for (const declaration of ['height: 1em', 'width: 1em']) {
@@ -1540,12 +1564,12 @@ const run = async () => {
     assert(markup.includes('reading the board…'), 'with the caller\'s line beneath it');
     assert(format.loading('<b>x</b>').includes('&lt;b&gt;'), 'the line is escaped like every other interpolation');
     const fs = require('fs');
-    const page = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    const page = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
     assert(!/\bloading[^}]*\} from '@omega\.js\/client\/modules\/live-page'/.test(page),
       'the Board takes the wait state from the shared vocabulary, not the framework\'s corner-flush inline one');
     assert(/import \{[^}]*\bloading\b[^}]*\} from '\.\.\/libs\/tower\/format\.js'/.test(page),
       'and it imports the tower\'s own');
-    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
+    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
     assert(!sheet.includes('.spinner-border'), 'and this sheet leaves the animation alone');
   });
 
@@ -1553,7 +1577,7 @@ const run = async () => {
     // No new colour pairing for #99: the quiet phase names the SAME faint token
     // the idle one does, so there is one gray on the tower rather than two.
     const fs = require('fs');
-    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
+    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
     const rule = /\.omega-tower-activity--idle,\s*\.omega-tower-activity--quiet \{ color: (.+?); \}/.exec(sheet);
     assert(rule, 'the two bands share one rule');
     assert(rule[1].includes('--omega-ink-faint'), 'and it is the theme\'s faint ink, not a hex of its own');
@@ -1565,13 +1589,13 @@ const run = async () => {
     // the card has to carry the hook the second hand walks - the same bet the
     // `data-live-*` stamps beside it make.
     const fs = require('fs');
-    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     for (const name of ['crew.js', 'index.js']) {
       const source = fs.readFileSync(path.join(pages, name), 'utf8');
       assert(source.includes('data-live-card'), `${name} marks the element that goes muted`);
       assert(/import \{[^}]*cardMuted[^}]*\} from '\.\.\/libs\/tower\/agent\.js'/.test(source), `${name} draws that mute from the one arithmetic, never a threshold of its own`);
     }
-    const clock = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'libs', 'tower', 'clock.js'), 'utf8');
+    const clock = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'libs', 'tower', 'clock.js'), 'utf8');
     assert(clock.includes('data-live-card'), 'and the second hand walks them');
   });
 
@@ -1597,7 +1621,7 @@ const run = async () => {
     assert(agent.roleIcon('worker').includes('omega-icon-chip omega-icon-chip--neutral'), 'the markup wears the theme\'s own tile');
     assert(agent.roleIcon('worker').includes(`color: ${format.badgeColor('worker')}`), 'and still writes the role colour inline');
     const fs = require('fs');
-    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
+    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
     const local = /\.omega-tower-role \{([^}]*)\}/.exec(sheet);
     assert(local, 'the sheet still sizes the glyph');
     for (const declaration of ['height', 'width', 'background', 'border-radius', 'color']) {
@@ -1607,13 +1631,13 @@ const run = async () => {
     // The chip is inline-flex, which is what keeps BOTH placements: the crew
     // card centres the tile with `text-center`, which reaches inline-level boxes
     // and nothing else, and the agent dialog's head lays it out as one flex item.
-    const crewPage = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'crew.js'), 'utf8');
+    const crewPage = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'crew.js'), 'utf8');
     assert(/<div class="text-center mb-2">\$\{roleIcon\(/.test(crewPage), 'the crew card centres it as inline content');
   });
 
   await test('the pages route their indicators through the one helper', () => {
     const fs = require('fs');
-    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     const crewPage = fs.readFileSync(path.join(pages, 'crew.js'), 'utf8');
     assert(/import \{[^}]*crewActivity[^}]*\} from '\.\.\/libs\/tower\/agent\.js'/.test(crewPage), 'the Crew page takes the indicator from the shared lib');
     const boardPage = fs.readFileSync(path.join(pages, 'board.js'), 'utf8');
@@ -1683,7 +1707,7 @@ const run = async () => {
     // the row's last item, and the gear fades out from under the button while
     // the card is hovered or focused so the two never stack.
     const fs = require('fs');
-    const src = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src');
+    const src = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src');
     const boardPage = fs.readFileSync(path.join(src, 'assets', 'js', 'pages', 'board.js'), 'utf8');
     assert(boardPage.includes('omega-tower-issue__top'), 'the card names the row the corner is measured from');
     // That row is the BOARD card's alone: the Brief, the Overview and Health
@@ -2105,7 +2129,7 @@ const run = async () => {
   // is in, so a page that counted claims too would put one issue in two places.
   await test('the Overview counts in flight by the brief’s rule - the label alone', () => {
     const fs = require('fs');
-    const overview = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'index.js'), 'utf8');
+    const overview = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'index.js'), 'utf8');
     const briefSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'brief.js'), 'utf8');
     assert(/inFlight = issues\.filter\(\(i\) => i\.status === 'building'\)/.test(briefSrc),
       'the brief counts in flight by the building label');
@@ -2116,7 +2140,7 @@ const run = async () => {
 
   await test('every page that lists issues routes through it - no role on an li anywhere', () => {
     const fs = require('fs');
-    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     for (const name of fs.readdirSync(pages).filter((file) => file.endsWith('.js'))) {
       const source = fs.readFileSync(path.join(pages, name), 'utf8');
       assert(!/<li[^>]*\$\{issueTrigger\(/.test(source), `${name} puts no trigger on an <li>`);
@@ -2341,7 +2365,7 @@ const run = async () => {
     // `sitePath` or it points at the domain root from a copy that is not served
     // there (issue #169).
     const fs = require('fs');
-    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     const bare = /(?<!sitePath\()'\/(board|crew|usage|health|brief|settings)'/;
     for (const name of fs.readdirSync(pages).filter((file) => file.endsWith('.js'))) {
       const source = fs.readFileSync(path.join(pages, name), 'utf8');
@@ -2466,9 +2490,11 @@ const run = async () => {
     assertEq(scope.scopedHref('/board', scope.NONE), '/board?repo=~', 'and the URL carries the tilde itself, never %7E - a query is a thing people copy');
     // The surfaces that SAY the state say it in words (the review pass caught
     // the tilde escaping into all three).
-    const pagesDir = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const pagesDir = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     const pageSrc = (name) => require('fs').readFileSync(path.join(pagesDir, name), 'utf8');
-    assert(/isNone\(selected\)\) scope = 'with no projects selected'/.test(pageSrc('board.js')), 'the Board count line says the none scope in words');
+    // The Board has no count line to say it in (#203): its none state is the
+    // picker's own words and seven empty lanes, and the tilde never reaches the page.
+    assert(!/~/.test(pageSrc('board.js').replace(/\/\/.*$/gm, '')), 'the Board never prints the tilde itself');
     for (const page of ['index.js', 'health.js']) {
       assert(/isNone\(selectedSlugs\(state\)\) \? 'no projects selected/.test(pageSrc(page)), `${page} tells an unticked roster apart from an empty one`);
     }
@@ -3066,6 +3092,80 @@ const run = async () => {
     const issue = github.normalizeBoard(['o/r'], long.data, []).issues[0];
     assertEq(issue.body.length, 4000, 'cut at the same 4,000 characters');
     assertEq(issue.bodyTruncated, true, 'and never cut silently');
+  });
+
+  // Issue #202: the whole roster in one request is what GitHub refuses, so both
+  // halves of the sweep ask a batch at a time. The browser's requests go out
+  // together - a page has no cache in front of it and nothing to serialize for -
+  // and the aliases restart at r0 in every one of them, which is what the merge
+  // has to get right.
+  await test('the browser batches the sweep by the tower’s own number', () => {
+    assertEq(github.REPOS_PER_REQUEST, apiBoard.REPOS_PER_REQUEST,
+      'a batch size that drifted would be a published board GitHub refuses while the tower’s works');
+  });
+
+  await test('a roster longer than one batch goes out as one request per batch, merged in order', async () => {
+    const slugs = Array.from({ length: 13 }, (_, i) => `owner/repo${i}`);
+    // Each request is answered only for the aliases IT named, which is what
+    // makes a merge that ignored the offset visible: the issue number is the
+    // repo's index, so a mis-mapped alias is a mismatched pair.
+    const fetchImpl = mkFetch((url, options) => {
+      const query = JSON.parse(options.body).query;
+      const data = {};
+      const re = /(r\d+): repository\(owner: "[^"]+", name: "repo(\d+)"\)/g;
+      let match = re.exec(query);
+      while (match) {
+        data[match[1]] = { issues: { totalCount: 1, nodes: [{ number: Number(match[2]), labels: { nodes: [] }, assignees: { nodes: [] } }] } };
+        match = re.exec(query);
+      }
+      return jsonResponse(200, { data });
+    });
+    const board = await github.fetchBoard(slugs, { token: 't', fetch: fetchImpl });
+    assertEq(fetchImpl.calls.length, 3, '13 repos at 6 a request is three requests, never one');
+    assertEq(board.repos.map((repo) => repo.slug).join(','), slugs.join(','), 'every repo once, in roster order');
+    assertEq(board.issues.map((issue) => `${issue.repo}#${issue.number}`).join(' '),
+      slugs.map((slug, i) => `${slug}#${i}`).join(' '),
+      'and each issue on the repo whose batch answered it');
+  });
+
+  await test('one refused request fails the sweep rather than half-drawing the board', async () => {
+    const slugs = Array.from({ length: 13 }, (_, i) => `owner/repo${i}`);
+    let sent = 0;
+    const fetchImpl = mkFetch(() => {
+      sent += 1;
+      return sent === 2 ? jsonResponse(401, { message: 'Bad credentials' }) : jsonResponse(200, { data: {} });
+    });
+    const board = await github.fetchBoard(slugs, { token: 't', fetch: fetchImpl });
+    assertEq(board.ok, false, 'a board missing a batch is not a board');
+    assertEq(board.status, 401, 'and the status survives, so Settings can say the token is the problem');
+  });
+
+  await test('a null issue node is skipped on both sides, and the repo says what was dropped', () => {
+    // The crash itself (#202): GitHub answers the shape of the board with every
+    // issue node null. Reading a field off one of those ended the tower's API.
+    const dropped = {
+      data: {
+        r0: {
+          issues: {
+            totalCount: 3,
+            nodes: [{ number: 17, labels: { nodes: [] }, assignees: { nodes: [] }, comments: { totalCount: 0 } }, null, null],
+          },
+        },
+      },
+      errors: [
+        { type: 'RESOURCE_LIMITS_EXCEEDED', path: ['r0', 'issues', 'nodes', 1], message: 'the query exceeded a limit' },
+        { type: 'RESOURCE_LIMITS_EXCEEDED', path: ['r0', 'issues', 'nodes', 2], message: 'and again' },
+      ],
+    };
+    const fromBrowser = github.normalizeBoard(['o/r'], dropped.data, dropped.errors, CLOSED_NOW);
+    const fromTower = apiBoard.fetchBoard([{ slug: 'o/r' }], {
+      exec: (cmd, args) => (args[0] === '--version' ? 'gh version 2' : JSON.stringify(dropped)),
+      now: CLOSED_NOW,
+    });
+    assertEq(fromBrowser.issues.length, 1, 'the nulls are skipped rather than thrown on');
+    assertEq(fromBrowser.repos[0].error, 'GitHub dropped 2 of 3 issues: the query exceeded a limit',
+      'and the drop is on the repo entry, where the Overview’s warning reads it');
+    assertEq(JSON.stringify(fromBrowser), JSON.stringify(fromTower), 'the two halves drop it identically');
   });
 
   await test('an empty roster is an empty board, not a request', async () => {
@@ -3783,10 +3883,14 @@ const run = async () => {
     // blob `web_manager` → `client`, the stale key resolved to nothing, and
     // the admin chain’s `authenticated` policy silently won. The pin is on
     // the exact key path, so the next rename fails here instead of on screen.
-    const layout = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src',
+    // It rides under `config:`, the one place a page or layout overrides
+    // omega.json5 — a config section restated BARE fails the build outright.
+    const layout = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src',
       '_layouts', 'tower', 'page.html'), 'utf8');
-    assert(/client:\n  auth:\n    config:\n      policy: "disabled"/.test(layout),
+    assert(/^config:$/m.test(layout), 'the override sits under the config namespace');
+    assert(/^  client:\n    auth:\n      config:\n        policy: "disabled"$/m.test(layout),
       'the client blob disables the auth policy, spelled exactly as the engine reads it');
+    assert(!/^client:/m.test(layout), 'and never bare, which no longer reaches the engine at all');
     assert(!layout.includes('web_manager:'), 'and the retired key is gone - it resolves to nothing');
   });
 
@@ -3795,7 +3899,7 @@ const run = async () => {
     // close button - because behind it was a page with no data and no second
     // place to type a token. The second place is now a page (#167), so the
     // dialog is retired rather than merely made closable.
-    const layout = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src',
+    const layout = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src',
       '_layouts', 'tower', 'page.html'), 'utf8');
     assert(!layout.includes('id="tower-unlock"'), 'the dialog is gone from the layout');
     assert(!layout.includes('data-token-body'), 'and so is the region the prompt was written into');
@@ -3835,7 +3939,7 @@ const run = async () => {
   });
 
   await test('the Settings page exists, is in the sidebar, and is bound to its module', () => {
-    const src = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src');
+    const src = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src');
     const page = fs.readFileSync(path.join(src, 'pages', 'settings.md'), 'utf8');
     assert(page.includes(`permalink: ${scope.SETTINGS_PATH}`), 'the page answers at the path the runtime sends viewers to');
     assert(page.includes('<div id="tower-settings"></div>'), 'with the mount its module draws into');
@@ -3858,7 +3962,7 @@ const run = async () => {
   });
 
   await test('no other page declares itself tokenless - Settings is the only one that works locked', () => {
-    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     for (const name of fs.readdirSync(pages).filter((file) => file.endsWith('.js') && file !== 'settings.js')) {
       assert(!/tokenless/.test(fs.readFileSync(path.join(pages, name), 'utf8')), `${name} needs a token like every other data page`);
     }
@@ -3871,7 +3975,7 @@ const run = async () => {
       const full = path.join(dir, entry.name);
       return entry.isDirectory() ? walk(full) : [full];
     });
-    const src = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src');
+    const src = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src');
     for (const file of walk(src)) {
       const text = fs.readFileSync(file, 'utf8');
       assert(!/gh[pousr]_[A-Za-z0-9]{20,}/.test(text), `${path.basename(file)} carries no classic token`);
@@ -3951,7 +4055,7 @@ const run = async () => {
   });
 
   await test('the Overview draws the history through the framework’s chart module, and invents no colour', () => {
-    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     const source = fs.readFileSync(path.join(pages, 'index.js'), 'utf8');
     assert(/from '__main_assets__\/js\/libs\/charts\.js'/.test(source), 'index.js draws through the framework module');
     assert(/chartSlot\(/.test(source), 'index.js draws into the slot that says the figures are in the table when the chunk did not load');
@@ -4053,7 +4157,7 @@ const run = async () => {
   });
 
   await test('both pages draw that line, and the Health page asks for the feed it rides on', () => {
-    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     for (const name of ['health.js', 'brief.js']) {
       const source = fs.readFileSync(path.join(pages, name), 'utf8');
       assert(/briefAlert\(/.test(source), `${name} draws the line from the one decision, never its own`);
@@ -4073,7 +4177,7 @@ const run = async () => {
   group('tower/app: the runtime’s published shape');
 
   await test('the pages that read this machine say so instead of drawing empty', () => {
-    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     for (const name of ['crew.js', 'usage.js', 'health.js']) {
       assert(/local: true/.test(fs.readFileSync(path.join(pages, name), 'utf8')), `${name} declares itself local-only`);
     }
@@ -4132,7 +4236,7 @@ const run = async () => {
   });
 
   await test('the Overview says local-only where its machine-bound numbers would be', () => {
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'index.js'), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'index.js'), 'utf8');
     for (const cell of ['Live sessions', 'Uncommitted', 'Unpushed', 'Unreleased']) {
       assert(new RegExp(`machineStat\\(state, '(sessions|health)', '${cell}'`).test(source), `${cell} is a machine reading, and the tile knows it`);
     }
@@ -4148,7 +4252,7 @@ const run = async () => {
     // (see the header) - what can be pinned is the source of the decision: the
     // notice is drawn from BOTH commits being present and differing, which is
     // what keeps an unreadable git and a published copy silent.
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'health.js'), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'health.js'), 'utf8');
     assert(/meta\.bootCommit && meta\.currentHead && meta\.bootCommit !== meta\.currentHead/.test(source),
       'both shas present and differing is the whole condition');
     assert(/stale\(meta\)[\s\S]{0,200}npm run tower/.test(source), 'and the notice it draws names the restart command');
@@ -4168,7 +4272,7 @@ const run = async () => {
   // and the one line a machine with nothing wrong shows.
 
   const healthSource = () => fs.readFileSync(
-    path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'health.js'),
+    path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'health.js'),
     'utf8',
   );
 
@@ -4216,7 +4320,7 @@ const run = async () => {
   });
 
   await test('the published Board drags like the local one - no read-only line left anywhere', () => {
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
     assert(/draggable = \(issue\) => WRITABLE/.test(source), 'a card picks up wherever there is something to write with');
     assert(!/READ_ONLY_NOTICE|readOnlyLine/.test(source), 'and the sentence that said it could not is gone with the state it described');
     assert(!/never even renders this page/.test(source), 'and the file no longer claims the runtime skips it');
@@ -4229,7 +4333,7 @@ const run = async () => {
   // so what is pinned is the source of each decision; the markup the archive is
   // built from is modal.js's, and is asked real questions in its own group.
   await test('the Brief page is the mornings themselves - the newest one open, the rest an archive', () => {
-    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     const source = fs.readFileSync(path.join(pages, 'brief.js'), 'utf8');
     assert(/documents\.find\(\(doc\) => doc\.kind === 'brief'\)/.test(source),
       'the newest brief is the first brief on a newest-first payload, never a second sort');
@@ -4241,7 +4345,7 @@ const run = async () => {
   });
 
   await test('a Brief that could not read the mornings says so, and never draws an empty archive', () => {
-    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     const source = fs.readFileSync(path.join(pages, 'brief.js'), 'utf8');
     assert(/Array\.isArray\(payload\.documents\) \? payload\.documents : null/.test(source),
       'an absent or null key is the unreadable state, the posture the history beside it is read with');
@@ -4250,7 +4354,7 @@ const run = async () => {
   });
 
   await test('everything else on the Brief is gone from it, not moved somewhere else on it', () => {
-    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     const source = fs.readFileSync(path.join(pages, 'brief.js'), 'utf8');
     // The Overview owns the charts, the Board owns the queue, Health owns the
     // warnings. Each of these was a second drawing of one of them.
@@ -4351,7 +4455,7 @@ const run = async () => {
   });
 
   await test('every page reads the selection as a SET, and no consumer compares it as a slug', () => {
-    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'pages');
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     // The Board's repo column and its denominator is the one page left that
     // reads the selection directly rather than through state.js, converted to
     // the set (#104). The Brief read it too until it stopped being about the
@@ -4378,7 +4482,7 @@ const run = async () => {
     assert(!chrome.chromeMarkup().includes('id="tower-token"'), 'no page chrome carries a token control');
     assert(format.LOCKED_NOTICE.includes('Settings page'), 'the locked write notice names where a token goes');
     assert(!/open any page/.test(format.LOCKED_NOTICE), 'and no longer says any page will do');
-    const src = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js');
+    const src = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js');
     const typed = [];
     const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).forEach((entry) => {
       const full = path.join(dir, entry.name);

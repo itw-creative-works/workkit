@@ -7,6 +7,12 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#203](../../issues/203) — The board's seven lanes share one grid: every header on one line, every lane and card one width, the pipeline and the waiting pocket drawn as two cards behind their lanes, no captions, one "showing X out of Y" line. QA wears the theme's magenta and `type:bug` its red.
+- [#202](../../issues/202) — The board sweep asks GitHub in batches of six repos and skips an issue GitHub dropped instead of ending the API: a 23-repo roster tripped GitHub's query limit, every issue came back empty, and the whole dashboard went down with the API.
+- [#198](../../issues/198) — The tower dashboard builds again on the current OMEGA: its targets moved from `apps/` to `targets/` and each page's config block moved under `config:`, with the engine, the seed and the publish build following. A clone seeded before the rename keeps a stale `apps/` tree until deleted by hand.
+
 ## [0.48.0] - 2026-08-26
 
 ### Added

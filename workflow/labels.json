@@ -21,7 +21,7 @@
         },
         "qa": {
           "description": "Built; waiting on its check (the agent's under agent:ok). Exactly one status: label per open issue.",
-          "color": "6A7F2B"
+          "color": "B0416A"
         },
         "complete": {
           "description": "QA passed, ready to ship. Exactly one status: label per open issue.",
@@ -45,7 +45,7 @@
       "values": {
         "bug": {
           "description": "Something is broken. Exactly one type: label per open issue. Set at capture.",
-          "color": "B0416A"
+          "color": "D92D20"
         },
         "enhancement": {
           "description": "New or improved behavior. Exactly one type: label per open issue. Set at capture.",

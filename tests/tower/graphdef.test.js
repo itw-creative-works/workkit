@@ -17,7 +17,7 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
-const libs = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets', 'js', 'libs', 'tower');
+const libs = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'libs', 'tower');
 const load = (name) => import(pathToFileURL(path.join(libs, name)).href);
 
 /** One issue as the sweep normalizes it - `blockedBy` is always a list (#103). */

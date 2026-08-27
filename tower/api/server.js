@@ -531,7 +531,11 @@ const createServer = (opts = {}) => {
     });
   };
 
-  return http.createServer((req, res) => {
+  /**
+   * One request, start to finish. Separated from the listener below only so
+   * that every path out of it - including a throw - passes through one place.
+   */
+  const handle = (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     const pathname = url.pathname;
     const fresh = url.searchParams.get('fresh') === '1';
@@ -615,6 +619,22 @@ const createServer = (opts = {}) => {
     }
 
     return sendJson(res, 404, { ok: false, reason: `no such endpoint: ${pathname}` });
+  };
+
+  // A bug in a lib is a 500 on the request that met it, never the end of this
+  // process (issue #202): the sweep hit a payload shape it did not expect, the
+  // throw ended the API, and tower/start.sh took the dashboard down with it -
+  // the whole site vanished the moment the board asked for data. One line on
+  // the machine, one sentence to the caller, and the listener is still up.
+  return http.createServer((req, res) => {
+    try {
+      handle(req, res);
+    } catch (err) {
+      const reason = String((err && err.message) || err);
+      console.error(`[tower] ${req.method} ${req.url} failed: ${reason}`);
+      if (res.headersSent) res.end();
+      else sendJson(res, 500, { ok: false, reason });
+    }
   });
 };
 
