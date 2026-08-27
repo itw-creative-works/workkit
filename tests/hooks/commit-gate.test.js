@@ -717,7 +717,7 @@ const run = async () => {
     stage(dir, 'package.json', '{ "scripts": { "test": "exit 0" } }\n');
     execSync('git commit -m "base"', { cwd: dir, stdio: 'pipe' });
     stage(dir, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
-    stageDeep(dir, '.github/changelog-lint.js', vendoredLinter());
+    stageDeep(dir, '.github/changelog-lint.cjs', vendoredLinter());
     const { code, stderr } = runHook(dir, 'git commit -m "chore(workflow): heal output"');
     assertEq(code, 0, `the heal's own output needs no review or test file, stderr: ${stderr}`);
     cleanup(dir);
@@ -726,7 +726,7 @@ const run = async () => {
   await test('tampered linter copy, no marker — exit 2', () => {
     const dir = mkRepo();
     stageDeep(dir, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
-    stageDeep(dir, '.github/changelog-lint.js', `${vendoredLinter()}\n// local edit\n`);
+    stageDeep(dir, '.github/changelog-lint.cjs', `${vendoredLinter()}\n// local edit\n`);
     const { code } = runHook(dir, 'git commit -m "chore: tampered"');
     assertEq(code, 2, 'a hand-edited linter copy gets the full gate');
     cleanup(dir);
@@ -735,7 +735,7 @@ const run = async () => {
   await test('linter copy missing the vendor header, no marker — exit 2', () => {
     const dir = mkRepo();
     const engine = fs.readFileSync(path.join(WORKFLOW_DIR, 'changelog.js'), 'utf8');
-    stageDeep(dir, '.github/changelog-lint.js', engine);
+    stageDeep(dir, '.github/changelog-lint.cjs', engine);
     const { code } = runHook(dir, 'git commit -m "chore: raw copy"');
     assertEq(code, 2, 'a raw engine copy without the header is not the vendored shape');
     cleanup(dir);

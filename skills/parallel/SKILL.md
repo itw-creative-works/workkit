@@ -39,9 +39,9 @@ One group at a time onto the main tree, dependency order first and verified-firs
 
 ## 5. Ship — one release closes the batch
 
-A landed batch parks like everything else: every issue in it goes to `status:qa` with its own check comment, and the batch says in one line that its items sit there and the owner's word "ship" ships them together. `agent:ok` issues park too, as they do anywhere — the check on them is the agent's own.
+A landed batch parks like everything else: every issue in it goes to `status:qa` with its own check comment, and the batch says in one line that its items sit there until the owner's check passes each to `status:complete`, which is the stage the ship reads them from — one ship for the batch. `agent:ok` issues park too, as they do anywhere — the check on them is the agent's own, and so is the flip to `status:complete`.
 
-Default: a single [workkit:ship](../ship/SKILL.md) over the whole batch — one release, its CHANGELOG carrying every group's entries, its commit trailers closing every issue. A group whose result is urgent may ship alone; say so out loud and say why. Done-criteria: every issue in the batch verified in its group, landed with the suite green, parked at `status:qa`, and closed by the ship — or named, with its reason, as dropped from the batch, its claim released (unassign, labels back).
+Default: a single [workkit:ship](../ship/SKILL.md) over the whole batch — one release, its CHANGELOG carrying every group's entries, its commit trailers closing every issue. A group whose result is urgent may ship alone; say so out loud and say why. Done-criteria: every issue in the batch verified in its group, landed with the suite green, parked at `status:qa`, and closed by the ship once its check passed it to `status:complete` — or named, with its reason, as dropped from the batch, its claim released (unassign, labels back).
 
 ## Never
 

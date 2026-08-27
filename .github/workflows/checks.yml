@@ -57,7 +57,7 @@ jobs:
       - name: CHANGELOG entry format
         run: |
           if [ -f CHANGELOG.md ]; then
-            node .github/changelog-lint.js CHANGELOG.md --unreleased-only
+            node .github/changelog-lint.cjs CHANGELOG.md --unreleased-only
           else
             echo "no CHANGELOG.md — nothing to check"
           fi

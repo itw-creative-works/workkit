@@ -240,7 +240,7 @@ fi
 
 # Heal bookkeeping (owner ruling, 2026-07-27): a commit whose files are ALL
 # workflow bookkeeping — the .workkit/settings.json version stamp, and the
-# vendored .github/changelog-lint.js when its content is exactly what the
+# vendored .github/changelog-lint.cjs when its content is exactly what the
 # engine would vendor — carries no judgment to review, so checks 1 and 2 stand
 # down for it. Tests (check 5) still run. Any other file in the commit, a
 # hand-edited linter copy, or an unknowable file list restores the full gate.
@@ -250,9 +250,9 @@ linter_is_vendor_current() {
   # Judge the bytes the COMMIT will carry: the staged blob normally, the
   # working tree under -a/--all (which is what such a commit stages).
   if [ "$has_all_flag" -eq 1 ]; then
-    copy="$(cat "$repo_root/.github/changelog-lint.js" 2>/dev/null)" || return 1
+    copy="$(cat "$repo_root/.github/changelog-lint.cjs" 2>/dev/null)" || return 1
   else
-    copy="$(cd "$repo_root" && git show ":.github/changelog-lint.js" 2>/dev/null)" || return 1
+    copy="$(cd "$repo_root" && git show ":.github/changelog-lint.cjs" 2>/dev/null)" || return 1
   fi
   [ -n "$copy" ] || return 1
   # The vendored shape is standards.sh render_changelog_linter's: the engine's
@@ -286,7 +286,7 @@ if [ "$has_pathspec" -eq 0 ] && [ -n "$files" ]; then
   while IFS= read -r path; do
     case "$path" in
       .workkit/settings.json) settings_is_stamp_only || { bookkeeping=0; break; } ;;
-      .github/changelog-lint.js) linter_is_vendor_current || { bookkeeping=0; break; } ;;
+      .github/changelog-lint.cjs) linter_is_vendor_current || { bookkeeping=0; break; } ;;
       *) bookkeeping=0; break ;;
     esac
   done <<<"$files"

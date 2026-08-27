@@ -15,11 +15,11 @@ Each is found wherever it sits in a compound (the command is split on `;` `|` `&
 | `git checkout` | a pathspec is plausible — see the line below |
 | `git switch` | `--discard-changes` or `-f`/`--force` is present. It takes no pathspec, so a plain switch is legal |
 | `git restore` | always, EXCEPT `--staged` (or `-S`) without `--worktree` (or `-W`) — restoring the index alone leaves the tree untouched |
-| `git stash` | every subcommand, bare `git stash` included |
+| `git stash` | every subcommand except the read-only `list`/`show`, bare `git stash` included |
 | `git clean` | a force spelling is present: `-f`, any cluster carrying `f`, `--force`. A dry run (`-n`) passes |
 | `git reset` | `--hard` is present. `--soft`, `--mixed` and a plain unstage pass |
 
-`git stash list` and `git stash show` read rather than discard, and they are in anyway: the subcommand is one word away from `pop`, the guard is a reflex-breaker rather than a sandbox, and the escape below covers the rare honest need.
+`git stash list` and `git stash show` read rather than discard, and stand aside since 2026-08-21 (issue #193, the owner reversing the reflex-breaker call that had them in): blocking a harmless lookup cost more than the one-word distance to `pop` protects against. Every other subcommand stays blocked.
 
 ## Where the checkout line sits, and why
 

@@ -149,33 +149,44 @@ export const day = (value, fallback = '') => {
 export const documentMeta = (doc) => [doc.kind, day(doc.createdAt)].filter(Boolean).join(' · ');
 
 //
-// The status pipeline, in the order the board reads left to right. It mirrors
-// the `status` group in the workflow label SSOT the API reads, and is restated
-// here only because a column has to exist while it is EMPTY, which no amount of
-// looking at the data can tell you.
+// The status pipeline, in the order the board reads it. It mirrors the `status`
+// group in the workflow label SSOT the API reads, and is restated here only
+// because a column has to exist while it is EMPTY, which no amount of looking
+// at the data can tell you.
 //
 // Every entry is a place an issue LIVES. A missing `status:` label is not one
 // of those - it is a fault the pipeline forbids and the daily heal repairs - so
 // it is drawn as the alarm below rather than a lane of its own (#118).
 //
+// The order is the STAGE order the spec defines, `complete` between the check
+// and the ship (#196), and the two states that are not stages carry `pocket`:
+// `blocked` and `backlog` are waiting, not progress, and the Board sets them
+// apart on that flag rather than on a second list of its own.
+//
 export const STATUSES = [
   { key: 'inbox', label: 'Inbox' },
   { key: 'specced', label: 'Specced' },
   { key: 'building', label: 'Building' },
-  { key: 'blocked', label: 'Blocked' },
-  { key: 'backlog', label: 'Backlog' },
   { key: 'qa', label: 'QA' },
+  { key: 'complete', label: 'Complete' },
+  { key: 'blocked', label: 'Blocked', pocket: true },
+  { key: 'backlog', label: 'Backlog', pocket: true },
 ];
 
 /**
  * The theme token a status is drawn in, on cards and in charts.
  *
- * `qa` wears the OK green (issue #135): the state means built and good, waiting
- * only on the owner's confirmation, and the theme's success hue is what says
- * that at a glance. `specced` gives that green up for the categorical purple -
- * an authorization is a stage, not a verdict.
+ * `complete` wears the OK green (issue #196): the theme's success hue is a
+ * VERDICT, and `complete` is the stage that carries one - QA passed, ready to
+ * ship. `qa` held that green while it was the end of the pipeline (issue #135)
+ * and gives it up to the stage after it for the olive of `--omega-chart-6`, the
+ * one ramp slot no ISSUE vocabulary had taken - status, type and priority sit in
+ * one chip row, and the models below share the ramp from the other end (TONES),
+ * on pages no issue chip is drawn on; waiting on a check is a stage, not a
+ * verdict. `specced` gave the same green up for the categorical purple, for the
+ * same reason - an authorization is a stage, not a verdict.
  *
- * Six lanes, six colours: WITHIN a vocabulary a hue never repeats, since a
+ * Seven lanes, seven colours: WITHIN a vocabulary a hue never repeats, since a
  * column header, a card chip and a chart slice are all read by hue. Across the
  * vocabularies it may (issue #149) - `type:idea` shares this purple, `high` the
  * alarm red `blocked` wears, `low` the faint ink `backlog` is drawn in - because
@@ -195,7 +206,8 @@ export const statusToken = (key) => ({
   inbox: '--omega-chart-2',
   specced: '--omega-chart-3',
   building: '--omega-warn',
-  qa: '--omega-ok',
+  qa: '--omega-chart-6',
+  complete: '--omega-ok',
   blocked: '--omega-danger',
   backlog: '--omega-ink-faint',
 }[key] || '--omega-ink-muted');
@@ -314,9 +326,10 @@ export const byPriority = (a, b) => {
 // enhancement is the wand that improves what is already there, an idea is the
 // lamp, the priority ends are arrows pointing where the band sits, and a status
 // is the act it names - the tray it was captured into, the clipboard its spec
-// was signed off on, the hammer, the eye the owner checks it with, the raised
-// hand, the pause. Three are a crew role's glyph too (agent.js) - the lamp is
-// the advisor's, the hammer the worker's, the clipboard the verifier's - which
+// was signed off on, the hammer, the eye the owner checks it with, the tick
+// that check earns it (#196), the raised hand, the pause. Three are a crew
+// role's glyph too (agent.js) - the lamp is the advisor's, the hammer the
+// worker's, the clipboard the verifier's - which
 // is fine: a role glyph is drawn on the Crew page and in the agent dialog, and
 // no surface that draws an issue chip shows one, so the two never say different
 // things in one place.
@@ -329,6 +342,7 @@ export const CHIP_GLYPHS = {
   specced: 'fa-clipboard-check',
   building: 'fa-hammer',
   qa: 'fa-eye',
+  complete: 'fa-circle-check',
   blocked: 'fa-hand',
   backlog: 'fa-circle-pause',
   bug: 'fa-bug',
@@ -581,6 +595,27 @@ export const waitsOnChips = (issue, open) => (issue.blockedBy || [])
   .filter((blocker) => open && open.has(issueKey(blocker).toLowerCase()))
   .map((blocker) => `<span class="omega-chip">${esc(`waits on ${String(blocker.repo).toLowerCase() === String(issue.repo).toLowerCase() ? `#${blocker.number}` : issueKey(blocker)}`)}</span>`)
   .join('');
+
+/**
+ * What a BLOCKED issue is waiting to be told (issue #196) - its open question,
+ * under the title on the card.
+ *
+ * The convention the spec sets is that a blocked issue's question is a COMMENT
+ * on it, so the last comment is the best signal the sweep can carry: it is the
+ * question itself on an issue that has just been blocked, and the newest word on
+ * one that has been discussed since. It is cut to a line's worth on the sweep
+ * (`lastComment`), and only ever drawn on `blocked` - the last comment of an
+ * issue that is moving is not a question anybody is waiting on.
+ *
+ * Remote text like every other value here, escaped, and drawn as the muted micro
+ * line the rest of a card's secondary text uses.
+ *
+ * @param {object} issue one issue from /api/board or /api/brief
+ * @returns {string} markup, or nothing at all when there is no question to show
+ */
+export const openQuestion = (issue) => ((issue || {}).status === 'blocked' && issue.lastComment
+  ? `<p class="omega-micro text-body-secondary mb-2 omega-tower-issue__question">${esc(issue.lastComment)}</p>`
+  : '');
 
 /**
  * The chips that label one issue - its type, its priority, what it waits on,

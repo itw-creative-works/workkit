@@ -39,7 +39,7 @@ const ROSTER = [
 ];
 
 const run = async () => {
-  group('tower/brief: the five sections');
+  group('tower/brief: the six sections');
 
   await test('blocked issues are what is waiting on you; every specced issue is ready', () => {
     const board = boardOf([
@@ -65,7 +65,26 @@ const run = async () => {
     assertEq(out.qa.map((i) => i.number).join(','), '6', 'a built item waiting on a check is its own section');
     assertEq(out.counts.qa, 1, 'and its own count');
     assertEq(out.counts.backlog, 1, 'backlog is counted but not listed - it is nobody’s morning');
+    assertEq(out.complete.length, 0, 'and nothing has passed its check yet');
     assertEq(out.generatedAt, STAMP, 'the stamp is the one passed in');
+  });
+
+  // Issue #196: the stage above qa. The check PASSED, so the item waits on the
+  // ship and on nothing else - which is a different fact about a morning from
+  // "waiting on your check", and the ship itself reads from this section.
+  await test('a QA-passed issue is its own section - finished work waiting on the ship', () => {
+    const board = boardOf([
+      issue(1, { status: 'qa' }),
+      issue(2, { status: 'complete' }),
+      issue(3, { status: 'complete', priority: 'high' }),
+    ]);
+    const out = buildBrief(board, {}, ROSTER, STAMP);
+    assertEq(out.complete.map((i) => i.number).join(','), '3,2', 'both, in the urgency order every section uses');
+    assertEq(out.counts.complete, 2, 'and its own count');
+    assertEq(out.qa.map((i) => i.number).join(','), '1', 'the item still waiting on its check stays where it is');
+    assertEq(out.ready.length + out.inFlight.length + out.inbox.length, 0, 'and it is in no other section');
+    assert(/2 issues are QA-passed and ready to ship/.test(out.headline),
+      `the morning leads with them over the check still to give, got: ${out.headline}`);
   });
 
   await test('a building issue is in flight on its label alone, claimed or not', () => {
@@ -151,6 +170,22 @@ const run = async () => {
     assertEq(out.nextUp[0].items.map((i) => i.number).join(','), '3,2,1',
       'the decision, then the check, then the spec - even with the spec priority:high');
     assertEq(out.nextUp[0].items[1].status, 'qa', 'and the check says which it is');
+  });
+
+  // Issue #196: a complete item is one act from released - the ship - so it
+  // ranks under the decisions, which nothing moves without, and above the check
+  // that has not been given yet.
+  await test('a QA-passed item ranks under the decisions and above the check still to give', () => {
+    const board = boardOf([
+      issue(1, { status: 'specced', priority: 'high' }),
+      issue(2, { status: 'qa' }),
+      issue(3, { status: 'blocked' }),
+      issue(4, { status: 'complete' }),
+    ]);
+    const out = buildBrief(board, {}, ROSTER, STAMP);
+    assertEq(out.nextUp[0].items.map((i) => i.number).join(','), '3,4,2',
+      'the decision, then the ship, then the check - and the spec is off the end of the three');
+    assertEq(out.nextUp[0].items[1].status, 'complete', 'and the ready-to-ship item says which it is');
   });
 
   await test('a repo with nothing actionable is left out, never listed empty', () => {
@@ -324,8 +359,10 @@ const run = async () => {
   group('tower/brief: the headline and the failed sweep');
 
   await test('the headline names the most consequential fact, in order', () => {
-    assert(/waiting on a decision/.test(headlineFor({ waiting: 2, qa: 4, inFlight: 5, ready: 3, inbox: 1 })), 'a decision leads');
-    assert(/waiting on your check/.test(headlineFor({ waiting: 0, qa: 4, inFlight: 5, ready: 3, inbox: 1 })), 'then the checks the owner owes');
+    assert(/waiting on a decision/.test(headlineFor({ waiting: 2, complete: 1, qa: 4, inFlight: 5, ready: 3, inbox: 1 })), 'a decision leads');
+    assert(/QA-passed and ready to ship/.test(headlineFor({ waiting: 0, complete: 1, qa: 4, inFlight: 5, ready: 3, inbox: 1 })),
+      'then work that is finished and simply not out (#196)');
+    assert(/waiting on your check/.test(headlineFor({ waiting: 0, complete: 0, qa: 4, inFlight: 5, ready: 3, inbox: 1 })), 'then the checks the owner owes');
     assert(/in flight/.test(headlineFor({ waiting: 0, inFlight: 1, ready: 3, inbox: 1 })), 'then what is running');
     assert(/ready to start/.test(headlineFor({ waiting: 0, inFlight: 0, ready: 3, inbox: 1 })), 'then what may be started');
     assert(/inbox/.test(headlineFor({ waiting: 0, inFlight: 0, ready: 0, inbox: 4 })), 'then the inbox');

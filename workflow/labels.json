@@ -20,7 +20,11 @@
           "color": "C47206"
         },
         "qa": {
-          "description": "Built; awaiting its check (the agent's under agent:ok). Exactly one status: label per open issue.",
+          "description": "Built; waiting on its check (the agent's under agent:ok). Exactly one status: label per open issue.",
+          "color": "6A7F2B"
+        },
+        "complete": {
+          "description": "QA passed, ready to ship. Exactly one status: label per open issue.",
           "color": "12925C"
         },
         "blocked": {

@@ -81,6 +81,7 @@ const run = async () => {
     assert(ctx.includes('workkit:scout') && ctx.includes('workkit:worker') && ctx.includes('workkit:verifier'), 'crew names must be plugin-namespaced');
     assert(!ctx.includes('agents/README.md'), 'no personal-tree citation');
     assert(ctx.includes('write the brief to a file'), 'handoff convention inlined');
+    assert(ctx.includes('chat summary, never a file'), 'brief files gated on an actual dispatch (#192)');
   });
   await test('workhorse session injects with the consult clause', () => {
     freshTmp();

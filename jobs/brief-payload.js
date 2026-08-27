@@ -46,14 +46,16 @@ const INSTRUCTION = `You are producing the owner's MORNING KICKOFF from the brie
 
 The payload is the tower's daily brief as JSON. \`waiting\` is blocked on a
 decision from the owner, \`qa\` is built and verified and waiting on the
-owner's check before it ships, \`ready\` is specced, \`inFlight\` is building,
-\`inbox\` is captured but not yet specced, and \`warnings\` is work sitting
-on the table per repo (uncommitted, unpushed, unreleased). \`ok: false\` means the
-sweep itself failed — report that and its \`reason\`, never a quiet morning.
+owner's check before it ships, \`complete\` is that check PASSED — ready to
+ship and waiting on nothing else, \`ready\` is specced, \`inFlight\` is
+building, \`inbox\` is captured but not yet specced, and \`warnings\` is work
+sitting on the table per repo (uncommitted, unpushed, unreleased). \`ok: false\`
+means the sweep itself failed — report that and its \`reason\`, never a quiet
+morning.
 
 \`nextUp\` is the same board asked one question further: per repo, the few open
-items this morning could actually move — decisions first, then the checks
-waiting on the owner, then accepted specs.
+items this morning could actually move — decisions first, then what is ready to
+ship, then the checks waiting on the owner, then accepted specs.
 \`findings\` is the newest daily summary published on the home repo (what
 yesterday produced), and \`week\` is the weekly rollup, which rides on Mondays
 only. Either may be null or absent, which means there was none to read.
@@ -68,6 +70,8 @@ Line 1 — the literal prefix "HEADLINE: " then one sentence, the single most
 important thing today (<=120 chars total).
 Then these labeled sections, one line per item, tightest useful phrasing:
 WAITING ON YOU: every issue in \`waiting\` — these move only if the owner acts.
+READY TO SHIP: every issue in \`complete\` — QA passed, waiting on the ship and
+on nothing else. Omit the section entirely when \`complete\` is empty.
 WAITING ON YOUR CHECK: every issue in \`qa\` — built and verified, and each one
 ships the moment the owner says so. Omit the section entirely when \`qa\` is empty.
 IN FLIGHT: every issue in \`inFlight\`, saying which repo.

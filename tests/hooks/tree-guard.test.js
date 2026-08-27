@@ -175,11 +175,20 @@ const run = async () => {
 
   group('tree-guard: git stash, clean, reset');
 
-  await test('every stash spelling — exit 2', () => {
+  await test('every mutating stash spelling — exit 2', () => {
     const dir = mkTree();
     for (const c of ['git stash', 'git stash push -m "wip"', 'git stash push src/app.js',
-      'git stash pop', 'git stash apply', 'git stash drop', 'git stash list', 'git stash save wip']) {
+      'git stash pop', 'git stash apply', 'git stash drop', 'git stash clear', 'git stash save wip']) {
       blocks(dir, c);
+    }
+    rmTree(dir);
+  });
+
+  await test('read-only stash subcommands — exit 0 (issue #193)', () => {
+    const dir = mkTree();
+    for (const c of ['git stash list', 'git stash show', 'git stash show -p stash@{0}',
+      'git -C /other stash list', 'echo start; git stash list; echo done']) {
+      passes(dir, c);
     }
     rmTree(dir);
   });

@@ -247,10 +247,23 @@ const run = async () => {
 
   await test('exact values per group', () => {
     const values = (g) => Object.keys(MANIFEST.groups[g].values).sort().join(',');
-    assertEq(values('status'), 'backlog,blocked,building,inbox,qa,specced', 'status values');
+    assertEq(values('status'), 'backlog,blocked,building,complete,inbox,qa,specced', 'status values');
     assertEq(values('type'), 'bug,enhancement,idea', 'type values');
     assertEq(values('priority'), 'high,low', 'priority values');
     assertEq(values('agent'), 'ok,working', 'agent values');
+  });
+
+  await test('status:complete is the stage after qa, and its label teaches what it means (#196)', () => {
+    // The manifest lists the statuses in PIPELINE order — inbox, specced,
+    // building, qa, complete, then the side pockets — so a reader with nothing
+    // but `gh label list` learns the road in the order it is walked. The stage
+    // a ship reads from sits directly after the one whose passing check grants
+    // it, and it wears the verdict green qa gave up.
+    const status = MANIFEST.groups.status.values;
+    assertEq(Object.keys(status).slice(0, 5).join(','), 'inbox,specced,building,qa,complete', 'the pipeline in order');
+    assertEq(status.complete.description, 'QA passed, ready to ship. Exactly one status: label per open issue.', 'complete says QA passed');
+    assertEq(status.complete.color, '12925C', 'complete wears the verdict green');
+    assertEq(status.qa.color, '6A7F2B', 'qa moved off it — qa only means waiting on the check');
   });
 
   await test('values are single lowercase words — no hyphens', () => {
@@ -289,7 +302,7 @@ const run = async () => {
     // could track, for the danger red that `status:blocked` also wears.
     const expected = {
       status: {
-        inbox: '0F8FA9', specced: '7A45B5', building: 'C47206', qa: '12925C', blocked: 'D92D20', backlog: 'A1A19E',
+        inbox: '0F8FA9', specced: '7A45B5', building: 'C47206', qa: '6A7F2B', complete: '12925C', blocked: 'D92D20', backlog: 'A1A19E',
       },
       type: { bug: 'B0416A', enhancement: 'A06A08', idea: '7A45B5' },
       priority: { high: 'D92D20', low: 'A1A19E' },
@@ -1512,8 +1525,8 @@ const run = async () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    const body = readFile(path.join(repo, '.github', 'changelog-lint.js'));
-    assert(body, 'changelog-lint.js created');
+    const body = readFile(path.join(repo, '.github', 'changelog-lint.cjs'));
+    assert(body, 'changelog-lint.cjs created');
     const lines = body.split('\n');
     assert(lines[0].startsWith('#!'), 'the shebang stays on line 1');
     assert(/SSOT/.test(lines[1]) && /resynced on every heal/.test(lines[1]), `line 2 says the kit owns it, got: ${lines[1]}`);
@@ -1529,7 +1542,7 @@ const run = async () => {
     runScript(repo, { pathPrefix: stub.binDir });
     fs.writeFileSync(path.join(repo, 'CHANGELOG.md'),
       '# Changelog\n\n## [Unreleased]\n\n- a line with no issue link and no separator\n');
-    const res = spawnSync('node', ['.github/changelog-lint.js', 'CHANGELOG.md', '--unreleased-only'], {
+    const res = spawnSync('node', ['.github/changelog-lint.cjs', 'CHANGELOG.md', '--unreleased-only'], {
       cwd: repo, encoding: 'utf8', timeout: 15000,
     });
     assertEq(res.status, 1, 'a bad entry fails the check');
@@ -1541,7 +1554,7 @@ const run = async () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     runScript(repo, { pathPrefix: stub.binDir });
-    const dest = path.join(repo, '.github', 'changelog-lint.js');
+    const dest = path.join(repo, '.github', 'changelog-lint.cjs');
     const current = readFile(dest);
     fs.writeFileSync(dest, '// someone edited the copy\n');
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
@@ -1554,12 +1567,69 @@ const run = async () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     runScript(repo, { pathPrefix: stub.binDir });
-    const dest = path.join(repo, '.github', 'changelog-lint.js');
+    const dest = path.join(repo, '.github', 'changelog-lint.cjs');
     const before = fs.statSync(dest).mtimeMs;
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
     assertEq(fs.statSync(dest).mtimeMs, before, 'the file is not rewritten');
-    assert(output.includes('changelog lint: .github/changelog-lint.js already matches'), `skip reported, got: ${output}`);
+    assert(output.includes('changelog lint: .github/changelog-lint.cjs already matches'), `skip reported, got: ${output}`);
     assert(!output.includes('changelog lint: resynced'), 'and nothing claims a resync');
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  group('standards.sh: the .js → .cjs migration (issue #190)');
+
+  // The pre-rename state is built by healing and then walking the repo BACK to
+  // it — the old copy under the old name, and a checks.yml running it there —
+  // so the fixture is whatever the engine actually used to produce.
+  const healedThenRolledBack = (repo, stub) => {
+    runScript(repo, { pathPrefix: stub.binDir });
+    const cjs = path.join(repo, '.github', 'changelog-lint.cjs');
+    const js = path.join(repo, '.github', 'changelog-lint.js');
+    fs.renameSync(cjs, js);
+    const yml = path.join(repo, '.github', 'workflows', 'checks.yml');
+    fs.writeFileSync(yml, readFile(yml).replace(/changelog-lint\.cjs/g, 'changelog-lint.js'));
+    return { cjs, js, yml };
+  };
+
+  await test('a repo healed before the rename is migrated: the copy moves and checks.yml follows', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const { cjs, js, yml } = healedThenRolledBack(repo, stub);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    assert(fs.existsSync(cjs), 'the copy is vendored under the new name');
+    assert(!fs.existsSync(js), `the retired copy is gone, got: ${output}`);
+    assert(readFile(yml).includes('node .github/changelog-lint.cjs CHANGELOG.md --unreleased-only'),
+      `the job runs the new name, got: ${readFile(yml)}`);
+    assert(!readFile(yml).includes('changelog-lint.js'), 'and the old name is nowhere in the workflow');
+    assert(output.includes('removed the retired .github/changelog-lint.js'), `the removal is reported, got: ${output}`);
+    assert(output.includes('repointed the changelog job'), `and so is the repoint, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('the migration runs once — a second heal changes nothing and says nothing', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const { yml } = healedThenRolledBack(repo, stub);
+    runScript(repo, { pathPrefix: stub.binDir });
+    const once = readFile(yml);
+    assert(once.includes('changelog-lint.cjs'), `the first heal migrated, got: ${once}`);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(readFile(yml), once, 'idempotent');
+    assert(!output.includes('repointed the changelog job'), `no second repoint, got: ${output}`);
+    assert(!output.includes('removed the retired'), `and no second removal, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('an old .js that is NOT the kit\'s copy is reported, never deleted', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    runScript(repo, { pathPrefix: stub.binDir });
+    const mine = path.join(repo, '.github', 'changelog-lint.js');
+    const owned = '#!/usr/bin/env node\n// a linter someone here wrote\n';
+    fs.writeFileSync(mine, owned);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(readFile(mine), owned, 'a file without the vendor header is left exactly as found');
+    assert(output.includes('is not the kit\'s copy'), `and reported, got: ${output}`);
     cleanup(repo); cleanup(stub.dir);
   });
 
@@ -1571,7 +1641,7 @@ const run = async () => {
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
     const body = readFile(path.join(repo, '.github', 'workflows', 'checks.yml'));
     assert(/^ {2}changelog:$/m.test(body), `the job is defined, got: ${body}`);
-    assert(body.includes('node .github/changelog-lint.js CHANGELOG.md --unreleased-only'),
+    assert(body.includes('node .github/changelog-lint.cjs CHANGELOG.md --unreleased-only'),
       'and runs the vendored linter over the unreleased section');
     assert(body.includes('no CHANGELOG.md — nothing to check'), 'a repo without a CHANGELOG passes cleanly');
     assert(output.includes('changelog job is already in'), `no second append, got: ${output}`);

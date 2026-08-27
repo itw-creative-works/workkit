@@ -17,7 +17,8 @@
 #   git switch     with `--discard-changes` or `-f`/`--force` (it takes no
 #                  pathspec, so the plain switch is legal)
 #   git restore    unless `--staged` is there WITHOUT `--worktree`
-#   git stash      every subcommand, bare included
+#   git stash      every subcommand, bare included — except the read-only
+#                  `list` and `show` (issue #193)
 #   git clean      with a force spelling (`-f`, `-fd`, `--force`)
 #   git reset      with `--hard`
 # Always on: whether the tree is dirty beyond this agent's own files is not
@@ -209,7 +210,14 @@ while IFS= read -r clause; do
     esac
   done
   case "$sub" in
-    stash) found="git stash"; break ;;
+    stash)
+      # `list` and `show` only READ stash state (issue #193); every other
+      # subcommand — bare stash included — parks or rewrites tree state.
+      case "${1:-}" in
+        list|show) ;;
+        *) found="git stash"; break ;;
+      esac
+      ;;
     checkout)
       if tg_checkout_discards "$@"; then found="git checkout with a pathspec"; break; fi ;;
     switch)

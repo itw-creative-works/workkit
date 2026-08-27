@@ -23,11 +23,12 @@ flowchart TB
     Verify -.->|findings| Build
     Verify -->|clean| QA([status:qa])
     QA -.->|findings| Build
-    QA -->|the owner says ship| Ship["Ship<br>commit, CHANGELOG, Fixes #N<br>/workkit:ship"]
+    QA -->|the check passes| Complete([status:complete])
+    Complete -->|the owner says ship| Ship["Ship<br>commit, CHANGELOG, Fixes #N<br>/workkit:ship"]
     Ship --> Closed([closed])
 ```
 
-Capture puts an item in `status:inbox`; triage is what routes it out. Four labels sit on the road: the flip to `status:specced` is the go-ahead to build, `status:building` carries the work from the moment it starts, and `status:qa` is where it parks once it is built and verified — in your working tree, waiting on your check, until your word "ship" runs the ship and the close ends it. `blocked` and `backlog` are side pockets: an answered question rejoins the road, a revived item goes back through triage. You still claim an issue by assigning it to yourself — the assignee is who holds it, the label is what makes it visible in flight. The letter of every hop — what each label means, who may flip it, how a claim expires: [`docs/project-state.md`](docs/project-state.md).
+Capture puts an item in `status:inbox`; triage is what routes it out. Five labels sit on the road: the flip to `status:specced` is the go-ahead to build, `status:building` carries the work from the moment it starts, `status:qa` is where it parks once it is built and verified — in your working tree, waiting on your check — and your passing check moves it to `status:complete`, the stage a ship reads from, until your word "ship" runs the ship and the close ends it. `blocked` and `backlog` are side pockets: an answered question rejoins the road, a revived item goes back through triage. You still claim an issue by assigning it to yourself — the assignee is who holds it, the label is what makes it visible in flight. The letter of every hop — what each label means, who may flip it, how a claim expires: [`docs/project-state.md`](docs/project-state.md).
 
 ## The crew that works it
 

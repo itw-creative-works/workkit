@@ -1,7 +1,9 @@
 //
 // Board - every open issue on the roster, in columns by `status:`.
 //
-// The columns are the status labels, in pipeline order. An open issue carrying
+// The columns are the status labels, in two regions (issue #196): the PIPELINE,
+// in stage order, which reads as a flow, and the side POCKETS beside it, which
+// are the states of waiting rather than stages of progress. An open issue carrying
 // none of them is not a further place to be - it is a fault the pipeline forbids
 // and the daily heal repairs - so it is drawn as the danger alert above the
 // board (format.js's `noStatusAlert`), named and linked, and nowhere else: not
@@ -35,7 +37,7 @@ import { startPage } from '../libs/tower/page.js';
 import { issuesFor, board, feed, issueByKey } from '../libs/tower/state.js';
 import { isNone, selectedSlugs } from '../libs/tower/scope.js';
 import {
-  esc, empty, problem, loading, issueChips, issueKey, STATUSES, statusColor, byPriority, noStatusAlert,
+  esc, empty, problem, loading, issueChips, issueKey, STATUSES, statusColor, byPriority, noStatusAlert, openQuestion,
 } from '../libs/tower/format.js';
 import { swap } from '@omega.js/client/modules/live-page';
 import { loadGraph, graphReady, graphSlot, drawGraph } from '__main_assets__/js/libs/graph.js';
@@ -164,6 +166,12 @@ const draggable = (issue) => WRITABLE && MOVABLE_STATUSES.includes(issue.status)
 // height at all, where a line of its own would make every blocked card taller
 // than its neighbours.
 //
+// A BLOCKED card carries one line the others do not: the open question it is
+// waiting to be told (issue #196). That one is worth the height - a pocket of
+// blocked cards saying only their titles is a list of things stuck for reasons
+// you have to open each of them to read - and it is drawn by format.js, which
+// decides what a question is and cuts it to the line.
+//
 // The top row is NAMED because its right end is one slot rather than two: the
 // open button is lifted out of the flow into that corner where there is a
 // pointer to reveal it with, which is the sheet's job and needs an element to
@@ -178,6 +186,7 @@ const issueCard = (issue, showRepo, open) => `<div class="card omega-tower-issue
       ${externalLink(issue.url)}
     </div>
     <span class="mb-2 omega-tower-issue__title">${esc(issue.title)}</span>
+    ${openQuestion(issue)}
     ${issueChips(issue, 'mt-auto omega-tower-issue__chips', open)}
   </div>
 </div>`;
@@ -197,16 +206,37 @@ const column = (status, issues, showRepo, open) => `<section data-column="${esc(
 // belongs here, because it is a function of how many the pipeline has. At the
 // stylesheet's 15rem floor the strip is wider than an ordinary main region,
 // which put the right-hand columns half off the edge with only an overlay
-// scrollbar to say so. Six columns at 9rem come to the same ~54rem five at 11rem
-// did: they fit the main region down to a laptop width, they still stretch to
-// fill a wide one, and the strip goes on scrolling when the window is genuinely
-// too narrow for the board.
+// scrollbar to say so. Columns at 9rem fit the main region down to a laptop
+// width, still stretch to fill a wide one, and the strip goes on scrolling when
+// the window is genuinely too narrow for the board.
 //
 // A column reads in three priority bands - high, then the unlabelled middle,
 // then low - most recently updated first inside each. The comparator is
 // format.js's (`byPriority`), the same module that colours those bands.
-const columns = (shown, showRepo, open) => `<div class="omega-tower-board" style="grid-auto-columns: minmax(9rem, 1fr);">
-  ${STATUSES.map((status) => column(status, shown.filter((issue) => issue.status === status.key).sort(byPriority), showRepo, open)).join('')}
+const lanes = (statuses, shown, showRepo, open) => `<div class="omega-tower-board" style="grid-auto-columns: minmax(9rem, 1fr);">
+  ${statuses.map((status) => column(status, shown.filter((issue) => issue.status === status.key).sort(byPriority), showRepo, open)).join('')}
+</div>`;
+
+// The board is TWO regions (issue #196). The pipeline is the flow - inbox to
+// complete, in stage order, read left to right - and the side pockets are the
+// two states that are not stages: `blocked` and `backlog` are waiting, and a
+// lane of them standing in the middle of the flow made the board read as though
+// an issue progressed through them. Which lanes are which is the vocabulary's
+// own `pocket` flag (format.js), never a second list of statuses here.
+//
+// They sit side by side in the ratio of the lanes they hold - five to two - and
+// wrap onto their own row when there is no width for both, each strip scrolling
+// on its own. The pocket is set apart by the sheet's own rule and says in one
+// muted line what it is; every lane in it is a drop target like any other, so a
+// card is still dragged into and out of the pockets.
+const columns = (shown, showRepo, open) => `<div class="d-flex flex-wrap align-items-start gap-3">
+  <div style="flex: 5 1 30rem; min-width: 0;">
+    ${lanes(STATUSES.filter((status) => !status.pocket), shown, showRepo, open)}
+  </div>
+  <aside class="omega-tower-pockets p-3" style="flex: 2 1 14rem; min-width: 0;" aria-label="Waiting - not stages of the pipeline">
+    <p class="omega-micro text-body-secondary mb-2">waiting, not moving</p>
+    ${lanes(STATUSES.filter((status) => status.pocket), shown, showRepo, open)}
+  </aside>
 </div>`;
 
 // The denominator, so a filtered board never reads as an empty one: how many

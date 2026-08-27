@@ -44,7 +44,7 @@ The `manager/resolver` hook routes ONLY the four workkit classes above — every
 
 A chat-inline brief bloats the dispatching context; a report file the dispatcher then has to open is a round trip nobody needs. So the two halves go opposite ways:
 
-1. **Brief in a file.** The dispatcher writes the task brief to a file (session scratchpad dir) and passes the path plus a 1–3 sentence dispatch line. Briefs are **behavioral, not procedural**: state the goal, constraints, and done-criteria — not step-by-step file paths that go stale.
+1. **Brief in a file.** The dispatcher writes the task brief to a file (session scratchpad dir) and passes the path plus a 1–3 sentence dispatch line. Briefs are **behavioral, not procedural**: state the goal, constraints, and done-criteria — not step-by-step file paths that go stale. A brief file exists only for a dispatch being made now — the spawn rides the same turn (or the owner explicitly asked for the file). The owner saying "brief me" is asking for a chat summary, never a file (issue #192).
 2. **Report inline.** The agent's final message IS the report: a completion status, commits if any, and the findings the dispatcher needs to act — written for a reader who has not seen the work. No report file, and no summary file beside it.
 3. **A report FILE is the exception.** Only when the brief explicitly asks for one — a large artifact meant to be read selectively rather than in chat. Then the final message stays status, commits, and ONE line of result plus the path.
 

@@ -249,13 +249,20 @@ const run = async () => {
     assertEq(format.shortPath(''), '', 'nothing in, nothing out');
   });
 
-  await test('the board’s columns are the pipeline in order, QA at the end of it', () => {
-    assertEq(format.STATUSES.map((s) => s.key).join(','), 'inbox,specced,building,blocked,backlog,qa',
-      'left to right, and the pipeline is all of it');
-    assertEq(format.STATUSES.map((s) => s.label).join(','), 'Inbox,Specced,Building,Blocked,Backlog,QA',
+  await test('the board’s columns are the pipeline in stage order, the waiting states apart from it', () => {
+    assertEq(format.STATUSES.map((s) => s.key).join(','), 'inbox,specced,building,qa,complete,blocked,backlog',
+      'the stages in the order the spec defines them, `complete` between the check and the ship (#196)');
+    assertEq(format.STATUSES.map((s) => s.label).join(','), 'Inbox,Specced,Building,QA,Complete,Blocked,Backlog',
       'and each column is titled the way a human reads it');
-    assertEq(format.STATUSES.length, 6, 'six lanes - a missing label is not a place an issue lives (#118)');
+    assertEq(format.STATUSES.length, 7, 'seven lanes - a missing label is not a place an issue lives (#118)');
     assert(!format.STATUSES.some((s) => !s.key), 'so no column stands for the absence of one');
+    // The pocket flag is what the Board splits its two regions on (#196), so a
+    // status added without one lands in the pipeline by default - which is what
+    // a new STAGE is, and a new waiting state has to say otherwise out loud.
+    assertEq(format.STATUSES.filter((s) => !s.pocket).map((s) => s.key).join(','), 'inbox,specced,building,qa,complete',
+      'the pipeline is the five stages, and they read as a flow');
+    assertEq(format.STATUSES.filter((s) => s.pocket).map((s) => s.key).join(','), 'blocked,backlog',
+      'and the pockets are the two states of waiting, which are no stage at all');
   });
 
   await test('every status has a colour, and one the pipeline does not name still has one', () => {
@@ -265,13 +272,17 @@ const run = async () => {
     assertEq(format.statusToken('nonsense'), '--omega-ink-muted', 'an unknown status is drawn, not dropped');
     assert(format.statusToken('building') !== format.statusToken(''),
       'in-flight work and a status the vocabulary does not name never share a colour');
-    // Issue #135: six lanes, six colours. A column header, a card chip and a
+    // Issue #135: one lane, one colour. A column header, a card chip and a
     // chart slice are all read by hue, so two statuses sharing one would make
     // the board say less than it draws.
     const tokens = format.STATUSES.map((status) => format.statusToken(status.key));
     assertEq(new Set(tokens).size, tokens.length, 'no two statuses are drawn in one colour');
-    assertEq(format.statusToken('qa'), '--omega-ok', 'qa wears the ok green - built and good, waiting on the owner');
-    assertEq(format.statusToken('specced'), '--omega-chart-3', 'and specced gives that green up for the categorical purple');
+    // Issue #196: the ok green is a VERDICT, so it moved up a rung with the
+    // verdict - `complete` is the check passed, and `qa` is now the waiting for
+    // it, drawn in the one ramp slot no vocabulary had taken.
+    assertEq(format.statusToken('complete'), '--omega-ok', 'complete wears the ok green - the check passed, ready to ship');
+    assertEq(format.statusToken('qa'), '--omega-chart-6', 'qa gives that green up for the olive - waiting on a check is no verdict');
+    assertEq(format.statusToken('specced'), '--omega-chart-3', 'and specced gave it up for the categorical purple before either');
   });
 
   await test('a priority is drawn from the theme, and the unlabelled middle is neutral', () => {
@@ -353,13 +364,16 @@ const run = async () => {
     const clean = format.statusBreakdown([
       { status: 'inbox' }, { status: 'building' }, { status: 'building' },
     ]);
-    assertEq(clean.labels.join(','), 'Inbox,Specced,Building,Blocked,Backlog,QA', 'no drift means six slices, nothing more');
-    assertEq(clean.values.join(','), '1,0,2,0,0,0', 'each status counts its own');
+    assertEq(clean.labels.join(','), 'Inbox,Specced,Building,QA,Complete,Blocked,Backlog', 'no drift means seven slices, nothing more');
+    assertEq(clean.values.join(','), '1,0,2,0,0,0,0', 'each status counts its own');
     assertEq(clean.labels.length, clean.colors.length, 'labels and colors stay in step');
+    // The series is the column list's own (#196): the Overview's ring gained the
+    // `complete` slice from STATUSES rather than from a list of its own.
+    assertEq(clean.labels.length, format.STATUSES.length, 'one slice per lane, and the lanes are format.js’s');
 
     const drifted = format.statusBreakdown([{ status: 'inbox' }, { status: '' }, {}]);
     assertEq(drifted.labels[drifted.labels.length - 1], 'No status', 'an unlabeled issue is a visible slice');
-    assertEq(drifted.values.join(','), '1,0,0,0,0,0,2', 'counted, so the ring sums to the open count');
+    assertEq(drifted.values.join(','), '1,0,0,0,0,0,0,2', 'counted, so the ring sums to the open count');
     assertEq(drifted.values.reduce((sum, value) => sum + value, 0), 3, 'nothing dropped');
     assert(drifted.colors[drifted.colors.length - 1] !== format.statusColor('blocked'), 'and its color is no pipeline status’s');
   });
@@ -580,11 +594,12 @@ const run = async () => {
     assertEq(format.CHIP_GLYPHS.specced, 'fa-clipboard-check', 'specced is the signed-off clipboard');
     assertEq(format.CHIP_GLYPHS.building, 'fa-hammer', 'building is the hammer');
     assertEq(format.CHIP_GLYPHS.qa, 'fa-eye', 'qa is the owner’s eye');
+    assertEq(format.CHIP_GLYPHS.complete, 'fa-circle-check', 'complete is the tick that eye gave it (#196)');
     assertEq(format.CHIP_GLYPHS.blocked, 'fa-hand', 'blocked is the raised hand');
     assertEq(format.CHIP_GLYPHS.backlog, 'fa-circle-pause', 'and backlog is the pause');
     const glyphs = Object.values(format.CHIP_GLYPHS);
     assertEq(new Set(glyphs).size, glyphs.length, 'no two names share a glyph');
-    assertEq(Object.keys(format.CHIP_GLYPHS).sort().join(','), 'backlog,blocked,bug,building,enhancement,high,idea,inbox,low,qa,specced',
+    assertEq(Object.keys(format.CHIP_GLYPHS).sort().join(','), 'backlog,blocked,bug,building,complete,enhancement,high,idea,inbox,low,qa,specced',
       'and the table names the three vocabularies and nothing else');
     for (const status of format.STATUSES) {
       assert(format.statusChip(status.key).includes(`<i class="fa-solid ${format.CHIP_GLYPHS[status.key]} me-1"`),
@@ -668,6 +683,25 @@ const run = async () => {
     const chips = format.issueChips(issue, '', new Set(['owner/repo#12']));
     assert(chips.includes('<span class="omega-chip">waits on #12</span>'),
       'matched against the sweep and recognized as this repo despite the spelling');
+  });
+
+  await test('a blocked card says the question it is waiting on, and no other card does (#196)', () => {
+    // The spec's convention is that a blocked issue's question is a COMMENT on
+    // it, so the last comment is the signal the sweep carries. Only `blocked`
+    // draws it: the newest comment on an issue that is moving is not a question
+    // anybody is waiting on.
+    const question = format.openQuestion({ status: 'blocked', lastComment: 'Which of the two?' });
+    assert(question.includes('Which of the two?'), 'the question is on the card');
+    assert(question.includes('omega-tower-issue__question'), 'in the line the sheet clamps, so one long question cannot double a card');
+    assert(question.includes('text-body-secondary'), 'and in the muted tone the rest of a card’s secondary text uses');
+    assertEq(format.openQuestion({ status: 'qa', lastComment: 'shipped it' }), '',
+      'an issue that is moving draws none - its last comment is not a question');
+    assertEq(format.openQuestion({ status: 'blocked', lastComment: '' }), '',
+      'and a blocked issue nobody has commented on draws none either');
+    assertEq(format.openQuestion(null), '', 'nothing in, nothing out');
+    const hostile = format.openQuestion({ status: 'blocked', lastComment: '<img src=x onerror=alert(1)>' });
+    assert(!hostile.includes('<img'), 'a comment is remote text like every other value here');
+    assert(hostile.includes('&lt;img src=x'), 'and shows as what it says');
   });
 
   await test('a blocker the board is not holding is drawn nowhere', () => {
@@ -943,6 +977,30 @@ const run = async () => {
       'the round trip writes the graph and takes the default off rather than leaving ?view=list behind');
     assert(/history\.replaceState\(null, '', url\)/.test(source), 'through replaceState, like the filters beside it');
     assert(/const view = readView\(\);/.test(source), 'and every paint re-reads it, so the 60-second repaint cannot revert the view');
+  });
+
+  await test('the board is two regions - the pipeline flows, the pockets wait (#196)', () => {
+    const fs = require('fs');
+    const src = path.join(__dirname, '..', '..', 'tower', 'app', 'apps', 'web', 'src', 'assets');
+    const source = fs.readFileSync(path.join(src, 'js', 'pages', 'board.js'), 'utf8');
+    // Which lanes are which is the vocabulary's flag, never a list here: a
+    // second list of statuses on this page is the drift the flag exists to stop.
+    assert(/STATUSES\.filter\(\(status\) => !status\.pocket\)/.test(source), 'the pipeline region is the lanes that are stages');
+    assert(/STATUSES\.filter\(\(status\) => status\.pocket\)/.test(source), 'and the pocket region is the lanes that are not');
+    assert(!/'blocked', 'backlog'|"blocked", "backlog"/.test(source), 'the page names neither of them itself');
+    assert(/<aside class="omega-tower-pockets[^"]*"[^>]*aria-label="Waiting/.test(source),
+      'the pocket is a region of its own and says what it is to a screen reader');
+    assert(/waiting, not moving/.test(source), 'and says it in a line on the page too');
+    // Both regions are drawn by ONE lane renderer, which is what keeps a pocket
+    // lane a drop target like any other - a card is dragged into and out of them.
+    assertEq((source.match(/const lanes = /g) || []).length, 1, 'one lane renderer draws both regions');
+    assert(/\$\{openQuestion\(issue\)\}/.test(source), 'and a card draws its open question from format.js, never a shape of its own');
+
+    const sheet = fs.readFileSync(path.join(src, 'css', 'main.scss'), 'utf8');
+    assert(/\.omega-tower-pockets \{[^}]*border: 1px solid/.test(sheet),
+      'the pocket is set apart by an outline - a tint would swallow the drop tint of the lane inside it');
+    assert(/\.omega-tower-issue__question \{[^}]*-webkit-line-clamp: 3/.test(sheet),
+      'and the question is clamped, so the widest one cannot stand three cards tall');
   });
 
   await test('a filter never clears the view, and the view never clears a filter', () => {
@@ -2591,8 +2649,8 @@ const run = async () => {
       'where it came from rides along - the move removes one label and adds the other');
   });
 
-  await test('the six columns that are a status are the only ones a card moves between', () => {
-    assertEq(api.MOVABLE_STATUSES.join(','), 'inbox,specced,building,blocked,backlog,qa', 'the pipeline, from the column list itself');
+  await test('the seven columns that are a status are the only ones a card moves between', () => {
+    assertEq(api.MOVABLE_STATUSES.join(','), 'inbox,specced,building,qa,complete,blocked,backlog', 'the pipeline, from the column list itself');
     assertEq(api.moveRequest(CARD, '', true), null, 'the absence of a label is not a destination - nothing on the board names it');
     assertEq(api.moveRequest({ ...CARD, status: null }, 'inbox', true), null, 'and an issue triage has not reached has no label to remove');
     assertEq(api.moveRequest(CARD, 'shipped', true), null, 'a status the pipeline does not name is not one');
@@ -2982,6 +3040,25 @@ const run = async () => {
     const groups = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'workflow', 'labels.json'), 'utf8')).groups);
     assertEq([...github.LABEL_GROUPS].sort().join(','), groups.sort().join(','),
       'a group defined in the SSOT and missing here would be a group the published board cannot show');
+  });
+
+  await test('the newest comment is folded and cut on both sides, to the same character', () => {
+    // Issue #196: the sweep carries a blocked issue's open question, which is
+    // its last comment. Both halves ask for it and both fold it the same way,
+    // so a published board and a tower board say the same thing on a card.
+    const one = (body) => ({ data: { r0: { issues: { totalCount: 1, nodes: [{ number: 1, labels: { nodes: [] }, assignees: { nodes: [] }, comments: { totalCount: 1, nodes: [{ body }] } }] } } } });
+    const long = 'z'.repeat(300);
+    const fromBrowser = github.normalizeBoard(['o/r'], one('Which one?\nSay the word.').data, []).issues[0];
+    const fromTower = apiBoard.fetchBoard([{ slug: 'o/r' }], {
+      exec: (cmd, args) => (args[0] === '--version' ? 'gh version 2' : JSON.stringify(one('Which one?\nSay the word.'))),
+    }).issues[0];
+    assertEq(fromBrowser.lastComment, 'Which one? Say the word.', 'the comment as one line');
+    assertEq(fromBrowser.lastComment, fromTower.lastComment, 'and the tower folds it identically');
+    const cutBrowser = github.normalizeBoard(['o/r'], one(long).data, []).issues[0].lastComment;
+    assertEq(cutBrowser.length, 281, 'cut at the same 280 characters, plus the ellipsis that says it was');
+    assert(cutBrowser.endsWith('…'), 'never stopping mid-word in silence');
+    assertEq(github.normalizeBoard(['o/r'], one('').data, []).issues[0].lastComment, '',
+      'and an issue nobody has commented on carries the empty string');
   });
 
   await test('a body over the limit is cut and flagged, the same as the tower’s', () => {

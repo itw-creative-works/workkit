@@ -14,7 +14,7 @@
 #
 # The `changelog` job is the only job the heal adds to an EXISTING checks.yml,
 # appended once at the end of `jobs:`. Its linter is the copy of the kit's
-# changelog.js the heal vendors to .github/changelog-lint.js on every run.
+# changelog.js the heal vendors to .github/changelog-lint.cjs on every run.
 name: checks
 
 on:
@@ -60,7 +60,7 @@ jobs:
       - name: CHANGELOG entry format
         run: |
           if [ -f CHANGELOG.md ]; then
-            node .github/changelog-lint.js CHANGELOG.md --unreleased-only
+            node .github/changelog-lint.cjs CHANGELOG.md --unreleased-only
           else
             echo "no CHANGELOG.md — nothing to check"
           fi

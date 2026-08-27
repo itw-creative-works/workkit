@@ -87,6 +87,12 @@ const PAGE_SIZE = 100;
 // How much of an issue body rides the sweep; the dialog reads it straight off.
 const BODY_LIMIT = 4000;
 
+// How much of an issue's LAST COMMENT rides it (issue #196) - the API's number,
+// restated for the copy-boundary reason every other constant here is. A blocked
+// issue's open question is a comment on it, which is what the Board draws under
+// the title of a blocked card.
+const LAST_COMMENT_LIMIT = 280;
+
 // The closed issues a repo is asked for, and the window they are counted over -
 // tower/api/lib/board.js's numbers, restated for the copy-boundary reason every
 // other constant here is. The count is all that survives normalization: no
@@ -342,7 +348,7 @@ export const buildBoardQuery = (slugs) => {
         body
         createdAt
         updatedAt
-        comments { totalCount }
+        comments(last: 1) { totalCount nodes { body } }
         labels(first: 20) { nodes { name } }
         assignees(first: 5) { nodes { login } }
         blockedBy(first: 20) { nodes { number state repository { nameWithOwner } } }
@@ -354,6 +360,20 @@ export const buildBoardQuery = (slugs) => {
   }`;
   });
   return `query {\n${fields.join('\n')}\n}\n`;
+};
+
+/**
+ * The issue's newest comment as one line, cut to what a card can show - the
+ * API's own fold (tower/api/lib/board.js): the query asks for the LAST comment,
+ * the markdown's whitespace becomes single spaces, and a cut says so.
+ *
+ * @param {object} node the issue node as GraphQL answered it
+ * @returns {string} '' on an issue nobody has commented on
+ */
+export const lastCommentOf = (node) => {
+  const nodes = ((node.comments || {}).nodes) || [];
+  const body = String((nodes[nodes.length - 1] || {}).body || '').replace(/\s+/g, ' ').trim();
+  return body.length > LAST_COMMENT_LIMIT ? `${body.slice(0, LAST_COMMENT_LIMIT)}…` : body;
 };
 
 /** How many of a repo's closed issues were closed in the last 24 hours - the API's own count. */
@@ -483,6 +503,7 @@ export const normalizeBoard = (slugs, data, errors, now = Date.now()) => {
         body: body.slice(0, BODY_LIMIT),
         bodyTruncated: body.length > BODY_LIMIT,
         comments: ((node.comments || {}).totalCount) || 0,
+        lastComment: lastCommentOf(node),
         createdAt: node.createdAt || null,
         updatedAt: node.updatedAt,
         status: (parsed.status || [])[0] || null,
@@ -628,8 +649,8 @@ const byUrgency = (a, b) => {
 };
 
 // `nextUp` is that module's rule too, and restated for the same reason: the few
-// items a morning could move, per repo - decisions, then the checks waiting on
-// the owner, then accepted specs - three at most. The published copy carries it
+// items a morning could move, per repo - decisions, then what is ready to ship,
+// then the checks waiting on the owner, then accepted specs - three at most. The published copy carries it
 // because the payloads are one shape - the suite compares them key for key.
 const NEXT_UP_PER_REPO = 3;
 
@@ -658,6 +679,7 @@ const nextUpFrom = (issues) => {
     .filter(Boolean);
   const actionable = [
     ...issues.filter((i) => i.status === 'blocked'),
+    ...issues.filter((i) => i.status === 'complete'),
     ...issues.filter((i) => i.status === 'qa'),
     ...issues.filter((i) => i.status === 'specced'),
   ];
@@ -685,6 +707,7 @@ const nextUpFrom = (issues) => {
 export const headlineFor = (counts) => {
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   if (counts.waiting) return `${plural(counts.waiting, 'issue is', 'issues are')} waiting on a decision from you.`;
+  if (counts.complete) return `${plural(counts.complete, 'issue is', 'issues are')} QA-passed and ready to ship.`;
   if (counts.qa) return `${plural(counts.qa, 'issue is', 'issues are')} built and waiting on your check.`;
   if (counts.inFlight) return `${plural(counts.inFlight, 'issue is', 'issues are')} in flight, and nothing is blocked.`;
   if (counts.ready) return `Nothing is blocked - ${plural(counts.ready, 'issue is', 'issues are')} specced and ready to start.`;
@@ -710,6 +733,9 @@ export const buildBrief = (board, opts = {}) => {
   // Its own section, the API's brief's rule (issue #135): a qa item is finished
   // work waiting on the OWNER, not work somebody is still on.
   const qa = issues.filter((i) => i.status === 'qa').map(briefIssue);
+  // And the stage above it (issue #196): the check passed, so the item waits on
+  // the ship alone - the section the ship itself reads from.
+  const complete = issues.filter((i) => i.status === 'complete').map(briefIssue);
   // The status label is the whole answer here as it is in the API's brief
   // (issue #62): a claimed `specced` issue is a transient the standards sweep
   // flips to `building`, never a second in-flight shape to be read for.
@@ -720,6 +746,7 @@ export const buildBrief = (board, opts = {}) => {
   const counts = {
     open: issues.length,
     waiting: waiting.length,
+    complete: complete.length,
     qa: qa.length,
     ready: ready.length,
     inFlight: inFlight.length,
@@ -739,6 +766,7 @@ export const buildBrief = (board, opts = {}) => {
     repoCounts,
     nextUp: nextUpFrom(issues),
     waiting,
+    complete,
     qa,
     ready,
     inFlight,
@@ -1109,7 +1137,7 @@ const SLUG_SHAPE = /^[\w.-]+\/[\w.-]+$/;
  * restated across the copy boundary for the reason the groups above are, and
  * pinned to `workflow/labels.json` by the suite.
  */
-export const MOVE_STATUSES = ['inbox', 'specced', 'building', 'qa', 'blocked', 'backlog'];
+export const MOVE_STATUSES = ['inbox', 'specced', 'building', 'qa', 'complete', 'blocked', 'backlog'];
 
 /**
  * What a move may do, or why it may not - the endpoint's `validateMove`, on

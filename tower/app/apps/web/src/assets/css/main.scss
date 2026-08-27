@@ -20,6 +20,16 @@
   padding-bottom: .5rem;
 }
 
+// The side pockets (issue #196). `blocked` and `backlog` are states of waiting
+// rather than stages of progress, so they stand beside the pipeline in a region
+// of their own; a hairline and the theme's own radius are the whole of it. It is
+// an OUTLINE and not a tint, because the drop target inside it is what takes a
+// tint - a pocket painted in that same surface would swallow it.
+.omega-tower-pockets {
+  border: 1px solid var(--omega-line, var(--bs-border-color));
+  border-radius: var(--bs-border-radius, .375rem);
+}
+
 // Dragging a card between the columns is how an issue is relabelled, and the
 // two states that needs are the ones the browser does not draw itself: the card
 // that was picked up fades so its origin is still readable, and the column under
@@ -45,6 +55,17 @@
   display: -webkit-box;
   overflow: hidden;
   -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+// The open question a blocked card carries (issue #196). It is cut to a line's
+// worth on the sweep already; the clamp is what stops the widest of those from
+// standing three times the height of the card above it, and the whole comment is
+// on GitHub through the card's own button.
+.omega-tower-issue__question {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
 }
 

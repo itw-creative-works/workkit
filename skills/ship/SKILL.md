@@ -57,7 +57,7 @@ If all decisions are resolved by args (bump type given, file scope clear, no amb
    - The primary working directory (from the environment)
    - Any additional working directories
    - Repos you've run `git` commands in, edited files in, or `cd`'d into
-3. **If multiple repos have uncommitted changes or were edited this session, ASK which project to ship.** Don't guess — shipping the wrong repo is a hard-to-reverse mistake. This and a major bump are the only questions the pipeline ever asks.
+3. **If multiple repos have uncommitted changes or were edited this session, ASK which project to ship.** Don't guess — shipping the wrong repo is a hard-to-reverse mistake. This, a major bump, and the `status:qa` call in Step 0c are the only questions the pipeline ever asks.
 4. If only one repo was touched, or the user's intent is unambiguous, proceed without asking.
 
 Once the target is resolved, `cd` into that project's root (or the appropriate subdirectory like `functions/`) before continuing.
@@ -72,6 +72,18 @@ Once the target is resolved, `cd` into that project's root (or the appropriate s
 - `scripts.deploy` or `scripts.release` (exists?)
 
 Also run `git log --oneline -5` to understand recent commit style.
+
+## Step 0c: What this ship carries — the `status:qa` call
+
+A ship finishes the items that PASSED their check: `status:complete` is the stage it reads from (spec § the qa stage). Items still at `status:qa` are waiting on a check and are not this ship's to close.
+
+1. List both stages, if the repo participates: `gh issue list --state open --label status:complete --json number,title` and the same for `status:qa`.
+2. Nothing at `status:qa` → say nothing about it and carry on.
+3. Anything at `status:qa` → its code sits in the SAME working tree this ship is about to commit, so the owner has to call it. List each one (number, title, one line of what it is waiting on from its check comment) and ask per item:
+   - **include** — the owner's check passed right there: grant the stage on the spot (`gh issue edit <N> --remove-label status:qa --add-label status:complete`) with the pass comment (`gh issue comment <N> --body "QA passed by <owner>, <date>."`), and the ship carries it like any other complete item.
+   - **delay the ship** — STOP the pipeline and say so. Nothing is committed; the item gets its check first.
+   The owner may also say to ship anyway, in which case the qa item's code rides along in the commit while its issue stays open, keeping its `[Unreleased]` entry — it is untouched by this ship's close step.
+4. This is a question the pipeline DOES ask, alongside the major bump and the target repo. Never grant `status:complete` on the owner's behalf: the verdict is theirs, exactly like `agent:ok`. An `agent:ok` issue is the one exception, where the agent's own passing check already moved it.
 
 ## Step 1: Pick the bump type (ask ONLY for major)
 
@@ -137,7 +149,7 @@ This step runs if there are changes in the working tree (from the session's work
    - Squash merge: `gh pr merge --squash --delete-branch` with an explicit `--subject` (commit subject + ` (#<PR>)`) and a `--body` carrying the `Fixes #N` trailer — the squash commit is what lands, so the trailer must live there. An AGENT never merges without being asked in words: `agent:ok` authorizes the work, not the merge, so an agent-authored PR stops at green and says so.
    - Check out the default branch and `git pull`.
 
-   **Release commit** (either path, only if bump not skipped): use the `Edit` tool to bump `version` in `package.json` (NOT `npm version` — it auto-commits), run `node ~/.claude/workkit/changelog-links.js` to fill each entry's commit link and contributor handle (idempotent), move the CHANGELOG `[Unreleased]` content to a new `[<x.y.z>] <date>` section, commit as `chore(release): <x.y.z>`, and push directly to the default branch — the release commit is generated bookkeeping and never takes a PR. Then watch THAT push's CI run (below): it is the final sha, and the ship never ends without its conclusion.
+   **Release commit** (either path, only if bump not skipped): use the `Edit` tool to bump `version` in `package.json` (NOT `npm version` — it auto-commits), run `node ~/.claude/workkit/changelog-links.js` to fill each entry's commit link and contributor handle (idempotent), move the CHANGELOG `[Unreleased]` content to a new `[<x.y.z>] <date>` section — EXCEPT any entry whose issue this ship leaves open (a qa ride-along from Step 0c): that entry stays under `[Unreleased]` for the ship that closes it — commit as `chore(release): <x.y.z>`, and push directly to the default branch — the release commit is generated bookkeeping and never takes a PR. Then watch THAT push's CI run (below): it is the final sha, and the ship never ends without its conclusion.
 
    **Watching a push's CI run** — a direct push is unreviewed by any check until CI runs, so ship waits on it the way the PR path waits on `gh pr checks --watch`:
    - Resolve the pushed head sha (`git rev-parse HEAD`) and find its run: `gh run list --commit <sha> --json databaseId,name,status,conclusion`.
@@ -146,10 +158,10 @@ This step runs if there are changes in the working tree (from the session's work
    - RED = a failure needing action, at the TOP of the ship summary, never a footnote: name the workflow, the failing job (`gh run view <id> --log-failed` for the step), and the run URL. The ship is already pushed, so say plainly that the default branch is red and what needs fixing — never bury it under the version line, never call the ship clean.
    - A red run also STOPS the pipeline: do not proceed to the GitHub release, `npm publish`, deploy, or the dashboard republish (steps 4–7) on a red default branch — report, fix, and only continue on the owner's word. The local commit gate proved the suite on THIS machine; a red CI run is the proof failing somewhere else, and publishing on top of it ships the failure.
 
-6. **Close the shipped work items** — every issue this ship completes ends closed with a pointer to the CHANGELOG entry. The `Fixes #N` trailer already closed it when its commit landed on the default branch; for anything left open, close it manually:
+6. **Close the shipped work items** — every issue this ship completes ends closed with a pointer to the CHANGELOG entry. Those are the `status:complete` items from Step 0c; an issue left at `status:qa` is not one of them and stays open with its `[Unreleased]` entry where it is. The `Fixes #N` trailer already closed it when its commit landed on the default branch; for anything left open, close it manually:
    `gh issue close <N> --comment "Shipped in <version-or-commit> — see CHANGELOG [Unreleased]/<section>."`
    Issues that are only PARTLY addressed stay open — comment the progress instead.
-   Release every claim this ship completes: remove whichever working labels the closed issue is carrying — `status:qa`, `status:building`, `agent:working` (`gh issue edit <N> --remove-label status:qa,status:building,agent:working`; naming a label the issue does not have is harmless). Both statuses are possible: the normal path parks at `status:qa` and ships from there, and an issue can still be at `status:building` when the ship reaches it. A trailer closes the issue but never touches labels, the spec says the ship close is what ENDS the working stage, and a label left on closed issues stops meaning anything.
+   Release every claim this ship completes: remove whichever working labels the closed issue is carrying — `status:complete`, `status:qa`, `status:building`, `agent:working` (`gh issue edit <N> --remove-label status:complete,status:qa,status:building,agent:working`; naming a label the issue does not have is harmless). Every one of them is possible: the normal path passes its check into `status:complete` and ships from there, an issue can still be at `status:building` when the ship reaches it, and a Step 0c "include" leaves nothing at `status:qa` for this ship to close. A trailer closes the issue but never touches labels, the spec says the ship close is what ENDS the working stage, and a label left on closed issues stops meaning anything.
    Then PRUNE the queue: if the repo participates, open `.workkit/agents/session.md` and delete every entry this ship completed — the bullets about the issues just closed and about the release just cut. Their facts now live in the CHANGELOG and the closed issues; the file is the next session's task queue, not an archive of this one.
 
 7. **Verify** — run `git status` to confirm the working tree is clean and `git log --oneline -2` shows the expected commits on the default branch.
@@ -201,7 +213,7 @@ If the diff touched none of those paths, skip silently.
 ### The owner's word is the invocation, and it authorizes that ship alone
 Nothing ships without the owner's word, and the word IS the permission (spec § Labels, issue #147): "ship" said as a command runs this skill exactly as `/workkit:ship` does, with no follow-up permission prompt and no re-asking in chat. What that word authorizes is THIS run and nothing after it — the next ship needs the next word.
 
-The skill never runs unattended and an agent never invokes it on its own: an item that is built and verified parks at `status:qa` with the check comment and waits (`workkit:feature`), and the agent does not ask in chat whether to ship. The one exception is an issue carrying `agent:ok`, where the label is the owner's word given in advance, per issue.
+The skill never runs unattended and an agent never invokes it on its own: an item that is built and verified parks at `status:qa` with the check comment and waits (`workkit:feature`) until the owner's check passes it to `status:complete`, and the agent does not ask in chat whether to ship. The one exception is an issue carrying `agent:ok`, where the label is the owner's word given in advance, per issue.
 
 ### The reply is the outcome, not the working
 Ship does a lot of work. Almost none of it belongs in the chat — it is already written where it is read from (owner ruling, 2026-07-25: "so it doesnt dump the commit message or details into the chat, we dont need that anymore").

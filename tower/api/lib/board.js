@@ -49,6 +49,13 @@ const PAGE_SIZE = 100;
 // and the rest is one click away on GitHub.
 const BODY_LIMIT = 4000;
 
+// How much of an issue's LAST COMMENT the sweep carries (issue #196). A blocked
+// issue's open question is a comment on it — that is the spec's convention — so
+// the newest comment is the best signal there is for what the board is waiting
+// to be told, and the Board draws it under the title of a blocked card. One
+// line's worth is what a card can show; the whole thread is one click away.
+const LAST_COMMENT_LIMIT = 280;
+
 // The closed issues a repo is asked for, and the window they are counted over.
 // The sweep is about the OPEN board, and closed issues never enter it — what is
 // wanted is one number per repo, "how much shipped in the last day", which the
@@ -158,6 +165,23 @@ const blockersFor = (node, slug) => {
   return out;
 };
 
+/**
+ * The issue's newest comment as one line, cut to what a card can show.
+ *
+ * The query asks for the LAST one, so the connection holds at most a single
+ * node. Its body is markdown over many lines and the surfaces that draw it draw
+ * one line, so the whitespace is folded here rather than in each of them, and a
+ * cut says so with an ellipsis instead of stopping mid-word in silence.
+ *
+ * @param {object} node the issue node as GraphQL answered it
+ * @returns {string} '' on an issue nobody has commented on
+ */
+const lastCommentOf = (node) => {
+  const nodes = ((node.comments || {}).nodes) || [];
+  const body = String((nodes[nodes.length - 1] || {}).body || '').replace(/\s+/g, ' ').trim();
+  return body.length > LAST_COMMENT_LIMIT ? `${body.slice(0, LAST_COMMENT_LIMIT)}…` : body;
+};
+
 /** The GraphQL document for a roster, one aliased field per repo. */
 const buildQuery = (slugs) => {
   const fields = slugs.map(([owner, name], i) => `  r${i}: repository(owner: "${owner}", name: "${name}") {
@@ -170,7 +194,7 @@ const buildQuery = (slugs) => {
         body
         createdAt
         updatedAt
-        comments { totalCount }
+        comments(last: 1) { totalCount nodes { body } }
         labels(first: 20) { nodes { name } }
         assignees(first: 5) { nodes { login } }
         blockedBy(first: 20) { nodes { number state repository { nameWithOwner } } }
@@ -321,6 +345,7 @@ const fetchBoard = (repos, opts = {}) => {
         body: body.slice(0, BODY_LIMIT),
         bodyTruncated: body.length > BODY_LIMIT,
         comments: ((node.comments || {}).totalCount) || 0,
+        lastComment: lastCommentOf(node),
         createdAt: node.createdAt || null,
         updatedAt: node.updatedAt,
         status: (parsed.status || [])[0] || null,
@@ -337,4 +362,4 @@ const fetchBoard = (repos, opts = {}) => {
   return { ok: true, issues, repos: repoEntries };
 };
 
-module.exports = { fetchBoard, buildQuery, parseLabels, labelGroups, errorsByAlias, closedSince, blockersFor, PAGE_SIZE, BODY_LIMIT, CLOSED_PAGE, CLOSED_WINDOW_MS, LABELS_FILE };
+module.exports = { fetchBoard, buildQuery, parseLabels, labelGroups, errorsByAlias, closedSince, blockersFor, lastCommentOf, PAGE_SIZE, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, CLOSED_WINDOW_MS, LABELS_FILE };

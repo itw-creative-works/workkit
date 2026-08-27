@@ -267,6 +267,22 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  await test('a QA-passed item rides the morning as the thing that only needs shipping', () => {
+    // Issue #196: the stage above qa. The composed payload carries it the way
+    // the tower's does — its own bucket and count, and actionable in nextUp
+    // under the decisions and above the check still to be given.
+    const world = mkWorld();
+    world.board.data.r0.issues.totalCount = 3;
+    world.board.data.r0.issues.nodes.push(issueNode(19, ['status:complete']));
+    const out = composeIn(world);
+    assertEq(out.complete.map((i) => i.number).join(','), '19', 'the QA-passed item is the complete section');
+    assertEq(out.counts.complete, 1, 'and its own count');
+    assertEq(out.qa.length, 0, 'the check it already passed is not still waiting');
+    assertEq(out.nextUp[0].items.map((i) => i.number).join(','), '18,19,17',
+      'the decision, then the ship, then the accepted spec');
+    cleanup(world.root);
+  });
+
   group('jobs/brief-payload: yesterday and the week');
 
   await test('the newest daily summary is the findings, every morning', () => {
@@ -391,6 +407,8 @@ const run = async () => {
     assert(/`nextUp` is the same board asked one question further/.test(INSTRUCTION), 'the payload description explains nextUp');
     assert(/`qa` is built and verified and waiting on the\nowner's check/.test(INSTRUCTION), 'the payload description explains qa (#135)');
     assert(/^WAITING ON YOUR CHECK: every issue in `qa`/m.test(INSTRUCTION), 'and the response shape has its section');
+    assert(/`complete` is that check PASSED/.test(INSTRUCTION), 'the payload description explains complete (#196)');
+    assert(/^READY TO SHIP: every issue in `complete`/m.test(INSTRUCTION), 'and the response shape has its section too');
     assert(/`findings` is the newest daily summary/.test(INSTRUCTION), 'and the findings');
     assert(/`week` is the weekly rollup, which rides on Mondays/.test(INSTRUCTION), 'and when the week rides');
     assert(/^WORK ON THIS NEXT: `nextUp`/m.test(INSTRUCTION), 'the response shape has its ranked list');
@@ -401,7 +419,7 @@ const run = async () => {
     // split at every labeled header, so a section that lost the clause fails
     // here instead of matching the next section's copy of it further down.
     const chunks = INSTRUCTION.split(/\n(?=[A-Z][A-Z' 0-9]+:)/);
-    for (const section of ['WAITING ON YOUR CHECK', 'WORK ON THIS NEXT', 'YESTERDAY', 'THE WEEK']) {
+    for (const section of ['READY TO SHIP', 'WAITING ON YOUR CHECK', 'WORK ON THIS NEXT', 'YESTERDAY', 'THE WEEK']) {
       const chunk = chunks.find((part) => part.startsWith(`${section}:`));
       assert(chunk && /Omit\s+the\s+section\s+entirely/.test(chunk),
         `${section} is omitted when there is nothing to say`);
@@ -502,7 +520,7 @@ const run = async () => {
     else process.env.WORKKIT_BRIEF_MARK_FILE = before;
     assertEq(
       fs.readFileSync(file, 'utf8'),
-      '<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":4,"waiting":1,"qa":1,"ready":1,"inFlight":1,"inbox":1,"backlog":0},"closedDay":2,"repos":{"owner/repo":{"open":4}}} -->\n',
+      '<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":4,"waiting":1,"complete":0,"qa":1,"ready":1,"inFlight":1,"inbox":1,"backlog":0},"closedDay":2,"repos":{"owner/repo":{"open":4}}} -->\n',
       'the line, exactly as the runner will append it',
     );
     cleanup(dir);

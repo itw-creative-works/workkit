@@ -14,7 +14,7 @@ const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
 const REPO = path.join(__dirname, '..', '..');
-const { fetchBoard, buildQuery, labelGroups, LABELS_FILE, PAGE_SIZE, BODY_LIMIT, CLOSED_PAGE } = require(path.join(REPO, 'tower', 'api', 'lib', 'board.js'));
+const { fetchBoard, buildQuery, labelGroups, LABELS_FILE, PAGE_SIZE, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE } = require(path.join(REPO, 'tower', 'api', 'lib', 'board.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-board-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -120,7 +120,8 @@ const run = async () => {
     // second request behind a click.
     assert(q.includes('body'), 'the body the dialog renders');
     assert(q.includes('createdAt'), 'when it was filed');
-    assert(q.includes('comments { totalCount }'), 'and how much conversation is waiting');
+    assert(q.includes('comments(last: 1) { totalCount nodes { body } }'),
+      'how much conversation is waiting, and the newest word of it - a blocked issue’s open question (#196)');
   });
 
   await test('an issue carries what the dialog shows, with a long body cut and reported', () => {
@@ -148,6 +149,39 @@ const run = async () => {
     assertEq(b.body.length, BODY_LIMIT, 'a body longer than the cap is cut to it');
     assertEq(b.bodyTruncated, true, 'and says so, so the dialog can point at GitHub');
     assertEq(b.comments, 0, 'an issue with no comment count reads as none');
+  });
+
+  // Issue #196: a blocked issue's open question is a COMMENT on it - the spec's
+  // own convention - so the sweep carries the newest one and the Board draws it
+  // on a blocked card. The cut is stated on both sides of the limit, since a
+  // question that arrives half-drawn with nothing to say so is worse than none.
+  await test('an issue carries its newest comment as one line, cut where a card ends', () => {
+    const comments = (...bodies) => ({ totalCount: bodies.length, nodes: bodies.map((body) => ({ body })) });
+    const res = fetchBoard([ROSTER[0]], {
+      exec: fakeGh({
+        data: {
+          r0: {
+            issues: {
+              totalCount: 4,
+              nodes: [
+                issue(17, { comments: comments('Which of the two?\n\nSay the word.') }),
+                issue(18, { comments: comments('x'.repeat(LAST_COMMENT_LIMIT)) }),
+                issue(19, { comments: comments('y'.repeat(LAST_COMMENT_LIMIT + 1)) }),
+                issue(20, {}),
+              ],
+            },
+          },
+        },
+      }),
+    });
+    const [a, b, c, d] = res.issues;
+    assertEq(a.lastComment, 'Which of the two? Say the word.',
+      'the comment as one line - the markdown’s own breaks are folded here, not in every surface that draws it');
+    assertEq(b.lastComment.length, LAST_COMMENT_LIMIT, 'a comment exactly at the limit arrives whole');
+    assert(!b.lastComment.endsWith('…'), 'and says nothing about a cut that did not happen');
+    assertEq(c.lastComment.length, LAST_COMMENT_LIMIT + 1, 'one past it is cut to the limit');
+    assert(c.lastComment.endsWith('…'), 'and says so, rather than stopping mid-word in silence');
+    assertEq(d.lastComment, '', 'an issue nobody has commented on carries the empty string, never a missing field');
   });
 
   await test('two repos come back as one flat, normalized issue list', () => {

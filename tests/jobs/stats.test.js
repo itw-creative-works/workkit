@@ -19,7 +19,7 @@ const { parseStatsMark, STATS_RE: READ_RE } = require(path.join(__dirname, '..',
 const PAYLOAD = {
   ok: true,
   generatedAt: '2026-08-03T09:00:00.000Z',
-  counts: { open: 12, waiting: 2, qa: 2, ready: 3, inFlight: 1, inbox: 5, backlog: 1 },
+  counts: { open: 12, waiting: 2, complete: 1, qa: 2, ready: 3, inFlight: 1, inbox: 5, backlog: 1 },
   closedDay: 4,
   repoCounts: [
     { slug: 'ITW-Creative-Works/workkit', open: 9, closedDay: 3 },
@@ -27,7 +27,7 @@ const PAYLOAD = {
   ],
 };
 
-const EXPECTED = '<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":12,"waiting":2,"qa":2,"ready":3,"inFlight":1,"inbox":5,"backlog":1},"closedDay":4,"repos":{"ITW-Creative-Works/workkit":{"open":9},"ianwieds/.dotfiles":{"open":3}}} -->';
+const EXPECTED = '<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":12,"waiting":2,"complete":1,"qa":2,"ready":3,"inFlight":1,"inbox":5,"backlog":1},"closedDay":4,"repos":{"ITW-Creative-Works/workkit":{"open":9},"ianwieds/.dotfiles":{"open":3}}} -->';
 
 const run = async () => {
   group('jobs/stats: the line itself');
@@ -62,7 +62,7 @@ const run = async () => {
 
   await test('the numbers absent from a payload are zeros, not gaps', () => {
     const out = renderStatsMark({ ok: true, generatedAt: '2026-08-03T09:00:00.000Z', counts: { open: 1 } });
-    assertEq(out, '<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":1,"waiting":0,"qa":0,"ready":0,"inFlight":0,"inbox":0,"backlog":0},"closedDay":0,"repos":{}} -->',
+    assertEq(out, '<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":1,"waiting":0,"complete":0,"qa":0,"ready":0,"inFlight":0,"inbox":0,"backlog":0},"closedDay":0,"repos":{}} -->',
       'every key a reader expects is present');
   });
 

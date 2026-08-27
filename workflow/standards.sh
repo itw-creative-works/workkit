@@ -18,7 +18,7 @@
 #                  CI workflow that runs the test suite on every pull request.
 #                  Installed once and never overwritten: after the first heal
 #                  the copy is the repo's own to extend.
-#   4a. changelog lint — vendor changelog.js to .github/changelog-lint.js,
+#   4a. changelog lint — vendor changelog.js to .github/changelog-lint.cjs,
 #                  byte-synced on every run so the kit stays the SSOT, and add
 #                  the `changelog` job to the repo's checks.yml once. The
 #                  format gate then holds for a maintainer with no plugin
@@ -752,7 +752,13 @@ ensure_ci_workflow() {
 # this engine would produce, so an edit to the copy is undone on the next heal
 # and the header says so. The comparison is over BYTES, which makes the step
 # idempotent — a current copy is left untouched and nothing is reported.
-CHANGELOG_LINT_DEST=".github/changelog-lint.js"
+#
+# The extension is .cjs, not .js: the copy uses require(), and a consumer whose
+# package.json says "type": "module" would have Node read a .js copy as ESM and
+# fail the check it was vendored to run (issue #190). The engine source keeps
+# its own name — it is read by this kit, never by the consumer's module type.
+CHANGELOG_LINT_DEST=".github/changelog-lint.cjs"
+CHANGELOG_LINT_LEGACY=".github/changelog-lint.js"
 CHANGELOG_LINT_HEADER="// Vendored from the workflow core's changelog.js by standards.sh — the kit is the SSOT; edit it there. This copy is resynced on every heal."
 
 # The header goes on line 2, after the shebang, so the file stays runnable.
@@ -760,6 +766,31 @@ render_changelog_linter() {
   head -n 1 "$CHANGELOG_LINTER"
   printf '%s\n' "$CHANGELOG_LINT_HEADER"
   tail -n +2 "$CHANGELOG_LINTER"
+}
+
+# A repo healed before the rename carries the old .js copy beside the new one.
+# Only OUR copy is retired — the vendor header on line 2 is the proof of
+# ownership, and a file without it is someone else's, so it is reported and
+# left exactly as found.
+retire_legacy_changelog_linter() {
+  local legacy="$CHANGELOG_LINT_LEGACY"
+
+  [[ -f "$legacy" ]] || return 0
+  case "$(sed -n 2p "$legacy")" in
+    "// Vendored"*) ;;
+    *)
+      log_warn "changelog lint: $legacy is not the kit's copy — move or delete it by hand; $CHANGELOG_LINT_DEST is the vendored one now"
+      needs_attention=1
+      return 0
+      ;;
+  esac
+
+  if ! rm -f "$legacy"; then
+    log_warn "changelog lint: could not remove the retired $legacy"
+    needs_attention=1
+    return 0
+  fi
+  log_ok "changelog lint: removed the retired $legacy — $CHANGELOG_LINT_DEST replaces it; commit the removal"
 }
 
 ensure_changelog_linter() {
@@ -784,6 +815,7 @@ ensure_changelog_linter() {
     if cmp -s "$tmp" "$dest"; then
       rm -f "$tmp"
       log_skip "changelog lint: $dest already matches the workflow core"
+      retire_legacy_changelog_linter
       return 0
     fi
     verb="resynced"
@@ -796,6 +828,7 @@ ensure_changelog_linter() {
     return 0
   fi
   log_ok "changelog lint: $verb $dest from the workflow core — commit it"
+  retire_legacy_changelog_linter
 }
 
 # ── 2b-ii. The changelog job in the repo's checks.yml ──
@@ -810,9 +843,25 @@ ensure_changelog_linter() {
 # else is a layout this script cannot reason about, so it says what to add and
 # leaves the file alone.
 ensure_changelog_job() {
-  local dest=".github/workflows/checks.yml" src="$TEMPLATES_DIR/github-workflows/checks.yml" block last
+  local dest=".github/workflows/checks.yml" src="$TEMPLATES_DIR/github-workflows/checks.yml" block last tmp
 
   [[ -f "$dest" ]] || return 0
+
+  # A repo healed before the rename runs the linter under its old name, and the
+  # presence check below would leave that command pointing at a file the heal no
+  # longer vendors — so the name is repaired first. Idempotent: the old name is
+  # not a substring of the new one, so a second run finds nothing to change.
+  if grep -q 'changelog-lint\.js' "$dest"; then
+    tmp="$dest.tmp.$$"
+    if sed 's/changelog-lint\.js/changelog-lint.cjs/g' "$dest" >"$tmp" 2>/dev/null && [[ -s "$tmp" ]] && mv "$tmp" "$dest"; then
+      log_ok "checks: repointed the changelog job in $dest at $CHANGELOG_LINT_DEST — commit it"
+    else
+      rm -f "$tmp"
+      log_warn "checks: could not repoint the changelog job in $dest at $CHANGELOG_LINT_DEST — change the command by hand"
+      needs_attention=1
+    fi
+  fi
+
   if grep -qE '^  changelog:' "$dest"; then
     log_skip "checks: the changelog job is already in $dest"
     return 0
