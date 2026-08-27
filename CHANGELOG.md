@@ -7,13 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-08-27
+
 ### Added
 
-- [#206](../../issues/206) — `workkit:checkpoint` hardens a long chat into issues before you compact: every finding, decision and open question routed to its one home, `.workkit/agents/session.md` trimmed to what is in flight, and a Filed trail ending in "Safe to compact."
+- [#206](../../issues/206) [`175d2d0`](../../commit/175d2d0) Thanks [@ianwieds]! — `workkit:checkpoint` hardens a long chat into issues before you compact: every finding, decision and open question routed to its one home, `.workkit/agents/session.md` trimmed to what is in flight, and a Filed trail ending in "Safe to compact."
 
 ### Changed
 
-- [#205](../../issues/205) — A blocked card on the Board no longer draws its last comment under the title; the open question now lives in the issue dialog, labelled as such.
+- [#205](../../issues/205) [`175d2d0`](../../commit/175d2d0) Thanks [@ianwieds]! — A blocked card on the Board no longer draws its last comment under the title; the open question now lives in the issue dialog, labelled as such.
 
 ## [0.49.0] - 2026-08-27
 
