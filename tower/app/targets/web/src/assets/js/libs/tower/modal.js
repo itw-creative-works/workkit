@@ -201,6 +201,27 @@ const dependencyLine = (issue, issues) => {
 };
 
 /**
+ * What a BLOCKED issue is waiting to be told (issue #196) - its open question,
+ * in the dialog the card opens rather than on the card itself (issue #205).
+ *
+ * The convention the spec sets is that a blocked issue's question is a COMMENT
+ * on it, so the last comment is the best signal the sweep can carry: it is the
+ * question itself on an issue that has just been blocked, and the newest word on
+ * one that has been discussed since. Only `blocked` draws it - the last comment
+ * of an issue that is moving is not a question anybody is waiting on.
+ *
+ * Remote text like every other value here, escaped, and drawn as an alert in the
+ * danger red `blocked` wears - a question waiting on the owner is the loudest
+ * thing in the dialog, never a muted line (owner, 2026-08-27).
+ *
+ * @param {object} issue - one issue from /api/board or /api/brief
+ * @returns {string} markup, or nothing at all when there is no question to show
+ */
+const openQuestion = (issue) => (issue.status === 'blocked' && issue.lastComment
+  ? `<div class="alert alert-danger mb-3" role="alert"><strong>Open question</strong><p class="omega-tower-issue__question mb-0">${esc(issue.lastComment)}</p></div>`
+  : '');
+
+/**
  * The three pieces of the dialog for one issue.
  *
  * Pure - an issue in, three markup strings out - which is what lets the suite
@@ -231,6 +252,7 @@ export const issueDialog = (issue, renderBody, issues) => {
         ${issueChips(issue)}
       </div>
       <p class="omega-micro text-body-secondary">${esc(meta.join(' · '))}</p>
+      ${openQuestion(issue)}
       ${dependencyLine(issue, issues)}
       <div class="omega-tower-issue__body">${rendered || '<p class="text-body-secondary mb-0">No description.</p>'}</div>
       ${issue.bodyTruncated ? '<p class="omega-micro text-body-secondary mt-2">The body is longer than this - the rest is on GitHub.</p>' : ''}

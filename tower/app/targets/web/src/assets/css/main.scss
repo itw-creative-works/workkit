@@ -82,10 +82,11 @@
   -webkit-box-orient: vertical;
 }
 
-// The open question a blocked card carries (issue #196). It is cut to a line's
+// The open question a blocked issue carries (issue #196), drawn in the dialog
+// the card opens rather than on the card (issue #205). It is cut to a line's
 // worth on the sweep already; the clamp is what stops the widest of those from
-// standing three times the height of the card above it, and the whole comment is
-// on GitHub through the card's own button.
+// crowding out the body under it, and the whole comment is on GitHub through the
+// dialog's own button. The alert around it is the danger red `blocked` wears.
 .omega-tower-issue__question {
   display: -webkit-box;
   overflow: hidden;

@@ -596,27 +596,6 @@ export const waitsOnChips = (issue, open) => (issue.blockedBy || [])
   .join('');
 
 /**
- * What a BLOCKED issue is waiting to be told (issue #196) - its open question,
- * under the title on the card.
- *
- * The convention the spec sets is that a blocked issue's question is a COMMENT
- * on it, so the last comment is the best signal the sweep can carry: it is the
- * question itself on an issue that has just been blocked, and the newest word on
- * one that has been discussed since. It is cut to a line's worth on the sweep
- * (`lastComment`), and only ever drawn on `blocked` - the last comment of an
- * issue that is moving is not a question anybody is waiting on.
- *
- * Remote text like every other value here, escaped, and drawn as the muted micro
- * line the rest of a card's secondary text uses.
- *
- * @param {object} issue one issue from /api/board or /api/brief
- * @returns {string} markup, or nothing at all when there is no question to show
- */
-export const openQuestion = (issue) => ((issue || {}).status === 'blocked' && issue.lastComment
-  ? `<p class="omega-micro text-body-secondary mb-2 omega-tower-issue__question">${esc(issue.lastComment)}</p>`
-  : '');
-
-/**
  * The chips that label one issue - its type, its priority, what it waits on,
  * whether an agent may take it, and who holds it.
  *

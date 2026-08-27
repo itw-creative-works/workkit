@@ -38,7 +38,7 @@ import { startPage } from '../libs/tower/page.js';
 import { issuesFor, board, feed, issueByKey } from '../libs/tower/state.js';
 import { selectedSlugs } from '../libs/tower/scope.js';
 import {
-  esc, empty, problem, loading, issueChips, issueKey, STATUSES, statusColor, byPriority, noStatusAlert, openQuestion,
+  esc, empty, problem, loading, issueChips, issueKey, STATUSES, statusColor, byPriority, noStatusAlert,
 } from '../libs/tower/format.js';
 import { swap } from '@omega.js/client/modules/live-page';
 import { loadGraph, graphReady, graphSlot, drawGraph } from '__main_assets__/js/libs/graph.js';
@@ -167,11 +167,10 @@ const draggable = (issue) => WRITABLE && MOVABLE_STATUSES.includes(issue.status)
 // height at all, where a line of its own would make every blocked card taller
 // than its neighbours.
 //
-// A BLOCKED card carries one line the others do not: the open question it is
-// waiting to be told (issue #196). That one is worth the height - a pocket of
-// blocked cards saying only their titles is a list of things stuck for reasons
-// you have to open each of them to read - and it is drawn by format.js, which
-// decides what a question is and cuts it to the line.
+// A BLOCKED card carries no line the others do not (issue #205): the open
+// question it is waiting to be told is in the dialog the card opens, where
+// there is room to read it, rather than a line of its own on the face of every
+// stuck card.
 //
 // The top row is NAMED because its right end is one slot rather than two: the
 // open button is lifted out of the flow into that corner where there is a
@@ -187,7 +186,6 @@ const issueCard = (issue, showRepo, open) => `<div class="card omega-tower-issue
       ${externalLink(issue.url)}
     </div>
     <span class="mb-2 omega-tower-issue__title">${esc(issue.title)}</span>
-    ${openQuestion(issue)}
     ${issueChips(issue, 'mt-auto omega-tower-issue__chips', open)}
   </div>
 </div>`;

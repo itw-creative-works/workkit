@@ -91,6 +91,8 @@ Three surfaces, all converging on issues. There is no store outside a participat
 
 Its one job is keeping the LOCAL AGENT on task across a compaction, a resume, or a restart, which is why it is READ BACK at every session start (the `docs:session` hook injects it on every source, silent when the file holds only its header). It is a queue, not a journal, and not long-term storage: past 40 content lines the injection says so, and the `docs:session-guard` hook bounces the write itself — the same 40-line bar plus a 350-character cap per bullet — because everything durable belonged on an issue the moment it existed. A session.md growing into the retired `PROGRESS.md` shape is the failure the bar exists to catch.
 
+Before a deliberate compaction, the `workkit:checkpoint` skill hardens the CONVERSATION into issues the same way — routed by the triage table, with `session.md` trimmed to what is in flight — so the chat's findings survive on the board instead of in the scrollback.
+
 ## Issue anatomy
 
 Every issue body has the SAME two sections, always present, always in this order (owner ruling, 2026-07-24: one enforced structure so every issue reads the same):

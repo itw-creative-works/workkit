@@ -21,7 +21,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 │   ├── manager/          # resolver, profile, spawn-guard, close-guard + ladder.json (the tier SSOT)
 │   └── workflow/         # standards (the daily heal) + reload-guard
 ├── agents/               # the crew — surface as workkit:<name> (roster + contract: docs/agents.md)
-├── skills/               # the nine workflow skills — surface as workkit:<name>
+├── skills/               # the ten workflow skills — surface as workkit:<name>
 ├── workflow/             # the agent-agnostic engine (labels.json, standards.sh, home.sh, publish.sh, changelog.js, templates)
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
 ├── jobs/                 # scheduled work — the 9am daily brief, its launchd plist, and install.sh
@@ -55,7 +55,7 @@ Five, namespaced `workkit:<name>`: `scout` (recon), `worker` (implementation), `
 
 ## Skills
 
-Nine, namespaced `workkit:<name>`: `feature` · `interview` · `diagnose` · `review` · `triage` · `status` · `migrate` · `parallel` · `ship`. One `SKILL.md` each, which is that skill's own home — what it does, when it fires, and how it runs.
+Ten, namespaced `workkit:<name>`: `feature` · `interview` · `diagnose` · `review` · `triage` · `status` · `checkpoint` · `migrate` · `parallel` · `ship`. One `SKILL.md` each, which is that skill's own home — what it does, when it fires, and how it runs.
 
 ## The engine (`workflow/`)
 

@@ -115,7 +115,7 @@ The first four are capability classes — the resolver hook gives each spawn its
 
 ### Skills — the part you (or Claude) trigger with words
 
-`workkit:feature` · `workkit:interview` · `workkit:diagnose` · `workkit:review` · `workkit:triage` · `workkit:status` · `workkit:migrate` · `workkit:parallel` · `workkit:ship`. Most load themselves when your message matches their triggers; you can also type them as `/workkit:<name>`.
+`workkit:feature` · `workkit:interview` · `workkit:diagnose` · `workkit:review` · `workkit:triage` · `workkit:status` · `workkit:checkpoint` · `workkit:migrate` · `workkit:parallel` · `workkit:ship`. Most load themselves when your message matches their triggers; you can also type them as `/workkit:<name>`.
 
 ### Tower — the dashboard
 
@@ -147,7 +147,7 @@ Participation is deliberate. `workkit enable <repo>` writes that repo's `.workki
 .claude-plugin/   plugin.json + marketplace.json (this repo is its own marketplace)
 hooks/            hooks.json + the hook groups, resolved via ${CLAUDE_PLUGIN_ROOT}
 agents/           the crew (namespaced workkit:<name>)
-skills/           the nine workflow skills (namespaced workkit:<name>)
+skills/           the ten workflow skills (namespaced workkit:<name>)
 workflow/         the agent-agnostic engine
 tower/            mission control — api/ (the JSON API) + app/ (the OMEGA dashboard)
 jobs/             the 9am job — summaries, brief, publish: payload builders, runners, launchd schedule

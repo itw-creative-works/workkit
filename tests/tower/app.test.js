@@ -685,25 +685,6 @@ const run = async () => {
       'matched against the sweep and recognized as this repo despite the spelling');
   });
 
-  await test('a blocked card says the question it is waiting on, and no other card does (#196)', () => {
-    // The spec's convention is that a blocked issue's question is a COMMENT on
-    // it, so the last comment is the signal the sweep carries. Only `blocked`
-    // draws it: the newest comment on an issue that is moving is not a question
-    // anybody is waiting on.
-    const question = format.openQuestion({ status: 'blocked', lastComment: 'Which of the two?' });
-    assert(question.includes('Which of the two?'), 'the question is on the card');
-    assert(question.includes('omega-tower-issue__question'), 'in the line the sheet clamps, so one long question cannot double a card');
-    assert(question.includes('text-body-secondary'), 'and in the muted tone the rest of a card’s secondary text uses');
-    assertEq(format.openQuestion({ status: 'qa', lastComment: 'shipped it' }), '',
-      'an issue that is moving draws none - its last comment is not a question');
-    assertEq(format.openQuestion({ status: 'blocked', lastComment: '' }), '',
-      'and a blocked issue nobody has commented on draws none either');
-    assertEq(format.openQuestion(null), '', 'nothing in, nothing out');
-    const hostile = format.openQuestion({ status: 'blocked', lastComment: '<img src=x onerror=alert(1)>' });
-    assert(!hostile.includes('<img'), 'a comment is remote text like every other value here');
-    assert(hostile.includes('&lt;img src=x'), 'and shows as what it says');
-  });
-
   await test('a blocker the board is not holding is drawn nowhere', () => {
     const issue = { repo: 'owner/repo', blockedBy: [{ repo: 'owner/repo', number: 12 }] };
     assertEq(format.issueChips(issue, '', new Set(['owner/repo#9'])).includes('waits on'), false,
@@ -1007,7 +988,7 @@ const run = async () => {
     // Both groups are drawn by ONE lane renderer, which is what keeps a pocket
     // lane a drop target like any other - a card is dragged into and out of them.
     assertEq((source.match(/const lanes = /g) || []).length, 1, 'one lane renderer draws both groups');
-    assert(/\$\{openQuestion\(issue\)\}/.test(source), 'and a card draws its open question from format.js, never a shape of its own');
+    assert(!/openQuestion|omega-tower-issue__question/.test(source), 'and no card draws an open question line - that one is in the dialog it opens (#205)');
 
     const sheet = fs.readFileSync(path.join(src, 'css', 'main.scss'), 'utf8');
     assert(/\.omega-tower-board \{[^}]*grid-template-columns: repeat\(var\(--pipeline\), minmax\(9rem, 1fr\)\) 0 repeat\(var\(--pocket\), minmax\(9rem, 1fr\)\);/.test(sheet),
@@ -1024,7 +1005,7 @@ const run = async () => {
     assert(!/omega-tower-pockets/.test(sheet), 'the pocket has no rule of its own beyond its placement');
     assert(/\.omega-tower-board \{[^}]*padding: \.5rem;/.test(sheet), 'and the strip carries the half gutter the card faces are drawn into');
     assert(/\.omega-tower-issue__question \{[^}]*-webkit-line-clamp: 3/.test(sheet),
-      'and the question is clamped, so the widest one cannot stand three cards tall');
+      'and the question the dialog draws is clamped, so the widest one cannot crowd out the body under it');
   });
 
   await test('a filter never clears the view, and the view never clears a filter', () => {
@@ -1796,6 +1777,28 @@ const run = async () => {
   await test('a truncated body admits it', () => {
     const cut = modal.issueDialog({ ...ISSUE, bodyTruncated: true }, render);
     assert(cut.body.includes('the rest is on GitHub'), 'the dialog says what it is not showing');
+  });
+
+  await test('a blocked issue’s dialog says the question it is waiting on, and no other one does (#205)', () => {
+    // The spec's convention is that a blocked issue's question is a COMMENT on
+    // it, so the last comment is the signal the sweep carries. It is read in the
+    // DIALOG now, not on the card: only `blocked` draws it, because the newest
+    // comment on an issue that is moving is not a question anybody waits on.
+    const blocked = modal.issueDialog({ ...ISSUE, status: 'blocked', lastComment: 'Which of the two?' }, render);
+    assert(blocked.body.includes('Which of the two?'), 'the question is in the dialog');
+    assert(blocked.body.includes('<strong>Open question</strong>'), 'labelled as what it is');
+    const alertBlock = (blocked.body.match(/<div class="alert alert-danger[^>]*>[\s\S]*?<\/div>/) || [''])[0];
+    assert(alertBlock.includes('omega-tower-issue__question') && !alertBlock.includes('omega-micro'),
+      'in a danger alert with plain-case text, never the muted small-caps line');
+    const moving = modal.issueDialog({ ...ISSUE, status: 'qa', lastComment: 'shipped it' }, render);
+    assert(!moving.body.includes('shipped it') && !moving.body.includes('omega-tower-issue__question'),
+      'an issue that is moving draws none - its last comment is not a question');
+    const silent = modal.issueDialog({ ...ISSUE, status: 'blocked', lastComment: '' }, render);
+    assert(!silent.body.includes('omega-tower-issue__question'),
+      'and a blocked issue nobody has commented on draws none either');
+    const hostile = modal.issueDialog({ ...ISSUE, status: 'blocked', lastComment: '<img src=x onerror=alert(1)>' }, render);
+    assert(!hostile.body.includes('<img'), 'a comment is remote text like every other value here');
+    assert(hostile.body.includes('&lt;img src=x'), 'and shows as what it says');
   });
 
   await test('a mount without a renderer fails there, not at the first click', () => {
