@@ -7,6 +7,21 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#194](../../issues/194) — The board sweep pages past 100 open issues per repo, to a ceiling of 1,000, and both dashboards draw each page as it lands with a per-repo progress line; the brief still composes from a finished board.
+
+### Changed
+
+- [#195](../../issues/195) — The board sweep's query, its bounding numbers, its node-to-issue parse and its reading of the errors that came back beside them are one shared module both halves run — the machine's `gh` sweep and a published copy's browser sweep — instead of two copies held together by drift tests.
+- [#204](../../issues/204) — The QA walkthrough lists EVERY issue waiting on your check, not only the ones with something to look at, and each item now names how to check it: see it, read the named evidence, or run the given command.
+
+### Fixed
+
+- [#200](../../issues/200) — The home clone is never downgraded or wedged: the tower seed, the runner and the daily sync stamp the kit version into `.workkit-version`, an older checkout writes nothing and names `workkit update` as the fix (so does `workkit doctor`), and the morning pulls its clone up to date before seeding.
+- [#201](../../issues/201) — The seed and the sync no longer copy the tower app's local `logs/` tree into the home clone: `logs` joins the exclude list, which a test now holds to every top-level entry of `tower/app/.gitignore`.
+- [#199](../../issues/199) — The release-time backfill no longer doubles a contributor handle: an entry that already carries its `Thanks [@who]!` keeps the one it has, and only an entry with no attribution is given one.
+
 ## [0.48.1] - 2026-08-26
 
 ### Fixed

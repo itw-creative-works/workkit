@@ -46,7 +46,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const { discoverRepos } = require('./lib/repos');
-const { fetchBoard, LABELS_FILE } = require('./lib/board');
+const { startSweep, LABELS_FILE } = require('./lib/board');
 const { listSessions } = require('./lib/sessions');
 const { repoHealth } = require('./lib/health');
 const { collectTelemetry } = require('./lib/telemetry');
@@ -358,7 +358,105 @@ const createServer = (opts = {}) => {
   }, (value) => value !== null);
   const roster = (o) => rosterOrNull(o) || [];
 
-  const board = cached(BOARD_TTL, () => fetchBoard(roster(), seam));
+  // The board is not one answer but a SWEEP, and a repo past a hundred open
+  // issues takes a request per hundred (issue #194). The dashboard on this
+  // machine draws each page as it lands, the way a published copy does, so this
+  // slot serves the sweep IN FLIGHT rather than holding the request until the
+  // last page: the first pages are asked for inside the request that found the
+  // slot cold — which is what gives that answer something to draw — and the
+  // continuations run on afterwards, a round to a turn of the event loop,
+  // growing the snapshot the next poll reads. A repo still being paged carries
+  // `loading: true`, which is the progress line; the finished board carries no
+  // such mark, which is what clears it.
+  //
+  // ONLY /api/board is served that way. Everything DERIVED from the board — the
+  // brief — reads `finishedBoard()` instead, because a morning composition made
+  // from half a repo's issues is a wrong answer rather than an early one: it
+  // takes the last finished board, and where none has finished it drives the
+  // sweep to its end inside the request and waits, which is what the endpoint
+  // did before any of this.
+  //
+  // The CACHE's semantics survive around it: a finished board is served for the
+  // TTL, `fresh` forces a new sweep, and only a finished board takes the slot,
+  // so a failure is never pinned in front of the next read (cached() says why).
+  // A new sweep cannot blank the last finished board either — the request that
+  // starts one is already holding its first pages by the time it answers.
+  let boardDone;
+  let boardAt = 0;
+  let sweeping = null;
+
+  const advance = () => {
+    if (!sweeping) return;
+    // The WHOLE round is guarded, not just the ask. This runs off the request
+    // stack, where the request handler's own catch cannot reach it and an
+    // uncaught throw takes the process down with it — and the throw that did
+    // (issue #202) came out of `board()`, the shaping of what had arrived,
+    // rather than out of `step()`. The sweep answers its own failures rather
+    // than throwing (lib/board.js), so anything landing here is a board this
+    // process cannot finish: it is said out loud, dropped, and the slot stays
+    // cold, so the next read sweeps again — the course a failed sweep takes.
+    try {
+      sweeping.step();
+      if (sweeping.paging()) {
+        schedule();
+        return;
+      }
+      boardDone = sweeping.board();
+      boardAt = Date.now();
+      sweeping = null;
+    } catch (err) {
+      console.error(`[tower] the board sweep was dropped: ${String((err && err.message) || err)}`);
+      sweeping = null;
+    }
+  };
+
+  // Unref'd: a sweep in flight must never be the reason this process — or a
+  // test's server — stays up a moment longer than it was asked to.
+  const schedule = () => {
+    const timer = setTimeout(advance, 0);
+    if (timer.unref) timer.unref();
+  };
+
+  // A sweep run to its end here and now, taking the slot with it. The rounds are
+  // the same rounds the timer turns; what differs is only who is waiting.
+  const settle = (sweep) => {
+    while (sweep.paging()) sweep.step();
+    const value = sweep.board();
+    if (value.ok !== false) {
+      boardDone = value;
+      boardAt = Date.now();
+    }
+    return value;
+  };
+
+  const board = ({ fresh = false } = {}) => {
+    if (sweeping) return sweeping.board();
+    if (!fresh && boardDone !== undefined && Date.now() - boardAt < BOARD_TTL) return boardDone;
+    const sweep = startSweep(roster(), seam);
+    // A sweep with nothing to page - one page a repo, or one that failed
+    // outright - is already its own whole answer, and settles here.
+    if (!sweep.paging()) return settle(sweep);
+    sweeping = sweep;
+    schedule();
+    return sweep.board();
+  };
+
+  /**
+   * The whole board, never a page of it — what everything derived from the
+   * board reads.
+   *
+   * A finished board inside the TTL is that answer, sweep in flight or not: it
+   * is the last one that finished, which is exactly what a `fresh` board read
+   * starting a new sweep must not take away from the brief. Otherwise the sweep
+   * already in flight is driven to its end here, and where there is none a new
+   * one is, so this reading blocks where /api/board no longer does.
+   */
+  const finishedBoard = () => {
+    if (boardDone !== undefined && Date.now() - boardAt < BOARD_TTL) return boardDone;
+    const sweep = sweeping || startSweep(roster(), seam);
+    sweeping = null;
+    return settle(sweep);
+  };
   const sessions = cached(LIVE_TTL, () => listSessions({
     markerDir: opts.markerDir,
     home: opts.home,
@@ -449,7 +547,7 @@ const createServer = (opts = {}) => {
     const nodes = discussions();
     const entries = nodes && historyFrom(nodes);
     return Object.assign(
-      buildBrief(board(), health(), roster()),
+      buildBrief(finishedBoard(), health(), roster()),
       summaries(),
       {
         history: entries,

@@ -19,7 +19,7 @@ import { chartSlot, doughnutChart, lineChart, barChart } from '__main_assets__/j
 import {
   entriesOf, hasSeries, unread, seriesOf, weekDelta, deltaLine, ACCRUES, UNREAD,
 } from '../libs/tower/history.js';
-import { swap } from '@omega.js/client/modules/live-page';
+import { swap, loading as inlineLoading } from '@omega.js/client/modules/live-page';
 import { issueItem, externalLink } from '../libs/tower/modal.js';
 import { isNone, selectedSlugs, sitePath, scopedHref } from '../libs/tower/scope.js';
 import { crewActivity, cardMuted } from '../libs/tower/agent.js';
@@ -327,9 +327,18 @@ const render = (root, state) => {
   if (!result) head = `<div class="mb-4">${loading('reading the board…')}</div>`;
   else if (!result.ok) head = `<div class="mb-4">${problem(result.reason)}</div>`;
   else {
+    // A repo speaks here only when it has something to say: what went wrong,
+    // that its issues are still arriving, or that the sweep stopped short. The
+    // middle one is the sweep's PROGRESS (issue #194) - a repo past one page is
+    // paged, and both halves draw each page as it lands - so it is the
+    // framework's inline wait rather than a warning, and it clears by the sweep
+    // no longer marking that repo. What is left when the sweep is done is the
+    // repo that hit the ceiling with open issues this board is not showing.
     const warnings = ((payload && payload.repos) || [])
-      .filter((repo) => repo.error || repo.truncated)
-      .map((repo) => `<div class="alert alert-warning py-2 px-3 mb-2">${esc(repo.slug)}: ${esc(repo.error || `showing ${repo.count} of ${repo.totalCount} open issues`)}</div>`)
+      .filter((repo) => repo.error || repo.loading || repo.truncated)
+      .map((repo) => (repo.loading
+        ? `<div class="mb-2">${inlineLoading(`${repo.slug}: loading ${repo.count} of ${repo.totalCount} open issues`)}</div>`
+        : `<div class="alert alert-warning py-2 px-3 mb-2">${esc(repo.slug)}: ${esc(repo.error || `showing ${repo.count} of ${repo.totalCount} open issues`)}</div>`))
       .join('');
     head = `${numbers(state)}${warnings}${waiting(state)}`;
   }

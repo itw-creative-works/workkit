@@ -304,6 +304,30 @@ const run = async () => {
     }
   });
 
+  await test('the copy’s exclude list covers everything the app’s .gitignore names', () => {
+    // The list says it IS the gitignore's set (issue #201). Read both and hold
+    // them to it: an ignore rule added to the app without the list learning it
+    // is a tree the seed and the sync copy into the published clone.
+    const world = mkWorld();
+    const { out } = inHome(world, 'printf "%s\\n" "${WK_TOWER_APP_EXCLUDE[@]}"');
+    const excluded = out.trim().split('\n');
+    cleanup(world.root);
+
+    const ignored = fs.readFileSync(path.join(KIT_DIR, 'tower', 'app', '.gitignore'), 'utf8')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#') && !line.startsWith('!'))
+      // Matched by NAME at every depth, so only the top-level names are the
+      // list's to carry — a rule spelling out a path is a different question.
+      .map((line) => line.replace(/\/$/, ''))
+      .filter((line) => !line.includes('/'));
+
+    assert(ignored.length > 0, 'the app’s ignore rules were read');
+    for (const name of ignored) {
+      assert(excluded.includes(name), `the exclude list carries ${name}`);
+    }
+  });
+
   await test('the addresses are the new layout: a plain folder with one repo in it', () => {
     const world = mkWorld();
     const { out } = inHome(world, 'printf "%s\\n%s\\n%s\\n" "$WK_USER_DIR" "$WK_HOME_DIR" "$WK_HOME_SETTINGS"');
@@ -721,6 +745,130 @@ const run = async () => {
     assertEq(fs.readFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.sh'), 'utf8'), '# a newer runner\n', 'the clone carries the new one');
     const subject = spawnSync('git', ['-C', world.tower, 'log', '-1', '--pretty=%s'], { encoding: 'utf8' }).stdout.trim();
     assertEq(subject, 'chore(home): refresh the cloud brief runner', 'in a commit that says what it is');
+    cleanup(world.root);
+  });
+
+  group('workflow/home: the version stamp');
+
+  // Issue #200: two machines seed ONE clone, and before the stamp the winner
+  // was simply whichever ran last — a machine on an older kit put a month-old
+  // runner and a pre-rename app back on the home repo three mornings running.
+  // The stamp is the tie-breaker: the clone says which kit wrote what is in it,
+  // and an older checkout writes nothing at all.
+
+  /** Where the stamp lives and what it is called — the name IS the contract. */
+  const STAMP = '.workkit-version';
+  const kitVersion = () => JSON.parse(
+    fs.readFileSync(path.join(KIT_DIR, '.claude-plugin', 'plugin.json'), 'utf8'),
+  ).version;
+  const stampOf = (world) => {
+    const file = path.join(world.tower, STAMP);
+    return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim() : null;
+  };
+
+  await test('the versions compare as numbers, never as text', () => {
+    const world = mkWorld();
+    const gt = (a, b) => {
+      const { out, err } = inHome(world, `if wk_semver_gt ${JSON.stringify(a)} ${JSON.stringify(b)}; then printf 'yes\\n'; else printf 'no\\n'; fi`);
+      return (out + err).trim();
+    };
+    // The one a text compare gets wrong, and the reason this is not `>`.
+    assertEq(gt('0.9.0', '0.48.1'), 'no', '0.9.0 is OLDER than 0.48.1');
+    assertEq(gt('0.48.1', '0.9.0'), 'yes', 'and 0.48.1 is newer than it');
+    assertEq(gt('0.48.10', '0.48.9'), 'yes', 'ten is past nine in the patch too');
+    assertEq(gt('1.0.0', '0.99.99'), 'yes', 'the major decides first');
+    assertEq(gt('0.48.1', '0.48.1'), 'no', 'equal is not newer');
+    assertEq(gt('0.48.1', '0.48.1-rc.1'), 'no', 'a prerelease suffix is dropped, not compared');
+    assertEq(gt('', '0.48.1'), 'no', 'and nothing readable is never newer');
+    cleanup(world.root);
+  });
+
+  await test('the runner seed stamps the clone with this checkout’s kit version', () => {
+    const world = mkWorld();
+    const { out, err } = seeded(world);
+    assert(/rc=0/.test(out + err), `the seed ran: ${out}${err}`);
+    assertEq(stampOf(world), kitVersion(), 'the version is at the clone’s root, beside what it describes');
+    cleanup(world.root);
+  });
+
+  await test('a clone stamped NEWER is left exactly as it is, and the skip names the fix', () => {
+    const world = mkWorld();
+    seeded(world);
+    const dest = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
+    // Drift an ordinary run WOULD heal, so what stops this one is the stamp.
+    fs.writeFileSync(dest, '# the newer machine’s runner\n');
+    fs.writeFileSync(path.join(world.tower, STAMP), '99.0.0\n');
+
+    const { out, err } = seeded(world);
+    const said = out + err;
+    assert(/rc=1/.test(said), `the caller is told nothing was written: ${said}`);
+    assert(said.includes('carries workkit 99.0.0'), `it names what the clone carries: ${said}`);
+    assert(said.includes(`this checkout is ${kitVersion()}`), `and what this checkout is: ${said}`);
+    assert(/not downgrading/.test(said), `and what it refused to do: ${said}`);
+    assert(/workkit update/.test(said), `with the command that fixes it: ${said}`);
+    assertEq(fs.readFileSync(dest, 'utf8'), '# the newer machine’s runner\n', 'the newer copy stands');
+    assertEq(stampOf(world), '99.0.0', 'and so does its stamp');
+    cleanup(world.root);
+  });
+
+  await test('an older stamp is no obstacle — the seed runs and the stamp moves forward', () => {
+    const world = mkWorld();
+    seeded(world);
+    fs.writeFileSync(path.join(world.tower, STAMP), '0.0.1\n');
+    const dest = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
+    fs.writeFileSync(dest, '# last month’s runner\n');
+
+    const { out, err } = seeded(world);
+    assert(/rc=0/.test(out + err), `it wrote: ${out}${err}`);
+    assertEq(
+      fs.readFileSync(dest, 'utf8'),
+      fs.readFileSync(path.join(KIT_DIR, 'jobs', 'morning.sh'), 'utf8'),
+      'the drift is healed from this checkout',
+    );
+    assertEq(stampOf(world), kitVersion(), 'and the clone now says which kit wrote it');
+    cleanup(world.root);
+  });
+
+  await test('a checkout that cannot say its version stamps nothing and blocks nothing', () => {
+    // A partial checkout has no plugin manifest to read. Unknown is not newer
+    // and not older: the seed behaves exactly as it did before the stamp.
+    const world = mkWorld();
+    world.env.WORKKIT_KIT_DIR = mkKitCopy(world.root);
+    seeded(world);
+    assertEq(stampOf(world), null, 'nothing to stamp with, so nothing is stamped');
+
+    fs.writeFileSync(path.join(world.tower, STAMP), '99.0.0\n');
+    fs.writeFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.sh'), '# drifted\n');
+    const { out, err } = seeded(world);
+    assert(/rc=0/.test(out + err), `the seed still runs: ${out}${err}`);
+    cleanup(world.root);
+  });
+
+  await test('setup over a newer-stamped clone commits nothing', () => {
+    const world = mkWorld({ login: 'owner' });
+    const remote = mkRemote(world.root);
+    world.env.WORKKIT_HOME_REMOTE = remote;
+    setup(world);
+
+    // The other machine's push: a newer kit's stamp, committed the way its own
+    // seed would have committed it.
+    fs.writeFileSync(path.join(world.tower, STAMP), '99.0.0\n');
+    fs.writeFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.sh'), '# the newer machine’s runner\n');
+    git(world.tower, 'add', '-A');
+    git(world.tower, '-c', 'user.name=other', '-c', 'user.email=other@localhost', 'commit', '-q', '-m', 'chore(home): the other machine');
+
+    const { out, err } = setup(world);
+    assert(/not downgrading/.test(out + err), `the second setup refuses: ${out}${err}`);
+    assertEq(
+      spawnSync('git', ['-C', world.tower, 'log', '-1', '--pretty=%s'], { encoding: 'utf8' }).stdout.trim(),
+      'chore(home): the other machine',
+      'and wrote no commit of its own over it',
+    );
+    assertEq(
+      fs.readFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.sh'), 'utf8'),
+      '# the newer machine’s runner\n',
+      'the newer runner is still what the clone carries',
+    );
     cleanup(world.root);
   });
 
@@ -1176,6 +1324,22 @@ const run = async () => {
     const { out } = inHome(world, 'rc=0; wk_home_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
     assert(/is behind/.test(out) && /pull --rebase/.test(out), `it names the fix, got: ${out}`);
     assert(/rc=1/.test(out), 'and counts');
+    cleanup(world.root);
+  });
+
+  await test('a checkout older than the clone’s stamp is a finding naming the update', () => {
+    // The same refusal the seed makes (issue #200), reported by the one command
+    // whose job is to say what needs attention.
+    const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
+    world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
+    inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed\nwk_home_commit_push "chore(home): seed the tower project"');
+    fs.writeFileSync(path.join(world.tower, STAMP), '99.0.0\n');
+
+    const { out, err } = inHome(world, 'rc=0; wk_home_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
+    const said = out + err;
+    assert(said.includes('carries workkit 99.0.0'), `it names what the clone carries: ${said}`);
+    assert(/workkit update/.test(said), `and the command that fixes it: ${said}`);
+    assert(/rc=1/.test(said), `and counts as something needing attention: ${said}`);
     cleanup(world.root);
   });
 

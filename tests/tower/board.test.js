@@ -14,7 +14,7 @@ const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
 const REPO = path.join(__dirname, '..', '..');
-const { fetchBoard, buildQuery, labelGroups, LABELS_FILE, PAGE_SIZE, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, REPOS_PER_REQUEST } = require(path.join(REPO, 'tower', 'api', 'lib', 'board.js'));
+const { fetchBoard, buildBoardQuery, labelGroups, LABELS_FILE, PAGE_SIZE, MAX_OPEN_ISSUES, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, REPOS_PER_REQUEST } = require(path.join(REPO, 'tower', 'api', 'lib', 'board.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-board-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -111,7 +111,7 @@ const run = async () => {
   group('tower/board: one call, per-repo aliases');
 
   await test('the query aliases every repo and asks for totalCount', () => {
-    const q = buildQuery([['ITW-Creative-Works', 'workkit'], ['ianwieds', '.dotfiles']]);
+    const q = buildBoardQuery(['ITW-Creative-Works/workkit', 'ianwieds/.dotfiles']);
     assert(q.includes('r0: repository(owner: "ITW-Creative-Works", name: "workkit")'), 'r0 alias');
     assert(q.includes('r1: repository(owner: "ianwieds", name: ".dotfiles")'), 'r1 alias');
     assert(q.includes('totalCount'), 'truncation is answerable');
@@ -122,6 +122,14 @@ const run = async () => {
     assert(q.includes('createdAt'), 'when it was filed');
     assert(q.includes('comments(last: 1) { totalCount nodes { body } }'),
       'how much conversation is waiting, and the newest word of it - a blocked issue’s open question (#196)');
+  });
+
+  await test('the query asks whether another page follows, and carries a cursor when one does', () => {
+    const first = buildBoardQuery(['ITW-Creative-Works/workkit']);
+    assert(first.includes('pageInfo { hasNextPage endCursor }'), 'the sweep can tell whether it reached the end (#194)');
+    assert(!first.includes('after:'), 'the first page starts where the connection does');
+    const next = buildBoardQuery(['ITW-Creative-Works/workkit'], ['CUR1']);
+    assert(next.includes(`first: ${PAGE_SIZE}, after: "CUR1"`), 'and the page after it says where to resume');
   });
 
   await test('an issue carries what the dialog shows, with a long body cut and reported', () => {
@@ -212,7 +220,7 @@ const run = async () => {
   const closedAt = (...stamps) => ({ nodes: stamps.map((stamp) => ({ closedAt: stamp })) });
 
   await test('the query asks each repo for its recently closed issues, and only their stamps', () => {
-    const q = buildQuery([['ITW-Creative-Works', 'workkit']]);
+    const q = buildBoardQuery(['ITW-Creative-Works/workkit']);
     assert(q.includes('closed: issues(states: CLOSED'), 'an aliased second field');
     assert(q.includes(`first: ${CLOSED_PAGE}`), 'with its own page size');
     assert(/closed: issues\([^)]*\) \{\n\s*nodes \{ closedAt \}/.test(q), `and it selects nothing but closedAt: ${q}`);
@@ -275,7 +283,7 @@ const run = async () => {
   });
 
   await test('the query asks what each issue is blocked by, and for the blocker’s state', () => {
-    const q = buildQuery([['ITW-Creative-Works', 'workkit']]);
+    const q = buildBoardQuery(['ITW-Creative-Works/workkit']);
     assert(q.includes('blockedBy(first: 20) { nodes { number state repository { nameWithOwner } } }'),
       `the dependency edges ride the one sweep, state and all: ${q}`);
   });
@@ -397,22 +405,154 @@ const run = async () => {
     cleanup(tmp);
   });
 
-  group('tower/board: truncation');
+  group('tower/board: paging past the first page');
 
-  await test('a repo with more open issues than the page cap is flagged truncated', () => {
-    const nodes = Array.from({ length: 3 }, (_, i) => issue(i + 1));
+  // Issue #194: GitHub caps one connection page at 100, so a repo past that is
+  // asked again with the cursor its last page ended on - and only that repo,
+  // since the rest of the batch was already exhausted.
+
+  /**
+   * A fake `gh` that answers each request from a per-alias script.
+   *
+   * `pages` is keyed by repo slug and holds that repo's answers in order, so a
+   * repo asked twice gets its second page on the second ask. The query is read
+   * back for the aliases it names, which is what makes a request for the WRONG
+   * repo - or one that forgot the cursor - visible.
+   */
+  const fakePaged = (pages, calls = []) => (cmd, args) => {
+    calls.push([cmd, ...args]);
+    if (args[0] === '--version') return 'gh version 2.0.0\n';
+    const query = args[args.length - 1];
+    const data = {};
+    const re = /(r\d+): repository\(owner: "([^"]+)", name: "([^"]+)"\)/g;
+    let match = re.exec(query);
+    while (match) {
+      const slug = `${match[2]}/${match[3]}`;
+      data[match[1]] = { issues: (pages[slug] || []).shift() || { totalCount: 0, nodes: [] } };
+      match = re.exec(query);
+    }
+    return JSON.stringify({ data });
+  };
+
+  /** One connection page: its nodes, its total, and whether another follows. */
+  const conn = (numbers, { total = numbers.length, next = null } = {}) => ({
+    totalCount: total,
+    pageInfo: { hasNextPage: Boolean(next), endCursor: next },
+    nodes: numbers.map((n) => issue(n)),
+  });
+
+  await test('a repo with another page is asked again with the cursor, and only that repo', () => {
+    const calls = [];
     const res = fetchBoard(ROSTER, {
-      exec: fakeGh({
-        data: {
-          r0: { issues: { totalCount: 140, nodes } },
-          r1: { issues: { totalCount: 3, nodes } },
-        },
+      exec: fakePaged({
+        'ITW-Creative-Works/workkit': [conn([1, 2], { total: 4, next: 'CUR1' }), conn([3, 4], { total: 4 })],
+        'ianwieds/.dotfiles': [conn([9])],
+      }, calls),
+    });
+    const queries = calls.filter((c) => c[1] === 'api').map((c) => c[4]);
+    assertEq(queries.length, 2, 'the batch, then one continuation');
+    assert(queries[1].includes('after: "CUR1"'), 'the second ask carries the cursor the first page ended on');
+    assert(queries[1].includes('name: "workkit"') && !queries[1].includes('name: ".dotfiles"'),
+      'and names only the repo that had more');
+    assertEq(res.repos[0].count, 4, 'both pages are on the board');
+    assertEq(res.repos[0].truncated, false, 'a repo swept to the end is not truncated');
+    assertEq(res.issues.map((i) => i.number).join(','), '1,2,3,4,9',
+      'a repo\u2019s pages stay together, and the roster order is kept');
+  });
+
+  await test('a total ahead of the count is no longer truncation - only the ceiling is', () => {
+    const res = fetchBoard(ROSTER, {
+      exec: fakePaged({
+        'ITW-Creative-Works/workkit': [conn([1, 2, 3], { total: 140 })],
+        'ianwieds/.dotfiles': [conn([9], { total: 1 })],
       }),
     });
-    assertEq(res.repos[0].truncated, true, 'r0 hit the cap');
-    assertEq(res.repos[0].totalCount, 140, 'the real total is reported');
-    assertEq(res.repos[0].count, 3, 'what actually came back');
-    assertEq(res.repos[1].truncated, false, 'r1 is complete');
+    assertEq(res.repos[0].truncated, false, 'GitHub said there was no next page, whatever the total claims');
+    assertEq(res.repos[0].totalCount, 140, 'the real total is still reported');
+    assertEq(res.repos[0].count, 3, 'and what actually came back');
+  });
+
+  await test('the ceiling stops the sweep and the repo says it was cut', () => {
+    const calls = [];
+    // Every page says another follows, so nothing but the ceiling can end it.
+    const endless = { shift: () => conn(Array.from({ length: PAGE_SIZE }, (_, i) => i + 1), { total: 5000, next: 'MORE' }) };
+    const res = fetchBoard([ROSTER[0]], { exec: fakePaged({ 'ITW-Creative-Works/workkit': endless }, calls) });
+    assertEq(MAX_OPEN_ISSUES, 1000, 'the ceiling both halves of the sweep hold');
+    assertEq(res.repos[0].count, MAX_OPEN_ISSUES, 'the sweep stops at it rather than paging forever');
+    assertEq(res.repos[0].truncated, true, 'and the repo says there is more it did not carry');
+    assertEq(calls.filter((c) => c[1] === 'api').length, MAX_OPEN_ISSUES / PAGE_SIZE, 'no request past the ceiling');
+  });
+
+  await test('an answer claiming more pages without saying where stops rather than looping', () => {
+    // The loop's own footgun: `hasNextPage` with no cursor beside it would have
+    // it re-read the same page forever, inside a request the dashboard is
+    // waiting on. The fake gives up after fifty asks so a regression fails here
+    // instead of hanging the suite.
+    let asked = 0;
+    const res = fetchBoard([ROSTER[0]], {
+      exec: (cmd, args) => {
+        if (args[0] === '--version') return 'gh version 2.0.0\n';
+        asked += 1;
+        if (asked > 50) throw new Error('the sweep never stopped asking');
+        return JSON.stringify({
+          data: { r0: { issues: { totalCount: 9, pageInfo: { hasNextPage: true, endCursor: null }, nodes: [issue(1)] } } },
+        });
+      },
+    });
+    assertEq(asked, 1, 'asked once and stopped - there was nowhere to resume from');
+    assertEq(res.repos[0].truncated, true, 'and the repo still says there is more it did not carry');
+  });
+
+  await test('a page that resumes where the last one did stops rather than looping', () => {
+    // The other footgun the cursor guard does not cover: an answer that claims
+    // more pages, hands back the cursor it was ASKED with, and carries nothing.
+    // Neither the resume point nor `nodes.length` moves, so the ceiling never
+    // arrives either and the loop the API drives its sweep with would turn
+    // forever. A round that moved nothing is the tell, and the fake gives up
+    // after fifty asks so a regression fails here instead of hanging the suite.
+    let asked = 0;
+    const res = fetchBoard([ROSTER[0]], {
+      exec: (cmd, args) => {
+        if (args[0] === '--version') return 'gh version 2.0.0\n';
+        asked += 1;
+        if (asked > 50) throw new Error('the sweep never stopped asking');
+        return JSON.stringify({
+          data: { r0: { issues: {
+            totalCount: 9,
+            pageInfo: { hasNextPage: true, endCursor: 'CUR1' },
+            nodes: asked === 1 ? [issue(1)] : [],
+          } } },
+        });
+      },
+    });
+    assertEq(asked, 2, 'the first page, one continuation, and no more - the cursor had not moved');
+    assertEq(res.repos[0].count, 1, 'the page that arrived is kept');
+    assertEq(res.repos[0].truncated, true, 'and the repo still says there is more it did not carry');
+  });
+
+  await test('a continuation that fails keeps the pages that arrived and says why', () => {
+    // The first page is already drawn; blanking the whole board because page
+    // two of one repo failed would throw away every other repo's answer too.
+    let asked = 0;
+    const res = fetchBoard(ROSTER, {
+      exec: (cmd, args) => {
+        if (args[0] === '--version') return 'gh version 2.0.0\n';
+        asked += 1;
+        if (asked === 1) {
+          return JSON.stringify({
+            data: {
+              r0: { issues: conn([1, 2], { total: 4, next: 'CUR1' }) },
+              r1: { issues: conn([9]) },
+            },
+          });
+        }
+        throw execError('HTTP 502', { stderr: 'gateway' });
+      },
+    });
+    assertEq(res.ok, true, 'the board still renders');
+    assertEq(res.repos[0].count, 2, 'the page that arrived is kept');
+    assert(/502/.test(res.repos[0].error), `the repo carries the reason, got: ${res.repos[0].error}`);
+    assertEq(res.repos[1].error, null, 'and the repo that answered whole carries none');
   });
 
   group('tower/board: the sweep is batched');
@@ -515,6 +655,21 @@ const run = async () => {
     assertEq(res.repos[0].error, 'GitHub dropped 2 of 3 issues: the query exceeded a limit',
       'the count and GitHub’s first word on it - the 464th says nothing the first did not');
     assertEq(res.repos[1].error, null, 'and the repo that answered whole carries none');
+  });
+
+  await test('a null node INSIDE an issue is skipped too - the drop is not only the issue list', () => {
+    // The same failure one level down, and the second throw it caused: GitHub
+    // nulls a node it could not deliver wherever the connection is, and every
+    // other connection on an issue already skipped one. `assignees` did not.
+    const res = fetchBoard([ROSTER[0]], {
+      exec: fakeGh({
+        data: {
+          r0: { issues: { totalCount: 1, nodes: [issue(17, { assignees: { nodes: [null, { login: 'ianwieds' }] } })] } },
+        },
+      }),
+    });
+    assertEq(res.ok, true, 'the board still renders');
+    assertEq(res.issues[0].assignees.join(','), 'ianwieds', 'the assignee that arrived is carried, the hole is not');
   });
 
   group('tower/board: a partial answer is kept');

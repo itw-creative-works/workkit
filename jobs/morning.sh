@@ -255,6 +255,23 @@ reconcile_runner() {
       esac
       exit 0
     fi
+    # The clone is BEHIND until it is pulled, and the seed judges what to write
+    # from the working copy: the guard that keeps it off a newer kit reads the
+    # stamp lying in this folder, issue #200. A clone that never caught up reads
+    # a stamp a week old, seeds over what the remote already carries, and
+    # commits something it can never push — wedging every publish after it.
+    # --autostash for the reason publish.sh gives: the ordinary local state here
+    # is an upstream change somebody took by hand, and a rebase refusing on that
+    # dirty tree would read as a divergence.
+    #
+    # A pull that cannot finish is not always a divergence — offline and an auth
+    # refusal land here too — and none of them is a morning to force: the rebase
+    # is aborted, the seed is skipped, and the clone is left as it was found.
+    if ! git -C "$WK_HOME_DIR" pull --rebase --autostash --quiet 2>/dev/null; then
+      git -C "$WK_HOME_DIR" rebase --abort >/dev/null 2>&1 || true
+      wk_say_warn "runner: the clone could not be brought up to date — the runner was not refreshed"
+      exit 0
+    fi
     rc=0
     wk_home_seed_runner || rc=$?
     # 0 is a copy that moved, the only answer worth a commit. 2 is a runner

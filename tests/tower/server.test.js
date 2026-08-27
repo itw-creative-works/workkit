@@ -143,6 +143,58 @@ const listen = (server) => new Promise((resolve) => {
 });
 
 /** The server options for a world - a live object, so a test may mutate it. */
+/**
+ * Block this thread for `ms`, the way a real `gh api graphql` call does: the
+ * sweep runs on execFileSync, so a round holds the event loop for as long as
+ * the request takes and nothing else is served during one. A fixture that
+ * answered instantly could not hold a sweep in flight long enough for a second
+ * request to arrive mid-sweep, which is the state these tests are about.
+ */
+const blockFor = (ms) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
+
+/** The three pages the fixture board arrives in, one issue to a page. */
+const BOARD_PAGES = [[17, ['status:specced']], [18, ['status:qa']], [19, ['status:inbox']]];
+
+/**
+ * Make a world's board arrive in THREE pages: issue 17, then 18 and 19 behind
+ * the cursors each page ends on. What a repo past GitHub's hundred-issue page
+ * looks like to the sweep (issue #194), in three issues instead of three
+ * hundred - and the only fixture where a board still arriving and a finished
+ * one are told apart.
+ *
+ * Three rather than two because a sweep has to still be RUNNING when the next
+ * request is served: with two pages the one continuation is the end of it.
+ * `pause` is what makes that deterministic - a round that holds the loop for
+ * long enough that a request sent while it runs is certainly waiting when it
+ * ends, and is served with a round still to go.
+ */
+const pageTheBoard = (world, { pause = 0 } = {}) => {
+  const plain = world.exec;
+  world.exec = (cmd, args) => {
+    if (cmd === 'gh' && args[0] === 'api' && !args.join(' ').includes('discussions(first')) {
+      world.calls.push([cmd, ...args]);
+      const query = args[args.length - 1];
+      const at = BOARD_PAGES.findIndex((_, i) => query.includes(`after: "CUR${i}"`));
+      const page = at === -1 ? 0 : at;
+      if (page > 0 && pause) blockFor(pause);
+      const last = page === BOARD_PAGES.length - 1;
+      return JSON.stringify({
+        data: {
+          r0: {
+            issues: {
+              totalCount: BOARD_PAGES.length,
+              pageInfo: { hasNextPage: !last, endCursor: last ? null : `CUR${page + 1}` },
+              nodes: [issueNode(...BOARD_PAGES[page])],
+            },
+          },
+        },
+      });
+    }
+    return plain(cmd, args);
+  };
+  return world;
+};
+
 const worldOpts = (world, opts = {}) => ({
   workflowHome: path.join(world.root, 'workflow-home'),
   markerDir: world.markerDir,
@@ -246,6 +298,38 @@ const run = async () => {
     assertEq(body.nextUp.length, 1, 'the one repo has actionable work');
     assertEq(body.nextUp[0].items.map((i) => i.number).join(','), '18,17',
       'the decision leads, then the accepted spec');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('/api/brief never composes from half a board - it waits for the last page', async () => {
+    // The board is drawn as it arrives; a MORNING is not. Composing the brief
+    // from the pages that happen to have landed would count a repo's issues
+    // wrong - an early answer that is simply a wrong one - so this endpoint
+    // reads the last finished board, and drives the sweep to its end when none
+    // has finished yet.
+    // The pause is what makes the state deterministic: the brief's request is
+    // sent while a round is running and is served the moment that round ends,
+    // with a page still to fetch - the exact moment a brief must not compose in.
+    const w = pageTheBoard(mkWorld(), { pause: 60 });
+    const c = await start(w);
+
+    const partial = await getJson(c, '/api/board');
+    assertEq(partial.body.repos[0].loading, true, 'a sweep is in flight, and /api/board says so');
+    assertEq(partial.body.issues.length, 1, 'with one page of three issues on it');
+
+    const { body } = await getJson(c, '/api/brief');
+    assertEq(body.ok, true, 'the morning is composed');
+    assertEq(body.counts.open, 3, 'from every page, not the one that had landed');
+    assertEq(body.counts.qa, 1, 'the issue that arrived on page two is counted');
+    assertEq(body.counts.inbox, 1, 'and so is the one beside it');
+    assertEq(body.repoCounts[0].open, 3, 'and the repo it publishes a series from is whole');
+    assertEq(ghCalls(w, 'api').length, BOARD_PAGES.length, 'it asked for the pages itself rather than answering without them');
+
+    // What it drove to the end is the board itself, not a copy of one.
+    const after = await getJson(c, '/api/board');
+    assertEq(after.body.issues.length, 3, 'the sweep the brief settled is what everyone else now reads');
+    assertEq(after.body.repos[0].loading, undefined, 'finished, and saying so by saying nothing');
     await c.stop();
     cleanup(w.root);
   });
@@ -390,6 +474,35 @@ const run = async () => {
     assertEq(body.issues[0].status, 'specced', 'labels parsed');
     assertEq(body.issues[0].agentOk, true, 'the runway badge');
     assertEq(body.issues[1].priority, 'high', 'priority parsed');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a sweep still paging is SERVED as it stands, and the next read has the rest', async () => {
+    // The board is drawn page by page on this machine too (issue #194): the
+    // request that starts a sweep answers with the first pages rather than
+    // holding the reader until the last one, marking what is still arriving.
+    const w = pageTheBoard(mkWorld());
+    const c = await start(w);
+
+    const first = await getJson(c, '/api/board');
+    assertEq(first.body.issues.length, 1, 'the page that had arrived is what the first read gets');
+    assertEq(first.body.repos[0].loading, true, 'with the repo saying its issues are still coming');
+    assertEq(first.body.repos[0].totalCount, 3, 'which is what the progress line counts against');
+    // That body IS the proof the request did not wait for the last page:
+    // a read held until the sweep ended could only have answered with all three.
+
+    // The page's next poll, without the page. Bounded, so a sweep that never
+    // finishes fails here instead of hanging the suite.
+    let body = first.body;
+    for (let i = 0; i < 100 && body.repos[0].loading; i += 1) {
+      await new Promise((resolve) => { setTimeout(resolve, 5); });
+      ({ body } = await getJson(c, '/api/board'));
+    }
+    assertEq(body.issues.length, 3, 'the finished board carries both pages');
+    assertEq(body.repos[0].loading, undefined, 'and no progress at all - the line clears by being absent');
+    assertEq(body.repos[0].truncated, false, 'the repo was swept to the end');
+    assertEq(ghCalls(w, 'api').length, BOARD_PAGES.length, 'every page was asked for, behind the answer');
     await c.stop();
     cleanup(w.root);
   });
@@ -1113,6 +1226,70 @@ const run = async () => {
       assertEq(said.length, 1, 'logged once, so the machine has a trail');
       const repos = await getJson(c, '/api/repos');
       assertEq(repos.status, 200, 'and the next request is answered by the same live process');
+    } finally {
+      console.error = wasError;
+    }
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  // And the same bug one page later, where no request is left to answer it: the
+  // continuations run on a TIMER, off the request stack, and the throw that
+  // ended the API came out of the shaping of what had arrived rather than out of
+  // the ask. A round that cannot finish is dropped, not fatal.
+  await test('a continuation that throws is dropped, and the process keeps serving', async () => {
+    const w = mkWorld();
+    // A first page that is whole and says another follows, and a continuation
+    // whose issue carries a labels connection that is not a list - a shape the
+    // normalizer only meets in `board()`, after the last page has been absorbed.
+    w.board = {
+      data: { r0: { issues: {
+        totalCount: 2,
+        pageInfo: { hasNextPage: true, endCursor: 'CUR1' },
+        nodes: [issueNode(17, ['status:specced'])],
+      } } },
+    };
+    const plain = w.exec;
+    let broken = true;
+    w.exec = (cmd, args) => {
+      if (cmd === 'gh' && args[0] === 'api' && args[args.length - 1].includes('after: "CUR1"')) {
+        w.calls.push([cmd, ...args]);
+        const node = issueNode(18, ['status:qa']);
+        if (broken) node.labels = { nodes: 5 };
+        return JSON.stringify({ data: { r0: { issues: { totalCount: 2, nodes: [node] } } } });
+      }
+      return plain(cmd, args);
+    };
+
+    const c = await start(w);
+    const said = [];
+    const wasError = console.error;
+    console.error = (line) => said.push(line);
+    try {
+      const first = await getJson(c, '/api/board');
+      assertEq(first.status, 200, 'the read that started the sweep is answered with its first page');
+      // The drop happens a turn of the loop later. Bounded, so a regression that
+      // takes the process down fails here rather than hanging the suite.
+      for (let i = 0; i < 100 && said.length === 0; i += 1) {
+        await new Promise((resolve) => { setTimeout(resolve, 5); });
+      }
+      assertEq(said.length, 1, 'the machine is told once, the way every other catch here tells it');
+      assert(/^\[tower\] the board sweep was dropped: /.test(said[0]), `and in those words, got: ${said[0]}`);
+
+      const alive = await getJson(c, '/api/repos');
+      assertEq(alive.status, 200, 'the listener is still up - the timer did not take it with it');
+
+      // The slot stayed COLD, so there is nothing to serve for the minute: the
+      // next read sweeps again, and a page that has stopped breaking lands.
+      broken = false;
+      const second = await getJson(c, '/api/board');
+      let body = second.body;
+      for (let i = 0; i < 100 && body.repos[0].loading; i += 1) {
+        await new Promise((resolve) => { setTimeout(resolve, 5); });
+        ({ body } = await getJson(c, '/api/board'));
+      }
+      assertEq(body.issues.length, 2, 'the whole board, from a sweep that was started fresh');
+      assertEq(said.length, 1, 'and nothing more was dropped');
     } finally {
       console.error = wasError;
     }

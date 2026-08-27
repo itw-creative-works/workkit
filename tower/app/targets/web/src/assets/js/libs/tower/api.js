@@ -190,10 +190,17 @@ const githubContext = () => ({
  * The fetcher a published page hands the poller - the same contract
  * `feedFetcher` has, answered from GitHub instead of from a tower.
  *
+ * `onPage` is the one thing it takes that the poller knows nothing about: the
+ * board's sweep pages (#194), and a published copy draws each page as it lands
+ * rather than at the end. The runtime passes a callback that writes the
+ * board-so-far into the feed's own slot and paints (page.js); the poller's own
+ * answer lands over it when the sweep finishes.
+ *
  * @param {string} path - '/api/board'
+ * @param {Function} [onPage] - handed the board so far, once per round
  * @returns {Promise<any>} the feed's body
  */
-export const githubFetcher = async (path) => unwrapFeed(await readFeed(path, githubContext()));
+export const githubFetcher = async (path, onPage) => unwrapFeed(await readFeed(path, { ...githubContext(), onPage }));
 
 /**
  * One feed answer from whichever half is talking - the tower's API on a

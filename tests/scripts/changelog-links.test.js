@@ -196,6 +196,36 @@ const run = async () => {
     cleanup(dir); cleanup(stub.dir);
   });
 
+  await test('a bare entry ends with exactly one handle, however often the backfill runs', () => {
+    const { dir } = mkRepo(
+      CHANGELOG('- [#4](../../issues/4) — Text.'),
+      ['feat: a\n\nFixes #4'],
+    );
+    const stub = makeGhStub({ login: 'ianwieds' });
+    runScript(dir, stub);
+    runScript(dir, stub);
+    const entry = readLog(dir).split('\n').find((l) => l.startsWith('- [#4]'));
+    assertEq((entry.match(/Thanks \[@ianwieds\]!/g) || []).length, 1, `one handle, got: ${entry}`);
+    cleanup(dir); cleanup(stub.dir);
+  });
+
+  await test('an entry already carrying its handle is not given a second one', () => {
+    // Entries are written at build time, handle and all — the normal park flow.
+    // The backfill used to append its own attribution regardless, and every
+    // such entry shipped "Thanks [@who]! Thanks [@who]! —" (issue #199).
+    const { dir, shas } = mkRepo(
+      CHANGELOG('- [#4](../../issues/4) Thanks [@ianwieds]! — Text.'),
+      ['feat: a\n\nFixes #4'],
+    );
+    const stub = makeGhStub({ login: 'ianwieds' });
+    runScript(dir, stub);
+    runScript(dir, stub);
+    const entry = readLog(dir).split('\n').find((l) => l.startsWith('- [#4]'));
+    assertEq((entry.match(/Thanks \[@ianwieds\]!/g) || []).length, 1, `one handle, got: ${entry}`);
+    assert(entry.includes(`[\`${shas[0]}\`](../../commit/${shas[0]})`), `the commit link still landed, got: ${entry}`);
+    cleanup(dir); cleanup(stub.dir);
+  });
+
   await test('a later contributor joins the existing section', () => {
     const { dir } = mkRepo(
       CHANGELOG('- [#4](../../issues/4) — First.'),

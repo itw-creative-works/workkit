@@ -49,7 +49,7 @@ WK_TOWER_APP="${WORKKIT_TOWER_APP:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../tower
 # answer as the one at the root. `.git` and `.DS_Store` ride along beyond the
 # gitignore: the app has no `.git` and the clone's is never the sync's to look
 # inside, and `.DS_Store` is Finder litter no copy should carry.
-WK_TOWER_APP_EXCLUDE=(node_modules package-lock.json .omega .cache .temp dist .env .git .DS_Store)
+WK_TOWER_APP_EXCLUDE=(node_modules package-lock.json .omega .cache .temp dist .env logs .git .DS_Store)
 
 # The engine's own folder — where standards.sh sits, the script the clone's heal
 # is a scoped invocation of. Resolved from this file rather than from the kit
@@ -73,9 +73,11 @@ WK_KIT_DIR="${WORKKIT_KIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/n
 # `src:dest` pairs, both relative. Everything but the workflow file lands under
 # one folder with its checkout-relative subpath intact, so every relative
 # address inside those scripts — `../workflow` for the engine libraries,
-# `../tower/api/lib` for the composers' requires — resolves in the clone exactly
-# as it does here. The list IS the require closure of brief-payload.js plus what
-# morning.sh sources on the cloud path; a new require means a new line here.
+# `../tower/api/lib` for the composers' requires, and board.js's reach across
+# into the app's shared sweep module (issue #195) — resolves in the clone
+# exactly as it does here. The list IS the require closure of brief-payload.js
+# plus what morning.sh sources on the cloud path; a new require means a new
+# line here.
 WK_HOME_RUNNER_FILES=(
   'workflow/templates/github-workflows/brief.yml:.github/workflows/brief.yml'
   'jobs/morning.sh:brief/jobs/morning.sh'
@@ -88,6 +90,7 @@ WK_HOME_RUNNER_FILES=(
   'workflow/home.sh:brief/workflow/home.sh'
   'tower/api/lib/repos.js:brief/tower/api/lib/repos.js'
   'tower/api/lib/board.js:brief/tower/api/lib/board.js'
+  'tower/app/targets/web/src/assets/js/libs/tower/sweep.js:brief/tower/app/targets/web/src/assets/js/libs/tower/sweep.js'
   'tower/api/lib/health.js:brief/tower/api/lib/health.js'
   'tower/api/lib/brief.js:brief/tower/api/lib/brief.js'
   'tower/api/lib/summaries.js:brief/tower/api/lib/summaries.js'
@@ -309,6 +312,103 @@ wk_home_project_manifest() {
   return 0
 }
 
+# ── The version stamp ─────────────────────────────────────────────────────────
+# The kit version the clone was last written FROM, in one file at its root.
+#
+# Every writer below seeds content this checkout owns over the clone's, so two
+# machines seeding one clone race — and before the stamp the winner was simply
+# whichever ran last, which is how a machine on an older kit put a month-old
+# runner and a pre-rename app back on the home repo three mornings running
+# (issue #200). The stamp rides in the same commit as the content it describes,
+# so the clone always says which kit wrote what is in it, and a checkout OLDER
+# than the stamp writes nothing at all.
+#
+# ONE file for all of them, because they all seed from one checkout: a stamp per
+# writer would let the answer to "which kit is this clone at?" disagree with
+# itself. It sits at the ROOT, which is shared territory the project sync never
+# prunes.
+WK_HOME_STAMP='.workkit-version'
+
+# This checkout's kit version, or empty when it cannot be read — a partial
+# checkout, or a machine without jq. Empty means "do not know", and nothing here
+# ever refuses on what it does not know.
+wk_kit_version() {
+  wk_json_get "$WK_KIT_DIR/.claude-plugin/plugin.json" '.version'
+}
+
+# The clone's stamp, or empty when it carries none. Every clone made before
+# issue #200 is one, and an unstamped clone is written exactly as it always was.
+wk_home_stamp_read() {
+  [[ -f "$WK_HOME_DIR/$WK_HOME_STAMP" ]] || return 0
+  tr -d '[:space:]' <"$WK_HOME_DIR/$WK_HOME_STAMP" 2>/dev/null || true
+}
+
+# Is a NEWER than b? Compared on major.minor.patch and nothing else: a
+# prerelease or build suffix is dropped rather than ordered, since the only
+# question here is which of two checkouts is further along.
+#
+# Hand-rolled, because this has to hold on the stock macOS bash 3.2 and BSD
+# userland the morning runs under, where `sort -V` does not exist — and a TEXT
+# compare gets it exactly backwards on the versions this kit ships (it would
+# call 0.9.0 newer than 0.48.1).
+wk_semver_gt() {
+  local a="${1:-}" b="${2:-}" i x y
+  local -a af bf
+  a="${a%%-*}"; a="${a%%+*}"
+  b="${b%%-*}"; b="${b%%+*}"
+  IFS=. read -r -a af <<<"$a"
+  IFS=. read -r -a bf <<<"$b"
+  for i in 0 1 2; do
+    # Anything that is not a digit is not a version number, and reads as 0
+    # rather than dying in the arithmetic and taking the caller's run with it.
+    x="${af[$i]:-0}"; x="${x//[!0-9]/}"; [[ -n "$x" ]] || x=0
+    y="${bf[$i]:-0}"; y="${y//[!0-9]/}"; [[ -n "$y" ]] || y=0
+    [[ "$((10#$x))" -gt "$((10#$y))" ]] && return 0
+    [[ "$((10#$x))" -lt "$((10#$y))" ]] && return 1
+  done
+  return 1
+}
+
+# Would writing from THIS checkout downgrade the clone? Says so once when it
+# would, and the caller then writes nothing, commits nothing and pushes nothing.
+#
+# The stamp it reads is the WORKING COPY's — the clone as it stands after
+# whatever catch-up the caller already made. publish.sh rebases onto origin
+# before it syncs, and the morning's runner reconcile answers for the clone it
+# has; neither fetches on this function's behalf.
+#
+# Returns 0 when this checkout is older (do not write), 1 otherwise — which
+# covers an unstamped clone and a version neither side can read.
+wk_home_downgrades() {
+  local stamp mine
+  stamp="$(wk_home_stamp_read)"
+  [[ -n "$stamp" ]] || return 1
+  mine="$(wk_kit_version)"
+  [[ -n "$mine" ]] || return 1
+  wk_semver_gt "$stamp" "$mine" || return 1
+  wk_say_warn "home: the clone carries workkit $stamp and this checkout is $mine — not downgrading; run \`workkit update\` here"
+  return 0
+}
+
+# The stamp, written beside what the caller just wrote so it rides the same
+# commit. By CONTENT like every other write here: a stamp already saying this
+# version is not rewritten, so a second run leaves nothing to commit.
+#
+# Returns 0 when it wrote (the caller counts that as a change: a kit that moved
+# on has to reach the remote for the other machine's guard to see it), 2 when
+# there was nothing to write.
+wk_home_stamp_write() {
+  local mine
+  mine="$(wk_kit_version)"
+  [[ -n "$mine" ]] || return 2
+  [[ "$(wk_home_stamp_read)" != "$mine" ]] || return 2
+  printf '%s\n' "$mine" >"$WK_HOME_DIR/$WK_HOME_STAMP" 2>/dev/null || {
+    wk_say_warn "home: could not write $WK_HOME_STAMP into $WK_HOME_DIR — the next machine to seed this clone cannot tell which kit wrote what is in it"
+    return 2
+  }
+  return 0
+}
+
 # The seed: this checkout's `tower/app` becomes the clone's whole contents.
 #
 # The app IS the template (the Spec's "no stored second template"), so the copy
@@ -351,6 +451,9 @@ wk_home_seed() {
     target_pkg="${pkg#"$WK_HOME_DIR"/}"
     wk_home_project_manifest "$pkg" "$WK_TOWER_APP/$(dirname "$target_pkg")"
   done
+
+  # From the very first commit the clone says which kit wrote it (issue #200).
+  wk_home_stamp_write || true
 
   wk_say_ok "home: seeded the tower project in $WK_HOME_DIR from $WK_TOWER_APP"
   return 0
@@ -403,6 +506,10 @@ wk_home_sync() {
     wk_say_skip "sync: the tower app is not beside this engine (${WK_TOWER_APP:-no tower/app was found}) — $WK_HOME_DIR is left exactly as it is"
     return 1
   }
+  # Never over a NEWER kit's work (issue #200). The named skip is rc=1, the same
+  # answer as a missing app: nothing was written, and the caller builds the
+  # clone exactly as it is.
+  wk_home_downgrades && return 1
 
   # The walk's blindfold, built once and used on both sides. `-prune` is what
   # does it: on a directory it stops the descent, and on a plain file it simply
@@ -481,6 +588,11 @@ wk_home_sync() {
     done < <(find "$WK_HOME_DIR/$topname" \( "${prune[@]}" \) -prune -o -type f -print)
   done
 
+  # The stamp last, so it rides whatever this run wrote (issue #200) — and
+  # counts as a write of its own, since a kit that moved on has to reach the
+  # remote even when the app it ships did not change.
+  wk_home_stamp_write && copied=$((copied + 1))
+
   if [[ $((copied + removed)) -eq 0 ]]; then
     wk_say_skip "sync: the tower project in $WK_HOME_DIR is already current with $WK_TOWER_APP"
     return 2
@@ -527,6 +639,9 @@ wk_home_seed_runner() {
     wk_say_warn "home: the plugin checkout could not be resolved beside this engine — the cloud brief's runner was not seeded"
     return 1
   }
+  # Never over a NEWER kit's work (issue #200). rc=1 is what every caller
+  # already reads as "nothing was written", so none of them commits.
+  wk_home_downgrades && return 1
 
   for pair in "${WK_HOME_RUNNER_FILES[@]}"; do
     src="$WK_KIT_DIR/${pair%%:*}"
@@ -569,6 +684,11 @@ wk_home_seed_runner() {
   if [[ -n "$missing" ]]; then
     wk_say_warn "home: this checkout is missing$missing — the cloud brief's runner is incomplete in $WK_HOME_DIR"
   fi
+  # The stamp rides with the copy (issue #200), and counts as a write of its
+  # own: a version bump that changed none of these files still has to reach the
+  # remote for the other machine's guard to see it.
+  wk_home_stamp_write && changed=$((changed + 1))
+
   if [[ "$changed" -eq 0 ]]; then
     wk_say_skip "home: the cloud brief's runner in $WK_HOME_DIR is current"
     return 2
@@ -882,6 +1002,12 @@ wk_home_doctor() {
       fi
       return 1 ;;
   esac
+
+  # A checkout OLDER than what the clone carries: the seed and the sync both
+  # refuse to write from here (issue #200), so nothing this machine does reaches
+  # the home repo until it catches up. Asked FIRST — every answer below it is
+  # about a clone this checkout may no longer write to.
+  wk_home_downgrades && return 1
 
   # A clone. The only question left is where it stands against its upstream, and
   # `git status -sb` answers all three without a network call.

@@ -318,12 +318,30 @@ export async function startPage(options) {
     return;
   }
 
+  // The board arrives in PAGES (#194) - a repo past a hundred open issues takes
+  // a request per hundred - and each page is drawn as it lands rather than
+  // after the last, in BOTH halves. On a machine nothing is needed here: the
+  // tower's /api/board answers with the sweep as it stands, so an ordinary poll
+  // lands a partial and the next one lands the rest. A published copy has no
+  // API holding that snapshot, only the sweep running in this tab, and the
+  // poller's fetcher contract has no room for a mid-flight handover - so the
+  // progress goes around it: the board-so-far is written into the board feed's
+  // own slot, in the shape a landed read has, and the page is painted from it.
+  // Either way one slot feeds one drawing path, and `loading` on a repo means
+  // the same thing whichever half filled it (pages/index.js). The poller's own
+  // answer lands over this when the sweep finishes, which is what clears the
+  // progress the Overview draws.
+  const onBoardPage = (partial) => {
+    poller.state.feeds.board = { ok: true, data: partial, status: null, reason: null };
+    paint();
+  };
+
   const poller = createFeedPoller({
     // Only the feeds this page asked for: readAll reads the whole table and
     // start() arms a timer per entry, so a page never polls a feed it draws
     // nothing from.
     feeds: LIVE ? pageFeeds(options.feeds) : githubPageFeeds(options.feeds),
-    fetcher: LIVE ? feedFetcher : githubFetcher,
+    fetcher: LIVE ? feedFetcher : (path) => githubFetcher(path, onBoardPage),
     onChange: () => paint(),
   });
 

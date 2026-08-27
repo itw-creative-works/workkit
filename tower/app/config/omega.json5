@@ -29,12 +29,179 @@
       social: "/assets/images/brand/social.png",
     },
   },
+  repo: {
+    providers: {
+      github: {
+        // false = the repo service skips entirely — no org profile, no repo
+        // settings, no GitHub Pages reconciliation; the brand hosts its source
+        // somewhere the manager does not touch.
+        enabled: true,
+        // true = the org is shared with other brands; org-level reconciliation
+        // is skipped.
+        shared: false,
+        // Brand repo visibility (default true).
+        private: true,
+      },
+    },
+  },
+  edge: {
+    providers: {
+      // Cloudflare zone reconciliation (@omega.js/manager cloudflare service):
+      // dns, settings, rules, cacheRules, speedTest, workers. Tokens live in
+      // .env.
+      cloudflare: {
+        // false = the edge service skips entirely — no zone, DNS, settings,
+        // rules, speed-test or worker reconciliation for this brand.
+        enabled: true,
+      },
+    },
+  },
+  cloud: {
+    // true = the cloud project is shared with other brands; only per-brand
+    // operations run (service-account, sdk-config).
+    shared: false,
+    // false = skip the api.{domain} hosting custom domain.
+    apiSubdomain: true,
+  },
+  monitoring: {
+    // Role-level switch (default true). false skips the monitoring service
+    // outright, whatever the providers block says.
+    enabled: true,
+  },
+  payment: {
+    winback: {
+      // The cancel-flow save offer (#268), shown before the cancellation
+      // questionnaire. Defaults ON — false is the whole off switch, and the
+      // cancel flow goes straight to the questionnaire.
+      enabled: true,
+      // Whole percentage off the next cycle the save offer pitches. Defaults to
+      // 50. Mutually exclusive with payment.winback.amount.
+      percent: 50,
+      // How long the accepted offer lasts: 'once' (the next cycle only, the
+      // default) or 'forever' (a permanent price cut).
+      duration: "once",
+    },
+  },
+  // Marketing automation: the campaigns + newsletter roles (each
+  // provider-keyed) and the prune switch.
+  marketing: {
+    campaigns: {
+      // Role-level switch for email marketing (default true). false skips the
+      // campaigns service and the backend contact sync.
+      enabled: true,
+    },
+    newsletter: {
+      // Role-level switch for the newsletter (default true). false skips the
+      // newsletter service and the backend subscriber sync.
+      enabled: true,
+    },
+    prune: {
+      // Monthly cold-contact prune across both providers. ON by default (Ian
+      // 2026-08-22) and materialized into every brand config — false is the
+      // per-brand off switch.
+      enabled: true,
+    },
+  },
+  search: {
+    providers: {
+      searchConsole: {
+        // false = the search service skips entirely — the property is never
+        // verified and no sitemap is submitted (submitSitemap only turns the
+        // sitemap half off).
+        enabled: true,
+        // false = skip sitemap submission to Google Search Console.
+        submitSitemap: true,
+        // Sitemap paths submitted as https://{domain}{path} (default
+        // ['/sitemap.xml']).
+        sitemapPaths: ["/sitemap.xml"],
+      },
+    },
+  },
+  forms: {
+    providers: {
+      slapform: {
+        // false = the slapform service skips and the contact page has no form
+        // endpoint.
+        enabled: true,
+        // false = the form is shared and managed by another brand; its
+        // name/settings are left alone.
+        updateFormInfo: true,
+        // Tier granted to the form-owner account ({ id, name }) —
+        // Slapform-operator only.
+        plan: {
+          id: "grandmaster",
+          name: "Grandmaster",
+        },
+      },
+    },
+  },
+  inbound: {
+    chat: {
+      providers: {
+        chatsy: {
+          // false = no chat widget boots and the chatsy service skips.
+          enabled: true,
+          // false = the agent is shared and managed by another brand; its
+          // settings/knowledge are left alone.
+          updateAgentInfo: true,
+          // Tier granted to the agent-owner account ({ id, name }) —
+          // Chatsy-operator only.
+          plan: {
+            id: "max",
+            name: "Max",
+          },
+        },
+      },
+    },
+    email: {
+      providers: {
+        replyify: {
+          // false = the replyify service skips.
+          enabled: true,
+          // false = the agent is shared and managed by another brand; its
+          // filter/knowledge are left alone.
+          updateAgentInfo: true,
+          // Tier granted to the agent-owner account ({ id, name }) —
+          // Replyify-operator only.
+          plan: {
+            id: "max",
+            name: "Max",
+          },
+        },
+      },
+    },
+  },
+  // Directory participation (@omega.js/manager directory service): { enabled }
+  // — opt in to push this brand's entry into the parent project's `brands`
+  // collection. Absent or false never pushes. Needs `parent` to name the
+  // relationship and DIRECTORY_SERVICE_ACCOUNT in the brand .env.
+  directory: {
+    // true opts the brand into the directory push. Default false —
+    // participation is never implicit.
+    enabled: false,
+  },
 
   // The classy theme is what the whole dashboard is drawn in: omega-shell for
   // the geometry, omega-side__* for the sidebar, omega-statgrid for tiles.
   theme: {
     id: "classy",
     appearance: "system",
+  },
+  translation: {
+    // Master switch (default true). Translation only runs when languages is
+    // non-empty.
+    enabled: true,
+    // Source language code (default 'en'). Drives <html lang>, og:locale, and
+    // the default hreflang.
+    default: "en",
+  },
+  client: {
+    consent: {
+      // The consent banner + the provider-script gate (default true). false
+      // ships NO banner — legal only for a site that loads no
+      // analytics/marketing provider at all.
+      enabled: true,
+    },
   },
 
   // Key presence = target enabled. Web only - the tower has no backend target

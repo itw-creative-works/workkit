@@ -418,6 +418,44 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  // Issue #200: the sync writes the checkout's app over the clone's, so two
+  // machines seeding one clone race — and the loser was whichever ran last. The
+  // stamp at the clone's root says which kit wrote what is there.
+
+  /** Where the stamp lives and what it is called — the name IS the contract. */
+  const STAMP = '.workkit-version';
+  const kitVersion = () => JSON.parse(
+    fs.readFileSync(path.join(REPO_ROOT, '.claude-plugin', 'plugin.json'), 'utf8'),
+  ).version;
+
+  await test('the sync stamps the clone with the kit version it wrote from', () => {
+    const world = mkSyncWorld();
+    const { rc, out, err } = sync(world);
+    assertEq(rc, 0, `something changed — ${out}${err}`);
+    assertEq(fs.readFileSync(path.join(world.clone, STAMP), 'utf8').trim(), kitVersion(),
+      'the version rides with the content it describes');
+    cleanup(world.root);
+  });
+
+  await test('a clone stamped NEWER than this checkout is not synced at all', () => {
+    const world = mkSyncWorld();
+    sync(world);
+    // What a newer machine's sync would have left: its app, and its stamp.
+    write(path.join(world.clone, 'targets', 'web', 'src', 'index.html'), '<html>the newer board</html>\n');
+    write(path.join(world.clone, STAMP), '99.0.0\n');
+    const before = mtimes(world.clone);
+
+    const { rc, out, err } = sync(world);
+    const said = out + err;
+    assertEq(rc, 1, `the caller can tell it did not run — ${said}`);
+    assert(said.includes('carries workkit 99.0.0'), `it names what the clone carries: ${said}`);
+    assert(said.includes(`this checkout is ${kitVersion()}`), `and what this checkout is: ${said}`);
+    assert(/not downgrading/.test(said), `and what it refused to do: ${said}`);
+    assert(/workkit update/.test(said), `with the command that fixes it: ${said}`);
+    assertEq(JSON.stringify(mtimes(world.clone)), JSON.stringify(before), 'and wrote nothing at all');
+    cleanup(world.root);
+  });
+
   group('workflow/publish: the sync, then the install, then the mint, then the build');
 
   await test('the clone is refreshed before it is built — the published page is the app’s', () => {

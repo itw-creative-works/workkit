@@ -20,18 +20,39 @@
 // filing an issue - are here as well, in the same shapes and behind the same
 // door discipline.
 //
-// Three things are RESTATED here rather than imported, for one reason: the app is
-// copied out of this repo and becomes a project of its own in `~/.workkit/tower`
-// (issue #77), so nothing under `tower/api/` is reachable from it. The label
-// groups, the sweep's shape and the brief's sections are the same rules
-// tower/api/lib/{board,brief}.js hold, and the suite pins the ones that can
-// drift.
+// The SWEEP itself is not written here: its pure half - the document, the
+// numbers that bound it, the parse that turns an answered node into a board
+// issue, and the reading of the errors beside them - lives beside this file in
+// sweep.js, and tower/api/lib/board.js reaches
+// across and requires the same module (issue #195). Only the browser's transport
+// around it is here. sweep.js can be shared because it is on THIS side of the
+// copy boundary: the app is copied out of this repo and becomes a project of its
+// own in `~/.workkit/tower` (issue #77), so a published copy carries it while
+// nothing under `tower/api/` is reachable from one.
+//
+// Two things are still RESTATED here for that same boundary: the label groups
+// (the vocabulary a published copy cannot read off workflow/labels.json) and the
+// brief's sections, which are tower/api/lib/brief.js's rules. The suite pins
+// both.
 //
 // Every function takes its seams as arguments - the token, `fetch`, the clock -
 // so the whole module imports and answers under Node.
 //
 
 import { priorityRank, issueKey } from './format.js';
+import {
+  buildBoardQuery, parseLabels, blockersFor, lastCommentOf, issueFrom, closedSince,
+  errorsByAlias, firstErrorFor, droppedReason,
+  MAX_OPEN_ISSUES, REPOS_PER_REQUEST,
+} from './sweep.js';
+
+// The sweep's pure half is the SAME module the tower's own sweep runs on, and it
+// is re-exported here so a caller that has this data layer has all of it.
+export {
+  buildBoardQuery, parseLabels, blockersFor, lastCommentOf, issueFrom, closedSince,
+  errorsByAlias, firstErrorFor, droppedReason,
+  MAX_OPEN_ISSUES, REPOS_PER_REQUEST,
+};
 
 const GRAPHQL_URL = 'https://api.github.com/graphql';
 
@@ -80,34 +101,6 @@ export const ROSTER_PATH = 'data/repos.json';
  * the default branch instead would cost a request before the first row is drawn.
  */
 export const ROSTER_REF = 'main';
-
-// Per repo, per request - GitHub caps a connection page at 100 (tower/api/lib/board.js).
-const PAGE_SIZE = 100;
-
-/**
- * How many repos ride ONE request (issue #202) - tower/api/lib/board.js's
- * measured number, restated for the copy-boundary reason every other constant
- * here is, and pinned against it by the suite. The whole roster in one document
- * is what GitHub refuses: it scores a query before running it, and a 23-repo
- * sweep came back RESOURCE_LIMITS_EXCEEDED with every issue node null.
- */
-export const REPOS_PER_REQUEST = 6;
-
-// How much of an issue body rides the sweep; the dialog reads it straight off.
-const BODY_LIMIT = 4000;
-
-// How much of an issue's LAST COMMENT rides it (issue #196) - the API's number,
-// restated for the copy-boundary reason every other constant here is. A blocked
-// issue's open question is a comment on it, which is what the Board draws under
-// the title of a blocked card.
-const LAST_COMMENT_LIMIT = 280;
-
-// The closed issues a repo is asked for, and the window they are counted over -
-// tower/api/lib/board.js's numbers, restated for the copy-boundary reason every
-// other constant here is. The count is all that survives normalization: no
-// closed issue enters the board.
-const CLOSED_PAGE = 30;
-const CLOSED_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 // The label vocabulary's groups (workflow/labels.json, the SSOT the heal reads).
 // A group missing here is a group the published board cannot show, so the suite
@@ -343,143 +336,6 @@ export const fetchSlugs = async (ctx = {}) => {
 
 // ── The board ──────────────────────────────────────────────────────────────
 
-/** The sweep, one aliased field per repo - one document per BATCH of them (#202). */
-export const buildBoardQuery = (slugs) => {
-  const fields = slugs.map((slug, i) => {
-    const [owner, name] = slug.split('/');
-    return `  r${i}: repository(owner: "${owner}", name: "${name}") {
-    issues(states: OPEN, first: ${PAGE_SIZE}, orderBy: {field: UPDATED_AT, direction: DESC}) {
-      totalCount
-      nodes {
-        number
-        title
-        url
-        body
-        createdAt
-        updatedAt
-        comments(last: 1) { totalCount nodes { body } }
-        labels(first: 20) { nodes { name } }
-        assignees(first: 5) { nodes { login } }
-        blockedBy(first: 20) { nodes { number state repository { nameWithOwner } } }
-      }
-    }
-    closed: issues(states: CLOSED, first: ${CLOSED_PAGE}, orderBy: {field: UPDATED_AT, direction: DESC}) {
-      nodes { closedAt }
-    }
-  }`;
-  });
-  return `query {\n${fields.join('\n')}\n}\n`;
-};
-
-/**
- * The issue's newest comment as one line, cut to what a card can show - the
- * API's own fold (tower/api/lib/board.js): the query asks for the LAST comment,
- * the markdown's whitespace becomes single spaces, and a cut says so.
- *
- * @param {object} node the issue node as GraphQL answered it
- * @returns {string} '' on an issue nobody has commented on
- */
-export const lastCommentOf = (node) => {
-  const nodes = ((node.comments || {}).nodes) || [];
-  const body = String((nodes[nodes.length - 1] || {}).body || '').replace(/\s+/g, ' ').trim();
-  return body.length > LAST_COMMENT_LIMIT ? `${body.slice(0, LAST_COMMENT_LIMIT)}…` : body;
-};
-
-/** How many of a repo's closed issues were closed in the last 24 hours - the API's own count. */
-export const closedSince = (resolved, now) => {
-  const nodes = ((resolved || {}).closed || {}).nodes || [];
-  let count = 0;
-  for (const node of nodes) {
-    const at = Date.parse((node || {}).closedAt || '');
-    if (Number.isNaN(at)) continue;
-    if (now - at <= CLOSED_WINDOW_MS && at <= now) count += 1;
-  }
-  return count;
-};
-
-/** `group:value` labels into a map of group → values, keeping only the groups the vocabulary defines. */
-export const parseLabels = (nodes) => {
-  const out = {};
-  for (const node of nodes || []) {
-    const name = node && node.name;
-    if (typeof name !== 'string') continue;
-    const idx = name.indexOf(':');
-    if (idx < 1) continue;
-    const group = name.slice(0, idx);
-    if (!LABEL_GROUPS.has(group)) continue;
-    (out[group] = out[group] || []).push(name.slice(idx + 1));
-  }
-  return out;
-};
-
-// The inline fallback for a dependency GitHub itself will not hold (issue #103)
-// - tower/api/lib/board.js's label and expression, restated for the copy-boundary
-// reason every other rule here is, and pinned against it by the suite.
-const DEPENDS_LABEL = 'depends on:';
-const DEPENDS_RE = /(?:^|[\s,;(])(?:([\w.-]+\/[\w.-]+))?#(\d+)\b/g;
-
-/**
- * What one issue is WAITING on - the native edges merged with that inline
- * fallback, in the API's own composition: a CLOSED edge is satisfied and never
- * surfaces, an inline reference carries no state and counts until the line is
- * edited away, and the same blocker written both ways is one edge.
- *
- * @param {object} node the issue node as GraphQL answered it
- * @param {string} slug the repo it was swept from - what a bare `#<n>` means
- * @returns {Array<{repo: string, number: number}>} empty when it waits on nothing
- */
-export const blockersFor = (node, slug) => {
-  const out = [];
-  const seen = new Set();
-  const add = (repo, number) => {
-    const key = `${repo}#${number}`.toLowerCase();
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push({ repo, number });
-  };
-
-  for (const edge of ((node.blockedBy || {}).nodes || [])) {
-    if (!edge || edge.state !== 'OPEN' || typeof edge.number !== 'number') continue;
-    add(((edge.repository || {}).nameWithOwner) || slug, edge.number);
-  }
-
-  for (const line of String(node.body || '').split('\n')) {
-    const lower = line.toLowerCase();
-    // Issue bodies are markdown: a list bullet or bold marker around the label
-    // ("- Depends on:", "**Depends on:**") is the same line, still at its start.
-    if (!lower.trim().replace(/^[-*>\s]+/, '').startsWith(DEPENDS_LABEL)) continue;
-    const refs = line.slice(lower.indexOf(DEPENDS_LABEL) + DEPENDS_LABEL.length).replace(/^\*+/, '');
-    DEPENDS_RE.lastIndex = 0;
-    let match = DEPENDS_RE.exec(refs);
-    while (match) {
-      add(match[1] || slug, Number(match[2]));
-      match = DEPENDS_RE.exec(refs);
-    }
-  }
-
-  return out;
-};
-
-/** A GraphQL errors array indexed by the alias it names; an error with no path belongs to no repo. */
-export const errorsByAlias = (errors) => {
-  const map = {};
-  for (const error of errors || []) {
-    const alias = Array.isArray(error.path) && typeof error.path[0] === 'string' ? error.path[0] : null;
-    if (!alias) continue;
-    const message = error.message || error.type || 'unknown error';
-    map[alias] = map[alias] ? `${map[alias]}; ${message}` : message;
-  }
-  return map;
-};
-
-/** The FIRST message GitHub reported against an alias - the API's own, and what a dropped-node reason quotes. */
-export const firstErrorFor = (errors, alias) => {
-  for (const error of errors || []) {
-    if (Array.isArray(error.path) && error.path[0] === alias) return error.message || error.type || 'unknown error';
-  }
-  return 'no reason given';
-};
-
 /**
  * One GraphQL answer, normalized to the board payload the pages read.
  *
@@ -500,48 +356,33 @@ export const normalizeBoard = (slugs, data, errors, now = Date.now()) => {
     const conn = (resolved || {}).issues || {};
     const answered = conn.nodes || [];
     // A NULL node is an issue GitHub could not deliver, and reading a field off
-    // one is what ended the tower's API (issue #202). It is skipped, counted,
-    // and said out loud on the repo it belongs to - the API's own guard, so the
-    // published board and the tower board drop it identically.
+    // one is what ended the tower's API (issue #202). It is skipped here and
+    // named by the shared droppedReason below, so the published board and the
+    // tower board drop it identically.
     const nodes = answered.filter(Boolean);
-    const dropped = answered.length - nodes.length;
     const total = typeof conn.totalCount === 'number' ? conn.totalCount : answered.length;
     repos.push({
       slug,
       count: nodes.length,
       totalCount: total,
-      truncated: total > answered.length,
+      // There are open issues this answer did not carry. The sweep pages (#194),
+      // so on the LAST page of a repo this is true only when it stopped at the
+      // ceiling - which is what the tower's entry means by it too.
+      truncated: Boolean((conn.pageInfo || {}).hasNextPage),
       closedDay: closedSince(resolved, now),
-      error: (dropped > 0 ? `GitHub dropped ${dropped} of ${answered.length} issues: ${firstErrorFor(errors, alias)}` : null)
+      error: droppedReason(answered, nodes, errors, alias)
         || aliasErrors[alias] || (resolved ? null : 'not resolved'),
     });
-    for (const node of nodes) {
-      const parsed = parseLabels((node.labels || {}).nodes);
-      const agent = parsed.agent || [];
-      const body = String(node.body || '');
-      issues.push({
-        repo: slug,
-        number: node.number,
-        title: node.title,
-        url: node.url,
-        body: body.slice(0, BODY_LIMIT),
-        bodyTruncated: body.length > BODY_LIMIT,
-        comments: ((node.comments || {}).totalCount) || 0,
-        lastComment: lastCommentOf(node),
-        createdAt: node.createdAt || null,
-        updatedAt: node.updatedAt,
-        status: (parsed.status || [])[0] || null,
-        type: (parsed.type || [])[0] || null,
-        priority: (parsed.priority || [])[0] || null,
-        agentOk: agent.includes('ok'),
-        agentWorking: agent.includes('working'),
-        assignees: ((node.assignees || {}).nodes || []).map((a) => a.login),
-        blockedBy: blockersFor(node, slug),
-      });
-    }
+    for (const node of nodes) issues.push(issueFrom(node, slug, LABEL_GROUPS));
   });
 
   return { ok: true, issues, repos };
+};
+
+/** Where a repo's next page resumes, or null when that answer was its last. */
+const nextPageOf = (resolved) => {
+  const info = (((resolved || {}).issues) || {}).pageInfo || {};
+  return info.hasNextPage && typeof info.endCursor === 'string' ? info.endCursor : null;
 };
 
 /**
@@ -551,8 +392,18 @@ export const normalizeBoard = (slugs, data, errors, now = Date.now()) => {
  * acted on rather than read: a token GitHub refused is the one failure a new
  * token fixes, and the runtime carries it to the Settings page (page.js).
  *
+ * A repo with more than one page of open issues is asked again with the cursor
+ * its last page ended on (#194), until GitHub says there is no next page or the
+ * ceiling stops it - and every round is handed to `onPage` before the next one
+ * goes out, so a published board DRAWS each page as it lands instead of holding
+ * a viewer at a spinner while a long roster finishes. The handover carries the
+ * board so far, with `loading: true` on every repo still being paged; the
+ * finished board carries no such mark, which is how the progress line clears.
+ * A continuation that fails leaves the pages that arrived on the board and the
+ * reason on their repo, the way the tower's sweep keeps a partial answer.
+ *
  * @param {string[]} slugs
- * @param {object} ctx - `{ token, fetch }`
+ * @param {object} ctx - `{ token, fetch, now, onPage }`
  * @returns {Promise<{ok: boolean, reason?: string, status?: number|null, issues: object[], repos: object[]}>}
  */
 export const fetchBoard = async (slugs, ctx = {}) => {
@@ -574,16 +425,63 @@ export const fetchBoard = async (slugs, ctx = {}) => {
     };
   }
 
+  // One accumulator per repo, in roster order, holding that repo's own issues
+  // rather than one flat list: a repo's pages arrive rounds apart and belong
+  // together, which is the order the tower serves them in.
+  const collected = slugs.map((slug) => ({ slug, issues: [], repo: null, cursor: null }));
+
   // The aliases restart at r0 in every answer, so each batch is normalized
-  // against its OWN slugs and the results are concatenated in roster order.
-  const issues = [];
-  const repos = [];
+  // against its OWN slugs and each repo's share is taken by the count its entry
+  // reports - the issues come back in alias order, so the counts slice them.
   batches.forEach((batch, i) => {
-    const part = normalizeBoard(batch, answers[i].data, answers[i].errors);
-    issues.push(...part.issues);
-    repos.push(...part.repos);
+    const part = normalizeBoard(batch, answers[i].data, answers[i].errors, ctx.now);
+    let at = 0;
+    batch.forEach((slug, j) => {
+      const entry = collected[(i * REPOS_PER_REQUEST) + j];
+      entry.repo = part.repos[j];
+      entry.issues = part.issues.slice(at, at + part.repos[j].count);
+      at += part.repos[j].count;
+      entry.cursor = nextPageOf(answers[i].data[`r${j}`]);
+    });
   });
-  return { ok: true, issues, repos };
+
+  /** The board as it stands, marking what is still being paged when asked to. */
+  const payload = (mark) => ({
+    ok: true,
+    issues: collected.flatMap((entry) => entry.issues),
+    repos: collected.map((entry) => (mark && entry.cursor ? { ...entry.repo, loading: true } : entry.repo)),
+  });
+
+  // The pages AFTER the first, one repo to a request and only the repos GitHub
+  // said had more. Fired together, like the batches, and a round at a time so
+  // the page is handed what has arrived before the next one goes out.
+  let more = collected.filter((entry) => entry.cursor);
+  while (more.length) {
+    if (ctx.onPage) ctx.onPage(payload(true));
+    const rounds = await Promise.all(more.map((entry) => graphql(buildBoardQuery([entry.slug], [entry.cursor]), ctx)));
+    rounds.forEach((answer, i) => {
+      const entry = more[i];
+      if (!answer.ok) {
+        entry.repo = { ...entry.repo, error: entry.repo.error || answer.reason };
+        entry.cursor = null;
+        return;
+      }
+      const part = normalizeBoard([entry.slug], answer.data, answer.errors, ctx.now);
+      entry.issues.push(...part.issues);
+      entry.repo = {
+        ...entry.repo,
+        count: entry.repo.count + part.repos[0].count,
+        truncated: part.repos[0].truncated,
+        error: entry.repo.error || part.repos[0].error,
+      };
+      // The ceiling is the other way this ends, and it ends with the repo still
+      // saying it was truncated - because it was.
+      entry.cursor = entry.issues.length >= MAX_OPEN_ISSUES ? null : nextPageOf(answer.data.r0);
+    });
+    more = more.filter((entry) => entry.cursor);
+  }
+
+  return payload(false);
 };
 
 /** The two statuses that mean the TOKEN is the problem, not the read. */
@@ -1015,7 +913,10 @@ export const readFeed = async (path, ctx = {}) => {
 
   if (path === '/api/repos') return { ok: true, data: repos, status: 200, reason: null };
 
-  const board = await fetchBoard(slugs, ctx);
+  // The progress callback is the BOARD feed's alone (#194): the brief is built
+  // from this same sweep, and a brief poll handing half a board to the page
+  // would walk a finished board backwards.
+  const board = await fetchBoard(slugs, path === '/api/board' ? ctx : { ...ctx, onPage: null });
   if (path === '/api/board') {
     return board.ok
       ? { ok: true, data: board, status: 200, reason: null }

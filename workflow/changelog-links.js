@@ -181,7 +181,12 @@ const fill = (text, { byIssue, resolve }) => {
     handles.forEach((h) => contributors.add(h));
     // Shortcut reference: one definition at the bottom serves every entry a
     // person appears in, instead of repeating their profile URL on each line.
-    const thanks = handles.length
+    //
+    // An entry written during ordinary work often already carries its
+    // attribution, and appending regardless shipped every one of them as
+    // "Thanks [@who]! Thanks [@who]! —". What the entry has, it keeps: the
+    // attribution is only ever inserted where the metadata run has none.
+    const thanks = handles.length && !(meta && /Thanks\s+\[/.test(meta[0]))
       ? ` Thanks ${handles.map((h) => `[@${h}]`).join(' ')}!`
       : '';
 
