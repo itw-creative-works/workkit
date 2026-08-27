@@ -7,17 +7,19 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-08-26
+
 ### Added
 
-- [#196](../../issues/196) — The pipeline gains `status:complete` between qa and the close: a passing check moves an item there on the owner's word alone, and the ship reads that stage. Items still at `status:qa` survive a ship, listed for an include-or-delay call.
+- [#196](../../issues/196) [`3fdeac7`](../../commit/3fdeac7) Thanks [@ianwieds]! — The pipeline gains `status:complete` between qa and the close: a passing check moves an item there on the owner's word alone, and the ship reads that stage. Items still at `status:qa` survive a ship, listed for an include-or-delay call.
 
 ### Changed
 
-- [#196](../../issues/196) — The board reads as two regions: the five pipeline stages in stage order, and a pocket aside holding blocked and backlog, each blocked card showing the open question it waits on.
-- [#191](../../issues/191) — The tower `.env.example` the engine ships now models double-quoted values in every sample line, so a copy-paste starts compliant with the env lint.
-- [#192](../../issues/192) — The manager's file-handoff convention now requires an explicit dispatch before any brief file exists: "brief me" in chat means a summary in chat, never an artifact.
-- [#190](../../issues/190) Thanks [@ianwieds]! — The heal now vendors the CHANGELOG linter as `.github/changelog-lint.cjs`, so a repo declaring `"type": "module"` no longer has Node read it as ESM and fail CI. A repo on the old name migrates in place, its `changelog` job repointed and only the kit's own copy removed.
-- [#193](../../issues/193) Thanks [@ianwieds]! — tree-guard now stands aside for `git stash list` and `git stash show`: both only read stash state, and blocking a harmless lookup cost more than it protected. Every mutating stash subcommand, bare `git stash` included, still bounces.
+- [#196](../../issues/196) [`3fdeac7`](../../commit/3fdeac7) Thanks [@ianwieds]! — The board reads as two regions: the five pipeline stages in stage order, and a pocket aside holding blocked and backlog, each blocked card showing the open question it waits on.
+- [#191](../../issues/191) [`3fdeac7`](../../commit/3fdeac7) Thanks [@ianwieds]! — The tower `.env.example` the engine ships now models double-quoted values in every sample line, so a copy-paste starts compliant with the env lint.
+- [#192](../../issues/192) [`3fdeac7`](../../commit/3fdeac7) Thanks [@ianwieds]! — The manager's file-handoff convention now requires an explicit dispatch before any brief file exists: "brief me" in chat means a summary in chat, never an artifact.
+- [#190](../../issues/190) [`3fdeac7`](../../commit/3fdeac7) Thanks [@ianwieds]! — The heal now vendors the CHANGELOG linter as `.github/changelog-lint.cjs`, so a repo declaring `"type": "module"` no longer has Node read it as ESM and fail CI. A repo on the old name migrates in place, its `changelog` job repointed and only the kit's own copy removed.
+- [#193](../../issues/193) [`3fdeac7`](../../commit/3fdeac7) Thanks [@ianwieds]! — tree-guard now stands aside for `git stash list` and `git stash show`: both only read stash state, and blocking a harmless lookup cost more than it protected. Every mutating stash subcommand, bare `git stash` included, still bounces.
 
 ## [0.47.1] - 2026-08-21
 
