@@ -168,12 +168,10 @@ This step runs if there are changes in the working tree (from the session's work
 
 ## Step 4: GitHub release (automatic)
 
-**Runs automatically — no asking, no opt-in required.** If the repo is **public** (check with `gh repo view --json isPrivate -q '.isPrivate'`) AND a version bump was applied:
-- Create a GitHub release: `gh release create v<version> --title "v<version>" --notes "<DESCRIPTION>"`
+**Runs automatically on every version bump, public or private repo — no asking, no visibility check.** A release is bookkeeping for the bump, like the `chore(release)` commit; only outward publishing (npm in Step 5, deploy in Step 6) is gated. Skipping it on private repos left workkit with releases for some versions and none for others (issue #208, owner ruling 2026-08-27).
+- Create it from the release sha: `gh release create v<version> --target <release-sha> --title "v<version>" --notes "<that version's CHANGELOG section>"`
 
-Also runs automatically after a successful npm publish in Step 5 (a published package always gets a release). If the release was already created in this step, don't duplicate it.
-
-If the repo is private, skip silently. Can be skipped with `no release` in invocation args.
+The only opt-out is `no release` in the invocation args. A release already created this ship is never duplicated.
 
 ## Step 5: npm publish (if applicable)
 

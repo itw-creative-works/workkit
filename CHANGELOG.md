@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#208](../../issues/208) — Every version bump now gets a GitHub release, private repo or not; only npm publish and deploy stay gated. The 59 workkit versions that had none were backfilled at their release commits.
+
 ## [0.50.1] - 2026-08-27
 
 ### Changed
