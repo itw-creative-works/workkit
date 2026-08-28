@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.50.1] - 2026-08-27
+
 ### Changed
 
-- [#207](../../issues/207) — The kit ships under the Functional Source License (FSL-1.1-MIT): use, change and share it freely, never as a competing product, and each release turns MIT two years on. Test fixtures no longer carry the owner's paths or handle.
+- [#207](../../issues/207) [`fb60489`](../../commit/fb60489) Thanks [@ianwieds]! — The kit ships under the Functional Source License (FSL-1.1-MIT): use, change and share it freely, never as a competing product, and each release turns MIT two years on. Test fixtures no longer carry the owner's paths or handle.
 
 ## [0.50.0] - 2026-08-27
 
