@@ -39,7 +39,7 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
 const makeRepo = ({ optIn = true, settings = '{ "version": 1, "enabled": true }\n' } = {}) => {
   const dir = mkTmp();
   spawnSync('git', ['init', '-q'], { cwd: dir });
-  spawnSync('git', ['remote', 'add', 'origin', 'https://example.invalid/ian/repo.git'], { cwd: dir });
+  spawnSync('git', ['remote', 'add', 'origin', 'https://example.invalid/alice/repo.git'], { cwd: dir });
   if (optIn) {
     fs.mkdirSync(path.join(dir, W), { recursive: true });
     fs.writeFileSync(path.join(dir, W, 'settings.json'), settings);

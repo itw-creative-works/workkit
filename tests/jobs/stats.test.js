@@ -23,11 +23,11 @@ const PAYLOAD = {
   closedDay: 4,
   repoCounts: [
     { slug: 'ITW-Creative-Works/workkit', open: 9, closedDay: 3 },
-    { slug: 'ianwieds/.dotfiles', open: 3, closedDay: 1 },
+    { slug: 'alice/.dotfiles', open: 3, closedDay: 1 },
   ],
 };
 
-const EXPECTED = '<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":12,"waiting":2,"complete":1,"qa":2,"ready":3,"inFlight":1,"inbox":5,"backlog":1},"closedDay":4,"repos":{"ITW-Creative-Works/workkit":{"open":9},"ianwieds/.dotfiles":{"open":3}}} -->';
+const EXPECTED = '<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":12,"waiting":2,"complete":1,"qa":2,"ready":3,"inFlight":1,"inbox":5,"backlog":1},"closedDay":4,"repos":{"ITW-Creative-Works/workkit":{"open":9},"alice/.dotfiles":{"open":3}}} -->';
 
 const run = async () => {
   group('jobs/stats: the line itself');

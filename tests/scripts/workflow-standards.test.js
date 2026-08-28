@@ -61,7 +61,7 @@ const makeRepo = ({ remote = true, settings = '{ "version": 1, "enabled": true }
   const dir = mkTmp();
   spawnSync('git', ['init', '-q'], { cwd: dir });
   if (remote) {
-    spawnSync('git', ['remote', 'add', 'origin', 'https://example.invalid/ian/repo.git'], { cwd: dir });
+    spawnSync('git', ['remote', 'add', 'origin', 'https://example.invalid/alice/repo.git'], { cwd: dir });
   }
   if (settings !== null) {
     fs.mkdirSync(path.join(dir, W), { recursive: true });
@@ -2032,7 +2032,7 @@ const run = async () => {
       issues: [{
         number: 9,
         labels: [{ name: 'status:specced' }, { name: 'type:bug' }],
-        assignees: [{ login: 'ian' }],
+        assignees: [{ login: 'alice' }],
       }],
     });
     const { code } = runScript(repo, { pathPrefix: stub.binDir });

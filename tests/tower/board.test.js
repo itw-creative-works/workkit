@@ -60,7 +60,7 @@ const fakeGh = (payload, { versionFails = false, graphqlError = null, calls = []
 
 const ROSTER = [
   { name: 'workkit', path: '/x/workkit', slug: 'ITW-Creative-Works/workkit' },
-  { name: '.dotfiles', path: '/x/.dotfiles', slug: 'ianwieds/.dotfiles' },
+  { name: '.dotfiles', path: '/x/.dotfiles', slug: 'alice/.dotfiles' },
 ];
 
 const run = async () => {
@@ -111,9 +111,9 @@ const run = async () => {
   group('tower/board: one call, per-repo aliases');
 
   await test('the query aliases every repo and asks for totalCount', () => {
-    const q = buildBoardQuery(['ITW-Creative-Works/workkit', 'ianwieds/.dotfiles']);
+    const q = buildBoardQuery(['ITW-Creative-Works/workkit', 'alice/.dotfiles']);
     assert(q.includes('r0: repository(owner: "ITW-Creative-Works", name: "workkit")'), 'r0 alias');
-    assert(q.includes('r1: repository(owner: "ianwieds", name: ".dotfiles")'), 'r1 alias');
+    assert(q.includes('r1: repository(owner: "alice", name: ".dotfiles")'), 'r1 alias');
     assert(q.includes('totalCount'), 'truncation is answerable');
     assert(q.includes(`first: ${PAGE_SIZE}`), 'the page cap is in the query');
     // The dashboard's issue dialog reads these off the sweep - there is no
@@ -205,7 +205,7 @@ const run = async () => {
     assertEq(res.ok, true, 'ok');
     assertEq(res.issues.length, 3, 'all three issues');
     assertEq(res.issues.map((i) => `${i.repo}#${i.number}`).join(' '),
-      'ITW-Creative-Works/workkit#17 ITW-Creative-Works/workkit#18 ianwieds/.dotfiles#22',
+      'ITW-Creative-Works/workkit#17 ITW-Creative-Works/workkit#18 alice/.dotfiles#22',
       'each issue carries its repo slug');
     assertEq(calls.filter((c) => c[1] === 'api').length, 1, 'ONE graphql call for the whole roster');
   });
@@ -290,9 +290,9 @@ const run = async () => {
 
   await test('an open edge is a blocker; a closed one is satisfied and never surfaces', () => {
     const res = swept(issue(17, {
-      blockedBy: blockedBy([4, 'OPEN'], [5, 'CLOSED'], [9, 'OPEN', 'ianwieds/.dotfiles']),
+      blockedBy: blockedBy([4, 'OPEN'], [5, 'CLOSED'], [9, 'OPEN', 'alice/.dotfiles']),
     }));
-    assertEq(waits(res), 'ITW-Creative-Works/workkit#4 ianwieds/.dotfiles#9',
+    assertEq(waits(res), 'ITW-Creative-Works/workkit#4 alice/.dotfiles#9',
       'both open edges, each carrying the repo it lives in - a cross-repo blocker is not #9 here');
     assert(!waits(res).includes('#5'), 'a dependency on a closed issue is satisfied');
   });
@@ -349,7 +349,7 @@ const run = async () => {
               nodes: [
                 issue(17, {
                   labels: labels('status:specced', 'type:enhancement', 'priority:high', 'agent:ok', 'agent:working', 'area:tower'),
-                  assignees: assignees('ianwieds'),
+                  assignees: assignees('alice'),
                 }),
                 issue(18, { labels: labels('bug', 'wontfix') }),
               ],
@@ -364,7 +364,7 @@ const run = async () => {
     assertEq(a.priority, 'high', 'priority');
     assertEq(a.agentOk, true, 'agent:ok');
     assertEq(a.agentWorking, true, 'agent:working');
-    assertEq(a.assignees.join(','), 'ianwieds', 'assignees are logins');
+    assertEq(a.assignees.join(','), 'alice', 'assignees are logins');
     assertEq(b.status, null, 'a bare label is not a group');
     assertEq(b.type, null, 'no type');
     assertEq(b.priority, null, 'absence of priority means normal');
@@ -382,14 +382,14 @@ const run = async () => {
           r0: {
             issues: {
               totalCount: 1,
-              nodes: [issue(17, { labels: labels('status:building', 'type:bug'), assignees: assignees('ianwieds') })],
+              nodes: [issue(17, { labels: labels('status:building', 'type:bug'), assignees: assignees('alice') })],
             },
           },
         },
       }),
     });
     assertEq(res.issues[0].status, 'building', 'the status group passes the value through');
-    assertEq(res.issues[0].assignees.join(','), 'ianwieds', 'and the assignee still says who holds it');
+    assertEq(res.issues[0].assignees.join(','), 'alice', 'and the assignee still says who holds it');
   });
 
   await test('an unparseable vocabulary file leaves every group unparsed rather than crashing', () => {
@@ -446,7 +446,7 @@ const run = async () => {
     const res = fetchBoard(ROSTER, {
       exec: fakePaged({
         'ITW-Creative-Works/workkit': [conn([1, 2], { total: 4, next: 'CUR1' }), conn([3, 4], { total: 4 })],
-        'ianwieds/.dotfiles': [conn([9])],
+        'alice/.dotfiles': [conn([9])],
       }, calls),
     });
     const queries = calls.filter((c) => c[1] === 'api').map((c) => c[4]);
@@ -464,7 +464,7 @@ const run = async () => {
     const res = fetchBoard(ROSTER, {
       exec: fakePaged({
         'ITW-Creative-Works/workkit': [conn([1, 2, 3], { total: 140 })],
-        'ianwieds/.dotfiles': [conn([9], { total: 1 })],
+        'alice/.dotfiles': [conn([9], { total: 1 })],
       }),
     });
     assertEq(res.repos[0].truncated, false, 'GitHub said there was no next page, whatever the total claims');
@@ -664,12 +664,12 @@ const run = async () => {
     const res = fetchBoard([ROSTER[0]], {
       exec: fakeGh({
         data: {
-          r0: { issues: { totalCount: 1, nodes: [issue(17, { assignees: { nodes: [null, { login: 'ianwieds' }] } })] } },
+          r0: { issues: { totalCount: 1, nodes: [issue(17, { assignees: { nodes: [null, { login: 'alice' }] } })] } },
         },
       }),
     });
     assertEq(res.ok, true, 'the board still renders');
-    assertEq(res.issues[0].assignees.join(','), 'ianwieds', 'the assignee that arrived is carried, the hole is not');
+    assertEq(res.issues[0].assignees.join(','), 'alice', 'the assignee that arrived is carried, the hole is not');
   });
 
   group('tower/board: a partial answer is kept');
@@ -692,7 +692,7 @@ const run = async () => {
     });
     assertEq(res.ok, true, 'the board still renders');
     assertEq(res.issues.length, 1, 'the repo that resolved keeps its issues');
-    assertEq(res.issues[0].repo, 'ianwieds/.dotfiles', 'and they are attributed correctly');
+    assertEq(res.issues[0].repo, 'alice/.dotfiles', 'and they are attributed correctly');
     assertEq(res.issues[0].status, 'inbox', 'normalized as usual');
     assert(/Could not resolve/.test(res.repos[0].error), 'the unresolved repo carries its reason');
     assertEq(res.repos[1].error, null, 'the healthy repo carries none');

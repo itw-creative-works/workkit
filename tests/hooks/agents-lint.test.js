@@ -64,7 +64,7 @@ const run = async () => {
     );
     assertEq(violations('a.md', 'run /home/runner/work/x.sh').length, 1, '/home/ path');
     assertEq(violations('a.md', 'open C:\\Users\\someone\\x.md').length, 1, 'a Windows drive path');
-    assertEq(violations('a.md', 'see /users/ian/x.md').length, 1, 'a lowercase /users/ on a case-insensitive volume');
+    assertEq(violations('a.md', 'see /users/alice/x.md').length, 1, 'a lowercase /users/ on a case-insensitive volume');
     assertEq(violations('a.md', 'notes in ~/Developer/notes.md').length, 1, 'a personal-layout path');
     assertEq(violations('a.md', 'lives in the .dotfiles repo').length, 1, 'a dotfiles-checkout reference');
   });

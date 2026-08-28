@@ -255,14 +255,14 @@ const run = async () => {
     const repos = [
       mkRepo(tmp, 'Owner/ssh', { origin: 'git@github.com:ITW-Creative-Works/workkit.git' }),
       mkRepo(tmp, 'Owner/sshurl', { origin: 'ssh://git@github.com/ITW-Creative-Works/workkit' }),
-      mkRepo(tmp, 'Owner/https', { origin: 'https://github.com/ianwieds/.dotfiles.git' }),
+      mkRepo(tmp, 'Owner/https', { origin: 'https://github.com/alice/.dotfiles.git' }),
     ];
     const bySlug = Object.fromEntries(
       discoverRepos({ workflowHome: mkWorkflowHome(tmp, repos) }).map((r) => [r.name, r.slug]),
     );
     assertEq(bySlug.ssh, 'ITW-Creative-Works/workkit', 'ssh shorthand');
     assertEq(bySlug.sshurl, 'ITW-Creative-Works/workkit', 'ssh URL');
-    assertEq(bySlug.https, 'ianwieds/.dotfiles', 'https, dot in the repo name kept');
+    assertEq(bySlug.https, 'alice/.dotfiles', 'https, dot in the repo name kept');
     cleanup(tmp);
   });
 

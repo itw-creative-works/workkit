@@ -162,3 +162,7 @@ tests/            npm test
 - [`docs/agents.md`](docs/agents.md) · [`workflow/README.md`](workflow/README.md) — the crew contract and the engine reference
 - [`docs/hooks.md`](docs/hooks.md) — what each hook does, one section apiece: when it fires, what it blocks, and where it stands down
 - [`jobs/README.md`](jobs/README.md) — the daily job: the summaries step, the brief, payloads, runners, schedule, install
+
+## License
+
+[Functional Source License, Version 1.1, MIT Future License](LICENSE.md) (FSL-1.1-MIT). Use it, change it, share it, and run it inside your own work freely; do not offer it as a competing product or service. Each release becomes MIT two years after it ships.

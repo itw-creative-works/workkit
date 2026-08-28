@@ -199,8 +199,8 @@ const run = async () => {
 
   await test('the transcript path flattens both / and . in the cwd', () => {
     assertEq(
-      transcriptPath('/home/ian', '/Users/ian/Repos/.dotfiles', 'sid'),
-      path.join('/home/ian', '.claude', 'projects', '-Users-ian-Repos--dotfiles', 'sid.jsonl'),
+      transcriptPath('/home/alice', '/Users/alice/Repos/.dotfiles', 'sid'),
+      path.join('/home/alice', '.claude', 'projects', '-Users-alice-Repos--dotfiles', 'sid.jsonl'),
       'the hook does tr /. --',
     );
   });
@@ -212,11 +212,11 @@ const run = async () => {
     mkMarker(w, 4201, { cwd: '/x/c', session: 'titled' });
     mkTranscript(w, '/x/c', 'titled', [
       '{"aiTitle":"Generated first"}',
-      '{"customTitle":"Ian named it"}',
-      '{"customTitle":"Ian renamed it"}',
+      '{"customTitle":"Alice named it"}',
+      '{"customTitle":"Alice renamed it"}',
       '{"aiTitle":"Generated later"}',
     ]);
-    assertEq(list(w)[0].chatName, 'Ian renamed it', 'custom, last match');
+    assertEq(list(w)[0].chatName, 'Alice renamed it', 'custom, last match');
     cleanup(w.root);
   });
 

@@ -244,7 +244,7 @@ const run = async () => {
   });
 
   await test('shortPath names a repo by its last segment', () => {
-    assertEq(format.shortPath('/Users/ian/Developer/Repositories/ITW/workkit'), 'workkit', 'the leaf');
+    assertEq(format.shortPath('/Users/alice/Developer/Repositories/acme/workkit'), 'workkit', 'the leaf');
     assertEq(format.shortPath('/trailing/slash/'), 'slash', 'a trailing slash is not a segment');
     assertEq(format.shortPath(''), '', 'nothing in, nothing out');
   });
@@ -539,12 +539,12 @@ const run = async () => {
 
   await test('an issue shows exactly the chips it earns', () => {
     const chips = format.issueChips({
-      type: 'bug', priority: 'high', agentOk: true, assignees: ['ianwieds', 'someone'],
+      type: 'bug', priority: 'high', agentOk: true, assignees: ['alice', 'someone'],
     });
     assert(chips.includes('>bug<'), 'the type');
     assert(chips.includes('high'), 'the priority');
     assert(chips.includes('agent:ok'), 'the agent grant');
-    assert(chips.includes('@ianwieds, @someone'), 'every assignee, each with its handle');
+    assert(chips.includes('@alice, @someone'), 'every assignee, each with its handle');
   });
 
   await test('both ends of the priority scale are drawn through the one colour system', () => {
@@ -1215,21 +1215,21 @@ const run = async () => {
   });
 
   await test('the Board draws the glyph only for work an agent actually holds', () => {
-    const claimed = agent.claimGlyph({ status: 'specced', assignees: ['ianwieds'] });
+    const claimed = agent.claimGlyph({ status: 'specced', assignees: ['alice'] });
     assert(claimed.includes('omega-tower-activity--idle'), 'a specced issue with an assignee carries the still glyph');
-    assert(claimed.includes('title="held by @ianwieds"'), 'saying who has it');
+    assert(claimed.includes('title="held by @alice"'), 'saying who has it');
     assertEq(agent.claimGlyph({ status: 'specced', assignees: [] }), '', 'specced but unclaimed is not work in flight');
     assertEq(agent.claimGlyph({ status: 'specced' }), '', 'and neither is one with no assignee field at all');
-    assertEq(agent.claimGlyph({ status: 'inbox', assignees: ['ianwieds'] }), '', 'a claim before the spec is accepted is not either');
-    assertEq(agent.claimGlyph({ status: 'blocked', assignees: ['ianwieds'] }), '', 'nor a claim on something blocked');
+    assertEq(agent.claimGlyph({ status: 'inbox', assignees: ['alice'] }), '', 'a claim before the spec is accepted is not either');
+    assertEq(agent.claimGlyph({ status: 'blocked', assignees: ['alice'] }), '', 'nor a claim on something blocked');
     assertEq(agent.claimGlyph({}), '', 'and an issue with nothing on it draws nothing');
   });
 
   await test('a building card spins the gear - the status says the work is in motion (#141)', () => {
-    const building = agent.claimGlyph({ status: 'building', assignees: ['ianwieds'] });
+    const building = agent.claimGlyph({ status: 'building', assignees: ['alice'] });
     assert(building.includes('omega-tower-activity--working'), 'a building issue wears the working glyph');
     assert(building.includes('fa-spin'), 'and the gear turns');
-    assert(building.includes('title="held by @ianwieds"'), 'saying who has it');
+    assert(building.includes('title="held by @alice"'), 'saying who has it');
     assert(building.includes('<span class="visually-hidden">building</span>'), 'a screen reader hears the honest word');
     const unheld = agent.claimGlyph({ status: 'building', assignees: [] });
     assert(unheld.includes('fa-spin'), 'building without a holder is still work in flight, so it spins too');
@@ -1237,7 +1237,7 @@ const run = async () => {
   });
 
   await test('a claim announces itself as a claim, not as an idle agent', () => {
-    assert(agent.claimGlyph({ status: 'specced', assignees: ['ianwieds'] }).includes('<span class="visually-hidden">claimed</span>'), 'the word a screen reader hears is the caller\'s');
+    assert(agent.claimGlyph({ status: 'specced', assignees: ['alice'] }).includes('<span class="visually-hidden">claimed</span>'), 'the word a screen reader hears is the caller\'s');
     assert(agent.activityIcon('idle').includes('<span class="visually-hidden">idle</span>'), 'and the phase name is still the default');
     assert(!agent.claimGlyph({ status: 'specced', assignees: ['<img src=x>'] }).includes('<img'), 'a hostile handle is text in both the title and the label');
   });
@@ -1521,7 +1521,7 @@ const run = async () => {
     // spinner - drawn STILL on a claimed Board card, which is what a board
     // whose spinners "do not work" looks like. A specced claim is still on
     // purpose (work at rest), so the fix is a shape that reads at rest.
-    const held = agent.claimGlyph({ status: 'specced', assignees: ['ian'] });
+    const held = agent.claimGlyph({ status: 'specced', assignees: ['alice'] });
     assert(held.includes('fa-gear'), 'the Board says a claim with a gear at rest');
     assert(!held.includes('fa-spin'), 'still - a specced claim is held, not running');
     assert(agent.activityIcon('working').includes('fa-gear'), 'and the Crew turns the same one');
@@ -1648,7 +1648,7 @@ const run = async () => {
     type: 'enhancement',
     priority: 'high',
     agentOk: true,
-    assignees: ['ianwieds'],
+    assignees: ['alice'],
   };
 
   // The renderer is the framework's and is handed to the dialog by the mount,
@@ -1731,7 +1731,7 @@ const run = async () => {
     assert(parts.actions.includes('target="_blank"'), 'the external button is the header action');
     assert(parts.body.includes('>specced<'), 'the status');
     assert(parts.body.includes('>enhancement<') && parts.body.includes('agent:ok'), 'and the chips');
-    assert(parts.body.includes('held by @ianwieds'), 'who holds it');
+    assert(parts.body.includes('held by @alice'), 'who holds it');
     assert(/filed .* · updated /.test(parts.body), 'both dates');
     assertEq(rendered[rendered.length - 1], ISSUE.body, 'the renderer is handed the raw body, markdown and all');
     assert(parts.body.includes(`<div class="omega-tower-issue__body"><p data-rendered>${ISSUE.body}</p></div>`), 'and what it answers is the body of the dialog');
@@ -1937,7 +1937,7 @@ const run = async () => {
     tokens: 12000,
     usage: { input: 400, output: 90, total: 12000 },
     cost: 0.42,
-    transcript: '/home/ian/.claude/projects/-repos-ITW-workkit/sess/subagents/agent-k1.jsonl',
+    transcript: '/home/alice/.claude/projects/-repos-ITW-workkit/sess/subagents/agent-k1.jsonl',
   };
 
   await test('a crew card is reachable without a mouse, keyed by the agent it draws', () => {
@@ -2937,7 +2937,7 @@ const run = async () => {
             updatedAt: '2026-07-29T10:00:00Z',
             comments: { totalCount: 2 },
             labels: { nodes: [{ name: 'status:building' }, { name: 'type:enhancement' }, { name: 'agent:ok' }, { name: 'area:tower' }] },
-            assignees: { nodes: [{ login: 'ianwieds' }] },
+            assignees: { nodes: [{ login: 'alice' }] },
           }, {
             number: 82,
             title: 'A decision is waiting',
@@ -3928,7 +3928,7 @@ const run = async () => {
     assertEq(token.lockedIntakeNotice('localhost'), format.localLockedNotice(), 'on this machine it asks for the tower');
     assert(format.LOCAL_LOCKED_NOTICE.includes('npm run tower'), 'in the same words, and no token among them');
     assert(!/token/i.test(format.LOCAL_LOCKED_NOTICE), 'a local dialog never asks for one');
-    assertEq(token.lockedIntakeNotice('ianwieds.github.io'), format.lockedNotice(), 'and anywhere else it is the token wording, unchanged');
+    assertEq(token.lockedIntakeNotice('alice.github.io'), format.lockedNotice(), 'and anywhere else it is the token wording, unchanged');
 
     const source = fs.readFileSync(path.join(libs, 'intake.js'), 'utf8');
     assert(/lockedIntakeNotice\(location\.hostname\)/.test(source), 'the dialog reads the fork rather than owning a second one');
@@ -3937,7 +3937,7 @@ const run = async () => {
   });
 
   await test('saving stores what was typed and reads the page again with it', () => {
-    for (const hostname of ['ianwieds.github.io', 'tower.example.com', '192.168.1.20']) {
+    for (const hostname of ['alice.github.io', 'tower.example.com', '203.0.113.5']) {
       assert(!token.isLocalHost(hostname), `${hostname} is not this machine`);
     }
 

@@ -45,7 +45,7 @@ const run = async () => {
     const board = boardOf([
       issue(1, { status: 'blocked' }),
       issue(2, { status: 'specced' }),
-      issue(3, { status: 'specced', assignees: ['ianwieds'] }),
+      issue(3, { status: 'specced', assignees: ['alice'] }),
       issue(4, { status: 'inbox' }),
       issue(5, { status: 'backlog' }),
       issue(6, { status: 'qa' }),
@@ -89,7 +89,7 @@ const run = async () => {
 
   await test('a building issue is in flight on its label alone, claimed or not', () => {
     const board = boardOf([
-      issue(1, { status: 'building', assignees: ['ianwieds'] }),
+      issue(1, { status: 'building', assignees: ['alice'] }),
       issue(2, { status: 'building' }),
     ]);
     const out = buildBrief(board, {}, ROSTER, STAMP);

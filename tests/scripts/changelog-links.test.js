@@ -84,14 +84,14 @@ const run = async () => {
   await test('parses both GitHub remote URL forms, and rejects others', () => {
     const dir = mkTmp();
     git(dir, 'init', '-q', '-b', 'main');
-    git(dir, 'remote', 'add', 'origin', 'git@github.com:ianwieds/.dotfiles.git');
-    assertEq(repoSlug(dir), 'ianwieds/.dotfiles', 'ssh form');
-    git(dir, 'remote', 'set-url', 'origin', 'https://github.com/ianwieds/.dotfiles.git');
-    assertEq(repoSlug(dir), 'ianwieds/.dotfiles', 'https form');
-    git(dir, 'remote', 'set-url', 'origin', 'https://gitlab.com/ianwieds/x.git');
+    git(dir, 'remote', 'add', 'origin', 'git@github.com:alice/.dotfiles.git');
+    assertEq(repoSlug(dir), 'alice/.dotfiles', 'ssh form');
+    git(dir, 'remote', 'set-url', 'origin', 'https://github.com/alice/.dotfiles.git');
+    assertEq(repoSlug(dir), 'alice/.dotfiles', 'https form');
+    git(dir, 'remote', 'set-url', 'origin', 'https://gitlab.com/alice/x.git');
     assertEq(repoSlug(dir), null, 'a non-GitHub remote has nothing to link to');
-    git(dir, 'remote', 'set-url', 'origin', 'https://github.com/ianwieds/.dotfiles/');
-    assertEq(repoSlug(dir), 'ianwieds/.dotfiles', 'a trailing slash is tolerated');
+    git(dir, 'remote', 'set-url', 'origin', 'https://github.com/alice/.dotfiles/');
+    assertEq(repoSlug(dir), 'alice/.dotfiles', 'a trailing slash is tolerated');
     git(dir, 'remote', 'remove', 'origin');
     assertEq(repoSlug(dir), null, 'no origin remote resolves to no slug');
     cleanup(dir);
@@ -104,13 +104,13 @@ const run = async () => {
       CHANGELOG('- [#4](../../issues/4) — Plugins install from settings.json.'),
       ['refactor(setup): install plugins\n\nFixes #4'],
     );
-    const stub = makeGhStub({ login: 'Ian-Wiedenman' });
+    const stub = makeGhStub({ login: 'Octocat' });
     const { code } = runScript(dir, stub);
     assertEq(code, 0, 'exit 0');
     const text = readLog(dir);
     assert(text.includes(`[\`${shas[0]}\`](../../commit/${shas[0]})`), `a relative commit link, got: ${text}`);
-    assert(text.includes('Thanks [@Ian-Wiedenman]!'), `a shortcut attribution, got: ${text}`);
-    assert(text.includes('[@Ian-Wiedenman]: https://github.com/Ian-Wiedenman'), `defined once at the bottom, got: ${text}`);
+    assert(text.includes('Thanks [@Octocat]!'), `a shortcut attribution, got: ${text}`);
+    assert(text.includes('[@Octocat]: https://github.com/Octocat'), `defined once at the bottom, got: ${text}`);
     assert(!text.includes('github.com/o/r'), `the repo URL appears nowhere, got: ${text}`);
     assert(text.includes('— Plugins install from settings.json.'), `prose intact, got: ${text}`);
     cleanup(dir); cleanup(stub.dir);
@@ -201,11 +201,11 @@ const run = async () => {
       CHANGELOG('- [#4](../../issues/4) — Text.'),
       ['feat: a\n\nFixes #4'],
     );
-    const stub = makeGhStub({ login: 'ianwieds' });
+    const stub = makeGhStub({ login: 'alice' });
     runScript(dir, stub);
     runScript(dir, stub);
     const entry = readLog(dir).split('\n').find((l) => l.startsWith('- [#4]'));
-    assertEq((entry.match(/Thanks \[@ianwieds\]!/g) || []).length, 1, `one handle, got: ${entry}`);
+    assertEq((entry.match(/Thanks \[@alice\]!/g) || []).length, 1, `one handle, got: ${entry}`);
     cleanup(dir); cleanup(stub.dir);
   });
 
@@ -214,14 +214,14 @@ const run = async () => {
     // The backfill used to append its own attribution regardless, and every
     // such entry shipped "Thanks [@who]! Thanks [@who]! —" (issue #199).
     const { dir, shas } = mkRepo(
-      CHANGELOG('- [#4](../../issues/4) Thanks [@ianwieds]! — Text.'),
+      CHANGELOG('- [#4](../../issues/4) Thanks [@alice]! — Text.'),
       ['feat: a\n\nFixes #4'],
     );
-    const stub = makeGhStub({ login: 'ianwieds' });
+    const stub = makeGhStub({ login: 'alice' });
     runScript(dir, stub);
     runScript(dir, stub);
     const entry = readLog(dir).split('\n').find((l) => l.startsWith('- [#4]'));
-    assertEq((entry.match(/Thanks \[@ianwieds\]!/g) || []).length, 1, `one handle, got: ${entry}`);
+    assertEq((entry.match(/Thanks \[@alice\]!/g) || []).length, 1, `one handle, got: ${entry}`);
     assert(entry.includes(`[\`${shas[0]}\`](../../commit/${shas[0]})`), `the commit link still landed, got: ${entry}`);
     cleanup(dir); cleanup(stub.dir);
   });
