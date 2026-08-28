@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#208](../../issues/208) — The ship skill names the full 40-character sha for the release target; a short sha is rejected.
+
 ## [0.50.2] - 2026-08-27
 
 ### Fixed
