@@ -7,9 +7,12 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.50.4] - 2026-08-28
+
 ### Fixed
-- [#214](../../issues/214) — Every `gh issue list` in the kit now reads up to 1,000 issues instead of 100: the heal's label check and the status brief no longer stop silently at the first hundred open issues of a large repo.
-- [#213](../../issues/213) — The tower now tells a spent GitHub rate limit apart from a refused token: the local sweep and the published copy both read the rate-limit headers and name the reset time in the reader's own clock, so the Board says when the limit lifts.
+
+- [#214](../../issues/214) [`34e3281`](../../commit/34e3281) Thanks [@ianwieds]! — Every `gh issue list` in the kit now reads up to 1,000 issues instead of 100: the heal's label check and the status brief no longer stop silently at the first hundred open issues of a large repo.
+- [#213](../../issues/213) [`34e3281`](../../commit/34e3281) Thanks [@ianwieds]! — The tower now tells a spent GitHub rate limit apart from a refused token: the local sweep and the published copy both read the rate-limit headers and name the reset time in the reader's own clock, so the Board says when the limit lifts.
 
 ## [0.50.3] - 2026-08-27
 
