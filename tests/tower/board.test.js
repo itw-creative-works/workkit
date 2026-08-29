@@ -827,6 +827,11 @@ const run = async () => {
       'the body says it when the counter did not survive');
     assert(rateLimitReason(200, {}, now, { errors: [{ type: 'RATE_LIMITED', message: 'API rate limit exceeded' }] }) === null,
       'the GraphQL tell with no reset time still has nothing to say');
+    // The wire as observed on 2026-08-29: a 200 whose error type is RATE_LIMIT
+    // (not the documented RATE_LIMITED) with the budget headers beside it.
+    const live = { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor((now + 34 * 60000) / 1000)) };
+    const seen = rateLimitReason(200, live, now, { errors: [{ type: "RATE_LIMIT", code: "graphql_rate_limit", message: "API rate limit already exceeded for user ID 1." }] });
+    assert(seen && seen.includes("(in 34 min)"), "the live RATE_LIMIT shape is read as the limit it is, got " + seen);
   });
 
   await test('a secondary limit is measured by what it was told to wait, not the shared reset', () => {

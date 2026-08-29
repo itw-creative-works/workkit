@@ -336,7 +336,8 @@ export const droppedReason = (answered, nodes, errors, alias) => {
  * GitHub says a spent budget three different ways and they all mean wait:
  * the PRIMARY limit on REST answers 403 (429 on some routes) with
  * `x-ratelimit-remaining: 0`; the same limit on GraphQL answers HTTP 200 with
- * `errors[].type === 'RATE_LIMITED'`, which is a success as far as the status
+ * `errors[].type` of `RATE_LIMIT` (observed live, 2026-08-29; the docs say
+ * `RATE_LIMITED`), which is a success as far as the status
  * line is concerned; and a SECONDARY limit answers 403 with `retry-after`
  * seconds and a budget that is not spent at all. A refused TOKEN wears that
  * same 403 and is the opposite problem: one is waited out, the other needs a
@@ -360,9 +361,11 @@ export const droppedReason = (answered, nodes, errors, alias) => {
 export const rateLimitReason = (status, headers, now, evidence = {}) => {
   const head = headers || {};
   const { message, errors } = evidence || {};
-  // The GraphQL type is the whole tell on its own: it is only ever sent for
-  // this, and the status line above it says 200.
-  const flagged = (errors || []).some((error) => error && error.type === 'RATE_LIMITED');
+  // The GraphQL error is the whole tell on its own: its type starts with
+  // RATE_LIMIT (the live wire says RATE_LIMIT, the docs say RATE_LIMITED) or
+  // its message names the limit, and the status line above it says 200.
+  const flagged = (errors || []).some((error) => error
+    && (/^RATE_LIMIT/.test(error.type || '') || /rate limit/i.test(error.message || '')));
   const spent = head['x-ratelimit-remaining'] === '0';
   const said = /rate limit/i.test(message || '');
   if (!flagged && !((status === 403 || status === 429) && (spent || said))) return null;
