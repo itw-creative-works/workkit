@@ -18,7 +18,7 @@ A mode reply carries only the sections it names — the tally opens the full dig
 
 ## Repo mode (default — a project repo is the cwd)
 
-One query does it: `gh issue list --state open --json number,title,labels,assignees,blockedBy --limit 100`.
+One query does it: `gh issue list --state open --json number,title,labels,assignees,blockedBy --limit 1000`.
 Answer in this shape, plain language, one to two sentences per item:
 
 0. **The tally** — the digest OPENS with one count line: total open issues, then the count per `status:` label and per `type:` label (e.g. "12 open — status: 1 complete, 2 qa, 3 blocked, 4 specced, 2 backlog · type: 5 bugs, 6 enhancements, 1 idea").

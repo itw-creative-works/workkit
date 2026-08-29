@@ -14,7 +14,7 @@ const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
 const REPO = path.join(__dirname, '..', '..');
-const { fetchBoard, buildBoardQuery, labelGroups, LABELS_FILE, PAGE_SIZE, MAX_OPEN_ISSUES, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, REPOS_PER_REQUEST } = require(path.join(REPO, 'tower', 'api', 'lib', 'board.js'));
+const { fetchBoard, splitResponse, rateLimitReason, buildBoardQuery, labelGroups, LABELS_FILE, PAGE_SIZE, MAX_OPEN_ISSUES, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, REPOS_PER_REQUEST } = require(path.join(REPO, 'tower', 'api', 'lib', 'board.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-board-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -449,7 +449,7 @@ const run = async () => {
         'alice/.dotfiles': [conn([9])],
       }, calls),
     });
-    const queries = calls.filter((c) => c[1] === 'api').map((c) => c[4]);
+    const queries = calls.filter((c) => c[1] === 'api').map((c) => c[c.length - 1]);
     assertEq(queries.length, 2, 'the batch, then one continuation');
     assert(queries[1].includes('after: "CUR1"'), 'the second ask carries the cursor the first page ended on');
     assert(queries[1].includes('name: "workkit"') && !queries[1].includes('name: ".dotfiles"'),
@@ -590,8 +590,8 @@ const run = async () => {
     assertEq(REPOS_PER_REQUEST, 6, 'the measured batch size (issue #202)');
     const queries = calls.filter((c) => c[1] === 'api');
     assertEq(queries.length, 3, '13 repos at 6 a request is three requests, never one');
-    assertEq((queries[0][4].match(/repository\(/g) || []).length, REPOS_PER_REQUEST, 'the first request carries a full batch');
-    assertEq((queries[2][4].match(/repository\(/g) || []).length, 1, 'and the last carries the remainder');
+    assertEq((queries[0][queries[0].length - 1].match(/repository\(/g) || []).length, REPOS_PER_REQUEST, 'the first request carries a full batch');
+    assertEq((queries[2][queries[2].length - 1].match(/repository\(/g) || []).length, 1, 'and the last carries the remainder');
     assertEq(res.ok, true, 'ok');
   });
 
@@ -731,6 +731,138 @@ const run = async () => {
     });
     assertEq(res.ok, false, 'nothing usable came back');
     assertEq(res.issues.length, 0, 'no issues');
+  });
+
+  group('tower/board: a spent rate limit says when it lifts');
+
+  /**
+   * What `gh api graphql --include` prints: the status line, the response's own
+   * headers, a blank line, then the body. CRLF, as the wire has it, since the
+   * split has to survive both endings.
+   */
+  const httpAnswer = (status, headers, body) => [
+    `HTTP/2.0 ${status} ${status === 200 ? 'OK' : 'Refused'}`,
+    ...Object.entries(headers).map(([name, value]) => `${name}: ${value}`),
+    '',
+    typeof body === 'string' ? body : JSON.stringify(body),
+  ].join('\r\n');
+
+  /** A fake `gh` answering one raw response, either printed or thrown on stdout. */
+  const fakeRaw = (text, { fails = false, calls = [] } = {}) => (cmd, args) => {
+    calls.push([cmd, ...args]);
+    if (args[0] === '--version') return 'gh version 2.0.0\n';
+    if (fails) throw execError('Command failed: gh api graphql', { stdout: text, stderr: '' });
+    return text;
+  };
+
+  /** The epoch SECOND a limit lifting `minutes` from now resets at. */
+  const resetIn = (minutes) => Math.floor((Date.now() + minutes * 60 * 1000) / 1000);
+
+  /** The reader's own clock, which is what the sentence promises to speak in. */
+  const clockAt = (second) => new Date(second * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+  await test('the headers are asked for, so the reset time can be read at all', () => {
+    const calls = [];
+    fetchBoard(ROSTER, { exec: fakeRaw(httpAnswer(200, { 'x-ratelimit-remaining': '4999' }, { data: { r0: { issues: { totalCount: 0, nodes: [] } }, r1: { issues: { totalCount: 0, nodes: [] } } } }), { calls }) });
+    const graphql = calls.find((c) => c[1] === 'api');
+    assert(graphql.includes('--include'), `the call carries --include, got: ${graphql.join(' ')}`);
+  });
+
+  await test('a 403 with the budget spent reports the reset time in the local clock', () => {
+    const reset = resetIn(18);
+    const res = fetchBoard(ROSTER, {
+      exec: fakeRaw(httpAnswer(403, {
+        'X-RateLimit-Remaining': '0',
+        'X-RateLimit-Reset': String(reset),
+      }, { message: 'API rate limit exceeded for user ID 7562803.' }), { fails: true }),
+    });
+    assertEq(res.ok, false, 'nothing came back');
+    assertEq(res.reason, `GitHub rate limit hit for this token; resets at ${clockAt(reset)} (in 18 min).`, 'the sentence names the limit and when it lifts');
+  });
+
+  await test('a limit lifting inside the minute says so rather than counting to zero', () => {
+    const reset = resetIn(0.5);
+    const res = fetchBoard(ROSTER, {
+      exec: fakeRaw(httpAnswer(429, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(reset) }, { message: 'Too many requests' }), { fails: true }),
+    });
+    assert(/\(in under a minute\)\.$/.test(res.reason), `the wait reads as a wait, got: ${res.reason}`);
+  });
+
+  await test('a normal answer with the header block in front of it still yields the payload', () => {
+    const res = fetchBoard(ROSTER, {
+      exec: fakeRaw(httpAnswer(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-RateLimit-Remaining': '4987',
+      }, {
+        data: {
+          r0: { issues: { totalCount: 1, nodes: [issue(4, { labels: labels('status:inbox') })] } },
+          r1: { issues: { totalCount: 0, nodes: [] } },
+        },
+      })),
+    });
+    assertEq(res.ok, true, 'the header block is not mistaken for the body');
+    assertEq(res.issues.length, 1, 'and the issues arrive as they always did');
+    assertEq(res.issues[0].status, 'inbox', 'normalized as usual');
+  });
+
+  await test('a bad token is still a bad token, headers or not', () => {
+    const res = fetchBoard(ROSTER, {
+      exec: fakeRaw(httpAnswer(401, {
+        'X-RateLimit-Remaining': '4999',
+        'X-RateLimit-Reset': String(resetIn(30)),
+      }, { message: 'Bad credentials', status: '401' }), { fails: true }),
+    });
+    assertEq(res.reason, 'gh not authenticated', 'the auth failure keeps its own reason');
+  });
+
+  await test('the reading of a limit is pure, and everything else reads as no limit', () => {
+    const now = Date.UTC(2026, 7, 28, 3, 0, 0);
+    const at = (seconds) => String(Math.floor(now / 1000) + seconds);
+    const headers = { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': at(300) };
+    assert(/\(in 5 min\)\.$/.test(rateLimitReason(403, headers, now)), 'five minutes out reads as five');
+    assertEq(rateLimitReason(500, headers, now), null, 'a server failure is not a limit');
+    assertEq(rateLimitReason(403, { 'x-ratelimit-remaining': '12', 'x-ratelimit-reset': at(300) }, now), null, 'budget left is not a limit');
+    assertEq(rateLimitReason(403, { 'x-ratelimit-remaining': '0' }, now), null, 'and a limit with no reset time has nothing to say');
+    assert(rateLimitReason(403, { 'x-ratelimit-reset': at(300) }, now, { message: 'API rate limit exceeded' }) !== null,
+      'the body says it when the counter did not survive');
+    assert(rateLimitReason(200, {}, now, { errors: [{ type: 'RATE_LIMITED', message: 'API rate limit exceeded' }] }) === null,
+      'the GraphQL tell with no reset time still has nothing to say');
+  });
+
+  await test('a secondary limit is measured by what it was told to wait, not the shared reset', () => {
+    // Both headers on one answer: `retry-after` is THIS caller's wait, the
+    // reset second is when the shared budget refills, and they disagree.
+    const now = Date.UTC(2026, 7, 28, 3, 0, 0);
+    const said = rateLimitReason(403, {
+      'x-ratelimit-remaining': '0',
+      'x-ratelimit-reset': String(Math.floor(now / 1000) + (60 * 60)),
+      'retry-after': '120',
+    }, now, { message: 'You have exceeded a secondary rate limit' });
+    assert(/\(in 2 min\)\.$/.test(said), `the seconds it was handed win, got: ${said}`);
+    const spentAlready = rateLimitReason(429, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(Math.floor(now / 1000)) }, now);
+    assert(/\(now\)\.$/.test(spentAlready), `a window that has already turned reads as now, got: ${spentAlready}`);
+  });
+
+  await test('the GraphQL limit arrives as an ordinary 200 and is read as the limit it is', () => {
+    // GitHub answers a spent GraphQL budget 200, with the whole of the tell in
+    // the error type - the status line says nothing is wrong.
+    const reset = resetIn(9);
+    const res = fetchBoard(ROSTER, {
+      exec: fakeRaw(httpAnswer(200, { 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': String(reset) }, {
+        data: null,
+        errors: [{ type: 'RATE_LIMITED', message: 'API rate limit exceeded' }],
+      })),
+    });
+    assertEq(res.ok, false, 'a 200 with nothing in it is still a failed sweep');
+    assertEq(res.reason, `GitHub rate limit hit for this token; resets at ${clockAt(reset)} (in 9 min).`,
+      'and it says when it lifts rather than "returned no data"');
+  });
+
+  await test('a bare body with no header block parses exactly as it did before', () => {
+    const { status, headers, body } = splitResponse('{"data":{"r0":null}}');
+    assertEq(status, null, 'no status line, no status');
+    assertEq(Object.keys(headers).length, 0, 'no headers');
+    assertEq(body, '{"data":{"r0":null}}', 'and the body is the whole of it');
   });
 
   return summary();

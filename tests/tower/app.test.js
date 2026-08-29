@@ -2869,7 +2869,14 @@ const run = async () => {
     fn.calls = calls;
     return fn;
   };
-  const jsonResponse = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+  // `headers` is the third thing a Response carries and the only place a rate
+  // limit says when it lifts, so the stub answers them the way `Headers` does.
+  const jsonResponse = (status, body, headers = {}) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: (name) => (name in headers ? headers[name] : null) },
+    json: async () => body,
+  });
 
   await test('with no token nothing is sent at all - the refusal comes before the request', async () => {
     const fetchImpl = mkFetch(() => { throw new Error('a request was made'); });
@@ -2904,6 +2911,65 @@ const run = async () => {
     const empty = await github.graphql('q', { token: 't', fetch: mkFetch(jsonResponse(200, { errors: [{ message: 'Bad query' }] })) });
     assertEq(empty.ok, false, 'a 200 carrying only errors is not an answer');
     assertEq(empty.reason, 'Bad query', 'and GitHub’s own sentence is the reason');
+  });
+
+  /** The epoch SECOND a limit lifting `minutes` from now resets at. */
+  const resetIn = (minutes) => Math.floor((Date.now() + minutes * 60 * 1000) / 1000);
+
+  /** The reader's own clock, which is what the sentence promises to speak in. */
+  const clockAt = (second) => new Date(second * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+  await test('a spent rate limit is not a bad token - it says when the budget lifts', async () => {
+    const reset = resetIn(18);
+    const limited = await github.graphql('q', {
+      token: 't',
+      fetch: mkFetch(jsonResponse(403, { message: 'API rate limit exceeded for user ID 7562803.' }, {
+        'x-ratelimit-remaining': '0',
+        'x-ratelimit-reset': String(reset),
+      })),
+    });
+    assertEq(limited.ok, false, 'the read still failed');
+    assertEq(limited.status, 403, 'the status survives');
+    assertEq(limited.reason, `GitHub rate limit hit for this token; resets at ${clockAt(reset)} (in 18 min).`,
+      'and the sentence names the limit and when it lifts, not a token to replace');
+
+    const refused = await github.graphql('q', {
+      token: 't',
+      fetch: mkFetch(jsonResponse(403, { message: 'Resource not accessible by personal access token' }, {
+        'x-ratelimit-remaining': '4931',
+        'x-ratelimit-reset': String(reset),
+      })),
+    });
+    assert(/refused the token/.test(refused.reason), `a 403 with budget left is still the token, got: ${refused.reason}`);
+  });
+
+  await test('the GraphQL limit comes as a 200, and retry-after is the wait it names', async () => {
+    // GitHub answers a spent GraphQL budget 200: nothing in the status line says
+    // a limit, and the error type is the whole tell.
+    const reset = resetIn(9);
+    const quiet = await github.graphql('q', {
+      token: 't',
+      fetch: mkFetch(jsonResponse(200, { data: null, errors: [{ type: 'RATE_LIMITED', message: 'API rate limit exceeded' }] }, {
+        'x-ratelimit-remaining': '0',
+        'x-ratelimit-reset': String(reset),
+      })),
+    });
+    assertEq(quiet.ok, false, 'a 200 with nothing in it is not an answer');
+    assertEq(quiet.rateLimited, true, 'it is marked, so no page sends the viewer to Settings over it');
+    assertEq(quiet.reason, `GitHub rate limit hit for this token; resets at ${clockAt(reset)} (in 9 min).`,
+      'and it says when it lifts, not "GitHub answered without data"');
+
+    // A SECONDARY limit hands back the seconds this caller must wait, which is
+    // not the hour the shared budget takes to refill.
+    const secondary = await github.graphql('q', {
+      token: 't',
+      fetch: mkFetch(jsonResponse(403, { message: 'You have exceeded a secondary rate limit' }, {
+        'x-ratelimit-remaining': '0',
+        'x-ratelimit-reset': String(resetIn(60)),
+        'retry-after': '120',
+      })),
+    });
+    assert(/\(in 2 min\)\.$/.test(secondary.reason), `the seconds it was handed win, got: ${secondary.reason}`);
   });
 
   await test('data AND errors together is a success - one bad repo does not blank the board', async () => {
@@ -3601,6 +3667,65 @@ const run = async () => {
       : jsonResponse(403, { message: 'Resource not accessible by personal access token' })));
     const unread = await github.readFeed('/api/board', { token: 'no-contents', fetch: blindRoster });
     assert(github.isTokenRefusal(unread), `a token that cannot read the roster is a token refusal, got: ${unread.reason}`);
+  });
+
+  await test('a spent rate limit is not a token refusal - no token typed on Settings fixes it (#213)', async () => {
+    // The mark, not the status, is what tells them apart by the time the runtime
+    // reads it: both wear a 403, and only one of them is answered by handing
+    // over a new token. It has to survive graphql -> fetchBoard -> readFeed.
+    const answering = (body, headers) => mkFetch((url) => {
+      if (url === 'data/home.json') return jsonResponse(200, { home: 'owner/workkit' });
+      if (isRoster(url)) return jsonResponse(200, { repos: ['owner/workkit'], home: 'owner/workkit' });
+      return jsonResponse(403, body, headers);
+    });
+    const reset = resetIn(18);
+    const limitHeaders = { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(reset) };
+
+    for (const feedPath of ['/api/board', '/api/brief']) {
+      const limited = await github.readFeed(feedPath, {
+        token: 't',
+        fetch: answering({ message: 'API rate limit exceeded for user ID 7562803.' }, limitHeaders),
+      });
+      assertEq(limited.status, 403, `${feedPath} still carries the status GitHub refused it with`);
+      assertEq(limited.rateLimited, true, `${feedPath} carries the mark up from the sweep`);
+      assertEq(limited.reason, `GitHub rate limit hit for this token; resets at ${clockAt(reset)} (in 18 min).`,
+        `${feedPath} carries the sentence the page will draw`);
+      assert(!github.isTokenRefusal(limited), `${feedPath} is left to the page, never routed to Settings`);
+    }
+
+    const refused = await github.readFeed('/api/board', {
+      token: 'narrow',
+      fetch: answering({ message: 'Resource not accessible by personal access token' }, { 'x-ratelimit-remaining': '4931' }),
+    });
+    assert(github.isTokenRefusal(refused), 'while a 403 with budget left is the token, and still goes to Settings');
+    assertEq(refused.rateLimited, undefined, 'and carries no mark at all - it is added only when it is true');
+  });
+
+  await test('a limit on the ROSTER read is a limit too - the first call the token makes (#213)', async () => {
+    // The roster is read over REST before the sweep goes out (issue #110), so a
+    // spent budget is met THERE first. That path had its own refusal wording and
+    // no mark, which sent a rate-limited viewer to Settings to type a token that
+    // was never the problem.
+    const reset = resetIn(18);
+    const sentence = `GitHub rate limit hit for this token; resets at ${clockAt(reset)} (in 18 min).`;
+    const limitedRoster = () => mkFetch((url) => (url === 'data/home.json'
+      ? jsonResponse(200, { home: 'owner/workkit' })
+      : jsonResponse(403, { message: 'API rate limit exceeded for user ID 7562803.' }, {
+        'x-ratelimit-remaining': '0',
+        'x-ratelimit-reset': String(reset),
+      })));
+
+    const answer = await github.readFeed('/api/board', { token: 't', fetch: limitedRoster() });
+    assertEq(answer.status, 403, 'the status survives the roster read');
+    assertEq(answer.rateLimited, true, 'the mark rides up from the REST call through fetchSlugs');
+    assertEq(answer.reason, sentence, 'and the sentence is the one the sweep would have said');
+    assert(!github.isTokenRefusal(answer), 'so it is drawn on the page, never routed to Settings');
+
+    // The two writes read that same roster, and a write refused for a limit must
+    // not tell the viewer to make a token with more permission.
+    const filed = await github.createIssue({ repo: 'owner/workkit', title: 'x' }, { token: 't', fetch: limitedRoster() });
+    assertEq(filed.reason, sentence, 'the intake says the limit, not the write refusal');
+    assertEq(filed.rateLimited, true, 'and carries the mark with it');
   });
 
   await test('the refusal names the fix that exists - there is no form under it', async () => {

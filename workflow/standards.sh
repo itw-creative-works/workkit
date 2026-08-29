@@ -1053,7 +1053,7 @@ sweep_stale_claims() {
     can_flip=1
   fi
 
-  if ! issues="$(gh issue list --state open --label "$CLAIM_LABEL" --json number,updatedAt,assignees,labels --limit 100 2>/dev/null)"; then
+  if ! issues="$(gh issue list --state open --label "$CLAIM_LABEL" --json number,updatedAt,assignees,labels --limit 1000 2>/dev/null)"; then
     log_warn "claims: could not list the issues carrying $CLAIM_LABEL — every claim is left in place"
     needs_attention=1
     return 0
@@ -1128,7 +1128,7 @@ flip_claimed_specced() {
   [[ -n "$existing_labels" ]] || return 0
   jq -e --arg n "$BUILDING_LABEL" 'any(.[]; .name == $n)' <<<"$existing_labels" >/dev/null 2>&1 || return 0
 
-  if ! issues="$(gh issue list --state open --label "$SPECCED_LABEL" --json number,assignees --limit 100 2>/dev/null)"; then
+  if ! issues="$(gh issue list --state open --label "$SPECCED_LABEL" --json number,assignees --limit 1000 2>/dev/null)"; then
     log_warn "claims: could not list the issues carrying $SPECCED_LABEL — nothing was flipped"
     needs_attention=1
     return 0
@@ -1173,7 +1173,7 @@ check_issue_labels() {
   command -v gh >/dev/null 2>&1 || return 0
   gh auth status >/dev/null 2>&1 || return 0
   git remote get-url origin >/dev/null 2>&1 || return 0
-  issues="$(gh issue list --json number,labels --limit 100 2>/dev/null)" || return 0
+  issues="$(gh issue list --json number,labels --limit 1000 2>/dev/null)" || return 0
   [[ -n "$issues" ]] || return 0
   bad="$(jq -r --slurpfile manifest "$LABELS_JSON" '
     ($manifest[0].groups | to_entries | map(select(.value.exclusive == true))

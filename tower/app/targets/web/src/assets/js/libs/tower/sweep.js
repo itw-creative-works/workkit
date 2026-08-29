@@ -329,3 +329,49 @@ export const droppedReason = (answered, nodes, errors, alias) => {
   if (dropped < 1) return null;
   return `GitHub dropped ${dropped} of ${answered.length} issues: ${firstErrorFor(errors, alias)}`;
 };
+
+/**
+ * The rate limit said in the reader's own clock, or null when this is not one.
+ *
+ * GitHub says a spent budget three different ways and they all mean wait:
+ * the PRIMARY limit on REST answers 403 (429 on some routes) with
+ * `x-ratelimit-remaining: 0`; the same limit on GraphQL answers HTTP 200 with
+ * `errors[].type === 'RATE_LIMITED'`, which is a success as far as the status
+ * line is concerned; and a SECONDARY limit answers 403 with `retry-after`
+ * seconds and a budget that is not spent at all. A refused TOKEN wears that
+ * same 403 and is the opposite problem: one is waited out, the other needs a
+ * new token, so the board can only say which by reading these.
+ *
+ * WHEN it lifts is read from `retry-after` first, because the answer carrying
+ * one is telling this caller how long IT must wait, which a shared budget's
+ * reset second does not say.
+ *
+ * The headers arrive as a plain lowercased object from either transport: the
+ * machine splits them off `gh --include` (board.js), the browser reads the ones
+ * that matter off the `Response` (github.js). One sentence for both, which is
+ * why it is here and not written twice (issue #213).
+ *
+ * @param {number|null} status the response status
+ * @param {Object<string, string|null>} headers the response headers, lowercased
+ * @param {number} now epoch ms the wait is measured from
+ * @param {object} [evidence] what the body said: `{ message, errors }`
+ * @returns {string|null}
+ */
+export const rateLimitReason = (status, headers, now, evidence = {}) => {
+  const head = headers || {};
+  const { message, errors } = evidence || {};
+  // The GraphQL type is the whole tell on its own: it is only ever sent for
+  // this, and the status line above it says 200.
+  const flagged = (errors || []).some((error) => error && error.type === 'RATE_LIMITED');
+  const spent = head['x-ratelimit-remaining'] === '0';
+  const said = /rate limit/i.test(message || '');
+  if (!flagged && !((status === 403 || status === 429) && (spent || said))) return null;
+
+  const after = Number(head['retry-after']);
+  const reset = after > 0 ? now + (after * 1000) : Number(head['x-ratelimit-reset']) * 1000;
+  if (!Number.isFinite(reset) || reset <= 0) return null;
+  const clock = new Date(reset).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const left = reset - now;
+  const wait = left <= 0 ? 'now' : (left < 60000 ? 'in under a minute' : `in ${Math.ceil(left / 60000)} min`);
+  return `GitHub rate limit hit for this token; resets at ${clock} (${wait}).`;
+};

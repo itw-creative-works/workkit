@@ -42,7 +42,7 @@
 import { priorityRank, issueKey } from './format.js';
 import {
   buildBoardQuery, parseLabels, blockersFor, lastCommentOf, issueFrom, closedSince,
-  errorsByAlias, firstErrorFor, droppedReason,
+  errorsByAlias, firstErrorFor, droppedReason, rateLimitReason,
   MAX_OPEN_ISSUES, REPOS_PER_REQUEST,
 } from './sweep.js';
 
@@ -174,13 +174,44 @@ export const clearToken = (storage) => writeToken(storage, '');
 const NO_TOKEN = 'no GitHub token in this browser - add one to unlock the board';
 
 /**
+ * The rate-limit MARK, carried only when there is one.
+ *
+ * A failure travels graphql -> fetchBoard -> readFeed before the runtime reads
+ * it, and the status alone cannot say which kind of 403 this was. The mark is
+ * added last and only while it is true, so every other result is the payload it
+ * always was.
+ *
+ * @param {{rateLimited?: boolean}} result - the answer it is read off
+ * @returns {{rateLimited?: boolean}}
+ */
+const limitMark = (result) => ((result || {}).rateLimited ? { rateLimited: true } : {});
+
+/**
+ * The headers a rate limit speaks in, lifted off a `Response` into the plain
+ * object the shared reading takes - which is the shape the machine's half hands
+ * it after splitting them off `gh --include`.
+ *
+ * @param {{headers?: {get: Function}}} response - what `fetch` answered
+ * @returns {Object<string, string|null>}
+ */
+const limitHeaders = (response) => {
+  const read = (name) => (response.headers && typeof response.headers.get === 'function' ? response.headers.get(name) : null);
+  return {
+    'x-ratelimit-remaining': read('x-ratelimit-remaining'),
+    'x-ratelimit-reset': read('x-ratelimit-reset'),
+    'retry-after': read('retry-after'),
+  };
+};
+
+/**
  * One GraphQL request.
  *
  * Never throws, and reports the four ways it can fail apart: no token, a
- * transport failure, a status GitHub refused it with, and a body that is not
- * JSON. A payload carrying BOTH data and errors is a success - a roster with one
- * unreadable repo is the ordinary shape, and the caller hangs each error on the
- * repo it names.
+ * transport failure, a status GitHub refused it with (a spent rate limit told
+ * apart from a token that will not do), and a body that is not JSON. A payload
+ * carrying BOTH data and errors is a success - a roster with one unreadable
+ * repo is the ordinary shape, and the caller hangs each error on the repo it
+ * names.
  *
  * @param {string} query - the document
  * @param {object} ctx
@@ -213,6 +244,18 @@ export const graphql = async (query, ctx = {}) => {
   } catch {
     payload = null;
   }
+
+  // The limit is read BEFORE the refusal, because it wears the same status and
+  // the wrong sentence sends the viewer off making a token they already have.
+  // On GraphQL it does not wear a refusing status at all: the primary limit is
+  // an ordinary 200 whose only tell is the error type, which is why the errors
+  // go in with the headers. A PARTIAL answer is still an answer, so they speak
+  // only when nothing came back.
+  const limited = rateLimitReason(response.status, limitHeaders(response), Date.now(), {
+    message: payload && payload.message,
+    errors: payload && payload.data ? null : payload && payload.errors,
+  });
+  if (limited) return { ok: false, data: null, errors: [], status: response.status, reason: limited, rateLimited: true };
 
   if (response.status === 401 || response.status === 403) {
     return {
@@ -313,7 +356,7 @@ export const fetchHome = async (ctx = {}) => {
  */
 export const fetchSlugs = async (ctx = {}) => {
   const pointer = await fetchHome(ctx);
-  if (!pointer.ok) return { ok: false, data: null, status: pointer.status, reason: pointer.reason };
+  if (!pointer.ok) return { ok: false, data: null, status: pointer.status, reason: pointer.reason, ...limitMark(pointer) };
 
   // The raw media type, so the answer is the file itself rather than GitHub's
   // envelope with the bytes base64'd inside it.
@@ -322,7 +365,7 @@ export const fetchSlugs = async (ctx = {}) => {
     ctx,
     { accept: 'application/vnd.github.raw+json' },
   );
-  if (!answer.ok) return { ok: false, data: null, status: answer.status, reason: answer.reason };
+  if (!answer.ok) return { ok: false, data: null, status: answer.status, reason: answer.reason, ...limitMark(answer) };
   if (!answer.data || !Array.isArray(answer.data.repos)) {
     return { ok: false, data: null, status: answer.status, reason: `${pointer.home} answered without a repo list at ${ROSTER_PATH} - the board has no repositories to sweep` };
   }
@@ -421,7 +464,7 @@ export const fetchBoard = async (slugs, ctx = {}) => {
   const refused = answers.find((answer) => !answer.ok);
   if (refused) {
     return {
-      ok: false, reason: refused.reason, status: refused.status, issues: [], repos: [],
+      ok: false, reason: refused.reason, status: refused.status, ...limitMark(refused), issues: [], repos: [],
     };
   }
 
@@ -493,10 +536,15 @@ const REFUSED = [401, 403];
  * One home for the question, because two places ask it: the fetchers here and
  * the runtime, which answers a refusal with the Settings pointer instead of a page problem.
  *
- * @param {{ok: boolean, status: number|null}} result - a feed result
+ * A spent rate limit wears the same 403 and is NOT this (issue #213): there is
+ * nothing to type on the Settings page that fixes it, so a marked result is
+ * left to the page, which draws the sentence in its own alert and lets the next
+ * poll clear it.
+ *
+ * @param {{ok: boolean, status: number|null, rateLimited?: boolean}} result - a feed result
  * @returns {boolean}
  */
-export const isTokenRefusal = (result) => Boolean(result) && result.ok === false && REFUSED.includes(result.status);
+export const isTokenRefusal = (result) => Boolean(result) && result.ok === false && !result.rateLimited && REFUSED.includes(result.status);
 
 // ── The summaries ──────────────────────────────────────────────────────────
 
@@ -920,7 +968,7 @@ export const readFeed = async (path, ctx = {}) => {
   if (path === '/api/board') {
     return board.ok
       ? { ok: true, data: board, status: 200, reason: null }
-      : { ok: false, data: null, status: board.status || null, reason: board.reason };
+      : { ok: false, data: null, status: board.status || null, reason: board.reason, ...limitMark(board) };
   }
 
   if (path === '/api/brief') {
@@ -931,7 +979,7 @@ export const readFeed = async (path, ctx = {}) => {
     const { history, documents } = await fetchDiscussions(home, ctx);
     return board.ok
       ? { ok: true, data: buildBrief(board, { generatedAt: ctx.generatedAt, summaries, history, documents }), status: 200, reason: null }
-      : { ok: false, data: null, status: board.status || null, reason: board.reason };
+      : { ok: false, data: null, status: board.status || null, reason: board.reason, ...limitMark(board) };
   }
 
   // A page asking for a feed only the machine can answer. It is the runtime's
@@ -1038,6 +1086,13 @@ const rest = async (path, ctx = {}, init = {}) => {
   } catch {
     payload = null;
   }
+
+  // Read BEFORE the refusal, as the sweep reads it: a spent budget wears the
+  // same 403 and no token typed on Settings lifts it. This is the path the
+  // ROSTER is read on - the first thing the token is asked for (issue #110) -
+  // so a limit hit here is the one the viewer meets first.
+  const limited = rateLimitReason(response.status, limitHeaders(response), Date.now(), { message: payload && payload.message });
+  if (limited) return { ok: false, data: null, status: response.status, reason: limited, rateLimited: true };
 
   if (REFUSED.includes(response.status)) {
     const refusal = method === 'GET' ? readRefusal : writeRefusal;
@@ -1209,7 +1264,7 @@ export const createIssue = async (payload, ctx = {}) => {
   if (!(ctx.token || '')) return { ok: false, data: null, status: null, reason: NO_TOKEN };
 
   const list = await fetchSlugs(ctx);
-  if (!list.ok) return { ok: false, data: null, status: list.status, reason: list.reason };
+  if (!list.ok) return { ok: false, data: null, status: list.status, reason: list.reason, ...limitMark(list) };
 
   const checked = validateIntake(payload, list.data.repos.map((repo) => repo.slug));
   // The endpoint answers a refused intake 400 with the reason; so does this, and

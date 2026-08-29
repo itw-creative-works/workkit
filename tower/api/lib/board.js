@@ -61,7 +61,7 @@ const { execFileSync } = require('child_process');
 // ES module, reached by the relative path the cloud brief's runner preserves.
 const {
   buildBoardQuery, parseLabels, blockersFor, lastCommentOf, issueFrom, closedSince,
-  errorsByAlias, firstErrorFor, droppedReason,
+  errorsByAlias, firstErrorFor, droppedReason, rateLimitReason,
   PAGE_SIZE, MAX_OPEN_ISSUES, REPOS_PER_REQUEST, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, CLOSED_WINDOW_MS,
 } = require('../../app/targets/web/src/assets/js/libs/tower/sweep.js');
 
@@ -106,6 +106,34 @@ const failureReason = (err) => {
 };
 
 /**
+ * The status line, the headers and the body of a `gh --include` answer.
+ *
+ * `--include` puts the response's own headers in front of the body, which is
+ * the only way the rate limit's reset time reaches this side: `gh` prints the
+ * status line, the header lines, a blank line, then the JSON. Text with no
+ * header block in front of it is handed back whole, so a caller holding a bare
+ * body reads exactly what it read before.
+ *
+ * @param {string} text stdout, from the call or from its error
+ * @returns {{status: number|null, headers: object, body: string}} header names lowercased
+ */
+const splitResponse = (text) => {
+  const raw = text == null ? '' : String(text);
+  const opening = raw.match(/^HTTP\/\S+\s+(\d{3})/);
+  if (!opening) return { status: null, headers: {}, body: raw };
+
+  const gap = raw.search(/\r?\n\r?\n/);
+  const head = gap === -1 ? raw : raw.slice(0, gap);
+  const body = gap === -1 ? '' : raw.slice(gap).replace(/^\r?\n\r?\n/, '');
+  const headers = {};
+  for (const line of head.split(/\r?\n/).slice(1)) {
+    const colon = line.indexOf(':');
+    if (colon > 0) headers[line.slice(0, colon).trim().toLowerCase()] = line.slice(colon + 1).trim();
+  }
+  return { status: Number(opening[1]), headers, body };
+};
+
+/**
  * One `gh api graphql` round trip, believed even when the exit code says no.
  *
  * A non-zero exit still carries the response: `gh` fails whenever an errors
@@ -113,17 +141,34 @@ const failureReason = (err) => {
  * the payload decides, never the exit code — and only a payload with no data
  * in it at all is a failure to report.
  *
+ * The call asks for the headers as well, because a spent rate limit is only
+ * legible in them; they are split off before the body is parsed, and a rate
+ * limit is read before every other reason so the sweep says when it lifts. The
+ * errors go with them, since the GraphQL half of that limit arrives as an
+ * ordinary 200 carrying one.
+ *
  * @param {Function} exec the `gh` seam
  * @param {string} query the document to send
  * @returns {{payload: object|null, reason: string|null}}
  */
 const ask = (exec, query) => {
+  const read = (text) => {
+    const { status, headers, body } = splitResponse(text);
+    return { status, headers, payload: tryParse(body) };
+  };
+  const limited = ({ status, headers, payload }) => rateLimitReason(status, headers, Date.now(), {
+    message: payload && payload.message,
+    errors: payload && payload.errors,
+  });
+
   try {
-    const payload = tryParse(exec('gh', ['api', 'graphql', '-f', `query=${query}`]));
-    return payload && payload.data ? { payload, reason: null } : { payload: null, reason: 'gh graphql returned no data' };
+    const answer = read(exec('gh', ['api', 'graphql', '--include', '-f', `query=${query}`]));
+    if (answer.payload && answer.payload.data) return { payload: answer.payload, reason: null };
+    return { payload: null, reason: limited(answer) || 'gh graphql returned no data' };
   } catch (err) {
-    const payload = tryParse(err.stdout ? String(err.stdout) : '');
-    return payload && payload.data ? { payload, reason: null } : { payload: null, reason: failureReason(err) };
+    const answer = read(err.stdout ? String(err.stdout) : '');
+    if (answer.payload && answer.payload.data) return { payload: answer.payload, reason: null };
+    return { payload: null, reason: limited(answer) || failureReason(err) };
   }
 };
 
@@ -323,4 +368,4 @@ const fetchBoard = (repos, opts = {}) => {
 
 // The sweep's pure half is re-exported rather than restated, so a caller that
 // has this module has the whole sweep and never reaches past it (issue #195).
-module.exports = { fetchBoard, startSweep, buildBoardQuery, parseLabels, issueFrom, labelGroups, errorsByAlias, firstErrorFor, droppedReason, closedSince, blockersFor, lastCommentOf, REPOS_PER_REQUEST, PAGE_SIZE, MAX_OPEN_ISSUES, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, CLOSED_WINDOW_MS, LABELS_FILE };
+module.exports = { fetchBoard, startSweep, splitResponse, buildBoardQuery, parseLabels, issueFrom, labelGroups, errorsByAlias, firstErrorFor, droppedReason, rateLimitReason, closedSince, blockersFor, lastCommentOf, REPOS_PER_REQUEST, PAGE_SIZE, MAX_OPEN_ISSUES, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, CLOSED_WINDOW_MS, LABELS_FILE };

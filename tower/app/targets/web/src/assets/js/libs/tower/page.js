@@ -518,8 +518,9 @@ export async function startPage(options) {
     // Settings itself it rides the state into the card's own reason; on every
     // other page it is the line pointing at Settings, in place of the data that
     // will not load. Written through `swap` like everything else in the body, so
-    // a read landing after all (a 403 is a rate limit as often as a bad token)
-    // draws the page back over it.
+    // a read landing after all draws the page back over it. A spent RATE LIMIT
+    // wears the same 403 and never comes here (issue #213): no token fixes it,
+    // so `isTokenRefusal` leaves it to the page, which says when it lifts.
     state.tokenProblem = '';
     if (MODE === 'github') {
       const refused = Object.values(state.feeds).find(isTokenRefusal);

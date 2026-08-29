@@ -112,7 +112,7 @@ The app is an OMEGA brand root whose one app is the dashboard. The framework sup
 
 Anything outside `/api/*` is a 404. The dashboard is the OMEGA app, not this process.
 
-Failures are soft and never cached: a lapsed `gh` login returns `{ ok: false, reason: … }` and the next read retries. One unresolvable repo does not blank the board — its entry carries the error and the rest render.
+Failures are soft and never cached: a lapsed `gh` login returns `{ ok: false, reason: … }` and the next read retries. One unresolvable repo does not blank the board — its entry carries the error and the rest render. A SPENT RATE LIMIT is told apart from a refused token and says when it lifts (issue #213): the sweep asks `gh` for the response headers (`--include`), and a spent budget reads as `GitHub rate limit hit for this token; resets at 11:04 PM (in 18 min).` in the machine's own clock. A limit says so in three shapes and all three are read: a 403 or 429 with `x-ratelimit-remaining: 0`, an ordinary GraphQL 200 whose only tell is `errors[].type === 'RATE_LIMITED'`, and a secondary limit's `retry-after` seconds, which name this caller's own wait and win over the shared reset second. It is the same sentence the published copy shows, because both halves call one reading in `libs/tower/sweep.js` rather than two copies of it (issue #195). On the published copy every path reads it, the REST roster read included (that one is the first call the token makes), and it is drawn as the page's own alert rather than routed to Settings the way a refused token is: no token typed there lifts a limit, so the result carries a `rateLimited` mark up through the sweep and `isTokenRefusal` declines it.
 
 ## Telemetry, and why it is careful
 

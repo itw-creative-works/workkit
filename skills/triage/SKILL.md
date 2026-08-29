@@ -21,10 +21,10 @@ mkdir -p "${TMPDIR:-/tmp}/claude-triage-marker" && touch "${TMPDIR:-/tmp}/claude
 
 ## Sources to drain
 
-1. **Open `status:inbox` issues** on the cwd repo — `gh issue list --state open --label status:inbox --json number,title,body,labels`.
+1. **Open `status:inbox` issues** on the cwd repo — `gh issue list --state open --label status:inbox --json number,title,body,labels --limit 1000`.
 2. **`.workkit/capture.md`** — the local, gitignored capture file (offline moments, free-form dumps).
 3. **Mid-chat note dumps** — same routing, no file needed first.
-4. **The HQ pass** (#100) — the home repo's own open `status:inbox` issues (`gh issue list --repo <site.repo> --state open --label status:inbox ...`, the `site.repo` in `~/.workkit/settings.json`), routed with the same table below, from any repo. This is how the nursery drains, since no session ever opens in the clone. When captures cluster around one project, propose graduation (§ Graduation). No `site.repo`, or HQ unreachable: name the skip in the Filed trail — never silent.
+4. **The HQ pass** (#100) — the home repo's own open `status:inbox` issues (`gh issue list --repo <site.repo> --state open --label status:inbox ... --limit 1000`, the `site.repo` in `~/.workkit/settings.json`), routed with the same table below, from any repo. This is how the nursery drains, since no session ever opens in the clone. When captures cluster around one project, propose graduation (§ Graduation). No `site.repo`, or HQ unreachable: name the skip in the Filed trail — never silent.
 
 A capture made outside every participating repo is already a `status:inbox` issue on the home repo — `wk.sh note` files it there directly, so the HQ pass is where it gets drained.
 
@@ -33,7 +33,7 @@ Split every source into discrete entries. A wall of mixed notes fans out to MANY
 ## Route each entry to exactly ONE home
 
 Before creating anything, **search what already exists** — open AND closed:
-`gh issue list --state all --search "<key words>"`.
+`gh issue list --state all --search "<key words>" --limit 1000`.
 
 Then, before creating anything, apply the **filing litmus test**: *would closing an OPEN issue automatically mean this entry is done too?* Yes → it goes on THAT issue, as a checklist line in its Spec or as a comment. Only a no earns a new issue (spec § How big is one issue).
 
@@ -85,7 +85,7 @@ Filed:
 
 A separate mode: instead of draining the inbox, sweep the OPEN board and apply the same litmus test across the issues that already exist.
 
-1. List the open issues (`gh issue list --state open --json number,title,labels,body`) and read them.
+1. List the open issues (`gh issue list --state open --json number,title,labels,body --limit 1000`) and read them.
 2. Group by the test — *would closing one of these automatically mean the other is done too?*
 3. Present a merge PLAN and stop: **merge these** (which survives, which closes, what moves), **attach that** (an issue that becomes a checklist line or a comment on another), **keep these separate** — with one line of why for every group, including the separations.
 4. Execute ONLY on the owner's approval, group by group. Content moves to the survivor BEFORE the close; a closed-as-merged issue gets a closing comment naming the survivor (`gh issue comment <N> --body "Merged into #<survivor>."` then `gh issue close <N>`). End with the Filed trail.

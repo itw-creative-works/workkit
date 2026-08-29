@@ -77,7 +77,7 @@ Also run `git log --oneline -5` to understand recent commit style.
 
 A ship finishes the items that PASSED their check: `status:complete` is the stage it reads from (spec § the qa stage). Items still at `status:qa` are waiting on a check and are not this ship's to close.
 
-1. List both stages, if the repo participates: `gh issue list --state open --label status:complete --json number,title` and the same for `status:qa`.
+1. List both stages, if the repo participates: `gh issue list --state open --label status:complete --json number,title --limit 1000` and the same for `status:qa`.
 2. Nothing at `status:qa` → say nothing about it and carry on.
 3. Anything at `status:qa` → its code sits in the SAME working tree this ship is about to commit, so the owner has to call it. List each one (number, title, one line of what it is waiting on from its check comment) and ask per item:
    - **include** — the owner's check passed right there: grant the stage on the spot (`gh issue edit <N> --remove-label status:qa --add-label status:complete`) with the pass comment (`gh issue comment <N> --body "QA passed by <owner>, <date>."`), and the ship carries it like any other complete item.

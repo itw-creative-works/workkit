@@ -81,7 +81,7 @@ if [ -n "$cwd" ] && command -v gh >/dev/null 2>&1 \
     n=$(cat "$cache_file" 2>/dev/null)
   fi
   if [ -z "$n" ]; then
-    issues=$(cd "$cwd" && run_bounded 5 gh issue list --state open --label status:inbox --json number --limit 100 2>/dev/null) || issues=""
+    issues=$(cd "$cwd" && run_bounded 5 gh issue list --state open --label status:inbox --json number --limit 1000 2>/dev/null) || issues=""
     if [ -n "$issues" ]; then
       n=$(jq -r 'length' <<<"$issues" 2>/dev/null) || n=0
       case "$n" in ''|*[!0-9]*) n=0 ;; esac
