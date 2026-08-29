@@ -7,8 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.50.5] - 2026-08-29
+
 ### Fixed
-- [#216](../../issues/216) — The tower now reads the rate limit as GitHub actually sends it on GraphQL: an HTTP 200 whose error type is `RATE_LIMIT` with the budget headers beside it, so the Board names the reset time instead of the bare message.
+
+- [#216](../../issues/216) [`09a5578`](../../commit/09a5578) Thanks [@ianwieds]! — The tower now reads the rate limit as GitHub actually sends it on GraphQL: an HTTP 200 whose error type is `RATE_LIMIT` with the budget headers beside it, so the Board names the reset time instead of the bare message.
 
 ## [0.50.4] - 2026-08-28
 
