@@ -7,6 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+- [#217](../../issues/217) — The qa stage gains **The proof**: a park names every test layer the change has a surface on in a `Proof:` line of the park comment. The verifier checks the layers, the feature skill cites the rule, and the standards heal names every `status:qa` issue without the line.
+- [#212](../../issues/212) — The `workkit:interview` skill now fixes the shape of every question put to the human: a numbered question, its options as nested bullets, the recommended option first and bold with one sentence of why, one bold heading per issue. It is the one home of that shape.
+- [#210](../../issues/210) — The `workkit:checkpoint` skill now applies the chat to the board: it enumerates every owner verdict, decision and question first, files or comments each onto its issue, flips the status the owner spoke (a spoken pass on a qa item grants `status:complete`), and reports only what changed.
+- [#209](../../issues/209) — The `workkit:review` skill gains a Parity lens: in the full tier a scout names each changed file's siblings and reports where the new code's shape, naming, entry point, logging, or call form differs; the light tier carries one line of it; a finding with no sibling scores 0.
+
+### Changed
+- (no issue) — The worker agent now reads the framework guides its brief names before its first edit and records that read through the owning plugin's own command, and the brief-in-a-file convention says a brief must name those guides.
+
 ## [0.50.5] - 2026-08-29
 
 ### Fixed

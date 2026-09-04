@@ -46,15 +46,17 @@ Stage the class agents by phase, never all at once. Build = ONE `workkit:worker`
 
 ## 5. Verify + review
 
-Run the suite. Then [workkit:review](../review/SKILL.md) on the diff (trivial tasks: skip formal review; the green suite is the proof). Fix ≥80 findings before calling it done. The review's simplification lens covers post-green cleanup. Done-criteria: suite green, review verdict "ship", the issue and docs updated per the doc-parity rules.
+Run the suite. Then [workkit:review](../review/SKILL.md) on the diff (trivial tasks: skip formal review; the green suite is the proof). Fix ≥80 findings before calling it done. The review's simplification lens covers post-green cleanup. Done-criteria: green at every layer the change has a surface on (`docs/project-state.md` § The proof), review verdict "ship", the issue and docs updated per the doc-parity rules.
 
 ## 6. Park at `status:qa` — the flow ends here, not at a ship
 
-Build done, tests green, review passed → the work STAYS IN THE WORKING TREE (uncommitted, or committed but unpushed). Flip the issue and say what to check:
+Build done, tests green, review passed → the work STAYS IN THE WORKING TREE (uncommitted, or committed but unpushed). Flip the issue and say what to check. The comment's first line is `Proof:`, one entry per layer (the command, or the reason it was skipped); the check reads it before anything else.
 
 ```
 gh issue edit <N> --remove-label status:building,agent:working --add-label status:qa
-gh issue comment <N> --body "<what to check, and where>"
+gh issue comment <N> --body "Proof: <one entry per layer: the command, or why it was skipped>
+
+<what to check, and where>"
 ```
 
 `agent:working` comes off with the flip: the agent is done and the wait is the owner's, and a claim left standing is swept as stale after 24 idle hours. The assignee stays — the work is still in that tree. The comment is the whole handover: what changed, what to look at, and where to look at it — the page to open, the command to run, or the diff to read when the change has no surface. The flip is MECHANICAL — it is not a question, and it happens the moment the done-criteria above are met.

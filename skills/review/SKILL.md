@@ -15,7 +15,7 @@ Default: uncommitted changes (else the last commit); the user may name a range, 
 Two tiers. **Default is FULL.** An explicit invocation arg wins both ways: `/workkit:review light` forces light, `/workkit:review full` forces full.
 
 - **Full tier**: every applicable lens in §2, in parallel, plus the §3 scorer.
-- **Light tier**: ONE `workkit:verifier` agent carrying the combined finder mandate (bugs + compliance + spec-faithfulness + simplification, same brief discipline, still execution-verifies its claims), plus the §3 scorer. The scorer is never skipped — finder-never-scores is the integrity core of both tiers.
+- **Light tier**: ONE `workkit:verifier` agent carrying the combined finder mandate (bugs + compliance + spec-faithfulness + simplification, plus one line of the Parity mandate below: name each changed file's siblings and report where the new code differs; same brief discipline, still execution-verifies its claims), plus the §3 scorer. The scorer is never skipped — finder-never-scores is the integrity core of both tiers.
 
 Downgrade to light ONLY when ALL of these hold (any miss = stay full):
 1. Small diff: under ~150 changed lines AND ~5 files.
@@ -35,12 +35,13 @@ Dispatch per the file-handoff convention: the brief goes to a file in the sessio
 | Simplification | `workkit:scout` agent | Run the deletion test over the diff's ADDITIONS (`js:patterns` `resources/code-design.md`): wrappers that add nothing, options with one caller, defensive branches for impossible states, needless indirection. Clarity over brevity — clearer sometimes means more lines, and an abstraction serving a NAMED second consumer is not clutter (global §3). Findings name the collapse, never apply it |
 | History | `workkit:scout` agent | `git log`/`blame` on touched files: does the diff fight a past fix, revert intent, or repeat a reverted approach? |
 | Firestore rules | `workkit:scout` agent | ONLY when the diff touches BEM/Firestore work: reads vs rules coverage both ways |
+| Parity | `workkit:scout` agent | Full tier only. For every file the diff adds or changes, name its siblings (the same kind of thing on another surface, target, command, or package) from the repo's docs and directory shape, then report where the new code's shape, naming, entry point, logging, or call form differs from them. The principle is the global AGENTS.md parity rule (like things use like systems); the lens quotes it, never owns it. Findings name the sibling and the mismatch, never apply a fix |
 
 Never tell a lens what NOT to flag and never pre-rate severity in the brief — that manufactures false negatives. The `manager/resolver` hook supplies each class agent's model per spawn — never pass a `model` param.
 
 ## 3. Scorer — separate pass
 
-The `workkit:verifier` agent (never a finder in the same pass) scores every collected finding 0–100: "how certain is this a real issue a maintainer would fix?" It gets the finding + the relevant code, applies the false-positive list (linter-catchable, unmodified lines, pre-existing, no written rule, unreachable hypotheticals → score 0) and re-checks the claim against the actual file before scoring. Where a lens attached its own confidence, the scorer's number wins. The final ship/fix/rework verdict stays with the dispatching session — frontier-or-session judgment by construction.
+The `workkit:verifier` agent (never a finder in the same pass) scores every collected finding 0–100: "how certain is this a real issue a maintainer would fix?" It gets the finding + the relevant code, applies the false-positive list (linter-catchable, unmodified lines, pre-existing, no written rule, unreachable hypotheticals → score 0) and re-checks the claim against the actual file before scoring. Where a lens attached its own confidence, the scorer's number wins. A Parity finding whose file has no sibling scores 0. The final ship/fix/rework verdict stays with the dispatching session — frontier-or-session judgment by construction.
 
 ## 4. Report
 

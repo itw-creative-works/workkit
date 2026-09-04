@@ -29,8 +29,17 @@ Size the sweep out loud and say it: a small item clears most categories with not
 
 ## How questions are asked: chat rounds, never a form
 
-- **In chat, as prose.** Never the AskUserQuestion tool (the frontmatter removes it). Numbered questions, batched in themed rounds of 3–5, highest-stakes round first.
-- **Every question carries a recommendation FIRST**, labeled "(Recommended)", one line of why, then the alternatives as plain outcomes. Quality bar: the human can answer most questions with "yes" or a single word.
+- **In chat, never a form.** Never the AskUserQuestion tool (the frontmatter removes it). Questions are batched in themed rounds of 3–5, highest-stakes round first. The one exception is a BOARD round: when every question is "what happens to this issue" (build, park, close, talk), one round holds the whole board, grouped by what the human must do (build on a yes / needs a design talk / stays parked unless pulled), because the human decides the set in one sitting (Ian 2026-09-02).
+- **Every question explains its subject first, in plain words** (Ian 2026-09-02, "explain each in detail, plainly and simply"). Before the options, one short paragraph says what the issue or thing IS, what is wrong or missing today, and what the decision changes in practice. Small words, short sentences, no codenames or labels standing in for an explanation: a title alone, or a line lumping several issues, is the defect. The reader must be able to decide without opening the issue.
+- **One shape, every question** (the SSOT for how a decision is put to the human, in an interview or anywhere else): a numbered question; its options as nested bullets under it, each a plain outcome; the recommended option is ALWAYS the first bullet, bold, tagged "(Recommended)", with one short sentence of why. Questions from one issue sit under a bold heading line carrying the issue link. Never options inline in a paragraph, never a table. Quality bar: the human can answer most questions with "yes" or a single word.
+
+  ```
+  **[#16](url), private-key auth**
+
+  2. The Firebase backend. Today the brand has no backend of its own, so signin has nowhere to verify a key. Picking where it runs decides what `npm start` boots.
+     - **New `targets/backend`, emulator only** (Recommended). `npm start` boots it with the rest.
+     - Point at another brand's backend through an env var.
+  ```
 - **Re-derive between rounds.** Each round's answers may kill or spawn later questions — never march through a fixed script.
 - **Mid-build (frontier mode)**: ask only what changes the next action; everything else gets your recommended default, stated in the report, reversible later.
 

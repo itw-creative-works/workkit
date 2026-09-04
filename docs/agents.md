@@ -32,7 +32,7 @@ The manager groups the batch's issues before any spawn, by three forces in order
 
 ### Questions to the owner
 
-A decision put to the owner is SELF-CONTAINED: the question carries its full background in plain words — what the item is, why it needs a decision now, and what each choice means in consequence — written for an owner who has read nothing else this session. Option labels are plain outcomes, never internal shorthand, and the recommended option says why it is recommended. The chat message before a question dialog briefs each decision in its own short paragraph, so the dialog confirms choices the owner already understands rather than introducing them. Unrelated decisions still batch into one pass — the questions arrive together, each standing alone (owner ruling, 2026-08-04).
+A decision put to the owner is SELF-CONTAINED: the question carries its full background in plain words — what the item is, why it needs a decision now, and what each choice means in consequence — written for an owner who has read nothing else this session. The shape of the question itself (numbered, a plain paragraph first, options as nested bullets with the recommended one first and bold) is the `workkit:interview` skill's, § How questions are asked, and it binds every decision put to the owner. Unrelated decisions still batch into one pass — the questions arrive together, each standing alone (owner ruling, 2026-08-04).
 
 ## Agents from other repos
 
@@ -44,7 +44,7 @@ The `manager/resolver` hook routes ONLY the four workkit classes above — every
 
 A chat-inline brief bloats the dispatching context; a report file the dispatcher then has to open is a round trip nobody needs. So the two halves go opposite ways:
 
-1. **Brief in a file.** The dispatcher writes the task brief to a file (session scratchpad dir) and passes the path plus a 1–3 sentence dispatch line. Briefs are **behavioral, not procedural**: state the goal, constraints, and done-criteria — not step-by-step file paths that go stale. A brief file exists only for a dispatch being made now — the spawn rides the same turn (or the owner explicitly asked for the file). The owner saying "brief me" is asking for a chat summary, never a file (issue #192).
+1. **Brief in a file.** The dispatcher writes the task brief to a file (session scratchpad dir) and passes the path plus a 1–3 sentence dispatch line. Briefs are **behavioral, not procedural**: state the goal, constraints, and done-criteria — not step-by-step file paths that go stale. A brief file exists only for a dispatch being made now — the spawn rides the same turn (or the owner explicitly asked for the file). The owner saying "brief me" is asking for a chat summary, never a file (issue #192). A brief also NAMES the framework guide(s) the agent must read before its first edit, so that reading is routed by the dispatcher instead of guessed at.
 2. **Report inline.** The agent's final message IS the report: a completion status, commits if any, and the findings the dispatcher needs to act — written for a reader who has not seen the work. No report file, and no summary file beside it.
 3. **A report FILE is the exception.** Only when the brief explicitly asks for one — a large artifact meant to be read selectively rather than in chat. Then the final message stays status, commits, and ONE line of result plus the path.
 

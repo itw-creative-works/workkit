@@ -1891,6 +1891,48 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
+  group('standards.sh: the qa proof report');
+
+  // The park's rule: a built item says which test layers proved it, in a
+  // comment line starting `Proof:`. A qa issue without one was parked on a
+  // partial proof, and the heal names it until the line lands.
+  await test('a status:qa issue with no Proof: line in any comment is named', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub({
+      labels: desiredLabels(),
+      labeled: {
+        'status:qa': [
+          { number: 11, comments: [] },
+          { number: 12, comments: [{ body: 'What to check: open the page.\nThe diff is the rest.' }] },
+          { number: 13, comments: [{ body: 'Proof: unit node --test test/x.test.js; e2e skipped, no surface' }] },
+          { number: 14, comments: [{ body: 'Built.' }, { body: 'What changed, then\nProof: integration npm test' }] },
+        ],
+      },
+    });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 1, 'a missing proof flags the run — re-reported every session until the line lands');
+    assert(output.includes('#11'), `no comment at all is named, got: ${output}`);
+    assert(output.includes('#12'), `a park comment without the line is named, got: ${output}`);
+    assert(!output.includes('#13'), `a Proof: line at the top of a comment passes, got: ${output}`);
+    assert(!output.includes('#14'), `a Proof: line on a later line of a later comment passes, got: ${output}`);
+    assert(output.includes('The proof'), `names the rule, got: ${output}`);
+    const proofQueries = ghCalls(stub)
+      .filter((c) => isCall(c, 'issue', 'list') && c.includes('status:qa'));
+    assertEq(proofQueries.length, 1, 'one gh call for the whole report');
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('qa issues that all carry a Proof: line stay silent', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub({
+      labels: desiredLabels(),
+      labeled: { 'status:qa': [{ number: 11, comments: [{ body: 'Proof: unit node --test test/x.test.js' }] }] },
+    });
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    assert(!output.includes('Proof:'), `nothing to name, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
   group('standards.sh: the stale-claim sweep');
 
   // An agent that claimed an issue and then died leaves it locked against every

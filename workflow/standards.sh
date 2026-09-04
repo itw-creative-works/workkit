@@ -38,6 +38,10 @@
 #                  the machine-local index the tower reads instead of walking a
 #                  filesystem root, and drop any listed path that is gone or has
 #                  since said `enabled: false`. Silent; `workkit doctor` counts it.
+#   6b. proof    — name every open status:qa issue whose comments carry no
+#                  `Proof:` line: the park's rule (project-state.md § The
+#                  proof) is that a built item says which test layers proved
+#                  it, and one parked without that line is not built.
 #   7. hooks     — assert the hook layer beside this engine is alive: every hook
 #                  wired in hooks.json resolves to a script that exists, is
 #                  executable, and parses, and the tools they call are present.
@@ -1190,6 +1194,30 @@ check_issue_labels() {
   fi
 }
 
+# ── 4b. A qa issue carries its proof ──
+# The park's own rule (docs/project-state.md § The proof, owner ruling
+# 2026-09-02, #217): an item is built when it has proof at every test layer it
+# has a surface on, and the park comment says which, in a line starting
+# `Proof:`. An open status:qa issue with no such line was parked on a partial
+# proof, and it is named every session until the line lands, the way a missing
+# label is. Same tool gates as the label report; the comments ride one list call.
+check_qa_proof() {
+  local issues bad
+  command -v jq >/dev/null 2>&1 || return 0
+  command -v gh >/dev/null 2>&1 || return 0
+  gh auth status >/dev/null 2>&1 || return 0
+  git remote get-url origin >/dev/null 2>&1 || return 0
+  issues="$(gh issue list --label status:qa --json number,comments --limit 1000 2>/dev/null)" || return 0
+  [[ -n "$issues" ]] || return 0
+  bad="$(jq -r '
+    [ .[] | select(any(.comments[]?.body; test("(^|\n)Proof:")) | not) | "#\(.number)" ]
+    | join(" ")' <<<"$issues" 2>/dev/null || true)"
+  if [[ -n "$bad" ]]; then
+    log_warn "issues: $bad parked at status:qa with no Proof: line — the park comment names each test layer, or why it was skipped (docs/project-state.md § The proof)"
+    needs_attention=1
+  fi
+}
+
 # ── 5. The hook layer is alive ──
 # Every hook fails OPEN by design — a broken hook must never wedge a session —
 # so a chmod-stripped script, a syntax error, or a missing tool disables a
@@ -1345,6 +1373,7 @@ sync_labels
 sweep_stale_claims
 flip_claimed_specced
 check_issue_labels
+check_qa_proof
 check_hook_layer
 
 # A repo already at the current standard has nothing to look for — the whole

@@ -124,6 +124,7 @@ const run = async () => {
     assert(ctx.includes("the agent's reply IS the report"), 'the file-handoff rule is missing');
     assert(/[Jj]udgment stays/.test(ctx), 'the judgment boundary is missing');
     assert(ctx.includes('self-contained'), 'the owner-question rule is missing');
+    assert(ctx.includes('names the framework guide'), 'the brief routes the guide read');
   });
   await test('the visibility rules are present on both rungs (#154)', () => {
     // What a manager owes the chat while it delegates: the checklist that says

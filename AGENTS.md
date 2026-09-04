@@ -79,6 +79,11 @@ Each step is gated by what the environment it woke up in can do; the brief itsel
 
 `npm test` runs `tests/run.js`, which discovers every `tests/**/*.test.js`. A suite whose precondition this machine cannot meet calls `skipSuite()` and the runner names the skip rather than hiding it. Suites live under `tests/hooks/`, `tests/scripts/`, `tests/tower/`, and `tests/jobs/`.
 
+Lanes per layer (`docs/project-state.md` § The proof):
+- Unit: a module called directly.
+- Integration: a script run whole with a stubbed `gh`.
+- End to end: no lane here (a live session is the only surface), so a park names that layer as skipped.
+
 ## Conventions
 
 - **Portable by default.** Nothing under `hooks/`, `agents/`, or `skills/` may carry a machine-specific absolute path. Hook commands resolve through `${CLAUDE_PLUGIN_ROOT}`; the engine's stable address is `~/.claude/workkit`.
