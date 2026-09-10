@@ -7,6 +7,20 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+- [#226](../../issues/226) — Naming issue numbers in a triage ask now scopes the run to only those issues ("215 211 triage", "accept 215"): no capture-file drain, no home-repo pass, and "accept" waits for your yes unless a real spec is already written. The bare word still drains everything.
+
+### Changed
+- [#228](../../issues/228) — The four tower suites that fake `gh` answers now share one fixture, `tests/lib/gh.js`: the six helpers lived in two full copies and two partial ones, with the error builder under two call forms, and each suite now imports only the names it uses.
+- [#222](../../issues/222) — Review now runs at two cadences: every blind verification asks the drift questions (parity siblings, duplicates by grep, stale docs), every ship runs the full review panel over its whole diff, and a review marker alone no longer licenses a ship.
+- [#221](../../issues/221) — Every restated issue now reads for a cold reader: `docs/project-state.md` § Restating an issue is the one home, the `manager/profile` hook injects it every prompt, every skill and agent that restates issues points there, and the Filed trails print one link-first shape (folds #220).
+- [#219](../../issues/219) — The missing-proof watch moved from the daily heal into the ship: every ship now lists each item at `status:qa` or `status:complete` whose comments carry no `Proof:` line and you call each one, so a spoken pass cannot ship unrecorded.
+
+### Fixed
+- [#227](../../issues/227) — Every skill's frontmatter now parses under a strict YAML loader: the ship description and the migrate argument hint carried a bare colon and a bare bracket that Claude Code tolerated but a stricter loader refuses, and the skills suite now checks every folder for both.
+- [#215](../../issues/215) — The tower's two Discussions reads no longer swallow a `gh` failure: the summaries and the published briefs carry the sweep's own reason beside the null, so the Brief and the Overview name a spent rate limit or a refused token where they said nothing.
+- [#211](../../issues/211) — Triage now resolves which repo an entry belongs to instead of defaulting to the home repo: a finding about a workkit skill, hook, agent or engine file lands on the kit's own repo from any session, another project's through this machine's roster, an unresolvable one stays local.
+
 ## [0.51.0] - 2026-09-04
 
 ### Added

@@ -321,8 +321,10 @@ const run = async () => {
     assertEq(out.counts.open, 2, 'and the board is all there');
     assertEq(out.findings, null, 'the key says there was nothing to read');
     assertEq(out.week, null, 'and so does the rollup');
-    assert(/^brief: no daily summary could be read from owner\/private-home$/m.test(stderr), `the skip is named: ${JSON.stringify(stderr)}`);
-    assert(/^brief: it is Monday and no weekly rollup could be read from owner\/private-home$/m.test(stderr), `both of them: ${JSON.stringify(stderr)}`);
+    // The line carries the read's own reason (#215): a gap with nothing to
+    // explain it read as a night that produced nothing.
+    assert(/^brief: no daily summary could be read from owner\/private-home: gh graphql failed: /m.test(stderr), `the skip is named, with why: ${JSON.stringify(stderr)}`);
+    assert(/^brief: it is Monday and no weekly rollup could be read from owner\/private-home: gh graphql failed: /m.test(stderr), `both of them: ${JSON.stringify(stderr)}`);
     cleanup(world.root);
   });
 

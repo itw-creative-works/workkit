@@ -13,9 +13,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { resetIn, clockAt, mkLimited, mkRefused } = require('../lib/gh');
 
 const {
-  briefHistory, briefFreshness, parseStatsMark, HISTORY_LIMIT, BRIEF_TITLE_PREFIX,
+  readDiscussions, briefHistory, briefFreshness, parseStatsMark, HISTORY_LIMIT, BRIEF_TITLE_PREFIX,
 } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'history.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-history-'));
@@ -117,6 +118,48 @@ const run = async () => {
       exec: () => { throw new Error('gh must not be called at all'); },
     }), null, 'a machine with nowhere to read from never asks');
     cleanup(home); cleanup(noHome);
+  });
+
+  group('tower/history: why the mornings could not be read');
+
+  await test('a spent rate limit rides back as the reason, not as a bare null (#215)', () => {
+    const home = mkHome();
+    const reset = resetIn(9);
+    const out = readDiscussions({ workflowHome: home, exec: mkLimited(reset) });
+    assertEq(out.nodes, null, 'no mornings arrived');
+    assertEq(out.reason, `GitHub rate limit hit for this token; resets at ${clockAt(reset)} (in 9 min).`,
+      'and the read says why, in the sentence the board and the sweep say');
+    cleanup(home);
+  });
+
+  await test('a refused token wears the same 403 and is told apart from a limit', () => {
+    const home = mkHome();
+    const out = readDiscussions({ workflowHome: home, exec: mkRefused() });
+    assertEq(out.nodes, null, 'nothing was read');
+    assertEq(out.reason, 'gh not authenticated', 'and a new token, not a wait, is what fixes it');
+    cleanup(home);
+  });
+
+  await test('a board that answered carries the mornings and no reason at all', () => {
+    const home = mkHome();
+    const out = readDiscussions({ workflowHome: home, exec: mkExec([brief('2026-08-03', 12, 4)]) });
+    assertEq(out.nodes.length, 1, 'the morning came back');
+    assertEq(out.reason, null, 'and nothing went wrong to report');
+
+    const noHome = mkHome(null);
+    assertEq(readDiscussions({
+      workflowHome: noHome,
+      exec: () => { throw new Error('gh must not be called at all'); },
+    }).reason, null, 'a machine with no home repo has no board to have failed to read');
+    cleanup(home); cleanup(noHome);
+  });
+
+  await test('the read asks for the headers a limit is only legible in', () => {
+    const home = mkHome();
+    const calls = [];
+    readDiscussions({ workflowHome: home, exec: mkExec([], calls) });
+    assert(calls[0].includes('--include'), `the round trip asks for them: ${calls[0].join(' ')}`);
+    cleanup(home);
   });
 
   group('tower/history: the block itself');

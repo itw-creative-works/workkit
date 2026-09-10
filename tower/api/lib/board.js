@@ -147,11 +147,18 @@ const splitResponse = (text) => {
  * errors go with them, since the GraphQL half of that limit arrives as an
  * ordinary 200 carrying one.
  *
+ * The board's own document takes no variables; the two Discussions readers
+ * beside it (`summaries.js`, `history.js`) send the home repo's owner and name
+ * and call THIS rather than reading a refusal a second way, so one round trip
+ * and one reading of it answer for every `gh api graphql` the tower makes
+ * (issue #215).
+ *
  * @param {Function} exec the `gh` seam
  * @param {string} query the document to send
+ * @param {Object<string, string>} [variables] `-f name=value` pairs to send with it
  * @returns {{payload: object|null, reason: string|null}}
  */
-const ask = (exec, query) => {
+const ask = (exec, query, variables = {}) => {
   const read = (text) => {
     const { status, headers, body } = splitResponse(text);
     return { status, headers, payload: tryParse(body) };
@@ -161,8 +168,12 @@ const ask = (exec, query) => {
     errors: payload && payload.errors,
   });
 
+  const args = ['api', 'graphql', '--include'];
+  for (const [name, value] of Object.entries(variables)) args.push('-f', `${name}=${value}`);
+  args.push('-f', `query=${query}`);
+
   try {
-    const answer = read(exec('gh', ['api', 'graphql', '--include', '-f', `query=${query}`]));
+    const answer = read(exec('gh', args));
     if (answer.payload && answer.payload.data) return { payload: answer.payload, reason: null };
     return { payload: null, reason: limited(answer) || 'gh graphql returned no data' };
   } catch (err) {
@@ -368,4 +379,4 @@ const fetchBoard = (repos, opts = {}) => {
 
 // The sweep's pure half is re-exported rather than restated, so a caller that
 // has this module has the whole sweep and never reaches past it (issue #195).
-module.exports = { fetchBoard, startSweep, splitResponse, buildBoardQuery, parseLabels, issueFrom, labelGroups, errorsByAlias, firstErrorFor, droppedReason, rateLimitReason, closedSince, blockersFor, lastCommentOf, REPOS_PER_REQUEST, PAGE_SIZE, MAX_OPEN_ISSUES, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, CLOSED_WINDOW_MS, LABELS_FILE };
+module.exports = { fetchBoard, startSweep, ask, splitResponse, buildBoardQuery, parseLabels, issueFrom, labelGroups, errorsByAlias, firstErrorFor, droppedReason, rateLimitReason, closedSince, blockersFor, lastCommentOf, REPOS_PER_REQUEST, PAGE_SIZE, MAX_OPEN_ISSUES, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, CLOSED_WINDOW_MS, LABELS_FILE };

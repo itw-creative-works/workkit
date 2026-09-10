@@ -23,6 +23,25 @@ export const ACCRUES = 'charts appear after two published briefs';
 /** What a page says when the history could not be read at all. */
 export const UNREAD = 'the published briefs could not be read, so there is no history to draw';
 
+/**
+ * A page's own absence sentence with the READ's reason on the end of it, where
+ * the payload carries one (issue #215).
+ *
+ * The two pages drawn off this read say different tails - one has no history to
+ * draw, the other nothing to show - so each keeps its sentence and the reason
+ * joins it here rather than in both of them. A spent rate limit and a refused
+ * token are the reasons there are; an absent key is a copy that was never asked
+ * the question, and the sentence stands alone as it always did.
+ *
+ * @param {string} sentence - the page's own line
+ * @param {object} payload - the brief payload
+ * @returns {string}
+ */
+export const unreadLine = (sentence, payload) => {
+  const reason = (payload && payload.historyReason) || null;
+  return reason ? `${sentence} - ${reason}` : sentence;
+};
+
 /** The entries a payload carries, or an empty list - never null, for the callers that map. */
 export const entriesOf = (payload) => {
   const history = payload && payload.history;

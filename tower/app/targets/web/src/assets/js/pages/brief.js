@@ -31,7 +31,7 @@ import { feed } from '../libs/tower/state.js';
 import { esc, empty, problem, loading, card, documentMeta } from '../libs/tower/format.js';
 import { swap } from '@omega.js/client/modules/live-page';
 import { documentItem, documentBody, mountDocumentModal } from '../libs/tower/modal.js';
-import { briefAlert } from '../libs/tower/history.js';
+import { briefAlert, unreadLine } from '../libs/tower/history.js';
 
 // A published body is remote text, so what turns it into markup escapes first.
 // The renderer is the framework's; this page holds the singleton because it
@@ -88,7 +88,9 @@ const archive = (documents, drawn) => {
 // with no home repo, or a read that failed, has nowhere to read the mornings
 // from - while a home repo that has published none has an archive that is
 // genuinely empty. The first is the `documents` key absent or null, which is
-// the posture the history is read with beside it.
+// the posture the history is read with beside it - and where that read said WHY
+// it failed, the payload carries the sentence and it is drawn on the end of
+// this one (issue #215).
 const UNREAD = 'the published briefs could not be read, so there is nothing to show here';
 
 /**
@@ -121,7 +123,7 @@ const render = (root, state) => {
   const documents = Array.isArray(payload.documents) ? payload.documents : null;
 
   if (!documents) {
-    swap(root, `${staleBanner(payload)}${card('The mornings', empty(UNREAD, 'fa-regular fa-comments'), { class: 'mb-0' })}`);
+    swap(root, `${staleBanner(payload)}${card('The mornings', empty(unreadLine(UNREAD, payload), 'fa-regular fa-comments'), { class: 'mb-0' })}`);
     return;
   }
 

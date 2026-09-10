@@ -18,6 +18,8 @@ Agent definitions shipped by the workkit plugin. They surface in a session names
 
 Test scope is class doctrine (#152): a worker's mid-work proof is the test files it touched, red-green on the new cases; a verifier runs the narrowest command that checks the claim. Neither runs a package or root suite unless the brief asks or the finding is suite-scoped — the commit gate owns suites.
 
+Drift is verifier doctrine (#222): every blind verification also asks the three DRIFT questions past its brief, parity siblings on the other surfaces, duplicates of anything hand-typed the diff adds (found by grep), and the docs the change made stale. They live in `../agents/verifier.md` § Behavior, which quotes the Parity mandate `../skills/review/SKILL.md` § 2 owns, and they are asked per issue so a later issue's verifier catches the earlier issues' drift. The worker carries the other half of the same ruling: a hand-typed thing found wrong once is grepped across every package, fixed at the sites the brief covers, and every other site is NAMED in the report (`../agents/worker.md`, fix the class). The wider counterpart is per SHIP, not per batch: `workkit:ship` runs the full review panel over the whole ship diff every time.
+
 Visibility is manager doctrine (#154), injected every prompt by the `manager/profile` hook: keep a visible checklist with the todo tool for any multi-step task, kept current as steps start and finish; announce every crew spawn in chat as it is made (class, model per the ladder, one-line mandate) and report what it returned.
 
 ### Crew sizing
@@ -45,7 +47,7 @@ The `manager/resolver` hook routes ONLY the four workkit classes above — every
 A chat-inline brief bloats the dispatching context; a report file the dispatcher then has to open is a round trip nobody needs. So the two halves go opposite ways:
 
 1. **Brief in a file.** The dispatcher writes the task brief to a file (session scratchpad dir) and passes the path plus a 1–3 sentence dispatch line. Briefs are **behavioral, not procedural**: state the goal, constraints, and done-criteria — not step-by-step file paths that go stale. A brief file exists only for a dispatch being made now — the spawn rides the same turn (or the owner explicitly asked for the file). The owner saying "brief me" is asking for a chat summary, never a file (issue #192). A brief also NAMES the framework guide(s) the agent must read before its first edit, so that reading is routed by the dispatcher instead of guessed at.
-2. **Report inline.** The agent's final message IS the report: a completion status, commits if any, and the findings the dispatcher needs to act — written for a reader who has not seen the work. No report file, and no summary file beside it.
+2. **Report inline.** The agent's final message IS the report: a completion status, commits if any, and the findings the dispatcher needs to act — written for a reader who has not seen the work. A finding or a line that restates an issue reads in the cold-reader line (`docs/project-state.md` § Restating an issue). No report file, and no summary file beside it.
 3. **A report FILE is the exception.** Only when the brief explicitly asks for one — a large artifact meant to be read selectively rather than in chat. Then the final message stays status, commits, and ONE line of result plus the path.
 
 Each agent file inlines the slice of this it needs, so it stays portable — this README is the full statement, not an import target.

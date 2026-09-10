@@ -125,6 +125,7 @@ const run = async () => {
     assert(/[Jj]udgment stays/.test(ctx), 'the judgment boundary is missing');
     assert(ctx.includes('self-contained'), 'the owner-question rule is missing');
     assert(ctx.includes('names the framework guide'), 'the brief routes the guide read');
+    assert(ctx.includes('ONE bullet, two to three sentences for a cold reader') && ctx.includes('Restating an issue'), 'the cold-reader line rides every prompt (#221)');
   });
   await test('the visibility rules are present on both rungs (#154)', () => {
     // What a manager owes the chat while it delegates: the checklist that says
@@ -149,7 +150,7 @@ const run = async () => {
       assert(!ctx.includes(moved), `"${moved}" belongs in docs/agents.md, not the injection`);
     }
   });
-  await test('the injection stays under 900 characters on both rungs', () => {
+  await test('the injection stays under 1100 characters on both rungs (cap raised for the #221 cold-reader line)', () => {
     // The workhorse branch is the longer one (its advisor clause), so the cap
     // must be proven per rung — the frontier ctx alone leaves untested headroom.
     // The cap moved from 600 with the two visibility rules (#154); it is still
@@ -158,7 +159,7 @@ const run = async () => {
       freshTmp();
       cacheSession('sess1', id(rung));
       const ctx = contextOf(runHook(payload()));
-      assert(ctx.length < 900, `${rung} injection is ${ctx.length} chars`);
+      assert(ctx.length < 1100, `${rung} injection is ${ctx.length} chars`);
     }
   });
 

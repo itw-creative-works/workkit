@@ -12,6 +12,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { httpAnswer, execError, resetIn, clockAt } = require('../lib/gh');
 
 const REPO = path.join(__dirname, '..', '..');
 const { fetchBoard, splitResponse, rateLimitReason, buildBoardQuery, labelGroups, LABELS_FILE, PAGE_SIZE, MAX_OPEN_ISSUES, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, REPOS_PER_REQUEST } = require(path.join(REPO, 'tower', 'api', 'lib', 'board.js'));
@@ -31,21 +32,6 @@ const issue = (number, extra = {}) => ({
   assignees: assignees(),
   ...extra,
 });
-
-/**
- * The error execFileSync throws on a non-zero exit: the message, the streams it
- * captured, and the status. `gh api graphql` exits 1 whenever the response
- * carries an errors array - WITH the complete payload on stdout - so this shape
- * is the difference between a partial board and a blank one.
- */
-const execError = (message, { stdout = '', stderr = '', status = 1, code = null } = {}) => {
-  const err = new Error(message);
-  err.stdout = stdout;
-  err.stderr = stderr;
-  err.status = status;
-  if (code) err.code = code;
-  return err;
-};
 
 /** A fake `gh`: the version probe passes, graphql answers with the given payload. */
 const fakeGh = (payload, { versionFails = false, graphqlError = null, calls = [] } = {}) => (cmd, args) => {
@@ -735,18 +721,6 @@ const run = async () => {
 
   group('tower/board: a spent rate limit says when it lifts');
 
-  /**
-   * What `gh api graphql --include` prints: the status line, the response's own
-   * headers, a blank line, then the body. CRLF, as the wire has it, since the
-   * split has to survive both endings.
-   */
-  const httpAnswer = (status, headers, body) => [
-    `HTTP/2.0 ${status} ${status === 200 ? 'OK' : 'Refused'}`,
-    ...Object.entries(headers).map(([name, value]) => `${name}: ${value}`),
-    '',
-    typeof body === 'string' ? body : JSON.stringify(body),
-  ].join('\r\n');
-
   /** A fake `gh` answering one raw response, either printed or thrown on stdout. */
   const fakeRaw = (text, { fails = false, calls = [] } = {}) => (cmd, args) => {
     calls.push([cmd, ...args]);
@@ -754,12 +728,6 @@ const run = async () => {
     if (fails) throw execError('Command failed: gh api graphql', { stdout: text, stderr: '' });
     return text;
   };
-
-  /** The epoch SECOND a limit lifting `minutes` from now resets at. */
-  const resetIn = (minutes) => Math.floor((Date.now() + minutes * 60 * 1000) / 1000);
-
-  /** The reader's own clock, which is what the sentence promises to speak in. */
-  const clockAt = (second) => new Date(second * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
   await test('the headers are asked for, so the reset time can be read at all', () => {
     const calls = [];

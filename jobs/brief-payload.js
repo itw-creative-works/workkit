@@ -116,13 +116,16 @@ const warnUnreadable = (board) => {
 /**
  * The published summaries, onto the payload — the ONE shape both readers of
  * `buildBrief` attach, so the morning message and the Brief page carry the same
- * two keys or neither (tower/api/lib/summaries.js owns the Monday rule).
+ * keys or neither (tower/api/lib/summaries.js owns the Monday rule).
  *
  * A summary that could not be read is a NAMED line on stderr and a null key,
  * beside `warnUnreadable`'s: the brief still composes, and the log says which
- * part of it is missing rather than leaving a morning quietly thinner. A machine
- * with NO home repo says nothing at all — it has no board to have read, which is
- * a fact about the machine rather than a gap in this morning.
+ * part of it is missing rather than leaving a morning quietly thinner. The line
+ * carries the read's OWN reason where it had one (issue #215), so a morning
+ * thinned by a spent rate limit says so in the Actions log instead of reading as
+ * a night that produced nothing. A machine with NO home repo says nothing at
+ * all: it has no board to have read, which is a fact about the machine rather
+ * than a gap in this morning.
  *
  * @param {object} payload what buildBrief returned
  * @param {object} opts composeBrief's own options
@@ -136,8 +139,9 @@ const attachSummaries = (payload, opts) => {
     exec: opts.exec,
   });
   const home = homeSlugFor(opts);
-  if (home && !summaries.findings) process.stderr.write(`brief: no daily summary could be read from ${home}\n`);
-  if (home && 'week' in summaries && !summaries.week) process.stderr.write(`brief: it is Monday and no weekly rollup could be read from ${home}\n`);
+  const why = summaries.summariesReason ? `: ${summaries.summariesReason}` : '';
+  if (home && !summaries.findings) process.stderr.write(`brief: no daily summary could be read from ${home}${why}\n`);
+  if (home && 'week' in summaries && !summaries.week) process.stderr.write(`brief: it is Monday and no weekly rollup could be read from ${home}${why}\n`);
   return Object.assign(payload, summaries);
 };
 

@@ -530,7 +530,9 @@ const createServer = (opts = {}) => {
   // A read that failed is null and says nothing on stderr, unlike the 9am job's
   // named skip: this one runs every minute the tower is up, and a line per poll
   // would bury the log it was meant to be visible in. The page draws the null as
-  // the sentence it means.
+  // the sentence it means, and where the read had a reason to give it draws that
+  // beside it (#215) - a spent rate limit and a refused token are the two the
+  // null used to swallow.
   const discussions = cached(BOARD_TTL, () => readDiscussions({
     workflowHome: opts.workflowHome,
     home: opts.home,
@@ -544,7 +546,7 @@ const createServer = (opts = {}) => {
   // from THAT array, never from a read of its own, so the charts and the alarm
   // can never disagree about which morning was the last one.
   const brief = () => {
-    const nodes = discussions();
+    const { nodes, reason } = discussions();
     const entries = nodes && historyFrom(nodes);
     return Object.assign(
       buildBrief(finishedBoard(), health(), roster()),
@@ -553,6 +555,9 @@ const createServer = (opts = {}) => {
         history: entries,
         briefFreshness: briefFreshness(entries),
         documents: nodes && documentsFrom(nodes),
+        // One read, one reason: the series, the mornings and the freshness are
+        // three readings of it, so what stopped it is said once (#215).
+        historyReason: reason,
       },
     );
   };

@@ -1,7 +1,7 @@
 ---
 name: triage
-description: Route every captured entry to its one home, then print the Filed trail; the merge mode sweeps the board and proposes merges. - Use when the user says "triage", "file my notes", "empty the inbox", asks to merge or dedupe the board, or when the state-check hook reports inbox items.
-argument-hint: "[merge]"
+description: Route each entry to one home, then print the Filed trail. - Use on "triage", "file my notes", "empty the inbox" (the bare word drains everything), numbers with a triage word ("215 211 triage", "accept 215") for those only, a merge or dedupe ask, or when state-check reports inbox items.
+argument-hint: "[merge | <issue numbers>]"
 ---
 
 # Triage — drain the inbox, visibly
@@ -13,13 +13,13 @@ Label vocabulary (SSOT: `~/.claude/workkit/labels.json`, and every repo's own `g
 
 ## Marker (opens the capture file)
 
-Before reading anything, record that triage is running — the `safety/capture-guard` hook checks this marker before allowing a read of `.workkit/capture.md` OR the rewrite that clears the drained entries, which is the only write this file ever takes from an agent (adding to it is the owner's alone). It is the owner's capture surface at every other moment. The marker is keyed to the repo root the capture file belongs to:
+In the FULL drain only (a scoped run never reads the capture file and sets no marker, § Scoped mode), before reading anything, record that triage is running — the `safety/capture-guard` hook checks this marker before allowing a read of `.workkit/capture.md` OR the rewrite that clears the drained entries, which is the only write this file ever takes from an agent (adding to it is the owner's alone). It is the owner's capture surface at every other moment. The marker is keyed to the repo root the capture file belongs to:
 
 ```sh
 mkdir -p "${TMPDIR:-/tmp}/claude-triage-marker" && touch "${TMPDIR:-/tmp}/claude-triage-marker/$({ git rev-parse --show-toplevel 2>/dev/null || echo "$HOME"; } | tr -d '\n' | shasum | cut -d' ' -f1)"
 ```
 
-## Sources to drain
+## Sources to drain (the FULL drain; § Scoped mode reads only the named issues)
 
 1. **Open `status:inbox` issues** on the cwd repo — `gh issue list --state open --label status:inbox --json number,title,body,labels --limit 1000`.
 2. **`.workkit/capture.md`** — the local, gitignored capture file (offline moments, free-form dumps).
@@ -46,8 +46,9 @@ Then, before creating anything, apply the **filing litmus test**: *would closing
 | A polish nit, docs nit, or cosmetic finding | A checklist line in the `## Spec` of the surface's open `polish: <surface>` issue — open one (`status:inbox` + `type:enhancement`) when none is open. Mechanics, including the freeze rule and "bugs never batch": spec § How big is one issue |
 | Waiting on the owner's decision | `status:blocked` + a comment naming the question |
 | Worth keeping, deliberately not now | `status:backlog` |
-| Cross-project / business / no single repo | An issue on the **home repo** — the `site.repo` named in `~/.workkit/settings.json` (`docs/project-state.md` § The global layer). No `site.repo` set: leave the entry in the capture file and say so |
-| Belongs to a DIFFERENT project | An issue on that repo (`gh issue create --repo <owner/name>`) |
+| Cross-project / business / no single repo, and no repo on this machine owns it | An issue on the **home repo**, the `site.repo` named in `~/.workkit/settings.json` (`docs/project-state.md` § The global layer). The rows below are resolved FIRST: this one is the last resort. No `site.repo` set: leave the entry in the capture file and say so |
+| Names a workkit skill, hook, agent, or engine file | An issue on the KIT'S OWN repo, from any session, never the home repo: resolve the repo from the plugin's own checkout, a CHAIN not a default: `[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && git -C "${CLAUDE_PLUGIN_ROOT}" remote get-url origin || git -C ~/.claude/workkit remote get-url origin` (the variable is set only inside hook commands, and an empty `-C` would silently answer with the session's own repo, so the guard is what makes the second link run; a published install's plugin root is a cache folder with no git, and the second link takes over there too); the URL git prints is accepted by `gh issue create --repo` as is. Never a hardcoded slug. Unresolvable: the entry stays local with the skip named in the Filed trail |
+| Belongs to a DIFFERENT project | An issue on that repo, with the project RESOLVED rather than guessed: find the project's checkout in this machine's roster (`~/.workkit/.repos.json`, each enabled repo's absolute path), read its slug with `git -C <path> remote get-url origin`, then `gh issue create --repo <owner/name>`. No roster match: the entry stays local with the skip named in the Filed trail, never the home repo |
 | An idea for a project that has no repo yet | A `type:idea` issue on the **home repo**, later notes as comments on it. Never create a repo or a folder here — graduation is the owner's word, proposed and executed per § Graduation |
 | A durable fact about how things work | The right `docs/*.md` (or AGENTS.md if doctrinal) — then close the issue pointing at it |
 | Needs the owner's yes/no before it is even accepted | Draft the proposal into the `## Spec`; label `status:blocked` with the question |
@@ -75,11 +76,26 @@ The system proposes, the owner creates; no automation ever makes a repo or moves
 
 ## Always end with the Filed trail
 
+The trail IS the reply's `**🗂️ Filed**` section, the same heading and bullet shape as every other Filed section the owner reads, so the two never differ. Each bullet leads with the issue link and reads in the cold-reader line (`docs/project-state.md` § Restating an issue); an entry that went somewhere with no issue (a docs page, another repo's path) leads with that destination instead.
+
 ```
-Filed:
-- "<entry summary>" → <#N + what changed, or the repo/path it went to>
+**🗂️ Filed**
+- [#N](url): <what the entry is, what this run did with it, what is needed next>
+- <repo or docs path>: <what the entry is and why it landed there>
 - ...
 ```
+
+## Scoped mode (`/workkit:triage 215 211`)
+
+Numbers in the ask mean SCOPED: only the issues named are read, and nothing else is touched. The `#` is optional (`215`, `#215`), and plain words carry the same meaning, so "215 211 triage", "triage 215", "accept 215" and "spec 215 and 211" are all this mode. The FULL drain needs the bare word with NO numbers ("triage", "empty the inbox"); a number in the ask is never the whole-inbox run.
+
+1. Read only the named issues (`gh issue view <N> --comments`). An issue already past `status:inbox` is REPORTED as it stands, never re-routed: only the owner's word in the same ask moves a label it already carries.
+2. Route each one through the SAME table above. Scoped changes only WHICH entries are read, never how they are routed: a named issue still parks to `status:backlog`, still goes `status:blocked` with its question in a comment, still becomes a polish line or a fold into another issue when that is what it is.
+3. End with the Filed trail, listing only the numbers named.
+
+Nothing else runs: no `.workkit/capture.md` drain, no HQ pass, and no marker for the capture guard, since the capture file is never read.
+
+**"Accept" flips only on a real spec.** `accept 215` earns `status:specced` only when the issue already carries a `## Spec` with content: a spec the owner accepted, or the literal small-item line the routing table names. An empty Spec, or a `None yet` placeholder, is not acceptance ready. Draft one from the issue's body and comments, print it, and wait for the owner's yes; the flip follows the yes, never the draft (owner ruling, 2026-09-09: the ask itself is the accept, so a small drafted spec shown in chat earns the flip on that yes). An issue that still needs real design is the routing table's interview row, not this shortcut (spec § Specs).
 
 ## Merge mode (`/workkit:triage merge`)
 

@@ -9,8 +9,8 @@
 // is what the page is.
 //
 // PURE. The round trip is `history.js`'s `readDiscussions`, and both readings
-// are made from that one answer: asking twice would be two round trips for a
-// single read of a single board.
+// are made from the `nodes` of that one answer: asking twice would be two round
+// trips for a single read of a single board.
 //
 // TWO KINDS, decided by the TITLE, which is the same question `history.js` and
 // `summaries.js` ask of the same board: `brief: <date>` is a morning, and
@@ -25,7 +25,7 @@
 //
 // Usage:
 //   const { documentsFrom } = require('./documents');
-//   documentsFrom(readDiscussions(opts));   // newest first
+//   documentsFrom(readDiscussions(opts).nodes);   // newest first
 //
 
 const { BRIEF_TITLE_PREFIX } = require('./history');
@@ -64,7 +64,7 @@ const readable = (body) => String(body || '')
  * from the other.
  *
  * @param {Array<{title: string, url: string, createdAt: string|null, body: string}>} nodes
- *   what readDiscussions returned
+ *   the `nodes` readDiscussions returned
  * @returns {Array<{kind: string, title: string, url: string, createdAt: string|null, body: string}>}
  */
 const documentsFrom = (nodes) => (nodes || [])

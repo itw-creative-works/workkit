@@ -2,7 +2,7 @@
 name: migrate
 description: Bring a repo the rest of the way onto project-state spec v4 — retired PROGRESS/INBOX/TODO/plans files become issues, CHANGELOG history is rewritten to the entry format. - Use when the user says "migrate this repo", "bring this repo to the standard", or "fix the changelog history".
 user-invocable: true
-argument-hint: [repo path] [files|changelog]
+argument-hint: "[repo path] [files|changelog]"
 ---
 
 # Migrate — the judgment half of a repo migration
@@ -36,7 +36,7 @@ This is `workkit:triage`'s routing pointed at a file instead of an inbox — **i
 2. Drop what is already true: a board's `Done` lane is history, and history lives in the CHANGELOG and the commits. Do not file completed work as an open issue.
 3. File each live item with `## Description` then `## Spec` (a small item's Spec is the literal line `None needed — small item.`), exactly one `status:` label, and a `type:` label. Never apply `agent:ok` — that is the owner's to grant.
 4. A `plans/` file becomes the `## Spec` section of its issue. One plan, one issue. A spec already marked rejected is not filed; it stays rejected.
-5. **Print the Filed trail before deleting anything**, one line per item: `"<summary>" → #<number>`.
+5. **Print the Filed trail before deleting anything**: the `**🗂️ Filed**` section `workkit:triage` prints, one bullet per item leading with its issue link, in the cold-reader line (`docs/project-state.md` § Restating an issue).
 6. Delete the file only after every live item in it has an issue number. Deleting first turns a mis-read into lost work.
 
 If an item's home is genuinely unclear, file it `status:inbox` and mark it `(check placement)` in the trail. Do not stop to ask per item.

@@ -25,7 +25,11 @@
 //
 // EVERY FAILURE IS null, the posture `summaries.js` reads its board with: no
 // home repo, no `gh`, a token that refuses, an answer of another shape. A page
-// says the history could not be read; it never says the board was empty.
+// says the history could not be read; it never says the board was empty. And it
+// says WHY where there is a why (issue #215): the round trip is board.js's
+// `ask`, so a spent rate limit and a refused token ride back beside the null in
+// the sentence the board and the published copy already say, and `/api/brief`
+// carries it as `historyReason` for the two pages drawn off this one read.
 //
 // Usage:
 //   const { briefHistory, STATS_RE } = require('./history');
@@ -34,6 +38,9 @@
 
 const { execFileSync } = require('child_process');
 
+// The sweep's round trip, and with it the reading of a refusal: one `gh api
+// graphql` and one answer to "why did that come back empty" for the whole tower.
+const { ask } = require('./board');
 const { homeSlugFor } = require('./summaries');
 
 /**
@@ -67,9 +74,11 @@ const HISTORY_QUERY = `query($owner:String!,$name:String!){
   }
 }`;
 
+// stderr is piped, not ignored: `gh` writes its "gh auth login" guidance there,
+// and the reading that names an auth failure as one needs that text (board.js).
 const defaultExec = (cmd, args) => execFileSync(cmd, args, {
   encoding: 'utf8',
-  stdio: ['ignore', 'pipe', 'ignore'],
+  stdio: ['ignore', 'pipe', 'pipe'],
 });
 
 /**
@@ -111,34 +120,37 @@ const parseStatsMark = (body) => {
  * against a node of another shape: a title that is not a string cannot start
  * with the prefix, and a body that is not a string carries no stats line.
  *
+ * BOTH KEYS, always. `nodes` is null where the board could not be read at all,
+ * and `reason` is why when there is a why to give: a refusal has one, while a
+ * machine with no home repo and an answer of another shape have nothing to name
+ * beyond the null itself (issue #215).
+ *
  * @param {object} [opts]
  * @param {string} [opts.workflowHome] the user's ~/.workkit
  * @param {string} [opts.home] overrides ~ for the default above
  * @param {Function} [opts.exec] (cmd, args) => stdout — the gh seam
- * @returns {Array<{title: string, url: string, createdAt: string|null, body: string}>|null}
- *   null when the board could not be read at all
+ * @returns {{nodes: Array<{title: string, url: string, createdAt: string|null, body: string}>|null, reason: string|null}}
  */
 const readDiscussions = (opts = {}) => {
   const slug = homeSlugFor(opts);
-  if (!slug) return null;
+  if (!slug) return { nodes: null, reason: null };
   const [owner, name] = slug.split('/');
-  const exec = opts.exec || defaultExec;
 
-  let nodes;
-  try {
-    const out = exec('gh', ['api', 'graphql', '-f', `owner=${owner}`, '-f', `name=${name}`, '-f', `query=${HISTORY_QUERY}`]);
-    nodes = JSON.parse(out).data.repository.discussions.nodes;
-  } catch {
-    return null;
-  }
-  if (!Array.isArray(nodes)) return null;
+  const { payload, reason } = ask(opts.exec || defaultExec, HISTORY_QUERY, { owner, name });
+  if (!payload) return { nodes: null, reason };
 
-  return nodes.filter(Boolean).map((node) => ({
-    title: typeof node.title === 'string' ? node.title : '',
-    url: typeof node.url === 'string' ? node.url : '',
-    createdAt: node.createdAt || null,
-    body: typeof node.body === 'string' ? node.body : '',
-  }));
+  const nodes = (((payload.data || {}).repository || {}).discussions || {}).nodes;
+  if (!Array.isArray(nodes)) return { nodes: null, reason: null };
+
+  return {
+    nodes: nodes.filter(Boolean).map((node) => ({
+      title: typeof node.title === 'string' ? node.title : '',
+      url: typeof node.url === 'string' ? node.url : '',
+      createdAt: node.createdAt || null,
+      body: typeof node.body === 'string' ? node.body : '',
+    })),
+    reason: null,
+  };
 };
 
 /**
@@ -149,7 +161,7 @@ const readDiscussions = (opts = {}) => {
  * consumer: a caller that wanted the newest would ask for the last entry rather
  * than reverse a series.
  *
- * @param {Array<{title: string, body: string}>} nodes what readDiscussions returned
+ * @param {Array<{title: string, body: string}>} nodes the `nodes` readDiscussions returned
  * @returns {Array<{date: string, totals: object, closedDay: number, repos: object}>}
  */
 const historyFrom = (nodes) => {
@@ -170,11 +182,15 @@ const historyFrom = (nodes) => {
 /**
  * The read and the reading, for a caller that wants only the series.
  *
+ * The reason the read may carry is not passed on: a caller that has to SAY why
+ * the series is missing reads `readDiscussions` itself, the way `/api/brief`
+ * does.
+ *
  * @param {object} [opts] what readDiscussions takes
  * @returns {Array<object>|null} null when the board could not be read at all
  */
 const briefHistory = (opts = {}) => {
-  const nodes = readDiscussions(opts);
+  const { nodes } = readDiscussions(opts);
   return nodes && historyFrom(nodes);
 };
 

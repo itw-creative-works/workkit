@@ -83,6 +83,30 @@ const run = async () => {
     assertEq(over.join(', '), '', `descriptions over ${DESCRIPTION_CAP} chars`);
   });
 
+  group('skills: frontmatter is strict YAML');
+
+  await test('no plain frontmatter scalar carries a bare `: `, ` #`, or an opening `[` or `{`', () => {
+    // A strict loader refuses a plain (unquoted) scalar holding `: ` or ` #`
+    // (a nested mapping, a comment) and reads one opening with `[` or `{` as
+    // a list or a map instead of text. Claude Code tolerates all of it today,
+    // so the drift is invisible in use (#227). Checked here without a YAML
+    // dependency, on every folder.
+    const bad = [];
+    for (const name of skillFolders()) {
+      const file = path.join(SKILLS_DIR, name, 'SKILL.md');
+      const block = fs.readFileSync(file, 'utf8').match(/^---\n([\s\S]*?)\n---/);
+      assert(block, `${file} has no frontmatter`);
+      for (const line of block[1].split('\n')) {
+        const field = line.match(/^([\w-]+):\s*(.*)$/);
+        if (!field) continue;
+        const value = field[2];
+        if (/^["']/.test(value)) continue;
+        if (/^[[{]/.test(value) || value.includes(': ') || value.includes(' #')) bad.push(`${name} ${field[1]}`);
+      }
+    }
+    assertEq(bad.join(', '), '', 'plain scalars a strict YAML loader refuses');
+  });
+
   group('skills: no `workflow:` skill names survive');
   await test('nothing under skills/ names a workflow: skill', () => {
     // `workflow:standards` is the HOOK, and keeps its name — only the

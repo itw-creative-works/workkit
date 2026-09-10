@@ -195,6 +195,34 @@ const pageTheBoard = (world, { pause = 0 } = {}) => {
   return world;
 };
 
+/**
+ * Answer every Discussions read with the live GraphQL rate limit (issue #216):
+ * HTTP 200, the budget spent in the headers, and a RATE_LIMIT error where the
+ * data would be. `gh` exits non-zero on an errors array, so the answer arrives
+ * on the error's stdout, which is where the readers look for it. The board
+ * sweep is left alone: a brief whose sweep failed is a different page.
+ */
+const limitDiscussions = (world) => {
+  const inner = world.exec;
+  world.exec = (cmd, args) => {
+    if (cmd === 'gh' && args[0] === 'api' && args.join(' ').includes('discussions(first')) {
+      world.calls.push([cmd, ...args]);
+      const err = new Error('Command failed: gh api graphql');
+      err.stdout = [
+        'HTTP/2.0 200 OK',
+        'X-RateLimit-Remaining: 0',
+        `X-RateLimit-Reset: ${Math.floor(Date.now() / 1000) + 540}`,
+        '',
+        JSON.stringify({ errors: [{ type: 'RATE_LIMIT', code: 'graphql_rate_limit', message: 'API rate limit already exceeded for user ID 1.' }] }),
+      ].join('\r\n');
+      err.stderr = '';
+      throw err;
+    }
+    return inner(cmd, args);
+  };
+  return world;
+};
+
 const worldOpts = (world, opts = {}) => ({
   workflowHome: path.join(world.root, 'workflow-home'),
   markerDir: world.markerDir,
@@ -446,6 +474,31 @@ const run = async () => {
     assertEq((await getJson(empty, '/api/brief')).body.briefFreshness.state, 'never',
       'a home repo that has published no brief carrying a block has never published one');
     await empty.stop();
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('/api/brief says WHY the mornings are missing, never only that they are (#215)', async () => {
+    // Both Discussions reads refuse the same way, so the payload carries the
+    // limit's own sentence twice over rather than two nulls with nothing to
+    // explain them - which is what the Brief and the Overview draw.
+    const w = mkWorld();
+    fs.writeFileSync(
+      path.join(w.root, 'workflow-home', 'settings.json'),
+      JSON.stringify({ version: 1, site: { repo: 'owner/private-home', publish: false, url: null } }),
+    );
+    limitDiscussions(w);
+    const c = await start(w);
+    const { body } = await getJson(c, '/api/brief');
+    assertEq(body.ok, true, 'the sweep itself answered, so the brief is a brief');
+    assertEq(body.history, null, 'the series could not be read');
+    assertEq(body.documents, null, 'and neither could the mornings themselves');
+    assert(/^GitHub rate limit hit for this token; resets at /.test(body.historyReason),
+      `the payload names the limit: ${body.historyReason}`);
+    assert(/^GitHub rate limit hit for this token; resets at /.test(body.summariesReason),
+      `and so does the summaries read beside it: ${body.summariesReason}`);
+    assertEq(body.findings, null, 'with nothing to say about yesterday');
+    assertEq(body.briefFreshness.state, 'unreadable', 'a read that failed judges no morning');
     await c.stop();
     cleanup(w.root);
   });

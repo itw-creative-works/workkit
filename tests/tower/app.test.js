@@ -30,6 +30,7 @@
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { resetIn, clockAt } = require('../lib/gh');
 
 const libs = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'libs', 'tower');
 const load = (name) => import(pathToFileURL(path.join(libs, name)).href);
@@ -2913,12 +2914,6 @@ const run = async () => {
     assertEq(empty.reason, 'Bad query', 'and GitHub’s own sentence is the reason');
   });
 
-  /** The epoch SECOND a limit lifting `minutes` from now resets at. */
-  const resetIn = (minutes) => Math.floor((Date.now() + minutes * 60 * 1000) / 1000);
-
-  /** The reader's own clock, which is what the sentence promises to speak in. */
-  const clockAt = (second) => new Date(second * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-
   await test('a spent rate limit is not a bad token - it says when the budget lifts', async () => {
     const reset = resetIn(18);
     const limited = await github.graphql('q', {
@@ -3387,12 +3382,13 @@ const run = async () => {
     const stamp = '2026-07-29T11:00:00Z';
     const mine = github.buildBrief(board, { generatedAt: stamp });
     const theirs = apiBrief.buildBrief(board, {}, [], stamp);
-    // `summaries`, `history`, `documents` and the freshness read off that
-    // history (#176) are ATTACHED after the build on the tower's side
-    // (server.js) and inside it here, so they are the four keys the comparison
-    // lifts out - everything buildBrief itself decides is compared.
+    // `summaries`, `history`, `documents`, the freshness read off that
+    // history (#176) and the history read's reason (#215) are ATTACHED after
+    // the build on the tower's side (server.js) and inside it here, so they are
+    // the five keys the comparison lifts out - everything buildBrief itself
+    // decides is compared.
     assertEq(JSON.stringify({
-      ...mine, summaries: undefined, history: undefined, documents: undefined, briefFreshness: undefined,
+      ...mine, summaries: undefined, history: undefined, documents: undefined, briefFreshness: undefined, historyReason: undefined,
     }), JSON.stringify(theirs), 'the same sections, the same order, the same headline');
     assertEq(mine.nextUp[0].items.map((i) => i.number).join(','), '83,82',
       'the blocked item would lead on status, so this order EXISTS only because demotion ran - on both sides');
@@ -3477,7 +3473,7 @@ const run = async () => {
     const theirs = apiDocuments.documentsFrom(apiHistory.readDiscussions({
       workflowHome: home,
       exec: () => JSON.stringify({ data: { repository: { discussions: { nodes } } } }),
-    }));
+    }).nodes);
     fs.rmSync(home, { recursive: true, force: true });
     assertEq(JSON.stringify(mine), JSON.stringify(theirs), 'one archive, whichever side read it');
   });
@@ -3499,6 +3495,18 @@ const run = async () => {
     });
     assertEq(empty.history.length, 0, 'a home repo with no published briefs yet is an empty series, not a failure');
     assertEq(empty.documents.length, 0, 'and an empty archive, which is a different sentence from an unreadable one');
+
+    // And where the refusal has a SENTENCE, it rides beside those nulls (#215):
+    // the pages draw it, and dropping it left them saying only that the
+    // mornings were unreadable.
+    const refused = await github.fetchDiscussions('owner/workkit', {
+      token: 't',
+      fetch: mkFetch(jsonResponse(403, { message: 'Bad credentials' })),
+    });
+    assertEq(refused.history, null, 'a refused token reads no mornings');
+    assert(/refused the token/.test(refused.reason), `and says which of the two problems it is: ${refused.reason}`);
+    assertEq(nowhere.reason, null, 'while a copy with no home repo has nothing it failed to read');
+    assertEq(empty.reason, null, 'and a board that answered has nothing to explain');
   });
 
   await test('the browser sorts the queues by the brief’s rule, to the letter', () => {
@@ -4251,6 +4259,25 @@ const run = async () => {
     assert(history.hasSeries(withHistory([day('2026-08-02', { open: 2 }), day('2026-08-03', { open: 1 })])), 'two is a line');
     assert(history.ACCRUES.includes('published briefs') && history.UNREAD.includes('could not be read'),
       'and each absence has its own sentence');
+  });
+
+  await test('an unreadable history says WHY, where the read had a reason to give (#215)', () => {
+    const fs = require('fs');
+    const said = 'GitHub rate limit hit for this token; resets at 11:04 PM (in 18 min).';
+    const line = history.unreadLine(history.UNREAD, { counts: { open: 0 }, history: null, historyReason: said });
+    assert(line.startsWith(history.UNREAD), 'the page keeps its own sentence');
+    assert(line.endsWith(said), `and the read's reason is on the end of it: ${line}`);
+    assertEq(history.unreadLine(history.UNREAD, withHistory(null)), history.UNREAD,
+      'a read that had no reason to give draws the sentence alone, as it always did');
+    assertEq(history.unreadLine(history.UNREAD, null), history.UNREAD,
+      'and so does a copy that was never asked the question');
+
+    // Both pages drawn off that one read say it, each keeping its own tail.
+    const pages = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
+    for (const name of ['index.js', 'brief.js']) {
+      const source = fs.readFileSync(path.join(pages, name), 'utf8');
+      assert(/unreadLine\(UNREAD, payload\)/.test(source), `${name} draws the reason where it drew the bare sentence`);
+    }
   });
 
   await test('last week is found by date, not by counting entries', () => {

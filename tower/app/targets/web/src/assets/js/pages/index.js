@@ -17,7 +17,7 @@ import {
 } from '../libs/tower/format.js';
 import { chartSlot, doughnutChart, lineChart, barChart } from '__main_assets__/js/libs/charts.js';
 import {
-  entriesOf, hasSeries, unread, seriesOf, weekDelta, deltaLine, ACCRUES, UNREAD,
+  entriesOf, hasSeries, unread, seriesOf, weekDelta, deltaLine, unreadLine, ACCRUES, UNREAD,
 } from '../libs/tower/history.js';
 import { swap, loading as inlineLoading } from '@omega.js/client/modules/live-page';
 import { issueItem, externalLink } from '../libs/tower/modal.js';
@@ -266,7 +266,7 @@ const drawShape = (state) => {
 // names a colour.
 
 const historyBody = (payload, id, height, key) => {
-  if (unread(payload)) return empty(UNREAD, 'fa-regular fa-clock');
+  if (unread(payload)) return empty(unreadLine(UNREAD, payload), 'fa-regular fa-clock');
   if (!hasSeries(payload)) return empty(ACCRUES, 'fa-regular fa-clock');
   // The stamp is the card's OWN series - it is what tells `swap` the markup
   // changed on a data-only tick, so a card stamped with a neighbour's series

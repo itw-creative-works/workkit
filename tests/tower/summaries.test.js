@@ -14,6 +14,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { resetIn, clockAt, mkLimited, mkRefused } = require('../lib/gh');
 
 const { briefSummaries, newestSummary, isMonday } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'summaries.js'));
 
@@ -61,12 +62,12 @@ const run = async () => {
 
   await test('the newest daily and the newest weekly are read off one board', () => {
     const home = mkHome();
-    const daily = newestSummary('daily', { workflowHome: home, exec: mkExec(BOARD) });
+    const daily = newestSummary('daily', { workflowHome: home, exec: mkExec(BOARD) }).summary;
     assertEq(daily.title, 'daily: 2026-08-02', 'the newest daily, not the newest post');
     assert(daily.url.startsWith('https://github.com/'), `and its link: ${daily.url}`);
     assertEq(daily.createdAt, '2026-08-02T09:00:00Z', 'and when it was published');
 
-    const weekly = newestSummary('weekly', { workflowHome: home, exec: mkExec(BOARD) });
+    const weekly = newestSummary('weekly', { workflowHome: home, exec: mkExec(BOARD) }).summary;
     assertEq(weekly.title, 'weekly: 2026-08-02', 'the rollup is found by its own prefix');
     cleanup(home);
   });
@@ -79,7 +80,8 @@ const run = async () => {
       workflowHome: home,
       exec: mkExec([post('brief: 2026-08-03', '2026-08-03'), post('a thread somebody opened', '2026-08-02')]),
     });
-    assertEq(out, null, 'nothing on that board is a daily summary');
+    assertEq(out.summary, null, 'nothing on that board is a daily summary');
+    assertEq(out.reason, null, 'and nothing went wrong reading it');
     cleanup(home);
   });
 
@@ -96,29 +98,29 @@ const run = async () => {
 
   group('tower/summaries: nothing to say is never a throw');
 
-  await test('an empty board, a machine with no home repo, and a gh that refuses all answer null', () => {
+  await test('an empty board, a machine with no home repo, and a gh that refuses all answer no summary', () => {
     const home = mkHome();
-    assertEq(newestSummary('daily', { workflowHome: home, exec: mkExec([]) }), null, 'a board with nothing on it');
+    assertEq(newestSummary('daily', { workflowHome: home, exec: mkExec([]) }).summary, null, 'a board with nothing on it');
     assertEq(newestSummary('daily', {
       workflowHome: home,
       exec: () => { throw new Error('gh: not authenticated'); },
-    }), null, 'a read that failed');
-    assertEq(newestSummary('daily', { workflowHome: home, exec: () => 'not json at all' }), null, 'an answer of another shape');
+    }).summary, null, 'a read that failed');
+    assertEq(newestSummary('daily', { workflowHome: home, exec: () => 'not json at all' }).summary, null, 'an answer of another shape');
 
     const noHome = mkHome(null);
     assertEq(newestSummary('daily', {
       workflowHome: noHome,
       exec: () => { throw new Error('gh must not be called at all'); },
-    }), null, 'a machine with nowhere to read from never asks');
+    }).summary, null, 'a machine with nowhere to read from never asks');
     cleanup(home); cleanup(noHome);
   });
 
-  await test('a cadence nobody publishes is null without a round trip', () => {
+  await test('a cadence nobody publishes is no summary without a round trip', () => {
     const home = mkHome();
     assertEq(newestSummary('yearly', {
       workflowHome: home,
       exec: () => { throw new Error('gh must not be called at all'); },
-    }), null, 'there is no such summary to look for');
+    }).summary, null, 'there is no such summary to look for');
     cleanup(home);
   });
 
@@ -145,6 +147,59 @@ const run = async () => {
     });
     assertEq(out.findings, null, 'nothing to say about yesterday');
     assertEq(out.week, null, 'nor about the week');
+    cleanup(home);
+  });
+
+  group('tower/summaries: why the board could not be read');
+
+  await test('a spent rate limit is the sentence the sweep says, not a bare null (#215)', () => {
+    const home = mkHome();
+    const reset = resetIn(9);
+    const out = newestSummary('daily', { workflowHome: home, exec: mkLimited(reset) });
+    assertEq(out.summary, null, 'there is nothing to say about yesterday');
+    assertEq(out.reason, `GitHub rate limit hit for this token; resets at ${clockAt(reset)} (in 9 min).`,
+      'and the reason is the board\u2019s own sentence, said when it lifts');
+    cleanup(home);
+  });
+
+  await test('a refused token wears the same 403 and is told apart from a limit', () => {
+    const home = mkHome();
+    const out = newestSummary('daily', { workflowHome: home, exec: mkRefused() });
+    assertEq(out.summary, null, 'nothing was read');
+    assertEq(out.reason, 'gh not authenticated', 'and a new token, not a wait, is what fixes it');
+    cleanup(home);
+  });
+
+  await test('the reason rides the keys a brief carries, both cadences over one board', () => {
+    const home = mkHome();
+    const reset = resetIn(9);
+    const out = briefSummaries({ generatedAt: MONDAY, workflowHome: home, exec: mkLimited(reset) });
+    assertEq(out.findings, null, 'nothing to say about yesterday');
+    assertEq(out.week, null, 'nor about the week');
+    assert(/rate limit/.test(out.summariesReason), `and the payload carries why: ${out.summariesReason}`);
+    cleanup(home);
+  });
+
+  await test('a board that answered carries no reason at all', () => {
+    const home = mkHome();
+    const out = briefSummaries({ generatedAt: TUESDAY, workflowHome: home, exec: mkExec(BOARD) });
+    assertEq(out.findings.title, 'daily: 2026-08-02', 'the summary is what it always was');
+    assertEq(out.summariesReason, null, 'and nothing went wrong to report');
+
+    const noHome = mkHome(null);
+    assertEq(briefSummaries({
+      generatedAt: TUESDAY,
+      workflowHome: noHome,
+      exec: () => { throw new Error('gh must not be called at all'); },
+    }).summariesReason, null, 'a machine with no home repo has no board to have failed to read');
+    cleanup(home); cleanup(noHome);
+  });
+
+  await test('the read asks for the headers a limit is only legible in', () => {
+    const home = mkHome();
+    const calls = [];
+    newestSummary('daily', { workflowHome: home, exec: mkExec(BOARD, calls) });
+    assert(calls[0].includes('--include'), `the round trip asks for them: ${calls[0].join(' ')}`);
     cleanup(home);
   });
 

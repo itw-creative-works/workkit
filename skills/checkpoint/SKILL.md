@@ -46,13 +46,13 @@ One bullet per item now in flight or queued, each pointing at its issue; DELETE 
 
 ## 5. End with the Filed trail — what this run CHANGED
 
-The trail is a report of actions, not an audit log. ONE line per issue this run touched, the issue number as a markdown link, listing everything done to it in plain words (comments, filings, flips). Never one line per action, never a raw URL. Items verified as already on the board get ONE closing count line, never a line each.
+The trail is a report of actions, not an audit log. ONE bullet per issue this run touched, leading with the issue link, listing everything done to it in plain words (comments, filings, flips). Never one line per action, never a raw URL. It is the reply's `**🗂️ Filed**` section, the one shape `workkit:triage` prints too, and every bullet reads in the cold-reader line (`docs/project-state.md` § Restating an issue). Items verified as already on the board get ONE closing count line, never a line each.
 
 ```
-Filed:
-- [#209](url): commented your "watch it a few days" ruling.
-- [#637](url): quoted "637 looks good", flipped to status:complete.
-- [#211](url): filed — findings from other repos' sessions land on the home repo.
+**🗂️ Filed**
+- [#209](url): the review skill's Parity lens is built and parked for your check. Commented your "watch it a few days" ruling, so it rides along unshipped until you pass it.
+- [#637](url): the palette failure line was overwritten on the desktop settings page. Quoted your "637 looks good" and flipped it to status:complete, so the next ship carries it.
+- [#211](url): findings about workkit made in another repo's session were filed on the home repo instead of the workkit repo. Filed as a bug, status:inbox, for triage to route.
 - Verified 6 earlier items already on their issues.
 
 **✅ Safe to compact or continue in a new session.**

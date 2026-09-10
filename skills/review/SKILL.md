@@ -35,7 +35,7 @@ Dispatch per the file-handoff convention: the brief goes to a file in the sessio
 | Simplification | `workkit:scout` agent | Run the deletion test over the diff's ADDITIONS (`js:patterns` `resources/code-design.md`): wrappers that add nothing, options with one caller, defensive branches for impossible states, needless indirection. Clarity over brevity — clearer sometimes means more lines, and an abstraction serving a NAMED second consumer is not clutter (global §3). Findings name the collapse, never apply it |
 | History | `workkit:scout` agent | `git log`/`blame` on touched files: does the diff fight a past fix, revert intent, or repeat a reverted approach? |
 | Firestore rules | `workkit:scout` agent | ONLY when the diff touches BEM/Firestore work: reads vs rules coverage both ways |
-| Parity | `workkit:scout` agent | Full tier only. For every file the diff adds or changes, name its siblings (the same kind of thing on another surface, target, command, or package) from the repo's docs and directory shape, then report where the new code's shape, naming, entry point, logging, or call form differs from them. The principle is the global AGENTS.md parity rule (like things use like systems); the lens quotes it, never owns it. Findings name the sibling and the mismatch, never apply a fix |
+| Parity | `workkit:scout` agent | Full tier only. For every file the diff adds or changes, name its siblings (the same kind of thing on another surface, target, command, or package) from the repo's docs and directory shape, then report where the new code's shape, naming, entry point, logging, or call form differs from them. The principle is the global AGENTS.md parity rule (like things use like systems); the lens quotes it, never owns it. This row is the KIT's one home of the mandate's wording: the light tier above and the per-issue drift question in `agents/verifier.md` both quote it. Findings name the sibling and the mismatch, never apply a fix |
 
 Never tell a lens what NOT to flag and never pre-rate severity in the brief — that manufactures false negatives. The `manager/resolver` hook supplies each class agent's model per spawn — never pass a `model` param.
 
@@ -45,7 +45,7 @@ The `workkit:verifier` agent (never a finder in the same pass) scores every coll
 
 ## 4. Report
 
-One consolidated report: findings **≥80** as actionable items (file:line, issue, fix); 40–79 compressed into a "lower confidence" note; below 40 dropped silently. End with a verdict: ship / fix-then-ship / rework. Done-criteria: every ≥80 finding names its file:line and concrete fix; no lens output pasted raw into chat.
+One consolidated report: findings **≥80** as actionable items (file:line, issue, fix); 40–79 compressed into a "lower confidence" note; below 40 dropped silently. End with a verdict: ship / fix-then-ship / rework. Every item in the report, and every issue one of them names, reads in the cold-reader line (`docs/project-state.md` § Restating an issue). Done-criteria: every ≥80 finding names its file:line and concrete fix; no lens output pasted raw into chat.
 
 A finding that gets FILED rather than fixed now passes the filing litmus test first — *would closing an open issue automatically mean this is done too?* Yes → it attaches there, never as a sibling issue; polish-grade findings batch as checklist lines onto the surface's rolling `polish: <surface>` issue. The rules: `docs/project-state.md` § How big is one issue.
 
@@ -60,4 +60,4 @@ mkdir -p "${TMPDIR:-/tmp}/claude-review-marker" && touch "${TMPDIR:-/tmp}/claude
 ## Gotchas
 
 - The inline return IS the convention (#133) — the reviewer, `workkit:scout`, and `workkit:verifier` toolsets have no Write anyway. A report FILE is the explicit-ask exception: name the path in the brief only when the output is a large artifact meant to be read selectively, and never ask a lens without Write for one.
-- Do not re-run a full panel over edits that merely implement findings the scorer already judged this session — that reviews the review's own output. A light verification pass ("does each edit implement its finding without contradictions?") is the honest check (2026-07-23).
+- Do not re-run a full panel over edits that merely implement findings the scorer already judged this session — that reviews the review's own output. A light verification pass ("does each edit implement its finding without contradictions?") is the honest check (2026-07-23). The `workkit:ship` panel is the one exception: it runs full over the whole ship diff every time (its step 3.2b).

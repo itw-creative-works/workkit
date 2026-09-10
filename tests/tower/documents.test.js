@@ -113,7 +113,7 @@ const run = async () => {
   await test('the read carries the fields a card needs, off the query the series already made', () => {
     const home = mkHome();
     const calls = [];
-    const nodes = readDiscussions({ workflowHome: home, exec: mkExec([brief('2026-08-03')], calls) });
+    const { nodes } = readDiscussions({ workflowHome: home, exec: mkExec([brief('2026-08-03')], calls) });
     assertEq(calls.length, 1, 'one round trip');
     const argv = calls[0].join(' ');
     for (const field of ['title', 'url', 'createdAt', 'body']) {
@@ -126,7 +126,7 @@ const run = async () => {
   await test('the archive and the series are two readings of that one read', () => {
     const home = mkHome();
     const calls = [];
-    const nodes = readDiscussions({ workflowHome: home, exec: mkExec([brief('2026-08-03'), daily('2026-08-02')], calls) });
+    const { nodes } = readDiscussions({ workflowHome: home, exec: mkExec([brief('2026-08-03'), daily('2026-08-02')], calls) });
     assertEq(documentsFrom(nodes).length, 2, 'the archive is both posts');
     assertEq(historyFrom(nodes).length, 1, 'the series is the one that carried a stats line');
     assertEq(calls.length, 1, 'and asking both questions cost one round trip, not two');
@@ -135,7 +135,7 @@ const run = async () => {
 
   await test('a node of another shape is normalized at the read, never defended against twice', () => {
     const home = mkHome();
-    const nodes = readDiscussions({
+    const { nodes } = readDiscussions({
       workflowHome: home,
       exec: mkExec([null, { title: 7 }, { title: 'daily: 2026-08-02' }]),
     });
@@ -149,13 +149,13 @@ const run = async () => {
 
   await test('a read that could not be made is null, which is not an empty archive', () => {
     const home = mkHome();
-    assertEq(readDiscussions({ workflowHome: home, exec: () => { throw new Error('gh: not authenticated'); } }), null, 'a read that failed');
-    assertEq(readDiscussions({ workflowHome: home, exec: () => 'not json at all' }), null, 'an answer of another shape');
+    assertEq(readDiscussions({ workflowHome: home, exec: () => { throw new Error('gh: not authenticated'); } }).nodes, null, 'a read that failed');
+    assertEq(readDiscussions({ workflowHome: home, exec: () => 'not json at all' }).nodes, null, 'an answer of another shape');
     const noHome = mkHome(null);
     assertEq(readDiscussions({
       workflowHome: noHome,
       exec: () => { throw new Error('gh must not be called at all'); },
-    }), null, 'a machine with nowhere to read from never asks');
+    }).nodes, null, 'a machine with nowhere to read from never asks');
     cleanup(home); cleanup(noHome);
   });
 

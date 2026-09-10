@@ -709,7 +709,7 @@ export const headlineFor = (counts) => {
  * The brief, from the board this browser just swept.
  *
  * @param {object} board - the sweep
- * @param {object} [opts] - `{ generatedAt, summaries, history, documents }`
+ * @param {object} [opts] - `{ generatedAt, summaries, history, documents, historyReason }`
  * @returns {object} the same payload shape /api/brief serves
  */
 export const buildBrief = (board, opts = {}) => {
@@ -769,6 +769,10 @@ export const buildBrief = (board, opts = {}) => {
     // published copy that carried the block only there drew no banner at all.
     briefFreshness: briefFreshness(opts.history || null, generatedAt),
     documents: opts.documents || null,
+    // Why the three above are empty, where the read had a reason to give: the
+    // tower carries it on this key too (tower/api/server.js), so the Brief and
+    // the Overview say the limit or the refusal on either copy (issue #215).
+    historyReason: opts.historyReason || null,
   };
 };
 
@@ -926,16 +930,22 @@ export const normalizeDocuments = (data) => ((((data || {}).repository || {}).di
  * briefs carry no stats line yet has a history that is genuinely empty - and the
  * page says a different sentence for each.
  *
+ * The REASON rides beside them (issue #215), as it does on the tower's own read
+ * (tower/api/lib/history.js): a refusal this read already worded is a sentence
+ * the pages can draw, and dropping it left them saying only that the mornings
+ * were unreadable. A site with no home repo has none to give - there is nothing
+ * it failed to read.
+ *
  * @param {string} home - the home repo slug, or ''
  * @param {object} ctx
- * @returns {Promise<{history: Array<object>|null, documents: Array<object>|null}>}
+ * @returns {Promise<{history: Array<object>|null, documents: Array<object>|null, reason: string|null}>}
  */
 export const fetchDiscussions = async (home, ctx = {}) => {
-  const nothing = { history: null, documents: null };
+  const nothing = { history: null, documents: null, reason: null };
   if (!home) return nothing;
   const answer = await graphql(buildHistoryQuery(home), ctx);
-  if (!answer.ok) return nothing;
-  return { history: normalizeHistory(answer.data), documents: normalizeDocuments(answer.data) };
+  if (!answer.ok) return { ...nothing, reason: answer.reason || null };
+  return { history: normalizeHistory(answer.data), documents: normalizeDocuments(answer.data), reason: null };
 };
 
 // ── The one door ───────────────────────────────────────────────────────────
@@ -976,9 +986,9 @@ export const readFeed = async (path, ctx = {}) => {
     // The history and the documents ride the brief here exactly as they do on
     // the tower's own endpoint, so the Overview's charts and the Brief's archive
     // work off-machine too - and they come off ONE read, as they do there.
-    const { history, documents } = await fetchDiscussions(home, ctx);
+    const { history, documents, reason } = await fetchDiscussions(home, ctx);
     return board.ok
-      ? { ok: true, data: buildBrief(board, { generatedAt: ctx.generatedAt, summaries, history, documents }), status: 200, reason: null }
+      ? { ok: true, data: buildBrief(board, { generatedAt: ctx.generatedAt, summaries, history, documents, historyReason: reason }), status: 200, reason: null }
       : { ok: false, data: null, status: board.status || null, reason: board.reason, ...limitMark(board) };
   }
 
