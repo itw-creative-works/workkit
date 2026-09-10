@@ -957,11 +957,14 @@ const run = async () => {
   await test('a machine with no browser opener is the same named skip', () => {
     // `/usr/bin/open` is on every mac, so the machine WITHOUT an opener is the
     // other branch: a `uname` that says Linux sends the step looking for
-    // `xdg-open`, which this world no longer has.
+    // `xdg-open`, which this world no longer has. The gate asks `command -v`,
+    // and a Linux runner keeps a real `xdg-open` on the base PATH, so the
+    // question itself answers no for that one name here.
     const world = mkPagesWorld(PUBLISHED);
     fs.rmSync(path.join(world.bin, 'xdg-open'));
     writeStub(path.join(world.bin, 'uname'), ["printf '%s\\n' Linux"]);
-    const { code, out } = inCli(world, `${AT_TERMINAL}\nhandover_token`);
+    const noOpener = `command() { [[ "$1" == '-v' && "$2" == 'xdg-open' ]] && return 1; builtin command "$@"; }`;
+    const { code, out } = inCli(world, `${AT_TERMINAL}\n${noOpener}\nhandover_token`);
     assertEq(code, 0, 'exit 0');
     assert(/the token handover needs a browser opener/.test(out), `the skip names what is missing, got: ${out}`);
     assert(out.includes(SETTINGS_URL), 'and where to do it instead');
