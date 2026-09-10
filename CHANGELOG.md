@@ -7,15 +7,17 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-09-10
+
 ### Added
-- [#230](../../issues/230) — `workkit setup` now hands this machine's `gh` login token to the dashboard it publishes: it waits for GitHub Pages to serve the publish, then opens the Settings page with the token in the URL fragment, so unlocking a fresh copy takes no token to create and none to paste.
+- [#230](../../issues/230) [`b9de92c`](../../commit/b9de92c) Thanks [@ianwieds]! — `workkit setup` now hands this machine's `gh` login token to the dashboard it publishes: it waits for GitHub Pages to serve the publish, then opens the Settings page with the token in the URL fragment, so unlocking a fresh copy takes no token to create and none to paste.
 
 ### Changed
-- [#229](../../issues/229) — The server suite's rate-limit fake now comes from the shared `gh` fixture in `tests/lib/gh.js`, so every suite that needs a limited `gh` builds the same bytes one way.
-- [#231](../../issues/231) — The server suite's two remaining hand-built `gh` exec errors now come from that fixture's `execError`, so one helper fabricates every exec failure in the file.
+- [#229](../../issues/229) [`b9de92c`](../../commit/b9de92c) Thanks [@ianwieds]! — The server suite's rate-limit fake now comes from the shared `gh` fixture in `tests/lib/gh.js`, so every suite that needs a limited `gh` builds the same bytes one way.
+- [#231](../../issues/231) [`b9de92c`](../../commit/b9de92c) Thanks [@ianwieds]! — The server suite's two remaining hand-built `gh` exec errors now come from that fixture's `execError`, so one helper fabricates every exec failure in the file.
 
 ### Fixed
-- [#230](../../issues/230) — A `site.url` recorded with a trailing slash no longer publishes an invalid `CNAME`: the scheme and the slash now come off in the engine's one reader of that option, which the publish and the new token handover share.
+- [#230](../../issues/230) [`b9de92c`](../../commit/b9de92c) Thanks [@ianwieds]! — A `site.url` recorded with a trailing slash no longer publishes an invalid `CNAME`: the scheme and the slash now come off in the engine's one reader of that option, which the publish and the new token handover share.
 
 ## [0.52.0] - 2026-09-10
 
