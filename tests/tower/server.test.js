@@ -18,6 +18,7 @@ const http = require('http');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { resetIn, mkLimited, execError } = require('../lib/gh');
 
 const {
   createServer, DEFAULT_BIND, DEFAULT_PORT, MAX_REQUEST_BYTES, MOVE_STATUSES,
@@ -196,27 +197,17 @@ const pageTheBoard = (world, { pause = 0 } = {}) => {
 };
 
 /**
- * Answer every Discussions read with the live GraphQL rate limit (issue #216):
- * HTTP 200, the budget spent in the headers, and a RATE_LIMIT error where the
- * data would be. `gh` exits non-zero on an errors array, so the answer arrives
- * on the error's stdout, which is where the readers look for it. The board
- * sweep is left alone: a brief whose sweep failed is a different page.
+ * Answer every Discussions read with the live GraphQL rate limit (issue #216),
+ * the shape tests/lib/gh.js owns. The board sweep is left alone: a brief whose
+ * sweep failed is a different page.
  */
 const limitDiscussions = (world) => {
   const inner = world.exec;
+  const limited = mkLimited(resetIn(9));
   world.exec = (cmd, args) => {
     if (cmd === 'gh' && args[0] === 'api' && args.join(' ').includes('discussions(first')) {
       world.calls.push([cmd, ...args]);
-      const err = new Error('Command failed: gh api graphql');
-      err.stdout = [
-        'HTTP/2.0 200 OK',
-        'X-RateLimit-Remaining: 0',
-        `X-RateLimit-Reset: ${Math.floor(Date.now() / 1000) + 540}`,
-        '',
-        JSON.stringify({ errors: [{ type: 'RATE_LIMIT', code: 'graphql_rate_limit', message: 'API rate limit already exceeded for user ID 1.' }] }),
-      ].join('\r\n');
-      err.stderr = '';
-      throw err;
+      return limited();
     }
     return inner(cmd, args);
   };
@@ -786,8 +777,7 @@ const run = async () => {
 
   await test('a gh failure is a soft-fail body, never a 500', async () => {
     const w = mkWorld();
-    const err = new Error('Command failed: gh issue create');
-    err.stderr = 'gh: To get started with GitHub CLI, please run: gh auth login\n';
+    const err = execError('Command failed: gh issue create', { stderr: 'gh: To get started with GitHub CLI, please run: gh auth login\n' });
     w.createResult = err;
     const c = await start(w);
     const { status, body } = await postJson(c, '/api/intake', { repo: SLUG, title: 'Offline' });
@@ -951,8 +941,7 @@ const run = async () => {
 
   await test('a gh failure is a soft-fail body the page can revert on, never a 500', async () => {
     const w = mkWorld();
-    const err = new Error('Command failed: gh issue edit');
-    err.stderr = 'gh: could not add label: not found\n';
+    const err = execError('Command failed: gh issue edit', { stderr: 'gh: could not add label: not found\n' });
     w.editResult = err;
     const c = await start(w);
     const { status, body } = await postJson(c, MOVE, validMove);

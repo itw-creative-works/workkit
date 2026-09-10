@@ -8,8 +8,12 @@
 // made by the page itself (issues #81, #110). The key that unlocks those calls is a
 // fine-grained personal access token the viewer supplies, held in that browser's
 // localStorage and nowhere else - never in the repo, the built site, an engine
-// file or a URL. Without it the site has no data to show, which is what makes
-// the token the auth layer as well as the credential.
+// file or a URL that reaches a server. It is TYPED into the Settings page, or
+// handed over by `workkit setup`, which opens that page with the token in the
+// URL fragment (issue #230): a fragment is the one part of a URL the browser
+// keeps to itself, so the handover reaches this storage and nothing else.
+// Without it the site has no data to show, which is what makes the token the
+// auth layer as well as the credential.
 //
 // It answers in the SAME shapes the tower API serves, so the page modules do not
 // know which half is talking to them: `/api/repos` is a roster, `/api/board` is
@@ -167,6 +171,51 @@ export const writeToken = (storage, value) => {
 
 /** Forget the token this browser holds. */
 export const clearToken = (storage) => writeToken(storage, '');
+
+/** The fragment a handover arrives in, and the only hash this module reads. */
+const TOKEN_HASH = '#token=';
+
+/**
+ * The token `workkit setup` handed over in the URL fragment: stored, and the
+ * fragment stripped off the address bar behind it (issue #230).
+ *
+ * Setup already holds a token that works - the `gh` login's - so a freshly
+ * published copy is unlocked with nothing typed: it waits for Pages, then opens
+ * the Settings page with `#token=<token>` on the end. The carrier is the
+ * FRAGMENT because a fragment is never sent in the request, so the token
+ * reaches this browser without reaching a server on the way. This runs BEFORE
+ * the mode is decided (api.js), which is what makes such a landing boot as a
+ * copy holding a token rather than a locked one.
+ *
+ * It reads the ONE hash it owns: any other fragment, and any page without the
+ * two globals this needs, is left exactly as it is. The value is decoded
+ * because the shell may encode it, and the strip keeps `?repo=` intact - the
+ * path and the query are what the clean URL is made of.
+ *
+ * @param {object} [scope] - the global carrying `location`, `history` and `localStorage`
+ * @returns {string} the token that was handed over, or ''
+ */
+export const takeTokenFromHash = (scope) => {
+  const where = scope && scope.location;
+  const nav = scope && scope.history;
+  const hash = (where && where.hash) || '';
+  if (!hash.startsWith(TOKEN_HASH) || !nav || typeof nav.replaceState !== 'function') return '';
+  let token = '';
+  try {
+    token = decodeURIComponent(hash.slice(TOKEN_HASH.length)).trim();
+  } catch {
+    return ''; // a fragment that is not valid encoding never carried a token
+  }
+  if (!token) return '';
+  writeToken(safeStorage(scope), token);
+  try {
+    nav.replaceState(null, '', `${where.pathname || ''}${where.search || ''}`);
+  } catch {
+    // A browser that refuses the rewrite keeps the fragment in its address bar.
+    // The token is stored either way, which is the part the boot depends on.
+  }
+  return token;
+};
 
 // ── The wire ───────────────────────────────────────────────────────────────
 

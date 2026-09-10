@@ -62,10 +62,21 @@ const secretList = (secrets) => JSON.stringify(secrets.map(({ name, days }) => (
  * screen — the browser message AND the paste-the-code prompt that follows it —
  * is drawn on the terminal, and the token is the last thing on it. `mintExit`
  * is a mint that did not finish.
+ *
+ * The token-handover world (issue #230) is that same `gh` answering two more
+ * reads: `pagesRef` is the `gh-pages` head the publish pushed, and `pagesBuilds`
+ * is what `pages/builds/latest` says, ONE ENTRY PER POLL as `[status, commit]`,
+ * so a wait can be given a `building` answer first and a `built` one after. The
+ * last entry repeats, the way a served build stays served. Both openers are on
+ * PATH as recorders whatever the test asks for, because `/usr/bin/open` is real
+ * on every mac and a step that reached it unshadowed would open a browser; each
+ * one copies the page it was handed, mode and all, so the test can read what
+ * the browser would have.
  */
 const mkWorld = ({
   pluginInstalled = false, ghAuthed = true, claude = true, binOnPath = false,
   secrets = null, authToken = '', claudeToken = '', mintExit = 0,
+  pagesRef = '', pagesBuilds = [],
 } = {}) => {
   const root = mkTmp();
   const bin = path.join(root, 'bin');
@@ -98,6 +109,12 @@ const mkWorld = ({
   const ghLog = path.join(root, 'gh-argv.log');
   const stdinDir = path.join(root, 'gh-stdin');
   fs.mkdirSync(stdinDir, { recursive: true });
+  // The Pages answers, one file for the sequence and one for how far through it
+  // this world has been read: the stub is a fresh process per poll, so the count
+  // has to live on disk for the second answer to differ from the first.
+  const pollSeq = path.join(root, 'pages-builds.tsv');
+  const pollCount = path.join(root, 'pages-polls');
+  fs.writeFileSync(pollSeq, pagesBuilds.map(([status, commit]) => `${status}\t${commit}\n`).join(''));
   writeStub(path.join(bin, 'gh'), [
     recordArgv(ghLog),
     'if [[ "$1" == \'secret\' && "$2" == \'set\' ]]; then',
@@ -127,8 +144,41 @@ const mkWorld = ({
       '  exit 0',
       'fi',
     ] : []),
+    // The two reads the token handover makes. Both are answered as the tool
+    // renders them for the flags the step passes: `--jq` reduces the ref to its
+    // sha and the latest build to a status/commit pair, so the stub prints those
+    // values and nothing around them.
+    'if [[ "$1" == \'api\' && "$2" == repos/*/git/ref/heads/* ]]; then',
+    `  printf '%s\\n' '${pagesRef}'`,
+    '  exit 0',
+    'fi',
+    'if [[ "$1" == \'api\' && "$2" == */pages/builds/latest ]]; then',
+    `  polls="$(cat "${pollCount}" 2>/dev/null || printf 0)"`,
+    '  polls=$((polls + 1))',
+    `  printf '%s' "$polls" > "${pollCount}"`,
+    `  total="$(grep -c '' "${pollSeq}" 2>/dev/null || printf 0)"`,
+    '  if [[ "$total" -gt 0 ]]; then',
+    '    if [[ "$polls" -gt "$total" ]]; then polls="$total"; fi',
+    `    sed -n "\${polls}p" "${pollSeq}"`,
+    '  fi',
+    '  exit 0',
+    'fi',
     `exit ${ghAuthed ? 0 : 1}`,
   ]);
+
+  // The browser opener, whichever name this machine's kind of desktop uses.
+  // Both are recorders, and both keep a copy of the page they were handed: the
+  // CLI removes the original at exit, and its MODE is half of what the test is
+  // asking about, so the copy is made with `cp -p`.
+  const openerLog = path.join(root, 'opener-argv.log');
+  const openedFile = path.join(root, 'opened.html');
+  for (const opener of ['open', 'xdg-open']) {
+    writeStub(path.join(bin, opener), [
+      recordArgv(openerLog),
+      `if [[ -f "$1" ]]; then cp -p "$1" "${openedFile}"; fi`,
+      'exit 0',
+    ]);
+  }
 
   const agents = path.join(home, 'Library', 'LaunchAgents');
   const localBin = path.join(home, '.local', 'bin');
@@ -151,8 +201,16 @@ const mkWorld = ({
       const file = path.join(stdinDir, name);
       return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined;
     },
-    // What is left in this machine's TMPDIR. The mint's capture file is the
-    // only thing the CLI ever puts there, so anything at all is a leak.
+    openerCalls: () => readArgv(openerLog),
+    // The page the opener was handed, copied aside before the CLI removed it:
+    // its text and the mode it carried, or undefined when nothing was opened.
+    openedPage: () => (fs.existsSync(openedFile) ? {
+      text: fs.readFileSync(openedFile, 'utf8'),
+      mode: fs.statSync(openedFile).mode & 0o777,
+    } : undefined),
+    // What is left in this machine's TMPDIR. The CLI puts two things there and
+    // removes both: the mint's capture file and the handover page, each of which
+    // carries a token value, so anything at all left here is a leak.
     tmpFiles: () => fs.readdirSync(tmp),
     seedPlist: (label, text) => {
       fs.mkdirSync(agents, { recursive: true });
@@ -227,13 +285,19 @@ const seedSettings = (world, site) => {
  * mint now runs the CLI under — refuses a socket for stdin outright. A file is
  * still not a terminal, so every `interactive` check answers exactly as it did.
  */
-const inCli = (world, script, { input = '' } = {}) => {
+const inCli = (world, script, { input = '', env } = {}) => {
   const driver = `. ${JSON.stringify(CLI)} help >/dev/null\n${script}`;
   const stdinFile = path.join(world.root, 'inCli-stdin');
   fs.writeFileSync(stdinFile, input);
   const fd = fs.openSync(stdinFile, 'r');
   const res = spawnSync('bash', ['-c', driver], {
-    cwd: world.root, env: world.env, stdio: [fd, 'pipe', 'pipe'], encoding: 'utf8', timeout: 30000,
+    cwd: world.root,
+    // `env` for the values the CLI reads at SOURCE time, which a line prepended
+    // to the script would be too late for.
+    env: { ...world.env, ...(env || {}) },
+    stdio: [fd, 'pipe', 'pipe'],
+    encoding: 'utf8',
+    timeout: 30000,
   });
   fs.closeSync(fd);
   assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
@@ -803,6 +867,200 @@ const run = async () => {
       assert(!/^.*publish: /m.test(out), `${publish} publishes nothing, got: ${out}`);
       cleanup(world.root);
     }
+  });
+
+  group('workkit setup: the token handover');
+
+  // The fake this group moves around: shaped like the `gh` OAuth token the step
+  // reads, and URL-safe the way a real one is, so it can ride a fragment as it
+  // stands. Nothing here is a credential, and nothing here is ever printed.
+  const HANDOVER = 'gho_FAKEhandoverTOKENfakeHANDOVER0';
+  const PUSHED = 'fa11ee0000000000000000000000000000000000';
+
+  /**
+   * A machine whose publish has landed: `gh-pages` is at PUSHED, and Pages
+   * answers `building` first and `built` on the second poll, so a handover that
+   * happens proves the step waited rather than read once.
+   */
+  const mkPagesWorld = (site, pagesBuilds = [['building', ''], ['built', PUSHED]]) => {
+    const world = mkWorld({ authToken: HANDOVER, pagesRef: PUSHED, pagesBuilds });
+    seedSettings(world, site);
+    return world;
+  };
+  const PUBLISHED = { repo: 'owner/home', publish: true, url: null };
+  const SETTINGS_URL = 'https://owner.github.io/home/settings';
+  // The polls of the Pages build, off the recorded gh calls: the one endpoint
+  // the wait reads, told apart from every other `gh api` a run makes.
+  const pagesPolls = (world) => world.ghCalls().filter((c) => isCall(c, 'api') && /pages\/builds\/latest$/.test(c[1] || ''));
+
+  await test('the token reaches the browser in a file, never in an argument', () => {
+    const world = mkPagesWorld(PUBLISHED);
+    const { code, out } = inCli(world, `${AT_TERMINAL}\nhandover_token`, { env: { WORKKIT_PAGES_WAIT: '60' } });
+    assertEq(code, 0, `exit 0, got: ${out}`);
+    const polls = pagesPolls(world);
+    assertEq(polls.length, 2, `it polled until Pages had served the push: ${fmtCalls(polls)}`);
+    const calls = world.openerCalls();
+    assertEq(calls.length, 1, `the opener ran once: ${fmtCalls(calls)}`);
+    assertEq(calls[0].length, 1, 'with one argument, the page and nothing beside it');
+    assert(calls[0][0].endsWith('.html'), `under a name a browser will take: ${calls[0][0]}`);
+    const page = world.openedPage();
+    assertEq(page.mode, 0o600, 'the page is readable by this user and nobody else');
+    assert(page.text.includes(`${SETTINGS_URL}#token=${HANDOVER}`), `and redirects to Settings with the token in the fragment, got: ${page.text}`);
+    assert(!out.includes(HANDOVER), `no line of output carries the token, got: ${out}`);
+    assert(!fmtCalls(calls).includes(HANDOVER), `and no argument carries it either: ${fmtCalls(calls)}`);
+    assert(/the browser now holds it/.test(out), `the run says what happened, got: ${out}`);
+    assertEq(world.tmpFiles().join(','), '', 'and the page is gone by the time the run ends');
+    cleanup(world.root);
+  });
+
+  await test('the URL is the site’s own address, github.io or the custom domain', () => {
+    // The publish's own rule (workflow/publish.sh): a custom domain serves at
+    // its root, and the default project site serves a path deeper. Only the
+    // OWNER is lowercased, because that half is a hostname.
+    for (const [site, expected] of [
+      [{ repo: 'Owner/Home', publish: true, url: null }, 'https://owner.github.io/Home/settings'],
+      [{ repo: 'owner/home', publish: true, url: 'https://tower.example.com/' }, 'https://tower.example.com/settings'],
+    ]) {
+      const world = mkPagesWorld(site, [['built', PUSHED]]);
+      const { out } = inCli(world, `${AT_TERMINAL}\nhandover_token`, { env: { WORKKIT_PAGES_WAIT: '60' } });
+      const page = world.openedPage();
+      assert(page && page.text.includes(`${expected}#token=${HANDOVER}`), `${expected} is what was opened, got: ${page ? page.text : out}`);
+      assert(!out.includes(HANDOVER), 'and no line of output carries the token');
+      cleanup(world.root);
+    }
+  });
+
+  await test('a publish Pages has not served yet prints the URL and opens nothing', () => {
+    const world = mkPagesWorld(PUBLISHED, [['building', '']]);
+    const { code, out } = inCli(world, `${AT_TERMINAL}\nhandover_token`, { env: { WORKKIT_PAGES_WAIT: '0' } });
+    assertEq(code, 0, 'a wait that ran out is not a failure');
+    assert(/GitHub Pages has not served the publish/.test(out), `it names what it was waiting for, got: ${out}`);
+    assert(out.includes(SETTINGS_URL), 'and the page to hand the token over on by hand');
+    assert(!out.includes('#token='), `with no fragment on that URL, got: ${out}`);
+    assertEq(world.openerCalls().length, 0, 'nothing was opened');
+    assertEq(world.openedPage(), undefined, 'and no page was written');
+    cleanup(world.root);
+  });
+
+  await test('without a terminal it is a named skip, and GitHub is asked nothing', () => {
+    const world = mkPagesWorld(PUBLISHED);
+    const { code, out } = inCli(world, 'handover_token');
+    assertEq(code, 0, 'exit 0');
+    assert(/the token handover needs a terminal/.test(out), `the skip names what is missing, got: ${out}`);
+    assert(out.includes(SETTINGS_URL), 'and where to do it instead');
+    assert(out.includes('gh auth token'), 'with the command that prints the token');
+    assert(!world.ghCalls().some((c) => isCall(c, 'api')), `no read was made at all: ${fmtCalls(world.ghCalls())}`);
+    assertEq(world.openerCalls().length, 0, 'and nothing was opened');
+    cleanup(world.root);
+  });
+
+  await test('a machine with no browser opener is the same named skip', () => {
+    // `/usr/bin/open` is on every mac, so the machine WITHOUT an opener is the
+    // other branch: a `uname` that says Linux sends the step looking for
+    // `xdg-open`, which this world no longer has.
+    const world = mkPagesWorld(PUBLISHED);
+    fs.rmSync(path.join(world.bin, 'xdg-open'));
+    writeStub(path.join(world.bin, 'uname'), ["printf '%s\\n' Linux"]);
+    const { code, out } = inCli(world, `${AT_TERMINAL}\nhandover_token`);
+    assertEq(code, 0, 'exit 0');
+    assert(/the token handover needs a browser opener/.test(out), `the skip names what is missing, got: ${out}`);
+    assert(out.includes(SETTINGS_URL), 'and where to do it instead');
+    assert(!world.ghCalls().some((c) => isCall(c, 'api')), `no read was made at all: ${fmtCalls(world.ghCalls())}`);
+    cleanup(world.root);
+  });
+
+  await test('setup hands the token over right after the publish it belongs to', () => {
+    // The call site, pinned: publishing is on, so the publish runs and the
+    // handover follows it. `runCli` is a pipe and not a terminal, so what lands
+    // there is the terminal skip, which is what makes the order readable.
+    const world = mkPagesWorld(PUBLISHED);
+    const { code, out } = runCli(world, ['setup']);
+    assertEq(code, 0, 'exit 0');
+    const published = out.indexOf('publish: ');
+    const handed = out.indexOf('the token handover needs a terminal');
+    assert(published !== -1, `the publish ran, got: ${out}`);
+    assert(handed > published, `and the handover came after it, got: ${out}`);
+    cleanup(world.root);
+  });
+
+  await test('an interrupt while setup carries on takes the page with it', () => {
+    // The window the EXIT trap alone left open: the page outlives the step by
+    // design (the browser reads it asynchronously), so setup's remaining
+    // questions are asked with it on disk, and a Ctrl-C at one of those prompts
+    // has to remove it too. The signal goes to the shell that called the step,
+    // which is exactly where a Ctrl-C would land.
+    const world = mkPagesWorld(PUBLISHED, [['built', PUSHED]]);
+    const during = path.join(world.root, 'during-the-window');
+    const script = `${AT_TERMINAL}\nhandover_token\nls "$TMPDIR" > ${JSON.stringify(during)}\nkill -INT $$`;
+    const { code } = inCli(world, script, { env: { WORKKIT_PAGES_WAIT: '60' } });
+    assertEq(code, 130, 'the interrupt is not swallowed: 128 plus SIGINT');
+    assert(/\.html$/m.test(fs.readFileSync(during, 'utf8')), 'the page was still on disk when the interrupt arrived');
+    assertEq(world.tmpFiles().join(','), '', 'and it is gone after it');
+    cleanup(world.root);
+  });
+
+  await test('a publish that did not finish holds the handover back', () => {
+    // A token handed to a publish that failed is a token handed to whatever
+    // Pages was already serving. `cmd_publish` never fails a run, so the step
+    // reads what it DID off PUBLISH_FAILED.
+    const world = mkPagesWorld(PUBLISHED);
+    const { kit, script } = mkKit('owner/kit');
+    writeStub(path.join(kit, 'workflow', 'publish.sh'), ["printf '%s\\n' 'publish: this one broke' >&2", 'exit 1']);
+    const { code, out } = runCli(world, ['setup'], { script });
+    assertEq(code, 0, 'setup still finishes');
+    assert(/site: the publish did not finish/.test(out), `the publish named its own failure, got: ${out}`);
+    assert(/the token handover waits for a publish that finished/.test(out), `and the handover says what it waits for, got: ${out}`);
+    assertEq(pagesPolls(world).length, 0, `Pages was never polled: ${fmtCalls(world.ghCalls())}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('three empty reads end the wait, with both causes named', () => {
+    // Two things read as nothing: a repo whose Pages step was refused (its
+    // `pages/builds/latest` 404s for ever) and a read that could not be made at
+    // all, since a fired `bounded_read` bound looks exactly like a listing that
+    // would not come. The line states the condition and names both rather than
+    // diagnosing one of them as fact.
+    const world = mkPagesWorld(PUBLISHED, []);
+    const { code, out } = inCli(world, `${AT_TERMINAL}\nhandover_token`, { env: { WORKKIT_PAGES_WAIT: '60' } });
+    assertEq(code, 0, 'exit 0');
+    assert(out.includes("three reads of owner/home's latest Pages build came back with nothing"), `it says what happened, got: ${out}`);
+    assert(out.includes('Pages may be off (https://github.com/owner/home/settings/pages) or unreachable'), 'and names both causes, neither as the answer');
+    assert(out.includes(SETTINGS_URL), 'with the by-hand URL beside them');
+    assertEq(pagesPolls(world).length, 3, `the read got three tries: ${fmtCalls(pagesPolls(world))}`);
+    assertEq(world.openerCalls().length, 0, 'and nothing was opened');
+    cleanup(world.root);
+  });
+
+  await test('a site.url that cannot go in a URL is refused, never escaped', () => {
+    // `ask_site_url` takes whatever was typed at its word, so the address is
+    // checked before it reaches a message or the redirect page's JS string. A
+    // `#` is refused for a second reason: a fragment of its own would swallow
+    // the token's, and the success line would print over a Settings page that
+    // was handed nothing.
+    for (const url of ['tower.example.com/"onerror="x', 'tower.example.com/#board']) {
+      const world = mkPagesWorld({ repo: 'owner/home', publish: true, url });
+      const { code, out } = inCli(world, `${AT_TERMINAL}\nhandover_token`, { env: { WORKKIT_PAGES_WAIT: '60' } });
+      assertEq(code, 0, 'exit 0');
+      assert(out.includes('cannot be put in a URL as it stands'), `${url} is refused, got: ${out}`);
+      assertEq(world.openerCalls().length, 0, 'nothing was opened');
+      assertEq(pagesPolls(world).length, 0, 'and Pages was never polled');
+      cleanup(world.root);
+    }
+  });
+
+  await test('a token that would need escaping is refused, never escaped', () => {
+    // The same rule as the address: the fragment carries a gh token as it
+    // stands, and a value outside that shape is a mangled or refused login,
+    // never something to encode on a guess.
+    const world = mkWorld({ authToken: 'gho_a/b', pagesRef: PUSHED, pagesBuilds: [['built', PUSHED]] });
+    seedSettings(world, PUBLISHED);
+    const { code, out } = inCli(world, `${AT_TERMINAL}\nhandover_token`, { env: { WORKKIT_PAGES_WAIT: '60' } });
+    assertEq(code, 0, 'exit 0');
+    assert(out.includes('characters a URL fragment would have to escape'), `the shape is refused, got: ${out}`);
+    assert(out.includes(SETTINGS_URL), 'and the Settings URL is printed for the paste by hand');
+    assertEq(world.openerCalls().length, 0, 'nothing was opened');
+    assert(!out.includes('gho_a/b'), 'the value itself is never printed');
+    cleanup(world.root);
   });
 
   group('workkit setup: the cloud secrets');

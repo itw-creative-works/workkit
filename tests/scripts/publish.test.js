@@ -668,6 +668,15 @@ const run = async () => {
     assertEq(fs.readFileSync(path.join(fromPages(world), 'CNAME'), 'utf8'), 'board.example.com\n',
       'the scheme is not part of a CNAME');
 
+    // A trailing slash is not part of one either (issue #230): `ask_site_url`
+    // takes whatever was typed at its word, and the engine's one reader of the
+    // option (`wk_site_host` in home.sh) is where both the scheme and the slash
+    // come off, for this file and for the handover's site URL alike.
+    setSite(world, { url: 'https://board.example.com/' });
+    publish(world);
+    assertEq(fs.readFileSync(path.join(fromPages(world), 'CNAME'), 'utf8'), 'board.example.com\n',
+      'and a trailing slash is not a valid record either');
+
     setSite(world, { url: null });
     publish(world);
     assert(!fs.existsSync(path.join(fromPages(world), 'CNAME')), 'clearing it takes the file away');

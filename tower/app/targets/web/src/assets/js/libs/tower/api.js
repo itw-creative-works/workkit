@@ -31,7 +31,7 @@
 
 import { STATUSES } from './format.js';
 import {
-  readToken, readFeed, safeStorage, moveIssueStatus, createIssue,
+  readToken, readFeed, safeStorage, takeTokenFromHash, moveIssueStatus, createIssue,
 } from './github.js';
 
 /**
@@ -103,6 +103,11 @@ export function decideMode(environment, override, hasToken) {
 }
 
 const ENVIRONMENT = (typeof window.Configuration === 'object' && window.Configuration && window.Configuration.environment) || '';
+
+// A handover setup opened this page with is banked before the mode is read off
+// the storage it lands in (issue #230), so a copy arriving with the fragment is
+// a copy holding a token.
+takeTokenFromHash(window);
 
 /** This copy's mode - `tower`, `github` or `locked`. */
 export const MODE = decideMode(ENVIRONMENT, OVERRIDE, Boolean(readToken(safeStorage(window))));

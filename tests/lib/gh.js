@@ -3,7 +3,7 @@
 //
 // tower/api/lib/*.js reaches GitHub through a single exec seam, so a suite
 // exercising a limit, a refusal or a plain response builds the bytes `gh` would
-// have printed. Four suites needed the same bytes, so the shapes live here: the
+// have printed. Five suites need the same bytes, so the shapes live here: the
 // raw `--include` response, the error a non-zero exit throws, and the two `gh`
 // stubs a spent budget and a refused token wear.
 //

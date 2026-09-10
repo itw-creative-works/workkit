@@ -2815,6 +2815,55 @@ const run = async () => {
     assertEq(github.readToken(storage), '', 'and the old one is gone rather than left in place');
   });
 
+  // The page a handover lands on, as `takeTokenFromHash` sees it: the fragment,
+  // the two parts the clean URL behind it is made of, and the rewrite it strips
+  // with - every url `replaceState` was asked for is kept.
+  const mkLanding = (hash, search = '', initial = {}, refuse = false) => {
+    const rewrites = [];
+    return {
+      rewrites,
+      location: { hash, pathname: '/settings', search },
+      history: { replaceState: (state, title, url) => rewrites.push(url) },
+      localStorage: mkStorage(initial, refuse),
+    };
+  };
+
+  await test('the handover setup opens the page with is stored, and the fragment stripped behind it (#230)', () => {
+    const landing = mkLanding('#token=gho_FAKE', '?repo=a,b');
+    assertEq(github.takeTokenFromHash(landing), 'gho_FAKE', 'the fragment is where setup put the token');
+    assertEq(landing.localStorage.held[github.TOKEN_KEY], 'gho_FAKE', 'stored under the one key a typed token goes under');
+    assertEq(landing.rewrites.length, 1, 'and the address bar is rewritten exactly once');
+    assertEq(landing.rewrites[0], '/settings?repo=a,b', 'to the path and the query alone - the fragment is gone, the selection survives');
+
+    const encoded = mkLanding('#token=gho_a%2Fb');
+    assertEq(github.takeTokenFromHash(encoded), 'gho_a/b', 'a value the shell encoded is decoded on the way in');
+    assertEq(encoded.rewrites[0], '/settings', 'and a page with no query is stripped to its path');
+  });
+
+  await test('every other fragment is left exactly as it is', () => {
+    for (const hash of ['', '#something-else', '#token=', '#token=%E0%A4%A']) {
+      const landing = mkLanding(hash, '?repo=a', { [github.TOKEN_KEY]: 'fake-token-for-tests' });
+      assertEq(github.takeTokenFromHash(landing), '', `${hash || '(no fragment)'} carries no handover`);
+      assertEq(github.readToken(landing.localStorage), 'fake-token-for-tests', 'so what this browser already holds is untouched');
+      assertEq(landing.rewrites.length, 0, 'and nothing is rewritten');
+    }
+    assertEq(github.takeTokenFromHash({}), '', 'a global with no location at all is the same answer');
+    assertEq(github.takeTokenFromHash(undefined), '', 'and so is no global');
+
+    // Nothing to strip WITH is nothing taken: a token stored off a fragment
+    // that stays in the address bar is the leak the strip exists to close.
+    const noHistory = { location: { hash: '#token=gho_FAKE', pathname: '/settings', search: '' }, localStorage: mkStorage() };
+    assertEq(github.takeTokenFromHash(noHistory), '', 'a page with no history to rewrite takes nothing from the fragment');
+    assertEq(Object.keys(noHistory.localStorage.held).length, 0, 'and stores nothing it could not strip');
+  });
+
+  await test('a browser that refuses storage reads the handover without breaking the boot', () => {
+    const landing = mkLanding('#token=gho_FAKE', '', {}, true);
+    assertEq(github.takeTokenFromHash(landing), 'gho_FAKE',
+      'the return says what the fragment CARRIED, not what the storage kept: writeToken swallows the refusal, so such a copy stays locked while the boot goes on');
+    assertEq(landing.rewrites.length, 1, 'and the fragment is stripped either way - a token has no business in an address bar');
+  });
+
   group('tower/app: favorites - the projects pinned to the top');
 
   await test('a favorite is stored under one key, as a list of slugs', () => {
@@ -3936,6 +3985,26 @@ const run = async () => {
     assertEq(api.decideMode('production', '', false), 'locked', 'and without one it has nothing to show but the prompt');
     assertEq(api.MODE, 'locked', 'which is what the module itself decided under the stubs above');
     assertEq(api.LIVE, false, 'LIVE stays the question of a TOWER - WRITABLE is the flag every write gates on');
+  });
+
+  await test('a landing carrying setup’s handover boots as a copy holding a token (#230)', async () => {
+    // The one case that has to be read off the MODULE rather than off
+    // `decideMode`: the fragment is banked at import, before the storage the
+    // mode is decided from is read. A module URL evaluates once per process, so
+    // this second import carries a cache-busting query to get a fresh one.
+    const storage = mkStorage();
+    const rewrites = [];
+    const where = { href: 'https://alice.github.io/workkit/settings#token=gho_FAKE', hash: '#token=gho_FAKE', pathname: '/workkit/settings', search: '' };
+    globalThis.location = where;
+    globalThis.window = { location: where, history: { replaceState: (state, title, url) => rewrites.push(url) }, localStorage: storage };
+    const handed = await import(`${pathToFileURL(path.join(libs, 'api.js')).href}?handover=1`);
+    delete globalThis.location;
+    delete globalThis.window;
+
+    assertEq(storage.held[github.TOKEN_KEY], 'gho_FAKE', 'the fragment was banked while the module loaded');
+    assertEq(handed.MODE, 'github', 'so the copy that lands with one boots unlocked rather than locked');
+    assertEq(handed.WRITABLE, true, 'and writes with it, exactly as a typed token does');
+    assertEq(rewrites.join(','), '/workkit/settings', 'with the fragment stripped off the project-path URL it arrived on');
   });
 
   await test('a published page arms only the feeds GitHub can answer', () => {

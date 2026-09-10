@@ -438,7 +438,7 @@ fi
 # whenever the variable is set, so what is exported here is what the built
 # pages emit their URLs under.
 PATH_PREFIX='/'
-if [[ -z "$(wk_json_get "$WK_HOME_SETTINGS" '.site.url')" ]]; then
+if [[ -z "$(wk_site_host)" ]]; then
   HOME_SLUG="$(wk_home_slug)"
   PATH_PREFIX="/${HOME_SLUG##*/}/"
 fi
@@ -529,10 +529,13 @@ say_info "publish: the home pointer is at data/home.json"
 # `site.url` in the machine settings file is the whole configuration: set, it
 # becomes the CNAME Pages serves under; cleared or absent, the CNAME goes away
 # and Pages falls back to its github.io address.
-SITE_URL="$(wk_json_get "$WK_HOME_SETTINGS" '.site.url')"
-if [[ -n "$SITE_URL" ]]; then
-  printf '%s\n' "${SITE_URL#*://}" >"$WORKTREE/CNAME"
-  say_info "publish: CNAME → ${SITE_URL#*://}"
+# The host is the engine's one reader of that option (`wk_site_host` in home.sh),
+# so the scheme and any trailing slash are off before it gets here: a CNAME
+# carries a host and a slash in one is not a valid record.
+SITE_HOST="$(wk_site_host)"
+if [[ -n "$SITE_HOST" ]]; then
+  printf '%s\n' "$SITE_HOST" >"$WORKTREE/CNAME"
+  say_info "publish: CNAME → $SITE_HOST"
 fi
 
 # ── Push the branch ───────────────────────────────────────────────────────────

@@ -109,6 +109,22 @@ wk_home_remote_url() {
 # the hand-edited file names the repo the site publishes from (issue #80).
 wk_home_slug() { wk_json_get "$WK_HOME_SETTINGS" '.site.repo'; }
 
+# The site's own HOST, or empty when this machine has no custom domain: the
+# recorded `site.url` with any scheme and any trailing slash taken off. One home
+# for that shape because three callers need it and none of them wants a
+# different answer (issue #230): publish.sh decides the build's path prefix on
+# whether it is set at all and writes it as the CNAME, and workkit.sh composes
+# the published site's base URL out of it. The trailing slash comes off HERE
+# rather than at one caller, since a CNAME carries a host and never a path, and
+# `ask_site_url` takes whatever was typed at its word.
+wk_site_host() {
+  local url
+  url="$(wk_json_get "$WK_HOME_SETTINGS" '.site.url')"
+  [[ -n "$url" ]] || return 0
+  url="${url#*://}"
+  printf '%s' "${url%/}"
+}
+
 # The branch the clone is on — the one `wk_home_commit_push` pushes to, and the
 # one the published home pointer names so that every reader of the roster asks
 # for the branch the writer actually wrote (issue #112). `main` is the answer

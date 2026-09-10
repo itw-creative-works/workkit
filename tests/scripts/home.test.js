@@ -344,6 +344,28 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  await test('the site host reads one way, whatever shape the domain was typed in', () => {
+    // One reader for that option (issue #230), because three callers want the
+    // same answer: publish.sh writes it as the CNAME and decides the build's
+    // path prefix on whether it is set at all, and setup composes the published
+    // site's URL out of it. A CNAME carries a host and never a path, so the
+    // scheme and any trailing slash come off HERE rather than at a caller, and
+    // `ask_site_url` takes whatever was typed at its word. Bracketed on the way
+    // out so the empty answer is an answer and not a missing line.
+    for (const [typed, host] of [
+      ['board.example.com', 'board.example.com'],
+      ['board.example.com/', 'board.example.com'],
+      ['https://board.example.com/', 'board.example.com'],
+      [null, ''],
+    ]) {
+      const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: typed } } });
+      const { code, out } = inHome(world, 'printf "[%s]" "$(wk_site_host)"');
+      assertEq(code, 0, `exit 0 for ${JSON.stringify(typed)}`);
+      assertEq(out, `[${host}]`, `${JSON.stringify(typed)} reads as the host alone`);
+      cleanup(world.root);
+    }
+  });
+
   group('workflow/home: the four states');
 
   await test('no home slug is `unset`', () => {
