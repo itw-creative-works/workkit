@@ -8,15 +8,19 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 ## [Unreleased]
 
 ### Changed
-- [#232](../../issues/232) — The CLI suite now covers the handover's empty-token skip, and the app test plus `takeTokenFromHash` say the shell refuses a token it cannot carry rather than encoding it, so the decode reads as the guard it is.
-- [#234](../../issues/234) — The `workkit:checkpoint` skill now fires on any mention of compacting the chat ("can I compact", "I need to compact"), not only its four listed phrases, and a compact question is answered by running it first.
-- [#233](../../issues/233) — A `Proof:` line is now a hard gate: the new `safety:proof-guard` hook blocks the flip to `status:complete` and the close of an issue without one, `safety:commit-gate` check 6 blocks the `Fixes #N` trailer, and a ship holds an unproved item instead of waving it through.
-- [#236](../../issues/236) — The tower Board's move to Complete applies the proof gate too: both write paths (the API server and the published copy) read the issue's comments and refuse the move without a `Proof:` line, and refuse a read they cannot make.
-- [#235](../../issues/235) — The ship re-runs `workkit setup` after a green release when the diff touched the setup surface, and names every step still owed a human in its summary; the token handover no longer needs a terminal.
-- [#238](../../issues/238) — A new `docs:checkpoint` hook fires the `workkit:checkpoint` skill deterministically on any line about compacting or clearing the chat, and a per-session marker turns a second fire into a delta run instead of a second full pass.
-- [#237](../../issues/237) — Every line the engine, the jobs and the tower print now shares one voice in `workflow/lib.sh` and its Node twin: a glyph per outcome, the `task:` prefix in bold, an emoji on every title and section, indented steps, color on a terminal only, and a spinner on every awaited call.
-- [#240](../../issues/240) — Every em dash outside this file is gone from the kit: prose, comments, printed strings and the tests that pin them now use a colon, a comma, parentheses or a new sentence, and the code that reads this file's entry format spells its separator as an escape.
 - [#241](../../issues/241) — The tower's Settings page shows one create-token button: the classic-token path is now a link inside the guidance sentence, and the token card and the guidance card share a row at desktop width instead of stacking.
+
+## [0.54.0] - 2026-09-11
+
+### Changed
+- [#232](../../issues/232) [`50e13d0`](../../commit/50e13d0) Thanks [@ianwieds]! — The CLI suite now covers the handover's empty-token skip, and the app test plus `takeTokenFromHash` say the shell refuses a token it cannot carry rather than encoding it, so the decode reads as the guard it is.
+- [#234](../../issues/234) [`50e13d0`](../../commit/50e13d0) Thanks [@ianwieds]! — The `workkit:checkpoint` skill now fires on any mention of compacting the chat ("can I compact", "I need to compact"), not only its four listed phrases, and a compact question is answered by running it first.
+- [#233](../../issues/233) [`50e13d0`](../../commit/50e13d0) Thanks [@ianwieds]! — A `Proof:` line is now a hard gate: the new `safety:proof-guard` hook blocks the flip to `status:complete` and the close of an issue without one, `safety:commit-gate` check 6 blocks the `Fixes #N` trailer, and a ship holds an unproved item instead of waving it through.
+- [#236](../../issues/236) [`50e13d0`](../../commit/50e13d0) Thanks [@ianwieds]! — The tower Board's move to Complete applies the proof gate too: both write paths (the API server and the published copy) read the issue's comments and refuse the move without a `Proof:` line, and refuse a read they cannot make.
+- [#235](../../issues/235) [`50e13d0`](../../commit/50e13d0) Thanks [@ianwieds]! — The ship re-runs `workkit setup` after a green release when the diff touched the setup surface, and names every step still owed a human in its summary; the token handover no longer needs a terminal.
+- [#238](../../issues/238) [`50e13d0`](../../commit/50e13d0) Thanks [@ianwieds]! — A new `docs:checkpoint` hook fires the `workkit:checkpoint` skill deterministically on any line about compacting or clearing the chat, and a per-session marker turns a second fire into a delta run instead of a second full pass.
+- [#237](../../issues/237) [`50e13d0`](../../commit/50e13d0) Thanks [@ianwieds]! — Every line the engine, the jobs and the tower print now shares one voice in `workflow/lib.sh` and its Node twin: a glyph per outcome, the `task:` prefix in bold, an emoji on every title and section, indented steps, color on a terminal only, and a spinner on every awaited call.
+- [#240](../../issues/240) [`50e13d0`](../../commit/50e13d0) Thanks [@ianwieds]! — Every em dash outside this file is gone from the kit: prose, comments, printed strings and the tests that pin them now use a colon, a comma, parentheses or a new sentence, and the code that reads this file's entry format spells its separator as an escape.
 
 ## [0.53.0] - 2026-09-10
 
