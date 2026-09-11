@@ -123,7 +123,7 @@ const mkTowerApp = (root) => {
  */
 const mkWorld = ({
   login = 'owner', repoExists = false, discussionsOn = false,
-  categories = ['Daily', 'Weekly', 'Monthly'], pagesOn = false, pagesFails = false,
+  categories = ['Daily', 'Weekly', 'Monthly', 'Brief'], pagesOn = false, pagesFails = false,
   settings = { version: 1, site: { repo: null, publish: false, url: null } }, remote = null, npmLinksOn = 1,
 } = {}) => {
   const root = mkTmp();
@@ -173,7 +173,12 @@ const mkWorld = ({
   // find its own work and create nothing (issue #123)?
   const labelsFile = path.join(root, 'labels.json');
   fs.writeFileSync(labelsFile, '[]\n');
-  const nodes = categories.map((name, i) => `{ "id": "DIC_${i}", "name": "${name}" }`).join(',');
+  // The categories live in a FILE the shim reads on every call, because setup
+  // asks twice (issue #244): once, then again after the owner made them on the
+  // page it opened. The opener stub below is how a test plays that owner.
+  const asNodes = (names) => names.map((name, i) => `{ "id": "DIC_${i}", "name": "${name}" }`).join(',');
+  const categoriesFile = path.join(root, 'categories.json');
+  fs.writeFileSync(categoriesFile, asNodes(categories));
   fs.writeFileSync(path.join(bin, 'gh'), [
     '#!/usr/bin/env bash',
     recordArgv(ghLog),
@@ -201,7 +206,7 @@ const mkWorld = ({
       + `{"title":"daily: 2026-07-27","createdAt":"2026-07-27T09:00:00Z","body":"yesterday"},`
       + `{"title":"daily: 2026-06-01","createdAt":"2026-06-01T09:00:00Z","body":"long ago"}]}}}}' ;;`,
     '  *discussionCategories*)',
-    `    printf '%s' '{"data":{"repository":{"id":"R_kdt","hasDiscussionsEnabled":${discussionsOn},"discussionCategories":{"nodes":[${nodes}]}}}}' ;;`,
+    `    printf '%s' "{\\"data\\":{\\"repository\\":{\\"id\\":\\"R_kdt\\",\\"hasDiscussionsEnabled\\":${discussionsOn},\\"discussionCategories\\":{\\"nodes\\":[$(cat ${JSON.stringify(categoriesFile)})]}}}}" ;;`,
     `  *"pages"*) exit ${pagesOn ? 0 : (pagesFails ? 1 : 0)} ;;`,
     `  *) printf '%s' '{}' ;;`,
     'esac',
@@ -224,10 +229,36 @@ const mkWorld = ({
     fs.chmodSync(path.join(bin, 'gh'), 0o755);
   }
 
+  // A browser opener that records what it was handed and, when a test says
+  // so, plays the owner: the page it "opened" is where the categories get
+  // made, so it writes them into the store the gh shim answers from, at once
+  // or `after` seconds later (an owner still clicking while the poll runs).
+  // Every world gets the recorders: the base PATH keeps `/usr/bin/open` real
+  // on a Mac, and a step that reached it unshadowed would open a browser.
+  const openerLog = path.join(root, 'opener-argv.log');
+  // `breaks` plays a read that fails mid-poll (the network or the token gone):
+  // the store stops being JSON, so every later read returns nothing.
+  const installOpener = ({ makes = [], after = 0, breaks = false } = {}) => {
+    const write = `printf '%s' ${JSON.stringify(breaks ? 'not json' : asNodes(makes))} > ${JSON.stringify(categoriesFile)}`;
+    for (const opener of ['open', 'xdg-open']) {
+      fs.writeFileSync(path.join(bin, opener), [
+        '#!/usr/bin/env bash',
+        recordArgv(openerLog),
+        ...(makes.length || breaks ? [after ? `( sleep ${after}; ${write} ) &` : write] : []),
+        'exit 0',
+        '',
+      ].join('\n'));
+      fs.chmodSync(path.join(bin, opener), 0o755);
+    }
+  };
+  installOpener();
+
   return {
     root,
     home,
     workflowHome,
+    installOpener,
+    openerCalls: () => readArgv(openerLog),
     tower: path.join(workflowHome, 'tower'),
     towerApp: tower.app,
     framework: tower.framework,
@@ -1071,9 +1102,100 @@ const run = async () => {
     const { code, out } = inHome(world, 'wk_home_discussions owner/workkit');
     assertEq(code, 0, 'exit 0');
     assert(/Discussions enabled/.test(out), `it turns them on, got: ${out}`);
-    assert(/Daily, Weekly, Monthly/.test(out), 'names every category that is missing');
+    assert(/Daily, Weekly, Monthly, Brief/.test(out), 'names every category that is missing, the brief\'s included (#244)');
     assert(/discussions\/categories/.test(out), 'and the page that makes them');
     assert(/no API that creates one/.test(out), 'saying why it cannot do it itself');
+    assertEq(world.openerCalls().length, 0, 'and nothing opened: this run has no terminal');
+    cleanup(world.root);
+  });
+
+  // The interactive runs feed the step's stdin through a process substitution,
+  // so keys can arrive AFTER the poll started; a spawnSync `input` is all
+  // read at once, and the pipe closing under the poll reads as a skip. The
+  // feeder lets go of the transcript's streams first, or a feeder still
+  // sleeping would hold the run open past the step it is feeding.
+  const atTerminal = (world, stdin) => inHome(world,
+    `interactive() { return 0; }\nwk_home_discussions owner/workkit < <(exec 2>/dev/null; ${stdin})`);
+  const categoriesCalls = (world) => world.ghCalls().filter((c) => c.join(' ').includes('discussionCategories')).length;
+
+  await test('at a terminal, setup opens the page that makes the categories and polls until they are there (#244)', () => {
+    const world = mkWorld({ login: 'owner', discussionsOn: true, categories: ['General'] });
+    world.installOpener({ makes: ['General', 'Daily', 'Weekly', 'Monthly', 'Brief'] });
+    const { code, out } = atTerminal(world, "printf '\\n'");
+    assertEq(code, 0, 'exit 0');
+    assert(/Make the Daily, Weekly, Monthly, Brief categories on this page/.test(out), `it says what to do there, got: ${out}`);
+    assert(/URL: https:\/\/github.com\/owner\/workkit\/discussions\/categories/.test(out), 'and prints the URL before asking');
+    assert(/\? Press Enter to open the categories page in your browser\.\.\./.test(out), 'the one Enter gate, in omega\'s words');
+    const opened = world.openerCalls();
+    assertEq(opened.length, 1, `the page opened once: ${fmtCalls(opened)}`);
+    assertEq(opened[0][0], 'https://github.com/owner/workkit/discussions/categories', 'the page that makes them');
+    assert(/\(enter\)=check now, \(s\)=skip/.test(out), 'then the poll names its keys');
+    assert(/✓.*Daily, Weekly, Monthly and Brief categories are there/.test(out), `the first check found what the owner made, got: ${out}`);
+    assert(!/no API that creates one/.test(out), 'so no pointer is printed');
+    cleanup(world.root);
+  });
+
+  await test('Enter checks now, ahead of the interval (#244)', () => {
+    const world = mkWorld({ login: 'owner', discussionsOn: true, categories: ['General'] });
+    world.installOpener({ makes: ['General', 'Daily', 'Weekly', 'Monthly', 'Brief'], after: 1 });
+    const started = Date.now();
+    const { code, out } = atTerminal(world, "printf '\\n'; sleep 2; printf '\\n'");
+    const took = (Date.now() - started) / 1000;
+    assertEq(code, 0, 'exit 0');
+    assert(/✓.*categories are there/.test(out), `the second check passed, got: ${out}`);
+    assertEq(categoriesCalls(world), 4, `enable, the step's own read, the poll's first check, then the one Enter asked for: ${categoriesCalls(world)} reads`);
+    assert(took < 5, `and it never waited the whole interval out (${took}s)`);
+    cleanup(world.root);
+  });
+
+  await test('with no key pressed, the poll checks again on its own after five seconds (#244)', () => {
+    const world = mkWorld({ login: 'owner', discussionsOn: true, categories: ['General'] });
+    world.installOpener({ makes: ['General', 'Daily', 'Weekly', 'Monthly', 'Brief'], after: 1 });
+    const started = Date.now();
+    const { code, out } = atTerminal(world, "printf '\\n'; sleep 9");
+    const took = (Date.now() - started) / 1000;
+    assertEq(code, 0, 'exit 0');
+    assert(/✓.*categories are there/.test(out), `the interval's own check passed, got: ${out}`);
+    assert(took >= 5 && took < 9, `one interval, not the pipe closing (${took}s)`);
+    assertEq(categoriesCalls(world), 4, `enable, the step's own read, the poll's first check, the interval's: ${categoriesCalls(world)} reads`);
+    cleanup(world.root);
+  });
+
+  await test('s skips the poll and keeps the pointer; the pipe closing counts as a skip too (#244)', () => {
+    const skipped = mkWorld({ login: 'owner', discussionsOn: true, categories: ['General'] });
+    skipped.installOpener();
+    const s = atTerminal(skipped, "printf '\\ns'");
+    assertEq(s.code, 0, 'exit 0');
+    assertEq(skipped.openerCalls().length, 1, 'the open is never declined; skipping happens at the poll');
+    assert(/no API that creates one/.test(s.out), `the pointer stands, got: ${s.out}`);
+    cleanup(skipped.root);
+
+    // A read that fails during the poll must not blank the pointer's names.
+    const broken = mkWorld({ login: 'owner', discussionsOn: true, categories: ['General'] });
+    broken.installOpener({ breaks: true });
+    const b = atTerminal(broken, "printf '\ns'");
+    assertEq(b.code, 0, 'exit 0');
+    assert(/the Daily, Weekly, Monthly, Brief categories do not exist yet/.test(b.out), `the pointer keeps the names the step read itself, got: ${b.out}`);
+    cleanup(broken.root);
+
+    const partial = mkWorld({ login: 'owner', discussionsOn: true, categories: ['General'] });
+    partial.installOpener({ makes: ['General', 'Daily', 'Weekly', 'Monthly'] });
+    const p = atTerminal(partial, "printf '\\n'");
+    assertEq(p.code, 0, 'exit 0');
+    assert(/the Brief categories do not exist yet/.test(p.out), `the pointer names only what is still missing, got: ${p.out}`);
+    cleanup(partial.root);
+  });
+
+  await test('a terminal with no browser opener still asks and polls, and says the URL is by hand (#244)', () => {
+    const world = mkWorld({ login: 'owner', discussionsOn: true, categories: ['General'] });
+    // The base PATH keeps a real `open` on a Mac and a real `xdg-open` on a
+    // Linux runner, so the gate's own `command -v` is answered no by hand.
+    const noOpener = 'command() { [[ "$1" == "-v" && ("$2" == "open" || "$2" == "xdg-open") ]] && return 1; builtin command "$@"; }';
+    const { code, out } = inHome(world, `${noOpener}\ninteractive() { return 0; }\nwk_home_discussions owner/workkit < <(printf '\\n')`);
+    assertEq(code, 0, 'exit 0');
+    assert(/Press Enter to open/.test(out), `the gate still asks, got: ${out}`);
+    assert(/no browser could be launched: open the URL above by hand/.test(out), 'and says the open did not happen');
+    assert(/no API that creates one/.test(out), 'the pointer stands once the pipe closes');
     cleanup(world.root);
   });
 

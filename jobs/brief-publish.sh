@@ -12,9 +12,10 @@
 # needs are sourced inside the function, which is normally called inside a
 # `$(…)` capture: nothing it sources leaks into the caller's shell.
 #
-# The CATEGORY is asked for by name and answered by the fallback: categories
-# cannot be created over the API, so `Brief` resolves to the repo's default
-# unless someone made one by hand. The read-back in cc-news.js filters on the
+# The CATEGORY is asked for by name (WK_DISC_BRIEF_CATEGORY, the one home of
+# it) and answered by the fallback: categories cannot be created over the API,
+# so it resolves to the repo's default until setup has walked the owner through
+# making it (issue #244). The read-back in cc-news.js filters on the
 # TITLE for the same reason: it cannot know which category a repo landed in.
 #
 # Usage: wk_brief_publish <engine-dir> <response> <mark-file> <body-file>
@@ -56,7 +57,7 @@ wk_brief_publish() {
   # Check before post: the local job, the cloud dispatch and the cron backup can
   # all fire on one morning, and the answer is the same for each. It costs one
   # call, and it is what makes the overlap harmless.
-  posted="$(wk_disc_list "$slug" 'Brief' "${date}T00:00:00Z")" || posted=''
+  posted="$(wk_disc_list "$slug" "$WK_DISC_BRIEF_CATEGORY" "${date}T00:00:00Z")" || posted=''
   if [[ -n "$posted" ]] \
     && printf '%s' "$posted" | jq -e --arg t "$title" 'any(.[]; .title == $t)' >/dev/null 2>&1; then
     printf 'brief: %s already carries %s; nothing posted' "$slug" "$title"
@@ -74,7 +75,7 @@ wk_brief_publish() {
   # One return covers two causes: the category read itself failed, or the repo
   # answered with no categories at all, and this caller cannot tell them apart.
   # Naming one of them would be a guess in the log, so it names neither.
-  if ! wk_disc_resolve_category "$slug" 'Brief'; then
+  if ! wk_disc_resolve_category "$slug" "$WK_DISC_BRIEF_CATEGORY"; then
     printf 'brief: could not resolve a discussion category on %s; nothing posted' "$slug"
     return 1
   fi

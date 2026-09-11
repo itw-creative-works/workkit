@@ -606,8 +606,7 @@ handover_token() {
   # (issue #235): only `setup` calls this step, and setup is a human's act or the
   # ship's, never the 9am job's, so a piped run hands the token over exactly as
   # a run at a terminal does.
-  if [[ "$(uname -s)" == 'Darwin' ]]; then opener='open'; else opener='xdg-open'; fi
-  if ! command -v "$opener" >/dev/null 2>&1; then
+  if ! opener="$(wk_opener)"; then
     wk_skip "site: the token handover needs a browser opener; open $url and paste \`gh auth token\` on its Settings page"
     return 0
   fi

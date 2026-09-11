@@ -858,13 +858,38 @@ wk_home_heal() {
   return 0
 }
 
-# Discussions on, and the cadence categories checked. Categories CANNOT be
-# created over the API (no createDiscussionCategory mutation exists, probed
-# 2026-07-28), so a missing one is a one-time pointer at the page that makes it,
-# and the summaries step publishes into the repo's default category until it
-# is there.
+# The categories of WK_DISC_CATEGORIES the repo does not have, comma-joined,
+# from one wk_disc_meta answer. Empty means all four are there.
+wk_home_missing_categories() {
+  local meta="$1" name missing=''
+  for name in "${WK_DISC_CATEGORIES[@]}"; do
+    printf '%s' "$meta" | jq -e --arg c "$name" '.categories | has($c)' >/dev/null 2>&1 || missing="$missing, $name"
+  done
+  printf '%s' "${missing#, }"
+}
+
+# The poll's check (wk_poll runs it in this shell): a fresh read of the
+# categories, the missing ones left in WK_HOME_MISSING_CATEGORIES for the
+# caller's pointer, and 0 only when all four are there.
+WK_HOME_MISSING_CATEGORIES=''
+wk_home_categories_present() {
+  local meta
+  meta="$(wk_disc_meta "$1" --refresh)" || return 1
+  WK_HOME_MISSING_CATEGORIES="$(wk_home_missing_categories "$meta")"
+  [[ -z "$WK_HOME_MISSING_CATEGORIES" ]]
+}
+
+# Discussions on, and the four categories checked. Categories CANNOT be created
+# over the API (no createDiscussionCategory mutation exists, probed 2026-07-28),
+# so setup does the next best thing (issue #244), in omega's walkthrough shape
+# (wk_enter_to_open and wk_poll in lib.sh): at a terminal it names the missing
+# ones, opens the page that makes them on Enter, and polls every five seconds
+# until they are there, Enter checking now and `s` skipping. Anywhere else, or
+# after a skip, it is the one-time pointer at the page, and the summaries and
+# the brief publish into the repo's default category until they exist.
 wk_home_discussions() {
-  local slug="$1" rc=0 meta missing='' name
+  local slug="$1" rc=0 meta missing=''
+  local page="https://github.com/$slug/discussions/categories"
   wk_disc_ready || { wk_skip "home: Discussions need gh and jq; skipped"; return 0; }
 
   wk_disc_enable "$slug" || rc=$?
@@ -875,14 +900,27 @@ wk_home_discussions() {
   esac
 
   meta="$(wk_disc_meta "$slug" --refresh)" || return 0
-  for name in Daily Weekly Monthly; do
-    printf '%s' "$meta" | jq -e --arg c "$name" '.categories | has($c)' >/dev/null 2>&1 || missing="$missing $name"
-  done
-  if [[ -n "$missing" ]]; then
-    wk_info "home: the summary categories ($(printf '%s' "${missing# }" | sed 's/ /, /g')) do not exist yet; GitHub has no API that creates one, so make them once at https://github.com/$slug/discussions/categories. Until then summaries publish in the repo's default category"
-  else
-    wk_skip "home: the Daily, Weekly and Monthly categories are there"
+  missing="$(wk_home_missing_categories "$meta")"
+  if [[ -z "$missing" ]]; then
+    wk_skip "home: the Daily, Weekly, Monthly and Brief categories are there"
+    return 0
   fi
+
+  # Only where there is someone at the keyboard: the piped run (the ship's
+  # setup, a morning job) prints the pointer instead. The name is what the
+  # posts match on, so any format will do.
+  if declare -f interactive >/dev/null 2>&1 && interactive; then
+    wk_enter_to_open "$page" 'the categories page' \
+      "Make the $missing categories on this page, each with that exact name (any format)."
+    if wk_poll 'Waiting for the categories' 5 wk_home_categories_present "$slug"; then
+      wk_ok "home: the Daily, Weekly, Monthly and Brief categories are there"
+      return 0
+    fi
+    # A read that failed during the poll leaves the global empty: the pointer
+    # then names what the step's own read found missing.
+    missing="${WK_HOME_MISSING_CATEGORIES:-$missing}"
+  fi
+  wk_info "home: the $missing categories do not exist yet; GitHub has no API that creates one, so make them once at $page. Until then the summaries and the brief publish in the repo's default category"
   return 0
 }
 

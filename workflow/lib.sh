@@ -181,6 +181,17 @@ wk_section() {
   return 0
 }
 
+# The browser opener this machine has, printed, for the steps that hand a page
+# to the owner (the token handover, the Discussion categories). `open` on
+# Darwin, `xdg-open` everywhere else; a machine with neither returns 1 and the
+# caller prints the URL instead.
+wk_opener() {
+  local opener
+  if [[ "$(uname -s)" == 'Darwin' ]]; then opener='open'; else opener='xdg-open'; fi
+  command -v "$opener" >/dev/null 2>&1 || return 1
+  printf '%s' "$opener"
+}
+
 # The closing line of a command that found nothing left to do. A command that
 # DID find something says so with a warning instead, so the last line of a run
 # is always the answer to "is there anything for me here?".
@@ -251,6 +262,118 @@ wk_spin() {
   { kill "$pid"; wait "$pid"; } >/dev/null 2>&1 || true
   printf '\r%*s\r' 72 '' >&2
   return "$rc"
+}
+
+# ── Browser flows ─────────────────────────────────────────────────────────────
+# omega's walkthrough shape (that monorepo's `packages/devkit/src/flows.js`,
+# `openBrowserAndPoll`), in shell and in this file's voice: say what to do on
+# the page and print its URL, gate the open behind Enter, then poll a check
+# until it passes, Enter meaning "check now" and `s` meaning skip. Both are for
+# a caller that already knows it has a terminal; a piped run prints its own
+# pointer instead of asking anyone anything.
+
+# The Enter gate and the open. The URL is printed either way, so a terminal
+# with link support keeps it clickable; a machine with no opener says so in one
+# dim line and the caller goes on, since the URL is already on screen.
+# Usage: wk_enter_to_open <url> <label> <what to do there>
+wk_enter_to_open() {
+  local url="$1" label="$2" prompt="$3" opener answer=''
+  # The palette's codes are backslash text for a FORMAT string, never a %s
+  # argument, the same as every other line in this file.
+  printf "\n%s%s\n%sURL: ${WK_C_CYAN}%s${WK_C_OFF}\n\n" "$WK_LOG_INDENT" "$prompt" "$WK_LOG_INDENT" "$url" >&2
+  printf "${WK_C_GREEN}?${WK_C_OFF} Press Enter to open %s in your browser... " "$label" >&2
+  read -r answer || true
+  if opener="$(wk_opener)"; then
+    "$opener" "$url" >/dev/null 2>&1 || true
+  else
+    printf "%s${WK_C_DIM}(no browser could be launched: open the URL above by hand)${WK_C_OFF}\n" "$WK_LOG_INDENT" >&2
+  fi
+  return 0
+}
+
+# The countdown frame of a poll, run as a background job by wk_poll below: the
+# spinner, the message, and the seconds left until the next check.
+wk_poll_draw() {
+  local msg="$1" deadline="$2" i=0 left frame
+  while :; do
+    frame="${WK_SPIN_FRAMES[$(( i % ${#WK_SPIN_FRAMES[@]} ))]}"
+    left=$(( deadline - $(date +%s) ))
+    if [[ "$left" -lt 0 ]]; then left=0; fi
+    printf "\r%s${WK_C_CYAN}%s${WK_C_OFF} %s... ${WK_C_DIM}(%ss)${WK_C_OFF}" \
+      "$WK_LOG_INDENT" "$frame" "$msg" "$left" >&2
+    i=$(( i + 1 ))
+    sleep 0.1
+  done
+}
+
+# Poll a check until it passes. The check is a command run in THIS shell (so a
+# global it sets survives), and exit 0 means done. Between checks the countdown
+# draws (a static line where stderr is not a terminal, as wk_spin does) and the
+# keys are read one at a time: Enter checks now, `s` skips, and stdin closing
+# counts as a skip, because nobody is there to press anything. Returns 0 when
+# the check passed, 1 when skipped.
+#
+# Telling a closed stdin from a one-second timeout: bash 4 reports a timeout
+# with a status above 128, but bash 3.2 (macOS's own) returns 1 for both. The
+# closed pipe is the one that comes back at once, so three failed reads inside
+# one clock second cannot be timeouts of a second each: that is the closed
+# pipe, on either bash.
+#
+# Ctrl+C: a background job ignores the interrupt, so without a trap the shell
+# dies and the countdown goes on redrawing over the prompt that came back,
+# which reads as a poll nothing can stop. The trap takes the frame down, clears
+# the line, then re-raises the interrupt so the run ends the way it was asked to.
+# Usage: wk_poll <message> <interval-seconds> <check command...>
+wk_poll() {
+  local msg="$1" interval="$2"; shift 2
+  local key rc deadline waited now fast=0 lastfail=''
+  printf "\n%s${WK_C_DIM}(enter)=check now, (s)=skip${WK_C_OFF}\n\n" "$WK_LOG_INDENT" >&2
+  trap 'wk_poll_stop; trap - INT; kill -INT $$' INT
+  while :; do
+    if "$@"; then trap - INT; return 0; fi
+    deadline=$(( $(date +%s) + interval ))
+    if [[ "${WORKKIT_SPIN:-}" != '0' ]] && [[ -t 2 ]]; then
+      wk_poll_draw "$msg" "$deadline" &
+      WK_POLL_PID=$!
+    else
+      printf '%s⏳ %s...\n' "$WK_LOG_INDENT" "$msg" >&2
+    fi
+    waited=0
+    key=''
+    while [[ "$waited" -lt "$interval" ]]; do
+      key=''; rc=0
+      read -rsn1 -t 1 key || rc=$?
+      if [[ "$rc" -eq 0 ]]; then
+        # Enter is an empty read, or the carriage return a raw terminal can
+        # hand over: check now. Any other key is read and dropped.
+        if [[ -z "$key" || "$key" == $'\r' || "$key" == $'\n' ]]; then key=''; break; fi
+        if [[ "$key" == 's' || "$key" == 'S' ]]; then key='s'; break; fi
+        continue
+      fi
+      now="$(date +%s)"
+      if [[ "$rc" -le 128 && "$now" == "$lastfail" ]]; then
+        fast=$(( fast + 1 ))
+        if [[ "$fast" -ge 2 ]]; then key='s'; break; fi
+      else
+        fast=0
+      fi
+      lastfail="$now"
+      waited=$(( waited + 1 ))
+    done
+    wk_poll_stop
+    if [[ "$key" == 's' ]]; then trap - INT; return 1; fi
+  done
+}
+
+# Take the countdown frame down and clear its line. WK_POLL_PID is the draw job
+# wk_poll started, a global so the interrupt trap reaches it too.
+WK_POLL_PID=''
+wk_poll_stop() {
+  if [[ -n "$WK_POLL_PID" ]]; then
+    { kill "$WK_POLL_PID"; wait "$WK_POLL_PID"; } >/dev/null 2>&1 || true
+    WK_POLL_PID=''
+    printf '\r%*s\r' 72 '' >&2
+  fi
 }
 
 wk_palette

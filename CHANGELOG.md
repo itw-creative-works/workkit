@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#244](../../issues/244) — `workkit setup` now checks four Discussion categories (Daily, Weekly, Monthly, Brief) and, at a terminal, opens the page that makes the missing ones on Enter and polls every five seconds until they exist (Enter checks now, s skips); the brief's category name has one home.
+
 ## [0.55.1] - 2026-09-11
 
 ### Changed

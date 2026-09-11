@@ -14,7 +14,8 @@
 #     there is no date argument, so the window is applied here.
 #   · there is NO createDiscussionCategory mutation. Categories cannot be made
 #     over the API at all, which is why `wk_disc_category_id` falls back to the
-#     repo's default category and the wizard prints a one-time manual pointer.
+#     repo's default category and setup walks the owner to the page that makes
+#     them (issue #244), printing a one-time pointer where it has no terminal.
 #
 # Every call is best effort: a machine with no `gh`, no network, or a token that
 # refuses gets an empty answer and a non-zero status, never an abort. The
@@ -22,10 +23,14 @@
 #
 # Needs: lib.sh sourced first (WK_HOME_CACHE, wk_json_edit, the wk_ok family).
 
-# The categories a summary looks for, one per cadence. A repo that has them gets
-# a tidy archive; a repo that does not still gets its summaries (see the
-# fallback below), because a post nobody can file is worse than a post in
-# General.
+# The category the morning brief posts in (jobs/brief-publish.sh asks for it by
+# this name), and the four setup checks the home repo for: one per summary
+# cadence (the names claude-nightly.sh derives from the cadence) and the brief's.
+# A repo that has them gets a tidy archive; a repo that does not still gets its
+# posts (see the fallback below), because a post nobody can file is worse than
+# a post in General.
+WK_DISC_BRIEF_CATEGORY='Brief'
+WK_DISC_CATEGORIES=('Daily' 'Weekly' 'Monthly' "$WK_DISC_BRIEF_CATEGORY")
 WK_DISC_FALLBACKS=('General' 'Announcements')
 
 # What the last category resolution landed on. GLOBALS rather than a printed
