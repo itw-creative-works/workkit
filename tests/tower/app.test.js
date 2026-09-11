@@ -4123,9 +4123,9 @@ const run = async () => {
     };
   };
 
-  await test('the card takes a token, hides what is typed, and links where to make one', () => {
+  await test('the card takes a token and hides what is typed', () => {
     const markup = token.tokenCard();
-    assert(markup.includes(`href="${github.TOKEN_URL}"`), 'the creation page is one click away');
+    assert(!markup.includes(`href="${github.TOKEN_URL}"`), 'making one is the guidance card\'s button, not this card\'s (#241)');
     assert(markup.includes('type="password"'), 'the field does not display the token');
     assert(markup.includes('<label class="form-label" for="tower-token-input">'), 'the field carries a real label');
     assert(markup.includes('localStorage'), 'and it says where the token is kept');
@@ -4156,14 +4156,16 @@ const run = async () => {
     // two cannot be read by one at all (#167) - the page says which token can.
     assert(markup.includes('classic token with the repo scope'), 'the other kind is named');
     assert(/two owners/.test(markup), 'with the one case that requires it');
-    // ONE create button on the page and it is the token card's (#241): the
-    // classic URL rides the words that name that token, inside the sentence,
-    // rather than a second button that reads as a mistake.
+    // ONE create button on the page and it is THIS card's (#241, the owner's
+    // second call): it sits under the permissions it names. The classic URL
+    // rides the words that name that token, inside the sentence, rather than
+    // a second button that reads as a mistake.
     const classicLink = `<a href="${format.esc(github.TOKEN_CLASSIC_URL)}" target="_blank" rel="noopener">a classic token with the repo scope</a>`;
     assert(markup.includes(`${classicLink} works too`), 'the link that makes one with the scope already ticked sits on the words that name it');
     assert(github.TOKEN_CLASSIC_URL.includes('scopes=repo'), 'which is the repo scope and nothing wider');
-    assert(!/btn/.test(markup), 'and this card carries no button at all - the token card above has the one');
-    assertEq((markup.match(/<a /g) || []).length, 1, 'that inline link being the only one here');
+    assert(markup.includes(`href="${github.TOKEN_URL}"`), 'the creation page is one click away, from this card');
+    assertEq((markup.match(/class="btn /g) || []).length, 1, 'as the one button on it');
+    assertEq((markup.match(/<a /g) || []).length, 2, 'the inline link and that button being the only links here');
   });
 
   await test('a copy with a TOWER behind it is told the token is not its credential', () => {

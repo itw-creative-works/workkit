@@ -44,7 +44,8 @@ export const SETTINGS_LABEL = 'Settings';
 
 /**
  * The token card on the Settings page: what this browser holds, the field that
- * replaces it, and the button that forgets it.
+ * replaces it, and the button that forgets it. Making one is the guidance
+ * card's button, under the permissions it names.
  *
  * The field is drawn whether or not a token is held - replacing one is typing
  * the next over it - and the clear button only where there is something to
@@ -69,7 +70,6 @@ export const tokenCard = (options = {}) => `<div class="card h-100">
       <div class="d-flex flex-wrap align-items-center gap-2">
         <button class="btn btn-adaptive btn-sm" type="submit" data-token-save>Save</button>
         ${options.held ? '<button class="btn btn-outline-adaptive btn-sm" type="button" data-token-clear>Clear</button>' : ''}
-        <a class="btn btn-outline-adaptive btn-sm" href="${esc(TOKEN_URL)}" target="_blank" rel="noopener">Create a token on GitHub</a>
       </div>
     </form>
   </div>
@@ -83,12 +83,13 @@ export const tokenCard = (options = {}) => `<div class="card h-100">
  * the guidance and the calls it describes cannot drift apart if they live in
  * one file.
  *
- * ONE create button on the page, and it is the token card's (issue #241): two
- * buttons for one action read as a mistake. The classic URL rides the words
- * that NAME that token instead, inside the sentence explaining when it is the
- * only kind that works - one click away, with nothing to mistake it for. The
- * suite pins the phrase, so a reworded sentence is caught rather than quietly
- * losing its link.
+ * ONE create button on the page, and it is THIS card's (issue #241, the
+ * owner's second call): the button sits under the permissions it names, so a
+ * viewer reads what the token needs and then makes one. The token card only
+ * takes what was made. The classic URL rides the words that NAME that token
+ * instead, inside the sentence explaining when it is the only kind that works
+ * - one click away, with nothing to mistake it for. The suite pins the phrase,
+ * so a reworded sentence is caught rather than quietly losing its link.
  *
  * @returns {string} markup
  */
@@ -97,6 +98,7 @@ export const tokenGuidance = () => `<div class="card h-100">
     <div class="omega-panel-head mb-3"><span>What the token needs</span></div>
     <p class="text-body-secondary">${esc(TOKEN_SCOPES)}</p>
     <p class="text-body-secondary">${esc(TOKEN_CLASSIC).replace(esc(TOKEN_CLASSIC_WORDS), `<a href="${esc(TOKEN_CLASSIC_URL)}" target="_blank" rel="noopener">${esc(TOKEN_CLASSIC_WORDS)}</a>`)}</p>
+    <a class="btn btn-outline-adaptive btn-sm" href="${esc(TOKEN_URL)}" target="_blank" rel="noopener">Create a token on GitHub</a>
   </div>
 </div>`;
 
