@@ -17,7 +17,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 │   ├── loader.sh         # name → path router (docs:board-guard → docs/board-guard/run.sh)
 │   ├── _lib.sh           # shared helpers (sourced, never executed)
 │   ├── docs/             # board-guard, changelog-guard, change-tracker, checkpoint, session, session-guard, state-check
-│   ├── safety/           # vendor-guard, commit-gate, commit-language, issue-guard, proof-guard, capture-guard, tree-guard
+│   ├── safety/           # vendor-guard, commit-gate, commit-language, issue-guard, proof-guard, suite-guard, capture-guard, tree-guard
 │   ├── manager/          # resolver, profile, spawn-guard, close-guard + ladder.json (the tier SSOT)
 │   └── workflow/         # standards (the daily heal) + reload-guard
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
@@ -49,7 +49,7 @@ The engine's stable filesystem address is `~/.claude/workkit` → this repo's `w
 
 Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh` so settings reference a hook by `prefix:name` rather than a path. A LOADER-level failure fails open (exit 0); the hook's own exit code passes through untouched, which blocking hooks (exit 2) need.
 
-The index of all twenty and what each one does: `docs/hooks.md`. Three carry a README beside the script as well: `tree-guard`, `session-guard`, `change-tracker`.
+The index of all twenty-one and what each one does: `docs/hooks.md`. Three carry a README beside the script as well: `tree-guard`, `session-guard`, `change-tracker`.
 
 ## Agents
 

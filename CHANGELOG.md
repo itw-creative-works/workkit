@@ -7,8 +7,14 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+- [#243](../../issues/243) — The commit gate now owns the full test suite: the new `safety:suite-guard` hook bounces a bare `npm test` and the repo's test script run directly, from every class alike, so the suite is paid for once at the commit. A narrowed run passes, and `WORKKIT_SUITE=1` is the deliberate full run.
+
 ### Changed
 - [#241](../../issues/241) — The tower's Settings page shows one create-token button: the classic-token path is now a link inside the guidance sentence, and the token card and the guidance card share a row at desktop width instead of stacking.
+
+### Fixed
+- [#242](../../issues/242) — The changelog, changelog-links and changelog-guard suites now carry the `require.main` tail every other suite has, so a direct `node <path>` run prints its groups and exits by its result instead of silently reporting nothing.
 
 ## [0.54.0] - 2026-09-11
 

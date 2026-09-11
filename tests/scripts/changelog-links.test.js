@@ -12,7 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync, execFileSync } = require('child_process');
-const { group, test, assert, assertEq, summary } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { recordArgv } = require('../lib/argv-log');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'changelog-links.js');
@@ -567,3 +567,5 @@ const run = async () => {
 };
 
 module.exports = run;
+
+if (require.main === module) selfRun(module.exports);

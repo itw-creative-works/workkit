@@ -5,9 +5,10 @@
 # missing tools degrade, never crash the hook).
 #
 # Consumers: safety/commit-gate, safety/commit-language (the git-commit
-# detection trio below); safety/proof-guard + safety/tree-guard (the two text
-# strips); safety/commit-gate + docs/changelog-guard (hook_changelog_linter);
+# detection trio below); safety/proof-guard + safety/tree-guard +
+# safety/suite-guard (the two text strips); safety/commit-gate + docs/changelog-guard (hook_changelog_linter);
 # safety/proof-guard + safety/commit-gate (hook_issue_has_proof);
+# safety/tree-guard + safety/suite-guard (hook_has_escape);
 # manager/resolver + manager/profile (hook_session_model, hook_model_tier,
 # hook_manager_config). Add helpers only with a second named consumer.
 #
@@ -65,6 +66,15 @@ hook_strip_quotes() {
   else
     printf '%s' "$1" | sed -E "s/''|\"\"//g; s/'[^']*'|\"[^\"]*\"/_hookq_/g"
   fi
+}
+
+# hook_has_escape <text> <NAME>: is the deliberate escape `NAME=1` set as an
+# assignment on this command? Every escape the kit offers is one shape
+# (WORKKIT_ALLOW_DISCARD for tree-guard, WORKKIT_SUITE for suite-guard), so the
+# pattern that recognises it has one home rather than one copy per guard. Feed
+# it the QUOTE STRIPPED text: a mention inside a body is not an assignment.
+hook_has_escape() {
+  printf '%s' "$1" | grep -Eq '(^|[^[:alnum:]_])'"$2"'=1([^[:alnum:]_]|$)'
 }
 
 # _hook_count_placeholders <text>: count the `_hookq_` placeholders the quote

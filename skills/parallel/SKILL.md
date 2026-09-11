@@ -35,7 +35,7 @@ Launch the group WORKERS in ONE message so they run concurrently (each verifier 
 
 ## 4. Merge: serial, green between landings
 
-One group at a time onto the main tree, dependency order first and verified-first after that. A landing is the MANAGER applying the group's worktree diff onto the main tree. Workers never commit, so the worktree's uncommitted diff is the group's whole output, and ship (§5) makes the batch's only commits. The FULL suite is green after each landing before the next begins; a red suite stops the queue and belongs to the group that just landed. A conflict surfaces at apply time and is the landing group's crew's to resolve on its own worktree, never patched blind on main.
+One group at a time onto the main tree, dependency order first and verified-first after that. A landing is the MANAGER applying the group's worktree diff onto the main tree. Workers never commit, so the worktree's uncommitted diff is the group's whole output, and ship (§5) makes the batch's only commits. The FULL suite is green after each landing before the next begins, the manager's one deliberate full run (`WORKKIT_SUITE=1 npm test`: a landing is not a commit, so the gate does not run there); a red suite stops the queue and belongs to the group that just landed. A conflict surfaces at apply time and is the landing group's crew's to resolve on its own worktree, never patched blind on main.
 
 ## 5. Ship: one release closes the batch
 

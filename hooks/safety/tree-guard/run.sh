@@ -239,7 +239,7 @@ EOF
 # Same visible channel commit-gate's stand-down uses: a top-level systemMessage
 # for the user plus additionalContext for Claude, and NO permissionDecision, so
 # the command's fate is decided exactly as it would be with this hook silent.
-if printf '%s' "$stripped" | grep -Eq '(^|[^[:alnum:]_])WORKKIT_ALLOW_DISCARD=1([^[:alnum:]_]|$)'; then
+if hook_has_escape "$stripped" WORKKIT_ALLOW_DISCARD; then
   aside="tree-guard: stood aside for a deliberate discard: WORKKIT_ALLOW_DISCARD=1 is set on this command (${found})."
   jq -n --arg m "$aside" '{
     "systemMessage": $m,

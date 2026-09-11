@@ -24,6 +24,7 @@ One line per hook; the section below it carries the detail.
 | `safety:tree-guard` | PreToolUse (Bash) | Blocks the git commands that DISCARD a shared working tree, with one deliberate escape (#157) |
 | `safety:issue-guard` | PreToolUse (Bash) | Blocks a `gh` issue/PR/API write whose outbound text carries a local `.env` value or a token-shaped string (#83) |
 | `safety:proof-guard` | PreToolUse (Bash) | Blocks the flip to `status:complete` and the `gh issue close` of an issue carrying no `Proof:` comment (#233) |
+| `safety:suite-guard` | PreToolUse (Bash) | Blocks the repo's full suite run by hand, from any class: the commit gate owns it (#243) |
 | `safety:capture-guard` | PreToolUse (Read/Grep/Bash/Edit/Write) | Gates `.workkit/capture.md` in both directions: the owner's surface, whose one sanctioned touch is the triage drain (#145) |
 | `docs:board-guard` | PostToolUse (Edit/Write) | Bounces `CLAUDE.md` / `AGENTS.md` writes that break the pointer doctrine, the 250-line budget, or the 400-byte density rule (#161) |
 | `docs:changelog-guard` | PostToolUse (Edit/Write) | Bounces an added CHANGELOG entry that is an essay instead of one short linked paragraph |
@@ -130,6 +131,15 @@ One line per hook; the section below it carries the detail.
 - Two literal tests on the raw command come first, so a `gh issue edit` that cannot be a flip never reaches the walk: the text has to spell `status:complete` or `gh issue close`, which neither command can do its work without.
 - The third stage of the same gate is `safety:commit-gate` check 6, the `Fixes #N` trailer. Both call one helper, `hook_issue_has_proof` in `hooks/_lib.sh`, so on the shell path the question and its pattern have one home.
 - The tower Board's own move of a card to Complete applies the same gate off the same read (#236), on both of its write paths; the one difference is that a read the board cannot make refuses the move, where this hook stands down. Detail: `tower/README.md`.
+
+## `safety:suite-guard`: PreToolUse (Bash)
+
+- Blocks the full suite run BY HAND: `npm test`, `npm run test`, npm's `t` alias and npm's own flags in front of any of them (`npm --silent test`), and the repo's test script run directly (`scripts.test` in the GIT ROOT's package.json, the same place `safety:commit-gate` reads it, `node tests/run.js` here). The rule is the spec's (§ The proof): the commit gate owns the full suite and runs it at the commit, so a hand-run before that pays the same minutes twice (#243).
+- It holds for EVERY class, the manager included, which is what #152 at `docs/agents.md` could not reach: that one is written to the worker and the verifier.
+- A narrowed run passes untouched, since it is what proves a change: `npm test -- <scope>`, `node --test <file>`, `node tests/<dir>/<name>.test.js`, `npx omega test <scope>`, and the test script carrying an argument. A script whose name merely opens with `test` (`npm run test:unit`) is another script and is never this one. EVERY occurrence is judged, not the first: `npm test -- one && npm test` is a full run.
+- The escape is `WORKKIT_SUITE=1` on the command, the deliberate full run, the same shape as tree-guard's `WORKKIT_ALLOW_DISCARD`. The gate's own run never arrives here: it runs the suite from inside its own hook, never through the Bash tool.
+- Detection is the command TEXT in two passes, with no clause walk. The first is cheap and raw, one awk pass, and nothing else runs for a command that cannot be a suite run; only a command that matched pays for the second, over the heredoc-stripped and quote-stripped copy (`hooks/_lib.sh`), so a MENTION of the suite bounces nothing: a commit message, a `gh issue comment`, a heredoc body.
+- Fails open and silent: no `jq`, a session directory inside no git repository, no package.json at the git root, or a package.json with no test script leaves the command alone. The escape reads through `hook_has_escape` in `hooks/_lib.sh`, the one home of the `NAME=1` pattern `safety:tree-guard` uses too.
 
 ## `safety:capture-guard`: PreToolUse (Read/Grep/Bash/Edit/Write)
 

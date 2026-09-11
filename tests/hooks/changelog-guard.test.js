@@ -12,7 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync, execFileSync } = require('child_process');
-const { group, test, assert, assertEq, summary } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'changelog-guard', 'run.sh');
 // Point the hook at THIS checkout's engine rather than the installed symlink,
@@ -171,3 +171,5 @@ const run = async () => {
 };
 
 module.exports = run;
+
+if (require.main === module) selfRun(module.exports);

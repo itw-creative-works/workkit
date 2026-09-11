@@ -460,7 +460,7 @@ if [ "$has_code" -eq 1 ] && [ -f "$repo_root/package.json" ] && jq -e '.scripts.
   if kill -0 "$test_pid" 2>/dev/null; then
     gate_end_tree "$test_pid"
     rm -f "$out_file"
-    block "the test suite was still running at the gate's ${deadline}s deadline, so the gate cannot prove it green. Run npm test yourself; if this repo's suite genuinely needs longer, raise WORKKIT_GATE_TEST_DEADLINE in this repo's .claude/settings.json env block (2900s at most) and restart the session."
+    block "the test suite was still running at the gate's ${deadline}s deadline, so the gate cannot prove it green. Run \`WORKKIT_SUITE=1 npm test\` yourself; if this repo's suite genuinely needs longer, raise WORKKIT_GATE_TEST_DEADLINE in this repo's .claude/settings.json env block (2900s at most) and restart the session."
   fi
   if ! wait "$test_pid"; then
     {
