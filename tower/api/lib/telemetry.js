@@ -1,12 +1,12 @@
 //
-// What the crew spent — tokens and cost, read out of the transcripts.
+// What the crew spent: tokens and cost, read out of the transcripts.
 //
 // Nothing meters this. Claude Code already writes every assistant message to a
 // transcript with its `message.usage` block attached, and it already writes a
 // subagent's messages to its own file under the parent's `subagents/` folder.
 // Those two facts answer the whole question: how many tokens went where, under
 // which model, on which day, and on whose behalf. This module reads them and
-// adds nothing — a token ledger of its own would be a store the tower is not
+// adds nothing: a token ledger of its own would be a store the tower is not
 // allowed to have.
 //
 // Facts this depends on, all confirmed against real files under ~/.claude:
@@ -58,7 +58,7 @@ const OVERTIME_DAYS = 30;
 
 // USD per MILLION tokens, per model, priced separately for each counter a usage
 // block carries. These are Anthropic's published API list prices and they are a
-// SNAPSHOT, hand-entered — nothing on disk states a rate, so a price change
+// SNAPSHOT, hand-entered: nothing on disk states a rate, so a price change
 // lands here or nowhere.
 //
 // Only input and output are published per model. The three cache rates are
@@ -111,8 +111,8 @@ const cachedPaths = () => [...cache.keys()];
  * Forget every file this pass did not read.
  *
  * The cache is keyed by path and would otherwise only grow: a session that
- * finished drops out of `listSessions` and its read state — a Set of message
- * ids, plus the per-day and per-model maps — would be held for as long as the
+ * finished drops out of `listSessions` and its read state (a Set of message
+ * ids, plus the per-day and per-model maps) would be held for as long as the
  * tower process lives. A finished session is not read again, so nothing is lost
  * by dropping it, and a session that comes back is read from zero, which is
  * what a rewritten file already does.
@@ -127,7 +127,7 @@ const prune = (keep) => {
 
 const zeroTokens = () => ({ input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 });
 
-/** A usage counter, coerced — a missing or non-numeric field counts as none. */
+/** A usage counter, coerced: a missing or non-numeric field counts as none. */
 const num = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
 
 /**
@@ -186,7 +186,7 @@ const dayKey = (when) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 };
 
-/** A fresh read state for a file — also what a rewritten file resets to. */
+/** A fresh read state for a file: also what a rewritten file resets to. */
 const newEntry = () => ({
   size: 0,
   mtimeMs: 0,
@@ -235,7 +235,7 @@ const ingest = (entry, line) => {
   const message = record.message;
   if (!message || typeof message !== 'object') return;
 
-  // The spawn half of the class join, collected while the file is open anyway —
+  // The spawn half of the class join, collected while the file is open anyway,
   // and beside it the last tool this transcript reached for, which is the one
   // line that says what an agent is DOING rather than how much it has spent.
   // A transcript is folded in file order, so the last one seen is the latest.
@@ -266,7 +266,7 @@ const ingest = (entry, line) => {
   const total = input + output + cacheRead + cacheCreation;
 
   // The two cache TTLs cost different rates. The share written at the 1-hour
-  // TTL is read purely to PRICE it — it is never a counter of its own, so the
+  // TTL is read purely to PRICE it: it is never a counter of its own, so the
   // token totals the page renders stay exactly the four the contract names.
   const split = usage.cache_creation;
   const cacheCreation1h = split && typeof split === 'object' ? num(split.ephemeral_1h_input_tokens) : 0;
@@ -365,7 +365,7 @@ const advance = (entry, file, size) => {
   }
 };
 
-/** A caller-owned copy of a read state — the cache is never handed out. */
+/** A caller-owned copy of a read state: the cache is never handed out. */
 const snapshot = (entry) => ({
   tokens: { ...entry.tokens },
   byDay: { ...entry.byDay },
@@ -390,7 +390,7 @@ const snapshot = (entry) => ({
  * or whose mtime moved backwards was rewritten rather than appended to, so its
  * state is discarded and it is read again from zero.
  *
- * A missing or unreadable file answers zeros — the tower polls, and a session
+ * A missing or unreadable file answers zeros: the tower polls, and a session
  * whose transcript has not been written yet is an ordinary condition.
  *
  * @param {string} file
@@ -429,7 +429,7 @@ const className = (subagentType) => {
 /**
  * Whether a transcript that last moved at `lastAt` is still being written to.
  *
- * A finished subagent never touches its file again, so quiet IS finished — and
+ * A finished subagent never touches its file again, so quiet IS finished, and
  * the window is the one `sessions.js` derives a root session's state from, so a
  * subagent and its manager are called live by the same rule.
  *
@@ -522,7 +522,7 @@ const mergeCounts = (into, from) => {
 
 /**
  * One live session's telemetry: its own tokens and cost, plus a row per
- * subagent it spawned. The session's `tokens` are ITS OWN — a subagent's tokens
+ * subagent it spawned. The session's `tokens` are ITS OWN: a subagent's tokens
  * are in its own row and are never folded into the parent's, so a caller may
  * sum the page without counting anything twice.
  *
@@ -583,7 +583,7 @@ const sessionRow = (session, home, now, idleMs) => {
  * @param {string} [opts.markerDir] override the marker directory
  * @param {string} [opts.stateDir] override the statusline cache directory
  * @param {number} [opts.idleMinutes] override the idle threshold
- * @param {Function} [opts.exec] (cmd, args) => stdout — the `ps` seam
+ * @param {Function} [opts.exec] (cmd, args) => stdout: the `ps` seam
  * @param {number} [opts.now] override "now" in ms
  * @returns {{sessions: object[], byModel: object, byClass: object, overTime: Array<{label: string, tokens: number}>}}
  */

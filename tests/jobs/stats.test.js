@@ -1,11 +1,11 @@
 //
-// Tests for jobs/stats.js — the stats line a published brief carries.
+// Tests for jobs/stats.js: the stats line a published brief carries.
 //
 // The line is the ONLY store the history charts have (issue #55), so what is
 // pinned here is its exact text: a renderer that quietly renamed a key or
 // reordered the JSON would leave every published morning unreadable to the
 // module that reads them back. The expected JSON is written out by hand for
-// that reason — one composed from the implementation would agree with any
+// that reason: one composed from the implementation would agree with any
 // shape it happened to have.
 //
 
@@ -34,7 +34,7 @@ const run = async () => {
 
   await test('the mark is one line of JSON, key for key', () => {
     assertEq(renderStatsMark(PAYLOAD), EXPECTED, 'the shape a morning publishes');
-    assert(!renderStatsMark(PAYLOAD).includes('\n'), 'and it is one line — a comment in a Discussion body');
+    assert(!renderStatsMark(PAYLOAD).includes('\n'), 'and it is one line: a comment in a Discussion body');
   });
 
   await test('the day comes from the payload’s own stamp, never from the clock', () => {
@@ -54,7 +54,7 @@ const run = async () => {
 
   await test('a morning whose sweep failed publishes no line at all', () => {
     // buildBrief reports a failed sweep as such ("gh could not answer"), but its
-    // counts are still zeros — and the line is the only store, so a zero point
+    // counts are still zeros, and the line is the only store, so a zero point
     // published for that day would be a permanent cliff in every chart. The
     // missing day is the honest answer, same as the undated case.
     assertEq(renderStatsMark({ ...PAYLOAD, ok: false }), '', 'a failed sweep is a missing day, not a board of zeros');

@@ -1,5 +1,5 @@
 //
-// Tests for jobs/cc-news.js — the upstream Claude Code entries the morning
+// Tests for jobs/cc-news.js: the upstream Claude Code entries the morning
 // brief carries, grouped by topic.
 //
 // BOTH reads are the injected exec seam: `curl` answers with a fixture
@@ -45,7 +45,7 @@ const SLUG = 'owner/private-home';
  * A world: a scratch workflow home naming a home repo, plus an exec seam that
  * answers `curl` with the fixture CHANGELOG and `gh` with the fixture board.
  *
- * `slug: null` writes no settings file — a machine with no home repo, which is
+ * `slug: null` writes no settings file: a machine with no home repo, which is
  * a board that cannot be read at all.
  */
 const mkWorld = (text = CHANGELOG, { slug = SLUG } = {}) => {
@@ -133,7 +133,7 @@ const run = async () => {
     assertEq(topicOf('Raised the subagent spawn depth ceiling'), 'agents', 'agents');
   });
 
-  await test('everything else files under other — a bucket, never dropped', () => {
+  await test('everything else files under other: a bucket, never dropped', () => {
     assertEq(topicOf('Bug fixes and reliability improvements'), 'other', 'housekeeping');
     assertEq(topicOf('Fixed multi-line paste collapsing into one line'), 'other', 'paste');
   });
@@ -158,7 +158,7 @@ const run = async () => {
     board(world, '2.1.218');
     const news = collectIn(world);
     assertEq(news.matches.length, 5, 'all five entries of the two newer releases');
-    assert(news.matches.some((m) => /model picker/.test(m.entry)), 'the picker fix rides too — the digest judges, not the job');
+    assert(news.matches.some((m) => /model picker/.test(m.entry)), 'the picker fix rides too: the digest judges, not the job');
     cleanup(world.home);
   });
 
@@ -177,8 +177,8 @@ const run = async () => {
     const block = renderCcNews(collectIn(world));
     assert(/^\n--- CC NEWS ---\n/.test(block), 'it is a labeled block');
     assert(/since 2\.1\.219, by topic:/.test(block), 'saying where it counted from');
-    assert(/\[hooks\]\n2\.1\.220 — Added a `DirectoryAdded` hook/.test(block), `entries sit under their topic: ${block}`);
-    assert(/\[other\]\n2\.1\.220 — Fixed copy-on-select/.test(block), `and other files last: ${block}`);
+    assert(/\[hooks\]\n2\.1\.220: Added a `DirectoryAdded` hook/.test(block), `entries sit under their topic: ${block}`);
+    assert(/\[other\]\n2\.1\.220: Fixed copy-on-select/.test(block), `and other files last: ${block}`);
     assert(block.indexOf('[hooks]') < block.indexOf('[other]'), 'kit surfaces before the rest');
     cleanup(world.home);
   });
@@ -233,8 +233,8 @@ const run = async () => {
   await test('a brief far down a busy board is still the cursor', () => {
     // Two posts a day share this board, and a morning whose send failed carries
     // no line at all. A narrow read window lets the last line-carrying brief
-    // scroll out of view, which reads as an empty board and re-seeds the cursor
-    // — every entry in between never reported.
+    // scroll out of view, which reads as an empty board and re-seeds the cursor,
+    // every entry in between never reported.
     const world = mkWorld();
     const filler = Array.from({ length: 60 }, (_, i) => (
       { title: `daily: 2026-07-${i}`, body: 'a summary carries no cursor' }
@@ -253,7 +253,7 @@ const run = async () => {
 
   group('jobs/cc-news: a first run seeds, it does not report');
 
-  await test('an empty board is a first run — nothing reported, the latest carried', () => {
+  await test('an empty board is a first run: nothing reported, the latest carried', () => {
     const world = mkWorld();
     const news = collectIn(world);
     assertEq(news.since, null, 'nothing has ever been published');
@@ -305,7 +305,7 @@ const run = async () => {
   await test('there is no commit callback to call', () => {
     const world = mkWorld();
     board(world, '2.1.218');
-    assertEq(typeof collectIn(world).commit, 'undefined', 'the publish IS the commit — no function pretends to persist');
+    assertEq(typeof collectIn(world).commit, 'undefined', 'the publish IS the commit: no function pretends to persist');
     cleanup(world.home);
   });
 
@@ -340,7 +340,7 @@ const run = async () => {
     const news = collectIn(world);
     assertEq(news.since, null, 'no board, no since');
     assertEq(news.matches.length, 0, 'so nothing is reported');
-    assertEq(news.version, null, 'and no line publishes — the last brief\'s cursor stands');
+    assertEq(news.version, null, 'and no line publishes: the last brief\'s cursor stands');
     cleanup(world.home);
   });
 

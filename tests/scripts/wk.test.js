@@ -1,5 +1,5 @@
 //
-// Tests for workflow/wk.sh — the capture CLI.
+// Tests for workflow/wk.sh: the capture CLI.
 //
 // Every case runs the real script against a real temp tree: which capture file a note
 // lands in is a question about directories and a settings file, so there is
@@ -9,7 +9,7 @@
 // The one seam is `gh`: filing a note outside every project creates an ISSUE
 // (issue #79), and no test may reach GitHub. PATH is pinned to a scratch bin
 // plus the system one, and the shim in that bin answers every call. The machine
-// that HAS no gh is built, not assumed — see basePathWithout below.
+// that HAS no gh is built, not assumed: see basePathWithout below.
 //
 
 const path = require('path');
@@ -25,8 +25,8 @@ const TEMPLATE = fs.readFileSync(path.join(WORKFLOW_DIR, 'templates', 'capture.m
 const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 
 // A copy of the base PATH with one command left out of it. The "no gh" case
-// cannot ASSUME the machine has none — plenty of them ship it in /usr/bin (every
-// Ubuntu runner does, which is what made this case fail there, issue #114) — so
+// cannot ASSUME the machine has none: plenty of them ship it in /usr/bin (every
+// Ubuntu runner does, which is what made this case fail there, issue #114), so
 // it makes the absence instead: one directory of symlinks to everything on the
 // base PATH except the named command, in first-wins order the way a PATH lookup
 // resolves.
@@ -41,7 +41,7 @@ const basePathWithout = (dir, command) => {
       try { fs.symlinkSync(path.join(entry, name), path.join(out, name)); } catch {}
     }
   }
-  // An empty mirror would make the absence assertion pass vacuously — the run
+  // An empty mirror would make the absence assertion pass vacuously: the run
   // would fail on the missing SHELL, not the missing command. `sh` proves the
   // mirror is real before anything leans on it.
   if (!fs.existsSync(path.join(out, 'sh'))) throw new Error(`basePathWithout built an unusable PATH at ${out}`);
@@ -53,12 +53,12 @@ const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
 // A temp tree holding a participating repo, a nested subdirectory, an outside
 // directory, and the home the tower clone sits under. `tower: false` is the
-// machine that has never run `workkit setup` — the one case with nowhere at all
+// machine that has never run `workkit setup`: the one case with nowhere at all
 // to put a note; `tower: 'foreign'` is somebody else's repo sitting at that
 // path, which is never adopted.
 //
 // The clone is a REAL git repo with the home repo's origin, because which
-// folder counts as the home is the engine's own `wk_home_ready` question — a
+// folder counts as the home is the engine's own `wk_home_ready` question: a
 // bare `.git` directory is not the answer. It carries no `.workkit/` of its
 // own: the clone is engine territory (issue #79).
 //
@@ -166,8 +166,8 @@ const run = async () => {
     // put it in.
     const t = makeTree();
     const { code, out } = runScript(t.outside, ['note', 'a stray thought'], t);
-    assertEq(code, 0, `exit 0 — ${out}`);
-    assert(out.includes('noted → https://github.com/owner/workkit/issues/7'), `it names the issue, got: ${out}`);
+    assertEq(code, 0, `exit 0: ${out}`);
+    assert(out.includes('✓ noted → https://github.com/owner/workkit/issues/7'), `it names the issue, got: ${out}`);
 
     const calls = t.ghCalls();
     assertEq(calls.length, 1, `one gh call: ${calls.join(' | ')}`);
@@ -177,7 +177,7 @@ const run = async () => {
     assertEq(argv[argv.indexOf('--title') + 1], 'a stray thought', 'the note is the title');
     assertEq(argv[argv.indexOf('--label') + 1], 'status:inbox,type:idea', 'labelled for triage');
     const body = calls[0].slice(calls[0].indexOf('## Description'));
-    assert(/^## Description\n\na stray thought\n\n## Spec\n\nNone needed — small item\.$/.test(body),
+    assert(/^## Description\n\na stray thought\n\n## Spec\n\nNone needed: small item\.$/.test(body),
       `the body is the spec's issue anatomy, got: ${body}`);
 
     assert(!fs.existsSync(path.join(t.tower, W)), 'and nothing at all is written into the clone');
@@ -185,17 +185,17 @@ const run = async () => {
     cleanup(t.dir);
   });
 
-  await test('a cwd under $HOME still files the issue — the machine settings are not a repo opt-in', async () => {
+  await test('a cwd under $HOME still files the issue: the machine settings are not a repo opt-in', async () => {
     // The walk up passes through $HOME, where `.workkit/settings.json` is the
     // MACHINE settings file (roster, site options, home slug). With no
     // `enabled` key it read as a legacy yes, and the note buffered into
-    // ~/.workkit/capture.md — a file the spec says must not exist (issue #79).
+    // ~/.workkit/capture.md: a file the spec says must not exist (issue #79).
     const t = makeTree();
     const scratch = path.join(t.home, 'Documents', 'scratch');
     fs.mkdirSync(scratch, { recursive: true });
     const { code, out } = runScript(scratch, ['note', 'a thought from under home'], t);
-    assertEq(code, 0, `exit 0 — ${out}`);
-    assert(out.includes('noted → https://github.com/owner/workkit/issues/7'), `filed as an issue, got: ${out}`);
+    assertEq(code, 0, `exit 0: ${out}`);
+    assert(out.includes('✓ noted → https://github.com/owner/workkit/issues/7'), `filed as an issue, got: ${out}`);
     assertEq(t.ghCalls().length, 1, 'one gh call');
     assert(!fs.existsSync(path.join(t.home, W, 'capture.md')), 'and no user-level capture file appeared');
     cleanup(t.dir);
@@ -236,8 +236,8 @@ const run = async () => {
   await test('a home repo without the labels yet takes the issue unlabelled', async () => {
     const t = makeTree({ gh: 'labels' });
     const { code, out, err } = runScript(t.outside, ['note', 'a fresh home'], t);
-    assertEq(code, 0, `exit 0 — the thought is filed either way: ${err}`);
-    assert(out.includes('noted → https://github.com/owner/workkit/issues/7'), `it still names the issue, got: ${out}`);
+    assertEq(code, 0, `exit 0, the thought is filed either way: ${err}`);
+    assert(out.includes('✓ noted → https://github.com/owner/workkit/issues/7'), `it still names the issue, got: ${out}`);
     assert(/labels could not be applied/.test(err), `and says so once, got: ${err}`);
 
     const calls = t.ghCalls();
@@ -270,7 +270,7 @@ const run = async () => {
   });
 
   await test('a repo whose settings say enabled:false is not a participating repo', async () => {
-    // The deliberate no. The note still has somewhere to go — the home repo.
+    // The deliberate no. The note still has somewhere to go: the home repo.
     const t = makeTree({ settings: '{ "version": 1, "enabled": false }\n' });
     assertEq(runScript(t.deep, ['note', 'declined repo'], t).code, 0, 'exit 0');
     assert(t.ghCalls()[0].includes('declined repo'), 'filed on the home repo');
@@ -289,7 +289,7 @@ const run = async () => {
 
   await test('a foreign repo sitting at the clone’s path is refused, not written into', async () => {
     // The engine never adopts what it finds at ~/.workkit/tower. A `.git`
-    // directory is not the test — being the home repo's clone is.
+    // directory is not the test: being the home repo's clone is.
     const t = makeTree({ tower: 'foreign' });
     const { code, err } = runScript(t.outside, ['note', 'not yours'], t);
     assertEq(code, 1, 'the caller learns the thought was not filed');
@@ -345,7 +345,7 @@ const run = async () => {
   });
 
   await test('multiple arguments join with spaces', async () => {
-    // The unquoted call — the shell split it, and the script reassembles it.
+    // The unquoted call: the shell split it, and the script reassembles it.
     const t = makeTree();
     runScript(t.repo, ['note', 'fix', 'the', 'tower', 'poller'], t);
     assert(read(t.repoCapture).endsWith('- fix the tower poller\n'), 'one bullet, one sentence');

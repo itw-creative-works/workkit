@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# workflow:standards — SessionStart hook.
+# workflow:standards: SessionStart hook.
 # Brings the session's repo to the issue-workflow standard by running
 # the kit's own workflow/standards.sh (labels from labels.json, issue templates,
-# .workkit/ in .gitignore). The script is idempotent; this hook is its delivery
-# — nobody runs a command by hand.
+# .workkit/ in .gitignore). The script is idempotent; this hook is its delivery.
+# Nobody runs a command by hand.
 #
 # Runs at most once per repo per DAY: the label step talks to GitHub, and a
 # session-start network call on every new panel is not worth the latency. The
 # marker lives under ~/.claude/logs/workflow-standards (TMPDIR is wiped far too
 # often to hold a daily cache).
 #
-# Silent unless something was actually created or corrected — an all-skip run
+# Silent unless something was actually created or corrected: an all-skip run
 # (already standardized, or offline with nothing to do) says nothing.
 
 set -euo pipefail
@@ -19,7 +19,7 @@ input=$(cat)
 
 command -v jq >/dev/null 2>&1 || exit 0
 
-# The workflow engine is this kit's own workflow/ folder — resolve it from this
+# The workflow engine is this kit's own workflow/ folder. Resolve it from this
 # script's physical location, never through a symlink someone has to install
 # first. `pwd -P` resolves the link before the `..` walk, so the climb out of
 # hooks/workflow/standards/ lands on the real directory.
@@ -29,10 +29,10 @@ ENGINE_DIR="${WORKFLOW_DIR:-$SCRIPT_DIR/../../../workflow}"
 STANDARDS="$ENGINE_DIR/standards.sh"
 MANIFEST="$ENGINE_DIR/labels.json"
 
-# Setup pester (issue #72) — EVERY session until the machine is set up, with no
+# Setup pester (issue #72): EVERY session until the machine is set up, with no
 # daily cache and no repo gate: the schedule, the home repo, and the CLI all
 # come from `workkit setup`, and a machine that never ran it is missing all of
-# them everywhere, not just in a participating repo. Still only a prompt — the
+# them everywhere, not just in a participating repo. Still only a prompt: the
 # hook informs, the human runs the wizard (the #71 boundary).
 # The probe is the CLI the wizard installs: absent, dangling, or not executable
 # all mean the command is not there, and `setup` is the one step that fixes each
@@ -41,10 +41,10 @@ MANIFEST="$ENGINE_DIR/labels.json"
 pester=""
 cli_link="$HOME/.local/bin/workkit"
 if [ ! -x "$cli_link" ]; then
-  # The command the user is told to paste resolves the ../.. climb first — the
+  # The command the user is told to paste resolves the ../.. climb first: the
   # raw ENGINE_DIR string executes fine but reads like a bug.
   engine_shown="$(cd "$ENGINE_DIR" 2>/dev/null && pwd -P || printf '%s' "$ENGINE_DIR")"
-  pester="SETUP: workkit is not set up on this machine ($cli_link is missing) — the daily brief, the home repo, and the workkit command are all absent until it is. Tell the user to run \`bash $engine_shown/workkit.sh setup\` before continuing with other work."
+  pester="SETUP: workkit is not set up on this machine ($cli_link is missing). The daily brief, the home repo, and the workkit command are all absent until it is. Tell the user to run \`bash $engine_shown/workkit.sh setup\` before continuing with other work."
 fi
 
 # Every exit from here down goes through emit, so the pester rides along with
@@ -81,16 +81,16 @@ root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || emit
 
 # A missing engine is a real state, not a no-op: a half-installed or partially
 # updated kit has this hook live while the engine beside it is incomplete. The
-# manifest is half the engine — the label heals cannot run without it, so a
+# manifest is half the engine: the label heals cannot run without it, so a
 # missing or unreadable labels.json is the same broken install and must speak,
-# not go quiet. Say so once, and only for a repo that already opted in —
-# everyone else stays silent. Still exit 0; a broken install never wedges a
+# not go quiet. Say so once, and only for a repo that already opted in.
+# Everyone else stays silent. Still exit 0; a broken install never wedges a
 # session start.
 broken=""
 if [ ! -f "$STANDARDS" ]; then
-  broken="workflow engine not found at $STANDARDS — reinstall the workkit plugin."
+  broken="workflow engine not found at $STANDARDS. Reinstall the workkit plugin."
 elif [ ! -r "$MANIFEST" ]; then
-  broken="workflow manifest missing or unreadable at $MANIFEST — reinstall the workkit plugin."
+  broken="workflow manifest missing or unreadable at $MANIFEST. Reinstall the workkit plugin."
 fi
 if [ -n "$broken" ]; then
   # Without the engine, undecided and declined cannot be told apart (both need
@@ -98,13 +98,13 @@ if [ -n "$broken" ]; then
   # for a repo that said YES: an explicit `"enabled": false` is a deliberate no
   # and stays silent here too, the same way the engine honors it.
   # This hook sources nothing, so the directory name is spelled out; its SSOT is
-  # WORKKIT_DIR in hooks/_lib.sh — change both together.
+  # WORKKIT_DIR in hooks/_lib.sh. Change both together.
   [ -f "$root/.workkit/settings.json" ] || emit
   grep -qE '"enabled"[[:space:]]*:[[:space:]]*false' "$root/.workkit/settings.json" && emit
   emit "$broken"
 fi
 
-# Participation gate — the engine owns the five states (enabled · disabled ·
+# Participation gate: the engine owns the five states (enabled · disabled ·
 # declined · undecided · home); this hook only routes them. A repo that has
 # not said yes is never written to, and an undecided one hears a single offer
 # line every
@@ -135,13 +135,17 @@ if [ -f "$marker" ] && [ "$(cat "$marker" 2>/dev/null)" = "$today" ]; then
   emit
 fi
 
-# Never let a failing standards run wedge the session start — but never call a
+# Never let a failing standards run wedge the session start, but never call a
 # failure a heal either. Diagnostics arrive on stderr, so capture both streams
 # for the report and keep the exit status: only a CLEAN run caches the day, so a
 # partial heal retries next session instead of going quiet until tomorrow
 # (review finding, 2026-07-24).
+# QUIET=1 is what makes the report filterable (issue #237): the engine's one
+# voice prints an ACTION (`wk_ok`) and a warning whatever the caller asked for,
+# and silences the skips and the info lines under QUIET. So the capture below is
+# already only the two glyphs this hook reports.
 rc=0
-out=$(bash "$STANDARDS" "$root" 2>&1) || rc=$?
+out=$(QUIET=1 bash "$STANDARDS" "$root" 2>&1) || rc=$?
 if [ "$rc" -eq 0 ]; then
   printf '%s' "$today" >"$marker" 2>/dev/null || true
 fi
@@ -150,30 +154,45 @@ fi
 # no plugin-install hook, so this is the trigger the kit owns: a checkout that
 # moved or a job template that changed would otherwise leave the installed
 # schedule pointing at yesterday's paths until somebody remembered to re-run the
-# installer. The CLI resolves beside the engine — never through the PATH or the
-# ~/.local/bin symlink, which is exactly what may not exist yet — and only ever
+# installer. The CLI resolves beside the engine (never through the PATH or the
+# ~/.local/bin symlink, which is exactly what may not exist yet) and only ever
 # UPDATES a schedule a human already installed. Most session starts never reach
 # this line at all: the daily marker above returns first. The run it does make
 # costs a few short shell invocations, a plutil lint, and the two read-only `gh`
-# calls behind the cloud-secrets report (issue #88) — no launchd call, and no
+# calls behind the cloud-secrets report (issue #88): no launchd call, and no
 # network beyond those two, which the CLI bounds so a stalled api.github.com
 # cannot hold a session start open. It prints nothing when nothing drifted.
 upkeep=""
 CLI="$ENGINE_DIR/workkit.sh"
 if [ -f "$CLI" ]; then
-  upkeep=$(bash "$CLI" update --auto 2>/dev/null || true)
+  # Both streams: a warning from the upkeep is on STDERR now (issue #237), and
+  # a warning is the one thing this relay exists to carry.
+  upkeep=$(bash "$CLI" update --auto 2>&1 || true)
 fi
 
-# Strip the script's ANSI colors, then keep only the lines that report an
-# action (created/corrected = ✓, needs judgment = ⚠). Skips stay silent.
+# ONE shape for everything this hook injects (issue #237): strip the script's
+# ANSI colors, keep the lines the ENGINE itself printed, and take the indent and
+# the glyph off each one. Both captures above are both streams, so a child
+# tool's own stderr is in them too (a `cp` refusal, a git advisory) and a line
+# the engine did not say must never be relayed as an action: the opening glyph
+# is what tells them apart, and the QUIET runs leave only the action (✓) and the
+# warning (⚠). The engine indents under a title even when QUIET silences the
+# title itself, which is the other half of why this strip is not optional.
 # (Alternation, not a bracket class: in the C locale a class of multibyte
-# characters matches their shared leading byte, which also matches ℹ and ·.)
-actions=$(printf '%s\n' "$out" | sed $'s/\033\\[[0-9;]*m//g' | grep -E '^[[:space:]]*(✓|⚠)' || true)
+# characters matches on their bytes, which matches none of these glyphs.)
+engine_lines() {
+  sed $'s/\033\\[[0-9;]*m//g' \
+    | grep -E '^[[:space:]]*(✓|⚠) ' \
+    | sed -E 's/^ *(✓|·|›|⚠|✖|⏳) //' || true
+}
+
+actions=$(printf '%s\n' "$out" | engine_lines)
+upkeep=$(printf '%s\n' "$upkeep" | engine_lines)
 
 if [ "$rc" -ne 0 ]; then
   # A non-zero engine exit is worth a session's attention even when it printed
-  # no ✓/⚠ line of its own — that is exactly the half-finished case.
-  msg="workflow standards did not finish in $root (exit $rc) — it will retry next session:
+  # no ✓ or ⚠ line of its own: that is exactly the half-finished case.
+  msg="workflow standards did not finish in $root (exit $rc). It will retry next session:
 ${actions:-$(printf '%s\n' "$out" | sed $'s/\033\\[[0-9;]*m//g' | tail -3)}"
 elif [ -n "$actions" ]; then
   msg="workflow standards healed $root:

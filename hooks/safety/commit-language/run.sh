@@ -1,8 +1,8 @@
 #!/bin/bash
-# safety/commit-language — PreToolUse hook (Bash)
+# safety/commit-language: PreToolUse hook (Bash)
 # The mechanical half of two AGENTS.md commit rules.
 #   1. Vocabulary (plan guard 5): commit MESSAGES must not carry kill/destroy/
-#      dead wording — safety classifiers judge wording without task context.
+#      dead wording: safety classifiers judge wording without task context.
 #      The judgment half (tone, register) stays prose.
 #   2. Format: the SUBJECT line must be Conventional Commits
 #      (`<type>(<scope>)?: <subject>`, lowercase subject start, <=72 chars),
@@ -11,12 +11,12 @@
 #      pass unexamined.
 #
 # Scope: only real `git ... commit` commands, and only the QUOTED spans of
-# their message flags (-m/--message/-F/--file) — that is where message text
+# their message flags (-m/--message/-F/--file): that is where message text
 # lives (-m "...", including the usual -m "$(cat <<'EOF' ...)" idiom, whose
 # body sits inside the outer quotes). Unquoted words (file paths, flags) are
 # never scanned, so committing a file named kill-switch.md cannot bounce.
 # When no message span extracts (unquoted message, unusual spelling) the scan
-# falls back to EVERY quoted span — toward gating, never toward silence. A
+# falls back to EVERY quoted span, toward gating, never toward silence. A
 # flag-adjacent quoted span elsewhere on the line (`grep -F "..."`) is the
 # accepted residual false positive: reword, or HOOK_DISABLE=1. Known accepted
 # misses (fail-open by design): a bare `git commit -F - <<EOF` body is
@@ -45,17 +45,17 @@ cmd=$(jq -r '.tool_input.command // ""' <<<"$input" || true)
 # hooks/_lib.sh, used identically by the safety/commit-gate hook. Detection
 # reads the STRIPPED command; the span extraction below still reads the
 # ORIGINAL command, so the quoted `-m "$(cat <<EOF ...)"` message body stays
-# scanned (a bare `-F - <<EOF` body is unquoted — the accepted miss above).
+# scanned (a bare `-F - <<EOF` body is unquoted, the accepted miss above).
 . "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
 hook_find_git_commit "$cmd"
 # A wrapped commit (`sh -c "git commit …"`) has no visible clause but is
-# still a commit — scan it rather than stay silent.
+# still a commit: scan it rather than stay silent.
 [ -n "$HOOK_COMMIT_CLAUSE" ] || [ "$HOOK_WRAPPED_COMMIT" -eq 1 ] || exit 0
 
 # --- Pull the MESSAGE spans: quoted values of -m/--message/-F/--file. ---
 # Scoped so quoted text elsewhere on the line (`… && echo "…"`) is not judged
 # as commit-message vocabulary (hardening 2026-07-25). When nothing extracts,
-# fall back to every quoted span (multiline-safe) — toward gating.
+# fall back to every quoted span (multiline-safe), toward gating.
 # One regex for both passes; PERL_FLAG_RE carries it into perl so the two
 # extractions can never drift apart.
 export PERL_FLAG_RE='(?:^|[\s;&|({])(?:-[a-zA-Z]*[mF]|--message|--file)[=\s]*("(?:[^"\\]|\\.)*"|\x27[^\x27]*\x27)'
@@ -70,7 +70,7 @@ fi
 found=$(printf '%s' "$quoted" | grep -Eiow 'kill(s|ed|ing)?|destroy(s|ed|ing)?|dead' | sort -fu | tr '\n' ' ' || true)
 if [ -n "$found" ]; then
   {
-    echo "commit-language: BLOCKED this commit — the message uses non-neutral vocabulary: ${found}"
+    echo "commit-language: BLOCKED this commit: the message uses non-neutral vocabulary: ${found}"
     echo "Reword per the AGENTS.md neutral-language rule (terminate not kill, remove not destroy, stale not dead) and commit again. If a listed word is a literal file/identifier name, keep it unquoted in the command or rephrase around it."
   } >&2
   exit 2
@@ -86,7 +86,7 @@ fi
 # case this scoping exists for), and starting early keeps every -m of a
 # multi-flag commit in order, so `-m "…the commit message" -m "Body."` still
 # reads the first flag as the subject. A `commit` word that is only prose
-# earlier on the line costs nothing — the scan from it finds the same real
+# earlier on the line costs nothing: the scan from it finds the same real
 # spans. Nothing extracted → no format verdict (fail open).
 fmt_spans=$(printf '%s' "$cmd" | perl -0777 -ne '
   my $re = qr/$ENV{PERL_FLAG_RE}/s;
@@ -105,7 +105,7 @@ case "$subject" in
   *'$('*'<<'*) subject=$(printf '%s' "$fmt_spans" | sed -n '2p') ;;
 esac
 # Any OTHER command substitution (`-m "$(cat /tmp/msg.txt)"`) is shell text
-# the hook cannot expand — judging it as a subject would bounce a message we
+# the hook cannot expand: judging it as a subject would bounce a message we
 # never actually read. Fail open.
 case "$subject" in
   *'$('*) exit 0 ;;
@@ -121,7 +121,7 @@ esac
 
 if ! printf '%s' "$subject" | grep -Eq '^(feat|fix|docs|chore|refactor|test)(\([^)]+\))?!?: [^A-Z]'; then
   {
-    echo "commit-language: BLOCKED this commit — the subject line is not Conventional Commits: ${subject}"
+    echo "commit-language: BLOCKED this commit: the subject line is not Conventional Commits: ${subject}"
     echo "Write it as <type>(<scope>): <subject> with type one of feat/fix/docs/chore/refactor/test and a lowercase first word, e.g. fix(hooks): bounce the empty span."
   } >&2
   exit 2
@@ -134,7 +134,7 @@ len=$(printf '%s' "$subject" | perl -CS -ne 'chomp; print length' 2>/dev/null ||
 [ -n "$len" ] || len=${#subject}
 if [ "$len" -gt 72 ]; then
   {
-    echo "commit-language: BLOCKED this commit — the subject line is ${len} characters, over the 72-character limit."
+    echo "commit-language: BLOCKED this commit: the subject line is ${len} characters, over the 72-character limit."
     echo "Shorten the subject and move the detail into the commit body."
   } >&2
   exit 2
@@ -143,7 +143,7 @@ fi
 if printf '%s' "$subject" | grep -Eqw 'v?[0-9]+\.[0-9]+\.[0-9]+' \
   && ! printf '%s' "$subject" | grep -Eq '^chore\(release\): v?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
   {
-    echo "commit-language: BLOCKED this commit — the subject line carries a version number: ${subject}"
+    echo "commit-language: BLOCKED this commit: the subject line carries a version number: ${subject}"
     echo "Only the release commit names a version, as chore(release): <x.y.z>. Describe the change instead; the version bump is its own commit."
   } >&2
   exit 2

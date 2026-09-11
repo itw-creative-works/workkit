@@ -99,6 +99,10 @@ const mkWorld = () => {
     createResult: `https://github.com/${SLUG}/issues/99\n`,
     // And what `gh issue edit` does - the relabel the board's drag performs.
     editResult: `https://github.com/${SLUG}/issues/17\n`,
+    // What `gh issue view --json comments` answers - the proof read a move to
+    // Complete makes. Proved by default, so a test that is about anything else
+    // is not about the gate.
+    viewResult: JSON.stringify({ comments: [{ body: 'Proof:\n- unit: node tests/tower/server.test.js' }] }),
     // Flip to make the `gh --version` probe fail, as an unprovisioned machine does.
     ghMissing: false,
   };
@@ -120,7 +124,8 @@ const mkWorld = () => {
       return JSON.stringify(world.board);
     }
     if (cmd === 'gh' && args[0] === 'issue') {
-      const result = args[1] === 'edit' ? world.editResult : world.createResult;
+      const answers = { edit: world.editResult, view: world.viewResult };
+      const result = args[1] in answers ? answers[args[1]] : world.createResult;
       if (result instanceof Error) throw result;
       return result;
     }
@@ -952,6 +957,88 @@ const run = async () => {
     cleanup(w.root);
   });
 
+  // ── The proof gate on the drag (issue #236) ──────────────────────────────
+  // The board is the SECOND door into the flip the hooks hold on the shell path
+  // (safety/proof-guard, safety/commit-gate check 6): nothing reaches Complete
+  // without a `Proof:` comment, whichever door it comes through.
+
+  /** The `gh issue` calls a move makes, told apart by their subcommand. */
+  const moveCalls = (world, sub) => ghCalls(world, 'issue').filter((call) => call[2] === sub);
+
+  await test('a move to Complete on an issue with no Proof: line is refused, and the label is never written', async () => {
+    const w = mkWorld();
+    w.viewResult = JSON.stringify({ comments: [{ body: 'looks good' }, { body: 'shipping this. proof: lowercase is not the line' }] });
+    const c = await start(w);
+    const { status, body } = await postJson(c, MOVE, { ...validMove, from: 'qa', to: 'complete' });
+    assertEq(status, 200, 'soft, like the other refusals gh is reached for - the page reverts the card on the body');
+    assertEq(body.ok, false, 'the gate refused it');
+    assert(/no comment whose line starts with "Proof:"/.test(body.reason), `the reason names what is missing, got: ${body.reason}`);
+    assert(/Park it with a Proof: comment first/.test(body.reason), 'and the fix that exists');
+    assertEq(moveCalls(w, 'edit').length, 0, 'the drag is not a door around the hooks');
+    const [view] = moveCalls(w, 'view');
+    assertEq(view.join(' '), `gh issue view 17 --repo ${SLUG} --json comments`,
+      'one read of the issue\u2019s own comments, the same read hook_issue_has_proof makes');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a Proof: line opening any line of any comment lets that move through', async () => {
+    const w = mkWorld();
+    w.viewResult = JSON.stringify({
+      comments: [{ body: 'first pass' }, { body: 'parked at qa.\n  Proof:\n- unit: node tests/tower/server.test.js\n- e2e: skipped, no surface' }],
+    });
+    const c = await start(w);
+    const { status, body } = await postJson(c, MOVE, { ...validMove, from: 'qa', to: 'complete' });
+    assertEq(status, 200, 'ok');
+    assertEq(body.ok, true, 'the item is proved');
+    assertEq(body.status, 'complete', 'and the card lands');
+    const [edit] = moveCalls(w, 'edit');
+    assertEq(edit.join(' '),
+      `gh issue edit 17 --repo ${SLUG} --remove-label status:qa --add-label status:complete`,
+      'the ordinary move, after the gate said yes');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a proof that cannot be READ refuses the move - a gate never fails open', async () => {
+    const w = mkWorld();
+    w.viewResult = execError('Command failed: gh issue view', { stderr: 'gh: could not resolve to an Issue\n' });
+    const c = await start(w);
+    const { status, body } = await postJson(c, MOVE, { ...validMove, from: 'qa', to: 'complete' });
+    assertEq(status, 200, 'the tower stays up');
+    assertEq(body.ok, false, 'and the move did not land');
+    assert(/could not be read/.test(body.reason), `the reason says the question could not be asked, got: ${body.reason}`);
+    assert(/could not resolve to an Issue/.test(body.reason), 'carrying gh\u2019s own message');
+    assertEq(moveCalls(w, 'edit').length, 0, 'nothing was written');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('an answer that is not JSON is unreadable too, and refused the same way', async () => {
+    const w = mkWorld();
+    w.viewResult = 'gh printed something else entirely';
+    const c = await start(w);
+    const { body } = await postJson(c, MOVE, { ...validMove, from: 'qa', to: 'complete' });
+    assertEq(body.ok, false, 'an answer that does not parse is not a proof');
+    assert(/could not be read/.test(body.reason), `and says so, got: ${body.reason}`);
+    assertEq(moveCalls(w, 'edit').length, 0, 'nothing was written');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a move to any other column reads no comments at all', async () => {
+    const w = mkWorld();
+    const c = await start(w);
+    for (const to of ['specced', 'building', 'qa', 'blocked', 'backlog']) {
+      const { body } = await postJson(c, MOVE, { ...validMove, from: 'inbox', to });
+      assertEq(body.ok, true, `a move to ${to} is not the gated one`);
+    }
+    assertEq(moveCalls(w, 'view').length, 0, 'only the flip to Complete pays for the read');
+    assertEq(moveCalls(w, 'edit').length, 5, 'and every one of them was written');
+    await c.stop();
+    cleanup(w.root);
+  });
+
   await test('the preflight covers this POST too - one answer, both write paths', async () => {
     const w = mkWorld();
     const c = await start(w);
@@ -1316,7 +1403,9 @@ const run = async () => {
         await new Promise((resolve) => { setTimeout(resolve, 5); });
       }
       assertEq(said.length, 1, 'the machine is told once, the way every other catch here tells it');
-      assert(/^\[tower\] the board sweep was dropped: /.test(said[0]), `and in those words, got: ${said[0]}`);
+      // The kit's one line shape (issue #237): the glyph, then the message.
+      assert(/^✖ the board sweep was dropped: /.test(said[0]),
+        `and in those words, got: ${said[0]}`);
 
       const alive = await getJson(c, '/api/repos');
       assertEq(alive.status, 200, 'the listener is still up - the timer did not take it with it');

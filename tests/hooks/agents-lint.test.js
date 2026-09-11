@@ -1,16 +1,16 @@
-// Agent-definition lint — the mechanically checkable half of the "no
+// Agent-definition lint: the mechanically checkable half of the "no
 // machine-specific paths" rule (docs/agents.md § Defining an agent, and the
 // AGENTS.md Conventions section, which extends the same rule to everything
 // under hooks/, agents/ and skills/). These files ship to any repo on any
 // machine, so one absolute path is a broken install somewhere else.
 //
 // The OTHER agent-file rules stay JUDGMENT and are deliberately not linted
-// here — an agent file carrying knowledge content instead of pointing at the
+// here. An agent file carrying knowledge content instead of pointing at the
 // live repo docs is a review call, and its home is docs/agents.md.
 //
 // Scope note: tests/scripts/skills.test.js already refuses `/Users/`,
 // `~/Developer/` and `.dotfiles` across skills, agents and the shipped docs.
-// This suite is the line-level lens on the same convention — it names the
+// This suite is the line-level lens on the same convention. It names the
 // offending file AND line, adds the forms that check missed (`/home/`, a
 // Windows drive letter), and is the only one that walks hooks/.
 const path = require('path');
@@ -20,8 +20,8 @@ const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harn
 const REPO = path.join(__dirname, '..', '..');
 const AGENTS_DIR = path.join(REPO, 'agents');
 
-// The portable idioms — `~/…` (every install has a home directory) and
-// `${CLAUDE_PLUGIN_ROOT}/…` (the plugin resolves its own location) — match
+// The portable idioms, `~/…` (every install has a home directory) and
+// `${CLAUDE_PLUGIN_ROOT}/…` (the plugin resolves its own location), match
 // none of these by construction, so they need no exception list.
 const PATTERNS = [
   { name: '/Users/', re: /\/Users\//i },
@@ -31,12 +31,12 @@ const PATTERNS = [
   { name: '.dotfiles', re: /\.dotfiles/i },
 ];
 
-// Every violation in one file's text, as `path:line — pattern`.
+// Every violation in one file's text, as `path:line: pattern`.
 const violations = (rel, text) => {
   const out = [];
   text.split('\n').forEach((line, i) => {
     for (const { name, re } of PATTERNS) {
-      if (re.test(line)) out.push(`${rel}:${i + 1} — machine-specific path (${name}): ${line.trim()}`);
+      if (re.test(line)) out.push(`${rel}:${i + 1}: machine-specific path (${name}): ${line.trim()}`);
     }
   });
   return out;
@@ -59,7 +59,7 @@ const run = async () => {
   await test('each machine-specific form is caught, with its line number', () => {
     assertEq(
       violations('a.md', 'ok\nsee /Users/someone/Developer/thing.md\n').join(''),
-      'a.md:2 — machine-specific path (/Users/): see /Users/someone/Developer/thing.md',
+      'a.md:2: machine-specific path (/Users/): see /Users/someone/Developer/thing.md',
       '/Users/ path'
     );
     assertEq(violations('a.md', 'run /home/runner/work/x.sh').length, 1, '/home/ path');

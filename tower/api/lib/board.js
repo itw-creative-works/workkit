@@ -1,12 +1,12 @@
 //
-// The cross-repo issue sweep — the board's data, in one call.
+// The cross-repo issue sweep: the board's data, in one call.
 //
 // Every opted-in repo's open issues arrive from `gh api graphql` using per-repo
 // aliases (`r0:`, `r1:`, …), a BATCH of repos to a request. Batching instead of
 // one request per repo is most of the point: the board is polled, and a roster
 // of a dozen repos would otherwise be a dozen round trips and a dozen
 // rate-limit hits every refresh. Asking for the whole roster at once is the
-// other half — GitHub refuses a query that is too much work in one go
+// other half. GitHub refuses a query that is too much work in one go
 // (REPOS_PER_REQUEST says what that cost), and the aliases restart at `r0` in
 // every request, so a batch is mapped back onto the roster by its offset.
 //
@@ -15,11 +15,11 @@
 // of the errors beside them live in the app's `libs/tower/sweep.js`, which the
 // published copy of the dashboard also
 // imports (issue #195). This file is the machine's transport around it, and
-// nothing else. That module is an ES module and this one is not — Node 22
+// nothing else. That module is an ES module and this one is not. Node 22
 // `require()`s it directly.
 //
 // The label vocabulary is not restated here either. Group names come from
-// workflow/labels.json — the SSOT the standards heal also reads — so a new
+// workflow/labels.json (the SSOT the standards heal also reads) so a new
 // group appears in the parse the moment it is defined there, and a value list
 // never drifts between the two files.
 //
@@ -31,9 +31,9 @@
 // and paying for it on every poll to learn what the next call is about to say
 // costs a request per refresh for nothing.
 //
-// A PARTIAL answer is kept. GraphQL returns data and errors together — a repo
+// A PARTIAL answer is kept. GraphQL returns data and errors together (a repo
 // that was renamed, or one the token cannot see, resolves to null while every
-// other alias comes back complete — and `gh` exits non-zero whenever an errors
+// other alias comes back complete) and `gh` exits non-zero whenever an errors
 // array is present, putting that complete payload on the error's stdout. So a
 // failed exit is parsed before it is believed: if there is data in it, the board
 // renders what resolved and the repos that did not carry their reason. Treating
@@ -138,7 +138,7 @@ const splitResponse = (text) => {
  *
  * A non-zero exit still carries the response: `gh` fails whenever an errors
  * array is present, and a roster with one bad repo is exactly that shape. So
- * the payload decides, never the exit code — and only a payload with no data
+ * the payload decides, never the exit code, and only a payload with no data
  * in it at all is a failure to report.
  *
  * The call asks for the headers as well, because a spent rate limit is only
@@ -186,8 +186,8 @@ const ask = (exec, query, variables = {}) => {
 /**
  * Fold one answered PAGE into what the sweep has collected for that repo.
  *
- * The first answer is the one that carries the repo's facts — its total and its
- * closed page — because every later page repeats them for the same repo, and
+ * The first answer is the one that carries the repo's facts (its total and its
+ * closed page) because every later page repeats them for the same repo, and
  * the first reason anything went wrong is the one kept: the failure this guards
  * against answers with an error per dropped node (issue #202), and a later page
  * saying it again adds nothing.
@@ -226,7 +226,7 @@ const absorb = (entry, resolved, { errors, aliasErrors, alias, now }) => {
  * The sweep is stepwise because the board is DRAWN as it arrives (issue #194).
  * A repo past a hundred open issues takes a request per hundred, and a caller
  * that has a reader waiting takes the first pages inside the request it is
- * answering, hands those back, and runs the continuations on afterwards —
+ * answering, hands those back, and runs the continuations on afterwards,
  * asking `board()` again for the snapshot as it grows.
  *
  * `board()` marks every repo still being paged `loading: true`, which is the
@@ -256,7 +256,7 @@ const startSweep = (repos, opts = {}) => {
   const settled = (value) => ({ board: () => value, paging: () => false, step: () => {} });
 
   try {
-    // Local and free — it answers "is gh installed", which no failure of the
+    // Local and free: it answers "is gh installed", which no failure of the
     // sweep itself distinguishes cleanly from a network or token problem.
     exec('gh', ['--version']);
   } catch {
@@ -271,8 +271,8 @@ const startSweep = (repos, opts = {}) => {
   }));
 
   // The FIRST page of every repo, a batch at a time, in sequence. The requests
-  // are serial because the sweep runs behind one cached endpoint on a poll —
-  // three round trips one after the other is what the cache absorbs, and firing
+  // are serial because the sweep runs behind one cached endpoint on a poll.
+  // Three round trips one after the other is what the cache absorbs, and firing
   // them together is how a roster this size meets a secondary rate limit
   // instead of the resource one.
   for (let offset = 0; offset < withSlug.length; offset += REPOS_PER_REQUEST) {
@@ -289,22 +289,22 @@ const startSweep = (repos, opts = {}) => {
   // Has this repo a page left to ask for? The CURSOR is asked for as well as
   // `hasNextPage`: an answer claiming more without saying where it resumes is
   // one this sweep cannot act on, and asking again without it would re-read the
-  // page it just read, forever. `stopped` is the third way it ends — a
-  // continuation that failed — and it is kept apart from `more` because the
+  // page it just read, forever. `stopped` is the third way it ends (a
+  // continuation that failed) and it is kept apart from `more` because the
   // repo goes on saying it was truncated, which it was.
   const pending = (entry) => entry.more && Boolean(entry.cursor) && !entry.stopped && entry.nodes.length < MAX_OPEN_ISSUES;
 
   /**
    * One round: the page after the last for every repo that has one, one repo
    * to a request. A continuation that fails is carried on its repo rather than
-   * failing the sweep — the first pages are already collected, and throwing
+   * failing the sweep: the first pages are already collected, and throwing
    * away every other repo's answer over page two of one of them is not a better
    * board.
    *
    * A round that moved NOTHING ends the repo too. An answer claiming another
    * page, handing back the cursor it was asked with and carrying no nodes, has
-   * advanced neither of the two things that end a sweep — the resume point and
-   * the count the ceiling is measured against — so `while (paging()) step()`
+   * advanced neither of the two things that end a sweep (the resume point and
+   * the count the ceiling is measured against) so `while (paging()) step()`
    * turns forever on it, inside the request or the timer driving it. Either one
    * moving is progress and the paging goes on; neither moving is the tell, and
    * it is read from the round itself rather than trusted to `hasNextPage`.
@@ -358,15 +358,15 @@ const startSweep = (repos, opts = {}) => {
  * what happened to it: `truncated: true` when the sweep stopped at the ceiling
  * with issues still to give (issue #194), and `error` when its alias did not
  * resolve or GitHub dropped issues out of its answer. The issue list itself
- * stays flat — the board sorts and groups it — with a repo's pages together and
+ * stays flat (the board sorts and groups it) with a repo's pages together and
  * the repos in roster order.
  *
  * This is `startSweep` run to the end: what a caller with nobody watching the
- * pages arrive wants — the 9am brief, a test — in one call.
+ * pages arrive wants (the 9am brief, a test) in one call.
  *
  * @param {Array<{slug: string|null}>} repos the roster (repos without a slug are skipped)
  * @param {object} [opts]
- * @param {Function} [opts.exec] (cmd, args) => stdout — the `gh` seam
+ * @param {Function} [opts.exec] (cmd, args) => stdout: the `gh` seam
  * @param {string} [opts.labelsFile] override the vocabulary SSOT
  * @param {number} [opts.now] epoch ms the day's closed count is measured back from
  * @returns {{ok: boolean, reason?: string, issues: object[], repos: object[]}}

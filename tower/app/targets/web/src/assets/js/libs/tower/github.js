@@ -88,7 +88,10 @@ export const TOKEN_CLASSIC_URL = 'https://github.com/settings/tokens/new?scopes=
  * owner: `repo` covers every repository that account can see, whoever owns it,
  * and it is read and written through exactly the same calls.
  */
-export const TOKEN_CLASSIC = 'a classic token with the repo scope works too - and it is the only one that does when this board spans two owners, since a fine-grained token belongs to a single resource owner.';
+export const TOKEN_CLASSIC_WORDS = 'a classic token with the repo scope';
+// The Settings card links those words; the sentence is built from them so a
+// rewrite can never separate the link from what it names (issue #241).
+export const TOKEN_CLASSIC = `${TOKEN_CLASSIC_WORDS} works too - and it is the only one that does when this board spans two owners, since a fine-grained token belongs to a single resource owner.`;
 
 /** The baked artifact, and the only one: which repo is the home, and which branch of it carries the roster. Relative, so a project-path Pages site resolves it too. */
 export const HOME_PATH = 'data/home.json';
@@ -188,9 +191,11 @@ const TOKEN_HASH = '#token=';
  * copy holding a token rather than a locked one.
  *
  * It reads the ONE hash it owns: any other fragment, and any page without the
- * two globals this needs, is left exactly as it is. The value is decoded
- * because the shell may encode it, and the strip keeps `?repo=` intact - the
- * path and the query are what the clean URL is made of.
+ * two globals this needs, is left exactly as it is. The value is decoded as a
+ * GUARD rather than a need: setup refuses a token outside `[A-Za-z0-9_-]`
+ * rather than escaping it, so nothing it hands over arrives encoded. The strip
+ * keeps `?repo=` intact - the path and the query are what the clean URL is
+ * made of.
  *
  * @param {object} [scope] - the global carrying `location`, `history` and `localStorage`
  * @returns {string} the token that was handed over, or ''
@@ -749,9 +754,9 @@ export const headlineFor = (counts) => {
   if (counts.complete) return `${plural(counts.complete, 'issue is', 'issues are')} QA-passed and ready to ship.`;
   if (counts.qa) return `${plural(counts.qa, 'issue is', 'issues are')} built and waiting on your check.`;
   if (counts.inFlight) return `${plural(counts.inFlight, 'issue is', 'issues are')} in flight, and nothing is blocked.`;
-  if (counts.ready) return `Nothing is blocked - ${plural(counts.ready, 'issue is', 'issues are')} specced and ready to start.`;
+  if (counts.ready) return `Nothing is blocked: ${plural(counts.ready, 'issue is', 'issues are')} specced and ready to start.`;
   if (counts.inbox) return `The board is clear of specced work; ${plural(counts.inbox, 'item is', 'items are')} sitting in the inbox.`;
-  return 'Nothing is waiting, in flight, or ready - the board is empty.';
+  return 'Nothing is waiting, in flight, or ready: the board is empty.';
 };
 
 /**
@@ -1192,6 +1197,16 @@ export const nextLabels = (current, from, to) => {
 const SLUG_SHAPE = /^[\w.-]+\/[\w.-]+$/;
 
 /**
+ * The line that proves an item was built, and the one status that demands it -
+ * the endpoint's `PROOF_LINE` and `PROOF_GATED`, restated across the copy
+ * boundary for the reason `MOVE_STATUSES` is. The pattern is the spec's
+ * (docs/project-state.md, "The proof"): any comment line may open with it,
+ * leading whitespace tolerated and nothing else.
+ */
+const PROOF_LINE = /(^|\n)[ \t]*Proof:/;
+const PROOF_GATED = 'complete';
+
+/**
  * The statuses a move may name - the label vocabulary's `status` group,
  * restated across the copy boundary for the reason the groups above are, and
  * pinned to `workflow/labels.json` by the suite.
@@ -1256,6 +1271,34 @@ export const moveIssueStatus = async (move, ctx = {}) => {
   // the board puts the card back where it was.
   if (!checked.ok) return { ok: false, data: null, status: 400, reason: checked.reason };
   const { repo, number, from, to } = checked;
+
+  // The proof gate, before anything is written: the endpoint reads the same
+  // comments for the same status and refuses in the same words, and the hooks
+  // hold it on the shell path. A read that fails is returned as itself - a
+  // refusal, never a pass, and a token problem the runtime can still route.
+  if (to === PROOF_GATED) {
+    // One page is enough: an issue with more than a hundred comments is not one
+    // this board moves, and the miss would refuse the move rather than pass it,
+    // which is the direction a gate fails in. The file pages GraphQL lists by
+    // cursor; REST has no such reader here to borrow.
+    const seen = await rest(`/repos/${repo}/issues/${number}/comments?per_page=100`, ctx);
+    if (!seen.ok) {
+      return {
+        ...seen,
+        reason: `the proof on issue #${number} could not be read (${seen.reason}), so the move to status:complete was refused. Nothing was changed.`,
+      };
+    }
+    const proved = Array.isArray(seen.data)
+      && seen.data.some((comment) => PROOF_LINE.test(String((comment && comment.body) || '')));
+    if (!proved) {
+      return {
+        ok: false,
+        data: null,
+        status: seen.status,
+        reason: `issue #${number} carries no comment whose line starts with "Proof:", so it cannot move to status:complete. Park it with a Proof: comment first, one entry per layer, then move the card.`,
+      };
+    }
+  }
 
   const read = await rest(`/repos/${repo}/issues/${number}`, ctx);
   if (!read.ok) return read;

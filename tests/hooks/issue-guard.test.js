@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 //
-// Tests for hooks/safety/issue-guard — the PreToolUse hook that blocks a
+// Tests for hooks/safety/issue-guard: the PreToolUse hook that blocks a
 // `gh issue create|comment|edit` or `gh pr create|comment|edit|merge` whose
 // outbound text carries a secret: a value from a local .env file, or a
 // token-shaped string. Every repo is assumed public (docs/project-state.md →
@@ -34,7 +34,7 @@ const PLACEHOLDER = 'your-api-key-here-1234';
 fs.writeFileSync(path.join(CWD, '.env.example'), `API_SECRET=${PLACEHOLDER}\n`);
 
 // A git repo whose .env sits at the ROOT while the session stands in a
-// subdirectory — the case that made value matching go blind. Realpath'd so the
+// subdirectory: the case that made value matching go blind. Realpath'd so the
 // git toplevel and the cwd are the same string on macOS.
 const REPO = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'issue-guard-repo-')));
 spawnSync('git', ['init', '-q'], { cwd: REPO });
@@ -59,7 +59,7 @@ const runHook = (command, cwd = CWD) => {
 const run = async () => {
   group('issue-guard: blocked outbound text');
 
-  await test('gh issue create carrying a .env value — exit 2, names the KEY not the value', () => {
+  await test('gh issue create carrying a .env value: exit 2, names the KEY not the value', () => {
     const { code, stderr } = runHook(`gh issue create --title "auth fails" --body "the token is ${SECRET}"`);
     assertEq(code, 2, 'a verbatim .env value must block');
     assert(stderr.includes('issue-guard'), 'names itself');
@@ -68,7 +68,7 @@ const run = async () => {
     assert(stderr.includes('public'), 'states where sensitive context belongs');
   });
 
-  await test('GitHub token shape — exit 2, names the kind not the match', () => {
+  await test('GitHub token shape: exit 2, names the kind not the match', () => {
     const token = `ghp_${'A1b2C3d4E5f6G7h8I9j0'}`;
     const { code, stderr } = runHook(`gh issue comment 12 --body "use ${token} to retry"`);
     assertEq(code, 2, 'a ghp_ token must block');
@@ -76,7 +76,7 @@ const run = async () => {
     assert(!stderr.includes(token), 'never echoes the match');
   });
 
-  await test('other token shapes — exit 2', () => {
+  await test('other token shapes: exit 2', () => {
     const cases = [
       ['sk-', `sk-${'aB3'.repeat(8)}`],
       ['AIza', `AIza${'Sy0aBcDeFgHiJkLmNoPq'}`],
@@ -90,14 +90,14 @@ const run = async () => {
     }
   });
 
-  await test('long high-entropy run — exit 2', () => {
+  await test('long high-entropy run: exit 2', () => {
     const blob = 'aB3'.repeat(15); // 45 chars, mixed case with digits
     const { code, stderr } = runHook(`gh issue edit 7 --body "key ${blob}"`);
     assertEq(code, 2, 'a 40+ char mixed-case run must block');
     assert(stderr.includes('high-entropy'), 'names the kind');
   });
 
-  await test('--body-file CONTENT is scanned — exit 2', () => {
+  await test('--body-file CONTENT is scanned: exit 2', () => {
     const file = path.join(CWD, 'body.md');
     fs.writeFileSync(file, `## Description\n\nthe key is ${SECRET}\n`);
     const { code, stderr } = runHook('gh issue create --title "x" --body-file body.md');
@@ -105,7 +105,7 @@ const run = async () => {
     assert(stderr.includes('API_SECRET'), 'names the key from the file content');
   });
 
-  await test('-F is the same body-file flag and its CONTENT is scanned — exit 2', () => {
+  await test('-F is the same body-file flag and its CONTENT is scanned: exit 2', () => {
     const file = path.join(CWD, 'short-body.md');
     fs.writeFileSync(file, `the key is ${SECRET}\n`);
     for (const c of ['gh issue create --title "x" -F short-body.md', 'gh issue comment 12 -F=short-body.md']) {
@@ -115,7 +115,7 @@ const run = async () => {
     }
   });
 
-  await test('gh pr merge and gh pr create are gated too — exit 2', () => {
+  await test('gh pr merge and gh pr create are gated too: exit 2', () => {
     for (const c of [
       `gh pr merge 3 --body "token ghp_${'A1b2C3d4E5f6G7h8I9j0'}"`,
       `gh pr create --title "fix" --body "token ghp_${'A1b2C3d4E5f6G7h8I9j0'}"`,
@@ -124,7 +124,7 @@ const run = async () => {
     }
   });
 
-  await test('close and reopen post free text too — exit 2 (verifier finding)', () => {
+  await test('close and reopen post free text too: exit 2 (verifier finding)', () => {
     const token = `ghp_${'A1b2C3d4E5f6G7h8I9j0'}`;
     for (const c of [
       `gh issue close 5 --comment "the fix used ${token}"`,
@@ -140,10 +140,10 @@ const run = async () => {
   group('issue-guard: the GraphQL door');
 
   // The shape workflow/discussions.sh sends, with the body inline rather than
-  // from a file — the same mutation either way.
+  // from a file: the same mutation either way.
   const mutation = (body) => [
     'gh api graphql',
-    '-f repoId="R_kg1" -f catId="DIC_kw1" -f title="Daily — 2026-07-29"',
+    '-f repoId="R_kg1" -f catId="DIC_kw1" -f title="Daily: 2026-07-29"',
     `-f body='${body}'`,
     "-f query='mutation($repoId:ID!,$catId:ID!,$title:String!,$body:String!){",
     '  createDiscussion(input:{repositoryId:$repoId, categoryId:$catId, title:$title, body:$body}){',
@@ -152,14 +152,14 @@ const run = async () => {
     "}'",
   ].join(' ');
 
-  await test('createDiscussion carrying a .env value — exit 2, names the KEY', () => {
+  await test('createDiscussion carrying a .env value: exit 2, names the KEY', () => {
     const { code, stderr } = runHook(mutation(`## Went well\n\nthe token is ${SECRET}`));
     assertEq(code, 2, 'the summary path is an outbound write like any other');
     assert(stderr.includes('API_SECRET'), 'names the key');
     assert(!stderr.includes(SECRET), 'never echoes the value');
   });
 
-  await test('a token shape in the mutation body — exit 2, names the kind', () => {
+  await test('a token shape in the mutation body: exit 2, names the kind', () => {
     const token = `ghp_${'A1b2C3d4E5f6G7h8I9j0'}`;
     const { code, stderr } = runHook(mutation(`the run used ${token}`));
     assertEq(code, 2, 'a ghp_ token must block here too');
@@ -167,7 +167,7 @@ const run = async () => {
     assert(!stderr.includes(token), 'never echoes the match');
   });
 
-  await test('the -F body=@file form is dereferenced — exit 2 (what discussions.sh sends)', () => {
+  await test('the -F body=@file form is dereferenced: exit 2 (what discussions.sh sends)', () => {
     const file = path.join(CWD, 'summary.md');
     fs.writeFileSync(file, `## Went well\n\nthe key is ${SECRET}\n`);
     const cmd = mutation('placeholder').replace("-f body='placeholder'", `-F body="@${file}"`);
@@ -176,7 +176,7 @@ const run = async () => {
     assert(stderr.includes('API_SECRET'), 'names the key from the file content');
   });
 
-  await test('the --field body=@file long form is dereferenced too — exit 2 (verifier finding)', () => {
+  await test('the --field body=@file long form is dereferenced too: exit 2 (verifier finding)', () => {
     const file = path.join(CWD, 'long-form-summary.md');
     fs.writeFileSync(file, `## Went well\n\nthe key is ${SECRET}\n`);
     for (const flag of ['--field', '--raw-field']) {
@@ -187,7 +187,7 @@ const run = async () => {
     }
   });
 
-  await test('a clean --field mutation — exit 0', () => {
+  await test('a clean --field mutation: exit 0', () => {
     const file = path.join(CWD, 'clean-summary.md');
     fs.writeFileSync(file, '## Went well\n\nThe suite is green.\n');
     const cmd = mutation('placeholder').replace("-f body='placeholder'", `--field body=@${file}`);
@@ -196,13 +196,13 @@ const run = async () => {
     assertEq(stderr, '', 'silent');
   });
 
-  await test('a clean createDiscussion — exit 0', () => {
+  await test('a clean createDiscussion: exit 0', () => {
     const { code, stderr } = runHook(mutation('## Went well\n\nThe suite is green.'));
     assertEq(code, 0, `ordinary summary prose publishes, got: ${stderr}`);
     assertEq(stderr, '', 'silent');
   });
 
-  await test('other discussion and issue mutations are gated — exit 2', () => {
+  await test('other discussion and issue mutations are gated: exit 2', () => {
     const token = `ghp_${'A1b2C3d4E5f6G7h8I9j0'}`;
     for (const op of ['addDiscussionComment', 'createIssue', 'updateIssue', 'addComment']) {
       const cmd = `gh api graphql -f body='${token}' -f query='mutation{ ${op}(input:{body:$body}){ clientMutationId } }'`;
@@ -210,7 +210,7 @@ const run = async () => {
     }
   });
 
-  await test('a plain GraphQL query — exit 0, reads are never gated', () => {
+  await test('a plain GraphQL query: exit 0, reads are never gated', () => {
     const query = [
       'gh api graphql -f owner="ITW-Creative-Works" -f name="workkit"',
       "-f query='query($owner:String!,$name:String!){",
@@ -222,14 +222,14 @@ const run = async () => {
     assertEq(code, 0, `a read writes nothing, got: ${stderr}`);
   });
 
-  await test('a GraphQL query naming a repository mutation-free field — exit 0', () => {
+  await test('a GraphQL query naming a repository mutation-free field: exit 0', () => {
     const { code, stderr } = runHook("gh api graphql -f query='{ viewer { login } }'");
     assertEq(code, 0, `an anonymous operation is a query, got: ${stderr}`);
   });
 
   group('issue-guard: the REST door');
 
-  await test('a POST creating an issue with a .env value — exit 2, names the KEY', () => {
+  await test('a POST creating an issue with a .env value: exit 2, names the KEY', () => {
     const { code, stderr } = runHook(
       `gh api -X POST repos/owner/name/issues -f title="auth fails" -f body="the token is ${SECRET}"`);
     assertEq(code, 2, 'REST is the same egress as gh issue create');
@@ -237,7 +237,7 @@ const run = async () => {
     assert(!stderr.includes(SECRET), 'never echoes the value');
   });
 
-  await test('a PATCH carrying a token shape — exit 2, names the kind', () => {
+  await test('a PATCH carrying a token shape: exit 2, names the kind', () => {
     const token = `ghp_${'A1b2C3d4E5f6G7h8I9j0'}`;
     const { code, stderr } = runHook(
       `gh api --method PATCH /repos/owner/name/issues/12 -f body="use ${token} to retry"`);
@@ -246,7 +246,7 @@ const run = async () => {
     assert(!stderr.includes(token), 'never echoes the match');
   });
 
-  await test('every issue and pull endpoint shape — exit 2', () => {
+  await test('every issue and pull endpoint shape: exit 2', () => {
     const token = `ghp_${'A1b2C3d4E5f6G7h8I9j0'}`;
     for (const p of [
       'repos/owner/name/issues',
@@ -264,8 +264,8 @@ const run = async () => {
     }
   });
 
-  await test('no method flag at all is the implied POST gh makes — exit 2', () => {
-    // gh's method is GET until a field is given, and then it is POST — so a call
+  await test('no method flag at all is the implied POST gh makes: exit 2', () => {
+    // gh's method is GET until a field is given, and then it is POST, so a call
     // with a body and no -X is a write, and the guard reads it as one.
     const { code, stderr } = runHook(
       `gh api repos/owner/name/issues/12/comments -f body="the key is ${SECRET}"`);
@@ -273,7 +273,7 @@ const run = async () => {
     assert(stderr.includes('API_SECRET'), 'names the key');
   });
 
-  await test('--input CONTENT is dereferenced — exit 2', () => {
+  await test('--input CONTENT is dereferenced: exit 2', () => {
     const file = path.join(CWD, 'rest-body.json');
     fs.writeFileSync(file, `{ "body": "the key is ${SECRET}" }\n`);
     const { code, stderr } = runHook(
@@ -282,7 +282,7 @@ const run = async () => {
     assert(stderr.includes('API_SECRET'), 'names the key from the file content');
   });
 
-  await test('-F body=@file is dereferenced on the REST door too — exit 2', () => {
+  await test('-F body=@file is dereferenced on the REST door too: exit 2', () => {
     const file = path.join(CWD, 'rest-comment.md');
     fs.writeFileSync(file, `the key is ${SECRET}\n`);
     const { code, stderr } = runHook(
@@ -291,7 +291,7 @@ const run = async () => {
     assert(stderr.includes('API_SECRET'), 'names the key from the file content');
   });
 
-  await test('reads of the same paths — exit 0', () => {
+  await test('reads of the same paths: exit 0', () => {
     const token = `ghp_${'A1b2C3d4E5f6G7h8I9j0'}`;
     for (const c of [
       'gh api repos/owner/name/issues',
@@ -301,33 +301,33 @@ const run = async () => {
       `gh api repos/owner/name/issues/12 --jq .body -H "Authorization: token ${token}"`,
     ]) {
       const { code, stderr } = runHook(c);
-      assertEq(code, 0, `a read is never gated: ${c} — ${stderr}`);
+      assertEq(code, 0, `a read is never gated: ${c}: ${stderr}`);
     }
   });
 
-  await test('a body whose PROSE says -X GET does not disarm the scan — exit 2', () => {
+  await test('a body whose PROSE says -X GET does not disarm the scan: exit 2', () => {
     const { code, stderr } = runHook(
       `gh api repos/owner/name/issues/1/comments -f body='try curl -X GET foo: ${SECRET}'`);
     assertEq(code, 2, 'the method flag is read before the first field, never from a field value');
     assert(stderr.includes('API_SECRET'), 'names the key');
   });
 
-  await test('a read chained with a write in one command is still a write — exit 2', () => {
+  await test('a read chained with a write in one command is still a write: exit 2', () => {
     const { code, stderr } = runHook(
       `gh api -X GET repos/owner/name/issues > /tmp/x.json && gh api repos/owner/name/issues -f body="${SECRET}"`);
     assertEq(code, 2, 'the read exemption only speaks for a single gh api call');
     assert(stderr.includes('API_SECRET'), 'names the key');
   });
 
-  await test('a POST to a path that is not issues or pulls — exit 0', () => {
+  await test('a POST to a path that is not issues or pulls: exit 0', () => {
     const token = `ghp_${'A1b2C3d4E5f6G7h8I9j0'}`;
     for (const p of ['repos/owner/name/dispatches', 'repos/owner/name/actions/workflows/brief.yml/dispatches']) {
       const { code, stderr } = runHook(`gh api -X POST ${p} -f ref="${token}"`);
-      assertEq(code, 0, `nothing public-facing is written there: ${p} — ${stderr}`);
+      assertEq(code, 0, `nothing public-facing is written there: ${p}: ${stderr}`);
     }
   });
 
-  await test('a clean REST comment — exit 0', () => {
+  await test('a clean REST comment: exit 0', () => {
     const { code, stderr } = runHook(
       'gh api -X POST repos/owner/name/issues/12/comments -f body="specced, building now"');
     assertEq(code, 0, `ordinary comment prose posts, got: ${stderr}`);
@@ -336,7 +336,7 @@ const run = async () => {
 
   group('issue-guard: the repo root .env');
 
-  await test("a root .env value, from a subdirectory cwd — exit 2, names the KEY", () => {
+  await test("a root .env value, from a subdirectory cwd: exit 2, names the KEY", () => {
     const { code, stderr } = runHook(
       `gh issue comment 12 --body "it failed with ${ROOT_SECRET}"`, SUB);
     assertEq(code, 2, "the repo root's values are loaded from a subdirectory too");
@@ -344,26 +344,26 @@ const run = async () => {
     assert(!stderr.includes(ROOT_SECRET), 'never echoes the value');
   });
 
-  await test("the subdirectory's own .env is still scanned — exit 2", () => {
+  await test("the subdirectory's own .env is still scanned: exit 2", () => {
     const { code, stderr } = runHook(
       `gh issue comment 12 --body "it failed with ${SUB_SECRET}"`, SUB);
     assertEq(code, 2, 'the cwd scan is unchanged');
     assert(stderr.includes('SUB_TOKEN'), 'names the key');
   });
 
-  await test('standing AT the repo root — exit 2, the one scan still catches it', () => {
+  await test('standing AT the repo root: exit 2, the one scan still catches it', () => {
     const { code, stderr } = runHook(
       `gh issue comment 12 --body "it failed with ${ROOT_SECRET}"`, REPO);
     assertEq(code, 2, 'toplevel == cwd is scanned once and still blocks');
     assert(stderr.includes('ROOT_TOKEN'), 'names the key');
   });
 
-  await test('clean text from a subdirectory — exit 0', () => {
+  await test('clean text from a subdirectory: exit 0', () => {
     const { code, stderr } = runHook('gh issue comment 12 --body "specced, building now"', SUB);
     assertEq(code, 0, `the root scan adds no false block, got: ${stderr}`);
   });
 
-  await test('a cwd in no repo at all — exit 0, the toplevel lookup never errors', () => {
+  await test('a cwd in no repo at all: exit 0, the toplevel lookup never errors', () => {
     const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'issue-guard-norepo-'));
     const { code, stderr } = runHook('gh issue create --title "x" --body "plain text"', bare);
     assertEq(code, 0, `no repo → just the cwd scan, got: ${stderr}`);
@@ -372,26 +372,26 @@ const run = async () => {
 
   group('issue-guard: allowed');
 
-  await test('clean gh issue close --comment — exit 0', () => {
+  await test('clean gh issue close --comment: exit 0', () => {
     const { code, stderr } = runHook('gh issue close 57 --comment "done"');
     assertEq(code, 0, 'a clean closing comment passes');
     assertEq(stderr, '', 'silent');
   });
 
-  await test('clean gh issue comment — exit 0', () => {
-    const { code, stderr } = runHook('gh issue comment 57 --body "specced — the guard blocks the outbound write"');
+  await test('clean gh issue comment: exit 0', () => {
+    const { code, stderr } = runHook('gh issue comment 57 --body "specced: the guard blocks the outbound write"');
     assertEq(code, 0, 'clean text passes');
     assertEq(stderr, '', 'silent');
   });
 
-  await test('40-char lowercase-hex sha — exit 0 (false-positive guard)', () => {
+  await test('40-char lowercase-hex sha: exit 0 (false-positive guard)', () => {
     const sha = 'a94a8fe5ccb19ba61c4c0873d391e987982fbbd3';
     assertEq(sha.length, 40, 'fixture is a real sha length');
     const { code, stderr } = runHook(`gh issue comment 12 --body "fixed in ${sha}"`);
     assertEq(code, 0, `commit shas must never bounce, got: ${stderr}`);
   });
 
-  await test('cross-repo links, absolute paths and long branch names — exit 0 (verifier finding)', () => {
+  await test('cross-repo links, absolute paths and long branch names: exit 0 (verifier finding)', () => {
     // The entropy class used to include / and -, so every one of these read as
     // one 40+ char mixed-case run. The spec REQUIRES cross-repo links in issue
     // bodies, which made this the guard's fatal false positive.
@@ -408,24 +408,24 @@ const run = async () => {
     assertEq(code, 0, `a long branch name in a PR body must pass, got: ${stderr}`);
   });
 
-  await test('a placeholder from .env.example — exit 0 (verifier finding)', () => {
+  await test('a placeholder from .env.example: exit 0 (verifier finding)', () => {
     const { code, stderr } = runHook(`gh issue comment 12 --body "set API_SECRET=${PLACEHOLDER} locally"`);
     assertEq(code, 0, `example/template files hold public placeholders, got: ${stderr}`);
   });
 
-  await test('non-secret .env values are not matched — exit 0', () => {
+  await test('non-secret .env values are not matched: exit 0', () => {
     for (const v of ['true', '3000', 'abc', 'http://localhost:8693']) {
       const { code, stderr } = runHook(`gh issue comment 12 --body "the value is ${v} here"`);
       assertEq(code, 0, `"${v}" must not block, got: ${stderr}`);
     }
   });
 
-  await test('non-gh command carrying a .env value — exit 0', () => {
+  await test('non-gh command carrying a .env value: exit 0', () => {
     const { code } = runHook(`echo "${SECRET}" >> notes.txt`);
     assertEq(code, 0, 'only gh issue/pr writes are gated');
   });
 
-  await test('read-only gh commands — exit 0', () => {
+  await test('read-only gh commands: exit 0', () => {
     for (const c of ['gh issue list --label status:inbox', `gh issue view 57 --json body`]) {
       assertEq(runHook(c).code, 0, `must pass: ${c}`);
     }
@@ -442,7 +442,7 @@ const run = async () => {
       'the Bash block routes safety:issue-guard through the loader');
   });
 
-  await test('missing command — exit 0', () => {
+  await test('missing command: exit 0', () => {
     const res = spawnSync('bash', [HOOK], {
       input: JSON.stringify({ tool_input: {} }),
       env: { ...process.env, HOME: os.homedir() },
@@ -452,7 +452,7 @@ const run = async () => {
     assertEq(res.status, 0, 'no command → fail open');
   });
 
-  await test('malformed JSON — exit 0', () => {
+  await test('malformed JSON: exit 0', () => {
     const res = spawnSync('bash', [HOOK], {
       input: 'not json',
       env: { ...process.env, HOME: os.homedir() },
@@ -462,7 +462,7 @@ const run = async () => {
     assertEq(res.status, 0, 'bad input → fail open');
   });
 
-  await test('a cwd with no .env at all — exit 0', () => {
+  await test('a cwd with no .env at all: exit 0', () => {
     const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'issue-guard-bare-'));
     const { code, stderr } = runHook('gh issue create --title "x" --body "plain text"', empty);
     assertEq(code, 0, `no .env is not an error, got: ${stderr}`);

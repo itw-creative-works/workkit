@@ -1,12 +1,12 @@
 //
 // Tests for jobs/morning.sh as a GITHUB ACTIONS RUNNER runs it (issues #82,
-// #107) — the same script the 9am launchd job runs, in the environment where
+// #107): the same script the 9am launchd job runs, in the environment where
 // the brief is the step that can happen and the summaries and the publish are
 // named skips. The machine leg is morning-local.test.js.
 //
 // The runner is executed for real against a scratch HOME and a PATH farm: a
 // fake `claude` recording the argument vector it was given, a recording
-// notifier, and a `gh` that answers the two APIs this path speaks — the
+// notifier, and a `gh` that answers the two APIs this path speaks: the
 // contents API it reads the published slug list from, and the Discussions
 // GraphQL it publishes through. `git`, `jq` and `node` are the real ones,
 // because the roster this script writes is only worth asserting if the tower's
@@ -41,21 +41,21 @@ const today = () => new Date().toLocaleDateString('en-CA');
  * A scratch HOME, a fake `claude` printing `response` and exiting `status`, and
  * a `gh` that answers the contents API and the Discussions GraphQL.
  *
- * `githubRepo` is GITHUB_REPOSITORY — the repo the run belongs to, which since
+ * `githubRepo` is GITHUB_REPOSITORY: the repo the run belongs to, which since
  * issue #91 IS the home repo, because the workflow lives on it. Null leaves it
  * unset.
- * `settings` is a settings file to plant before the run — the configured runner
+ * `settings` is a settings file to plant before the run: the configured runner
  * whose file must win over the env var.
- * `siteRepos` is what the home repo's default branch carries as data/repos.json
- * — private, where gh-pages would be public (issue #110); null is the file being
+ * `siteRepos` is what the home repo's default branch carries as data/repos.json,
+ * private, where gh-pages would be public (issue #110); null is the file being
  * absent, which is publishing that is off or has never run.
- * `defaultBranch` is what GitHub answers for the home repo's default branch —
+ * `defaultBranch` is what GitHub answers for the home repo's default branch:
  * the ref the roster is read from, asked for rather than assumed (issue #112).
  * `posted` is what the home repo's discussions already carry, as
- * `{ title, body }` — the check-before-post guard's input, and the cursor's.
+ * `{ title, body }`: the check-before-post guard's input, and the cursor's.
  * `ghFails` makes every API call refuse.
  * `boardBroken` makes the board sweep answer a per-repo error for the first
- * repo — a token whose reach does not cover it.
+ * repo: a token whose reach does not cover it.
  * `ccChangelog` is the upstream CHANGELOG the news read is pointed at.
  */
 const mkWorld = ({
@@ -84,7 +84,7 @@ const mkWorld = ({
     '#!/usr/bin/env bash',
     recordArgv(claudeLog),
     // %b, not %s: the escapes JSON.stringify wrote have to become real newlines.
-    // A send that failed says so on stderr, the way the CLI does — the runner
+    // A send that failed says so on stderr, the way the CLI does: the runner
     // logs that and never the digest.
     `printf '%b' ${JSON.stringify(response)}${status === 0 ? '' : ' >&2'}`,
     `exit ${status}`,
@@ -124,12 +124,12 @@ const mkWorld = ({
     `  *.default_branch*) printf 'branch %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
     'esac',
     'case "$all" in',
-    // The default branch, asked for before the roster is read (issue #112) —
+    // The default branch, asked for before the roster is read (issue #112):
     // `gh api ... -q .default_branch` answers the bare string.
     `  *.default_branch*) printf '%s\\n' ${JSON.stringify(defaultBranch)} ;;`,
     `  *contents/data/repos.json\\?ref=${defaultBranch}*)`,
     ...(encoded
-      // Wrapped at 60 characters, the way GitHub serves it — a decoder that
+      // Wrapped at 60 characters, the way GitHub serves it: a decoder that
       // cannot take the newlines would pass against one long line.
       // %b, not %s: the escapes JSON.stringify wrote have to become real
       // newlines, or the wrap proves nothing.
@@ -142,7 +142,7 @@ const mkWorld = ({
     `    printf '%s' '{"data":{"repository":{"id":"R_kdt","hasDiscussionsEnabled":true,"discussionCategories":{"nodes":[{"id":"DIC_0","name":"General"}]}}}}' ;;`,
     // The board sweep. A repo the token cannot read comes back as a per-repo
     // error beside the data, and real `gh` exits non-zero when an errors array
-    // is present — the shape the composer's warning is about.
+    // is present: the shape the composer's warning is about.
     '  *"issues(states: OPEN"*)',
     ...(boardBroken
       ? [
@@ -160,7 +160,7 @@ const mkWorld = ({
   fs.chmodSync(path.join(bin, 'gh'), 0o755);
 
   // The upstream CHANGELOG the news read is pointed at. `/dev/null` is the
-  // module's silent-skip path — an empty body, no version, no line.
+  // module's silent-skip path: an empty body, no version, no line.
   let ccSource = 'file:///dev/null';
   if (ccChangelog) {
     const file = path.join(root, 'cc-changelog.md');
@@ -196,7 +196,7 @@ const mkWorld = ({
       const file = path.join(home, '.workkit', 'settings.json');
       return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
     },
-    // The roster read back the way the composers read it — the only assertion
+    // The roster read back the way the composers read it: the only assertion
     // that proves the synthetic checkouts are ones they accept.
     roster: () => discoverRepos({ workflowHome: path.join(home, '.workkit'), home }),
     calls: () => readArgv(claudeLog),
@@ -205,7 +205,7 @@ const mkWorld = ({
     created: () => readArgv(ghLog).filter((c) => c.join(' ').includes('createDiscussion')),
     postedBody: () => (fs.existsSync(bodyLog) ? fs.readFileSync(bodyLog, 'utf8') : ''),
     // The token each kind of call carried, as `{ post, sweep, roster }` of the
-    // values seen — a Set per kind, so a leak between them is visible.
+    // values seen: a Set per kind, so a leak between them is visible.
     tokens: (kind) => {
       const lines = fs.existsSync(tokenLog) ? fs.readFileSync(tokenLog, 'utf8').split('\n') : [];
       return [...new Set(lines.filter((l) => l.startsWith(`${kind} `)).map((l) => l.slice(kind.length + 1)))];
@@ -218,7 +218,10 @@ const mkWorld = ({
 // /usr/bin, dropping its directory would take every other tool with it. A farm
 // of symlinks to exactly what the run needs BEFORE it asks for jq is the honest
 // shape of the missing tool.
-const NO_JQ_TOOLS = ['bash', 'dirname', 'mktemp', 'mkdir', 'rm', 'cat'];
+// `date` is on the list because every line the job prints is stamped with it
+// (issue #237): a PATH without it is a shell that cannot log, not a machine
+// missing jq.
+const NO_JQ_TOOLS = ['bash', 'dirname', 'mktemp', 'mkdir', 'rm', 'cat', 'date'];
 const withoutJq = (root, bin) => {
   const farm = path.join(root, 'no-jq');
   fs.mkdirSync(farm, { recursive: true });
@@ -238,7 +241,7 @@ const runJob = (world, args = []) => spawnSync('bash', [SCRIPT, ...args], {
 const run = async () => {
   group('jobs/morning (cloud): shape');
 
-  await test('bash -n — no syntax errors', () => {
+  await test('bash -n: no syntax errors', () => {
     const res = spawnSync('bash', ['-n', SCRIPT], { encoding: 'utf8' });
     assertEq(res.status, 0, `bash -n: ${res.stderr}`);
   });
@@ -247,34 +250,34 @@ const run = async () => {
     assert(fs.statSync(SCRIPT).mode & 0o111, 'the workflow runs it through bash, but a human runs it directly');
   });
 
-  await test('a runner runs the brief alone — every other step names its skip', () => {
+  await test('a runner runs the brief alone: every other step names its skip', () => {
     // The capability gates from the cloud side (issue #107): the summaries read
     // a machine's transcripts and git history, the publish builds the home
     // clone, and a runner has neither. A named skip is what tells that apart
     // from a step that quietly did nothing.
     const world = mkWorld();
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(/summaries: a GitHub Actions runner has no session transcripts/.test(res.stdout),
       `the summaries step names its skip: ${res.stdout}`);
-    assert(!fs.existsSync(world.nightlyLog), 'and never started — there is no day here to write up');
+    assert(!fs.existsSync(world.nightlyLog), 'and never started: there is no day here to write up');
     assert(/publish: the site is built from the home clone/.test(res.stdout),
       `the publish names its skip: ${res.stdout}`);
     // Issue #173: the stale-brief marker is read at session start on a MACHINE,
-    // and a runner's home dies with the job — there is nobody there to leave it
+    // and a runner's home dies with the job: there is nobody there to leave it
     // for, and a marker written into that home would be thrown away unread.
     assert(/marker: the brief marker is read at session start on a machine/.test(res.stdout),
       `the marker step names its skip: ${res.stdout}`);
     assert(!fs.existsSync(path.join(world.workflowHome, 'brief-status.json')),
       'and nothing was written into the runner’s home');
-    assertEq(world.notifs().length, 0, 'and nothing was notified — there is no desktop');
+    assertEq(world.notifs().length, 0, 'and nothing was notified: there is no desktop');
     cleanup(world.root);
   });
 
   await test('a runner never reconciles the seeded copy it is running', () => {
     // Issue #143: the machine refreshes the home repo's `brief/` copies from its
     // checkout every morning. On a runner those copies ARE what is executing and
-    // there is no checkout to seed them from, so the step is a named skip — and
+    // there is no checkout to seed them from, so the step is a named skip, and
     // a home clone sitting where the machine's would be is left untouched.
     const world = mkWorld({ settings: { version: 1, site: { repo: HOME_SLUG } } });
     const remote = path.join(world.root, 'remote.git');
@@ -289,7 +292,7 @@ const run = async () => {
     world.env.WORKKIT_HOME_REMOTE = remote;
 
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(/runner: a runner IS the seeded copy of the cloud brief/.test(res.stdout),
       `the step names its skip: ${res.stdout}`);
     assertEq(fs.readFileSync(seeded, 'utf8'), '# last month’s runner\n',
@@ -300,7 +303,7 @@ const run = async () => {
   group('jobs/morning (cloud): a runner only');
 
   await test('off a runner the cloud steps never run, and the machine’s roster is untouched', () => {
-    // The synthetic machine REPLACES what is in ~/.workkit — on a laptop that is
+    // The synthetic machine REPLACES what is in ~/.workkit: on a laptop that is
     // every registered repo and every recorded decline, swapped for synthetic
     // cloud paths that would then live on the tower forever. GITHUB_ACTIONS is
     // the gate on all of it.
@@ -323,7 +326,7 @@ const run = async () => {
     delete env.GITHUB_ACTIONS;
     spawnSync('bash', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
 
-    assertEq(fs.readFileSync(roster, 'utf8'), before, 'the roster is byte-identical — nothing was registered or dropped');
+    assertEq(fs.readFileSync(roster, 'utf8'), before, 'the roster is byte-identical: nothing was registered or dropped');
     assertEq(world.calls().length, 0, 'and nothing was sent: the day is dispatched from a machine, never composed on it');
     assertEq(world.created().length, 0, 'nor published');
     cleanup(world.root);
@@ -336,7 +339,7 @@ const run = async () => {
     // the home and nothing has to be configured to say which one it is.
     const world = mkWorld();
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(world.settings().site.repo, HOME_SLUG, 'the repo the runner is standing in');
     assert(res.stdout.includes('settings: wrote'), `and it says it wrote it: ${res.stdout}`);
     cleanup(world.root);
@@ -348,14 +351,14 @@ const run = async () => {
       githubRepo: 'env/home',
     });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(world.settings().site.repo, 'configured/home', 'a configured runner is not rewritten');
     assert(world.roster().some((r) => r.slug === 'configured/home'), 'and that is the repo swept');
     cleanup(world.root);
   });
 
   await test('a missing jq is named as a missing tool, not as a missing home repo', () => {
-    // jq reads the home slug, so an absent one empties that read — the two
+    // jq reads the home slug, so an absent one empties that read: the two
     // refusals have to say which of them happened.
     const world = mkWorld();
     const env = { ...world.env, PATH: withoutJq(world.root, path.join(world.root, 'bin')) };
@@ -382,11 +385,11 @@ const run = async () => {
   });
 
   await test('the roster comes from the home repo’s own branch, and the composer reads it back', () => {
-    // Private, and read with the cross-repo token — never from gh-pages, which
+    // Private, and read with the cross-repo token, never from gh-pages, which
     // is public even on a private repo (issue #110).
     const world = mkWorld({ siteRepos: { repos: ['a/one', 'b/two', HOME_SLUG], home: HOME_SLUG } });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     const slugs = world.roster().map((r) => r.slug).sort();
     assertEq(slugs.join(','), ['a/one', 'b/two', HOME_SLUG].sort().join(','),
       `every slug on the list is on the roster: ${JSON.stringify(world.roster())}`);
@@ -398,14 +401,14 @@ const run = async () => {
   await test('the branch the roster is read from is asked for, never assumed to be main', () => {
     // Issue #112: the publish pushes whatever branch the home clone is on. The
     // published dashboard is told which one by data/home.json; a runner has no
-    // site to read that from, so it asks GitHub for the repo it is standing in —
+    // site to read that from, so it asks GitHub for the repo it is standing in:
     // a hardcoded `main` was a 404 and a silently home-only board.
     const world = mkWorld({
       defaultBranch: 'trunk',
       siteRepos: { repos: ['a/one', HOME_SLUG], home: HOME_SLUG },
     });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(world.ghCalls().some((argv) => argv.includes(`repos/${HOME_SLUG}/contents/data/repos.json?ref=trunk`)),
       `the roster is read from the branch GitHub named: ${fmtCalls(world.ghCalls())}`);
     assert(world.roster().some((r) => r.slug === 'a/one'),
@@ -417,7 +420,7 @@ const run = async () => {
   await test('no slug list falls back to the home repo alone, and still composes', () => {
     const world = mkWorld();
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     const slugs = world.roster().map((r) => r.slug);
     assertEq(slugs.join(','), HOME_SLUG, `the home repo, whose issues are the cross-project queue: ${slugs}`);
     assert(res.stdout.includes('sweeping the home repo alone'), `and it says so: ${res.stdout}`);
@@ -447,11 +450,15 @@ const run = async () => {
     // and not the rest, the brief reads clean, and only this line says so.
     const world = mkWorld({ boardBroken: true });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
-    assert(res.stdout.includes(`brief: 1 repos unreadable: ${HOME_SLUG}`), `the log names them: ${res.stdout}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
+    // The Actions log is both streams, and a line that needs a person is a
+    // WARNING, so it rides stderr the way every other warning in the kit does
+    // (issue #237).
+    assert(`${res.stdout}${res.stderr}`.includes(`brief: 1 repos unreadable: ${HOME_SLUG}`),
+      `the log names them: ${res.stdout}${res.stderr}`);
     const calls = world.calls();
     assertEq(calls.length, 1, 'the brief was still composed');
-    assert(calls[0][1].startsWith(INSTRUCTION), 'and the payload is untouched — the line never entered it');
+    assert(calls[0][1].startsWith(INSTRUCTION), 'and the payload is untouched: the line never entered it');
     cleanup(world.root);
   });
 
@@ -460,7 +467,7 @@ const run = async () => {
   await test('the digest is posted as a Discussion titled with the date', () => {
     const world = mkWorld({ ccChangelog: '# Changelog\n\n## 2.1.220\n\n- Added a `DirectoryAdded` hook\n' });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     const created = world.created();
     assertEq(created.length, 1, `one createDiscussion mutation: ${fmtCalls(world.ghCalls()).slice(0, 400)}`);
     assert(created[0].join(' ').includes(`title=brief: ${today()}`), 'the title carries the date');
@@ -493,9 +500,9 @@ const run = async () => {
   await test('the digest body never reaches the Actions log', () => {
     // The log belongs to a repo that could be public; the digest summarizes
     // private-repo issues. Proof of life is all the log gets.
-    const world = mkWorld({ response: 'HEADLINE: one thing today.\nIN FLIGHT: acme/secret #4 — the private thing.\n' });
+    const world = mkWorld({ response: 'HEADLINE: one thing today.\nIN FLIGHT: acme/secret #4: the private thing.\n' });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(!/acme\/secret/.test(res.stdout + res.stderr), `no digest body in the log: ${res.stdout}`);
     assert(/digest: HEADLINE: one thing today\./.test(res.stdout), `the headline is the proof of life: ${res.stdout}`);
     assert(/\(\d+ bytes\)/.test(res.stdout), `with how much there was of it: ${res.stdout}`);
@@ -525,8 +532,10 @@ const run = async () => {
   await test('a post that does not land is a red run', () => {
     const world = mkWorld({ ghFails: true });
     const res = runJob(world);
-    assertEq(res.status, 1, 'in the cloud the log IS the delivery — a silent failure is invisible');
-    assert(res.stdout.includes('nothing posted'), `and the run says what happened: ${res.stdout}`);
+    assertEq(res.status, 1, 'in the cloud the log IS the delivery: a silent failure is invisible');
+    // A post that did not land is the warning level, on stderr with the rest of
+    // them; the Actions log carries both streams (issue #237).
+    assert(res.stderr.includes('nothing posted'), `and the run says what happened: ${res.stdout}${res.stderr}`);
     cleanup(world.root);
   });
 
@@ -547,7 +556,7 @@ const run = async () => {
     // cross-repo secret is for the board, and only the board.
     const world = mkWorld({ siteRepos: { repos: ['a/one', HOME_SLUG], home: HOME_SLUG } });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(world.tokens('post').join(','), 'POST-TOKEN', 'the post carries the built-in token');
     assertEq(world.tokens('sweep').join(','), 'SWEEP-TOKEN', 'the board sweep carries the secret');
     assertEq(world.tokens('roster').join(','), 'SWEEP-TOKEN', 'and so does the published slug list');
@@ -561,7 +570,7 @@ const run = async () => {
     // token rather than as an absent one.
     const world = mkWorld({ postToken: null });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(world.tokens('post').join(','), 'SWEEP-TOKEN', 'the post falls back rather than losing its token');
     cleanup(world.root);
   });
@@ -569,7 +578,7 @@ const run = async () => {
   group('jobs/morning (cloud): the workflow that runs it');
 
   // The workflow is SEEDED onto the home repo (issue #91) and lives nowhere in
-  // this repo but here — the plugin is distributed, and a consumer cannot set
+  // this repo but here: the plugin is distributed, and a consumer cannot set
   // secrets on a repo they do not own.
   const WORKFLOW = path.join(__dirname, '..', '..', 'workflow', 'templates', 'github-workflows', 'brief.yml');
 

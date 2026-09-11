@@ -1,9 +1,9 @@
 //
-// Tests for jobs/brief-payload.js — the payload the 9am job hands to Claude.
+// Tests for jobs/brief-payload.js: the payload the 9am job hands to Claude.
 //
 // The whole composition runs here against a fixture roster: one
 // real, opted-in git repo and one fake exec answering `gh` while passing `git`
-// through to the real binary — the same seam the tower's server suite uses,
+// through to the real binary: the same seam the tower's server suite uses,
 // because roster discovery and health ask git questions no stub answers
 // honestly.
 //
@@ -28,7 +28,7 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
-// The upstream CHANGELOG the script reads, as a file on disk — the seam that
+// The upstream CHANGELOG the script reads, as a file on disk: the seam that
 // keeps the news gather off the network. cc-news.test.js owns the parsing and
 // filtering cases; this suite only asks whether the script wires it up.
 const CC_CHANGELOG = '\n## 2.1.219\n\n- Added the `workflowSizeGuideline` settings key\n';
@@ -43,7 +43,7 @@ const ccFixture = (home) => {
  * A world for the news path: a scratch HOME naming a home repo, a `gh` shim
  * that answers the board read out of a file this suite rewrites, the CHANGELOG
  * on disk, and the scratch mark file the runner would name. Nothing here
- * reaches GitHub — the shim is first on PATH and never calls out.
+ * reaches GitHub: the shim is first on PATH and never calls out.
  */
 const mkNewsWorld = () => {
   const home = mkTmp();
@@ -96,7 +96,7 @@ const issueNode = (number, labels) => ({
 
 /**
  * One opted-in repo with an origin, an unreleased CHANGELOG entry, and an
- * uncommitted file, registered in a scratch ~/.workkit roster — plus the exec
+ * uncommitted file, registered in a scratch ~/.workkit roster, plus the exec
  * seam that answers gh and lets git through.
  */
 const mkWorld = () => {
@@ -109,7 +109,7 @@ const mkWorld = () => {
   git(repo, 'remote', 'add', 'origin', `git@github.com:${SLUG}.git`);
   fs.mkdirSync(path.join(repo, '.workkit'), { recursive: true });
   fs.writeFileSync(path.join(repo, '.workkit', 'settings.json'), JSON.stringify({ version: 7, enabled: true }));
-  fs.writeFileSync(path.join(repo, 'CHANGELOG.md'), '# Changelog\n\n## [Unreleased]\n\n- [#1](u) — One thing.\n');
+  fs.writeFileSync(path.join(repo, 'CHANGELOG.md'), '# Changelog\n\n## [Unreleased]\n\n- [#1](u) \u2014 One thing.\n'); // \u2014 is the CHANGELOG entry separator (U+2014)
   git(repo, 'add', '-A');
   git(repo, 'commit', '-qm', 'initial');
   fs.writeFileSync(path.join(repo, 'scratch.txt'), 'uncommitted\n');
@@ -253,7 +253,7 @@ const run = async () => {
 
   await test('a built item waiting on the owner is its own section, and ranks above the specs', () => {
     // Issue #135: `status:qa` is the park a built item sits in until the owner
-    // checks it. The composed payload carries it exactly as the tower's does —
+    // checks it. The composed payload carries it exactly as the tower's does:
     // its own bucket and count, and actionable in nextUp under the decisions.
     const world = mkWorld();
     world.board.data.r0.issues.totalCount = 3;
@@ -269,7 +269,7 @@ const run = async () => {
 
   await test('a QA-passed item rides the morning as the thing that only needs shipping', () => {
     // Issue #196: the stage above qa. The composed payload carries it the way
-    // the tower's does — its own bucket and count, and actionable in nextUp
+    // the tower's does: its own bucket and count, and actionable in nextUp
     // under the decisions and above the check still to be given.
     const world = mkWorld();
     world.board.data.r0.issues.totalCount = 3;
@@ -329,7 +329,7 @@ const run = async () => {
   });
 
   await test('a machine with no home repo says nothing about summaries', () => {
-    // It has no board to have read — a fact about the machine, not a gap in
+    // It has no board to have read: a fact about the machine, not a gap in
     // this morning, and a line every day would be noise.
     const world = mkWorld();
     const stderr = captureStderr(() => composeIn(world, MONDAY));
@@ -359,7 +359,7 @@ const run = async () => {
     };
     let out;
     const stderr = captureStderr(() => { out = composeIn(world); });
-    assertEq(out.ok, true, 'the sweep itself answered — this is not a failed morning');
+    assertEq(out.ok, true, 'the sweep itself answered: this is not a failed morning');
     assertEq(stderr, `brief: 1 repos unreadable: ${SLUG}\n`, `the gap is said out loud: ${JSON.stringify(stderr)}`);
     cleanup(world.root);
   });
@@ -376,7 +376,7 @@ const run = async () => {
       generatedAt: STAMP,
       exec: () => { throw new Error('never called'); },
       // The read swallows an unreadable file, so the throw has to come from
-      // the argument itself — a getter is the one seam that reaches inside.
+      // the argument itself: a getter is the one seam that reaches inside.
       get workflowHome() { throw new Error('the workflow home could not be read'); },
     });
     assertEq(out.ok, false, 'the brief is not ok');
@@ -401,7 +401,7 @@ const run = async () => {
     const parsed = JSON.parse(json);
     assertEq(parsed.counts.open, 2, 'the counts round-trip');
     assertEq(parsed.headline, composeIn(world).headline, 'so does the headline');
-    assert(/\n  "counts": \{/.test(json), 'indented, not one line — a human reads this over a shoulder');
+    assert(/\n  "counts": \{/.test(json), 'indented, not one line: a human reads this over a shoulder');
     cleanup(world.root);
   });
 
@@ -439,7 +439,7 @@ const run = async () => {
       env: { ...process.env, HOME: home, WORKKIT_CC_CHANGELOG: `file://${ccFixture(home)}` },
     });
     cleanup(home);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(res.stdout.startsWith(INSTRUCTION), 'stdout leads with the instruction');
     const parsed = JSON.parse(res.stdout.slice(INSTRUCTION.length).split('--- CC NEWS ---')[0]);
     assert(typeof parsed.headline === 'string' && parsed.headline.length > 0, 'and carries a headline');
@@ -456,33 +456,33 @@ const run = async () => {
 
   await test('a first run prints no block and hands the runner the latest version', () => {
     // The cursor is a line in the latest published brief (issue #86), so the
-    // world here is an empty board and a scratch mark file — never the network.
+    // world here is an empty board and a scratch mark file, never the network.
     const world = mkNewsWorld();
     const first = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
-    assertEq(first.status, 0, `exit 0 — stderr: ${first.stderr}`);
+    assertEq(first.status, 0, `exit 0, stderr: ${first.stderr}`);
     // Past the instruction, which names the block it is explaining.
     assert(!/--- CC NEWS ---/.test(first.stdout.slice(INSTRUCTION.length)), 'the first morning does not dump the history');
     assertEq(world.mark().split('\n')[0], '<!-- cc-news: 2.1.219 -->', 'the version line the published brief will carry');
 
-    // The brief that publish would have made, now on the board — and a release
+    // The brief that publish would have made, now on the board, and a release
     // above it upstream.
     world.publish('2.1.219');
     fs.writeFileSync(world.ccFile, `# Changelog\n\n## 2.1.220\n\n- Added a \`DirectoryAdded\` hook\n- Bug fixes\n${CC_CHANGELOG}`);
     const second = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
-    assertEq(second.status, 0, `exit 0 — stderr: ${second.stderr}`);
+    assertEq(second.status, 0, `exit 0, stderr: ${second.stderr}`);
     assert(/--- CC NEWS ---/.test(second.stdout.slice(INSTRUCTION.length)), 'the new release is flagged');
-    assert(/\[hooks\]\n2\.1\.220 — Added a `DirectoryAdded` hook/.test(second.stdout), 'with the entry under its topic');
-    assert(/\[other\]\n2\.1\.220 — Bug fixes/.test(second.stdout), 'and the housekeeping rides under other — the digest judges, not the job');
+    assert(/\[hooks\]\n2\.1\.220: Added a `DirectoryAdded` hook/.test(second.stdout), 'with the entry under its topic');
+    assert(/\[other\]\n2\.1\.220: Bug fixes/.test(second.stdout), 'and the housekeeping rides under other: the digest judges, not the job');
     assertEq(world.mark().split('\n')[0], '<!-- cc-news: 2.1.220 -->', 'and the cursor the next brief publishes has advanced');
     cleanup(world.home);
   });
 
-  await test('the mark file carries both lines — the cursor and the day’s stats', () => {
+  await test('the mark file carries both lines: the cursor and the day’s stats', () => {
     // Issue #55: the runner appends this file verbatim under the digest, so
     // both lines the published brief is meant to carry leave together.
     const world = mkNewsWorld();
     const res = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     const lines = world.mark().trim().split('\n');
     assertEq(lines.length, 2, `two lines, got: ${world.mark()}`);
     assert(/^<!-- cc-news: /.test(lines[0]), `the cursor leads: ${lines[0]}`);
@@ -497,7 +497,7 @@ const run = async () => {
     const world = mkNewsWorld();
     const env = { ...world.env, WORKKIT_CC_CHANGELOG: 'file:///nowhere/at/all.md' };
     const res = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     const lines = world.mark().trim().split('\n');
     assertEq(lines.length, 1, `one line, got: ${world.mark()}`);
     assert(/^<!-- workkit-stats: /.test(lines[0]), `and it is the day's numbers: ${lines[0]}`);
@@ -543,7 +543,7 @@ const run = async () => {
     const env = { ...world.env };
     delete env.WORKKIT_BRIEF_MARK_FILE;
     const res = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(res.stdout.startsWith(INSTRUCTION), 'the payload printed');
     cleanup(world.home);
   });

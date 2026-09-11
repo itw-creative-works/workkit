@@ -1,4 +1,4 @@
-# Checks (workflow spec) — the test gate that runs on every pull request.
+# Checks (workflow spec): the test gate that runs on every pull request.
 # Making it a REQUIRED check is a repo setting (branch protection / ruleset)
 # a human turns on; until then it runs and reports, and the ship skill treats
 # a red run as unmergeable.
@@ -7,7 +7,7 @@
 # the workflow core's template.
 #
 # The job mirrors what the local safety/commit-gate hook runs: the npm test
-# suite. A repo without a test script passes trivially — the check exists so
+# suite. A repo without a test script passes trivially. The check exists so
 # a pull request from ANY author (cloud agent, collaborator, laptop without
 # the hooks) meets the same bar before merge.
 #
@@ -59,5 +59,5 @@ jobs:
           if [ -f CHANGELOG.md ]; then
             node .github/changelog-lint.cjs CHANGELOG.md --unreleased-only
           else
-            echo "no CHANGELOG.md — nothing to check"
+            echo "no CHANGELOG.md, nothing to check"
           fi

@@ -1,25 +1,25 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 //
-// CHANGELOG entry format — the single home for the rules (SSOT).
+// CHANGELOG entry format: the single home for the rules (SSOT).
 //
 // The layering: git history carries the full story (why, what was tried, what
 // review caught); the CHANGELOG is the index a human scans to answer "what
 // changed in this version, and does it affect me?". So an entry is one short
 // paragraph pointing at the depth, never a second copy of the commit body.
 //
-// Canonical shapes — every link in its short form, so the repo URL appears
+// Canonical shapes: every link in its short form, so the repo URL appears
 // nowhere in the file:
 //   [Unreleased]  - [#4](../../issues/4) — Plugins install from settings.json.
 //   released      - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [@who]! — Plugins install from settings.json.
 //
 // The commit link is derivable offline (remote URL + sha) so released sections
 // require it; the @handle needs the GitHub API, so it is generated when
-// resolvable and never demanded — an offline release still produces a valid
+// resolvable and never demanded. An offline release still produces a valid
 // CHANGELOG. Both are written by changelog-links.js, never by hand.
 //
 // Consumers: the docs/changelog-guard hook (write time, fast feedback) and the
-// safety/commit-gate hook (commit time, the authority — it sees hand edits too).
+// safety/commit-gate hook (commit time, the authority: it sees hand edits too).
 // Both call this module so the rule has one home.
 //
 // CLI:
@@ -28,7 +28,7 @@
 //                   repo with a legacy CHANGELOG is never bounced for history
 //     --staged      read the file from the index and diff the index vs HEAD
 //     --unreleased-only
-//                   judge only the [Unreleased] section — the CI mode. A
+//                   judge only the [Unreleased] section: the CI mode. A
 //                   runner has the whole file and no notion of which lines a
 //                   change added, and released history is already published,
 //                   so holding a pull request to it would bounce work that
@@ -52,24 +52,24 @@ const BULLET_RE = /^[-*+]\s+(.*)$/;
 // Links are written in their SHORT forms, so the repo URL appears nowhere in
 // the file: `../../issues/4` and `../../commit/<sha>` are relative links GitHub
 // resolves against the blob path, and `[@who]` is a shortcut reference whose one
-// definition sits at the bottom of the file. Absolute URLs still parse — a repo
-// migrating in keeps working — they are simply not what the generator writes.
+// definition sits at the bottom of the file. Absolute URLs still parse (a repo
+// migrating in keeps working). They are simply not what the generator writes.
 const ISSUE_LINK_RE = /\[#(\d+)\]\([^)\s]+\)/;
 const ISSUE_RE = /^(?:\[#\d+\]\([^)\s]+\)|\(no issue\))/;
 const COMMIT_RE = /\[`[0-9a-f]{7,40}`\]\([^)\s]+\)/;
 // The generated metadata run: the issue, then any commit links, then the
-// attribution. The separator is required immediately AFTER it — searching the
+// attribution. The separator is required immediately AFTER it. Searching the
 // whole entry for an em dash would accept prose that merely contains one.
 const META_RE = new RegExp(
   `^(?:\\[#\\d+\\]\\([^)\\s]+\\)|\\(no issue\\))`
   + `(?:\\s+\\[\`[0-9a-f]{7,40}\`\\]\\([^)\\s]+\\))*`
   + `(?:\\s+Thanks(?:\\s+\\[@[^\\]]+\\](?:\\([^)\\s]+\\))?)+!)?`,
 );
-const SEPARATOR = ' — ';
+const SEPARATOR = ' \u2014 '; // the CHANGELOG entry separator (U+2014)
 
 /**
  * Classify a `## [...]` heading. Only a semver-shaped label is a released
- * version — "any label with a digit" also caught prose headings like
+ * version: "any label with a digit" also caught prose headings like
  * `## [Plans for 2026]`, whose bullets then demanded commit links. Other `##`
  * headings (a prose section) are not changelog bodies and hold no entries.
  * @param {string} label the text inside the brackets
@@ -89,14 +89,14 @@ const sectionKind = (label) => {
  * Three things are deliberately not entries, because a guard that judges them
  * bounces correct work: anything inside a fenced code block (a file documenting
  * its own format), anything under a `##` heading that is not a version section
- * (a prose appendix), and any flush-left line after a bullet — which is what
+ * (a prose appendix), and any flush-left line after a bullet, which is what
  * keepachangelog's `[1.0.0]: <url>` reference footer is made of.
  * @param {string} text the whole file
  * @returns {Array<{line: number, endLine: number, section: string, kind: string, prose: string, multiParagraph: boolean}>}
  */
 const parseEntries = (text) => {
   // A CRLF file must parse identically: `$` sits before the `\r`, so every
-  // pattern here would miss and the whole file would read as zero entries —
+  // pattern here would miss and the whole file would read as zero entries,
   // a guard passing everything, silently.
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   const entries = [];
@@ -131,7 +131,7 @@ const parseEntries = (text) => {
     if (!bullet) continue;
 
     // Consume the wrapped continuation, which is always indented. A blank line
-    // ends the entry UNLESS indented content follows — that is a second
+    // ends the entry UNLESS indented content follows. That is a second
     // paragraph, which the one-paragraph rule reports rather than swallowing.
     const body = [bullet[1]];
     let multiParagraph = false;
@@ -173,7 +173,7 @@ const lintEntry = (entry) => {
   const fail = (rule, message) => found.push({ line: entry.line, rule, message });
 
   if (!ISSUE_RE.test(entry.prose)) {
-    fail('issue-link', 'must start with its issue link — `- [#4](../../issues/4) — text.` — or the literal `(no issue)` when there is none.');
+    fail('issue-link', 'must start with its issue link (`- [#4](../../issues/4) \u2014 text.`) or the literal `(no issue)` when there is none.');
   }
 
   // Anchor every metadata judgment to the generated run at the START of the
@@ -182,10 +182,10 @@ const lintEntry = (entry) => {
   const meta = META_RE.exec(entry.prose);
 
   // Only an entry naming its issue can be linked: the generator finds commits
-  // through their `Fixes #N` trailers. `(no issue)` therefore means no links —
+  // through their `Fixes #N` trailers. `(no issue)` therefore means no links,
   // a nudge toward filing one, never a demand for a hand-typed sha.
   if (entry.kind === 'released' && /^\[#\d+\]/.test(entry.prose) && !(meta && COMMIT_RE.test(meta[0]))) {
-    fail('commit-link', 'a released entry must carry its commit link (`[`1de1308`](…/commit/1de1308)`). Run changelog-links.js — the links are generated at release time, never typed.');
+    fail('commit-link', 'a released entry must carry its commit link (`[`1de1308`](…/commit/1de1308)`). Run changelog-links.js. The links are generated at release time, never typed.');
   }
 
   // Anchor the separator to the END of the metadata run, never to the first em
@@ -195,17 +195,17 @@ const lintEntry = (entry) => {
   const rest = meta ? entry.prose.slice(meta[0].length) : entry.prose;
   const separated = rest.startsWith(SEPARATOR);
   if (!separated) {
-    fail('separator', 'an em dash surrounded by spaces (` — `) goes between the links and the text.');
+    fail('separator', 'an em dash surrounded by spaces (` \u2014 `) goes between the links and the text.');
   }
 
   const prose = separated ? rest.slice(SEPARATOR.length) : rest;
   const words = prose.split(/\s+/).filter(Boolean).length;
   if (words > RULES.maxWords) {
-    fail('word-cap', `${words} words (max ${RULES.maxWords}) — say what changed and who it affects; the why, the evidence, and the journey stay in the commit message.`);
+    fail('word-cap', `${words} words (max ${RULES.maxWords}). Say what changed and who it affects; the why, the evidence, and the journey stay in the commit message.`);
   }
 
   if (entry.multiParagraph) {
-    fail('one-paragraph', 'one paragraph per entry — a second paragraph is detail that belongs in the commit message or the issue.');
+    fail('one-paragraph', 'one paragraph per entry. A second paragraph is detail that belongs in the commit message or the issue.');
   }
 
   return found;
@@ -232,7 +232,7 @@ const entryTouched = (entry, lines) => {
  * @param {Set<number>|null} onlyLines judge only entries touching these 1-based
  *   lines; null judges every entry
  * @param {boolean} unreleasedOnly judge only entries in the [Unreleased]
- *   section. Composes with onlyLines — both filters apply.
+ *   section. Composes with onlyLines. Both filters apply.
  * @returns {Array<{line: number, rule: string, message: string}>}
  */
 const lintText = (text, onlyLines = null, unreleasedOnly = false) => parseEntries(text)
@@ -247,7 +247,7 @@ const git = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8', st
  * A file git does not know about yet counts as entirely added.
  * @param {string} file absolute path
  * @param {boolean} staged compare the index (rather than the working tree) to HEAD
- * @returns {Set<number>|null} null when git cannot answer — the caller then judges everything
+ * @returns {Set<number>|null} null when git cannot answer. The caller then judges everything
  */
 const addedLines = (file, staged) => {
   const cwd = path.dirname(file);
@@ -294,7 +294,7 @@ const addedLines = (file, staged) => {
 };
 
 /**
- * Read the content to judge — the index's copy when gating a commit, the file
+ * Read the content to judge: the index's copy when gating a commit, the file
  * on disk otherwise.
  * @param {string} file absolute path
  * @param {boolean} staged
@@ -329,7 +329,7 @@ const main = (argv) => {
   const violations = lintText(text, onlyLines, flags.has('--unreleased-only'));
   if (violations.length === 0) return 0;
 
-  console.error(`${path.basename(abs)} — the entry format (see docs/project-state.md → "CHANGELOG entries"):`);
+  console.error(`${path.basename(abs)}: the entry format (see docs/project-state.md → "CHANGELOG entries"):`);
   for (const v of violations) {
     console.error(`  line ${v.line} [${v.rule}] ${v.message}`);
   }
@@ -346,5 +346,5 @@ if (require.main === module) {
 
 // Exported for the guards (RULES, parseEntries, lintText) and for
 // changelog-links.js, which must agree with this file about what an entry looks
-// like and what "already has its links" means — one home, no second copy.
+// like and what "already has its links" means: one home, no second copy.
 module.exports = { RULES, COMMIT_RE, ISSUE_LINK_RE, META_RE, parseEntries, lintText };

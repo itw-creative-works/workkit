@@ -1,5 +1,5 @@
 //
-// Tests for run_under_pty's expect path (issue #187) — the Ctrl-C escape the
+// Tests for run_under_pty's expect path (issue #187): the Ctrl-C escape the
 // token mint needs. The claude CLI holds its PTY in raw mode and discards the
 // ^C byte, so `workflow/mint-pty.exp` binds it one layer out and ends the run
 // itself; these cases prove the binding with a child that IGNORES SIGINT the
@@ -8,7 +8,7 @@
 //
 // The whole suite runs under an OUTER expect: the path under test is gated on
 // stdin being a real terminal, and a pty is the only honest way to answer that
-// gate — a pipe would route every case to the `script` fallback and prove
+// gate: a pipe would route every case to the `script` fallback and prove
 // nothing. No expect on this machine, nothing to test: the fallback is the
 // only path that can run here, and workkit-cli.test.js already covers it.
 //
@@ -34,7 +34,7 @@ const hasExpect = () => spawnSync('expect', ['-v'], { encoding: 'utf8' }).status
  * harness observed: the wrapper's exit code line and the capture's content.
  *
  * `set -e` is live in the sourced CLI, so the wrapper's status is read through
- * `||` — the same disarm the real mint uses.
+ * `||`: the same disarm the real mint uses.
  */
 const runMint = (root, { child, send = '' }) => {
   const childFile = path.join(root, 'child.sh');
@@ -69,9 +69,9 @@ const runMint = (root, { child, send = '' }) => {
 };
 
 const run = async () => {
-  if (!hasExpect()) skipSuite('expect is not installed — only the script fallback can run here');
+  if (!hasExpect()) skipSuite('expect is not installed: only the script fallback can run here');
 
-  group('workflow: mint-pty — Ctrl-C ends a mint whose child ignores it (#187)');
+  group('workflow: mint-pty: Ctrl-C ends a mint whose child ignores it (#187)');
 
   await test('one ^C ends an INT-ignoring child and answers 130', () => {
     const root = mkTmp();

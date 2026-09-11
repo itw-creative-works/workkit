@@ -1,5 +1,5 @@
 //
-// The daily brief — one payload, two readers.
+// The daily brief: one payload, two readers.
 //
 // The 9am notification and the tower's Brief page must tell the SAME story, so
 // the brief is assembled here, once, from the board sweep and the per-repo
@@ -12,11 +12,11 @@
 //
 // The six sections answer the six questions a morning asks, in the order a
 // morning asks them:
-//   waiting    what is blocked on a human decision — the only thing that stops work
-//   complete   QA passed — finished work that needs nothing but the ship (#196)
+//   waiting    what is blocked on a human decision, the only thing that stops work
+//   complete   QA passed: finished work that needs nothing but the ship (#196)
 //   qa         built and verified, waiting on the owner's check before the ship
-//   ready      specced — what may be started right now
-//   inFlight   building — the label is what says work has started
+//   ready      specced: what may be started right now
+//   inFlight   building: the label is what says work has started
 //   warnings   work sitting on the table: uncommitted, unpushed, unreleased
 //
 // `nextUp` is the same board asked one question further: of everything open,
@@ -27,7 +27,7 @@
 //   buildBrief(board, health, repos);
 //
 
-// An issue as the brief carries it — the fields a one-line summary needs, plus
+// An issue as the brief carries it: the fields a one-line summary needs, plus
 // the ones the dashboard's issue dialog reads. The Brief page never fetches the
 // board, so an issue arriving without its body would be the one place on the
 // dashboard where opening an issue showed less than everywhere else.
@@ -65,7 +65,7 @@ const byUrgency = (a, b) => {
 const NEXT_UP_PER_REPO = 3;
 
 /**
- * The one name for one issue, `repo#number` — the browser's own idiom
+ * The one name for one issue, `repo#number`, the browser's own idiom
  * (libs/tower/format.js), on this side of the copy boundary.
  *
  * A dependency is matched on the PAIR and never on the number alone: the sweep
@@ -74,7 +74,7 @@ const NEXT_UP_PER_REPO = 3;
 const issueKey = (issue) => `${issue.repo}#${issue.number}`;
 
 /**
- * What to work on next, per repo — the ranked few, in the order the status
+ * What to work on next, per repo: the ranked few, in the order the status
  * skill reads a board in.
  *
  * `blocked` leads because it is waiting on the OWNER: a decision nobody makes
@@ -82,11 +82,11 @@ const issueKey = (issue) => `${issue.repo}#${issue.number}`;
  * can clear without opening an editor. `complete` follows (#196): the check is
  * already given and the ship is the one act left, so it is the shortest distance
  * on the board between a morning and something released. `qa` comes next for the
- * reason `blocked` leads, one rung further down — built work parked on the
+ * reason `blocked` leads, one rung further down: built work parked on the
  * owner's check, which nothing downstream of it ships past. `specced` comes last
  * of the four in the same urgency order every other section uses, since an
  * accepted spec is what may be started right now. Nothing else is actionable at
- * nine in the morning — `building` is already somebody's and `inbox` is not a
+ * nine in the morning: `building` is already somebody's and `inbox` is not a
  * decision yet.
  *
  * Grouping is by repo because a morning is spent in one repo at a time, and the
@@ -95,7 +95,7 @@ const issueKey = (issue) => `${issue.repo}#${issue.number}`;
  *
  * An issue WAITING on another orders last inside its repo (issue #103), and
  * says which ones it waits on. A blocker counts only where the sweep can see it
- * is still open — the sweep IS the open board, so an edge whose target is in it
+ * is still open: the sweep IS the open board, so an edge whose target is in it
  * is an edge nothing has satisfied. An edge pointing outside the sweep says
  * nothing either way (a closed issue and a repo the token cannot read look
  * identical from here), so it neither demotes its issue nor is listed. That is
@@ -108,7 +108,7 @@ const issueKey = (issue) => `${issue.repo}#${issue.number}`;
  */
 const nextUpFrom = (issues) => {
   // Repo names are case-insensitive on GitHub and the inline fallback is
-  // hand-typed, so the match folds case — and answers in the sweep's spelling.
+  // hand-typed, so the match folds case, and answers in the sweep's spelling.
   const open = new Map(issues.map((issue) => [issueKey(issue).toLowerCase(), issueKey(issue)]));
   const waitsOnFor = (issue) => (issue.blockedBy || [])
     .map((blocker) => open.get(issueKey(blocker).toLowerCase()))
@@ -148,7 +148,7 @@ const nextUpFrom = (issues) => {
  * rather than only that the total did. `open` is the repo's totalCount rather
  * than the nodes it returned: a repo over the page cap is still that many
  * issues open, and a series that dipped at the cap would be a lie about the day.
- * A repo the sweep could not read is absent for the same reason — its zeros are
+ * A repo the sweep could not read is absent for the same reason: its zeros are
  * not counts, and a false "0 open" published once dips its series forever.
  *
  * @param {{repos?: object[]}} board the sweep
@@ -162,7 +162,7 @@ const repoCountsFrom = (board) => ((board && board.repos) || [])
     closedDay: typeof repo.closedDay === 'number' ? repo.closedDay : 0,
   }));
 
-/** The repo's display name — its slug when it has one, else its folder name. */
+/** The repo's display name: its slug when it has one, else its folder name. */
 const nameOf = (repos, repoPath) => {
   const match = (repos || []).find((r) => r.path === repoPath);
   return match ? (match.slug || match.name) : repoPath;
@@ -171,7 +171,7 @@ const nameOf = (repos, repoPath) => {
 /**
  * The headline: one plain sentence naming the single most useful fact.
  *
- * The order is the order of consequence — a decision waiting on a human blocks
+ * The order is the order of consequence: a decision waiting on a human blocks
  * everything downstream of it, so it leads even when other numbers are larger.
  *
  * @param {object} counts the section sizes
@@ -186,9 +186,9 @@ const headlineFor = (counts) => {
   if (counts.complete) return `${plural(counts.complete, 'issue is', 'issues are')} QA-passed and ready to ship.`;
   if (counts.qa) return `${plural(counts.qa, 'issue is', 'issues are')} built and waiting on your check.`;
   if (counts.inFlight) return `${plural(counts.inFlight, 'issue is', 'issues are')} in flight, and nothing is blocked.`;
-  if (counts.ready) return `Nothing is blocked — ${plural(counts.ready, 'issue is', 'issues are')} specced and ready to start.`;
+  if (counts.ready) return `Nothing is blocked: ${plural(counts.ready, 'issue is', 'issues are')} specced and ready to start.`;
   if (counts.inbox) return `The board is clear of specced work; ${plural(counts.inbox, 'item is', 'items are')} sitting in the inbox.`;
-  return 'Nothing is waiting, in flight, or ready — the board is empty.';
+  return 'Nothing is waiting, in flight, or ready: the board is empty.';
 };
 
 /**
@@ -212,11 +212,11 @@ const buildBrief = (board, health, repos, generatedAt) => {
   // `waiting` and the opposite of "somebody is on it".
   const qa = issues.filter((i) => i.status === 'qa').map(brief);
   // The stage above it (#196): the check PASSED, so nothing about the item is
-  // open — it waits on the ship alone, and the ship reads from this section.
+  // open: it waits on the ship alone, and the ship reads from this section.
   const complete = issues.filter((i) => i.status === 'complete').map(brief);
   // The label is the whole answer on both of these (issue #62): `specced` is a
   // spec accepted and nothing started, `building` is work in flight. An
-  // assignee no longer moves an issue between them — a claimed `specced` issue
+  // assignee no longer moves an issue between them: a claimed `specced` issue
   // is a transient the standards sweep flips, not a shape to be tolerated here.
   const ready = issues.filter((i) => i.status === 'specced').map(brief);
   const inFlight = issues.filter((i) => i.status === 'building').map(brief);
@@ -262,7 +262,7 @@ const buildBrief = (board, health, repos, generatedAt) => {
     generatedAt: generatedAt || new Date().toISOString(),
     headline: headlineFor(counts),
     counts,
-    // What the day SHIPPED, roster wide — the one number a count of the open
+    // What the day SHIPPED, roster wide: the one number a count of the open
     // board cannot carry, and the one a morning's chart is drawn from.
     closedDay: repoCounts.reduce((sum, repo) => sum + repo.closedDay, 0),
     repoCounts,

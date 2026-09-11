@@ -11,7 +11,7 @@
 //
 // NUL is the sound half: an argument physically cannot contain one, because that
 // is the byte the kernel uses to terminate it. 0x1e is a convention, not a
-// guarantee — an argument that is EXACTLY that byte would read back as a record
+// guarantee. An argument that is EXACTLY that byte would read back as a record
 // boundary. Nothing these stubs record can be: the arguments come from
 // workflow/labels.json and the hooks' own literals. A stub fed arbitrary payloads
 // wants a framing that does not rely on that.
@@ -36,7 +36,7 @@ const RS = '\x1e';
  * Emitted into a stub script, so `logFile` must already be shell-safe (a
  * mkdtemp path is).
  *
- * ONE printf, so one append — as long as the record fits bash's stdout buffer
+ * ONE printf, so one append, as long as the record fits bash's stdout buffer
  * (1024 bytes on macOS). Under that, O_APPEND makes the write atomic, so two
  * stubs racing cannot interleave their fields, and a terminated stub leaves
  * nothing rather than a record with no end. A record past the buffer splits
@@ -45,7 +45,7 @@ const RS = '\x1e';
  * fed large payloads wants a framing that does not rely on that.
  *
  * The separator rides along as the last field, which is also why no `$#` guard
- * is needed — a call with no arguments writes just the separator, and reads
+ * is needed. A call with no arguments writes just the separator, and reads
  * back as an empty argv.
  *
  * @param {string} logFile - absolute path to append to
@@ -74,13 +74,13 @@ const readArgv = (logFile) => {
       current.push(field);
     }
   }
-  // Fields with no separator behind them are a write that never finished —
+  // Fields with no separator behind them are a write that never finished,
   // not a call, and never silently rounded up into one.
   return calls;
 };
 
 /**
- * Whole-argument prefix match — `isCall(c, 'label', 'create')` is true only when
+ * Whole-argument prefix match: `isCall(c, 'label', 'create')` is true only when
  * the first two ARGUMENTS are exactly those words, never when one argument
  * happens to contain them.
  * @param {string[]} call

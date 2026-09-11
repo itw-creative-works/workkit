@@ -210,6 +210,10 @@ const BUMPED_APP = [
 // stops recognising the warning it exists to drop. One set of escape constants
 // serves the stub and the assertions both, so what is read back off the
 // terminal is compared against exactly what was printed into it.
+// The tower's own first line, in the kit's one shape (issue #237): the glyph,
+// then what it is doing.
+const STARTING = /^✓ starting the dashboard$/;
+
 const RED = '\u001b[31m';
 const CYAN = '\u001b[36m';
 const GREEN = '\u001b[32m';
@@ -411,11 +415,11 @@ const run = async () => {
     const child = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { capture: true });
     const out = collect(child);
     try {
-      assert(await until(() => /tower: dashboard at/.test(out())), 'the dashboard was announced');
+      assert(await until(() => /✓ dashboard at/.test(out())), 'the dashboard was announced');
       assert(await until(() => /the board failed to load/.test(out())), 'the error line came through');
       const text = out();
-      assert(/tower: dashboard at https:\/\/localhost:14300/.test(text), 'at the URL the app itself named');
-      assertEq(text.match(/tower: dashboard at/g).length, 1, 'once, not once per URL the app printed');
+      assert(/✓ dashboard at https:\/\/localhost:14300/.test(text), 'at the URL the app itself named');
+      assertEq(text.match(/✓ dashboard at/g).length, 1, 'once, not once per URL the app printed');
       assert(/WARN missing key/.test(text), 'the warning came through too');
       // The cost of #170, taken deliberately: the prefix is the whole test, so
       // omega's benign notes ride in beside its refusals. A note is one line;
@@ -487,7 +491,7 @@ const run = async () => {
     try {
       assert(await until(() => child.exitCode !== null), 'the run ended when its app half did');
       const text = out();
-      assert(/tower: dashboard at https:\/\/localhost:14300/.test(text), 'the dashboard had been announced');
+      assert(/✓ dashboard at https:\/\/localhost:14300/.test(text), 'the dashboard had been announced');
       assert(!/ended before the dashboard/.test(text), 'so its ending is ordinary shutdown, not a refusal to explain');
     } finally {
       child.kill('SIGKILL');
@@ -508,7 +512,7 @@ const run = async () => {
     const out = collect(child);
     const closed = new Promise((resolve) => { child.on('close', resolve); });
     try {
-      assert(await until(() => /tower: dashboard at/.test(out())), 'the dashboard was announced');
+      assert(await until(() => /✓ dashboard at/.test(out())), 'the dashboard was announced');
       child.kill('SIGTERM');
       await closed;
       const text = out();
@@ -552,9 +556,9 @@ const run = async () => {
     const loudOut = collect(loud);
     try {
       assert(await until(() => out().includes('\n')), 'the quiet run printed');
-      assertEq(out().split('\n')[0], 'tower: starting the dashboard…', 'and its very first line says so');
+      assert(STARTING.test(out().split('\n')[0]), `and its very first line says so, got: ${out().split('\n')[0]}`);
       assert(await until(() => loudOut().includes('\n')), 'the verbose run printed');
-      assertEq(loudOut().split('\n')[0], 'tower: starting the dashboard…', 'the same first line - one story, both modes');
+      assert(STARTING.test(loudOut().split('\n')[0]), `the same first line - one story, both modes, got: ${loudOut().split('\n')[0]}`);
     } finally {
       child.kill('SIGKILL');
       loud.kill('SIGKILL');
@@ -574,8 +578,8 @@ const run = async () => {
       assert(!/\[11ty\]/.test(text), "the manage cycle's own bracketed line stayed hidden");
       assert(!/some manage step/.test(text), 'and did not open the phase for the line after it');
       assert(/\[web\] Using existing mkcert certificates/.test(text), 'the first tagged line came through - no keep-net word in it');
-      assert(/tower: dashboard at https:\/\/localhost:14300/.test(text), 'the dashboard was still announced');
-      assertEq(text.match(/tower: dashboard at/g).length, 1, 'once');
+      assert(/✓ dashboard at https:\/\/localhost:14300/.test(text), 'the dashboard was still announced');
+      assertEq(text.match(/✓ dashboard at/g).length, 1, 'once');
       assert(/\[web\] Dev server: https:\/\/localhost:14300/.test(text), "and the app's own URL line printed beside it, not instead of it");
       assert(!/objc\[/.test(text), 'the drop list outlives the boundary - the objc warning is gone');
     } finally {
@@ -599,8 +603,8 @@ const run = async () => {
       assert(/GET \/assets\/app\.css 200 in 3ms/.test(text), 'and the one after it');
       assert(!/objc\[/.test(text), 'the drop list outlives the boundary - the objc warning is gone');
       assert(!/6 passed, 0 failed, 1 warned, 20 skipped/.test(text), 'and so is the passing check summary');
-      assert(/tower: dashboard at https:\/\/localhost:14300/.test(text), 'the dashboard was announced');
-      assertEq(text.match(/tower: dashboard at/g).length, 1, 'once');
+      assert(/✓ dashboard at https:\/\/localhost:14300/.test(text), 'the dashboard was announced');
+      assertEq(text.match(/✓ dashboard at/g).length, 1, 'once');
       // A trigger line is judged in the phase it OPENS, so the URL line prints
       // as itself too - the announce stands beside it, naming the dashboard in
       // the wrapper's own voice.
@@ -619,7 +623,7 @@ const run = async () => {
       assert(await until(() => /sweep token is missing/.test(out())), 'its problem line came through');
       const text = out();
       assert(!/board sweep done/.test(text), 'its ordinary chatter did not');
-      assert(!/tower: dashboard at/.test(text), 'and a URL in ITS output announces nothing - it owns no dashboard');
+      assert(!/✓ dashboard at/.test(text), 'and a URL in ITS output announces nothing - it owns no dashboard');
       assert(!/api: listening on/.test(text), 'so that line is just chatter too');
       assert(!/\[web\] hello/.test(text), 'nor does the app half\'s tag open a phase over here');
     } finally {
@@ -633,10 +637,10 @@ const run = async () => {
     const child = start(dir, 'exec sleep 30', BUMPED_APP, QUIET_PORTS, { capture: true });
     const out = collect(child);
     try {
-      assert(await until(() => /tower: dashboard at/.test(out())), 'the dashboard was announced');
+      assert(await until(() => /✓ dashboard at/.test(out())), 'the dashboard was announced');
       const text = out();
-      assert(/tower: dashboard at https:\/\/localhost:14301/.test(text), 'at the port it actually took, not the one it was asked for');
-      assertEq(text.match(/tower: dashboard at/g).length, 1, 'once');
+      assert(/✓ dashboard at https:\/\/localhost:14301/.test(text), 'at the port it actually took, not the one it was asked for');
+      assertEq(text.match(/✓ dashboard at/g).length, 1, 'once');
       assert(/bumped to 14301/.test(text), 'and the line explaining the move survived too');
     } finally {
       child.kill('SIGKILL');
@@ -653,7 +657,7 @@ const run = async () => {
       const text = out();
       assert(/cloudflare/.test(text), 'and the framework chatter with them');
       assert(/Dev server: https:\/\/localhost:14300/.test(text), "the app's own URL line stands unrewritten");
-      assert(!/tower: dashboard at/.test(text), 'so the wrapper adds no second one');
+      assert(!/✓ dashboard at/.test(text), 'so the wrapper adds no second one');
     } finally {
       child.kill('SIGKILL');
       cleanup(dir);
@@ -694,9 +698,9 @@ const run = async () => {
       assert(!/objc\[/.test(text), 'the colored benign warning was still dropped - its prefix is read under the color');
       assert(!/quiet chatter/.test(text), 'and the quiet phase is still quiet');
       assert(text.includes(`${CYAN}[web]${OFF} Using existing mkcert certificates`), 'the colored tag line printed as itself');
-      const announce = text.split('\n').find((line) => line.startsWith('tower: dashboard at'));
-      assertEq(announce, 'tower: dashboard at https://localhost:14300',
-        'and the announce names the bare URL - the tower composes its own lines uncolored');
+      const announce = text.split('\n').find((line) => /✓ dashboard at/.test(line));
+      assert(/^✓ dashboard at https:\/\/localhost:14300$/.test(announce || ''),
+        `and the announce names the bare URL - the tower composes its own lines uncolored, got: ${announce}`);
     } finally {
       child.kill('SIGKILL');
       cleanup(dir);
@@ -780,7 +784,7 @@ const run = async () => {
       try {
         assert(await until(() => child.exitCode !== null, 25000), 'the run came down on the interrupt');
         const text = out();
-        assert(/tower: dashboard at/.test(text), 'the terminal saw the one line it should');
+        assert(/✓ dashboard at/.test(text), 'the terminal saw the one line it should');
         assert(!/Terminated/.test(text), 'and no job-control obituary for the halves');
         assert(!/\bDone\b/.test(text), 'nor for their filters');
       } finally {

@@ -1,9 +1,9 @@
 #!/bin/bash
-# docs:board-guard — PostToolUse hook (Edit|Write)
+# docs:board-guard: PostToolUse hook (Edit|Write)
 # Enforces the document rules of the project-state spec v4 at write time,
 # two surfaces:
-#   CLAUDE.md — pointer doctrine: exactly a bare '@AGENTS.md' import, no content.
-#   AGENTS.md — size budget: ≤250 lines, AND density: no line over 400 BYTES.
+#   CLAUDE.md: pointer doctrine: exactly a bare '@AGENTS.md' import, no content.
+#   AGENTS.md: size budget: ≤250 lines, AND density: no line over 400 BYTES.
 #     A markdown paragraph is ONE source line, so the line count alone let the
 #     file grow into a book while passing every check (issue #161). Both halves
 #     of the budget are judged here; the meat lives in docs/<topic>.md.
@@ -11,10 +11,10 @@
 #     counts bytes and gawk counts characters under a UTF-8 locale, so an
 #     unpinned rule would judge the same file differently on macOS and Linux.
 # Violations exit 2 with a precise fix-list so the WRITING agent corrects
-# immediately — prevention at write time, not cleanup later.
+# immediately: prevention at write time, not cleanup later.
 # Board checks retired with the board itself (spec v4): work-item state lives
 # in GitHub Issues, where label legality is the standards script's job.
-# Spec checks retired with plans/ — a spec lives in its issue body under a
+# Spec checks retired with plans/. A spec lives in its issue body under a
 # '## Spec' heading, so there is no plan file left to validate.
 
 set -euo pipefail
@@ -54,13 +54,13 @@ add() {
 if [ "$kind" = "pointer" ]; then
   # Pointer doctrine: every non-blank line must be the bare import.
   bad_lines=$(grep -nv -e '^[[:space:]]*$' -e '^@AGENTS\.md$' "$file_path" | head -3 || true)
-  [ -z "$bad_lines" ] || add "POINTER DOCTRINE: CLAUDE.md is exactly one line — a bare '@AGENTS.md' import. Content belongs in AGENTS.md. Converting a content-bearing CLAUDE.md: 'git mv CLAUDE.md AGENTS.md', commit, THEN add the pointer in a SEPARATE commit (same-commit pointer breaks rename detection). First offending line(s): $(printf '%s' "$bad_lines" | tr '\n' ' ')"
+  [ -z "$bad_lines" ] || add "POINTER DOCTRINE: CLAUDE.md is exactly one line: a bare '@AGENTS.md' import. Content belongs in AGENTS.md. Converting a content-bearing CLAUDE.md: 'git mv CLAUDE.md AGENTS.md', commit, THEN add the pointer in a SEPARATE commit (same-commit pointer breaks rename detection). First offending line(s): $(printf '%s' "$bad_lines" | tr '\n' ' ')"
   grep -q '^@AGENTS\.md$' "$file_path" || add "POINTER DOCTRINE: missing the bare '@AGENTS.md' import line."
 fi
 
 if [ "$kind" = "agents" ]; then
   total=$(wc -l <"$file_path" | tr -d ' ')
-  [ "$total" -le 250 ] || add "AGENTS BUDGET: $total lines (max 250) — AGENTS.md is the architectural overview; deep references move to docs/<topic>.md and AGENTS.md keeps a pointer line."
+  [ "$total" -le 250 ] || add "AGENTS BUDGET: $total lines (max 250). AGENTS.md is the architectural overview; deep references move to docs/<topic>.md and AGENTS.md keeps a pointer line."
 
   # Density: the same budget judged per line, in BYTES (LC_ALL=C). The first few
   # offenders are named so the writing agent can go straight to them. An awk that
@@ -72,7 +72,7 @@ if [ "$kind" = "agents" ]; then
     }
     END { if (n > 3) printf ", and %d more", n - 3 }
   ' "$file_path" 2>/dev/null) || dense=""
-  [ -z "$dense" ] || add "AGENTS DENSITY: $dense — no line may exceed 400 bytes. A markdown paragraph is one source line, so AGENTS.md passes the 250-line budget while carrying a book. Bulletize those lines, or move the detail to docs/<topic>.md and keep a pointer here."
+  [ -z "$dense" ] || add "AGENTS DENSITY: $dense. No line may exceed 400 bytes. A markdown paragraph is one source line, so AGENTS.md passes the 250-line budget while carrying a book. Bulletize those lines, or move the detail to docs/<topic>.md and keep a pointer here."
 fi
 
 if [ -n "$violations" ]; then

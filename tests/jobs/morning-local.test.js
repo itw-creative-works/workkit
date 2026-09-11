@@ -1,5 +1,5 @@
 //
-// Tests for jobs/morning.sh as THIS MACHINE runs it — the 9am launchd job: the
+// Tests for jobs/morning.sh as THIS MACHINE runs it, the 9am launchd job: the
 // summaries step, the dispatch that hands the brief to the cloud, and the site
 // publish. The same script on a runner is morning-cloud.test.js; the two suites
 // are the two environments, not two scripts.
@@ -9,7 +9,7 @@
 // HOME is a scratch directory, so the log it appends to and the empty cwd it
 // runs from are both inside the fixture: this suite never writes to the real
 // home and never puts a notification on screen. The summaries step it calls gets
-// the same treatment — a scratch WORKFLOW_HOME with no home repo named in it, so
+// the same treatment: a scratch WORKFLOW_HOME with no home repo named in it, so
 // it has nowhere to publish, sends nothing, and the assertions below see only
 // the brief (the step's own suite covers the publishing).
 //
@@ -17,7 +17,7 @@
 // than beside the others: the runner exports a PATH of its own beginning there
 // and including /opt/homebrew/bin, so a shim anywhere else would lose to the
 // real `gh` and this suite would reach GitHub. A world with nowhere to publish
-// gets one too — a skip is proved by a recorder that stayed silent, never by the
+// gets one too: a skip is proved by a recorder that stayed silent, never by the
 // tool being absent, which no assertion could tell from a skip that never ran.
 //
 // GITHUB_ACTIONS is stripped from every world: a suite run inside Actions would
@@ -33,11 +33,11 @@ const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'morning.sh');
 const { INSTRUCTION } = require(path.join(__dirname, '..', '..', 'jobs', 'brief-payload.js'));
-// The title every published brief carries — from the module that owns the
+// The title every published brief carries, from the module that owns the
 // literal, so this fixture and the step under test read one prefix.
 const { BRIEF_TITLE_PREFIX } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'history.js'));
 
-// A `gh` call that is the brief's business with the board — listing today's
+// A `gh` call that is the brief's business with the board: listing today's
 // posts, resolving a category, creating the Discussion.
 const BRIEF_GH = /discussions\(first|discussionCategories|createDiscussion/;
 
@@ -52,24 +52,24 @@ const today = () => new Date().toLocaleDateString('en-CA');
  * A scratch home, a fake `claude` printing `response` and exiting `status`, and
  * a fake Notifly. Returns everything an assertion needs to read back.
  *
- * `logsDir: false` leaves ~/Library/Logs out — the bare home the job has to
+ * `logsDir: false` leaves ~/Library/Logs out: the bare home the job has to
  * make its own log directory in.
- * `transcripts: false` leaves ~/.claude/projects out — the machine whose day the
+ * `transcripts: false` leaves ~/.claude/projects out: the machine whose day the
  * summaries step cannot read, and that gate's red side.
  * `home` is the home repo slug to name in the settings file; null is a machine
  * with nowhere to publish, and it gets the same recording `gh` shim so the skip
  * is something an assertion can see.
- * `badSettings` writes a settings file that does not parse — the shape the site
+ * `badSettings` writes a settings file that does not parse: the shape the site
  * publish warns about rather than reading as a default.
  * `posted` is what that repo's discussions already carry, as `{ title, body }`.
  * `ghFails` makes every API call refuse.
  * `ccChangelog` is the upstream CHANGELOG the news read is pointed at.
- * `dispatch` is whether `gh workflow run` lands — false by default, which is the
+ * `dispatch` is whether `gh workflow run` lands: false by default, which is the
  * machine that cannot reach the cloud, and since issue #107 that is a briefless
  * morning rather than a local brief.
- * `secrets` is the names `gh secret list` reports — both by default, the repo
+ * `secrets` is the names `gh secret list` reports: both by default, the repo
  * whose runner can actually compose the brief and sweep the board.
- * `homeClone` gives the world a home clone at `<WORKFLOW_HOME>/tower` — the
+ * `homeClone` gives the world a home clone at `<WORKFLOW_HOME>/tower`: the
  * folder the reconcile step writes the cloud brief's runner into (issue #143).
  * Its remote is a local bare repo (WORKKIT_HOME_REMOTE, the engine's own seam),
  * so every clone, commit and push here runs offline and the real
@@ -95,7 +95,7 @@ const mkWorld = ({
       : JSON.stringify({ version: 1, site: { repo: homeRepo, publish: false, url: null } }, null, 2),
   );
   // The home clone the reconcile step refreshes (issue #143), and the tiny
-  // stand-in for `tower/app` the site publish syncs into it — the real project
+  // stand-in for `tower/app` the site publish syncs into it: the real project
   // would only make this fixture slower, and neither step is the other's test.
   const tower = path.join(workflowHome, 'tower');
   let homeRemote = null;
@@ -110,7 +110,7 @@ const mkWorld = ({
   // ~/Library/Logs is a directory every macOS home already has; the fixture home
   // is bare, so it is created here rather than by the job.
   if (logsDir) fs.mkdirSync(path.join(home, 'Library', 'Logs'), { recursive: true });
-  // The session transcripts the summaries step is gated on. Empty is enough —
+  // The session transcripts the summaries step is gated on. Empty is enough:
   // the step's own guards call that a quiet day.
   if (transcripts) fs.mkdirSync(path.join(home, '.claude', 'projects'), { recursive: true });
 
@@ -171,7 +171,7 @@ const mkWorld = ({
   fs.chmodSync(path.join(localBin, 'gh'), 0o755);
 
   // The upstream CHANGELOG the news read is pointed at. `/dev/null` is the
-  // module's silent-skip path — an empty body, no version, no line.
+  // module's silent-skip path: an empty body, no version, no line.
   let ccSource = 'file:///dev/null';
   if (ccChangelog) {
     const file = path.join(root, 'cc-changelog.md');
@@ -215,7 +215,7 @@ const mkWorld = ({
     dispatched: () => readArgv(ghLog).filter((c) => c[0] === 'workflow' && c[1] === 'run'),
     postedBody: () => (fs.existsSync(bodyLog) ? fs.readFileSync(bodyLog, 'utf8') : ''),
     // The stale-brief marker (issue #173), read back the way the session hook
-    // reads it — null when the step wrote none.
+    // reads it: null when the step wrote none.
     markerFile: path.join(workflowHome, 'brief-status.json'),
     marker: () => {
       const file = path.join(workflowHome, 'brief-status.json');
@@ -267,7 +267,7 @@ const subjects = (dir) => spawnSync('git', ['-C', dir, 'log', '--pretty=%s'], { 
 
 const REFRESH = 'chore(home): refresh the cloud brief runner';
 
-// The notification is fired detached on purpose — Notifly does not return until
+// The notification is fired detached on purpose: Notifly does not return until
 // it is dismissed, and the job must never wait on a human. So the job exits
 // BEFORE the recorder has written, and an assertion on it has to wait a moment.
 const notified = async (world, ms = 5000) => {
@@ -280,7 +280,7 @@ const notified = async (world, ms = 5000) => {
   }
 };
 
-// The first notification whose message matches — the summaries step fires its
+// The first notification whose message matches: the summaries step fires its
 // own, so "the brief's notification" is the one that says so, not the first one
 // recorded.
 const notifiedMatching = async (world, pattern, ms = 5000) => {
@@ -300,7 +300,7 @@ const run = async () => {
 
   group('jobs/morning (local): shape');
 
-  await test('bash -n — no syntax errors', () => {
+  await test('bash -n: no syntax errors', () => {
     const res = spawnSync('bash', ['-n', SCRIPT], { encoding: 'utf8' });
     assertEq(res.status, 0, `bash -n: ${res.stderr}`);
   });
@@ -314,7 +314,7 @@ const run = async () => {
   await test('an argument overrides the payload and reaches claude verbatim', () => {
     const world = mkWorld();
     const res = runJob(world, ['just', 'this message']);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     const calls = world.calls();
     assertEq(calls.length, 1, `claude ran once: ${fmtCalls(calls)}`);
     assertEq(calls[0][0], '-p', 'headless');
@@ -324,10 +324,10 @@ const run = async () => {
 
   await test('the rehearsal payload is the brief, instruction first', () => {
     // `--now`, because the scheduled morning composes nothing here any more
-    // (issue #107) — the rehearsal is what still exercises the local compose.
+    // (issue #107): the rehearsal is what still exercises the local compose.
     const world = mkWorld();
     const res = runJob(world, ['--now']);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     const message = world.calls()[0][1];
     assert(message.startsWith(INSTRUCTION), 'the default payload is jobs/brief-payload.js output');
     cleanup(world.root);
@@ -342,7 +342,7 @@ const run = async () => {
     assertEq(after('--effort'), 'low', 'at the lowest effort');
     assert(argv.includes('--safe-mode'), 'safe mode');
     assert(argv.includes('--no-session-persistence'), 'nothing persisted');
-    assertEq(after('--tools'), '', 'no tools — it reads a payload and writes prose');
+    assertEq(after('--tools'), '', 'no tools: it reads a payload and writes prose');
     assertEq(after('--max-budget-usd'), '0.25', 'and a hard budget');
     cleanup(world.root);
   });
@@ -355,7 +355,7 @@ const run = async () => {
     assert(res.stdout.includes('HEADLINE: one thing today.'), 'the response goes to stdout');
 
     const log = world.log();
-    assert(/── \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ──/.test(log), 'one timestamped block');
+    assert(/--- \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ---/.test(log), 'one timestamped block');
     assert(log.includes('> hello'), 'the message is logged, truncated to its first 200 characters');
     assert(log.includes('IN FLIGHT: nothing.'), 'and the whole response');
 
@@ -366,7 +366,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('a home with no Library/Logs gets one — the exchange is still logged', () => {
+  await test('a home with no Library/Logs gets one: the exchange is still logged', () => {
     const world = mkWorld({ logsDir: false });
     const res = runJob(world, ['hello']);
     assertEq(res.status, 0, `the append cannot fail the job: ${res.stderr}`);
@@ -394,7 +394,7 @@ const run = async () => {
     fs.chmodSync(fakeNode, 0o755);
     const res = runJob(world, ['--now']);
     assertEq(res.status, 7, 'the builder status carries through');
-    assertEq(world.calls().length, 0, 'claude never ran — there was nothing to send');
+    assertEq(world.calls().length, 0, 'claude never ran: there was nothing to send');
     const log = world.log();
     assert(log.includes('[brief-payload exit 7]'), 'the log names the failed stage');
     assert(log.includes('boom: cannot find module'), 'and carries the stderr');
@@ -406,7 +406,7 @@ const run = async () => {
     const world = mkWorld();
     runJob(world, ['hello']);
     const scratch = path.join(world.home, 'Library', 'Caches', 'claude-daily');
-    assert(fs.existsSync(scratch), 'the empty cwd exists — launchd starts the job at / and TCC notices');
+    assert(fs.existsSync(scratch), 'the empty cwd exists: launchd starts the job at / and TCC notices');
     assertEq(fs.readdirSync(scratch).length, 0, 'and stays empty, so there is nothing to scan');
     cleanup(world.root);
   });
@@ -416,11 +416,11 @@ const run = async () => {
   await test('the summaries step runs, and with no home repo it only logs its skip', async () => {
     const world = mkWorld();
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
 
     assertEq(world.calls().length, 0, `nothing was sent from this machine: ${fmtCalls(world.calls()).slice(0, 160)}`);
-    assert(fs.existsSync(world.nightlyLog), 'the step ran — it kept its own log');
-    assert(/summaries: no home repo configured — skipped/.test(fs.readFileSync(world.nightlyLog, 'utf8')),
+    assert(fs.existsSync(world.nightlyLog), 'the step ran: it kept its own log');
+    assert(/summaries: no home repo configured; skipped/.test(fs.readFileSync(world.nightlyLog, 'utf8')),
       'and said why it had nothing to do');
     await settle();
     cleanup(world.root);
@@ -432,8 +432,8 @@ const run = async () => {
     // up. The named skip is what tells that apart from a step that failed.
     const world = mkWorld({ transcripts: false });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
-    assert(/summaries: this machine has no session transcripts to read — skipped/.test(world.log()),
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
+    assert(/summaries: this machine has no session transcripts to read; skipped/.test(world.log()),
       `the log names the gate: ${world.log()}`);
     assert(!fs.existsSync(world.nightlyLog), 'and the step was never started');
     await settle();
@@ -443,13 +443,13 @@ const run = async () => {
   await test('a summaries failure never stops the morning', async () => {
     const world = mkWorld({ home: 'owner/private-home', dispatch: true });
     // A directory where the step's log file belongs: its first append fails, and
-    // the step exits non-zero — the shape of failure that costs the most to
+    // the step exits non-zero: the shape of failure that costs the most to
     // swallow, since the morning would be lost to the night before.
     fs.mkdirSync(world.nightlyLog, { recursive: true });
 
     const res = runJob(world);
     assertEq(res.status, 0, 'the morning is not lost to the night before');
-    assert(/\[summaries exit \d+ — the brief continues\]/.test(world.log()),
+    assert(/\[summaries exit \d+; the brief continues\]/.test(world.log()),
       `the log names the failed step: ${world.log().slice(0, 300)}`);
     assertEq(world.dispatched().length, 1, 'and the day was still handed over');
     await settle();
@@ -473,7 +473,7 @@ const run = async () => {
   await test('a message argument runs the send alone, summaries and all skipped', () => {
     const world = mkWorld();
     const res = runJob(world, ['hello']);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     const calls = world.calls();
     assertEq(calls.length, 1, `one send: ${fmtCalls(calls).slice(0, 160)}`);
     assertEq(calls[0][1], 'hello', 'the generic headless runner is still generic');
@@ -485,7 +485,7 @@ const run = async () => {
 
   // Issue #143: the cloud composes the brief out of SEEDED COPIES of these
   // scripts on the home repo, and until now only `workkit setup` refreshed
-  // them — so a checkout that moved on published stale briefs until somebody
+  // them, so a checkout that moved on published stale briefs until somebody
   // remembered. The morning reconciles them, ahead of the dispatch that
   // consumes them.
 
@@ -494,7 +494,7 @@ const run = async () => {
     const dest = plantStaleRunner(world);
 
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(
       fs.readFileSync(dest, 'utf8'),
       fs.readFileSync(SCRIPT, 'utf8'),
@@ -518,7 +518,7 @@ const run = async () => {
     const written = fs.statSync(dest).mtimeMs;
 
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(fs.statSync(dest).mtimeMs, written, 'the file was not rewritten');
     assert(/runner in .* is current/.test(world.log()), `and the morning says so: ${world.log()}`);
     assertEq(subjects(world.tower).filter((s) => s === REFRESH).length, 1,
@@ -536,7 +536,7 @@ const run = async () => {
     pushFromElsewhere(world, 'NOTE.md', 'somebody else was here\n');
 
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(fs.existsSync(path.join(world.tower, 'NOTE.md')), 'the clone carries what the remote had moved on to');
     assertEq(
       fs.readFileSync(dest, 'utf8'),
@@ -547,7 +547,7 @@ const run = async () => {
     // The later publish pulls for its own reasons and would carry a wedged
     // commit out on its next run, which is precisely what hides this bug: the
     // step has to push what it commits, in the step that committed it.
-    const reconcile = world.log().split(/── \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ──/)[1] || '';
+    const reconcile = world.log().split(/--- \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ---/)[1] || '';
     assert(!/could not push/.test(reconcile),
       `and it pushed under its own step rather than wedging in the clone: ${reconcile}`);
     assert(subjects(world.homeRemote).includes(REFRESH), 'the refresh reached the home repo');
@@ -567,7 +567,7 @@ const run = async () => {
     git('-c', 'user.name=local', '-c', 'user.email=local@localhost', 'commit', '-q', '-m', 'chore: a local edit');
 
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(/could not be brought up to date/.test(world.log()), `the morning names the skip: ${world.log()}`);
     assertEq(fs.readFileSync(dest, 'utf8'), STALE_RUNNER, 'and nothing was seeded into a clone that cannot push');
     assert(!subjects(world.tower).includes(REFRESH),
@@ -581,7 +581,7 @@ const run = async () => {
     // a machine that has not run `workkit setup` hears one line.
     const world = mkWorld({ home: 'owner/private-home', dispatch: true });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(/runner: nothing is cloned at .*tower/.test(world.log()), `the log names the skip: ${world.log()}`);
     assert(!fs.existsSync(world.tower), 'and nothing was cloned to make it go away');
     assert(fs.existsSync(world.nightlyLog), 'the summaries step still ran');
@@ -589,7 +589,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('a message argument reconciles nothing — the generic runner stays generic', () => {
+  await test('a message argument reconciles nothing: the generic runner stays generic', () => {
     const world = mkWorld({ home: 'owner/private-home', dispatch: true, homeClone: true });
     const dest = plantStaleRunner(world);
     runJob(world, ['hello']);
@@ -605,7 +605,7 @@ const run = async () => {
     // warns from the publish writes both blocks, and the brief's is the earlier.
     const world = mkWorld({ badSettings: true });
     const res = runJob(world, ['--now']);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     const log = world.log();
     assert(log.includes('HEADLINE: one thing today.'), `the brief reached the log: ${log}`);
     assert(log.indexOf('publish:') > log.indexOf('HEADLINE: one thing today.'),
@@ -613,20 +613,20 @@ const run = async () => {
 
     const text = fs.readFileSync(SCRIPT, 'utf8');
     assert(/publish\.sh" --quiet/.test(text), 'the daily run asks for the quiet variant');
-    assert(/publish exit %d — the brief was already sent/.test(text), 'and a failure is logged, never fatal');
+    assert(/publish exit %d; the brief was already sent/.test(text), 'and a failure is logged, never fatal');
     await settle();
     cleanup(world.root);
   });
 
   // The site publish's own block, told apart from the brief's lines, which say
   // `brief: …` right beside it. Every line publish.sh prints is prefixed
-  // `publish: ` — including the warnings no `--quiet` suppresses.
+  // `publish: `, including the warnings no `--quiet` suppresses.
   const SITE_BLOCK = /publish:/;
 
   await test('a machine with no home repo hears nothing about publishing', async () => {
     const world = mkWorld();
     const res = runJob(world, ['--now']);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(!SITE_BLOCK.test(world.log()), `the log stays about the morning, got: ${world.log()}`);
     assert(res.stdout.includes('HEADLINE: one thing today.'), 'and the brief is untouched');
     await settle();
@@ -640,7 +640,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('a publish that warns is heard — the block is not scoped to its failures', () => {
+  await test('a publish that warns is heard: the block is not scoped to its failures', () => {
     // A settings file that does not parse is publish.sh's loudest guarded skip:
     // it warns and exits 0, so an assertion looking only for a non-zero exit or
     // a branch name would call the morning quiet.
@@ -656,20 +656,20 @@ const run = async () => {
   group('jobs/morning (local): the brief is the cloud’s');
 
   // Since issue #107 the scheduled brief on this machine is the dispatch and
-  // nothing else. Everything below is about the day going over — or not going
+  // nothing else. Everything below is about the day going over, or not going
   // over, which is a briefless morning and never a local compose.
 
   await test('a dispatch that lands hands the day to the cloud and composes nothing here', () => {
     const world = mkWorld({ home: 'owner/private-home', dispatch: true });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
 
     const sent = world.dispatched();
     assertEq(sent.length, 1, `one workflow run: ${fmtCalls(world.ghCalls()).slice(0, 400)}`);
     assertEq(sent[0][2], 'brief.yml', 'and it names the brief workflow');
     assertEq(sent[0][3], '--repo', 'on a repo');
     // The HOME repo (issue #91), which is where setup seeded the workflow and
-    // wrote the secrets — never this checkout's own, which is distributed.
+    // wrote the secrets, never this checkout's own, which is distributed.
     assertEq(sent[0][4], 'owner/private-home', 'the home repo this machine is configured for');
 
     assertEq(world.calls().length, 0, `claude never ran here: ${fmtCalls(world.calls()).slice(0, 200)}`);
@@ -686,10 +686,10 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the site publish still runs after a dispatch — the site is this machine\'s', () => {
+  await test('the site publish still runs after a dispatch: the site is this machine\'s', () => {
     const world = mkWorld({ badSettings: true, dispatch: true });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(/does not parse as JSON/.test(world.log()), `the publish leg ran: ${world.log()}`);
     cleanup(world.root);
   });
@@ -697,11 +697,11 @@ const run = async () => {
   await test('a dispatch that does not land is a logged, briefless morning', async () => {
     // Issue #107: the local compose is GONE, not no-opped. The brief needs the
     // sweep token and the roster, which live on the home repo, so a morning the
-    // day cannot be handed over is a morning with no brief — and the log is the
+    // day cannot be handed over is a morning with no brief, and the log is the
     // only place that says why.
     const world = mkWorld({ home: 'owner/private-home' });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(world.dispatched().length, 1, 'the trigger was tried');
     assertEq(world.calls().length, 0, `and nothing was composed here: ${fmtCalls(world.calls()).slice(0, 200)}`);
     assertEq(world.created().length, 0, 'nothing was published from this machine');
@@ -709,7 +709,7 @@ const run = async () => {
     assert(/did not land/.test(world.log()), `and names the reason: ${world.log()}`);
     assert(/no brief this morning/.test(res.stderr), `it reaches the plist log too: ${res.stderr}`);
     await settle();
-    assertEq(world.notifs().length, 0, 'and nothing was announced — there is no digest to announce');
+    assertEq(world.notifs().length, 0, 'and nothing was announced: there is no digest to announce');
     cleanup(world.root);
   });
 
@@ -721,7 +721,7 @@ const run = async () => {
     fs.mkdirSync(stray, { recursive: true });
     fs.copyFileSync(SCRIPT, path.join(stray, 'morning.sh'));
     const res = spawnSync('bash', [path.join(stray, 'morning.sh')], { encoding: 'utf8', timeout: 60000, env: world.env });
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(world.dispatched().length, 0, 'nothing was triggered');
     assert(/partial checkout/.test(world.log()), `the reason names the missing lib: ${world.log()}`);
     assert(/no brief this morning/.test(world.log()), `and the morning is briefless, not broken: ${world.log()}`);
@@ -735,7 +735,7 @@ const run = async () => {
     // secrets; a listing that FAILED means this token cannot read the repo.
     const bare = mkWorld({ home: 'owner/private-home', dispatch: true, secrets: [] });
     let res = runJob(bare);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(bare.dispatched().length, 0, 'nothing was triggered');
     assert(/carries no secrets/.test(bare.log()), `an empty listing blames the missing secrets: ${bare.log()}`);
     assert(!/could not be listed/.test(bare.log()), 'and never the listing');
@@ -744,7 +744,7 @@ const run = async () => {
 
     const unlistable = mkWorld({ home: 'owner/private-home', dispatch: true, secrets: [], secretsUnlistable: true });
     res = runJob(unlistable);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(/could not be listed/.test(unlistable.log()), `a failed listing says so: ${unlistable.log()}`);
     await settle();
     cleanup(unlistable.root);
@@ -752,11 +752,11 @@ const run = async () => {
 
   await test('a repo without the OAuth secret is never handed the day', async () => {
     // `gh workflow run` succeeds the moment the file is on the default branch,
-    // secrets or not — and a runner without the token composes nothing. Naming
+    // secrets or not, and a runner without the token composes nothing. Naming
     // the missing secret is the whole value of the check.
     const world = mkWorld({ home: 'owner/private-home', dispatch: true, secrets: ['WORKKIT_GITHUB_TOKEN'] });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(world.dispatched().length, 0, 'nothing was triggered');
     assertEq(world.calls().length, 0, 'and nothing was composed here');
     assert(/CLAUDE_CODE_OAUTH_TOKEN/.test(world.log()), `the log names the secret: ${world.log()}`);
@@ -765,12 +765,12 @@ const run = async () => {
   });
 
   await test('a repo without the board token is never handed the day either', async () => {
-    // The OAuth token alone buys a runner that composes — over an empty board.
+    // The OAuth token alone buys a runner that composes, over an empty board.
     // `WORKKIT_GITHUB_TOKEN` is the credential every issue read uses, so a
     // morning without it is a digest about nothing. Both names, or nothing goes.
     const world = mkWorld({ home: 'owner/private-home', dispatch: true, secrets: ['CLAUDE_CODE_OAUTH_TOKEN'] });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(world.dispatched().length, 0, 'nothing was triggered');
     assertEq(world.calls().length, 0, 'and nothing was composed here');
     assert(/WORKKIT_GITHUB_TOKEN/.test(world.log()), `the log names the secret: ${world.log()}`);
@@ -793,7 +793,7 @@ const run = async () => {
     // machine that has none has nowhere to hand the day to.
     const world = mkWorld({ home: null, dispatch: true });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(world.dispatched().length, 0, 'nothing was triggered');
     assert(!/dispatched/.test(world.log()), `and nothing was claimed: ${world.log()}`);
     assert(/no home repo is configured/.test(world.log()), `the log names the reason: ${world.log()}`);
@@ -812,17 +812,17 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('--now never dispatches — a rehearsal must not hand the day to a runner', () => {
+  await test('--now never dispatches: a rehearsal must not hand the day to a runner', () => {
     const world = mkWorld({ home: 'owner/private-home', dispatch: true });
     const res = runJob(world, ['--now']);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(world.dispatched().length, 0, 'the cloud was never asked');
     assertEq(world.calls().length, 1, 'the rehearsal ran here');
     assertEq(world.created().length, 0, 'and published nothing, as it always did');
     cleanup(world.root);
   });
 
-  await test('a message argument never dispatches — the generic runner stays generic', () => {
+  await test('a message argument never dispatches: the generic runner stays generic', () => {
     const world = mkWorld({ home: 'owner/private-home', dispatch: true });
     runJob(world, ['hello']);
     assertEq(world.dispatched().length, 0, 'no workflow was triggered');
@@ -836,7 +836,7 @@ const run = async () => {
     // a message run reach the board for nothing at all.
     const world = mkWorld({ home: 'owner/private-home', ccChangelog: '# Changelog\n\n## 2.1.220\n\n- Added a hook\n' });
     const res = runJob(world, ['--now']);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(res.stdout.includes('HEADLINE: one thing today.'), 'the brief still ran end to end');
     assertEq(world.created().length, 0, `and nothing was posted: ${fmtCalls(world.ghCalls()).slice(0, 300)}`);
     assertEq(world.postedBody(), '', 'no body reached the board');
@@ -849,14 +849,14 @@ const run = async () => {
     runJob(world, ['--now']);
     assert(!fs.existsSync(path.join(world.workflowHome, '.cache.json'))
       || !('ccNews' in JSON.parse(fs.readFileSync(path.join(world.workflowHome, '.cache.json'), 'utf8'))),
-    'the cursor is the Discussion — nothing writes ccNews any more');
+    'the cursor is the Discussion: nothing writes ccNews any more');
     cleanup(world.root);
   });
 
   group('jobs/morning (local): the cloud brief marker');
 
   // Issue #173: the brief is composed and published in the cloud, and a runner
-  // whose token expired fails quietly — ten mornings went by with nothing
+  // whose token expired fails quietly: ten mornings went by with nothing
   // posted and no chat session knew. So the morning records what is actually on
   // the board, and the session hook reads that ONE file. This is the writer.
 
@@ -864,7 +864,7 @@ const run = async () => {
     const world = mkWorld({
       home: 'owner/private-home',
       dispatch: true,
-      // Newest first, the order the query asks for — and the newest post of all
+      // Newest first, the order the query asks for, and the newest post of all
       // is a summary, which is what the title filter is for.
       posted: [
         { title: 'daily: 2026-08-18' },
@@ -873,7 +873,7 @@ const run = async () => {
       ],
     });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
 
     const marker = JSON.parse(world.marker());
     assertEq(marker.version, 1, 'the marker carries its version');
@@ -890,14 +890,14 @@ const run = async () => {
 
   await test('a read that fails leaves the marker exactly as it was', () => {
     // Never write a lie: an offline machine, a token that refuses, a `gh` that
-    // is not there — none of them are evidence about the board, so the marker a
+    // is not there: none of them are evidence about the board, so the marker a
     // real read left behind stands.
     const world = mkWorld({ home: 'owner/private-home', dispatch: true, ghFails: true });
     const was = JSON.stringify({ version: 1, lastBrief: '2026-08-01', checkedAt: '2026-08-01T09:00:00Z' });
     fs.writeFileSync(world.markerFile, was);
 
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(world.marker(), was, 'the marker is untouched');
     assert(/marker: .*could not be read/.test(world.log()), `and the skip is named: ${world.log()}`);
     cleanup(world.root);
@@ -908,7 +908,7 @@ const run = async () => {
       home: 'owner/private-home', dispatch: true, posted: [{ title: 'daily: 2026-08-18' }],
     });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(world.marker(), null, 'a board with no brief on it is not a date');
     cleanup(world.root);
   });
@@ -916,13 +916,13 @@ const run = async () => {
   await test('a machine with no home repo records nothing, and says why', () => {
     const world = mkWorld({ home: null });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(world.marker(), null, 'there is no board to read');
     assert(/marker: no home repo/.test(world.log()), `the log names the skip: ${world.log()}`);
     cleanup(world.root);
   });
 
-  await test('a message argument records nothing — the generic runner stays generic', () => {
+  await test('a message argument records nothing: the generic runner stays generic', () => {
     const world = mkWorld({
       home: 'owner/private-home', posted: [{ title: `${BRIEF_TITLE_PREFIX}2026-08-17` }],
     });
@@ -955,9 +955,9 @@ const run = async () => {
   await test('--now sends the same brief, not the flag as a message', () => {
     const world = mkWorld();
     const res = runJob(world, ['--now']);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     const message = world.calls()[0][1];
-    assert(message.startsWith(INSTRUCTION), 'the flag reaches the compose step — the payload the cloud sends');
+    assert(message.startsWith(INSTRUCTION), 'the flag reaches the compose step: the payload the cloud sends');
     assert(!message.includes('--now'), 'and is never mistaken for the message');
     cleanup(world.root);
   });
@@ -966,7 +966,7 @@ const run = async () => {
     const world = mkWorld();
     runJob(world, ['--now']);
     const log = world.log();
-    assert(/── \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \(manual\) ──/.test(log), `stamped manual, got: ${log.slice(0, 120)}`);
+    assert(/--- \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \(manual\) ---/.test(log), `stamped manual, got: ${log.slice(0, 120)}`);
     cleanup(world.root);
   });
 

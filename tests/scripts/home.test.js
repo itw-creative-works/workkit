@@ -1,5 +1,5 @@
 //
-// Tests for workflow/home.sh — the home repo's lifecycle (issues #27, #77).
+// Tests for workflow/home.sh: the home repo's lifecycle (issues #27, #77).
 //
 // Every world is a scratch HOME with a scratch ~/.workkit (WORKFLOW_HOME) and a
 // `gh` shim that answers `api user`, `repo view`, `repo create` and the
@@ -9,10 +9,10 @@
 // here touches the real ~/.workkit.
 //
 // The tower app the seed copies is a FIXTURE (WORKKIT_TOWER_APP) shaped like the
-// real one — a brand root with targets/web, config/, a .gitignore, and file: specs
+// real one: a brand root with targets/web, config/, a .gitignore, and file: specs
 // pointing at a fake sibling framework. No omega, no npm install, no build.
 //
-// The library is sourced by a one-line driver rather than executed — it is a
+// The library is sourced by a one-line driver rather than executed: it is a
 // library, and the shell it is asked its questions in is the one the CLI and
 // the heal ask them in.
 //
@@ -29,7 +29,7 @@ const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 // The plugin checkout the cloud brief's runner is seeded FROM (issue #91). The
 // real one, because the point of that seed is that the scripts a runner
-// executes are these scripts — a fixture would prove only that files copy.
+// executes are these scripts: a fixture would prove only that files copy.
 const KIT_DIR = path.join(__dirname, '..', '..');
 const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 
@@ -44,7 +44,7 @@ const writeJson = (file, value) => {
 
 /**
  * A bare repo standing in for the one on GitHub, with an initial commit when
- * `seed` is given — the difference between a repo just created (empty) and one
+ * `seed` is given: the difference between a repo just created (empty) and one
  * a first machine already pushed to.
  */
 const mkRemote = (root, { seed = null } = {}) => {
@@ -67,7 +67,7 @@ const mkRemote = (root, { seed = null } = {}) => {
 };
 
 /**
- * The tower app the seed copies from — the real one's shape without its weight:
+ * The tower app the seed copies from, the real one's shape without its weight:
  * a brand root whose manifests carry `file:` specs into a sibling framework
  * checkout, a target under targets/web, and the accretions the seed must leave
  * behind (node_modules at both levels, a lockfile, .omega, dist).
@@ -94,7 +94,7 @@ const mkTowerApp = (root) => {
   });
   fs.writeFileSync(path.join(app, '.gitignore'), 'node_modules/\npackage-lock.json\ndist/\n.omega/\n');
   fs.writeFileSync(path.join(app, 'README.md'), '# the tower\n');
-  fs.writeFileSync(path.join(app, 'AGENTS.md'), '# the tower — architecture\n');
+  fs.writeFileSync(path.join(app, 'AGENTS.md'), '# the tower: architecture\n');
   fs.mkdirSync(path.join(app, 'config'), { recursive: true });
   fs.writeFileSync(path.join(app, 'config', 'omega.json5'), '{ brand: { id: "workkit" } }\n');
   fs.mkdirSync(path.join(app, 'targets', 'web', 'src'), { recursive: true });
@@ -140,7 +140,7 @@ const mkWorld = ({
 
   // npm is a shim throughout: a seed's install must never reach the network,
   // and no test in this suite runs a real build.
-  // `npmLinksOn` is which invocation links the workspace bin — 1 is the ordinary
+  // `npmLinksOn` is which invocation links the workspace bin: 1 is the ordinary
   // machine, 2 is the fresh tree npm needs two passes on, and 0 never links.
   // The CWD is recorded beside the argv, one path a line: that is what an
   // install is keyed from (issue #171), and a path out of mkdtemp holds no
@@ -168,7 +168,7 @@ const mkWorld = ({
   fs.chmodSync(path.join(bin, 'npm'), 0o755);
 
   const ghLog = path.join(root, 'gh-argv.log');
-  // The labels the stub believes the repo carries — a STORE, not a fixture, so
+  // The labels the stub believes the repo carries: a STORE, not a fixture, so
   // the clone's heal can be asked the question that matters: does a second run
   // find its own work and create nothing (issue #123)?
   const labelsFile = path.join(root, 'labels.json');
@@ -252,7 +252,7 @@ const mkWorld = ({
 };
 
 /**
- * Source the library and run one line of shell in it — how every caller uses
+ * Source the library and run one line of shell in it: how every caller uses
  * it. stdin is a pipe, so any prompt that forgot its tty guard hangs the test
  * rather than production.
  */
@@ -265,13 +265,21 @@ const inHome = (world, script, { input = '' } = {}) => {
     script,
   ].join('\n');
   // From the world's own root, never the caller's: a shim that keys anything
-  // off the cwd — as npm does — must key it off a scratch directory rather
+  // off the cwd (as npm does) must key it off a scratch directory rather
   // than this checkout.
   const res = spawnSync('bash', ['-c', driver], {
     cwd: world.root, env: world.env, input, encoding: 'utf8', timeout: 30000,
   });
   assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
-  return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
+  // `out` is the whole transcript, both streams in the order a terminal shows
+  // them: the library prints an action on stdout and a warning on stderr
+  // (issue #237), and what these tests read is what the user was told. `err`
+  // stays separate for the checks that are about the STREAM.
+  return {
+    code: res.status,
+    out: `${res.stdout || ''}${res.stderr || ''}`,
+    err: res.stderr || '',
+  };
 };
 
 /** A full setup run against a world whose remote is an empty bare repo. */
@@ -318,7 +326,7 @@ const run = async () => {
       .map((line) => line.trim())
       .filter((line) => line && !line.startsWith('#') && !line.startsWith('!'))
       // Matched by NAME at every depth, so only the top-level names are the
-      // list's to carry — a rule spelling out a path is a different question.
+      // list's to carry: a rule spelling out a path is a different question.
       .map((line) => line.replace(/\/$/, ''))
       .filter((line) => !line.includes('/'));
 
@@ -376,7 +384,7 @@ const run = async () => {
 
   await test('the slug write seeds the settings file when nothing has yet, with the switch unanswered', () => {
     // The one order where setup runs before any heal: this function creates the
-    // hand-edited file itself. `publish` seeds NULL (issue #84) — the same
+    // hand-edited file itself. `publish` seeds NULL (issue #84): the same
     // unanswered state the heal's seed writes, so whichever wrote it first,
     // setup still has a question to put.
     const world = mkWorld({ settings: null });
@@ -418,7 +426,7 @@ const run = async () => {
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root, { seed: { 'package.json': '{ "name": "tower" }\n' } });
 
     const { code, out } = inHome(world, 'wk_home_clone owner/workkit');
-    assertEq(code, 0, `exit 0 — ${out}`);
+    assertEq(code, 0, `exit 0: ${out}`);
     assert(fs.existsSync(path.join(world.tower, '.git')), 'the tower folder is the git repo');
     assert(fs.existsSync(path.join(world.tower, 'package.json')), 'carrying the remote’s files');
     assert(!fs.existsSync(path.join(world.workflowHome, '.git')), 'and ~/.workkit stays a plain folder');
@@ -428,11 +436,11 @@ const run = async () => {
 
   await test('an EMPTY repo clones fine, and the warning it prints is not an error', () => {
     // A repo GitHub just created has no commit. git clones it with a warning on
-    // stderr and no branch checked out — the ordinary first-setup case.
+    // stderr and no branch checked out: the ordinary first-setup case.
     const world = mkWorld();
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
     const { code, out, err } = inHome(world, 'wk_home_clone owner/workkit');
-    assertEq(code, 0, `exit 0 — ${out}${err}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
     assert(!/warning/i.test(out), `the warning is swallowed, got: ${out}`);
     assert(fs.existsSync(path.join(world.tower, '.git')), 'and the clone is there to seed');
     cleanup(world.root);
@@ -478,7 +486,7 @@ const run = async () => {
     const world = mkWorld();
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
     const { code, out } = inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed');
-    assertEq(code, 0, `exit 0 — ${out}`);
+    assertEq(code, 0, `exit 0: ${out}`);
 
     assert(fs.existsSync(path.join(world.tower, 'targets', 'web', 'src', 'index.html')), 'the app travels');
     assert(fs.existsSync(path.join(world.tower, 'config', 'omega.json5')), 'and the brand config');
@@ -527,7 +535,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the seed is the app and nothing else — no config file, no .workkit', () => {
+  await test('the seed is the app and nothing else: no config file, no .workkit', () => {
     // The clone is engine territory (issue #79): the site options are the
     // user's and live in the machine settings file, and the home repo is known
     // by path, so there is no opt-in to seed and no inbox to keep out.
@@ -567,7 +575,7 @@ const run = async () => {
 
   await test('a stray .workkit/ in the clone is never committed by the daily push', () => {
     // The clone carries no participation state, so anything under that name is
-    // scratch someone or something left there — and an unattended commit must
+    // scratch someone or something left there, and an unattended commit must
     // not push it to the default branch (issue #79).
     const world = mkWorld();
     const remote = mkRemote(world.root);
@@ -612,8 +620,8 @@ const run = async () => {
   };
 
   /**
-   * A COPY of this checkout's runner sources, so a test can change one of them
-   * — the drift a later setup exists to heal is drift in the checkout, and the
+   * A COPY of this checkout's runner sources, so a test can change one of them.
+   * The drift a later setup exists to heal is drift in the checkout, and the
    * real one is not a test's to edit.
    */
   const mkKitCopy = (root) => {
@@ -773,12 +781,12 @@ const run = async () => {
   group('workflow/home: the version stamp');
 
   // Issue #200: two machines seed ONE clone, and before the stamp the winner
-  // was simply whichever ran last — a machine on an older kit put a month-old
+  // was simply whichever ran last: a machine on an older kit put a month-old
   // runner and a pre-rename app back on the home repo three mornings running.
   // The stamp is the tie-breaker: the clone says which kit wrote what is in it,
   // and an older checkout writes nothing at all.
 
-  /** Where the stamp lives and what it is called — the name IS the contract. */
+  /** Where the stamp lives and what it is called: the name IS the contract. */
   const STAMP = '.workkit-version';
   const kitVersion = () => JSON.parse(
     fs.readFileSync(path.join(KIT_DIR, '.claude-plugin', 'plugin.json'), 'utf8'),
@@ -833,7 +841,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('an older stamp is no obstacle — the seed runs and the stamp moves forward', () => {
+  await test('an older stamp is no obstacle: the seed runs and the stamp moves forward', () => {
     const world = mkWorld();
     seeded(world);
     fs.writeFileSync(path.join(world.tower, STAMP), '0.0.1\n');
@@ -899,7 +907,7 @@ const run = async () => {
   await test('setup creates the repo, clones it, seeds it, and records the slug', () => {
     const world = mkWorld({ login: 'owner' });
     const { code, out } = setup(world);
-    assertEq(code, 0, `exit 0 — ${out}`);
+    assertEq(code, 0, `exit 0: ${out}`);
 
     const calls = world.ghCalls().map((c) => c.join(' '));
     assert(calls.some((c) => c.includes('repo create owner/workkit --private')), `the private repo is created: ${fmtCalls(world.ghCalls())}`);
@@ -916,10 +924,10 @@ const run = async () => {
     // installs the issue forms on top of it (issue #123).
     const subjects = spawnSync('git', ['-C', world.tower, 'log', '--pretty=%s'], { encoding: 'utf8' }).stdout.trim().split('\n');
     assertEq(subjects[subjects.length - 1], 'chore(home): seed the tower project', 'the first commit says what it is');
-    // The wiring itself, pinned: setup runs the clone's heal (issue #123) —
+    // The wiring itself, pinned: setup runs the clone's heal (issue #123):
     // deleting the wk_home_heal calls in wk_home_setup goes red here.
     assert(subjects.includes('chore(home): install the issue templates'),
-      `and setup healed the clone's issue forms — its log: ${subjects.join(' | ')}`);
+      `and setup healed the clone's issue forms, its log: ${subjects.join(' | ')}`);
     cleanup(world.root);
   });
 
@@ -930,7 +938,7 @@ const run = async () => {
     const head = spawnSync('git', ['-C', world.tower, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout;
 
     const { code, out } = setup(world);
-    assertEq(code, 0, `exit 0 — ${out}`);
+    assertEq(code, 0, `exit 0: ${out}`);
     assert(!/created the private repo/.test(out), `nothing is created twice, got: ${out}`);
     assert(/is the clone of/.test(out), `it reports the clone it found, got: ${out}`);
     assertEq(fs.readFileSync(path.join(world.tower, 'targets', 'web', 'src', 'index.html'), 'utf8'),
@@ -945,7 +953,7 @@ const run = async () => {
       seed: { 'package.json': '{ "name": "tower" }\n', 'README.md': '# from elsewhere\n' },
     });
     const { code, out } = setup(world);
-    assertEq(code, 0, `exit 0 — ${out}`);
+    assertEq(code, 0, `exit 0: ${out}`);
     assertEq(fs.readFileSync(path.join(world.tower, 'README.md'), 'utf8'), '# from elsewhere\n',
       'the other machine’s project is the one here');
     assert(!fs.existsSync(path.join(world.tower, 'targets')), 'and nothing was seeded over it');
@@ -961,7 +969,7 @@ const run = async () => {
       seed: { 'package.json': '{ "name": "tower" }\n', 'README.md': '# from elsewhere\n' },
     });
     const { code, out } = setup(world);
-    assertEq(code, 0, `exit 0 — ${out}`);
+    assertEq(code, 0, `exit 0: ${out}`);
     assert(/installing the tower project's dependencies/.test(out), `it says what it is doing, got: ${out}`);
     assert(fs.existsSync(path.join(world.tower, 'node_modules', '.bin', 'omega')), 'and the build tooling is there afterwards');
 
@@ -977,14 +985,14 @@ const run = async () => {
     // install a fresh machine ever runs: `npm --prefix <link>/tower install`
     // resolves the project through the link while keying the tree from the
     // CALLER'S cwd, and the lockfile takes package paths outside the project
-    // root — a corrupt tree the next install dies inside arborist on.
+    // root: a corrupt tree the next install dies inside arborist on.
     const world = mkWorld({ login: 'owner' });
     const link = path.join(world.root, 'linked-workkit');
     fs.symlinkSync(world.workflowHome, link);
     world.env.WORKFLOW_HOME = link;
 
     const { code, out } = setup(world);
-    assertEq(code, 0, `exit 0 — ${out}`);
+    assertEq(code, 0, `exit 0: ${out}`);
     const cwds = world.npmCwds();
     assertEq(cwds.length, 1, `one install, and its cwd recorded: ${cwds.join(' | ')}`);
     assertEq(cwds[0], world.tower, 'the cwd is the clone with its links resolved');
@@ -999,7 +1007,7 @@ const run = async () => {
     // linked everything. One retry is what makes that machine publishable.
     const world = mkWorld({ login: 'owner', npmLinksOn: 2 });
     const { code, out } = setup(world);
-    assertEq(code, 0, `exit 0 — ${out}`);
+    assertEq(code, 0, `exit 0: ${out}`);
     assert(/the tower project can build here/.test(out), `the retry is what proved it, got: ${out}`);
     assert(fs.existsSync(path.join(world.tower, 'node_modules', '.bin', 'omega')), 'and the bin is linked');
     assertEq(world.npmCalls().filter((c) => /install/.test(c)).length, 2, 'two passes, never more');
@@ -1009,7 +1017,7 @@ const run = async () => {
   await test('a tree that never links its bins warns once, after the retry', () => {
     const world = mkWorld({ login: 'owner', npmLinksOn: 0 });
     const { code, out } = setup(world);
-    assertEq(code, 0, `the setup still finishes — ${out}`);
+    assertEq(code, 0, `the setup still finishes: ${out}`);
     assertEq(world.npmCalls().filter((c) => /install/.test(c)).length, 2, 'it retried once and stopped');
     assert(/build tooling did not install/.test(out), `and says so plainly, got: ${out}`);
     cleanup(world.root);
@@ -1057,8 +1065,8 @@ const run = async () => {
   });
 
   await test('Discussions are enabled, and missing categories get a one-time pointer', () => {
-    // GitHub has NO mutation that creates a discussion category — probed
-    // against the live schema — so the only honest step is to name the page.
+    // GitHub has NO mutation that creates a discussion category, probed
+    // against the live schema, so the only honest step is to name the page.
     const world = mkWorld({ login: 'owner', categories: ['General'] });
     const { code, out } = inHome(world, 'wk_home_discussions owner/workkit');
     assertEq(code, 0, 'exit 0');
@@ -1094,7 +1102,7 @@ const run = async () => {
     cleanup(world.root); cleanup(refused.root);
   });
 
-  await test('setup creates no branch — the publish makes gh-pages when it first pushes', () => {
+  await test('setup creates no branch: the publish makes gh-pages when it first pushes', () => {
     // Issue #71's boundary: the wizard creates the repo, Discussions and Pages;
     // a branch is generated output and belongs to whatever generates it.
     const world = mkWorld({ login: 'owner' });
@@ -1122,7 +1130,7 @@ const run = async () => {
   });
 
   await test('a rollup reads prior summaries back, and the window is applied here', () => {
-    // The API takes no date argument — only an order — so the period is a
+    // The API takes no date argument (only an order) so the period is a
     // filter on what came back, not a query the server ran.
     const world = mkWorld({ login: 'owner', discussionsOn: true });
     const { code, out } = inHome(world, 'wk_disc_list owner/workkit Daily 2026-07-21T00:00:00Z');
@@ -1143,7 +1151,7 @@ const run = async () => {
   group('workflow/home: the clone’s own heal');
 
   // The clone is engine territory and no session ever opens in it, so the heal
-  // every other repo gets at SessionStart is invoked here instead — scoped to
+  // every other repo gets at SessionStart is invoked here instead, scoped to
   // what makes a repo fileable into: labels and issue forms (issue #123).
   const cloned = () => {
     const world = mkWorld({
@@ -1159,7 +1167,7 @@ const run = async () => {
   await test('the home repo gets the labels and the forms, and they are pushed', () => {
     const world = cloned();
     const { code, out, err } = inHome(world, 'wk_home_heal');
-    assertEq(code, 0, `exit 0 — ${out}${err}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
 
     const names = world.labels().map((l) => l.name);
     for (const label of ['status:inbox', 'type:idea']) {
@@ -1177,7 +1185,7 @@ const run = async () => {
         `${form}.md landed in the clone`);
     }
 
-    // The forms are files, so they are committed and pushed — a template only
+    // The forms are files, so they are committed and pushed: a template only
     // this machine can see applies to nothing filed from a phone.
     const check = path.join(world.root, 'check');
     spawnSync('git', ['clone', '-q', world.env.WORKKIT_HOME_REMOTE, check], { encoding: 'utf8' });
@@ -1198,7 +1206,7 @@ const run = async () => {
     // push with nothing to send both leave the same repo behind.
     const { code, out } = inHome(world,
       'wk_home_commit_push() { printf "COMMIT_PUSH %s\\n" "$1"; return 0; }\nwk_home_heal');
-    assertEq(code, 0, `exit 0 — ${out}`);
+    assertEq(code, 0, `exit 0: ${out}`);
     assert(!/COMMIT_PUSH/.test(out), `nothing was committed or pushed, got: ${out}`);
     assertEq(spawnSync('git', ['-C', world.tower, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout, head,
       'the clone is exactly where the first run left it');
@@ -1220,12 +1228,12 @@ const run = async () => {
     const remote = world.env.WORKKIT_HOME_REMOTE;
     fs.renameSync(remote, `${remote}.away`);
     const first = inHome(world, 'wk_home_heal');
-    assertEq(first.code, 0, `the morning carries on — ${first.out}${first.err}`);
+    assertEq(first.code, 0, `the morning carries on: ${first.out}${first.err}`);
     assert(/could not push/.test(`${first.out}${first.err}`), `the failed push is named, got: ${first.out}${first.err}`);
     fs.renameSync(`${remote}.away`, remote);
 
     const { code, out, err } = inHome(world, 'wk_home_heal');
-    assertEq(code, 0, `exit 0 — ${out}${err}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
     const check = path.join(world.root, 'check-stranded');
     spawnSync('git', ['clone', '-q', remote, check], { encoding: 'utf8' });
     assert(fs.existsSync(path.join(check, '.github', 'ISSUE_TEMPLATE', 'idea.md')),
@@ -1239,7 +1247,7 @@ const run = async () => {
       settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } },
     });
     const { code, out } = inHome(world, 'wk_home_heal\nprintf "carried on\\n"');
-    assertEq(code, 0, 'exit 0 — a heal that cannot run never stops its caller');
+    assertEq(code, 0, 'exit 0: a heal that cannot run never stops its caller');
     assert(/nothing is cloned at .*tower/.test(out), `it names the missing clone, got: ${out}`);
     assert(/not healed/.test(out), 'and what went unhealed is named');
     assert(/carried on/.test(out), 'the caller runs on');
@@ -1247,7 +1255,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('an ordinary repo is refused — the mode heals the clone and nothing else', () => {
+  await test('an ordinary repo is refused: the mode heals the clone and nothing else', () => {
     // The participation gate is not bypassed but inverted: --home writes into
     // the tower clone only, so it can never touch a repo that never said yes.
     const world = cloned();
@@ -1389,7 +1397,7 @@ const run = async () => {
 
   await test('a seeded file the checkout has moved past is reported as behind', () => {
     const world = withRunner();
-    // The checkout moved on — a `git pull` since the last setup.
+    // The checkout moved on: a `git pull` since the last setup.
     fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.sh'), '\n# a later change\n');
     const { out } = runnerDoctor(world);
     assert(/brief runner is behind this checkout/.test(out), `it names the drift, got: ${out}`);
@@ -1401,7 +1409,7 @@ const run = async () => {
 
   await test('a retired file awaiting the prune is drift, not current', () => {
     // #117: the seed now removes what the manifest stopped naming, so a clone
-    // holding such a file is one setup would still change — doctor must not
+    // holding such a file is one setup would still change: doctor must not
     // call it current.
     const world = withRunner();
     const retired = path.join(world.tower, 'brief', 'jobs', 'claude-cloud.sh');
@@ -1409,16 +1417,16 @@ const run = async () => {
     const { out } = runnerDoctor(world);
     assert(/1 retired file\(s\) await pruning/.test(out), `it names the leftover, got: ${out}`);
     assert(/workkit setup/.test(out) && /rc=1/.test(out), `and warns, got: ${out}`);
-    assert(fs.existsSync(retired), 'doctor only reads — the file is still there');
+    assert(fs.existsSync(retired), 'doctor only reads: the file is still there');
     cleanup(world.root);
   });
 
-  await test('doctor only reads — it never writes the runner back or pushes', () => {
+  await test('doctor only reads: it never writes the runner back or pushes', () => {
     const world = withRunner();
     const file = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
     fs.writeFileSync(file, '# an old copy\n');
     runnerDoctor(world);
-    assertEq(fs.readFileSync(file, 'utf8'), '# an old copy\n', 'the clone is untouched — the writers are setup and the morning run');
+    assertEq(fs.readFileSync(file, 'utf8'), '# an old copy\n', 'the clone is untouched: the writers are setup and the morning run');
     cleanup(world.root);
   });
 
@@ -1426,7 +1434,7 @@ const run = async () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     const { out } = runnerDoctor(world);
     assert(/runner: no home clone at/.test(out), `it names what is missing, got: ${out}`);
-    assert(/rc=0/.test(out), 'and nothing to fix here — the home line already said it');
+    assert(/rc=0/.test(out), 'and nothing to fix here: the home line already said it');
     cleanup(world.root);
   });
 

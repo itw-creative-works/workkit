@@ -1,5 +1,5 @@
 //
-// Tests for jobs/install.sh — the LaunchAgent installer.
+// Tests for jobs/install.sh: the LaunchAgent installer.
 //
 // HOME is a scratch directory and `launchctl` is a recorder on PATH, so nothing
 // here touches ~/Library/LaunchAgents or the real gui domain: the suite reads
@@ -16,7 +16,7 @@ const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'install.sh');
 const REPO = path.join(__dirname, '..', '..');
 
-// The one agent this checkout installs — the 9am job, which runs the summaries
+// The one agent this checkout installs: the 9am job, which runs the summaries
 // step and then the brief. The label is the schedule's name and outlives the
 // script it points at, which since issue #107 is the one morning entry point.
 const AGENT = { label: 'com.workkit.claude-daily', runner: 'morning.sh', hour: '9' };
@@ -27,8 +27,8 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
 
 /**
  * A scratch home plus a `launchctl` recorder. `loaded` decides what
- * `launchctl print` answers for the agent this checkout installs — the
- * difference between one already running and one never bootstrapped — and
+ * `launchctl print` answers for the agent this checkout installs (the
+ * difference between one already running and one never bootstrapped) and
  * `loadedPath` the plist that answer says the label is registered from, which
  * is the checkout's own unless a test wants a stray registration.
  *
@@ -92,7 +92,7 @@ const run = async () => {
   await test('the daily agent is rendered, for this checkout and this home', () => {
     const world = mkWorld();
     const res = install(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
 
     const plist = fs.readFileSync(world.plist(LABEL), 'utf8');
     assert(!plist.includes('{{'), `no placeholder survives: ${plist}`);
@@ -114,7 +114,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('it is the only agent installed — one job, one cron', () => {
+  await test('it is the only agent installed: one job, one cron', () => {
     const world = mkWorld();
     install(world);
     assertEq(world.rendered().join(','), `${LABEL}.plist`, 'nothing else is rendered into LaunchAgents');
@@ -139,8 +139,8 @@ const run = async () => {
     const before = world.calls().length;
 
     const res = install(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
-    assert(new RegExp(`${LABEL} → already installed and loaded`).test(res.stdout), `it says so: ${res.stdout}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
+    assert(new RegExp(`✓ ${LABEL} → already installed and loaded`).test(res.stdout), `it says so: ${res.stdout}`);
     assertEq(fs.readFileSync(world.installed, 'utf8'), first, 'the plist is untouched');
 
     const added = world.calls().slice(before);
@@ -158,7 +158,7 @@ const run = async () => {
     assert(/loaded \(plist unchanged\)/.test(res.stdout), `it says what it did: ${res.stdout}`);
     const added = world.calls().slice(before);
     assertEq(added.length, 2, `print, then bootstrap: ${fmtCalls(added)}`);
-    assert(isCall(added[1], 'bootstrap'), 'no bootout — there was nothing to remove');
+    assert(isCall(added[1], 'bootstrap'), 'no bootout: there was nothing to remove');
     assert(!added.some((c) => isCall(c, 'bootout')), `and nothing was booted out: ${fmtCalls(added)}`);
     cleanup(world.root);
   });
@@ -182,7 +182,7 @@ const run = async () => {
     const before = world.calls().length;
 
     const res = install(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(/reloaded \(was registered from \/somewhere\/stale\.plist\)/.test(res.stdout), `it names the stray path: ${res.stdout}`);
 
     const added = world.calls().slice(before);
@@ -209,8 +209,8 @@ const run = async () => {
   await test('a run under a scratch home asks launchd for nothing', () => {
     const world = mkWorld({ launchdOk: false });
     const res = install(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
-    assertEq(fmtCalls(world.calls()), '', 'not one launchctl call — the gui domain is the whole machine’s');
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
+    assertEq(fmtCalls(world.calls()), '', 'not one launchctl call: the gui domain is the whole machine’s');
     assert(/would boot.*\(skipped: HOME is not this account's home/.test(res.stdout), `and it says what it would have done: ${res.stdout}`);
     assert(fs.existsSync(world.installed), 'the plist is still rendered into the scratch home');
     cleanup(world.root);
@@ -226,7 +226,7 @@ const run = async () => {
       timeout: 30000,
       env: { ...world.env, WORKKIT_LAUNCHD_OK: '' },
     });
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(fmtCalls(world.calls().slice(before)), '', 'launchd is not even asked whether it is loaded');
     assert(/would bootstrap it \(plist unchanged\)/.test(res.stdout), `it says so: ${res.stdout}`);
     cleanup(world.root);
@@ -235,7 +235,7 @@ const run = async () => {
   await test('the override is what lets a fixture home talk to launchd', () => {
     const world = mkWorld({ launchdOk: true });
     const res = install(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(world.calls().some((c) => isCall(c, 'bootstrap', `gui/${process.getuid()}`, world.plist(LABEL))), `the calls happen: ${fmtCalls(world.calls())}`);
     assert(!/skipped/.test(res.stdout), `and nothing is skipped: ${res.stdout}`);
     cleanup(world.root);
@@ -246,8 +246,8 @@ const run = async () => {
   await test('a machine with nothing installed says the agent is not installed', () => {
     const world = mkWorld();
     const res = check(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
-    assert(new RegExp(`${LABEL} → not installed`).test(res.stdout), `it says so: ${res.stdout}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
+    assert(new RegExp(`✓ ${LABEL} → not installed`).test(res.stdout), `it says so: ${res.stdout}`);
     assertEq(world.rendered().join(','), '', 'and writes nothing');
     cleanup(world.root);
   });
@@ -257,7 +257,7 @@ const run = async () => {
     install(world);
     const before = world.calls().length;
     const res = check(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(res.stdout, '', `silence is "current": ${res.stdout}`);
     assertEq(world.calls().length, before, `no launchctl call at all: ${fmtCalls(world.calls().slice(before))}`);
     cleanup(world.root);
@@ -268,7 +268,7 @@ const run = async () => {
     install(world);
     fs.appendFileSync(world.installed, '\n<!-- from an older checkout -->\n');
     const res = check(world);
-    assert(new RegExp(`${LABEL} → out of date`).test(res.stdout), `it names the drift: ${res.stdout}`);
+    assert(new RegExp(`✓ ${LABEL} → out of date`).test(res.stdout), `it names the drift: ${res.stdout}`);
     assert(fs.readFileSync(world.installed, 'utf8').includes('older checkout'), 'and the check writes nothing');
     cleanup(world.root);
   });

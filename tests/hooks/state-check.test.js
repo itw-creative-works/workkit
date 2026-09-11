@@ -1,5 +1,5 @@
 //
-// Tests for hooks/docs:state-check — the SessionStart hook that announces
+// Tests for hooks/docs:state-check: the SessionStart hook that announces
 // open status:inbox issues, a non-empty .workkit/capture.md, a content-bearing
 // CLAUDE.md, and an oversized AGENTS.md. Silent when everything is current.
 //
@@ -51,7 +51,7 @@ const makeGhStub = ({ issues = [] } = {}) => {
 // One argv array per recorded `gh` invocation.
 const ghCalls = (stub) => readArgv(stub.logFile);
 
-// Fresh cache dir per run by default — the ~30-min issue-count cache must never
+// Fresh cache dir per run by default. The ~30-min issue-count cache must never
 // leak between tests or write into the real ~/.claude/logs. Pass `cache` to
 // share one across runs (that is what the cache tests exercise); a shared dir is
 // the caller's to clean up.
@@ -75,7 +75,7 @@ const runHook = (cwd, { pathPrefix, cache } = {}) => {
 const run = async () => {
   group('state-check: silence when nothing needs attention');
 
-  await test('bare directory — silent exit 0', () => {
+  await test('bare directory: silent exit 0', () => {
     const dir = mkTmp();
     const { code, stdout } = runHook(dir);
     assertEq(code, 0, 'exit 0');
@@ -83,7 +83,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('a repo with no inbox issues — silent', () => {
+  await test('a repo with no inbox issues: silent', () => {
     const repo = mkRepo();
     const stub = makeGhStub({ issues: [] });
     const { code, stdout } = runHook(repo, { pathPrefix: stub.binDir });
@@ -94,7 +94,7 @@ const run = async () => {
 
   group('state-check: status:inbox issues');
 
-  await test('three open inbox issues — announces the count and offers triage', () => {
+  await test('three open inbox issues: announces the count and offers triage', () => {
     const repo = mkRepo();
     const stub = makeGhStub({ issues: [{ number: 1 }, { number: 2 }, { number: 3 }] });
     const { stdout } = runHook(repo, { pathPrefix: stub.binDir });
@@ -104,11 +104,11 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('one issue — singular grammar', () => {
+  await test('one issue: singular grammar', () => {
     const repo = mkRepo();
     const stub = makeGhStub({ issues: [{ number: 7 }] });
     const { stdout } = runHook(repo, { pathPrefix: stub.binDir });
-    assert(stdout.includes('1 open status:inbox issue '), `singular form, got: ${stdout}`);
+    assert(stdout.includes('1 open status:inbox issue.'), `singular form, got: ${stdout}`);
     cleanup(repo); cleanup(stub.dir);
   });
 
@@ -118,7 +118,7 @@ const run = async () => {
     runHook(repo, { pathPrefix: stub.binDir });
     const calls = ghCalls(stub);
     assertEq(calls.length, 1, `exactly one gh call, got: ${fmtCalls(calls)}`);
-    // Flag and value must be SEPARATE arguments — `--label status:inbox` arriving
+    // Flag and value must be SEPARATE arguments. `--label status:inbox` arriving
     // as one word (or as two words that got split further) is a different query.
     const hasFlag = (call, flag, value) => call.some((a, i) => a === flag && call[i + 1] === value);
     assert(hasFlag(calls[0], '--state', 'open'), `open only, got: ${fmtCalls(calls)}`);
@@ -127,7 +127,7 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('no gh on PATH — silent skip, everything else still checked', () => {
+  await test('no gh on PATH: silent skip, everything else still checked', () => {
     const repo = mkRepo();
     fs.writeFileSync(path.join(repo, 'CLAUDE.md'), '# Big Doc\n\nrules\nmore rules\nand more\n');
     const { code, stdout } = runHook(repo);
@@ -137,7 +137,7 @@ const run = async () => {
     cleanup(repo);
   });
 
-  await test('gh failing (offline / unauthenticated) — silent skip', () => {
+  await test('gh failing (offline / unauthenticated): silent skip', () => {
     const repo = mkRepo();
     const stub = makeGhStub({ issues: null });
     const { code, stdout } = runHook(repo, { pathPrefix: stub.binDir });
@@ -146,7 +146,7 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('non-git directory — gh is never called', () => {
+  await test('non-git directory: gh is never called', () => {
     const dir = mkTmp();
     const stub = makeGhStub({ issues: [{ number: 1 }] });
     const { stdout } = runHook(dir, { pathPrefix: stub.binDir });
@@ -157,7 +157,7 @@ const run = async () => {
 
   group('state-check: local .workkit/capture.md');
 
-  await test('a non-empty capture file — announces it', () => {
+  await test('a non-empty capture file: announces it', () => {
     const dir = mkTmp();
     fs.mkdirSync(path.join(dir, W));
     fs.writeFileSync(path.join(dir, W, 'capture.md'), '# capture\n> dump anything\n\nan idea\nanother\n');
@@ -167,7 +167,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('a header-only capture file — silent', () => {
+  await test('a header-only capture file: silent', () => {
     const dir = mkTmp();
     fs.mkdirSync(path.join(dir, W));
     fs.writeFileSync(path.join(dir, W, 'capture.md'), '# capture\n> dump anything here\n\n');
@@ -176,7 +176,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('inbox issues + captures — both in one context', () => {
+  await test('inbox issues + captures: both in one context', () => {
     const repo = mkRepo();
     fs.mkdirSync(path.join(repo, W));
     fs.writeFileSync(path.join(repo, W, 'capture.md'), 'note\n');
@@ -192,7 +192,7 @@ const run = async () => {
     const dir = mkTmp();
     fs.writeFileSync(path.join(dir, 'PROGRESS.md'), '# Project Progress Tracker\n\n## Current Focus\n* stuff\n');
     const { stdout } = runHook(dir);
-    assertEq(stdout, '', 'board files are dying — no legacy-format announcement');
+    assertEq(stdout, '', 'board files are dying: no legacy-format announcement');
     cleanup(dir);
   });
 
@@ -206,7 +206,7 @@ const run = async () => {
 
   group('state-check: content-bearing CLAUDE.md (pointer doctrine)');
 
-  await test('content-bearing CLAUDE.md — announces conversion', () => {
+  await test('content-bearing CLAUDE.md: announces conversion', () => {
     const dir = mkTmp();
     fs.writeFileSync(path.join(dir, 'CLAUDE.md'), '# Big Doc\n\nlots of rules\nmore rules\nand more\n');
     const { stdout } = runHook(dir);
@@ -215,7 +215,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('pointer CLAUDE.md — silent', () => {
+  await test('pointer CLAUDE.md: silent', () => {
     const dir = mkTmp();
     fs.writeFileSync(path.join(dir, 'CLAUDE.md'), '@AGENTS.md\n');
     const { stdout } = runHook(dir);
@@ -223,7 +223,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('no CLAUDE.md — silent', () => {
+  await test('no CLAUDE.md: silent', () => {
     const dir = mkTmp();
     const { stdout } = runHook(dir);
     assert(!stdout.includes('CLAUDE.md'), 'missing file is fine');
@@ -232,7 +232,7 @@ const run = async () => {
 
   group('state-check: oversized AGENTS.md');
 
-  await test('AGENTS.md over 250 lines — announces the offload', () => {
+  await test('AGENTS.md over 250 lines: announces the offload', () => {
     const dir = mkTmp();
     fs.writeFileSync(path.join(dir, 'AGENTS.md'), `# repo\n${'line\n'.repeat(255)}`);
     const { stdout } = runHook(dir);
@@ -241,7 +241,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('AGENTS.md within budget — silent', () => {
+  await test('AGENTS.md within budget: silent', () => {
     const dir = mkTmp();
     fs.writeFileSync(path.join(dir, 'AGENTS.md'), `# repo\n${'line\n'.repeat(100)}`);
     const { stdout } = runHook(dir);
@@ -252,7 +252,7 @@ const run = async () => {
   // The density half of the same budget (issue #161): a markdown paragraph is
   // one source line, so a file well inside 250 lines still carries a book. The
   // unit is BYTES, pinned with LC_ALL=C the way board-guard pins it.
-  await test('a dense AGENTS.md inside the line count — announces the density rule', () => {
+  await test('a dense AGENTS.md inside the line count: announces the density rule', () => {
     const dir = mkTmp();
     fs.writeFileSync(path.join(dir, 'AGENTS.md'), `# repo\n${'x'.repeat(2100)}\n${'line\n'.repeat(100)}`);
     const { stdout } = runHook(dir);
@@ -263,7 +263,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('several dense lines — the count is plural', () => {
+  await test('several dense lines: the count is plural', () => {
     const dir = mkTmp();
     fs.writeFileSync(path.join(dir, 'AGENTS.md'), `# repo\n${`${'x'.repeat(500)}\n`.repeat(3)}`);
     const { stdout } = runHook(dir);
@@ -271,7 +271,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('a 400-byte line — silent (the boundary passes)', () => {
+  await test('a 400-byte line: silent (the boundary passes)', () => {
     const dir = mkTmp();
     fs.writeFileSync(path.join(dir, 'AGENTS.md'), `# repo\n${'x'.repeat(400)}\n`);
     const { stdout } = runHook(dir);
@@ -279,9 +279,9 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('a non-ASCII line — 370 characters, 410 bytes, and it counts', () => {
+  await test('a non-ASCII line: 370 characters, 410 bytes, and it counts', () => {
     const dir = mkTmp();
-    const line = `${'x'.repeat(350)}${'—'.repeat(20)}`;
+    const line = `${'x'.repeat(350)}${'\u2014'.repeat(20)}`;
     assertEq(Buffer.byteLength(line, 'utf8'), 410, 'the fixture is 410 bytes');
     fs.writeFileSync(path.join(dir, 'AGENTS.md'), `# repo\n${line}\n`);
     const { stdout } = runHook(dir);
@@ -295,14 +295,14 @@ const run = async () => {
 
   // Only SILENCE is cached (issue #1). An announcement describes a queue that
   // triage can empty at any moment, and triage leaves no local trace this hook
-  // could fingerprint — so the announcing state is re-asked every session and
+  // could fingerprint, so the announcing state is re-asked every session and
   // the cache invalidates itself.
   const issueCount = (stub) => ghCalls(stub).filter((c) => isCall(c, 'issue', 'list')).length;
   // The stub answers `issue list` from this file, so rewriting it is what the
   // repo's queue changing between two sessions looks like.
   const setIssues = (stub, issues) => fs.writeFileSync(path.join(stub.dir, 'issues.json'), JSON.stringify(issues));
 
-  await test('an empty queue is cached — a second session inside 30 minutes makes no gh call', () => {
+  await test('an empty queue is cached: a second session inside 30 minutes makes no gh call', () => {
     const repo = mkRepo();
     const stub = makeGhStub({ issues: [] });
     const cache = mkTmp();
@@ -315,7 +315,7 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir); cleanup(cache);
   });
 
-  await test('a count worth announcing is never cached — the next session asks again', () => {
+  await test('a count worth announcing is never cached: the next session asks again', () => {
     const repo = mkRepo();
     const stub = makeGhStub({ issues: [{ number: 1 }, { number: 2 }] });
     const cache = mkTmp();
@@ -330,7 +330,7 @@ const run = async () => {
 
   await test('triage drains the inbox and the very next session goes quiet', () => {
     // The reported bug (issue #1): the drained inbox kept announcing until the
-    // cache aged out. Nothing here invalidates anything — the announcing state
+    // cache aged out. Nothing here invalidates anything. The announcing state
     // simply has no cache entry to go stale.
     const repo = mkRepo();
     const stub = makeGhStub({ issues: [{ number: 1 }, { number: 2 }] });
@@ -361,7 +361,7 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir); cleanup(cache);
   });
 
-  await test('empty cwd in input — exit 0', () => {
+  await test('empty cwd in input: exit 0', () => {
     const { code } = runHook('');
     assertEq(code, 0, 'fail open');
   });

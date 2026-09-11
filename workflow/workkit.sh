@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# workkit — the one command (issue #71).
+# workkit: the one command (issue #71).
 #
 # Installing the plugin wires the hooks, the skills, and the agents. Everything
-# else a working machine needs — the 9am schedule, the engine's address, the
-# per-repo opt-in, a `workkit` on the PATH — was a set of separate commands
+# else a working machine needs (the 9am schedule, the engine's address, the
+# per-repo opt-in, a `workkit` on the PATH) was a set of separate commands
 # nobody could find. This is the front door for all of them:
 #
 #   workkit help                the map
@@ -19,21 +19,21 @@
 #
 # Agent-agnostic like the rest of the engine: shell only, no Claude Code
 # knowledge beyond the name of a CLI it looks for. The checkout is resolved from
-# this script's own location — the link chain walked to the real file FIRST, so
+# this script's own location: the link chain walked to the real file FIRST, so
 # `~/.local/bin/workkit` and `~/.claude/workkit/workkit.sh` both land on the
 # checkout rather than on the directory the link happens to sit in.
 #
 # UPKEEP IS AUTOMATIC. Claude Code has no plugin-install hook, so the trigger is
 # the one this kit owns: the workflow:standards SessionStart hook's once-per-day
 # run calls `update --auto`. That path only ever UPDATES a schedule a human
-# already installed (the installed daily plist is the marker) — a first install
+# already installed (the installed daily plist is the marker). A first install
 # belongs to `setup`, run by a person.
 
 set -euo pipefail
 
 # The link chain, walked before the dirname. `pwd -P` alone resolves the
 # DIRECTORIES on the way in, never the final component, so a run through
-# ~/.local/bin/workkit would otherwise call ~/.local/bin the checkout — and
+# ~/.local/bin/workkit would otherwise call ~/.local/bin the checkout, and
 # every path below it (the engine, the installer, the symlink this script
 # maintains) would name a file that does not exist.
 SOURCE="${BASH_SOURCE[0]}"
@@ -52,7 +52,7 @@ CAPTURE="$SCRIPT_DIR/wk.sh"
 PUBLISH="$SCRIPT_DIR/publish.sh"
 JOBS_INSTALL="$KIT_DIR/jobs/install.sh"
 TOWER_START="$KIT_DIR/tower/start.sh"
-# The morning, and the one function that hands it to the cloud — the same two
+# The morning, and the one function that hands it to the cloud: the same two
 # files the 9am schedule runs, so `workkit brief` is that morning on demand
 # rather than a second way of doing it.
 MORNING="$KIT_DIR/jobs/morning.sh"
@@ -61,18 +61,18 @@ BRIEF_DISPATCH="$KIT_DIR/jobs/brief-dispatch.sh"
 # The plugin, as `claude plugin list` names it, and the marketplace this repo is.
 PLUGIN_ID="workkit@workkit"
 
-# The installed daily schedule — the marker that says a human ran the install.
+# The installed daily schedule: the marker that says a human ran the install.
 DAILY_LABEL="com.workkit.claude-daily"
 DAILY_PLIST="${HOME:-}/Library/LaunchAgents/$DAILY_LABEL.plist"
 
 # The command's own address. ~/.local/bin because it is the one directory a user
 # owns that every shell setup already knows about; the PATH line is printed and
-# never written — someone's rc file is theirs.
+# never written: someone's rc file is theirs.
 BIN_DIR="${HOME:-}/.local/bin"
 BIN_LINK="$BIN_DIR/workkit"
 
 # The engine's address, maintained by standards.sh. Named here only so `doctor`
-# can report it — this script never writes it.
+# can report it: this script never writes it.
 CLAUDE_HOME="${WORKFLOW_CLAUDE_HOME:-${HOME:-}/.claude}"
 ENGINE_LINK="$CLAUDE_HOME/workkit"
 
@@ -81,15 +81,14 @@ ENGINE_LINK="$CLAUDE_HOME/workkit"
 # `doctor`, written only by the engine.
 USER_REPOS="${WORKFLOW_HOME:-${HOME:-}/.workkit}/.repos.json"
 
-# The home repo's lifecycle — creating it, cloning it into ~/.workkit/tower,
+# The home repo's lifecycle: creating it, cloning it into ~/.workkit/tower,
 # seeding the tower project, Discussions, Pages, the doctor lines. Sourced
 # rather than shelled out to, so its steps speak in this command's own voice
-# (lib.sh's
-# wk_say_* delegate to the say_* below). Each file is a library: sourcing them
-# runs nothing.
+# (lib.sh's logger, tagged with whichever command the dispatch named). Each file
+# is a library: sourcing them runs nothing.
 #
 # An incomplete checkout is REPORTED by the steps that need them, never by a
-# source that aborts before this command can say anything at all — the same
+# source that aborts before this command can say anything at all: the same
 # restraint refresh_engine_link shows about a missing standards.sh.
 HOME_LIBS=1
 for _lib in lib.sh discussions.sh home.sh; do
@@ -102,38 +101,37 @@ for _lib in lib.sh discussions.sh home.sh; do
 done
 
 # ── Output ────────────────────────────────────────────────────────────────────
-# Everything goes to STDOUT: this is a human command, and its one machine caller
-# (the standards hook) relays what it prints. The palette is lib.sh's — one home
-# for the codes and for the question of whether to use them at all, and the
-# answer is no anywhere but a terminal, because the hook puts this text into a
-# session's context where escape codes are noise. A partial checkout with no
-# lib.sh beside this script still speaks; it speaks plainly.
-_G='' _Y='' _C='' _D='' _B='' _N=''
-if declare -f wk_set_palette >/dev/null 2>&1; then wk_set_palette; fi
+# Everything a person reads goes to STDOUT: this is a human command, and its one
+# machine caller (the standards hook) relays what it prints. The voice is
+# lib.sh's, one home for the glyphs, the colors and the question of whether to
+# use them at all (issue #237); each command opens with its own title, and the
+# steps print indented under it. A partial checkout with no lib.sh beside this
+# script still speaks; it speaks plainly, through the fallbacks below.
+if ! declare -f wk_ok >/dev/null 2>&1; then
+  wk_ok()    { printf '%s\n' "$1"; }
+  wk_skip()  { [[ "$QUIET" -eq 1 ]] || printf '%s\n' "$1"; }
+  wk_info()  { [[ "$QUIET" -eq 1 ]] || printf '%s\n' "$1"; }
+  wk_warn()  { printf '%s\n' "$1" >&2; }
+  wk_error() { printf '%s\n' "$1" >&2; }
+  wk_title() { [[ "$QUIET" -eq 1 ]] || printf '%s\n' "$1"; }
+  wk_section() { [[ "$QUIET" -eq 1 ]] || printf '\n%s\n' "$1"; }
+  wk_done()  { [[ "$QUIET" -eq 1 ]] || printf '%s\n' "$1"; }
+  wk_spin()  { shift; "$@"; }
+  wk_plain() { cat; }
+fi
 
 # --auto is the quiet variant: only ACTIONS and warnings speak, so a session
 # start that found nothing to do says nothing at all.
 QUIET=0
 
-say_ok()   { printf "${_G}✓${_N} %s\n" "$1"; }
-say_warn() { printf "${_Y}⚠${_N} %s\n" "$1"; }
-say_skip() { [[ "$QUIET" -eq 1 ]] || printf "${_D}· %s${_N}\n" "$1"; }
-say_info() { [[ "$QUIET" -eq 1 ]] || printf "${_C}ℹ${_N} %s\n" "$1"; }
-say_head() { [[ "$QUIET" -eq 1 ]] || printf "\n${_B}%s${_N}\n" "$1"; }
-# A run of steps under one title (issue #90). A full setup is ~25 lines, and
-# flat they read as one undifferentiated list; the blank line and the title are
-# what turn them into the handful of things setup actually does. The quiet
-# variant prints none of it — a session-start injection is warnings only.
-say_section() { [[ "$QUIET" -eq 1 ]] || printf "\n${_B}${_C}%s${_N}\n" "$1"; }
-
 # A step that needs a human answer must never block a script. Every prompt in
 # `setup` asks this first and prints the command instead when the answer cannot
-# be given — a piped or backgrounded run finishes rather than hanging.
+# be given: a piped or backgrounded run finishes rather than hanging.
 interactive() { [[ -t 0 ]]; }
 
 usage() {
   cat <<'EOF'
-workkit — the issue workflow, one command.
+workkit: the issue workflow, one command.
 
 usage: workkit <command> [args]
 
@@ -156,13 +154,13 @@ usage: workkit <command> [args]
                        (the daily job does this after the morning brief)
   brief [--local]      ask for today's brief now: the same cloud run the 9am
                        schedule dispatches. --local runs the local morning
-                       instead — composed and sent from this machine, the
+                       instead, composed and sent from this machine, the
                        brief never posted to the home repo
-  tower [--verbose]    run the tower here — the JSON API and the dashboard
+  tower [--verbose]    run the tower here: the JSON API and the dashboard
                        together, until one interrupt ends both
   enable [repo]        write the repo's committed opt-in, then heal it
   decline [repo]       record this developer's no for the repo, personally
-  heal [repo]          re-run the standards heal on the repo now — the same
+  heal [repo]          re-run the standards heal on the repo now, the same
                        pass a session makes once a day, without the wait
   note <text...>       append one bullet to the nearest capture file, or file it
                        as an issue on the home repo outside every project
@@ -174,7 +172,7 @@ EOF
 
 # ── The pieces ────────────────────────────────────────────────────────────────
 
-# The engine's address is standards.sh's own to maintain — it points
+# The engine's address is standards.sh's own to maintain: it points
 # ~/.claude/workkit at the folder it is running from, when that folder is a real
 # workkit checkout. `--engine-link` is that step on its own, which is how this
 # command triggers it without owning a second copy of it. Its diagnostics arrive
@@ -184,32 +182,35 @@ refresh_engine_link() {
   # A missing engine is a broken checkout, never a machine that is up to date:
   # the two must not read the same, or a half-installed kit reports all-clear.
   if [[ ! -f "$STANDARDS" ]]; then
-    say_warn "engine: standards.sh is missing at $STANDARDS — this checkout is incomplete, so the engine address cannot be maintained"
+    wk_warn "engine: standards.sh is missing at $STANDARDS; this checkout is incomplete, so the engine address cannot be maintained"
     return 0
   fi
 
   out="$(bash "$STANDARDS" --engine-link "$KIT_DIR" 2>&1 >/dev/null)" || rc=$?
   if [[ "$rc" -ne 0 ]]; then
-    say_warn "engine: the address step could not run (exit $rc) — run \`bash $STANDARDS --engine-link $KIT_DIR\` to see why"
+    wk_warn "engine: the address step could not run (exit $rc); run \`bash $STANDARDS --engine-link $KIT_DIR\` to see why"
     return 0
   fi
 
-  out="$(printf '%s\n' "$out" | sed $'s/\033\\[[0-9;]*m//g' | grep '^  ✓ engine:' || true)"
+  # The heal speaks in the same voice this command does (issue #237), so the
+  # relay strips the colors, then the indent and the glyph, and keeps the engine
+  # lines: an action line is re-said here under this command's own glyph rather
+  # than repeated with the heal's.
+  out="$(printf '%s\n' "$out" | sed $'s/\033\\[[0-9;]*m//g' | wk_plain | grep '^engine:' || true)"
   if [[ -n "$out" ]]; then
-    # Relay each engine line as its own say_ok, stripping the prefix per line.
     while IFS= read -r line; do
-      say_ok "${line#  ✓ }"
+      wk_ok "$line"
     done <<<"$out"
   else
     # Silence is two different outcomes: the address already resolves here, or
     # the engine REFUSED to write it (no ~/.claude, no git, a checkout that is
     # not the machine's engine). Only the first is "current", so the address is
-    # read back rather than assumed — a refusal that reads as up to date is the
+    # read back rather than assumed: a refusal that reads as up to date is the
     # one report this command must not print (verifier finding, 2026-07-29).
     if [[ -L "$ENGINE_LINK" && "$(cd "$ENGINE_LINK" 2>/dev/null && pwd -P || true)" == "$SCRIPT_DIR" ]]; then
-      say_skip "engine: $ENGINE_LINK is current"
+      wk_skip "engine: $ENGINE_LINK is current"
     else
-      say_skip "engine: $ENGINE_LINK was left as it is — this checkout does not take the engine's address"
+      wk_skip "engine: $ENGINE_LINK was left as it is; this checkout does not take the engine's address"
     fi
   fi
 }
@@ -219,7 +220,7 @@ refresh_engine_link() {
 # and is only reported.
 link_command() {
   local current
-  # The automatic path CREATES nothing on a machine that has no ~/.local/bin —
+  # The automatic path CREATES nothing on a machine that has no ~/.local/bin:
   # the same restraint the engine shows with ~/.claude. A directory convention a
   # machine has not adopted is not a session start's to introduce; a human
   # running `setup` or `update` is asking for it.
@@ -230,23 +231,23 @@ link_command() {
   if [[ -L "$BIN_LINK" ]]; then
     current="$(readlink "$BIN_LINK" || true)"
     if [[ "$current" == "$SCRIPT_DIR/workkit.sh" ]]; then
-      say_skip "command: $BIN_LINK is current"
+      wk_skip "command: $BIN_LINK is current"
     else
       ln -sfn "$SCRIPT_DIR/workkit.sh" "$BIN_LINK"
-      say_ok "command: repointed $BIN_LINK at $SCRIPT_DIR/workkit.sh"
+      wk_ok "command: repointed $BIN_LINK at $SCRIPT_DIR/workkit.sh"
     fi
   elif [[ -e "$BIN_LINK" ]]; then
-    say_warn "command: $BIN_LINK is a real file — move it aside, then re-run \`workkit update\`"
+    wk_warn "command: $BIN_LINK is a real file; move it aside, then re-run \`workkit update\`"
     return 0
   else
     mkdir -p "$BIN_DIR"
     ln -s "$SCRIPT_DIR/workkit.sh" "$BIN_LINK"
-    say_ok "command: linked $BIN_LINK → $SCRIPT_DIR/workkit.sh"
+    wk_ok "command: linked $BIN_LINK → $SCRIPT_DIR/workkit.sh"
   fi
 
   case ":${PATH:-}:" in
     *":$BIN_DIR:"*) ;;
-    *) say_info "command: $BIN_DIR is not on your PATH — add it to your shell rc:
+    *) wk_info "command: $BIN_DIR is not on your PATH; add it to your shell rc:
     export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
   esac
 }
@@ -258,20 +259,20 @@ link_command() {
 #
 # Two failures must never read as "current": an installer this checkout does not
 # have, and a check that could not finish. Both print their reason on stdout and
-# return 1 — the caller is in a command substitution, so the reason travels back
+# return 1: the caller is in a command substitution, so the reason travels back
 # with the status and is reported there.
 cron_drift() {
   if [[ ! -f "$JOBS_INSTALL" ]]; then
-    printf 'the installer is missing at %s — this checkout is incomplete\n' "$JOBS_INSTALL"
+    printf 'the installer is missing at %s; this checkout is incomplete\n' "$JOBS_INSTALL"
     return 1
   fi
-  bash "$JOBS_INSTALL" --check 2>/dev/null || {
-    printf 'the drift check did not finish — run `bash %s --check` to see why\n' "$JOBS_INSTALL"
+  bash "$JOBS_INSTALL" --check 2>/dev/null | wk_plain || {
+    printf 'the drift check did not finish; run `bash %s --check` to see why\n' "$JOBS_INSTALL"
     return 1
   }
 }
 
-# Run the installer and relay what it ACTUALLY did — one line per agent, in the
+# Run the installer and relay what it ACTUALLY did: one line per agent, in the
 # installer's own words, so a run that changed nothing never claims to have
 # reinstalled the 9am job. A failure is reported and swallowed: this
 # runs inside a session-start hook that discards stderr, so an unguarded
@@ -280,35 +281,35 @@ run_installer() {
   local out rc=0
   out="$(bash "$JOBS_INSTALL" 2>&1)" || rc=$?
   if [[ "$rc" -ne 0 ]]; then
-    say_warn "schedule: the install did not finish (exit $rc) — run \`bash $JOBS_INSTALL\` to see why"
+    wk_warn "schedule: the install did not finish (exit $rc); run \`bash $JOBS_INSTALL\` to see why"
     return 0
   fi
   # "already installed and loaded" is the installer confirming a no-op; every
   # other line is something it did.
-  printf '%s\n' "$out" | grep -v 'already installed and loaded' | grep -v '^[[:space:]]*$' \
-    | while IFS= read -r line; do say_ok "schedule: $line"; done || true
+  printf '%s\n' "$out" | wk_plain | grep -v 'already installed and loaded' | grep -v '^[[:space:]]*$' \
+    | while IFS= read -r line; do wk_ok "schedule: $line"; done || true
 }
 
 # Re-render and reload the schedule, but ONLY on a machine that already has it:
 # installing a cron is a decision, and `setup` is where a human makes it. The
-# rest is install.sh's — it renders, compares, and reloads only on a difference.
+# rest is install.sh's: it renders, compares, and reloads only on a difference.
 update_cron() {
   local drift
   if [[ "$(uname -s)" != "Darwin" ]]; then
-    say_skip "schedule: launchd is macOS — nothing to keep current here"
+    wk_skip "schedule: launchd is macOS; nothing to keep current here"
     return 0
   fi
   if [[ ! -f "$DAILY_PLIST" ]]; then
-    say_info "schedule: not installed on this machine — \`workkit setup\` installs the 9am job"
+    wk_info "schedule: not installed on this machine; \`workkit setup\` installs the 9am job"
     return 0
   fi
 
   if ! drift="$(cron_drift)"; then
-    say_warn "schedule: $drift"
+    wk_warn "schedule: $drift"
     return 0
   fi
   if [[ -z "$drift" ]]; then
-    say_skip "schedule: $DAILY_LABEL is current"
+    wk_skip "schedule: $DAILY_LABEL is current"
     return 0
   fi
 
@@ -317,22 +318,22 @@ update_cron() {
 
 # The plugin, on a machine that may not have Claude Code at all. Detection first,
 # because `marketplace add` on an installed marketplace is noise nobody needs to
-# read; a missing `claude` is a named skip, never a failure — the engine, the
+# read; a missing `claude` is a named skip, never a failure: the engine, the
 # schedule, and the capture CLI all work without it.
 install_plugin() {
   if ! command -v claude >/dev/null 2>&1; then
-    say_skip "plugin: the claude CLI is not on this machine — skipping the plugin install"
+    wk_skip "plugin: the claude CLI is not on this machine; skipping the plugin install"
     return 0
   fi
-  if claude plugin list --json 2>/dev/null | grep -q "\"$PLUGIN_ID\""; then
-    say_skip "plugin: $PLUGIN_ID is installed"
+  if wk_spin 'reading the installed plugins' claude plugin list --json 2>/dev/null | grep -q "\"$PLUGIN_ID\""; then
+    wk_skip "plugin: $PLUGIN_ID is installed"
     return 0
   fi
-  claude plugin marketplace add "$KIT_DIR" >/dev/null 2>&1 \
-    || { say_warn "plugin: \`claude plugin marketplace add $KIT_DIR\` did not finish — run it by hand"; return 0; }
-  claude plugin install "$PLUGIN_ID" >/dev/null 2>&1 \
-    || { say_warn "plugin: \`claude plugin install $PLUGIN_ID\` did not finish — run it by hand"; return 0; }
-  say_ok "plugin: installed $PLUGIN_ID from $KIT_DIR — it loads in a new session"
+  wk_spin 'adding the marketplace' claude plugin marketplace add "$KIT_DIR" >/dev/null 2>&1 \
+    || { wk_warn "plugin: \`claude plugin marketplace add $KIT_DIR\` did not finish; run it by hand"; return 0; }
+  wk_spin "installing $PLUGIN_ID" claude plugin install "$PLUGIN_ID" >/dev/null 2>&1 \
+    || { wk_warn "plugin: \`claude plugin install $PLUGIN_ID\` did not finish; run it by hand"; return 0; }
+  wk_ok "plugin: installed $PLUGIN_ID from $KIT_DIR; it loads in a new session"
 }
 
 # gh is how the whole standard reaches its issues; an unauthenticated one turns
@@ -340,20 +341,20 @@ install_plugin() {
 # auth login` is a browser flow and a human's to run.
 check_gh() {
   if ! command -v gh >/dev/null 2>&1; then
-    say_warn "gh: not installed — the label heals and the board need it (https://cli.github.com)"
+    wk_warn "gh: not installed; the label heals and the board need it (https://cli.github.com)"
     return 0
   fi
-  if gh auth status >/dev/null 2>&1; then
-    say_skip "gh: installed and authenticated"
+  if wk_spin 'checking the gh login' gh auth status >/dev/null 2>&1; then
+    wk_skip "gh: installed and authenticated"
   else
-    say_warn "gh: installed but not authenticated — run \`gh auth login\`"
+    wk_warn "gh: installed but not authenticated; run \`gh auth login\`"
   fi
 }
 
 # The tower is started, never installed: it is two long-running processes and
 # nothing schedules them. Setup's job is to say where they are.
 tower_pointer() {
-  say_info "tower: mission control is \`workkit tower\` — the API on 8693 and the dashboard on 4300 together, replacing any previous instance"
+  wk_info "tower: mission control is \`workkit tower\`; the API on 8693 and the dashboard on 4300 together, replacing any previous instance"
 }
 
 # The repo the shell is standing in. Undecided is the only state with anything
@@ -362,12 +363,12 @@ offer_repo() {
   local state
   state="$(bash "$STANDARDS" --state "$PWD" 2>/dev/null | tail -1 || printf 'nogit')"
   case "$state" in
-    enabled)  say_skip "repo: $PWD is in the workflow" ;;
-    disabled) say_skip "repo: $PWD has a committed no — leaving it alone" ;;
-    nogit)    say_skip "repo: $PWD is not a git repo — nothing to enable" ;;
+    enabled)  wk_skip "repo: $PWD is in the workflow" ;;
+    disabled) wk_skip "repo: $PWD has a committed no; leaving it alone" ;;
+    nogit)    wk_skip "repo: $PWD is not a git repo; nothing to enable" ;;
     declined|undecided)
       if ! interactive; then
-        say_info "repo: $PWD is not in the workflow — \`workkit enable\` joins it"
+        wk_info "repo: $PWD is not in the workflow; \`workkit enable\` joins it"
         return 0
       fi
       printf 'Add %s to the issue workflow? [y/N] ' "$PWD"
@@ -375,15 +376,15 @@ offer_repo() {
       read -r answer || true
       case "$answer" in
         y|Y|yes|YES) bash "$STANDARDS" --enable "$PWD" ;;
-        *) say_skip "repo: left as it is — \`workkit enable\` joins it later" ;;
+        *) wk_skip "repo: left as it is; \`workkit enable\` joins it later" ;;
       esac
       ;;
-    *) say_skip "repo: $PWD reports state '$state' — nothing to do" ;;
+    *) wk_skip "repo: $PWD reports state '$state'; nothing to do" ;;
   esac
 }
 
-# The site switch, asked once (issue #84). Setup builds the whole publish path —
-# the home repo, the clone, the tower project, its dependencies — and then left
+# The site switch, asked once (issue #84). Setup builds the whole publish path
+# (the home repo, the clone, the tower project, its dependencies) and then left
 # `site.publish` seeded false, so going live meant knowing to hand-edit a file
 # nobody had been told about. Setup is the one command a human runs at a
 # terminal, so it is the one place the question can be put.
@@ -394,7 +395,7 @@ offer_repo() {
 # publishes nothing while it waits.
 #
 # What the step LEAVES the switch reading, for the caller that acts on it:
-# 'true' when publishing is on — freshly answered yes or already true — 'false'
+# 'true' when publishing is on (freshly answered yes or already true), 'false'
 # on a fresh no, and empty for every other ending, including every skip.
 # `cmd_setup` publishes on 'true' and adds nothing at all otherwise (issue #85).
 SITE_PUBLISH=''
@@ -412,45 +413,45 @@ offer_site_publish() {
   SITE_PUBLISH=''
 
   # The whole step reads and writes the machine's settings file through the
-  # engine's library — the same reader, the same JSON edit, the same mutex every
+  # engine's library: the same reader, the same JSON edit, the same mutex every
   # other writer of that file takes. Without it there is no safe write to make,
   # and home_steps has already named the incomplete checkout.
   if [[ "$HOME_LIBS" -ne 1 ]]; then
-    say_skip "site: the publish question needs the home-repo library beside $SCRIPT_DIR"
+    wk_skip "site: the publish question needs the home-repo library beside $SCRIPT_DIR"
     return 0
   fi
   if ! command -v jq >/dev/null 2>&1; then
-    say_skip "site: reading the publish switch in $WK_HOME_SETTINGS needs jq"
+    wk_skip "site: reading the publish switch in $WK_HOME_SETTINGS needs jq"
     return 0
   fi
   if [[ ! -f "$WK_HOME_SETTINGS" ]]; then
-    say_skip "site: $WK_HOME_SETTINGS does not exist yet — the first heal seeds it, and the next setup asks"
+    wk_skip "site: $WK_HOME_SETTINGS does not exist yet; the first heal seeds it, and the next setup asks"
     return 0
   fi
 
   # Read RAW rather than through wk_json_get: jq's `//` treats false as absent,
   # and false is the one answer this step must be able to tell from silence.
-  # "null" is what an absent key and a null both render as — the same state.
+  # "null" is what an absent key and a null both render as: the same state.
   current="$(jq -r '.site.publish | tostring' "$WK_HOME_SETTINGS" 2>/dev/null || printf '')"
   if [[ -z "$current" ]]; then
-    say_warn "site: $WK_HOME_SETTINGS does not parse as JSON — the publish question was not asked; fix the file, then re-run \`workkit setup\`"
+    wk_warn "site: $WK_HOME_SETTINGS does not parse as JSON; the publish question was not asked; fix the file, then re-run \`workkit setup\`"
     return 0
   fi
 
   # No home repo, nothing to publish from: the question would be about a site
   # that has nowhere to go.
   if [[ -z "$(wk_home_slug)" ]]; then
-    say_skip "site: no home repo yet — the publish question comes once there is one to publish from"
+    wk_skip "site: no home repo yet; the publish question comes once there is one to publish from"
     return 0
   fi
 
   case "$current" in
-    true)  SITE_PUBLISH=true; say_skip "site: publishing is on — edit \`site.publish\` in $WK_HOME_SETTINGS to change it"; return 0 ;;
-    false) say_skip "site: publishing is off — edit \`site.publish\` in $WK_HOME_SETTINGS to change it"; return 0 ;;
+    true)  SITE_PUBLISH=true; wk_skip "site: publishing is on; edit \`site.publish\` in $WK_HOME_SETTINGS to change it"; return 0 ;;
+    false) wk_skip "site: publishing is off; edit \`site.publish\` in $WK_HOME_SETTINGS to change it"; return 0 ;;
   esac
 
   if ! interactive; then
-    say_info "site: nobody has been asked whether to publish the dashboard — a terminal run of \`workkit setup\` puts the question; until then nothing is published"
+    wk_info "site: nobody has been asked whether to publish the dashboard; a terminal run of \`workkit setup\` puts the question; until then nothing is published"
     return 0
   fi
 
@@ -465,8 +466,8 @@ offer_site_publish() {
   SITE_PUBLISH="$value"
 
   # The domain rides the FRESH yes and nothing else: it is the one moment the
-  # answer is free — the site has never been built, so no address is in use yet
-  # — and asking on every later run would nag a machine that already said yes.
+  # answer is free (the site has never been built, so no address is in use yet)
+  # and asking on every later run would nag a machine that already said yes.
   # An already-answered machine changes its domain by hand edit, as it does
   # today. Nothing to ask either when a domain is already recorded.
   if [[ "$value" == 'true' ]] && [[ "$(jq -r '.site.url | tostring' "$WK_HOME_SETTINGS" 2>/dev/null || printf 'null')" == 'null' ]]; then
@@ -475,7 +476,7 @@ offer_site_publish() {
 }
 
 # The custom domain, asked right after the fresh yes. Empty input is an answer
-# too — it means the plain github.io address, so nothing is written, `site.url`
+# too: it means the plain github.io address, so nothing is written, `site.url`
 # stays null and publish.sh writes no CNAME. Whatever is typed is taken at its
 # word: publish.sh already strips a scheme prefix on its way to the CNAME, and
 # the shape of a domain is not this command's to judge.
@@ -497,13 +498,13 @@ set_site_publish() {
   write_site_option publish "$value" || rc=$?
 
   if [[ "$rc" -ne 0 ]]; then
-    say_warn "site: the answer could not be written to $WK_HOME_SETTINGS — set \`site.publish\` there by hand"
+    wk_warn "site: the answer could not be written to $WK_HOME_SETTINGS; set \`site.publish\` there by hand"
     return 0
   fi
   if [[ "$value" == 'true' ]]; then
-    say_ok "site: publishing is on — \`workkit publish\` builds it now, and the daily job publishes after the morning brief (what Pages serves is public, even from a private repo)"
+    wk_ok "site: publishing is on; \`workkit publish\` builds it now, and the daily job publishes after the morning brief (what Pages serves is public, even from a private repo)"
   else
-    say_ok "site: publishing stays off — set \`site.publish\` to true in $WK_HOME_SETTINGS whenever you want the dashboard live"
+    wk_ok "site: publishing stays off; set \`site.publish\` to true in $WK_HOME_SETTINGS whenever you want the dashboard live"
   fi
   return 0
 }
@@ -515,15 +516,15 @@ set_site_url() {
   write_site_option url "$(printf '%s' "$url" | jq -R .)" || rc=$?
 
   if [[ "$rc" -ne 0 ]]; then
-    say_warn "site: the domain could not be written to $WK_HOME_SETTINGS — set \`site.url\` there by hand"
+    wk_warn "site: the domain could not be written to $WK_HOME_SETTINGS; set \`site.url\` there by hand"
     return 0
   fi
-  say_ok "site: the site answers at $url — the publish writes the CNAME, and the DNS record is yours to point at GitHub Pages"
+  wk_ok "site: the site answers at $url; the publish writes the CNAME, and the DNS record is yours to point at GitHub Pages"
   return 0
 }
 
 # The one guarded write of a site option: the whole-file read-modify-write both
-# answers make, under the engine's one state mutex. `value` is JSON — a bare
+# answers make, under the engine's one state mutex. `value` is JSON: a bare
 # `true`, or a jq-encoded string.
 write_site_option() {
   local key="$1" value="$2" locked=0 rc=0
@@ -559,12 +560,12 @@ handover_token() {
   rm -f "${TMPDIR:-/tmp}"/workkit-handover.*
 
   if [[ "$HOME_LIBS" -ne 1 ]]; then
-    say_skip "site: the token handover needs the home-repo library beside $SCRIPT_DIR"
+    wk_skip "site: the token handover needs the home-repo library beside $SCRIPT_DIR"
     return 0
   fi
   slug="$(wk_home_slug 2>/dev/null || true)"
   if [[ -z "$slug" ]]; then
-    say_skip "site: the token handover needs a home repo to name the published site"
+    wk_skip "site: the token handover needs a home repo to name the published site"
     return 0
   fi
 
@@ -595,36 +596,35 @@ handover_token() {
   # than escaped, the way the token is, because a domain shaped like that serves
   # nothing and is worth saying out loud.
   if [[ "$url" == *'"'* || "$url" == *'\'* || "$url" == *'<'* || "$url" == *'>'* || "$url" == *'#'* || "$url" =~ [[:space:]] ]]; then
-    say_skip "site: the recorded \`site.url\` cannot be put in a URL as it stands, so the token was not handed over; fix it in $WK_HOME_SETTINGS, then re-run \`workkit setup\`"
+    wk_skip "site: the recorded \`site.url\` cannot be put in a URL as it stands, so the token was not handed over; fix it in $WK_HOME_SETTINGS, then re-run \`workkit setup\`"
     return 0
   fi
 
-  # The two things this step cannot supply for itself. Both name the URL WITHOUT
-  # the fragment: no token is in that line, and it is the address the same
-  # handover is done by hand at.
-  if ! interactive; then
-    say_skip "site: the token handover needs a terminal; open $url and paste \`gh auth token\` on its Settings page"
-    return 0
-  fi
+  # The one thing this step cannot supply for itself. The skip names the URL
+  # WITHOUT the fragment: no token is in that line, and it is the address the
+  # same handover is done by hand at. A TERMINAL is not among the conditions
+  # (issue #235): only `setup` calls this step, and setup is a human's act or the
+  # ship's, never the 9am job's, so a piped run hands the token over exactly as
+  # a run at a terminal does.
   if [[ "$(uname -s)" == 'Darwin' ]]; then opener='open'; else opener='xdg-open'; fi
   if ! command -v "$opener" >/dev/null 2>&1; then
-    say_skip "site: the token handover needs a browser opener; open $url and paste \`gh auth token\` on its Settings page"
+    wk_skip "site: the token handover needs a browser opener; open $url and paste \`gh auth token\` on its Settings page"
     return 0
   fi
 
   # The commit the publish pushed. Waiting on the BUILD alone would hand the
   # token to whatever Pages is serving, which on a first publish is a 404.
-  sha="$(bounded_read gh api "repos/$slug/git/ref/heads/$WK_HOME_PAGES_BRANCH" --jq .object.sha 2>/dev/null || true)"
+  sha="$(wk_spin "reading $WK_HOME_PAGES_BRANCH on $slug" bounded_read gh api "repos/$slug/git/ref/heads/$WK_HOME_PAGES_BRANCH" --jq .object.sha 2>/dev/null || true)"
   if [[ -z "$sha" ]]; then
-    say_skip "site: $slug's $WK_HOME_PAGES_BRANCH head could not be read, so there is no publish to wait for; open $url and paste \`gh auth token\` on its Settings page"
+    wk_skip "site: $slug's $WK_HOME_PAGES_BRANCH head could not be read, so there is no publish to wait for; open $url and paste \`gh auth token\` on its Settings page"
     return 0
   fi
 
   # One line before the wait, because a silent minute at the end of setup reads
   # as a command that hung.
-  say_info "site: waiting for GitHub Pages to serve the publish"
+  wk_info "site: waiting for GitHub Pages to serve the publish"
   while :; do
-    latest="$(bounded_read gh api "repos/$slug/pages/builds/latest" --jq '[.status, .commit] | @tsv' 2>/dev/null || true)"
+    latest="$(wk_spin 'reading the latest Pages build' bounded_read gh api "repos/$slug/pages/builds/latest" --jq '[.status, .commit] | @tsv' 2>/dev/null || true)"
     status="${latest%%$'\t'*}"
     commit="${latest##*$'\t'}"
     # A read that came back with nothing at all, three polls running. TWO things
@@ -639,28 +639,28 @@ handover_token() {
     if [[ -z "$latest" ]]; then
       blanks=$((blanks + 1))
       if (( blanks >= 3 )); then
-        say_skip "site: three reads of $slug's latest Pages build came back with nothing, so the token was not handed over; Pages may be off (https://github.com/$slug/settings/pages) or unreachable; open $url and paste \`gh auth token\` on its Settings page"
+        wk_skip "site: three reads of $slug's latest Pages build came back with nothing, so the token was not handed over; Pages may be off (https://github.com/$slug/settings/pages) or unreachable; open $url and paste \`gh auth token\` on its Settings page"
         return 0
       fi
     else
       blanks=0
     fi
     if [[ "$status" == 'errored' ]]; then
-      say_warn "site: the GitHub Pages build for $slug errored, so nothing was handed over; open $url once it is green and paste \`gh auth token\` on its Settings page"
+      wk_warn "site: the GitHub Pages build for $slug errored, so nothing was handed over; open $url once it is green and paste \`gh auth token\` on its Settings page"
       return 0
     fi
     if [[ "$status" == 'built' && "$commit" == "$sha" ]]; then break; fi
     if (( waited >= PAGES_WAIT )); then
-      say_skip "site: GitHub Pages has not served the publish after ${PAGES_WAIT}s, so the token was not handed over; open $url and paste \`gh auth token\` on its Settings page"
+      wk_skip "site: GitHub Pages has not served the publish after ${PAGES_WAIT}s, so the token was not handed over; open $url and paste \`gh auth token\` on its Settings page"
       return 0
     fi
     sleep 5
     waited=$((waited + 5))
   done
 
-  token="$(gh auth token 2>/dev/null)" || rc=$?
+  token="$(wk_spin 'reading the gh login token' gh auth token 2>/dev/null)" || rc=$?
   if [[ "$rc" -ne 0 || -z "$token" ]]; then
-    say_skip "site: \`gh auth token\` returned nothing, so there was no token to hand over; run \`gh auth login\`, then open $url and paste it on the Settings page"
+    wk_skip "site: \`gh auth token\` returned nothing, so there was no token to hand over; run \`gh auth login\`, then open $url and paste it on the Settings page"
     return 0
   fi
   # A gh token is opaque but URL-safe as it stands, so it rides the fragment
@@ -668,7 +668,7 @@ handover_token() {
   # way in reads exactly like one GitHub refused, and that shape is also the
   # only one that could end the quoted string it is written into below.
   if [[ ! "$token" =~ ^[A-Za-z0-9_-]+$ ]]; then
-    say_skip "site: this login's token carries characters a URL fragment would have to escape, so it was not handed over; open $url and paste \`gh auth token\` on its Settings page"
+    wk_skip "site: this login's token carries characters a URL fragment would have to escape, so it was not handed over; open $url and paste \`gh auth token\` on its Settings page"
     return 0
   fi
 
@@ -700,10 +700,10 @@ handover_token() {
   printf '%s' "<!doctype html><meta charset=\"utf-8\"><script>location.replace(\"$url#token=$token\")</script>" >"$page"
 
   if ! "$opener" "$page" >/dev/null 2>&1; then
-    say_warn "site: \`$opener\` did not open the handover page, so the token was not handed over; open $url and paste \`gh auth token\` on its Settings page"
+    wk_warn "site: \`$opener\` did not open the handover page, so the token was not handed over; open $url and paste \`gh auth token\` on its Settings page"
     return 0
   fi
-  say_ok "site: the dashboard's Settings page was opened with this machine's gh login token; the browser now holds it"
+  wk_ok "site: the dashboard's Settings page was opened with this machine's gh login token; the browser now holds it"
 }
 
 # The global layer, reported and never written: how many repos this machine has
@@ -713,25 +713,25 @@ report_globals() {
   local count home
 
   if [[ ! -f "$USER_REPOS" ]]; then
-    say_info "roster: $USER_REPOS does not exist yet — the first heal writes it"
+    wk_info "roster: $USER_REPOS does not exist yet; the first heal writes it"
     return 0
   fi
   if ! command -v jq >/dev/null 2>&1; then
-    say_skip "roster: reading $USER_REPOS needs jq"
+    wk_skip "roster: reading $USER_REPOS needs jq"
     return 0
   fi
 
   count="$(jq -r '[(.repos // {}) | to_entries[] | select(.value != "declined")] | length' "$USER_REPOS" 2>/dev/null || printf '')"
   if [[ -z "$count" ]]; then
-    say_warn "roster: $USER_REPOS is not valid JSON — fix or remove it, then re-run a session in any repo"
+    wk_warn "roster: $USER_REPOS is not valid JSON; fix or remove it, then re-run a session in any repo"
     return 0
   fi
   # Zero is the one count worth a different voice: an empty roster means the
   # tower, the board and the brief have nothing to read.
   if [[ "$count" == "0" ]]; then
-    say_info "roster: no repos registered in $USER_REPOS yet — it fills as a session opens in each enabled repo"
+    wk_info "roster: no repos registered in $USER_REPOS yet; it fills as a session opens in each enabled repo"
   else
-    say_ok "roster: $count repo(s) registered in $USER_REPOS"
+    wk_ok "roster: $count repo(s) registered in $USER_REPOS"
   fi
 
 }
@@ -742,14 +742,14 @@ report_globals() {
 # to run once it has them, rather than silently getting no home.
 home_steps() {
   if [[ "$HOME_LIBS" -ne 1 ]]; then
-    say_warn "home: the home-repo library is missing beside $SCRIPT_DIR — this checkout is incomplete"
+    wk_warn "home: the home-repo library is missing beside $SCRIPT_DIR; this checkout is incomplete"
     return 0
   fi
   wk_home_setup
 }
 
 # ── The cloud secrets (issues #88, #91) ───────────────────────────────────────
-# The cloud brief runs on two repo secrets, and they live on the HOME repo —
+# The cloud brief runs on two repo secrets, and they live on the HOME repo:
 # `<login>/workkit`, the repo setup made for this machine and seeded the
 # workflow into. Not on this checkout's own repo: the plugin is distributed to
 # everyone who installs the kit, and a consumer cannot set secrets on a repo
@@ -759,7 +759,7 @@ home_steps() {
 # The one rule the whole block is built around: a token value goes from the
 # command that produced it to `gh secret set` through a pipe, held in a single
 # local on the way. It is never passed as an argument, echoed, or logged, and
-# the ONE file it may transit is the mint's own capture (issue #174) — 600 before
+# the ONE file it may transit is the mint's own capture (issue #174): 600 before
 # a byte lands in it, and gone the moment it has been read.
 SECRET_CLAUDE='CLAUDE_CODE_OAUTH_TOKEN'
 # Only names STARTING with `GITHUB_` are refused by GitHub; one that contains it
@@ -767,11 +767,11 @@ SECRET_CLAUDE='CLAUDE_CODE_OAUTH_TOKEN'
 SECRET_HOME='WORKKIT_GITHUB_TOKEN'
 
 # The OAuth token lives about a year, so ~11 months is the point where a refresh
-# is worth offering — early enough that a morning brief never meets the expiry.
+# is worth offering: early enough that a morning brief never meets the expiry.
 SECRET_MAX_AGE_DAYS=330
 
-# The listing below is the only network the daily path makes — the standards
-# hook calls `update --auto` at session start — so it gets an upper
+# The listing below is the only network the daily path makes (the standards
+# hook calls `update --auto` at session start) so it gets an upper
 # bound: a captive portal answers the TCP handshake and never the request, and
 # an unbounded `gh` there would hold a session open for as long as it liked.
 # macOS ships no coreutils `timeout`, so one is used when the machine has it and
@@ -809,7 +809,7 @@ PAGES_WAIT="${WORKKIT_PAGES_WAIT:-180}"
 # When the run sits at a real terminal and `expect` exists, expect drives the
 # PTY (`mint-pty.exp`, beside this script), for one reason (issue #187): Ctrl-C. The CLI holds its PTY in raw mode
 # and DISCARDS the ^C byte, and under raw passthrough no layer turns the key
-# into a signal — so the byte is caught one layer out, at this terminal, before
+# into a signal, so the byte is caught one layer out, at this terminal, before
 # it is forwarded. The binding ends the child and answers 130, the way an
 # interrupt ends any other command; every other keystroke passes through, which
 # is what keeps the paste-the-code prompt answerable.
@@ -817,7 +817,7 @@ PAGES_WAIT="${WORKKIT_PAGES_WAIT:-180}"
 # Without expect, or without a terminal (the tests drive this with a file on
 # stdin), the two `script` utilities take the command in different places, so
 # the machine is asked which one it speaks: only GNU/util-linux answers
-# `--version` at all, and only its `-e` returns the child's own exit status —
+# `--version` at all, and only its `-e` returns the child's own exit status:
 # without it a mint that never ran would look like one that succeeded. macOS
 # returns that status on its own, but `-e` is asked for on the BSD side too: a
 # no-op there, and the flag that keeps a FreeBSD `script` from reading every
@@ -835,11 +835,11 @@ run_under_pty() {
   fi
 }
 
-# `gh secret list --json name,updatedAt` for the repo, or nothing at all — an
+# `gh secret list --json name,updatedAt` for the repo, or nothing at all: an
 # unauthenticated gh, a repo without Actions, no network. The caller tells the
 # two apart by asking jq whether what came back is an array.
 secrets_json() {
-  bounded_read gh secret list --repo "$1" --json name,updatedAt 2>/dev/null || true
+  wk_spin "reading the secrets on $1" bounded_read gh secret list --repo "$1" --json name,updatedAt 2>/dev/null || true
 }
 
 # Whether a listing came back at all.
@@ -848,7 +848,7 @@ is_listing() {
 }
 
 # How many whole days ago a secret was last set: a number, `unknown` for a
-# timestamp jq could not read, and NOTHING when the repo has no such secret —
+# timestamp jq could not read, and NOTHING when the repo has no such secret:
 # absent is the state every caller acts on first.
 secret_age_days() {
   printf '%s' "$1" | jq -r --arg n "$2" '
@@ -861,7 +861,7 @@ secret_age_days() {
 # The token out of `claude setup-token`'s output. The mint prints its progress
 # around the value, so the shape is what identifies it: an `sk-ant-` token if
 # there is one, otherwise the last line that is nothing but a long opaque
-# string. Colors are stripped first — a terminal mint arrives wrapped in them.
+# string. Colors are stripped first: a terminal mint arrives wrapped in them.
 extract_token() {
   local text token
   text="$(printf '%s' "$1" | tr -d '\r' | sed $'s/\033\\[[0-9;]*m//g')"
@@ -873,15 +873,15 @@ extract_token() {
 }
 
 # Mint and push in one move, with the mint under a PTY. The CLI draws its ENTIRE
-# screen on stdout — the browser-open message AND the paste-the-authorization-code
-# prompt that follows the approval — so a captured stdout leaves the human staring
+# screen on stdout (the browser-open message AND the paste-the-authorization-code
+# prompt that follows the approval) so a captured stdout leaves the human staring
 # at a blank line with nothing to answer and, in the CLI's raw keyboard mode,
 # no Ctrl-C either (issue #174). Under the PTY runner that whole screen reaches
 # the terminal, a copy of it lands in the capture file, and Ctrl-C ends the run
 # where the runner can catch it (run_under_pty, issue #187). The capture is the
 # one file a token value may
 # transit: `mktemp` in TMPDIR, 600 before the mint writes a byte, read once and
-# removed — by a trap as well, so an interrupted mint leaves nothing behind.
+# removed, by a trap as well, so an interrupted mint leaves nothing behind.
 # From the extraction on the value is a local on its way to `gh secret set`'s
 # stdin, and every path out of here that did not push prints the two commands
 # that do the same thing by hand.
@@ -892,34 +892,34 @@ mint_claude_token() {
   chmod 600 "$capture"
   trap "rm -f '$capture'" INT TERM EXIT
 
-  say_info "secrets: running \`claude setup-token\` — approve it in the browser, and the token goes straight to $slug, where the cloud brief runs"
+  wk_info "secrets: running \`claude setup-token\`; approve it in the browser, and the token goes straight to $slug, where the cloud brief runs"
   run_under_pty "$capture" claude setup-token || rc=$?
   raw="$(cat "$capture" 2>/dev/null || true)"
   rm -f "$capture"
   trap - INT TERM EXIT
 
   if [[ "$rc" -ne 0 ]]; then
-    say_warn "secrets: \`claude setup-token\` did not finish (exit $rc) — run it by hand, then \`gh secret set $SECRET_CLAUDE --repo $slug\`"
+    wk_warn "secrets: \`claude setup-token\` did not finish (exit $rc); run it by hand, then \`gh secret set $SECRET_CLAUDE --repo $slug\`"
     return 0
   fi
 
   token="$(extract_token "$raw")"
   if [[ -z "$token" ]]; then
-    say_warn "secrets: \`claude setup-token\` printed no token this run — run it by hand, then \`gh secret set $SECRET_CLAUDE --repo $slug\`"
+    wk_warn "secrets: \`claude setup-token\` printed no token this run; run it by hand, then \`gh secret set $SECRET_CLAUDE --repo $slug\`"
     return 0
   fi
 
-  if ! printf '%s' "$token" | gh secret set "$SECRET_CLAUDE" --repo "$slug" >/dev/null 2>&1; then
-    say_warn "secrets: $SECRET_CLAUDE could not be written to $slug — run \`gh secret set $SECRET_CLAUDE --repo $slug\` by hand"
+  if ! printf '%s' "$token" | wk_spin "setting $SECRET_CLAUDE on $slug" gh secret set "$SECRET_CLAUDE" --repo "$slug" >/dev/null 2>&1; then
+    wk_warn "secrets: $SECRET_CLAUDE could not be written to $slug; run \`gh secret set $SECRET_CLAUDE --repo $slug\` by hand"
     return 0
   fi
-  say_ok "secrets: $SECRET_CLAUDE is set on $slug — the value went from the mint into the secret, and the file it passed through is gone"
+  wk_ok "secrets: $SECRET_CLAUDE is set on $slug; the value went from the mint into the secret, and the file it passed through is gone"
 }
 
 # The three things a mint needs and no run can supply for itself: the CLI that
 # performs it, a PTY tool (`expect`, or `script` without the Ctrl-C escape) that
 # gives that CLI a terminal to draw its
-# screen on, and a terminal to approve it in — the mint is a browser approval,
+# screen on, and a terminal to approve it in: the mint is a browser approval,
 # so a piped or backgrounded run gets the two commands instead. Every answer is
 # the same whether the mint was offered or asked for outright, which is why they
 # live here rather than in either caller.
@@ -927,15 +927,15 @@ can_mint_claude_token() {
   local slug="$1" reason="$2"
 
   if ! command -v claude >/dev/null 2>&1; then
-    say_skip "secrets: $SECRET_CLAUDE $reason on $slug — minting it needs the claude CLI"
+    wk_skip "secrets: $SECRET_CLAUDE $reason on $slug; minting it needs the claude CLI"
     return 1
   fi
   if ! command -v expect >/dev/null 2>&1 && ! command -v script >/dev/null 2>&1; then
-    say_skip "secrets: $SECRET_CLAUDE $reason on $slug — minting it needs \`expect\` or \`script\`, which give \`claude setup-token\` the terminal it draws on: run \`claude setup-token\` by hand, then \`gh secret set $SECRET_CLAUDE --repo $slug\`"
+    wk_skip "secrets: $SECRET_CLAUDE $reason on $slug; minting it needs \`expect\` or \`script\`, which give \`claude setup-token\` the terminal it draws on: run \`claude setup-token\` by hand, then \`gh secret set $SECRET_CLAUDE --repo $slug\`"
     return 1
   fi
   if ! interactive; then
-    say_info "secrets: $SECRET_CLAUDE $reason on $slug — run these two at a terminal:
+    wk_info "secrets: $SECRET_CLAUDE $reason on $slug; run these two at a terminal:
     claude setup-token
     gh secret set $SECRET_CLAUDE --repo $slug"
     return 1
@@ -953,33 +953,33 @@ offer_claude_token() {
   read -r answer || true
   case "$answer" in
     y|Y|yes|YES) mint_claude_token "$slug" ;;
-    *) say_skip "secrets: $SECRET_CLAUDE left as it is — \`workkit setup\` offers again" ;;
+    *) wk_skip "secrets: $SECRET_CLAUDE left as it is; \`workkit setup\` offers again" ;;
   esac
 }
 
 # The cross-repo token, zero-click (owner ruling 2026-07-30): the CLI's own
 # login already reaches every swept board, and there is no API that mints a
-# narrower one. It is the only credential that leaves the home repo — the
+# narrower one. It is the only credential that leaves the home repo: the
 # Discussion is posted with the workflow's built-in GITHUB_TOKEN. The tradeoff
-# — that login's full reach — and the least-privilege alternative are in
+# (that login's full reach) and the least-privilege alternative are in
 # jobs/README.md.
 push_home_token() {
   local slug="$1" token='' rc=0
 
-  token="$(gh auth token 2>/dev/null)" || rc=$?
+  token="$(wk_spin 'reading the gh login token' gh auth token 2>/dev/null)" || rc=$?
   if [[ "$rc" -ne 0 || -z "$token" ]]; then
-    say_warn "secrets: $SECRET_HOME is not set on $slug and \`gh auth token\` returned nothing — run \`gh auth login\`, then re-run \`workkit setup\`"
+    wk_warn "secrets: $SECRET_HOME is not set on $slug and \`gh auth token\` returned nothing; run \`gh auth login\`, then re-run \`workkit setup\`"
     return 0
   fi
-  if ! printf '%s' "$token" | gh secret set "$SECRET_HOME" --repo "$slug" >/dev/null 2>&1; then
-    say_warn "secrets: $SECRET_HOME could not be written to $slug — run \`gh auth token | gh secret set $SECRET_HOME --repo $slug\` by hand"
+  if ! printf '%s' "$token" | wk_spin "setting $SECRET_HOME on $slug" gh secret set "$SECRET_HOME" --repo "$slug" >/dev/null 2>&1; then
+    wk_warn "secrets: $SECRET_HOME could not be written to $slug; run \`gh auth token | gh secret set $SECRET_HOME --repo $slug\` by hand"
     return 0
   fi
-  say_ok "secrets: $SECRET_HOME is set on $slug from this machine's gh login — the run on $slug reads every board with it, so it carries that login's reach (jobs/README.md names the narrower alternative)"
+  wk_ok "secrets: $SECRET_HOME is set on $slug from this machine's gh login; the run on $slug reads every board with it, so it carries that login's reach (jobs/README.md names the narrower alternative)"
 }
 
 # Everything the block needs before it can say anything true: gh, jq, a home
-# repo, and a listing that came back. Each failure is a named skip — none of them
+# repo, and a listing that came back. Each failure is a named skip: none of them
 # is drift, and a run that cannot read the repo must never report a missing secret.
 # Sets SECRETS_SLUG and SECRETS_JSON for the caller.
 SECRETS_SLUG=''
@@ -989,29 +989,29 @@ secrets_precheck() {
   SECRETS_JSON=''
 
   if ! command -v gh >/dev/null 2>&1; then
-    say_skip "secrets: the cloud brief's secrets need gh"
+    wk_skip "secrets: the cloud brief's secrets need gh"
     return 1
   fi
   if ! command -v jq >/dev/null 2>&1; then
-    say_skip "secrets: reading the cloud brief's secrets needs jq"
+    wk_skip "secrets: reading the cloud brief's secrets needs jq"
     return 1
   fi
   # Two different missing things, told apart: a checkout without the home-repo
   # library cannot resolve a slug at all, which is not the same as a machine
   # that asked and has no home repo yet.
   if [[ "$HOME_LIBS" -ne 1 ]]; then
-    say_skip "secrets: the home-repo library is missing beside $SCRIPT_DIR — this checkout cannot name the home repo the cloud brief's secrets live on"
+    wk_skip "secrets: the home-repo library is missing beside $SCRIPT_DIR; this checkout cannot name the home repo the cloud brief's secrets live on"
     return 1
   fi
   SECRETS_SLUG="$(wk_home_slug 2>/dev/null || true)"
   if [[ -z "$SECRETS_SLUG" ]]; then
-    say_skip "secrets: this machine names no home repo — the cloud brief runs there and posts the morning brief there, so its secrets live there too; setup's home step makes one"
+    wk_skip "secrets: this machine names no home repo; the cloud brief runs there and posts the morning brief there, so its secrets live there too; setup's home step makes one"
     return 1
   fi
 
   SECRETS_JSON="$(secrets_json "$SECRETS_SLUG")"
   if ! is_listing "$SECRETS_JSON"; then
-    say_skip "secrets: $SECRETS_SLUG's secrets could not be read — \`gh secret list --repo $SECRETS_SLUG\` says why"
+    wk_skip "secrets: $SECRETS_SLUG's secrets could not be read; \`gh secret list --repo $SECRETS_SLUG\` says why"
     return 1
   fi
   return 0
@@ -1030,19 +1030,19 @@ secrets_step() {
   elif [[ "$age" != 'unknown' ]] && (( age > SECRET_MAX_AGE_DAYS )); then
     offer_claude_token "$SECRETS_SLUG" "was set $age days ago and the token lives about a year"
   else
-    say_skip "secrets: $SECRET_CLAUDE is set on $SECRETS_SLUG"
+    wk_skip "secrets: $SECRET_CLAUDE is set on $SECRETS_SLUG"
   fi
 
   age="$(secret_age_days "$SECRETS_JSON" "$SECRET_HOME")"
   if [[ -z "$age" ]]; then
     push_home_token "$SECRETS_SLUG"
   else
-    say_skip "secrets: $SECRET_HOME is set on $SECRETS_SLUG"
+    wk_skip "secrets: $SECRET_HOME is set on $SECRETS_SLUG"
   fi
 }
 
 # `setup --token`: the mint on demand (issue #174). The step above acts on
-# ABSENT or old, which is everything the listing can see — and a token can go
+# ABSENT or old, which is everything the listing can see, and a token can go
 # bad while it is young, a subscription that lapsed under it being the case that
 # named this. So the flag IS the yes: no age to check, no question to put, and
 # nothing else of setup runs. The guards stay, because a mint still needs the
@@ -1054,8 +1054,8 @@ token_step() {
 }
 
 # The report, in two voices. `doctor` says one line per value and returns how
-# many need attention; `update` — including the daily --auto run, which never
-# prompts and never mints — says nothing but the warnings.
+# many need attention; `update` (including the daily --auto run, which never
+# prompts and never mints) says nothing but the warnings.
 secrets_report() {
   local mode="$1" age attention=0 name
 
@@ -1064,16 +1064,16 @@ secrets_report() {
   for name in "$SECRET_CLAUDE" "$SECRET_HOME"; do
     age="$(secret_age_days "$SECRETS_JSON" "$name")"
     if [[ -z "$age" ]]; then
-      say_warn "secrets: $name is not set on $SECRETS_SLUG — run \`workkit setup\`"
+      wk_warn "secrets: $name is not set on $SECRETS_SLUG; run \`workkit setup\`"
       attention=$((attention + 1))
     elif [[ "$age" != 'unknown' ]] && (( age > SECRET_MAX_AGE_DAYS )); then
-      say_warn "secrets: $name on $SECRETS_SLUG was set $age days ago — run \`workkit setup\` to refresh it"
+      wk_warn "secrets: $name on $SECRETS_SLUG was set $age days ago; run \`workkit setup\` to refresh it"
       attention=$((attention + 1))
     elif [[ "$mode" == 'doctor' ]]; then
       if [[ "$age" == 'unknown' ]]; then
-        say_ok "secrets: $name is set on $SECRETS_SLUG"
+        wk_ok "secrets: $name is set on $SECRETS_SLUG"
       else
-        say_ok "secrets: $name is set on $SECRETS_SLUG ($age days ago)"
+        wk_ok "secrets: $name is set on $SECRETS_SLUG ($age days ago)"
       fi
     fi
   done
@@ -1086,37 +1086,37 @@ secrets_report() {
 cmd_setup() {
   case "${1:-}" in
     --token)
-      say_head "workkit setup --token — the cloud brief's Claude token"
+      wk_title "🔑 workkit setup --token: the cloud brief's Claude token"
       token_step
       return 0
       ;;
     '') ;;
-    *) printf 'workkit setup: unknown option %s\n' "$1" >&2; return 1 ;;
+    *) wk_error "setup: unknown option $1"; return 1 ;;
   esac
 
-  say_head "workkit setup — $KIT_DIR"
+  wk_title "🧰 workkit setup in $KIT_DIR"
 
-  say_section "This machine"
+  wk_section "💻 This machine"
   install_plugin
   check_gh
   refresh_engine_link
   link_command
   install_cron
   # The tower pointer is about this machine's dashboard, not the repo the shell
-  # stands in — it lives here, not under "This repo".
+  # stands in: it lives here, not under "This repo".
   tower_pointer
 
-  say_section "Home repo"
+  wk_section "🏠 Home repo"
   home_steps
 
-  say_section "Cloud brief secrets"
+  wk_section "🔑 Cloud brief secrets"
   # After the home steps, because the repo it writes to is the home repo they
   # settle.
   secrets_step
 
-  say_section "Dashboard site"
+  wk_section "🌐 Dashboard site"
   offer_site_publish
-  # The switch ends on, so setup makes it real before it exits — the same call
+  # The switch ends on, so setup makes it real before it exits: the same call
   # the human path of `update` already makes, and idempotent the way the rest of
   # setup is: a re-run republishes (issue #85). Off, unanswered, or a step that
   # skipped adds no call and says nothing further; publish.sh's own gate stays
@@ -1131,39 +1131,40 @@ cmd_setup() {
     if [[ "$PUBLISH_FAILED" -eq 0 ]]; then
       handover_token
     else
-      say_skip "site: the token handover waits for a publish that finished"
+      wk_skip "site: the token handover waits for a publish that finished"
     fi
   fi
 
-  say_section "This repo"
+  wk_section "📁 This repo"
   offer_repo
-  say_head "Setup is idempotent — re-run it any time. \`workkit doctor\` reports what is left."
+  wk_done "Setup is idempotent: re-run it any time. \`workkit doctor\` reports what is left."
 }
 
-# The FIRST install of the schedule, which only ever happens here: a human ran
-# this command. `update` from then on keeps it current.
+# The FIRST install of the schedule, which only ever happens here, under
+# `setup`: a human ran it, or a ship did after a green release (#235). `update`
+# from then on keeps it current.
 install_cron() {
   local drift
   if [[ "$(uname -s)" != "Darwin" ]]; then
-    say_skip "schedule: launchd is macOS — the 9am job is not available here"
+    wk_skip "schedule: launchd is macOS; the 9am job is not available here"
     return 0
   fi
 
   if [[ -f "$DAILY_PLIST" ]]; then
     # Already installed: the only question left is whether it still matches this
     # checkout, and a check that cannot answer stops the step rather than
-    # reinstalling on a guess. Either way setup carries on — the steps after
+    # reinstalling on a guess. Either way setup carries on: the steps after
     # this one have nothing to do with launchd.
     if ! drift="$(cron_drift)"; then
-      say_warn "schedule: $drift"
+      wk_warn "schedule: $drift"
       return 0
     fi
     if [[ -z "$drift" ]]; then
-      say_skip "schedule: $DAILY_LABEL is installed and current"
+      wk_skip "schedule: $DAILY_LABEL is installed and current"
       return 0
     fi
   elif [[ ! -f "$JOBS_INSTALL" ]]; then
-    say_warn "schedule: the installer is missing at $JOBS_INSTALL — this checkout is incomplete"
+    wk_warn "schedule: the installer is missing at $JOBS_INSTALL; this checkout is incomplete"
     return 0
   fi
 
@@ -1174,10 +1175,10 @@ cmd_update() {
   case "${1:-}" in
     --auto) QUIET=1 ;;
     '') ;;
-    *) printf 'workkit update: unknown option %s\n' "$1" >&2; return 1 ;;
+    *) wk_error "update: unknown option $1"; return 1 ;;
   esac
 
-  say_head "workkit update — $KIT_DIR"
+  wk_title "🔄 workkit update in $KIT_DIR"
   refresh_engine_link
   link_command
   update_cron
@@ -1190,112 +1191,112 @@ cmd_update() {
   # it alone: an app build at session start is minutes of work nobody asked for,
   # and the daily job publishes anyway.
   if [[ "$QUIET" -eq 1 ]]; then
-    say_skip "site: the daily job publishes it — \`workkit publish\` does it now"
+    wk_skip "site: the daily job publishes it; \`workkit publish\` does it now"
   else
     cmd_publish
   fi
 }
 
-# The site publish, which is the engine's own script — named here so everything
+# The site publish, which is the engine's own script, named here so everything
 # stays reachable from one command.
 cmd_publish() {
   PUBLISH_FAILED=0
   if [[ ! -f "$PUBLISH" ]]; then
-    say_warn "site: publish.sh is missing at $PUBLISH — this checkout is incomplete"
+    wk_warn "site: publish.sh is missing at $PUBLISH; this checkout is incomplete"
     PUBLISH_FAILED=1
     return 0
   fi
-  bash "$PUBLISH" "$@" || { say_warn "site: the publish did not finish — run \`bash $PUBLISH\` to see why"; PUBLISH_FAILED=1; }
+  bash "$PUBLISH" "$@" || { wk_warn "site: the publish did not finish; run \`bash $PUBLISH\` to see why"; PUBLISH_FAILED=1; }
   return 0
 }
 
 # Today's brief, asked for now (issue #54). The scheduled morning dispatches the
-# cloud run and this is that same dispatch, through the same one function — the
+# cloud run and this is that same dispatch, through the same one function: the
 # difference is who is listening. Nine o'clock logs a refusal and carries on;
 # a human standing at a terminal is told, and the command fails.
 #
 # `--local` is the rehearsal the job already has: the full local morning, with
 # the brief composed and sent from this machine and never posted to the home
-# repo. The morning's other steps still run where they can — the summaries can
+# repo. The morning's other steps still run where they can: the summaries can
 # post their Discussion and the site publish still fires when it is switched on.
 cmd_brief() {
   if [[ "${1:-}" == '--local' ]]; then
     if [[ ! -f "$MORNING" ]]; then
-      printf 'workkit: no morning job beside this engine (%s) — this command needs the workkit checkout\n' "$MORNING" >&2
+      wk_error "no morning job beside this engine ($MORNING), and this command needs the workkit checkout"
       exit 1
     fi
     exec bash "$MORNING" --now
   fi
   if [[ $# -gt 0 ]]; then
-    printf 'workkit: brief takes --local or nothing, not %s\n' "$1" >&2
+    wk_error "brief takes --local or nothing, not $1"
     exit 1
   fi
   if [[ ! -f "$BRIEF_DISPATCH" ]]; then
-    printf 'workkit: no brief dispatch beside this engine (%s) — this command needs the workkit checkout\n' "$BRIEF_DISPATCH" >&2
+    wk_error "no brief dispatch beside this engine ($BRIEF_DISPATCH), and this command needs the workkit checkout"
     exit 1
   fi
   # shellcheck source=../jobs/brief-dispatch.sh
   . "$BRIEF_DISPATCH"
   if ! dispatch_brief; then
-    say_warn "brief: the day could not be handed to the cloud — $DISPATCH_REASON"
+    wk_warn "brief: the day could not be handed to the cloud; $DISPATCH_REASON"
     exit 1
   fi
-  say_ok "$DISPATCH_LINE"
-  say_info "watch it: https://github.com/$DISPATCH_SLUG/actions/workflows/$BRIEF_WORKFLOW"
+  wk_ok "$DISPATCH_LINE"
+  wk_info "watch it: https://github.com/$DISPATCH_SLUG/actions/workflows/$BRIEF_WORKFLOW"
 }
 
 cmd_doctor() {
   local attention=0
-  say_head "workkit doctor — $KIT_DIR"
+  wk_title "🩺 workkit doctor in $KIT_DIR"
 
-  say_section "This machine"
+  wk_section "💻 This machine"
   if command -v claude >/dev/null 2>&1; then
-    if claude plugin list --json 2>/dev/null | grep -q "\"$PLUGIN_ID\""; then
-      say_ok "plugin: $PLUGIN_ID is installed"
+    if wk_spin 'reading the installed plugins' claude plugin list --json 2>/dev/null | grep -q "\"$PLUGIN_ID\""; then
+      wk_ok "plugin: $PLUGIN_ID is installed"
     else
-      say_warn "plugin: $PLUGIN_ID is not installed — run \`workkit setup\`"
+      wk_warn "plugin: $PLUGIN_ID is not installed; run \`workkit setup\`"
       attention=$((attention + 1))
     fi
   else
-    say_skip "plugin: no claude CLI on this machine"
+    wk_skip "plugin: no claude CLI on this machine"
   fi
 
   check_gh
 
   if [[ -L "$ENGINE_LINK" && "$(cd "$ENGINE_LINK" 2>/dev/null && pwd -P || true)" == "$SCRIPT_DIR" ]]; then
-    say_ok "engine: $ENGINE_LINK → $SCRIPT_DIR"
+    wk_ok "engine: $ENGINE_LINK → $SCRIPT_DIR"
   else
-    say_warn "engine: $ENGINE_LINK does not point at this checkout — run \`workkit update\`"
+    wk_warn "engine: $ENGINE_LINK does not point at this checkout; run \`workkit update\`"
     attention=$((attention + 1))
   fi
 
   if [[ -L "$BIN_LINK" && "$(readlink "$BIN_LINK" || true)" == "$SCRIPT_DIR/workkit.sh" ]]; then
-    say_ok "command: $BIN_LINK → $SCRIPT_DIR/workkit.sh"
+    wk_ok "command: $BIN_LINK → $SCRIPT_DIR/workkit.sh"
     case ":${PATH:-}:" in
       *":$BIN_DIR:"*) ;;
-      *) say_warn "command: $BIN_DIR is not on your PATH — add \`export PATH=\"\$HOME/.local/bin:\$PATH\"\` to your shell rc"
+      *) wk_warn "command: $BIN_DIR is not on your PATH; add \`export PATH=\"\$HOME/.local/bin:\$PATH\"\` to your shell rc"
          attention=$((attention + 1)) ;;
     esac
   else
-    say_warn "command: $BIN_LINK is missing or points elsewhere — run \`workkit update\`"
+    wk_warn "command: $BIN_LINK is missing or points elsewhere; run \`workkit update\`"
     attention=$((attention + 1))
   fi
 
   if [[ "$(uname -s)" != "Darwin" ]]; then
-    say_skip "schedule: launchd is macOS"
+    wk_skip "schedule: launchd is macOS"
   elif [[ ! -f "$DAILY_PLIST" ]]; then
-    say_warn "schedule: the 9am job is not installed — run \`workkit setup\`"
+    wk_warn "schedule: the 9am job is not installed; run \`workkit setup\`"
     attention=$((attention + 1))
   else
     local drift
     if ! drift="$(cron_drift)"; then
-      say_warn "schedule: $drift"
+      wk_warn "schedule: $drift"
       attention=$((attention + 1))
     elif [[ -z "$drift" ]]; then
-      say_ok "schedule: $DAILY_LABEL is installed and current"
+      wk_ok "schedule: $DAILY_LABEL is installed and current"
     else
       printf '%s\n' "$drift" | while IFS= read -r line; do
-        say_warn "schedule: $line — run \`workkit update\`"
+        wk_warn "schedule: $line; run \`workkit update\`"
       done
       attention=$((attention + 1))
     fi
@@ -1305,44 +1306,46 @@ cmd_doctor() {
 
   # The home repo: whether one is named, whether the folder is its clone, and
   # where that clone stands against its upstream.
-  say_section "Home repo"
+  wk_section "🏠 Home repo"
   if [[ "$HOME_LIBS" -ne 1 ]]; then
-    say_warn "home: the home-repo library is missing beside $SCRIPT_DIR — this checkout is incomplete"
+    wk_warn "home: the home-repo library is missing beside $SCRIPT_DIR; this checkout is incomplete"
     attention=$((attention + 1))
   else
     local home_attention=0
     wk_home_doctor || home_attention=$?
     attention=$((attention + home_attention))
     # The seeded cloud runner drifts on a `git pull` of this checkout, and only
-    # `setup` writes it back — so doctor is the one place that can notice.
+    # `setup` writes it back, so doctor is the one place that can notice.
     local runner_attention=0
     wk_home_runner_doctor || runner_attention=$?
     attention=$((attention + runner_attention))
   fi
 
-  say_section "Cloud brief secrets"
+  wk_section "🔑 Cloud brief secrets"
   local secrets_attention=0
   secrets_report doctor || secrets_attention=$?
   attention=$((attention + secrets_attention))
 
-  say_section "This repo"
+  wk_section "📁 This repo"
   local state
   state="$(bash "$STANDARDS" --state "$PWD" 2>/dev/null | tail -1 || printf 'nogit')"
   case "$state" in
-    enabled) say_ok "repo: $PWD is in the workflow" ;;
-    nogit)   say_skip "repo: $PWD is not a git repo" ;;
-    *)       say_info "repo: $PWD is '$state' — \`workkit enable\` joins it" ;;
+    enabled) wk_ok "repo: $PWD is in the workflow" ;;
+    nogit)   wk_skip "repo: $PWD is not a git repo" ;;
+    *)       wk_info "repo: $PWD is '$state'; \`workkit enable\` joins it" ;;
   esac
 
   if [[ "$attention" -gt 0 ]]; then
-    say_head "$attention item(s) need attention — the command to fix each is above."
+    wk_warn "$attention item(s) need attention: the command to fix each is above."
   else
-    say_head "Everything this command can see is current."
+    wk_done "Everything this command can see is current."
   fi
 }
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 
+# Each command opens with its own title (issue #237), which is what makes
+# `setup`, `publish` and the 9am job legible in one scrollback.
 case "${1:-help}" in
   help|-h|--help) usage ;;
   setup)   shift; cmd_setup "$@" ;;
@@ -1352,20 +1355,23 @@ case "${1:-help}" in
   brief)   shift; cmd_brief "$@" ;;
   tower)
     shift
-    # The tower lives in the checkout, not the engine — a partial checkout
+    # The tower lives in the checkout, not the engine: a partial checkout
     # that copied only workflow/ has nothing to run.
     if [[ ! -f "$TOWER_START" ]]; then
-      printf 'workkit: no tower beside this engine (%s) — this command needs the workkit checkout\n' "$TOWER_START" >&2
+      wk_error "tower: no tower beside this engine ($TOWER_START), and this command needs the workkit checkout"
       exit 1
     fi
     exec bash "$TOWER_START" "$@"
     ;;
+  # The four that hand the whole run to another script: each one speaks in its
+  # own voice the moment it starts.
   enable)  shift; exec bash "$STANDARDS" --enable "${1:-$PWD}" ;;
   decline) shift; exec bash "$STANDARDS" --decline "${1:-$PWD}" ;;
   heal)    shift; exec bash "$STANDARDS" "${1:-$PWD}" ;;
   note)    shift; exec bash "$CAPTURE" note "$@" ;;
   *)
-    printf 'workkit: unknown command %s\n\n' "$1" >&2
+    wk_error "unknown command $1"
+    printf '\n' >&2
     usage >&2
     exit 1
     ;;

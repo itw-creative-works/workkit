@@ -8,8 +8,8 @@ assignees: ""
 
 ## Description
 
-<!-- What should change, stated plainly, and why — the problem it solves. -->
+<!-- What should change, stated plainly, and why: the problem it solves. -->
 
 ## Spec
 
-None needed — small item.
+None needed: small item.

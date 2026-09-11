@@ -1,4 +1,4 @@
-// Skills parity — the ten workflow skills ship here, each folder's name is the
+// Skills parity: the ten workflow skills ship here, each folder's name is the
 // frontmatter name (plugin namespacing supplies the `workkit:` prefix), and
 // nothing under agents/ or skills/ still points at the dotfiles they came from.
 const path = require('path');
@@ -11,7 +11,7 @@ const AGENTS_DIR = path.join(REPO, 'agents');
 
 const SKILLS = ['feature', 'interview', 'diagnose', 'review', 'triage', 'status', 'checkpoint', 'migrate', 'ship', 'parallel'];
 
-// A description is a ROUTING line — the model reads every one of them on every
+// A description is a ROUTING line. The model reads every one of them on every
 // turn, so it stays one tight trigger sentence and the body carries the detail
 // (issue #94).
 const DESCRIPTION_CAP = 300;
@@ -39,7 +39,7 @@ const skillFolders = () =>
     .sort();
 
 // The section of a markdown file under one heading, up to the next heading of
-// the same or a higher level — the docs parity checks read one section each
+// the same or a higher level. The docs parity checks read one section each
 // rather than the whole file, so a name mentioned in prose elsewhere cannot
 // stand in for its row.
 const section = (file, heading) => {
@@ -109,7 +109,7 @@ const run = async () => {
 
   group('skills: no `workflow:` skill names survive');
   await test('nothing under skills/ names a workflow: skill', () => {
-    // `workflow:standards` is the HOOK, and keeps its name — only the
+    // `workflow:standards` is the HOOK, and keeps its name. Only the
     // SKILL names moved to the workkit: prefix.
     const bad = [];
     for (const file of markdownIn(SKILLS_DIR)) {
@@ -123,12 +123,12 @@ const run = async () => {
 
   group('skills: docs parity');
 
-  // The two places a reader meets the roster — AGENTS.md's list and the
-  // README's enumeration — are pinned to the FOLDERS, in both directions: a
+  // The two places a reader meets the roster (AGENTS.md's list and the
+  // README's enumeration) are pinned to the FOLDERS, in both directions: a
   // twelfth skill that lands without its name fails here, and so does a name
   // left behind by a skill that went away (issue #128). AGENTS.md carries the
-  // bare names rather than a table since #161 — what each one DOES lives in its
-  // own SKILL.md — so the surface is every backticked plain name in the
+  // bare names rather than a table since #161 (what each one DOES lives in its
+  // own SKILL.md), so the surface is every backticked plain name in the
   // section, which `workkit:<name>` and `SKILL.md` are not.
   await test("AGENTS.md's Skills section lists exactly the skill folders", () => {
     const named = [...section(path.join(REPO, 'AGENTS.md'), '## Skills').matchAll(/`([a-z-]+)`/g)]

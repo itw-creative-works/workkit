@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 //
-// The nightly payload — what the summaries step hands to Claude.
+// The nightly payload: what the summaries step hands to Claude.
 //
 // The day's two records, gathered without reading either: an INDEX of the
 // session transcripts that moved in the last 24 hours (path, size, mtime) and
 // the commits that landed across the roster in the same window. The transcripts
-// are named, never inlined — a day's sessions are far past any budget, so the
+// are named, never inlined: a day's sessions are far past any budget, so the
 // model samples them itself with Read/Grep/Glob, newest first, and stops when it
 // has enough. The index is what makes "newest first" possible at all.
 //
@@ -13,7 +13,7 @@
 // the two halves of the daily job agree about which repos are the owner's work.
 //
 // Pure gather: no writes, no Claude, no notification. claude-nightly.sh owns
-// the sending and the publishing — the summary is posted as a Discussion on the
+// the sending and the publishing: the summary is posted as a Discussion on the
 // home repo and never written to disk (issue #27).
 //
 // The WEEKLY and MONTHLY rollups take the same shape with different inputs: a
@@ -41,17 +41,17 @@ const WINDOW_MS = WINDOW_HOURS * 60 * 60 * 1000;
 // model its own reading budget over the transcript index, and fixes the output
 // EXACTLY: the response is not a report about a summary, it IS the summary, and
 // claude-nightly.sh writes it to disk byte for byte.
-const INSTRUCTION = `You are writing the owner's DAILY SUMMARY — a reflection on the day that just ended.
+const INSTRUCTION = `You are writing the owner's DAILY SUMMARY: a reflection on the day that just ended.
 
 The payload below is JSON with two parts. \`transcripts\` is an INDEX of the
 Claude Code session transcripts that changed in the last 24 hours, newest first,
-each with its path, size in bytes, and modification time — the contents are NOT
+each with its path, size in bytes, and modification time. The contents are NOT
 here. \`commits\` is what landed in the owner's repos in the same window.
 
 Read the day before you judge it:
 - Sample the transcripts yourself with the Read, Grep, and Glob tools, working
   down the index from the newest.
-- Skip any file larger than 10 MB — the cost of one is the cost of many smaller
+- Skip any file larger than 10 MB: the cost of one is the cost of many smaller
   ones, and the smaller ones say more.
 - A transcript is JSONL, one event per line; skimming and grepping beats reading
   a whole file end to end.
@@ -62,16 +62,16 @@ Then output ONLY the finished daily summary as markdown, with EXACTLY these four
 sections and no others:
 
 ## Went well
-What worked — shipped work, decisions that held, friction that stayed away.
+What worked: shipped work, decisions that held, friction that stayed away.
 
 ## Went poorly
-What did not — rework, dead ends, things that took far longer than they should
+What did not: rework, dead ends, things that took far longer than they should
 have, repeated corrections.
 
 ## Improvements
 Each bullet is ONE line, phrased as a candidate issue: what would change and
-why, tight enough to file as-is. Nothing is filed from this document — a human
-triages these — so write them to be read cold.
+why, tight enough to file as-is. Nothing is filed from this document (a human
+triages these), so write them to be read cold.
 
 ## Facts learned
 Durable things now known that were not known this morning: how a tool actually
@@ -94,7 +94,7 @@ const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
  *
  * One level down from the projects root, which is how Claude Code lays it out
  * (a directory per project, `.jsonl` files inside). An unreadable directory is
- * skipped rather than fatal — the day's record is still worth summarizing
+ * skipped rather than fatal: the day's record is still worth summarizing
  * without it.
  *
  * @param {object} [opts]
@@ -156,7 +156,7 @@ const transcriptIndex = (opts = {}) => {
  * @param {object} [opts]
  * @param {string} [opts.workflowHome] the user's ~/.workkit
  * @param {string} [opts.home] overrides ~ for the libs that resolve it
- * @param {Function} [opts.exec] (cmd, args) => stdout — the git seam
+ * @param {Function} [opts.exec] (cmd, args) => stdout: the git seam
  * @returns {Array<{repo: string, slug: string|null, path: string, commits: Array<{sha: string, subject: string}>, error?: string}>}
  */
 const commitsToday = (opts = {}) => {
@@ -225,13 +225,13 @@ const composeNightly = (opts = {}) => {
 const render = (payload) => `${INSTRUCTION}\n\n${JSON.stringify(payload, null, 2)}\n`;
 
 /**
- * The rollup instruction. It says what the material IS — summaries, not raw
- * days — because a rollup that re-reads transcripts would spend a week's budget
+ * The rollup instruction. It says what the material IS (summaries, not raw
+ * days) because a rollup that re-reads transcripts would spend a week's budget
  * on ground the daily summaries already covered.
  *
  * @param {string} cadence 'weekly' or 'monthly'
  */
-const rollupInstruction = (cadence) => `You are writing the owner's ${cadence.toUpperCase()} SUMMARY — a rollup of the period that just ended.
+const rollupInstruction = (cadence) => `You are writing the owner's ${cadence.toUpperCase()} SUMMARY: a rollup of the period that just ended.
 
 The payload below is JSON. \`summaries\` is every DAILY summary published in the
 period, newest first, each with its title, its date, and its full body. That is
@@ -242,7 +242,7 @@ Output ONLY the finished ${cadence} summary as markdown, with EXACTLY these four
 sections and no others:
 
 ## Themes
-What the period was actually about — the two or three threads that show up
+What the period was actually about: the two or three threads that show up
 across days, not a list of days.
 
 ## What held and what did not
@@ -251,7 +251,7 @@ Decisions that survived contact, and the ones that were re-litigated or undone.
 ## Improvements
 Each bullet is ONE line, phrased as a candidate issue: what would change and
 why, tight enough to file as-is. Prefer a pattern seen on several days over
-anything that happened once. Nothing is filed from this document — a human
+anything that happened once. Nothing is filed from this document: a human
 triages these.
 
 ## Facts learned
@@ -307,7 +307,7 @@ if (require.main === module) {
   } else if (cadence === 'weekly' || cadence === 'monthly') {
     // The prior summaries arrive on stdin: the API call belongs to the step that
     // already holds the credentials (workflow/discussions.sh), and this module
-    // stays a pure composer. Unreadable input is an EMPTY period, said plainly —
+    // stays a pure composer. Unreadable input is an EMPTY period, said plainly:
     // a rollup invented from nothing is worse than none.
     let raw = '';
     try {

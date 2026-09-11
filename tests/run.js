@@ -9,7 +9,7 @@
 // Run with:  npm test   (or)  node tests/run.js
 //
 // Add a new suite by dropping a `*.test.js` anywhere under tests/ that exports
-// `async () => ({ passed, failed, failures })` — see tests/hooks/ for the shape.
+// `async () => ({ passed, failed, failures })`. See tests/hooks/ for the shape.
 //
 
 const fs = require('fs');
@@ -73,7 +73,7 @@ const findSuites = (dir) => {
       }
     } catch (err) {
       // A suite that called skipSuite() is reporting a missing precondition,
-      // not a defect — this machine cannot ask the question it asks.
+      // not a defect. This machine cannot ask the question it asks.
       if (err.suiteSkipped) {
         console.log(`\x1b[33m⊘ skipped:\x1b[0m ${err.message}`);
         skippedSuites.push({ name: rel, reason: err.message });

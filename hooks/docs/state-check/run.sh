@@ -1,17 +1,17 @@
 #!/bin/bash
-# docs:state-check — SessionStart hook
+# docs:state-check: SessionStart hook
 # Announces project-state upkeep so nothing rots silently:
 #   1. open status:inbox issues on the cwd repo (the captured-but-unrouted
-#      queue — triage is the action that drains it)
+#      queue: triage is the action that drains it)
 #   2. a non-empty .workkit/capture.md (the local capture file)
 #   3. a content-bearing CLAUDE.md (doctrine: content lives in AGENTS.md;
 #      CLAUDE.md is a one-line @AGENTS.md pointer)
-#   4. an AGENTS.md over either half of its budget — >250 lines, or any line
+#   4. an AGENTS.md over either half of its budget: >250 lines, or any line
 #      over 400 BYTES (issue #161: a markdown paragraph is one source line, so
-#      a dense file passes the count) — deep references belong in docs/. The
+#      a dense file passes the count). Deep references belong in docs/. The
 #      unit is pinned to bytes (LC_ALL=C), the way board-guard pins it.
 # This is the auto-heal trigger: every session that opens in a repo learns
-# immediately what needs attention — no manual sweeps. Detection is automatic;
+# immediately what needs attention, no manual sweeps. Detection is automatic;
 # the fixing stays agent-executed. Silent when everything is current.
 #
 # The issue count is the only network call: read-only, short timeout, and any
@@ -43,7 +43,7 @@ run_bounded() {
 }
 
 # Count entry lines: non-blank, not headings, not blockquote header notes.
-# (grep -c prints its count even when exiting 1 on zero matches — don't add
+# (grep -c prints its count even when exiting 1 on zero matches. Don't add
 # a fallback echo or the count doubles.)
 count_entries() {
   local file c
@@ -56,18 +56,18 @@ count_entries() {
 msg=""
 
 # Captured-but-unrouted work items (GitHub Issues are the SSOT).
-# The count is cached ~30 min per repo — a network call on EVERY new panel is
+# The count is cached ~30 min per repo. A network call on EVERY new panel is
 # the latency the standards hook's daily marker exists to avoid (review
 # finding 2026-07-24). Stale or missing cache = refresh.
 #
 # ONLY SILENCE IS CACHED (issue #1). Triage drains status:inbox by editing
 # labels on GitHub, which leaves no local trace this hook could fingerprint,
-# and a skill cannot be relied on to run an invalidate command — so the cache
+# and a skill cannot be relied on to run an invalidate command, so the cache
 # has to invalidate itself. It does, by never holding an announcement: an empty
 # queue is written to the cache, a non-empty one is re-queried every session and
 # the old entry removed. The moment triage empties the queue, the next session
 # asks GitHub and goes quiet, with no cooperation from the skill at all.
-# The trade is one bounded query per session while the inbox is non-empty —
+# The trade is one bounded query per session while the inbox is non-empty,
 # paid only in the state the announcement is telling you to clear.
 if [ -n "$cwd" ] && command -v gh >/dev/null 2>&1 \
   && git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -86,7 +86,7 @@ if [ -n "$cwd" ] && command -v gh >/dev/null 2>&1 \
       n=$(jq -r 'length' <<<"$issues" 2>/dev/null) || n=0
       case "$n" in ''|*[!0-9]*) n=0 ;; esac
       # `|| true`: this is the last command of the block, and an empty repo_key
-      # would make the block return 1 — set -e would end the hook right here,
+      # would make the block return 1. set -e would end the hook right here,
       # before the CLAUDE.md and AGENTS.md checks below ever run.
       if [ -n "$repo_key" ]; then
         if [ "$n" -eq 0 ]; then
@@ -101,28 +101,28 @@ if [ -n "$cwd" ] && command -v gh >/dev/null 2>&1 \
   fi
   case "$n" in ''|*[!0-9]*) n=0 ;; esac
   if [ "$n" -gt 0 ]; then
-    msg="ISSUES: $n open status:inbox issue$([ "$n" -eq 1 ] && echo '' || echo s) — run triage (workkit:triage) to route them."
+    msg="ISSUES: $n open status:inbox issue$([ "$n" -eq 1 ] && echo '' || echo s). Run triage (workkit:triage) to route them."
   fi
 fi
 
-# Local capture file — the offline/free-form half of the same intake.
+# Local capture file: the offline/free-form half of the same intake.
 # This hook sources nothing, so the directory name is spelled out; its SSOT is
-# WORKKIT_DIR in hooks/_lib.sh — change both together.
+# WORKKIT_DIR in hooks/_lib.sh. Change both together.
 if [ -n "$cwd" ] && [ -f "$cwd/.workkit/capture.md" ]; then
   sn=$(count_entries "$cwd/.workkit/capture.md")
   if [ "$sn" -gt 0 ]; then
     [ -n "$msg" ] && msg="$msg "
-    msg="${msg}SCRATCH: the local capture file has entries ($cwd/.workkit/capture.md) — triage drains it."
+    msg="${msg}SCRATCH: the local capture file has entries ($cwd/.workkit/capture.md): triage drains it."
   fi
 fi
 
 # Content-bearing CLAUDE.md detection (pointer doctrine). A compliant file is
-# essentially just the @AGENTS.md import — >3 non-blank lines means content.
+# essentially just the @AGENTS.md import. >3 non-blank lines means content.
 if [ -n "$cwd" ] && [ -f "$cwd/CLAUDE.md" ]; then
   cl=$(grep -cv '^[[:space:]]*$' "$cwd/CLAUDE.md" 2>/dev/null) || true
   if [ "${cl:-0}" -gt 3 ] || ! grep -q '@AGENTS.md' "$cwd/CLAUDE.md" 2>/dev/null; then
     [ -n "$msg" ] && msg="$msg "
-    msg="${msg}CLAUDE.md holds content — convert BEFORE other work: git mv CLAUDE.md AGENTS.md (own commit), THEN add a one-line @AGENTS.md-pointer CLAUDE.md in a SEPARATE commit (same commit breaks rename history)."
+    msg="${msg}CLAUDE.md holds content. Convert BEFORE other work: git mv CLAUDE.md AGENTS.md (own commit), THEN add a one-line @AGENTS.md-pointer CLAUDE.md in a SEPARATE commit (same commit breaks rename history)."
   fi
 fi
 
@@ -131,7 +131,7 @@ if [ -n "$cwd" ] && [ -f "$cwd/AGENTS.md" ]; then
   al=$(wc -l <"$cwd/AGENTS.md" | tr -d ' ')
   if [ "${al:-0}" -gt 250 ]; then
     [ -n "$msg" ] && msg="$msg "
-    msg="${msg}AGENTS.md is $al lines (budget 250) — move deep references to docs/<topic>.md and keep pointer lines; the board-guard hook bounces writes until it fits."
+    msg="${msg}AGENTS.md is $al lines (budget 250). Move deep references to docs/<topic>.md and keep pointer lines; the board-guard hook bounces writes until it fits."
   fi
   # The density half of the same budget (issue #161): a file well inside 250
   # lines still carries a book when its paragraphs are single source lines.
@@ -139,7 +139,7 @@ if [ -n "$cwd" ] && [ -f "$cwd/AGENTS.md" ]; then
   case "$ad" in ''|*[!0-9]*) ad=0 ;; esac
   if [ "$ad" -gt 0 ]; then
     [ -n "$msg" ] && msg="$msg "
-    msg="${msg}AGENTS.md has $ad line$([ "$ad" -eq 1 ] && echo '' || echo s) over 400 bytes (density rule) — bulletize them or move the detail to docs/<topic>.md; the board-guard hook bounces writes until it fits."
+    msg="${msg}AGENTS.md has $ad line$([ "$ad" -eq 1 ] && echo '' || echo s) over 400 bytes (density rule). Bulletize them or move the detail to docs/<topic>.md; the board-guard hook bounces writes until it fits."
   fi
 fi
 

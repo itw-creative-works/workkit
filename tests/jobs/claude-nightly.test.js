@@ -1,12 +1,12 @@
 //
-// Tests for jobs/claude-nightly.sh — the summaries step the 9am job runs first,
+// Tests for jobs/claude-nightly.sh: the summaries step the 9am job runs first,
 // which writes the day up and PUBLISHES it as a Discussion on the home repo
 // (issue #27).
 //
 // The runner is executed for real against shims: a `claude` that answers with a
 // summary, and a `gh` that answers the three GraphQL calls the delivery makes
 // with canned JSON. HOME and WORKFLOW_HOME are scratch directories, so the log
-// it appends to and the settings file it reads are both inside the fixture —
+// it appends to and the settings file it reads are both inside the fixture:
 // this suite never touches the real home, never reaches GitHub, never writes a
 // summary to disk, and never puts a notification on screen.
 //
@@ -21,13 +21,13 @@ const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-nightly.sh');
 
 // The date the runner works in is the LOCAL one (`date '+%Y-%m-%d'`), which is not
-// always today in UTC — a fixture stamped from toISOString would be a different
+// always today in UTC: a fixture stamped from toISOString would be a different
 // day for half the world's clocks.
 const today = () => new Date().toLocaleDateString('en-CA');
 
 // Every cadence title the runner would publish TODAY. The script adds the
 // weekly on a Sunday and the monthly on the 1st, so a test seeding "already
-// published" must cover all of them — seeding the daily alone reds the test
+// published" must cover all of them: seeding the daily alone reds the test
 // on exactly those days, when the rollup legitimately composes.
 const allPostedToday = () => {
   const now = new Date();
@@ -48,14 +48,14 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
  *
  * `home` is the `"home"` key to write into the settings file; null writes the
  * file without one, and `settings: null` writes no file at all.
- * `logsDir: false` leaves ~/Library/Logs out — the bare home the job has to
+ * `logsDir: false` leaves ~/Library/Logs out: the bare home the job has to
  * make its own log directory in.
  * `categories` is what the repo's Discussions actually offer, which is how the
  * fallback is exercised; `ghFails` makes every API call refuse.
  * `quiet` is whether the day has a record at all: a world that is not quiet
  * carries one session transcript inside the window, which is what the payload
  * reads to decide there was a day to summarize.
- * `posted` is what the repo's Daily discussions already carry — the duplicate
+ * `posted` is what the repo's Daily discussions already carry: the duplicate
  * guard's input.
  * `claudeStderr` is noise the send writes to its stderr, which must reach the
  * log and never the published body.
@@ -69,7 +69,7 @@ const mkWorld = ({
   const homeDir = path.join(root, 'home');
   // ~/.local/bin, and not just any directory: the runner exports a PATH of its
   // own that begins there and includes /opt/homebrew/bin, so a shim anywhere
-  // else would lose to the real `gh` on this machine — and the suite would
+  // else would lose to the real `gh` on this machine, and the suite would
   // reach GitHub.
   const bin = path.join(homeDir, '.local', 'bin');
   const workflowHome = path.join(root, 'workflow-home');
@@ -88,7 +88,7 @@ const mkWorld = ({
 
   // The day's record. Claude Code lays transcripts out one directory per
   // project with `.jsonl` files inside, and the payload only counts the ones
-  // that moved inside the 24-hour window — a file written now is one.
+  // that moved inside the 24-hour window: a file written now is one.
   const projects = path.join(root, 'projects');
   if (!quiet) {
     fs.mkdirSync(path.join(projects, 'a-repo'), { recursive: true });
@@ -122,7 +122,7 @@ const mkWorld = ({
   // the real gh and the real GitHub.
   {
     const nodes = categories.map((name, i) => `{ "id": "DIC_${i}", "name": "${name}" }`).join(',');
-    // What the repo already carries, in the shape the API answers with — the
+    // What the repo already carries, in the shape the API answers with: the
     // duplicate guard reads exactly this.
     const priorNodes = posted.map((title) => JSON.stringify({
       title, createdAt: `${today()}T09:00:00Z`, body: 'already published',
@@ -175,7 +175,7 @@ const mkWorld = ({
       // when this world put it there.
       PATH: `${bin}:/usr/bin:/bin:/usr/sbin:/sbin:${path.dirname(process.execPath)}`,
       WORKFLOW_HOME: workflowHome,
-      // The transcripts root the payload indexes and the send is granted — the
+      // The transcripts root the payload indexes and the send is granted: the
       // same root, which is the whole point of the grant.
       WORKKIT_CLAUDE_PROJECTS: projects,
     },
@@ -198,7 +198,7 @@ const run = async () => {
 
   group('jobs/claude-nightly: shape');
 
-  await test('bash -n — no syntax errors', () => {
+  await test('bash -n: no syntax errors', () => {
     const res = spawnSync('bash', ['-n', SCRIPT], { encoding: 'utf8' });
     assertEq(res.status, 0, `bash -n: ${res.stderr}`);
   });
@@ -209,11 +209,11 @@ const run = async () => {
 
   group('jobs/claude-nightly: no home repo is a named skip');
 
-  await test('no home repo configured — it skips and says so', async () => {
+  await test('no home repo configured: it skips and says so', async () => {
     const world = mkWorld();
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
-    assert(/summaries: no home repo configured — skipped/.test(world.log()), `the log names the reason: ${world.log()}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
+    assert(/summaries: no home repo configured; skipped/.test(world.log()), `the log names the reason: ${world.log()}`);
     assertEq(world.calls().length, 0, `nothing was sent: ${fmtCalls(world.calls())}`);
     await settle();
     assertEq(world.notifs().length, 0, 'and nothing interrupted anyone');
@@ -222,10 +222,10 @@ const run = async () => {
 
   group('jobs/claude-nightly: the summary is published');
 
-  await test('a home repo IS configured — the summary is written and posted', () => {
+  await test('a home repo IS configured: the summary is written and posted', () => {
     const world = mkWorld({ home: 'owner/private-home' });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     const log = world.log();
     assert(/posted the daily summary/.test(log), `the log says it published: ${log}`);
     assert(/discussions\/7/.test(log), 'and names the discussion it created');
@@ -254,7 +254,7 @@ const run = async () => {
   });
 
   await test('a repo with no Daily category publishes in the default one, and says so', () => {
-    // Categories cannot be created over the API — no such mutation exists — so
+    // Categories cannot be created over the API (no such mutation exists) so
     // a fallback is the only honest behavior, and it is never silent.
     const world = mkWorld({ home: 'owner/private-home', categories: ['General'] });
     const res = runJob(world);
@@ -297,12 +297,12 @@ const run = async () => {
   await test('the log block is timestamped, and --now stamps it manual', () => {
     const world = mkWorld();
     runJob(world);
-    assert(/── \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ──/.test(world.log()), `one timestamped block: ${world.log()}`);
+    assert(/--- \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ---/.test(world.log()), `one timestamped block: ${world.log()}`);
     cleanup(world.root);
 
     const manual = mkWorld();
     runJob(manual, ['--now']);
-    assert(/── \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \(manual\) ──/.test(manual.log()),
+    assert(/--- \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \(manual\) ---/.test(manual.log()),
       `stamped manual: ${manual.log().slice(0, 120)}`);
     assertEq(manual.calls().length, 0, 'and the manual trigger sends nothing either');
     cleanup(manual.root);
@@ -321,7 +321,7 @@ const run = async () => {
     assert(tools !== -1 && argv[tools + 1] === 'Read,Grep,Glob', `the three read tools: ${JSON.stringify(argv)}`);
     const dir = argv.indexOf('--add-dir');
     assertEq(argv[dir + 1], path.join(world.root, 'projects'),
-      'and the SAME root the payload indexed — the grant and the index cannot disagree');
+      'and the SAME root the payload indexed: the grant and the index cannot disagree');
     cleanup(world.root);
   });
 
@@ -359,7 +359,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('--now posts anyway — a manual run is an explicit ask', () => {
+  await test('--now posts anyway: a manual run is an explicit ask', () => {
     const world = mkWorld({ home: 'owner/private-home', posted: [`daily: ${today()}`] });
     runJob(world, ['--now']);
     assert(/posted the daily summary/.test(world.log()), `it published: ${world.log()}`);
@@ -413,14 +413,14 @@ const run = async () => {
   await test('the retired local summaries path is gone from the script', () => {
     const text = fs.readFileSync(SCRIPT, 'utf8');
     // The machinery that used to write the summary into a folder, by name. The
-    // send itself is back — it is the destination that changed, from a file to
+    // send itself is back: it is the destination that changed, from a file to
     // a Discussion.
     for (const gone of ['WORKKIT_HQ', 'summaries/daily', 'DAILY_FILE']) {
-      assert(!text.includes(gone), `${gone} is not in the script — generated records are never files`);
+      assert(!text.includes(gone), `${gone} is not in the script: generated records are never files`);
     }
   });
 
-  await test('a home with no Library/Logs gets one — the log line still lands', () => {
+  await test('a home with no Library/Logs gets one: the log line still lands', () => {
     const world = mkWorld({ logsDir: false });
     const res = runJob(world);
     assertEq(res.status, 0, `the append cannot fail the step: ${res.stderr}`);

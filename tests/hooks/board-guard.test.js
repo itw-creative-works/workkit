@@ -1,12 +1,12 @@
 //
-// Tests for hooks/docs:board-guard — the PostToolUse hook that enforces the
+// Tests for hooks/docs:board-guard: the PostToolUse hook that enforces the
 // document rules of the project-state spec v4: CLAUDE.md pointer doctrine and
 // the AGENTS.md size budget.
 //
 // The hook reads JSON on stdin (tool_input.file_path), validates the written
 // file, and exits 2 with a fix-list on stderr when it violates a rule.
-// Board files are no longer a surface — work-item state lives in GitHub Issues.
-// Plan files are no longer a surface either — a plan lives in its issue body.
+// Board files are no longer a surface. Work-item state lives in GitHub Issues.
+// Plan files are no longer a surface either. A plan lives in its issue body.
 //
 
 const path = require('path');
@@ -40,7 +40,7 @@ const writeFile = (dir, content, name) => {
 const run = async () => {
   group('board-guard: scope');
 
-  await test('unguarded file — silent exit 0', () => {
+  await test('unguarded file: silent exit 0', () => {
     const dir = mkTmp();
     const p = writeFile(dir, 'anything at all', 'README.md');
     const { code, stderr } = runHook(p);
@@ -49,7 +49,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('PROGRESS.md / BOARD.md are no longer validated — exit 0', () => {
+  await test('PROGRESS.md / BOARD.md are no longer validated: exit 0', () => {
     const dir = mkTmp();
     for (const name of ['PROGRESS.md', 'BOARD.md']) {
       const p = writeFile(dir, '# whatever\n\n## Random\n- GO 1: anywhere\n', name);
@@ -60,7 +60,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('missing file_path in input — exit 0', () => {
+  await test('missing file_path in input: exit 0', () => {
     const res = spawnSync('bash', [HOOK], {
       input: JSON.stringify({ tool_name: 'Write', tool_input: {} }),
       env: { ...process.env, HOME: os.homedir() },
@@ -70,14 +70,14 @@ const run = async () => {
     assertEq(res.status, 0, 'no file_path → fail open');
   });
 
-  await test('file_path that does not exist — exit 0', () => {
+  await test('file_path that does not exist: exit 0', () => {
     const { code } = runHook('/nonexistent/PROGRESS.md');
     assertEq(code, 0, 'missing file → fail open');
   });
 
   group('board-guard: CLAUDE.md pointer doctrine');
 
-  await test('bare @AGENTS.md pointer — exit 0', () => {
+  await test('bare @AGENTS.md pointer: exit 0', () => {
     const dir = mkTmp();
     const p = writeFile(dir, '@AGENTS.md\n', 'CLAUDE.md');
     const { code, stderr } = runHook(p);
@@ -85,7 +85,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('content-bearing CLAUDE.md — exit 2 POINTER DOCTRINE with convert recipe', () => {
+  await test('content-bearing CLAUDE.md: exit 2 POINTER DOCTRINE with convert recipe', () => {
     const dir = mkTmp();
     const p = writeFile(dir, '# My Project\n\nReal instructions here.\n@AGENTS.md\n', 'CLAUDE.md');
     const { code, stderr } = runHook(p);
@@ -95,7 +95,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('CLAUDE.md missing the import line entirely — exit 2', () => {
+  await test('CLAUDE.md missing the import line entirely: exit 2', () => {
     const dir = mkTmp();
     const p = writeFile(dir, '\n', 'CLAUDE.md');
     const { code, stderr } = runHook(p);
@@ -106,9 +106,9 @@ const run = async () => {
 
   group('board-guard: AGENTS.md size budget');
 
-  const agentsLines = (n) => `# repo — overview\n${Array.from({ length: n - 1 }, (_, i) => `line ${i}`).join('\n')}\n`;
+  const agentsLines = (n) => `# repo: overview\n${Array.from({ length: n - 1 }, (_, i) => `line ${i}`).join('\n')}\n`;
 
-  await test('AGENTS.md at 250 lines — exit 0', () => {
+  await test('AGENTS.md at 250 lines: exit 0', () => {
     const dir = mkTmp();
     const p = writeFile(dir, agentsLines(250), 'AGENTS.md');
     const { code, stderr } = runHook(p);
@@ -116,7 +116,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('AGENTS.md over 250 lines — exit 2 AGENTS BUDGET with offload instruction', () => {
+  await test('AGENTS.md over 250 lines: exit 2 AGENTS BUDGET with offload instruction', () => {
     const dir = mkTmp();
     const p = writeFile(dir, agentsLines(251), 'AGENTS.md');
     const { code, stderr } = runHook(p);
@@ -131,20 +131,20 @@ const run = async () => {
   // A markdown paragraph is ONE source line, which is how a 137-line file came
   // to carry three paragraphs over 2,000 bytes (issue #161). The line count and
   // the line LENGTH are two halves of one budget, and the unit of the second is
-  // BYTES — pinned with LC_ALL=C, since one-true-awk and gawk disagree otherwise.
+  // BYTES, pinned with LC_ALL=C, since one-true-awk and gawk disagree otherwise.
   const longLine = (n) => 'x'.repeat(n);
 
-  await test('a 400-byte line — exit 0 (the boundary passes)', () => {
+  await test('a 400-byte line: exit 0 (the boundary passes)', () => {
     const dir = mkTmp();
-    const p = writeFile(dir, `# repo — overview\n${longLine(400)}\n`, 'AGENTS.md');
+    const p = writeFile(dir, `# repo: overview\n${longLine(400)}\n`, 'AGENTS.md');
     const { code, stderr } = runHook(p);
     assertEq(code, 0, `400 bytes is within the density budget, stderr: ${stderr}`);
     cleanup(dir);
   });
 
-  await test('a 401-byte line — exit 2 AGENTS DENSITY naming the line and its length', () => {
+  await test('a 401-byte line: exit 2 AGENTS DENSITY naming the line and its length', () => {
     const dir = mkTmp();
-    const p = writeFile(dir, `# repo — overview\n${longLine(401)}\n`, 'AGENTS.md');
+    const p = writeFile(dir, `# repo: overview\n${longLine(401)}\n`, 'AGENTS.md');
     const { code, stderr } = runHook(p);
     assertEq(code, 2, 'one character over must block');
     assert(stderr.includes('AGENTS DENSITY'), 'names the violation');
@@ -153,11 +153,11 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('a 137-line file with a 3,000-byte line — the count passes, the density bounces', () => {
+  await test('a 137-line file with a 3,000-byte line: the count passes, the density bounces', () => {
     const dir = mkTmp();
     const body = Array.from({ length: 135 }, (_, i) => `line ${i}`);
     body.splice(60, 0, longLine(3000));
-    const p = writeFile(dir, `# repo — overview\n${body.join('\n')}\n`, 'AGENTS.md');
+    const p = writeFile(dir, `# repo: overview\n${body.join('\n')}\n`, 'AGENTS.md');
     assertEq(fs.readFileSync(p, 'utf8').trimEnd().split('\n').length, 137, 'the fixture is 137 lines');
     const { code, stderr } = runHook(p);
     assertEq(code, 2, 'a dense file blocks even well inside 250 lines');
@@ -166,9 +166,9 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('many offenders — the first three are named and the rest counted', () => {
+  await test('many offenders: the first three are named and the rest counted', () => {
     const dir = mkTmp();
-    const p = writeFile(dir, `# repo — overview\n${Array.from({ length: 5 }, () => longLine(500)).join('\n')}\n`, 'AGENTS.md');
+    const p = writeFile(dir, `# repo: overview\n${Array.from({ length: 5 }, () => longLine(500)).join('\n')}\n`, 'AGENTS.md');
     const { code, stderr } = runHook(p);
     assertEq(code, 2, 'blocks');
     for (const n of [2, 3, 4]) assert(stderr.includes(`line ${n} (500 bytes)`), `names line ${n}, got: ${stderr}`);
@@ -178,14 +178,14 @@ const run = async () => {
   });
 
   // The unit is bytes, so a line of prose with em-dashes in it is over budget
-  // while a character count still reads it as comfortably inside — 370
+  // while a character count still reads it as comfortably inside: 370
   // characters, 410 bytes. The message has to name the number the rule judges.
-  await test('a non-ASCII line — judged in bytes, and the message says 410', () => {
+  await test('a non-ASCII line: judged in bytes, and the message says 410', () => {
     const dir = mkTmp();
-    const line = `${'x'.repeat(350)}${'—'.repeat(20)}`;
+    const line = `${'x'.repeat(350)}${'\u2014'.repeat(20)}`;
     assertEq(line.length, 370, 'the fixture is 370 characters');
     assertEq(Buffer.byteLength(line, 'utf8'), 410, 'and 410 bytes');
-    const p = writeFile(dir, `# repo — overview\n${line}\n`, 'AGENTS.md');
+    const p = writeFile(dir, `# repo: overview\n${line}\n`, 'AGENTS.md');
     const { code, stderr } = runHook(p);
     assertEq(code, 2, 'over 400 BYTES blocks, whatever the character count says');
     assert(stderr.includes('line 2 (410 bytes)'), `names the byte length, got: ${stderr}`);
@@ -200,19 +200,19 @@ const run = async () => {
 
   group('board-guard: plans are no longer a surface');
 
-  await test('markdown under plans/ passes silently — exit 0', () => {
+  await test('markdown under plans/ passes silently: exit 0', () => {
     const dir = mkTmp();
     const d = path.join(dir, 'plans');
     fs.mkdirSync(d, { recursive: true });
     const p = path.join(d, 'thing.md');
     fs.writeFileSync(p, '# A proposal with no frontmatter\n\n- [ ] a checkbox\n');
     const { code, stderr } = runHook(p);
-    assertEq(code, 0, 'plans left the repo — a plan lives in its issue body');
+    assertEq(code, 0, 'plans left the repo. A plan lives in its issue body');
     assertEq(stderr, '', 'no output');
     cleanup(dir);
   });
 
-  await test('ordinary markdown untouched — exit 0', () => {
+  await test('ordinary markdown untouched: exit 0', () => {
     const dir = mkTmp();
     const p = writeFile(dir, 'anything - [ ] checkbox', 'notes.md');
     const { code } = runHook(p);

@@ -1,5 +1,5 @@
 {
-  "note": "SSOT for the issue label vocabulary. Every label is group:value — values are single lowercase words, never hyphenated. The standards script creates missing labels and corrects description/color drift; it never deletes labels it does not know. A group's color is the default for its values; a value may override it. An exclusive group allows at most one of its labels per open issue; a required group demands exactly one.",
+  "note": "SSOT for the issue label vocabulary. Every label is group:value. Values are single lowercase words, never hyphenated. The standards script creates missing labels and corrects description/color drift; it never deletes labels it does not know. A group's color is the default for its values; a value may override it. An exclusive group allows at most one of its labels per open issue; a required group demands exactly one.",
   "groups": {
     "status": {
       "exclusive": true,
@@ -8,15 +8,15 @@
       "color": "1D76DB",
       "values": {
         "inbox": {
-          "description": "Captured, nothing authorized — triage drains this state. Exactly one status: label per open issue.",
+          "description": "Captured, nothing authorized. Triage drains this state. Exactly one status: label per open issue.",
           "color": "0F8FA9"
         },
         "specced": {
-          "description": "Spec written and accepted — building is authorized. Exactly one status: label per open issue.",
+          "description": "Spec written and accepted. Building is authorized. Exactly one status: label per open issue.",
           "color": "7A45B5"
         },
         "building": {
-          "description": "Authorized and in flight — the work has started. Exactly one status: label per open issue.",
+          "description": "Authorized and in flight. The work has started. Exactly one status: label per open issue.",
           "color": "C47206"
         },
         "qa": {
@@ -59,7 +59,7 @@
     },
     "priority": {
       "exclusive": true,
-      "summary": "Order within the queue. Absence of a priority: label means normal — there is no priority:normal label.",
+      "summary": "Order within the queue. Absence of a priority: label means normal. There is no priority:normal label.",
       "color": "D93F0B",
       "values": {
         "high": {

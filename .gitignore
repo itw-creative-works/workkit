@@ -5,12 +5,12 @@
 node_modules/
 package-lock.json
 
-# Workflow state (workflow spec) — only settings.json is committed
+# Workflow state (workflow spec): only settings.json is committed
 .workkit/*
 !.workkit/settings.json
 
 # Editor and environment files, ignored everywhere
 .env
 
-# Removed but not gone (workflow spec) — evicted files, never committed
+# Removed but not gone (workflow spec): evicted files, never committed
 _attic/

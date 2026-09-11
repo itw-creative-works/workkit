@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# manager:profile — UserPromptSubmit hook (issue #11).
+# manager:profile: UserPromptSubmit hook (issue #11).
 # Injects the MANAGER standing instruction: the main chat is the conversation
 # and judgment layer; the class agents (scout / worker / verifier / advisor)
 # do the work, with models supplied per spawn by the manager/resolver hook.
 # Re-injected every turn for the same reason comms/style is: standing rules
 # stated once get buried under competing instructions.
 #
-# Injection condition: only manager-capable sessions get the profile — the
+# Injection condition: only manager-capable sessions get the profile. The
 # session tier is the frontier or workhorse rung (read from ../ladder.json),
 # or unknown (a fresh VS Code first prompt; the owner's default model is frontier,
 # so silence there would drop the profile exactly where it matters most).
@@ -14,7 +14,7 @@
 # profile, no output at all. The tier names come from the LAYERED config
 # (`hook_manager_config`): this repo's `.workkit/settings.json` `manager`
 # block over the user's over the ladder, and `enabled: false` silences the
-# profile outright. Always exits 0 — never blocks a prompt.
+# profile outright. Always exits 0, never blocks a prompt.
 
 set -euo pipefail
 
@@ -44,15 +44,15 @@ if [ -n "$tier" ] && [ "$tier" != "$frontier" ] && [ "$tier" != "$workhorse" ]; 
 fi
 
 # Advisor clause: a frontier session IS the advisor; anything else (including
-# unknown — treated as frontier-capable above, but the consult line is only
+# unknown, treated as frontier-capable above, but the consult line is only
 # offered when the tier is POSITIVELY below frontier) gets the consult line.
 if [ -n "$tier" ] && [ "$tier" != "$frontier" ]; then
-  advisor='Consult the workkit:advisor agent for plans and hard calls — it runs on the frontier model.'
+  advisor='Consult the workkit:advisor agent for plans and hard calls: it runs on the frontier model.'
 else
-  advisor='You are the frontier model — the workkit:advisor agent is redundant; do not spawn it.'
+  advisor='You are the frontier model. The workkit:advisor agent is redundant; do not spawn it.'
 fi
 
-ctx="[You are the MANAGER — judgment and dispatch. Delegate: recon to workkit:scout, implementation to workkit:worker, blind review to workkit:verifier. ${advisor} The resolver hook picks spawn models; never pass a model param. Keep a visible checklist with the todo tool for any multi-step task — current item in progress, updated as steps start and finish, pruned when stale. Announce every crew spawn in chat as you make it — class, model per the ladder, one-line mandate — and report what it returned when it finishes. Handoff: write the brief to a file only when dispatching now (brief me = a chat summary, never a file); it names the framework guide(s) to read first; the agent's reply IS the report. Judgment stays here: design, contracts, verdicts. Owner questions: self-contained, workkit:interview shape. Issue lines: ONE bullet, two to three sentences for a cold reader (what was wrong, what changed, how to check; docs/project-state.md § Restating an issue).]"
+ctx="[You are the MANAGER: judgment and dispatch. Delegate: recon to workkit:scout, implementation to workkit:worker, blind review to workkit:verifier. ${advisor} The resolver hook picks spawn models; never pass a model param. Keep a visible checklist with the todo tool for any multi-step task: current item in progress, updated as steps start and finish, pruned when stale. Announce every crew spawn in chat as you make it (class, model per the ladder, one-line mandate) and report what it returned when it finishes. Handoff: write the brief to a file only when dispatching now (brief me = a chat summary, never a file); it names the framework guide(s) to read first; the agent's reply IS the report. Judgment stays here: design, contracts, verdicts. Owner questions: self-contained, workkit:interview shape. Issue lines: ONE bullet, two to three sentences for a cold reader (what was wrong, what changed, how to check; docs/project-state.md § Restating an issue).]"
 
 jq -n --arg ctx "$ctx" '{
   "hookSpecificOutput": {

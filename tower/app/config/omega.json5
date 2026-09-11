@@ -32,7 +32,7 @@
   repo: {
     providers: {
       github: {
-        // false = the repo service skips entirely — no org profile, no repo
+        // false = the repo service skips entirely: no org profile, no repo
         // settings, no GitHub Pages reconciliation; the brand hosts its source
         // somewhere the manager does not touch.
         enabled: true,
@@ -50,7 +50,7 @@
       // dns, settings, rules, cacheRules, speedTest, workers. Tokens live in
       // .env.
       cloudflare: {
-        // false = the edge service skips entirely — no zone, DNS, settings,
+        // false = the edge service skips entirely: no zone, DNS, settings,
         // rules, speed-test or worker reconciliation for this brand.
         enabled: true,
       },
@@ -71,7 +71,7 @@
   payment: {
     winback: {
       // The cancel-flow save offer (#268), shown before the cancellation
-      // questionnaire. Defaults ON — false is the whole off switch, and the
+      // questionnaire. Defaults ON: false is the whole off switch, and the
       // cancel flow goes straight to the questionnaire.
       enabled: true,
       // Whole percentage off the next cycle the save offer pitches. Defaults to
@@ -97,7 +97,7 @@
     },
     prune: {
       // Monthly cold-contact prune across both providers. ON by default (Ian
-      // 2026-08-22) and materialized into every brand config — false is the
+      // 2026-08-22) and materialized into every brand config: false is the
       // per-brand off switch.
       enabled: true,
     },
@@ -105,7 +105,7 @@
   search: {
     providers: {
       searchConsole: {
-        // false = the search service skips entirely — the property is never
+        // false = the search service skips entirely: the property is never
         // verified and no sitemap is submitted (submitSitemap only turns the
         // sitemap half off).
         enabled: true,
@@ -126,7 +126,7 @@
         // false = the form is shared and managed by another brand; its
         // name/settings are left alone.
         updateFormInfo: true,
-        // Tier granted to the form-owner account ({ id, name }) —
+        // Tier granted to the form-owner account ({ id, name }):
         // Slapform-operator only.
         plan: {
           id: "grandmaster",
@@ -144,7 +144,7 @@
           // false = the agent is shared and managed by another brand; its
           // settings/knowledge are left alone.
           updateAgentInfo: true,
-          // Tier granted to the agent-owner account ({ id, name }) —
+          // Tier granted to the agent-owner account ({ id, name }):
           // Chatsy-operator only.
           plan: {
             id: "max",
@@ -161,7 +161,7 @@
           // false = the agent is shared and managed by another brand; its
           // filter/knowledge are left alone.
           updateAgentInfo: true,
-          // Tier granted to the agent-owner account ({ id, name }) —
+          // Tier granted to the agent-owner account ({ id, name }):
           // Replyify-operator only.
           plan: {
             id: "max",
@@ -171,12 +171,12 @@
       },
     },
   },
-  // Directory participation (@omega.js/manager directory service): { enabled }
-  // — opt in to push this brand's entry into the parent project's `brands`
+  // Directory participation (@omega.js/manager directory service): { enabled }.
+  // Opt in to push this brand's entry into the parent project's `brands`
   // collection. Absent or false never pushes. Needs `parent` to name the
   // relationship and DIRECTORY_SERVICE_ACCOUNT in the brand .env.
   directory: {
-    // true opts the brand into the directory push. Default false —
+    // true opts the brand into the directory push. Default false:
     // participation is never implicit.
     enabled: false,
   },
@@ -198,7 +198,7 @@
   client: {
     consent: {
       // The consent banner + the provider-script gate (default true). false
-      // ships NO banner — legal only for a site that loads no
+      // ships NO banner: legal only for a site that loads no
       // analytics/marketing provider at all.
       enabled: true,
     },

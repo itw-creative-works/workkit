@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 //
-// The morning payload — what the 9am job hands to Claude.
+// The morning payload: what the 9am job hands to Claude.
 //
 // It is the tower's `/api/brief`, composed WITHOUT the tower: the same roster
 // walk, the same board sweep, the same per-repo health, through the same
 // `buildBrief`. Mirroring the server's composition rather than calling it over
 // HTTP is what lets the job run at nine in the morning whether or not anyone
-// started `npm run tower` — and because both halves derive from one module, the
+// started `npm run tower`, and because both halves derive from one module, the
 // notification and the Brief page cannot tell different stories.
 //
 // The caching the server wraps around those reads is deliberately absent. A job
@@ -17,7 +17,7 @@
 // the first when the second happened is worse than no brief at all.
 //
 // Pure gather: no writes, no Claude, no notification. `morning.sh` owns the
-// sending — and, since issue #86, the publishing: what this script leaves
+// sending, and, since issue #86, the publishing: what this script leaves
 // behind are the two lines the runner appends to the brief it publishes, the
 // upstream-news cursor and the day's stats (issue #55), both written into the
 // scratch file named by `WORKKIT_BRIEF_MARK_FILE` and gone with the run. Both
@@ -46,15 +46,15 @@ const INSTRUCTION = `You are producing the owner's MORNING KICKOFF from the brie
 
 The payload is the tower's daily brief as JSON. \`waiting\` is blocked on a
 decision from the owner, \`qa\` is built and verified and waiting on the
-owner's check before it ships, \`complete\` is that check PASSED — ready to
+owner's check before it ships, \`complete\` is that check PASSED: ready to
 ship and waiting on nothing else, \`ready\` is specced, \`inFlight\` is
 building, \`inbox\` is captured but not yet specced, and \`warnings\` is work
 sitting on the table per repo (uncommitted, unpushed, unreleased). \`ok: false\`
-means the sweep itself failed — report that and its \`reason\`, never a quiet
+means the sweep itself failed. Report that and its \`reason\`, never a quiet
 morning.
 
 \`nextUp\` is the same board asked one question further: per repo, the few open
-items this morning could actually move — decisions first, then what is ready to
+items this morning could actually move: decisions first, then what is ready to
 ship, then the checks waiting on the owner, then accepted specs.
 \`findings\` is the newest daily summary published on the home repo (what
 yesterday produced), and \`week\` is the weekly rollup, which rides on Mondays
@@ -62,43 +62,43 @@ only. Either may be null or absent, which means there was none to read.
 
 A \`--- CC NEWS ---\` block may follow the payload: every upstream Claude Code
 CHANGELOG entry that shipped since the last brief, grouped by topic. You judge
-which matter — a new feature the kit could use, a change that could break
+which matter: a new feature the kit could use, a change that could break
 something the kit built, an improvement worth adopting.
 
 Respond in EXACTLY this shape, plain language, no markdown headers:
-Line 1 — the literal prefix "HEADLINE: " then one sentence, the single most
+Line 1: the literal prefix "HEADLINE: " then one sentence, the single most
 important thing today (<=120 chars total).
 Then these labeled sections, one line per item, tightest useful phrasing:
-WAITING ON YOU: every issue in \`waiting\` — these move only if the owner acts.
-READY TO SHIP: every issue in \`complete\` — QA passed, waiting on the ship and
+WAITING ON YOU: every issue in \`waiting\`. These move only if the owner acts.
+READY TO SHIP: every issue in \`complete\`. QA passed, waiting on the ship and
 on nothing else. Omit the section entirely when \`complete\` is empty.
-WAITING ON YOUR CHECK: every issue in \`qa\` — built and verified, and each one
+WAITING ON YOUR CHECK: every issue in \`qa\`, built and verified, and each one
 ships the moment the owner says so. Omit the section entirely when \`qa\` is empty.
 IN FLIGHT: every issue in \`inFlight\`, saying which repo.
-WORK ON THIS NEXT: \`nextUp\`, one line per repo — "repo: #N title, #N title" in
+WORK ON THIS NEXT: \`nextUp\`, one line per repo, "repo: #N title, #N title" in
 the order given; an item carrying \`waitsOn\` appends "(waits on #M)" so the
 morning knows why it sits last. Omit the section entirely when \`nextUp\` is empty.
 TODAY'S TOP 3: your pick of the highest-leverage next actions, judged across
 \`ready\`, inbox pressure, and \`warnings\`. Number them.
 ON THE TABLE: only repos in \`warnings\`, as "repo: N uncommitted, N unpushed, N unreleased".
-INBOX: one line — \`counts.inbox\` captured items not yet specced; omit if zero.
-YESTERDAY: one line — \`findings.title\` and its \`findings.url\`. Omit the
+INBOX: one line, \`counts.inbox\` captured items not yet specced; omit if zero.
+YESTERDAY: one line, \`findings.title\` and its \`findings.url\`. Omit the
 section entirely when \`findings\` is null.
-THE WEEK: one line — \`week.title\` and its \`week.url\`. Omit the section
+THE WEEK: one line, \`week.title\` and its \`week.url\`. Omit the section
 entirely when \`week\` is absent or null.
-CC NEWS: only when a CC NEWS block is present — NOT a restating of the block:
+CC NEWS: only when a CC NEWS block is present, NOT a restating of the block:
 name only the entries that matter to this kit (could break something we built,
-a feature or improvement we should adopt), each as "<version> — what it means
+a feature or improvement we should adopt), each as "<version>: what it means
 for us"; end the line with how many entries were routine. Omit the section
 entirely when there is no block.
-Nothing else — no preamble, no advice, no restating the payload.
+Nothing else: no preamble, no advice, no restating the payload.
 
 --- BRIEF ---`;
 
 /**
  * The repos the sweep could not read, said once on stderr.
  *
- * A PARTIAL sweep still answers `ok: true` — the board keeps every repo that
+ * A PARTIAL sweep still answers `ok: true`: the board keeps every repo that
  * came back and records the others as per-repo errors, which the payload does
  * not carry. That is the shape a token whose scope is short takes: the brief
  * reads clean and simply covers less than the roster. The one line here is what
@@ -114,7 +114,7 @@ const warnUnreadable = (board) => {
 };
 
 /**
- * The published summaries, onto the payload — the ONE shape both readers of
+ * The published summaries, onto the payload: the ONE shape both readers of
  * `buildBrief` attach, so the morning message and the Brief page carry the same
  * keys or neither (tower/api/lib/summaries.js owns the Monday rule).
  *
@@ -155,7 +155,7 @@ const attachSummaries = (payload, opts) => {
  * @param {string} [opts.workflowHome] the user's ~/.workkit
  * @param {string} [opts.home] overrides ~ for the libs that resolve it
  * @param {string} [opts.generatedAt] ISO stamp, injectable so the suite is not a clock test
- * @param {Function} [opts.exec] (cmd, args) => stdout — the git/gh seam
+ * @param {Function} [opts.exec] (cmd, args) => stdout: the git/gh seam
  * @returns {object} the brief payload
  */
 const composeBrief = (opts = {}) => {
@@ -171,9 +171,9 @@ const composeBrief = (opts = {}) => {
     });
   } catch (err) {
     // A read that threw leaves no roster to sweep, and an empty roster sweeps
-    // clean — which would read as an empty board rather than as a broken read.
+    // clean, which would read as an empty board rather than as a broken read.
     // No summaries are attached here. The read that just failed was of this
-    // machine's own state, and the home repo is named in the same folder — a
+    // machine's own state, and the home repo is named in the same folder: a
     // brief that could not learn what repos exist has no business asking that
     // folder a second question, and an ok:false payload is a report of a broken
     // morning rather than a morning to be enriched.
@@ -207,8 +207,8 @@ const render = (payload, news) => `${INSTRUCTION}\n\n${JSON.stringify(payload, n
  *
  * Two lines now, and each one rides only when it has something to say: the
  * upstream-news cursor when the news could be read at all, and the day's stats
- * (issue #55) whenever a payload was composed. Nothing durable is written here
- * — the published Discussion is the store for both, which is why they leave
+ * (issue #55) whenever a payload was composed. Nothing durable is written here:
+ * the published Discussion is the store for both, which is why they leave
  * together, in one file the runner appends verbatim.
  *
  * @param {object|null} news what collectCcNews returned

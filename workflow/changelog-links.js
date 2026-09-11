@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 //
-// Fill in a CHANGELOG entry's generated metadata — the commit link and the
+// Fill in a CHANGELOG entry's generated metadata: the commit link and the
 // contributor handle.
 //
 // Nobody types a sha. An entry is written during ordinary work as
@@ -15,7 +15,7 @@
 // once at the bottom of the file however many entries a person appears in.
 //
 // `../..` assumes the CHANGELOG sits at the repo root on a branch whose name
-// has no slash — the blob path is `/<owner>/<repo>/blob/<branch>/CHANGELOG.md`.
+// has no slash: the blob path is `/<owner>/<repo>/blob/<branch>/CHANGELOG.md`.
 // A nested `--file` or a `feature/x` branch shifts that depth and the links
 // land short. Both are outside how this is used; worth knowing before moving
 // the file.
@@ -35,7 +35,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-// What an entry IS, and what "already linked" means, come from changelog.js —
+// What an entry IS, and what "already linked" means, come from changelog.js,
 // the same shapes the guards enforce. A second copy here would drift, and the
 // two files would disagree about which entries still need filling.
 const { COMMIT_RE, ISSUE_LINK_RE, META_RE, parseEntries } = require('./changelog');
@@ -59,7 +59,7 @@ const originUrl = (cwd) => {
 
 /**
  * owner/name for the origin remote, from either URL form. A trailing slash on
- * the URL is tolerated — remotes get pasted with one.
+ * the URL is tolerated. Remotes get pasted with one.
  * @param {string} cwd repo directory
  * @returns {string|null}
  */
@@ -135,7 +135,7 @@ const authorHandle = (slug, sha, cwd, cache) => {
  * Only entries the parser reports under `[Unreleased]` are candidates. A raw
  * line-walk would also rewrite bullets inside a fenced block (a CHANGELOG
  * documenting its own format) and entries in old released sections whose issue
- * number happens to recur in the range — both permanent corruption. Filling
+ * number happens to recur in the range, both permanent corruption. Filling
  * before the release move is also the documented order in the ship skill.
  * @param {string} text the CHANGELOG
  * @param {object} ctx { byIssue, resolve }
@@ -144,7 +144,7 @@ const authorHandle = (slug, sha, cwd, cache) => {
 const fill = (text, { byIssue, resolve }) => {
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   // The file's dominant line ending, detected once and used for the one join
-  // below — a CRLF file must come back CRLF, not silently rewritten line by
+  // below. A CRLF file must come back CRLF, not silently rewritten line by
   // line to LF.
   const crlf = (text.match(/\r\n/g) || []).length;
   const eol = crlf > lines.length - 1 - crlf ? '\r\n' : '\n';
@@ -158,7 +158,7 @@ const fill = (text, { byIssue, resolve }) => {
     const index = entry.line - 1;
     const line = lines[index];
     // "Already linked" means a commit link in the generated metadata RUN, the
-    // same anchor the lint uses — a commit-link-shaped string in the prose must
+    // same anchor the lint uses. A commit-link-shaped string in the prose must
     // not suppress the fill (or it would be skipped and never reported).
     const meta = META_RE.exec(entry.prose);
     if (meta && COMMIT_RE.test(meta[0])) continue;
@@ -168,7 +168,7 @@ const fill = (text, { byIssue, resolve }) => {
 
     const shas = byIssue.get(issue[1]);
     if (!shas || shas.length === 0) {
-      // No commit in this range closed it — the entry names an issue whose
+      // No commit in this range closed it. The entry names an issue whose
       // commit carries no `Fixes #N` trailer. Reported, never silently passed.
       unmatched.push(issue[1]);
       continue;
@@ -206,7 +206,7 @@ const DEFINITION_RE = /^\[@([^\]]+)\]:\s*(\S.*)$/;
  * everyone credited above, followed by the one `[@who]: url` definition each
  * that makes every `Thanks [@who]!` in the file a link.
  *
- * Idempotent — rebuilding an unchanged file reproduces it byte for byte — and
+ * Idempotent (rebuilding an unchanged file reproduces it byte for byte), and
  * an existing definition's URL is carried over rather than regenerated, so a
  * hand-edited one survives.
  * @param {string[]} lines the file, already rewritten
@@ -222,7 +222,7 @@ const defineContributors = (lines, handles) => {
   let cut = out.length;
   // Search from the END, and only accept a heading whose entire remainder is
   // this section's own shape. Taking the FIRST match instead would cut at a
-  // `## Contributors` line inside a fenced example — everything below it, every
+  // `## Contributors` line inside a fenced example: everything below it, every
   // released version section, discarded on write. Same permanent damage `fill`
   // is written to avoid, and workkit:migrate points this script at other
   // repos' histories.
@@ -259,7 +259,7 @@ const defineContributors = (lines, handles) => {
 
   out = out.slice(0, cut);
   while (out.length && out[out.length - 1].trim() === '') out.pop();
-  // The rule above the heading belongs to this section — drop it too, or every
+  // The rule above the heading belongs to this section. Drop it too, or every
   // rebuild would stack another one. Only when the section was actually there:
   // a CHANGELOG whose last content line is its own `---` would otherwise lose
   // it, silently and permanently, on the first backfill.
@@ -316,12 +316,12 @@ const main = (argv) => {
   // Two distinct failures, two distinct messages: no origin remote at all
   // (add one) versus an origin that is not GitHub-shaped (nothing to link to).
   if (originUrl(root) === null) {
-    console.error('changelog-links: this repo has no origin remote — nothing to link to.');
+    console.error('changelog-links: this repo has no origin remote; nothing to link to.');
     return 1;
   }
   const slug = repoSlug(root);
   if (!slug) {
-    console.error('changelog-links: origin is not a GitHub remote — nothing to link to.');
+    console.error('changelog-links: origin is not a GitHub remote; nothing to link to.');
     return 1;
   }
 
@@ -340,10 +340,10 @@ const main = (argv) => {
     resolve: (sha) => authorHandle(slug, sha, root, cache),
   });
 
-  // An unmatched entry is the "you forgot the Fixes #N trailer" signal — the
+  // An unmatched entry is the "you forgot the Fixes #N trailer" signal, the
   // one thing that leaves an entry unlinkable, so it is never passed in silence.
   for (const issue of new Set(result.unmatched)) {
-    console.log(`changelog-links: #${issue} has no closing commit in ${range} — add a "Fixes #${issue}" trailer, or link it by hand.`);
+    console.log(`changelog-links: #${issue} has no closing commit in ${range}; add a "Fixes #${issue}" trailer, or link it by hand.`);
   }
 
   if (result.filled === 0) {
@@ -359,7 +359,7 @@ const main = (argv) => {
   fs.writeFileSync(file, result.text);
   console.log(`changelog-links: filled ${result.filled} entries from ${range}.`);
   if ([...cache.values()].some((h) => h === null)) {
-    console.log('changelog-links: some handles could not be resolved — commit links landed without attribution.');
+    console.log('changelog-links: some handles could not be resolved; commit links landed without attribution.');
   }
   return 0;
 };

@@ -1,16 +1,16 @@
 //
-// The stats line a published brief carries — the day, in numbers a chart can
+// The stats line a published brief carries: the day, in numbers a chart can
 // read back.
 //
 // The digest a model writes is prose, and prose is not a series. So the morning
 // leaves one machine-readable line under it, composed HERE from the payload the
-// brief was built out of and appended mechanically by the runner — the same
+// brief was built out of and appended mechanically by the runner: the same
 // path the upstream-news cursor takes (jobs/cc-news.js, `brief-publish.sh`).
 // Nothing asks the model to reproduce JSON: a number it retyped would be a
 // number that could be wrong.
 //
 // The published Discussion is the only store. `tower/api/lib/history.js` reads
-// these lines back, and it owns the PATTERN this renders to match — writer and
+// these lines back, and it owns the PATTERN this renders to match: writer and
 // reader are two halves of one shape.
 //
 // Usage:
@@ -24,8 +24,8 @@ const { STATS_RE } = require('../tower/api/lib/history');
  * The day this payload is about, from the payload's OWN stamp.
  *
  * Never `new Date()`: a brief composed at 09:00 and a line stamped whenever this
- * function happened to run are the same day almost always, and the exception —
- * a run crossing midnight, a rerun of yesterday's dispatch — is exactly the day
+ * function happened to run are the same day almost always, and the exception
+ * (a run crossing midnight, a rerun of yesterday's dispatch) is exactly the day
  * a chart would draw twice.
  *
  * @param {string} generatedAt the ISO stamp buildBrief put on the payload
@@ -37,7 +37,7 @@ const dayOf = (generatedAt) => {
 };
 
 /**
- * The open-issue count per repo, keyed by slug — the one section of the line
+ * The open-issue count per repo, keyed by slug: the one section of the line
  * that is per repo, so a chart can answer "which board grew" as well as "how
  * big is the board".
  *
@@ -59,7 +59,7 @@ const perRepo = (repoCounts) => {
  * A payload with no usable stamp renders NOTHING rather than a line dated
  * today: an undated point is a point a series cannot place, and a wrongly dated
  * one is worse than a missing day. A payload whose sweep FAILED renders nothing
- * for the same reason — buildBrief reports that morning as a failure, but its
+ * for the same reason: buildBrief reports that morning as a failure, but its
  * counts are zeros, and a zero point in the only store would be a permanent
  * cliff in every chart.
  *

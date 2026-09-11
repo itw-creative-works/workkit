@@ -1,5 +1,5 @@
 //
-// Tests for hooks/docs:session-guard — the PostToolUse hook that holds
+// Tests for hooks/docs:session-guard: the PostToolUse hook that holds
 // `.workkit/agents/session.md` to the shape of a queue: short bullets, few lines.
 //
 // Every case runs the real hook against a fixture file. The hook reads nothing
@@ -58,7 +58,7 @@ const doc = (bullets) => [
   '',
 ].join('\n');
 
-const notes = (n) => Array.from({ length: n }, (_, i) => `- #${i} — a queued entry.`);
+const notes = (n) => Array.from({ length: n }, (_, i) => `- #${i}: a queued entry.`);
 
 const run = async () => {
   group('session-guard: the line cap');
@@ -111,7 +111,7 @@ const run = async () => {
 
   await test('a bullet over 350 chars is bounced, with its length and its head', () => {
     const long = `- #126 the entry that would not stop ${'x'.repeat(400)}`;
-    const file = mkFile(doc([long, '- #12 — a short one.']));
+    const file = mkFile(doc([long, '- #12: a short one.']));
     const { code, stderr } = runHook(file);
     assertEq(code, 2, 'exit 2 blocks the write');
     assert(stderr.includes(`${long.length} chars`), `names the length ${long.length}, got: ${stderr}`);
@@ -165,13 +165,13 @@ const run = async () => {
     cleanupFile(file);
   });
 
-  await test('a session.md that no longer exists — fail open', () => {
+  await test('a session.md that no longer exists: fail open', () => {
     const dir = mkTmp();
     assertEq(runHook(path.join(dir, W, 'agents', 'session.md')).code, 0, 'exit 0');
     cleanup(dir);
   });
 
-  await test('no file_path in the input — fail open', () => {
+  await test('no file_path in the input: fail open', () => {
     const res = spawnSync('bash', [HOOK], {
       input: JSON.stringify({ tool_name: 'Write', tool_input: {} }),
       env: { HOME: os.homedir(), PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin' },

@@ -1,8 +1,8 @@
 //
-// Per-repo health — the work sitting on the table.
+// Per-repo health: the work sitting on the table.
 //
 // Four numbers, all of them things git and the CHANGELOG already know:
-//   unpushed          commits ahead of the upstream (null when there is none —
+//   unpushed          commits ahead of the upstream (null when there is none:
 //                     a branch with no upstream is a DIFFERENT state from a
 //                     branch that is level with one, and collapsing them to 0
 //                     would hide the repo that has never been pushed)
@@ -11,7 +11,7 @@
 //   lastTag           the most recent release tag
 //
 // Nothing here throws. The tower renders a tile per repo on a poll, and one
-// unreadable checkout must not take the pane down — a broken repo reports nulls
+// unreadable checkout must not take the pane down. A broken repo reports nulls
 // and names the problem in `error`.
 //
 // Usage:
@@ -66,7 +66,7 @@ const unreleasedCount = (file) => {
  * One repo's health.
  * @param {string} repoPath
  * @param {object} [opts]
- * @param {Function} [opts.exec] (cmd, args) => stdout — the git seam
+ * @param {Function} [opts.exec] (cmd, args) => stdout: the git seam
  * @returns {{unpushed: number|null, uncommitted: number|null, unreleasedEntries: number, lastTag: string|null, error: string|null}}
  */
 const repoHealth = (repoPath, opts = {}) => {

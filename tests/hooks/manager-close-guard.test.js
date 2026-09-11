@@ -1,4 +1,4 @@
-// manager/close-guard hook — the warn-only end-of-turn read of the manager's
+// manager/close-guard hook: the warn-only end-of-turn read of the manager's
 // own behavior. Covers both rules over fixture transcripts, the turn window
 // (only entries after the last real user prompt, sidechain entries excluded),
 // the threshold override, the fail-open preconditions, and the invariant that
@@ -22,7 +22,7 @@ const freshTmp = () => {
   return tmp;
 };
 
-// Transcript entry builders — the shapes a real .jsonl carries.
+// Transcript entry builders: the shapes a real .jsonl carries.
 const prompt = (text = 'do the thing') => ({ type: 'user', message: { role: 'user', content: text } });
 const meta = () => ({ type: 'user', isMeta: true, message: { role: 'user', content: [{ type: 'text', text: 'system reminder' }] } });
 // The system-injected pseudo-prompts: ordinary user entries by every field the
@@ -80,7 +80,7 @@ const warn = (out) => (out.stdout ? JSON.parse(out.stdout).systemMessage : '');
 const run = async () => {
   const F = id(FRONTIER);
 
-  group('manager-close-guard: rule 3 — the frontier model implementing itself');
+  group('manager-close-guard: rule 3, the frontier model implementing itself');
   await test('6 edits and no worker in a frontier session warns', () => {
     freshTmp();
     const out = runHook(payload(transcript([prompt(), ...edits(6, F)])));
@@ -125,7 +125,7 @@ const run = async () => {
     assertEq(runHook(payload(t), { MANAGER_CLOSE_EDITS: '1' }).stdout, '');
   });
 
-  group('manager-close-guard: rule 4 — built work ending unreviewed');
+  group('manager-close-guard: rule 4, built work ending unreviewed');
   await test('a worker with no verifier warns', () => {
     freshTmp();
     const out = runHook(payload(transcript([prompt(), spawn('worker', F), result()])));
@@ -279,7 +279,7 @@ const run = async () => {
     const out = runHook(payload(transcript([prompt(), ...edits(6, undefined)])));
     assertEq(out.stdout, '');
   });
-  await test('the read stops at the tail — a turn beyond it is not seen', () => {
+  await test('the read stops at the tail: a turn beyond it is not seen', () => {
     freshTmp();
     // The turn worth warning about sits in the HEAD; 4200 lines of quiet
     // tool-result traffic follow it. Reading the whole file would warn.

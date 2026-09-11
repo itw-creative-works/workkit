@@ -12,4 +12,4 @@ assignees: ""
 
 ## Spec
 
-None needed — small item.
+None needed: small item.

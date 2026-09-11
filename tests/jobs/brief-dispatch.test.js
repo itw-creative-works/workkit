@@ -1,10 +1,10 @@
 //
-// Tests for jobs/brief-dispatch.sh — handing the day to the cloud.
+// Tests for jobs/brief-dispatch.sh: handing the day to the cloud.
 //
 // The function is SOURCED and called directly here, which is how both its
 // callers use it: the scheduled morning (morning-local.test.js covers what that
 // caller does with the answer) and `workkit brief` (workkit-cli.test.js). This
-// suite is about the answer itself — the dispatch that lands, and every named
+// suite is about the answer itself: the dispatch that lands, and every named
 // reason one cannot be made.
 //
 // Every world is a scratch HOME with a recording `gh` first on PATH, so nothing
@@ -26,8 +26,8 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
 
 const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 
-// The "no gh" case cannot ASSUME the machine has none — every Ubuntu runner
-// ships it in /usr/bin (the wk.test.js lesson, issue #114) — so the absence is
+// The "no gh" case cannot ASSUME the machine has none: every Ubuntu runner
+// ships it in /usr/bin (the wk.test.js lesson, issue #114), so the absence is
 // built: one directory of symlinks to everything on the base PATH except gh.
 const basePathWithout = (dir, command) => {
   const out = path.join(dir, `path-without-${command}`);
@@ -40,7 +40,7 @@ const basePathWithout = (dir, command) => {
       try { fs.symlinkSync(path.join(entry, name), path.join(out, name)); } catch {}
     }
   }
-  // An empty mirror would pass the absence assertion vacuously — `sh` proves
+  // An empty mirror would pass the absence assertion vacuously: `sh` proves
   // the mirror is real before anything leans on it.
   if (!fs.existsSync(path.join(out, 'sh'))) throw new Error(`basePathWithout built an unusable PATH at ${out}`);
   return out;
@@ -49,7 +49,7 @@ const basePathWithout = (dir, command) => {
 /**
  * A machine the dispatch can be asked of.
  *
- * `home` is the home repo slug the settings name — null is a machine with none.
+ * `home` is the home repo slug the settings name: null is a machine with none.
  * `secrets` is what `gh secret list` reports, `secretsUnlistable` makes that
  * read refuse, `dispatch` is whether `gh workflow run` lands, and `gh: false`
  * is a machine without the tool at all.
@@ -92,7 +92,7 @@ const mkWorld = ({
       HOME: path.join(root, 'home'),
       WORKFLOW_HOME: workflowHome,
       // Only the shim and the system tools. `jq` lives where the package
-      // managers put it, so those directories are on the path — except in the
+      // managers put it, so those directories are on the path, except in the
       // world that has no `gh` at all, which gets a mirror of the base PATH
       // with gh left out, since a runner ships the real one in /usr/bin.
       PATH: gh ? `${bin}:/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin` : `${bin}:${basePathWithout(root, 'gh')}`,
@@ -112,7 +112,7 @@ if dispatch_brief; then printf 'ok\\n%s\\n' "$DISPATCH_LINE"; else printf 'refus
 const run = async () => {
   group('jobs/brief-dispatch: shape');
 
-  await test('bash -n — no syntax errors, and nothing runs at load', () => {
+  await test('bash -n: no syntax errors, and nothing runs at load', () => {
     const res = spawnSync('bash', ['-n', LIB], { encoding: 'utf8' });
     assertEq(res.status, 0, `bash -n: ${res.stderr}`);
     const sourced = spawnSync('bash', ['-c', `. ${JSON.stringify(LIB)}`], { encoding: 'utf8', timeout: 30000 });
@@ -157,7 +157,7 @@ const run = async () => {
   ];
 
   for (const [why, over, pattern] of refusals) {
-    await test(`${why} — the reason is set and no day goes over`, () => {
+    await test(`${why}: the reason is set and no day goes over`, () => {
       const world = mkWorld(over);
       const { verdict, said } = dispatch(world);
       assertEq(verdict, 'refused', `the dispatch was refused: ${said}`);
@@ -171,7 +171,7 @@ const run = async () => {
 
   await test('a copy of the lib with no engine beside it refuses by name', () => {
     // The engine is resolved from the FILE's own location, which is what lets a
-    // caller that knows nothing about the 9am job source it — and what makes a
+    // caller that knows nothing about the 9am job source it, and what makes a
     // partial checkout a named refusal rather than a crash.
     const world = mkWorld();
     const lone = path.join(world.root, 'jobs');

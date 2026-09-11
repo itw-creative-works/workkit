@@ -1,5 +1,5 @@
 //
-// Tests for hooks/docs:changelog-guard — the PostToolUse hook that holds a
+// Tests for hooks/docs:changelog-guard: the PostToolUse hook that holds a
 // CHANGELOG entry to its format at write time.
 //
 // The rules themselves are tested in tests/scripts/changelog.test.js (their one
@@ -76,7 +76,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('no file_path in the input — fail open', () => {
+  await test('no file_path in the input: fail open', () => {
     const res = spawnSync('bash', [HOOK], {
       input: JSON.stringify({ tool_name: 'Write', tool_input: {} }),
       env: { ...process.env, HOME: os.homedir(), WORKFLOW_DIR },
@@ -86,7 +86,7 @@ const run = async () => {
     assertEq(res.status, 0, 'exit 0');
   });
 
-  await test('a CHANGELOG that no longer exists — fail open', () => {
+  await test('a CHANGELOG that no longer exists: fail open', () => {
     const dir = mkTmp();
     const { code } = runHook(path.join(dir, 'CHANGELOG.md'));
     assertEq(code, 0, 'exit 0');
@@ -97,7 +97,9 @@ const run = async () => {
 
   await test('a new entry in the format passes', () => {
     const dir = mkRepo(doc());
-    const file = append(dir, `- ${ISSUE} — Plugins install from settings.json.`);
+    // \u2014 is the CHANGELOG entry separator (U+2014), escaped so the kit's
+    // own sources carry no em dash while the fixture still produces the format.
+    const file = append(dir, `- ${ISSUE} \u2014 Plugins install from settings.json.`);
     const { code, stderr } = runHook(file);
     assertEq(code, 0, `exit 0, got: ${stderr}`);
     cleanup(dir);
@@ -116,7 +118,7 @@ const run = async () => {
   await test('a legacy entry the write did not touch does not block', () => {
     // Adopting the format must never bounce a repo for its history.
     const dir = mkRepo(doc('- A legacy essay entry with no issue link at all.'));
-    const file = append(dir, `- ${ISSUE} — A properly formatted new entry.`);
+    const file = append(dir, `- ${ISSUE} \u2014 A properly formatted new entry.`);
     const { code, stderr } = runHook(file);
     assertEq(code, 0, `exit 0, got: ${stderr}`);
     cleanup(dir);
@@ -138,7 +140,7 @@ const run = async () => {
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(
       '[Unreleased]:',
-      `- ${ISSUE} — A correct new entry.\n\n[Unreleased]:`,
+      `- ${ISSUE} \u2014 A correct new entry.\n\n[Unreleased]:`,
     ));
     const { code, stderr } = runHook(file);
     assertEq(code, 0, `exit 0, got: ${stderr}`);
@@ -156,7 +158,7 @@ const run = async () => {
   });
 
   await test('a CHANGELOG outside git is judged in full', () => {
-    // With no git to ask, everything is new — a first CHANGELOG is still held
+    // With no git to ask, everything is new. A first CHANGELOG is still held
     // to the format rather than slipping through unjudged.
     const dir = mkTmp();
     const file = path.join(dir, 'CHANGELOG.md');

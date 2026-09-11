@@ -1,4 +1,4 @@
-// manager/spawn-guard hook — the warn-only companion to the resolver.
+// manager/spawn-guard hook: the warn-only companion to the resolver.
 // Covers both rules, both class spellings, the silence everywhere else, the
 // fail-open preconditions, and the invariant the whole hook rests on: no path
 // ever returns a permission decision, so a spawn is never blocked or altered.
@@ -60,7 +60,7 @@ const warning = (out) => {
 };
 
 const run = async () => {
-  group('manager-spawn-guard: rule 1 — a hand-passed model on a class spawn');
+  group('manager-spawn-guard: rule 1, a hand-passed model on a class spawn');
   for (const cls of ['scout', 'worker', 'verifier', 'advisor']) {
     for (const name of [cls, `workkit:${cls}`]) {
       await test(`${name} with model: haiku warns`, () => {
@@ -88,7 +88,7 @@ const run = async () => {
     assertEq(out.stdout, '');
   });
 
-  group('manager-spawn-guard: rule 2 — the advisor in a frontier session');
+  group('manager-spawn-guard: rule 2, the advisor in a frontier session');
   await test('an advisor spawn from a frontier session warns', () => {
     freshTmp();
     cacheSession('sess1', `${id(FRONTIER)}[1m]`);

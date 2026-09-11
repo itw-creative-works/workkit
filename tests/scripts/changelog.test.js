@@ -1,5 +1,5 @@
 //
-// Tests for workflow/changelog.js — the CHANGELOG entry rules and the CLI both
+// Tests for workflow/changelog.js: the CHANGELOG entry rules and the CLI both
 // the docs:changelog-guard hook and the safety/commit-gate hook call.
 //
 // The added-only tests build real git repositories in a temp dir (no network,
@@ -22,6 +22,7 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
 const ISSUE = '[#4](https://github.com/o/r/issues/4)';
 const COMMIT = '[`1de1308`](https://github.com/o/r/commit/1de1308)';
 const THANKS = 'Thanks [@who](https://github.com/who)!';
+// `\u2014` in the fixtures below is the CHANGELOG entry separator (U+2014).
 
 /** A CHANGELOG with the given bullet lines under a section. */
 const doc = (section, ...bullets) => [
@@ -69,7 +70,7 @@ const run = async () => {
       '## [Unreleased]',
       '',
       '### Added',
-      `- ${ISSUE} — A short entry.`,
+      `- ${ISSUE} \u2014 A short entry.`,
     ].join('\n');
     const entries = parseEntries(text);
     assertEq(entries.length, 1, 'only the sectioned bullet counts');
@@ -77,15 +78,15 @@ const run = async () => {
   });
 
   await test('a `## [3.1.0] - date` heading is a released section', () => {
-    const entries = parseEntries(doc('3.1.0] - 2026-07-24', `- ${ISSUE} ${COMMIT} — Text.`));
+    const entries = parseEntries(doc('3.1.0] - 2026-07-24', `- ${ISSUE} ${COMMIT} \u2014 Text.`));
     assertEq(entries[0].kind, 'released', 'version headings are released');
   });
 
   await test('a wrapped entry is one entry, not several', () => {
-    const text = doc('Unreleased', `- ${ISSUE} — First line of the sentence`, '  wrapped onto a second line.');
+    const text = doc('Unreleased', `- ${ISSUE} \u2014 First line of the sentence`, '  wrapped onto a second line.');
     // The blank line the doc() helper inserts sits AFTER the wrap, so the
     // continuation must attach to the bullet above it.
-    const entries = parseEntries(text.replace(`— First line of the sentence\n\n  wrapped`, '— First line of the sentence\n  wrapped'));
+    const entries = parseEntries(text.replace(`\u2014 First line of the sentence\n\n  wrapped`, '\u2014 First line of the sentence\n  wrapped'));
     assertEq(entries.length, 1, 'one entry');
     assert(entries[0].prose.includes('wrapped onto a second line'), `continuation joined, got: ${entries[0].prose}`);
   });
@@ -93,28 +94,28 @@ const run = async () => {
   group('changelog: the rules');
 
   await test('the canonical unreleased entry passes', () => {
-    const found = lintText(doc('Unreleased', `- ${ISSUE} — Plugins install from settings.json instead of being tracked as files.`));
+    const found = lintText(doc('Unreleased', `- ${ISSUE} \u2014 Plugins install from settings.json instead of being tracked as files.`));
     assertEq(found.length, 0, `clean, got: ${JSON.stringify(found)}`);
   });
 
   await test('the canonical released entry passes', () => {
-    const found = lintText(doc('3.1.0] - 2026-07-24', `- ${ISSUE} ${COMMIT} ${THANKS} — Plugins install from settings.json.`));
+    const found = lintText(doc('3.1.0] - 2026-07-24', `- ${ISSUE} ${COMMIT} ${THANKS} \u2014 Plugins install from settings.json.`));
     assertEq(found.length, 0, `clean, got: ${JSON.stringify(found)}`);
   });
 
   await test('an entry with no issue link is reported', () => {
-    const found = lintText(doc('Unreleased', '- **Plugins are installed from a declaration** — the old essay style.'));
+    const found = lintText(doc('Unreleased', '- **Plugins are installed from a declaration** \u2014 the old essay style.'));
     assert(rules(found).includes('issue-link'), `got: ${rules(found)}`);
   });
 
   await test('`(no issue)` satisfies the issue rule', () => {
-    const found = lintText(doc('Unreleased', '- (no issue) — A change with nothing filed for it.'));
+    const found = lintText(doc('Unreleased', '- (no issue) \u2014 A change with nothing filed for it.'));
     assertEq(found.length, 0, `clean, got: ${JSON.stringify(found)}`);
   });
 
   await test('an over-long entry is reported with its word count', () => {
     const long = new Array(RULES.maxWords + 5).fill('word').join(' ');
-    const found = lintText(doc('Unreleased', `- ${ISSUE} — ${long}.`));
+    const found = lintText(doc('Unreleased', `- ${ISSUE} \u2014 ${long}.`));
     const cap = found.find((v) => v.rule === 'word-cap');
     assert(cap, `word-cap reported, got: ${rules(found)}`);
     assert(cap.message.startsWith(`${RULES.maxWords + 5} words`), `names the count, got: ${cap.message}`);
@@ -122,15 +123,15 @@ const run = async () => {
 
   await test('an entry at exactly the cap passes', () => {
     const exact = new Array(RULES.maxWords).fill('word').join(' ');
-    const found = lintText(doc('Unreleased', `- ${ISSUE} — ${exact}`));
+    const found = lintText(doc('Unreleased', `- ${ISSUE} \u2014 ${exact}`));
     assertEq(found.length, 0, `the cap is inclusive, got: ${JSON.stringify(found)}`);
   });
 
   await test('the links do not count toward the word cap', () => {
-    // Only the prose after the separator is measured — otherwise a long URL
+    // Only the prose after the separator is measured. Otherwise a long URL
     // would eat the budget an entry is supposed to spend on meaning.
     const words = new Array(RULES.maxWords).fill('word').join(' ');
-    const found = lintText(doc('3.1.0] - 2026-07-24', `- ${ISSUE} ${COMMIT} ${THANKS} — ${words}`));
+    const found = lintText(doc('3.1.0] - 2026-07-24', `- ${ISSUE} ${COMMIT} ${THANKS} \u2014 ${words}`));
     assertEq(found.length, 0, `metadata is not prose, got: ${JSON.stringify(found)}`);
   });
 
@@ -140,28 +141,28 @@ const run = async () => {
   });
 
   await test('a released entry missing its commit link is reported', () => {
-    const found = lintText(doc('3.1.0] - 2026-07-24', `- ${ISSUE} — Plugins install from settings.json.`));
+    const found = lintText(doc('3.1.0] - 2026-07-24', `- ${ISSUE} \u2014 Plugins install from settings.json.`));
     assert(rules(found).includes('commit-link'), `got: ${rules(found)}`);
   });
 
   await test('a commit link mentioned in the prose does not satisfy the released rule', () => {
     // The rule is anchored to the metadata run after the issue link; testing
     // the whole entry let a prose mention stand in for the missing link.
-    const found = lintText(doc('3.1.0] - 2026-07-24', `- ${ISSUE} — Reverts ${COMMIT} from the last release.`));
+    const found = lintText(doc('3.1.0] - 2026-07-24', `- ${ISSUE} \u2014 Reverts ${COMMIT} from the last release.`));
     assert(rules(found).includes('commit-link'), `got: ${rules(found)}`);
   });
 
   await test('an unreleased entry is NOT asked for a commit link', () => {
-    // The sha does not exist when the entry is written — demanding it here
+    // The sha does not exist when the entry is written. Demanding it here
     // would make the rule impossible to satisfy.
-    const found = lintText(doc('Unreleased', `- ${ISSUE} — Plugins install from settings.json.`));
+    const found = lintText(doc('Unreleased', `- ${ISSUE} \u2014 Plugins install from settings.json.`));
     assertEq(found.length, 0, `no commit-link demand, got: ${JSON.stringify(found)}`);
   });
 
   await test('a released `(no issue)` entry is exempt from the commit link', () => {
     // The generator finds commits through `Fixes #N`; with no issue there is
     // nothing to look up, and a hand-typed sha is what this format avoids.
-    const found = lintText(doc('3.1.0] - 2026-07-24', '- (no issue) — A change with nothing filed for it.'));
+    const found = lintText(doc('3.1.0] - 2026-07-24', '- (no issue) \u2014 A change with nothing filed for it.'));
     assertEq(found.length, 0, `exempt, got: ${JSON.stringify(found)}`);
   });
 
@@ -170,7 +171,7 @@ const run = async () => {
       '## [Unreleased]',
       '',
       '### Added',
-      `- ${ISSUE} — The short entry.`,
+      `- ${ISSUE} \u2014 The short entry.`,
       '',
       '  And then a whole second paragraph of detail that belongs in the commit.',
       '',
@@ -179,7 +180,7 @@ const run = async () => {
   });
 
   await test('a blank line between two entries is not a second paragraph', () => {
-    const found = lintText(doc('Unreleased', `- ${ISSUE} — First entry.`, `- ${ISSUE} — Second entry.`));
+    const found = lintText(doc('Unreleased', `- ${ISSUE} \u2014 First entry.`, `- ${ISSUE} \u2014 Second entry.`));
     assertEq(found.length, 0, `both clean, got: ${JSON.stringify(found)}`);
   });
 
@@ -193,7 +194,7 @@ const run = async () => {
       '## [Unreleased]',
       '',
       '### Added',
-      `- ${ISSUE} — A perfectly correct entry.`,
+      `- ${ISSUE} \u2014 A perfectly correct entry.`,
       '',
       '[Unreleased]: https://github.com/o/r/compare/v1.0.0...HEAD',
       '[1.0.0]: https://github.com/o/r/releases/tag/v1.0.0',
@@ -219,7 +220,7 @@ const run = async () => {
       '- An example of the OLD format, with no link and a great many words indeed.',
       '```',
       '',
-      `- ${ISSUE} — A real entry.`,
+      `- ${ISSUE} \u2014 A real entry.`,
     ].join('\n');
     assertEq(lintText(text).length, 0, `the fenced example is not judged, got: ${JSON.stringify(lintText(text))}`);
   });
@@ -237,7 +238,7 @@ const run = async () => {
       '## [Unreleased]',
       '',
       '### Added',
-      `- ${ISSUE} — A real entry.`,
+      `- ${ISSUE} \u2014 A real entry.`,
       '',
       '## Migration notes',
       '',
@@ -254,7 +255,7 @@ const run = async () => {
   await test('an em dash inside the prose does not stand in for the separator', () => {
     // The separator is anchored to the end of the links; searching the whole
     // entry accepted this and then counted words from the wrong offset.
-    const found = lintText(doc('Unreleased', `- ${ISSUE} The installer — which reads settings.json — now runs.`));
+    const found = lintText(doc('Unreleased', `- ${ISSUE} The installer \u2014 which reads settings.json \u2014 now runs.`));
     assert(rules(found).includes('separator'), `got: ${rules(found)}`);
   });
 
@@ -263,7 +264,7 @@ const run = async () => {
   await test('a clean file exits 0 and says nothing', () => {
     const dir = mkTmp();
     const file = path.join(dir, 'CHANGELOG.md');
-    fs.writeFileSync(file, doc('Unreleased', `- ${ISSUE} — A short entry.`));
+    fs.writeFileSync(file, doc('Unreleased', `- ${ISSUE} \u2014 A short entry.`));
     const { code, out } = runCli(file, [], dir);
     assertEq(code, 0, 'exit 0');
     assertEq(out.trim(), '', `silent, got: ${out}`);
@@ -301,16 +302,16 @@ const run = async () => {
   await test('--added-only accepts a new entry in the format', () => {
     const dir = mkRepo(doc('Unreleased', '- A legacy entry, no issue link.'));
     const file = path.join(dir, 'CHANGELOG.md');
-    fs.writeFileSync(file, `${fs.readFileSync(file, 'utf8')}- ${ISSUE} — A properly formatted new entry.\n`);
+    fs.writeFileSync(file, `${fs.readFileSync(file, 'utf8')}- ${ISSUE} \u2014 A properly formatted new entry.\n`);
     assertEq(runCli(file, ['--added-only'], dir).code, 0, 'clean');
     cleanup(dir);
   });
 
   await test('--staged judges the index, not the working tree', () => {
-    const dir = mkRepo(doc('Unreleased', `- ${ISSUE} — A clean entry.`));
+    const dir = mkRepo(doc('Unreleased', `- ${ISSUE} \u2014 A clean entry.`));
     const file = path.join(dir, 'CHANGELOG.md');
     // Stage a good entry, then leave a bad one only in the working tree.
-    fs.writeFileSync(file, `${fs.readFileSync(file, 'utf8')}- ${ISSUE} — Staged and fine.\n`);
+    fs.writeFileSync(file, `${fs.readFileSync(file, 'utf8')}- ${ISSUE} \u2014 Staged and fine.\n`);
     git(dir, 'add', 'CHANGELOG.md');
     fs.writeFileSync(file, `${fs.readFileSync(file, 'utf8')}- unstaged essay with no link.\n`);
     assertEq(runCli(file, ['--added-only', '--staged'], dir).code, 0, 'the index is clean');
@@ -319,7 +320,7 @@ const run = async () => {
   });
 
   await test('an untracked CHANGELOG is judged in full', () => {
-    // Nothing to diff against, so every entry is new — a first CHANGELOG must
+    // Nothing to diff against, so every entry is new. A first CHANGELOG must
     // not slip in unjudged.
     const dir = mkTmp();
     git(dir, 'init', '-q', '-b', 'main');
@@ -332,7 +333,7 @@ const run = async () => {
   await test('--added-only judges an entry when only its CONTINUATION line changed', () => {
     // Editing a wrapped entry's second line rewrites the entry; anchoring on
     // its first line alone let the edit walk past both hooks.
-    const dir = mkRepo([...doc('Unreleased').split('\n'), `- ${ISSUE} — Short`, '  and a wrap.', ''].join('\n'));
+    const dir = mkRepo([...doc('Unreleased').split('\n'), `- ${ISSUE} \u2014 Short`, '  and a wrap.', ''].join('\n'));
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('  and a wrap.', `  ${new Array(60).fill('word').join(' ')}`));
     const { code, out } = runCli(file, ['--added-only'], dir);
@@ -355,7 +356,7 @@ const run = async () => {
   await test('every violation survives being piped to a consumer', () => {
     // standards.sh derives a COUNT from this output. `process.exit()` discards
     // whatever console.error still has buffered when stderr is a pipe, so a
-    // large file reported a short, varying list — and a count of 0 would have
+    // large file reported a short, varying list, and a count of 0 would have
     // read as "this repo is already migrated". The invariant is asserted here;
     // the truncation itself was timing-dependent and does not reproduce
     // reliably, so this pins the contract rather than the race.
@@ -379,7 +380,7 @@ const run = async () => {
   group('changelog: --unreleased-only (the CI mode)');
 
   // A CHANGELOG whose released history is out of format and whose [Unreleased]
-  // section is the part still being written — the shape every repo has while it
+  // section is the part still being written, the shape every repo has while it
   // is adopting the format.
   const mixed = (unreleased) => [
     '# Changelog',
@@ -401,7 +402,7 @@ const run = async () => {
   await test('released history never fails the check', () => {
     const dir = mkTmp();
     const file = path.join(dir, 'CHANGELOG.md');
-    fs.writeFileSync(file, mixed(`- ${ISSUE} — A clean unreleased entry.`));
+    fs.writeFileSync(file, mixed(`- ${ISSUE} \u2014 A clean unreleased entry.`));
     assertEq(runCli(file, [], dir).code, 1, 'the whole file does violate');
     assertEq(runCli(file, ['--unreleased-only'], dir).code, 0, 'but published history is not this gate\'s business');
     cleanup(dir);
@@ -423,7 +424,7 @@ const run = async () => {
     // no business enforcing: the links are generated at release time.
     const dir = mkTmp();
     const file = path.join(dir, 'CHANGELOG.md');
-    fs.writeFileSync(file, doc('1.0.0] - 2020-01-01', `- ${ISSUE} — Released without its commit link.`));
+    fs.writeFileSync(file, doc('1.0.0] - 2020-01-01', `- ${ISSUE} \u2014 Released without its commit link.`));
     assertEq(runCli(file, [], dir).code, 1, 'the commit-link rule does apply to it');
     assertEq(runCli(file, ['--unreleased-only'], dir).code, 0, 'but not in the CI mode');
     cleanup(dir);

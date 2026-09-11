@@ -1,12 +1,12 @@
 //
-// The live crew — every Claude session running on this machine right now.
+// The live crew: every Claude session running on this machine right now.
 //
 // Nothing is registered anywhere for this. The `claude:keep-awake` hook already
 // writes one marker file per working session (named for the claude pid, holding
 // the caffeinate pid, the cwd, and the session id), and Claude Code already
 // appends to a per-session transcript on every message. Those two facts answer
 // the whole question: who is running, where, and whether they are working or
-// idle. This module reads them exactly as the hook writes them — a second
+// idle. This module reads them exactly as the hook writes them. A second
 // bookkeeping file would be a store the tower is not allowed to have.
 //
 // Facts this depends on, all from the hook (dotfiles hooks/claude/keep-awake):
@@ -15,7 +15,7 @@
 //   marker name    the claude pid; `.<pid>.lock` directories are the acquire
 //                  mutex and are skipped
 //   marker body    caffeinate=<pid>, cwd=<path>, session=<id>
-//   the assertion  `caffeinate -d -i -w <claude pid>` — matched WHOLE, so a
+//   the assertion  `caffeinate -d -i -w <claude pid>`, matched WHOLE, so a
 //                  recycled pid now belonging to something else reads as stale
 //   transcript     ~/.claude/projects/<cwd with / and . flattened to ->/<id>.jsonl
 //   idle           quiet longer than KEEP_AWAKE_IDLE_MINUTES (default 45)
@@ -70,14 +70,14 @@ const markerRoot = (exec) => {
  * of the number would let the same crew read live on one page and finished on
  * another.
  *
- * @param {object} opts the caller's options — `idleMinutes` overrides everything
+ * @param {object} opts the caller's options: `idleMinutes` overrides everything
  * @returns {number} milliseconds
  */
 const idleWindowMs = (opts) => {
   const minutes = (() => {
     if (typeof opts.idleMinutes === 'number') return opts.idleMinutes;
     const env = process.env.KEEP_AWAKE_IDLE_MINUTES;
-    // A non-numeric override falls back rather than passing through — the hook
+    // A non-numeric override falls back rather than passing through. The hook
     // makes the same call, so a typo cannot quietly disable the idle check.
     if (env && /^\d+$/.test(env)) return Number(env);
     return DEFAULT_IDLE_MINUTES;
@@ -132,12 +132,12 @@ const titleIn = (text) => {
  *
  * The file is read in BOUNDED windows and never whole. A working session's
  * transcript grows without limit, and a busy one passes the 512MB cap on a
- * JavaScript string — `readFileSync(file, 'utf8')` throws ERR_STRING_TOO_LONG
+ * JavaScript string. `readFileSync(file, 'utf8')` throws ERR_STRING_TOO_LONG
  * there, so reading it all would leave the busiest session on the machine, the
  * one most worth seeing, rendering unnamed. The tail is read first because a
  * rename lands at the end; the head is read only when the tail carried no
  * title, because the generated title is written early. A title straddling a
- * window's edge is missed — a rename that lands there simply shows the earlier
+ * window's edge is missed. A rename that lands there simply shows the earlier
  * name until the next one, which is the right price for a bounded read.
  *
  * @param {string} file
@@ -208,7 +208,7 @@ const mtimeMs = (file) => {
  * When a file was created, in ms, or null when it cannot be probed.
  *
  * A filesystem with no birth time answers 0 (Node's documented fallback), which
- * is not a time anything happened — it reads as unknown rather than as 1970.
+ * is not a time anything happened: it reads as unknown rather than as 1970.
  *
  * @param {string} file
  * @returns {number|null}
@@ -233,14 +233,14 @@ const birthMs = (file) => {
  * `lastActivity` and `aliveSince` are the same two probes the state is decided
  * from, handed over as ms epochs rather than kept private: a page draws how
  * FRESH a session is and how long it has been up, and both of those age between
- * reads — so the times travel and the arithmetic is the reader's.
+ * reads, so the times travel and the arithmetic is the reader's.
  *
  * @param {object} [opts]
  * @param {string} [opts.markerDir] override the marker directory
  * @param {string} [opts.home] override ~ for transcript resolution
  * @param {string} [opts.stateDir] override the statusline cache directory
  * @param {number} [opts.idleMinutes] override the idle threshold
- * @param {Function} [opts.exec] (cmd, args) => stdout — the `ps` seam
+ * @param {Function} [opts.exec] (cmd, args) => stdout: the `ps` seam
  * @param {number} [opts.now] override "now" in ms
  * @param {number} [opts.nameReadBytes] bytes read from each end of a transcript
  * @returns {Array<{claudePid: number, cwd: string, session: string, chatName: string|null, state: string, model: string|null, effort: string|null, transcript: string, lastActivity: number|null, aliveSince: number|null}>}
@@ -281,7 +281,7 @@ const listSessions = (opts = {}) => {
     const live = command === `caffeinate -d -i -w ${claudePid}`;
 
     const transcript = transcriptPath(home, marker.cwd, marker.session);
-    // The marker's own times are when the assertion was taken — the right
+    // The marker's own times are when the assertion was taken: the right
     // fallback when the transcript cannot be read.
     const probed = mtimeMs(transcript);
     const lastActivity = probed === null ? mtimeMs(file) : probed;

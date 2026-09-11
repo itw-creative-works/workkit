@@ -1,4 +1,4 @@
-// Agent roster parity — the four class agents, the ladder they must agree
+// Agent roster parity: the four class agents, the ladder they must agree
 // with, the README roster, and the review skill's re-route.
 const path = require('path');
 const fs = require('fs');
@@ -12,7 +12,7 @@ const SKILL = path.join(REPO, 'skills', 'review', 'SKILL.md');
 
 const CLASSES = ['scout', 'worker', 'verifier', 'advisor'];
 
-// Minimal YAML frontmatter reader — flat key: value pairs only.
+// Minimal YAML frontmatter reader. Flat key: value pairs only.
 const frontmatter = (file) => {
   const text = fs.readFileSync(file, 'utf8');
   const match = text.match(/^---\n([\s\S]*?)\n---/);

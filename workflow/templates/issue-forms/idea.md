@@ -8,8 +8,8 @@ assignees: ""
 
 ## Description
 
-<!-- The thought, as rough as you like — triage shapes it later. -->
+<!-- The thought, as rough as you like. Triage shapes it later. -->
 
 ## Spec
 
-None needed — small item.
+None needed: small item.

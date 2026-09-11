@@ -1,5 +1,5 @@
 //
-// Tests for workflow/workkit.sh — the one command (setup, update, doctor,
+// Tests for workflow/workkit.sh: the one command (setup, update, doctor,
 // enable, decline, note).
 //
 // Every world is a scratch HOME with `launchctl`, `claude`, and `gh` recorders
@@ -22,7 +22,7 @@ const CLI = path.join(WORKFLOW_DIR, 'workkit.sh');
 const JOBS_INSTALL = path.join(__dirname, '..', '..', 'jobs', 'install.sh');
 const LABEL = 'com.workkit.claude-daily';
 
-// A PATH with the ordinary system tools and nothing else — the shims are
+// A PATH with the ordinary system tools and nothing else: the shims are
 // prepended per world, so a command this script looks for is present only when
 // the test put it there.
 const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -36,7 +36,7 @@ const writeStub = (file, lines) => {
 };
 
 // A secret listing as `gh secret list --json name,updatedAt` renders it. `days`
-// is how long ago the secret was last set — the only thing the age check reads.
+// is how long ago the secret was last set: the only thing the age check reads.
 const secretList = (secrets) => JSON.stringify(secrets.map(({ name, days }) => ({
   name,
   updatedAt: new Date(Date.now() - days * 86400000).toISOString().replace(/\.\d+Z$/, 'Z'),
@@ -50,8 +50,8 @@ const secretList = (secrets) => JSON.stringify(secrets.map(({ name, days }) => (
  * a shell-rc line.
  *
  * The cloud-secrets world (issue #88) is the same machine with a `gh` that can
- * answer for a repo's secrets: `secrets` null is the default gh — it prints
- * nothing, which is every unreadable repo — and an array is a listing. Since
+ * answer for a repo's secrets: `secrets` null is the default gh. It prints
+ * nothing, which is every unreadable repo, and an array is a listing. Since
  * issue #91 the repo those secrets live on is the HOME repo, which the machine
  * settings name. `secret set` and `auth token` are recorded the same way, and
  * what arrived on a `secret set`'s STDIN is kept, because the piping is the
@@ -59,7 +59,7 @@ const secretList = (secrets) => JSON.stringify(secrets.map(({ name, days }) => (
  * prints; it is fiction, and the only token any of this ever handles.
  *
  * The mint stub is shaped like the CLI issue #174 was filed against: the whole
- * screen — the browser message AND the paste-the-code prompt that follows it —
+ * screen (the browser message AND the paste-the-code prompt that follows it)
  * is drawn on the terminal, and the token is the last thing on it. `mintExit`
  * is a mint that did not finish.
  *
@@ -119,7 +119,7 @@ const mkWorld = ({
     recordArgv(ghLog),
     'if [[ "$1" == \'secret\' && "$2" == \'set\' ]]; then',
     // Shaped like the live API: GitHub refuses a secret whose name STARTS with
-    // `GITHUB_`, and only that — a name that merely contains it is accepted,
+    // `GITHUB_`, and only that: a name that merely contains it is accepted,
     // which is what the rename in issue #91 rests on.
     '  if [[ "$3" == GITHUB_* ]]; then printf \'refusing to set %s: secret names must not start with GITHUB_\\n\' "$3" >&2; exit 1; fi',
     `  cat > "${stdinDir}/$3"`,
@@ -225,7 +225,7 @@ const mkWorld = ({
       WORKFLOW_HOME: path.join(root, 'workflow-home'),
       WORKFLOW_CLAUDE_HOME: path.join(home, '.claude'),
       // HOME here is a scratch directory, which jobs/install.sh refuses to load
-      // a schedule from — launchd is machine-global, so a fake home is exactly
+      // a schedule from: launchd is machine-global, so a fake home is exactly
       // the run it guards against (issue #95). launchctl on this PATH is a
       // recorder, so this world says out loud that it is the rehearsal the
       // override exists for; the guard itself is pinned in tests/jobs.
@@ -236,8 +236,8 @@ const mkWorld = ({
 
 // stdin is a pipe, never a terminal: that is the non-interactive machine, and
 // any prompt that forgot to check would hang here instead of in production.
-// `script` runs a DIFFERENT entry point — the world's symlink, or a copy of the
-// CLI in a partial checkout — which is how the suite asks where a run thinks it
+// `script` runs a DIFFERENT entry point: the world's symlink, or a copy of the
+// CLI in a partial checkout, which is how the suite asks where a run thinks it
 // is standing.
 const runCli = (world, args, { cwd, script, env } = {}) => {
   const res = spawnSync('bash', [script || CLI, ...args], {
@@ -248,8 +248,25 @@ const runCli = (world, args, { cwd, script, env } = {}) => {
     timeout: 30000,
   });
   assert(res.status !== null, `workkit ${args.join(' ')} finished (no timeout, no signal): ${res.error || ''}`);
-  return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
+  // Three views of one run: stdout, stderr, and `said`, the whole transcript
+  // in the order a terminal shows it. Since issue #237 the level IS the stream
+  // (an action and a skip on stdout, a warning and an error on stderr), so a
+  // check about what the user was told reads `said` and a check about WHICH
+  // stream reads `out` or `err`.
+  return {
+    code: res.status,
+    out: res.stdout || '',
+    err: res.stderr || '',
+    said: `${res.stdout || ''}${res.stderr || ''}`,
+  };
 };
+
+// An ACTED line, by its words. The glyphs are gone (issue #237) and an action
+// and a skip are both plain lines on stdout, so where QUIET cannot answer the
+// question the verbs the kit uses when it changes something do. Used twice: to
+// prove a first run DID something, and for `setup`, which has no quiet variant
+// to read the answer structurally from.
+const ACTED = /\b(linked|repointed|reloaded|created|cloned|seeded|corrected|released)\b|installed \S+ from|installed and loaded/;
 
 // A real (empty) git repo, optionally already in the workflow.
 const mkRepo = ({ optIn = false } = {}) => {
@@ -265,7 +282,7 @@ const mkRepo = ({ optIn = false } = {}) => {
 const installSchedule = (world) => spawnSync('bash', [JOBS_INSTALL], { env: world.env, encoding: 'utf8', timeout: 30000 });
 
 // The machine's hand-edited settings file, written the way a heal seeds it.
-// `site` is whatever the test wants the site options to be — a `publish` of
+// `site` is whatever the test wants the site options to be: a `publish` of
 // null is the unanswered switch, which is the state setup has a question about.
 const userSettings = (world) => path.join(world.env.WORKFLOW_HOME, 'settings.json');
 const seedSettings = (world, site) => {
@@ -276,13 +293,13 @@ const seedSettings = (world, site) => {
 };
 
 /**
- * One of the CLI's own functions, called directly — the pattern home.test.js
+ * One of the CLI's own functions, called directly: the pattern home.test.js
  * uses for the engine's libraries. Sourcing the script with `help` loads every
  * function and prints the map, which is thrown away.
  *
  * The answers arrive on stdin from a FILE rather than through spawnSync's
- * `input`: node's pipes are socketpairs on macOS, and BSD `script` — which the
- * mint now runs the CLI under — refuses a socket for stdin outright. A file is
+ * `input`: node's pipes are socketpairs on macOS, and BSD `script` (which the
+ * mint now runs the CLI under) refuses a socket for stdin outright. A file is
  * still not a terminal, so every `interactive` check answers exactly as it did.
  */
 const inCli = (world, script, { input = '', env } = {}) => {
@@ -301,17 +318,22 @@ const inCli = (world, script, { input = '', env } = {}) => {
   });
   fs.closeSync(fd);
   assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
-  return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
+  return {
+    code: res.status,
+    out: res.stdout || '',
+    err: res.stderr || '',
+    said: `${res.stdout || ''}${res.stderr || ''}`,
+  };
 };
 
 // The one thing a piped test cannot hand a prompt is a terminal. Prepended to
 // an `inCli` script, this answers the CLI's own `interactive` check yes while
-// the answers arrive on stdin — the prompt, the read and the write are all the
+// the answers arrive on stdin: the prompt, the read and the write are all the
 // real thing.
 const AT_TERMINAL = 'interactive() { return 0; }';
 
 /**
- * A partial checkout: this CLI COPIED (never symlinked — the link chain now
+ * A partial checkout: this CLI COPIED (never symlinked: the link chain now
  * resolves back to the real one) into a `workflow/` beside whatever the test
  * decides to give it. `installer` is the body of a stub `jobs/install.sh`;
  * without it the checkout simply has none. Returns the entry point to run.
@@ -328,7 +350,7 @@ const mkPartialKit = ({ installer } = {}) => {
 };
 
 /**
- * A checkout of the ENGINE that has an origin of its own — a DIFFERENT slug
+ * A checkout of the ENGINE that has an origin of its own: a DIFFERENT slug
  * from the machine's home repo, on purpose: since issue #91 the cloud secrets
  * live on the home repo, and a run that still reached for the checkout's origin
  * would be visible here. The whole `workflow/` is copied because the CLI sources
@@ -384,7 +406,7 @@ const run = async () => {
     const world = mkWorld();
     fs.mkdirSync(world.claudeHome, { recursive: true });
     const { code, out } = runCli(world, ['update']);
-    assertEq(code, 0, `exit 0 — stderr says: ${out}`);
+    assertEq(code, 0, `exit 0: stderr says: ${out}`);
     assertEq(fs.realpathSync(world.engineLink), fs.realpathSync(WORKFLOW_DIR), 'the address resolves to the engine');
     assert(out.includes('engine:'), `and it reported the link, got: ${out}`);
     cleanup(world.root);
@@ -437,17 +459,17 @@ const run = async () => {
     const world = mkWorld();
     fs.mkdirSync(world.localBin, { recursive: true });
     fs.writeFileSync(world.link, 'someone else’s script\n');
-    const { code, out } = runCli(world, ['update']);
+    const { code, said } = runCli(world, ['update']);
     assertEq(code, 0, 'exit 0');
-    assert(out.includes('is a real file'), `it says what is in the way, got: ${out}`);
+    assert(said.includes('is a real file'), `it says what is in the way, got: ${said}`);
     assertEq(fs.readFileSync(world.link, 'utf8'), 'someone else’s script\n', 'and the file is untouched');
     cleanup(world.root);
   });
 
   await test('run THROUGH the symlink, it still stands in the real checkout', () => {
     // The failure this guards: taking the dirname before resolving the link
-    // makes ~/.local/bin the checkout, so every path under it — the engine, the
-    // installer, the symlink itself — names a file that does not exist, and the
+    // makes ~/.local/bin the checkout, so every path under it (the engine, the
+    // installer, the symlink itself) names a file that does not exist, and the
     // command repoints its own address at nothing.
     const world = mkWorld({ pluginInstalled: true, binOnPath: true });
     fs.mkdirSync(world.claudeHome, { recursive: true });
@@ -455,7 +477,7 @@ const run = async () => {
     runCli(world, ['setup'], { cwd: repo });
 
     const viaLink = runCli(world, ['update'], { cwd: repo, script: world.link });
-    assertEq(viaLink.code, 0, `exit 0 — stderr: ${viaLink.err}`);
+    assertEq(viaLink.code, 0, `exit 0: stderr: ${viaLink.err}`);
     assert(viaLink.out.includes(path.dirname(WORKFLOW_DIR)), `it names the real checkout, got: ${viaLink.out}`);
     assertEq(fs.readlinkSync(world.link), CLI, 'and its own address still points at the real CLI');
 
@@ -475,10 +497,15 @@ const run = async () => {
   await test('a second update reports nothing to do', () => {
     const world = mkWorld({ binOnPath: true });
     fs.mkdirSync(world.claudeHome, { recursive: true });
-    runCli(world, ['update']);
-    const { code, out } = runCli(world, ['update']);
+    fs.mkdirSync(world.localBin, { recursive: true });
+    const first = runCli(world, ['update']);
+    assert(ACTED.test(first.said), `the first run had something to do, got: ${first.said}`);
+    // The answer is STRUCTURAL, not a word list: `--auto` is the same run with
+    // QUIET=1, which silences every skip and note, so an empty stdout IS
+    // "nothing was done" (issue #237).
+    const { code, out } = runCli(world, ['update', '--auto']);
     assertEq(code, 0, 'exit 0');
-    assert(!out.includes('✓'), `nothing was done the second time, got: ${out}`);
+    assertEq(out, '', `nothing was done the second time, got: ${out}`);
     cleanup(world.root);
   });
 
@@ -578,11 +605,11 @@ const run = async () => {
       const world = mkWorld();
       world.seedPlist(LABEL, '<!-- installed by a human, once -->\n');
       const { kit, script } = mkPartialKit();
-      const { code, out } = runCli(world, ['update'], { script });
+      const { code, said } = runCli(world, ['update'], { script });
       assertEq(code, 0, 'exit 0');
-      assert(out.includes('standards.sh is missing'), `the missing engine is named, got: ${out}`);
-      assert(out.includes('installer is missing'), `and so is the missing installer, got: ${out}`);
-      assert(!out.includes('is current'), 'an incomplete checkout never reads as up to date');
+      assert(said.includes('standards.sh is missing'), `the missing engine is named, got: ${said}`);
+      assert(said.includes('installer is missing'), `and so is the missing installer, got: ${said}`);
+      assert(!said.includes('is current'), 'an incomplete checkout never reads as up to date');
       cleanup(world.root); cleanup(kit);
     });
 
@@ -599,10 +626,10 @@ const run = async () => {
           'exit 1',
         ],
       });
-      const { code, out } = runCli(world, ['update', '--auto'], { script });
+      const { code, said } = runCli(world, ['update', '--auto'], { script });
       assertEq(code, 0, 'a failed install never aborts the caller');
-      assert(out.includes('did not finish'), `it says the install failed, got: ${out}`);
-      assert(out.includes('install.sh'), 'and names the command to run by hand');
+      assert(said.includes('did not finish'), `it says the install failed, got: ${said}`);
+      assert(said.includes('install.sh'), 'and names the command to run by hand');
       cleanup(world.root); cleanup(kit);
     });
 
@@ -610,13 +637,13 @@ const run = async () => {
       const world = mkWorld();
       world.seedPlist(LABEL, '<!-- installed by a human, once -->\n');
       const { kit, script } = mkPartialKit({ installer: ['exit 3'] });
-      const { code, out } = runCli(world, ['update', '--auto'], { script });
+      const { code, said } = runCli(world, ['update', '--auto'], { script });
       assertEq(code, 0, 'exit 0');
-      assert(out.includes('drift check did not finish'), `it says the check failed, got: ${out}`);
+      assert(said.includes('drift check did not finish'), `it says the check failed, got: ${said}`);
       cleanup(world.root); cleanup(kit);
     });
   } else {
-    group('workkit update: the schedule — skipped, launchd is macOS (#114)');
+    group('workkit update: the schedule: skipped, launchd is macOS (#114)');
   }
 
   group('workkit setup');
@@ -624,7 +651,7 @@ const run = async () => {
   await test('a machine without the plugin has it installed from this checkout', () => {
     const world = mkWorld({ pluginInstalled: false });
     const { code, out } = runCli(world, ['setup']);
-    assertEq(code, 0, `exit 0 — stderr: ${out}`);
+    assertEq(code, 0, `exit 0: stderr: ${out}`);
     const calls = world.claudeCalls();
     assert(calls.some((c) => isCall(c, 'plugin', 'marketplace', 'add', path.dirname(WORKFLOW_DIR))), `the marketplace is this checkout: ${fmtCalls(calls)}`);
     assert(calls.some((c) => isCall(c, 'plugin', 'install', 'workkit@workkit')), `and the plugin is installed: ${fmtCalls(calls)}`);
@@ -680,16 +707,18 @@ const run = async () => {
     fs.mkdirSync(world.claudeHome, { recursive: true });
     const repo = mkRepo({ optIn: true });
     runCli(world, ['setup'], { cwd: repo });
-    const { code, out } = runCli(world, ['setup'], { cwd: repo });
+    const { code, said } = runCli(world, ['setup'], { cwd: repo });
     assertEq(code, 0, 'exit 0');
-    assert(!out.includes('✓'), `an already-set-up machine acts on nothing, got: ${out}`);
+    // `setup` has no quiet variant, so the verbs are the signal here: QUIET is
+    // 0 and an action and a skip are the same shape of line (issue #237).
+    assert(!ACTED.test(said), `an already-set-up machine acts on nothing, got: ${said}`);
     cleanup(world.root); cleanup(repo);
   });
 
   await test('setup offers the home repo, and a non-interactive run only says what it would do', () => {
     // The gh shim answers `auth status` and nothing else, so `gh api user`
     // prints nothing: the home step has no login to work from and hands over
-    // the command instead of guessing one. What this proves is the OFFER — the
+    // the command instead of guessing one. What this proves is the OFFER: the
     // wizard reaches the home steps at all, and creates nothing without a
     // terminal (workflow/home.sh's own suite covers the steps themselves).
     const world = mkWorld();
@@ -730,7 +759,7 @@ const run = async () => {
     }
   });
 
-  await test('no home repo, no question — there would be nowhere to publish from', () => {
+  await test('no home repo, no question: there would be nowhere to publish from', () => {
     const world = mkWorld();
     seedSettings(world, { repo: null, publish: null, url: null });
     const { out } = runCli(world, ['setup']);
@@ -743,9 +772,9 @@ const run = async () => {
     const world = mkWorld();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
     fs.writeFileSync(file, '{ "version": 1, "site": {\n');
-    const { code, out } = runCli(world, ['setup']);
+    const { code, said } = runCli(world, ['setup']);
     assertEq(code, 0, 'a broken file is not a crash');
-    assert(/site: .*does not parse as JSON/.test(out), `it says what is wrong, got: ${out}`);
+    assert(/site: .*does not parse as JSON/.test(said), `it says what is wrong, got: ${said}`);
     assertEq(fs.readFileSync(file, 'utf8'), '{ "version": 1, "site": {\n', 'and the owner’s file is untouched');
     cleanup(world.root);
   });
@@ -766,7 +795,7 @@ const run = async () => {
 
     const no = inCli(world, 'set_site_publish false');
     site = JSON.parse(fs.readFileSync(file, 'utf8')).site;
-    assertEq(site.publish, false, 'a no is an answer too — false, not a missing key');
+    assertEq(site.publish, false, 'a no is an answer too: false, not a missing key');
     assert(/site: publishing stays off/.test(no.out), `and it says so, got: ${no.out}`);
     cleanup(world.root);
   });
@@ -794,7 +823,7 @@ const run = async () => {
   await test('a fresh yes is asked for the custom domain, and what is typed is written', () => {
     // The terminal check is the ONE thing a piped test cannot satisfy, so the
     // question step is called with `interactive` answering yes and the answers
-    // arriving on stdin — everything else is the real function (issue #85).
+    // arriving on stdin: everything else is the real function (issue #85).
     const world = mkWorld();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
     const lock = path.join(world.env.WORKFLOW_HOME, '.state.lock');
@@ -812,7 +841,7 @@ const run = async () => {
 
   await test('an empty domain answer leaves the plain github.io address', () => {
     // Nothing written means `site.url` stays null, and publish.sh writes no
-    // CNAME — enter IS an answer.
+    // CNAME: enter IS an answer.
     const world = mkWorld();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
     const { out } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'y\n\n' });
@@ -849,7 +878,7 @@ const run = async () => {
 
   await test('the switch ending on publishes before setup exits', () => {
     // Already true is an answer, and a piped run is not a reason to hold the
-    // site back — the publish is not a question (issue #85). The engine's own
+    // site back: the publish is not a question (issue #85). The engine's own
     // script names why it stopped, which is how the call is seen from here.
     const world = mkWorld();
     seedSettings(world, { repo: 'owner/workkit', publish: true, url: null });
@@ -942,18 +971,6 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('without a terminal it is a named skip, and GitHub is asked nothing', () => {
-    const world = mkPagesWorld(PUBLISHED);
-    const { code, out } = inCli(world, 'handover_token');
-    assertEq(code, 0, 'exit 0');
-    assert(/the token handover needs a terminal/.test(out), `the skip names what is missing, got: ${out}`);
-    assert(out.includes(SETTINGS_URL), 'and where to do it instead');
-    assert(out.includes('gh auth token'), 'with the command that prints the token');
-    assert(!world.ghCalls().some((c) => isCall(c, 'api')), `no read was made at all: ${fmtCalls(world.ghCalls())}`);
-    assertEq(world.openerCalls().length, 0, 'and nothing was opened');
-    cleanup(world.root);
-  });
-
   await test('a machine with no browser opener is the same named skip', () => {
     // `/usr/bin/open` is on every mac, so the machine WITHOUT an opener is the
     // other branch: a `uname` that says Linux sends the step looking for
@@ -974,15 +991,18 @@ const run = async () => {
 
   await test('setup hands the token over right after the publish it belongs to', () => {
     // The call site, pinned: publishing is on, so the publish runs and the
-    // handover follows it. `runCli` is a pipe and not a terminal, so what lands
-    // there is the terminal skip, which is what makes the order readable.
-    const world = mkPagesWorld(PUBLISHED);
+    // handover follows it. `runCli` is a PIPE, which is the shape the ship's own
+    // run has (issue #235): the handover no longer asks for a terminal, so what
+    // lands here is the whole step, and its success line is what makes the order
+    // readable.
+    const world = mkPagesWorld(PUBLISHED, [['built', PUSHED]]);
     const { code, out } = runCli(world, ['setup']);
     assertEq(code, 0, 'exit 0');
     const published = out.indexOf('publish: ');
-    const handed = out.indexOf('the token handover needs a terminal');
+    const handed = out.indexOf('the browser now holds it');
     assert(published !== -1, `the publish ran, got: ${out}`);
     assert(handed > published, `and the handover came after it, got: ${out}`);
+    assert(!out.includes(HANDOVER), `no line of output carries the token, got: ${out}`);
     cleanup(world.root);
   });
 
@@ -1009,10 +1029,10 @@ const run = async () => {
     const world = mkPagesWorld(PUBLISHED);
     const { kit, script } = mkKit('owner/kit');
     writeStub(path.join(kit, 'workflow', 'publish.sh'), ["printf '%s\\n' 'publish: this one broke' >&2", 'exit 1']);
-    const { code, out } = runCli(world, ['setup'], { script });
+    const { code, said } = runCli(world, ['setup'], { script });
     assertEq(code, 0, 'setup still finishes');
-    assert(/site: the publish did not finish/.test(out), `the publish named its own failure, got: ${out}`);
-    assert(/the token handover waits for a publish that finished/.test(out), `and the handover says what it waits for, got: ${out}`);
+    assert(/site: the publish did not finish/.test(said), `the publish named its own failure, got: ${said}`);
+    assert(/the token handover waits for a publish that finished/.test(said), `and the handover says what it waits for, got: ${said}`);
     assertEq(pagesPolls(world).length, 0, `Pages was never polled: ${fmtCalls(world.ghCalls())}`);
     cleanup(world.root); cleanup(kit);
   });
@@ -1051,6 +1071,22 @@ const run = async () => {
     }
   });
 
+  await test('a login with no token to give is a named skip, and nothing is opened', () => {
+    // The last ending of the step: the wait finished, and `gh auth token` came
+    // back with nothing. `mkWorld` answers that read with silence by default,
+    // which is the shape of a login that expired or was never made.
+    const world = mkWorld({ pagesRef: PUSHED, pagesBuilds: [['built', PUSHED]] });
+    seedSettings(world, PUBLISHED);
+    const { code, out } = inCli(world, `${AT_TERMINAL}\nhandover_token`, { env: { WORKKIT_PAGES_WAIT: '60' } });
+    assertEq(code, 0, 'exit 0');
+    assert(out.includes('`gh auth token` returned nothing, so there was no token to hand over'), `the skip names what was missing, got: ${out}`);
+    assert(out.includes('run `gh auth login`'), 'with the command that makes one');
+    assert(out.includes(SETTINGS_URL), 'and the Settings URL for the paste by hand');
+    assertEq(world.openerCalls().length, 0, 'nothing was opened');
+    assertEq(world.openedPage(), undefined, 'and no page was written');
+    cleanup(world.root);
+  });
+
   await test('a token that would need escaping is refused, never escaped', () => {
     // The same rule as the address: the fragment carries a gh token as it
     // stands, and a value outside that shape is a mangled or refused login,
@@ -1069,7 +1105,7 @@ const run = async () => {
   group('workkit setup: the cloud secrets');
 
   // The fictional values these tests move around. Nothing here is a real token,
-  // and nothing here carries a vendor's prefix either — a committed literal
+  // and nothing here carries a vendor's prefix either: a committed literal
   // shaped like a credential trips push protection for everyone who clones the
   // repo. What is asserted is that the value went from the command that
   // produced it to `gh secret set`'s stdin, and appeared nowhere else.
@@ -1077,12 +1113,12 @@ const run = async () => {
   const LOGIN_TOKEN = 'gho_FAKEloginTOKENfakeLOGINtoken00';
 
   // Since issue #174 the mint runs under a pty and its whole screen is teed to
-  // the terminal, so the CLI's own copy of the token is on stdout by design —
+  // the terminal, so the CLI's own copy of the token is on stdout by design:
   // that is the screen the human reads the paste prompt on. What must never
   // happen is a SECOND copy: workkit printing the value on a line of its own.
-  // The CLI's lines are the pass-through; workkit's all start with a glyph.
+  // The CLI's lines are the pass-through; workkit's all open with a glyph.
   const countOf = (text, needle) => text.split(needle).length - 1;
-  const workkitLines = (text) => text.split('\n').filter((l) => /^[✓⚠ℹ·]/.test(l)).join('\n');
+  const workkitLines = (text) => text.split('\n').filter((l) => /^ {0,2}[✓·›⚠✖⏳] /.test(l)).join('\n');
   // The checkout's own origin, and the machine's home repo. They are different
   // slugs on purpose: since issue #91 the cloud secrets live on the SECOND one,
   // because the plugin repo is distributed to everyone who installs the kit and
@@ -1090,7 +1126,7 @@ const run = async () => {
   const SLUG = 'owner/kit';
   const HOME = 'owner/home';
 
-  /** A machine whose home repo is `HOME` — where the cloud secrets belong. */
+  /** A machine whose home repo is `HOME`: where the cloud secrets belong. */
   const mkHomeWorld = (opts = {}) => {
     const world = mkWorld(opts);
     seedSettings(world, { repo: HOME, publish: false, url: null });
@@ -1120,7 +1156,7 @@ const run = async () => {
   });
 
   await test('a listing that cannot be read is a skip, never a missing secret', () => {
-    // The default gh prints nothing for `secret list` — an unauthenticated CLI,
+    // The default gh prints nothing for `secret list`: an unauthenticated CLI,
     // a repo without Actions, no network. Reporting that as "not set" would
     // send a human to mint a token that is already there.
     const world = mkHomeWorld();
@@ -1147,9 +1183,9 @@ const run = async () => {
     const { out, err } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'y\n' });
     const calls = world.ghCalls();
     assert(calls.some((c) => isCall(c, 'secret', 'set', 'CLAUDE_CODE_OAUTH_TOKEN', '--repo', HOME)), `the secret is written on the named repo: ${fmtCalls(calls)}`);
-    assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), MINTED, 'and the value arrived on stdin — a pipe, not an argument');
+    assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), MINTED, 'and the value arrived on stdin: a pipe, not an argument');
     assert(!calls.some((c) => c.includes(MINTED)), `the token is not an argument to anything: ${fmtCalls(calls)}`);
-    assertEq(countOf(out + err, MINTED), 1, `it is on the terminal once — the CLI's own screen, and no copy of workkit's: ${out}${err}`);
+    assertEq(countOf(out + err, MINTED), 1, `it is on the terminal once: the CLI's own screen, and no copy of workkit's: ${out}${err}`);
     assert(!workkitLines(out + err).includes(MINTED), `no line workkit printed carries it, got: ${workkitLines(out + err)}`);
     assert(out.includes('is set on'), `the run says the secret is set, got: ${out}`);
     cleanup(world.root);
@@ -1167,8 +1203,8 @@ const run = async () => {
   await test('a mint that printed no token warns instead of writing an empty secret', () => {
     // An empty `gh secret set` would overwrite a working token with nothing.
     const world = mkWorld();
-    const { out } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'y\n' });
-    assert(/printed no token/.test(out), `it says what did not happen, got: ${out}`);
+    const { said } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'y\n' });
+    assert(/printed no token/.test(said), `it says what did not happen, got: ${said}`);
     assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), undefined, 'and nothing was written');
     assertEq(world.tmpFiles().join(','), '', 'and the mint left no capture file behind');
     cleanup(world.root);
@@ -1177,7 +1213,7 @@ const run = async () => {
   await test('the token is found whatever shape the mint printed it in', () => {
     // Two shapes the mint has been seen in: a bare opaque value on the last
     // line, and the same value wrapped in a terminal's color codes. Both must
-    // reach the secret byte for byte — a stray escape in a pushed token is a
+    // reach the secret byte for byte: a stray escape in a pushed token is a
     // cloud brief that fails to authenticate a month later.
     const ESC = '\u001b';
     for (const [shape, printed] of [
@@ -1193,7 +1229,7 @@ const run = async () => {
   });
 
   await test('a vendor-prefixed token wins over any other line in the output', () => {
-    // The prefixed shape is what the mint prints today, so it is read first —
+    // The prefixed shape is what the mint prints today, so it is read first,
     // asserted on the extraction itself, because a literal long enough to look
     // like the real thing has no business in a committed file.
     const world = mkWorld();
@@ -1221,10 +1257,10 @@ FAKEtrailingLINEthatIsLongEnough')"`);
   });
 
   await test('the cross-repo token is set zero-click from the gh login, with no prompt at all', () => {
-    // Owner ruling 2026-07-30: maximum automation. A piped run — no terminal to
-    // ask — still writes it, which is what "no prompt" means here. The name
+    // Owner ruling 2026-07-30: maximum automation. A piped run (no terminal to
+    // ask) still writes it, which is what "no prompt" means here. The name
     // CONTAINS `GITHUB_`, which the stub refuses only as a prefix the way the
-    // live API does — so a write that lands proves the name is a legal one.
+    // live API does, so a write that lands proves the name is a legal one.
     const world = mkHomeWorld({ secrets: [], authToken: LOGIN_TOKEN });
     const { kit, script } = mkKit(SLUG);
     const { out } = runCli(world, ['setup'], { script });
@@ -1236,17 +1272,17 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     cleanup(world.root); cleanup(kit);
   });
 
-  await test('only a name that STARTS with GITHUB_ is refused — the shipped one is accepted', () => {
+  await test('only a name that STARTS with GITHUB_ is refused: the shipped one is accepted', () => {
     // The rename in issue #91 rests on GitHub's actual rule, so it is asserted
     // against a stub that enforces that rule rather than against a comment: the
     // same push, twice, differing only in the secret's name.
     const world = mkHomeWorld({ authToken: LOGIN_TOKEN });
     const refused = inCli(world, `SECRET_HOME=GITHUB_TOKEN\npush_home_token ${HOME}`);
-    assert(/GITHUB_TOKEN could not be written/.test(refused.out), `a leading GITHUB_ is refused: ${refused.out}`);
+    assert(/GITHUB_TOKEN could not be written/.test(refused.said), `a leading GITHUB_ is refused: ${refused.said}`);
     assertEq(world.secretStdin('GITHUB_TOKEN'), undefined, 'and nothing was written under it');
 
     const shipped = inCli(world, `push_home_token ${HOME}`);
-    assert(/WORKKIT_GITHUB_TOKEN is set on/.test(shipped.out), `a name that merely contains it lands: ${shipped.out}`);
+    assert(/WORKKIT_GITHUB_TOKEN is set on/.test(shipped.said), `a name that merely contains it lands: ${shipped.said}`);
     assertEq(world.secretStdin('WORKKIT_GITHUB_TOKEN'), LOGIN_TOKEN, 'with the value on stdin');
     cleanup(world.root);
   });
@@ -1259,7 +1295,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     const { kit, script } = mkKit(SLUG);
     const { out } = runCli(world, ['setup'], { script });
     assert(!world.ghCalls().some((c) => isCall(c, 'secret', 'set')), `no secret is rewritten: ${fmtCalls(world.ghCalls())}`);
-    assert(!/✓/.test(out.split('\n').filter((l) => l.includes('secrets:')).join('\n')), `and a set-up machine acts on nothing, got: ${out}`);
+    assert(!/went from the mint|from this machine's gh login/.test(out), `and a set-up machine acts on nothing, got: ${out}`);
     cleanup(world.root); cleanup(kit);
   });
 
@@ -1286,8 +1322,8 @@ FAKEtrailingLINEthatIsLongEnough')"`);
   await test('the CLI’s whole screen reaches the terminal, and the capture file is gone by the end', () => {
     // The QA failure this fixes: the CLI draws its ENTIRE screen on stdout, so
     // a captured stdout left the human with a blank line where the paste
-    // prompt should be. Both halves of the screen are asserted — the one the
-    // stub draws on stdout and the one it draws on stderr — because under the
+    // prompt should be. Both halves of the screen are asserted (the one the
+    // stub draws on stdout and the one it draws on stderr) because under the
     // pty both are the same terminal.
     const world = mkMintWorld({ claudeToken: MINTED });
     const { out } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
@@ -1303,9 +1339,9 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     // printing a token, its status crosses the pty wrapper, and the run says so
     // rather than writing an empty secret.
     const world = mkMintWorld({ mintExit: 3 });
-    const { out } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
-    assert(/did not finish \(exit 3\)/.test(out), `the child's own status is reported, got: ${out}`);
-    assert(out.includes(`gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo ${HOME}`), 'with the command that does it by hand');
+    const { said } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
+    assert(/did not finish \(exit 3\)/.test(said), `the child's own status is reported, got: ${said}`);
+    assert(said.includes(`gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo ${HOME}`), 'with the command that does it by hand');
     assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), undefined, 'and nothing was written');
     assertEq(world.tmpFiles().join(','), '', 'and TMPDIR holds nothing afterwards');
     cleanup(world.root);
@@ -1318,7 +1354,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     // directory, so the check that fires is the one being tested.
     const world = mkHomeWorld({ secrets: [], claudeToken: MINTED });
     const { code, out } = inCli(world, `${AT_TERMINAL}\nPATH='${world.bin}'\noffer_claude_token ${HOME} 'is not set'`, { input: 'y\n' });
-    assertEq(code, 0, 'exit 0 — a machine that cannot mint is not a failed run');
+    assertEq(code, 0, 'exit 0: a machine that cannot mint is not a failed run');
     assert(/needs `expect` or `script`/.test(out), `it names both runners it is missing (#187), got: ${out}`);
     assert(out.includes('claude setup-token'), 'and hands over the mint');
     assert(out.includes(`gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo ${HOME}`), 'and the command that pushes it');
@@ -1329,7 +1365,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
 
   await test('a GNU/util-linux `script` is spoken in its own syntax, and its -e carries the status back', () => {
     // The other `script`. It takes the command in a different place, and only
-    // its `-e` returns the child's status — without it a mint that never ran
+    // its `-e` returns the child's status: without it a mint that never ran
     // would read as one that succeeded. This machine speaks the BSD syntax, so
     // the GNU one is pinned against a stub shaped like the real utility (it
     // answers `--version`, which BSD's refuses), the way the gh stub is shaped
@@ -1368,7 +1404,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
 
     const failed = mkMintWorld({ mintExit: 3 });
     gnuScript(failed);
-    const failedOut = inCli(failed, `${AT_TERMINAL}\ncmd_setup --token`).out;
+    const failedOut = inCli(failed, `${AT_TERMINAL}\ncmd_setup --token`).said;
     assert(/did not finish \(exit 3\)/.test(failedOut), `a mint that did not finish is seen through it, got: ${failedOut}`);
     assertEq(failed.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), undefined, 'and nothing was written');
     cleanup(failed.root);
@@ -1376,18 +1412,18 @@ FAKEtrailingLINEthatIsLongEnough')"`);
 
   group('workkit setup --token: the forced re-mint (issue #174)');
 
-  await test('a young secret is re-minted anyway — the flag IS the yes', () => {
+  await test('a young secret is re-minted anyway: the flag IS the yes', () => {
     // The token that goes bad while young (a lapsed subscription) is the case
     // the age check cannot see: three days old, and nothing about it is stale.
     // The terminal is the one thing this harness cannot hand a run, so the
-    // command is called with `interactive` answering yes; everything else —
-    // the flag, the parsing, the step — is the real thing.
+    // command is called with `interactive` answering yes; everything else
+    // (the flag, the parsing, the step) is the real thing.
     const world = mkHomeWorld({ secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }], claudeToken: MINTED });
     const { out, err } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
     const calls = world.ghCalls();
     assert(world.claudeCalls().some((c) => isCall(c, 'setup-token')), `the mint ran without being asked: ${fmtCalls(world.claudeCalls())}`);
     assert(calls.some((c) => isCall(c, 'secret', 'set', 'CLAUDE_CODE_OAUTH_TOKEN', '--repo', HOME)), `and the secret is written on the home repo: ${fmtCalls(calls)}`);
-    assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), MINTED, 'through stdin — a pipe, not an argument');
+    assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), MINTED, 'through stdin: a pipe, not an argument');
     assert(!workkitLines(out + err).includes(MINTED), `and no line workkit printed carries it, got: ${workkitLines(out + err)}`);
     assert(!/\[y\/N\]/.test(out), `no question is put, got: ${out}`);
     cleanup(world.root);
@@ -1450,10 +1486,10 @@ FAKEtrailingLINEthatIsLongEnough')"`);
   await test('update --auto warns about each missing value and prompts for none', () => {
     const world = mkHomeWorld({ secrets: [], authToken: LOGIN_TOKEN, claudeToken: MINTED, binOnPath: true });
     const { kit, script } = mkKit(SLUG);
-    const { code, out } = runCli(world, ['update', '--auto'], { script });
+    const { code, said } = runCli(world, ['update', '--auto'], { script });
     assertEq(code, 0, 'exit 0');
     for (const name of ['CLAUDE_CODE_OAUTH_TOKEN', 'WORKKIT_GITHUB_TOKEN']) {
-      assert(new RegExp(`secrets: ${name} is not set on ${HOME} — run \`workkit setup\``).test(out), `one line for ${name}, got: ${out}`);
+      assert(new RegExp(`secrets: ${name} is not set on ${HOME}; run \`workkit setup\``).test(said), `one line for ${name}, got: ${said}`);
     }
     assert(!world.claudeCalls().some((c) => isCall(c, 'setup-token')), 'the automatic path mints nothing');
     assert(!world.ghCalls().some((c) => isCall(c, 'secret', 'set')), `and writes nothing: ${fmtCalls(world.ghCalls())}`);
@@ -1499,10 +1535,12 @@ FAKEtrailingLINEthatIsLongEnough')"`);
       secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 400 }, { name: 'WORKKIT_GITHUB_TOKEN', days: 5 }],
     });
     const { kit, script } = mkKit(SLUG);
-    const { out } = runCli(world, ['doctor'], { script });
-    assert(new RegExp(`⚠.*CLAUDE_CODE_OAUTH_TOKEN on ${HOME} was set 40\\d days ago`).test(out), `the old one is a warning with its age, got: ${out}`);
-    assert(new RegExp(`✓.*WORKKIT_GITHUB_TOKEN is set on ${HOME} \\(5 days ago\\)`).test(out), `the fresh one is a check, got: ${out}`);
-    assert(/item\(s\) need attention/.test(out), 'the stale token is counted');
+    const { out, err, said } = runCli(world, ['doctor'], { script });
+    // The level is the STREAM now (issue #237): a warning is on stderr, and an
+    // ordinary report line is on stdout.
+    assert(new RegExp(`CLAUDE_CODE_OAUTH_TOKEN on ${HOME} was set 40\\d days ago`).test(err), `the old one is a warning with its age, got: ${err}`);
+    assert(new RegExp(`WORKKIT_GITHUB_TOKEN is set on ${HOME} \\(5 days ago\\)`).test(out), `the fresh one is a plain report line, got: ${out}`);
+    assert(/item\(s\) need attention/.test(said), 'the stale token is counted');
     cleanup(world.root); cleanup(kit);
   });
 
@@ -1541,13 +1579,13 @@ FAKEtrailingLINEthatIsLongEnough')"`);
 
   await test('a bare machine hears what is missing and how to fix each', () => {
     const world = mkWorld({ pluginInstalled: false, ghAuthed: false });
-    const { code, out } = runCli(world, ['doctor']);
-    assertEq(code, 0, 'a report is a report — exit 0');
-    assert(out.includes('plugin:') && out.includes('workkit setup'), `the plugin is missing, got: ${out}`);
-    assert(out.includes('gh auth login'), 'gh is not authenticated');
-    assert(out.includes('engine:'), 'the engine address is reported');
-    assert(out.includes('command:'), 'and the symlink');
-    assert(/\d+ item\(s\) need attention/.test(out), `it counts them, got: ${out}`);
+    const { code, said } = runCli(world, ['doctor']);
+    assertEq(code, 0, 'a report is a report: exit 0');
+    assert(said.includes('plugin:') && said.includes('workkit setup'), `the plugin is missing, got: ${said}`);
+    assert(said.includes('gh auth login'), 'gh is not authenticated');
+    assert(said.includes('engine:'), 'the engine address is reported');
+    assert(said.includes('command:'), 'and the symlink');
+    assert(/\d+ item\(s\) need attention/.test(said), `it counts them, got: ${said}`);
     cleanup(world.root);
   });
 
@@ -1567,15 +1605,15 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     // A heal of the repo is what puts it on the roster, so `doctor` has a real
     // count to read rather than a seeded one.
     runCli(world, ['enable', repo]);
-    const { out } = runCli(world, ['doctor'], { cwd: repo });
-    assert(/roster: 1 repo\(s\) registered/.test(out), `it counts the roster, got: ${out}`);
-    assert(/home: not set/.test(out) && out.includes('workkit setup'), `and says which command makes one, got: ${out}`);
+    const { said } = runCli(world, ['doctor'], { cwd: repo });
+    assert(/roster: 1 repo\(s\) registered/.test(said), `it counts the roster, got: ${said}`);
+    assert(/home: not set/.test(said) && said.includes('workkit setup'), `and says which command makes one, got: ${said}`);
 
     const settings = path.join(world.env.WORKFLOW_HOME, 'settings.json');
     const parsed = JSON.parse(fs.readFileSync(settings, 'utf8'));
     parsed.site = { ...(parsed.site || {}), repo: 'owner/private-home' };
     fs.writeFileSync(settings, JSON.stringify(parsed, null, 2));
-    const named = runCli(world, ['doctor'], { cwd: repo }).out;
+    const named = runCli(world, ['doctor'], { cwd: repo }).said;
     assert(/home: owner\/private-home/.test(named), `it reports the home repo once it is named, got: ${named}`);
     assert(/nothing is cloned at/.test(named), `and that the tower is not cloned yet, got: ${named}`);
     assert(/tower/.test(named), 'naming the path setup would clone it into');
@@ -1591,7 +1629,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
 
   await test('an empty roster reports as a notice, not as a green check', () => {
     // Zero registered means the tower, the board and the brief have nothing to
-    // read — the one count that must not read as everything being fine.
+    // read: the one count that must not read as everything being fine.
     const world = mkWorld({ pluginInstalled: true, binOnPath: true });
     fs.mkdirSync(world.env.WORKFLOW_HOME, { recursive: true });
     fs.writeFileSync(
@@ -1600,10 +1638,43 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     );
     const { out } = runCli(world, ['doctor']);
     const line = out.split('\n').find((l) => l.includes('roster:'));
-    assert(line && !/✓/.test(line), `no green check on an empty roster, got: ${line}`);
+    assert(line && !/repo\(s\) registered/.test(line), `an empty roster never reads as a count, got: ${line}`);
     assert(/fills as a session opens/.test(line), `and it says how it fills, got: ${line}`);
     cleanup(world.root);
   });
+
+  group('workkit-cli: the output contract (#237)');
+
+  // One shape for every line a person reads: a GLYPH for what happened, the
+  // message after it, and no timestamp or module tag anywhere on the line. A
+  // heading (a command's title, a section, the closing line) is the one other
+  // shape, and it opens with the emoji its caller chose. The commands below are
+  // the three a piped run can drive end to end with the stubs this suite
+  // already has; `setup` is left out because its prompts are not log lines (a
+  // prompt has no newline: the answer is typed on it).
+  const LEVEL = /^ {0,2}[✓·›⚠✖⏳] /;
+  const HEADING = /^[^\x00-\x7F]+ \S/;
+  const OLD_TAG = /\[\d\d:\d\d:\d\d\]|\[workkit:/;
+
+  for (const [name, args] of [['doctor', ['doctor']], ['update --auto', ['update', '--auto']], ['publish', ['publish']]]) {
+    await test(`${name} speaks the one line shape, a glyph per outcome`, () => {
+      const world = mkWorld({ pluginInstalled: true, binOnPath: true });
+      // ~/.local/bin exists here, so `update --auto` has the one thing it will
+      // actually DO in this world: a run that said nothing would pass every
+      // check below without meaning any of them.
+      fs.mkdirSync(world.localBin, { recursive: true });
+      const { out, err, said } = runCli(world, args);
+      assert(said.trim().length > 0, `${name} said something, got: ${JSON.stringify(said)}`);
+      assert(!OLD_TAG.test(said), `no timestamp and no module tag, got: ${JSON.stringify(said)}`);
+      for (const [stream, text] of [['stdout', out], ['stderr', err]]) {
+        for (const line of text.split('\n').filter(Boolean)) {
+          assert(LEVEL.test(line) || HEADING.test(line),
+            `every line on ${stream} is a glyph line or a heading, got: ${JSON.stringify(line)}`);
+        }
+      }
+      cleanup(world.root);
+    });
+  }
 
   group('workkit: the engine commands');
 
@@ -1612,7 +1683,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     const repo = mkRepo({ optIn: true });
     const { code, out } = runCli(world, ['note', 'fix', 'the', 'tower', 'poller'], { cwd: repo });
     assertEq(code, 0, 'exit 0');
-    assert(out.includes('noted →'), `the capture CLI answered, got: ${out}`);
+    assert(out.includes('✓ noted →'), `the capture CLI answered, got: ${out}`);
     assert(fs.readFileSync(path.join(repo, W, 'capture.md'), 'utf8').endsWith('- fix the tower poller\n'), 'one bullet, in the repo capture file');
     cleanup(world.root); cleanup(repo);
   });
@@ -1635,7 +1706,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     cleanup(world.root); cleanup(repo);
   });
 
-  // The heal a session makes once a day, asked for now — so the assertion is
+  // The heal a session makes once a day, asked for now, so the assertion is
   // that the pass RAN on the target, named or the one the shell stands in.
   await test('heal runs the standards pass on the repo, named or the current one', () => {
     const world = mkWorld();
@@ -1670,14 +1741,14 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     cleanup(world.root);
   });
 
-  await test('a refusal is loud here — a human asked for this one now', () => {
+  await test('a refusal is loud here: a human asked for this one now', () => {
     // The scheduled morning logs the same reason and exits 0; at a terminal
     // there is somebody to tell, so the command fails.
     const world = mkWorld({ secrets: [{ name: 'WORKKIT_GITHUB_TOKEN', days: 30 }] });
     seedSettings(world, { repo: 'owner/private-home', publish: false, url: null });
-    const { code, out } = runCli(world, ['brief']);
-    assertEq(code, 1, `exit 1, got: ${out}`);
-    assert(/does not carry CLAUDE_CODE_OAUTH_TOKEN/.test(out), `naming the reason: ${out}`);
+    const { code, said } = runCli(world, ['brief']);
+    assertEq(code, 1, `exit 1, got: ${said}`);
+    assert(/does not carry CLAUDE_CODE_OAUTH_TOKEN/.test(said), `naming the reason: ${said}`);
     assertEq(world.ghCalls().filter((c) => c[0] === 'workflow').length, 0, 'and no day went over');
     cleanup(world.root);
   });
@@ -1694,7 +1765,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     const { code } = runCli(world, ['brief', '--local'], { script });
     assertEq(code, 0, 'exit 0');
     assertEq(readArgv(morningLog).map((c) => c.join(' ')).join('; '), '--now',
-      'the rehearsal — composed here, publishing nothing');
+      'the rehearsal: composed here, publishing nothing');
     assertEq(world.ghCalls().filter((c) => c[0] === 'workflow').length, 0, 'and nothing was handed to a runner');
     cleanup(world.root); cleanup(kit);
   });
@@ -1722,7 +1793,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     assert(/^ {2}brief \[--local\]/m.test(out), `help lists it, got: ${out}`);
   });
 
-  await test('tower runs the whole tower — the start wrapper, with the checkout resolved', () => {
+  await test('tower runs the whole tower: the start wrapper, with the checkout resolved', () => {
     // The commands are injected the same way tower/start.sh's own suite does
     // it, so the CLI path is proven end-to-end without opening a port.
     const world = mkWorld();
@@ -1763,18 +1834,21 @@ FAKEtrailingLINEthatIsLongEnough')"`);
   // to a pipe may contain one: the standards hook relays `update --auto` into a
   // session's context, and the log files keep the rest.
   const ESCAPE = '\u001b';
-  const SETUP_SECTIONS = ['This machine', 'Home repo', 'Cloud brief secrets', 'Dashboard site', 'This repo'];
-  const DOCTOR_SECTIONS = ['This machine', 'Home repo', 'Cloud brief secrets', 'This repo'];
+  // Where a section title sits in a transcript: a blank line, then the title
+  // with its emoji (issue #237) and nothing else.
+  const sectionAt = (text, title) => text.search(new RegExp(`\n\n${title}\n`));
+  const SETUP_SECTIONS = ['💻 This machine', '🏠 Home repo', '🔑 Cloud brief secrets', '🌐 Dashboard site', '📁 This repo'];
+  const DOCTOR_SECTIONS = ['💻 This machine', '🏠 Home repo', '🔑 Cloud brief secrets', '📁 This repo'];
 
   await test('a piped run is grouped into titled sections and carries no color', () => {
     const world = mkWorld();
-    // A real TERM, so escape-free output here is the tty gate's doing — with no
+    // A real TERM, so escape-free output here is the tty gate's doing, with no
     // TERM at all bash reports `dumb` and the dumb-TERM check would pass this
     // test with the tty gate deleted.
     const { out } = runCli(world, ['doctor'], { env: { TERM: 'xterm-256color' } });
     assert(!out.includes(ESCAPE), `no escape sequence reaches a pipe, got: ${JSON.stringify(out)}`);
     for (const title of DOCTOR_SECTIONS) {
-      assert(out.includes(`\n\n${title}\n`), `"${title}" is a section, with a blank line before it, got: ${out}`);
+      assert(sectionAt(out, title) > -1, `"${title}" is a section, with a blank line before it, got: ${out}`);
     }
     cleanup(world.root);
   });
@@ -1785,7 +1859,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     const { out } = runCli(world, ['setup'], { script });
     let at = -1;
     for (const title of SETUP_SECTIONS) {
-      const next = out.indexOf(`\n\n${title}\n`);
+      const next = sectionAt(out, title);
       assert(next > at, `"${title}" comes after the section before it, got: ${out}`);
       at = next;
     }
@@ -1798,14 +1872,18 @@ FAKEtrailingLINEthatIsLongEnough')"`);
 
   await test('at a terminal the section headers are styled and the glyphs colored', () => {
     const world = mkWorld();
-    const { out } = runCli(world, ['doctor'], { env: AT_A_TERMINAL });
-    assert(out.includes(`\n\n${ESCAPE}[1m${ESCAPE}[0;36mThis machine${ESCAPE}[0m\n`), `the header is bold and colored, got: ${JSON.stringify(out)}`);
-    assert(out.includes(`${ESCAPE}[0;33m⚠${ESCAPE}[0m`), `a warning glyph is yellow, got: ${JSON.stringify(out)}`);
+    const { out, err } = runCli(world, ['doctor'], { env: AT_A_TERMINAL });
+    // The line shape, in color (issue #237): a section title in bold cyan, one
+    // blank line above it, its emoji riding along.
+    assert(out.includes(`\n\n${ESCAPE}[1m${ESCAPE}[0;36m💻 This machine${ESCAPE}[0m\n`),
+      `the header is bold and colored, got: ${JSON.stringify(out)}`);
+    // A warning wears its color on the glyph, the task and the message alike.
+    assert(err.includes(`${ESCAPE}[0;33m⚠${ESCAPE}[0m`), `a warning's glyph is yellow, got: ${JSON.stringify(err)}`);
     cleanup(world.root);
   });
 
   await test('a machine that asked for no color gets none, however it asked', () => {
-    // Each no is final — even against the seam that asked for color, because a
+    // Each no is final, even against the seam that asked for color, because a
     // machine saying NO_COLOR is answering for every tool on it.
     for (const [why, env] of [
       ['NO_COLOR is set', { ...AT_A_TERMINAL, NO_COLOR: '1' }],
@@ -1815,7 +1893,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
       const world = mkWorld();
       const { out } = runCli(world, ['doctor'], { env });
       assert(!out.includes(ESCAPE), `${why}: nothing is styled, got: ${JSON.stringify(out)}`);
-      assert(out.includes('\n\nThis machine\n'), `${why}: and the grouping is still there, got: ${out}`);
+      assert(sectionAt(out, '💻 This machine') > -1, `${why}: and the grouping is still there, got: ${out}`);
       cleanup(world.root);
     }
   });
@@ -1833,7 +1911,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
       for (const title of SETUP_SECTIONS) {
         assert(!out.includes(title), `no "${title}" header, got: ${out}`);
       }
-      assert(!out.includes('workkit update —'), `and no title line, got: ${out}`);
+      assert(!out.includes('workkit update in'), `and no title line, got: ${out}`);
       cleanup(world.root);
     }
   });

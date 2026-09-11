@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 //
-// The tower's API — one plain-Node process, zero dependencies.
+// The tower's API: one plain-Node process, zero dependencies.
 //
 // It serves JSON and nothing else: the dashboard is the OMEGA app under
 // tower/app, served by its own dev server, and it reads this API cross-origin.
@@ -8,8 +8,8 @@
 //
 // Every endpoint is a thin wrapper over a lib under tower/api/lib: the server
 // owns routing, caching and validation, and nothing else. It is a VIEW, so the
-// whole surface has exactly two write paths — `POST /api/intake`, which files an
-// issue, and `POST /api/issues/status`, which moves one along the pipeline — and
+// whole surface has exactly two write paths (`POST /api/intake`, which files an
+// issue, and `POST /api/issues/status`, which moves one along the pipeline) and
 // both write through the door everyone else uses, `gh`.
 //
 // Binding is 127.0.0.1 on purpose. The phone reaches the tower through
@@ -22,7 +22,7 @@
 // against an allowlist on EVERY request, and a request that carries an Origin
 // must carry one from that same allowlist. Because `tailscale serve` proxies
 // under the tailnet hostname, that hostname belongs in `TOWER_ALLOW_HOST`
-// (comma-separated) or `opts.allowHosts` — otherwise the phone sees a 403.
+// (comma-separated) or `opts.allowHosts`. Otherwise the phone sees a 403.
 //
 // CORS falls out of that one allowlist: an allowed origin is ECHOED back in
 // `Access-Control-Allow-Origin` (never `*`), and the preflight is answered for
@@ -54,6 +54,11 @@ const { buildBrief } = require('./lib/brief');
 const { briefSummaries } = require('./lib/summaries');
 const { readDiscussions, historyFrom, briefFreshness } = require('./lib/history');
 const { documentsFrom } = require('./lib/documents');
+const { createLogger } = require('./lib/log');
+
+// One voice for everything this process prints (issue #237): the same glyph
+// lines the shell half prints from workflow/lib.sh.
+const log = createLogger();
 
 // TOWER on a phone keypad is 86937; 8693 is what fits a port.
 const DEFAULT_PORT = 8693;
@@ -75,13 +80,24 @@ const BODY_MAX = 4000;
 const DEFAULT_BODY = 'Filed from the tower.';
 
 // The statuses an issue may be moved between, read from the label SSOT rather
-// than restated — the same file the sweep parses its vocabulary from. A require,
+// than restated, the same file the sweep parses its vocabulary from. A require,
 // so a tower whose vocabulary file is unreadable says so at start instead of
 // refusing every move at runtime for a reason nobody can see.
 const MOVE_STATUSES = Object.keys(require(LABELS_FILE).groups.status.values);
 
-// `owner/name` and nothing else. It is only the first gate — the slug still has
-// to be one the roster holds — but it is what keeps a value that is not even
+// The line that proves an item was built (docs/project-state.md, "The proof"):
+// any comment line may open with it, leading whitespace tolerated and nothing
+// else. This is the ONE place the API quotes it; its sibling on the shell side
+// is `hook_issue_has_proof` in hooks/_lib.sh, which matches the same pattern for
+// safety/proof-guard and safety/commit-gate. The two change together.
+const PROOF_LINE = /(^|\n)[ \t]*Proof:/;
+
+// The one status a move has to prove itself to reach. The board is the second
+// door into the gate the two hooks hold on the shell path.
+const PROOF_GATED = 'complete';
+
+// `owner/name` and nothing else. It is only the first gate (the slug still has
+// to be one the roster holds) but it is what keeps a value that is not even
 // shaped like a repository from reaching the roster comparison at all.
 const SLUG_SHAPE = /^[\w.-]+\/[\w.-]+$/;
 
@@ -94,7 +110,7 @@ const MAX_REQUEST_BYTES = 64 * 1024;
 // which rejects a bare `::1` but resolves `[::1]` to the form requests carry.
 const LOCAL_HOSTS = ['127.0.0.1', 'localhost', '[::1]'];
 
-// The checkout this process is RUNNING FROM — two levels up from tower/api.
+// The checkout this process is RUNNING FROM: two levels up from tower/api.
 // A node process holds the code it started with, so a tower left running past
 // a pull serves endpoints that no longer match the repo (issue #64 was exactly
 // that). Comparing this checkout's HEAD against the one captured at boot is
@@ -113,11 +129,11 @@ const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
  *
  * A FAILURE is never stored. `gh` being briefly unauthenticated, or a roster read
  * that threw, would otherwise pin its own error in front of every read for the
- * whole TTL — the tower would stay broken for a minute after the machine was
+ * whole TTL: the tower would stay broken for a minute after the machine was
  * fine again. Only an answer worth keeping takes the slot; everything else is
  * returned to this one caller and asked again next time.
  *
- * `fresh` bypasses the slot and repopulates it — the page's manual refresh
+ * `fresh` bypasses the slot and repopulates it: the page's manual refresh
  * button, which must be able to actually refresh.
  *
  * @param {number} ttl
@@ -147,7 +163,7 @@ const cached = (ttl, produce, keep = (value) => !(value && value.ok === false)) 
  * reads everything before an `@` as userinfo and drops it, so `evil.com@
  * localhost` would answer `localhost` and walk straight through an allowlist
  * that has never heard of evil.com. Neither header has a userinfo component to
- * begin with — RFC 7230 gives Host the grammar `host [":" port]` — so a value
+ * begin with (RFC 7230 gives Host the grammar `host [":" port]`) so a value
  * containing one is malformed, and the only safe reading of it is none.
  *
  * @param {string|undefined} value a Host header or an Origin URL
@@ -228,9 +244,9 @@ const readBody = (req) => new Promise((resolve, reject) => {
 
 /**
  * The JSON body of a write request, or nothing once the client has been told
- * why there is none. Both write paths read a body the same way, so the answer —
+ * why there is none. Both write paths read a body the same way, so the answer (
  * including the over-cap dance, where the response goes out before the socket
- * closes — is written once.
+ * closes) is written once.
  *
  * @param {import('http').IncomingMessage} req
  * @param {import('http').ServerResponse} res
@@ -334,7 +350,7 @@ const urlFrom = (stdout) => {
  * @param {string} [opts.home] overrides ~ for the libs that resolve it
  * @param {number} [opts.idleMinutes] the working/idle threshold
  * @param {string[]} [opts.allowHosts] extra hostnames this tower answers to
- * @param {Function} [opts.exec] (cmd, args) => stdout — the git/gh/ps seam
+ * @param {Function} [opts.exec] (cmd, args) => stdout: the git/gh/ps seam
  * @returns {import('http').Server}
  */
 const createServer = (opts = {}) => {
@@ -342,7 +358,7 @@ const createServer = (opts = {}) => {
   const seam = { exec };
   const hosts = allowedHosts(opts.allowHosts);
 
-  // A failed read answers null, which the cache refuses to store — distinct
+  // A failed read answers null, which the cache refuses to store, distinct
   // from a read that ran and found nothing, which is a real empty roster and
   // caches like any other answer. Callers see [] either way.
   const rosterOrNull = cached(ROSTER_TTL, () => {
@@ -363,14 +379,14 @@ const createServer = (opts = {}) => {
   // machine draws each page as it lands, the way a published copy does, so this
   // slot serves the sweep IN FLIGHT rather than holding the request until the
   // last page: the first pages are asked for inside the request that found the
-  // slot cold — which is what gives that answer something to draw — and the
+  // slot cold (which is what gives that answer something to draw) and the
   // continuations run on afterwards, a round to a turn of the event loop,
   // growing the snapshot the next poll reads. A repo still being paged carries
   // `loading: true`, which is the progress line; the finished board carries no
   // such mark, which is what clears it.
   //
-  // ONLY /api/board is served that way. Everything DERIVED from the board — the
-  // brief — reads `finishedBoard()` instead, because a morning composition made
+  // ONLY /api/board is served that way. Everything DERIVED from the board (the
+  // brief) reads `finishedBoard()` instead, because a morning composition made
   // from half a repo's issues is a wrong answer rather than an early one: it
   // takes the last finished board, and where none has finished it drives the
   // sweep to its end inside the request and waits, which is what the endpoint
@@ -379,7 +395,7 @@ const createServer = (opts = {}) => {
   // The CACHE's semantics survive around it: a finished board is served for the
   // TTL, `fresh` forces a new sweep, and only a finished board takes the slot,
   // so a failure is never pinned in front of the next read (cached() says why).
-  // A new sweep cannot blank the last finished board either — the request that
+  // A new sweep cannot blank the last finished board either: the request that
   // starts one is already holding its first pages by the time it answers.
   let boardDone;
   let boardAt = 0;
@@ -389,12 +405,12 @@ const createServer = (opts = {}) => {
     if (!sweeping) return;
     // The WHOLE round is guarded, not just the ask. This runs off the request
     // stack, where the request handler's own catch cannot reach it and an
-    // uncaught throw takes the process down with it — and the throw that did
+    // uncaught throw takes the process down with it, and the throw that did
     // (issue #202) came out of `board()`, the shaping of what had arrived,
     // rather than out of `step()`. The sweep answers its own failures rather
     // than throwing (lib/board.js), so anything landing here is a board this
     // process cannot finish: it is said out loud, dropped, and the slot stays
-    // cold, so the next read sweeps again — the course a failed sweep takes.
+    // cold, so the next read sweeps again, the course a failed sweep takes.
     try {
       sweeping.step();
       if (sweeping.paging()) {
@@ -405,13 +421,13 @@ const createServer = (opts = {}) => {
       boardAt = Date.now();
       sweeping = null;
     } catch (err) {
-      console.error(`[tower] the board sweep was dropped: ${String((err && err.message) || err)}`);
+      log.error(`the board sweep was dropped: ${String((err && err.message) || err)}`);
       sweeping = null;
     }
   };
 
-  // Unref'd: a sweep in flight must never be the reason this process — or a
-  // test's server — stays up a moment longer than it was asked to.
+  // Unref'd: a sweep in flight must never be the reason this process (or a
+  // test's server) stays up a moment longer than it was asked to.
   const schedule = () => {
     const timer = setTimeout(advance, 0);
     if (timer.unref) timer.unref();
@@ -442,7 +458,7 @@ const createServer = (opts = {}) => {
   };
 
   /**
-   * The whole board, never a page of it — what everything derived from the
+   * The whole board, never a page of it: what everything derived from the
    * board reads.
    *
    * A finished board inside the TTL is that answer, sweep in flight or not: it
@@ -483,7 +499,7 @@ const createServer = (opts = {}) => {
   // and the start time are captured once, here, because that is the only moment
   // that can honestly answer them; the live head is read like every other live
   // reading. Git being absent, or the checkout not being a repository, answers
-  // null on both sides — absence of proof is not staleness.
+  // null on both sides: absence of proof is not staleness.
   const startedAt = new Date().toISOString();
   const headNow = () => {
     try {
@@ -496,8 +512,8 @@ const createServer = (opts = {}) => {
   const currentHead = cached(LIVE_TTL, headNow, (value) => value !== null);
 
   // The per-repo map with one `meta` block beside it. FLAT rather than nested
-  // because every consumer of this endpoint reads a reading by repo path — an
-  // absolute path, so it can never be the string `meta` — and nesting would
+  // because every consumer of this endpoint reads a reading by repo path (an
+  // absolute path, so it can never be the string `meta`) and nesting would
   // move every one of them. The brief is built from `health()` itself, which
   // stays the map alone.
   const healthPayload = () => ({
@@ -505,7 +521,7 @@ const createServer = (opts = {}) => {
     meta: { bootCommit, startedAt, currentHead: currentHead() },
   });
 
-  // The published summaries the brief names — a GraphQL round trip like the
+  // The published summaries the brief names: a GraphQL round trip like the
   // board's, and cached on the board's minute rather than on the live slots'
   // five seconds: a page polling every ten would otherwise ask GitHub for
   // yesterday's summary six times a minute to hear the same answer all day.
@@ -520,7 +536,7 @@ const createServer = (opts = {}) => {
   // they are the same board and the same health, one derivation. The summaries
   // attach onto it exactly as the 9am job attaches them (jobs/brief-payload.js),
   // which is what keeps the two payloads one shape.
-  // The published Discussions themselves (issues #55, #181) — a second GraphQL
+  // The published Discussions themselves (issues #55, #181): a second GraphQL
   // round trip on the same board the summaries come from, and cached on the same
   // minute for the same reason. ONE read, because the three things drawn off it
   // are three readings of one board: the mornings BEFORE this one, which no
@@ -562,7 +578,7 @@ const createServer = (opts = {}) => {
     );
   };
 
-  /** The roster's slugs — what both write paths judge a repo against. */
+  /** The roster's slugs: what both write paths judge a repo against. */
   const slugsNow = () => roster().map((r) => r.slug).filter(Boolean);
 
   const intake = async (req, res) => {
@@ -588,7 +604,7 @@ const createServer = (opts = {}) => {
       ]);
     } catch (err) {
       // gh being absent, unauthenticated, or offline is an expected condition
-      // for a tower on a phone — the page renders the reason, not an error page.
+      // for a tower on a phone: the page renders the reason, not an error page.
       const detail = String(err.stderr || err.message || '').trim().split('\n').pop();
       sendJson(res, 200, { ok: false, reason: `gh issue create failed: ${detail}` });
       return;
@@ -613,6 +629,42 @@ const createServer = (opts = {}) => {
     if (!checked.ok) {
       sendJson(res, 400, checked);
       return;
+    }
+
+    // The proof gate (docs/project-state.md, "The proof"), which the board is
+    // the second door into: safety/proof-guard holds the shell's `gh issue
+    // edit`, and this holds the drag. It sits here rather than in validateMove
+    // because it is a READ - that function is pure and never reaches `gh` - and
+    // only a move to complete pays for it.
+    if (checked.to === PROOF_GATED) {
+      let comments;
+      try {
+        const view = exec('gh', [
+          'issue', 'view', String(checked.number),
+          '--repo', checked.repo,
+          '--json', 'comments',
+        ]);
+        comments = JSON.parse(view).comments;
+      } catch (err) {
+        // Unreadable is a REFUSAL, never a pass: a gate that cannot ask the
+        // question must not answer it yes. Soft-failed like the write below, so
+        // the page reverts the card and shows the sentence.
+        const detail = String(err.stderr || err.message || '').trim().split('\n').pop();
+        sendJson(res, 200, {
+          ok: false,
+          reason: `the proof on issue #${checked.number} could not be read (${detail}), so the move to status:complete was refused. Nothing was changed.`,
+        });
+        return;
+      }
+      const proved = Array.isArray(comments)
+        && comments.some((comment) => PROOF_LINE.test(String((comment && comment.body) || '')));
+      if (!proved) {
+        sendJson(res, 200, {
+          ok: false,
+          reason: `issue #${checked.number} carries no comment whose line starts with "Proof:", so it cannot move to status:complete. Park it with a Proof: comment first, one entry per layer, then move the card.`,
+        });
+        return;
+      }
     }
 
     try {
@@ -655,7 +707,7 @@ const createServer = (opts = {}) => {
     // One origin gate for the whole surface. A browser sends Origin on every
     // cross-origin request and on same-origin writes; an absent Origin is a
     // non-browser client, which the Host check has already judged. A page this
-    // tower does not answer to gets a 403 — no header, and no data either.
+    // tower does not answer to gets a 403: no header, and no data either.
     const origin = req.headers.origin;
     const allowOrigin = corsOrigin(origin, hosts);
     if (origin && !allowOrigin) {
@@ -671,8 +723,8 @@ const createServer = (opts = {}) => {
 
     // The preflight the page's POSTs trigger: a cross-origin JSON body is never
     // a simple request, so the browser asks first. One answer covers both write
-    // paths — it is about the method and the headers, not the path. Only a
-    // request that carries an allowed Origin is answered — a preflight without
+    // paths: it is about the method and the headers, not the path. Only a
+    // request that carries an allowed Origin is answered: a preflight without
     // one is not a browser asking permission, and falls through to the method
     // check like any other unsupported verb.
     if (req.method === 'OPTIONS' && allowOrigin) {
@@ -734,7 +786,7 @@ const createServer = (opts = {}) => {
       handle(req, res);
     } catch (err) {
       const reason = String((err && err.message) || err);
-      console.error(`[tower] ${req.method} ${req.url} failed: ${reason}`);
+      log.error(`${req.method} ${req.url} failed: ${reason}`);
       if (res.headersSent) res.end();
       else sendJson(res, 500, { ok: false, reason });
     }
@@ -761,7 +813,6 @@ if (require.main === module) {
   const port = Number(process.env.TOWER_PORT) || DEFAULT_PORT;
   const bind = process.env.TOWER_BIND || DEFAULT_BIND;
   createServer().listen(port, bind, () => {
-    // eslint-disable-next-line no-console
-    console.log(`tower listening on http://${bind}:${port}`);
+    log.ok(`listening on http://${bind}:${port}`);
   });
 }

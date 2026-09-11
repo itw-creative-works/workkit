@@ -1,4 +1,4 @@
-// manager/profile hook — the MANAGER standing instruction, injected only in
+// manager/profile hook: the MANAGER standing instruction, injected only in
 // manager-capable sessions (frontier/workhorse tier, or unknown).
 const path = require('path');
 const os = require('os');
@@ -98,7 +98,7 @@ const run = async () => {
     assert(contextOf(out).includes('MANAGER'), 'unknown tier should still inject');
   });
   for (const rung of ['sonnet', 'haiku']) {
-    await test(`${rung} session is solo — no output at all`, () => {
+    await test(`${rung} session is solo: no output at all`, () => {
       freshTmp();
       cacheSession('sess1', id(rung));
       const out = runHook(payload());
@@ -136,9 +136,9 @@ const run = async () => {
       freshTmp();
       cacheSession('sess1', id(rung));
       const ctx = contextOf(runHook(payload()));
-      assert(ctx.includes('Keep a visible checklist with the todo tool for any multi-step task — current item in progress, updated as steps start and finish, pruned when stale.'),
+      assert(ctx.includes('Keep a visible checklist with the todo tool for any multi-step task: current item in progress, updated as steps start and finish, pruned when stale.'),
         `${rung}: the checklist rule is missing`);
-      assert(ctx.includes('Announce every crew spawn in chat as you make it — class, model per the ladder, one-line mandate — and report what it returned when it finishes.'),
+      assert(ctx.includes('Announce every crew spawn in chat as you make it (class, model per the ladder, one-line mandate) and report what it returned when it finishes.'),
         `${rung}: the spawn-narration rule is missing`);
     }
   });
@@ -152,7 +152,7 @@ const run = async () => {
   });
   await test('the injection stays under 1100 characters on both rungs (cap raised for the #221 cold-reader line)', () => {
     // The workhorse branch is the longer one (its advisor clause), so the cap
-    // must be proven per rung — the frontier ctx alone leaves untested headroom.
+    // must be proven per rung: the frontier ctx alone leaves untested headroom.
     // The cap moved from 600 with the two visibility rules (#154); it is still
     // a cap, so the next clause has to earn its place against it.
     for (const rung of ['fable', 'opus']) {

@@ -2835,8 +2835,13 @@ const run = async () => {
     assertEq(landing.rewrites.length, 1, 'and the address bar is rewritten exactly once');
     assertEq(landing.rewrites[0], '/settings?repo=a,b', 'to the path and the query alone - the fragment is gone, the selection survives');
 
+    // Setup itself never sends one of these: `handover_token` REFUSES a token
+    // outside `[A-Za-z0-9_-]` rather than escaping it (workflow/workkit.sh, and
+    // `a token that would need escaping is refused, never escaped` proves it).
+    // The decode is the guard on this side of that contract.
     const encoded = mkLanding('#token=gho_a%2Fb');
-    assertEq(github.takeTokenFromHash(encoded), 'gho_a/b', 'a value the shell encoded is decoded on the way in');
+    assertEq(github.takeTokenFromHash(encoded), 'gho_a/b',
+      'an encoded value is decoded on the way in: the shell refuses a token that would need escaping rather than sending one, so the decode is this side\'s own guard');
     assertEq(encoded.rewrites[0], '/settings', 'and a page with no query is stripped to its path');
   });
 
@@ -3940,6 +3945,76 @@ const run = async () => {
     assert(serverSrc.includes('the issue is already status:'), 'and so is the refusal of a move that is not one');
   });
 
+  // The proof gate on the drag (issue #236): Complete is the one column a card
+  // has to prove itself into, and the published copy holds the same gate the
+  // endpoint and the two hooks hold - refused in the browser, before the PATCH.
+  const COMMENTS_URL = 'https://api.github.com/repos/o/r/issues/48/comments?per_page=100';
+
+  await test('a move to Complete reads the issue’s comments first, and is refused without a Proof: line', async () => {
+    const fetchImpl = mkFetch((url) => (url === COMMENTS_URL
+      ? jsonResponse(200, [{ body: 'looks good' }, { body: 'proof: lowercase is not the line' }])
+      : jsonResponse(200, { number: 48, labels: [{ name: 'status:qa' }] })));
+    const answer = await github.moveIssueStatus({
+      repo: 'o/r', number: 48, from: 'qa', to: 'complete',
+    }, { token: 'fake-token-for-tests', fetch: fetchImpl });
+
+    assertEq(fetchImpl.calls.length, 1, 'the comments were read and nothing else was - no read of the issue, no PATCH');
+    assertEq(fetchImpl.calls[0].url, COMMENTS_URL, 'one page of comments is the whole read');
+    assertEq(answer.ok, false, 'the move was refused in the browser');
+    assert(/no comment whose line starts with "Proof:"/.test(answer.reason), `naming what is missing, got: ${answer.reason}`);
+    assert(/Park it with a Proof: comment first/.test(answer.reason), 'and the fix that exists');
+
+    // A read that FAILS is a refusal too, never a pass: the gate cannot ask.
+    const blind = mkFetch(jsonResponse(404, { message: 'Not Found' }));
+    const unreadable = await github.moveIssueStatus({
+      repo: 'o/r', number: 48, from: 'qa', to: 'complete',
+    }, { token: 't', fetch: blind });
+    assertEq(blind.calls.length, 1, 'and it stopped there');
+    assert(/could not be read/.test(unreadable.reason), `saying the proof could not be read, got: ${unreadable.reason}`);
+
+    // The sentence and the pattern are the endpoint's, across the copy boundary.
+    assert(serverSrc.includes('carries no comment whose line starts with "Proof:"'), 'the refusal is the endpoint’s own sentence');
+    assert(serverSrc.includes('/(^|\\n)[ \\t]*Proof:/'), 'and the line it looks for is the endpoint’s own pattern');
+    // The same pattern has a third home on the shell side, and the gated status
+    // is a vocabulary word: both pinned, so a change to either cannot leave the
+    // board and the hooks disagreeing with every test green (#236).
+    const fs = require('fs');
+    const libSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'hooks', '_lib.sh'), 'utf8');
+    assert(libSrc.includes('(^|\\n)[ \\t]*Proof:'), 'hooks/_lib.sh looks for the same line');
+    const statusWords = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'workflow', 'labels.json'), 'utf8')).groups.status.values);
+    assert(statusWords.includes('complete'), 'and the gated status is one the vocabulary names');
+  });
+
+  await test('a Proof: line opening any line of any comment lets that same move through', async () => {
+    const fetchImpl = mkFetch((url, options) => {
+      if (url === COMMENTS_URL) return jsonResponse(200, [{ body: 'parked at qa.\n  Proof:\n- unit: node tests/tower/app.test.js' }]);
+      return (options && options.method) === 'PATCH'
+        ? jsonResponse(200, { number: 48 })
+        : jsonResponse(200, { number: 48, labels: [{ name: 'status:qa' }, { name: 'type:bug' }] });
+    });
+    const answer = await github.moveIssueStatus({
+      repo: 'o/r', number: 48, from: 'qa', to: 'complete',
+    }, { token: 'fake-token-for-tests', fetch: fetchImpl });
+
+    assertEq(fetchImpl.calls.length, 3, 'the proof, then the labels the issue carries now, then the one write');
+    assertEq(fetchImpl.calls[2].options.method, 'PATCH', 'the write the gate let through');
+    assertEq(JSON.parse(fetchImpl.calls[2].options.body).labels.join(','), 'type:bug,status:complete', 'landing on Complete with its other labels intact');
+    assertEq(answer.ok, true, 'and the move landed');
+    assertEq(answer.data.status, 'complete', 'on the column it was dropped on');
+  });
+
+  await test('a move to any other column reads no comments at all', async () => {
+    const fetchImpl = mkFetch((url, options) => ((options && options.method) === 'PATCH'
+      ? jsonResponse(200, { number: 48 })
+      : jsonResponse(200, { number: 48, labels: [{ name: 'status:inbox' }] })));
+    const answer = await github.moveIssueStatus({
+      repo: 'o/r', number: 48, from: 'inbox', to: 'specced',
+    }, { token: 't', fetch: fetchImpl });
+    assertEq(answer.ok, true, 'moved');
+    assertEq(fetchImpl.calls.length, 2, 'the read and the write, as before the gate existed');
+    assert(!fetchImpl.calls.some((call) => call.url.includes('/comments')), 'only the flip to Complete pays for the proof read');
+  });
+
   await test('intake files the issue the endpoint files - same labels, same default body', async () => {
     const fetchImpl = mkSiteFetch({ repos: ['owner/workkit'], home: 'owner/workkit' },
       { html_url: 'https://github.com/owner/workkit/issues/12' });
@@ -4081,8 +4156,14 @@ const run = async () => {
     // two cannot be read by one at all (#167) - the page says which token can.
     assert(markup.includes('classic token with the repo scope'), 'the other kind is named');
     assert(/two owners/.test(markup), 'with the one case that requires it');
-    assert(markup.includes(`href="${format.esc(github.TOKEN_CLASSIC_URL)}"`), 'and a link that makes one with the scope already ticked');
+    // ONE create button on the page and it is the token card's (#241): the
+    // classic URL rides the words that name that token, inside the sentence,
+    // rather than a second button that reads as a mistake.
+    const classicLink = `<a href="${format.esc(github.TOKEN_CLASSIC_URL)}" target="_blank" rel="noopener">a classic token with the repo scope</a>`;
+    assert(markup.includes(`${classicLink} works too`), 'the link that makes one with the scope already ticked sits on the words that name it');
     assert(github.TOKEN_CLASSIC_URL.includes('scopes=repo'), 'which is the repo scope and nothing wider');
+    assert(!/btn/.test(markup), 'and this card carries no button at all - the token card above has the one');
+    assertEq((markup.match(/<a /g) || []).length, 1, 'that inline link being the only one here');
   });
 
   await test('a copy with a TOWER behind it is told the token is not its credential', () => {
@@ -4193,7 +4274,7 @@ const run = async () => {
     // the admin chain’s `authenticated` policy silently won. The pin is on
     // the exact key path, so the next rename fails here instead of on screen.
     // It rides under `config:`, the one place a page or layout overrides
-    // omega.json5 — a config section restated BARE fails the build outright.
+    // omega.json5. A config section restated BARE fails the build outright.
     const layout = fs.readFileSync(path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src',
       '_layouts', 'tower', 'page.html'), 'utf8');
     assert(/^config:$/m.test(layout), 'the override sits under the config namespace');
@@ -4267,6 +4348,11 @@ const run = async () => {
       'it draws the card from what this browser holds and from any refusal the runtime carried');
     assert(/mountTokenCard\(root\)/.test(module), 'and wires it after the write');
     assert(/LIVE \? towerTokenNote\(\) : ''/.test(module), 'a copy with a tower behind it is told the token is not its credential');
+    // The two cards sit on ONE row, a column each, and stack below the lg
+    // breakpoint the way every other pair on the dashboard does (#241).
+    assert(/<div class="row g-4">/.test(module), 'the two cards share a row');
+    assert(/<div class="col-12 col-xl-6">\$\{tokenCard\(/.test(module), 'the token card takes half of it');
+    assert(/<div class="col-12 col-xl-6">\$\{tokenGuidance\(\)\}<\/div>/.test(module), 'and what the token needs takes the other half');
     assert(/feeds: \['repos'\]/.test(module), 'the one feed it arms is the roster the sidebar’s selector is filled from');
   });
 

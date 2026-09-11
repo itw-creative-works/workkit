@@ -1,4 +1,4 @@
-// Hooks index parity — the WIRING in hooks/hooks.json is the roster, and the two
+// Hooks index parity: the WIRING in hooks/hooks.json is the roster, and the two
 // places a reader meets it are pinned to it in both directions: docs/hooks.md's
 // index table and detail sections, and the spelled-out count in AGENTS.md
 // § Hooks. A hook wired without its row, a row left behind by one that went
@@ -21,7 +21,7 @@ const COUNT_WORDS = {
 };
 
 // The section of a markdown file under one heading, up to the next heading of
-// the same or a higher level — the parity checks read one section each rather
+// the same or a higher level. The parity checks read one section each rather
 // than the whole file, so a name mentioned in prose elsewhere cannot stand in
 // for its row.
 const section = (file, heading) => {
@@ -64,7 +64,7 @@ const run = async () => {
 
   await test('the detail sections are exactly the wired hooks', () => {
     // Keyed on the BACKTICKED name, which is what keeps the file's two prose
-    // headings — `## The index` and `## How they are wired` — out of the set.
+    // headings (`## The index` and `## How they are wired`) out of the set.
     const text = fs.readFileSync(HOOKS_DOC, 'utf8');
     const headings = [...text.matchAll(/^## `([^`]+)`/gm)].map((m) => m[1]).sort();
     assertEq(headings.join(','), wiredHooks().join(','), "docs/hooks.md's detail sections");

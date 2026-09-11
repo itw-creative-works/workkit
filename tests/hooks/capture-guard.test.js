@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 //
-// Tests for hooks/safety/capture-guard — the PreToolUse hook that keeps
+// Tests for hooks/safety/capture-guard: the PreToolUse hook that keeps
 // .workkit/capture.md the owner's capture surface: its CONTENTS are read, and
 // its drained entries cleared, only during a triage run, which the
 // workkit:triage skill announces by touching a marker. A missing or stale
@@ -25,12 +25,12 @@ fs.mkdirSync(path.join(REPO, W, 'agents'), { recursive: true });
 fs.writeFileSync(path.join(REPO, W, 'capture.md'), '# capture\n\n- a private thought\n');
 fs.writeFileSync(path.join(REPO, W, 'agents', 'session.md'), '# Session\n');
 
-// The repo root as GIT reports it — on macOS the temp dir is reached through a
+// The repo root as GIT reports it: on macOS the temp dir is reached through a
 // symlink, and the marker's name is the sha of the PHYSICAL path.
 const REPO_ROOT = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: REPO, encoding: 'utf8' })
   .stdout.trim();
 const MARKER_DIR = path.join(TMP, 'claude-triage-marker');
-// The marker's name is the sha of the ANCHOR — the capture file's repo root, or the
+// The marker's name is the sha of the ANCHOR: the capture file's repo root, or the
 // .workkit directory's own parent outside a repo.
 const markerFor = (anchor) => path.join(
   MARKER_DIR,
@@ -39,7 +39,7 @@ const markerFor = (anchor) => path.join(
 const MARKER = markerFor(REPO_ROOT);
 const CAPTURE = path.join(REPO, W, 'capture.md');
 
-// The user-level capture file — a stray ~/.workkit/capture.md made by hand.
+// The user-level capture file: a stray ~/.workkit/capture.md made by hand.
 // wk.sh never writes there (outside a repo it files on the home repo), but the
 // guard gates it anyway. $HOME is not a git repo, so the anchor is $HOME itself.
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-guard-home-'));
@@ -79,7 +79,7 @@ const write = (file) => runHook({ tool_name: 'Write', tool_input: { file_path: f
 const run = async () => {
   group('capture-guard: the Read path');
 
-  await test('reading the capture file with no marker — exit 2, names the rule and the skill', () => {
+  await test('reading the capture file with no marker: exit 2, names the rule and the skill', () => {
     clearMarker();
     const { code, stderr } = read(CAPTURE);
     assertEq(code, 2, 'an unannounced read must block');
@@ -88,23 +88,23 @@ const run = async () => {
     assert(stderr.includes('capture surface'), 'states the rule');
   });
 
-  await test('reading the capture file with a fresh marker — exit 0', () => {
+  await test('reading the capture file with a fresh marker: exit 0', () => {
     touchMarker();
     const { code, stderr } = read(CAPTURE);
     assertEq(code, 0, `a triage run reads freely, got: ${stderr}`);
   });
 
-  await test('a marker 31 minutes old — exit 2', () => {
+  await test('a marker 31 minutes old: exit 2', () => {
     touchMarker(31 * 60);
     assertEq(read(CAPTURE).code, 2, 'a stale marker is not a triage run');
   });
 
-  await test('a relative capture path is gated too — exit 2', () => {
+  await test('a relative capture path is gated too: exit 2', () => {
     clearMarker();
     assertEq(read(`${W}/capture.md`).code, 2, 'the path is matched by suffix, not by shape');
   });
 
-  await test('any other file — exit 0', () => {
+  await test('any other file: exit 0', () => {
     clearMarker();
     for (const f of [
       path.join(REPO, W, 'agents', 'session.md'),
@@ -118,7 +118,7 @@ const run = async () => {
 
   group('capture-guard: the Bash path');
 
-  await test('a content-reading command — exit 2', () => {
+  await test('a content-reading command: exit 2', () => {
     clearMarker();
     for (const c of [
       `cat ${W}/capture.md`,
@@ -132,13 +132,13 @@ const run = async () => {
     }
   });
 
-  await test('a fresh marker opens the Bash path too — exit 0', () => {
+  await test('a fresh marker opens the Bash path too: exit 0', () => {
     touchMarker();
     const { code, stderr } = bash(`cat ${W}/capture.md`);
     assertEq(code, 0, `a triage run reads freely, got: ${stderr}`);
   });
 
-  await test('counting the entries — exit 0', () => {
+  await test('counting the entries: exit 0', () => {
     clearMarker();
     for (const c of [`wc -l ${W}/capture.md`, `wc -l < ${W}/capture.md`]) {
       const { code, stderr } = bash(c);
@@ -146,25 +146,25 @@ const run = async () => {
     }
   });
 
-  await test('a command naming another file — exit 0', () => {
+  await test('a command naming another file: exit 0', () => {
     clearMarker();
     assertEq(bash(`cat ${W}/agents/session.md`).code, 0, 'only the capture file is gated');
   });
 
   // The two halves of the path need not be contiguous: a `cd` into .workkit
   // leaves the file named on its own, and that is the same read.
-  await test('a read split across a cd — exit 2', () => {
+  await test('a read split across a cd: exit 2', () => {
     clearMarker();
     assertEq(bash(`cd ${W} && cat capture.md`).code, 2, 'the cd names the directory the read names the file');
   });
 
-  await test('a split command that only counts — exit 0', () => {
+  await test('a split command that only counts: exit 0', () => {
     clearMarker();
     const { code, stderr } = bash(`cd ${W} && wc -l capture.md`);
     assertEq(code, 0, `counts stay open however they are spelled, got: ${stderr}`);
   });
 
-  await test('an capture.md with no .workkit anywhere — exit 0', () => {
+  await test('an capture.md with no .workkit anywhere: exit 0', () => {
     clearMarker();
     for (const c of ['echo x >> notes/capture.md', 'cat notes/capture.md']) {
       const { code, stderr } = bash(c);
@@ -176,20 +176,20 @@ const run = async () => {
 
   // The drain is the one write the file takes from an agent, so Edit/Write
   // ride the same marker the reads do.
-  await test('editing or writing the capture file with no marker — exit 2', () => {
+  await test('editing or writing the capture file with no marker: exit 2', () => {
     clearMarker();
     for (const call of [() => edit(CAPTURE), () => write(CAPTURE), () => edit(`${W}/capture.md`)]) {
       const { code, stderr } = call();
       assertEq(code, 2, 'an unannounced write must block');
       assert(stderr.includes('capture-guard'), 'names itself');
       assert(stderr.includes('triage'), 'names the sanctioned path');
-      // The branch is the rewrite gate, so the refusal names the rewrite —
+      // The branch is the rewrite gate, so the refusal names the rewrite:
       // the append rule is a different act and a different message.
       assert(stderr.includes('BLOCKED rewriting'), 'the message matches the act');
     }
   });
 
-  await test('editing or writing it with a fresh marker — exit 0', () => {
+  await test('editing or writing it with a fresh marker: exit 0', () => {
     touchMarker();
     for (const call of [() => edit(CAPTURE), () => write(CAPTURE)]) {
       const { code, stderr } = call();
@@ -197,7 +197,7 @@ const run = async () => {
     }
   });
 
-  await test('writing another file in .workkit/ — exit 0', () => {
+  await test('writing another file in .workkit/: exit 0', () => {
     clearMarker();
     assertEq(write(path.join(REPO, W, 'agents', 'session.md')).code, 0, 'only the capture file is gated');
   });
@@ -205,8 +205,8 @@ const run = async () => {
   group('capture-guard: the agent never adds to the capture file');
 
   // Owner ruling, 2026-08-05: clear it on triage, never add to it. No marker
-  // opens an append — the marker means a DRAIN is running, not a capture.
-  await test('an append into the capture file — exit 2 with and without a marker', () => {
+  // opens an append: the marker means a DRAIN is running, not a capture.
+  await test('an append into the capture file: exit 2 with and without a marker', () => {
     const appends = [
       `echo "- a thought" >> ${W}/capture.md`,
       `echo "- a thought" >>${W}/capture.md`,
@@ -226,7 +226,7 @@ const run = async () => {
     }
   });
 
-  await test('the capture CLI run by the agent — exit 2 with and without a marker', () => {
+  await test('the capture CLI run by the agent: exit 2 with and without a marker', () => {
     const captures = [
       'bash ~/.claude/workkit/wk.sh note "a thought"',
       'workkit note "a thought"',
@@ -247,7 +247,7 @@ const run = async () => {
 
   // The CLI is caught where it is RUN, not where it is mentioned: prose about
   // capture in an issue body, and a search for it, touch no capture file.
-  await test('the capture CLI merely named — exit 0', () => {
+  await test('the capture CLI merely named: exit 0', () => {
     clearMarker();
     for (const c of [
       `gh issue create --body 'the owner runs wk.sh note "x" to capture'`,
@@ -259,7 +259,7 @@ const run = async () => {
     }
   });
 
-  await test('a rewrite of the capture file — marker-gated like a read', () => {
+  await test('a rewrite of the capture file: marker-gated like a read', () => {
     const rewrites = [
       `echo x > ${W}/capture.md`,
       `echo x | tee ${W}/capture.md`,
@@ -277,7 +277,7 @@ const run = async () => {
     }
   });
 
-  await test('a command redirecting elsewhere while naming the capture file — exit 0', () => {
+  await test('a command redirecting elsewhere while naming the capture file: exit 0', () => {
     clearMarker();
     for (const c of [
       `echo "${W}/capture.md" > /dev/null`,
@@ -292,7 +292,7 @@ const run = async () => {
   // tee, sed -i and perl -i are judged by their OWN argument: a pipeline whose
   // writer points at another file writes to that file, whatever the command
   // line mentions elsewhere.
-  await test('a writer keyword pointed at another file — exit 0', () => {
+  await test('a writer keyword pointed at another file: exit 0', () => {
     clearMarker();
     for (const c of [
       `wc -l ${W}/capture.md | tee -a /tmp/log`,
@@ -306,7 +306,7 @@ const run = async () => {
     }
   });
 
-  await test('the same keywords pointed AT the capture file — still gated', () => {
+  await test('the same keywords pointed AT the capture file: still gated', () => {
     clearMarker();
     assertEq(bash(`tee -a ${W}/capture.md`).code, 2, 'an append is never the agent\'s');
     assertEq(bash(`sed -i '' s/a/b/ ${W}/capture.md`).code, 2, 'a rewrite needs the marker');
@@ -317,7 +317,7 @@ const run = async () => {
 
   group('capture-guard: the Grep path');
 
-  await test('a Grep whose path IS the capture file — exit 2', () => {
+  await test('a Grep whose path IS the capture file: exit 2', () => {
     clearMarker();
     for (const input of [
       { pattern: 'salary', path: CAPTURE, output_mode: 'content' },
@@ -330,26 +330,26 @@ const run = async () => {
     }
   });
 
-  await test('a Grep whose path is the .workkit directory — exit 2', () => {
+  await test('a Grep whose path is the .workkit directory: exit 2', () => {
     clearMarker();
     for (const p of [path.join(REPO, W), W]) {
       assertEq(grep({ pattern: 'salary', path: p }).code, 2, `must block: ${p}`);
     }
   });
 
-  await test('a glob spelling the capture file out — exit 2', () => {
+  await test('a glob spelling the capture file out: exit 2', () => {
     clearMarker();
     assertEq(grep({ pattern: 'salary', path: REPO, glob: '**/capture.md' }).code, 2,
       'the glob names the file, so the search is pointed at it');
   });
 
-  await test('a fresh marker opens the Grep path too — exit 0', () => {
+  await test('a fresh marker opens the Grep path too: exit 0', () => {
     touchMarker();
     const { code, stderr } = grep({ pattern: 'salary', path: CAPTURE, output_mode: 'content' });
     assertEq(code, 0, `a triage run reads freely, got: ${stderr}`);
   });
 
-  await test('a broad repo-wide Grep — exit 0', () => {
+  await test('a broad repo-wide Grep: exit 0', () => {
     clearMarker();
     for (const input of [
       { pattern: 'salary', path: REPO, output_mode: 'content' },
@@ -362,7 +362,7 @@ const run = async () => {
     }
   });
 
-  await test('a .workkit Grep narrowed away from the capture file by its glob — exit 0', () => {
+  await test('a .workkit Grep narrowed away from the capture file by its glob: exit 0', () => {
     clearMarker();
     for (const input of [
       { pattern: 'salary', path: path.join(REPO, W), glob: 'agents/session.md' },
@@ -373,20 +373,20 @@ const run = async () => {
     }
   });
 
-  await test('a glob merely mentioning capture is still pointed at it — exit 2', () => {
+  await test('a glob merely mentioning capture is still pointed at it: exit 2', () => {
     clearMarker();
     assertEq(grep({ pattern: 'salary', path: REPO, glob: '*capture*' }).code, 2,
       'the glob names the capture file, however it spells it');
   });
 
-  await test('a trailing slash does not slip the Grep gate — exit 2', () => {
+  await test('a trailing slash does not slip the Grep gate: exit 2', () => {
     clearMarker();
     for (const p of [`${path.join(REPO, W)}/`, `${CAPTURE}/`]) {
       assertEq(grep({ pattern: 'salary', path: p }).code, 2, `must block: ${p}`);
     }
   });
 
-  await test('a .workkit Grep where no capture file exists — exit 0', () => {
+  await test('a .workkit Grep where no capture file exists: exit 0', () => {
     clearMarker();
     const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-guard-bare-'));
     spawnSync('git', ['init', '-q'], { cwd: bare });
@@ -400,22 +400,22 @@ const run = async () => {
   group('capture-guard: the user-level capture file');
 
   // A hand-made ~/.workkit/capture.md sits in no repo, and $HOME is not a git
-  // repo — keyed to a repo root alone, this file was read ungated.
-  await test('reading the user capture file with no marker — exit 2', () => {
+  // repo: keyed to a repo root alone, this file was read ungated.
+  await test('reading the user capture file with no marker: exit 2', () => {
     clearMarker(HOME_MARKER);
     const { code, stderr } = read(HOME_CAPTURE);
     assertEq(code, 2, 'the user capture file is gated like any other');
     assert(stderr.includes('capture-guard'), 'names itself');
   });
 
-  await test('reading it with a fresh $HOME-keyed marker — exit 0', () => {
+  await test('reading it with a fresh $HOME-keyed marker: exit 0', () => {
     touchMarker(0, HOME_MARKER);
     const { code, stderr } = read(HOME_CAPTURE);
     assertEq(code, 0, `a triage run reads freely, got: ${stderr}`);
     clearMarker(HOME_MARKER);
   });
 
-  await test('cat of the user capture file — blocked without the marker, open with it', () => {
+  await test('cat of the user capture file: blocked without the marker, open with it', () => {
     clearMarker(HOME_MARKER);
     assertEq(bash(`cat ${HOME_CAPTURE}`).code, 2, 'blocked with no marker');
     touchMarker(0, HOME_MARKER);
@@ -431,7 +431,7 @@ const run = async () => {
     clearMarker(HOME_MARKER);
     assertEq(tilde(), 2, 'the tilde form is the same file and the same gate');
     // The $HOME-keyed marker opens it, which is what proves the tilde expanded
-    // — a path left unexpanded would key somewhere else and stay blocked.
+    // (a path left unexpanded would key somewhere else and stay blocked).
     touchMarker(0, HOME_MARKER);
     assertEq(tilde(), 0, 'and the user capture file marker is the one that opens it');
     clearMarker(HOME_MARKER);
@@ -514,7 +514,7 @@ const run = async () => {
     fs.rmSync(bare, { recursive: true, force: true });
   });
 
-  await test('another tool, a missing input, malformed JSON — exit 0', () => {
+  await test('another tool, a missing input, malformed JSON: exit 0', () => {
     for (const input of [
       JSON.stringify({ tool_name: 'Glob', cwd: REPO, tool_input: { pattern: '**/capture.md' } }),
       JSON.stringify({ tool_name: 'Read', cwd: REPO, tool_input: {} }),

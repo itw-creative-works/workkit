@@ -1,5 +1,5 @@
 //
-// Tests for hooks/workflow:reload-guard — the SessionStart stamp and the
+// Tests for hooks/workflow:reload-guard: the SessionStart stamp and the
 // UserPromptSubmit reminder that the kit checkout changed since the session
 // loaded.
 //
@@ -39,7 +39,7 @@ const touchOlder = (file, seconds) => {
   fs.utimesSync(file, when, when);
 };
 
-// A session-keyed state directory shared across the runs of one test — that
+// A session-keyed state directory shared across the runs of one test. That
 // sharing is what makes the stamp comparison meaningful.
 const makeSession = () => ({ id: `sess-${Math.random().toString(36).slice(2)}`, state: mkTmp() });
 
@@ -101,7 +101,7 @@ const run = async () => {
 
   group('reload-guard: an unchanged checkout is silent');
 
-  await test('prompt after a stamp with nothing touched — no output', () => {
+  await test('prompt after a stamp with nothing touched: no output', () => {
     const root = makeRoot();
     const session = makeSession();
     runHook('SessionStart', { root, session });
@@ -123,7 +123,7 @@ const run = async () => {
     cleanup(root); cleanup(session.state);
   });
 
-  await test('editing an existing hook script is not a change — those edits are already live', () => {
+  await test('editing an existing hook script is not a change: those edits are already live', () => {
     const root = makeRoot();
     const session = makeSession();
     fs.mkdirSync(path.join(root, 'hooks', 'docs', 'state-check'), { recursive: true });
@@ -137,7 +137,7 @@ const run = async () => {
 
   group('reload-guard: a change nags once');
 
-  await test('rewired hooks.json — one notice, then silence', () => {
+  await test('rewired hooks.json: one notice, then silence', () => {
     const root = makeRoot();
     const session = makeSession();
     runHook('SessionStart', { root, session });
@@ -236,7 +236,7 @@ const run = async () => {
 
   group('reload-guard: guards');
 
-  await test('no stamp at all — re-stamped silently, no phantom change', () => {
+  await test('no stamp at all: re-stamped silently, no phantom change', () => {
     const root = makeRoot();
     const session = makeSession();
     const { code, stdout } = runHook('UserPromptSubmit', { root, session });
@@ -247,7 +247,7 @@ const run = async () => {
     cleanup(root); cleanup(session.state);
   });
 
-  await test('garbage stdin — exit 0, silent', () => {
+  await test('garbage stdin: exit 0, silent', () => {
     const root = makeRoot();
     const session = makeSession();
     const res = spawnSync('bash', [HOOK], {
@@ -261,7 +261,7 @@ const run = async () => {
     cleanup(root); cleanup(session.state);
   });
 
-  await test('no session id — exit 0, and nothing is written', () => {
+  await test('no session id: exit 0, and nothing is written', () => {
     const root = makeRoot();
     const session = makeSession();
     const res = spawnSync('bash', [HOOK], {
@@ -276,7 +276,7 @@ const run = async () => {
     cleanup(root); cleanup(session.state);
   });
 
-  await test('an unexpected event name — exit 0, silent', () => {
+  await test('an unexpected event name: exit 0, silent', () => {
     const root = makeRoot();
     const session = makeSession();
     runHook('SessionStart', { root, session });
@@ -287,7 +287,7 @@ const run = async () => {
     cleanup(root); cleanup(session.state);
   });
 
-  await test('a checkout missing every surface — exit 0, silent', () => {
+  await test('a checkout missing every surface: exit 0, silent', () => {
     const root = mkTmp();
     const session = makeSession();
     assertEq(runHook('SessionStart', { root, session }).code, 0, 'stamping an empty tree is fine');

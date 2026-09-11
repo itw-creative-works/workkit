@@ -1,19 +1,19 @@
 //
-// The published summaries, read back — what the brief says about yesterday.
+// The published summaries, read back: what the brief says about yesterday.
 //
 // The 9am job's first step COMPOSES the day and publishes it as a Discussion on
 // the home repo (`jobs/claude-nightly.sh`). This module is the read side of that
 // same board: the brief names the newest one and links it, so the morning opens
 // with what the night before actually produced rather than with counts alone.
 //
-// One helper, two readers — `jobs/brief-payload.js` (the 9am job and the cloud
+// One helper, two readers: `jobs/brief-payload.js` (the 9am job and the cloud
 // runner) and the tower's `/api/brief`. Both attach the SAME keys onto the
 // payload `buildBrief` returned, so the notification and the Brief page cannot
 // tell different stories.
 //
 // THE TITLE IS WHAT SAYS WHAT A POST IS, not the category. A summary is titled
 // `<cadence>: <date>` by the job that writes it, while the category it lands in
-// is negotiable — categories cannot be created over the API, so a repo without
+// is negotiable: categories cannot be created over the API, so a repo without
 // a `Daily` falls back to `General` (workflow/discussions.sh). Reading by title
 // is the one question that answers the same on every home repo, and it is the
 // same reasoning `jobs/cc-news.js` reads the briefs by.
@@ -45,7 +45,7 @@ const { execFileSync } = require('child_process');
 const { ask } = require('./board');
 
 const WORKKIT_DIR = '.workkit';
-// The hand-edited file that names the home repo — the board the summaries live on.
+// The hand-edited file that names the home repo: the board the summaries live on.
 const SETTINGS_FILE = 'settings.json';
 
 // The title prefix each cadence publishes under, from the job that writes them
@@ -56,8 +56,8 @@ const CADENCE_PREFIX = {
 };
 
 // 100 is the GraphQL page maximum, and the window is wide for the same reason
-// cc-news.js's is: the board is SHARED — the briefs publish beside the summaries
-// — and a weekly rollup is one post in a week of them. A narrow window would
+// cc-news.js's is: the board is SHARED: the briefs publish beside the summaries
+// and a weekly rollup is one post in a week of them. A narrow window would
 // scroll the answer out of view and read as a board with nothing on it.
 const WINDOW = 100;
 
@@ -87,7 +87,7 @@ const homeSlug = (workflowHome) => {
   }
 };
 
-/** Where ~/.workkit is for this call — the same resolution cc-news.js makes. */
+/** Where ~/.workkit is for this call: the same resolution cc-news.js makes. */
 const workflowHomeOf = (opts) => opts.workflowHome
   || process.env.WORKFLOW_HOME
   || path.join(opts.home || os.homedir(), WORKKIT_DIR);
@@ -138,7 +138,7 @@ const readSummaries = (opts = {}) => {
  * @param {object} [opts]
  * @param {string} [opts.workflowHome] the user's ~/.workkit
  * @param {string} [opts.home] overrides ~ for the default above
- * @param {Function} [opts.exec] (cmd, args) => stdout — the gh seam
+ * @param {Function} [opts.exec] (cmd, args) => stdout: the gh seam
  * @returns {{summary: {title: string, url: string, createdAt: string|null}|null, reason: string|null}}
  */
 const newestSummary = (cadence, opts = {}) => {
@@ -168,12 +168,12 @@ const isMonday = (generatedAt) => {
 };
 
 /**
- * The summary keys a brief carries — the ONE shape both call sites attach.
+ * The summary keys a brief carries: the ONE shape both call sites attach.
  *
  * `findings` is the newest daily summary and rides every morning. `week` is the
  * weekly rollup and rides MONDAYS ONLY: there is one brief a day, richer on a
  * Monday, rather than a second delivery nobody asked for. Any other day the key
- * is absent entirely — an absent key draws nothing, where a null would have to
+ * is absent entirely. An absent key draws nothing, where a null would have to
  * be explained.
  *
  * `summariesReason` rides every morning beside them and is null on a board that
@@ -185,7 +185,7 @@ const isMonday = (generatedAt) => {
  * @param {string} [opts.generatedAt] the stamp the payload is built under
  * @param {string} [opts.workflowHome] the user's ~/.workkit
  * @param {string} [opts.home] overrides ~ for the default above
- * @param {Function} [opts.exec] (cmd, args) => stdout — the gh seam
+ * @param {Function} [opts.exec] (cmd, args) => stdout: the gh seam
  * @returns {{findings: object|null, summariesReason: string|null, week?: object|null}}
  */
 const briefSummaries = (opts = {}) => {

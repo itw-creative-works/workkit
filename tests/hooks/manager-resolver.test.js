@@ -1,4 +1,4 @@
-// manager/resolver hook — spawn-time model resolution for the class agents.
+// manager/resolver hook: spawn-time model resolution for the class agents.
 // Covers the ladder manifest shape, the full decision table in rewrite mode
 // (both session-detection paths), advise mode, and the pass-through
 // invariants: the resolver must NEVER touch a non-class spawn or break a
@@ -15,7 +15,7 @@ const LOADER = path.join(REPO, 'hooks', 'loader.sh');
 const LADDER_PATH = path.join(REPO, 'hooks', 'manager', 'ladder.json');
 const ladder = JSON.parse(fs.readFileSync(LADDER_PATH, 'utf8'));
 const id = (rung) => ladder.ladder[rung];
-// The fast tier's rung comes from the ladder, never hardcoded — the scout
+// The fast tier's rung comes from the ladder, never hardcoded: the scout
 // expectations below follow a tier retune (haiku → sonnet, Ian 2026-07-26)
 // without edits here.
 const FAST = ladder.tiers.fast;
@@ -187,7 +187,7 @@ const run = async () => {
     const transcript = path.join(tmp, 't.jsonl');
     fs.writeFileSync(transcript, [
       JSON.stringify({ type: 'assistant', message: { model: id('sonnet') } }),
-      // A tool-result line QUOTING an assistant entry that claims fable — the
+      // A tool-result line QUOTING an assistant entry that claims fable: the
       // jq validation must reject it, leaving the real sonnet entry to win.
       JSON.stringify({ type: 'user', toolUseResult: '{"type":"assistant","message":{"model":"claude-fable-5"}}' }),
     ].join('\n'));

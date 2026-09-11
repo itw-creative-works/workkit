@@ -1,36 +1,36 @@
 #!/bin/bash
-# safety/tree-guard — PreToolUse hook (Bash)
+# safety/tree-guard: PreToolUse hook (Bash)
 # The working tree is SHARED (issue #157): a worker reverting its own edits with
 # `git checkout -- <files>` discarded another agent's uncommitted work in the
 # same files, and three later runs reached for `git stash` over trees holding a
 # whole wave of parked work. Every one of those commands throws away, or parks,
-# state the agent running it cannot see — so this guard bounces them and names
+# state the agent running it cannot see, so this guard bounces them and names
 # the scoped alternative: reverse-edit your own hunks.
 #
 # Blocked, wherever they sit in a compound, and through the prefixes the house
 # finder in _lib.sh peels (`git -C <path>`, a path spelling, `command`/`env`/an
-# UNQUOTED `eval`, `VAR=x`, a `(`/`{` opener) — a quoted eval body, an `sh -c`
+# UNQUOTED `eval`, `VAR=x`, a `(`/`{` opener): a quoted eval body, an `sh -c`
 # string, a control-flow wrapper and a command substitution are accepted misses,
 # the same line that finder draws:
-#   git checkout   with a pathspec — `--`, a path-looking or quoted operand,
+#   git checkout   with a pathspec: `--`, a path-looking or quoted operand,
 #                  two operands, `-f`/`--force`, `--pathspec-from-file`
 #   git switch     with `--discard-changes` or `-f`/`--force` (it takes no
 #                  pathspec, so the plain switch is legal)
 #   git restore    unless `--staged` is there WITHOUT `--worktree`
-#   git stash      every subcommand, bare included — except the read-only
+#   git stash      every subcommand, bare included, except the read-only
 #                  `list` and `show` (issue #193)
 #   git clean      with a force spelling (`-f`, `-fd`, `--force`)
 #   git reset      with `--hard`
 # Always on: whether the tree is dirty beyond this agent's own files is not
 # knowable from here, so the guard never tries to decide it. The deliberate
 # discard escapes by carrying `WORKKIT_ALLOW_DISCARD=1` as an assignment on the
-# command, which is the OWNER's to add — the hook then stands aside out loud.
+# command, which is the OWNER's to add: the hook then stands aside out loud.
 #
 # Where the checkout line sits, and why: a lone ref operand is a branch switch
 # and stays legal (the ship PR path uses it, and git refuses it over conflicting
 # changes anyway), while anything that could name a file is a discard. The
-# working tree answers the ambiguous case — `feature/thing` is a branch,
-# `src/app.js` is a file that exists — and a QUOTED operand reads as a pathspec,
+# working tree answers the ambiguous case (`feature/thing` is a branch,
+# `src/app.js` is a file that exists) and a QUOTED operand reads as a pathspec,
 # since quoting an operand is how a glob is passed and almost never how a branch
 # is named. Fully documented in README.md.
 #
@@ -53,7 +53,7 @@ cwd=$(jq -r '.cwd // ""' <<<"$input" || true)
 
 # Shared text handling (heredoc-body strip, multiline quote strip): hooks/_lib.sh,
 # the same preparation the commit hooks do before walking clauses. A heredoc BODY
-# is file content, and a quoted span is data — neither is a command.
+# is file content, and a quoted span is data: neither is a command.
 . "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
 src=$(hook_strip_heredocs "$cmd")
 stripped=$(hook_strip_quotes "$src")
@@ -62,7 +62,7 @@ stripped=$(hook_strip_quotes "$src")
 # whether attached as `>/tmp/out` or sitting in the next token) and everything
 # from an unquoted `#` onward. Both used to be walked like operands, so
 # `git checkout main > /tmp/out` and `git checkout main # note` read as the
-# ref-plus-pathspec form and bounced a legal branch switch — and a `--hard` or a
+# ref-plus-pathspec form and bounced a legal branch switch, and a `--hard` or a
 # `-f` inside a trailing comment answered for the command in front of it.
 # Runs for every clause, ahead of the git test, so each subcommand's judgment
 # sees the command's real words and nothing else.
@@ -114,11 +114,11 @@ tg_checkout_discards() {
         ;;
     esac
   done
-  # `git checkout <ref> <path>` — two operands is the ref+pathspec form.
+  # `git checkout <ref> <path>`: two operands is the ref+pathspec form.
   [ "$operands" -gt 1 ]
 }
 
-# `git switch` is checkout's modern half, and takes no pathspec at all — so the
+# `git switch` is checkout's modern half, and takes no pathspec at all, so the
 # plain switch is legal and only the two spellings that overwrite local
 # modifications are not.
 tg_switch_discards() {
@@ -212,7 +212,7 @@ while IFS= read -r clause; do
   case "$sub" in
     stash)
       # `list` and `show` only READ stash state (issue #193); every other
-      # subcommand — bare stash included — parks or rewrites tree state.
+      # subcommand (bare stash included) parks or rewrites tree state.
       case "${1:-}" in
         list|show) ;;
         *) found="git stash"; break ;;
@@ -240,7 +240,7 @@ EOF
 # for the user plus additionalContext for Claude, and NO permissionDecision, so
 # the command's fate is decided exactly as it would be with this hook silent.
 if printf '%s' "$stripped" | grep -Eq '(^|[^[:alnum:]_])WORKKIT_ALLOW_DISCARD=1([^[:alnum:]_]|$)'; then
-  aside="tree-guard: stood aside for a deliberate discard — WORKKIT_ALLOW_DISCARD=1 is set on this command (${found})."
+  aside="tree-guard: stood aside for a deliberate discard: WORKKIT_ALLOW_DISCARD=1 is set on this command (${found})."
   jq -n --arg m "$aside" '{
     "systemMessage": $m,
     "hookSpecificOutput": {
@@ -252,7 +252,7 @@ if printf '%s' "$stripped" | grep -Eq '(^|[^[:alnum:]_])WORKKIT_ALLOW_DISCARD=1(
 fi
 
 {
-  echo "tree-guard: BLOCKED this command — it runs ${found}, which discards or parks working-tree state, and this tree is SHARED: reverting your own edits that way takes whatever else is uncommitted with it (issue #157)."
-  echo "Revert your own changes by reverse-editing your own hunks — edit each file back to what it was. If the discard is genuinely intended, the OWNER reruns the command with WORKKIT_ALLOW_DISCARD=1 in front of it."
+  echo "tree-guard: BLOCKED this command: it runs ${found}, which discards or parks working-tree state, and this tree is SHARED: reverting your own edits that way takes whatever else is uncommitted with it (issue #157)."
+  echo "Revert your own changes by reverse-editing your own hunks: edit each file back to what it was. If the discard is genuinely intended, the OWNER reruns the command with WORKKIT_ALLOW_DISCARD=1 in front of it."
 } >&2
 exit 2

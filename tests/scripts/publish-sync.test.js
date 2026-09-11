@@ -1,14 +1,14 @@
 //
-// Tests for the tower SYNC and the brand MINT (issue #129) — the two steps that
+// Tests for the tower SYNC and the brand MINT (issue #129): the two steps that
 // run between the pull and the build, and the reason the published dashboard
 // stops being stranded at the day the home repo was seeded.
 //
 // Two layers, and neither one touches the real ~/.workkit. The sync itself is
 // asked its questions as the library function it is, against fixture
-// directories and a clone of a local bare "GitHub". The WIRING — the sync ahead
+// directories and a clone of a local bare "GitHub". The WIRING (the sync ahead
 // of the build, the install after a sync that changed a manifest (issue #130),
 // the mint after a sync that changed something, the abort on a mint that
-// failed — is proved end to end through publish.sh in the same
+// failed) is proved end to end through publish.sh in the same
 // scratch world the publish suite uses, with an `npm` shim for the build and a
 // stub `omega` for the mint. No omega, no network.
 //
@@ -43,7 +43,7 @@ const writeStub = (file, lines) => {
 };
 
 /**
- * The checkout's `tower/app` — the real one's shape without its weight: a brand
+ * The checkout's `tower/app`, the real one's shape without its weight: a brand
  * root with targets/web, config/ and assets/, manifests carrying `file:` specs
  * into a sibling framework, and every accretion a copy must leave behind
  * (node_modules at both levels, a lockfile, .omega, dist, a .env).
@@ -123,7 +123,7 @@ const mkSyncWorld = () => {
   };
 };
 
-/** Source the library and run one line of shell in it — how every caller uses it. */
+/** Source the library and run one line of shell in it: how every caller uses it. */
 const inHome = (world, script, { env = {} } = {}) => {
   const driver = [
     'set -euo pipefail',
@@ -165,7 +165,7 @@ const mtimes = (dir) => {
 /**
  * A publish world: a copied engine that CARRIES a tower/app to sync from, a
  * scratch ~/.workkit, a bare "GitHub" with a project already on main, and the
- * stubs a publish needs — an `npm` that writes what a build writes, a `gh` that
+ * stubs a publish needs: an `npm` that writes what a build writes, a `gh` that
  * answers everything, and the clone's `omega` binary, which is both the tooling
  * gate and the mint.
  *
@@ -188,7 +188,7 @@ const mkPublishWorld = ({ mintFails = false, minted = false, installFails = fals
   spawnSync('cp', ['-R', path.join(REPO_ROOT, 'workflow'), kit]);
   spawnSync('cp', ['-R', path.join(REPO_ROOT, 'tower', 'api'), path.join(kit, 'tower')]);
 
-  // The app the sync reads — a sibling of the engine in the copied checkout,
+  // The app the sync reads: a sibling of the engine in the copied checkout,
   // exactly as it is in the real one. No `file:` specs: the manifest transform
   // has its own cases at the library layer, and here it would only add a
   // resolvable framework path to the fixture.
@@ -202,8 +202,8 @@ const mkPublishWorld = ({ mintFails = false, minted = false, installFails = fals
   write(path.join(app, 'targets', 'web', 'src', 'index.html'), '<html>the current board</html>\n');
   write(path.join(app, '.gitignore'), 'node_modules/\ndist/\n.omega/\n');
 
-  // The npm shim answers both calls a publish makes — the install of the
-  // clone's dependencies (issue #130) and the build of the app — and records
+  // The npm shim answers both calls a publish makes: the install of the
+  // clone's dependencies (issue #130) and the build of the app, and records
   // its CWD and its argv, so a test can prove which one ran and where. The cwd
   // is half the record because that is what an install is keyed from (issue
   // #166): `--prefix` names the project, the cwd names the tree npm writes.
@@ -229,7 +229,7 @@ const mkPublishWorld = ({ mintFails = false, minted = false, installFails = fals
     version: 1, site: { repo: 'owner/workkit', publish: true, url: null },
   });
 
-  // The clone, carrying what a seed left BEHIND — the project as it looked the
+  // The clone, carrying what a seed left BEHIND: the project as it looked the
   // day the home repo was made, which is the whole bug (issue #129).
   const seed = path.join(root, 'seed');
   writeJson(path.join(seed, 'package.json'), {
@@ -250,7 +250,7 @@ const mkPublishWorld = ({ mintFails = false, minted = false, installFails = fals
 
   // The clone's own build tooling: the gate publish checks for, and the binary
   // the mint calls. It records where it ran and with what, and leaves what a
-  // real mint leaves — the minted tree the "has it ever minted" check reads.
+  // real mint leaves: the minted tree the "has it ever minted" check reads.
   const mintLog = path.join(root, 'mint.log');
   writeStub(path.join(tower, 'node_modules', '.bin', 'omega'), [
     `printf '%s|%s\\n' "$PWD" "$*" >> ${JSON.stringify(mintLog)}`,
@@ -306,7 +306,7 @@ const run = async () => {
   await test('a clone that carries nothing gets the project, and none of the accretions', () => {
     const world = mkSyncWorld();
     const { rc, out, err } = sync(world);
-    assertEq(rc, 0, `something changed — ${out}${err}`);
+    assertEq(rc, 0, `something changed: ${out}${err}`);
     assert(fs.existsSync(path.join(world.clone, 'targets', 'web', 'src', 'index.html')), 'the app travelled');
     assert(fs.existsSync(path.join(world.clone, 'config', 'omega.json5')), 'and its config');
     assert(fs.existsSync(path.join(world.clone, 'assets', 'logo', 'brandmark.svg')), 'and the authored mark');
@@ -322,11 +322,11 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('a freshly seeded clone is already current — the seed and the sync agree', () => {
+  await test('a freshly seeded clone is already current: the seed and the sync agree', () => {
     const world = mkSyncWorld();
     inHome(world, 'wk_home_seed');
     const { rc, out, err } = sync(world);
-    assertEq(rc, 2, `nothing to do — ${out}${err}`);
+    assertEq(rc, 2, `nothing to do: ${out}${err}`);
     assert(/already current/.test(out + err), `and it says so, got: ${out}${err}`);
     cleanup(world.root);
   });
@@ -343,7 +343,7 @@ const run = async () => {
 
     write(path.join(world.app, 'targets', 'web', 'src', 'index.html'), '<html>a newer board</html>\n');
     const { rc, out, err } = sync(world);
-    assertEq(rc, 0, `the change is a change — ${out}${err}`);
+    assertEq(rc, 0, `the change is a change: ${out}${err}`);
     assertEq(fs.readFileSync(path.join(world.clone, 'targets', 'web', 'src', 'index.html'), 'utf8'),
       '<html>a newer board</html>\n', 'the edited file landed');
 
@@ -354,7 +354,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('a second run writes nothing — the manifests included', () => {
+  await test('a second run writes nothing: the manifests included', () => {
     // The trap the content compare has to avoid: a manifest compared against the
     // RAW source differs by construction (the seed repoints its `file:` specs),
     // so a sync that compared it that way would rewrite it forever.
@@ -366,7 +366,7 @@ const run = async () => {
     const before = mtimes(world.clone);
 
     const { rc, out, err } = sync(world);
-    assertEq(rc, 2, `already current — ${out}${err}`);
+    assertEq(rc, 2, `already current: ${out}${err}`);
     const after = mtimes(world.clone);
     assertEq(Object.keys(after).filter((rel) => after[rel] !== before[rel]).join(','), '',
       'not one file was rewritten');
@@ -398,7 +398,7 @@ const run = async () => {
     write(path.join(world.clone, 'data', 'repos.json'), '{"repos":[]}\n');
 
     const { rc, out, err } = sync(world);
-    assertEq(rc, 0, `the removal is a change — ${out}${err}`);
+    assertEq(rc, 0, `the removal is a change: ${out}${err}`);
     assert(!fs.existsSync(path.join(world.clone, 'targets', 'web', 'src', 'pages', 'retired.js')),
       'the retired page is gone');
     assert(fs.existsSync(path.join(world.clone, 'brief', 'jobs', 'morning.sh')), 'the runner is not the sync’s');
@@ -412,17 +412,17 @@ const run = async () => {
     sync(world);
     const before = mtimes(world.clone);
     const { rc, out, err } = sync(world, { env: { WORKKIT_TOWER_APP: path.join(world.root, 'nowhere') } });
-    assertEq(rc, 1, `the caller can tell it did not run — ${out}${err}`);
+    assertEq(rc, 1, `the caller can tell it did not run: ${out}${err}`);
     assert(/tower app/.test(out + err), `it names what is missing, got: ${out}${err}`);
     assertEq(JSON.stringify(mtimes(world.clone)), JSON.stringify(before), 'and wrote nothing');
     cleanup(world.root);
   });
 
   // Issue #200: the sync writes the checkout's app over the clone's, so two
-  // machines seeding one clone race — and the loser was whichever ran last. The
+  // machines seeding one clone race, and the loser was whichever ran last. The
   // stamp at the clone's root says which kit wrote what is there.
 
-  /** Where the stamp lives and what it is called — the name IS the contract. */
+  /** Where the stamp lives and what it is called: the name IS the contract. */
   const STAMP = '.workkit-version';
   const kitVersion = () => JSON.parse(
     fs.readFileSync(path.join(REPO_ROOT, '.claude-plugin', 'plugin.json'), 'utf8'),
@@ -431,7 +431,7 @@ const run = async () => {
   await test('the sync stamps the clone with the kit version it wrote from', () => {
     const world = mkSyncWorld();
     const { rc, out, err } = sync(world);
-    assertEq(rc, 0, `something changed — ${out}${err}`);
+    assertEq(rc, 0, `something changed: ${out}${err}`);
     assertEq(fs.readFileSync(path.join(world.clone, STAMP), 'utf8').trim(), kitVersion(),
       'the version rides with the content it describes');
     cleanup(world.root);
@@ -447,7 +447,7 @@ const run = async () => {
 
     const { rc, out, err } = sync(world);
     const said = out + err;
-    assertEq(rc, 1, `the caller can tell it did not run — ${said}`);
+    assertEq(rc, 1, `the caller can tell it did not run: ${said}`);
     assert(said.includes('carries workkit 99.0.0'), `it names what the clone carries: ${said}`);
     assert(said.includes(`this checkout is ${kitVersion()}`), `and what this checkout is: ${said}`);
     assert(/not downgrading/.test(said), `and what it refused to do: ${said}`);
@@ -458,10 +458,10 @@ const run = async () => {
 
   group('workflow/publish: the sync, then the install, then the mint, then the build');
 
-  await test('the clone is refreshed before it is built — the published page is the app’s', () => {
+  await test('the clone is refreshed before it is built: the published page is the app’s', () => {
     const world = mkPublishWorld();
     const { code, out, err } = publish(world);
-    assertEq(code, 0, `exit 0 — ${out}${err}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
     const pages = fromPages(world);
     assert(pages, 'the site published');
     assertEq(fs.readFileSync(path.join(pages, 'index.html'), 'utf8'), '<html>the current board</html>\n',
@@ -492,7 +492,7 @@ const run = async () => {
       name: 'workkit-tower-web', private: true, dependencies: { 'chart.js': '^4.0.0' },
     });
     const { code, out, err } = publish(world);
-    assertEq(code, 0, `exit 0 — ${out}${err}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
     const installs = world.npms().filter((call) => /install/.test(call));
     assertEq(installs.length, before + 1, `one install for the manifest that moved: ${installs.join(' | ')}`);
     assertEq(installs[installs.length - 1], `${world.tower}|install`,
@@ -503,7 +503,7 @@ const run = async () => {
   await test('the install is keyed from the clone’s real path, symlinked ~/.workkit or not', () => {
     // Issue #166: `~/.workkit` is a symlink on the machine that publishes, and
     // `npm --prefix <link>/tower install` resolved the project through the link
-    // while keying the tree from the CALLER'S cwd — the lockfile took package
+    // while keying the tree from the CALLER'S cwd: the lockfile took package
     // paths outside the project root, the workspace went extraneous, and the
     // next run crashed arborist. An install run from inside the resolved path
     // is the whole fix, so the cwd is what this pins.
@@ -513,7 +513,7 @@ const run = async () => {
     world.env.WORKFLOW_HOME = link;
 
     const { code, out, err } = publish(world);
-    assertEq(code, 0, `exit 0 — ${out}${err}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
     const installs = world.npms().filter((call) => /install/.test(call));
     assertEq(installs.length, 1, `the seeded clone’s manifests are installed once: ${installs.join(' | ')}`);
     assertEq(installs[0], `${world.tower}|install`,
@@ -525,14 +525,14 @@ const run = async () => {
     const world = mkPublishWorld();
     publish(world);
     // The seeded clone's root manifest carries no `file:` transform yet, so the
-    // first sync composes one and that run does install — which is what makes
+    // first sync composes one and that run does install, which is what makes
     // the second run's silence mean something.
     const before = world.npms().filter((call) => /install/.test(call)).length;
     assertEq(before, 1, 'the first publish’s sync did write a manifest');
 
     write(path.join(world.app, 'targets', 'web', 'src', 'index.html'), '<html>a newer board</html>\n');
     const { code, out, err } = publish(world);
-    assertEq(code, 0, `exit 0 — ${out}${err}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
     assertEq(world.npms().filter((call) => /install/.test(call)).length, before,
       'the ordinary morning does not reinstall the dependencies to publish a page');
     const pages = fromPages(world);
@@ -543,7 +543,7 @@ const run = async () => {
 
   await test('a manifest committed while the site was off is installed once the switch turns on', () => {
     // The sync sits above the switch, so a switch-off run still writes and
-    // commits the refreshed manifests — and ends before the install. The flag
+    // commits the refreshed manifests, and ends before the install. The flag
     // dies with that process; the stamp comparison is what remembers.
     const world = mkPublishWorld();
     const settings = path.join(world.root, 'workflow-home', 'settings.json');
@@ -555,7 +555,7 @@ const run = async () => {
 
     writeJson(settings, { ...current, site: { ...current.site, publish: true } });
     const { code, out, err } = publish(world);
-    assertEq(code, 0, `exit 0 — ${out}${err}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
     assertEq(world.npms().filter((call) => /install/.test(call)).length, 1,
       'the first switched-on run installs the manifests the off run left newer than the stamp');
     cleanup(world.root);
@@ -568,7 +568,7 @@ const run = async () => {
     const world = mkPublishWorld({ installFails: true });
     publish(world);
     const second = publish(world);
-    assert(second.code !== 0, `run 2 aborts too — the install is asked again, got exit ${second.code}`);
+    assert(second.code !== 0, `run 2 aborts too: the install is asked again, got exit ${second.code}`);
     assertEq(world.npms().filter((call) => /install/.test(call)).length, 2,
       'one attempt per run, not one ever');
     assertEq(fromPages(world), null, 'and nothing published over the failure');
@@ -577,10 +577,10 @@ const run = async () => {
 
   await test('an install that fails aborts the publish before the build, and says why', () => {
     // The clone's manifests are the seed's, so the first sync composes them and
-    // the install is the next step — which cannot finish here.
+    // the install is the next step, which cannot finish here.
     const world = mkPublishWorld({ installFails: true });
     const { code, out, err } = publish(world);
-    assert(code !== 0, `the caller can tell a failure from a skip — ${out}${err}`);
+    assert(code !== 0, `the caller can tell a failure from a skip: ${out}${err}`);
     assert(/install/.test(out + err), `it names the step, got: ${out}${err}`);
     assert(/ERESOLVE/.test(out + err), `and what npm said, got: ${out}${err}`);
     assertEq(fs.existsSync(world.dist), false, 'nothing was built on a half-installed tree');
@@ -602,19 +602,19 @@ const run = async () => {
     publish(world);
     // Everything is current now, and the first run left the minted tree.
     const { code, out, err } = publish(world);
-    assertEq(code, 0, `exit 0 — ${out}${err}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
     assertEq(world.mints().length, 1, 'the second run has nothing to mint for');
 
     fs.rmSync(path.join(world.tower, '.omega'), { recursive: true, force: true });
     publish(world);
-    assertEq(world.mints().length, 2, 'a clone with no minted assets mints anyway — the tags reference them');
+    assertEq(world.mints().length, 2, 'a clone with no minted assets mints anyway: the tags reference them');
     cleanup(world.root);
   });
 
   await test('a mint that fails aborts the publish before the build, and says why', () => {
     const world = mkPublishWorld({ mintFails: true });
     const { code, out, err } = publish(world);
-    assert(code !== 0, `the caller can tell a failure from a skip — ${out}${err}`);
+    assert(code !== 0, `the caller can tell a failure from a skip: ${out}${err}`);
     assert(/mint/.test(out + err), `it names the step, got: ${out}${err}`);
     assert(/brandmark could not be read/.test(out + err), `and what the mint said, got: ${out}${err}`);
     assertEq(fs.existsSync(world.dist), false, 'nothing was built on top of it');
@@ -622,7 +622,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('a failed mint stays failed — the next run aborts too, until a mint succeeds', () => {
+  await test('a failed mint stays failed: the next run aborts too, until a mint succeeds', () => {
     // The dangerous shape: a clone that minted fine in the past (the dir
     // exists), then a sync brings the change that breaks the mint. Run 1
     // aborts on the mint; run 2's sync is current and the dir exists, so
@@ -633,7 +633,7 @@ const run = async () => {
     assert(first.code !== 0, 'run 1 aborts on the failing mint');
 
     const second = publish(world);
-    assert(second.code !== 0, `run 2 aborts too — the failure is sticky, got exit ${second.code}`);
+    assert(second.code !== 0, `run 2 aborts too: the failure is sticky, got exit ${second.code}`);
     assertEq(fromPages(world), null, 'and nothing was published over it');
 
     const mintLog = path.join(world.root, 'mint.log');
@@ -643,7 +643,7 @@ const run = async () => {
       'exit 0',
     ]);
     const third = publish(world);
-    assertEq(third.code, 0, `a repaired mint publishes again — ${third.out}${third.err}`);
+    assertEq(third.code, 0, `a repaired mint publishes again: ${third.out}${third.err}`);
     assert(!fs.existsSync(path.join(world.tower, '.omega', '.mint-failed')),
       'and the green mint cleared the marker');
     cleanup(world.root);
@@ -658,7 +658,7 @@ const run = async () => {
     fs.rmSync(path.join(world.app, 'targets', 'web', 'src', 'index.html'));
     write(path.join(world.app, 'targets', 'web', 'src', 'index.html', 'a.txt'), 'now a dir\n');
     const { rc, out, err } = sync(world);
-    assertEq(rc, 3, `a partial write is rc=3, distinct from the skip — ${out}${err}`);
+    assertEq(rc, 3, `a partial write is rc=3, distinct from the skip: ${out}${err}`);
     cleanup(world.root);
 
     // Wiring layer: publish stops on it, and the half-copied tree is never
@@ -683,6 +683,16 @@ const run = async () => {
     assert(/tower\/app/.test(skill), 'and what in the diff triggers it');
     assert(/Bash\(workkit publish \*\)/.test(skill), 'and is allowed to run it');
     cleanup(path.join(os.tmpdir(), 'nothing'));
+  });
+
+  await test('ship re-runs setup when the diff touched the setup surface (#235)', () => {
+    const skill = fs.readFileSync(path.join(REPO_ROOT, 'skills', 'ship', 'SKILL.md'), 'utf8');
+    assert(/workkit setup/.test(skill), 'the ship skill knows the command');
+    for (const file of ['workflow/workkit.sh', 'workflow/home.sh', 'workflow/publish.sh', 'workflow/standards.sh', 'jobs/', 'hooks/']) {
+      assert(skill.includes('`' + file + '`'), `and names ${file} as a trigger`);
+    }
+    assert(/Bash\(workkit setup \*\)/.test(skill), 'and is allowed to run it');
+    assert(/REPLACES the separate `workkit publish`/.test(skill), 'and one run covers both clauses');
   });
 
   return summary();

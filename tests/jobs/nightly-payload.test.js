@@ -1,5 +1,5 @@
 //
-// Tests for jobs/nightly-payload.js — the day's record, as the summaries step
+// Tests for jobs/nightly-payload.js: the day's record, as the summaries step
 // hands it to Claude.
 //
 // The transcript index runs against a fixture projects tree whose mtimes are set
@@ -52,7 +52,7 @@ const indexIn = (projectsRoot) => transcriptIndex({ projectsRoot, now: NOW });
 
 /**
  * A fixture roster with one opted-in repo carrying two commits: the repo, and
- * the scratch ~/.workkit that registers it — the index the tower and the jobs
+ * the scratch ~/.workkit that registers it: the index the tower and the jobs
  * both read, so nothing here walks a disk.
  */
 const mkRepos = () => {
@@ -110,7 +110,7 @@ const run = async () => {
     ]);
     const index = indexIn(root);
     assertEq(index.map((t) => path.basename(t.path)).join(','), 'newest.jsonl,middle.jsonl,older.jsonl', 'ordered by mtime');
-    assertEq(index[0].bytes, 400, 'the size rides along — a 10 MB file is skipped by size alone');
+    assertEq(index[0].bytes, 400, 'the size rides along: a 10 MB file is skipped by size alone');
     assertEq(index[0].modifiedAt, new Date(NOW - HOUR).toISOString(), 'and the mtime as ISO');
     cleanup(root);
   });
@@ -251,7 +251,7 @@ const run = async () => {
   await test('the output is the document, with nothing wrapped around it', () => {
     assert(/output ONLY the finished daily summary/.test(INSTRUCTION), 'the response IS the summary');
     assert(/No preamble/.test(INSTRUCTION), 'no preamble');
-    assert(/no code fence around\s+the document itself/.test(INSTRUCTION), 'and no fence — the script writes this to a file');
+    assert(/no code fence around\s+the document itself/.test(INSTRUCTION), 'and no fence: the script writes this to a file');
   });
 
   group('jobs/nightly-payload: what is printed');
@@ -262,7 +262,7 @@ const run = async () => {
     assert(text.startsWith(INSTRUCTION), 'the instruction is first');
     const parsed = JSON.parse(text.slice(INSTRUCTION.length));
     assertEq(parsed.quiet, true, 'the payload round-trips');
-    assert(/\n  "transcripts": \[/.test(text), 'indented, not one line — a human reads this over a shoulder');
+    assert(/\n  "transcripts": \[/.test(text), 'indented, not one line: a human reads this over a shoulder');
   });
 
   await test('run as a script it prints a payload and exits 0', () => {
@@ -275,7 +275,7 @@ const run = async () => {
       env: { ...process.env, HOME: home, WORKKIT_CLAUDE_PROJECTS: path.join(home, 'projects') },
     });
     cleanup(home);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(res.stdout.startsWith(INSTRUCTION), 'stdout leads with the instruction');
     const parsed = JSON.parse(res.stdout.slice(INSTRUCTION.length));
     assert(Array.isArray(parsed.transcripts), 'and carries the index');
@@ -286,7 +286,7 @@ const run = async () => {
 
   await test('a rollup is composed from the summaries already published', () => {
     // A week's material is the daily summaries, read back from the Discussions
-    // API — never the transcripts again, which the days already read.
+    // API, never the transcripts again, which the days already read.
     const prior = [
       { title: 'daily: 2026-07-27', createdAt: '2026-07-27T09:00:00Z', body: '## Went well\nShipped.' },
       { title: 'daily: 2026-07-26', createdAt: '2026-07-26T09:00:00Z', body: '## Went well\nSpecced.' },
@@ -316,7 +316,7 @@ const run = async () => {
       env: { ...process.env, HOME: home },
     });
     cleanup(home);
-    assertEq(res.status, 0, `exit 0 — stderr: ${res.stderr}`);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(res.stdout.startsWith(rollupInstruction('weekly')), 'stdout leads with the rollup instruction');
     const parsed = JSON.parse(res.stdout.slice(rollupInstruction('weekly').length));
     assertEq(parsed.summaries[0].body, 'a day', 'and carries what stdin handed it');

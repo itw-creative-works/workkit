@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# workflow/discussions.sh — the home repo's Discussions API. SOURCED, never executed.
+# workflow/discussions.sh: the home repo's Discussions API. SOURCED, never executed.
 #
 # Summaries are published, never filed (owner ruling, 2026-07-28: generated
 # records are never files). The destination is a Discussion on the home repo, so
-# this is the one place that speaks GitHub's Discussions GraphQL — the setup
+# this is the one place that speaks GitHub's Discussions GraphQL. The setup
 # wizard uses it to turn Discussions on, the summaries step and the morning
 # brief to post and to read prior posts back.
 #
 # WHAT THE API ACTUALLY OFFERS, probed against the live schema 2026-07-28:
-#   · `updateRepository(hasDiscussionsEnabled:)` — Discussions can be ENABLED.
-#   · `createDiscussion(repositoryId, categoryId, title, body)` — posts exist.
-#   · `repository.discussions(categoryId:, orderBy:)` — prior posts read back;
+#   · `updateRepository(hasDiscussionsEnabled:)`: Discussions can be ENABLED.
+#   · `createDiscussion(repositoryId, categoryId, title, body)`: posts exist.
+#   · `repository.discussions(categoryId:, orderBy:)`: prior posts read back;
 #     there is no date argument, so the window is applied here.
 #   · there is NO createDiscussionCategory mutation. Categories cannot be made
 #     over the API at all, which is why `wk_disc_category_id` falls back to the
@@ -18,9 +18,9 @@
 #
 # Every call is best effort: a machine with no `gh`, no network, or a token that
 # refuses gets an empty answer and a non-zero status, never an abort. The
-# summaries step exits 0 either way — the same doctrine the brief runs under.
+# summaries step exits 0 either way, the same doctrine the brief runs under.
 #
-# Needs: lib.sh sourced first (WK_HOME_CACHE, wk_json_edit, wk_say_*).
+# Needs: lib.sh sourced first (WK_HOME_CACHE, wk_json_edit, the wk_ok family).
 
 # The categories a summary looks for, one per cadence. A repo that has them gets
 # a tidy archive; a repo that does not still gets its summaries (see the
@@ -30,7 +30,7 @@ WK_DISC_FALLBACKS=('General' 'Announcements')
 
 # What the last category resolution landed on. GLOBALS rather than a printed
 # pair, because the caller needs BOTH the id and the name and a `$(…)` capture
-# would only carry one of them back — a fallback learned inside a subshell is a
+# would only carry one of them back. A fallback learned inside a subshell is a
 # fallback nobody can report.
 WK_DISC_CATEGORY_ID=''
 WK_DISC_CATEGORY_NAME=''
@@ -45,7 +45,7 @@ wk_disc_ready() {
 # Prints the compact JSON; non-zero and silent when the API could not answer.
 wk_disc_fetch_meta() {
   local slug="$1" owner="${1%%/*}" name="${1##*/}" out
-  out="$(gh api graphql \
+  out="$(wk_spin "reading $slug on GitHub" gh api graphql \
     -f owner="$owner" -f name="$name" \
     -f query='query($owner:String!,$name:String!){
       repository(owner:$owner,name:$name){
@@ -68,7 +68,7 @@ wk_disc_fetch_meta() {
 # when the caller asks for a refresh. The cache lives in the machine's DISPOSABLE
 # file (`~/.workkit/.cache.json`, issue #80): node ids are GitHub's, not the
 # project's, they are never hand-edited, and deleting the file costs one round
-# trip — which is why it is created here on demand rather than seeded anywhere.
+# trip, which is why it is created here on demand rather than seeded anywhere.
 #
 # Usage: wk_disc_meta <slug> [--refresh]
 wk_disc_meta() {
@@ -84,7 +84,7 @@ wk_disc_meta() {
   [[ -n "$fresh" ]] || return 1
   # Under the shared mutex: this is a whole-file read-modify-write, and the
   # summaries step and the brief both reach it inside the same minute of a
-  # morning. Taking the lock is best effort like every other writer's — a cache
+  # morning. Taking the lock is best effort like every other writer's: a cache
   # that lost a race is re-fetched, never wrong.
   if [[ -d "$WK_USER_DIR" ]] || mkdir -p "$WK_USER_DIR" 2>/dev/null; then
     if wk_take_state_lock; then locked=1; fi
@@ -96,7 +96,7 @@ wk_disc_meta() {
   printf '%s' "$fresh"
 }
 
-# The repo's node id — what every mutation takes.
+# The repo's node id: what every mutation takes.
 wk_disc_repo_id() {
   local meta
   meta="$(wk_disc_meta "$1" "${2:-}")" || return 1
@@ -104,11 +104,11 @@ wk_disc_repo_id() {
 }
 
 # Resolve the category to post in, into WK_DISC_CATEGORY_ID and
-# WK_DISC_CATEGORY_NAME. Call it DIRECTLY (never inside `$(…)`) — that is the
+# WK_DISC_CATEGORY_NAME. Call it DIRECTLY (never inside `$(…)`). That is the
 # whole point of it setting globals.
 #
-# A cache miss is refreshed ONCE — a category created by hand after the cache
-# was written is the ordinary reason for a miss — and a name that still is not
+# A cache miss is refreshed ONCE (a category created by hand after the cache
+# was written is the ordinary reason for a miss) and a name that still is not
 # there falls back to the repo's default, because categories cannot be created
 # over the API (see the header).
 wk_disc_resolve_category() {
@@ -146,24 +146,24 @@ wk_disc_resolve_category() {
 }
 
 # The same answer for a caller that only wants the id and can live with a
-# capture — wk_disc_list, which is itself always captured.
+# capture: wk_disc_list, which is itself always captured.
 wk_disc_category_id() {
   wk_disc_resolve_category "$1" "$2" || return 1
   printf '%s' "$WK_DISC_CATEGORY_ID"
 }
 
-# Turn Discussions on. Idempotent by nature — the mutation sets a flag — but the
+# Turn Discussions on. Idempotent by nature (the mutation sets a flag), but the
 # read comes first so an already-enabled repo is not written to at all.
 wk_disc_enable() {
   local slug="$1" meta repo_id
   wk_disc_ready || return 1
   meta="$(wk_disc_meta "$slug" --refresh)" || return 1
   if [[ "$(printf '%s' "$meta" | jq -r '.discussionsEnabled')" == "true" ]]; then
-    return 2   # already on — the caller says "current" rather than "enabled"
+    return 2   # already on; the caller says "current" rather than "enabled"
   fi
   repo_id="$(printf '%s' "$meta" | jq -r '.repositoryId // empty')"
   [[ -n "$repo_id" ]] || return 1
-  gh api graphql -f repoId="$repo_id" -f query='mutation($repoId:ID!){
+  wk_spin 'turning Discussions on' gh api graphql -f repoId="$repo_id" -f query='mutation($repoId:ID!){
     updateRepository(input:{repositoryId:$repoId, hasDiscussionsEnabled:true}){
       repository { hasDiscussionsEnabled }
     }
@@ -173,7 +173,7 @@ wk_disc_enable() {
   return 0
 }
 
-# Post one summary or brief. The body comes from a FILE — a day's reflection is
+# Post one summary or brief. The body comes from a FILE: a day's reflection is
 # far past what an argument list should carry, and `gh`'s `@file` form sends it
 # verbatim.
 # Prints the discussion URL.
@@ -191,7 +191,7 @@ wk_disc_create() {
   repo_id="$(wk_disc_repo_id "$slug")" || return 1
   [[ -n "$repo_id" ]] || return 1
 
-  out="$(gh api graphql \
+  out="$(wk_spin "posting $title" gh api graphql \
     -f repoId="$repo_id" -f catId="$cat_id" -f title="$title" -F body="@$body_file" \
     -f query='mutation($repoId:ID!,$catId:ID!,$title:String!,$body:String!){
       createDiscussion(input:{repositoryId:$repoId, categoryId:$catId, title:$title, body:$body}){
@@ -202,7 +202,7 @@ wk_disc_create() {
 }
 
 # The summaries already published in a category since a moment, newest first, as
-# a JSON array of { title, createdAt, body } — what a weekly or monthly rollup
+# a JSON array of { title, createdAt, body }: what a weekly or monthly rollup
 # reads instead of a folder of files. The window is applied here: the API takes
 # no date argument (probed 2026-07-28), only an order.
 #
@@ -213,7 +213,7 @@ wk_disc_list() {
   cat_id="$(wk_disc_category_id "$slug" "$category")" || return 1
   [[ -n "$cat_id" ]] || return 1
 
-  out="$(gh api graphql \
+  out="$(wk_spin "reading what $slug already carries" gh api graphql \
     -f owner="$owner" -f name="$name" -f catId="$cat_id" -F limit="$limit" \
     -f query='query($owner:String!,$name:String!,$catId:ID!,$limit:Int!){
       repository(owner:$owner,name:$name){

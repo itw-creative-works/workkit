@@ -1,4 +1,4 @@
-# The hooks — what each one does
+# The hooks: what each one does
 
 The behavior detail behind `AGENTS.md` § Hooks, which keeps one line per hook. The rules they enforce live in [`project-state.md`](project-state.md); this file describes how each hook executes them.
 
@@ -12,135 +12,156 @@ One line per hook; the section below it carries the detail.
 |---|---|---|
 | `workflow:standards` | SessionStart | The daily heal in a participating repo, the hook-layer self-check beside it, `workkit update --auto`, and the setup pester above every gate (#72) |
 | `docs:state-check` | SessionStart | Announces open `status:inbox` issues, a non-empty `.workkit/capture.md`, broken pointer files, an AGENTS.md over its line or density budget |
-| `docs:session` | SessionStart | Injects `.workkit/agents/session.md` — the queue a compacted session reads first — closing with one line for the manager and one for the owner (#134), and leads with a line when the cloud brief has gone stale (#173) |
-| `workflow:reload-guard` | SessionStart + UserPromptSubmit | Nags once when a surface that loads at session start has changed — the case `/reload-plugins` exists for |
+| `docs:session` | SessionStart | Injects `.workkit/agents/session.md` (the queue a compacted session reads first) closing with one line for the manager and one for the owner (#134), and leads with a line when the cloud brief has gone stale (#173) |
+| `workflow:reload-guard` | SessionStart + UserPromptSubmit | Nags once when a surface that loads at session start has changed: the case `/reload-plugins` exists for |
 | `manager:resolver` | PreToolUse (Task/Agent) | Supplies each crew spawn's model from `manager/ladder.json` and the live session model |
-| `manager:spawn-guard` | PreToolUse (Task/Agent) | Warns — never blocks — on a hand-passed spawn `model`, or a frontier session spawning the advisor |
+| `manager:spawn-guard` | PreToolUse (Task/Agent) | Warns (never blocks) on a hand-passed spawn `model`, or a frontier session spawning the advisor |
 | `manager:profile` | UserPromptSubmit | Injects the manager standing instruction in frontier/workhorse sessions only (#154) |
+| `docs:checkpoint` | UserPromptSubmit | Fires the `workkit:checkpoint` skill on any line about compacting, clearing or restarting the chat, as a delta after the first run (#238) |
 | `safety:vendor-guard` | PreToolUse (Edit/Write) | Blocks edits to generated, vendored, and gitignored files (`_attic/`, `.workkit/`, `.env*` excepted) |
-| `safety:commit-gate` | PreToolUse (Bash) | Blocks a `git commit` the work is not ready for — tests, test files, review marker, CHANGELOG entry, the issue it closes (#151, #155) — and one the gate cannot place (#159) |
+| `safety:commit-gate` | PreToolUse (Bash) | Blocks a `git commit` the work is not ready for (tests, test files, review marker, CHANGELOG entry, the issue it closes and its proof (#151, #155, #233)) and one the gate cannot place (#159) |
 | `safety:commit-language` | PreToolUse (Bash) | Bounces kill/destroy/dead wording, and a subject line that is not Conventional Commits or carries a version outside `chore(release)` |
 | `safety:tree-guard` | PreToolUse (Bash) | Blocks the git commands that DISCARD a shared working tree, with one deliberate escape (#157) |
 | `safety:issue-guard` | PreToolUse (Bash) | Blocks a `gh` issue/PR/API write whose outbound text carries a local `.env` value or a token-shaped string (#83) |
-| `safety:capture-guard` | PreToolUse (Read/Grep/Bash/Edit/Write) | Gates `.workkit/capture.md` in both directions — the owner's surface, whose one sanctioned touch is the triage drain (#145) |
+| `safety:proof-guard` | PreToolUse (Bash) | Blocks the flip to `status:complete` and the `gh issue close` of an issue carrying no `Proof:` comment (#233) |
+| `safety:capture-guard` | PreToolUse (Read/Grep/Bash/Edit/Write) | Gates `.workkit/capture.md` in both directions: the owner's surface, whose one sanctioned touch is the triage drain (#145) |
 | `docs:board-guard` | PostToolUse (Edit/Write) | Bounces `CLAUDE.md` / `AGENTS.md` writes that break the pointer doctrine, the 250-line budget, or the 400-byte density rule (#161) |
 | `docs:changelog-guard` | PostToolUse (Edit/Write) | Bounces an added CHANGELOG entry that is an essay instead of one short linked paragraph |
-| `docs:session-guard` | PostToolUse (Edit/Write) | Bounces a write that leaves `.workkit/agents/session.md` past either cap — a 350-char bullet or 40 content lines (#126) |
+| `docs:session-guard` | PostToolUse (Edit/Write) | Bounces a write that leaves `.workkit/agents/session.md` past either cap: a 350-char bullet or 40 content lines (#126) |
 | `docs:change-tracker` | Stop | Nags once per change (#132) about uncommitted work, keeping the issue true, promoting findings, and unfiled captures |
-| `manager:close-guard` | Stop | Warns — never blocks — when a frontier session did the bulk editing, or when worker output ended the turn with no verifier pass |
+| `manager:close-guard` | Stop | Warns (never blocks) when a frontier session did the bulk editing, or when worker output ended the turn with no verifier pass |
 
 ## How they are wired
 
 - Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh`, so settings reference a hook by `prefix:name` rather than by a path.
 - A LOADER-level failure fails open (exit 0). The hook's own exit code passes through untouched, which blocking hooks (exit 2) need.
 
-## `workflow:standards` — SessionStart
+## `workflow:standards`: SessionStart
 
 - Runs the engine's heal in a participating repo, once per repo per day. What the heal writes: `workflow/README.md`. The standard it heals to: the spec § Enforcement.
-- Adds the one check that is the hook layer's own — every wired hook resolves, is executable, parses, and the tools they call are present.
-- Reports only what it fixed. An undecided repo hears one offer and is never written to.
+- Adds the one check that is the hook layer's own: every wired hook resolves, is executable, parses, and the tools they call are present.
+- Reports only what it fixed: the heal runs under `QUIET=1`, which is what silences its skips at the source (#237), and the indent and the glyph every remaining line opens with are stripped before the report goes into the session's context. An undecided repo hears one offer and is never written to.
 - The same daily run calls `workkit update --auto`, the machine-side upkeep: it updates a schedule a human already installed and installs nothing fresh.
-- Above every gate sits the setup pester (#72). A machine with no `~/.local/bin/workkit` is told, every session and in any directory, to have the user run `workkit.sh setup` — a prompt, never an install.
+- Above every gate sits the setup pester (#72). A machine with no `~/.local/bin/workkit` is told, every session and in any directory, to have the user run `workkit.sh setup`, a prompt, never an install.
 
-## `docs:state-check` — SessionStart
+## `docs:state-check`: SessionStart
 
 - Announces open `status:inbox` issues, a non-empty `.workkit/capture.md`, broken pointer files, and an AGENTS.md that breaks its budget.
-- The AGENTS.md announcement covers both halves of that budget (#161): a file over 250 lines, and a file carrying any line over 400 bytes — the density rule, since a markdown paragraph is one source line. It names the rule and says `docs:board-guard` bounces writes until it fits.
+- The AGENTS.md announcement covers both halves of that budget (#161): a file over 250 lines, and a file carrying any line over 400 bytes: the density rule, since a markdown paragraph is one source line. It names the rule and says `docs:board-guard` bounces writes until it fits.
 - It measures in BYTES, pinned with `LC_ALL=C`, the same unit and the same pin board-guard uses.
 
-## `docs:session` — SessionStart
+## `docs:session`: SessionStart
 
-- Injects a participating repo's `.workkit/agents/session.md` on every source — the task queue a compacted or restarted session reads first — and warns when it has grown past the light bar.
+- Injects a participating repo's `.workkit/agents/session.md` on every source (the task queue a compacted or restarted session reads first) and warns when it has grown past the light bar.
 - Under a `---` rule that keeps them clear of the file's last heading, the injection closes with one line per reader (#134).
 - The manager is told to open its first reply in plain words with the state above.
-- The owner — who otherwise cannot see that anything survived — is told on the visible channel, a top-level `systemMessage`, that saying "continue" resumes the queue.
+- The owner (who otherwise cannot see that anything survived) is told on the visible channel, a top-level `systemMessage`, that saying "continue" resumes the queue.
 - Silent for a header-only or absent file, closing lines and owner line included.
-- It also names a cloud brief that stopped arriving (#173): the 9am job records the newest published brief's date in `~/.workkit/brief-status.json`, and past one whole calendar day (UTC) the injection LEADS with one line — the date, the gap, `workkit setup --token` as the fix, and `gh run list --repo <home> --workflow brief.yml` as the check, the slug read from `~/.workkit/settings.json` and the clause left off rather than guessed.
-- The marker's OWN age is part of the answer: past the same bar, `checkedAt` older than a whole day swaps the diagnosis for `this machine last checked <date>` — a laptop that was off is not a token that expired — and the check clause rides either wording.
-- That half is a FILE read and nothing else — a session start never waits on the network. A marker that is missing, unreadable, or missing either date says nothing at all; the line rides alone in a repo with no session state, and alone it carries no `systemMessage`.
-- The one-whole-day bar is `FRESH_DAYS` in `tower/api/lib/history.js` (#172), which asks the same question for the tower's pages — change both together. What they count diverges on purpose: the tower reads briefs carrying a stats line, the marker counts any `brief: `-titled Discussion.
+- It also names a cloud brief that stopped arriving (#173): the 9am job records the newest published brief's date in `~/.workkit/brief-status.json`, and past one whole calendar day (UTC) the injection LEADS with one line: the date, the gap, `workkit setup --token` as the fix, and `gh run list --repo <home> --workflow brief.yml` as the check, the slug read from `~/.workkit/settings.json` and the clause left off rather than guessed.
+- The marker's OWN age is part of the answer: past the same bar, `checkedAt` older than a whole day swaps the diagnosis for `this machine last checked <date>` (a laptop that was off is not a token that expired) and the check clause rides either wording.
+- That half is a FILE read and nothing else. A session start never waits on the network. A marker that is missing, unreadable, or missing either date says nothing at all; the line rides alone in a repo with no session state, and alone it carries no `systemMessage`.
+- The one-whole-day bar is `FRESH_DAYS` in `tower/api/lib/history.js` (#172), which asks the same question for the tower's pages. Change both together. What they count diverges on purpose: the tower reads briefs carrying a stats line, the marker counts any `brief: `-titled Discussion.
 
-## `workflow:reload-guard` — SessionStart + UserPromptSubmit
+## `workflow:reload-guard`: SessionStart + UserPromptSubmit
 
 - Stamps the load-time surfaces at session start: `hooks.json` content, plus the `agents/` and `skills/` file list and mtimes.
 - Injects one line when they change. Hook-script, skill-body, and engine edits are already live, so only these need `/reload-plugins`.
 - Each change nags once.
 
-## `manager:resolver` — PreToolUse (Task/Agent)
+## `manager:resolver`: PreToolUse (Task/Agent)
 
 - Supplies each crew spawn's model from `hooks/manager/ladder.json` and the live session model. The crew contract: [`agents.md`](agents.md).
 
-## `manager:spawn-guard` — PreToolUse (Task/Agent)
+## `manager:spawn-guard`: PreToolUse (Task/Agent)
 
-- Warns — never blocks — when a crew spawn carries a hand-passed `model` param, or when a frontier session spawns the advisor.
+- Warns (never blocks) when a crew spawn carries a hand-passed `model` param, or when a frontier session spawns the advisor.
 
-## `manager:profile` — UserPromptSubmit
+## `manager:profile`: UserPromptSubmit
 
 - Injects the manager standing instruction in frontier/workhorse sessions only: delegate to the crew, keep the todo checklist current, announce each spawn (#154).
 
-## `safety:vendor-guard` — PreToolUse (Edit/Write)
+## `docs:checkpoint`: UserPromptSubmit
+
+- Matches the compaction phrases on every prompt, case-insensitively: `compact` (which carries `compaction` and `/compact`), `context` beside `full`, `low`, `running out` or `window` on the same line (and the spoken order, `running out of context`, `out of context`, `low on context`), `clear the chat`, `clear this chat`, `new chat`, `fresh session`, `start over`.
+- A match injects one instruction: run the `workkit:checkpoint` skill before anything else in the turn, then answer the line. What the skill does with the chat is its own home, [`skills/checkpoint/SKILL.md`](../skills/checkpoint/SKILL.md).
+- A marker under `${TMPDIR:-/tmp}/claude-checkpoint-marker`, keyed by session id, holds the time of the last fire. The second fire in a session asks for a DELTA instead, naming the time the instruction was last issued, so the second run files only what has been spoken since. A payload with no session id gets the full line and writes no marker.
+- Fails open: no `jq`, no prompt, or a payload that does not parse is silence. It never exits 2, so a prompt is never blocked.
+
+## `safety:vendor-guard`: PreToolUse (Edit/Write)
 
 - Blocks edits to generated, vendored, and gitignored files. `_attic/`, `.workkit/` and `.env*` are excepted.
 
-## `safety:commit-gate` — PreToolUse (Bash)
+## `safety:commit-gate`: PreToolUse (Bash)
 
 - Blocks `git commit` unless: tests pass, new source files come with test files, code carries a fresh review marker, any added CHANGELOG entry matches the format, and a commit closing an issue (`Fixes #N`) stages the entry it closes against.
-- A stage-and-commit compound bounces (#155). A PreToolUse hook reads the index before the in-command `git add` runs, so it cannot see what the commit will carry — stage first, then commit.
+- A stage-and-commit compound bounces (#155). A PreToolUse hook reads the index before the in-command `git add` runs, so it cannot see what the commit will carry. Stage first, then commit.
 - A check that stands down says so out loud, one visible line, instead of skipping in silence.
 - The suite runs only for a commit carrying CODE (#151). A docs-only commit, and a version-only bump in the root `package.json` or `.claude-plugin/plugin.json`, stand it down.
 - The suite run has its own deadline under the hook's declared timeout, so a suite the harness would cancel bounces the commit instead of slipping through.
 - A repo whose green suite outgrows the 1500s default raises `WORKKIT_GATE_TEST_DEADLINE` in its own `.claude/settings.json` env block, clamped at 2900s under the gate's 3000s hook timeout (#189).
-- A commit the gate cannot PLACE bounces as well (#159): the `pushd`/`popd` spelling of the directory change, which used to walk past the `cd` test, and a session directory inside no repository at all — a background subagent's steady state, where the gate used to stand down entirely.
+- A commit the gate cannot PLACE bounces as well (#159): the `pushd`/`popd` spelling of the directory change, which used to walk past the `cd` test, and a session directory inside no repository at all, a background subagent's steady state, where the gate used to stand down entirely.
+- Check 6 is the proof (#233): every issue the message closes (the same `Fixes/Closes/Resolves #N` parse check 4 uses) must already carry a comment whose line starts `Proof:`. It reads the issue the way `safety:proof-guard` does, names every unproved issue in the bounce, and fails open with one stderr line when `gh` cannot answer. It runs before the suite, so a missing proof bounces without paying for a full test run.
 
-## `safety:commit-language` — PreToolUse (Bash)
+## `safety:commit-language`: PreToolUse (Bash)
 
 - Bounces commit messages using kill/destroy/dead wording, suggesting the neutral terms.
 - Bounces a subject line that is not Conventional Commits, or that carries a version number outside `chore(release)`.
 
-## `safety:tree-guard` — PreToolUse (Bash)
+## `safety:tree-guard`: PreToolUse (Bash)
 
 - Blocks the git commands that DISCARD a working tree, since the tree is shared and no agent can see what else is uncommitted in it (#157).
-- What it bounces: `git checkout` carrying a pathspec, a `git switch` carrying `--discard-changes` or `--force`, `git restore` without a bare `--staged`, every `git stash` spelling, a forced `git clean`, and `git reset --hard` — found anywhere in a compound and through the prefixes `hooks/_lib.sh`'s finder peels.
+- What it bounces: `git checkout` carrying a pathspec, a `git switch` carrying `--discard-changes` or `--force`, `git restore` without a bare `--staged`, every `git stash` spelling, a forced `git clean`, and `git reset --hard`, found anywhere in a compound and through the prefixes `hooks/_lib.sh`'s finder peels.
 - A plain branch switch stays legal. Where that line sits is the hook's own README.
 - Always on, with one escape: `WORKKIT_ALLOW_DISCARD=1` on the command, the owner's deliberate discard, which the guard stands aside for out loud.
 
-## `safety:issue-guard` — PreToolUse (Bash)
+## `safety:issue-guard`: PreToolUse (Bash)
 
-- Blocks a `gh issue create/comment/edit`, a `gh pr create/comment/edit/merge/close`, a `gh api graphql` carrying a discussion or issue mutation, or a `gh api` REST WRITE to an issue or pull endpoint (#83 — a read of the same path is untouched), whose outbound text carries a local `.env` value or a token-shaped string.
+- Blocks a `gh issue create/comment/edit`, a `gh pr create/comment/edit/merge/close`, a `gh api graphql` carrying a discussion or issue mutation, or a `gh api` REST WRITE to an issue or pull endpoint (#83, a read of the same path is untouched), whose outbound text carries a local `.env` value or a token-shaped string.
 - Every repo is assumed public (the spec § Issue anatomy).
 - It names the key or the kind, never the match.
 
-## `safety:capture-guard` — PreToolUse (Read/Grep/Bash/Edit/Write)
+## `safety:proof-guard`: PreToolUse (Bash)
 
-- Gates `.workkit/capture.md` in both directions — the owner's capture surface, whose one sanctioned touch is the triage drain (#145).
+- Blocks `gh issue edit <N> ... --add-label status:complete` and `gh issue close <N>` when one `gh issue view <N> --json comments` finds no comment whose line starts `Proof:`. The rule is the spec's (§ The proof): since #233 a missing proof is a hard gate, not a note at ship time.
+- Two closes pass, in any quoting: `--reason "not planned"` (`-r` is the same flag) and `--duplicate-of <M>`. Nothing was built on either, so there is nothing to prove. Every other label flip, and every read, is untouched.
+- The issue is read as a plain number standing before the first flag, which is the shape the skills write. Two spellings gh also accepts pass unrecognised, on purpose: an issue URL or an `owner/repo#N` argument (judging one means guessing which repo to ask), and a number sitting after a flag (a flag value that is itself a number would read as an issue). A `--repo`/`-R` on the command rides the read in every spelling gh takes, attached ones included, so a cross-repo flip is judged against its own issue.
+- Fails open, out loud: no `jq`, no `gh`, a view that exits non-zero, or a `--repo` value it cannot resolve (a variable, a substitution) leaves the command alone and says on stderr that the gate did not run. An unreadable `--repo` is never answered by reading the local repo instead.
+- Clause boundaries are quote aware, in ONE awk pass: a `;` or a `|` inside a quoted body is data, and splitting on it used to cut the clause before its `--add-label`. Detection reads the quote-stripped copy of each clause; the flag values are read raw, since the strip is what removes them.
+- Two literal tests on the raw command come first, so a `gh issue edit` that cannot be a flip never reaches the walk: the text has to spell `status:complete` or `gh issue close`, which neither command can do its work without.
+- The third stage of the same gate is `safety:commit-gate` check 6, the `Fixes #N` trailer. Both call one helper, `hook_issue_has_proof` in `hooks/_lib.sh`, so on the shell path the question and its pattern have one home.
+- The tower Board's own move of a card to Complete applies the same gate off the same read (#236), on both of its write paths; the one difference is that a read the board cannot make refuses the move, where this hook stands down. Detail: `tower/README.md`.
+
+## `safety:capture-guard`: PreToolUse (Read/Grep/Bash/Edit/Write)
+
+- Gates `.workkit/capture.md` in both directions: the owner's capture surface, whose one sanctioned touch is the triage drain (#145).
 - A read of its contents AND a rewrite of it (Edit/Write, `>`, plain `tee`, `sed -i`, `perl -i`) need the marker the `workkit:triage` skill records, stale after 30 minutes.
-- An APPEND — `>>`, `tee -a`, or the capture CLI (`wk.sh note`, which names no path) — is blocked with the marker or without, since adding to it is the owner's alone.
+- An APPEND (`>>`, `tee -a`, or the capture CLI (`wk.sh note`, which names no path)) is blocked with the marker or without, since adding to it is the owner's alone.
 - Counting stays open.
 
-## `docs:board-guard` — PostToolUse (Edit/Write)
+## `docs:board-guard`: PostToolUse (Edit/Write)
 
 - Bounces `CLAUDE.md` / `AGENTS.md` writes that break the spec's document rules.
-- `CLAUDE.md`: pointer doctrine — exactly a bare `@AGENTS.md` import, no content. The violation carries the two-commit convert recipe.
-- `AGENTS.md`: the size budget, ≤250 lines, and the DENSITY rule beside it (#161) — no line over 400 bytes, since a markdown paragraph is one source line and a file can pass the line count while carrying a book in fourteen of them.
+- `CLAUDE.md`: pointer doctrine: exactly a bare `@AGENTS.md` import, no content. The violation carries the two-commit convert recipe.
+- `AGENTS.md`: the size budget, ≤250 lines, and the DENSITY rule beside it (#161): no line over 400 bytes, since a markdown paragraph is one source line and a file can pass the line count while carrying a book in fourteen of them.
 - A density violation lists the first few offenders as `line N (M bytes)` and says to bulletize or move the detail into `docs/<topic>.md`.
 - The unit is BYTES, and the measure is pinned to it with `LC_ALL=C`: one-true-awk counts bytes while gawk counts characters under a UTF-8 locale, so an unpinned rule would judge the same file differently on macOS and Linux. One rule, one unit, everywhere it is described.
 
-## `docs:changelog-guard` — PostToolUse (Edit/Write)
+## `docs:changelog-guard`: PostToolUse (Edit/Write)
 
-- Bounces a CHANGELOG entry that is an essay instead of one short linked paragraph — only entries the write ADDED.
+- Bounces a CHANGELOG entry that is an essay instead of one short linked paragraph, only entries the write ADDED.
 
-## `docs:session-guard` — PostToolUse (Edit/Write)
+## `docs:session-guard`: PostToolUse (Edit/Write)
 
 - Bounces a write that leaves `.workkit/agents/session.md` past either cap: a bullet over 350 chars, or the file over 40 content lines (#126).
 - It judges the resulting file, which is why it is POST.
 - The same bar `docs:session` warns at; the `workkit:ship` prune is what normally keeps it under.
 
-## `docs:change-tracker` — Stop
+## `docs:change-tracker`: Stop
 
 - Nags about uncommitted work, keeping the issue true, promoting findings out of `.workkit/`, and unfiled captures.
 - Once per change (#132): it stays silent on every stop that follows while nothing has moved.
 
-## `manager:close-guard` — Stop
+## `manager:close-guard`: Stop
 
-- Warns — never blocks — when a frontier session did the bulk editing itself, or when worker output ended the turn with no verifier pass.
+- Warns (never blocks) when a frontier session did the bulk editing itself, or when worker output ended the turn with no verifier pass.
 - The warning is user-visible only and never continues the turn.

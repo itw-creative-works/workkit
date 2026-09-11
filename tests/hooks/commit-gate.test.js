@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 //
-// Tests for hooks/safety/commit-gate — the PreToolUse hook that gates every
+// Tests for hooks/safety/commit-gate: the PreToolUse hook that gates every
 // `git commit`: code commits need a fresh workkit:review marker, and repos
 // with a test script need the suite green.
 //
@@ -53,7 +53,7 @@ const runHook = (cwd, command, spawnCwd, extraEnv = {}) => {
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
 };
 
-// A stand-down's message, off the hook's JSON stdout — the channel a
+// A stand-down's message, off the hook's JSON stdout: the channel a
 // PreToolUse hook exiting 0 is actually heard on (#155). Empty stdout is no
 // stand-down, and is returned as such so a case can assert silence.
 const standDownMessage = (out) => {
@@ -70,14 +70,14 @@ const cleanup = (dir) => { dropMarker(dir); try { fs.rmSync(dir, { recursive: tr
 const run = async () => {
   group('commit-gate: scope');
 
-  await test('non-commit command — exit 0', () => {
+  await test('non-commit command: exit 0', () => {
     const dir = mkRepo();
     const { code } = runHook(dir, 'git status && npm test');
     assertEq(code, 0, 'only commits are gated');
     cleanup(dir);
   });
 
-  await test('commit with nothing staged — exit 0 (git will fail it anyway)', () => {
+  await test('commit with nothing staged: exit 0 (git will fail it anyway)', () => {
     const dir = mkRepo();
     const { code } = runHook(dir, 'git commit -m "x"');
     assertEq(code, 0, 'empty commits pass through');
@@ -86,7 +86,7 @@ const run = async () => {
 
   group('commit-gate: review marker');
 
-  await test('staged code, no review marker — exit 2 naming workkit:review', () => {
+  await test('staged code, no review marker: exit 2 naming workkit:review', () => {
     const dir = mkRepo();
     stage(dir, 'app.js', 'const x = 1;\n');
     const { code, stderr } = runHook(dir, 'git commit -m "feat"');
@@ -95,7 +95,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('staged code + fresh marker — exit 0', () => {
+  await test('staged code + fresh marker: exit 0', () => {
     const dir = mkRepo();
     stage(dir, 'app.js', 'const x = 1;\n');
     touchMarker(dir);
@@ -104,7 +104,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('docs-only staged, no marker — exit 0 (review not required)', () => {
+  await test('docs-only staged, no marker: exit 0 (review not required)', () => {
     const dir = mkRepo();
     stage(dir, 'README.md', '# docs\n');
     const { code } = runHook(dir, 'git commit -m "docs"');
@@ -112,7 +112,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('marker OLDER than the last commit — exit 2 (stale review)', () => {
+  await test('marker OLDER than the last commit: exit 2 (stale review)', () => {
     const dir = mkRepo();
     touchMarker(dir);
     const past = new Date(Date.now() - 3600 * 1000);
@@ -124,7 +124,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('-a flag counts modified tracked files — exit 2 without marker', () => {
+  await test('-a flag counts modified tracked files: exit 2 without marker', () => {
     const dir = mkRepo();
     stage(dir, 'app.js', 'const x = 1;\n');
     touchMarker(dir);
@@ -138,7 +138,7 @@ const run = async () => {
 
   group('commit-gate: tests must pass');
 
-  await test('failing test script — exit 2 with output tail', () => {
+  await test('failing test script: exit 2 with output tail', () => {
     const dir = mkRepo();
     stage(dir, 'package.json', '{"scripts":{"test":"echo BOOM && exit 1"}}');
     touchMarker(dir);
@@ -148,7 +148,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('passing test script + marker — exit 0', () => {
+  await test('passing test script + marker: exit 0', () => {
     const dir = mkRepo();
     stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
     touchMarker(dir);
@@ -157,7 +157,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('suite that outruns the gate deadline — exit 2, tree terminated (#93)', async () => {
+  await test('suite that outruns the gate deadline: exit 2, tree terminated (#93)', async () => {
     // The failure this pins: a suite longer than the harness's hook timeout
     // used to get the hook cancelled, and a cancelled hook is silently ALLOW.
     // The gate now ends the run at its own deadline and bounces.
@@ -169,7 +169,7 @@ const run = async () => {
     // Deadline 5, not 1 or 2: bash's integer SECONDS can round a 1s deadline
     // down toward the poll floor, and on a loaded machine (this suite running
     // inside the real gate's own run) npm can take past 2s to boot the fake
-    // suite — either way gate.pid would not exist yet when the deadline ends
+    // suite, either way gate.pid would not exist yet when the deadline ends
     // the run. 5s stays far under the 15s decision assertion below.
     const { code, stderr } = runHook(dir, 'git commit -m "x"', undefined,
       { WORKKIT_GATE_TEST_DEADLINE: '5' });
@@ -181,7 +181,7 @@ const run = async () => {
     // Ended is answered by WAITING for it, not by one instant. The gate kills
     // the tree from the leaves up, so the process it recorded loses its parent
     // in the same breath it is killed: until the kernel hands that orphan to
-    // init and init reaps it, the pid is a ZOMBIE — dead, and still answering
+    // init and init reaps it, the pid is a ZOMBIE: dead, and still answering
     // kill(pid, 0). How long that gap lasts is the machine's business, and on a
     // Linux runner it outlived the assertion (#114). A suite that was genuinely
     // left running answers for its full 30 seconds, so neither exit is hidden:
@@ -200,7 +200,7 @@ const run = async () => {
   });
 
   await test('the gate deadline sits under its declared hook timeout (#93)', () => {
-    // The invariant: the gate must decide BEFORE the harness would cancel it —
+    // The invariant: the gate must decide BEFORE the harness would cancel it:
     // a cancelled hook is a silent allow, which is the whole defect.
     const hooksJson = JSON.parse(fs.readFileSync(
       path.join(__dirname, '..', '..', 'hooks', 'hooks.json'), 'utf8'));
@@ -235,7 +235,7 @@ const run = async () => {
 
   group('commit-gate: new source files need tests (test-TYPE proxy)');
 
-  await test('new .js file, no test file staged — exit 2', () => {
+  await test('new .js file, no test file staged: exit 2', () => {
     const dir = mkRepo();
     stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
     stage(dir, 'thing.js', 'module.exports = 1;\n');
@@ -247,7 +247,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('new .js file WITH a test file staged — exit 0', () => {
+  await test('new .js file WITH a test file staged: exit 0', () => {
     const dir = mkRepo();
     stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
     stage(dir, 'thing.js', 'module.exports = 1;\n');
@@ -258,7 +258,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('new .js file in a repo with NO test script — proxy skipped, exit 0', () => {
+  await test('new .js file in a repo with NO test script: proxy skipped, exit 0', () => {
     const dir = mkRepo();
     stage(dir, 'thing.js', 'module.exports = 1;\n');
     touchMarker(dir);
@@ -267,7 +267,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('MODIFIED .js file (not added) — proxy skipped, exit 0', () => {
+  await test('MODIFIED .js file (not added): proxy skipped, exit 0', () => {
     const dir = mkRepo();
     stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
     stage(dir, 'thing.js', 'module.exports = 1;\n');
@@ -281,7 +281,7 @@ const run = async () => {
 
   await test('commit from a SUBDIRECTORY is gated identically (review regression)', () => {
     // package.json and npm test are judged at the repo ROOT, not the session
-    // cwd — a session sitting in repo/src must not slip past the proxy.
+    // cwd: a session sitting in repo/src must not slip past the proxy.
     const dir = mkRepo();
     stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
     stage(dir, 'thing.js', 'module.exports = 1;\n');
@@ -307,7 +307,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('new config/test-named files are exempt — exit 0', () => {
+  await test('new config/test-named files are exempt: exit 0', () => {
     const dir = mkRepo();
     stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
     stage(dir, 'eslint.config.mjs', 'export default [];\n');
@@ -319,7 +319,7 @@ const run = async () => {
 
   group('commit-gate: command parsing (review regressions)');
 
-  await test('command that only MENTIONS git commit — exit 0', () => {
+  await test('command that only MENTIONS git commit: exit 0', () => {
     const dir = mkRepo();
     stage(dir, 'app.js', 'const x = 1;\n');
     for (const c of ['echo "use git commit -m msg"', 'git log --grep=commit', 'echo how to git commit']) {
@@ -329,7 +329,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('commit followed by ; or && still gates — exit 2', () => {
+  await test('commit followed by ; or && still gates: exit 2', () => {
     const dir = mkRepo();
     stage(dir, 'app.js', 'const x = 1;\n');
     for (const c of ['git commit -m "x";', 'git commit -m "x"&&git push']) {
@@ -339,7 +339,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('flag-like words inside the message do not trigger -a — exit 0 for docs-only', () => {
+  await test('flag-like words inside the message do not trigger -a: exit 0 for docs-only', () => {
     const dir = mkRepo();
     stage(dir, 'README.md', '# docs\n');
     fs.writeFileSync(path.join(dir, 'tracked.js'), 'const x = 1;\n');
@@ -350,7 +350,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('git -C other-repo commit — exit 2 fail closed', () => {
+  await test('git -C other-repo commit: exit 2 fail closed', () => {
     const dir = mkRepo();
     const { code, stderr } = runHook(dir, 'git -C /somewhere/else commit -m "x"');
     assertEq(code, 2, 'commits aimed at another repo must fail closed');
@@ -358,7 +358,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('cd elsewhere && git commit — exit 2 fail closed', () => {
+  await test('cd elsewhere && git commit: exit 2 fail closed', () => {
     const dir = mkRepo();
     const { code, stderr } = runHook(dir, 'cd /somewhere/else && git commit -m "x"');
     assertEq(code, 2, 'directory-changing commits must fail closed');
@@ -366,7 +366,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('pushd / popd elsewhere && git commit — exit 2 fail closed (issue #159)', () => {
+  await test('pushd / popd elsewhere && git commit: exit 2 fail closed (issue #159)', () => {
     // pushd does the same repo-addressing job as cd and used to pass the
     // detector outright, which is half of the combination that landed a commit
     // through the gate with none of its checks applied.
@@ -381,7 +381,7 @@ const run = async () => {
     }
   });
 
-  await test('a commit whose session cwd is in no repo — exit 2 fail closed (issue #159)', () => {
+  await test('a commit whose session cwd is in no repo: exit 2 fail closed (issue #159)', () => {
     // The other half: a session sitting outside any repo (a background subagent's
     // steady state) resolved no toplevel, so the gate stood down entirely.
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-norepo-'));
@@ -413,10 +413,10 @@ const run = async () => {
     fs.rmSync(outside, { recursive: true, force: true });
   });
 
-  await test('a payload carrying NO cwd still fails open — exit 0 (issue #159)', () => {
+  await test('a payload carrying NO cwd still fails open: exit 0 (issue #159)', () => {
     // The one thing the fail-closed deliberately does not cover: with no cwd in
     // the payload the gate is blind to WHERE the command runs, which is the
-    // hook's own defect rather than a command shape an agent can write — and
+    // hook's own defect rather than a command shape an agent can write, and
     // blocking there would wedge every commit with nothing that could clear it.
     const res = spawnSync('bash', [HOOK], {
       input: JSON.stringify({ tool_input: { command: 'git commit -m "feat: x"' } }),
@@ -427,7 +427,7 @@ const run = async () => {
     assertEq(res.status, 0, `no cwd → fail open, got: ${res.stderr}`);
   });
 
-  await test('pathspec commit with nothing staged — exit 2 (bypass closed)', () => {
+  await test('pathspec commit with nothing staged: exit 2 (bypass closed)', () => {
     const dir = mkRepo();
     fs.writeFileSync(path.join(dir, 'app.js'), 'const x = 1;\n');
     execSync('git add app.js && git commit -m "add"', { cwd: dir, stdio: 'pipe' });
@@ -438,7 +438,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('MULTI-LINE quoted mention — exit 0 (_lib.sh unification)', () => {
+  await test('MULTI-LINE quoted mention: exit 0 (_lib.sh unification)', () => {
     // The gate's old line-based sed strip left the tail lines of a multi-line
     // quoted string looking unquoted; the shared hooks/_lib.sh strip is
     // multiline perl, same as the commit-language hook.
@@ -450,7 +450,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('quote character inside single quotes before a real commit — exit 2 (strip-ordering regression)', () => {
+  await test('quote character inside single quotes before a real commit: exit 2 (strip-ordering regression)', () => {
     // Stripping double-quoted spans before single-quoted ones let the `"` in
     // `grep '"'` pair with the commit message's opening quote and swallow the
     // git commit clause; the strip must be one left-to-right alternation.
@@ -462,7 +462,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('heredoc BODY mentioning git commit — exit 0 (gotchas-sweep regression)', () => {
+  await test('heredoc BODY mentioning git commit: exit 0 (gotchas-sweep regression)', () => {
     // A `cat >> file <<EOF` whose body holds a literal `git commit` example
     // was clause-split like top-level code and blocked as a real commit.
     const dir = mkRepo();
@@ -474,8 +474,8 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('commit inside interpreter-fed heredoc still gates — exit 2 (light-review finding)', () => {
-    // A heredoc body piped INTO a shell is executed code — stripping it
+  await test('commit inside interpreter-fed heredoc still gates: exit 2 (light-review finding)', () => {
+    // A heredoc body piped INTO a shell is executed code: stripping it
     // before detection opened a bypass. The strip must skip commands whose
     // heredoc feeds an interpreter.
     const dir = mkRepo();
@@ -487,7 +487,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('real commit with heredoc message still gates — exit 2', () => {
+  await test('real commit with heredoc message still gates: exit 2', () => {
     const dir = mkRepo();
     stage(dir, 'app.js', 'const x = 1;\n');
     dropMarker(dir);
@@ -499,7 +499,7 @@ const run = async () => {
 
   group('commit-gate: prefixed and wrapped spellings (hardening 2026-07-25)');
 
-  await test('prefixed spellings still gate — command/env/path/subshell/group', () => {
+  await test('prefixed spellings still gate: command/env/path/subshell/group', () => {
     // Each of these first words walked past the old first-word-is-git test,
     // so the whole gate was skipped.
     for (const c of ['command git commit -m "x"', 'env git commit -m "x"', '/usr/bin/git commit -m "x"', '(git commit -m "x")', '{ git commit -m "x"; }']) {
@@ -512,7 +512,7 @@ const run = async () => {
     }
   });
 
-  await test('interpreter-string commit — exit 2 asking for the plain form', () => {
+  await test('interpreter-string commit: exit 2 asking for the plain form', () => {
     // The -c string argument is one quoted span; the quote strip replaced it
     // with a placeholder, so the commit inside was never seen.
     for (const c of ['sh -c \'git commit -m "x"\'', 'bash -c "git commit -m x"', 'bash -lc "cd /x && git commit -m x"', 'eval "git commit -m x"']) {
@@ -525,7 +525,7 @@ const run = async () => {
     }
   });
 
-  await test('interpreter string without a commit inside — exit 0', () => {
+  await test('interpreter string without a commit inside: exit 0', () => {
     const dir = mkRepo();
     stage(dir, 'app.js', 'const x = 1;\n');
     for (const c of ['sh -c "echo hi"', 'bash -c "git status"']) {
@@ -537,7 +537,7 @@ const run = async () => {
 
   group('commit-gate: wrapper detection reads command position (review 2026-07-25)');
 
-  await test('a wrapped spelling inside DATA quotes does not block — grep pattern, --grep value', () => {
+  await test('a wrapped spelling inside DATA quotes does not block: grep pattern, --grep value', () => {
     // The old detector ran its regex over the ORIGINAL text, so a quoted span
     // that merely mentions a wrapper read as one and blocked commands that
     // commit nothing at all.
@@ -555,7 +555,7 @@ const run = async () => {
 
   await test('a commit whose MESSAGE mentions a wrapped spelling gates normally', () => {
     // The worst false positive: the block told the user to run a plain
-    // `git commit`, which is exactly what they were running — only rewording
+    // `git commit`, which is exactly what they were running, only rewording
     // the message escaped. A docs-only commit passing proves the message span
     // never reaches the wrapper test.
     const dir = mkRepo();
@@ -565,7 +565,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('unquoted eval commit still gates — exit 2 (eval-peel regression)', () => {
+  await test('unquoted eval commit still gates: exit 2 (eval-peel regression)', () => {
     // `eval git commit -m x` executes the words essentially as written, but
     // eval was not peeled, so the clause scan never saw git in first position
     // and the whole gate was skipped.
@@ -573,11 +573,11 @@ const run = async () => {
     stage(dir, 'app.js', 'const x = 1;\n');
     const { code, stderr } = runHook(dir, 'eval git commit -m "x"');
     assertEq(code, 2, `must gate, got: ${stderr}`);
-    assert(stderr.includes('review'), `gated normally — the flags are readable: ${stderr}`);
+    assert(stderr.includes('review'), `gated normally, the flags are readable: ${stderr}`);
     cleanup(dir);
   });
 
-  await test('attached -c string still fails closed — exit 2 (no-space regression)', () => {
+  await test('attached -c string still fails closed: exit 2 (no-space regression)', () => {
     // `bash -c"git commit -m x"` runs the string, but the old detector
     // demanded whitespace between the option cluster and the quotes.
     for (const c of ['bash -c"git commit -m x"', 'sh -lc"git commit -m x"']) {
@@ -615,7 +615,7 @@ const run = async () => {
     try { fs.rmSync(bin, { recursive: true, force: true }); } catch {}
   });
 
-  await test('GIT_DIR / --git-dir / --work-tree aimed elsewhere — exit 2 fail closed', () => {
+  await test('GIT_DIR / --git-dir / --work-tree aimed elsewhere: exit 2 fail closed', () => {
     // These were detected as commits but judged against the cwd's staging, so
     // a commit aimed at another repo could pass on this repo's cleanliness.
     for (const c of ['GIT_DIR=/other/.git git commit -m "x"', 'git --git-dir=/other/.git commit -m "x"', 'git --git-dir /other/.git commit -m "x"', 'git --work-tree=/other commit -m "x"', 'env GIT_WORK_TREE=/other git commit -m "x"']) {
@@ -627,7 +627,7 @@ const run = async () => {
     }
   });
 
-  await test('the subcommand must be commit — log/show/diff with a commit argument pass', () => {
+  await test('the subcommand must be commit: log/show/diff with a commit argument pass', () => {
     // Any clause `git … commit …` used to read as a commit, so
     // `git log --grep commit` ran the FULL gate, npm test included.
     const dir = mkRepo();
@@ -661,7 +661,7 @@ const run = async () => {
   const vendoredLinter = () => {
     const engine = fs.readFileSync(path.join(WORKFLOW_DIR, 'changelog.js'), 'utf8');
     const nl = engine.indexOf('\n');
-    return `${engine.slice(0, nl + 1)}// Vendored from the workflow core's changelog.js by standards.sh — the kit is the SSOT; edit it there. This copy is resynced on every heal.\n${engine.slice(nl + 1)}`;
+    return `${engine.slice(0, nl + 1)}// Vendored from the workflow core's changelog.js by standards.sh. The kit is the SSOT; edit it there. This copy is resynced on every heal.\n${engine.slice(nl + 1)}`;
   };
 
   const stageDeep = (dir, name, content) => {
@@ -669,7 +669,7 @@ const run = async () => {
     stage(dir, name, content);
   };
 
-  // A repo with a committed settings.json — the stamp arm only exempts an EDIT
+  // A repo with a committed settings.json: the stamp arm only exempts an EDIT
   // that touches nothing but the version key.
   const mkStampedRepo = () => {
     const dir = mkRepo();
@@ -678,7 +678,7 @@ const run = async () => {
     return dir;
   };
 
-  await test('version stamp alone, no marker — exit 0', () => {
+  await test('version stamp alone, no marker: exit 0', () => {
     const dir = mkStampedRepo();
     stage(dir, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
     const { code, stderr } = runHook(dir, 'git commit -m "chore(workflow): stamp"');
@@ -686,15 +686,15 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('settings edit beyond the version, no marker — exit 2', () => {
+  await test('settings edit beyond the version, no marker: exit 2', () => {
     const dir = mkStampedRepo();
     stage(dir, '.workkit/settings.json', '{ "version": 7, "enabled": false }\n');
     const { code } = runHook(dir, 'git commit -m "chore: flip"');
-    assertEq(code, 2, 'only the version key is bookkeeping — an enabled flip gets the full gate');
+    assertEq(code, 2, 'only the version key is bookkeeping: an enabled flip gets the full gate');
     cleanup(dir);
   });
 
-  await test('NEW settings.json (the opt-in commit), no marker — exit 2', () => {
+  await test('NEW settings.json (the opt-in commit), no marker: exit 2', () => {
     const dir = mkRepo();
     stageDeep(dir, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
     const { code } = runHook(dir, 'git commit -m "chore: opt in"');
@@ -702,7 +702,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('stamp + a source file, no marker — exit 2 (full gate restored)', () => {
+  await test('stamp + a source file, no marker: exit 2 (full gate restored)', () => {
     const dir = mkStampedRepo();
     stage(dir, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
     stage(dir, 'app.js', 'const x = 1;\n');
@@ -711,7 +711,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('stamp + current vendored linter, no marker, no test file — exit 0', () => {
+  await test('stamp + current vendored linter, no marker, no test file: exit 0', () => {
     const dir = mkStampedRepo();
     // A test script makes checks 1 and 5 live; the suite itself passes.
     stage(dir, 'package.json', '{ "scripts": { "test": "exit 0" } }\n');
@@ -723,7 +723,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('tampered linter copy, no marker — exit 2', () => {
+  await test('tampered linter copy, no marker: exit 2', () => {
     const dir = mkRepo();
     stageDeep(dir, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
     stageDeep(dir, '.github/changelog-lint.cjs', `${vendoredLinter()}\n// local edit\n`);
@@ -732,7 +732,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('linter copy missing the vendor header, no marker — exit 2', () => {
+  await test('linter copy missing the vendor header, no marker: exit 2', () => {
     const dir = mkRepo();
     const engine = fs.readFileSync(path.join(WORKFLOW_DIR, 'changelog.js'), 'utf8');
     stageDeep(dir, '.github/changelog-lint.cjs', engine);
@@ -753,7 +753,7 @@ const run = async () => {
   const suiteRan = (dir) => fs.existsSync(path.join(dir, SENTINEL));
 
   // package.json and a source file already committed, so each case stages only
-  // what it is about — and so the version bumps below have a HEAD copy to be
+  // what it is about, and so the version bumps below have a HEAD copy to be
   // judged against.
   const mkReleaseRepo = () => {
     const dir = mkRepo();
@@ -763,7 +763,7 @@ const run = async () => {
     return dir;
   };
 
-  await test('docs-only commit — the suite does not run', () => {
+  await test('docs-only commit: the suite does not run', () => {
     const dir = mkReleaseRepo();
     stage(dir, 'README.md', '# docs\n');
     dropMarker(dir);
@@ -773,7 +773,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('version-only root package.json bump — the suite does not run', () => {
+  await test('version-only root package.json bump: the suite does not run', () => {
     const dir = mkReleaseRepo();
     stage(dir, 'package.json', pkg('1.0.1'));
     dropMarker(dir);
@@ -783,7 +783,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('version bump plus a second changed key — gates as code', () => {
+  await test('version bump plus a second changed key: gates as code', () => {
     const dir = mkReleaseRepo();
     stage(dir, 'package.json', pkg('1.0.1', { description: 'now with a second change' }));
     dropMarker(dir);
@@ -798,7 +798,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('a code file alongside the version bump — the suite runs', () => {
+  await test('a code file alongside the version bump: the suite runs', () => {
     const dir = mkReleaseRepo();
     stage(dir, 'package.json', pkg('1.0.1'));
     stage(dir, 'app.js', 'const x = 2;\n');
@@ -810,7 +810,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  // The other file a repo keeps its version in — a plugin repo (this one
+  // The other file a repo keeps its version in: a plugin repo (this one
   // included) bumps both in the same release commit.
   const manifest = (version, extra) => `${JSON.stringify({
     name: 'fixture', version, description: 'a plugin', ...extra,
@@ -823,7 +823,7 @@ const run = async () => {
     return dir;
   };
 
-  await test('version-only plugin.json bump — the suite does not run', () => {
+  await test('version-only plugin.json bump: the suite does not run', () => {
     const dir = mkPluginRepo();
     stage(dir, 'package.json', pkg('1.0.1'));
     stageDeep(dir, '.claude-plugin/plugin.json', manifest('1.0.1'));
@@ -834,7 +834,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('plugin.json version bump plus a second changed key — gates as code', () => {
+  await test('plugin.json version bump plus a second changed key: gates as code', () => {
     const dir = mkPluginRepo();
     stageDeep(dir, '.claude-plugin/plugin.json', manifest('1.0.1', { description: 'reworded' }));
     dropMarker(dir);
@@ -848,8 +848,8 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('a script under a docs PATH is code — the suite runs (review finding)', () => {
-    // hooks/docs/*/run.sh is executable bash living under a docs directory —
+  await test('a script under a docs PATH is code: the suite runs (review finding)', () => {
+    // hooks/docs/*/run.sh is executable bash living under a docs directory:
     // six of them in this repo. Classifying it as docs would let a hook change
     // commit with no suite and no review marker. Seeded first, then modified,
     // so check 1 (new source needs tests) is not what answers.
@@ -868,7 +868,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('a .md under a docs path is still docs — the suite does not run', () => {
+  await test('a .md under a docs path is still docs: the suite does not run', () => {
     const dir = mkReleaseRepo();
     stageDeep(dir, 'docs/notes.md', '# notes\n');
     dropMarker(dir);
@@ -900,7 +900,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('a NESTED package.json version bump is code — the suite runs', () => {
+  await test('a NESTED package.json version bump is code: the suite runs', () => {
     // The carve-out is the root package.json alone; a workspace member's
     // version is not the release tooling's stamp on this repo.
     const dir = mkReleaseRepo();
@@ -916,7 +916,7 @@ const run = async () => {
 
   group('commit-gate: stage-and-commit compounds fail closed (issue #155)');
 
-  await test('git add -A && git commit over a CLEAN index — exit 2', () => {
+  await test('git add -A && git commit over a CLEAN index: exit 2', () => {
     // The regression this pins: the gate is PreToolUse, so it read the index
     // BEFORE the `add` ran. Over a clean index the empty file list hit the
     // fail-open and every check stood down, silently.
@@ -928,7 +928,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('the same compound with the change ALREADY staged — still exit 2', () => {
+  await test('the same compound with the change ALREADY staged: still exit 2', () => {
     // A populated index is no answer: the `add` may stage more than the gate saw.
     const dir = mkRepo();
     stage(dir, 'README.md', '# docs\n');
@@ -938,7 +938,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('rm / mv / stage compounds are the same shape — exit 2', () => {
+  await test('rm / mv / stage compounds are the same shape: exit 2', () => {
     for (const c of ['git rm old.js && git commit -m "chore: drop it"',
       'git mv a.js b.js && git commit -m "chore: move it"',
       'git stage app.js; git commit -m "feat: thing"']) {
@@ -950,7 +950,7 @@ const run = async () => {
     }
   });
 
-  await test('a staging clause AFTER the commit is not the rule — exit 0', () => {
+  await test('a staging clause AFTER the commit is not the rule: exit 0', () => {
     // The clause walk breaks at the commit, so only what precedes it can change
     // what the commit carries.
     const dir = mkRepo();
@@ -960,7 +960,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('a quoted MENTION of staging does not trigger the rule — exit 0', () => {
+  await test('a quoted MENTION of staging does not trigger the rule: exit 0', () => {
     const dir = mkRepo();
     stage(dir, 'README.md', '# docs\n');
     const { code, stderr } = runHook(dir, 'git commit -m "then git add -A"');
@@ -970,7 +970,7 @@ const run = async () => {
 
   group('commit-gate: check 5 never stands down silently (issue #155)');
 
-  await test('docs-only commit in a repo with a test script — exit 0, and says why', () => {
+  await test('docs-only commit in a repo with a test script: exit 0, and says why', () => {
     const dir = mkReleaseRepo();
     stage(dir, 'README.md', '# docs\n');
     dropMarker(dir);
@@ -983,7 +983,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('nothing staged in a repo with a test script — exit 0, and says why', () => {
+  await test('nothing staged in a repo with a test script: exit 0, and says why', () => {
     const dir = mkReleaseRepo();
     dropMarker(dir);
     const out = runHook(dir, 'git commit -m "chore: nothing"');
@@ -994,7 +994,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('a repo with NO test script is never told about a suite — exit 0, silent', () => {
+  await test('a repo with NO test script is never told about a suite: exit 0, silent', () => {
     const dir = mkRepo();
     stage(dir, 'README.md', '# docs\n');
     const out = runHook(dir, 'git commit -m "docs: readme"');
@@ -1026,7 +1026,7 @@ const run = async () => {
 
   await test('quoted and unquoted pathspec commits gate identically', () => {
     // The quoted message used to be DELETED from the detection copy, leaving
-    // -m to consume the pathspec — so the file list read as empty and the gate
+    // -m to consume the pathspec, so the file list read as empty and the gate
     // skipped every check, review and tests included.
     for (const message of ['"docs"', 'docs']) {
       const dir = mkRepo();
@@ -1048,7 +1048,7 @@ const run = async () => {
 
   await test('a value-taking flag does not have its value read as a pathspec', () => {
     // Once quoted spans became visible tokens, any flag missing from the walk's
-    // skip list had its value counted as a file — which forced a docs-only
+    // skip list had its value counted as a file, which forced a docs-only
     // commit to be gated as code and blocked for a missing review.
     for (const flag of ['--author "Jane Doe <j@d.c>"', '--date "2020-01-01"', '--trailer "Co-Authored-By: X <x@y.z>"']) {
       const dir = mkRepo();
@@ -1105,7 +1105,8 @@ const run = async () => {
 
   await test('a staged entry in the format commits', () => {
     const dir = mkRepo();
-    stage(dir, 'CHANGELOG.md', CHANGELOG(`- ${ISSUE} — Plugins install from settings.json.`));
+    // \u2014 is the CHANGELOG entry separator; the escape keeps the character out of this source.
+    stage(dir, 'CHANGELOG.md', CHANGELOG(`- ${ISSUE} \u2014 Plugins install from settings.json.`));
     const { code, stderr } = runHook(dir, 'git commit -m "docs: changelog"');
     assertEq(code, 0, `allowed, got: ${stderr}`);
     cleanup(dir);
@@ -1115,7 +1116,7 @@ const run = async () => {
     const dir = mkRepo();
     stage(dir, 'CHANGELOG.md', CHANGELOG('- A legacy essay entry with no issue link.'));
     execSync('git commit -q -m "legacy" --no-verify', { cwd: dir, stdio: 'pipe' });
-    stage(dir, 'CHANGELOG.md', CHANGELOG('- A legacy essay entry with no issue link.', `- ${ISSUE} — A new entry.`));
+    stage(dir, 'CHANGELOG.md', CHANGELOG('- A legacy essay entry with no issue link.', `- ${ISSUE} \u2014 A new entry.`));
     const { code, stderr } = runHook(dir, 'git commit -m "docs: changelog"');
     assertEq(code, 0, `allowed, got: ${stderr}`);
     cleanup(dir);
@@ -1133,7 +1134,7 @@ const run = async () => {
 
   await test('a CRLF CHANGELOG is judged, not waved through', () => {
     // The parser used to read a CRLF file as zero entries, so the gate passed
-    // anything in it — a guard failing open in silence.
+    // anything in it: a guard failing open in silence.
     const dir = mkRepo();
     stage(dir, 'CHANGELOG.md', CHANGELOG('- an essay entry with no issue link.').replace(/\n/g, '\r\n'));
     const { code, stderr } = runHook(dir, 'git commit -m "docs: changelog"');
@@ -1169,7 +1170,7 @@ const run = async () => {
     const readWith = (dialect) => {
       const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'statbin-'));
       // BSD: -c is unknown, so it errors out. GNU: -f is filesystem status,
-      // which answers `?` for %m and exits 0 — the trap this helper avoids.
+      // which answers `?` for %m and exits 0: the trap this helper avoids.
       const script = dialect === 'bsd'
         ? `#!/bin/sh\ncase "$1" in -c) echo "stat: illegal option" >&2; exit 1 ;; -f) echo ${when}; exit 0 ;; esac\nexit 1\n`
         : `#!/bin/sh\ncase "$1" in -f) echo '?'; exit 0 ;; -c) echo ${when}; exit 0 ;; esac\nexit 1\n`;
@@ -1190,7 +1191,7 @@ const run = async () => {
 
   // Collapse on ship: the turn that closes an issue writes the entry the issue
   // closes against. Prose until now, and deterministically checkable.
-  const ENTRY = CHANGELOG(`- ${ISSUE} — The thing the issue asked for.`);
+  const ENTRY = CHANGELOG(`- ${ISSUE} \u2014 The thing the issue asked for.`);
 
   await test('a Fixes trailer with no CHANGELOG staged blocks', () => {
     const dir = mkRepo();
@@ -1230,7 +1231,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('no trailer — the commit is not asked for an entry', () => {
+  await test('no trailer: the commit is not asked for an entry', () => {
     const dir = mkRepo();
     fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), ENTRY);
     execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe' });
@@ -1248,6 +1249,110 @@ const run = async () => {
     const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4"');
     assertEq(code, 0, `allowed, got: ${stderr}`);
     cleanup(dir);
+  });
+
+  group('commit-gate: check 6, a closed issue carries its Proof: comment (issue #233)');
+
+  // A proof is a hard gate (owner ruling, 2026-09-10): the trailer is its third
+  // stage, after the complete flip and the close that safety/proof-guard holds.
+  // The read is the guard's, so the shim answers the same call, and nothing
+  // here reaches GitHub.
+  const ghStub = ({ comments = {}, fails = false } = {}) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-gh-'));
+    const bodies = path.join(dir, 'issues');
+    fs.mkdirSync(bodies);
+    for (const [number, list] of Object.entries(comments)) {
+      fs.writeFileSync(path.join(bodies, `${number}.json`),
+        JSON.stringify({ comments: list.map((body) => ({ body })) }));
+    }
+    fs.mkdirSync(path.join(dir, 'bin'));
+    fs.writeFileSync(path.join(dir, 'bin', 'gh'), [
+      '#!/usr/bin/env bash',
+      'if [[ "$1 $2" == "issue view" ]]; then',
+      ...(fails ? ['  exit 1'] : [
+        `  file="${bodies}/$3.json"`,
+        '  [[ -f "$file" ]] || exit 1',
+        '  cat "$file"',
+        '  exit 0',
+      ]),
+      'fi',
+      'exit 0',
+    ].join('\n'), { mode: 0o755 });
+    return { env: { PATH: `${path.join(dir, 'bin')}:${process.env.PATH}` }, dir };
+  };
+
+  // A repo whose commit is ready for every other check: CHANGELOG seeded and
+  // its entry staged (check 4), code staged, review marker fresh.
+  const shipReadyRepo = () => {
+    const dir = mkRepo();
+    fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), CHANGELOG());
+    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe' });
+    stage(dir, 'app.js', 'const x = 1;\n');
+    stage(dir, 'CHANGELOG.md', ENTRY);
+    touchMarker(dir);
+    return dir;
+  };
+
+  await test('a Fixes trailer whose issue has no Proof: comment blocks', () => {
+    const dir = shipReadyRepo();
+    const stub = ghStub({ comments: { 4: ['QA passed by the owner, 2026-09-10.'] } });
+    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4"', undefined, stub.env);
+    assertEq(code, 2, `blocked, got: ${stderr}`);
+    assert(stderr.includes('#4'), `names the issue, got: ${stderr}`);
+    assert(stderr.includes('Proof:'), `names what is missing, got: ${stderr}`);
+    cleanup(dir);
+    fs.rmSync(stub.dir, { recursive: true, force: true });
+  });
+
+  await test('a repo that keeps no CHANGELOG.md is never asked for a proof, even when gh can answer', () => {
+    const dir = mkRepo();
+    stage(dir, 'app.js', 'const x = 1;\n');
+    touchMarker(dir);
+    const stub = ghStub({ comments: { 4: ['looks good to me'] } });
+    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4"', undefined, stub.env);
+    assertEq(code, 0, `allowed outside the pipeline, got: ${stderr}`);
+    cleanup(dir);
+    fs.rmSync(stub.dir, { recursive: true, force: true });
+  });
+
+  await test('the same commit passes once the issue carries its proof', () => {
+    const dir = shipReadyRepo();
+    const stub = ghStub({ comments: { 4: ['Proof: unit: node tests/hooks/x.test.js'] } });
+    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4"', undefined, stub.env);
+    assertEq(code, 0, `allowed, got: ${stderr}`);
+    cleanup(dir);
+    fs.rmSync(stub.dir, { recursive: true, force: true });
+  });
+
+  await test('every unproved issue in the message is named', () => {
+    const dir = shipReadyRepo();
+    const stub = ghStub({ comments: { 4: ['Proof: unit: node tests/hooks/x.test.js'], 9: ['looks good'], 12: ['ok'] } });
+    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4\nCloses #9\nResolves #12"', undefined, stub.env);
+    assertEq(code, 2, `blocked, got: ${stderr}`);
+    assert(stderr.includes('#9') && stderr.includes('#12'), `names both, got: ${stderr}`);
+    assert(!stderr.includes('#4'), `never names the proved one, got: ${stderr}`);
+    cleanup(dir);
+    fs.rmSync(stub.dir, { recursive: true, force: true });
+  });
+
+  await test('a gh that cannot answer stands the check down, and the commit is not blocked', () => {
+    const dir = shipReadyRepo();
+    const stub = ghStub({ fails: true });
+    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4"', undefined, stub.env);
+    assertEq(code, 0, `an unreachable gh fails open, got: ${stderr}`);
+    assert(stderr.includes('did not run'), `and says so, got: ${stderr}`);
+    cleanup(dir);
+    fs.rmSync(stub.dir, { recursive: true, force: true });
+  });
+
+  await test('no trailer, no proof read', () => {
+    const dir = shipReadyRepo();
+    const stub = ghStub({ comments: {} });
+    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing that closes nothing"', undefined, stub.env);
+    assertEq(code, 0, `allowed, got: ${stderr}`);
+    assertEq(stderr, '', 'a commit closing nothing is never asked for a proof');
+    cleanup(dir);
+    fs.rmSync(stub.dir, { recursive: true, force: true });
   });
 
   await test('hooks.json registers the gate under PreToolUse Bash', () => {

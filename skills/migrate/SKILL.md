@@ -1,11 +1,11 @@
 ---
 name: migrate
-description: Bring a repo the rest of the way onto project-state spec v4 — retired PROGRESS/INBOX/TODO/plans files become issues, CHANGELOG history is rewritten to the entry format. - Use when the user says "migrate this repo", "bring this repo to the standard", or "fix the changelog history".
+description: Bring a repo the rest of the way onto project-state spec v4 (retired PROGRESS/INBOX/TODO/plans files become issues, CHANGELOG history is rewritten to the entry format). - Use when the user says "migrate this repo", "bring this repo to the standard", or "fix the changelog history".
 user-invocable: true
 argument-hint: "[repo path] [files|changelog]"
 ---
 
-# Migrate — the judgment half of a repo migration
+# Migrate: the judgment half of a repo migration
 
 `workflow:standards` heals what is safe to heal automatically. Everything it can only REPORT is here, because every item on that list either destroys information or needs a human's call. This skill runs only when invoked; nothing about it fires from a hook.
 
@@ -20,7 +20,7 @@ bash ~/.claude/workkit/standards.sh --state <repo>   # is the repo even opted in
 bash ~/.claude/workkit/standards.sh <repo>           # the drift report
 ```
 
-Deriving the list again here would let the two disagree about what counts as drift. If the report is silent, the repo is already at the standard — say so and stop.
+Deriving the list again here would let the two disagree about what counts as drift. If the report is silent, the repo is already at the standard. Say so and stop.
 
 A repo that is not opted in is not migrated. Offer `--enable` and stop; migrating a repo that never said yes writes issues into someone else's tracker.
 
@@ -30,11 +30,11 @@ An invocation argument narrows the run: `files` does §1 only, `changelog` does 
 
 `PROGRESS.md`, `INBOX.md`, `TODO.md`, and `plans/` are retired. Their contents are work items, and work items live as GitHub issues.
 
-This is `workkit:triage`'s routing pointed at a file instead of an inbox — **invoke that skill for the routing decisions** rather than restating them here. What this section adds is the file-specific handling:
+This is `workkit:triage`'s routing pointed at a file instead of an inbox. **Invoke that skill for the routing decisions** rather than restating them here. What this section adds is the file-specific handling:
 
 1. Read the whole file first. Split it into discrete items; never file a mixed dump as one issue.
 2. Drop what is already true: a board's `Done` lane is history, and history lives in the CHANGELOG and the commits. Do not file completed work as an open issue.
-3. File each live item with `## Description` then `## Spec` (a small item's Spec is the literal line `None needed — small item.`), exactly one `status:` label, and a `type:` label. Never apply `agent:ok` — that is the owner's to grant.
+3. File each live item with `## Description` then `## Spec` (a small item's Spec is the literal line `None needed: small item.`), exactly one `status:` label, and a `type:` label. Never apply `agent:ok`. That is the owner's to grant.
 4. A `plans/` file becomes the `## Spec` section of its issue. One plan, one issue. A spec already marked rejected is not filed; it stays rejected.
 5. **Print the Filed trail before deleting anything**: the `**🗂️ Filed**` section `workkit:triage` prints, one bullet per item leading with its issue link, in the cold-reader line (`docs/project-state.md` § Restating an issue).
 6. Delete the file only after every live item in it has an issue number. Deleting first turns a mis-read into lost work.
@@ -45,17 +45,17 @@ If an item's home is genuinely unclear, file it `status:inbox` and mark it `(che
 
 The entry rules and their reasoning live in the workkit plugin's `docs/project-state.md` → "CHANGELOG entries"; the machine SSOT is `~/.claude/workkit/changelog.js`. In short: one short paragraph per entry, starting with `[#N](../../issues/N)` or the literal `(no issue)`, ` — ` before the prose, at most 50 words.
 
-The depth is NOT deleted — it already lives in the commit each entry links to. That is what makes the compression safe to do.
+The depth is NOT deleted. It already lives in the commit each entry links to. That is what makes the compression safe to do.
 
-**The WHOLE file migrates, and the linter cannot scope this work for you.** `changelog.js`'s section detector deliberately skips non-semver `## [...]` headings (the `## [Plans for 2026]` guard), so a pre-issue era section (`## [cp1–cp99] — …`) lints green while every entry in it is still a massive old-format line — exactly the miss that happened in omega (2026-07-27: only `[Unreleased]` was rewritten because only its lines failed the lint). Scope by EYEBALL: every `## ` section with bullets under it migrates, and any long-line entry anywhere means the work is not done. Pre-issue-tracker entries take the literal `(no issue)`.
+**The WHOLE file migrates, and the linter cannot scope this work for you.** `changelog.js`'s section detector deliberately skips non-semver `## [...]` headings (the `## [Plans for 2026]` guard), so a pre-issue era section (`## [cp1–cp99]: …`) lints green while every entry in it is still a massive old-format line, exactly the miss that happened in omega (2026-07-27: only `[Unreleased]` was rewritten because only its lines failed the lint). Scope by EYEBALL: every `## ` section with bullets under it migrates, and any long-line entry anywhere means the work is not done. Pre-issue-tracker entries take the literal `(no issue)`.
 
 ### Split the work by version section
 
 A long history does not fit one context. Fan it out:
 
-1. List every `## [version]` heading and its line range — including non-semver era headings the linter ignores.
+1. List every `## [version]` heading and its line range, including non-semver era headings the linter ignores.
 2. Divide into contiguous ranges, one subagent per range.
-3. Give each agent **the count of sections it owns** and require it to state that count back and confirm it rewrote all of them before returning. An agent here returned only the first section of its range on the first attempt, and the range had to be redone — the count is the check that catches it.
+3. Give each agent **the count of sections it owns** and require it to state that count back and confirm it rewrote all of them before returning. An agent here returned only the first section of its range on the first attempt, and the range had to be redone. The count is the check that catches it.
 4. Each agent returns rewritten markdown for its range ONLY, never the whole file.
 
 ### What every agent must preserve
@@ -75,12 +75,12 @@ Reassemble in order, then gate on the whole file:
 node ~/.claude/workkit/changelog.js CHANGELOG.md
 ```
 
-Whole file, not `--added-only` — the point of this pass is the history, which adds no lines. It must exit 0 before the work is done. Also confirm, out loud, that the section count after equals the section count before.
+Whole file, not `--added-only`. The point of this pass is the history, which adds no lines. It must exit 0 before the work is done. Also confirm, out loud, that the section count after equals the section count before.
 
 ## 3. Close out
 
 - Report the before/after: section count (must be equal), entry count, file size.
-- Stamp the standard forward by re-running `bash ~/.claude/workkit/standards.sh <repo>` — with the drift gone, it writes the version itself. Do not hand-edit `.workkit/settings.json`.
+- Stamp the standard forward by re-running `bash ~/.claude/workkit/standards.sh <repo>`. With the drift gone, it writes the version itself. Do not hand-edit `.workkit/settings.json`.
 - CHANGELOG entry + commit belong to the normal flow (`workkit:ship`), not to this skill. Migrating is not shipping.
 
 ## Rules
@@ -88,4 +88,4 @@ Whole file, not `--added-only` — the point of this pass is the history, which 
 - **Never delete a file whose items are not yet filed.** The Filed trail is the receipt.
 - **Never invent priority or ordering.** Queue position is the owner's call; `status:specced` with no priority label is the default.
 - **Idempotent.** Re-running on a migrated repo finds nothing in the drift report and does nothing.
-- A repo with no CHANGELOG at all is not given one here — that is a repo-setup decision, not a migration.
+- A repo with no CHANGELOG at all is not given one here. That is a repo-setup decision, not a migration.

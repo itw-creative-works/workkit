@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# jobs/brief-publish.sh — publishing the morning brief. SOURCED, never executed.
+# jobs/brief-publish.sh: publishing the morning brief. SOURCED, never executed.
 #
 # The one home of "post today's digest as a Discussion on the home repo", and
 # its one caller is morning.sh's CLOUD path (issues #82, #107): the digest is
 # published by whoever composed it, and the brief composes on a runner. So this
 # prints ONE line saying what happened and returns a status, and decides nothing
-# about the run — the caller is the one that turns a post which did not land
+# about the run: the caller is the one that turns a post which did not land
 # into a red one, because there the Actions log is the delivery.
 #
 # It sets no shell options and runs nothing at load. The engine libraries it
 # needs are sourced inside the function, which is normally called inside a
-# `$(…)` capture — nothing it sources leaks into the caller's shell.
+# `$(…)` capture: nothing it sources leaks into the caller's shell.
 #
 # The CATEGORY is asked for by name and answered by the fallback: categories
 # cannot be created over the API, so `Brief` resolves to the repo's default
 # unless someone made one by hand. The read-back in cc-news.js filters on the
-# TITLE for the same reason — it cannot know which category a repo landed in.
+# TITLE for the same reason: it cannot know which category a repo landed in.
 #
 # Usage: wk_brief_publish <engine-dir> <response> <mark-file> <body-file>
 # Prints one line. Returns:
-#   0  posted — the line carries the discussion URL
+#   0  posted: the line carries the discussion URL
 #   2  there was nothing to post: no engine, no home repo, no gh/jq, or today's
 #      brief is already on the board (a second run, or the other runner's)
 #   1  a post was attempted and did not land
@@ -28,7 +28,7 @@ wk_brief_publish() {
   local slug date title posted url
 
   if [[ ! -f "$engine/lib.sh" || ! -f "$engine/discussions.sh" || ! -f "$engine/home.sh" ]]; then
-    printf "brief: the engine's home-repo library is missing at %s — nothing published" "$engine"
+    printf "brief: the engine's home-repo library is missing at %s; nothing published" "$engine"
     return 2
   fi
   # shellcheck source=../workflow/lib.sh
@@ -40,17 +40,17 @@ wk_brief_publish() {
 
   slug="$(wk_home_slug)" || slug=''
   if [[ -z "$slug" ]]; then
-    printf 'brief: no home repo configured — nothing published'
+    printf 'brief: no home repo configured; nothing published'
     return 2
   fi
   if ! wk_disc_ready; then
-    printf 'brief: %s is the home repo, but gh and jq are what reach it — nothing published' "$slug"
+    printf 'brief: %s is the home repo, but gh and jq are what reach it; nothing published' "$slug"
     return 2
   fi
 
   date="$(date '+%Y-%m-%d')"
   # The prefix cc-news.js reads back by. Kept in step with BRIEF_TITLE_PREFIX
-  # there — the one literal this shell and that module both know.
+  # there: the one literal this shell and that module both know.
   title="brief: $date"
 
   # Check before post: the local job, the cloud dispatch and the cron backup can
@@ -59,7 +59,7 @@ wk_brief_publish() {
   posted="$(wk_disc_list "$slug" 'Brief' "${date}T00:00:00Z")" || posted=''
   if [[ -n "$posted" ]] \
     && printf '%s' "$posted" | jq -e --arg t "$title" 'any(.[]; .title == $t)' >/dev/null 2>&1; then
-    printf 'brief: %s already carries %s — nothing posted' "$slug" "$title"
+    printf 'brief: %s already carries %s; nothing posted' "$slug" "$title"
     return 2
   fi
 
@@ -71,16 +71,16 @@ wk_brief_publish() {
     cat "$mark_file" >>"$body_file"
   fi
 
-  # One return covers two causes — the category read itself failed, or the repo
-  # answered with no categories at all — and this caller cannot tell them apart.
+  # One return covers two causes: the category read itself failed, or the repo
+  # answered with no categories at all, and this caller cannot tell them apart.
   # Naming one of them would be a guess in the log, so it names neither.
   if ! wk_disc_resolve_category "$slug" 'Brief'; then
-    printf 'brief: could not resolve a discussion category on %s — nothing posted' "$slug"
+    printf 'brief: could not resolve a discussion category on %s; nothing posted' "$slug"
     return 1
   fi
   url="$(wk_disc_create "$slug" "$WK_DISC_CATEGORY_ID" "$title" "$body_file")" || url=''
   if [[ -z "$url" ]]; then
-    printf 'brief: %s could not be posted to %s — nothing posted' "$title" "$slug"
+    printf 'brief: %s could not be posted to %s; nothing posted' "$title" "$slug"
     return 1
   fi
   printf 'brief: posted %s → %s' "$title" "$url"

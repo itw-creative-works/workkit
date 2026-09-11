@@ -36,7 +36,7 @@
 
 import { esc, lockedNotice, localLockedNotice } from './format.js';
 import {
-  TOKEN_URL, TOKEN_SCOPES, TOKEN_CLASSIC_URL, TOKEN_CLASSIC, writeToken, clearToken, safeStorage,
+  TOKEN_URL, TOKEN_SCOPES, TOKEN_CLASSIC_URL, TOKEN_CLASSIC, TOKEN_CLASSIC_WORDS, writeToken, clearToken, safeStorage,
 } from './github.js';
 
 /** Where the token is typed, and the only page a copy without one can use. */
@@ -55,7 +55,7 @@ export const SETTINGS_LABEL = 'Settings';
  * @param {string} [options.problem] - why the last token did not work, if it did not
  * @returns {string} markup
  */
-export const tokenCard = (options = {}) => `<div class="card mb-4">
+export const tokenCard = (options = {}) => `<div class="card h-100">
   <div class="card-body">
     <div class="omega-panel-head mb-3"><span>GitHub token</span></div>
     <p>This copy of the tower has no data of its own - it reads your GitHub issues live from your browser, and moves and files them there too. Hand it a token and it works exactly like the dashboard on your machine.</p>
@@ -83,14 +83,20 @@ export const tokenCard = (options = {}) => `<div class="card mb-4">
  * the guidance and the calls it describes cannot drift apart if they live in
  * one file.
  *
+ * ONE create button on the page, and it is the token card's (issue #241): two
+ * buttons for one action read as a mistake. The classic URL rides the words
+ * that NAME that token instead, inside the sentence explaining when it is the
+ * only kind that works - one click away, with nothing to mistake it for. The
+ * suite pins the phrase, so a reworded sentence is caught rather than quietly
+ * losing its link.
+ *
  * @returns {string} markup
  */
-export const tokenGuidance = () => `<div class="card">
+export const tokenGuidance = () => `<div class="card h-100">
   <div class="card-body">
     <div class="omega-panel-head mb-3"><span>What the token needs</span></div>
     <p class="text-body-secondary">${esc(TOKEN_SCOPES)}</p>
-    <p class="text-body-secondary">${esc(TOKEN_CLASSIC)}</p>
-    <a class="btn btn-outline-adaptive btn-sm" href="${esc(TOKEN_CLASSIC_URL)}" target="_blank" rel="noopener">Create a classic token on GitHub</a>
+    <p class="text-body-secondary">${esc(TOKEN_CLASSIC).replace(esc(TOKEN_CLASSIC_WORDS), `<a href="${esc(TOKEN_CLASSIC_URL)}" target="_blank" rel="noopener">${esc(TOKEN_CLASSIC_WORDS)}</a>`)}</p>
   </div>
 </div>`;
 

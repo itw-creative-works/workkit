@@ -1,5 +1,5 @@
 //
-// Tests for workflow/ — the label vocabulary manifest (labels.json) and
+// Tests for workflow/: the label vocabulary manifest (labels.json) and
 // the repo standards script (standards.sh).
 //
 // The script's label step talks to GitHub through `gh`; every test here runs
@@ -46,14 +46,14 @@ const desiredLabels = () => {
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'wf-std-'));
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
-// The roster and the declines, out of the machine-maintained `.repos.json` —
+// The roster and the declines, out of the machine-maintained `.repos.json`:
 // absent until the engine has something to record there (issue #80).
 const rosterOf = (home) => {
   const file = path.join(home, '.repos.json');
   return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')).repos || {}) : {};
 };
 
-// A git repo with an origin remote — the shape the script expects. No commits
+// A git repo with an origin remote: the shape the script expects. No commits
 // are made and the remote is never contacted (gh is stubbed).
 // Participation: the committed .workkit/settings.json is the repo's yes, so
 // every fixture carries one unless a test is exercising another state.
@@ -72,7 +72,7 @@ const makeRepo = ({ remote = true, settings = '{ "version": 1, "enabled": true }
 
 // PATH shim: records each `gh` invocation, answers `label list` and
 // `issue list` from fixtures. The recording keeps argument boundaries (see
-// tests/lib/argv-log.js) — a label description is a phrase with spaces, and
+// tests/lib/argv-log.js): a label description is a phrase with spaces, and
 // losing the boundary would make an unquoted expansion in the script
 // indistinguishable from a correct call.
 const makeGhStub = ({
@@ -82,7 +82,7 @@ const makeGhStub = ({
   // the whole fixture. `labelQueryFails` makes that query fail.
   labeled = {}, labelQueryFails = false,
   // Branch-protection knobs. `protection`: 'absent' (404s, PUT accepted),
-  // 'present' (GET succeeds), or 'denied' (404s, PUT rejected — the free-plan
+  // 'present' (GET succeeds), or 'denied' (404s, PUT rejected: the free-plan
   // private repo). `repoView`: answer `gh repo view` with a real owner/branch;
   // off by default so every older test exercises the "cannot resolve" bail-out.
   protection = 'absent', repoView = false,
@@ -165,11 +165,11 @@ const readFile = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') 
 const ghCalls = (stub) => readArgv(stub.logFile);
 
 // `pathPrefix: null` means run with no gh on PATH at all (the offline machine).
-// WORKFLOW_HOME always points at a throwaway directory — the user-level
+// WORKFLOW_HOME always points at a throwaway directory: the user-level
 // settings file this script writes must never be the real ~/.workkit.
 // A PATH holding every tool the script needs EXCEPT one. `command -v <tool>`
 // searches every PATH entry, so the only way to prove the missing-tool branch
-// is to build the PATH by hand — where the tool lives varies by machine (a CI
+// is to build the PATH by hand: where the tool lives varies by machine (a CI
 // runner keeps gh in /usr/bin, Homebrew does not), and a test that assumed a
 // layout was testing the host instead of the script.
 const binDirWithout = (excluded) => {
@@ -211,7 +211,7 @@ const runScript = (repoDir, {
   // node is on the PATH of any machine running this standard (the engine lints
   // CHANGELOGs with it, and so does the hook layer), so the default PATH
   // carries it. A test proving what happens WITHOUT a tool builds its own PATH
-  // with binDirWithout() — the suite's idiom for exactly that.
+  // with binDirWithout(): the suite's idiom for exactly that.
   const basePath = `/usr/bin:/bin:/usr/sbin:/sbin:${path.dirname(process.execPath)}`;
   const res = spawnSync('bash', [SCRIPT, ...args, repoDir], {
     env: {
@@ -230,7 +230,7 @@ const runScript = (repoDir, {
   });
   // The engine keeps stdout for machine-readable answers (--state, --announce)
   // and sends every diagnostic to stderr. `output` is what a human sees in a
-  // terminal — assert human-facing lines against it, and stdout only when the
+  // terminal: assert human-facing lines against it, and stdout only when the
   // test cares that something IS machine-readable.
   const stdout = res.stdout || '';
   const stderr = res.stderr || '';
@@ -254,8 +254,8 @@ const run = async () => {
   });
 
   await test('status:complete is the stage after qa, and its label teaches what it means (#196)', () => {
-    // The manifest lists the statuses in PIPELINE order — inbox, specced,
-    // building, qa, complete, then the side pockets — so a reader with nothing
+    // The manifest lists the statuses in PIPELINE order: inbox, specced,
+    // building, qa, complete, then the side pockets, so a reader with nothing
     // but `gh label list` learns the road in the order it is walked. The stage
     // a ship reads from sits directly after the one whose passing check grants
     // it, and it wears the verdict green qa gave up.
@@ -263,10 +263,10 @@ const run = async () => {
     assertEq(Object.keys(status).slice(0, 5).join(','), 'inbox,specced,building,qa,complete', 'the pipeline in order');
     assertEq(status.complete.description, 'QA passed, ready to ship. Exactly one status: label per open issue.', 'complete says QA passed');
     assertEq(status.complete.color, '12925C', 'complete wears the verdict green');
-    assertEq(status.qa.color, 'B0416A', 'qa moved off it — qa only means waiting on the check');
+    assertEq(status.qa.color, 'B0416A', 'qa moved off it: qa only means waiting on the check');
   });
 
-  await test('values are single lowercase words — no hyphens', () => {
+  await test('values are single lowercase words: no hyphens', () => {
     for (const { name } of desiredLabels()) {
       const value = name.split(':')[1];
       assert(/^[a-z]+$/.test(value), `${name}: value must be one lowercase word`);
@@ -292,11 +292,11 @@ const run = async () => {
     }
   });
 
-  await test('a fixed label’s hex is its board token’s light value — the pairing, pinned', () => {
+  await test('a fixed label’s hex is its board token’s light value: the pairing, pinned', () => {
     // A label's colour on GitHub is not free-chosen: it is the LIGHT-mode value
     // of the theme token the tower draws that label in, so the board and the
-    // issue page agree. Only this half can be pinned here — the token values
-    // live in the omega framework — so an edit that breaks the pairing from the
+    // issue page agree. Only this half can be pinned here: the token values
+    // live in the omega framework, so an edit that breaks the pairing from the
     // hex side fails loudly instead of drifting. Every fixed label is in it
     // since #149: `priority:high` gave up the brand accent, which no fixed hex
     // could track, for the danger red that `status:blocked` also wears.
@@ -316,7 +316,7 @@ const run = async () => {
 
   await test('a hex repeats across the groups but never inside one (#149)', () => {
     // The rule the palette is built on: a colour is unique WITHIN a vocabulary,
-    // since a column header, a card chip and a chart slice are read by hue —
+    // since a column header, a card chip and a chart slice are read by hue,
     // and free across them, since every chip carries its own word and glyph.
     for (const group of ['status', 'type', 'priority']) {
       const colors = Object.values(MANIFEST.groups[group].values).map((body) => body.color.toUpperCase());
@@ -334,17 +334,17 @@ const run = async () => {
     }
   });
 
-  await test('priority is exclusive — high plus low on one issue is a contradiction', () => {
+  await test('priority is exclusive: high plus low on one issue is a contradiction', () => {
     assertEq(MANIFEST.groups.priority.exclusive, true, 'priority.exclusive');
   });
 
-  await test('status and type are the required groups — priority absence means normal', () => {
+  await test('status and type are the required groups: priority absence means normal', () => {
     for (const [name, body] of Object.entries(MANIFEST.groups)) {
       assertEq(body.required === true, name === 'status' || name === 'type', `${name}.required`);
     }
   });
 
-  await test('type is exclusive — an issue is one kind of thing', () => {
+  await test('type is exclusive: an issue is one kind of thing', () => {
     assertEq(MANIFEST.groups.type.exclusive, true, 'type.exclusive');
   });
 
@@ -382,7 +382,7 @@ const run = async () => {
 
   group('the state directory name is one string per layer');
 
-  // Three layers hold the name — the engine, the hooks, and this harness — and
+  // Three layers hold the name (the engine, the hooks, and this harness) and
   // a rename that misses one leaves a hook reading a directory nothing writes.
   const assignment = (file, variable) => {
     const found = new RegExp(`^\\s*(?:const\\s+)?${variable}\\s*=\\s*['"]([^'"]+)['"]`, 'm')
@@ -408,7 +408,7 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('git honors the pattern — settings.json tracked, the rest ignored', () => {
+  await test('git honors the pattern: settings.json tracked, the rest ignored', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     runScript(repo, { pathPrefix: stub.binDir });
@@ -455,7 +455,7 @@ const run = async () => {
   });
 
   // The heal is verified by OUTCOME (git check-ignore), not by grepping for its
-  // own block — the two cases below both passed a string check while leaving
+  // own block: the two cases below both passed a string check while leaving
   // settings.json untrackable (review regression, 2026-07-24).
   await test('a .gitignore with only .workkit/* gains the negation', () => {
     const repo = makeRepo();
@@ -482,7 +482,7 @@ const run = async () => {
     // exits 0, so a session start is never wedged.
     assertEq(code, 1, 'a heal needing a human reports itself as unfinished');
     const ignored = spawnSync('git', ['check-ignore', '-q', '--', `${W}/settings.json`], { cwd: repo }).status === 0;
-    assert(ignored, 'git cannot descend into an excluded directory — still ignored');
+    assert(ignored, 'git cannot descend into an excluded directory, still ignored');
     assert(stdout.includes('STILL ignored'), `the run says so plainly, got: ${stdout}`);
     assert(stdout.includes(`.gitignore:1:${W}/`), `and names the offending line, got: ${stdout}`);
     assert(stdout.includes('not fully standardized'), `the run reports the repo as needing attention, got: ${stdout}`);
@@ -587,7 +587,7 @@ const run = async () => {
     cleanup(repo);
   });
 
-  await test('no file and no record — offers to enable, writes nothing', () => {
+  await test('no file and no record: offers to enable, writes nothing', () => {
     const repo = makeRepo({ settings: null });
     const { code, output: stdout } = runScript(repo);
     assertEq(code, 0, 'exit 0');
@@ -622,14 +622,14 @@ const run = async () => {
     return { home, tower };
   };
 
-  await test('the tower clone is the `home` state — no offer, nothing written', () => {
+  await test('the tower clone is the `home` state: no offer, nothing written', () => {
     const { home, tower } = makeHomeClone();
     assertEq(stateOf(tower, { workflowHome: home }), 'home', 'state');
     const { code, output: stdout } = runScript(tower, { workflowHome: home });
     assertEq(code, 0, 'exit 0');
     assert(!stdout.includes('not in the issue workflow'), `never offered, got: ${stdout}`);
     assertUntouched(tower);
-    // And it never joins the roster — the tower finds it by path instead.
+    // And it never joins the roster: the tower finds it by path instead.
     assertEq(JSON.stringify(rosterOf(home)), '{}', 'not registered');
     cleanup(home);
   });
@@ -671,10 +671,10 @@ const run = async () => {
     assertEq(parsed.repos, undefined, 'the roster is not in the hand-edited file');
     assertEq(parsed.site.repo, null, 'the home repo is unset');
     // Null, not false: the switch has three states (issue #84), and a seeded
-    // false is an answer nobody gave — it is what setup reads to know there is
+    // false is an answer nobody gave: it is what setup reads to know there is
     // still a question to put.
     assert('publish' in parsed.site, 'the switch is spelled out');
-    assertEq(parsed.site.publish, null, 'and it is unanswered — nobody has been asked yet');
+    assertEq(parsed.site.publish, null, 'and it is unanswered: nobody has been asked yet');
     assertEq(parsed.site.url, null, 'and there is no custom domain');
     cleanup(repo);
   });
@@ -710,7 +710,7 @@ const run = async () => {
     cleanup(repo); cleanup(home);
   });
 
-  await test('--decline writes only the repos key — every other key survives', () => {
+  await test('--decline writes only the repos key: every other key survives', () => {
     const repo = makeRepo({ settings: null });
     const home = mkTmp();
     const seeded = {
@@ -737,7 +737,7 @@ const run = async () => {
     assert(fs.existsSync(settings), 'the repo now carries its yes');
     const parsed = JSON.parse(fs.readFileSync(settings, 'utf8'));
     assertEq(parsed.enabled, true, 'enabled: true');
-    // A repo opting in today is born at the current standard — there is no
+    // A repo opting in today is born at the current standard: there is no
     // legacy layout for the drift report to find.
     assertEq(parsed.version, STANDARD_VERSION, `version: ${STANDARD_VERSION}`);
     assert(stdout.includes('commit it'), `says the file must be committed, got: ${stdout}`);
@@ -764,8 +764,8 @@ const run = async () => {
   group('standards.sh: the roster');
 
   // The machine-local index the tower reads instead of walking a disk. It is
-  // maintained ON CONTACT — a heal registers the repo it is standing in and
-  // prunes what has gone away — and it is silent, so every assertion here is
+  // maintained ON CONTACT (a heal registers the repo it is standing in and
+  // prunes what has gone away) and it is silent, so every assertion here is
   // against the file rather than the output.
   await test('a heal registers the repo it healed', () => {
     const repo = makeRepo();
@@ -778,7 +778,7 @@ const run = async () => {
     cleanup(repo); cleanup(home); cleanup(stub.dir);
   });
 
-  await test('running twice registers once — no duplicate, no rewrite', () => {
+  await test('running twice registers once: no duplicate, no rewrite', () => {
     const repo = makeRepo();
     const home = mkTmp();
     const stub = makeGhStub({ authed: false });
@@ -808,7 +808,7 @@ const run = async () => {
     //
     // And the home repo's writers edit that same file: `wk_home_set_slug` runs
     // alongside them here, because a mutex only two of the three writers take
-    // is not a mutex — the slug it records has to survive as well.
+    // is not a mutex: the slug it records has to survive as well.
     const home = mkTmp();
     const stub = makeGhStub({ authed: false });
     const repos = [makeRepo(), makeRepo(), makeRepo()];
@@ -932,7 +932,7 @@ const run = async () => {
     cleanup(repo); cleanup(left); cleanup(home); cleanup(stub.dir);
   });
 
-  await test('a legacy opt-in with no enabled key is kept — it is still a yes', () => {
+  await test('a legacy opt-in with no enabled key is kept: it is still a yes', () => {
     // resolve_state reads a file that predates the key as opted in, and the
     // prune has to read it the same way or it would evict a member.
     const repo = makeRepo();
@@ -949,7 +949,7 @@ const run = async () => {
     cleanup(repo); cleanup(legacy); cleanup(home); cleanup(stub.dir);
   });
 
-  await test('a decline is a decision, not an observation — it is never pruned', () => {
+  await test('a decline is a decision, not an observation: it is never pruned', () => {
     const repo = makeRepo();
     const declined = mkTmp();
     const home = mkTmp();
@@ -968,7 +968,7 @@ const run = async () => {
     cleanup(repo); cleanup(home); cleanup(stub.dir);
   });
 
-  await test('an undecided repo is never registered — nothing observes it', () => {
+  await test('an undecided repo is never registered: nothing observes it', () => {
     const repo = makeRepo({ settings: null });
     const home = mkTmp();
     const stub = makeGhStub({ authed: false });
@@ -977,7 +977,7 @@ const run = async () => {
     cleanup(repo); cleanup(home); cleanup(stub.dir);
   });
 
-  await test('a malformed roster file warns and skips — the heal still finishes', () => {
+  await test('a malformed roster file warns and skips: the heal still finishes', () => {
     const repo = makeRepo();
     const home = mkTmp();
     fs.writeFileSync(path.join(home, '.repos.json'), '{ not json');
@@ -993,7 +993,7 @@ const run = async () => {
   await test('without jq the roster is simply not maintained', () => {
     const repo = makeRepo();
     const home = mkTmp();
-    // A PATH with no jq anywhere on it — the roster edit is a jq edit, and a
+    // A PATH with no jq anywhere on it: the roster edit is a jq edit, and a
     // machine without it must lose the index, never the heal.
     const binDir = binDirWithout('jq');
     const res = spawnSync('bash', [SCRIPT, repo], {
@@ -1002,13 +1002,13 @@ const run = async () => {
       timeout: 20000,
     });
     assertEq(res.status, 0, `the heal runs without it: ${res.stderr}`);
-    assertEq(rosterOf(home)[fs.realpathSync(repo)], undefined, 'no jq, no edit — and no half-written file');
+    assertEq(rosterOf(home)[fs.realpathSync(repo)], undefined, 'no jq, no edit, and no half-written file');
     cleanup(repo); cleanup(home); cleanup(binDir);
   });
 
   group('standards.sh: it fails loudly, never silently');
 
-  // Every case here was a reproduced defect before 3.1.0 — the suite proved the
+  // Every case here was a reproduced defect before 3.1.0: the suite proved the
   // happy path across all four states and nothing about what happens when the
   // ground shifts (review findings, 2026-07-24).
 
@@ -1016,7 +1016,7 @@ const run = async () => {
   // `(( x++ ))` yields the value BEFORE the increment, so a counter starting at
   // 0 makes the command exit non-zero on its first pass; bash 4.1 and later end
   // the run there. Stock macOS bash is 3.2 and does not, so the shape has to be
-  // banned by inspection — no Darwin test run would ever fail on it.
+  // banned by inspection: no Darwin test run would ever fail on it.
   await test('no arithmetic command that can exit non-zero under errexit', () => {
     const offenders = fs.readFileSync(SCRIPT, 'utf8').split('\n')
       .map((line, i) => ({ line: line.trim(), n: i + 1 }))
@@ -1039,7 +1039,7 @@ const run = async () => {
       }
     };
     walk(path.join(WORKFLOW_DIR, 'templates'), '');
-    for (const f of onDisk) assert(listed.includes(f), `${f} is on disk but untracked — a fresh clone would half-heal`);
+    for (const f of onDisk) assert(listed.includes(f), `${f} is on disk but untracked: a fresh clone would half-heal`);
   });
 
   await test('a missing template warns, keeps healing, and exits non-zero', () => {
@@ -1064,7 +1064,7 @@ const run = async () => {
 
   await test('a missing labels.json still answers --state and --announce, and the heal says what broke', () => {
     // The manifest check used to sit before mode dispatch, so a broken install
-    // answered --state with exit 1 — which the hook read as nogit and went
+    // answered --state with exit 1, which the hook read as nogit and went
     // silent forever.
     const engine = mkTmp();
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, engine]);
@@ -1115,7 +1115,7 @@ const run = async () => {
     cleanup(repo);
   });
 
-  await test('a malformed roster file — declines cleanly, records nothing, leaves no litter', () => {
+  await test('a malformed roster file: declines cleanly, records nothing, leaves no litter', () => {
     const home = mkTmp();
     fs.writeFileSync(path.join(home, '.repos.json'), '{ this is not json\n');
     const repo = makeRepo({ settings: null });
@@ -1151,7 +1151,7 @@ const run = async () => {
     cleanup(repo); cleanup(home);
   });
 
-  await test('no jq — a committed enabled:false is still honored, not healed over', () => {
+  await test('no jq: a committed enabled:false is still honored, not healed over', () => {
     // The grep fallback exists for exactly this; the only jq-free test used an
     // enabled repo, so the branch that matters had no coverage.
     const repo = makeRepo({ settings: '{ "version": 1, "enabled": false }\n' });
@@ -1180,7 +1180,7 @@ const run = async () => {
   group("standards.sh: the engine's address");
 
   // ~/.claude/workkit → the engine. The step runs on a real HEAL from a
-  // CANONICAL checkout — this suite's SCRIPT is that checkout, and every claude
+  // CANONICAL checkout: this suite's SCRIPT is that checkout, and every claude
   // home below is a temp directory, so the machine's own address is untouched.
   const ENGINE = path.resolve(WORKFLOW_DIR);
   const claudeHomeWith = () => {
@@ -1200,7 +1200,7 @@ const run = async () => {
     cleanup(repo); cleanup(claude);
   });
 
-  await test('an address already correct is silent — the step is idempotent', () => {
+  await test('an address already correct is silent: the step is idempotent', () => {
     const repo = makeRepo();
     const { claude } = claudeHomeWith();
     runScript(repo, { claudeHome: claude });
@@ -1234,7 +1234,7 @@ const run = async () => {
     cleanup(repo); cleanup(claude);
   });
 
-  await test('no ~/.claude on the machine — nothing is created', () => {
+  await test('no ~/.claude on the machine: nothing is created', () => {
     const repo = makeRepo();
     const home = mkTmp();
     const claude = path.join(home, '.claude');
@@ -1246,9 +1246,9 @@ const run = async () => {
 
   // The address belongs to the machine's real engine, and only a real heal from
   // it may write one. A --state probe or a fixture copy that repointed it stole
-  // the machine's engine from under every other session — which is exactly what
+  // the machine's engine from under every other session, which is exactly what
   // a partial-checkout test run did on 2026-07-29.
-  await test('a probe never touches the address — --state and --announce', () => {
+  await test('a probe never touches the address: --state and --announce', () => {
     for (const args of [['--state'], ['--announce']]) {
       const repo = makeRepo();
       const { claude } = claudeHomeWith();
@@ -1292,7 +1292,7 @@ const run = async () => {
   await test('a NON-canonical copy of the engine leaves the address alone, silently', () => {
     const repo = makeRepo();
     const { claude } = claudeHomeWith();
-    // A copy in a temp directory — no git repo above it, which is what a
+    // A copy in a temp directory: no git repo above it, which is what a
     // fixture, an archive, or a partial checkout looks like.
     const copy = mkTmp();
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
@@ -1308,7 +1308,7 @@ const run = async () => {
     });
     assertEq(res.status, 0, `the heal itself still runs: ${res.stderr}`);
     assert(!fs.existsSync(path.join(claude, 'workkit')), 'a copy is not the machine engine and takes no address');
-    assert(!(res.stdout + res.stderr).includes('engine:'), `and says nothing — it is a skip, not a fault, got: ${res.stderr}`);
+    assert(!(res.stdout + res.stderr).includes('engine:'), `and says nothing: it is a skip, not a fault, got: ${res.stderr}`);
     cleanup(repo); cleanup(claude); cleanup(copy);
   });
 
@@ -1359,7 +1359,7 @@ const run = async () => {
     });
     assertEq(res.status, 0, `the heal runs: ${res.stderr}`);
     assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(copy),
-      'a second real checkout is still a real checkout — the address follows the one that ran');
+      'a second real checkout is still a real checkout: the address follows the one that ran');
     cleanup(repo); cleanup(claude); cleanup(copyRoot);
   });
 
@@ -1405,7 +1405,7 @@ const run = async () => {
     const repo = makeRepo();
     runScript(repo);
     const text = readFile(path.join(repo, W, 'agents', 'session.md'));
-    assert(/compaction/i.test(text), 'names the job it does — surviving a compaction');
+    assert(/compaction/i.test(text), 'names the job it does: surviving a compaction');
     assert(/40/.test(text), 'states the light bar');
     cleanup(repo);
   });
@@ -1413,10 +1413,10 @@ const run = async () => {
   await test('never overwrites a session file that has content', () => {
     const repo = makeRepo();
     fs.mkdirSync(path.join(repo, W, 'agents'), { recursive: true });
-    fs.writeFileSync(path.join(repo, W, 'agents', 'session.md'), '# Session\n\n## Active\n#42 — mid-flight\n');
+    fs.writeFileSync(path.join(repo, W, 'agents', 'session.md'), '# Session\n\n## Active\n#42: mid-flight\n');
     const { output: stdout } = runScript(repo);
     assert(
-      readFile(path.join(repo, W, 'agents', 'session.md')).includes('#42 — mid-flight'),
+      readFile(path.join(repo, W, 'agents', 'session.md')).includes('#42: mid-flight'),
       'the session in progress is never clobbered',
     );
     assert(stdout.includes(`session: ${W}/agents/session.md already exists`), `reported as a skip, got: ${stdout}`);
@@ -1464,7 +1464,7 @@ const run = async () => {
         `${form}.md orders Description before Spec`,
       );
       assert(
-        afterFrontmatter.includes('None needed — small item.'),
+        afterFrontmatter.includes('None needed: small item.'),
         `${form}.md defaults the Spec so an untouched body still conforms`,
       );
     }
@@ -1536,7 +1536,7 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('the vendored copy actually runs — it is the engine, not a stub', () => {
+  await test('the vendored copy actually runs: it is the engine, not a stub', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     runScript(repo, { pathPrefix: stub.binDir });
@@ -1550,7 +1550,7 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('a drifted copy is resynced — the kit stays the SSOT', () => {
+  await test('a drifted copy is resynced: the kit stays the SSOT', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     runScript(repo, { pathPrefix: stub.binDir });
@@ -1579,7 +1579,7 @@ const run = async () => {
   group('standards.sh: the .js → .cjs migration (issue #190)');
 
   // The pre-rename state is built by healing and then walking the repo BACK to
-  // it — the old copy under the old name, and a checks.yml running it there —
+  // it (the old copy under the old name, and a checks.yml running it there)
   // so the fixture is whatever the engine actually used to produce.
   const healedThenRolledBack = (repo, stub) => {
     runScript(repo, { pathPrefix: stub.binDir });
@@ -1606,7 +1606,7 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('the migration runs once — a second heal changes nothing and says nothing', () => {
+  await test('the migration runs once: a second heal changes nothing and says nothing', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     const { yml } = healedThenRolledBack(repo, stub);
@@ -1643,7 +1643,7 @@ const run = async () => {
     assert(/^ {2}changelog:$/m.test(body), `the job is defined, got: ${body}`);
     assert(body.includes('node .github/changelog-lint.cjs CHANGELOG.md --unreleased-only'),
       'and runs the vendored linter over the unreleased section');
-    assert(body.includes('no CHANGELOG.md — nothing to check'), 'a repo without a CHANGELOG passes cleanly');
+    assert(body.includes('no CHANGELOG.md, nothing to check'), 'a repo without a CHANGELOG passes cleanly');
     assert(output.includes('changelog job is already in'), `no second append, got: ${output}`);
     cleanup(repo); cleanup(stub.dir);
   });
@@ -1664,7 +1664,7 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('the job is added once — a second heal appends nothing', () => {
+  await test('the job is added once: a second heal appends nothing', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     const file = path.join(repo, '.github', 'workflows', 'checks.yml');
@@ -1704,7 +1704,7 @@ const run = async () => {
     assert(put.join(' ').includes('repos/stub/repo/branches/main/protection'), `right endpoint, got: ${put.join(' ')}`);
     const body = JSON.parse(readFile(path.join(stub.dir, 'put-body.json')));
     assertEq(JSON.stringify(body.required_status_checks.contexts), '["test"]',
-      'requires exactly the test check — the job id checks.yml defines');
+      'requires exactly the test check: the job id checks.yml defines');
     assertEq(body.enforce_admins, false, 'admins stay exempt, so the direct path keeps working');
     cleanup(repo); cleanup(stub.dir);
   });
@@ -1728,7 +1728,7 @@ const run = async () => {
     const stub = makeGhStub({ repoView: true, protection: 'present' });
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
     assert(output.includes('protection: main already protected'), `reported as a skip, got: ${output}`);
-    assert(!ghCalls(stub).some((c) => c.includes('PUT')), 'no PUT — never overwrites a configured protection');
+    assert(!ghCalls(stub).some((c) => c.includes('PUT')), 'no PUT: never overwrites a configured protection');
     cleanup(repo); cleanup(stub.dir);
   });
 
@@ -1736,7 +1736,7 @@ const run = async () => {
     const repo = makeRepo();
     const stub = makeGhStub({ repoView: true, protection: 'denied' });
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 0, 'exit 0 — advisory by design');
+    assertEq(code, 0, 'exit 0: advisory by design');
     assert(output.includes('protection: not applied'), `says so quietly, got: ${output}`);
     assert(!output.includes('not fully standardized'), 'needs_attention untouched');
     cleanup(repo); cleanup(stub.dir);
@@ -1821,7 +1821,7 @@ const run = async () => {
   });
 
   await test('a failed label create marks the run unfinished so it retries', () => {
-    // log_warn alone let the run exit 0, the hook cached the day, and the
+    // a warning alone let the run exit 0, the hook cached the day, and the
     // missing label stayed missing until tomorrow.
     const repo = makeRepo();
     const stub = makeGhStub({ labels: [], createFails: true });
@@ -1861,15 +1861,15 @@ const run = async () => {
       ],
     });
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 1, 'a label violation flags the run — the day is not cached and the heal re-reports next session');
+    assertEq(code, 1, 'a label violation flags the run: the day is not cached and the heal re-reports next session');
     assert(output.includes('#3'), `an issue without a status is named, got: ${output}`);
     assert(output.includes('#4'), `a double status is named, got: ${output}`);
     assert(output.includes('#5'), `priority:high plus priority:low is named, got: ${output}`);
-    assert(!output.includes('#6') && !output.includes('#7'), `a conforming issue is not named — priority absence is normal, got: ${output}`);
-    assert(output.includes('#8'), `an issue without a type is named — type is required, got: ${output}`);
-    assert(output.includes('#9'), `a double type is named — type is exclusive, got: ${output}`);
+    assert(!output.includes('#6') && !output.includes('#7'), `a conforming issue is not named: priority absence is normal, got: ${output}`);
+    assert(output.includes('#8'), `an issue without a type is named: type is required, got: ${output}`);
+    assert(output.includes('#9'), `a double type is named: type is exclusive, got: ${output}`);
     assert(output.includes('workkit:triage'), `names the fix, got: ${output}`);
-    // The report's own query is the unscoped one — the label-scoped queries
+    // The report's own query is the unscoped one: the label-scoped queries
     // belong to the stale-claim sweep.
     const reportQueries = ghCalls(stub)
       .filter((c) => isCall(c, 'issue', 'list') && !c.includes('--label'));
@@ -1895,7 +1895,7 @@ const run = async () => {
 
   // An agent that claimed an issue and then died leaves it locked against every
   // other worker. The claim is the agent:working label (assignee accounts
-  // cannot tell an agent from a human — agents run gh as the owner) plus the
+  // cannot tell an agent from a human: agents run gh as the owner) plus the
   // assignee, and the heal releases both after 24 hours with no activity.
   const CLAIM = 'agent:working';
   const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString().replace(/\.\d+Z$/, 'Z');
@@ -1909,7 +1909,7 @@ const run = async () => {
     assert(desiredLabels().some((l) => l.name === CLAIM), 'the sweep queries a label the heal makes');
     assertEq(MANIFEST.groups.agent.exclusive, false, 'the claim marker is not exclusive with agent:ok');
     assert(!Object.keys(MANIFEST.groups.status.values).includes('working'),
-      'a claim is not a status — the issue carries status:building while it is worked');
+      'a claim is not a status: the issue carries status:building while it is worked');
   });
 
   await test('a claim with recent activity is left exactly as it is', () => {
@@ -1931,7 +1931,7 @@ const run = async () => {
     assertEq(edits.length, 1, `one release, got: ${fmtCalls(ghCalls(stub))}`);
     assert(hasPair(edits[0], '--remove-label', CLAIM), `the label comes off, got: ${fmtCalls(edits)}`);
     assert(hasPair(edits[0], '--remove-assignee', 'someone'),
-      `and so does the assignee — one left behind still reads as a claim, got: ${fmtCalls(edits)}`);
+      `and so does the assignee: one left behind still reads as a claim, got: ${fmtCalls(edits)}`);
     const comments = ghCalls(stub).filter((c) => isCall(c, 'issue', 'comment'));
     assertEq(comments.length, 1, `the release is recorded on the issue, got: ${fmtCalls(ghCalls(stub))}`);
     assert(comments[0].some((a) => /stale-claim sweep/.test(a)), `naming the sweep, got: ${fmtCalls(comments)}`);
@@ -1941,7 +1941,7 @@ const run = async () => {
 
   // Releasing a building issue and leaving it building would keep it counted as
   // in flight by every surface reading the pipeline, with nobody working it. The
-  // spec is still accepted, so it goes back to specced — in the SAME edit, or
+  // spec is still accepted, so it goes back to specced, in the SAME edit, or
   // there is a window where it is unclaimed and still reads as in flight.
   await test('a stale claim on a building issue goes back to specced in the same edit', () => {
     const repo = makeRepo();
@@ -1960,7 +1960,7 @@ const run = async () => {
     assert(hasPair(edits[0], '--remove-label', 'status:building'),
       `building ends, got: ${fmtCalls(edits)}`);
     assert(hasPair(edits[0], '--add-label', 'status:specced'),
-      `and specced resumes — the spec is still accepted, got: ${fmtCalls(edits)}`);
+      `and specced resumes: the spec is still accepted, got: ${fmtCalls(edits)}`);
     const comments = ghCalls(stub).filter((c) => isCall(c, 'issue', 'comment'));
     assertEq(comments.length, 1, `one comment, got: ${fmtCalls(ghCalls(stub))}`);
     assert(comments[0].some((a) => /status:specced/.test(a)),
@@ -1990,7 +1990,7 @@ const run = async () => {
 
   // `gh issue edit` fails whole when it is handed a label the repo does not
   // have, so a flip added blind would cost the release itself on exactly the
-  // repos least able to afford it — the ones whose labels never reached GitHub.
+  // repos least able to afford it: the ones whose labels never reached GitHub.
   await test('a missing status:specced costs the flip, never the release', () => {
     const repo = makeRepo();
     const stub = claimStub([{
@@ -2006,7 +2006,7 @@ const run = async () => {
     assert(hasPair(edits[0], '--remove-label', CLAIM), `the claim comes off, got: ${fmtCalls(edits)}`);
     assert(hasPair(edits[0], '--remove-assignee', 'someone'), `and the assignee, got: ${fmtCalls(edits)}`);
     assert(!edits[0].some((a) => /^status:/.test(a)),
-      `and no status label is named at all — the edit must not fail on one, got: ${fmtCalls(edits)}`);
+      `and no status label is named at all: the edit must not fail on one, got: ${fmtCalls(edits)}`);
     const comments = ghCalls(stub).filter((c) => isCall(c, 'issue', 'comment'));
     assert(!comments[0].some((a) => /status:specced/.test(a)),
       `the comment claims no flip either, got: ${fmtCalls(comments)}`);
@@ -2023,7 +2023,7 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('an issue assigned without the label is never touched — a human claim is not swept', () => {
+  await test('an issue assigned without the label is never touched: a human claim is not swept', () => {
     const repo = makeRepo();
     const stub = makeGhStub({
       labels: desiredLabels(),
@@ -2045,7 +2045,7 @@ const run = async () => {
 
   // status:specced is the authorization to start and the assignee is the claim,
   // so an issue carrying both has started. The flip is what let the readers drop
-  // the claimed-specced tolerance (issue #62) — nothing flipped these before, so
+  // the claimed-specced tolerance (issue #62): nothing flipped these before, so
   // the transitional branch was permanent by default.
   const SPECCED = 'status:specced';
   const BUILDING = 'status:building';
@@ -2216,7 +2216,7 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir); cleanup(hooks);
   });
 
-  await test('the loader itself is checked — nothing runs without it', () => {
+  await test('the loader itself is checked: nothing runs without it', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     const hooks = makeHooksDir();
@@ -2229,7 +2229,7 @@ const run = async () => {
 
   await test('a missing tool is named loudly, without holding the repo back', () => {
     // A tool the machine lacks is not the repo's fault, so it warns like
-    // everything else here but never flags the run — the version stamp and the
+    // everything else here but never flags the run: the version stamp and the
     // drift report must not wait on something no repo can install for it.
     const repo = makeRepo();
     const hooks = makeHooksDir();
@@ -2266,7 +2266,7 @@ const run = async () => {
 
   // The label assertions above are only as strong as the recording underneath
   // them. These two cases prove the recording tells a quoted expansion from an
-  // unquoted one — the exact regression a `"$*"` log could not see.
+  // unquoted one: the exact regression a `"$*"` log could not see.
   const callStub = (stub, snippet) => {
     spawnSync('bash', ['-c', snippet], {
       env: { ...process.env, PATH: `${stub.binDir}:/usr/bin:/bin` },
@@ -2286,7 +2286,7 @@ const run = async () => {
     cleanup(stub.dir);
   });
 
-  await test('the same phrase unquoted arrives split — and is not mistaken for the quoted call', () => {
+  await test('the same phrase unquoted arrives split, and is not mistaken for the quoted call', () => {
     const stub = makeGhStub();
     const calls = callStub(stub, 'd="two words"; gh label create x --description $d');
     assert(
@@ -2325,7 +2325,7 @@ const run = async () => {
     assertEq(calls.length, n, `every call recorded, got ${calls.length}`);
     const malformed = calls.filter((c) => c.length !== 5);
     assertEq(malformed.length, 0, `every record holds exactly its own 5 arguments, got: ${fmtCalls(malformed)}`);
-    // And the pairs are still each other's — not one call's flag with another's value.
+    // And the pairs are still each other's, not one call's flag with another's value.
     const mismatched = calls.filter((c) => c[4] !== `a phrase here ${c[2].replace('name', '')}`);
     assertEq(mismatched.length, 0, `each description stayed with its own label, got: ${fmtCalls(mismatched)}`);
     cleanup(stub.dir);
@@ -2333,7 +2333,7 @@ const run = async () => {
 
   group('standards.sh: offline and unauthenticated');
 
-  await test('no gh on PATH — clean exit, local heals still applied', () => {
+  await test('no gh on PATH: clean exit, local heals still applied', () => {
     const repo = makeRepo();
     // Hand-built PATH, like the jq test below: `command -v gh` searches every
     // PATH entry, and a machine that keeps gh in /usr/bin (a CI runner does)
@@ -2354,7 +2354,7 @@ const run = async () => {
     cleanup(repo); cleanup(binDir);
   });
 
-  await test('no jq on PATH — only the label step is skipped, local heals run', () => {
+  await test('no jq on PATH: only the label step is skipped, local heals run', () => {
     const repo = makeRepo();
     const binDir = binDirWithout('jq');
     const res = spawnSync('/bin/bash', [SCRIPT, repo], {
@@ -2371,7 +2371,7 @@ const run = async () => {
     cleanup(repo); cleanup(binDir);
   });
 
-  await test('gh present but unauthenticated — skipped without any label call', () => {
+  await test('gh present but unauthenticated: skipped without any label call', () => {
     const repo = makeRepo();
     const stub = makeGhStub({ authed: false });
     const { code, output: stdout } = runScript(repo, { pathPrefix: stub.binDir });
@@ -2382,7 +2382,7 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('no origin remote — labels skipped, exit 0', () => {
+  await test('no origin remote: labels skipped, exit 0', () => {
     const repo = makeRepo({ remote: false });
     const stub = makeGhStub();
     const { code, output: stdout } = runScript(repo, { pathPrefix: stub.binDir });
@@ -2437,7 +2437,7 @@ const driftRun = async () => {
   await test('a retired file is reported and never touched', () => {
     // Deleting PROGRESS.md deletes work items nobody migrated. The script says
     // what to run; a human (or the migrate skill) does it. The name has to be
-    // the skill that actually does this job — workkit:migrate advertises the
+    // the skill that actually does this job: workkit:migrate advertises the
     // drift report as its trigger, so pointing elsewhere means it never fires.
     const dir = makeRepo();
     const stub = makeGhStub();
@@ -2476,7 +2476,7 @@ const driftRun = async () => {
     const stub = makeGhStub();
     fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), [
       '# Changelog', '', '## [1.0.0] - 2020-01-01', '', '### Added',
-      '- (no issue) — A short entry in the format.', '',
+      '- (no issue) \u2014 A short entry in the format.', '', // \u2014 is the CHANGELOG entry separator (U+2014)
     ].join('\n'));
     const { output } = runScript(dir, { pathPrefix: `${stub.binDir}:${NODE_DIR}` });
     assert(!output.includes('not in the entry format'), `silent, got: ${output}`);
@@ -2492,7 +2492,7 @@ const driftRun = async () => {
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('no node with a CHANGELOG present — the version is not stamped, and the run says so', () => {
+  await test('no node with a CHANGELOG present: the version is not stamped, and the run says so', () => {
     // The CHANGELOG check is guarded on `command -v node`; stamping anyway
     // ended the one-time drift report for a file nobody checked.
     const dir = makeRepo();
@@ -2522,9 +2522,9 @@ const driftRun = async () => {
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('no jq — the version is not stamped and the run says why, instead of re-reporting silently forever', () => {
+  await test('no jq: the version is not stamped and the run says why, instead of re-reporting silently forever', () => {
     const dir = makeRepo();
-    // Every tool but jq — a hand-listed set falls behind the script as it grows
+    // Every tool but jq: a hand-listed set falls behind the script as it grows
     // and then dies of a missing utility while claiming to prove something
     // about the excluded one.
     const binDir = binDirWithout('jq');

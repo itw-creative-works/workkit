@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
-# jobs/morning.sh — the morning, in ONE script (issue #107).
+# jobs/morning.sh: the morning, in ONE script (issue #107).
 #
 # Two schedulers run this same body: the 9am LaunchAgent on this machine
 # (com.workkit.claude-daily) and the brief.yml workflow `workkit setup` seeds
-# onto the home repo. There is no laptop script and cloud script — there are
+# onto the home repo. There is no laptop script and cloud script: there are
 # five steps, and each one asks whether the environment it woke up in has what
 # that step needs. A step that cannot run here says so by name.
 #
-#   1 the summaries  need this machine's session transcripts and git history —
+#   1 the summaries  need this machine's session transcripts and git history:
 #                    the Mac.
 #   2 the runner     is the cloud brief's seeded copy on the home repo,
-#                    reconciled from the checkout this script sits in — the Mac,
+#                    reconciled from the checkout this script sits in: the Mac,
 #                    since on a runner that copy IS what is executing.
 #   3 the brief      needs the sweep token and the roster, which live on the
-#                    home repo — the CLOUD. Here the step is the dispatch and
+#                    home repo: the CLOUD. Here the step is the dispatch and
 #                    nothing else: a dispatch that cannot be made is a logged,
 #                    briefless morning.
-#   4 the publish    needs the home clone and its build tooling — the Mac.
+#   4 the publish    needs the home clone and its build tooling: the Mac.
 #   5 the marker     writes down what the board actually carries, for the session
-#                    hook to warn on — the Mac, since a runner's home dies with
+#                    hook to warn on: the Mac, since a runner's home dies with
 #                    the job and there is nobody there to leave it for.
 #
 # The environments differ in three DELIBERATE ways, all about where the output
@@ -26,28 +26,46 @@
 # and red; here the morning already happened on screen, so a failure is one
 # logged line and exit 0. There is no desktop to notify on a runner. And the
 # digest body never reaches the Actions log, which belongs to a repo that could
-# be made public — it gets the headline and a byte count as proof of life.
+# be made public: it gets the headline and a byte count as proof of life.
 #
 # Usage: morning.sh [--now | message]
 #   no arguments   the scheduled morning
 #   --now          the brief on demand (`npm run brief`): composed and sent
-#                  HERE, stamped manual, and publishing nothing — a post at noon
+#                  HERE, stamped manual, and publishing nothing: a post at noon
 #                  would make the scheduled brief find its own title on the
 #                  board and skip, and would advance the news cursor onto news
 #                  that brief has yet to report
-#   message        the generic headless runner — no summaries, no publish
+#   message        the generic headless runner: no summaries, no publish
 #   A runner takes no arguments; the workflow passes none.
 #
-# Runs standalone or via launchd (sets its own PATH — launchd provides a bare env).
-# Log: ~/Library/Logs/claude-daily.log — appended, one timestamped block per run,
+# Runs standalone or via launchd (sets its own PATH: launchd provides a bare env).
+# Log: ~/Library/Logs/claude-daily.log, appended, one timestamped block per run,
 #      and named for the schedule's label rather than for this file. In the cloud
 #      the Actions log is the log.
 
 set -euo pipefail
 
-# Resolve before any cd — BASH_SOURCE may be a relative path.
+# Resolve before any cd: BASH_SOURCE may be a relative path.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE="$SCRIPT_DIR/../workflow"
+
+# The engine's voice (issue #237): every line this job writes, to the Actions
+# log in the cloud or to ~/Library/Logs on a machine, opens with the glyph for
+# what happened. lib.sh is seeded onto the runner beside this file
+# (WK_HOME_RUNNER_FILES), and the plain fallback covers the one case it is not
+# there: a missing logger would end the morning under `set -e`.
+if [[ -f "$ENGINE/lib.sh" ]]; then
+  # shellcheck source=../workflow/lib.sh
+  . "$ENGINE/lib.sh"
+fi
+if ! declare -f wk_ok >/dev/null 2>&1; then
+  wk_ok()    { printf '%s\n' "$1"; }
+  wk_skip()  { printf '%s\n' "$1"; }
+  wk_info()  { printf '%s\n' "$1"; }
+  wk_warn()  { printf '%s\n' "$1" >&2; }
+  wk_error() { printf '%s\n' "$1" >&2; }
+  wk_spin()  { shift; "$@"; }
+fi
 
 # ── Where this run woke up ────────────────────────────────────────────────────
 
@@ -60,7 +78,7 @@ CLOUD=0
 if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then CLOUD=1; fi
 
 # The summaries read the day's session transcripts and the roster's git log. A
-# machine with neither has no day to write up — and a runner is such a machine,
+# machine with neither has no day to write up, and a runner is such a machine,
 # which is why this question is asked rather than a mode being passed in.
 have_history() {
   [[ -d "${WORKKIT_CLAUDE_PROJECTS:-$HOME/.claude/projects}" ]] || return 1
@@ -86,7 +104,7 @@ fi
 SCRATCH_DIR="$(mktemp -d)"
 trap 'rm -rf "$SCRATCH_DIR"' EXIT
 # brief-payload.js writes the upstream-version line here and the published body
-# is assembled here. Nothing in it outlives the run — the cursor is the
+# is assembled here. Nothing in it outlives the run: the cursor is the
 # Discussion, not a file.
 MARK_FILE="$SCRATCH_DIR/cc-version"
 export WORKKIT_BRIEF_MARK_FILE="$MARK_FILE"
@@ -100,14 +118,18 @@ if (( CLOUD )); then
   # Pinning it to the folder they resolve is what keeps the two halves of the
   # run reading one home.
   export WORKFLOW_HOME="$WK_DIR"
-  # The log is the Actions log. One line per thing that happened, on stdout.
-  note() { printf '%s\n' "$1"; }
+  # The log is the Actions log. One line per thing that happened, in the kit's
+  # one line shape, under the glyph for WHICH thing it was: an action taken, a
+  # step with nothing to do, or something that needs a person.
+  note()      { wk_ok "$1"; }
+  note_skip() { wk_skip "$1"; }
+  note_warn() { wk_warn "$1"; }
 else
   export PATH="$HOME/.local/bin:$HOME/.nvm/default-bin:/opt/homebrew/bin:$PATH"
   export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 
   # Run from an empty scratch dir. Under launchd the default cwd is / and the job
-  # is its own TCC identity (no inherited Terminal grants) — Claude Code's startup
+  # is its own TCC identity (no inherited Terminal grants): Claude Code's startup
   # scan from / trips macOS privacy prompts (Media Library, Documents, …).
   # An empty cwd gives it nothing to scan.
   WORK_DIR="$HOME/Library/Caches/claude-daily"
@@ -125,12 +147,19 @@ else
   # noon from the nine o'clock run.
   if (( MANUAL )); then LOG_STAMP="$TIMESTAMP (manual)"; fi
 
-  # One timestamped block, the same shape every other line in this file takes.
-  note() {
-    printf '── %s ──\n%s\n\n' "$LOG_STAMP" "$1" >> "$LOG_FILE"
+  # One block per note: the day's stamp (a log file outlives the day, and no
+  # line here carries a clock of its own), then the note itself under the glyph
+  # for what happened. One stamp block, three levels through it, and BOTH
+  # streams redirected: a warning is stderr's everywhere in the kit, and this
+  # file is the whole record of the run.
+  note_as() {
+    { printf '%s\n' "--- $LOG_STAMP ---"; "$1" "$2"; printf '\n'; } >> "$LOG_FILE" 2>&1
   }
+  note()      { note_as wk_ok "$1"; }
+  note_skip() { note_as wk_skip "$1"; }
+  note_warn() { note_as wk_warn "$1"; }
 
-  # Desktop notification — backgrounded + fully detached from stdio: Notifly
+  # Desktop notification, backgrounded + fully detached from stdio: Notifly
   # doesn't return until the notification dismisses; never make the job wait.
   # NOTIFLY is a seam, not a knob: the suite points it at a recorder so running
   # the tests never puts a notification on your screen.
@@ -149,8 +178,8 @@ else
   # A HANG is a failure with no exit status, so the two steps that shell out to
   # another script are bounded: 15 minutes, after which timeout's 124 flows down
   # the log-and-continue path like any other failure. `timeout` is homebrew
-  # coreutils on macOS and may be absent, so an empty array is the no-bound case
-  # — expanded the bash 3.2 way, since a bare "${TIMEOUT[@]}" is an unbound
+  # coreutils on macOS and may be absent, so an empty array is the no-bound case,
+  # expanded the bash 3.2 way, since a bare "${TIMEOUT[@]}" is an unbound
   # variable there under `set -u`.
   # The `if` is load-bearing too: under `set -e` a bare `command -v … && …` whose
   # left side fails IS the statement's status, and the job would exit right here
@@ -165,18 +194,18 @@ fi
 
 # Yesterday is written up before the brief is composed, so the morning reads a
 # record that already includes the day behind it. claude-nightly.sh stays the one
-# home of that logic — its own guards (a day already written up is skipped, a
+# home of that logic: its own guards (a day already written up is skipped, a
 # quiet day sends nothing) and its own log; calling it is all the wiring there is.
 #
 # A summaries failure is NOT the brief's failure. It is logged here and the
-# morning carries on — the job exists to make sure nine o'clock says something.
+# morning carries on: the job exists to make sure nine o'clock says something.
 summaries() {
   if (( CLOUD )); then
-    note 'summaries: a GitHub Actions runner has no session transcripts and no git history to write up — skipped'
+    note_skip 'summaries: a GitHub Actions runner has no session transcripts and no git history to write up; skipped'
     return 0
   fi
   if ! have_history; then
-    note 'summaries: this machine has no session transcripts to read — skipped'
+    note_skip 'summaries: this machine has no session transcripts to read; skipped'
     return 0
   fi
 
@@ -184,8 +213,8 @@ summaries() {
   output="$(${TIMEOUT[@]+"${TIMEOUT[@]}"} bash "$SCRIPT_DIR/claude-nightly.sh" 2>&1)" || status=$?
   if (( status != 0 )); then
     {
-      printf '── %s ──\n' "$LOG_STAMP"
-      printf '[summaries exit %d — the brief continues]\n' "$status"
+      printf '%s\n' "--- $LOG_STAMP ---"
+      printf '[summaries exit %d; the brief continues]\n' "$status"
       printf '%s\n\n' "$output"
     } >> "$LOG_FILE"
   fi
@@ -203,7 +232,7 @@ fi
 # The cloud brief runs SEEDED COPIES of these scripts on the home repo, and
 # until issue #143 the only thing that ever refreshed them was `workkit setup`.
 # A checkout that moved on left the cloud composing last month's brief with
-# nothing to say so — which is how briefs went out for days without the stats
+# nothing to say so, which is how briefs went out for days without the stats
 # line the tower's history charts read back.
 #
 # So the morning reconciles it, the way it already reconciles every other seeded
@@ -217,17 +246,17 @@ fi
 # THE MACHINE'S ALONE: on a runner `brief/` IS the scripts executing, and there
 # is no checkout there to seed them from.
 #
-# Nothing is ever created, cloned or enabled here — that is setup's and only
+# Nothing is ever created, cloned or enabled here: that is setup's and only
 # setup's (issue #71). A machine with no home clone hears a named line and the
 # morning carries on, which is also what a push that did not land costs: the
 # commit stays local and the next run pushes it.
 reconcile_runner() {
   if (( CLOUD )); then
-    note 'runner: a runner IS the seeded copy of the cloud brief — there is no checkout here to reconcile it from, skipped'
+    note_skip 'runner: a runner IS the seeded copy of the cloud brief; there is no checkout here to reconcile it from, skipped'
     return 0
   fi
   if [[ ! -f "$ENGINE/lib.sh" || ! -f "$ENGINE/home.sh" ]]; then
-    note "runner: the engine libraries are missing at $ENGINE — the cloud brief's runner was not reconciled (a partial checkout)"
+    note_warn "runner: the engine libraries are missing at $ENGINE; the cloud brief's runner was not reconciled (a partial checkout)"
     return 0
   fi
 
@@ -237,21 +266,24 @@ reconcile_runner() {
   # outlive the one step that needs them and everything the step says lands in
   # the log block rather than on the scheduler's stdout.
   #
-  # Two rules for bash 3.2 — the /bin/bash launchd runs — which re-parses this
+  # Two rules for bash 3.2 (the /bin/bash launchd runs) which re-parses this
   # substitution with a scanner of its own: apostrophes stay PAIRED per line,
   # comments included (an odd one reads as a quote opener and ends the
   # substitution early), and case patterns wear BOTH parens, `(x)` not `x)`
   # (a bare closing paren unbalances the substitution and dies at runtime).
   output="$(
+    # Warnings go to stderr, and this capture is the log: fold the two together
+    # so a refusal is recorded rather than scattered across the output.
+    exec 2>&1
     # shellcheck source=../workflow/lib.sh
     . "$ENGINE/lib.sh"
     # shellcheck source=../workflow/home.sh
     . "$ENGINE/home.sh"
     if ! wk_home_ready; then
       case "$(wk_home_state)" in
-        (unset)  wk_say_skip "runner: no home repo — \`workkit setup\` creates one; nothing to reconcile" ;;
-        (absent) wk_say_skip "runner: nothing is cloned at $WK_HOME_DIR yet — the cloud brief runner was not reconciled; \`workkit setup\` clones it" ;;
-        (other)  wk_say_warn "runner: $WK_HOME_DIR is not the home repo's clone — nothing is reconciled in somebody else's folder" ;;
+        (unset)  wk_skip "runner: no home repo; \`workkit setup\` creates one; nothing to reconcile" ;;
+        (absent) wk_skip "runner: nothing is cloned at $WK_HOME_DIR yet; the cloud brief runner was not reconciled; \`workkit setup\` clones it" ;;
+        (other)  wk_warn "runner: $WK_HOME_DIR is not the home repo's clone; nothing is reconciled in somebody else's folder" ;;
       esac
       exit 0
     fi
@@ -259,17 +291,17 @@ reconcile_runner() {
     # from the working copy: the guard that keeps it off a newer kit reads the
     # stamp lying in this folder, issue #200. A clone that never caught up reads
     # a stamp a week old, seeds over what the remote already carries, and
-    # commits something it can never push — wedging every publish after it.
+    # commits something it can never push, wedging every publish after it.
     # --autostash for the reason publish.sh gives: the ordinary local state here
     # is an upstream change somebody took by hand, and a rebase refusing on that
     # dirty tree would read as a divergence.
     #
-    # A pull that cannot finish is not always a divergence — offline and an auth
-    # refusal land here too — and none of them is a morning to force: the rebase
+    # A pull that cannot finish is not always a divergence (offline and an auth
+    # refusal land here too) and none of them is a morning to force: the rebase
     # is aborted, the seed is skipped, and the clone is left as it was found.
-    if ! git -C "$WK_HOME_DIR" pull --rebase --autostash --quiet 2>/dev/null; then
+    if ! wk_spin "catching the clone up with origin" git -C "$WK_HOME_DIR" pull --rebase --autostash --quiet 2>/dev/null; then
       git -C "$WK_HOME_DIR" rebase --abort >/dev/null 2>&1 || true
-      wk_say_warn "runner: the clone could not be brought up to date — the runner was not refreshed"
+      wk_warn "runner: the clone could not be brought up to date; the runner was not refreshed"
       exit 0
     fi
     rc=0
@@ -281,10 +313,19 @@ reconcile_runner() {
     wk_home_commit_push 'chore(home): refresh the cloud brief runner' || true
   )" || status=$?
 
+  # The subshell speaks in the same voice this job does, and note() puts its own
+  # glyph on what it is handed: strip the inner one so no line wears two, and
+  # let the glyph it ARRIVED with choose the one it is re-said under. A seed
+  # that warned and still exited 0 (a push that did not land) would otherwise be
+  # relayed as an action taken.
+  # (Alternation, not a bracket class: see wk_plain in workflow/lib.sh.)
+  local relay='note'
+  printf '%s\n' "$output" | grep -qE '^ *(⚠|✖) ' && relay='note_warn'
+  output="$(printf '%s\n' "$output" | wk_plain)"
   if (( status != 0 )); then
-    note "$(printf 'runner: the reconcile exited %d — the morning continues\n%s' "$status" "$output")"
+    note_warn "$(printf 'runner: the reconcile exited %d; the morning continues\n%s' "$status" "$output")"
   elif [[ -n "$output" ]]; then
-    note "$output"
+    "$relay" "$output"
   fi
   return 0
 }
@@ -299,7 +340,7 @@ fi
 
 # The payload, composed the same way in both environments: brief-payload.js
 # builds the tower's /api/brief without the tower. Its stderr is kept OUT of the
-# message — it carries the crash on a failure, and on a good run the one line
+# message: it carries the crash on a failure, and on a good run the one line
 # naming repos the sweep could not read, a token whose reach is short. Either
 # belongs in the log, neither in what Claude is handed.
 compose() {
@@ -310,7 +351,7 @@ compose() {
 # Actions log must never carry the digest, and locally the log block carries the
 # error text beside the response rather than inside it.
 send() {
-  claude -p "$1" \
+  wk_spin 'asking Claude for the brief' claude -p "$1" \
     --model haiku \
     --effort low \
     --safe-mode \
@@ -327,13 +368,12 @@ cloud_machine() {
 
   # GITHUB_REPOSITORY IS the home (issue #91): the workflow lives on the home
   # repo and nowhere else, so the run already knows which repo it is standing in.
-  # An existing settings file WINS — a runner handed a configured home does not
+  # An existing settings file WINS: a runner handed a configured home does not
   # get it rewritten. With neither there is no board to read and nowhere to
   # publish, which is the one thing this refuses over rather than working around.
   if [[ ! -f "$settings" ]]; then
     if [[ -z "${GITHUB_REPOSITORY:-}" ]]; then
-      printf 'morning: GITHUB_REPOSITORY is unset and %s does not exist — there is no home repo to sweep or publish to.\n' \
-        "$settings" >&2
+      wk_error "GITHUB_REPOSITORY is unset and $settings does not exist, so there is no home repo to sweep or publish to"
       exit 1
     fi
     mkdir -p "$WK_DIR"
@@ -342,17 +382,16 @@ cloud_machine() {
   fi
 
   # jq is asked FIRST, on its own. It reads the home slug on the next line and
-  # writes the roster later, and an absent one would empty that read — making a
+  # writes the roster later, and an absent one would empty that read, making a
   # missing tool look exactly like a settings file that names no home repo.
   if ! command -v jq >/dev/null 2>&1; then
-    printf 'morning: jq is not installed — the settings file cannot be read and the roster cannot be written.\n' >&2
+    wk_error "jq is not installed, so the settings file cannot be read and the roster cannot be written"
     exit 1
   fi
 
   home_slug="$(jq -r '.site.repo // empty' "$settings" 2>/dev/null || true)"
   if [[ -z "$home_slug" ]]; then
-    printf 'morning: %s names no home repo (.site.repo) — there is no board to sweep or publish to.\n' \
-      "$settings" >&2
+    wk_error "$settings names no home repo (.site.repo), so there is no board to sweep or publish to"
     exit 1
   fi
 
@@ -361,30 +400,30 @@ cloud_machine() {
   # it: `data/repos.json` on the home repo's DEFAULT branch, the slug list the
   # published dashboard sweeps (workflow/site-repos.js writes it). It is on the
   # default branch rather than beside the pages because gh-pages is public even
-  # from a private repo and the list names private repos (issue #110) — which
+  # from a private repo and the list names private repos (issue #110), which
   # changes nothing here, since this read was always authenticated. The contents
   # API answers with a base64 body.
   #
   # WHICH branch is ASKED FOR, never assumed (issue #112): the writer pushes
   # whatever branch the home clone is on, and a runner hardcoding `main` reads a
-  # 404 on a repo whose default branch is not — a silently home-only board. The
+  # 404 on a repo whose default branch is not: a silently home-only board. The
   # laptop's other reader is told the branch by the published pointer; a runner
   # has no site to read that from, so it asks GitHub for the repo it is standing
   # in. `main` is the fallback, because that is what the engine creates.
   if command -v gh >/dev/null 2>&1; then
-    home_branch="$(gh api "repos/$home_slug" -q '.default_branch' 2>/dev/null || true)"
+    home_branch="$(wk_spin "reading $home_slug" gh api "repos/$home_slug" -q '.default_branch' 2>/dev/null || true)"
     [[ -n "$home_branch" ]] || home_branch='main'
-    site_repos="$(gh api "repos/$home_slug/contents/data/repos.json?ref=$home_branch" -q '.content' 2>/dev/null || true)"
+    site_repos="$(wk_spin 'reading the slug list' gh api "repos/$home_slug/contents/data/repos.json?ref=$home_branch" -q '.content' 2>/dev/null || true)"
     site_repos="$(printf '%s' "$site_repos" | tr -d '\n' | base64 -d 2>/dev/null || true)"
   fi
   slugs="$(printf '%s' "$site_repos" | jq -r '.repos[]? // empty' 2>/dev/null || true)"
   if [[ -z "$slugs" ]]; then
-    # No published list — the site has never been published, or the read failed.
+    # No published list: the site has never been published, or the read failed.
     # The home repo ALONE is the fallback rather than an empty roster: its issues
     # are the cross-project queue, so a brief built from it is a real morning,
-    # while an empty board would read as "nothing is waiting on you" — the one
+    # while an empty board would read as "nothing is waiting on you": the one
     # thing a brief must never say when it simply did not look.
-    note "roster: no slug list on $home_slug ($home_branch data/repos.json) — sweeping the home repo alone"
+    note "roster: no slug list on $home_slug ($home_branch data/repos.json); sweeping the home repo alone"
     slugs="$home_slug"
   fi
   # The home repo is on the published list already; this covers the list that
@@ -393,7 +432,7 @@ cloud_machine() {
 
   # A synthetic checkout per slug, because that is what the roster is a list OF:
   # `discoverRepos` reads a path, checks the committed opt-in there and asks git
-  # for the origin. Both are given honestly and nothing else is faked — there is
+  # for the origin. Both are given honestly and nothing else is faked: there is
   # no working tree, so health reads zeroes and the brief carries no warnings
   # from a runner. The board, which needs only the slug, is unaffected.
   while IFS= read -r slug; do
@@ -415,7 +454,7 @@ cloud_machine() {
   note "roster: $(printf '%s' "$entries" | grep -c . || true) repos in $roster"
 }
 
-# The brief on a runner: compose, send, post — and every failure is a red run,
+# The brief on a runner: compose, send, post. And every failure is a red run,
 # because the Actions log is the delivery and a silent one is a morning nobody
 # hears about at all.
 cloud_brief() {
@@ -426,21 +465,21 @@ cloud_brief() {
   message="$(compose)" || payload_status=$?
   payload_err="$(cat "$PAYLOAD_ERR_FILE" 2>/dev/null || true)"
   if (( payload_status != 0 )); then
-    printf 'morning: brief-payload exit %d\n%s\n' "$payload_status" "$payload_err" >&2
+    wk_error "brief-payload exit $payload_status: $payload_err"
     exit "$payload_status"
   fi
-  if [[ -n "$payload_err" ]]; then note "$payload_err"; fi
+  if [[ -n "$payload_err" ]]; then note_warn "$payload_err"; fi
 
   response="$(send "$message")" || status=$?
   if (( status != 0 )); then
-    # The status and what the CLI said about it — never the payload it was
+    # The status and what the CLI said about it, never the payload it was
     # handed, and never whatever half a digest it managed before it stopped.
-    printf 'morning: the digest send exit %d\n%s\n' "$status" "$(cat "$SEND_ERR_FILE" 2>/dev/null || true)" >&2
+    wk_error "the digest send exit $status: $(cat "$SEND_ERR_FILE" 2>/dev/null || true)"
     exit "$status"
   fi
 
   # The DIGEST NEVER REACHES THIS LOG. It summarizes issues across private repos,
-  # and an Actions log belongs to the repo it ran in — one that could be made
+  # and an Actions log belongs to the repo it ran in, one that could be made
   # public. The Discussion is the delivery; the log needs only proof of life.
   note "digest: $(printf '%s' "$response" | head -1) (${#response} bytes)"
 
@@ -455,8 +494,17 @@ cloud_brief() {
     if [[ -n "${WORKKIT_POST_TOKEN:-}" ]]; then export GH_TOKEN="$WORKKIT_POST_TOKEN"; fi
     wk_brief_publish "$ENGINE" "$response" "$MARK_FILE" "$SCRATCH_DIR/brief.md"
   )" || publish_status=$?
-  if [[ -n "$publish_line" ]]; then note "$publish_line"; fi
-  # 2 is nothing to post — today's brief is already on the board, or this runner
+  # The publish line is the publisher's own words, and its STATUS is what says
+  # which outcome they report: 0 posted, 2 nothing to post, 1 a post that did
+  # not land. Reading the status is what keeps the glyph honest here.
+  if [[ -n "$publish_line" ]]; then
+    case "$publish_status" in
+      (1) note_warn "$publish_line" ;;
+      (2) note_skip "$publish_line" ;;
+      (*) note "$publish_line" ;;
+    esac
+  fi
+  # 2 is nothing to post: today's brief is already on the board, or this runner
   # has nowhere to publish; both are ordinary mornings. 1 is a post that was
   # attempted and did not land, and that is the red run.
   if (( publish_status == 1 )); then
@@ -465,7 +513,7 @@ cloud_brief() {
 }
 
 # The brief composed and sent HERE, which on this machine is the rehearsal
-# (`--now`) and the generic headless runner (`morning.sh <message>`) — never the
+# (`--now`) and the generic headless runner (`morning.sh <message>`), never the
 # scheduled morning, which hands the day over instead. It publishes nothing: a
 # rehearsal must not claim the day's title, and a prompt is not a digest.
 STATUS=0
@@ -476,20 +524,20 @@ local_send() {
     message="$*"
   else
     # Guarded like the send below: a payload-builder crash must still log and
-    # notify — a silent morning is the one failure mode this job exists to
+    # notify: a silent morning is the one failure mode this job exists to
     # prevent.
     message="$(compose)" || payload_status=$?
     payload_err="$(cat "$PAYLOAD_ERR_FILE" 2>/dev/null || true)"
     if (( payload_status != 0 )); then
       {
-        printf '── %s ──\n' "$LOG_STAMP"
+        printf '%s\n' "--- $LOG_STAMP ---"
         printf '[brief-payload exit %d]\n' "$payload_status"
         printf '%s\n\n' "$payload_err"
       } >> "$LOG_FILE"
-      notify "❌ brief-payload exit $payload_status — $payload_err"
+      notify "❌ brief-payload exit $payload_status; $payload_err"
       exit "$payload_status"
     fi
-    if [[ -n "$payload_err" ]]; then note "$payload_err"; fi
+    if [[ -n "$payload_err" ]]; then note_warn "$payload_err"; fi
   fi
 
   local response send_err
@@ -497,7 +545,7 @@ local_send() {
   send_err="$(cat "$SEND_ERR_FILE" 2>/dev/null || true)"
 
   {
-    printf '── %s ──\n' "$LOG_STAMP"
+    printf '%s\n' "--- $LOG_STAMP ---"
     printf '> %s\n' "${message:0:200}"
     if (( STATUS != 0 )); then
       printf '[exit %d]\n' "$STATUS"
@@ -506,9 +554,9 @@ local_send() {
     printf '%s\n\n' "$response"
   } >> "$LOG_FILE"
 
-  # The morning brief leads with its HEADLINE line — that's the notification.
+  # The morning brief leads with its HEADLINE line: that's the notification.
   notif="$(printf '%s' "$response" | head -1)"
-  (( STATUS != 0 )) && notif="❌ exit $STATUS — ${send_err:-$response}"
+  (( STATUS != 0 )) && notif="❌ exit $STATUS; ${send_err:-$response}"
   notify "$notif"
 
   printf '%s\n' "$response"
@@ -527,19 +575,19 @@ elif (( $# == 0 )) && (( MANUAL == 0 )); then
   # of the same one function (issue #54).
   # shellcheck source=./brief-dispatch.sh
   # A checkout missing the lib is a refusal like any other, not an abort under
-  # set -e — the publish after this must still run.
+  # set -e: the publish after this must still run.
   if [[ -f "$SCRIPT_DIR/brief-dispatch.sh" ]]; then
     . "$SCRIPT_DIR/brief-dispatch.sh"
   else
-    DISPATCH_REASON="$SCRIPT_DIR/brief-dispatch.sh is missing — a partial checkout"
+    DISPATCH_REASON="$SCRIPT_DIR/brief-dispatch.sh is missing; a partial checkout"
     dispatch_brief() { return 1; }
   fi
   if dispatch_brief; then
     note "$DISPATCH_LINE"
     printf '%s\n' "$DISPATCH_LINE"
   else
-    BRIEFLESS="brief: the day could not be handed to the cloud ($DISPATCH_REASON) — no brief this morning"
-    note "$BRIEFLESS"
+    BRIEFLESS="brief: the day could not be handed to the cloud ($DISPATCH_REASON); no brief this morning"
+    note_warn "$BRIEFLESS"
     printf '%s\n' "$BRIEFLESS" >&2
   fi
 else
@@ -553,15 +601,15 @@ fi
 # pushed to the home repo's gh-pages branch. It runs after the brief and only for
 # the morning, for the same reason the summaries run first and are allowed to fail:
 # the job exists to make sure nine o'clock says something, and a build is the
-# slowest thing here. Its every reason not to publish — `site.publish` off (the
-# default), no home repo, no build tooling, a diverged clone, nothing changed —
+# slowest thing here. Its every reason not to publish (`site.publish` off (the
+# default), no home repo, no build tooling, a diverged clone, nothing changed)
 # is a skip it logs and exits 0 on, so only a real failure appears in this block.
 #
 # It runs whether or not the day was handed over: the site is this machine's to
 # build either way.
 publish_site() {
   if (( CLOUD )); then
-    note 'publish: the site is built from the home clone on a machine — a runner has neither, skipped'
+    note_skip 'publish: the site is built from the home clone on a machine; a runner has neither, skipped'
     return 0
   fi
   have_publish || return 0
@@ -569,12 +617,12 @@ publish_site() {
   output="$(${TIMEOUT[@]+"${TIMEOUT[@]}"} bash "$ENGINE/publish.sh" --quiet 2>&1)" || status=$?
   if (( status != 0 )); then
     {
-      printf '── %s ──\n' "$LOG_STAMP"
-      printf '[publish exit %d — the brief was already sent]\n' "$status"
+      printf '%s\n' "--- $LOG_STAMP ---"
+      printf '[publish exit %d; the brief was already sent]\n' "$status"
       printf '%s\n\n' "$output"
     } >> "$LOG_FILE"
   elif [[ -n "$output" ]]; then
-    printf '── %s ──\n%s\n\n' "$LOG_STAMP" "$output" >> "$LOG_FILE"
+    printf '%s\n%s\n\n' "--- $LOG_STAMP ---" "$output" >> "$LOG_FILE"
   fi
   return 0
 }
@@ -591,22 +639,22 @@ fi
 # (issue #173). The brief is composed and published in the CLOUD, so its failures
 # happen where nobody is looking: a runner whose token expired posted nothing for
 # ten mornings and no session knew. A session start may reach no network at all,
-# so the reading happens HERE and the answer is left in one file —
+# so the reading happens HERE and the answer is left in one file:
 # `~/.workkit/brief-status.json`, which the `docs:session` hook reads at every
 # session start and names when the date has gone stale.
 #
 # It runs LAST, which also buys the run this morning's dispatch started the
 # longest chance to have posted before the board is read. A brief posted after
-# this read is not lost — it is a marker one day behind, and one day behind is
+# this read is not lost: it is a marker one day behind, and one day behind is
 # the ordinary morning the hook is silent about.
 #
-# NEVER A LIE. Every way this can fail — no gh, no home repo, a read that did not
-# answer, a board carrying no brief — leaves the existing marker exactly as it
+# NEVER A LIE. Every way this can fail (no gh, no home repo, a read that did not
+# answer, a board carrying no brief) leaves the existing marker exactly as it
 # was and names the skip. A marker a day stale warns a day late; an invented one
 # never warns at all.
 record_brief_status() {
   if (( CLOUD )); then
-    note 'marker: the brief marker is read at session start on a machine — a runner has no home that outlives the job, skipped'
+    note_skip 'marker: the brief marker is read at session start on a machine; a runner has no home that outlives the job, skipped'
     return 0
   fi
 
@@ -615,13 +663,13 @@ record_brief_status() {
   marker="$wk_dir/brief-status.json"
 
   if ! command -v gh >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
-    note 'marker: gh and jq are what read the board — the brief marker was left as it was'
+    note_skip 'marker: gh and jq are what read the board; the brief marker was left as it was'
     return 0
   fi
 
   slug="$(jq -r '.site.repo // empty' "$wk_dir/settings.json" 2>/dev/null || true)"
   if [[ -z "$slug" ]]; then
-    note 'marker: no home repo configured — there is no board to read the newest brief from'
+    note_skip 'marker: no home repo configured; there is no board to read the newest brief from'
     return 0
   fi
 
@@ -631,7 +679,7 @@ record_brief_status() {
   prefix="$(node -e 'process.stdout.write(require(process.argv[1]).BRIEF_TITLE_PREFIX)' \
     "$SCRIPT_DIR/../tower/api/lib/history.js" 2>/dev/null || true)"
   if [[ -z "$prefix" ]]; then
-    note 'marker: the brief title prefix could not be read from tower/api/lib/history.js — the marker was left as it was'
+    note_warn 'marker: the brief title prefix could not be read from tower/api/lib/history.js; the marker was left as it was'
     return 0
   fi
 
@@ -639,18 +687,18 @@ record_brief_status() {
   # own reads: a captive portal answers the handshake and never the request, and
   # an unbounded call here would hold the morning open for as long as it liked.
   # macOS ships no coreutils `timeout`, so the bound is applied where there is
-  # one and the read is made plain where there is not — a bound that fires looks
+  # one and the read is made plain where there is not: a bound that fires looks
   # exactly like a read that did not answer, which is already a named skip.
   # Expanded the bash 3.2 way, like TIMEOUT above: a bare "${BOUND[@]}" is an
   # unbound variable there under `set -u`.
   local BOUND=()
   if command -v timeout >/dev/null 2>&1; then BOUND=(timeout "${WORKKIT_GH_TIMEOUT:-10}"); fi
 
-  # The window is 50 because the board is SHARED — the daily summaries publish
-  # beside the briefs — and the gap this exists to notice is measured in days.
+  # The window is 50 because the board is SHARED (the daily summaries publish
+  # beside the briefs) and the gap this exists to notice is measured in days.
   owner="${slug%%/*}"
   name="${slug##*/}"
-  out="$(${BOUND[@]+"${BOUND[@]}"} gh api graphql \
+  out="$(wk_spin 'reading the newest brief' ${BOUND[@]+"${BOUND[@]}"} gh api graphql \
     -f owner="$owner" -f name="$name" \
     -f query='query($owner:String!,$name:String!){
       repository(owner:$owner,name:$name){
@@ -660,7 +708,7 @@ record_brief_status() {
       }
     }' 2>/dev/null)" || out=''
   if [[ -z "$out" ]]; then
-    note "marker: the board on $slug could not be read — the brief marker was left as it was"
+    note_warn "marker: the board on $slug could not be read; the brief marker was left as it was"
     return 0
   fi
 
@@ -670,7 +718,7 @@ record_brief_status() {
   case "$last" in
     ([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
     (*)
-      note "marker: nothing titled ${prefix}<date> in the newest 50 posts on $slug — the brief marker was left as it was"
+      note_skip "marker: nothing titled ${prefix}<date> in the newest 50 posts on $slug; the brief marker was left as it was"
       return 0
       ;;
   esac
@@ -684,21 +732,21 @@ record_brief_status() {
   #
   # The move is GUARDED ON THE WRITE. A scratch file that filled the disk or lost
   # its directory is a truncated one, and moving that over a good marker is the
-  # one way this step could destroy the very answer it exists to keep — the same
+  # one way this step could destroy the very answer it exists to keep: the same
   # never-a-lie rule every skip above obeys, at the last step where it can break.
   # A move that fails takes the temp with it: the marker's own directory is the
   # machine's, and nothing half-written is left sitting in it.
   if ! printf '{\n  "version": 1,\n  "lastBrief": "%s",\n  "checkedAt": "%s"\n}\n' \
     "$last" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >"$marker.tmp" 2>/dev/null; then
     rm -f "$marker.tmp" 2>/dev/null || true
-    note "marker: the marker could not be written in $wk_dir — $marker was left as it was (the board says the newest brief is $last)"
+    note_warn "marker: the marker could not be written in $wk_dir; $marker was left as it was (the board says the newest brief is $last)"
     return 0
   fi
   if mv "$marker.tmp" "$marker" 2>/dev/null; then
-    note "marker: the newest brief on $slug is $last — recorded in $marker"
+    note "marker: the newest brief on $slug is $last; recorded in $marker"
   else
     rm -f "$marker.tmp" 2>/dev/null || true
-    note "marker: $marker could not be written — the board says the newest brief is $last"
+    note_warn "marker: $marker could not be written; the board says the newest brief is $last"
   fi
   return 0
 }
@@ -709,7 +757,7 @@ if (( $# == 0 )); then
   record_brief_status
 fi
 
-# The send's status is the run's status — on this machine, where a send happened
+# The send's status is the run's status, on this machine, where a send happened
 # at all. Everything else here has already reported itself and exits 0.
 if (( BRIEF_SENT_HERE )); then
   exit "$STATUS"

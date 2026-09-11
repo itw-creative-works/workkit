@@ -1,5 +1,5 @@
 //
-// Tests for hooks/loader.sh — the router that resolves a hook name to its
+// Tests for hooks/loader.sh: the router that resolves a hook name to its
 // script. Loader-level failures fail OPEN (a broken loader must never wedge
 // the session); the hook's own exit code propagates untouched so blocking
 // hooks actually block.
@@ -22,19 +22,19 @@ const runLoader = (args, input = '{}', env = {}) => {
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
 };
 
-// A command the safety/commit-language hook must block (exit 2) — used to
+// A command the safety/commit-language hook must block (exit 2): used to
 // observe routing and exit-code propagation without any repo state.
 const BLOCKED_COMMIT = JSON.stringify({ tool_input: { command: 'git commit -m "kill the watcher"' } });
 
 const run = async () => {
   group('loader: fail-open');
 
-  await test('no hook name — exit 0', () => {
+  await test('no hook name: exit 0', () => {
     const { code } = runLoader([]);
     assertEq(code, 0, 'missing name must fail open');
   });
 
-  await test('unknown hook name — exit 0', () => {
+  await test('unknown hook name: exit 0', () => {
     const { code } = runLoader(['no-such-prefix:no-such-hook']);
     assertEq(code, 0, 'missing script must fail open');
   });

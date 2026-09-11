@@ -1,23 +1,23 @@
 #!/bin/bash
-# safety/vendor-guard — PreToolUse hook (Edit|Write)
+# safety/vendor-guard: PreToolUse hook (Edit|Write)
 # Blocks edits to generated/vendor/installed files BEFORE they happen:
 #   - vendor dir segments anywhere: node_modules/, vendor/, .bundle/
 #   - dist/ and build/ only DIRECTLY under a package root (see check_output_dir)
 #   - package-manager lockfiles (owned by their tools, never hand-edited)
-#   - gitignored files (git check-ignore) — generated/runtime files aren't hand-edited
+#   - gitignored files (git check-ignore): generated/runtime files aren't hand-edited
 # Mechanical half of the AGENTS.md "edit the SOURCE, not the output" rule.
 # Designed exceptions (owner ruling, 2026-07-22, plan Q1: default-deny + tiny visible allowlist):
-#   _attic/ (gitignored holding pen, written on purpose — checked FIRST, since
+#   _attic/ (gitignored holding pen, written on purpose, checked FIRST, since
 #   an attic may hold a parked dist/), .env / .env.* (secrets live there BECAUSE
 #   they're gitignored), and .workkit/ (agent state and the local capture file,
-#   gitignored by the workflow spec and written on purpose — 2026-07-24; only
+#   gitignored by the workflow spec and written on purpose, 2026-07-24; only
 #   .workkit/settings.json is committed, and a tracked file never trips the
 #   gitignore check anyway). .workkit/ is checked AFTER the vendor/lockfile
 #   block, so a .workkit/ inside node_modules/ or dist/ is still blocked.
 # The directory name is spelled out rather than read from a variable: this guard
 # sources nothing, so a broken shared file can never keep it from running. Its
-# SSOT is WORKKIT_DIR in hooks/_lib.sh — change both together.
-# Fail open on missing jq/file_path — a broken guard must never wedge the session.
+# SSOT is WORKKIT_DIR in hooks/_lib.sh. Change both together.
+# Fail open on missing jq/file_path: a broken guard must never wedge the session.
 
 set -euo pipefail
 
@@ -37,7 +37,7 @@ case "$file_path" in
 esac
 
 block() {
-  echo "vendor-guard: BLOCKED edit to $file_path — $1 Edit the SOURCE, not the output; a bug in a dependency gets fixed upstream, never patched in place." >&2
+  echo "vendor-guard: BLOCKED edit to $file_path: $1 Edit the SOURCE, not the output; a bug in a dependency gets fixed upstream, never patched in place." >&2
   exit 2
 }
 
@@ -45,7 +45,7 @@ block() {
 # dist/ or build/ sitting DIRECTLY under one is that package's output. Deeper in
 # a source tree the name means nothing (…/src/test/suites/build/ is committed
 # source, 2026-07-28), so only the anchored case blocks. A path whose parent
-# does not exist can't be disproved and stays blocked — default-deny.
+# does not exist can't be disproved and stays blocked: default-deny.
 is_package_root() {
   local dir="${1:-/}"
   [ -d "$dir" ] || return 0
@@ -85,7 +85,7 @@ case "$(basename "$file_path")" in
   package-lock.json|yarn.lock|pnpm-lock.yaml|bun.lock|bun.lockb|Gemfile.lock|Podfile.lock|composer.lock)
     block "lockfiles are owned by their package managers." ;;
   .env|.env.*)
-    exit 0 ;;   # secrets live in .env BECAUSE it is gitignored — allowed by design
+    exit 0 ;;   # secrets live in .env BECAUSE it is gitignored, allowed by design
 esac
 
 # .workkit/ is session state, gitignored by the workflow spec and written on
@@ -98,7 +98,7 @@ esac
 dir="$(dirname "$file_path")"
 if git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   if git -C "$dir" check-ignore -q -- "$file_path" 2>/dev/null; then
-    block "the file is gitignored — generated/runtime files are not hand-edited (designed exceptions: _attic/, .workkit/, .env*)."
+    block "the file is gitignored: generated/runtime files are not hand-edited (designed exceptions: _attic/, .workkit/, .env*)."
   fi
 fi
 

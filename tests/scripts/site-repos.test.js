@@ -1,5 +1,5 @@
 //
-// Tests for workflow/site-repos.js — the roster the published site sweeps.
+// Tests for workflow/site-repos.js: the roster the published site sweeps.
 //
 // The fixtures are a scratch ~/.workkit and real git repos with real `origin`
 // remotes, the same shape the roster read itself is tested against: what a slug
@@ -67,7 +67,7 @@ const run = async () => {
 
   group('workflow/site-repos: an empty machine and a roster that will not read');
 
-  await test('a machine that registers nothing writes the empty list — it is true', () => {
+  await test('a machine that registers nothing writes the empty list, it is true', () => {
     // The truth case: no roster file at all is not a failure, it is a machine
     // that has enabled nothing, and the list it composes says exactly that.
     const tmp = mkTmp();
@@ -81,7 +81,7 @@ const run = async () => {
 
   await test('a roster that cannot be read raises rather than composing an empty one', () => {
     // Issue #116: the failure and the empty machine compose the same list, so
-    // telling them apart is the whole job — an empty list published over a good
+    // telling them apart is the whole job. An empty list published over a good
     // one tells every reader the board is gone.
     const tmp = mkTmp();
     const workflowHome = mkWorkflowHome(tmp, ['omega'], { roster: '{ not json' });

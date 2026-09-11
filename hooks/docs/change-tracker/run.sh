@@ -1,9 +1,9 @@
 #!/bin/bash
-# docs:change-tracker — Stop hook
+# docs:change-tracker: Stop hook
 # Nudges Claude to keep the work item (a GitHub issue) true, promote durable
 # findings out of .workkit/, and check doc-parity.
 # Prompt content lives in prompt.md (same directory).
-# Reads files and writes one state file — never calls gh. A network round trip
+# Reads files and writes one state file, never calls gh. A network round trip
 # on every Stop is latency nobody agreed to pay.
 
 set -euo pipefail
@@ -35,9 +35,9 @@ if [ -f "INBOX.md" ]; then
   case "$inbox_count" in ''|*[!0-9]*) inbox_count=0 ;; esac
 fi
 
-# Local capture file — same entry rule, deliberate drain (never auto-emptied).
+# Local capture file: same entry rule, deliberate drain (never auto-emptied).
 # This hook sources nothing, so the directory name is spelled out; its SSOT is
-# WORKKIT_DIR in hooks/_lib.sh — change both together.
+# WORKKIT_DIR in hooks/_lib.sh. Change both together.
 scratch_count=0
 if [ -f ".workkit/capture.md" ]; then
   scratch_count=$(grep -cv -e '^#' -e '^>' -e '^[[:space:]]*$' .workkit/capture.md 2>/dev/null || true)
@@ -57,8 +57,8 @@ while IFS= read -r line; do
   base="$(basename "$path")"
 
   # Code-vs-docs classification matches the safety/commit-gate hook (same
-  # definition in both — a docs PATH, then a code extension winning over it,
-  # then the docs basenames — kept in sync by hand; the .workkit arm is this
+  # definition in both: a docs PATH, then a code extension winning over it,
+  # then the docs basenames, kept in sync by hand; the .workkit arm is this
   # hook's alone).
   is_doc=0
   case "$path" in
@@ -71,7 +71,7 @@ while IFS= read -r line; do
     *.js|*.cjs|*.mjs|*.ts|*.jsx|*.tsx|*.sh|*.zsh|*.py|*.rb) is_doc=0 ;;
   esac
   case "$path" in
-    # Session state, never committed — it has its own nudge below, and it is
+    # Session state, never committed. It has its own nudge below, and it is
     # never the "uncommitted code" this hook is watching for. After the
     # extension arm, so a script parked there stays out of it too.
     .workkit|.workkit/*) is_doc=1 ;;
@@ -90,8 +90,8 @@ done <<<"$status"
 [ "$has_code_change" -eq 1 ] || [ "$inbox_count" -gt 0 ] || [ "$scratch_count" -gt 0 ] || exit 0
 
 # Repeat only when something changed (issue #132). The fingerprint covers what
-# the nudge is ABOUT — the porcelain status, the diff behind it, the content of
-# the untracked files, and the capture surfaces' content — and the one last
+# the nudge is ABOUT: the porcelain status, the diff behind it, the content of
+# the untracked files, and the capture surfaces' content. The one last
 # nudged on is remembered in .workkit/agents/, the agents' own state. Same fingerprint means the
 # obligations were already stated for this exact state, so the Stop is silent; a
 # new edit (which the diff catches even when the status line is identical), a
@@ -106,11 +106,11 @@ fingerprint() {
   git ls-files --others --exclude-standard -z 2>/dev/null | sort -z | xargs -0 -r cat 2>/dev/null || true
   # The two capture surfaces whose entries are counted above: one is gitignored
   # by design, the other may be ignored too, so neither is reliably in the
-  # streams above — without this, an edit to an existing entry never re-fires.
+  # streams above. Without this, an edit to an existing entry never re-fires.
   cat "INBOX.md" ".workkit/capture.md" 2>/dev/null || true
 }
 
-# Whatever digest this machine has — the input is a local listing, not an
+# Whatever digest this machine has: the input is a local listing, not an
 # adversarial one, so the point is only that equal states digest equally.
 digest() {
   if command -v shasum >/dev/null 2>&1; then
@@ -122,7 +122,7 @@ digest() {
   fi | awk '{print $1}'
 }
 
-# A repo with no .workkit/ is UNDECIDED — never written to, so it has no memory
+# A repo with no .workkit/ is UNDECIDED, never written to, so it has no memory
 # and hears the nudge every Stop, exactly as before. Same for a repo whose
 # .workkit/ is not gitignored: the memory is session state, never a file the
 # repo would be asked to commit, so an unignored path keeps the old behavior.
@@ -133,7 +133,7 @@ if [ -d ".workkit" ] && git check-ignore -q "$state_file" 2>/dev/null; then
     if [ "$(cat "$state_file" 2>/dev/null || true)" = "$current" ]; then
       exit 0
     fi
-    # The block carries the redirection error too — 2>/dev/null on the printf
+    # The block carries the redirection error too. 2>/dev/null on the printf
     # alone is set up after the failing redirect, so an unwritable .workkit/
     # would spill the shell's own message onto the transcript.
     { mkdir -p ".workkit/agents" && printf '%s\n' "$current" >"$state_file"; } 2>/dev/null || true
@@ -154,19 +154,19 @@ fi
 if [ -f "PROGRESS.md" ]; then
   CONTEXT="$CONTEXT
 
-BOARD: PROGRESS.md still exists in this repo — migrate it to issues (recipe: the workkit plugin's docs/project-state.md § Migration), then delete the file. Until that happens, keep it true this turn."
+BOARD: PROGRESS.md still exists in this repo. Migrate it to issues (recipe: the workkit plugin's docs/project-state.md § Migration), then delete the file. Until that happens, keep it true this turn."
 fi
 
 if [ "$inbox_count" -gt 0 ]; then
   CONTEXT="$CONTEXT
 
-INBOX: $inbox_count unfiled entries in $cwd/INBOX.md — surface the count to the user and offer the workkit:triage skill. Filing stays deliberate: never empty the inbox as a side effect."
+INBOX: $inbox_count unfiled entries in $cwd/INBOX.md. Surface the count to the user and offer the workkit:triage skill. Filing stays deliberate: never empty the inbox as a side effect."
 fi
 
 if [ "$scratch_count" -gt 0 ]; then
   CONTEXT="$CONTEXT
 
-SCRATCH: $scratch_count unfiled entries in $cwd/.workkit/capture.md — surface the count and offer the workkit:triage skill. Filing stays deliberate: never drain the local capture file as a side effect."
+SCRATCH: $scratch_count unfiled entries in $cwd/.workkit/capture.md. Surface the count and offer the workkit:triage skill. Filing stays deliberate: never drain the local capture file as a side effect."
 fi
 
 reason="Change tracker: uncommitted code changes detected."

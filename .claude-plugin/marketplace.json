@@ -8,7 +8,7 @@
     {
       "name": "workkit",
       "source": "./",
-      "description": "The issue-pipeline workflow system: standards heal, manager crew, guard hooks, and the workflow skills — for any repo."
+      "description": "The issue-pipeline workflow system: standards heal, manager crew, guard hooks, and the workflow skills, for any repo."
     }
   ]
 }

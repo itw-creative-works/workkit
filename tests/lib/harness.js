@@ -12,7 +12,7 @@
 //   const { passed, failed } = summary();   // call once at the end of the file
 //
 
-// The workflow state directory's name, for the TEST layer — every suite builds
+// The workflow state directory's name, for the TEST layer. Every suite builds
 // its fixture paths from this instead of spelling the directory out. The engine
 // (workflow/standards.sh) and the hooks (hooks/_lib.sh) hold their own copy;
 // the standards.sh suite asserts all three still agree.
@@ -47,16 +47,16 @@ const assert = (cond, msg) => {
 
 const assertEq = (actual, expected, msg) => {
   if (actual !== expected) {
-    throw new Error(`${msg || 'assertEq failed'} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+    throw new Error(`${msg || 'assertEq failed'}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
   }
 };
 
 // A suite whose preconditions are absent SKIPS itself instead of failing. Some
-// suites can only ask their question on a provisioned machine — one with
+// suites can only ask their question on a provisioned machine: one with
 // caffeinate, with ~/.claude linked, with an upstream's dependencies installed.
 // Elsewhere (a Linux runner, a container, a fresh clone) their failures say
-// nothing about the code, and excluding them from the OUTSIDE — a second npm
-// script, a flag in a workflow file — puts that knowledge far from the suite it
+// nothing about the code, and excluding them from the OUTSIDE (a second npm
+// script, a flag in a workflow file) puts that knowledge far from the suite it
 // describes. Each suite states its own requirement, so `npm test` is the one
 // command everywhere and reports honestly wherever it runs.
 const skipSuite = (reason) => {
@@ -66,7 +66,7 @@ const skipSuite = (reason) => {
 };
 
 // The scheduling capability the 9am job is built on. A test that asserts what
-// launchd does needs launchd to exist — where it does not, there is no schedule
+// launchd does needs launchd to exist. Where it does not, there is no schedule
 // to keep current and the case says so instead of failing. The engine itself
 // branches on `uname -s` ("launchd is macOS"), so the detector mirrors that
 // exact question rather than probing PATH for launchctl: the two must never

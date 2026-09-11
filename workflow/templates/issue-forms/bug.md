@@ -8,8 +8,8 @@ assignees: ""
 
 ## Description
 
-<!-- What happened, what you expected instead, and how to reproduce it — steps, a command, or the smallest case that shows it. -->
+<!-- What happened, what you expected instead, and how to reproduce it: steps, a command, or the smallest case that shows it. -->
 
 ## Spec
 
-None needed — small item.
+None needed: small item.

@@ -1,5 +1,5 @@
 //
-// Tests for hooks/workflow:standards — the SessionStart hook that runs
+// Tests for hooks/workflow:standards: the SessionStart hook that runs
 // the workflow core's standards.sh against the session's repo, at most once per
 // repo per day, and reports only what it created or corrected.
 //
@@ -20,7 +20,7 @@ const HOOK = path.join(__dirname, '..', '..', 'hooks', 'workflow', 'standards', 
 // default-path group drops it to prove the relative resolution.
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 
-// node is on the PATH of any machine running this standard — the engine lints
+// node is on the PATH of any machine running this standard: the engine lints
 // CHANGELOGs with it, and its hook-layer self-check counts it among the tools
 // the hooks call. A PATH without it makes every heal here report a machine that
 // does not exist.
@@ -47,7 +47,7 @@ const makeRepo = ({ optIn = true, settings = '{ "version": 1, "enabled": true }\
   return dir;
 };
 
-// Record a decline the way the engine does — through its own entry point, so
+// Record a decline the way the engine does, through its own entry point, so
 // the test proves the two halves agree on the file's shape.
 const decline = (repo, workflowHome) => spawnSync('bash', [
   path.join(WORKFLOW_DIR, 'standards.sh'), '--decline', repo,
@@ -60,7 +60,7 @@ const decline = (repo, workflowHome) => spawnSync('bash', [
   encoding: 'utf8',
 });
 
-// Each run gets its own cache dir unless one is passed in — the daily marker
+// Each run gets its own cache dir unless one is passed in: the daily marker
 // must never leak between tests (or into the real ~/.claude/logs).
 // `home` overrides HOME; passing workflowDir: null DROPS WORKFLOW_DIR from the
 // environment so the hook resolves the engine beside itself.
@@ -69,7 +69,7 @@ const decline = (repo, workflowHome) => spawnSync('bash', [
 // the engine on every run, must never be the real ~/.workkit or ~/.claude.
 // A machine that has run `workkit setup`, as far as the setup pester (#72) can
 // see it: the CLI symlink the wizard installs, pointed at this checkout's
-// engine — exactly what `workkit update` calls current. Every run seeds it
+// engine: exactly what `workkit update` calls current. Every run seeds it
 // unless the test is exercising a machine that never ran setup (setup: false),
 // because a scratch HOME is otherwise indistinguishable from a fresh machine
 // and every case here would carry the pester.
@@ -110,9 +110,9 @@ const runHook = (cwd, { cache, pathPrefix, home, workflowDir, workflowHome, setu
 };
 
 const run = async () => {
-  group('workflow:standards — guards');
+  group('workflow:standards: guards');
 
-  await test('non-git cwd — silent exit 0, creates nothing', () => {
+  await test('non-git cwd: silent exit 0, creates nothing', () => {
     const dir = mkTmp();
     const { code, stdout, cacheDir } = runHook(dir);
     assertEq(code, 0, 'exit 0');
@@ -121,19 +121,19 @@ const run = async () => {
     cleanup(dir); cleanup(cacheDir);
   });
 
-  await test('empty cwd in input — exit 0', () => {
+  await test('empty cwd in input: exit 0', () => {
     const { code, stdout, cacheDir } = runHook('');
     assertEq(code, 0, 'fail open');
     assertEq(stdout, '', 'no output');
     cleanup(cacheDir);
   });
 
-  group('workflow:standards — participation gate');
+  group('workflow:standards: participation gate');
 
   // The offer an undecided repo hears, as SessionStart context.
   const offerOf = (stdout) => JSON.parse(stdout).hookSpecificOutput.additionalContext;
 
-  await test('no .workkit/settings.json — offers to enable, writes nothing', () => {
+  await test('no .workkit/settings.json: offers to enable, writes nothing', () => {
     const repo = makeRepo({ optIn: false });
     const { code, stdout, cacheDir } = runHook(repo);
     assertEq(code, 0, 'fail closed for writes, open for the session');
@@ -146,7 +146,7 @@ const run = async () => {
     cleanup(repo); cleanup(cacheDir);
   });
 
-  await test('enabled: false — silent, and no offer either', () => {
+  await test('enabled: false: silent, and no offer either', () => {
     const repo = makeRepo({ settings: '{ "version": 1, "enabled": false }\n' });
     const { code, stdout, cacheDir } = runHook(repo);
     assertEq(code, 0, 'exit 0');
@@ -166,7 +166,7 @@ const run = async () => {
     cleanup(repo); cleanup(cacheDir); cleanup(workflowHome);
   });
 
-  await test('the offer repeats every session — it is not daily-cached', () => {
+  await test('the offer repeats every session: it is not daily-cached', () => {
     const repo = makeRepo({ optIn: false });
     const cache = mkTmp();
     const first = runHook(repo, { cache });
@@ -198,9 +198,9 @@ const run = async () => {
     cleanup(repo); cleanup(cacheDir);
   });
 
-  group('workflow:standards — healing a repo');
+  group('workflow:standards: healing a repo');
 
-  await test('unstandardized repo — heals it and reports what changed', () => {
+  await test('unstandardized repo: heals it and reports what changed', () => {
     const repo = makeRepo();
     const { code, stdout, cacheDir } = runHook(repo);
     assertEq(code, 0, 'exit 0');
@@ -215,7 +215,7 @@ const run = async () => {
     cleanup(repo); cleanup(cacheDir);
   });
 
-  await test('already-standardized repo — silent (skips are not news)', () => {
+  await test('already-standardized repo: silent (skips are not news)', () => {
     const repo = makeRepo();
     const first = runHook(repo);
     assert(first.stdout.length > 0, 'first run reported the heals');
@@ -226,20 +226,59 @@ const run = async () => {
     cleanup(repo); cleanup(first.cacheDir); cleanup(second.cacheDir);
   });
 
+  // What the relay carries, and what it must not (issue #237). The heal's
+  // capture is BOTH streams, so a child tool the engine ran writes into it too:
+  // a `cp` refusal, a git advisory. Only a line the engine itself printed is a
+  // heal action, and the opening glyph is what says which is which.
+  await test('a raw line from a child tool is not relayed as a heal action', () => {
+    const engine = mkTmp();
+    fs.writeFileSync(path.join(engine, 'labels.json'), '{ "version": 1, "groups": {} }\n');
+    fs.writeFileSync(path.join(engine, 'standards.sh'), [
+      '#!/usr/bin/env bash',
+      "if [[ \"$1\" == '--state' ]]; then printf 'enabled\\n'; exit 0; fi",
+      // One action in the engine's voice, and one line a child tool wrote for
+      // itself.
+      "printf '  \\xe2\\x9c\\x93 gitignore: added .workkit/*\\n' >&2",
+      "printf 'cp: /nowhere/thing: No such file or directory\\n' >&2",
+      '',
+    ].join('\n'));
+    const repo = makeRepo();
+    const { code, stdout, cacheDir } = runHook(repo, { workflowDir: engine });
+    assertEq(code, 0, 'exit 0');
+    const ctx = JSON.parse(stdout).hookSpecificOutput.additionalContext;
+    assert(ctx.includes('gitignore: added'), `the engine's own line is relayed, got: ${ctx}`);
+    assert(!ctx.includes('cp:'), `and the child tool's is not, got: ${ctx}`);
+    cleanup(repo); cleanup(cacheDir); cleanup(engine);
+  });
+
+  await test("the relay's pattern matches a line the engine really prints", () => {
+    // The one place this hook restates the engine's line shape. Read the
+    // pattern out of the hook itself and put a REAL logger line through it, so
+    // the two can never drift apart in silence.
+    const pattern = fs.readFileSync(HOOK, 'utf8').match(/grep -E '(\^\[\[:space:\]\]\*[^']+)'/);
+    assert(pattern, 'the hook filters on a glyph pattern');
+    const lib = path.join(WORKFLOW_DIR, 'lib.sh');
+    const said = spawnSync('bash', ['-c',
+      `. ${JSON.stringify(lib)}; WK_LOG_INDENT='  '; WK_LOG_STDERR=1 wk_ok 'engine: linked a → b' 2>&1 | grep -E ${JSON.stringify(pattern[1])}`,
+    ], { encoding: 'utf8', env: { PATH: BASE_PATH, HOME: mkTmp(), WORKKIT_COLOR: '0' } });
+    assertEq(said.status, 0, `the pattern matched, got: ${JSON.stringify(said.stdout)}`);
+    assert(/engine: linked a → b$/.test(said.stdout.trim()), `on the whole line, got: ${JSON.stringify(said.stdout)}`);
+  });
+
   await test('a subdirectory session resolves to the repo root', () => {
     const repo = makeRepo();
     const nested = path.join(repo, 'src', 'deep');
     fs.mkdirSync(nested, { recursive: true });
-    // settings.json sits at the ROOT — the gate reads the resolved root, not the cwd.
+    // settings.json sits at the ROOT: the gate reads the resolved root, not the cwd.
     const { cacheDir } = runHook(nested);
     assert(fs.existsSync(path.join(repo, '.gitignore')), 'root healed');
     assert(!fs.existsSync(path.join(nested, '.gitignore')), 'nothing written in the subdirectory');
     cleanup(repo); cleanup(cacheDir);
   });
 
-  group('workflow:standards — daily cache');
+  group('workflow:standards: daily cache');
 
-  await test('second session the same day — no re-run, no output', () => {
+  await test('second session the same day: no re-run, no output', () => {
     const repo = makeRepo();
     const cache = mkTmp();
     const first = runHook(repo, { cache });
@@ -258,7 +297,7 @@ const run = async () => {
     runHook(repoA, { cache });
     const afterA = fs.readdirSync(cache);
     assertEq(afterA.length, 1, 'one marker after the first repo');
-    // The hook stamps `date +%Y-%m-%d` — LOCAL time. Comparing against a UTC
+    // The hook stamps `date +%Y-%m-%d`: LOCAL time. Comparing against a UTC
     // ISO slice fails for the hours the two dates disagree.
     const today = spawnSync('date', ['+%Y-%m-%d'], { encoding: 'utf8' }).stdout.trim();
     assertEq(fs.readFileSync(path.join(cache, afterA[0]), 'utf8'), today, 'marker holds today');
@@ -280,9 +319,9 @@ const run = async () => {
     cleanup(repo); cleanup(cache);
   });
 
-  group('workflow:standards — default engine path');
+  group('workflow:standards: default engine path');
 
-  await test('no WORKFLOW_DIR — resolves the engine beside the hook and heals', () => {
+  await test('no WORKFLOW_DIR: resolves the engine beside the hook and heals', () => {
     // No symlink, no HOME: the hook climbs out of its own directory to the
     // kit's workflow/, so a fresh plugin install works with nothing installed.
     const home = mkTmp();
@@ -294,7 +333,7 @@ const run = async () => {
     cleanup(repo); cleanup(cacheDir); cleanup(home);
   });
 
-  await test('a missing engine — says where it looked, exit 0', () => {
+  await test('a missing engine: says where it looked, exit 0', () => {
     const engine = mkTmp();
     const repo = makeRepo();
     const { code, stdout, cacheDir } = runHook(repo, { workflowDir: engine });
@@ -307,7 +346,7 @@ const run = async () => {
   });
 
   await test('an engine without labels.json is announced for an opted-in repo', () => {
-    // A missing manifest used to fail --state, which this hook read as nogit —
+    // A missing manifest used to fail --state, which this hook read as nogit:
     // a broken install went silent forever instead of speaking once.
     const engine = mkTmp();
     fs.symlinkSync(path.join(WORKFLOW_DIR, 'standards.sh'), path.join(engine, 'standards.sh'));
@@ -340,7 +379,7 @@ const run = async () => {
     cleanup(repo); cleanup(cacheDir); cleanup(engine);
   });
 
-  // Without the engine, undecided and declined are indistinguishable — but a
+  // Without the engine, undecided and declined are indistinguishable, but a
   // committed `false` is resolvable from the repo alone, so the deliberate no
   // must be honored here too (review finding, 2026-07-24).
   await test('a missing engine stays silent on a deliberately disabled repo', () => {
@@ -352,7 +391,7 @@ const run = async () => {
     cleanup(repo); cleanup(cacheDir); cleanup(engine);
   });
 
-  group('workflow:standards — the setup pester (#72)');
+  group('workflow:standards: the setup pester (#72)');
 
   const contextOf = (stdout) => JSON.parse(stdout).hookSpecificOutput.additionalContext;
 
@@ -383,7 +422,7 @@ const run = async () => {
     cleanup(repo); cleanup(home); cleanup(first.cacheDir); cleanup(second.cacheDir);
   });
 
-  await test('setup is a machine question — the pester reaches a non-git cwd too', () => {
+  await test('setup is a machine question: the pester reaches a non-git cwd too', () => {
     const dir = mkTmp();
     const home = mkTmp();
     const { code, stdout, cacheDir } = runHook(dir, { home, setup: false });
@@ -405,9 +444,9 @@ const run = async () => {
     cleanup(repo); cleanup(home); cleanup(cacheDir); cleanup(workflowHome);
   });
 
-  group('workflow:standards — machine-side upkeep');
+  group('workflow:standards: machine-side upkeep');
 
-  // The plist a machine carries, rendered for some OTHER checkout — the drift
+  // The plist a machine carries, rendered for some OTHER checkout: the drift
   // `workkit update --auto` exists to correct. Written straight to disk rather
   // than through the installer: what matters here is that the hook noticed.
   const seedStalePlist = (home) => {
@@ -418,7 +457,7 @@ const run = async () => {
     return file;
   };
 
-  // A launchctl that records nothing and answers "not loaded" — the real one is
+  // A launchctl that records nothing and answers "not loaded": the real one is
   // never reached from a test.
   const launchctlShim = () => {
     const dir = mkTmp();
@@ -450,11 +489,11 @@ const run = async () => {
   });
 
   // The plist itself is launchd's, and the engine re-renders one only where
-  // launchd is (`schedule: launchd is macOS — nothing to keep current here`).
+  // launchd is (`schedule: launchd is macOS; nothing to keep current here`).
   // Off that machine there is no schedule to correct, so the case is named as a
   // skip rather than asserted against a capability that is not there (#114).
   if (hasLaunchd()) {
-    group('workflow:standards — the schedule it keeps current');
+    group('workflow:standards: the schedule it keeps current');
 
     await test('a repo’s daily run corrects a schedule left by another checkout', () => {
       const repo = makeRepo();
@@ -468,15 +507,22 @@ const run = async () => {
       assert(body.includes('com.workkit.claude-daily'), 'and it is the real one');
       const ctx = JSON.parse(stdout).hookSpecificOutput.additionalContext;
       assert(ctx.includes('schedule:'), `the session hears what was corrected, got: ${ctx}`);
+      // In the SAME shape the heal's own lines arrive in (issue #237): the
+      // upkeep speaks under a title, so its lines are indented and glyphed at
+      // the source, and this relay takes both off rather than injecting one
+      // shape beside another.
+      const relayed = ctx.split('\n').find((line) => line.includes('schedule:'));
+      assert(/^schedule: /.test(relayed || ''),
+        `with no indent and no glyph left on it, got: ${JSON.stringify(relayed)}`);
       cleanup(repo); cleanup(cacheDir); cleanup(home); cleanup(shim);
     });
   } else {
-    group('workflow:standards — the schedule it keeps current — skipped, launchd is macOS (#114)');
+    group('workflow:standards: the schedule it keeps current: skipped, launchd is macOS (#114)');
   }
 
-  group('workflow:standards — offline');
+  group('workflow:standards: offline');
 
-  await test('no gh on PATH — local heals still reported, no failure', () => {
+  await test('no gh on PATH: local heals still reported, no failure', () => {
     const repo = makeRepo();
     const { code, stdout, cacheDir } = runHook(repo);
     assertEq(code, 0, 'exit 0');

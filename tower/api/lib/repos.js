@@ -1,14 +1,14 @@
 //
-// The tower's repo roster — which repositories the workflow covers.
+// The tower's repo roster: which repositories the workflow covers.
 //
 // The tri-state opt-in is unchanged and the COMMITTED `.workkit/settings.json`
 // (anything but `enabled: false`) stays the SSOT of membership; what this
 // module reads is the machine-local INDEX of it. The engine registers every repo it heals or enables
-// under `repos` in `~/.workkit/.repos.json` — the machine-maintained file, which
-// is why it is not the hand-edited `settings.json` beside it (issue #80) — and
+// under `repos` in `~/.workkit/.repos.json` (the machine-maintained file, which
+// is why it is not the hand-edited `settings.json` beside it (issue #80)) and
 // prunes the entries that went
 // away, so the list maintains itself and no filesystem root is ever walked. A
-// repo this machine has never opened is not on the dashboard — correct by
+// repo this machine has never opened is not on the dashboard, correct by
 // definition, since the tower reports on the machine it runs on.
 //
 // The same `repos` map holds this user's declines (`"declined"`), which are
@@ -51,7 +51,7 @@ const readJson = (file) => {
  * holds, `missing` when this machine has registered nothing, and `unreadable`
  * when the file is there and does not parse.
  *
- * A READER cannot tell the last two apart and does not need to — a roster it
+ * A READER cannot tell the last two apart and does not need to. A roster it
  * cannot read is a board with no repos on it, and the board still renders. A
  * WRITER must (issue #116): composing the same empty list from a failure would
  * publish it over a roster that was good.
@@ -83,7 +83,7 @@ const slugFromRemote = (url) => {
 
 /**
  * The origin slug for a repo, or null when it has no origin remote. A repo
- * without one is still listed — health works on a local-only repo; only the
+ * without one is still listed: health works on a local-only repo; only the
  * board, which needs a GitHub name to query, skips it.
  * @param {string} repoPath
  * @param {Function} exec
@@ -103,7 +103,7 @@ const originSlug = (repoPath, exec) => {
  * The engine's `resolve_state` is the SSOT of what "enabled" means, and this
  * reads it the same way: a committed file that does not say `enabled: false` is
  * a yes, so a legacy `{ "version": 1 }` written before the key existed stays in.
- * An absent or unparseable file is not a member — the answer is missing, not
+ * An absent or unparseable file is not a member. The answer is missing, not
  * given.
  */
 const isEnabled = (dir) => {
@@ -121,7 +121,7 @@ const isEnabled = (dir) => {
  * @param {object} [opts]
  * @param {string} [opts.workflowHome] the user's workflow state (default ~/.workkit)
  * @param {string} [opts.home] overrides ~ for the default
- * @param {Function} [opts.exec] (cmd, args) => stdout — the git seam
+ * @param {Function} [opts.exec] (cmd, args) => stdout: the git seam
  * @returns {Array<{name: string, path: string, slug: string|null}>}
  */
 const discoverRepos = (opts = {}) => {
@@ -144,13 +144,13 @@ const discoverRepos = (opts = {}) => {
   // The home repo, which the roster never carries: the tower clone holds no
   // `.workkit/` of its own (issue #79), so the engine knows it BY PATH and so
   // does this. Its issues are the cross-project queue, which is exactly what the
-  // board exists to show — and a machine whose roster somehow lists it too gets
+  // board exists to show, and a machine whose roster somehow lists it too gets
   // one entry, not two.
   //
   // By-path discovery has to prove two things a committed opt-in would have
   // proved for it: that this user did not DECLINE that path, and that whatever
   // sits there is actually the home repo. The proof of the second is the origin
-  // slug matching `site.repo` — the slug the owner's settings.json names as the
+  // slug matching `site.repo`: the slug the owner's settings.json names as the
   // repo the site publishes from. No origin, no configured slug, or a mismatch
   // means some other checkout is parked at that name, and a foreign repo is
   // never listed.

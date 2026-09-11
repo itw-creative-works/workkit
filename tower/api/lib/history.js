@@ -1,5 +1,5 @@
 //
-// The published briefs, read back — what the board looked like on the mornings
+// The published briefs, read back: what the board looked like on the mornings
 // before this one.
 //
 // Nothing on a machine records the shape of a day. The one durable trace a
@@ -8,7 +8,7 @@
 // readable `workkit-stats` line, appended after the digest exactly the way the
 // upstream-news cursor is (jobs/stats.js renders it, `jobs/brief-publish.sh`
 // appends it), and reading those lines back IS the history. No store, no
-// backfill, no second source of truth — a brief that was never published is a
+// backfill, no second source of truth: a brief that was never published is a
 // day the charts do not have, which is the honest answer.
 //
 // THIS MODULE OWNS THE TWO LITERALS the writer and the reader share: the title
@@ -51,15 +51,15 @@ const BRIEF_TITLE_PREFIX = 'brief: ';
 
 /**
  * The stats line, as it sits in a published brief's body. The renderer is
- * `jobs/stats.js` — writer and reader are two halves of one shape, which is why
+ * `jobs/stats.js`. Writer and reader are two halves of one shape, which is why
  * the pattern lives beside the prefix rather than beside either half.
  */
 const STATS_RE = /<!--\s*workkit-stats:\s*(\{.*\})\s*-->/;
 
 // How many mornings a chart draws. Five weeks is enough to see a trend and
 // short enough that a line chart's points stay distinguishable; the read itself
-// asks for the page maximum, since the board is SHARED — the summaries publish
-// beside the briefs — and a narrow window would answer with half as many days.
+// asks for the page maximum, since the board is SHARED (the summaries publish
+// beside the briefs) and a narrow window would answer with half as many days.
 const HISTORY_LIMIT = 35;
 const WINDOW = 100;
 
@@ -113,7 +113,7 @@ const parseStatsMark = (body) => {
 };
 
 /**
- * The home repo's Discussions, newest first — the ONE round trip both readings
+ * The home repo's Discussions, newest first: the ONE round trip both readings
  * are made from.
  *
  * Every field is normalized here so neither reading has to defend itself
@@ -128,7 +128,7 @@ const parseStatsMark = (body) => {
  * @param {object} [opts]
  * @param {string} [opts.workflowHome] the user's ~/.workkit
  * @param {string} [opts.home] overrides ~ for the default above
- * @param {Function} [opts.exec] (cmd, args) => stdout — the gh seam
+ * @param {Function} [opts.exec] (cmd, args) => stdout: the gh seam
  * @returns {{nodes: Array<{title: string, url: string, createdAt: string|null, body: string}>|null, reason: string|null}}
  */
 const readDiscussions = (opts = {}) => {
@@ -154,7 +154,7 @@ const readDiscussions = (opts = {}) => {
 };
 
 /**
- * The board over time, oldest first — one entry per published brief that
+ * The board over time, oldest first: one entry per published brief that
  * carried a stats line.
  *
  * ASCENDING because that is the order a chart draws in, and the axis is the one
@@ -196,27 +196,27 @@ const briefHistory = (opts = {}) => {
 
 // How old the newest published brief may be before the cloud brief is judged to
 // have stopped. ONE whole calendar day: the brief posts once a morning, so at
-// 08:00 the newest post is yesterday's and nothing is wrong — it is the morning
+// 08:00 the newest post is yesterday's and nothing is wrong: it is the morning
 // BEFORE that going unanswered which means no run has landed.
 //
 // The same bar is spelled out again in `hooks/docs/session/run.sh` (issue #173),
 // which asks the same question of the same board at session start, off the
-// marker the 9am job leaves rather than over the network — change both together.
+// marker the 9am job leaves rather than over the network. Change both together.
 // What the two COUNT diverges on purpose: this one reads the dates off briefs
 // carrying a `workkit-stats` line, because a chart is what it feeds, while the
-// marker counts any `brief: `-titled Discussion — a brief published without a
+// marker counts any `brief: `-titled Discussion: a brief published without a
 // stats line is still a morning that arrived, which is all that hook asks.
 const FRESH_DAYS = 1;
 const DAY_MS = 86400000;
 
-/** The UTC day a moment falls on — the same stamp `jobs/stats.js` dates a brief with. */
+/** The UTC day a moment falls on: the same stamp `jobs/stats.js` dates a brief with. */
 const utcDay = (when) => when.toISOString().slice(0, 10);
 
 /**
  * Whether the cloud brief is still posting (issue #172).
  *
  * Ten mornings failed in a row and every page looked normal, because the one
- * fact that would have said so — the newest published brief's date — was
+ * fact that would have said so (the newest published brief's date) was
  * already in the read above and nobody asked it. So this is ARITHMETIC on what
  * `briefHistory` returned: no second round trip, and no second definition of
  * what counts as a published brief.

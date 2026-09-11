@@ -1,11 +1,11 @@
 //
-// The mornings themselves — every brief and every summary the home repo has
+// The mornings themselves: every brief and every summary the home repo has
 // published, whole.
 //
 // `history.js` reads the same board and keeps the NUMBERS a morning recorded;
 // this keeps the TEXT it was written in (issue #181). The Brief page is the one
 // consumer: it renders the newest brief in place and lists the rest as an
-// archive, so the one thing the dashboard could never show — the brief itself —
+// archive, so the one thing the dashboard could never show (the brief itself)
 // is what the page is.
 //
 // PURE. The round trip is `history.js`'s `readDiscussions`, and both readings
@@ -18,9 +18,9 @@
 // the category is negotiable and answers differently on every home repo.
 //
 // THE BODY IS CARRIED WHOLE, minus its machine markers. A brief's stats line
-// and the news cursor beside it are HTML comments — invisible where GitHub
+// and the news cursor beside it are HTML comments (invisible where GitHub
 // renders the post, and literal text in a browser renderer that escapes before
-// it renders — so they come off here rather than in each of the two pages that
+// it renders) so they come off here rather than in each of the two pages that
 // would otherwise have to know about them.
 //
 // Usage:
@@ -40,7 +40,7 @@ const { BRIEF_TITLE_PREFIX } = require('./history');
  */
 const DOCUMENT_LIMIT = 40;
 
-/** The machine markers a published body carries — every HTML comment in it. */
+/** The machine markers a published body carries: every HTML comment in it. */
 const MARKER_RE = /<!--[\s\S]*?-->/g;
 
 /**
@@ -59,7 +59,7 @@ const readable = (body) => String(body || '')
  * Every published document, newest first.
  *
  * Newest first because that is the order an archive is read in, and the
- * opposite of the series `history.js` returns — which is ascending because a
+ * opposite of the series `history.js` returns, which is ascending because a
  * chart draws that way. Neither order is the other's, so neither is derived
  * from the other.
  *

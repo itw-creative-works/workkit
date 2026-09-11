@@ -1,6 +1,6 @@
-# Agents — the workkit crew
+# Agents: the workkit crew
 
-Agent definitions shipped by the workkit plugin. They surface in a session namespaced as `workkit:<name>`. **An agent exists here only if a flow dispatches it** — unrouted agents are dead weight. Every definition names its dispatcher below.
+Agent definitions shipped by the workkit plugin. They surface in a session namespaced as `workkit:<name>`. **An agent exists here only if a flow dispatches it**. Unrouted agents are dead weight. Every definition names its dispatcher below.
 
 ## Roster
 
@@ -14,9 +14,9 @@ Agent definitions shipped by the workkit plugin. They surface in a session names
 
 ## Classes (the manager system)
 
-`scout` / `worker` / `verifier` / `advisor` are the CAPABILITY CLASSES of the manager system. Their concrete model is supplied per spawn by the `manager/resolver` hook from `../hooks/manager/ladder.json` (the tier SSOT) and the LIVE session model — a mid-session `/model` switch takes effect on the next spawn. The `model:` frontmatter in these four files is only the static fallback for when the hook is disabled; never treat it as the routing truth, and never pass a `model` param when dispatching them.
+`scout` / `worker` / `verifier` / `advisor` are the CAPABILITY CLASSES of the manager system. Their concrete model is supplied per spawn by the `manager/resolver` hook from `../hooks/manager/ladder.json` (the tier SSOT) and the LIVE session model. A mid-session `/model` switch takes effect on the next spawn. The `model:` frontmatter in these four files is only the static fallback for when the hook is disabled; never treat it as the routing truth, and never pass a `model` param when dispatching them.
 
-Test scope is class doctrine (#152): a worker's mid-work proof is the test files it touched, red-green on the new cases; a verifier runs the narrowest command that checks the claim. Neither runs a package or root suite unless the brief asks or the finding is suite-scoped — the commit gate owns suites.
+Test scope is class doctrine (#152): a worker's mid-work proof is the test files it touched, red-green on the new cases; a verifier runs the narrowest command that checks the claim. Neither runs a package or root suite unless the brief asks or the finding is suite-scoped. The commit gate owns suites.
 
 Drift is verifier doctrine (#222): every blind verification also asks the three DRIFT questions past its brief, parity siblings on the other surfaces, duplicates of anything hand-typed the diff adds (found by grep), and the docs the change made stale. They live in `../agents/verifier.md` § Behavior, which quotes the Parity mandate `../skills/review/SKILL.md` § 2 owns, and they are asked per issue so a later issue's verifier catches the earlier issues' drift. The worker carries the other half of the same ruling: a hand-typed thing found wrong once is grepped across every package, fixed at the sites the brief covers, and every other site is NAMED in the report (`../agents/worker.md`, fix the class). The wider counterpart is per SHIP, not per batch: `workkit:ship` runs the full review panel over the whole ship diff every time.
 
@@ -24,33 +24,33 @@ Visibility is manager doctrine (#154), injected every prompt by the `manager/pro
 
 ### Crew sizing
 
-The manager stages the crew to the task rather than assembling it all at once: a small change is the manager alone or ONE worker; a feature is one worker, or a worker pair only when each has its own worktree and the manager merges; the `verifier` runs ONCE, when the build claims done; the full review panel assembles only inside `workkit:review` and `workkit:ship`. `scout` is recon — dispatch it at any point. Dispatch is one level deep throughout (§ Definition rules), so every stage is the manager's to open and close, and the manager keeps `.workkit/agents/session.md` current as it goes — the task queue and quick notes, with durable facts promoted to their issue the moment they exist. Design calls, contract changes, final verdicts, and anything security-adjacent stay the manager's, never the crew's. The self-edit line (#131, owner ruling 2026-08-04): the manager edits inline only when doing the edit costs fewer tokens than briefing a worker — in practice up to a line or a function; anything larger goes to a worker and gets the blind verify.
+The manager stages the crew to the task rather than assembling it all at once: a small change is the manager alone or ONE worker; a feature is one worker, or a worker pair only when each has its own worktree and the manager merges; the `verifier` runs ONCE, when the build claims done; the full review panel assembles only inside `workkit:review` and `workkit:ship`. `scout` is recon. Dispatch it at any point. Dispatch is one level deep throughout (§ Definition rules), so every stage is the manager's to open and close, and the manager keeps `.workkit/agents/session.md` current as it goes: the task queue and quick notes, with durable facts promoted to their issue the moment they exist. Design calls, contract changes, final verdicts, and anything security-adjacent stay the manager's, never the crew's. The self-edit line (#131, owner ruling 2026-08-04): the manager edits inline only when doing the edit costs fewer tokens than briefing a worker, in practice up to a line or a function; anything larger goes to a worker and gets the blind verify.
 
 ### Parallel mode (opt-in)
 
-Several issues may be worked at once, but only when a `workkit:parallel` invocation turns that on; the default stays one issue at a time. It changes nothing about who dispatches — the session is still the only manager, and the concurrency lives in the WORKTREES.
+Several issues may be worked at once, but only when a `workkit:parallel` invocation turns that on; the default stays one issue at a time. It changes nothing about who dispatches. The session is still the only manager, and the concurrency lives in the WORKTREES.
 
-The manager groups the batch's issues before any spawn, by three forces in order: dependency edges (a blocker and its dependent never in different concurrent groups), then shared seams (issues touching one file or module group together, so no two worktrees write the same lines), then size balance. The grouping is recorded on each issue as its claim comment. Each group then gets ONE worker against ONE per-group brief on its own worktree and ONE blind verifier over that worktree's diff, and the group crews run concurrently. Merges are SERIAL — one group lands on the main tree at a time, the full suite green before the next begins, and a conflict is the landing group's to resolve on its worktree. One ship closes the batch by default: a single release carrying every group's CHANGELOG entries and closing every issue; a group whose result is urgent may ship alone, said out loud. The skill executes this; it is not a second set of rules.
+The manager groups the batch's issues before any spawn, by three forces in order: dependency edges (a blocker and its dependent never in different concurrent groups), then shared seams (issues touching one file or module group together, so no two worktrees write the same lines), then size balance. The grouping is recorded on each issue as its claim comment. Each group then gets ONE worker against ONE per-group brief on its own worktree and ONE blind verifier over that worktree's diff, and the group crews run concurrently. Merges are SERIAL: one group lands on the main tree at a time, the full suite green before the next begins, and a conflict is the landing group's to resolve on its worktree. One ship closes the batch by default: a single release carrying every group's CHANGELOG entries and closing every issue; a group whose result is urgent may ship alone, said out loud. The skill executes this; it is not a second set of rules.
 
 ### Questions to the owner
 
-A decision put to the owner is SELF-CONTAINED: the question carries its full background in plain words — what the item is, why it needs a decision now, and what each choice means in consequence — written for an owner who has read nothing else this session. The shape of the question itself (numbered, a plain paragraph first, options as nested bullets with the recommended one first and bold) is the `workkit:interview` skill's, § How questions are asked, and it binds every decision put to the owner. Unrelated decisions still batch into one pass — the questions arrive together, each standing alone (owner ruling, 2026-08-04).
+A decision put to the owner is SELF-CONTAINED: the question carries its full background in plain words (what the item is, why it needs a decision now, and what each choice means in consequence) written for an owner who has read nothing else this session. The shape of the question itself (numbered, a plain paragraph first, options as nested bullets with the recommended one first and bold) is the `workkit:interview` skill's, § How questions are asked, and it binds every decision put to the owner. Unrelated decisions still batch into one pass: the questions arrive together, each standing alone (owner ruling, 2026-08-04).
 
 ## Agents from other repos
 
 A session's agents come from three places: any plugin ships them in its own `agents/` directory (this repo's, namespaced `workkit:`, is one such set), a repo ships them in `.claude/agents/`, and a user in `~/.claude/agents/`. Precedence on a name collision is **project > user > plugin**.
 
-The `manager/resolver` hook routes ONLY the four workkit classes above — every other `subagent_type`, foreign or built-in, passes through untouched. So a foreign agent's `model:` frontmatter IS its contract: nothing here overrides it, and nothing here needs to know it exists. Ladder routing for foreign agents is deliberately unbuilt; it waits for a real consumer to name what it needs.
+The `manager/resolver` hook routes ONLY the four workkit classes above. Every other `subagent_type`, foreign or built-in, passes through untouched. So a foreign agent's `model:` frontmatter IS its contract: nothing here overrides it, and nothing here needs to know it exists. Ladder routing for foreign agents is deliberately unbuilt; it waits for a real consumer to name what it needs.
 
 ## File-handoff convention (all dispatches)
 
 A chat-inline brief bloats the dispatching context; a report file the dispatcher then has to open is a round trip nobody needs. So the two halves go opposite ways:
 
-1. **Brief in a file.** The dispatcher writes the task brief to a file (session scratchpad dir) and passes the path plus a 1–3 sentence dispatch line. Briefs are **behavioral, not procedural**: state the goal, constraints, and done-criteria — not step-by-step file paths that go stale. A brief file exists only for a dispatch being made now — the spawn rides the same turn (or the owner explicitly asked for the file). The owner saying "brief me" is asking for a chat summary, never a file (issue #192). A brief also NAMES the framework guide(s) the agent must read before its first edit, so that reading is routed by the dispatcher instead of guessed at.
-2. **Report inline.** The agent's final message IS the report: a completion status, commits if any, and the findings the dispatcher needs to act — written for a reader who has not seen the work. A finding or a line that restates an issue reads in the cold-reader line (`docs/project-state.md` § Restating an issue). No report file, and no summary file beside it.
-3. **A report FILE is the exception.** Only when the brief explicitly asks for one — a large artifact meant to be read selectively rather than in chat. Then the final message stays status, commits, and ONE line of result plus the path.
+1. **Brief in a file.** The dispatcher writes the task brief to a file (session scratchpad dir) and passes the path plus a 1–3 sentence dispatch line. Briefs are **behavioral, not procedural**: state the goal, constraints, and done-criteria, not step-by-step file paths that go stale. A brief file exists only for a dispatch being made now: the spawn rides the same turn (or the owner explicitly asked for the file). The owner saying "brief me" is asking for a chat summary, never a file (issue #192). A brief also NAMES the framework guide(s) the agent must read before its first edit, so that reading is routed by the dispatcher instead of guessed at.
+2. **Report inline.** The agent's final message IS the report: a completion status, commits if any, and the findings the dispatcher needs to act, written for a reader who has not seen the work. A finding or a line that restates an issue reads in the cold-reader line (`docs/project-state.md` § Restating an issue). No report file, and no summary file beside it.
+3. **A report FILE is the exception.** Only when the brief explicitly asks for one: a large artifact meant to be read selectively rather than in chat. Then the final message stays status, commits, and ONE line of result plus the path.
 
-Each agent file inlines the slice of this it needs, so it stays portable — this README is the full statement, not an import target.
+Each agent file inlines the slice of this it needs, so it stays portable. This README is the full statement, not an import target.
 
 ### Completion statuses
 
@@ -58,16 +58,16 @@ Each agent file inlines the slice of this it needs, so it stays portable — thi
 |---|---|
 | `DONE` | Done-criteria met, verified this run |
 | `DONE_WITH_CONCERNS` | Done-criteria met; report lists risks/follow-ups |
-| `BLOCKED` | Cannot proceed — report says what's missing and what was tried |
-| `NEEDS_CONTEXT` | Brief is ambiguous — report lists the specific questions |
+| `BLOCKED` | Cannot proceed: report says what's missing and what was tried |
+| `NEEDS_CONTEXT` | Brief is ambiguous: report lists the specific questions |
 
-After **3 failed attempts** at the same obstacle, stop and return `BLOCKED` with the attempts documented — don't burn the run retrying.
+After **3 failed attempts** at the same obstacle, stop and return `BLOCKED` with the attempts documented. Don't burn the run retrying.
 
 ## Definition rules
 
-- **Subagents NEVER spawn subagents.** One level of dispatch only — the main session is the only dispatcher (reference: https://code.claude.com/docs/en/sub-agents).
-- Frontmatter: `name`, `description`, `tools` (minimum set — the list is also what mechanically keeps an agent from spawning subagents), and for the class agents `model` (fallback only, § Classes) + `effort`.
-- **No knowledge in agent files** — agents define behavior and preloads; knowledge lives in skills/docs. The reviewer's "derive the checklist from live docs" pattern is the model.
+- **Subagents NEVER spawn subagents.** One level of dispatch only: the main session is the only dispatcher (reference: https://code.claude.com/docs/en/sub-agents).
+- Frontmatter: `name`, `description`, `tools` (minimum set: the list is also what mechanically keeps an agent from spawning subagents), and for the class agents `model` (fallback only, § Classes) + `effort`.
+- **No knowledge in agent files**: agents define behavior and preloads; knowledge lives in skills/docs. The reviewer's "derive the checklist from live docs" pattern is the model.
 - **Every markdown file in `agents/` surfaces as an agent type**, which is why this document lives in `docs/` instead: a contract kept beside the definitions would become a definition.
 - **No machine-specific paths.** These files ship to any repo on any machine: no absolute paths, no pointers into a personal `~/.claude` tree beyond what every Claude Code install has.
-- Repo-doc entry point: AGENTS.md (CLAUDE.md is a one-line pointer in migrated repos; a repo that hasn't migrated may still carry content in CLAUDE.md — read whichever bears content).
+- Repo-doc entry point: AGENTS.md (CLAUDE.md is a one-line pointer in migrated repos; a repo that hasn't migrated may still carry content in CLAUDE.md: read whichever bears content).

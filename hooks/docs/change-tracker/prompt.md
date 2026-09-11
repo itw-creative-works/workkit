@@ -2,19 +2,19 @@ The working tree has uncommitted code/config changes. Work items live as GitHub 
 
 ## 1. Keep the work item true (always)
 
-The issue is the record — its labels say where the work is, its comments carry the trail.
+The issue is the record: its labels say where the work is, its comments carry the trail.
 
-- Work in flight → the issue is assigned to you (the assignment IS the claim) and carries exactly one `status:` label (`building` while the work runs, `blocked` when a human decision is pending — the question goes in a comment).
+- Work in flight → the issue is assigned to you (the assignment IS the claim) and carries exactly one `status:` label (`building` while the work runs, `blocked` when a human decision is pending: the question goes in a comment).
 - Work BUILT this turn → the issue is at `status:qa` with a comment naming what to check and where; it ships on the owner's word, never on yours. On an `agent:ok` issue the park is a pass-through: the agent performs the check itself and ships in the same run.
-- The owner's check PASSED this turn → the issue moves to `status:complete` with the pass comment ("QA passed by <owner>, <date>"); that stage is what the ship reads from. The verdict is the owner's alone — never grant it on their behalf.
+- The owner's check PASSED this turn → the issue moves to `status:complete` with the pass comment ("QA passed by <owner>, <date>"); that stage is what the ship reads from. The verdict is the owner's alone. Never grant it on their behalf.
 - Work shipped this turn → write the CHANGELOG `[Unreleased]` entry, then close the issue with a comment pointing at it (`Fixes #N` in the commit message does both).
-- New notes/ideas surfaced this turn → a `status:inbox` issue; print the `Filed:` trail for what you filed. If GitHub cannot be reached, put the finding in chat and stop there — the owner decides. Never write to `.workkit/capture.md`: it is the owner's capture surface, cleared only by a triage run.
+- New notes/ideas surfaced this turn → a `status:inbox` issue; print the `Filed:` trail for what you filed. If GitHub cannot be reached, put the finding in chat and stop there. The owner decides. Never write to `.workkit/capture.md`: it is the owner's capture surface, cleared only by a triage run.
 
-Only log meaningful progress — skip trivial formatting or typo fixes.
+Only log meaningful progress. Skip trivial formatting or typo fixes.
 
 ## 2. Promote durable findings out of `.workkit/`
 
-Anything durable that surfaced this turn — a finding, a decision, a blocker — belongs on its issue as a comment BEFORE you stop. Scratch is session state: it is gitignored, private to this developer, and nobody else ever reads it.
+Anything durable that surfaced this turn (a finding, a decision, a blocker) belongs on its issue as a comment BEFORE you stop. Scratch is session state: it is gitignored, private to this developer, and nobody else ever reads it.
 
 ## 3. Doc parity (finalized work only)
 
@@ -22,4 +22,4 @@ If this work is FINALIZED, follow the doc-parity rules in AGENTS.md (README, AGE
 
 ## 4. Sign off
 
-State which path you took (e.g. "issue updated" or "issue + docs updated" or "trivial change — skipping"), then stop. Do not re-run this check.
+State which path you took (e.g. "issue updated" or "issue + docs updated" or "trivial change: skipping"), then stop. Do not re-run this check.

@@ -1,13 +1,13 @@
 #!/bin/bash
-# docs:session-guard — PostToolUse hook (Edit|Write), issue #126.
+# docs:session-guard: PostToolUse hook (Edit|Write), issue #126.
 # Holds `.workkit/agents/session.md` to the shape it exists in: a TASK QUEUE, read
 # back on every session start, not a journal of what already shipped. Two caps,
-# both constants below — a bullet that has grown into a paragraph, and a file
+# both constants below: a bullet that has grown into a paragraph, and a file
 # that has grown into the retired PROGRESS.md.
 #
 # POST, not pre: an Edit's result is only knowable once it is on disk, and the
 # caps judge the resulting file, never the patch. A write that shrinks an
-# oversized file but leaves it over still bounces — the message is what
+# oversized file but leaves it over still bounces. The message is what
 # finishes the prune.
 #
 # The backstop for what this never saw (hand edits, files predating the hook)
@@ -27,7 +27,7 @@ file_path=$(jq -r '.tool_input.file_path // ""' <<<"$input" 2>/dev/null || true)
 [ -n "$file_path" ] || exit 0
 
 # This hook sources nothing, so the directory name is spelled out; its SSOT is
-# WORKKIT_DIR in hooks/_lib.sh — change both together.
+# WORKKIT_DIR in hooks/_lib.sh. Change both together.
 [ "$(basename "$file_path")" = "session.md" ] || exit 0
 session_dir="$(dirname "$file_path")"
 [ "$(basename "$session_dir")" = "agents" ] || exit 0
@@ -39,7 +39,7 @@ MAX_CONTENT_LINES=40
 
 problems=""
 
-# The first bullet over the cap — optional indent, then `- ` or `* `. One is
+# The first bullet over the cap: optional indent, then `- ` or `* `. One is
 # enough to bounce; the rest surface on the next write.
 offender=$(awk -v cap="$MAX_BULLET_CHARS" '
   /^[ \t]*[-*][ \t]/ && length($0) > cap {
@@ -48,16 +48,16 @@ offender=$(awk -v cap="$MAX_BULLET_CHARS" '
   }' "$file_path" 2>/dev/null) || true
 
 if [ -n "$offender" ]; then
-  # length<TAB>first 60 chars — the tab is spelled $'\t' so it stays visible.
+  # length<TAB>first 60 chars. The tab is spelled $'\t' so it stays visible.
   problems="$problems
   - a bullet is ${offender%%$'\t'*} chars (cap $MAX_BULLET_CHARS): ${offender#*$'\t'}…"
 fi
 
 # Content lines: non-blank, not a heading, not a blockquote note, not an HTML
-# comment — the same count the docs/session hook takes, so the two agree about
+# comment, the same count the docs/session hook takes, so the two agree about
 # what "over the bar" means. The count AND the bar live in both files; change
 # them together.
-# (grep -c prints its count even when exiting 1 on zero matches — don't add a
+# (grep -c prints its count even when exiting 1 on zero matches. Don't add a
 # fallback echo or the count doubles.)
 lines=$(grep -cvE '^[[:space:]]*$|^[[:space:]]*#|^[[:space:]]*>|^[[:space:]]*<!--' "$file_path" 2>/dev/null) || true
 lines="${lines:-0}"
@@ -71,7 +71,7 @@ fi
 [ -n "$problems" ] || exit 0
 
 {
-  echo "session-guard: $file_path is a queue, not a journal — prune it before any other work.$problems"
+  echo "session-guard: $file_path is a queue, not a journal. Prune it before any other work.$problems"
   echo "Promote anything durable to its issue or the CHANGELOG, delete what has already shipped, and split or trim an oversized bullet."
 } >&2
 exit 2

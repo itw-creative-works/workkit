@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# workflow:reload-guard — SessionStart + UserPromptSubmit hook (issue #5).
+# workflow:reload-guard: SessionStart + UserPromptSubmit hook (issue #5).
 # Tells a session when the kit checkout changed underneath it.
 #
 # A local-marketplace install resolves ${CLAUDE_PLUGIN_ROOT} to the checkout
 # itself, so edits to hook SCRIPTS, skill bodies, and the engine are already
-# live — nothing to announce. What is read ONCE, at load time, is the hook
+# live: nothing to announce. What is read ONCE, at load time, is the hook
 # WIRING (hooks/hooks.json) and the set of agent and skill definitions; a
 # change there reaches the session only through /reload-plugins, which is
 # interactive and cannot be triggered from a hook. So this reminds, it never
@@ -13,7 +13,7 @@
 # SessionStart stamps the current state of those load-time surfaces under
 # ${TMPDIR:-/tmp}, keyed by session id. UserPromptSubmit recomputes it and,
 # when it differs from the stamp, injects one line. The stamp is never moved
-# forward — the session really is out of date until it reloads — so a
+# forward (the session really is out of date until it reloads) so a
 # last-notified marker holds the state already announced and the same change
 # nags exactly once. A FURTHER change makes a new state, which nags again.
 #
@@ -21,7 +21,7 @@
 # session that started before this hook was wired, a cleared TMPDIR) is
 # re-stamped silently rather than reported as a change nobody made.
 #
-# RELOAD_GUARD_ROOT overrides the checkout being watched — the tests point it
+# RELOAD_GUARD_ROOT overrides the checkout being watched. The tests point it
 # at a fixture tree, because the surfaces they change are this repo's own.
 
 set -euo pipefail
@@ -34,7 +34,7 @@ command -v jq >/dev/null 2>&1 || exit 0
 event=$(printf '%s' "$input" | jq -r '.hook_event_name // empty' 2>/dev/null || true)
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null || true)
 
-# No session id means nothing to key the stamp by — a comparison against
+# No session id means nothing to key the stamp by. A comparison against
 # another session's state would be worse than silence.
 [ -n "$session_id" ] || exit 0
 
@@ -123,7 +123,7 @@ fi
 
 write_state "$NOTIFIED" "$current"
 
-jq -n --arg ctx "workkit changed since this session loaded — /reload-plugins picks up new agents/skills and hook wiring; engine and existing-script edits are already live" '{
+jq -n --arg ctx "workkit changed since this session loaded. /reload-plugins picks up new agents/skills and hook wiring; engine and existing-script edits are already live" '{
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
     "additionalContext": $ctx

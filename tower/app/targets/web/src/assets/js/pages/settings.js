@@ -45,10 +45,18 @@ const render = (root, state) => {
   // disagree about.
   const held = Boolean(readToken(safeStorage(window)));
 
+  // One row, two columns: the card and what the token needs are read together,
+  // and they stack below the xl breakpoint the way the rest of the dashboard
+  // does (issue #241). The tower note stays above the row, since it is about
+  // both of them.
+  //
   // Nothing on this page comes from a feed, so a poll landing produces the same
   // markup and `swap` leaves it alone - which is what keeps a half-typed token
   // in the field while the roster refreshes behind the sidebar.
-  if (!swap(root, `${LIVE ? towerTokenNote() : ''}${tokenCard({ held, problem: state.tokenProblem })}${tokenGuidance()}`)) return;
+  if (!swap(root, `${LIVE ? towerTokenNote() : ''}<div class="row g-4">
+    <div class="col-12 col-xl-6">${tokenCard({ held, problem: state.tokenProblem })}</div>
+    <div class="col-12 col-xl-6">${tokenGuidance()}</div>
+  </div>`)) return;
 
   mountTokenCard(root);
 };
