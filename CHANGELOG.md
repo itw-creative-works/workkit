@@ -7,8 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.55.1] - 2026-09-11
+
 ### Changed
-- [#241](../../issues/241) — The Settings page's one create-token button now sits on the "What the token needs" card, under the permissions it names; the token card keeps Save and Clear only.
+- [#241](../../issues/241) [`089e25b`](../../commit/089e25b) Thanks [@ianwieds]! — The Settings page's one create-token button now sits on the "What the token needs" card, under the permissions it names; the token card keeps Save and Clear only.
 
 ## [0.55.0] - 2026-09-11
 
