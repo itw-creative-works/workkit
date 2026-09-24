@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.57.2] - 2026-09-24
+
 ### Changed
-- [#282](../../issues/282) - The tower brand config's header no longer claims a tiny file with no service sections. Those sections are the manage walk's copies of the schema defaults, written back on the next dev boot when missing, and the file is converged so the boot leaves the tree clean.
-- [#283](../../issues/283) - The tower's web target now carries omega's scaffold output: the Node pin, the ignore and attributes files, the service worker entry, the example page and the synced package.json, plus the build workflow composed into the brand root. Every dev or build wrote them, so the tree stays clean now.
+- [#282](../../issues/282) [`5bc520d`](../../commit/5bc520d) Thanks [@ianwieds]! - The tower brand config's header no longer claims a tiny file with no service sections. Those sections are the manage walk's copies of the schema defaults, written back on the next dev boot when missing, and the file is converged so the boot leaves the tree clean.
+- [#283](../../issues/283) [`5bc520d`](../../commit/5bc520d) Thanks [@ianwieds]! - The tower's web target now carries omega's scaffold output: the Node pin, the ignore and attributes files, the service worker entry, the example page and the synced package.json, plus the build workflow composed into the brand root. Every dev or build wrote them, so the tree stays clean now.
 
 ## [0.57.1] - 2026-09-24
 
