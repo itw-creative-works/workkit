@@ -1,0 +1,48 @@
+#!/bin/bash
+# providers/npm: has the npm registry already published <name>@<version>?
+#
+# The provider contract (every file in this directory keeps it, and the hook
+# knows nothing else about any of them):
+#   providers/<name> <package-name> <version>
+#   exit 1  the version is TAKEN
+#   exit 0  it is free, or the check could not be made
+# A check that could not be made says so on stderr first: standing down in
+# silence would read exactly like a version nobody has.
+#
+# `npm view <name>@<version> version` prints the version when the registry has
+# it and nothing when the package exists without it. stdin is closed so a
+# prompt can never hold a PreToolUse hook open, and the update notifier is off
+# so its banner cannot reach stdout.
+
+set -uo pipefail
+
+name="${1:-}"
+version="${2:-}"
+[ -n "$name" ] && [ -n "$version" ] || exit 0
+
+stand_down() {
+  printf 'release-taken: the npm check stood down for %s@%s: %s\n' "$name" "$version" "$1" >&2
+  exit 0
+}
+
+command -v npm >/dev/null 2>&1 || stand_down "npm is not on PATH"
+
+err=$(mktemp "${TMPDIR:-/tmp}/release-taken-npm.XXXXXX") || stand_down "no temporary file could be made"
+trap 'rm -f "$err"' EXIT
+
+rc=0
+# One try, fifteen seconds: a stalled registry stands the check down rather
+# than holding the Bash command for the hook's whole window.
+out=$(npm view --no-update-notifier --fetch-retries=0 --fetch-timeout=15000 "$name@$version" version </dev/null 2>"$err") || rc=$?
+if [ "$rc" -ne 0 ]; then
+  # E404 is the registry answering: no such package, or no such version of it.
+  # Either way the version is free.
+  if grep -q 'E404' "$err"; then exit 0; fi
+  why=$(head -n 1 "$err" 2>/dev/null || true)
+  [ -n "$why" ] || why="npm exited $rc"
+  stand_down "$why"
+fi
+
+out=$(printf '%s' "$out" | tr -d '[:space:]')
+[ "$out" = "$version" ] || exit 0
+exit 1

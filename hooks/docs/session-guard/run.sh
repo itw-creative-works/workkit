@@ -23,11 +23,18 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-file_path=$(jq -r '.tool_input.file_path // ""' <<<"$input" 2>/dev/null || true)
+# The CRLF-safe jq, from its one home (workflow/platform.sh, `wk_jq`, which
+# carries the rule and the reason). The one file this hook sources: it defines
+# functions and sets nothing, so it can no more keep the hook from running than
+# a missing tool can.
+# shellcheck source=../../../workflow/platform.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/platform.sh"
+
+file_path=$(wk_jq -r '.tool_input.file_path // ""' <<<"$input" 2>/dev/null || true)
 [ -n "$file_path" ] || exit 0
 
-# This hook sources nothing, so the directory name is spelled out; its SSOT is
-# WORKKIT_DIR in hooks/_lib.sh. Change both together.
+# This hook sources no hook helper, so the directory name is spelled out; its
+# SSOT is WORKKIT_DIR in hooks/_lib.sh. Change both together.
 [ "$(basename "$file_path")" = "session.md" ] || exit 0
 session_dir="$(dirname "$file_path")"
 [ "$(basename "$session_dir")" = "agents" ] || exit 0

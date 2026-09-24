@@ -9,15 +9,26 @@
 // idle. This module reads them exactly as the hook writes them. A second
 // bookkeeping file would be a store the tower is not allowed to have.
 //
-// Facts this depends on, all from the hook (dotfiles hooks/claude/keep-awake):
-//   marker dir     $TMPDIR/claude-keep-awake (launchd has no TMPDIR, hence the
-//                  getconf fallback the sweep job uses)
-//   marker name    the claude pid; `.<pid>.lock` directories are the acquire
-//                  mutex and are skipped
-//   marker body    caffeinate=<pid>, cwd=<path>, session=<id>
-//   the assertion  `caffeinate -d -i -w <claude pid>`, matched WHOLE, so a
-//                  recycled pid now belonging to something else reads as stale
-//   transcript     ~/.claude/projects/<cwd with / and . flattened to ->/<id>.jsonl
+// Facts this depends on, all from the hook (dotfiles hooks/claude/keep-awake),
+// which writes a marker of a different SHAPE per platform because the two
+// platforms hold a machine awake with different tools. One reader takes both,
+// told apart by the marker's NAME, which is the hook's own rule:
+//   marker dir     <temp root>/claude-keep-awake, and the statusline cache is
+//                  <temp root>/claude-session-state beside it. Which directory
+//                  that is per platform is `tempRoot` in repos.js, the one
+//                  place the question is asked
+//   marker name    macOS: the claude pid; Windows: `win.<session>`.
+//                  `.<pid>.lock` directories are the acquire mutex and
+//                  `sched.<session>.<key>` are the timed holds; neither is a
+//                  session and neither name is admitted
+//   marker body    macOS: caffeinate=<pid>, cwd=<path>, session=<id>
+//                  Windows: holder=<pid>, beat=<epoch>, fire=, cron=,
+//                  cwd=<native path>, session=<id>, transcript=<path>
+//   the assertion  macOS: `caffeinate -d -i -w <claude pid>`, matched WHOLE, so
+//                  a recycled pid now belonging to something else reads as
+//                  stale. Windows: the holder's own heartbeat, below
+//   transcript     Windows markers NAME it; a macOS marker does not, and it is
+//                  ~/.claude/projects/<cwd, flattened>/<id>.jsonl
 //   idle           quiet longer than KEEP_AWAKE_IDLE_MINUTES (default 45)
 //
 // Model and effort come from the statusline cache the `claude:statusline` hook
@@ -34,8 +45,22 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
+const { gitPath, tempRoot } = require('./repos');
 
 const DEFAULT_IDLE_MINUTES = 45;
+
+// The two marker names, which are the two shapes: the claude pid on macOS, and
+// `win.<session>` on Windows, where finding the claude pid would cost a
+// PowerShell spawn on a path that runs before every tool call. A session id is
+// `[A-Za-z0-9_-]`, checked by the hook before it lands in a path, so the timed
+// holds (`sched.<session>.<key>`) and the acquire locks (`.<pid>.lock`) fail
+// both tests.
+const MAC_MARKER = /^\d+$/;
+const WIN_MARKER = /^win\.[A-Za-z0-9_-]+$/;
+
+// Three missed beats. The Windows holder rewrites its marker's `beat=` every
+// 30 seconds, and the hook calls 90 seconds of silence gone.
+const BEAT_MAX_MS = 90 * 1000;
 
 // Bytes read from each end of a transcript when looking for its title. A
 // transcript is unbounded and a title line is short; 256KB covers many messages
@@ -49,17 +74,10 @@ const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
 });
 
 /** Where the keep-awake hook writes its markers. */
-const markerRoot = (exec) => {
-  let base = process.env.TMPDIR;
-  if (!base) {
-    try {
-      base = exec('getconf', ['DARWIN_USER_TEMP_DIR']).trim();
-    } catch {
-      base = '';
-    }
-  }
-  return path.join(base || '/tmp', 'claude-keep-awake');
-};
+const markerRoot = (exec) => path.join(tempRoot(exec), 'claude-keep-awake');
+
+/** Where the statusline hook caches model and effort. */
+const stateRoot = (exec) => path.join(tempRoot(exec), 'claude-session-state');
 
 /**
  * How long a transcript may stay quiet before whatever wrote it counts as
@@ -86,32 +104,75 @@ const idleWindowMs = (opts) => {
 };
 
 /**
- * A marker's three fields. Split on the FIRST `=` so a value containing one
+ * A marker's fields, whichever shape it is in, or null when it is not a whole
+ * marker of that shape. Split on the FIRST `=` so a value containing one
  * survives, matching the hook's `IFS='=' read -r k v`.
+ *
+ * `cwd` and `session` are what every shape carries and every row needs. The
+ * pid is the one that differs, and only the macOS one is READ: `caffeinate` is
+ * that platform's whole liveness answer, so a marker without it is nothing,
+ * while the Windows `holder=` is a pid to end a hold with rather than to judge
+ * one by (`beatIsFresh` below) and is BLANK until the PowerShell holder's first
+ * beat writes it, so nothing here asks for it.
+ *
  * @param {string} file
- * @returns {{caffeinate: string, cwd: string, session: string}|null}
+ * @param {boolean} [windows] the shape the marker's name said it is
+ * @returns {{caffeinate: string, cwd: string, session: string, beat: string, transcript: string}|null}
  */
-const readMarker = (file) => {
+const readMarker = (file, windows = false) => {
   let text;
   try {
     text = fs.readFileSync(file, 'utf8');
   } catch {
     return null;
   }
-  const out = { caffeinate: '', cwd: '', session: '' };
+  const out = {
+    caffeinate: '', cwd: '', session: '', beat: '', transcript: '',
+  };
   for (const line of text.split('\n')) {
     const idx = line.indexOf('=');
     if (idx < 1) continue;
     const key = line.slice(0, idx);
     if (key in out) out[key] = line.slice(idx + 1);
   }
-  if (!out.caffeinate || !out.cwd || !out.session) return null;
+  if (!out.cwd || !out.session) return null;
+  if (!windows && !out.caffeinate) return null;
   return out;
 };
 
-/** Claude Code's transcript path: the cwd with `/` and `.` both flattened. */
+/**
+ * Is a Windows hold alive? Its own HEARTBEAT, which is the writer's rule and
+ * the only one there is: MSYS `ps` cannot see a native Windows process, so the
+ * holder says it is alive by rewriting `beat=` every 30 seconds and the hook
+ * reads exactly this. A pid probe of `holder=` would be a SECOND liveness rule
+ * disagreeing with the hook's own, reading live for a holder that hung without
+ * beating and reading nothing at all for a marker just seeded, whose holder is
+ * still blank; and unlike the macOS `ps` read it could not tell a recycled pid
+ * from the holder, since only the live holder writes a beat.
+ *
+ * @param {string} beat the marker's `beat=`, epoch SECONDS
+ * @param {number} now ms
+ * @returns {boolean}
+ */
+const beatIsFresh = (beat, now) => /^\d+$/.test(beat) && now - Number(beat) * 1000 < BEAT_MAX_MS;
+
+/**
+ * Claude Code's transcript path: the cwd with every character outside
+ * `[A-Za-z0-9]` flattened to `-`, the case it was written in kept.
+ *
+ * The rule is read off both machines' own `~/.claude/projects`, each folder
+ * compared against the `cwd` the transcripts inside it record: `_Claude` and a
+ * directory name carrying a space fold on the Mac, and `C:\Users\x\repo`
+ * becomes `C--Users-x-repo` on Windows (a lowercase `c:` stays lowercase). So
+ * the colon, the backslash, the underscore and the space fold exactly as the
+ * slash and the dot do.
+ *
+ * This is the derivation for a marker that names no transcript of its own,
+ * which is every macOS marker; a Windows marker carries `transcript=`, the path
+ * Claude Code itself handed the hook, and is read rather than derived.
+ */
 const transcriptPath = (home, cwd, session) => {
-  const slug = cwd.replace(/[/.]/g, '-');
+  const slug = cwd.replace(/[^A-Za-z0-9]/g, '-');
   return path.join(home, '.claude', 'projects', slug, `${session}.jsonl`);
 };
 
@@ -228,7 +289,8 @@ const birthMs = (file) => {
  * `state` is one of:
  *   working  the assertion is live and the transcript moved recently
  *   idle     the assertion is live but the session has gone quiet
- *   stale    the caffeinate pid is gone or is now some other process
+ *   stale    the assertion is gone: the caffeinate pid is gone or is now some
+ *            other process, or the Windows holder stopped beating
  *
  * `lastActivity` and `aliveSince` are the same two probes the state is decided
  * from, handed over as ms epochs rather than kept private: a page draws how
@@ -243,13 +305,13 @@ const birthMs = (file) => {
  * @param {Function} [opts.exec] (cmd, args) => stdout: the `ps` seam
  * @param {number} [opts.now] override "now" in ms
  * @param {number} [opts.nameReadBytes] bytes read from each end of a transcript
- * @returns {Array<{claudePid: number, cwd: string, session: string, chatName: string|null, state: string, model: string|null, effort: string|null, transcript: string, lastActivity: number|null, aliveSince: number|null}>}
+ * @returns {Array<{claudePid: number|null, cwd: string, session: string, chatName: string|null, state: string, model: string|null, effort: string|null, transcript: string, lastActivity: number|null, aliveSince: number|null}>}
  */
 const listSessions = (opts = {}) => {
   const exec = opts.exec || defaultExec;
   const markerDir = opts.markerDir || markerRoot(exec);
   const home = opts.home || os.homedir();
-  const stateDir = opts.stateDir || path.join(process.env.TMPDIR || '/tmp', 'claude-session-state');
+  const stateDir = opts.stateDir || stateRoot(exec);
   const idleMs = idleWindowMs(opts);
   const now = opts.now || Date.now();
   const nameReadBytes = opts.nameReadBytes || NAME_READ_BYTES;
@@ -263,24 +325,35 @@ const listSessions = (opts = {}) => {
 
   const out = [];
   for (const name of names.sort()) {
-    // A marker's name is always the claude pid, which is the hook's own rule and
-    // the only filter needed: the acquire locks are `.<pid>.lock` directories,
-    // and every one of them fails this test on its leading dot.
-    if (!/^\d+$/.test(name)) continue;
+    // Which shape this marker is, which is the one place the platforms differ:
+    // everything past here reads one record.
+    const windows = WIN_MARKER.test(name);
+    if (!windows && !MAC_MARKER.test(name)) continue;
     const file = path.join(markerDir, name);
-    const marker = readMarker(file);
+    const marker = readMarker(file, windows);
     if (!marker) continue;
 
-    const claudePid = Number(name);
-    let command = '';
-    try {
-      command = exec('ps', ['-o', 'command=', '-p', marker.caffeinate]).trim();
-    } catch {
-      command = '';
+    // The claude pid is the macOS marker's NAME. A Windows marker is keyed by
+    // the session instead and carries no claude pid at all, so the row says so
+    // rather than passing off the PowerShell holder's pid as one.
+    const claudePid = windows ? null : Number(name);
+    let live;
+    if (windows) {
+      live = beatIsFresh(marker.beat, now);
+    } else {
+      let command = '';
+      try {
+        command = exec('ps', ['-o', 'command=', '-p', marker.caffeinate]).trim();
+      } catch {
+        command = '';
+      }
+      live = command === `caffeinate -d -i -w ${claudePid}`;
     }
-    const live = command === `caffeinate -d -i -w ${claudePid}`;
 
-    const transcript = transcriptPath(home, marker.cwd, marker.session);
+    // The marker's own `transcript=` when it carries one, which is the Windows
+    // shape: Claude Code handed the hook that path, so nothing has to be
+    // derived. The derivation answers for the markers that name none.
+    const transcript = marker.transcript || transcriptPath(home, marker.cwd, marker.session);
     // The marker's own times are when the assertion was taken: the right
     // fallback when the transcript cannot be read.
     const probed = mtimeMs(transcript);
@@ -296,8 +369,13 @@ const listSessions = (opts = {}) => {
     }
 
     const { model, effort } = sessionState(stateDir, marker.session);
+    // The cwd is PUBLISHED in git's spelling, the one every roster key is
+    // written in, so a reader placing a session in a repo compares like against
+    // like. The transcript above stays derived from the marker's own native
+    // cwd, because that is the spelling Claude Code names the project folder
+    // from.
     out.push({
-      claudePid, cwd: marker.cwd, session: marker.session, chatName, state, model, effort, transcript, lastActivity, aliveSince,
+      claudePid, cwd: gitPath(marker.cwd), session: marker.session, chatName, state, model, effort, transcript, lastActivity, aliveSince,
     });
   }
   return out;

@@ -1,6 +1,6 @@
 #!/bin/bash
 # safety/commit-gate: PreToolUse hook (Bash)
-# Every `git commit` goes through the gate (owner ruling, 2026-07-22, plan Q3):
+# Every `git commit` goes through the gate:
 #   1. New-file tests: a commit that ADDS source files while touching no test
 #      file bounces (the test-TYPE proxy, only in repos with a test script).
 #   2. Review: when the files going into the commit include CODE (not docs-only),
@@ -31,7 +31,7 @@
 #      never cancel the hook into a silent allow. Both the raise and a
 #      plugin update take effect on a session restart.
 #   6. The proof: every issue the message closes (the check 4 trailer) must
-#      already carry a `Proof:` comment (owner ruling, 2026-09-10, issue #233).
+#      already carry a `Proof:` comment.
 #      The trailer is the third stage of the gate safety/proof-guard holds on
 #      the complete flip and the close, and it reads the issue the same way.
 # Code-vs-docs classification matches the docs/change-tracker hook (same
@@ -49,13 +49,14 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-cmd=$(jq -r '.tool_input.command // ""' <<<"$input" || true)
+. "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
+
+cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
 [ -n "$cmd" ] || exit 0
 
 # --- Find a real `git ... commit` COMMAND, not a mention. ---
 # Shared detection (heredoc-body strip, multiline quote strip, clause scan):
 # hooks/_lib.sh, used identically by the safety/commit-language hook.
-. "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
 hook_find_git_commit "$cmd"
 commit_clause="$HOOK_COMMIT_CLAUSE"
 saw_cd="$HOOK_SAW_CD"
@@ -74,7 +75,7 @@ block() {
 # for Claude, and NO permissionDecision, so the commit's fate is decided
 # exactly as it would be with this hook silent.
 stand_down() {
-  jq -n --arg m "$1" '{
+  hook_jq -n --arg m "$1" '{
     "systemMessage": $m,
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
@@ -159,7 +160,7 @@ done
 no_repo() {
   block "the session's directory is not inside a git repository, so the gate cannot see what this commit would carry. cd into the repo's root as its own command first, then run a plain 'git commit' there."
 }
-cwd=$(jq -r '.cwd // ""' <<<"$input" || true)
+cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
 [ -n "$cwd" ] || exit 0
 cd "$cwd" 2>/dev/null || no_repo
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || no_repo
@@ -180,7 +181,7 @@ if [ -z "$files" ] && [ "$has_pathspec" -eq 0 ]; then
   # without saying so is how a whole session's commits went untested. The
   # package.json probe sits on this path alone: by here the gate has already
   # resolved a real commit clause, so it is not new work on every Bash command.
-  if [ -f "$repo_root/package.json" ] && jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
+  if [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
     stand_down "commit-gate: nothing staged and no -a/pathspec: the gate has nothing to judge, so no check ran (suite included)."
   fi
   exit 0
@@ -206,8 +207,8 @@ version_bump_only() {
     copy="$(cd "$repo_root" && git show ":$file" 2>/dev/null)" || return 1
   fi
   [ -n "$copy" ] || return 1
-  a="$(jq -Sc 'del(.version)' <<<"$head" 2>/dev/null)" || return 1
-  b="$(jq -Sc 'del(.version)' <<<"$copy" 2>/dev/null)" || return 1
+  a="$(hook_jq -Sc 'del(.version)' <<<"$head" 2>/dev/null)" || return 1
+  b="$(hook_jq -Sc 'del(.version)' <<<"$copy" 2>/dev/null)" || return 1
   [ -n "$a" ] && [ "$a" = "$b" ]
 }
 
@@ -242,32 +243,65 @@ if [ -n "$files" ]; then
   done <<<"$files"
 fi
 
-# Heal bookkeeping (owner ruling, 2026-07-27): a commit whose files are ALL
-# workflow bookkeeping (the .workkit/settings.json version stamp, and the
-# vendored .github/changelog-lint.cjs when its content is exactly what the
-# engine would vendor) carries no judgment to review, so checks 1 and 2 stand
-# down for it. Tests (check 5) still run. Any other file in the commit, a
-# hand-edited linter copy, or an unknowable file list restores the full gate.
-linter_is_vendor_current() {
-  local engine copy
-  engine="$(hook_changelog_linter 2>/dev/null)" || return 1
-  # Judge the bytes the COMMIT will carry: the staged blob normally, the
-  # working tree under -a/--all (which is what such a commit stages).
+# Heal bookkeeping: a commit whose files are ALL workflow bookkeeping carries
+# no judgment to review, so checks 1 and 2 stand down for it. Tests (check 5)
+# still run. Any other file, or an unknowable file list, restores the full
+# gate. Three arms, each proving its file is exactly the heal's output:
+#   - the .workkit/settings.json version stamp (settings_is_stamp_only);
+#   - the DELETION of a linter copy (wk_linter_copies), and only once no
+#     workflow in the tree the commit produces still runs it
+#     (linter_copy_retired). An added or edited copy, or a deletion that leaves
+#     a workflow running the copy, is not the heal's output;
+#   - .github/workflows/checks.yml, when the blob the commit carries is the
+#     blob of the heal's rewrite of HEAD's file: its job swapped where it ran a
+#     copy, its header swapped where it carried a retired paragraph, and a job
+#     of the repo's own never touched, so a file the heal would not change
+#     cannot match (checks_is_job_rewrite). Blobs are compared by object id,
+#     so the match is byte for byte, trailing newlines included, and a CRLF
+#     working tree under autocrlf is judged by what git will store.
+# The copies' names, the "still runs it" question and the rewrite are all
+# workflow/changelog-job.sh's, sourced through _lib.sh, the file the heal runs,
+# so the two cannot disagree. Under -a/--all the working tree is what the
+# commit carries, so each arm reads it there.
+
+linter_copy_retired() {
+  local tmp rc=1
+  {
+    git diff --cached --name-only --diff-filter=D 2>/dev/null || true
+    if [ "$has_all_flag" -eq 1 ]; then git diff --name-only --diff-filter=D 2>/dev/null || true; fi
+  } | grep -Fxq -- "$1" || return 1
   if [ "$has_all_flag" -eq 1 ]; then
-    copy="$(cat "$repo_root/.github/changelog-lint.cjs" 2>/dev/null)" || return 1
-  else
-    copy="$(cd "$repo_root" && git show ":.github/changelog-lint.cjs" 2>/dev/null)" || return 1
+    wk_workflows_run_copy "$repo_root" "$1" && return 1
+    return 0
   fi
-  [ -n "$copy" ] || return 1
-  # The vendored shape is standards.sh render_changelog_linter's: the engine's
-  # shebang, the vendor header on line 2, then the engine's own bytes.
-  [ "$(printf '%s\n' "$copy" | head -n 1)" = "$(head -n 1 "$engine")" ] || return 1
-  case "$(printf '%s\n' "$copy" | sed -n 2p)" in "// Vendored"*) ;; *) return 1 ;; esac
-  cmp -s <(printf '%s\n' "$copy" | tail -n +3) <(tail -n +2 "$engine")
+  # The index's workflows, checked out where the question can read them.
+  tmp="$(mktemp -d 2>/dev/null)" || return 1
+  if (cd "$repo_root" && git ls-files -z -- .github/workflows | xargs -0 git checkout-index --prefix="$(wk_git_path "$tmp")/" --) >/dev/null 2>&1; then
+    wk_workflows_run_copy "$tmp" "$1" || rc=0
+  fi
+  rm -rf "$tmp"
+  return "$rc"
 }
 
-# The stamp arm proves its content like the linter arm does: only the `version`
-# key may differ from HEAD. Any other edit (flipping `enabled`, rewriting the
+checks_is_job_rewrite() {
+  local file=".github/workflows/checks.yml" tmp want have rc=1
+  tmp="$(mktemp -d 2>/dev/null)" || return 1
+  if (cd "$repo_root" && git show "HEAD:$file") >"$tmp/head" 2>/dev/null \
+    && wk_changelog_job_rewrite "$tmp/head" "$(wk_checks_template)" >"$tmp/rewrite" 2>/dev/null \
+    && want="$(cd "$repo_root" && git hash-object --path="$file" "$(wk_git_path "$tmp/rewrite")" 2>/dev/null)"; then
+    if [ "$has_all_flag" -eq 1 ]; then
+      have="$(cd "$repo_root" && git hash-object --path="$file" "$file" 2>/dev/null)" || have=""
+    else
+      have="$(cd "$repo_root" && git rev-parse -q --verify ":$file" 2>/dev/null)" || have=""
+    fi
+    if [ -n "$want" ] && [ "$want" = "$have" ]; then rc=0; fi
+  fi
+  rm -rf "$tmp"
+  return "$rc"
+}
+
+# The stamp arm proves its content: only the `version` key may differ from
+# HEAD. Any other edit (flipping `enabled`, rewriting the
 # `manager` block that picks every spawn's model) gets the full gate, and so
 # does a NEW settings.json (the one-time opt-in commit is not a stamp).
 settings_is_stamp_only() {
@@ -279,8 +313,8 @@ settings_is_stamp_only() {
     staged="$(cd "$repo_root" && git show ":.workkit/settings.json" 2>/dev/null)" || return 1
   fi
   [ -n "$staged" ] || return 1
-  a="$(jq -Sc 'del(.version)' <<<"$head" 2>/dev/null)" || return 1
-  b="$(jq -Sc 'del(.version)' <<<"$staged" 2>/dev/null)" || return 1
+  a="$(hook_jq -Sc 'del(.version)' <<<"$head" 2>/dev/null)" || return 1
+  b="$(hook_jq -Sc 'del(.version)' <<<"$staged" 2>/dev/null)" || return 1
   [ -n "$a" ] && [ "$a" = "$b" ]
 }
 
@@ -290,18 +324,19 @@ if [ "$has_pathspec" -eq 0 ] && [ -n "$files" ]; then
   while IFS= read -r path; do
     case "$path" in
       .workkit/settings.json) settings_is_stamp_only || { bookkeeping=0; break; } ;;
-      .github/changelog-lint.cjs) linter_is_vendor_current || { bookkeeping=0; break; } ;;
-      *) bookkeeping=0; break ;;
+      .github/workflows/checks.yml) checks_is_job_rewrite || { bookkeeping=0; break; } ;;
+      *)
+        grep -Fxq -- "$path" <<<"$(wk_linter_copies)" || { bookkeeping=0; break; }
+        linter_copy_retired "$path" || { bookkeeping=0; break; } ;;
     esac
   done <<<"$files"
 fi
 
-# 1. New source files need tests (owner ruling, 2026-07-23, the test-TYPE
-# proxy): a hook cannot judge what KIND of test a file holds, but it CAN see a
+# 1. New source files need tests (the test-TYPE proxy): a hook cannot judge what KIND of test a file holds, but it CAN see a
 # commit that ADDS code files while touching no test file at all. Only in repos
 # that define a test script (a repo without tests isn't asked to start here),
 # and only for staged adds (pathspec commits are already gated strictly).
-if [ "$bookkeeping" -eq 0 ] && [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/package.json" ] && jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
+if [ "$bookkeeping" -eq 0 ] && [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
   added=$(git diff --cached --name-only --diff-filter=A 2>/dev/null || true)
   new_code=""
   while IFS= read -r path; do
@@ -343,7 +378,13 @@ fi
 # 2. Review marker (code commits only). The workkit:review skill touches the
 # marker when it finishes; it must be newer than the previous commit.
 if [ "$has_code" -eq 1 ] && [ "$bookkeeping" -eq 0 ]; then
-  marker="${TMPDIR:-/tmp}/claude-review-marker/$(printf '%s' "$repo_root" | shasum | cut -d' ' -f1)"
+  # The marker's name is hook_review_marker_path's, the same helper
+  # scripts/review-marker.sh writes through, so the gate and the skill can
+  # never name two different files. No digest tool at all is loud: an empty key
+  # would be one marker shared by every repo on the machine.
+  if ! marker="$(hook_review_marker_path "$repo_root")"; then
+    block "this machine has neither shasum nor sha1sum, so the gate cannot name the review marker. Install one, then commit."
+  fi
   if [ ! -f "$marker" ]; then
     block "the commit contains code and no review has run. Run the workkit:review skill on the diff first (it records a marker), then commit."
   fi
@@ -401,7 +442,7 @@ if [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/CHANGELOG.md" ] \
   fi
 fi
 
-# 6. The proof (owner ruling, 2026-09-10, issue #233): every issue this commit
+# 6. The proof: every issue this commit
 # closes must already carry a `Proof:` comment, since the trailer is the third
 # stage of the same gate safety/proof-guard holds on the complete flip and the
 # close. Check 4's trailer pattern, and the guard's read (hook_issue_has_proof
@@ -438,13 +479,19 @@ fi
 # decision is ALLOW, so without this, the biggest suites are exactly where the
 # gate stopped enforcing (issue #93).
 # Injectable so the suite can prove the bounce without a wait.
+# `pgrep` is not everywhere: Git Bash ships no procps, so on Windows only the
+# named process itself is ended and the suite's own children are left to the
+# shell that spawned them. That is the honest limit of a portable walk here; a
+# PowerShell walk would be a second mechanism for one platform.
 gate_end_tree() {
   local pid kid
   pid="$1"
-  for kid in $(pgrep -P "$pid" 2>/dev/null); do gate_end_tree "$kid"; done
+  if command -v pgrep >/dev/null 2>&1; then
+    for kid in $(pgrep -P "$pid" 2>/dev/null); do gate_end_tree "$kid"; done
+  fi
   kill -9 "$pid" 2>/dev/null || true
 }
-if [ "$has_code" -eq 1 ] && [ -f "$repo_root/package.json" ] && jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
+if [ "$has_code" -eq 1 ] && [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
   deadline="${WORKKIT_GATE_TEST_DEADLINE:-1500}"
   # An over-raised budget would let the harness cancel the hook at its 3000s
   # timeout first: no decision, and no decision is ALLOW (#93). Clamp so a
@@ -471,7 +518,7 @@ if [ "$has_code" -eq 1 ] && [ -f "$repo_root/package.json" ] && jq -e '.scripts.
     exit 2
   fi
   rm -f "$out_file"
-elif [ -f "$repo_root/package.json" ] && jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
+elif [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
   # The stand-down is deliberate (#151) but never silent (#155): a repo that
   # defines a suite hears why this commit did not run it.
   stand_down "commit-gate: suite not run: the commit carries no code (docs-only or version-stamp-only), per #151."

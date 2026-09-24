@@ -51,13 +51,15 @@ A finding that gets FILED rather than fixed now passes the filing litmus test fi
 
 ## 5. Marker (feeds the commit gate)
 
-After the report, record that review ran. The `safety/commit-gate` hook checks this marker before allowing a code commit:
+After the report, record that review ran, from inside the repo under review. The `safety/commit-gate` hook checks this marker before allowing a code commit, and the script names it through the same helper the hook reads it with, so the two can never drift:
 
 ```sh
-mkdir -p "${TMPDIR:-/tmp}/claude-review-marker" && touch "${TMPDIR:-/tmp}/claude-review-marker/$(git rev-parse --show-toplevel | tr -d '\n' | shasum | cut -d' ' -f1)"
+bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/workkit/..}/scripts/review-marker.sh"
 ```
+
+(`CLAUDE_PLUGIN_ROOT` is set only inside hook commands, so the fallback is the plugin root reached through the engine's stable address: `~/.claude/workkit` is the engine folder INSIDE the plugin, and its parent is the plugin itself.)
 
 ## Gotchas
 
-- The inline return IS the convention (#133). The reviewer, `workkit:scout`, and `workkit:verifier` toolsets have no Write anyway. A report FILE is the explicit-ask exception: name the path in the brief only when the output is a large artifact meant to be read selectively, and never ask a lens without Write for one.
-- Do not re-run a full panel over edits that merely implement findings the scorer already judged this session. That reviews the review's own output. A light verification pass ("does each edit implement its finding without contradictions?") is the honest check (2026-07-23). The `workkit:ship` panel is the one exception: it runs full over the whole ship diff every time (its step 3.2b).
+- The inline return IS the convention. The reviewer, `workkit:scout`, and `workkit:verifier` toolsets have no Write anyway. A report FILE is the explicit-ask exception: name the path in the brief only when the output is a large artifact meant to be read selectively, and never ask a lens without Write for one.
+- Do not re-run a full panel over edits that merely implement findings the scorer already judged this session. That reviews the review's own output. A light verification pass ("does each edit implement its finding without contradictions?") is the honest check. The `workkit:ship` panel is the one exception: it runs full over the whole ship diff every time (its step 3.2b).

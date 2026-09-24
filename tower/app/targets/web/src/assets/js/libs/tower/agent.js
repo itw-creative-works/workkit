@@ -214,7 +214,7 @@ const CLAIMABLE = ['specced'];
 /**
  * The Board's version of the glyph: an issue an agent HOLDS, or work RUNNING.
  *
- * A `building` card SPINS (owner ruling, #141): the status itself says the
+ * A `building` card SPINS: the status itself says the
  * work is in motion, so the gear turns even though a board card carries no
  * activity timestamps - and whether or not anyone is assigned yet, because
  * `building` without a holder is still work in flight, not work at rest. A

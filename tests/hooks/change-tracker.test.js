@@ -13,21 +13,22 @@ const fs = require('fs');
 const os = require('os');
 const { spawnSync, execSync } = require('child_process');
 const { group, test, assert, assertEq, summary, WORKKIT_DIR: W } = require('../lib/harness');
+const { BASH, SYSTEM_BASH, NO_RC, shellPath } = require('../lib/platform');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'change-tracker', 'run.sh');
 const PROMPT = path.join(__dirname, '..', '..', 'hooks', 'docs', 'change-tracker', 'prompt.md');
 
 const mkTmpRepo = () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-test-'));
-  execSync('git init && git commit --allow-empty -m "init"', { cwd: dir, stdio: 'pipe' });
+  execSync('git init && git commit --allow-empty -m "init"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
   return dir;
 };
 
 const runHook = (cwd) => {
-  const input = JSON.stringify({ cwd, stop_hook_active: false });
-  const res = spawnSync('bash', [HOOK], {
+  const input = JSON.stringify({ cwd: shellPath(cwd), stop_hook_active: false });
+  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
     input,
-    env: { ...process.env, HOME: os.homedir() },
+    env: { ...process.env, HOME: shellPath(os.homedir()) },
     encoding: 'utf8',
     timeout: 10000,
   });
@@ -78,7 +79,7 @@ const run = async () => {
     const dir = mkTmpRepo();
     fs.mkdirSync(path.join(dir, 'hooks', 'docs', 'x'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'hooks', 'docs', 'x', 'run.sh'), '#!/bin/bash\necho hi\n');
-    execSync('git add -A && git commit -q -m "seed"', { cwd: dir, stdio: 'pipe' });
+    execSync('git add -A && git commit -q -m "seed"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     fs.writeFileSync(path.join(dir, 'hooks', 'docs', 'x', 'run.sh'), '#!/bin/bash\necho tweaked\n');
     const { stdout } = runHook(dir);
     assert(stdout.includes('"block"'), `a code extension wins over the docs path, got: ${stdout.slice(0, 200)}`);
@@ -89,7 +90,7 @@ const run = async () => {
     const dir = mkTmpRepo();
     fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'docs', 'notes.md'), '# notes\n');
-    execSync('git add -A && git commit -q -m "seed"', { cwd: dir, stdio: 'pipe' });
+    execSync('git add -A && git commit -q -m "seed"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     fs.writeFileSync(path.join(dir, 'docs', 'notes.md'), '# notes, edited\n');
     const { stdout } = runHook(dir);
     assert(!stdout.includes('"block"'), 'the docs basenames are unchanged');
@@ -163,7 +164,7 @@ const run = async () => {
     const dir = mkTmpRepo();
     fs.writeFileSync(path.join(dir, '.gitignore'), `${W}/*\n`);
     fs.writeFileSync(path.join(dir, 'app.js'), 'one\n');
-    execSync('git add -A && git commit -m "app"', { cwd: dir, stdio: 'pipe' });
+    execSync('git add -A && git commit -m "app"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     fs.mkdirSync(path.join(dir, W), { recursive: true });
     return dir;
   };
@@ -260,10 +261,10 @@ const run = async () => {
     const dir = mkStateRepo();
     fs.writeFileSync(path.join(dir, 'app.js'), 'two\n');
     const runSession = (sessionId) => {
-      const input = JSON.stringify({ cwd: dir, stop_hook_active: false, session_id: sessionId });
-      const res = spawnSync('bash', [HOOK], {
+      const input = JSON.stringify({ cwd: shellPath(dir), stop_hook_active: false, session_id: sessionId });
+      const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
         input,
-        env: { ...process.env, HOME: os.homedir() },
+        env: { ...process.env, HOME: shellPath(os.homedir()) },
         encoding: 'utf8',
         timeout: 10000,
       });
@@ -307,10 +308,10 @@ const run = async () => {
   await test('stop_hook_active=true: exits 0 (prevents recursion)', () => {
     const dir = mkTmpRepo();
     fs.writeFileSync(path.join(dir, 'app.js'), 'code');
-    const input = JSON.stringify({ cwd: dir, stop_hook_active: true });
-    const res = spawnSync('bash', [HOOK], {
+    const input = JSON.stringify({ cwd: shellPath(dir), stop_hook_active: true });
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input,
-      env: { ...process.env, HOME: os.homedir() },
+      env: { ...process.env, HOME: shellPath(os.homedir()) },
       encoding: 'utf8',
       timeout: 10000,
     });
@@ -324,7 +325,7 @@ const run = async () => {
   await test('clean tree + unfiled INBOX entries: blocks with INBOX count', () => {
     const dir = mkTmpRepo();
     fs.writeFileSync(path.join(dir, 'INBOX.md'), '# INBOX\n> header line\n\nan idea\nanother note\n');
-    execSync('git add -A && git commit -m "inbox"', { cwd: dir, stdio: 'pipe' });
+    execSync('git add -A && git commit -m "inbox"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     const { stdout } = runHook(dir);
     assert(stdout.includes('"block"'), 'unfiled inbox should nudge even with a clean tree');
     assert(stdout.includes('INBOX: 2 unfiled'), `context carries the count, got: ${stdout.slice(0, 300)}`);
@@ -335,7 +336,7 @@ const run = async () => {
   await test('clean tree + header-only INBOX: no block', () => {
     const dir = mkTmpRepo();
     fs.writeFileSync(path.join(dir, 'INBOX.md'), '# INBOX\n> Dump anything here.\n\n');
-    execSync('git add -A && git commit -m "inbox"', { cwd: dir, stdio: 'pipe' });
+    execSync('git add -A && git commit -m "inbox"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     const { code, stdout } = runHook(dir);
     assertEq(code, 0, 'empty inbox exits 0');
     assert(!stdout.includes('block'), 'no nudge for an empty inbox');

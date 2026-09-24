@@ -138,6 +138,21 @@ const run = async () => {
     cleanup(home);
   });
 
+  await test('a Monday reads the board ONCE and picks both cadences off it (#250)', () => {
+    // Two reads of one board are two answers to the same question, and the
+    // second one costs a round trip on the one morning of the week that is
+    // already the busiest. Both summaries are on the array the first read
+    // brought back, so Monday asks no more of GitHub than any other day.
+    const home = mkHome();
+    const calls = [];
+    const out = briefSummaries({ generatedAt: MONDAY, workflowHome: home, exec: mkExec(BOARD, calls) });
+    assertEq(calls.length, 1, 'one round trip, on the day that used to take two');
+    assertEq(out.findings.title, 'daily: 2026-08-02', 'yesterday, off that read');
+    assertEq(out.week.title, 'weekly: 2026-08-02', 'and the rollup, off the same one');
+    assertEq(out.summariesReason, null, 'and a board that answered has nothing to explain');
+    cleanup(home);
+  });
+
   await test('an unreachable board still answers the keys, empty', () => {
     const home = mkHome();
     const out = briefSummaries({

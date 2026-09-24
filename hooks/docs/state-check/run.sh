@@ -25,7 +25,11 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-cwd=$(jq -r '.cwd // ""' <<<"$input")
+# Sourced for hook_sha1 alone: the cache key below is a digest, and its
+# spelling differs across the platforms this kit runs on.
+. "${BASH_SOURCE[0]%/*}/../../_lib.sh"
+
+cwd=$(hook_jq -r '.cwd // ""' <<<"$input")
 
 # Bounded run for the one command that touches the network. macOS ships no
 # `timeout`; perl's alarm is the portable stand-in.
@@ -73,7 +77,7 @@ if [ -n "$cwd" ] && command -v gh >/dev/null 2>&1 \
   && git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   cache_dir="${STATE_CHECK_CACHE:-$HOME/.claude/logs/state-check}"
   mkdir -p "$cache_dir" 2>/dev/null || true
-  repo_key=$(printf '%s' "$cwd" | shasum 2>/dev/null | cut -d' ' -f1 || true)
+  repo_key=$(printf '%s' "$cwd" | hook_sha1 2>/dev/null || true)
   cache_file="$cache_dir/${repo_key:-nokey}"
   n=""
   if [ -n "$repo_key" ] && [ -f "$cache_file" ] \
@@ -83,7 +87,7 @@ if [ -n "$cwd" ] && command -v gh >/dev/null 2>&1 \
   if [ -z "$n" ]; then
     issues=$(cd "$cwd" && run_bounded 5 gh issue list --state open --label status:inbox --json number --limit 1000 2>/dev/null) || issues=""
     if [ -n "$issues" ]; then
-      n=$(jq -r 'length' <<<"$issues" 2>/dev/null) || n=0
+      n=$(hook_jq_default '0' -r 'length' <<<"$issues")
       case "$n" in ''|*[!0-9]*) n=0 ;; esac
       # `|| true`: this is the last command of the block, and an empty repo_key
       # would make the block return 1. set -e would end the hook right here,
@@ -106,8 +110,8 @@ if [ -n "$cwd" ] && command -v gh >/dev/null 2>&1 \
 fi
 
 # Local capture file: the offline/free-form half of the same intake.
-# This hook sources nothing, so the directory name is spelled out; its SSOT is
-# WORKKIT_DIR in hooks/_lib.sh. Change both together.
+# The directory name is spelled out even though _lib.sh is sourced above; its
+# SSOT is WORKKIT_DIR there. Change both together.
 if [ -n "$cwd" ] && [ -f "$cwd/.workkit/capture.md" ]; then
   sn=$(count_entries "$cwd/.workkit/capture.md")
   if [ "$sn" -gt 0 ]; then
@@ -145,7 +149,7 @@ fi
 
 [ -n "$msg" ] || exit 0
 
-jq -n --arg ctx "$msg" '{
+hook_jq -n --arg ctx "$msg" '{
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
     "additionalContext": $ctx

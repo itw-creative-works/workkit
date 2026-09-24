@@ -18,10 +18,12 @@
 #                  CI workflow that runs the test suite on every pull request.
 #                  Installed once and never overwritten: after the first heal
 #                  the copy is the repo's own to extend.
-#   4a. changelog lint: vendor changelog.js to .github/changelog-lint.cjs,
-#                  byte-synced on every run so the kit stays the SSOT, and add
-#                  the `changelog` job to the repo's checks.yml once. The
-#                  format gate then holds for a maintainer with no plugin
+#   4a. changelog separator: convert an em dash CHANGELOG.md to spaced hyphens once
+#   4b. changelog lint: remove a linter copy an earlier heal vendored to
+#                  .github/changelog-lint.cjs, and put the `changelog` job in
+#                  the repo's checks.yml once, calling the kit's reusable
+#                  workflow (a job still running the copy is rewritten to it).
+#                  The format gate then holds for a maintainer with no plugin
 #                  installed, which is the only enforcement point CI has.
 #   5. protection: best-effort: ask GitHub to require the test check on the
 #                  default branch. Quietly skipped wherever the plan or the
@@ -74,18 +76,33 @@ TEMPLATES_DIR="$SCRIPT_DIR/templates"
 FORMS_DIR="$TEMPLATES_DIR/issue-forms"
 CHANGELOG_LINTER="$SCRIPT_DIR/changelog.js"
 
-# The engine's shared helpers, for two things the heal borrows: the settings
-# mutex every writer of the user file takes, and the tower clone's address
+# The CRLF-safe jq every read below goes through, and the one home of that
+# rule. Named here as well as reached through lib.sh, because this script reads
+# JSON from its first step and the seam it reads through belongs in the list of
+# what it depends on; the file defines functions and sets nothing, so sourcing
+# it twice is sourcing it once. Sourcing runs nothing.
+# shellcheck source=./platform.sh
+. "$SCRIPT_DIR/platform.sh"
+
+# The engine's shared helpers, for three things the heal borrows: the settings
+# mutex every writer of the user file takes, the safe JSON edit every settings
+# write goes through (wk_json_edit), and the tower clone's address
 # (WK_HOME_DIR), which the participation step compares against so the clone is
 # never offered, healed or registered. The heal owes the global layer nothing
 # else: the roster is machine-local, and the heal writes nothing into the clone
-# at all: it carries no opt-in and is engine territory. Sourced when it is there
-# and skipped when it is not, so a checkout without it still heals every repo it
-# can. Sourcing runs nothing.
-if [[ -f "$SCRIPT_DIR/lib.sh" ]]; then
-  # shellcheck source=./lib.sh
-  . "$SCRIPT_DIR/lib.sh"
-fi
+# at all: it carries no opt-in and is engine territory. Sourced flat, the way
+# every other part of the engine sources it: a checkout missing it is missing
+# the seam above too, so there is no deployment where the branch had an answer.
+# Sourcing runs nothing.
+# shellcheck source=./lib.sh
+. "$SCRIPT_DIR/lib.sh"
+
+# The changelog job in a repo's checks.yml, read and rewritten, the checks
+# template's address, and the retired linter copies: its own file because the
+# safety/commit-gate hook sources it too, to prove a staged checks.yml is
+# exactly the rewrite this heal writes. Sourcing runs nothing.
+# shellcheck source=./changelog-job.sh
+. "$SCRIPT_DIR/changelog-job.sh"
 
 # The hook layer that ships beside this engine. The engine runs fine without it
 # (it is installed alone wherever someone scripts the standard directly), so the
@@ -94,12 +111,13 @@ fi
 HOOKS_DIR="${WORKFLOW_HOOKS_DIR:-$SCRIPT_DIR/../hooks}"
 # The tools the hooks call for their core work. Each hook fails OPEN without
 # them by design, so a missing one disables a safety layer in silence. This
-# list is what makes that visible once a day.
-HOOK_TOOLS="jq git node shasum perl"
+# list is what makes that visible once a day. A `|` joins the spellings one
+# tool has across platforms (hook_sha1 takes shasum or sha1sum, #245): any one
+# of them satisfies the entry.
+HOOK_TOOLS="jq git node shasum|sha1sum perl"
 
 # The label an agent applies when it claims an issue, and how long a claim may
-# sit without activity before the heal releases it (owner ruling, 2026-07-26:
-# assignee accounts cannot tell an agent from a human, because agents run gh as
+# sit without activity before the heal releases it (assignee accounts cannot tell an agent from a human, because agents run gh as
 # the owner, so the claim needs a marker of its own).
 CLAIM_LABEL="agent:working"
 CLAIM_STALE_SECONDS=86400
@@ -131,19 +149,10 @@ STANDARD_VERSION=8
 # session far more often than it is read at a terminal, so it sets the indent
 # its lines have always carried itself.
 #
-# lib.sh is sourced above WHEN IT IS THERE, and this script still heals a repo
-# without it, so the levels have a plain fallback here: a missing logger would
-# otherwise be a command not found under `set -e`, which ends the heal.
+# Every level is lib.sh's own: it is sourced flat above, so there is no run of
+# this script where a level is missing and nothing here restates one.
 WK_LOG_STDERR=1
 WK_LOG_INDENT='  '
-if ! declare -f wk_ok >/dev/null 2>&1; then
-  wk_ok()    { printf '%s\n' "$1" >&2; }
-  wk_skip()  { [[ "${QUIET:-0}" == '1' ]] || printf '%s\n' "$1" >&2; }
-  wk_info()  { [[ "${QUIET:-0}" == '1' ]] || printf '%s\n' "$1" >&2; }
-  wk_warn()  { printf '%s\n' "$1" >&2; }
-  wk_error() { printf '%s\n' "$1" >&2; }
-  wk_spin()  { shift; "$@"; }
-fi
 
 mode="heal"
 case "${1:-}" in
@@ -179,27 +188,66 @@ is_canonical_checkout() {
   top="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)" || return 1
   [[ -n "$top" ]] || return 1
   url="$(git -C "$top" remote get-url origin 2>/dev/null)" || return 1
-  # The slug is what identifies it: https, ssh, and a trailing .git all read
-  # the same, and the owner's letter case is not the engine's business.
-  printf '%s' "$url" | grep -Eiq '[/:]workkit(\.git)?/?$'
+  # The slug is what identifies it, read through the engine's one rule
+  # (`wk_slug_from_remote`, workflow/slug.sh, sourced with lib.sh above): https,
+  # ssh, a local path in EITHER separator and a trailing .git all read the same,
+  # so a checkout cloned from a path typed natively on Windows is the machine's
+  # engine there too. A remote naming no owner names no repo and is not the kit.
+  # The owner's letter case is not the engine's business.
+  wk_slug_from_remote "$url" | grep -Eiq '^[^/]+/workkit$'
+}
+
+# What is at the address when the link did not land, judged by what IS there
+# and never by a command's status. A real DIRECTORY is the copy Git Bash
+# answers a plain `ln -s` with on a shell that may not make symlinks: lib.sh
+# exports MSYS=winsymlinks:nativestrict so that shell refuses instead, and the
+# result is checked anyway rather than the flag trusted, because a copy of the
+# engine at this address is worse than no address at all. The marker scripts
+# the skills call sit one level ABOVE the engine folder, so a copy hides them
+# and every skill's fallback resolves into $CLAUDE_HOME. What is there is this
+# run's own fresh copy, so it goes, and the Windows sentence says what to turn
+# on.
+#
+# A SYMLINK is never removed here: the one case that reaches this function with
+# a symlink at the address is a session that lost the race to another session
+# writing the SAME link, and deleting it would leave the machine with no
+# address at all. Anything else is a failure `ln` or `mv` already named on
+# stderr, so this says nothing and the heal goes on.
+clear_engine_copy() {
+  [[ -L "$ENGINE_LINK" ]] && return 0
+  [[ -d "$ENGINE_LINK" ]] || return 0
+  rm -rf "$ENGINE_LINK"
+  wk_warn "engine: $ENGINE_LINK came back a copy instead of a symlink, so it was removed; this shell cannot make symlinks (on Windows, turn on Developer Mode or run as administrator), then re-run \`workkit update\`"
+  return 0
 }
 
 ensure_engine_link() {
   [[ -d "$CLAUDE_HOME" ]] || return 0
   is_canonical_checkout || return 0
 
-  local current
+  local current verb=linked
   if [[ -L "$ENGINE_LINK" ]]; then
     current="$(cd "$ENGINE_LINK" 2>/dev/null && pwd -P || true)"
     [[ "$current" == "$SCRIPT_DIR" ]] && return 0
-    ln -sfn "$SCRIPT_DIR" "$ENGINE_LINK" \
-      && wk_ok "engine: repointed $ENGINE_LINK at $SCRIPT_DIR"
+    verb=repointed
   elif [[ -e "$ENGINE_LINK" ]]; then
     wk_warn "engine: $ENGINE_LINK is a real file or directory; move it aside so the engine's address can be linked"
-  else
-    ln -s "$SCRIPT_DIR" "$ENGINE_LINK" \
-      && wk_ok "engine: linked $ENGINE_LINK → $SCRIPT_DIR"
+    return 0
   fi
+
+  # One address for the whole machine, so sessions opening at once in several
+  # repos all write this one path. `wk_link` makes it atomically and answers
+  # for the ADDRESS rather than for one command, which is what a session that
+  # lost that race needs: losing it is not failing, since the winner wrote the
+  # same link. Under `set -e` the bare `ln` this replaced ended the heal one
+  # line above the roster registration, leaving the repo that session stood in
+  # off this machine's roster until the next day.
+  if wk_link "$SCRIPT_DIR" "$ENGINE_LINK"; then
+    wk_ok "engine: $verb $ENGINE_LINK → $SCRIPT_DIR"
+    return 0
+  fi
+  clear_engine_copy
+  return 0
 }
 
 # The address step alone: it is the ENGINE's address, so it needs no repo and
@@ -222,10 +270,20 @@ fi
 
 cd "$root"
 
+# The key this repo wears on the machine roster, settled ONCE here. Windows
+# spells one directory two ways and the roster must not: `wk_git_path` is the
+# one home of that rule (workflow/platform.sh), and every write and every
+# lookup below reads this variable rather than asking again. Feed it git's own
+# answer, as `root` is: `cygpath` keeps the letter case it is handed while git
+# canonicalizes it, so a `$PWD` or a hand-typed path would mint a second key.
+# The call is the identity on git's answer; it is here so the rule is stated at
+# the one site the key is made, not left to a caller happening to hand over git's.
+roster_key="$(wk_git_path "$root")"
+
 # ── 0. Participation ──────────────────────────────────────────────────────────
 # Four states, two files. The REPO's committed .workkit/settings.json is the
 # only place a yes or a deliberate no can live: it is a project fact a teammate
-# reads. Never-asked and declined are PERSONAL (owner ruling, 2026-07-24): a
+# reads. Never-asked and declined are PERSONAL: a
 # teammate seeing `enabled: false` would read it as the project declining when
 # it was one developer undecided, so those live in the user's own settings file
 # instead.
@@ -263,8 +321,7 @@ is_home_clone() {
 }
 
 # The user's workflow folder exists from the first run, not from the first
-# decline. Someone running this system expects to find it (owner ruling,
-# 2026-07-25); a folder that appears only after a particular action reads as
+# decline. Someone running this system expects to find it; a folder that appears only after a particular action reads as
 # missing.
 # A machine whose dotfiles already track and symlink the folder makes this a
 # no-op: it is the path for a machine where nothing has created it yet.
@@ -305,18 +362,27 @@ offer_line() {
   printf 'this repo is not in the issue workflow; say the word to enable it (bash %q/standards.sh --enable %q), or decline and it will not ask again (--decline).' "$SCRIPT_DIR" "$root"
 }
 
-# true | false | absent: the repo file's `enabled` key. jq when it is here; a
-# grep on our own two-key file when it is not, so a machine without jq still
-# honors a deliberate `enabled: false` instead of healing over it.
+# true | false | absent | unreadable: the `enabled` key of a settings file. jq
+# when it is here; a grep on our own two-key file when it is not, so a machine
+# without jq still honors a deliberate `enabled: false` instead of healing over
+# it. The file defaults to THIS repo's and is named by a caller asking about
+# another one (the roster prune, which asks the same question of every
+# registered path), so the reading has one home whichever repo it is about.
 repo_enabled_flag() {
+  local settings="${1:-$REPO_SETTINGS}"
   if command -v jq >/dev/null 2>&1; then
+    # `has`, not `//`: jq's alternative operator treats `false` as absent, which
+    # is the one value this reading exists to find.
+    #
     # A file jq cannot parse is NOT a legacy opt-in: reporting `absent` here
-    # would heal a repo whose answer is unreadable. Say so instead.
-    jq -r 'if has("enabled") then (.enabled | tostring) else "absent" end' "$REPO_SETTINGS" 2>/dev/null \
-      || printf 'unreadable'
-  elif grep -qE '"enabled"[[:space:]]*:[[:space:]]*false' "$REPO_SETTINGS"; then
+    # would heal a repo whose answer is unreadable. Say so instead, and only
+    # when jq answered nothing: a file whose first value says no and whose tail
+    # jq chokes on has still said no.
+    wk_jq_default 'unreadable' \
+      -r 'if has("enabled") then (.enabled | tostring) else "absent" end' "$settings"
+  elif wk_settings_declined "$settings"; then
     printf 'false'
-  elif grep -qE '"enabled"[[:space:]]*:[[:space:]]*true' "$REPO_SETTINGS"; then
+  elif wk_settings_enabled "$settings"; then
     printf 'true'
   else
     printf 'absent'
@@ -329,7 +395,7 @@ repo_version() {
   local v=""
   [[ -f "$REPO_SETTINGS" ]] || { printf '0'; return 0; }
   if command -v jq >/dev/null 2>&1; then
-    v="$(jq -r '.version // 1' "$REPO_SETTINGS" 2>/dev/null)" || v=""
+    v="$(wk_jq_default '' -r '.version // 1' "$REPO_SETTINGS")"
   fi
   [[ "$v" =~ ^[0-9]+$ ]] || v=1
   printf '%s' "$v"
@@ -394,38 +460,11 @@ resolve_state() {
   # The machine file is read-only here and the decline is the one decision in it,
   # so no jq means no record: an undecided repo simply gets offered again.
   if [[ -f "$USER_REPOS" ]] && command -v jq >/dev/null 2>&1 \
-    && [[ "$(jq -r --arg r "$root" '.repos[$r] // ""' "$USER_REPOS" 2>/dev/null)" == "declined" ]]; then
+    && [[ "$(wk_jq -r --arg r "$roster_key" '.repos[$r] // ""' "$USER_REPOS" 2>/dev/null)" == "declined" ]]; then
     printf 'declined'
     return 0
   fi
   printf 'undecided'
-}
-
-# Write ONLY the repos key, leaving every other key and the file's own shape
-# alone, the same contract the settings clean filter honors.
-# Write a jq edit back to a settings file safely: resolve symlinks first (this
-# repo's whole model is symlinking config out of ~, so the target is very likely
-# a link: writing the temp file over the LINK would replace it with a regular
-# file and orphan the real one), refuse to touch a file jq cannot parse, and
-# never leave a .tmp behind on any failure path.
-edit_settings_json() {
-  local file="$1"; shift
-  local target tmp rc=0
-  target=$(readlink -f "$file" 2>/dev/null || printf '%s' "$file")
-  if ! jq empty "$target" 2>/dev/null; then
-    wk_warn "settings: $target is not valid JSON; fix or remove it, then try again"
-    return 1
-  fi
-  tmp="$target.tmp.$$"
-  # shellcheck disable=SC2064  # expand $tmp now: it is what this call must clean up
-  trap "rm -f '$tmp'" RETURN
-  jq "$@" "$target" >"$tmp" || rc=$?
-  if [[ "$rc" -ne 0 ]] || [[ ! -s "$tmp" ]]; then
-    wk_warn "settings: could not write $target (left unchanged)"
-    return 1
-  fi
-  mv "$tmp" "$target" || { wk_warn "settings: could not replace $target"; return 1; }
-  return 0
 }
 
 # The state mutex is the engine's, not this script's: `wk_take_state_lock`
@@ -450,16 +489,16 @@ record_decline() {
     wk_warn "decline: proceeding without the lock (held for 5s by another run)"
   fi
 
-  edit_settings_json "$USER_REPOS" --arg r "$root" \
+  wk_json_edit "$USER_REPOS" --arg r "$roster_key" \
     '.repos = ((.repos // {}) + { ($r): "declined" })' || exit 1
 
   # A committed answer wins at resolve time, so saying "it will not be offered
   # again" would be a lie while that file says yes.
   if [[ -f "$REPO_SETTINGS" ]]; then
-    wk_ok "decline: recorded $root in $USER_REPOS"
+    wk_ok "decline: recorded $roster_key in $USER_REPOS"
     wk_warn "decline: $REPO_SETTINGS still carries the repo's committed answer, which wins; this takes effect only if that file goes away"
   else
-    wk_ok "decline: recorded $root in $USER_REPOS; it will not be offered again"
+    wk_ok "decline: recorded $roster_key in $USER_REPOS; it will not be offered again"
   fi
 }
 
@@ -491,14 +530,14 @@ register_in_roster() {
 
   # A file nobody can parse is SAID, not silently skipped: the roster would go
   # stale forever and the tower would quietly show the wrong machine.
-  if ! keys="$(jq -r '(.repos // {}) | to_entries[] | select(.value != "declined") | .key' "$USER_REPOS" 2>/dev/null)"; then
+  if ! keys="$(wk_jq -r '(.repos // {}) | to_entries[] | select(.value != "declined") | .key' "$USER_REPOS" 2>/dev/null)"; then
     wk_warn "roster: $USER_REPOS is not valid JSON; fix or remove it; until then this machine's roster is not maintained"
     return 0
   fi
 
   while IFS= read -r key; do
     [[ -n "$key" ]] || continue
-    [[ "$key" == "$root" ]] && continue
+    [[ "$key" == "$roster_key" ]] && continue
     if [[ ! -d "$key" ]]; then
       stale="$stale$key"$'\n'
       continue
@@ -510,9 +549,10 @@ register_in_roster() {
       stale="$stale$key"$'\n'
       continue
     fi
-    # `has`, not `//`: jq's alternative operator treats `false` as absent, which
-    # is the one value this check exists to find.
-    flag="$(jq -r 'if has("enabled") then (.enabled | tostring) else "absent" end' "$key/$REPO_SETTINGS" 2>/dev/null || true)"
+    # The same reading the heal makes of this repo's own file, asked of a
+    # registered one: `false` is the deliberate no, and every other answer
+    # (including a file jq cannot read) leaves the entry alone.
+    flag="$(repo_enabled_flag "$key/$REPO_SETTINGS")"
     if [[ "$flag" == "false" ]]; then
       stale="$stale$key"$'\n'
     fi
@@ -521,11 +561,11 @@ register_in_roster() {
   # Nothing to add and nothing to remove: leave the file untouched, so a session
   # start on an up-to-date machine writes nothing at all.
   if [[ -z "$stale" ]] \
-    && jq -e --arg r "$root" '(.repos // {})[$r] == "enabled"' "$USER_REPOS" >/dev/null 2>&1; then
+    && wk_jq -e --arg r "$roster_key" '(.repos // {})[$r] == "enabled"' "$USER_REPOS" >/dev/null 2>&1; then
     return 0
   fi
 
-  stale_json="$(printf '%s' "$stale" | jq -Rs 'split("\n") | map(select(length > 0))' 2>/dev/null)" || return 0
+  stale_json="$(printf '%s' "$stale" | wk_jq -Rs 'split("\n") | map(select(length > 0))' 2>/dev/null)" || return 0
 
   # The same mutex a decline takes, for the same reason: this is a whole-file
   # read-modify-write, and sessions opening together in several repos would
@@ -536,7 +576,7 @@ register_in_roster() {
   # every concurrent run wait out the full five seconds.
   if wk_take_state_lock; then locked=1; fi
 
-  edit_settings_json "$USER_REPOS" --arg r "$root" --argjson stale "$stale_json" \
+  wk_json_edit "$USER_REPOS" --arg r "$roster_key" --argjson stale "$stale_json" \
     '.repos = ((.repos // {}) | with_entries(select(.key as $k | ($stale | index($k)) | not)) + { ($r): "enabled" })' \
     || true
 
@@ -560,7 +600,7 @@ write_repo_optin() {
     wk_warn "opt-in: $REPO_SETTINGS exists and jq is not installed; set \"enabled\": true by hand"
     exit 1
   fi
-  edit_settings_json "$REPO_SETTINGS" '.enabled = true' || exit 1
+  wk_json_edit "$REPO_SETTINGS" '.enabled = true' || exit 1
   wk_ok "opt-in: $REPO_SETTINGS is now enabled"
 }
 
@@ -738,7 +778,8 @@ ensure_issue_forms() {
 # keeps the file with the jobs removed (or empty) rather than deleting it;
 # a deleted file would be re-installed on the next heal.
 ensure_ci_workflow() {
-  local dest=".github/workflows/checks.yml" src="$TEMPLATES_DIR/github-workflows/checks.yml"
+  local dest=".github/workflows/checks.yml" src
+  src="$(wk_checks_template)"
 
   if [[ -f "$dest" ]]; then
     wk_skip "checks: $dest already present"
@@ -754,144 +795,142 @@ ensure_ci_workflow() {
   wk_ok "checks: created $dest; commit it so it runs on every pull request"
 }
 
-# ── 2b-i. The CHANGELOG linter, vendored ──
+# ── 2b-i. The CHANGELOG linter copy, retired ──
 # The entry-format gates (the docs/changelog-guard and safety/commit-gate
-# hooks) run only on a machine carrying the plugin, so a maintainer with an
-# editor and a GitHub account meets no gate at all. CI is the enforcement point
-# every author passes through, and a runner has no kit checkout, so the repo
-# gets a copy of the linter it can run from its own tree.
+# hooks) run only on a machine carrying the plugin, so CI is the enforcement
+# point every author passes through. CI reaches the linter through the kit's
+# reusable workflow (.github/workflows/changelog.yml in the kit's own repo),
+# which checks the kit out beside the caller, so no repo carries a copy of it.
 #
-# The kit stays the SSOT: the copy is rewritten whenever it differs from what
-# this engine would produce, so an edit to the copy is undone on the next heal
-# and the header says so. The comparison is over BYTES, which makes the step
-# idempotent: a current copy is left untouched and nothing is reported.
-#
-# The extension is .cjs, not .js: the copy uses require(), and a consumer whose
-# package.json says "type": "module" would have Node read a .js copy as ESM and
-# fail the check it was vendored to run (issue #190). The engine source keeps
-# its own name: it is read by this kit, never by the consumer's module type.
-CHANGELOG_LINT_DEST=".github/changelog-lint.cjs"
-CHANGELOG_LINT_LEGACY=".github/changelog-lint.js"
-CHANGELOG_LINT_HEADER="// Vendored from the workflow core's changelog.js by standards.sh. The kit is the SSOT; edit it there. This copy is resynced on every heal."
+# A copy an earlier heal vendored is removed, under either name it was written
+# as. The vendor header on line 2 is the proof the kit owns it; a file without
+# it is someone else's, so it is reported and left exactly as found. A copy a
+# workflow under .github/workflows still names is kept and reported too, since
+# deleting it would break that workflow; the step runs after the changelog job
+# is rewritten, so the job the heal owns never holds a copy in place. The names
+# and the "still runs it" question are changelog-job.sh's. The deletion is left
+# unstaged, like every other change the heal makes, for the owner to commit.
+# Idempotent by presence: once the copies are gone the step says nothing.
+remove_changelog_linter_copies() {
+  local copy
 
-# The header goes on line 2, after the shebang, so the file stays runnable.
-render_changelog_linter() {
-  head -n 1 "$CHANGELOG_LINTER"
-  printf '%s\n' "$CHANGELOG_LINT_HEADER"
-  tail -n +2 "$CHANGELOG_LINTER"
-}
+  while IFS= read -r copy; do
+    [[ -f "$copy" ]] || continue
+    case "$(sed -n 2p "$copy")" in
+      "// Vendored"*) ;;
+      *)
+        wk_warn "changelog lint: $copy is not the kit's copy; CI runs the kit's workflow now, so move or delete it by hand"
+        needs_attention=1
+        continue
+        ;;
+    esac
 
-# A repo healed before the rename carries the old .js copy beside the new one.
-# Only OUR copy is retired: the vendor header on line 2 is the proof of
-# ownership, and a file without it is someone else's, so it is reported and
-# left exactly as found.
-retire_legacy_changelog_linter() {
-  local legacy="$CHANGELOG_LINT_LEGACY"
-
-  [[ -f "$legacy" ]] || return 0
-  case "$(sed -n 2p "$legacy")" in
-    "// Vendored"*) ;;
-    *)
-      wk_warn "changelog lint: $legacy is not the kit's copy; move or delete it by hand; $CHANGELOG_LINT_DEST is the vendored one now"
+    if wk_workflows_run_copy . "$copy"; then
+      wk_warn "changelog lint: kept $copy: a workflow under .github/workflows still runs it; point that step at the kit's workflow and the next heal removes the copy"
       needs_attention=1
-      return 0
-      ;;
-  esac
-
-  if ! rm -f "$legacy"; then
-    wk_warn "changelog lint: could not remove the retired $legacy"
-    needs_attention=1
-    return 0
-  fi
-  wk_ok "changelog lint: removed the retired $legacy; $CHANGELOG_LINT_DEST replaces it; commit the removal"
-}
-
-ensure_changelog_linter() {
-  local dest="$CHANGELOG_LINT_DEST" tmp verb="created"
-
-  if [[ ! -f "$CHANGELOG_LINTER" ]]; then
-    wk_warn "changelog lint: source missing at $CHANGELOG_LINTER; reinstall the workflow core"
-    needs_attention=1
-    return 0
-  fi
-
-  mkdir -p .github
-  tmp="$dest.tmp.$$"
-  if ! render_changelog_linter >"$tmp" 2>/dev/null || [[ ! -s "$tmp" ]]; then
-    rm -f "$tmp"
-    wk_warn "changelog lint: could not build $dest from $CHANGELOG_LINTER"
-    needs_attention=1
-    return 0
-  fi
-
-  if [[ -f "$dest" ]]; then
-    if cmp -s "$tmp" "$dest"; then
-      rm -f "$tmp"
-      wk_skip "changelog lint: $dest already matches the workflow core"
-      retire_legacy_changelog_linter
-      return 0
+      continue
     fi
-    verb="resynced"
-  fi
+    if ! rm -f "$copy"; then
+      wk_warn "changelog lint: could not remove $copy"
+      needs_attention=1
+      continue
+    fi
+    wk_ok "changelog lint: removed $copy, CI runs the kit's workflow now; commit it"
+  done < <(wk_linter_copies)
+}
 
-  if ! mv "$tmp" "$dest"; then
-    rm -f "$tmp"
-    wk_warn "changelog lint: could not write $dest"
+# ── 2b-ii. The CHANGELOG separator ──
+# Entries separate their links from their text with a spaced hyphen, never an
+# em dash (the no-em-dash rule has no exception, and the emdash hook judges
+# CHANGELOG.md like any other file). A repo written before that rule carries the
+# old separator on every line, so the heal converts the file once: every em
+# dash, separator and prose alike, becomes a spaced hyphen, and the linter then
+# proves the whole file. Idempotent by content: a file with no em dash is left
+# untouched and unreported.
+ensure_changelog_separator() {
+  local file="CHANGELOG.md" count
+
+  [[ -f "$file" ]] || return 0
+  # grep -q first: under pipefail a count pipeline over a clean file is a
+  # failing status, and that would end the heal for the common case.
+  LC_ALL=C grep -q $'\xe2\x80\x94' "$file" || return 0
+  count=$(LC_ALL=C grep -o $'\xe2\x80\x94' "$file" | wc -l | tr -d ' ')
+
+  # Inline, a spaced hyphen; at a line boundary, a bare hyphen in place, so no
+  # newline is ever swallowed and a wrapped entry keeps its lines.
+  if ! perl -CSD -pi -e 's/(?<=\S)[ \t]*\x{2014}[ \t]*(?=\S)/ - /g; s/\x{2014}/-/g' "$file"; then
+    wk_warn "changelog separator: could not convert $file; replace its em dashes with spaced hyphens by hand"
     needs_attention=1
     return 0
   fi
-  wk_ok "changelog lint: $verb $dest from the workflow core; commit it"
-  retire_legacy_changelog_linter
+  wk_ok "changelog separator: converted $count em dashes in $file to spaced hyphens; commit it"
 }
 
-# ── 2b-ii. The changelog job in the repo's checks.yml ──
+# ── 2b-iii. The changelog job in the repo's checks.yml ──
 # checks.yml is installed once and then belongs to the repo, so this adds ONE
 # job to it rather than overwriting the file: a repo healed before this standard
 # would otherwise never get the check, and a repo that extended its workflow
 # would lose the extension. Idempotent by presence: the job is added when it is
 # not there, and looked for by name every run after.
 #
+# An existing changelog job gets the heal's rewrite (changelog-job.sh), which
+# makes two swaps, each only where it applies: a job that still runs a vendored
+# linter copy by name (`node .github/changelog-lint.cjs`, or the older `.js`) is
+# replaced in place by the template's, which calls the kit's reusable workflow,
+# and a retired header paragraph is replaced by the template's whatever form
+# the job is in. Any other existing changelog job is the repo's own and is left
+# alone. Idempotent by content: a file the rewrite leaves unchanged is a skip.
+#
 # The job's text has one home, the template, so the two can never drift.
 # Appending is only correct while `jobs:` is the last top-level block; anything
 # else is a layout this script cannot reason about, so it says what to add and
 # leaves the file alone.
 ensure_changelog_job() {
-  local dest=".github/workflows/checks.yml" src="$TEMPLATES_DIR/github-workflows/checks.yml" block last tmp
+  local dest=".github/workflows/checks.yml" src block runs=0 last tmp
+  src="$(wk_checks_template)"
 
   [[ -f "$dest" ]] || return 0
-
-  # A repo healed before the rename runs the linter under its old name, and the
-  # presence check below would leave that command pointing at a file the heal no
-  # longer vendors, so the name is repaired first. Idempotent: the old name is
-  # not a substring of the new one, so a second run finds nothing to change.
-  if grep -q 'changelog-lint\.js' "$dest"; then
-    tmp="$dest.tmp.$$"
-    if sed 's/changelog-lint\.js/changelog-lint.cjs/g' "$dest" >"$tmp" 2>/dev/null && [[ -s "$tmp" ]] && mv "$tmp" "$dest"; then
-      wk_ok "checks: repointed the changelog job in $dest at $CHANGELOG_LINT_DEST; commit it"
-    else
-      rm -f "$tmp"
-      wk_warn "checks: could not repoint the changelog job in $dest at $CHANGELOG_LINT_DEST; change the command by hand"
-      needs_attention=1
-    fi
-  fi
-
-  if grep -qE '^  changelog:' "$dest"; then
-    wk_skip "checks: the changelog job is already in $dest"
-    return 0
-  fi
   # A missing template was already reported by the install step above.
   [[ -f "$src" ]] || return 0
 
-  block="$(awk '/^  changelog:/ { f = 1 } f && /^  [A-Za-z_-]+:/ && !/^  changelog:/ { exit } f' "$src")"
+  block="$(wk_changelog_job_block "$src")"
   if [[ -z "$block" ]]; then
     wk_warn "checks: the template at $src defines no changelog job; reinstall the workflow core"
     needs_attention=1
     return 0
   fi
 
+  if grep -qE '^  changelog:' "$dest"; then
+    if wk_changelog_job_runs_copy "$dest"; then runs=1; fi
+    tmp="$dest.tmp.$$"
+    if ! wk_changelog_job_rewrite "$dest" "$src" >"$tmp" 2>/dev/null || [[ ! -s "$tmp" ]]; then
+      rm -f "$tmp"
+      wk_warn "checks: could not rewrite the changelog job in $dest; replace it with the template's job by hand"
+      needs_attention=1
+      return 0
+    fi
+    if cmp -s "$tmp" "$dest"; then
+      rm -f "$tmp"
+      wk_skip "checks: the changelog job is already in $dest"
+      return 0
+    fi
+    if ! mv "$tmp" "$dest"; then
+      rm -f "$tmp"
+      wk_warn "checks: could not write $dest"
+      needs_attention=1
+      return 0
+    fi
+    if [[ "$runs" -eq 1 ]]; then
+      wk_ok "checks: the changelog job in $dest now calls the kit's workflow; commit it"
+    else
+      wk_ok "checks: the header comment in $dest now describes the kit's workflow; commit it"
+    fi
+    return 0
+  fi
+
   last="$(grep -E '^[A-Za-z_-]+:' "$dest" | tail -n 1)"
   if [[ "$last" != "jobs:" ]]; then
-    wk_skip "checks: $dest does not end in its jobs: block; add a changelog job running 'node $CHANGELOG_LINT_DEST CHANGELOG.md --unreleased-only' by hand"
+    wk_skip "checks: $dest does not end in its jobs: block; add a changelog job whose one line is '$(grep -m 1 'uses:' <<<"$block" | sed 's/^ *//')' by hand"
     return 0
   fi
 
@@ -940,7 +979,7 @@ ensure_branch_protection() {
 # ── 3. Labels ──
 # Desired set, one label per line: name<TAB>description<TAB>color.
 desired_labels() {
-  jq -r '
+  wk_jq -r '
     .groups | to_entries[] | .key as $group | .value.color as $group_color
     | .value.values | to_entries[]
     | "\($group):\(.key)\t\(.value.description)\t\(.value.color // $group_color)"
@@ -991,7 +1030,7 @@ sync_labels() {
 
   while IFS=$'\t' read -r name description color; do
     [[ -n "$name" ]] || continue
-    current="$(jq -r --arg n "$name" '.[] | select(.name == $n) | "\(.description)\t\(.color)"' <<<"$existing")"
+    current="$(wk_jq -r --arg n "$name" '.[] | select(.name == $n) | "\(.description)\t\(.color)"' <<<"$existing")"
 
     if [[ -z "$current" ]]; then
       if wk_spin "creating the $name label" gh label create "$name" --description "$description" --color "$color" >/dev/null 2>&1; then
@@ -1056,13 +1095,13 @@ sweep_stale_claims() {
   # (or a sync that never reached GitHub) the label may not exist here yet, and
   # a query for a label a repo does not have is not a failure worth reporting.
   [[ -n "$existing_labels" ]] || return 0
-  jq -e --arg n "$CLAIM_LABEL" 'any(.[]; .name == $n)' <<<"$existing_labels" >/dev/null 2>&1 || return 0
+  wk_jq -e --arg n "$CLAIM_LABEL" 'any(.[]; .name == $n)' <<<"$existing_labels" >/dev/null 2>&1 || return 0
   # The flip is a bonus, the release is the job. `gh issue edit` fails whole
   # when it is handed a label the repo does not have, so a repo whose
   # SPECCED_LABEL never made it to GitHub would lose the release too, the one
   # thing the sweep exists to do. Where the label is missing, release without
   # the flip, exactly as the sweep did before the flip existed.
-  if jq -e --arg n "$SPECCED_LABEL" 'any(.[]; .name == $n)' <<<"$existing_labels" >/dev/null 2>&1; then
+  if wk_jq -e --arg n "$SPECCED_LABEL" 'any(.[]; .name == $n)' <<<"$existing_labels" >/dev/null 2>&1; then
     can_flip=1
   fi
 
@@ -1072,14 +1111,14 @@ sweep_stale_claims() {
     return 0
   fi
 
-  stale="$(jq -r --argjson max "$CLAIM_STALE_SECONDS" '
+  stale="$(wk_jq -r --argjson max "$CLAIM_STALE_SECONDS" '
     .[] | select((.updatedAt | fromdateiso8601) < (now - $max)) | .number' <<<"$issues" 2>/dev/null || true)"
 
   while read -r n; do
     [[ -n "$n" ]] || continue
     # Every assignee comes off with the label: an assignee left behind still
     # reads as a claim to everyone querying the queue.
-    assignees="$(jq -r --argjson n "$n" '.[] | select(.number == $n) | .assignees[].login' <<<"$issues" 2>/dev/null || true)"
+    assignees="$(wk_jq -r --argjson n "$n" '.[] | select(.number == $n) | .assignees[].login' <<<"$issues" 2>/dev/null || true)"
     args=(--remove-label "$CLAIM_LABEL")
     while read -r login; do
       [[ -n "$login" ]] || continue
@@ -1088,7 +1127,7 @@ sweep_stale_claims() {
     # The status flip rides along in the same edit: two edits would leave a
     # window where the issue is unclaimed but still reads as in flight.
     building=""
-    if [[ -n "$can_flip" ]] && jq -e --argjson n "$n" --arg b "$BUILDING_LABEL" \
+    if [[ -n "$can_flip" ]] && wk_jq -e --argjson n "$n" --arg b "$BUILDING_LABEL" \
         '.[] | select(.number == $n) | any(.labels[]; .name == $b)' <<<"$issues" >/dev/null 2>&1; then
       building=1
       args+=(--remove-label "$BUILDING_LABEL" --add-label "$SPECCED_LABEL")
@@ -1139,7 +1178,7 @@ flip_claimed_specced() {
   wk_spin 'checking the gh login' gh auth status >/dev/null 2>&1 || return 0
   git remote get-url origin >/dev/null 2>&1 || return 0
   [[ -n "$existing_labels" ]] || return 0
-  jq -e --arg n "$BUILDING_LABEL" 'any(.[]; .name == $n)' <<<"$existing_labels" >/dev/null 2>&1 || return 0
+  wk_jq -e --arg n "$BUILDING_LABEL" 'any(.[]; .name == $n)' <<<"$existing_labels" >/dev/null 2>&1 || return 0
 
   if ! issues="$(wk_spin 'reading the specced issues' gh issue list --state open --label "$SPECCED_LABEL" --json number,assignees --limit 1000 2>/dev/null)"; then
     wk_warn "claims: could not list the issues carrying $SPECCED_LABEL; nothing was flipped"
@@ -1147,7 +1186,7 @@ flip_claimed_specced() {
     return 0
   fi
 
-  claimed="$(jq -r '.[] | select((.assignees | length) > 0) | .number' <<<"$issues" 2>/dev/null || true)"
+  claimed="$(wk_jq -r '.[] | select((.assignees | length) > 0) | .number' <<<"$issues" 2>/dev/null || true)"
 
   while read -r n; do
     [[ -n "$n" ]] || continue
@@ -1169,8 +1208,8 @@ flip_claimed_specced() {
 }
 
 # ── 4. Open issues carry conforming labels ──
-# A violation FLAGS THE RUN (owner ruling, 2026-07-28: a missing status is an
-# error, a double status is an error): templates can be installed before the
+# A violation FLAGS THE RUN (a missing status is an error, a double status is
+# an error): templates can be installed before the
 # label sync ever ran, GitHub silently drops nonexistent labels at issue
 # creation, and web-filed issues arrive unlabeled, so a captured issue can sit
 # outside every queue query, and the heal must keep saying so every session
@@ -1188,7 +1227,7 @@ check_issue_labels() {
   git remote get-url origin >/dev/null 2>&1 || return 0
   issues="$(wk_spin 'reading the board' gh issue list --json number,labels --limit 1000 2>/dev/null)" || return 0
   [[ -n "$issues" ]] || return 0
-  bad="$(jq -r --slurpfile manifest "$LABELS_JSON" '
+  bad="$(wk_jq -r --slurpfile manifest "$LABELS_JSON" '
     ($manifest[0].groups | to_entries | map(select(.value.exclusive == true))
       | map({ key, required: (.value.required == true) })) as $rules
     | [ .[] | . as $issue
@@ -1217,21 +1256,26 @@ check_issue_labels() {
 hook_names() {
   # Each wired command is `…/loader.sh <prefix>:<name>`; the name is what
   # resolves to a directory on disk.
-  jq -r '.. | objects | select(has("command")) | .command' "$HOOKS_DIR/hooks.json" 2>/dev/null \
+  wk_jq -r '.. | objects | select(has("command")) | .command' "$HOOKS_DIR/hooks.json" 2>/dev/null \
     | sed -E 's|.*loader\.sh[[:space:]]+||; s|[[:space:]].*||' \
     | grep -E '^[a-z]+[:/][a-z-]+$' | sort -u || true
 }
 
 hooks_checked=0
 check_hook_layer() {
-  local manifest="$HOOKS_DIR/hooks.json" name tool missing=""
+  local manifest="$HOOKS_DIR/hooks.json" name missing=""
 
   # No hook layer beside the engine: this is the engine installed on its own,
   # not a broken install.
   [[ -f "$manifest" ]] || return 0
 
-  for tool in $HOOK_TOOLS; do
-    command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"
+  local entry spelling found
+  for entry in $HOOK_TOOLS; do
+    found=0
+    for spelling in ${entry//|/ }; do
+      command -v "$spelling" >/dev/null 2>&1 && { found=1; break; }
+    done
+    [[ $found -eq 1 ]] || missing="$missing ${entry//|/ or }"
   done
   if [[ -n "$missing" ]]; then
     wk_warn "hooks: the hook layer needs$missing; without them the hooks exit 0 and their checks silently do not run"
@@ -1253,7 +1297,7 @@ check_hook_layer() {
   # cannot parse would silently fall out of the check. Compare against the
   # raw count of loader.sh commands and say so instead.
   local wired
-  wired="$(jq -r '.. | objects | select(has("command")) | .command' "$HOOKS_DIR/hooks.json" 2>/dev/null \
+  wired="$(wk_jq -r '.. | objects | select(has("command")) | .command' "$HOOKS_DIR/hooks.json" 2>/dev/null \
     | grep 'loader\.sh' | sort -u | grep -c . || true)"
   if [[ -n "$wired" && "$wired" -gt $((hooks_checked - 1)) ]]; then
     wk_warn "hooks: $wired commands are wired through loader.sh but only $((hooks_checked - 1)) resolved to checkable names; a hook name the checker cannot parse is going unchecked"
@@ -1351,8 +1395,9 @@ ensure_local_file capture.md
 ensure_local_file session.md agents/session.md
 ensure_issue_forms
 ensure_ci_workflow
-ensure_changelog_linter
+ensure_changelog_separator
 ensure_changelog_job
+remove_changelog_linter_copies
 ensure_branch_protection
 sync_labels
 sweep_stale_claims
@@ -1377,7 +1422,7 @@ if [[ "$repo_now" -lt "$STANDARD_VERSION" ]]; then
       wk_skip "standards: version not stamped; the CHANGELOG drift check needs node, which is not available"
     elif ! command -v jq >/dev/null 2>&1; then
       wk_skip "standards: version not stamped; writing it needs jq, so the drift report repeats until it is installed"
-    elif edit_settings_json "$REPO_SETTINGS" --argjson v "$STANDARD_VERSION" '.version = $v'; then
+    elif wk_json_edit "$REPO_SETTINGS" --argjson v "$STANDARD_VERSION" '.version = $v'; then
       wk_ok "standard version $repo_now → $STANDARD_VERSION"
     fi
   fi

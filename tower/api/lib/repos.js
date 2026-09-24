@@ -29,6 +29,13 @@ const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
 
+// What a repo is CALLED has one home for the whole kit, and it is the engine's
+// (workflow/slug.js, the twin of workflow/slug.sh). The reach out of tower/ is
+// the one workflow/site-repos.js already makes in the other direction, and the
+// home runner seed keeps both trees at the same relative depth, so this
+// resolves in the seeded clone exactly as it does here.
+const { slugFromRemote } = require('../../../workflow/slug');
+
 const WORKKIT_DIR = '.workkit';
 
 const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
@@ -36,6 +43,70 @@ const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
   stdio: ['ignore', 'pipe', 'ignore'],
   ...opts,
 });
+
+/**
+ * A path in GIT's spelling, the one every roster key is written under.
+ *
+ * Windows gives one directory two names: `path.join` spells `C:\Users\x` and
+ * git prints the mixed form `C:/Users/x`, and the roster is keyed by what git
+ * printed. A key looked up in the other spelling matches nothing. macOS and
+ * Linux spell a path one way, so there the answer is the path.
+ *
+ * `wk_git_path` in workflow/platform.sh answers the same question for the
+ * shell, and NOT with the same fold: it runs `cygpath -m`, which converts the
+ * MSYS mount form (`/c/Users/x`) as well, while this folds backslashes and
+ * nothing else. Each takes the spelling its own callers hand it (`path.join`
+ * and the session marker give the native form, a shell can be handed the mount
+ * form), so neither answers a `/c/` path for the other.
+ *
+ * `process.platform` is read at CALL time rather than folded into a constant:
+ * `require('path')` binds to the native implementation, so that read is the one
+ * seam a test off Windows has into this branch.
+ *
+ * @param {string} p
+ * @returns {string}
+ */
+const gitPath = (p) => (process.platform === 'win32' ? p.replace(/\\/g, '/') : p);
+
+/**
+ * This machine's temp root: where the harness keeps its per-session files, and
+ * the one place the platforms are asked about it. Two readers want the answer
+ * (the keep-awake markers and the statusline cache) and both writers spell it
+ * `${TMPDIR:-/tmp}` from a shell, so the branch is taken here once rather than
+ * at either consumer.
+ *
+ * The rule:
+ *   1. `TMPDIR` when it is set, which is what a hook or a shell was handed.
+ *   2. else the Darwin per-user temp dir, which is what a shell has and a
+ *      launchd job does not, and which is never `/tmp`.
+ *   3. else this machine's own `os.tmpdir()`.
+ * On Windows a POSIX answer is REFUSED. Git for Windows exports `TMP=/tmp` to
+ * every login shell, so `os.tmpdir()` hands back that string and `path.join`
+ * turns it into `C:\tmp`, a directory nothing ever writes to; Git Bash's
+ * `/tmp` IS `%LOCALAPPDATA%\Temp`, so that is the answer there. A machine
+ * without that variable keeps whatever it said, there being nothing better to
+ * offer it.
+ *
+ * `process.platform` is read at CALL time, the same seam `gitPath` above needs.
+ *
+ * @param {Function} [exec] (cmd, args) => stdout: the `getconf` seam
+ * @returns {string}
+ */
+const tempRoot = (exec = defaultExec) => {
+  let base = process.env.TMPDIR;
+  if (!base && process.platform === 'darwin') {
+    try {
+      base = exec('getconf', ['DARWIN_USER_TEMP_DIR']).trim();
+    } catch {
+      base = '';
+    }
+  }
+  base = base || os.tmpdir();
+  if (process.platform === 'win32' && base.startsWith('/') && process.env.LOCALAPPDATA) {
+    return path.join(process.env.LOCALAPPDATA, 'Temp');
+  }
+  return base;
+};
 
 /** Parse JSON from a file, or null when it is absent or unparseable. */
 const readJson = (file) => {
@@ -64,21 +135,6 @@ const readRoster = (workflowHome) => {
   if (!fs.existsSync(file)) return { status: 'missing', roster: null };
   const roster = readJson(file);
   return roster ? { status: 'ok', roster } : { status: 'unreadable', roster: null };
-};
-
-/**
- * `owner/repo` from a git remote URL, in either form git writes.
- *   git@github.com:owner/repo.git      ssh shorthand
- *   ssh://git@github.com/owner/repo    ssh URL
- *   https://github.com/owner/repo.git  https
- * @param {string} url
- * @returns {string|null}
- */
-const slugFromRemote = (url) => {
-  if (!url) return null;
-  const trimmed = url.trim().replace(/\.git$/, '').replace(/\/+$/, '');
-  const m = trimmed.match(/[:/]([^:/]+)\/([^/]+)$/);
-  return m ? `${m[1]}/${m[2]}` : null;
 };
 
 /**
@@ -154,7 +210,13 @@ const discoverRepos = (opts = {}) => {
   // repo the site publishes from. No origin, no configured slug, or a mismatch
   // means some other checkout is parked at that name, and a foreign repo is
   // never listed.
-  const tower = path.join(workflowHome, 'tower');
+  //
+  // The path is built in git's spelling, the one the roster keys it is compared
+  // against are written in: `path.join` would spell backslashes on
+  // Windows and neither compare below would ever match, so the clone would be
+  // listed a second time or its decline ignored. The directory is addressed by
+  // that same string, which Node and git both take.
+  const tower = gitPath(path.join(workflowHome, 'tower'));
   const towerDeclined = !!registered && typeof registered === 'object' && registered[tower] === 'declined';
   if (!towerDeclined && !found.some((r) => r.path === tower) && fs.existsSync(path.join(tower, '.git'))) {
     const settings = readJson(path.join(workflowHome, 'settings.json'));
@@ -170,4 +232,4 @@ const discoverRepos = (opts = {}) => {
   return found;
 };
 
-module.exports = { discoverRepos, readRoster, slugFromRemote };
+module.exports = { discoverRepos, gitPath, readRoster, tempRoot };

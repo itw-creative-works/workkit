@@ -14,20 +14,21 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun,
+  group, test, assert, assertEq, skip, summary, selfRun,
 } = require('../lib/harness');
+const {
+  IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, NO_EXEC_BIT,
+  shellPath, gitPath, toolStem, homeEnv, linkTool, stubTool, joinPath,
+} = require('../lib/platform');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
-const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
-
 const mkTmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'workkit-publish-')));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
 
 const writeStub = (file, lines) => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${['#!/usr/bin/env bash', ...lines, ''].join('\n')}`);
-  fs.chmodSync(file, 0o755);
+  return stubTool(path.dirname(file), path.basename(file), ['#!/usr/bin/env bash', ...lines]);
 };
 
 /**
@@ -127,17 +128,16 @@ const mkWorld = ({
       fs.writeFileSync(path.join(dir, '.workkit', 'settings.json'), '{ "version": 1, "enabled": true }\n');
       git(dir, 'init', '-q', '-b', 'main');
       git(dir, 'remote', 'add', 'origin', `https://github.com/owner/${name}.git`);
-      registered[dir] = { registered: '2026-07-29' };
+      registered[gitPath(dir)] = { registered: '2026-07-29' };
     }
     fs.writeFileSync(path.join(workflowHome, '.repos.json'), `${JSON.stringify({ version: 1, repos: registered }, null, 2)}\n`);
   }
 
-  const env = {
-    HOME: homeDir,
-    PATH: `${bin}:${BASE_PATH}:${path.dirname(process.execPath)}`,
-    WORKFLOW_HOME: workflowHome,
+  const env = homeEnv(homeDir, {
+    PATH: joinPath(bin, SYSTEM_PATH, NODE_DIR),
+    WORKFLOW_HOME: shellPath(workflowHome),
     WORKKIT_HOME_REMOTE: bare,
-  };
+  });
 
   // The clone, carrying what a seed leaves: the project on main (the app and
   // nothing else) and (unless a world says otherwise) the build tooling that
@@ -186,24 +186,22 @@ const mkWorld = ({
 const binDirWithout = (excluded) => {
   const binDir = mkTmp();
   const seen = new Set();
-  for (const dir of ['/usr/bin', '/bin', '/usr/sbin', '/sbin', path.dirname(process.execPath)]) {
+  for (const dir of [...SYSTEM_PATH.split(path.delimiter), NODE_DIR]) {
     if (!fs.existsSync(dir)) continue;
     for (const name of fs.readdirSync(dir)) {
-      if (name === excluded || seen.has(name)) continue;
-      seen.add(name);
-      try {
-        fs.symlinkSync(path.join(dir, name), path.join(binDir, name));
-      } catch {
-        // A name that cannot be linked is simply absent, which is the state the
-        // caller is testing for anyway.
-      }
+      // The tool a name IS, whatever extension this platform gives it: the
+      // excluded one has to be missing under every spelling of itself.
+      const tool = toolStem(name);
+      if (tool === excluded || seen.has(tool)) continue;
+      seen.add(tool);
+      linkTool(binDir, path.join(dir, name));
     }
   }
   return binDir;
 };
 
 const publish = (world, args = []) => {
-  const res = spawnSync('bash', [path.join(world.kit, 'workflow', 'publish.sh'), ...args], {
+  const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(world.kit, 'workflow', 'publish.sh')), ...args], {
     env: world.env, encoding: 'utf8', timeout: 60000,
   });
   assert(res.status !== null, `publish finished (no timeout): ${res.error || ''}`);
@@ -242,9 +240,10 @@ const run = async () => {
 
   await test('it parses and is executable', () => {
     const script = path.join(REPO_ROOT, 'workflow', 'publish.sh');
-    assertEq(spawnSync('bash', ['-n', script], { encoding: 'utf8' }).status, 0, 'bash -n is clean');
+    assertEq(spawnSync(BASH, [...NO_RC, '-n', shellPath(script)], { encoding: 'utf8' }).status, 0, 'bash -n is clean');
     // eslint-disable-next-line no-bitwise
-    assert((fs.statSync(script).mode & 0o111) !== 0, 'the executable bit is set');
+    if (IS_WINDOWS) skip('publish.sh carries the executable bit', NO_EXEC_BIT);
+    else assert((fs.statSync(script).mode & 0o111) !== 0, 'the executable bit is set');
   });
 
   group('workflow/publish: the reasons not to');
@@ -347,7 +346,10 @@ const run = async () => {
       'main on the remote is exactly where it was');
     assertEq(fromPages(world), null, 'and nothing was published');
 
-    assertEq(fs.readFileSync(world.source, 'utf8'), mine, 'the local edit is back, with no conflict markers in it');
+    // The line endings are the machine git's business (Windows checks out
+    // CRLF); what this case is about is that the edit came back whole.
+    assertEq(fs.readFileSync(world.source, 'utf8').replace(/\r\n/g, '\n'), mine,
+      'the local edit is back, with no conflict markers in it');
     assertEq(spawnSync('git', ['-C', world.tower, 'stash', 'list'], { encoding: 'utf8' }).stdout.trim(), '',
       'and nothing of it was left behind in a stash');
     cleanup(world.root);
@@ -581,7 +583,7 @@ const run = async () => {
     git(joined, 'init', '-q', '-b', 'main');
     git(joined, 'remote', 'add', 'origin', 'https://github.com/owner/dotfiles.git');
     const index = JSON.parse(fs.readFileSync(path.join(world.workflowHome, '.repos.json'), 'utf8'));
-    index.repos[joined] = { registered: '2026-07-29' };
+    index.repos[gitPath(joined)] = { registered: '2026-07-29' };
     fs.writeFileSync(path.join(world.workflowHome, '.repos.json'), `${JSON.stringify(index, null, 2)}\n`);
 
     publish(world);
@@ -616,7 +618,7 @@ const run = async () => {
       ...world,
       // The build shim stays on the PATH: the case is a machine without node,
       // not a machine that cannot build.
-      env: { ...world.env, PATH: `${path.join(world.root, 'bin')}:${binDirWithout('node')}` },
+      env: { ...world.env, PATH: joinPath(path.join(world.root, 'bin'), binDirWithout('node')) },
     });
     assertEq(code, 0, 'exit 0: a missing tool is not a crash');
     assert(/node is not on this machine/.test(out), `it names the tool, got: ${out}`);
@@ -801,7 +803,7 @@ const run = async () => {
     git(joined, 'init', '-q', '-b', 'main');
     git(joined, 'remote', 'add', 'origin', 'https://github.com/owner/dotfiles.git');
     const index = JSON.parse(fs.readFileSync(path.join(world.workflowHome, '.repos.json'), 'utf8'));
-    index.repos[joined] = { registered: '2026-07-31' };
+    index.repos[gitPath(joined)] = { registered: '2026-07-31' };
     fs.writeFileSync(path.join(world.workflowHome, '.repos.json'), `${JSON.stringify(index, null, 2)}\n`);
 
     setSite(world, { publish: false });

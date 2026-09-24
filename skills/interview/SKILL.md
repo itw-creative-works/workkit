@@ -29,8 +29,8 @@ Size the sweep out loud and say it: a small item clears most categories with not
 
 ## How questions are asked: chat rounds, never a form
 
-- **In chat, never a form.** Never the AskUserQuestion tool (the frontmatter removes it). Questions are batched in themed rounds of 3–5, highest-stakes round first. The one exception is a BOARD round: when every question is "what happens to this issue" (build, park, close, talk), one round holds the whole board, grouped by what the human must do (build on a yes / needs a design talk / stays parked unless pulled), because the human decides the set in one sitting (Ian 2026-09-02).
-- **Every question explains its subject first, in plain words** (Ian 2026-09-02, "explain each in detail, plainly and simply"). Before the options, one short paragraph says what the issue or thing IS, what is wrong or missing today, and what the decision changes in practice. Small words, short sentences, no codenames or labels standing in for an explanation: a title alone, or a line lumping several issues, is the defect. The reader must be able to decide without opening the issue.
+- **In chat, never a form.** Never the AskUserQuestion tool (the frontmatter removes it). Questions are batched in themed rounds of 3–5, highest-stakes round first. The one exception is a BOARD round: when every question is "what happens to this issue" (build, park, close, talk), one round holds the whole board, grouped by what the human must do (build on a yes / needs a design talk / stays parked unless pulled), because the human decides the set in one sitting.
+- **Every question explains its subject first, in plain words**. Before the options, one short paragraph says what the issue or thing IS, what is wrong or missing today, and what the decision changes in practice. Small words, short sentences, no codenames or labels standing in for an explanation: a title alone, or a line lumping several issues, is the defect. The reader must be able to decide without opening the issue.
 - **One shape, every question** (the SSOT for how a decision is put to the human, in an interview or anywhere else): a numbered question; its options as nested bullets under it, each a plain outcome; the recommended option is ALWAYS the first bullet, bold, tagged "(Recommended)", with one short sentence of why. Questions from one issue sit under a bold heading line carrying the issue link. Never options inline in a paragraph, never a table. Quality bar: the human can answer most questions with "yes" or a single word.
 
   ```
@@ -40,6 +40,7 @@ Size the sweep out loud and say it: a small item clears most categories with not
      - **New `targets/backend`, emulator only** (Recommended). `npm start` boots it with the rest.
      - Point at another brand's backend through an env var.
   ```
+- **Coupled questions are one question.** Before a round is printed, every question is checked against the others in it: if answering one settles or reshapes another, the two are ONE question. The coupled part becomes an option, a sub-bullet of the recommended option, or a line inside the question, never a second numbered question. The test: would the owner's answer to this question answer that one too? Then it is one question. Bar: a round never carries two questions whose options overlap or whose answers depend on each other.
 - **Re-derive between rounds.** Each round's answers may kill or spawn later questions. Never march through a fixed script.
 - **Mid-build (frontier mode)**: ask only what changes the next action; everything else gets your recommended default, stated in the report, reversible later.
 

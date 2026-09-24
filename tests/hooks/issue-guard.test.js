@@ -12,6 +12,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary } = require('../lib/harness');
+const { BASH, NO_RC, shellPath } = require('../lib/platform');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'issue-guard', 'run.sh');
 
@@ -46,10 +47,10 @@ const SUB_SECRET = 'subSecretValue_4d9e';
 fs.writeFileSync(path.join(SUB, '.env'), `SUB_TOKEN=${SUB_SECRET}\n`);
 
 const runHook = (command, cwd = CWD) => {
-  const input = JSON.stringify({ tool_name: 'Bash', cwd, tool_input: { command } });
-  const res = spawnSync('bash', [HOOK], {
+  const input = JSON.stringify({ tool_name: 'Bash', cwd: shellPath(cwd), tool_input: { command } });
+  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
     input,
-    env: { ...process.env, HOME: os.homedir() },
+    env: { ...process.env, HOME: shellPath(os.homedir()) },
     encoding: 'utf8',
     timeout: 10000,
   });
@@ -170,7 +171,7 @@ const run = async () => {
   await test('the -F body=@file form is dereferenced: exit 2 (what discussions.sh sends)', () => {
     const file = path.join(CWD, 'summary.md');
     fs.writeFileSync(file, `## Went well\n\nthe key is ${SECRET}\n`);
-    const cmd = mutation('placeholder').replace("-f body='placeholder'", `-F body="@${file}"`);
+    const cmd = mutation('placeholder').replace("-f body='placeholder'", `-F body="@${shellPath(file)}"`);
     const { code, stderr } = runHook(cmd);
     assertEq(code, 2, 'the body arrives as a file, and its content is the outbound text');
     assert(stderr.includes('API_SECRET'), 'names the key from the file content');
@@ -180,7 +181,7 @@ const run = async () => {
     const file = path.join(CWD, 'long-form-summary.md');
     fs.writeFileSync(file, `## Went well\n\nthe key is ${SECRET}\n`);
     for (const flag of ['--field', '--raw-field']) {
-      const cmd = mutation('placeholder').replace("-f body='placeholder'", `${flag} body=@${file}`);
+      const cmd = mutation('placeholder').replace("-f body='placeholder'", `${flag} body=@${shellPath(file)}`);
       const { code, stderr } = runHook(cmd);
       assertEq(code, 2, `gh's long synonym is the same door: ${flag}`);
       assert(stderr.includes('API_SECRET'), 'names the key from the file content');
@@ -190,7 +191,7 @@ const run = async () => {
   await test('a clean --field mutation: exit 0', () => {
     const file = path.join(CWD, 'clean-summary.md');
     fs.writeFileSync(file, '## Went well\n\nThe suite is green.\n');
-    const cmd = mutation('placeholder').replace("-f body='placeholder'", `--field body=@${file}`);
+    const cmd = mutation('placeholder').replace("-f body='placeholder'", `--field body=@${shellPath(file)}`);
     const { code, stderr } = runHook(cmd);
     assertEq(code, 0, `ordinary summary prose publishes the long way too, got: ${stderr}`);
     assertEq(stderr, '', 'silent');
@@ -277,7 +278,7 @@ const run = async () => {
     const file = path.join(CWD, 'rest-body.json');
     fs.writeFileSync(file, `{ "body": "the key is ${SECRET}" }\n`);
     const { code, stderr } = runHook(
-      `gh api -X POST repos/owner/name/issues/12/comments --input ${file}`);
+      `gh api -X POST repos/owner/name/issues/12/comments --input ${shellPath(file)}`);
     assertEq(code, 2, 'the whole request body arrives in a file, and that is the outbound text');
     assert(stderr.includes('API_SECRET'), 'names the key from the file content');
   });
@@ -286,7 +287,7 @@ const run = async () => {
     const file = path.join(CWD, 'rest-comment.md');
     fs.writeFileSync(file, `the key is ${SECRET}\n`);
     const { code, stderr } = runHook(
-      `gh api -X POST repos/owner/name/issues/12/comments -F body=@${file}`);
+      `gh api -X POST repos/owner/name/issues/12/comments -F body=@${shellPath(file)}`);
     assertEq(code, 2, 'the same @ form the GraphQL door already reads');
     assert(stderr.includes('API_SECRET'), 'names the key from the file content');
   });
@@ -443,9 +444,9 @@ const run = async () => {
   });
 
   await test('missing command: exit 0', () => {
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: JSON.stringify({ tool_input: {} }),
-      env: { ...process.env, HOME: os.homedir() },
+      env: { ...process.env, HOME: shellPath(os.homedir()) },
       encoding: 'utf8',
       timeout: 10000,
     });
@@ -453,9 +454,9 @@ const run = async () => {
   });
 
   await test('malformed JSON: exit 0', () => {
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: 'not json',
-      env: { ...process.env, HOME: os.homedir() },
+      env: { ...process.env, HOME: shellPath(os.homedir()) },
       encoding: 'utf8',
       timeout: 10000,
     });

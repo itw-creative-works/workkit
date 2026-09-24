@@ -212,7 +212,7 @@ const dependencyLine = (issue, issues) => {
  *
  * Remote text like every other value here, escaped, and drawn as an alert in the
  * danger red `blocked` wears - a question waiting on the owner is the loudest
- * thing in the dialog, never a muted line (owner, 2026-08-27).
+ * thing in the dialog, never a muted line.
  *
  * @param {object} issue - one issue from /api/board or /api/brief
  * @returns {string} markup, or nothing at all when there is no question to show

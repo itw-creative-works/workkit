@@ -20,12 +20,13 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-file_path=$(jq -r '.tool_input.file_path // ""' <<<"$input")
+. "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
+
+file_path=$(hook_jq -r '.tool_input.file_path // ""' <<<"$input")
 [ -n "$file_path" ] || exit 0
 [ "$(basename "$file_path")" = "CHANGELOG.md" ] || exit 0
 [ -f "$file_path" ] || exit 0
 
-. "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
 linter="$(hook_changelog_linter)" || exit 0
 
 if ! out=$(node "$linter" "$file_path" --added-only 2>&1); then

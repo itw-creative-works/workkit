@@ -25,8 +25,8 @@ set -euo pipefail
 input="$(cat)" || input=""
 command -v jq >/dev/null 2>&1 || exit 0
 
-prompt=$(printf '%s' "$input" | jq -r '.prompt // ""' 2>/dev/null || true)
-session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null || true)
+prompt=$(printf '%s' "$input" | hook_jq -r '.prompt // ""' 2>/dev/null || true)
+session_id=$(printf '%s' "$input" | hook_jq -r '.session_id // empty' 2>/dev/null || true)
 
 [ -n "$prompt" ] || exit 0
 
@@ -63,7 +63,7 @@ if [ -n "$session_id" ]; then
   : > "$marker" 2>/dev/null || true
 fi
 
-jq -n --arg ctx "$ctx" '{
+hook_jq -n --arg ctx "$ctx" '{
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
     "additionalContext": $ctx

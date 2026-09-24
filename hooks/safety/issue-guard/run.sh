@@ -45,7 +45,9 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-cmd=$(jq -r '.tool_input.command // ""' <<<"$input" || true)
+. "${BASH_SOURCE[0]%/*}/../../_lib.sh"
+
+cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
 [ -n "$cmd" ] || exit 0
 
 # --- Is this an outbound gh issue/PR write? ---
@@ -105,7 +107,7 @@ fi
 
 [ "$outbound" = yes ] || exit 0
 
-cwd=$(jq -r '.cwd // ""' <<<"$input" || true)
+cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
 [ -n "$cwd" ] || cwd="$PWD"
 
 # --- The outbound text: the command, plus any body-file content. ---

@@ -81,17 +81,20 @@ ENGINE_LINK="$CLAUDE_HOME/workkit"
 # `doctor`, written only by the engine.
 USER_REPOS="${WORKFLOW_HOME:-${HOME:-}/.workkit}/.repos.json"
 
-# The home repo's lifecycle: creating it, cloning it into ~/.workkit/tower,
-# seeding the tower project, Discussions, Pages, the doctor lines. Sourced
-# rather than shelled out to, so its steps speak in this command's own voice
-# (lib.sh's logger, tagged with whichever command the dispatch named). Each file
-# is a library: sourcing them runs nothing.
+# The platform seam and the home repo's lifecycle: the CRLF-safe jq every JSON
+# read here goes through, then creating the repo, cloning it into
+# ~/.workkit/tower, seeding the tower project, Discussions, Pages, the doctor
+# lines. Sourced rather than shelled out to, so its steps speak in this
+# command's own voice (lib.sh's logger, tagged with whichever command the
+# dispatch named). Each file is a library: sourcing them runs nothing.
 #
 # An incomplete checkout is REPORTED by the steps that need them, never by a
 # source that aborts before this command can say anything at all: the same
-# restraint refresh_engine_link shows about a missing standards.sh.
+# restraint refresh_engine_link shows about a missing standards.sh. The seam
+# rides in the same list for that reason: this script runs as a lone file, and
+# a source that assumed otherwise would end the run at its first line.
 HOME_LIBS=1
-for _lib in lib.sh discussions.sh home.sh; do
+for _lib in platform.sh lib.sh discussions.sh home.sh; do
   if [[ -f "$SCRIPT_DIR/$_lib" ]]; then
     # shellcheck source=/dev/null
     . "$SCRIPT_DIR/$_lib"
@@ -219,7 +222,7 @@ refresh_engine_link() {
 # repointed (a moved checkout is the ordinary case); a real file is a human's
 # and is only reported.
 link_command() {
-  local current
+  local current verb=linked make=1
   # The automatic path CREATES nothing on a machine that has no ~/.local/bin:
   # the same restraint the engine shows with ~/.claude. A directory convention a
   # machine has not adopted is not a session start's to introduce; a human
@@ -232,17 +235,23 @@ link_command() {
     current="$(readlink "$BIN_LINK" || true)"
     if [[ "$current" == "$SCRIPT_DIR/workkit.sh" ]]; then
       wk_skip "command: $BIN_LINK is current"
+      make=0
     else
-      ln -sfn "$SCRIPT_DIR/workkit.sh" "$BIN_LINK"
-      wk_ok "command: repointed $BIN_LINK at $SCRIPT_DIR/workkit.sh"
+      verb=repointed
     fi
   elif [[ -e "$BIN_LINK" ]]; then
     wk_warn "command: $BIN_LINK is a real file; move it aside, then re-run \`workkit update\`"
     return 0
   else
     mkdir -p "$BIN_DIR"
-    ln -s "$SCRIPT_DIR/workkit.sh" "$BIN_LINK"
-    wk_ok "command: linked $BIN_LINK → $SCRIPT_DIR/workkit.sh"
+  fi
+
+  # The engine's address and this command are the two links the engine makes,
+  # both of them one path for the whole machine, so both are written by the one
+  # atomic maker in lib.sh and judged the same way: by what the address IS
+  # afterwards, never by the status of the command that wrote it.
+  if [[ "$make" -eq 1 ]] && wk_link "$SCRIPT_DIR/workkit.sh" "$BIN_LINK"; then
+    wk_ok "command: $verb $BIN_LINK → $SCRIPT_DIR/workkit.sh"
   fi
 
   case ":${PATH:-}:" in
@@ -432,7 +441,7 @@ offer_site_publish() {
   # Read RAW rather than through wk_json_get: jq's `//` treats false as absent,
   # and false is the one answer this step must be able to tell from silence.
   # "null" is what an absent key and a null both render as: the same state.
-  current="$(jq -r '.site.publish | tostring' "$WK_HOME_SETTINGS" 2>/dev/null || printf '')"
+  current="$(wk_jq -r '.site.publish | tostring' "$WK_HOME_SETTINGS" 2>/dev/null || printf '')"
   if [[ -z "$current" ]]; then
     wk_warn "site: $WK_HOME_SETTINGS does not parse as JSON; the publish question was not asked; fix the file, then re-run \`workkit setup\`"
     return 0
@@ -470,7 +479,7 @@ offer_site_publish() {
   # and asking on every later run would nag a machine that already said yes.
   # An already-answered machine changes its domain by hand edit, as it does
   # today. Nothing to ask either when a domain is already recorded.
-  if [[ "$value" == 'true' ]] && [[ "$(jq -r '.site.url | tostring' "$WK_HOME_SETTINGS" 2>/dev/null || printf 'null')" == 'null' ]]; then
+  if [[ "$value" == 'true' ]] && [[ "$(wk_jq_default 'null' -r '.site.url | tostring' "$WK_HOME_SETTINGS")" == 'null' ]]; then
     ask_site_url
   fi
 }
@@ -513,7 +522,7 @@ set_site_publish() {
 set_site_url() {
   local url="$1" rc=0
 
-  write_site_option url "$(printf '%s' "$url" | jq -R .)" || rc=$?
+  write_site_option url "$(printf '%s' "$url" | wk_jq -R .)" || rc=$?
 
   if [[ "$rc" -ne 0 ]]; then
     wk_warn "site: the domain could not be written to $WK_HOME_SETTINGS; set \`site.url\` there by hand"
@@ -715,12 +724,15 @@ report_globals() {
     wk_info "roster: $USER_REPOS does not exist yet; the first heal writes it"
     return 0
   fi
-  if ! command -v jq >/dev/null 2>&1; then
-    wk_skip "roster: reading $USER_REPOS needs jq"
+  # jq, and the seam every read here goes through: a lone copy of this script
+  # has neither the engine beside it nor a way to read a file with one, and a
+  # count it cannot take is a count it says nothing about.
+  if ! command -v jq >/dev/null 2>&1 || ! declare -f wk_jq >/dev/null 2>&1; then
+    wk_skip "roster: reading $USER_REPOS needs jq and the engine's platform.sh beside this script"
     return 0
   fi
 
-  count="$(jq -r '[(.repos // {}) | to_entries[] | select(.value != "declined")] | length' "$USER_REPOS" 2>/dev/null || printf '')"
+  count="$(wk_jq -r '[(.repos // {}) | to_entries[] | select(.value != "declined")] | length' "$USER_REPOS" 2>/dev/null || printf '')"
   if [[ -z "$count" ]]; then
     wk_warn "roster: $USER_REPOS is not valid JSON; fix or remove it, then re-run a session in any repo"
     return 0
@@ -843,14 +855,14 @@ secrets_json() {
 
 # Whether a listing came back at all.
 is_listing() {
-  printf '%s' "$1" | jq -e 'type == "array"' >/dev/null 2>&1
+  printf '%s' "$1" | wk_jq -e 'type == "array"' >/dev/null 2>&1
 }
 
 # How many whole days ago a secret was last set: a number, `unknown` for a
 # timestamp jq could not read, and NOTHING when the repo has no such secret:
 # absent is the state every caller acts on first.
 secret_age_days() {
-  printf '%s' "$1" | jq -r --arg n "$2" '
+  printf '%s' "$1" | wk_jq -r --arg n "$2" '
     map(select(.name == $n)) | .[0] // empty
     | (try (.updatedAt | sub("\\.[0-9]+"; "") | fromdateiso8601) catch null) as $t
     | if $t == null then "unknown" else (((now - $t) / 86400) | floor | tostring) end
@@ -956,7 +968,7 @@ offer_claude_token() {
   esac
 }
 
-# The cross-repo token, zero-click (owner ruling 2026-07-30): the CLI's own
+# The cross-repo token, zero-click: the CLI's own
 # login already reaches every swept board, and there is no API that mints a
 # narrower one. It is the only credential that leaves the home repo: the
 # Discussion is posted with the workflow's built-in GITHUB_TOKEN. The tradeoff

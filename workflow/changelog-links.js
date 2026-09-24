@@ -5,9 +5,9 @@
 // contributor handle.
 //
 // Nobody types a sha. An entry is written during ordinary work as
-//   - [#4](../../issues/4) — Plugins install from settings.json.
+//   - [#4](../../issues/4) - Plugins install from settings.json.
 // and this script turns it into
-//   - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [@who]! — Plugins install from settings.json.
+//   - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [@who]! - Plugins install from settings.json.
 //
 // Every link is written in its SHORT form, so the repo URL appears nowhere in
 // the file: `../..` paths are relative links GitHub resolves against the blob
@@ -40,6 +40,11 @@ const { execFileSync } = require('child_process');
 // two files would disagree about which entries still need filling.
 const { COMMIT_RE, ISSUE_LINK_RE, META_RE, parseEntries } = require('./changelog');
 
+// And what a repo is CALLED comes from slug.js beside it, the twin of slug.sh,
+// for the same reason: a fourth copy of that parse would drift from the three
+// that already agree.
+const { slugFromRemote } = require('./slug');
+
 const TRAILER_RE = /\b(?:fixes|closes|resolves)\s+#(\d+)\b/gi;
 
 const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
@@ -58,16 +63,23 @@ const originUrl = (cwd) => {
 };
 
 /**
- * owner/name for the origin remote, from either URL form. A trailing slash on
- * the URL is tolerated. Remotes get pasted with one.
+ * owner/name for the origin remote, when that remote is on GitHub.
+ *
+ * The slug itself is `slugFromRemote`, the kit's one rule, so every form git
+ * writes a remote in reads here the way it reads everywhere else, EVERY
+ * trailing separator included: remotes get pasted with one.
+ *
+ * The GitHub check is this file's own and stays beside it: the links it builds
+ * are GitHub's (a commit URL, an `@handle`), so a remote anywhere else has
+ * nothing to link to and answers null rather than a slug nobody can resolve.
  * @param {string} cwd repo directory
  * @returns {string|null}
  */
 const repoSlug = (cwd) => {
   const url = originUrl(cwd);
   if (url === null) return null;
-  const match = /(?:github\.com[:/])([^/]+\/[^/]+?)(?:\.git)?\/?$/.exec(url);
-  return match ? match[1] : null;
+  if (!/github\.com[:/]/i.test(url)) return null;
+  return slugFromRemote(url);
 };
 
 /**
@@ -184,7 +196,7 @@ const fill = (text, { byIssue, resolve }) => {
     //
     // An entry written during ordinary work often already carries its
     // attribution, and appending regardless shipped every one of them as
-    // "Thanks [@who]! Thanks [@who]! —". What the entry has, it keeps: the
+    // "Thanks [@who]! Thanks [@who]! -". What the entry has, it keeps: the
     // attribution is only ever inserted where the metadata run has none.
     const thanks = handles.length && !(meta && /Thanks\s+\[/.test(meta[0]))
       ? ` Thanks ${handles.map((h) => `[@${h}]`).join(' ')}!`

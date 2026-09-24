@@ -11,14 +11,30 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { group, test, testUnless, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { asWindows, gitPath: rosterKey } = require('../lib/platform');
 
-const { discoverRepos, readRoster, slugFromRemote } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'repos.js'));
+const { discoverRepos, gitPath, readRoster, tempRoot } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'repos.js'));
+// The slug rule is the ENGINE's (workflow/slug.js, the twin of workflow/slug.sh
+// cased in tests/scripts/slug.test.js); repos.js requires it from there rather
+// than owning it, so the cases below ask it where it lives.
+const { slugFromRemote } = require(path.join(__dirname, '..', '..', 'workflow', 'slug.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-repos-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+
+/** Put back the env keys a case moved, deleting the ones it invented. */
+const restoreEnv = (saved, keys) => {
+  for (const key of keys) {
+    if (saved[key] === undefined) delete process.env[key];
+    else process.env[key] = saved[key];
+  }
+};
+
+/** The getconf seam on a machine that has no such variable to ask about. */
+const noGetconf = () => { throw new Error('getconf: Unrecognized variable'); };
 
 /**
  * A repo fixture at `rel` below `root`.
@@ -55,7 +71,7 @@ const mkWorkflowHome = (root, repos, { homeSlug = null, roster } = {}) => {
   const dir = path.join(root, 'workflow-home');
   fs.mkdirSync(dir, { recursive: true });
   const map = Array.isArray(repos)
-    ? Object.fromEntries(repos.map((p) => [p, 'enabled']))
+    ? Object.fromEntries(repos.map((p) => [rosterKey(p), 'enabled']))
     : repos;
   const body = roster === undefined
     ? JSON.stringify({ version: 1, repos: map }, null, 2)
@@ -78,7 +94,7 @@ const run = async () => {
     const repo = mkRepo(tmp, 'Owner/alpha');
     const found = discoverRepos({ workflowHome: mkWorkflowHome(tmp, [repo]) });
     assertEq(names(found), 'alpha', 'alpha listed');
-    assertEq(found[0].path, repo, 'path is the repo dir');
+    assertEq(found[0].path, rosterKey(repo), 'path is the repo dir');
     cleanup(tmp);
   });
 
@@ -143,8 +159,8 @@ const run = async () => {
     const kept = mkRepo(tmp, 'Owner/kept');
     const declined = mkRepo(tmp, 'Owner/declined');
     const workflowHome = mkWorkflowHome(tmp, {
-      [declined]: 'declined',
-      [kept]: 'enabled',
+      [rosterKey(declined)]: 'declined',
+      [rosterKey(kept)]: 'enabled',
     });
     assertEq(names(discoverRepos({ workflowHome })), 'kept', 'the declined repo is not listed');
     cleanup(tmp);
@@ -184,9 +200,13 @@ const run = async () => {
     fs.mkdirSync(tower, { recursive: true });
     git(tower, 'init', '-q', '-b', 'main');
     git(tower, 'remote', 'add', 'origin', 'https://github.com/owner/workkit.git');
+    // The key is written the way the ENGINE writes one, through the same fold
+    // (`wk_git_path`): git's spelling, which is the joined path on this
+    // machine and the slashed one on Windows. Keying it as `path.join` spelled
+    // it would be a file no real machine holds, and the lookup would miss.
     fs.writeFileSync(
       path.join(home, '.repos.json'),
-      `${JSON.stringify({ version: 1, repos: { [tower]: 'declined' } }, null, 2)}\n`,
+      `${JSON.stringify({ version: 1, repos: { [rosterKey(tower)]: 'declined' } }, null, 2)}\n`,
     );
     assertEq(names(discoverRepos({ workflowHome: home })), '', 'a declined clone stays off the board');
     cleanup(tmp);
@@ -241,10 +261,77 @@ const run = async () => {
     fs.writeFileSync(path.join(tower, '.workkit', 'settings.json'), '{ "version": 1, "enabled": true }\n');
     fs.writeFileSync(
       path.join(home, '.repos.json'),
-      `${JSON.stringify({ version: 1, repos: { [tower]: 'enabled' } }, null, 2)}\n`,
+      `${JSON.stringify({ version: 1, repos: { [rosterKey(tower)]: 'enabled' } }, null, 2)}\n`,
     );
     const found = discoverRepos({ workflowHome: home });
     assertEq(found.length, 1, `deduplicated by path: ${found.map((r) => r.path).join(', ')}`);
+    cleanup(tmp);
+  });
+
+  group('tower/repos: git\'s spelling of a path');
+
+  await test('gitPath folds a path into the spelling git prints, and leaves that one alone', () => {
+    // Every roster key is written by the engine from
+    // `git rev-parse --show-toplevel`, which on Windows answers the mixed form
+    // (`C:/Users/x`). A reader that compares in any other spelling compares
+    // against nothing.
+    assertEq(gitPath('/Users/x/tower'), '/Users/x/tower', 'one spelling here, so nothing to fold');
+    assertEq(asWindows(() => gitPath('C:\\Users\\x\\tower')), 'C:/Users/x/tower', 'the native spelling folds');
+    assertEq(asWindows(() => gitPath('C:/Users/x/tower')), 'C:/Users/x/tower', 'and git\'s own is already it');
+  });
+
+  await test('on Windows the tower clone the roster lists is still one entry, not two', () => {
+    // The dedup is the site that proves it: `path.join` spells the
+    // tower path with backslashes on Windows while the roster holds git's
+    // slashes, so an unfolded compare misses and the clone is listed twice.
+    //
+    // One directory under two names is what Windows does and what macOS cannot,
+    // so off Windows the fixture builds the two names as two directories: the
+    // workflow home wears the native spelling and the roster is keyed on git's.
+    // The fixture folds through the seam, under asWindows: on Windows the two
+    // names are one string already, and on macOS the backslash is a real
+    // character that only the Windows branch of the seam folds into one folder.
+    const tmp = mkTmp();
+    const twin = mkRepo(tmp, 'win/x/workflow-home/tower', { origin: 'https://github.com/owner/workkit.git' });
+    const twinKey = asWindows(() => rosterKey(twin));
+    const home = mkWorkflowHome(path.join(tmp, 'win\\x'), [twinKey], { homeSlug: 'owner/workkit' });
+    const tower = path.join(home, 'tower');
+    assertEq(asWindows(() => rosterKey(tower)), twinKey, 'the fixture is one folder git and Node spell differently');
+    // On Windows the two names ARE one folder, and it is the repo `mkRepo` just
+    // made; only off Windows is the joined spelling a second directory that
+    // needs a repo of its own.
+    if (!fs.existsSync(path.join(tower, '.git'))) {
+      fs.mkdirSync(tower, { recursive: true });
+      git(tower, 'init', '-q', '-b', 'main');
+      git(tower, 'remote', 'add', 'origin', 'https://github.com/owner/workkit.git');
+    }
+
+    const found = asWindows(() => discoverRepos({ workflowHome: home }));
+    assertEq(found.length, 1, `deduplicated across the spellings: ${found.map((r) => r.path).join(', ')}`);
+    assertEq(found[0].path, twinKey, 'and the entry wears the spelling every roster key is in');
+    cleanup(tmp);
+  });
+
+  await test('on Windows a decline recorded in git\'s spelling still answers the lookup', () => {
+    // The other compare the same fold serves: the decline is the
+    // only record there is of that answer, and a lookup in the joined spelling
+    // reads a declined clone as one nobody has been asked about.
+    const tmp = mkTmp();
+    // The folded spelling holds the repo the lookup reaches, as in the case above.
+    mkRepo(tmp, 'win/x/workflow-home/tower', { origin: 'https://github.com/owner/workkit.git' });
+    const home = mkWorkflowHome(path.join(tmp, 'win\\x'), {}, { homeSlug: 'owner/workkit' });
+    const tower = path.join(home, 'tower');
+    // Off Windows the joined spelling is a second directory that needs a repo of its own.
+    if (!fs.existsSync(path.join(tower, '.git'))) {
+      fs.mkdirSync(tower, { recursive: true });
+      git(tower, 'init', '-q', '-b', 'main');
+      git(tower, 'remote', 'add', 'origin', 'https://github.com/owner/workkit.git');
+    }
+    fs.writeFileSync(
+      path.join(home, '.repos.json'),
+      `${JSON.stringify({ version: 1, repos: { [asWindows(() => rosterKey(tower))]: 'declined' } }, null, 2)}\n`,
+    );
+    assertEq(names(asWindows(() => discoverRepos({ workflowHome: home }))), '', 'a declined clone stays off the board');
     cleanup(tmp);
   });
 
@@ -277,8 +364,69 @@ const run = async () => {
 
   await test('slugFromRemote handles trailing slashes and bare paths', () => {
     assertEq(slugFromRemote('https://github.com/o/r/'), 'o/r', 'trailing slash');
+    assertEq(slugFromRemote('https://github.com/o/r//'), 'o/r', 'every trailing slash, not one');
     assertEq(slugFromRemote(''), null, 'empty');
     assertEq(slugFromRemote('notaremote'), null, 'no owner segment');
+  });
+
+  await test('slugFromRemote reads a local path in either separator', () => {
+    assertEq(slugFromRemote('/Users/x/theirs.git'), 'x/theirs', 'a POSIX path');
+    assertEq(slugFromRemote('C:/Users/x/theirs.git'), 'x/theirs', 'the mixed form Git Bash prints');
+    assertEq(slugFromRemote('C:\\Users\\x\\theirs.git'), 'x/theirs', 'the native form git stores verbatim');
+    assertEq(slugFromRemote('C:\\Users\\x\\theirs.git\\'), 'x/theirs', 'and a trailing backslash comes off like a trailing slash');
+  });
+
+  group('tower/repos: this machine\'s temp root');
+
+  await test('on Windows a POSIX temp answer is refused for the directory Git Bash means by it', () => {
+    // Git for Windows exports `TMP=/tmp` to every login shell, so `os.tmpdir()`
+    // hands back that string and `path.join` turns it into `C:\tmp`, a
+    // directory nothing writes to. Git Bash's `/tmp` IS `%LOCALAPPDATA%\Temp`.
+    const saved = { ...process.env };
+    try {
+      delete process.env.TMPDIR;
+      process.env.TEMP = '/tmp';
+      process.env.TMP = '/tmp';
+      process.env.LOCALAPPDATA = 'C:\\Users\\x\\AppData\\Local';
+      assertEq(
+        asWindows(() => tempRoot(noGetconf)),
+        path.join('C:\\Users\\x\\AppData\\Local', 'Temp'),
+        'the directory Git Bash calls /tmp',
+      );
+      // A native answer is already the right one and is left alone.
+      process.env.TEMP = 'C:\\Users\\x\\AppData\\Local\\Temp';
+      process.env.TMP = process.env.TEMP;
+      assertEq(asWindows(() => tempRoot(noGetconf)), 'C:\\Users\\x\\AppData\\Local\\Temp', 'nothing to refuse');
+    } finally {
+      restoreEnv(saved, ['TMPDIR', 'TEMP', 'TMP', 'LOCALAPPDATA']);
+    }
+  });
+
+  // The per-user temp dir a launchd job has no TMPDIR for is a Darwin
+  // question, and this is the platform that can answer it. Read here rather
+  // than through the platform seam, which names the Windows fork only.
+  const darwinTest = testUnless(process.platform !== 'darwin', 'DARWIN_USER_TEMP_DIR is a macOS question');
+
+  await darwinTest('with no TMPDIR the Darwin per-user temp dir answers, and TMPDIR outranks it', () => {
+    const saved = { ...process.env };
+    const asked = [];
+    const stub = (cmd, args) => {
+      asked.push([cmd, ...args].join(' '));
+      return '/var/folders/gx/T/\n';
+    };
+    try {
+      delete process.env.TMPDIR;
+      // The real tool prints a trailing slash, which only the newline is taken
+      // off: a join past it normalizes, so nothing downstream sees it.
+      assertEq(tempRoot(stub), '/var/folders/gx/T/', 'the getconf answer, its newline trimmed');
+      assertEq(path.join(tempRoot(stub), 'claude-keep-awake'), '/var/folders/gx/T/claude-keep-awake', 'and a marker dir off it is ordinary');
+      assertEq(asked.join(' '), 'getconf DARWIN_USER_TEMP_DIR getconf DARWIN_USER_TEMP_DIR', 'getconf is the one question asked');
+      process.env.TMPDIR = '/var/folders/gx/mine';
+      assertEq(tempRoot(stub), '/var/folders/gx/mine', 'what the shell was handed wins');
+      assertEq(asked.length, 2, 'and with a TMPDIR set getconf is not asked at all');
+    } finally {
+      restoreEnv(saved, ['TMPDIR']);
+    }
   });
 
   group('tower/repos: a roster that says nothing');

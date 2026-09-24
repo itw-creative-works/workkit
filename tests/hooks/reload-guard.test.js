@@ -13,6 +13,7 @@ const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary } = require('../lib/harness');
+const { BASH, NO_RC, shellPath } = require('../lib/platform');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'workflow', 'reload-guard', 'run.sh');
 const LOADER = path.join(__dirname, '..', '..', 'hooks', 'loader.sh');
@@ -47,15 +48,15 @@ const runHook = (event, { root, session, script = HOOK, args = [], env = {} } = 
   const input = JSON.stringify({
     hook_event_name: event,
     session_id: session.id,
-    cwd: root,
+    cwd: shellPath(root),
     transcript_path: '',
   });
-  const res = spawnSync('bash', [script, ...args], {
+  const res = spawnSync(BASH, [...NO_RC, shellPath(script), ...args], {
     input,
     env: {
       ...process.env,
-      RELOAD_GUARD_ROOT: root,
-      TMPDIR: session.state,
+      RELOAD_GUARD_ROOT: shellPath(root),
+      TMPDIR: shellPath(session.state),
       ...env,
     },
     encoding: 'utf8',
@@ -250,9 +251,9 @@ const run = async () => {
   await test('garbage stdin: exit 0, silent', () => {
     const root = makeRoot();
     const session = makeSession();
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: 'not json at all {{{',
-      env: { ...process.env, RELOAD_GUARD_ROOT: root, TMPDIR: session.state },
+      env: { ...process.env, RELOAD_GUARD_ROOT: shellPath(root), TMPDIR: shellPath(session.state) },
       encoding: 'utf8',
       timeout: 15000,
     });
@@ -264,9 +265,9 @@ const run = async () => {
   await test('no session id: exit 0, and nothing is written', () => {
     const root = makeRoot();
     const session = makeSession();
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: JSON.stringify({ hook_event_name: 'UserPromptSubmit' }),
-      env: { ...process.env, RELOAD_GUARD_ROOT: root, TMPDIR: session.state },
+      env: { ...process.env, RELOAD_GUARD_ROOT: shellPath(root), TMPDIR: shellPath(session.state) },
       encoding: 'utf8',
       timeout: 15000,
     });

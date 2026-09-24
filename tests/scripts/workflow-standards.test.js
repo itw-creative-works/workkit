@@ -11,7 +11,14 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, WORKKIT_DIR: W } = require('../lib/harness');
+const {
+  group, test, assert, assertEq, skip, testUnless, summary, WORKKIT_DIR: W,
+} = require('../lib/harness');
+const {
+  IS_WINDOWS, BASH, SYSTEM_BASH, SYSTEM_PATH, NODE_DIR, NO_RC, NO_EXEC_BIT, shellPath,
+  gitPath, which, linkTool, stubTool, crlfJq, cygpathStub, basePathWithout, systemPathWith,
+  joinPath,
+} = require('../lib/platform');
 const { recordArgv, readArgv, isCall, eqArgv, fmtCalls } = require('../lib/argv-log');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
@@ -52,6 +59,13 @@ const rosterOf = (home) => {
   const file = path.join(home, '.repos.json');
   return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')).repos || {}) : {};
 };
+
+// The roster key a repo takes on the WINDOWS branch: git's spelling of its
+// root. On Windows this machine's own cygpath answers; off it, the seam's stub
+// does, prefixing the drive letter the MSYS root maps to (tests/lib/platform.js).
+const winRosterKey = (repo) => (IS_WINDOWS
+  ? gitPath(fs.realpathSync(repo))
+  : `C:${fs.realpathSync(repo)}`);
 
 // A git repo with an origin remote: the shape the script expects. No commits
 // are made and the remote is never contacted (gh is stubbed).
@@ -96,14 +110,22 @@ const makeGhStub = ({
   // An entry is a bare number when the caller only cares which issues carry the
   // label, or a whole object when the fields matter (the stale-claim sweep
   // reads updatedAt and assignees).
-  for (const [label, numbers] of Object.entries(labeled)) {
+  // A label name is never a file name: the colon in `agent:working` opens an
+  // NTFS alternate data stream on Windows instead of creating a file, and the
+  // shell cannot see one at all, so every label query would answer the empty
+  // list there. The fixtures are numbered and the stub LOOKS ITS LABEL UP, so
+  // the name lives in the case pattern and the path is spelled once, here.
+  const labelFixtures = Object.entries(labeled).map(([label, numbers], i) => {
+    const file = path.join(dir, `issues-${i}.json`);
     fs.writeFileSync(
-      path.join(dir, `issues-${label}.json`),
+      file,
       JSON.stringify(numbers.map((n) => (typeof n === 'object' ? n : { number: n }))),
     );
-  }
-  fs.mkdirSync(path.join(dir, 'bin'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'bin', 'gh'), [
+    return { label, file };
+  });
+  const binDir = path.join(dir, 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  stubTool(binDir, 'gh', [
     '#!/usr/bin/env bash',
     recordArgv(logFile),
     'if [[ "$1 $2" == "auth status" ]]; then',
@@ -123,11 +145,10 @@ const makeGhStub = ({
     '    exit 0',
     '  fi',
     ...(labelQueryFails ? ['  exit 1'] : []),
-    `  if [[ -f "${dir}/issues-$want.json" ]]; then`,
-    `    cat "${dir}/issues-$want.json"`,
-    '  else',
-    '    echo "[]"',
-    '  fi',
+    '  case "$want" in',
+    ...labelFixtures.map(({ label, file }) => `    '${label}') cat "${shellPath(file)}" ;;`),
+    '    *) echo "[]" ;;',
+    '  esac',
     '  exit 0',
     'fi',
     'if [[ "$1 $2" == "issue edit" ]]; then',
@@ -156,8 +177,8 @@ const makeGhStub = ({
     ...(protection === 'present' ? ['  exit 0'] : ['  echo "gh: Branch not protected (HTTP 404)" >&2', '  exit 1']),
     'fi',
     'exit 0',
-  ].join('\n'), { mode: 0o755 });
-  return { binDir: path.join(dir, 'bin'), logFile, dir };
+  ]);
+  return { binDir, logFile, dir };
 };
 
 const readFile = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
@@ -169,61 +190,33 @@ const ghCalls = (stub) => readArgv(stub.logFile);
 // settings file this script writes must never be the real ~/.workkit.
 // A PATH holding every tool the script needs EXCEPT one. `command -v <tool>`
 // searches every PATH entry, so the only way to prove the missing-tool branch
-// is to build the PATH by hand: where the tool lives varies by machine (a CI
-// runner keeps gh in /usr/bin, Homebrew does not), and a test that assumed a
-// layout was testing the host instead of the script.
-const binDirWithout = (excluded) => {
-  const binDir = mkTmp();
-  // Mirror the real PATH rather than a hand-listed set of tools: the script
-  // reaches for mv, rm, readlink and more as it grows, and a whitelist that
-  // falls behind makes the run die of a missing utility while claiming to
-  // prove something about the excluded one.
-  const dirs = ['/usr/bin', '/bin', '/usr/sbin', '/sbin'];
-  for (const tool of ['jq', 'gh', 'git', 'node']) {
-    const real = spawnSync('command', ['-v', tool], { shell: '/bin/bash', encoding: 'utf8' }).stdout.trim();
-    if (real) dirs.push(path.dirname(real));
-  }
-  const seen = new Set();
-  for (const dir of dirs) {
-    if (!fs.existsSync(dir)) continue;
-    for (const name of fs.readdirSync(dir)) {
-      // First directory wins, so the earlier system paths keep precedence.
-      if (name === excluded || seen.has(name)) continue;
-      seen.add(name);
-      try {
-        fs.symlinkSync(path.join(dir, name), path.join(binDir, name));
-      } catch {
-        // A name that cannot be linked (a broken entry, a race) is simply
-        // absent, which is what the caller is testing for anyway.
-      }
-    }
-  }
-  const found = spawnSync('command', ['-v', excluded], {
-    shell: '/bin/bash', encoding: 'utf8', env: { PATH: binDir },
-  }).stdout.trim();
-  assert(!found, `${excluded} must be unreachable, found it at ${found}`);
-  return binDir;
-};
+// is to build the PATH: where a tool lives varies by machine (a CI runner keeps
+// gh in /usr/bin, Homebrew does not), and a test that assumed a layout was
+// testing the host instead of the script. The seam builds and checks it.
+const binDirWithout = (excluded) => basePathWithout(mkTmp(), excluded);
 
 const runScript = (repoDir, {
-  pathPrefix, args = [], workflowHome, claudeHome, hooksDir,
+  pathPrefix, args = [], workflowHome, claudeHome, hooksDir, env = {},
 } = {}) => {
   // node is on the PATH of any machine running this standard (the engine lints
   // CHANGELOGs with it, and so does the hook layer), so the default PATH
   // carries it. A test proving what happens WITHOUT a tool builds its own PATH
   // with binDirWithout(): the suite's idiom for exactly that.
-  const basePath = `/usr/bin:/bin:/usr/sbin:/sbin:${path.dirname(process.execPath)}`;
-  const res = spawnSync('bash', [SCRIPT, ...args, repoDir], {
+  const basePath = joinPath(SYSTEM_PATH, NODE_DIR);
+  const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args, shellPath(repoDir)], {
     env: {
       ...process.env,
-      PATH: pathPrefix ? `${pathPrefix}:${basePath}` : basePath,
+      PATH: pathPrefix ? joinPath(pathPrefix, basePath) : basePath,
       // Unset means the real hook layer beside the engine, which is what most
       // of this suite runs against; the self-check tests point at a fixture.
-      ...(hooksDir ? { WORKFLOW_HOOKS_DIR: hooksDir } : {}),
-      WORKFLOW_HOME: workflowHome || path.join(mkTmp(), 'workflow-home'),
+      ...(hooksDir ? { WORKFLOW_HOOKS_DIR: shellPath(hooksDir) } : {}),
+      WORKFLOW_HOME: shellPath(workflowHome || path.join(mkTmp(), 'workflow-home')),
       // Same rule as WORKFLOW_HOME for the engine's address symlink: the step
       // that maintains ~/.claude/workkit must never reach the real ~/.claude.
-      WORKFLOW_CLAUDE_HOME: claudeHome || path.join(mkTmp(), 'claude-home'),
+      WORKFLOW_CLAUDE_HOME: shellPath(claudeHome || path.join(mkTmp(), 'claude-home')),
+      // Last, so a case driving another platform's branch (OSTYPE) wins over
+      // the environment this suite inherited.
+      ...env,
     },
     encoding: 'utf8',
     timeout: 20000,
@@ -238,6 +231,10 @@ const runScript = (repoDir, {
 };
 
 const run = async () => {
+  // A case that STRIPS a file's executable bit to see what the heal says about
+  // it. There is no bit to strip on Windows, so the whole case is the skip.
+  const strippedBitTest = testUnless(IS_WINDOWS, `${NO_EXEC_BIT}, so no script can be stripped of one`);
+
   group('labels.json: manifest shape');
 
   await test('all four groups present', () => {
@@ -650,7 +647,7 @@ const run = async () => {
     const { code, output: stdout } = runScript(tower, { workflowHome: home, args: ['--decline'] });
     assert(code !== 0, `the refusal is a failure, got exit ${code}`);
     assert(stdout.includes('engine territory'), `says why, got: ${stdout}`);
-    assert(!rosterOf(home)[fs.realpathSync(tower)], 'no decline recorded');
+    assert(!rosterOf(home)[gitPath(fs.realpathSync(tower))], 'no decline recorded');
     assertEq(JSON.stringify(rosterOf(home)), '{}', 'the roster is untouched');
     cleanup(home);
   });
@@ -704,7 +701,7 @@ const run = async () => {
     const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
     assertEq(parsed.version, 1, 'seeded with a version');
     const root = fs.realpathSync(repo);
-    assertEq(parsed.repos[root], 'declined', 'keyed by the absolute repo root');
+    assertEq(parsed.repos[gitPath(root)], 'declined', 'keyed by the absolute repo root');
     const settings = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
     assertEq(settings.repos, undefined, 'and nothing was written into the hand-edited file');
     cleanup(repo); cleanup(home);
@@ -725,7 +722,7 @@ const run = async () => {
     assertEq(parsed.editor, 'code', 'unrelated key survives with its value');
     assertEq(JSON.stringify(parsed.nested), JSON.stringify({ keep: ['me', 1] }), 'nested value survives');
     assertEq(parsed.repos['/some/other/repo'], 'declined', 'other repo decisions survive');
-    assertEq(parsed.repos[fs.realpathSync(repo)], 'declined', 'and the new one is added');
+    assertEq(parsed.repos[gitPath(fs.realpathSync(repo))], 'declined', 'and the new one is added');
     cleanup(repo); cleanup(home);
   });
 
@@ -773,7 +770,7 @@ const run = async () => {
     const stub = makeGhStub({ authed: false });
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
     assertEq(code, 0, 'exit 0');
-    assertEq(rosterOf(home)[fs.realpathSync(repo)], 'enabled', 'keyed by the absolute repo root');
+    assertEq(rosterOf(home)[gitPath(fs.realpathSync(repo))], 'enabled', 'keyed by the absolute repo root');
     assert(!/roster/.test(output), `registration is silent, got: ${output}`);
     cleanup(repo); cleanup(home); cleanup(stub.dir);
   });
@@ -796,7 +793,7 @@ const run = async () => {
     const home = mkTmp();
     const stub = makeGhStub({ authed: false });
     runScript(repo, { args: ['--enable'], pathPrefix: stub.binDir, workflowHome: home });
-    assertEq(rosterOf(home)[fs.realpathSync(repo)], 'enabled', 'joining and being indexed are one act');
+    assertEq(rosterOf(home)[gitPath(fs.realpathSync(repo))], 'enabled', 'joining and being indexed are one act');
     cleanup(repo); cleanup(home); cleanup(stub.dir);
   });
 
@@ -809,10 +806,18 @@ const run = async () => {
     // And the home repo's writers edit that same file: `wk_home_set_slug` runs
     // alongside them here, because a mutex only two of the three writers take
     // is not a mutex: the slug it records has to survive as well.
+    //
+    // The roster is not the only machine-level thing they all write: the
+    // engine's address is one path for the whole machine, so the claude home
+    // below EXISTS, which is what puts that step in the race too. A heal that
+    // ends on it never reaches the roster at all, so the count alone would
+    // report a lost write for a session that died two steps earlier.
     const home = mkTmp();
     const stub = makeGhStub({ authed: false });
     const repos = [makeRepo(), makeRepo(), makeRepo()];
-    const basePath = `${stub.binDir}:/usr/bin:/bin:/usr/sbin:/sbin:${path.dirname(process.execPath)}`;
+    const claudeHome = path.join(mkTmp(), 'claude-home');
+    fs.mkdirSync(claudeHome, { recursive: true });
+    const basePath = joinPath(stub.binDir, SYSTEM_PATH, NODE_DIR);
     // Seeded here rather than by whichever process gets there first: the race
     // under test is the EDIT, and two creations racing is a different one.
     fs.writeFileSync(path.join(home, '.repos.json'), `${JSON.stringify({ version: 1, repos: {} }, null, 2)}\n`);
@@ -823,30 +828,53 @@ const run = async () => {
     const env = {
       ...process.env,
       PATH: basePath,
-      WORKFLOW_HOME: home,
-      WORKFLOW_CLAUDE_HOME: path.join(mkTmp(), 'claude-home'),
+      WORKFLOW_HOME: shellPath(home),
+      WORKFLOW_CLAUDE_HOME: shellPath(claudeHome),
     };
+    // Sourced by their POSIX spelling, like every other path handed INTO a
+    // shell: a `C:\...` source gives `${BASH_SOURCE[0]%/*}` no `/` to cut, so
+    // lib.sh dies on the sibling it loads and the writer below is never
+    // defined at all.
     const setSlug = [
       'set -euo pipefail',
-      `. ${JSON.stringify(path.join(WORKFLOW_DIR, 'lib.sh'))}`,
-      `. ${JSON.stringify(path.join(WORKFLOW_DIR, 'discussions.sh'))}`,
-      `. ${JSON.stringify(path.join(WORKFLOW_DIR, 'home.sh'))}`,
+      `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'lib.sh')))}`,
+      `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'discussions.sh')))}`,
+      `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'home.sh')))}`,
       'wk_home_set_slug owner/workkit',
     ].join('\n');
-    await Promise.all([
-      ...repos.map((repo) => new Promise((resolve) => {
-        const child = spawn('bash', [SCRIPT, repo], { env, stdio: 'ignore' });
+    const [codes, slugCode] = await Promise.all([
+      Promise.all(repos.map((repo) => new Promise((resolve) => {
+        const child = spawn(BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], { env, stdio: 'ignore' });
         child.on('close', (code) => resolve(code));
-      })),
+      }))),
       new Promise((resolve) => {
-        const child = spawn('bash', ['-c', setSlug], { env, stdio: 'ignore' });
+        const child = spawn(BASH, [...NO_RC, '-c', setSlug], { env, stdio: 'ignore' });
         child.on('close', (code) => resolve(code));
       }),
     ]);
+    assertEq(codes.join(','), '0,0,0', `every session finished, none of them ended on a step another one won: ${codes.join(',')}`);
+    // Swept before it is asserted on, never after: a regression here writes a
+    // link INSIDE the tracked engine folder, and one left lying there is a
+    // loop the next run of this suite walks into.
+    const stray = path.join(WORKFLOW_DIR, 'workflow');
+    const strayed = fs.existsSync(stray);
+    if (strayed) fs.rmSync(stray, { recursive: true, force: true });
+    assert(!strayed, 'and none of them wrote the address INSIDE the engine folder');
+    // The address itself is what they were racing over, so it is asserted on
+    // directly: writing it by unlinking and re-creating leaves a gap where a
+    // second session finds nothing there, and the roster count cannot see that.
+    const address = path.join(claudeHome, 'workkit');
+    const made = fs.lstatSync(address, { throwIfNoEntry: false });
+    assert(!!made && made.isSymbolicLink(), 'the address they all wrote is a symlink, neither gone nor a copy');
+    assertEq(fs.realpathSync(address), fs.realpathSync(WORKFLOW_DIR), 'and it resolves to this engine');
     const roster = rosterOf(home);
     for (const repo of repos) {
-      assertEq(roster[fs.realpathSync(repo)], 'enabled', `${path.basename(repo)} survived the concurrent write`);
+      assertEq(roster[gitPath(fs.realpathSync(repo))], 'enabled', `${path.basename(repo)} survived the concurrent write`);
     }
+    // The writer's own status, read rather than dropped: a slug writer that
+    // died says so here, instead of arriving as a null on the next line with
+    // nothing to account for it.
+    assertEq(slugCode, 0, 'the slug writer finished');
     const settings = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
     assertEq(settings.site.repo, 'owner/workkit', 'and so did the home slug written beside them');
     assert(!fs.existsSync(path.join(home, '.state.lock')), 'and the lock is released, not left behind');
@@ -867,7 +895,7 @@ const run = async () => {
 
     const left = fs.readdirSync(home).sort();
     assertEq(left.join(','), '.repos.json,settings.json', `only the machine state: ${left.join(', ')}`);
-    assertEq(rosterOf(home)[fs.realpathSync(repo)], 'enabled', 'and the roster is the thing it wrote');
+    assertEq(rosterOf(home)[gitPath(fs.realpathSync(repo))], 'enabled', 'and the roster is the thing it wrote');
     cleanup(repo); cleanup(home); cleanup(stub.dir);
   });
 
@@ -901,7 +929,7 @@ const run = async () => {
     const home = mkTmp();
     fs.writeFileSync(path.join(home, '.repos.json'), JSON.stringify({
       version: 1,
-      repos: { [gone]: 'enabled', [fs.realpathSync(off)]: 'enabled' },
+      repos: { [gitPath(gone)]: 'enabled', [gitPath(fs.realpathSync(off))]: 'enabled' },
     }, null, 2));
     cleanup(gone);
 
@@ -909,8 +937,8 @@ const run = async () => {
     runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
     const roster = rosterOf(home);
     assertEq(roster[gone], undefined, 'the path that no longer exists is dropped');
-    assertEq(roster[fs.realpathSync(off)], undefined, 'and so is the repo whose committed file now says no');
-    assertEq(roster[fs.realpathSync(repo)], 'enabled', 'while the repo being healed is registered');
+    assertEq(roster[gitPath(fs.realpathSync(off))], undefined, 'and so is the repo whose committed file now says no');
+    assertEq(roster[gitPath(fs.realpathSync(repo))], 'enabled', 'while the repo being healed is registered');
     cleanup(repo); cleanup(off); cleanup(home); cleanup(stub.dir);
   });
 
@@ -923,12 +951,12 @@ const run = async () => {
     const home = mkTmp();
     fs.writeFileSync(path.join(home, '.repos.json'), JSON.stringify({
       version: 1,
-      repos: { [fs.realpathSync(left)]: 'enabled' },
+      repos: { [gitPath(fs.realpathSync(left))]: 'enabled' },
     }, null, 2));
 
     const stub = makeGhStub({ authed: false });
     runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
-    assertEq(rosterOf(home)[fs.realpathSync(left)], undefined, 'no committed answer, no membership');
+    assertEq(rosterOf(home)[gitPath(fs.realpathSync(left))], undefined, 'no committed answer, no membership');
     cleanup(repo); cleanup(left); cleanup(home); cleanup(stub.dir);
   });
 
@@ -940,12 +968,12 @@ const run = async () => {
     const home = mkTmp();
     fs.writeFileSync(path.join(home, '.repos.json'), JSON.stringify({
       version: 1,
-      repos: { [fs.realpathSync(legacy)]: 'enabled' },
+      repos: { [gitPath(fs.realpathSync(legacy))]: 'enabled' },
     }, null, 2));
 
     const stub = makeGhStub({ authed: false });
     runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
-    assertEq(rosterOf(home)[fs.realpathSync(legacy)], 'enabled', 'the legacy shape stays on the roster');
+    assertEq(rosterOf(home)[gitPath(fs.realpathSync(legacy))], 'enabled', 'the legacy shape stays on the roster');
     cleanup(repo); cleanup(legacy); cleanup(home); cleanup(stub.dir);
   });
 
@@ -956,14 +984,14 @@ const run = async () => {
     fs.writeFileSync(path.join(home, '.repos.json'), JSON.stringify({
       version: 1,
       editor: 'code',
-      repos: { [declined]: 'declined' },
+      repos: { [gitPath(declined)]: 'declined' },
     }, null, 2));
     cleanup(declined);
 
     const stub = makeGhStub({ authed: false });
     runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
     const parsed = JSON.parse(fs.readFileSync(path.join(home, '.repos.json'), 'utf8'));
-    assertEq(parsed.repos[declined], 'declined', 'the decline survives a vanished path');
+    assertEq(parsed.repos[gitPath(declined)], 'declined', 'the decline survives a vanished path');
     assertEq(parsed.editor, 'code', 'and every other key survives the write');
     cleanup(repo); cleanup(home); cleanup(stub.dir);
   });
@@ -996,14 +1024,59 @@ const run = async () => {
     // A PATH with no jq anywhere on it: the roster edit is a jq edit, and a
     // machine without it must lose the index, never the heal.
     const binDir = binDirWithout('jq');
-    const res = spawnSync('bash', [SCRIPT, repo], {
-      env: { PATH: binDir, WORKFLOW_HOME: home, WORKFLOW_CLAUDE_HOME: path.join(mkTmp(), 'ch') },
+    const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
+      env: { PATH: binDir, WORKFLOW_HOME: shellPath(home), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp(), 'ch')) },
       encoding: 'utf8',
       timeout: 20000,
     });
     assertEq(res.status, 0, `the heal runs without it: ${res.stderr}`);
-    assertEq(rosterOf(home)[fs.realpathSync(repo)], undefined, 'no jq, no edit, and no half-written file');
+    assertEq(rosterOf(home)[gitPath(fs.realpathSync(repo))], undefined, 'no jq, no edit, and no half-written file');
     cleanup(repo); cleanup(home); cleanup(binDir);
+  });
+
+  // Windows is the machine where one repo has two spellings: git prints
+  // `C:/Users/x` and the Git Bash around it says `/c/Users/x`. A roster holding
+  // both is a repo the tower lists twice and a decline that stops nothing, so
+  // the key is git's spelling and every write and every lookup asks
+  // `wk_git_path` for it. The branch is driven from here rather than only on
+  // Windows so the rule holds at every commit: OSTYPE is what the engine
+  // branches on, and bash honors an inherited one.
+  const msysWorld = () => {
+    const cyg = mkTmp();
+    cygpathStub(cyg);
+    return cyg;
+  };
+
+  await test('the roster key is git\'s spelling of the repo root, on the Windows branch too', () => {
+    const repo = makeRepo();
+    const home = mkTmp();
+    const stub = makeGhStub({ authed: false });
+    const cyg = msysWorld();
+    const { code } = runScript(repo, {
+      pathPrefix: joinPath(cyg, stub.binDir), workflowHome: home, env: { OSTYPE: 'msys' },
+    });
+    assertEq(code, 0, 'exit 0');
+    const keys = Object.keys(rosterOf(home));
+    assertEq(keys.length, 1, `one repo, one key, got: ${keys.join(' + ')}`);
+    assertEq(keys[0], winRosterKey(repo), 'spelled the way git spells it');
+    cleanup(repo); cleanup(home); cleanup(stub.dir); cleanup(cyg);
+  });
+
+  await test('a decline writes that same key, and the state read after it finds it', () => {
+    const repo = makeRepo({ settings: null });
+    const home = mkTmp();
+    const stub = makeGhStub({ authed: false });
+    const cyg = msysWorld();
+    const opts = {
+      pathPrefix: joinPath(cyg, stub.binDir), workflowHome: home, env: { OSTYPE: 'msys' },
+    };
+    runScript(repo, { ...opts, args: ['--decline'] });
+    const keys = Object.keys(rosterOf(home));
+    assertEq(keys.length, 1, `the decline wrote one key, got: ${keys.join(' + ')}`);
+    assertEq(keys[0], winRosterKey(repo), 'git\'s spelling, the one every lookup asks for');
+    const { stdout } = runScript(repo, { ...opts, args: ['--state'] });
+    assertEq(stdout.trim(), 'declined', 'and the lookup finds what the write left');
+    cleanup(repo); cleanup(home); cleanup(stub.dir); cleanup(cyg);
   });
 
   group('standards.sh: it fails loudly, never silently');
@@ -1048,10 +1121,10 @@ const run = async () => {
     fs.rmSync(path.join(engine, 'templates', 'session.md'));
     const repo = makeRepo();
     const stub = makeGhStub();
-    const res = spawnSync('bash', [path.join(engine, 'standards.sh'), repo], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), shellPath(repo)], {
       env: {
-        ...process.env, PATH: `${stub.binDir}:/usr/bin:/bin:/usr/sbin:/sbin`,
-        WORKFLOW_HOME: path.join(mkTmp(), 'wh'), WORKFLOW_CLAUDE_HOME: path.join(mkTmp(), 'ch'),
+        ...process.env, PATH: systemPathWith(stub.binDir),
+        WORKFLOW_HOME: shellPath(path.join(mkTmp(), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp(), 'ch')),
       },
       encoding: 'utf8', timeout: 20000,
     });
@@ -1071,16 +1144,16 @@ const run = async () => {
     fs.rmSync(path.join(engine, 'labels.json'));
     const repo = makeRepo();
     const env = {
-      ...process.env, PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
-      WORKFLOW_HOME: path.join(mkTmp(), 'wh'), WORKFLOW_CLAUDE_HOME: path.join(mkTmp(), 'ch'),
+      ...process.env, PATH: SYSTEM_PATH,
+      WORKFLOW_HOME: shellPath(path.join(mkTmp(), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp(), 'ch')),
     };
-    const state = spawnSync('bash', [path.join(engine, 'standards.sh'), '--state', repo], { env, encoding: 'utf8', timeout: 20000 });
+    const state = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), '--state', shellPath(repo)], { env, encoding: 'utf8', timeout: 20000 });
     assertEq(state.status, 0, '--state answers without the manifest');
     assertEq((state.stdout || '').trim(), 'enabled', 'and answers correctly');
-    const announce = spawnSync('bash', [path.join(engine, 'standards.sh'), '--announce', repo], { env, encoding: 'utf8', timeout: 20000 });
+    const announce = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), '--announce', shellPath(repo)], { env, encoding: 'utf8', timeout: 20000 });
     assertEq(announce.status, 0, '--announce answers without the manifest');
     assert((announce.stdout || '').includes('--enable'), 'and still offers');
-    const heal = spawnSync('bash', [path.join(engine, 'standards.sh'), repo], { env, encoding: 'utf8', timeout: 20000 });
+    const heal = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), shellPath(repo)], { env, encoding: 'utf8', timeout: 20000 });
     const out = (heal.stdout || '') + (heal.stderr || '');
     assert(out.includes('labels.json missing'), `the heal names the broken install, got: ${out}`);
     assertEq(heal.status, 1, 'and exits non-zero so the caller retries');
@@ -1098,7 +1171,7 @@ const run = async () => {
     const { output } = runScript(repo, { args: ['--decline'], workflowHome: home });
     assert(output.includes('without the lock'), `says it proceeded unlocked, got: ${output}`);
     assert(fs.existsSync(path.join(home, '.state.lock')), 'the mutex it never held survives');
-    assertEq(rosterOf(home)[fs.realpathSync(repo)], 'declined', 'the decline is still recorded');
+    assertEq(rosterOf(home)[gitPath(fs.realpathSync(repo))], 'declined', 'the decline is still recorded');
     // And a decline that did acquire the lock removes its own on exit.
     const home2 = mkTmp();
     runScript(repo, { args: ['--decline'], workflowHome: home2 });
@@ -1112,6 +1185,32 @@ const run = async () => {
     const { output } = runScript(repo);
     assert(output.includes('not valid JSON'), `and it says so, got: ${output}`);
     assert(!fs.existsSync(path.join(repo, '.github')), 'healing nothing until it is fixed');
+    cleanup(repo);
+  });
+
+  await test('a committed no with a severed tail is still a no, never a heal', () => {
+    // jq prints the answer it parsed and THEN fails on the tail, so a read
+    // whose fallback is appended to that answer resolves to neither `false`
+    // nor `unreadable`: it falls through to the enabled arm and heals a repo
+    // that said no.
+    const repo = makeRepo({ settings: '{ "version": 1, "enabled": false }{\n' });
+    assertEq(runScript(repo, { args: ['--state'] }).stdout.trim(), 'disabled', 'the deliberate no is read as a no');
+    const { output } = runScript(repo);
+    assertEq(output, '', `nothing is said about a repo that opted out, got: ${output}`);
+    assert(!fs.existsSync(path.join(repo, '.github')), 'and nothing is written into it');
+    cleanup(repo);
+  });
+
+  await test('a severed tail does not cost a repo the version it recorded', () => {
+    // The version read is the same file read, one line down: jq prints the
+    // version and then fails on the tail, so a read that throws that answer
+    // away calls a current repo a legacy one and tries to stamp a version it
+    // already carries onto a file nothing can write.
+    const repo = makeRepo({ settings: `{ "version": ${STANDARD_VERSION}, "enabled": true }{\n` });
+    const { output } = runScript(repo);
+    assert(output.includes('issue forms'), `the mechanical heals still run, got: ${output}`);
+    assert(!/not valid JSON/.test(output),
+      `a repo already at the standard is not stamped again, got: ${output}`);
     cleanup(repo);
   });
 
@@ -1137,7 +1236,7 @@ const run = async () => {
     runScript(repo, { args: ['--decline'], workflowHome: home });
     assert(fs.lstatSync(path.join(home, '.repos.json')).isSymbolicLink(), 'still a symlink');
     const written = JSON.parse(fs.readFileSync(realFile, 'utf8'));
-    assertEq(written.repos[fs.realpathSync(repo)] || written.repos[repo], 'declined', 'the real target got the decline');
+    assertEq(written.repos[gitPath(fs.realpathSync(repo))] || written.repos[gitPath(repo)], 'declined', 'the real target got the decline');
     assertEq(written.digest.hour, 9, 'and an unrelated key survived');
     cleanup(repo); cleanup(home); cleanup(realDir);
   });
@@ -1156,12 +1255,14 @@ const run = async () => {
     // enabled repo, so the branch that matters had no coverage.
     const repo = makeRepo({ settings: '{ "version": 1, "enabled": false }\n' });
     const binDir = mkTmp();
-    for (const tool of ['git', 'grep', 'tail', 'head', 'cp', 'mkdir', 'tr', 'cat', 'dirname', 'basename']) {
-      const real = spawnSync('command', ['-v', tool], { shell: '/bin/bash', encoding: 'utf8' }).stdout.trim();
-      fs.symlinkSync(real, path.join(binDir, tool));
+    // cygpath is the engine's path spelling on Windows (wk_git_path), as much a
+    // need there as git; `which` answers nothing for it on macOS and Linux.
+    for (const tool of ['git', 'grep', 'tail', 'head', 'cp', 'mkdir', 'tr', 'cat', 'dirname', 'basename', 'cygpath']) {
+      const real = which(tool);
+      if (real) linkTool(binDir, real);
     }
-    const res = spawnSync('/bin/bash', [SCRIPT, '--state', repo], {
-      env: { PATH: binDir, WORKFLOW_HOME: path.join(binDir, 'wh') }, encoding: 'utf8', timeout: 20000,
+    const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), '--state', shellPath(repo)], {
+      env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')) }, encoding: 'utf8', timeout: 20000,
     });
     assertEq((res.stdout || '').trim(), 'disabled', 'a deliberate no survives a jq-less machine');
     cleanup(repo); cleanup(binDir);
@@ -1219,6 +1320,65 @@ const run = async () => {
     assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(ENGINE), 'repointed at this engine');
     assert(output.includes('engine: repointed'), `and says so, got: ${output}`);
     cleanup(repo); cleanup(claude); cleanup(stale);
+  });
+
+  // The address is ONE path for the whole machine, so sessions opening at once
+  // in several repos all write it. What it must never be is MISSING: a maker
+  // that unlinks the address and then creates it leaves a gap, and a session
+  // reading it in that gap finds no engine at all, while every one of those
+  // sessions still exits 0 and registers its repo. Nothing but repetition can
+  // see that, so the rounds are the case: three sessions, because that is the
+  // smallest number with a loser reading while another one writes.
+  await test('sessions writing the address at once never leave it missing', async () => {
+    const { claude } = claudeHomeWith();
+    const address = path.join(claude, 'workkit');
+    const env = {
+      ...process.env,
+      PATH: joinPath(SYSTEM_PATH, NODE_DIR),
+      WORKFLOW_HOME: shellPath(path.join(mkTmp(), 'workflow-home')),
+      WORKFLOW_CLAUDE_HOME: shellPath(claude),
+    };
+    for (let round = 1; round <= 20; round++) {
+      fs.rmSync(address, { recursive: true, force: true });
+      // eslint-disable-next-line no-await-in-loop
+      await Promise.all([0, 1, 2].map(() => new Promise((resolve) => {
+        const child = spawn(BASH, [...NO_RC, shellPath(SCRIPT), '--engine-link'], { env, stdio: 'ignore' });
+        child.on('close', resolve);
+      })));
+      const made = fs.lstatSync(address, { throwIfNoEntry: false });
+      assert(!!made && made.isSymbolicLink(), `round ${round}: the address is a symlink, not gone`);
+      assertEq(fs.realpathSync(address), fs.realpathSync(ENGINE), `round ${round}: and it resolves to this engine`);
+    }
+    const stray = path.join(ENGINE, 'workflow');
+    const strayed = fs.existsSync(stray);
+    if (strayed) fs.rmSync(stray, { recursive: true, force: true });
+    assert(!strayed, 'and no round wrote a link inside the engine folder');
+    cleanup(claude);
+  });
+
+  // Git Bash without symlink rights answers `ln -s` with a COPY and exit 0.
+  // A copy at the engine's address is worse than no address at all: the marker
+  // scripts the skills call sit one level ABOVE the engine folder (#245), so a
+  // copy of the engine hides them and every skill's fallback resolves into
+  // ~/.claude. The `ln` stub below is that machine, on this one.
+  await test('an `ln` that copies instead of linking: the copy is removed and named', () => {
+    const repo = makeRepo();
+    const { claude } = claudeHomeWith();
+    const bin = mkTmp();
+    stubTool(bin, 'ln', [
+      '#!/bin/bash',
+      '# Git Bash without symlink rights: a copy, and exit 0.',
+      'dst="${@: -1}"; src="${@: -2:1}"',
+      'cp -R "$src" "$dst"',
+    ]);
+    const link = path.join(claude, 'workkit');
+    const { output } = runScript(repo, { claudeHome: claude, pathPrefix: bin });
+    assert(!fs.existsSync(link), `the copy is removed, not left at the address, got: ${output}`);
+    assert(output.includes('engine:') && output.includes(shellPath(link)),
+      `and the human is told, naming the address, got: ${output}`);
+    assert(/symlink/.test(output), `and what is wrong with it, got: ${output}`);
+    assert(!output.includes('engine: linked'), `never reported as linked, got: ${output}`);
+    cleanup(repo); cleanup(claude); cleanup(bin);
   });
 
   await test('a REAL directory at the address is never replaced', () => {
@@ -1296,12 +1456,12 @@ const run = async () => {
     // fixture, an archive, or a partial checkout looks like.
     const copy = mkTmp();
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
-    const res = spawnSync('bash', [path.join(copy, 'standards.sh'), repo], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
       env: {
         ...process.env,
-        PATH: `/usr/bin:/bin:/usr/sbin:/sbin:${path.dirname(process.execPath)}`,
-        WORKFLOW_HOME: path.join(mkTmp(), 'wh'),
-        WORKFLOW_CLAUDE_HOME: claude,
+        PATH: joinPath(SYSTEM_PATH, NODE_DIR),
+        WORKFLOW_HOME: shellPath(path.join(mkTmp(), 'wh')),
+        WORKFLOW_CLAUDE_HOME: shellPath(claude),
       },
       encoding: 'utf8',
       timeout: 20000,
@@ -1322,12 +1482,12 @@ const run = async () => {
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
     spawnSync('git', ['init', '-q'], { cwd: copyRoot });
     spawnSync('git', ['remote', 'add', 'origin', 'https://github.com/someone/not-the-kit.git'], { cwd: copyRoot });
-    const res = spawnSync('bash', [path.join(copy, 'standards.sh'), repo], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
       env: {
         ...process.env,
-        PATH: `/usr/bin:/bin:/usr/sbin:/sbin:${path.dirname(process.execPath)}`,
-        WORKFLOW_HOME: path.join(mkTmp(), 'wh'),
-        WORKFLOW_CLAUDE_HOME: claude,
+        PATH: joinPath(SYSTEM_PATH, NODE_DIR),
+        WORKFLOW_HOME: shellPath(path.join(mkTmp(), 'wh')),
+        WORKFLOW_CLAUDE_HOME: shellPath(claude),
       },
       encoding: 'utf8',
       timeout: 20000,
@@ -1347,12 +1507,12 @@ const run = async () => {
     spawnSync('git', ['init', '-q'], { cwd: copyRoot });
     spawnSync('git', ['remote', 'add', 'origin', 'git@github.com:ITW-Creative-Works/workkit.git'], { cwd: copyRoot });
     runScript(repo, { claudeHome: claude });   // prime it with THIS engine first
-    const res = spawnSync('bash', [path.join(copy, 'standards.sh'), repo], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
       env: {
         ...process.env,
-        PATH: `/usr/bin:/bin:/usr/sbin:/sbin:${path.dirname(process.execPath)}`,
-        WORKFLOW_HOME: path.join(mkTmp(), 'wh'),
-        WORKFLOW_CLAUDE_HOME: claude,
+        PATH: joinPath(SYSTEM_PATH, NODE_DIR),
+        WORKFLOW_HOME: shellPath(path.join(mkTmp(), 'wh')),
+        WORKFLOW_CLAUDE_HOME: shellPath(claude),
       },
       encoding: 'utf8',
       timeout: 20000,
@@ -1360,6 +1520,37 @@ const run = async () => {
     assertEq(res.status, 0, `the heal runs: ${res.stderr}`);
     assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(copy),
       'a second real checkout is still a real checkout: the address follows the one that ran');
+    cleanup(repo); cleanup(claude); cleanup(copyRoot);
+  });
+
+  await test('an origin spelled as a native Windows path is the kit too', () => {
+    // The canonical gate reads the SLUG through the engine's one rule
+    // (wk_slug_from_remote, workflow/slug.sh), so it takes a remote in either
+    // separator: git stores a path exactly as it was typed, and a checkout
+    // cloned from a local path on Windows carries backslashes. A gate that
+    // took only a forward slash refused the machine's own engine there.
+    const repo = makeRepo();
+    const { claude } = claudeHomeWith();
+    const copyRoot = mkTmp();
+    const copy = path.join(copyRoot, 'workflow');
+    fs.mkdirSync(copy, { recursive: true });
+    spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
+    spawnSync('git', ['init', '-q'], { cwd: copyRoot });
+    spawnSync('git', ['remote', 'add', 'origin', 'C:\\Users\\x\\kits\\workkit.git'], { cwd: copyRoot });
+    runScript(repo, { claudeHome: claude });   // prime it with THIS engine first
+    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
+      env: {
+        ...process.env,
+        PATH: joinPath(SYSTEM_PATH, NODE_DIR),
+        WORKFLOW_HOME: shellPath(path.join(mkTmp(), 'wh')),
+        WORKFLOW_CLAUDE_HOME: shellPath(claude),
+      },
+      encoding: 'utf8',
+      timeout: 20000,
+    });
+    assertEq(res.status, 0, `the heal runs: ${res.stderr}`);
+    assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(copy),
+      'a natively spelled origin names the kit, so the checkout takes the address');
     cleanup(repo); cleanup(claude); cleanup(copyRoot);
   });
 
@@ -1519,121 +1710,106 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  group('standards.sh: the vendored CHANGELOG linter');
+  group('standards.sh: the CHANGELOG separator');
 
-  await test('vendors the linter into the repo, headed by the note that the kit owns it', () => {
+  await test('an em dash CHANGELOG is converted to spaced hyphens once (#248)', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
+    const file = path.join(repo, 'CHANGELOG.md');
+    fs.writeFileSync(file,
+      '# Changelog\n\n## [Unreleased]\n\n- [#4](../../issues/4) \u2014 One thing \u2014 with a dash inside,\n  wrapped \u2014\n  \u2014 and twice at a boundary.\n');
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    const body = readFile(path.join(repo, '.github', 'changelog-lint.cjs'));
-    assert(body, 'changelog-lint.cjs created');
-    const lines = body.split('\n');
-    assert(lines[0].startsWith('#!'), 'the shebang stays on line 1');
-    assert(/SSOT/.test(lines[1]) && /resynced on every heal/.test(lines[1]), `line 2 says the kit owns it, got: ${lines[1]}`);
-    assert(body.includes(readFile(path.join(WORKFLOW_DIR, 'changelog.js')).split('\n').slice(1).join('\n')),
-      'the rest is the engine copy, verbatim');
-    assert(output.includes('changelog lint: created'), `reported the vendoring, got: ${output}`);
+    assertEq(readFile(file), '# Changelog\n\n## [Unreleased]\n\n- [#4](../../issues/4) - One thing - with a dash inside,\n  wrapped -\n  - and twice at a boundary.\n', 'every em dash became a hyphen, and no newline was swallowed');
+    assert(output.includes('changelog separator: converted 4 em dashes'), `reported the conversion, got: ${output}`);
+    const again = runScript(repo, { pathPrefix: stub.binDir }).output;
+    assert(!again.includes('changelog separator'), `a clean file is silent, got: ${again}`);
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('the vendored copy actually runs: it is the engine, not a stub', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    runScript(repo, { pathPrefix: stub.binDir });
-    fs.writeFileSync(path.join(repo, 'CHANGELOG.md'),
-      '# Changelog\n\n## [Unreleased]\n\n- a line with no issue link and no separator\n');
-    const res = spawnSync('node', ['.github/changelog-lint.cjs', 'CHANGELOG.md', '--unreleased-only'], {
-      cwd: repo, encoding: 'utf8', timeout: 15000,
-    });
-    assertEq(res.status, 1, 'a bad entry fails the check');
-    assert((res.stderr || '').includes('issue-link'), `and names the rule, got: ${res.stderr}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
+  group('standards.sh: the retired CHANGELOG linter copy');
 
-  await test('a drifted copy is resynced: the kit stays the SSOT', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    runScript(repo, { pathPrefix: stub.binDir });
-    const dest = path.join(repo, '.github', 'changelog-lint.cjs');
-    const current = readFile(dest);
-    fs.writeFileSync(dest, '// someone edited the copy\n');
-    const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(readFile(dest), current, 'the edit is undone');
-    assert(output.includes('changelog lint: resynced'), `and the resync is reported, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('a current copy is left alone and reported as a skip', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    runScript(repo, { pathPrefix: stub.binDir });
-    const dest = path.join(repo, '.github', 'changelog-lint.cjs');
-    const before = fs.statSync(dest).mtimeMs;
-    const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(fs.statSync(dest).mtimeMs, before, 'the file is not rewritten');
-    assert(output.includes('changelog lint: .github/changelog-lint.cjs already matches'), `skip reported, got: ${output}`);
-    assert(!output.includes('changelog lint: resynced'), 'and nothing claims a resync');
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  group('standards.sh: the .js → .cjs migration (issue #190)');
-
-  // The pre-rename state is built by healing and then walking the repo BACK to
-  // it (the old copy under the old name, and a checks.yml running it there)
-  // so the fixture is whatever the engine actually used to produce.
-  const healedThenRolledBack = (repo, stub) => {
-    runScript(repo, { pathPrefix: stub.binDir });
-    const cjs = path.join(repo, '.github', 'changelog-lint.cjs');
-    const js = path.join(repo, '.github', 'changelog-lint.js');
-    fs.renameSync(cjs, js);
-    const yml = path.join(repo, '.github', 'workflows', 'checks.yml');
-    fs.writeFileSync(yml, readFile(yml).replace(/changelog-lint\.cjs/g, 'changelog-lint.js'));
-    return { cjs, js, yml };
+  // What an earlier heal vendored: a shebang, the vendor header on line 2,
+  // then the linter's body.
+  const VENDORED_COPY = '#!/usr/bin/env node\n// Vendored from the workflow core\'s changelog.js by standards.sh. The kit is the SSOT; edit it there. This copy is resynced on every heal.\nconsole.log("lint");\n';
+  const git = (repo, ...args) => spawnSync('git',
+    ['-c', 'user.name=checks', '-c', 'user.email=checks@example.invalid', ...args], { cwd: repo, encoding: 'utf8' });
+  const writeCopy = (repo, name, body) => {
+    const file = path.join(repo, '.github', name);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, body);
+    return file;
   };
 
-  await test('a repo healed before the rename is migrated: the copy moves and checks.yml follows', () => {
+  await test('a copy the kit vendored is removed, the deletion left unstaged like every heal output', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
-    const { cjs, js, yml } = healedThenRolledBack(repo, stub);
+    const cjs = writeCopy(repo, 'changelog-lint.cjs', VENDORED_COPY);
+    const js = writeCopy(repo, 'changelog-lint.js', VENDORED_COPY);
+    git(repo, 'add', '.github/changelog-lint.cjs');
+    git(repo, 'commit', '-q', '-m', 'the vendored copy');
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    assert(fs.existsSync(cjs), 'the copy is vendored under the new name');
-    assert(!fs.existsSync(js), `the retired copy is gone, got: ${output}`);
-    assert(readFile(yml).includes('node .github/changelog-lint.cjs CHANGELOG.md --unreleased-only'),
-      `the job runs the new name, got: ${readFile(yml)}`);
-    assert(!readFile(yml).includes('changelog-lint.js'), 'and the old name is nowhere in the workflow');
-    assert(output.includes('removed the retired .github/changelog-lint.js'), `the removal is reported, got: ${output}`);
-    assert(output.includes('repointed the changelog job'), `and so is the repoint, got: ${output}`);
+    assert(!fs.existsSync(cjs), `the tracked copy is gone, got: ${output}`);
+    assert(!fs.existsSync(js), `and so is the untracked legacy one, got: ${output}`);
+    assertEq(git(repo, 'status', '--porcelain', '--', '.github/changelog-lint.cjs').stdout,
+      ' D .github/changelog-lint.cjs\n', 'the deletion is in the working tree, never staged');
+    assert(output.includes('changelog lint: removed .github/changelog-lint.cjs, CI runs the kit\'s workflow now; commit it'),
+      `the tracked removal is reported, got: ${output}`);
+    assert(output.includes('changelog lint: removed .github/changelog-lint.js'), `and the untracked one, got: ${output}`);
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('the migration runs once: a second heal changes nothing and says nothing', () => {
+  await test('the removal runs once: a second heal finds nothing and says nothing', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
-    const { yml } = healedThenRolledBack(repo, stub);
-    runScript(repo, { pathPrefix: stub.binDir });
-    const once = readFile(yml);
-    assert(once.includes('changelog-lint.cjs'), `the first heal migrated, got: ${once}`);
+    writeCopy(repo, 'changelog-lint.cjs', VENDORED_COPY);
+    const once = runScript(repo, { pathPrefix: stub.binDir }).output;
+    assert(once.includes('changelog lint: removed'), `the first heal removed it, got: ${once}`);
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(readFile(yml), once, 'idempotent');
-    assert(!output.includes('repointed the changelog job'), `no second repoint, got: ${output}`);
-    assert(!output.includes('removed the retired'), `and no second removal, got: ${output}`);
+    assert(!output.includes('changelog lint'), `nothing to say the second time, got: ${output}`);
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('an old .js that is NOT the kit\'s copy is reported, never deleted', () => {
+  await test('a copy without the vendor header is reported and kept', () => {
+    for (const name of ['changelog-lint.cjs', 'changelog-lint.js']) {
+      const repo = makeRepo();
+      const stub = makeGhStub();
+      const owned = '#!/usr/bin/env node\n// a linter someone here wrote\n';
+      const file = writeCopy(repo, name, owned);
+      const { output } = runScript(repo, { pathPrefix: stub.binDir });
+      assertEq(readFile(file), owned, `${name}: a file without the vendor header is left exactly as found`);
+      assert(output.includes(`.github/${name} is not the kit's copy`), `${name}: and reported, got: ${output}`);
+      cleanup(repo); cleanup(stub.dir);
+    }
+  });
+
+  await test('a repo with no copy gets none, and hears nothing about it', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
-    runScript(repo, { pathPrefix: stub.binDir });
-    const mine = path.join(repo, '.github', 'changelog-lint.js');
-    const owned = '#!/usr/bin/env node\n// a linter someone here wrote\n';
-    fs.writeFileSync(mine, owned);
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(readFile(mine), owned, 'a file without the vendor header is left exactly as found');
-    assert(output.includes('is not the kit\'s copy'), `and reported, got: ${output}`);
+    assert(!fs.existsSync(path.join(repo, '.github', 'changelog-lint.cjs')), 'no copy is vendored');
+    assert(!fs.existsSync(path.join(repo, '.github', 'changelog-lint.js')), 'under either name');
+    assert(!output.includes('changelog lint'), `and the step is silent, got: ${output}`);
     cleanup(repo); cleanup(stub.dir);
   });
 
   group('standards.sh: the changelog job in checks.yml');
+
+  // The job line the template carries: CI lints through the kit's reusable workflow.
+  const USES = 'uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main';
+  // The job an earlier template installed, running a vendored copy by name.
+  const nodeJob = (copy) => [
+    '  changelog:',
+    '    runs-on: ubuntu-latest',
+    '    steps:',
+    '      - uses: actions/checkout@v5',
+    '      - name: CHANGELOG entry format',
+    '        run: |',
+    '          if [ -f CHANGELOG.md ]; then',
+    `            node ${copy} CHANGELOG.md --unreleased-only`,
+    '          else',
+    '            echo "no CHANGELOG.md, nothing to check"',
+    '          fi',
+  ].join('\n');
 
   await test('a freshly installed checks.yml carries the job', () => {
     const repo = makeRepo();
@@ -1641,9 +1817,8 @@ const run = async () => {
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
     const body = readFile(path.join(repo, '.github', 'workflows', 'checks.yml'));
     assert(/^ {2}changelog:$/m.test(body), `the job is defined, got: ${body}`);
-    assert(body.includes('node .github/changelog-lint.cjs CHANGELOG.md --unreleased-only'),
-      'and runs the vendored linter over the unreleased section');
-    assert(body.includes('no CHANGELOG.md, nothing to check'), 'a repo without a CHANGELOG passes cleanly');
+    assert(body.includes(`  changelog:\n    ${USES}\n`), `and calls the kit's workflow, got: ${body}`);
+    assert(!body.includes('changelog-lint'), 'no vendored copy is named anywhere');
     assert(output.includes('changelog job is already in'), `no second append, got: ${output}`);
     cleanup(repo); cleanup(stub.dir);
   });
@@ -1659,7 +1834,7 @@ const run = async () => {
     const body = readFile(file);
     assert(body.startsWith(owned), 'every line the repo owned survives, in place');
     assert(/^ {2}changelog:$/m.test(body), `the job is appended, got: ${body}`);
-    assert(body.includes('--unreleased-only'), 'with the CI mode');
+    assert(body.endsWith(`  changelog:\n    ${USES}\n`), `calling the kit's workflow, got: ${body}`);
     assert(output.includes('checks: added the changelog job'), `reported, got: ${output}`);
     cleanup(repo); cleanup(stub.dir);
   });
@@ -1678,6 +1853,156 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
+  await test('a job running a vendored copy is rewritten in place to call the kit\'s workflow, once', () => {
+    for (const copy of ['.github/changelog-lint.cjs', '.github/changelog-lint.js']) {
+      const repo = makeRepo();
+      const stub = makeGhStub();
+      const file = path.join(repo, '.github', 'workflows', 'checks.yml');
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      const head = 'name: checks\n\non:\n  pull_request:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
+      const tail = '\n\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run lint\n';
+      fs.writeFileSync(file, `${head}${nodeJob(copy)}${tail}`);
+      const { output } = runScript(repo, { pathPrefix: stub.binDir });
+      assertEq(readFile(file), `${head}  changelog:\n    ${USES}${tail}`,
+        `${copy}: only the changelog job changed, and the job after it survives`);
+      assert(output.includes('checks: the changelog job in .github/workflows/checks.yml now calls the kit\'s workflow; commit it'),
+        `${copy}: reported, got: ${output}`);
+      const once = readFile(file);
+      const again = runScript(repo, { pathPrefix: stub.binDir }).output;
+      assertEq(readFile(file), once, `${copy}: idempotent`);
+      assert(!again.includes('now calls the kit\'s workflow'), `${copy}: no second rewrite, got: ${again}`);
+      assert(again.includes('changelog job is already in'), `${copy}: seen as current, got: ${again}`);
+      cleanup(repo); cleanup(stub.dir);
+    }
+  });
+
+  await test('the job ends at the next job whatever its id, and the comment above that job stays', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const head = 'name: checks\n\non:\n  pull_request:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
+    const tail = '\n\n  # end to end, on every pull request\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run e2e\n  lint.v2:\n    runs-on: ubuntu-latest\n';
+    fs.writeFileSync(file, `${head}${nodeJob('.github/changelog-lint.cjs')}${tail}`);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(readFile(file), `${head}  changelog:\n    ${USES}${tail}`,
+      `the e2e and lint.v2 jobs and the comment above them survive, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('the retired header comment is replaced by the template\'s own, with the job', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const oldHeader = '# The `changelog` job is the only job the heal adds to an EXISTING checks.yml,\n'
+      + '# appended once at the end of `jobs:`. Its linter is the copy of the kit\'s\n'
+      + '# changelog.js the heal vendors to .github/changelog-lint.cjs on every run.\n';
+    // The template's current paragraph: the anchor line through its last comment line.
+    const template = readFile(path.join(WORKFLOW_DIR, 'templates', 'github-workflows', 'checks.yml')).split('\n');
+    const from = template.findIndex((l) => l.startsWith('# The `changelog` job is the only job'));
+    const to = template.findIndex((l, i) => i > from && !l.startsWith('#'));
+    const newHeader = `${template.slice(from, to).join('\n')}\n`;
+    assert(from !== -1 && newHeader !== oldHeader, 'the template carries a different paragraph');
+    const intro = '# Checks: the repo\'s own words.\n#\n';
+    const body = 'name: checks\n\non:\n  pull_request:\n\njobs:\n';
+    fs.writeFileSync(file, `${intro}${oldHeader}${body}${nodeJob('.github/changelog-lint.cjs')}\n`);
+    runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(readFile(file), `${intro}${newHeader}${body}  changelog:\n    ${USES}\n`,
+      'the old paragraph is swapped for the template\'s, and nothing else in the header moves');
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a retired header above a job already in the uses: form is swapped on its own, once', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const older = '# The `changelog` job is the only job the heal adds to an EXISTING checks.yml,\n'
+      + '# appended once at the end of `jobs:`. Its linter is the copy of the kit\'s\n'
+      + '# changelog.js the heal vendors to .github/changelog-lint.js on every run.\n';
+    const template = readFile(path.join(WORKFLOW_DIR, 'templates', 'github-workflows', 'checks.yml')).split('\n');
+    const from = template.findIndex((l) => l.startsWith('# The `changelog` job is the only job'));
+    const to = template.findIndex((l, i) => i > from && !l.startsWith('#'));
+    const newHeader = `${template.slice(from, to).join('\n')}\n`;
+    const body = `name: checks\n\non:\n  pull_request:\n\njobs:\n  changelog:\n    ${USES}\n`;
+    fs.writeFileSync(file, `${older}${body}`);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(readFile(file), `${newHeader}${body}`, `the header swapped and the job untouched, got: ${output}`);
+    assert(output.includes('checks: the header comment in .github/workflows/checks.yml now describes the kit\'s workflow; commit it'),
+      `reported, got: ${output}`);
+    const again = runScript(repo, { pathPrefix: stub.binDir }).output;
+    assertEq(readFile(file), `${newHeader}${body}`, 'a second heal changes nothing');
+    assert(!again.includes('now describes the kit\'s workflow'), `and says nothing of it, got: ${again}`);
+    assert(again.includes('changelog job is already in'), `seen as current, got: ${again}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a comment naming the copy does not hold the copy in place', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const cjs = writeCopy(repo, 'changelog-lint.cjs', VENDORED_COPY);
+    const other = path.join(repo, '.github', 'workflows', 'release.yml');
+    fs.mkdirSync(path.dirname(other), { recursive: true });
+    fs.writeFileSync(other, 'name: release\n# the old linter lived at .github/changelog-lint.cjs\non:\n  push:\n');
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    assert(!fs.existsSync(cjs), `a comment is not a run, so the copy is removed, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a job that is the last one in the file is rewritten to the end', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const head = 'name: checks\n\non:\n  pull_request:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
+    fs.writeFileSync(file, `${head}${nodeJob('.github/changelog-lint.cjs')}\n`);
+    runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(readFile(file), `${head}  changelog:\n    ${USES}\n`, 'the old job is replaced whole');
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  // The heal rewrites the job BEFORE it removes the copy: the other order finds
+  // the old job still naming the copy, keeps the copy, and leaves a repo that
+  // needs a second heal.
+  await test('one heal rewrites a job running the copy and then removes the copy', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const cjs = writeCopy(repo, 'changelog-lint.cjs', VENDORED_COPY);
+    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const head = 'name: checks\n\non:\n  pull_request:\n\njobs:\n';
+    fs.writeFileSync(file, `${head}${nodeJob('.github/changelog-lint.cjs')}\n`);
+    git(repo, 'add', '.github');
+    git(repo, 'commit', '-q', '-m', 'the vendored copy and the job running it');
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(readFile(file), `${head}  changelog:\n    ${USES}\n`, `the job calls the kit's workflow, got: ${output}`);
+    assert(!fs.existsSync(cjs), `and the copy is gone in the same heal, got: ${output}`);
+    assertEq(git(repo, 'status', '--porcelain', '--', '.github/changelog-lint.cjs').stdout,
+      ' D .github/changelog-lint.cjs\n', 'the deletion is left unstaged');
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a copy another workflow still runs is kept and reported, even once checks.yml is rewritten', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const cjs = writeCopy(repo, 'changelog-lint.cjs', VENDORED_COPY);
+    const head = 'name: checks\n\non:\n  pull_request:\n\njobs:\n';
+    const checks = path.join(repo, '.github', 'workflows', 'checks.yml');
+    fs.mkdirSync(path.dirname(checks), { recursive: true });
+    fs.writeFileSync(checks, `${head}${nodeJob('.github/changelog-lint.cjs')}\n`);
+    const other = path.join(repo, '.github', 'workflows', 'release.yml');
+    const owned = 'name: release\n\non:\n  push:\n\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: node .github/changelog-lint.cjs CHANGELOG.md\n';
+    fs.writeFileSync(other, owned);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(readFile(checks), `${head}  changelog:\n    ${USES}\n`, `the job the heal owns is rewritten, got: ${output}`);
+    assertEq(readFile(cjs), VENDORED_COPY, 'the copy stays, since deleting it would break release.yml');
+    assertEq(readFile(other), owned, 'and the workflow the heal does not own is untouched');
+    assert(output.includes('changelog lint: kept .github/changelog-lint.cjs: a workflow under .github/workflows still runs it'),
+      `the keep is reported, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
   await test('a workflow that does not end in its jobs: block is described, never rewritten', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
@@ -1688,7 +2013,7 @@ const run = async () => {
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
     assertEq(readFile(file), owned, 'a layout the script cannot reason about is left exactly as found');
     assert(output.includes('does not end in its jobs: block'), `says so, got: ${output}`);
-    assert(output.includes('--unreleased-only'), 'and names the command to add by hand');
+    assert(output.includes(USES), `and names the line to add by hand, got: ${output}`);
     cleanup(repo); cleanup(stub.dir);
   });
 
@@ -1714,9 +2039,10 @@ const run = async () => {
     // PUTting the minimal payload over whatever configuration exists.
     const repo = makeRepo();
     const stub = makeGhStub({ repoView: true, protection: 'absent' });
-    fs.writeFileSync(path.join(stub.binDir, 'gh'),
-      readFile(path.join(stub.binDir, 'gh')).replace('Branch not protected (HTTP 404)', 'API rate limit exceeded'),
-      { mode: 0o755 });
+    stubTool(stub.binDir, 'gh',
+      readFile(path.join(stub.binDir, 'gh'))
+        .replace('Branch not protected (HTTP 404)', 'API rate limit exceeded')
+        .trimEnd().split('\n'));
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
     assertEq(code, 0, 'exit 0');
     assert(!ghCalls(stub).some((c) => c.includes('PUT')), `no PUT after an unexplained GET failure, got: ${output}`);
@@ -1788,6 +2114,74 @@ const run = async () => {
       `every label was compared, got: ${stdout}`,
     );
     cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a jq that writes CRLF: no phantom issue warning, no carriage return written', () => {
+    // The Windows jq is a native program whose stdout is in text mode, so every
+    // line it writes ends `\r\n`. Two reads break on that, and they are what
+    // this case reproduces. The open-issue check answers a LONE `\r` where a
+    // conforming board answers nothing, so every heal warns that issues are
+    // missing a status or type label when none are, and exits 1 saying the repo
+    // is not standardized. And the last field of each manifest line, the colour,
+    // arrives wearing a `\r`, which is handed to `gh` and on to GitHub, which
+    // refuses a colour that is not six hex digits: the label is never created,
+    // so the heal never finishes and asks again every session.
+    //
+    // The no-drift half is a GUARD, not the repro: a bare jq puts the same `\r`
+    // on both sides of that compare, so the two still match. It is here so a fix
+    // that strips one side and not the other cannot pass.
+    const jqDir = mkTmp();
+    if (!crlfJq(jqDir)) {
+      skip('a jq that writes CRLF: no phantom issue warning, no carriage return written',
+        'this machine has no jq to wrap in one that writes CRLF');
+      return;
+    }
+
+    // The guard: every label GitHub holds already matches the manifest.
+    const matched = makeRepo();
+    const held = makeGhStub({ labels: desiredLabels() });
+    const quiet = runScript(matched, { pathPrefix: joinPath(jqDir, held.binDir) });
+    const writes = ghCalls(held).filter((c) => isCall(c, 'label', 'create') || isCall(c, 'label', 'edit'));
+    assertEq(writes.length, 0, `nothing drifted, got: ${fmtCalls(writes)}`);
+    assert(
+      quiet.output.includes(`${desiredLabels().length} already correct`),
+      `every label was compared and matched, got: ${quiet.output}`,
+    );
+
+    // The repro: a repo with no labels and a board that conforms. The heal
+    // finishes silently, and each create carries the manifest's own description
+    // and colour byte for byte.
+    const empty = makeRepo();
+    const home = mkTmp();
+    const none = makeGhStub({
+      labels: [],
+      issues: [{ number: 1, labels: [{ name: 'status:specced' }, { name: 'type:bug' }] }],
+    });
+    const { code, output } = runScript(empty, {
+      pathPrefix: joinPath(jqDir, none.binDir), workflowHome: home,
+    });
+    assert(!output.includes('missing a required status'), `no phantom issue warning, got: ${output}`);
+    assertEq(code, 0, `the heal finished, got: ${output}`);
+    const creates = ghCalls(none).filter((c) => isCall(c, 'label', 'create'));
+    for (const { name, description, color } of desiredLabels()) {
+      const want = ['label', 'create', name, '--description', description, '--color', color];
+      assert(
+        creates.some((c) => eqArgv(c, want)),
+        `created ${name} with nothing left on its arguments; calls: ${fmtCalls(creates)}`,
+      );
+    }
+
+    // And what the heal WROTE: both files are jq's own output, so a text-mode jq
+    // rewrites every line of them with a `\r` on it. One of the two is committed,
+    // so its shape would flip with whichever machine healed last.
+    const settings = readFile(path.join(empty, W, 'settings.json'));
+    assert(settings.includes('"version"'), `the version was stamped, got: ${JSON.stringify(settings)}`);
+    assert(!settings.includes('\r'), `and the committed file is LF, got: ${JSON.stringify(settings)}`);
+    const roster = readFile(path.join(home, '.repos.json'));
+    assertEq(rosterOf(home)[gitPath(fs.realpathSync(empty))], 'enabled', 'the roster recorded the repo');
+    assert(!roster.includes('\r'), `and the roster is LF, got: ${JSON.stringify(roster)}`);
+
+    cleanup(matched); cleanup(held.dir); cleanup(empty); cleanup(home); cleanup(none.dir); cleanup(jqDir);
   });
 
   await test('description and color drift is corrected, one edit per label', () => {
@@ -2184,7 +2578,7 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('a chmod-stripped hook script is named, with the chmod that fixes it', () => {
+  await strippedBitTest('a chmod-stripped hook script is named, with the chmod that fixes it', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     const hooks = makeHooksDir({ notExecutable: ['safety:two'] });
@@ -2216,7 +2610,7 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir); cleanup(hooks);
   });
 
-  await test('the loader itself is checked: nothing runs without it', () => {
+  await strippedBitTest('the loader itself is checked: nothing runs without it', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     const hooks = makeHooksDir();
@@ -2235,12 +2629,12 @@ const run = async () => {
     const hooks = makeHooksDir();
     const stub = makeGhStub();
     const binDir = binDirWithout('node');
-    const res = spawnSync('/bin/bash', [SCRIPT, repo], {
+    const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
       env: {
-        PATH: `${stub.binDir}:${binDir}`,
-        WORKFLOW_HOME: path.join(binDir, 'wh'),
-        WORKFLOW_CLAUDE_HOME: path.join(binDir, 'ch'),
-        WORKFLOW_HOOKS_DIR: hooks,
+        PATH: joinPath(stub.binDir, binDir),
+        WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')),
+        WORKFLOW_CLAUDE_HOME: shellPath(path.join(binDir, 'ch')),
+        WORKFLOW_HOOKS_DIR: shellPath(hooks),
       },
       encoding: 'utf8',
       timeout: 20000,
@@ -2249,6 +2643,36 @@ const run = async () => {
     assertEq(res.status, 0, 'a machine condition never fails the run');
     assert(/hooks: the hook layer needs.*node/.test(out), `names the missing tool, got: ${out}`);
     assert(out.includes('silently do not run'), `and what its absence costs, got: ${out}`);
+    cleanup(repo); cleanup(hooks); cleanup(binDir); cleanup(stub.dir);
+  });
+
+  await test('a digest tool under either name satisfies the check (workkit #245)', () => {
+    // hook_sha1 takes shasum or sha1sum, so the daily heal asks for the pair:
+    // a Linux machine with only sha1sum is whole, and a machine with neither
+    // is told both names.
+    const repo = makeRepo();
+    const hooks = makeHooksDir();
+    const stub = makeGhStub();
+    const binDir = binDirWithout('shasum');
+    fs.rmSync(path.join(binDir, 'sha1sum'), { force: true });
+    const run = () => {
+      const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
+        env: {
+          PATH: joinPath(stub.binDir, binDir),
+          WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')),
+          WORKFLOW_CLAUDE_HOME: shellPath(path.join(binDir, 'ch')),
+          WORKFLOW_HOOKS_DIR: shellPath(hooks),
+        },
+        encoding: 'utf8',
+        timeout: 20000,
+      });
+      return (res.stdout || '') + (res.stderr || '');
+    };
+    const neither = run();
+    assert(/hooks: the hook layer needs.*shasum or sha1sum/.test(neither), `names both digest tools, got: ${neither}`);
+    stubTool(binDir, 'sha1sum', ['#!/bin/sh', 'exit 0']);
+    const one = run();
+    assert(!/hook layer needs/.test(one), `sha1sum alone satisfies the pair, got: ${one}`);
     cleanup(repo); cleanup(hooks); cleanup(binDir); cleanup(stub.dir);
   });
 
@@ -2268,8 +2692,8 @@ const run = async () => {
   // them. These two cases prove the recording tells a quoted expansion from an
   // unquoted one: the exact regression a `"$*"` log could not see.
   const callStub = (stub, snippet) => {
-    spawnSync('bash', ['-c', snippet], {
-      env: { ...process.env, PATH: `${stub.binDir}:/usr/bin:/bin` },
+    spawnSync(BASH, [...NO_RC, '-c', snippet], {
+      env: { ...process.env, PATH: systemPathWith(stub.binDir) },
       encoding: 'utf8',
     });
     return ghCalls(stub);
@@ -2339,8 +2763,8 @@ const run = async () => {
     // PATH entry, and a machine that keeps gh in /usr/bin (a CI runner does)
     // would otherwise reach the authentication check instead of this one.
     const binDir = binDirWithout('gh');
-    const res = spawnSync('/bin/bash', [SCRIPT, repo], {
-      env: { PATH: binDir, WORKFLOW_HOME: path.join(binDir, 'workflow-home') },
+    const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
+      env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'workflow-home')) },
       encoding: 'utf8',
       timeout: 20000,
     });
@@ -2357,8 +2781,8 @@ const run = async () => {
   await test('no jq on PATH: only the label step is skipped, local heals run', () => {
     const repo = makeRepo();
     const binDir = binDirWithout('jq');
-    const res = spawnSync('/bin/bash', [SCRIPT, repo], {
-      env: { PATH: binDir, WORKFLOW_HOME: path.join(binDir, 'workflow-home') },
+    const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
+      env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'workflow-home')) },
       encoding: 'utf8',
       timeout: 20000,
     });
@@ -2397,13 +2821,13 @@ const run = async () => {
   await test('defaults to the current directory when given no argument', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
-    const res = spawnSync('bash', [SCRIPT], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], {
       cwd: repo,
       env: {
-        ...process.env, PATH: `${stub.binDir}:/usr/bin:/bin:/usr/sbin:/sbin`,
+        ...process.env, PATH: systemPathWith(stub.binDir),
         // Inherited HOME plus the two user-level seeds would write the real
         // ~/.workkit and repoint the real ~/.claude/workkit.
-        WORKFLOW_HOME: path.join(mkTmp(), 'wh'), WORKFLOW_CLAUDE_HOME: path.join(mkTmp(), 'ch'),
+        WORKFLOW_HOME: shellPath(path.join(mkTmp(), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp(), 'ch')),
       },
       encoding: 'utf8',
       timeout: 20000,
@@ -2428,7 +2852,6 @@ const run = async () => {
 const STANDARD_VERSION = Number(
   /^STANDARD_VERSION=(\d+)/m.exec(fs.readFileSync(SCRIPT, 'utf8'))[1],
 );
-const NODE_DIR = path.dirname(process.execPath);
 const repoVersion = (dir) => JSON.parse(readFile(path.join(dir, W, 'settings.json'))).version;
 
 const driftRun = async () => {
@@ -2466,7 +2889,7 @@ const driftRun = async () => {
       '- **A big essay entry** that carries no issue link and no separator at all.',
       '- **Another one** just like it.', '',
     ].join('\n'));
-    const { output } = runScript(dir, { pathPrefix: `${stub.binDir}:${NODE_DIR}` });
+    const { output } = runScript(dir, { pathPrefix: joinPath(stub.binDir, NODE_DIR) });
     assert(/CHANGELOG\.md has 2 entries not in the entry format/.test(output), `counted, got: ${output}`);
     cleanup(dir); cleanup(stub.dir);
   });
@@ -2478,7 +2901,7 @@ const driftRun = async () => {
       '# Changelog', '', '## [1.0.0] - 2020-01-01', '', '### Added',
       '- (no issue) \u2014 A short entry in the format.', '', // \u2014 is the CHANGELOG entry separator (U+2014)
     ].join('\n'));
-    const { output } = runScript(dir, { pathPrefix: `${stub.binDir}:${NODE_DIR}` });
+    const { output } = runScript(dir, { pathPrefix: joinPath(stub.binDir, NODE_DIR) });
     assert(!output.includes('not in the entry format'), `silent, got: ${output}`);
     cleanup(dir); cleanup(stub.dir);
   });
@@ -2502,11 +2925,11 @@ const driftRun = async () => {
       '- **A big essay entry** that carries no issue link and no separator at all.', '',
     ].join('\n'));
     const binDir = binDirWithout('node');
-    const res = spawnSync('/bin/bash', [SCRIPT, dir], {
+    const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(dir)], {
       env: {
-        PATH: `${stub.binDir}:${binDir}`,
-        WORKFLOW_HOME: path.join(binDir, 'wh'),
-        WORKFLOW_CLAUDE_HOME: path.join(binDir, 'ch'),
+        PATH: joinPath(stub.binDir, binDir),
+        WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')),
+        WORKFLOW_CLAUDE_HOME: shellPath(path.join(binDir, 'ch')),
       },
       encoding: 'utf8',
       timeout: 20000,
@@ -2517,7 +2940,7 @@ const driftRun = async () => {
     assertEq(repoVersion(dir), 1, 'not stamped past a check that never ran');
     assert(output.includes('version not stamped'), `says so on stderr, got: ${output}`);
     // Once node is available the check runs and the same repo stamps forward.
-    runScript(dir, { pathPrefix: `${stub.binDir}:${NODE_DIR}` });
+    runScript(dir, { pathPrefix: joinPath(stub.binDir, NODE_DIR) });
     assertEq(repoVersion(dir), STANDARD_VERSION, 'stamps once the check could run');
     cleanup(dir); cleanup(stub.dir);
   });
@@ -2528,8 +2951,8 @@ const driftRun = async () => {
     // and then dies of a missing utility while claiming to prove something
     // about the excluded one.
     const binDir = binDirWithout('jq');
-    const res = spawnSync('/bin/bash', [SCRIPT, dir], {
-      env: { PATH: binDir, WORKFLOW_HOME: path.join(binDir, 'wh') }, encoding: 'utf8', timeout: 20000,
+    const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(dir)], {
+      env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')) }, encoding: 'utf8', timeout: 20000,
     });
     const out = (res.stdout || '') + (res.stderr || '');
     assertEq(res.status, 0, 'exit 0');

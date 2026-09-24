@@ -25,7 +25,9 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-file_path=$(jq -r '.tool_input.file_path // ""' <<<"$input")
+. "${BASH_SOURCE[0]%/*}/../../_lib.sh"
+
+file_path=$(hook_jq -r '.tool_input.file_path // ""' <<<"$input")
 [ -n "$file_path" ] || exit 0
 
 base="$(basename "$file_path")"

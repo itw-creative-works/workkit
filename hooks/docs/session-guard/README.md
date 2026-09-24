@@ -23,7 +23,7 @@ An Edit's RESULT is what the caps judge, and only the file on disk knows it. A p
 
 ## The pair, and the two other layers
 
-The content-line count and the bar of 40 live in BOTH this hook and `docs/session`, which reads the same file at SessionStart and warns past the same bar. Neither sources the other (a hook that must never cost a session sources nothing), so they are changed together and a case in `tests/hooks/session-guard.test.js` asserts they still agree.
+The content-line count and the bar of 40 live in BOTH this hook and `docs/session`, which reads the same file at SessionStart and warns past the same bar. Neither sources the other, and neither sources the hook layer's shared helpers: what each does source is an engine seam that defines functions and sets nothing. This hook takes the platform seam alone (`workflow/platform.sh`), for the CRLF-safe `wk_jq` its payload is read through; `docs/session` takes that one and the participation seam beside it (`workflow/participation.sh`), for `wk_settings_declined`, the one home of what a repo's deliberate no looks like. The pair is changed together and a case in `tests/hooks/session-guard.test.js` asserts they still agree.
 
 Three layers, one rule:
 

@@ -14,7 +14,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, hasLaunchd, WORKKIT_DIR: W } = require('../lib/harness');
+const { group, test, assert, assertEq, skip, summary, selfRun, hasLaunchd, WORKKIT_DIR: W } = require('../lib/harness');
+const {
+  IS_WINDOWS, BASH, SYSTEM_PATH, NO_RC, NO_EXEC_BIT,
+  shellPath, gitPath, which, homeEnv, stubTool, joinPath,
+} = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
@@ -25,15 +29,12 @@ const LABEL = 'com.workkit.claude-daily';
 // A PATH with the ordinary system tools and nothing else: the shims are
 // prepended per world, so a command this script looks for is present only when
 // the test put it there.
-const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
-
 const mkTmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'workkit-cli-')));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
-const writeStub = (file, lines) => {
-  fs.writeFileSync(file, `${['#!/usr/bin/env bash', ...lines, ''].join('\n')}`);
-  fs.chmodSync(file, 0o755);
-};
+const writeStub = (file, lines) => stubTool(
+  path.dirname(file), path.basename(file), ['#!/usr/bin/env bash', ...lines],
+);
 
 // A secret listing as `gh secret list --json name,updatedAt` renders it. `days`
 // is how long ago the secret was last set: the only thing the age check reads.
@@ -187,6 +188,10 @@ const mkWorld = ({
     root,
     home,
     bin,
+    // The world's own paths stay NATIVE for everything this suite reads and
+    // writes; the environment below carries the same places in the spelling the
+    // shell under test sees.
+    workflowHome: path.join(root, 'workflow-home'),
     claudeHome: path.join(home, '.claude'),
     localBin,
     link: path.join(localBin, 'workkit'),
@@ -216,23 +221,32 @@ const mkWorld = ({
       fs.mkdirSync(agents, { recursive: true });
       fs.writeFileSync(path.join(agents, `${label}.plist`), text);
     },
-    env: {
-      HOME: home,
+    env: homeEnv(home, {
       // Scratch too: the mint writes its capture file here, and a test that
       // asks whether one was left behind must be asking about this world's.
-      TMPDIR: tmp,
-      PATH: `${binOnPath ? `${localBin}:` : ''}${bin}:${BASE_PATH}`,
-      WORKFLOW_HOME: path.join(root, 'workflow-home'),
-      WORKFLOW_CLAUDE_HOME: path.join(home, '.claude'),
+      TMPDIR: shellPath(tmp),
+      PATH: joinPath(...(binOnPath ? [localBin] : []), bin, SYSTEM_PATH),
+      WORKFLOW_HOME: shellPath(path.join(root, 'workflow-home')),
+      WORKFLOW_CLAUDE_HOME: shellPath(path.join(home, '.claude')),
       // HOME here is a scratch directory, which jobs/install.sh refuses to load
       // a schedule from: launchd is machine-global, so a fake home is exactly
       // the run it guards against (issue #95). launchctl on this PATH is a
       // recorder, so this world says out loud that it is the rehearsal the
       // override exists for; the guard itself is pinned in tests/jobs.
       WORKKIT_LAUNCHD_OK: '1',
-    },
+    }),
   };
 };
+
+// A mint hands `claude setup-token` a terminal, which takes a PTY tool the
+// machine has to ship: `expect`, or `script`. Where it has neither, the CLI
+// refuses before the question these cases ask is ever reached
+// (workflow/workkit.sh, can_mint_claude_token), so they name their skip rather
+// than assert on the refusal.
+const HAS_PTY = Boolean(which('expect', SYSTEM_PATH) || which('script', SYSTEM_PATH));
+const mintTest = (name, fn) => (HAS_PTY
+  ? test(name, fn)
+  : skip(name, 'this machine has neither expect nor script, so no mint can be given a terminal'));
 
 // stdin is a pipe, never a terminal: that is the non-interactive machine, and
 // any prompt that forgot to check would hang here instead of in production.
@@ -240,7 +254,7 @@ const mkWorld = ({
 // CLI in a partial checkout, which is how the suite asks where a run thinks it
 // is standing.
 const runCli = (world, args, { cwd, script, env } = {}) => {
-  const res = spawnSync('bash', [script || CLI, ...args], {
+  const res = spawnSync(BASH, [...NO_RC, shellPath(script || CLI), ...args], {
     cwd: cwd || world.root,
     env: { ...world.env, ...(env || {}) },
     input: '',
@@ -279,15 +293,15 @@ const mkRepo = ({ optIn = false } = {}) => {
   return dir;
 };
 
-const installSchedule = (world) => spawnSync('bash', [JOBS_INSTALL], { env: world.env, encoding: 'utf8', timeout: 30000 });
+const installSchedule = (world) => spawnSync(BASH, [...NO_RC, shellPath(JOBS_INSTALL)], { env: world.env, encoding: 'utf8', timeout: 30000 });
 
 // The machine's hand-edited settings file, written the way a heal seeds it.
 // `site` is whatever the test wants the site options to be: a `publish` of
 // null is the unanswered switch, which is the state setup has a question about.
-const userSettings = (world) => path.join(world.env.WORKFLOW_HOME, 'settings.json');
+const userSettings = (world) => path.join(world.workflowHome, 'settings.json');
 const seedSettings = (world, site) => {
   const file = userSettings(world);
-  fs.mkdirSync(world.env.WORKFLOW_HOME, { recursive: true });
+  fs.mkdirSync(world.workflowHome, { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify({ version: 1, site }, null, 2)}\n`);
   return file;
 };
@@ -307,7 +321,7 @@ const inCli = (world, script, { input = '', env } = {}) => {
   const stdinFile = path.join(world.root, 'inCli-stdin');
   fs.writeFileSync(stdinFile, input);
   const fd = fs.openSync(stdinFile, 'r');
-  const res = spawnSync('bash', ['-c', driver], {
+  const res = spawnSync(BASH, [...NO_RC, '-c', driver], {
     cwd: world.root,
     // `env` for the values the CLI reads at SOURCE time, which a line prepended
     // to the script would be too late for.
@@ -396,8 +410,9 @@ const run = async () => {
 
   await test('it is executable and parses', () => {
     // eslint-disable-next-line no-bitwise
-    assert((fs.statSync(CLI).mode & 0o111) !== 0, 'the executable bit is set');
-    assertEq(spawnSync('bash', ['-n', CLI], { encoding: 'utf8' }).status, 0, 'bash -n is clean');
+    if (IS_WINDOWS) skip('workkit.sh carries the executable bit', NO_EXEC_BIT);
+    else assert((fs.statSync(CLI).mode & 0o111) !== 0, 'the executable bit is set');
+    assertEq(spawnSync(BASH, [...NO_RC, '-n', shellPath(CLI)], { encoding: 'utf8' }).status, 0, 'bash -n is clean');
   });
 
   group('workkit update: the two links');
@@ -417,7 +432,7 @@ const run = async () => {
     fs.mkdirSync(world.claudeHome, { recursive: true });
     runCli(world, ['update']);
     const { out } = runCli(world, ['update']);
-    assert(out.includes(`engine: ${world.engineLink} is current`), `an address that resolves here IS current, got: ${out}`);
+    assert(out.includes(`engine: ${shellPath(world.engineLink)} is current`), `an address that resolves here IS current, got: ${out}`);
     cleanup(world.root);
   });
 
@@ -478,7 +493,7 @@ const run = async () => {
 
     const viaLink = runCli(world, ['update'], { cwd: repo, script: world.link });
     assertEq(viaLink.code, 0, `exit 0: stderr: ${viaLink.err}`);
-    assert(viaLink.out.includes(path.dirname(WORKFLOW_DIR)), `it names the real checkout, got: ${viaLink.out}`);
+    assert(viaLink.out.includes(shellPath(path.dirname(WORKFLOW_DIR))), `it names the real checkout, got: ${viaLink.out}`);
     assertEq(fs.readlinkSync(world.link), CLI, 'and its own address still points at the real CLI');
 
     const doctor = runCli(world, ['doctor'], { cwd: repo, script: world.link });
@@ -653,7 +668,7 @@ const run = async () => {
     const { code, out } = runCli(world, ['setup']);
     assertEq(code, 0, `exit 0: stderr: ${out}`);
     const calls = world.claudeCalls();
-    assert(calls.some((c) => isCall(c, 'plugin', 'marketplace', 'add', path.dirname(WORKFLOW_DIR))), `the marketplace is this checkout: ${fmtCalls(calls)}`);
+    assert(calls.some((c) => isCall(c, 'plugin', 'marketplace', 'add', shellPath(path.dirname(WORKFLOW_DIR)))), `the marketplace is this checkout: ${fmtCalls(calls)}`);
     assert(calls.some((c) => isCall(c, 'plugin', 'install', 'workkit@workkit')), `and the plugin is installed: ${fmtCalls(calls)}`);
     cleanup(world.root);
   });
@@ -725,7 +740,7 @@ const run = async () => {
     const { code, out } = runCli(world, ['setup']);
     assertEq(code, 0, 'exit 0');
     assert(/home:/.test(out), `the home repo is part of setup, got: ${out}`);
-    assert(!fs.existsSync(path.join(world.env.WORKFLOW_HOME, '.git')), 'and nothing was converted without an answer');
+    assert(!fs.existsSync(path.join(world.workflowHome, '.git')), 'and nothing was converted without an answer');
     cleanup(world.root);
   });
 
@@ -805,7 +820,7 @@ const run = async () => {
     // does, so it takes the one lock they all take (workflow/lib.sh).
     const world = mkWorld();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
-    const lock = path.join(world.env.WORKFLOW_HOME, '.state.lock');
+    const lock = path.join(world.workflowHome, '.state.lock');
     fs.mkdirSync(lock, { recursive: true });
     const held = inCli(world, 'set_site_publish true');
     // Held by someone else: the write still happens (the engine never stops a
@@ -826,7 +841,7 @@ const run = async () => {
     // arriving on stdin: everything else is the real function (issue #85).
     const world = mkWorld();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
-    const lock = path.join(world.env.WORKFLOW_HOME, '.state.lock');
+    const lock = path.join(world.workflowHome, '.state.lock');
 
     const { code, out } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'y\ntower.example.com\n' });
     assertEq(code, 0, `exit 0, got: ${out}`);
@@ -836,6 +851,18 @@ const run = async () => {
     assertEq(site.url, 'tower.example.com', 'and the domain beside it');
     assertEq(site.repo, 'owner/workkit', 'the rest of the site options are untouched');
     assert(!fs.existsSync(lock), 'the domain write gave the state mutex back');
+    cleanup(world.root);
+  });
+
+  await test('a fresh yes on a file with a severed tail is still asked about the domain', () => {
+    // jq prints the value it parsed and THEN fails on the tail, so a default
+    // appended to that answer reads as neither `null` nor a domain, and the
+    // one run that puts the domain question skips it without a word.
+    const world = mkWorld();
+    const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
+    fs.appendFileSync(file, '{\n');
+    const { out } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'y\ntower.example.com\n' });
+    assert(/Custom domain for the site\? \[enter for none\]/.test(out), `the follow-up is still put, got: ${out}`);
     cleanup(world.root);
   });
 
@@ -933,7 +960,10 @@ const run = async () => {
     assertEq(calls[0].length, 1, 'with one argument, the page and nothing beside it');
     assert(calls[0][0].endsWith('.html'), `under a name a browser will take: ${calls[0][0]}`);
     const page = world.openedPage();
-    assertEq(page.mode, 0o600, 'the page is readable by this user and nobody else');
+    // Windows carries no POSIX mode, so the file it reports says nothing about
+    // who can read the page: the question is asked where it can be answered.
+    if (IS_WINDOWS) skip('the page is readable by this user and nobody else', 'Windows keeps no POSIX file mode');
+    else assertEq(page.mode, 0o600, 'the page is readable by this user and nobody else');
     assert(page.text.includes(`${SETTINGS_URL}#token=${HANDOVER}`), `and redirects to Settings with the token in the fragment, got: ${page.text}`);
     assert(!out.includes(HANDOVER), `no line of output carries the token, got: ${out}`);
     assert(!fmtCalls(calls).includes(HANDOVER), `and no argument carries it either: ${fmtCalls(calls)}`);
@@ -1178,7 +1208,7 @@ const run = async () => {
     cleanup(world.root); cleanup(kit);
   });
 
-  await test('answered yes, the mint goes straight into the secret and workkit prints it nowhere', () => {
+  await mintTest('answered yes, the mint goes straight into the secret and workkit prints it nowhere', () => {
     const world = mkWorld({ claudeToken: MINTED });
     const { out, err } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'y\n' });
     const calls = world.ghCalls();
@@ -1191,7 +1221,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the default answer is no, and nothing is minted or written', () => {
+  await mintTest('the default answer is no, and nothing is minted or written', () => {
     const world = mkWorld({ claudeToken: MINTED });
     const { out } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: '\n' });
     assert(/left as it is/.test(out), `an empty answer is a no, got: ${out}`);
@@ -1200,7 +1230,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('a mint that printed no token warns instead of writing an empty secret', () => {
+  await mintTest('a mint that printed no token warns instead of writing an empty secret', () => {
     // An empty `gh secret set` would overwrite a working token with nothing.
     const world = mkWorld();
     const { said } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'y\n' });
@@ -1210,7 +1240,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the token is found whatever shape the mint printed it in', () => {
+  await mintTest('the token is found whatever shape the mint printed it in', () => {
     // Two shapes the mint has been seen in: a bare opaque value on the last
     // line, and the same value wrapped in a terminal's color codes. Both must
     // reach the secret byte for byte: a stray escape in a pushed token is a
@@ -1319,7 +1349,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
   /** A machine whose home repo already carries a young Claude token. */
   const mkMintWorld = (opts = {}) => mkHomeWorld({ secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }], ...opts });
 
-  await test('the CLI’s whole screen reaches the terminal, and the capture file is gone by the end', () => {
+  await mintTest('the CLI’s whole screen reaches the terminal, and the capture file is gone by the end', () => {
     // The QA failure this fixes: the CLI draws its ENTIRE screen on stdout, so
     // a captured stdout left the human with a blank line where the paste
     // prompt should be. Both halves of the screen are asserted (the one the
@@ -1334,7 +1364,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     cleanup(world.root);
   });
 
-  await test('a mint that did not finish is named with its exit status, and leaves no capture behind', () => {
+  await mintTest('a mint that did not finish is named with its exit status, and leaves no capture behind', () => {
     // The interrupt path in the shape a test can produce: the CLI ends without
     // printing a token, its status crosses the pty wrapper, and the run says so
     // rather than writing an empty secret.
@@ -1412,7 +1442,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
 
   group('workkit setup --token: the forced re-mint (issue #174)');
 
-  await test('a young secret is re-minted anyway: the flag IS the yes', () => {
+  await mintTest('a young secret is re-minted anyway: the flag IS the yes', () => {
     // The token that goes bad while young (a lapsed subscription) is the case
     // the age check cannot see: three days old, and nothing about it is stale.
     // The terminal is the one thing this harness cannot hand a run, so the
@@ -1609,7 +1639,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     assert(/roster: 1 repo\(s\) registered/.test(said), `it counts the roster, got: ${said}`);
     assert(/home: not set/.test(said) && said.includes('workkit setup'), `and says which command makes one, got: ${said}`);
 
-    const settings = path.join(world.env.WORKFLOW_HOME, 'settings.json');
+    const settings = path.join(world.workflowHome, 'settings.json');
     const parsed = JSON.parse(fs.readFileSync(settings, 'utf8'));
     parsed.site = { ...(parsed.site || {}), repo: 'owner/private-home' };
     fs.writeFileSync(settings, JSON.stringify(parsed, null, 2));
@@ -1631,9 +1661,9 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     // Zero registered means the tower, the board and the brief have nothing to
     // read: the one count that must not read as everything being fine.
     const world = mkWorld({ pluginInstalled: true, binOnPath: true });
-    fs.mkdirSync(world.env.WORKFLOW_HOME, { recursive: true });
+    fs.mkdirSync(world.workflowHome, { recursive: true });
     fs.writeFileSync(
-      path.join(world.env.WORKFLOW_HOME, '.repos.json'),
+      path.join(world.workflowHome, '.repos.json'),
       JSON.stringify({ version: 1, repos: {} }, null, 2),
     );
     const { out } = runCli(world, ['doctor']);
@@ -1799,9 +1829,19 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     const world = mkWorld();
     const api = path.join(world.root, 'api.ran');
     const app = path.join(world.root, 'app.ran');
+    // Each half records itself and then waits for the other's marker. A half
+    // that exits the instant it is started ends the whole RUN: the wrapper
+    // takes the other one down the moment either is gone, and a shell takes
+    // longer to start than that poll takes to notice, so the second half was
+    // being killed before it ran its command at all. Waiting ends the run when
+    // both halves have demonstrably run, which is what this case claims.
+    const half = (mine, theirs) => [
+      `echo x > '${shellPath(mine)}'`,
+      `while [ ! -e '${shellPath(theirs)}' ]; do sleep 0.2; done`,
+    ].join('; ');
     const { code } = runCli(world, ['tower'], {
       // Ports emptied so a test run never reclaims this machine's real tower.
-      env: { WORKKIT_TOWER_API: `echo x > '${api}'`, WORKKIT_TOWER_APP: `echo x > '${app}'`, WORKKIT_TOWER_PORTS: '' },
+      env: { WORKKIT_TOWER_API: half(api, app), WORKKIT_TOWER_APP: half(app, api), WORKKIT_TOWER_PORTS: '' },
     });
     assertEq(code, 0, 'exit 0 once both halves ended');
     assert(fs.existsSync(api) && fs.existsSync(app), 'both halves were started through the wrapper');
@@ -1820,10 +1860,11 @@ FAKEtrailingLINEthatIsLongEnough')"`);
   await test('decline records the answer in the user’s own settings, not the repo’s', () => {
     const world = mkWorld();
     const repo = mkRepo();
-    const { code } = runCli(world, ['decline', repo]);
+    const { code } = runCli(world, ['decline', shellPath(repo)]);
     assertEq(code, 0, 'exit 0');
-    const user = JSON.parse(fs.readFileSync(path.join(world.env.WORKFLOW_HOME, '.repos.json'), 'utf8'));
-    assertEq(user.repos[repo], 'declined', 'the personal file carries it');
+    const user = JSON.parse(fs.readFileSync(path.join(world.workflowHome, '.repos.json'), 'utf8'));
+    assertEq(user.repos[gitPath(fs.realpathSync(repo))] || user.repos[gitPath(repo)], 'declined',
+      'the personal file carries it');
     assert(!fs.existsSync(path.join(repo, W)), 'and the repo is never written to');
     cleanup(world.root); cleanup(repo);
   });

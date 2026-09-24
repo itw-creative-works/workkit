@@ -1,0 +1,44 @@
+#!/bin/bash
+# providers/github-release: does the repo already carry the release `v<version>`?
+#
+# The provider contract (every file in this directory keeps it, and the hook
+# knows nothing else about any of them):
+#   providers/<name> <package-name> <version>
+#   exit 1  the version is TAKEN
+#   exit 0  it is free, or the check could not be made
+# A check that could not be made says so on stderr first: standing down in
+# silence would read exactly like a version nobody has.
+#
+# The package name is accepted and unused here: one contract for every
+# provider beats a per-provider argument list. The repo is the origin of the
+# directory this runs in, which the hook sets to the project root.
+
+set -uo pipefail
+
+version="${2:-}"
+[ -n "$version" ] || exit 0
+
+stand_down() {
+  printf 'release-taken: the github-release check stood down for v%s: %s\n' "$version" "$1" >&2
+  exit 0
+}
+
+command -v gh >/dev/null 2>&1 || stand_down "gh is not on PATH"
+
+err=$(mktemp "${TMPDIR:-/tmp}/release-taken-gh.XXXXXX") || stand_down "no temporary file could be made"
+trap 'rm -f "$err"' EXIT
+
+rc=0
+out=$(gh release view "v$version" --json tagName -q .tagName </dev/null 2>"$err") || rc=$?
+if [ "$rc" -ne 0 ]; then
+  # The repo answering "no such release" is the free case. Everything else
+  # (no origin, no auth, no network) is a check that did not happen.
+  if grep -qi 'release not found' "$err"; then exit 0; fi
+  why=$(head -n 1 "$err" 2>/dev/null || true)
+  [ -n "$why" ] || why="gh exited $rc"
+  stand_down "$why"
+fi
+
+out=$(printf '%s' "$out" | tr -d '[:space:]')
+[ "$out" = "v$version" ] || exit 0
+exit 1

@@ -11,8 +11,9 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawn, spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { spawn } = require('child_process');
+const { group, test, assert, assertEq, skip, testUnless, summary, selfRun } = require('../lib/harness');
+const { IS_WINDOWS, BASH, NO_RC, shellPath, which } = require('../lib/platform');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'tower', 'start.sh');
 
@@ -46,7 +47,7 @@ const start = (dir, api, app, ports = '', { args = [], env = {}, capture = false
   // untouched - spec-correct, and a red herring to every case that asserts
   // what the tower itself decides. The caller-owned path has its own pty case.
   if (!('FORCE_COLOR' in env)) delete childEnv.FORCE_COLOR;
-  return spawn('bash', [SCRIPT, ...args], {
+  return spawn(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
     env: childEnv,
     stdio: ['ignore', capture ? 'pipe' : 'ignore', capture ? 'pipe' : 'ignore'],
     cwd: dir,
@@ -239,12 +240,12 @@ const probeStub = (dir) => {
   const stub = path.join(dir, 'probe.sh');
   fs.writeFileSync(stub, [
     '#!/usr/bin/env bash',
-    `printf '%s' "\${FORCE_COLOR-unset}" > '${seen}'`,
+    `printf '%s' "\${FORCE_COLOR-unset}" > '${shellPath(seen)}'`,
     "echo 'Dev server: https://localhost:14300'",
     'exec sleep 30',
     '',
   ].join('\n'));
-  return { app: `bash '${stub}'`, seen };
+  return { app: `bash '${shellPath(stub)}'`, seen };
 };
 
 // A run under a REAL terminal. The tower's whole color decision is `[ -t 1 ]`,
@@ -263,12 +264,12 @@ const ptyRun = (dir, app, exports = []) => {
     "export WORKKIT_TOWER_API='exec sleep 30'",
     `export WORKKIT_TOWER_APP="${app}"`,
     ...exports,
-    `exec bash '${SCRIPT}'`,
+    `exec bash '${shellPath(SCRIPT)}'`,
     '',
   ].join('\n'));
   fs.writeFileSync(script, [
     'set timeout 20',
-    `spawn bash ${runner}`,
+    `spawn bash ${shellPath(runner)}`,
     'expect -re "dashboard at"',
     'send \\003',
     'expect eof',
@@ -280,12 +281,18 @@ const ptyRun = (dir, app, exports = []) => {
 // The pty case needs a real terminal to send a real Ctrl-C down; expect is the
 // only portable way to get one, and a machine without it says so rather than
 // pretending the case ran.
-const hasExpect = () => spawnSync('sh', ['-c', 'command -v expect'], { stdio: 'ignore' }).status === 0;
+const hasExpect = () => Boolean(which('expect'));
 
 const run = async () => {
+  // A case that asks whether a HALF is still running. The stub records itself
+  // with the shell's `$$`, which under Git Bash is an MSYS id Node cannot ask
+  // about: process.kill() throws for a shell that is demonstrably alive, so the
+  // question answers about nothing on that machine.
+  const pidTest = testUnless(IS_WINDOWS, 'a Git Bash $$ is an MSYS id, not a pid Node can query');
+
   group('tower/start: one command, both processes');
 
-  await test('both halves start, and one interrupt ends both', async () => {
+  await pidTest('both halves start, and one interrupt ends both', async () => {
     const dir = mkTmp();
     const apiPid = path.join(dir, 'api.pid');
     const appPid = path.join(dir, 'app.pid');
@@ -305,7 +312,7 @@ const run = async () => {
     }
   });
 
-  await test('either half ending takes the other with it - nothing lingers half-up', async () => {
+  await pidTest('either half ending takes the other with it - nothing lingers half-up', async () => {
     const dir = mkTmp();
     const appPid = path.join(dir, 'app.pid');
     const child = start(dir,
@@ -322,7 +329,7 @@ const run = async () => {
     }
   });
 
-  await test('a half that exits leaving a background child behind still ends the other', async () => {
+  await pidTest('a half that exits leaving a background child behind still ends the other', async () => {
     // The failure this pins (#138 review, B2): with the filter DOWNSTREAM in a
     // pipeline, the pid the down-taker watched was the pipeline's wrapper,
     // which lives until every writer of the pipe has closed. This stub's
@@ -344,7 +351,7 @@ const run = async () => {
     }
   });
 
-  await test('ending a half ends its whole tree - a grandchild server dies with it', async () => {
+  await pidTest('ending a half ends its whole tree - a grandchild server dies with it', async () => {
     const dir = mkTmp();
     const kidPid = path.join(dir, 'kid.pid');
     // The app stub puts a child between itself and the sleeper, the way npm
@@ -653,8 +660,12 @@ const run = async () => {
     const child = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { capture: true, args: ['--verbose'] });
     const out = collect(child);
     try {
-      assert(await until(() => /compiled 42 files/.test(out())), 'the build timings are back');
+      // The app half's LAST line, the way the quiet case above polls for it: a
+      // snapshot taken at an earlier line can be read before the lines after it
+      // have arrived, and the assertions below are about those later lines.
+      assert(await until(() => /the board failed to load/.test(out())), 'the app half was read to its last line');
       const text = out();
+      assert(/compiled 42 files/.test(text), 'the build timings are back');
       assert(/cloudflare/.test(text), 'and the framework chatter with them');
       assert(/Dev server: https:\/\/localhost:14300/.test(text), "the app's own URL line stands unrewritten");
       assert(!/✓ dashboard at/.test(text), 'so the wrapper adds no second one');
@@ -767,12 +778,12 @@ const run = async () => {
         `export WORKKIT_TOWER_PORTS='${QUIET_PORTS}'`,
         "export WORKKIT_TOWER_API='exec sleep 30'",
         'export WORKKIT_TOWER_APP="echo \'Dev server: https://localhost:14300\'; exec sleep 30"',
-        `exec bash '${SCRIPT}'`,
+        `exec bash '${shellPath(SCRIPT)}'`,
         '',
       ].join('\n'));
       fs.writeFileSync(script, [
         'set timeout 20',
-        `spawn bash ${runner}`,
+        `spawn bash ${shellPath(runner)}`,
         'expect -re "dashboard at"',
         'send \\003',
         'expect eof',
@@ -793,9 +804,11 @@ const run = async () => {
       }
     });
   } else {
-    console.log('  \x1b[33m⊘ a tower on a real terminal hands its halves the colors back: expect is not installed\x1b[0m');
-    console.log('  \x1b[33m⊘ a FORCE_COLOR the caller exported is the caller\'s: expect is not installed\x1b[0m');
-    console.log('  \x1b[33m⊘ a real Ctrl-C ends it silently: expect is not installed\x1b[0m');
+    // Named through the harness, so the run's totals say how much was left
+    // unanswered instead of three ⊘ lines scrolling past uncounted.
+    skip('a tower on a real terminal hands its halves the colors back', 'expect is not installed');
+    skip('a FORCE_COLOR the caller exported is the caller\'s', 'expect is not installed');
+    skip('a real Ctrl-C ends it silently', 'expect is not installed');
   }
 
   await test('workkit tower hands this script its arguments, so --verbose gets here', () => {

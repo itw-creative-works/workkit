@@ -2,7 +2,7 @@
 
 The behavior detail behind `AGENTS.md` § Hooks, which keeps one line per hook. The rules they enforce live in [`project-state.md`](project-state.md); this file describes how each hook executes them.
 
-Three hooks carry a README of their own beside the script, and it is their deeper home: [`hooks/safety/tree-guard/README.md`](../hooks/safety/tree-guard/README.md), [`hooks/docs/session-guard/README.md`](../hooks/docs/session-guard/README.md), [`hooks/docs/change-tracker/README.md`](../hooks/docs/change-tracker/README.md).
+Four hooks carry a README of their own beside the script, and it is their deeper home: [`hooks/safety/tree-guard/README.md`](../hooks/safety/tree-guard/README.md), [`hooks/safety/release-taken/README.md`](../hooks/safety/release-taken/README.md), [`hooks/docs/session-guard/README.md`](../hooks/docs/session-guard/README.md), [`hooks/docs/change-tracker/README.md`](../hooks/docs/change-tracker/README.md).
 
 ## The index
 
@@ -10,26 +10,27 @@ One line per hook; the section below it carries the detail.
 
 | Hook | Event | What it does |
 |---|---|---|
-| `workflow:standards` | SessionStart | The daily heal in a participating repo, the hook-layer self-check beside it, `workkit update --auto`, and the setup pester above every gate (#72) |
+| `workflow:standards` | SessionStart | The daily heal in a participating repo, the hook-layer self-check beside it, `workkit update --auto`, and the setup pester above every gate |
 | `docs:state-check` | SessionStart | Announces open `status:inbox` issues, a non-empty `.workkit/capture.md`, broken pointer files, an AGENTS.md over its line or density budget |
-| `docs:session` | SessionStart | Injects `.workkit/agents/session.md` (the queue a compacted session reads first) closing with one line for the manager and one for the owner (#134), and leads with a line when the cloud brief has gone stale (#173) |
+| `docs:session` | SessionStart | Injects `.workkit/agents/session.md` (the queue a compacted session reads first) closing with one line for the manager and one for the owner, and leads with a line when the cloud brief has gone stale |
 | `workflow:reload-guard` | SessionStart + UserPromptSubmit | Nags once when a surface that loads at session start has changed: the case `/reload-plugins` exists for |
 | `manager:resolver` | PreToolUse (Task/Agent) | Supplies each crew spawn's model from `manager/ladder.json` and the live session model |
 | `manager:spawn-guard` | PreToolUse (Task/Agent) | Warns (never blocks) on a hand-passed spawn `model`, or a frontier session spawning the advisor |
-| `manager:profile` | UserPromptSubmit | Injects the manager standing instruction in frontier/workhorse sessions only (#154) |
-| `docs:checkpoint` | UserPromptSubmit | Fires the `workkit:checkpoint` skill on any line about compacting, clearing or restarting the chat, as a delta after the first run (#238) |
+| `manager:profile` | UserPromptSubmit | Injects the manager standing instruction in frontier/workhorse sessions only |
+| `docs:checkpoint` | UserPromptSubmit | Fires the `workkit:checkpoint` skill on any line about compacting, clearing or restarting the chat, as a delta after the first run |
 | `safety:vendor-guard` | PreToolUse (Edit/Write) | Blocks edits to generated, vendored, and gitignored files (`_attic/`, `.workkit/`, `.env*` excepted) |
-| `safety:commit-gate` | PreToolUse (Bash) | Blocks a `git commit` the work is not ready for (tests, test files, review marker, CHANGELOG entry, the issue it closes and its proof (#151, #155, #233)) and one the gate cannot place (#159) |
+| `safety:commit-gate` | PreToolUse (Bash) | Blocks a `git commit` the work is not ready for (tests, test files, review marker, CHANGELOG entry, the issue it closes and its proof) and one the gate cannot place |
 | `safety:commit-language` | PreToolUse (Bash) | Bounces kill/destroy/dead wording, and a subject line that is not Conventional Commits or carries a version outside `chore(release)` |
-| `safety:tree-guard` | PreToolUse (Bash) | Blocks the git commands that DISCARD a shared working tree, with one deliberate escape (#157) |
-| `safety:issue-guard` | PreToolUse (Bash) | Blocks a `gh` issue/PR/API write whose outbound text carries a local `.env` value or a token-shaped string (#83) |
-| `safety:proof-guard` | PreToolUse (Bash) | Blocks the flip to `status:complete` and the `gh issue close` of an issue carrying no `Proof:` comment (#233) |
-| `safety:suite-guard` | PreToolUse (Bash) | Blocks the repo's full suite run by hand, from any class: the commit gate owns it (#243) |
-| `safety:capture-guard` | PreToolUse (Read/Grep/Bash/Edit/Write) | Gates `.workkit/capture.md` in both directions: the owner's surface, whose one sanctioned touch is the triage drain (#145) |
-| `docs:board-guard` | PostToolUse (Edit/Write) | Bounces `CLAUDE.md` / `AGENTS.md` writes that break the pointer doctrine, the 250-line budget, or the 400-byte density rule (#161) |
+| `safety:release-taken` | PreToolUse (Bash) | Bounces the release commit and the `npm publish` whose version a provider already has (npm, the GitHub release tag), before the commit and the tag exist |
+| `safety:tree-guard` | PreToolUse (Bash) | Blocks the git commands that DISCARD a shared working tree, with one deliberate escape |
+| `safety:issue-guard` | PreToolUse (Bash) | Blocks a `gh` issue/PR/API write whose outbound text carries a local `.env` value or a token-shaped string |
+| `safety:proof-guard` | PreToolUse (Bash) | Blocks the flip to `status:complete` and the `gh issue close` of an issue carrying no `Proof:` comment |
+| `safety:suite-guard` | PreToolUse (Bash) | Blocks the repo's full suite run by hand, from any class: the commit gate owns it |
+| `safety:capture-guard` | PreToolUse (Read/Grep/Bash/Edit/Write) | Gates `.workkit/capture.md` in both directions: the owner's surface, whose one sanctioned touch is the triage drain |
+| `docs:board-guard` | PostToolUse (Edit/Write) | Bounces `CLAUDE.md` / `AGENTS.md` writes that break the pointer doctrine, the 250-line budget, or the 400-byte density rule |
 | `docs:changelog-guard` | PostToolUse (Edit/Write) | Bounces an added CHANGELOG entry that is an essay instead of one short linked paragraph |
-| `docs:session-guard` | PostToolUse (Edit/Write) | Bounces a write that leaves `.workkit/agents/session.md` past either cap: a 350-char bullet or 40 content lines (#126) |
-| `docs:change-tracker` | Stop | Nags once per change (#132) about uncommitted work, keeping the issue true, promoting findings, and unfiled captures |
+| `docs:session-guard` | PostToolUse (Edit/Write) | Bounces a write that leaves `.workkit/agents/session.md` past either cap: a 350-char bullet or 40 content lines |
+| `docs:change-tracker` | Stop | Nags once per change about uncommitted work, keeping the issue true, promoting findings, and unfiled captures |
 | `manager:close-guard` | Stop | Warns (never blocks) when a frontier session did the bulk editing, or when worker output ended the turn with no verifier pass |
 
 ## How they are wired
@@ -37,31 +38,49 @@ One line per hook; the section below it carries the detail.
 - Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh`, so settings reference a hook by `prefix:name` rather than by a path.
 - A LOADER-level failure fails open (exit 0). The hook's own exit code passes through untouched, which blocking hooks (exit 2) need.
 
+## Platforms
+
+The hooks run on macOS, on Windows under Git Bash, and on Linux. Where a spelling differs between them the branch is taken once, never in the hook that needs it: in [`hooks/_lib.sh`](../hooks/_lib.sh) for what only a hook asks, and in the engine's [`workflow/platform.sh`](../workflow/platform.sh) for what the engine asks too, which this library then points at under its own `hook_` name:
+
+- `hook_is_macos` / `hook_is_windows` / `hook_is_linux`, over `hook_uname_s`: the platform reading. `$OSTYPE` answers first (the shell sets it, so it costs no fork and needs no PATH) and `uname -s` only for a name that split does not know. The personal hooks carry the same four names and the same shape, so one mechanism spans both sides.
+- `hook_sha1`: the one digest. macOS ships `shasum` and no `sha1sum`, a Linux machine often the reverse, and a key computed with a different tool is a different key. Every marker and cache name goes through it, the two markers a skill writes and a hook reads through `hook_review_marker_path` and `hook_triage_marker_path` above it. A machine with neither tool is refused loudly rather than keyed to an empty string, which would be one marker shared by every repo on it.
+- `hook_jq`: the CRLF-safe jq. jq on Windows is a native program whose stdout is in text mode, so it writes CRLF and a value read bare carries a `\r` into whatever is compared or written next. The engine reads the same JSON with the same tool, so the body is `wk_jq` in `workflow/platform.sh` and `hook_jq` is one line pointing at it: the strip has one home, and jq's own exit status comes back, so a predicate still answers what it answered. `hook_jq_default <default> <jq args...>` is the same pointer for the read that carries a default: jq writes the values it parsed before it fails on a later one, so a `|| printf <default>` in the substitution hands back that partial answer with the default stuck on the end of it, and the default is taken here only when jq wrote nothing. Three hooks call `wk_jq` by that name instead, sourcing the seam directly: `docs/session`, `docs/session-guard` and `safety/vendor-guard` each promise in their header to source no shared hook helper, so they take the body from its own file rather than through a library they do not load.
+- `wk_repo_slug` / `wk_slug_from_remote`: what a repo is CALLED, which is platform-shaped too. git stores a remote exactly as it was typed, so a Windows checkout's origin comes back a native path with backslashes, and a reader that took only a forward slash answered nothing about it. The rule lives once in the engine's [`workflow/slug.sh`](../workflow/slug.sh) (its Node twin is `slugFromRemote` in `workflow/slug.js`), and `safety/release-taken` reaches it by its ENGINE name through this library rather than parsing an origin of its own: a hand-rolled parse beside the one home is drift spelled shorter.
+- `hook_file_mtime`: BSD `stat -f` against GNU `stat -c`, each spelling accepted only when its output is digits, since the GNU one prints `?` and exits 0 for the flag it does not mean.
+- `docs:checkpoint`'s `date -r <epoch>` against `date -d @<epoch>` chain, and `docs:session`'s date maths done in jq, are the portable form of a clock question.
+
+On Windows the engine's address must be a real symlink: Git Bash answers a plain `ln -s` with a copy unless the MSYS runtime is told otherwise, and a copy of the engine at `~/.claude/workkit` hides the `scripts/` folder beside it, which is what the skills' fallback resolves through. The daily heal sets that flag and, when a link still could not be made, removes the copy and says so rather than leaving a stale engine at the address.
+
+The skills carry no platform-bound command at all: the two that record a marker run [`scripts/review-marker.sh`](../scripts/review-marker.sh) and [`scripts/triage-marker.sh`](../scripts/triage-marker.sh), which source `hooks/_lib.sh` and write exactly the path the guard reads.
+
+One limit is named rather than worked around: `safety:commit-gate`'s deadline walk uses `pgrep`, which Git Bash does not ship, so there it ends the suite process alone instead of its whole tree.
+
 ## `workflow:standards`: SessionStart
 
 - Runs the engine's heal in a participating repo, once per repo per day. What the heal writes: `workflow/README.md`. The standard it heals to: the spec § Enforcement.
 - Adds the one check that is the hook layer's own: every wired hook resolves, is executable, parses, and the tools they call are present.
-- Reports only what it fixed: the heal runs under `QUIET=1`, which is what silences its skips at the source (#237), and the indent and the glyph every remaining line opens with are stripped before the report goes into the session's context. An undecided repo hears one offer and is never written to.
+- Reports only what it fixed: the heal runs under `QUIET=1`, which is what silences its skips at the source, and the indent and the glyph every remaining line opens with are stripped before the report goes into the session's context. An undecided repo hears one offer and is never written to.
 - The same daily run calls `workkit update --auto`, the machine-side upkeep: it updates a schedule a human already installed and installs nothing fresh.
-- Above every gate sits the setup pester (#72). A machine with no `~/.local/bin/workkit` is told, every session and in any directory, to have the user run `workkit.sh setup`, a prompt, never an install.
+- Above every gate sits the setup pester. A machine with no `~/.local/bin/workkit` is told, every session and in any directory, to have the user run `workkit.sh setup`, a prompt, never an install.
 
 ## `docs:state-check`: SessionStart
 
 - Announces open `status:inbox` issues, a non-empty `.workkit/capture.md`, broken pointer files, and an AGENTS.md that breaks its budget.
-- The AGENTS.md announcement covers both halves of that budget (#161): a file over 250 lines, and a file carrying any line over 400 bytes: the density rule, since a markdown paragraph is one source line. It names the rule and says `docs:board-guard` bounces writes until it fits.
+- The AGENTS.md announcement covers both halves of that budget: a file over 250 lines, and a file carrying any line over 400 bytes: the density rule, since a markdown paragraph is one source line. It names the rule and says `docs:board-guard` bounces writes until it fits.
 - It measures in BYTES, pinned with `LC_ALL=C`, the same unit and the same pin board-guard uses.
 
 ## `docs:session`: SessionStart
 
 - Injects a participating repo's `.workkit/agents/session.md` on every source (the task queue a compacted or restarted session reads first) and warns when it has grown past the light bar.
-- Under a `---` rule that keeps them clear of the file's last heading, the injection closes with one line per reader (#134).
+- Under a `---` rule that keeps them clear of the file's last heading, the injection closes with one line per reader.
 - The manager is told to open its first reply in plain words with the state above.
 - The owner (who otherwise cannot see that anything survived) is told on the visible channel, a top-level `systemMessage`, that saying "continue" resumes the queue.
 - Silent for a header-only or absent file, closing lines and owner line included.
-- It also names a cloud brief that stopped arriving (#173): the 9am job records the newest published brief's date in `~/.workkit/brief-status.json`, and past one whole calendar day (UTC) the injection LEADS with one line: the date, the gap, `workkit setup --token` as the fix, and `gh run list --repo <home> --workflow brief.yml` as the check, the slug read from `~/.workkit/settings.json` and the clause left off rather than guessed.
+- Participation is a committed `.workkit/settings.json` at a GIT ROOT, with a deliberate `"enabled": false` as the repo's no (read through `wk_settings_declined`, the engine's one home of that spelling). No git toplevel means no repo at all and the hook says nothing: outside a repo the settings file a cwd carries is the MACHINE's own state, which the user profile holds on Windows, where every temp directory sits under it.
+- It also names a cloud brief that stopped arriving: the 9am job records the newest published brief's date in `~/.workkit/brief-status.json`, and past one whole calendar day (UTC) the injection LEADS with one line: the date, the gap, `workkit setup --token` as the fix, and `gh run list --repo <home> --workflow brief.yml` as the check, the slug read from `~/.workkit/settings.json` and the clause left off rather than guessed.
 - The marker's OWN age is part of the answer: past the same bar, `checkedAt` older than a whole day swaps the diagnosis for `this machine last checked <date>` (a laptop that was off is not a token that expired) and the check clause rides either wording.
 - That half is a FILE read and nothing else. A session start never waits on the network. A marker that is missing, unreadable, or missing either date says nothing at all; the line rides alone in a repo with no session state, and alone it carries no `systemMessage`.
-- The one-whole-day bar is `FRESH_DAYS` in `tower/api/lib/history.js` (#172), which asks the same question for the tower's pages. Change both together. What they count diverges on purpose: the tower reads briefs carrying a stats line, the marker counts any `brief: `-titled Discussion.
+- The one-whole-day bar is `FRESH_DAYS` in `tower/api/lib/history.js`, which asks the same question for the tower's pages. Change both together. What they count diverges on purpose: the tower reads briefs carrying a stats line, the marker counts any `brief: `-titled Discussion.
 
 ## `workflow:reload-guard`: SessionStart + UserPromptSubmit
 
@@ -79,7 +98,7 @@ One line per hook; the section below it carries the detail.
 
 ## `manager:profile`: UserPromptSubmit
 
-- Injects the manager standing instruction in frontier/workhorse sessions only: delegate to the crew, keep the todo checklist current, announce each spawn (#154).
+- Injects the manager standing instruction in frontier/workhorse sessions only: delegate to the crew, keep the todo checklist current, announce each spawn.
 
 ## `docs:checkpoint`: UserPromptSubmit
 
@@ -95,47 +114,58 @@ One line per hook; the section below it carries the detail.
 ## `safety:commit-gate`: PreToolUse (Bash)
 
 - Blocks `git commit` unless: tests pass, new source files come with test files, code carries a fresh review marker, any added CHANGELOG entry matches the format, and a commit closing an issue (`Fixes #N`) stages the entry it closes against.
-- A stage-and-commit compound bounces (#155). A PreToolUse hook reads the index before the in-command `git add` runs, so it cannot see what the commit will carry. Stage first, then commit.
+- A stage-and-commit compound bounces. A PreToolUse hook reads the index before the in-command `git add` runs, so it cannot see what the commit will carry. Stage first, then commit.
 - A check that stands down says so out loud, one visible line, instead of skipping in silence.
-- The suite runs only for a commit carrying CODE (#151). A docs-only commit, and a version-only bump in the root `package.json` or `.claude-plugin/plugin.json`, stand it down.
+- The suite runs only for a commit carrying CODE. A docs-only commit, and a version-only bump in the root `package.json` or `.claude-plugin/plugin.json`, stand it down.
 - The suite run has its own deadline under the hook's declared timeout, so a suite the harness would cancel bounces the commit instead of slipping through.
-- A repo whose green suite outgrows the 1500s default raises `WORKKIT_GATE_TEST_DEADLINE` in its own `.claude/settings.json` env block, clamped at 2900s under the gate's 3000s hook timeout (#189).
-- A commit the gate cannot PLACE bounces as well (#159): the `pushd`/`popd` spelling of the directory change, which used to walk past the `cd` test, and a session directory inside no repository at all, a background subagent's steady state, where the gate used to stand down entirely.
-- Check 6 is the proof (#233): every issue the message closes (the same `Fixes/Closes/Resolves #N` parse check 4 uses) must already carry a comment whose line starts `Proof:`. It reads the issue the way `safety:proof-guard` does, names every unproved issue in the bounce, and fails open with one stderr line when `gh` cannot answer. It runs before the suite, so a missing proof bounces without paying for a full test run.
+- A repo whose green suite outgrows the 1500s default raises `WORKKIT_GATE_TEST_DEADLINE` in its own `.claude/settings.json` env block, clamped at 2900s under the gate's 3000s hook timeout.
+- A commit the gate cannot PLACE bounces as well: the `pushd`/`popd` spelling of the directory change, which used to walk past the `cd` test, and a session directory inside no repository at all, a background subagent's steady state, where the gate used to stand down entirely.
+- Check 6 is the proof: every issue the message closes (the same `Fixes/Closes/Resolves #N` parse check 4 uses) must already carry a comment whose line starts `Proof:`. It reads the issue the way `safety:proof-guard` does, names every unproved issue in the bounce, and fails open with one stderr line when `gh` cannot answer. It runs before the suite, so a missing proof bounces without paying for a full test run.
 
 ## `safety:commit-language`: PreToolUse (Bash)
 
 - Bounces commit messages using kill/destroy/dead wording, suggesting the neutral terms.
 - Bounces a subject line that is not Conventional Commits, or that carries a version number outside `chore(release)`.
 
+## `safety:release-taken`: PreToolUse (Bash)
+
+- Bounces a release whose version a provider ALREADY has, at the one moment the number is still free to change: the release commit (a real `git ... commit` carrying the `chore(release): <x.y.z>` subject) and `npm publish`. Found afterwards, a taken version costs a second release rather than a different number.
+- The release commit asks npm for every package with publish intent, each at its own `package.json` version, and asks `github-release` once for the repo at the subject's version. The publish asks npm only: the GitHub release legitimately precedes it in the ship pipeline.
+- The project is the package.json at the git toplevel for a commit and at the cwd for a publish, plus every `workspaces` member (a literal directory, and `dir/*`; any other glob shape is named on stderr and skipped). Publish intent is the ship skill's own rule, Step 5: `private` not true, plus a `files` or a `publishConfig`.
+- Providers are sibling scripts under the hook's `providers/`, one contract (`providers/<name> <package-name> <version>`, exit 1 = taken), so a third provider is a file rather than an edit. They run concurrently: a family of ten packages costs one round trip.
+- A check that CANNOT be made (offline, unauthenticated, no origin, the tool missing) stands down out loud on stderr and never blocks, the way `safety:proof-guard` does. Cannot tell is not free.
+- The escape is the loader's `HOOK_DISABLE=1` and nothing narrower: releasing over a taken version is the owner's deliberate call, not a per-command habit.
+- It declares a 30 second timeout in `hooks/hooks.json`, the way `safety:commit-gate` declares its own: `gh release view` takes no timeout flag, so the wiring is what bounds a hung one.
+- The hook's own README is its deeper home: [`hooks/safety/release-taken/README.md`](../hooks/safety/release-taken/README.md).
+
 ## `safety:tree-guard`: PreToolUse (Bash)
 
-- Blocks the git commands that DISCARD a working tree, since the tree is shared and no agent can see what else is uncommitted in it (#157).
+- Blocks the git commands that DISCARD a working tree, since the tree is shared and no agent can see what else is uncommitted in it.
 - What it bounces: `git checkout` carrying a pathspec, a `git switch` carrying `--discard-changes` or `--force`, `git restore` without a bare `--staged`, every `git stash` spelling, a forced `git clean`, and `git reset --hard`, found anywhere in a compound and through the prefixes `hooks/_lib.sh`'s finder peels.
 - A plain branch switch stays legal. Where that line sits is the hook's own README.
 - Always on, with one escape: `WORKKIT_ALLOW_DISCARD=1` on the command, the owner's deliberate discard, which the guard stands aside for out loud.
 
 ## `safety:issue-guard`: PreToolUse (Bash)
 
-- Blocks a `gh issue create/comment/edit`, a `gh pr create/comment/edit/merge/close`, a `gh api graphql` carrying a discussion or issue mutation, or a `gh api` REST WRITE to an issue or pull endpoint (#83, a read of the same path is untouched), whose outbound text carries a local `.env` value or a token-shaped string.
+- Blocks a `gh issue create/comment/edit`, a `gh pr create/comment/edit/merge/close`, a `gh api graphql` carrying a discussion or issue mutation, or a `gh api` REST WRITE to an issue or pull endpoint (a read of the same path is untouched), whose outbound text carries a local `.env` value or a token-shaped string.
 - Every repo is assumed public (the spec § Issue anatomy).
 - It names the key or the kind, never the match.
 
 ## `safety:proof-guard`: PreToolUse (Bash)
 
-- Blocks `gh issue edit <N> ... --add-label status:complete` and `gh issue close <N>` when one `gh issue view <N> --json comments` finds no comment whose line starts `Proof:`. The rule is the spec's (§ The proof): since #233 a missing proof is a hard gate, not a note at ship time.
+- Blocks `gh issue edit <N> ... --add-label status:complete` and `gh issue close <N>` when one `gh issue view <N> --json comments` finds no comment whose line starts `Proof:`. The rule is the spec's (§ The proof): a missing proof is a hard gate, not a note at ship time.
 - Two closes pass, in any quoting: `--reason "not planned"` (`-r` is the same flag) and `--duplicate-of <M>`. Nothing was built on either, so there is nothing to prove. Every other label flip, and every read, is untouched.
 - The issue is read as a plain number standing before the first flag, which is the shape the skills write. Two spellings gh also accepts pass unrecognised, on purpose: an issue URL or an `owner/repo#N` argument (judging one means guessing which repo to ask), and a number sitting after a flag (a flag value that is itself a number would read as an issue). A `--repo`/`-R` on the command rides the read in every spelling gh takes, attached ones included, so a cross-repo flip is judged against its own issue.
 - Fails open, out loud: no `jq`, no `gh`, a view that exits non-zero, or a `--repo` value it cannot resolve (a variable, a substitution) leaves the command alone and says on stderr that the gate did not run. An unreadable `--repo` is never answered by reading the local repo instead.
 - Clause boundaries are quote aware, in ONE awk pass: a `;` or a `|` inside a quoted body is data, and splitting on it used to cut the clause before its `--add-label`. Detection reads the quote-stripped copy of each clause; the flag values are read raw, since the strip is what removes them.
 - Two literal tests on the raw command come first, so a `gh issue edit` that cannot be a flip never reaches the walk: the text has to spell `status:complete` or `gh issue close`, which neither command can do its work without.
 - The third stage of the same gate is `safety:commit-gate` check 6, the `Fixes #N` trailer. Both call one helper, `hook_issue_has_proof` in `hooks/_lib.sh`, so on the shell path the question and its pattern have one home.
-- The tower Board's own move of a card to Complete applies the same gate off the same read (#236), on both of its write paths; the one difference is that a read the board cannot make refuses the move, where this hook stands down. Detail: `tower/README.md`.
+- The tower Board's own move of a card to Complete applies the same gate off the same read, on both of its write paths; the one difference is that a read the board cannot make refuses the move, where this hook stands down. Detail: `tower/README.md`.
 
 ## `safety:suite-guard`: PreToolUse (Bash)
 
-- Blocks the full suite run BY HAND: `npm test`, `npm run test`, npm's `t` alias and npm's own flags in front of any of them (`npm --silent test`), and the repo's test script run directly (`scripts.test` in the GIT ROOT's package.json, the same place `safety:commit-gate` reads it, `node tests/run.js` here). The rule is the spec's (§ The proof): the commit gate owns the full suite and runs it at the commit, so a hand-run before that pays the same minutes twice (#243).
-- It holds for EVERY class, the manager included, which is what #152 at `docs/agents.md` could not reach: that one is written to the worker and the verifier.
+- Blocks the full suite run BY HAND: `npm test`, `npm run test`, npm's `t` alias and npm's own flags in front of any of them (`npm --silent test`), and the repo's test script run directly (`scripts.test` in the GIT ROOT's package.json, the same place `safety:commit-gate` reads it, `node tests/run.js` here). The rule is the spec's (§ The proof): the commit gate owns the full suite and runs it at the commit, so a hand-run before that pays the same minutes twice.
+- It holds for EVERY class, the manager included, which the `docs/agents.md` rule alone could not reach: that one is written to the worker and the verifier.
 - A narrowed run passes untouched, since it is what proves a change: `npm test -- <scope>`, `node --test <file>`, `node tests/<dir>/<name>.test.js`, `npx omega test <scope>`, and the test script carrying an argument. A script whose name merely opens with `test` (`npm run test:unit`) is another script and is never this one. EVERY occurrence is judged, not the first: `npm test -- one && npm test` is a full run.
 - The escape is `WORKKIT_SUITE=1` on the command, the deliberate full run, the same shape as tree-guard's `WORKKIT_ALLOW_DISCARD`. The gate's own run never arrives here: it runs the suite from inside its own hook, never through the Bash tool.
 - Detection is the command TEXT in two passes, with no clause walk. The first is cheap and raw, one awk pass, and nothing else runs for a command that cannot be a suite run; only a command that matched pays for the second, over the heredoc-stripped and quote-stripped copy (`hooks/_lib.sh`), so a MENTION of the suite bounces nothing: a commit message, a `gh issue comment`, a heredoc body.
@@ -143,7 +173,7 @@ One line per hook; the section below it carries the detail.
 
 ## `safety:capture-guard`: PreToolUse (Read/Grep/Bash/Edit/Write)
 
-- Gates `.workkit/capture.md` in both directions: the owner's capture surface, whose one sanctioned touch is the triage drain (#145).
+- Gates `.workkit/capture.md` in both directions: the owner's capture surface, whose one sanctioned touch is the triage drain.
 - A read of its contents AND a rewrite of it (Edit/Write, `>`, plain `tee`, `sed -i`, `perl -i`) need the marker the `workkit:triage` skill records, stale after 30 minutes.
 - An APPEND (`>>`, `tee -a`, or the capture CLI (`wk.sh note`, which names no path)) is blocked with the marker or without, since adding to it is the owner's alone.
 - Counting stays open.
@@ -152,7 +182,7 @@ One line per hook; the section below it carries the detail.
 
 - Bounces `CLAUDE.md` / `AGENTS.md` writes that break the spec's document rules.
 - `CLAUDE.md`: pointer doctrine: exactly a bare `@AGENTS.md` import, no content. The violation carries the two-commit convert recipe.
-- `AGENTS.md`: the size budget, ≤250 lines, and the DENSITY rule beside it (#161): no line over 400 bytes, since a markdown paragraph is one source line and a file can pass the line count while carrying a book in fourteen of them.
+- `AGENTS.md`: the size budget, ≤250 lines, and the DENSITY rule beside it: no line over 400 bytes, since a markdown paragraph is one source line and a file can pass the line count while carrying a book in fourteen of them.
 - A density violation lists the first few offenders as `line N (M bytes)` and says to bulletize or move the detail into `docs/<topic>.md`.
 - The unit is BYTES, and the measure is pinned to it with `LC_ALL=C`: one-true-awk counts bytes while gawk counts characters under a UTF-8 locale, so an unpinned rule would judge the same file differently on macOS and Linux. One rule, one unit, everywhere it is described.
 
@@ -162,14 +192,14 @@ One line per hook; the section below it carries the detail.
 
 ## `docs:session-guard`: PostToolUse (Edit/Write)
 
-- Bounces a write that leaves `.workkit/agents/session.md` past either cap: a bullet over 350 chars, or the file over 40 content lines (#126).
+- Bounces a write that leaves `.workkit/agents/session.md` past either cap: a bullet over 350 chars, or the file over 40 content lines.
 - It judges the resulting file, which is why it is POST.
 - The same bar `docs:session` warns at; the `workkit:ship` prune is what normally keeps it under.
 
 ## `docs:change-tracker`: Stop
 
 - Nags about uncommitted work, keeping the issue true, promoting findings out of `.workkit/`, and unfiled captures.
-- Once per change (#132): it stays silent on every stop that follows while nothing has moved.
+- Once per change: it stays silent on every stop that follows while nothing has moved.
 
 ## `manager:close-guard`: Stop
 

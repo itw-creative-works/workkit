@@ -20,9 +20,14 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { group, test, assert, assertEq, testUnless, summary, selfRun } = require('../lib/harness');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
+const {
+  IS_WINDOWS, BASH, NO_RC, NO_EXEC_BIT, NO_NODE_STUB, shellPath, which, homeEnv, linkTool,
+  stubTool, pathWith, joinPath,
+} = require('../lib/platform');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'morning.sh');
 const { INSTRUCTION } = require(path.join(__dirname, '..', '..', 'jobs', 'brief-payload.js'));
@@ -79,8 +84,7 @@ const mkWorld = ({
   }
 
   const claudeLog = path.join(root, 'claude-argv.log');
-  const claude = path.join(bin, 'claude');
-  fs.writeFileSync(claude, [
+  const claude = stubTool(bin, 'claude', [
     '#!/usr/bin/env bash',
     recordArgv(claudeLog),
     // %b, not %s: the escapes JSON.stringify wrote have to become real newlines.
@@ -88,16 +92,12 @@ const mkWorld = ({
     // logs that and never the digest.
     `printf '%b' ${JSON.stringify(response)}${status === 0 ? '' : ' >&2'}`,
     `exit ${status}`,
-    '',
-  ].join('\n'));
-  fs.chmodSync(claude, 0o755);
+  ]);
 
   // A notifier that must never be reached: there is no desktop on a runner, and
   // a recorder that stayed silent is the only way to assert it.
   const notifLog = path.join(root, 'notifly-argv.log');
-  const notifly = path.join(bin, 'notifly');
-  fs.writeFileSync(notifly, ['#!/usr/bin/env bash', recordArgv(notifLog), 'exit 0', ''].join('\n'));
-  fs.chmodSync(notifly, 0o755);
+  const notifly = stubTool(bin, 'notifly', ['#!/usr/bin/env bash', recordArgv(notifLog), 'exit 0']);
 
   const ghLog = path.join(root, 'gh-argv.log');
   const bodyLog = path.join(root, 'posted-body.md');
@@ -112,7 +112,7 @@ const mkWorld = ({
   // The contents API answers with a base64 body, which is what the script
   // decodes; `gh api -q .content` is the field it asks for.
   const encoded = siteRepos ? Buffer.from(JSON.stringify(siteRepos)).toString('base64') : null;
-  fs.writeFileSync(path.join(bin, 'gh'), [
+  stubTool(bin, 'gh', [
     '#!/usr/bin/env bash',
     recordArgv(ghLog),
     ...(ghFails ? ['exit 1'] : []),
@@ -155,9 +155,7 @@ const mkWorld = ({
     '  *) printf \'%s\' \'{}\' ;;',
     'esac',
     'exit 0',
-    '',
-  ].join('\n'));
-  fs.chmodSync(path.join(bin, 'gh'), 0o755);
+  ]);
 
   // The upstream CHANGELOG the news read is pointed at. `/dev/null` is the
   // module's silent-skip path: an empty body, no version, no line.
@@ -165,20 +163,23 @@ const mkWorld = ({
   if (ccChangelog) {
     const file = path.join(root, 'cc-changelog.md');
     fs.writeFileSync(file, ccChangelog);
-    ccSource = `file://${file}`;
+    ccSource = pathToFileURL(file).href;
   }
 
   const env = {
-    ...process.env,
-    HOME: home,
-    PATH: `${bin}:${process.env.PATH}`,
-    NOTIFLY: notifly,
-    WORKKIT_CC_CHANGELOG: ccSource,
-    // The variable Actions always sets, and the one the script asks which
-    // environment it woke up in. The world that is not a runner deletes it.
-    GITHUB_ACTIONS: 'true',
-    // The workflow's two: the cross-repo secret `gh` authenticates with by
-    // default, and the built-in token the post is made with.
+    ...homeEnv(home, {
+      ...process.env,
+      PATH: pathWith(bin),
+      NOTIFLY: notifly,
+      WORKKIT_CC_CHANGELOG: ccSource,
+      // The variable Actions always sets, and the one the script asks which
+      // environment it woke up in. The world that is not a runner deletes it.
+      GITHUB_ACTIONS: 'true',
+    }),
+    // The workflow's two, set AFTER the scratch home, which carries no token of
+    // its own: the cross-repo secret `gh` authenticates with by default, and
+    // the built-in token the post is made with. This world MEANS to hand them
+    // over, and what each call was made with is what these cases measure.
     GH_TOKEN: sweepToken,
     WORKKIT_POST_TOKEN: postToken,
   };
@@ -226,27 +227,39 @@ const withoutJq = (root, bin) => {
   const farm = path.join(root, 'no-jq');
   fs.mkdirSync(farm, { recursive: true });
   for (const tool of NO_JQ_TOOLS) {
-    const found = spawnSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).stdout.trim();
-    if (found) fs.symlinkSync(found, path.join(farm, tool));
+    const found = which(tool);
+    if (found) linkTool(farm, found);
   }
-  return `${bin}:${farm}`;
+  return joinPath(bin, farm);
 };
 
-const runJob = (world, args = []) => spawnSync('bash', [SCRIPT, ...args], {
+const runJob = (world, args = []) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
   encoding: 'utf8',
   timeout: 60000,
   env: world.env,
 });
 
 const run = async () => {
+  // A case that reads what the `gh` shim RECORDED, or what an answer of the
+  // shim's put in the log. The script's own gh calls reach it on either
+  // platform (a shell starts a shebang script itself), but the node composers
+  // it runs spawn gh directly, and no stub is startable that way on Windows
+  // (tests/lib/platform.js, `stubTool`): the machine's own gh answers those
+  // reads there, sealed by this world's env to a config that has no account.
+  const composerTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
+
+  // The whole case is the file's mode, which Windows has none of.
+  const execBitTest = testUnless(IS_WINDOWS, NO_EXEC_BIT);
+
   group('jobs/morning (cloud): shape');
 
   await test('bash -n: no syntax errors', () => {
-    const res = spawnSync('bash', ['-n', SCRIPT], { encoding: 'utf8' });
+    const res = spawnSync(BASH, [...NO_RC, '-n', shellPath(SCRIPT)], { encoding: 'utf8' });
     assertEq(res.status, 0, `bash -n: ${res.stderr}`);
   });
 
-  await test('the script is executable', () => {
+  await execBitTest('the script is executable', () => {
+    // eslint-disable-next-line no-bitwise
     assert(fs.statSync(SCRIPT).mode & 0o111, 'the workflow runs it through bash, but a human runs it directly');
   });
 
@@ -324,7 +337,7 @@ const run = async () => {
 
     const env = { ...world.env };
     delete env.GITHUB_ACTIONS;
-    spawnSync('bash', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
+    spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: 60000, env });
 
     assertEq(fs.readFileSync(roster, 'utf8'), before, 'the roster is byte-identical: nothing was registered or dropped');
     assertEq(world.calls().length, 0, 'and nothing was sent: the day is dispatched from a machine, never composed on it');
@@ -345,7 +358,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('an existing settings file wins over the repo the run belongs to', () => {
+  await composerTest('an existing settings file wins over the repo the run belongs to', () => {
     const world = mkWorld({
       settings: { version: 1, site: { repo: 'configured/home' } },
       githubRepo: 'env/home',
@@ -357,12 +370,38 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  await test('a runner without the seeded engine refuses, naming what is missing', () => {
+    // The engine seeded beside this script (home.sh's WK_HOME_RUNNER_FILES) is
+    // a REQUIREMENT of the cloud branch: the roster it writes is built through
+    // the engine's own predicates, and without them every directory reads as no
+    // repo at all. A refusal that names the gap beats a roster built on a
+    // question nothing answered. The machine branch asks nothing of it: its own
+    // logger fallback is the whole of what it needs.
+    const world = mkWorld();
+    const seeded = path.join(world.root, 'brief');
+    fs.mkdirSync(path.join(seeded, 'jobs'), { recursive: true });
+    fs.mkdirSync(path.join(seeded, 'workflow'), { recursive: true });
+    // The seeded jobs files are all there; `brief/workflow/` is the empty half,
+    // so the gap under test is the ENGINE and nothing else.
+    const copy = path.join(seeded, 'jobs', 'morning.sh');
+    fs.copyFileSync(SCRIPT, copy);
+    fs.copyFileSync(path.join(__dirname, '..', '..', 'jobs', 'brief-publish.sh'),
+      path.join(seeded, 'jobs', 'brief-publish.sh'));
+    const res = spawnSync(BASH, [...NO_RC, shellPath(copy)], {
+      encoding: 'utf8', timeout: 60000, env: world.env,
+    });
+    assertEq(res.status, 1, `the run refuses, stdout: ${res.stdout} stderr: ${res.stderr}`);
+    assert(/engine/.test(res.stderr), `and names the engine as what is missing: ${res.stderr}`);
+    assertEq(world.calls().length, 0, 'nothing was sent');
+    cleanup(world.root);
+  });
+
   await test('a missing jq is named as a missing tool, not as a missing home repo', () => {
     // jq reads the home slug, so an absent one empties that read: the two
     // refusals have to say which of them happened.
     const world = mkWorld();
     const env = { ...world.env, PATH: withoutJq(world.root, path.join(world.root, 'bin')) };
-    const res = spawnSync('bash', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
+    const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: 60000, env });
     assertEq(res.status, 1, 'the run refuses');
     assert(/jq is not installed/.test(res.stderr), `and names the tool: ${res.stderr}`);
     assert(!/names no home repo/.test(res.stderr), 'never the key, which is right there');
@@ -384,7 +423,7 @@ const run = async () => {
     assert(!/WORKKIT_HOME_SLUG/.test(fs.readFileSync(SCRIPT, 'utf8')), 'the runner does not name it');
   });
 
-  await test('the roster comes from the home repo’s own branch, and the composer reads it back', () => {
+  await composerTest('the roster comes from the home repo’s own branch, and the composer reads it back', () => {
     // Private, and read with the cross-repo token, never from gh-pages, which
     // is public even on a private repo (issue #110).
     const world = mkWorld({ siteRepos: { repos: ['a/one', 'b/two', HOME_SLUG], home: HOME_SLUG } });
@@ -398,7 +437,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the branch the roster is read from is asked for, never assumed to be main', () => {
+  await composerTest('the branch the roster is read from is asked for, never assumed to be main', () => {
     // Issue #112: the publish pushes whatever branch the home clone is on. The
     // published dashboard is told which one by data/home.json; a runner has no
     // site to read that from, so it asks GitHub for the repo it is standing in:
@@ -417,7 +456,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('no slug list falls back to the home repo alone, and still composes', () => {
+  await composerTest('no slug list falls back to the home repo alone, and still composes', () => {
     const world = mkWorld();
     const res = runJob(world);
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
@@ -445,7 +484,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('a repo the token cannot read is named in the log, not in the payload', () => {
+  await composerTest('a repo the token cannot read is named in the log, not in the payload', () => {
     // The scope gap the Actions log has to show: the token reaches the home repo
     // and not the rest, the brief reads clean, and only this line says so.
     const world = mkWorld({ boardBroken: true });
@@ -464,7 +503,7 @@ const run = async () => {
 
   group('jobs/morning (cloud): publishing');
 
-  await test('the digest is posted as a Discussion titled with the date', () => {
+  await composerTest('the digest is posted as a Discussion titled with the date', () => {
     const world = mkWorld({ ccChangelog: '# Changelog\n\n## 2.1.220\n\n- Added a `DirectoryAdded` hook\n' });
     const res = runJob(world);
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
@@ -489,7 +528,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('a failed upstream read carries the board’s version forward', () => {
+  await composerTest('a failed upstream read carries the board’s version forward', () => {
     const world = mkWorld({ posted: [{ title: 'brief: 2026-07-01', body: '<!-- cc-news: 2.1.219 -->' }] });
     runJob(world);
     assert(/<!-- cc-news: 2\.1\.219 -->/.test(world.postedBody()),
@@ -550,7 +589,7 @@ const run = async () => {
 
   group('jobs/morning (cloud): the two tokens');
 
-  await test('the post is made with the built-in token, the sweep with the secret', () => {
+  await composerTest('the post is made with the built-in token, the sweep with the secret', () => {
     // Issue #91: the Discussion lands on the repo the run belongs to, so it
     // needs nothing longer-lived than the workflow's own GITHUB_TOKEN. The
     // cross-repo secret is for the board, and only the board.

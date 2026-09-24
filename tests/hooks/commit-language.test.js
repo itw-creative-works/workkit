@@ -11,14 +11,15 @@ const path = require('path');
 const os = require('os');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary } = require('../lib/harness');
+const { BASH, NO_RC, shellPath } = require('../lib/platform');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'commit-language', 'run.sh');
 
 const runHook = (command) => {
   const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command } });
-  const res = spawnSync('bash', [HOOK], {
+  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
     input,
-    env: { ...process.env, HOME: os.homedir() },
+    env: { ...process.env, HOME: shellPath(os.homedir()) },
     encoding: 'utf8',
     timeout: 10000,
   });
@@ -273,9 +274,9 @@ const run = async () => {
     const subject = `feat: ${'a'.repeat(62)} … b`; // 6 + 62 + 4 = 72 characters
     assertEq(subject.length, 72, 'the fixture is exactly at the limit');
     const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command: `git commit -m "${subject}"` } });
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input,
-      env: { ...process.env, HOME: os.homedir(), LC_ALL: 'C' },
+      env: { ...process.env, HOME: shellPath(os.homedir()), LC_ALL: 'C' },
       encoding: 'utf8',
       timeout: 10000,
     });
@@ -290,9 +291,9 @@ const run = async () => {
   group('commit-language: fail-open');
 
   await test('missing command: exit 0', () => {
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: JSON.stringify({ tool_input: {} }),
-      env: { ...process.env, HOME: os.homedir() },
+      env: { ...process.env, HOME: shellPath(os.homedir()) },
       encoding: 'utf8',
       timeout: 10000,
     });
@@ -300,9 +301,9 @@ const run = async () => {
   });
 
   await test('malformed JSON: exit 0', () => {
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: 'not json',
-      env: { ...process.env, HOME: os.homedir() },
+      env: { ...process.env, HOME: shellPath(os.homedir()) },
       encoding: 'utf8',
       timeout: 10000,
     });

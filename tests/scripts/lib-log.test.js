@@ -14,8 +14,9 @@
 const { spawnSync } = require('child_process');
 const path = require('path');
 const { group, test, assert, assertEq, summary } = require('../lib/harness');
+const { BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../lib/platform');
 
-const LIB = path.join(__dirname, '..', '..', 'workflow', 'lib.sh');
+const LIB = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib.sh'));
 const ESCAPE = '\u001b';
 
 // One line of every level, in the order the table lists them.
@@ -28,8 +29,8 @@ const EVERY_LEVEL = 'wk_ok "engine: linked"\nwk_skip "engine: current"\nwk_info 
  * rather than the dumb-TERM check answering for it.
  */
 const inLib = (script, env = {}) => {
-  const res = spawnSync('bash', ['-c', `. ${JSON.stringify(LIB)}\n${script}`], {
-    env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: process.env.HOME, TERM: 'xterm-256color', ...env },
+  const res = spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(LIB)}\n${script}`], {
+    env: { PATH: SYSTEM_PATH, HOME: shellPath(process.env.HOME), TERM: 'xterm-256color', ...env },
     encoding: 'utf8',
     timeout: 30000,
   });

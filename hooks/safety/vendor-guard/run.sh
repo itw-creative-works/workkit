@@ -6,7 +6,7 @@
 #   - package-manager lockfiles (owned by their tools, never hand-edited)
 #   - gitignored files (git check-ignore): generated/runtime files aren't hand-edited
 # Mechanical half of the AGENTS.md "edit the SOURCE, not the output" rule.
-# Designed exceptions (owner ruling, 2026-07-22, plan Q1: default-deny + tiny visible allowlist):
+# Designed exceptions (default-deny plus a tiny visible allowlist):
 #   _attic/ (gitignored holding pen, written on purpose, checked FIRST, since
 #   an attic may hold a parked dist/), .env / .env.* (secrets live there BECAUSE
 #   they're gitignored), and .workkit/ (agent state and the local capture file,
@@ -15,7 +15,7 @@
 #   gitignore check anyway). .workkit/ is checked AFTER the vendor/lockfile
 #   block, so a .workkit/ inside node_modules/ or dist/ is still blocked.
 # The directory name is spelled out rather than read from a variable: this guard
-# sources nothing, so a broken shared file can never keep it from running. Its
+# sources no hook helper, so the variable holding it is not defined here. Its
 # SSOT is WORKKIT_DIR in hooks/_lib.sh. Change both together.
 # Fail open on missing jq/file_path: a broken guard must never wedge the session.
 
@@ -27,7 +27,21 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-file_path=$(jq -r '.tool_input.file_path // ""' <<<"$input" || true)
+# The two files this hook sources, both from its own physical location: the
+# CRLF-safe jq (workflow/platform.sh, `wk_jq`) and the repo-root predicate
+# (workflow/participation.sh, `wk_is_repo_root`), each carrying its rule and the
+# reason for it. Both define functions and set nothing, so a seam that is THERE
+# costs an edit nothing.
+#
+# UNGUARDED, the way every other source of these two files is: a checkout
+# missing one is an incomplete plugin, which the workflow:standards hook already
+# names, and a guard here would leave this guard reading an undefined predicate.
+# shellcheck source=../../../workflow/platform.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/platform.sh"
+# shellcheck source=../../../workflow/participation.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/participation.sh"
+
+file_path=$(wk_jq -r '.tool_input.file_path // ""' <<<"$input" || true)
 [ -n "$file_path" ] || exit 0
 
 # _attic/ outranks everything: an attic may hold a parked dist/ or vendor/, and
@@ -50,7 +64,7 @@ is_package_root() {
   local dir="${1:-/}"
   [ -d "$dir" ] || return 0
   [ -f "$dir/package.json" ] && return 0
-  [ -e "$dir/.git" ] && return 0
+  wk_is_repo_root "$dir" && return 0
   return 1
 }
 

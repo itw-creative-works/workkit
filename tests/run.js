@@ -45,6 +45,7 @@ const findSuites = (dir) => {
   let failed = 0;
   const allFailures = [];
   const skippedSuites = [];
+  const skippedCases = [];
 
   for (const suite of suites) {
     const rel = path.relative(TEST_DIR, suite);
@@ -71,6 +72,9 @@ const findSuites = (dir) => {
       for (const f of res.failures || []) {
         allFailures.push({ name: `${rel} › ${f.name}`, err: f.err });
       }
+      for (const s of res.skips || []) {
+        skippedCases.push({ name: `${rel} › ${s.name}`, reason: s.reason });
+      }
     } catch (err) {
       // A suite that called skipSuite() is reporting a missing precondition,
       // not a defect. This machine cannot ask the question it asks.
@@ -86,12 +90,14 @@ const findSuites = (dir) => {
   }
 
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-  const skipNote = skippedSuites.length ? `, ${skippedSuites.length} suite${skippedSuites.length === 1 ? '' : 's'} skipped` : '';
-  console.log(`\n\x1b[1m${passed} passed, ${failed} failed${skipNote}\x1b[0m (${elapsed}s, ${suites.length} suite${suites.length === 1 ? '' : 's'})`);
+  const suiteNote = skippedSuites.length ? `, ${skippedSuites.length} suite${skippedSuites.length === 1 ? '' : 's'} skipped` : '';
+  const caseNote = skippedCases.length ? `, ${skippedCases.length} case${skippedCases.length === 1 ? '' : 's'} skipped` : '';
+  console.log(`\n\x1b[1m${passed} passed, ${failed} failed${suiteNote}${caseNote}\x1b[0m (${elapsed}s, ${suites.length} suite${suites.length === 1 ? '' : 's'})`);
 
-  // Name every skip. A run that quietly covered less than the reader assumes is
-  // the failure mode this whole mechanism has to avoid.
-  for (const s of skippedSuites) {
+  // Name every skip, the whole file and the single case alike. A run that
+  // quietly covered less than the reader assumes is the failure mode this whole
+  // mechanism has to avoid.
+  for (const s of [...skippedSuites, ...skippedCases]) {
     console.log(`  \x1b[33m⊘ ${s.name}: ${s.reason}\x1b[0m`);
   }
 

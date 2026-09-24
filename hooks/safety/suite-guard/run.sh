@@ -47,10 +47,12 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-cmd=$(jq -r '.tool_input.command // ""' <<<"$input" || true)
+. "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
+
+cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
 [ -n "$cmd" ] || exit 0
 
-cwd=$(jq -r '.cwd // ""' <<<"$input" || true)
+cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
 [ -n "$cwd" ] || cwd="$PWD"
 
 # The repo, and its test script: the git root's package.json, which is what the
@@ -58,7 +60,7 @@ cwd=$(jq -r '.cwd // ""' <<<"$input" || true)
 repo_root=$(cd "$cwd" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null) || repo_root=""
 [ -n "$repo_root" ] || exit 0
 
-script=$(jq -r '.scripts.test // ""' "$repo_root/package.json" 2>/dev/null || true)
+script=$(hook_jq -r '.scripts.test // ""' "$repo_root/package.json" 2>/dev/null || true)
 [ -n "$script" ] || exit 0
 
 # npm's own spellings of the whole suite: the `run` form, the bare form, the `t`
@@ -107,7 +109,6 @@ sg_full_run() {
 
 # Matched, so the expensive half is worth paying for: a heredoc BODY is file
 # content and a quoted span is data, and neither is a command.
-. "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
 stripped=$(hook_strip_quotes "$(hook_strip_heredocs "$cmd")")
 [ -n "$(sg_full_run "$stripped")" ] || exit 0
 

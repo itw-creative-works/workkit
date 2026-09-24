@@ -14,6 +14,7 @@ const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary } = require('../lib/harness');
+const { BASH, NO_RC, shellPath } = require('../lib/platform');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'board-guard', 'run.sh');
 
@@ -21,10 +22,10 @@ const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'bg-test-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const runHook = (filePath, envOverride = {}) => {
-  const input = JSON.stringify({ tool_name: 'Write', tool_input: { file_path: filePath } });
-  const res = spawnSync('bash', [HOOK], {
+  const input = JSON.stringify({ tool_name: 'Write', tool_input: { file_path: shellPath(filePath) } });
+  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
     input,
-    env: { ...process.env, HOME: os.homedir(), ...envOverride },
+    env: { ...process.env, HOME: shellPath(os.homedir()), ...envOverride },
     encoding: 'utf8',
     timeout: 10000,
   });
@@ -61,9 +62,9 @@ const run = async () => {
   });
 
   await test('missing file_path in input: exit 0', () => {
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: JSON.stringify({ tool_name: 'Write', tool_input: {} }),
-      env: { ...process.env, HOME: os.homedir() },
+      env: { ...process.env, HOME: shellPath(os.homedir()) },
       encoding: 'utf8',
       timeout: 10000,
     });

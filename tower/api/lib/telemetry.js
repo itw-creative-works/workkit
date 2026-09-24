@@ -43,11 +43,10 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { StringDecoder } = require('string_decoder');
 
-const { listSessions, transcriptPath, idleWindowMs } = require('./sessions');
+const { listSessions, idleWindowMs } = require('./sessions');
 
 // Bytes per read. Large enough that a gigabyte transcript is a few hundred
 // syscalls, small enough that the buffer is never a memory question.
@@ -527,15 +526,18 @@ const mergeCounts = (into, from) => {
  * sum the page without counting anything twice.
  *
  * @param {object} session a row from listSessions
- * @param {string} home
  * @param {number} now
  * @param {number} idleMs the liveness window, from sessions.js
  * @returns {{row: object, usage: object, subUsage: object[], files: string[]}} the
  *   row plus the raw readings behind it, which the totals need and the response
  *   does not, and every file it read, which the cache prune needs
  */
-const sessionRow = (session, home, now, idleMs) => {
-  const transcript = transcriptPath(home, session.cwd, session.session);
+const sessionRow = (session, now, idleMs) => {
+  // Where a session's transcript is has ONE home, the sessions read that named
+  // it: the row's cwd is published in git's spelling and Claude Code names the
+  // project folder from the native one, so a second derivation off that cwd
+  // would name a file nothing wrote.
+  const { transcript } = session;
   const usage = readUsage(transcript);
   const { rows, readings, files } = readSubagents(transcript, usage.taskTypes, now, idleMs);
   return {
@@ -588,7 +590,6 @@ const sessionRow = (session, home, now, idleMs) => {
  * @returns {{sessions: object[], byModel: object, byClass: object, overTime: Array<{label: string, tokens: number}>}}
  */
 const collectTelemetry = (opts = {}) => {
-  const home = opts.home || os.homedir();
   const now = opts.now || Date.now();
 
   let listing;
@@ -615,7 +616,7 @@ const collectTelemetry = (opts = {}) => {
   for (const session of listing) {
     let read;
     try {
-      read = sessionRow(session, home, now, idleMs);
+      read = sessionRow(session, now, idleMs);
     } catch {
       // One session whose transcript cannot be reached costs its own numbers
       // and leaves the rest of the crew reported.

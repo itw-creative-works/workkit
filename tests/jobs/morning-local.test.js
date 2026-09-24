@@ -27,9 +27,11 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, skipSuite } = require('../lib/harness');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
+const { BASH, NO_RC, shellPath, homeEnv, stubTool, pathWith } = require('../lib/platform');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'morning.sh');
 const { INSTRUCTION } = require(path.join(__dirname, '..', '..', 'jobs', 'brief-payload.js'));
@@ -116,21 +118,15 @@ const mkWorld = ({
 
   const claudeLog = path.join(root, 'claude-argv.log');
   const notifLog = path.join(root, 'notifly-argv.log');
-  const claude = path.join(bin, 'claude');
-  const notifly = path.join(bin, 'notifly');
-
-  fs.writeFileSync(claude, [
+  const claude = stubTool(bin, 'claude', [
     '#!/usr/bin/env bash',
     recordArgv(claudeLog),
     // %b, not %s: the escapes JSON.stringify wrote have to become real newlines,
     // or the whole response is one line and "first line" proves nothing.
     `printf '%b' ${JSON.stringify(response)}`,
     `exit ${status}`,
-    '',
-  ].join('\n'));
-  fs.writeFileSync(notifly, ['#!/usr/bin/env bash', recordArgv(notifLog), 'exit 0', ''].join('\n'));
-  fs.chmodSync(claude, 0o755);
-  fs.chmodSync(notifly, 0o755);
+  ]);
+  const notifly = stubTool(bin, 'notifly', ['#!/usr/bin/env bash', recordArgv(notifLog), 'exit 0']);
 
   // The `gh` the publish speaks to, and the one the news cursor reads back
   // through. EVERY world gets it, including the ones with nowhere to publish:
@@ -143,7 +139,7 @@ const mkWorld = ({
   const nodes = posted.map(({ title, body = '' }) => JSON.stringify({
     title, createdAt: `${today()}T09:00:00Z`, body,
   })).join(',');
-  fs.writeFileSync(path.join(localBin, 'gh'), [
+  stubTool(localBin, 'gh', [
     '#!/usr/bin/env bash',
     recordArgv(ghLog),
     ...(ghFails ? ['exit 1'] : []),
@@ -166,9 +162,7 @@ const mkWorld = ({
     '  *) printf \'%s\' \'{}\' ;;',
     'esac',
     'exit 0',
-    '',
-  ].join('\n'));
-  fs.chmodSync(path.join(localBin, 'gh'), 0o755);
+  ]);
 
   // The upstream CHANGELOG the news read is pointed at. `/dev/null` is the
   // module's silent-skip path: an empty body, no version, no line.
@@ -176,14 +170,13 @@ const mkWorld = ({
   if (ccChangelog) {
     const file = path.join(root, 'cc-changelog.md');
     fs.writeFileSync(file, ccChangelog);
-    ccSource = `file://${file}`;
+    ccSource = pathToFileURL(file).href;
   }
 
-  const env = {
+  const env = homeEnv(home, {
     ...process.env,
-    HOME: home,
     NOTIFLY: notifly,
-    PATH: `${bin}:${process.env.PATH}`,
+    PATH: pathWith(bin),
     // The summaries step's one seam: where it looks for the home repo.
     WORKFLOW_HOME: workflowHome,
     WORKKIT_CC_CHANGELOG: ccSource,
@@ -191,7 +184,7 @@ const mkWorld = ({
       WORKKIT_HOME_REMOTE: homeRemote,
       WORKKIT_TOWER_APP: path.join(root, 'tower-app'),
     } : {}),
-  };
+  });
   // This suite IS the machine's environment, and the script asks Actions' own
   // variable which one it woke up in.
   delete env.GITHUB_ACTIONS;
@@ -229,7 +222,7 @@ const mkWorld = ({
   };
 };
 
-const runJob = (world, args = []) => spawnSync('bash', [SCRIPT, ...args], {
+const runJob = (world, args = []) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
   encoding: 'utf8',
   timeout: 60000,
   env: world.env,
@@ -301,7 +294,7 @@ const run = async () => {
   group('jobs/morning (local): shape');
 
   await test('bash -n: no syntax errors', () => {
-    const res = spawnSync('bash', ['-n', SCRIPT], { encoding: 'utf8' });
+    const res = spawnSync(BASH, [...NO_RC, '-n', shellPath(SCRIPT)], { encoding: 'utf8' });
     assertEq(res.status, 0, `bash -n: ${res.stderr}`);
   });
 
@@ -389,9 +382,8 @@ const run = async () => {
     const world = mkWorld();
     // Shadow node itself: the guard has to hold even when the builder cannot
     // run at all, not just when it returns ok:false.
-    const fakeNode = path.join(world.root, 'bin', 'node');
-    fs.writeFileSync(fakeNode, '#!/usr/bin/env bash\necho "boom: cannot find module" >&2\nexit 7\n');
-    fs.chmodSync(fakeNode, 0o755);
+    stubTool(path.join(world.root, 'bin'), 'node',
+      ['#!/usr/bin/env bash', 'echo "boom: cannot find module" >&2', 'exit 7']);
     const res = runJob(world, ['--now']);
     assertEq(res.status, 7, 'the builder status carries through');
     assertEq(world.calls().length, 0, 'claude never ran: there was nothing to send');
@@ -720,7 +712,7 @@ const run = async () => {
     const stray = path.join(world.root, 'stray-jobs');
     fs.mkdirSync(stray, { recursive: true });
     fs.copyFileSync(SCRIPT, path.join(stray, 'morning.sh'));
-    const res = spawnSync('bash', [path.join(stray, 'morning.sh')], { encoding: 'utf8', timeout: 60000, env: world.env });
+    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(stray, 'morning.sh'))], { encoding: 'utf8', timeout: 60000, env: world.env });
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(world.dispatched().length, 0, 'nothing was triggered');
     assert(/partial checkout/.test(world.log()), `the reason names the missing lib: ${world.log()}`);

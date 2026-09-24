@@ -17,7 +17,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 │   ├── loader.sh         # name → path router (docs:board-guard → docs/board-guard/run.sh)
 │   ├── _lib.sh           # shared helpers (sourced, never executed)
 │   ├── docs/             # board-guard, changelog-guard, change-tracker, checkpoint, session, session-guard, state-check
-│   ├── safety/           # vendor-guard, commit-gate, commit-language, issue-guard, proof-guard, suite-guard, capture-guard, tree-guard
+│   ├── safety/           # vendor-guard, commit-gate, commit-language, release-taken, issue-guard, proof-guard, suite-guard, capture-guard, tree-guard
 │   ├── manager/          # resolver, profile, spawn-guard, close-guard + ladder.json (the tier SSOT)
 │   └── workflow/         # standards (the daily heal) + reload-guard
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
@@ -25,6 +25,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 ├── workflow/             # the agent-agnostic engine (labels.json, standards.sh, home.sh, publish.sh, changelog.js, templates)
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
 ├── jobs/                 # scheduled work: the 9am daily brief, its launchd plist, and install.sh
+├── scripts/              # the two marker scripts the skills call (review, triage): the only platform-touching commands a skill has
 ├── docs/                 # project-state.md (the spec) · agents.md (the crew contract) · hooks.md (the hook detail) · cloud.md (remote provisioning) · history-purge.md (the rewrite runbook)
 ├── tests/                # Node runner + hook/script/tower suites (npm test)
 └── .workkit/             # settings.json is COMMITTED (this repo's own opt-in)
@@ -34,7 +35,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 
 From zero: clone, then `./workflow/workkit.sh setup`. One pass, each step checked before it acts: the plugin, `gh`, the 9am schedule, the home repo and its clone at `~/.workkit/tower`, the publish question, the token handover to the published site, the cloud brief's seeded runner and its two secrets, this repo's opt-in, the `~/.local/bin/workkit` symlink. Every mechanic: `workflow/README.md`.
 
-A SHIP re-runs it (issue #235): when the shipped diff touched the setup surface, the ship runs `workkit setup` itself once the release commit's CI is green, so the install follows the kit rather than waiting on the owner. The paths and the clause: `skills/ship/SKILL.md` Step 7.
+A SHIP re-runs it: when the shipped diff touched the setup surface, the ship runs `workkit setup` itself once the release commit's CI is green, so the install follows the kit rather than waiting on the owner. The paths and the clause: `skills/ship/SKILL.md` Step 7.
 
 The plugin alone is still two lines:
 
@@ -49,7 +50,7 @@ The engine's stable filesystem address is `~/.claude/workkit` → this repo's `w
 
 Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh` so settings reference a hook by `prefix:name` rather than a path. A LOADER-level failure fails open (exit 0); the hook's own exit code passes through untouched, which blocking hooks (exit 2) need.
 
-The index of all twenty-one and what each one does: `docs/hooks.md`. Three carry a README beside the script as well: `tree-guard`, `session-guard`, `change-tracker`.
+The index of all twenty-two and what each one does: `docs/hooks.md`. Four carry a README beside the script as well: `tree-guard`, `release-taken`, `session-guard`, `change-tracker`.
 
 ## Agents
 
@@ -69,11 +70,11 @@ Beside it live the label SSOT, the heal, the CHANGELOG linter, the capture CLI, 
 
 Mission control in two processes behind one command (`npm run tower`): the plain-Node JSON API on port 8693 (`tower/api/`, zero dependencies) and the OMEGA dashboard on 4300 that reads it cross-origin (`tower/app/`). Seven pages (Overview, Board, Crew, Usage, Brief, Health, Settings) over the board, the crew and its spend, the mornings, what is broken, and a published copy's token.
 
-A view, never a second store, one focus per page (#177): Overview surveys and points, Brief shows the mornings themselves, Health shows only what is broken and sits last in the nav. The pages, the dependency graph, the telemetry, the two write paths, and the published copy that speaks GitHub from the browser: `tower/README.md`.
+A view, never a second store, one focus per page: Overview surveys and points, Brief shows the mornings themselves, Health shows only what is broken and sits last in the nav. The pages, the dependency graph, the telemetry, the two write paths, and the published copy that speaks GitHub from the browser: `tower/README.md`.
 
 ## The jobs (`jobs/`)
 
-ONE job, at 9am, in five steps (the summaries, the runner reconcile, the brief, the publish, the stale-brief marker (#173)) and ONE script that runs them (#107): `morning.sh`, the entry point both schedulers invoke, this machine's launchd agent and the seeded `brief.yml` on a runner.
+ONE job, at 9am, in five steps (the summaries, the runner reconcile, the brief, the publish, the stale-brief marker) and ONE script that runs them: `morning.sh`, the entry point both schedulers invoke, this machine's launchd agent and the seeded `brief.yml` on a runner.
 
 Each step is gated by what the environment it woke up in can do; the brief itself runs in the CLOUD, on the home repo, since that is where the sweep token and the roster live. Every step, both environments, the payloads, the two tokens and the handover: `jobs/README.md`.
 
@@ -81,19 +82,25 @@ Each step is gated by what the environment it woke up in can do; the brief itsel
 
 `npm test` runs `tests/run.js`, which discovers every `tests/**/*.test.js`. A suite whose precondition this machine cannot meet calls `skipSuite()` and the runner names the skip rather than hiding it. Suites live under `tests/hooks/`, `tests/scripts/`, `tests/tower/`, and `tests/jobs/`.
 
+Every suite runs on macOS and on Windows under Git Bash, or skips whole by name on the platform it cannot answer. Everything that differs (the shell a case spawns, a PATH it controls, the POSIX spelling a shell script sees, how a tool reaches a stub PATH) lives in `tests/lib/platform.js`, every export the identity on macOS and Linux.
+
+A world a case spawns comes from the same seam: `homeEnv()` is the scratch home in every spelling a tool reads one by (HOME, USERPROFILE, `GH_CONFIG_DIR`, and no ambient token), so no child of a test reads the developer's own home or reaches GitHub as them, and `stubTool()` is the one writer of a PATH stub, which a shell starts on either platform and Node starts on neither.
+
+A case only one platform can answer names its skip through the harness's `skip()`. The Windows lane is manual: pull the clone on that machine, then run `WORKKIT_SUITE=1 node tests/run.js` there (the suite guard bounces the bare run there as here); how a session reaches that machine is the owner's own tooling, not the kit's.
+
 Lanes per layer (`docs/project-state.md` § The proof):
 - Unit: a module called directly.
 - Integration: a script run whole with a stubbed `gh`.
 - End to end: no lane here (a live session is the only surface), so a park names that layer as skipped.
 
-A missing `Proof:` line is a hard gate (#233): `safety/proof-guard` holds the flip to complete and the close, and `safety/commit-gate` check 6 holds the `Fixes #N` trailer.
+A missing `Proof:` line is a hard gate: `safety/proof-guard` holds the flip to complete and the close, and `safety/commit-gate` check 6 holds the `Fixes #N` trailer.
 
 ## Conventions
 
-- **Portable by default.** Nothing under `hooks/`, `agents/`, or `skills/` may carry a machine-specific absolute path. Hook commands resolve through `${CLAUDE_PLUGIN_ROOT}`; the engine's stable address is `~/.claude/workkit`.
+- **Portable by default.** macOS, Windows (Git Bash) and Linux all run the kit; a spelling that differs branches once, in `workflow/platform.sh` and `hooks/_lib.sh` (`docs/hooks.md` § Platforms). Nothing under `hooks/`, `agents/`, or `skills/` may carry a machine-specific absolute path. Hook commands resolve through `${CLAUDE_PLUGIN_ROOT}`; the engine's stable address is `~/.claude/workkit`.
 - **Generic by construction.** No owner names and no personal paths anywhere in the kit; `~/.workkit` and `.workkit/` are the only filesystem anchors.
 - **One mechanism, branching by environment.** Never two parallel copies of the same job: one entry point, each step gated on what its environment can do.
 - **Idempotent.** Every heal checks before acting; running twice equals running once.
-- **No em dashes.** Prose, comments, printed strings and tests use a colon, a comma, parentheses or a new sentence (#240). The one exemption is the CHANGELOG entry separator: `CHANGELOG.md` itself, the lines that quote its format, and the escape the linter matches it with.
+- **No em dashes, no exceptions.** Prose, comments, printed strings, tests and `CHANGELOG.md` use a colon, a comma, parentheses, a spaced hyphen or a new sentence. The CHANGELOG entry separator is a spaced hyphen.
 - **The spec is the SSOT.** Rules live in `docs/project-state.md`; skills and hooks execute them and point at it rather than restating them.
 - **One home per fact.** Every detail lands in its topic home (`docs/<topic>.md`, a folder's README, a `SKILL.md`) and is never restated where it is pointed at from.

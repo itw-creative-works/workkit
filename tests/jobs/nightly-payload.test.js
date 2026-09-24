@@ -16,6 +16,7 @@ const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { gitPath, homeEnv } = require('../lib/platform');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'nightly-payload.js');
 const {
@@ -75,7 +76,7 @@ const mkRepos = () => {
   fs.mkdirSync(path.join(home, '.workkit'), { recursive: true });
   fs.writeFileSync(
     path.join(home, '.workkit', '.repos.json'),
-    JSON.stringify({ version: 1, repos: { [repo]: 'enabled' } }, null, 2),
+    JSON.stringify({ version: 1, repos: { [gitPath(repo)]: 'enabled' } }, null, 2),
   );
   return { root, repo, home };
 };
@@ -98,7 +99,9 @@ const run = async () => {
     ]);
     const index = indexIn(root);
     assertEq(index.length, 1, 'the day-old transcript is out of the window');
-    assert(index[0].path.endsWith('repo-a/fresh.jsonl'), `the fresh one is in: ${index[0].path}`);
+    // The index carries the path the way the platform joins one, so the tail
+    // this compares against is joined the same way.
+    assert(index[0].path.endsWith(path.join('repo-a', 'fresh.jsonl')), `the fresh one is in: ${index[0].path}`);
     cleanup(root);
   });
 
@@ -269,10 +272,10 @@ const run = async () => {
     // An empty HOME: the live machine's repos and transcripts are none of this
     // suite's business.
     const home = mkTmp();
-    const res = spawnSync('node', [SCRIPT], {
+    const res = spawnSync(process.execPath, [SCRIPT], {
       encoding: 'utf8',
       timeout: 60000,
-      env: { ...process.env, HOME: home, WORKKIT_CLAUDE_PROJECTS: path.join(home, 'projects') },
+      env: homeEnv(home, { ...process.env, WORKKIT_CLAUDE_PROJECTS: path.join(home, 'projects') }),
     });
     cleanup(home);
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
@@ -309,11 +312,11 @@ const run = async () => {
 
   await test('run as a script, --cadence reads the prior summaries from stdin', () => {
     const home = mkTmp();
-    const res = spawnSync('node', [SCRIPT, '--cadence', 'weekly'], {
+    const res = spawnSync(process.execPath, [SCRIPT, '--cadence', 'weekly'], {
       encoding: 'utf8',
       timeout: 60000,
       input: JSON.stringify([{ title: 'daily: 2026-07-27', createdAt: '2026-07-27T09:00:00Z', body: 'a day' }]),
-      env: { ...process.env, HOME: home },
+      env: homeEnv(home, { ...process.env }),
     });
     cleanup(home);
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
@@ -323,7 +326,7 @@ const run = async () => {
   });
 
   await test('an unknown cadence is refused rather than guessed', () => {
-    const res = spawnSync('node', [SCRIPT, '--cadence', 'hourly'], { encoding: 'utf8', input: '[]', timeout: 60000 });
+    const res = spawnSync(process.execPath, [SCRIPT, '--cadence', 'hourly'], { encoding: 'utf8', input: '[]', timeout: 60000 });
     assertEq(res.status, 1, 'exit 1');
     assert(/unknown cadence hourly/.test(res.stderr), `it names what it did not understand, got: ${res.stderr}`);
   });

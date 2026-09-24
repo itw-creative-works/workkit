@@ -12,11 +12,12 @@ const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, WORKKIT_DIR: W } = require('../lib/harness');
+const {
+  BASH, SYSTEM_PATH, NO_RC, shellPath, stubTool, basePathWithout, systemPathWith,
+} = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'state-check', 'run.sh');
-
-const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ic-test-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -36,16 +37,17 @@ const makeGhStub = ({ issues = [] } = {}) => {
   const logFile = path.join(dir, 'gh.log');
   const issuesFile = path.join(dir, 'issues.json');
   fs.writeFileSync(issuesFile, JSON.stringify(issues || []));
-  fs.mkdirSync(path.join(dir, 'bin'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'bin', 'gh'), [
+  const binDir = path.join(dir, 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  stubTool(binDir, 'gh', [
     '#!/usr/bin/env bash',
     recordArgv(logFile),
     'if [[ "$1 $2" == "issue list" ]]; then',
     ...(issues === null ? ['  exit 1'] : [`  cat "${issuesFile}"`, '  exit 0']),
     'fi',
     'exit 0',
-  ].join('\n'), { mode: 0o755 });
-  return { binDir: path.join(dir, 'bin'), logFile, dir };
+  ]);
+  return { binDir, logFile, dir };
 };
 
 // One argv array per recorded `gh` invocation.
@@ -55,15 +57,31 @@ const ghCalls = (stub) => readArgv(stub.logFile);
 // leak between tests or write into the real ~/.claude/logs. Pass `cache` to
 // share one across runs (that is what the cache tests exercise); a shared dir is
 // the caller's to clean up.
+
+// The machine that does NOT have `gh`. A runner ships the real one in /usr/bin,
+// so a case about its absence has to take it off the PATH rather than trust the
+// system one, or the REAL gh answers and the case passes for another reason.
+// Built once, since the mirror links every system tool, and removed with the
+// suite.
+let noGhPath = null;
+const pathWithoutGh = () => {
+  if (!noGhPath) noGhPath = basePathWithout(mkTmp(), 'gh');
+  return noGhPath;
+};
+const dropPathWithoutGh = () => {
+  if (noGhPath) cleanup(path.dirname(noGhPath));
+  noGhPath = null;
+};
+
 const runHook = (cwd, { pathPrefix, cache } = {}) => {
-  const input = JSON.stringify({ cwd, source: 'startup' });
+  const input = JSON.stringify({ cwd: shellPath(cwd), source: 'startup' });
   const cacheDir = cache || fs.mkdtempSync(path.join(os.tmpdir(), 'sc-cache-'));
-  const res = spawnSync('bash', [HOOK], {
+  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
     input,
     env: {
-      HOME: os.homedir(),
-      PATH: pathPrefix ? `${pathPrefix}:${BASE_PATH}` : BASE_PATH,
-      STATE_CHECK_CACHE: cacheDir,
+      HOME: shellPath(os.homedir()),
+      PATH: pathPrefix ? systemPathWith(pathPrefix) : pathWithoutGh(),
+      STATE_CHECK_CACHE: shellPath(cacheDir),
     },
     encoding: 'utf8',
     timeout: 15000,
@@ -379,6 +397,7 @@ const run = async () => {
 
 module.exports = async () => {
   await run();
+  dropPathWithoutGh();
   return summary();
 };
 

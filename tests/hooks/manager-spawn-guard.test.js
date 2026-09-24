@@ -7,6 +7,7 @@ const os = require('os');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
+const { BASH, NO_RC, shellPath } = require('../lib/platform');
 
 const REPO = path.join(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'hooks', 'manager', 'spawn-guard', 'run.sh');
@@ -40,12 +41,12 @@ const payload = (subagentType, extra = {}) => ({
 });
 
 const runHook = (input, env = {}) => {
-  const res = spawnSync('bash', [HOOK], {
+  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
     input: typeof input === 'string' ? input : JSON.stringify(input),
     env: {
       ...process.env,
-      TMPDIR: tmp,
-      MANAGER_USER_SETTINGS: path.join(tmp, 'no-user-settings.json'),
+      TMPDIR: shellPath(tmp),
+      MANAGER_USER_SETTINGS: shellPath(path.join(tmp, 'no-user-settings.json')),
       ...env,
     },
     encoding: 'utf8',
@@ -149,7 +150,7 @@ const run = async () => {
     freshTmp();
     const settings = path.join(tmp, 'user-settings.json');
     fs.writeFileSync(settings, JSON.stringify({ version: 1, manager: { enabled: false } }));
-    const out = runHook(payload('worker', { model: 'haiku' }), { MANAGER_USER_SETTINGS: settings });
+    const out = runHook(payload('worker', { model: 'haiku' }), { MANAGER_USER_SETTINGS: shellPath(settings) });
     assertEq(out.code, 0, out.stderr);
     assertEq(out.stdout, '');
   });
@@ -208,9 +209,9 @@ const run = async () => {
   group('manager-spawn-guard: loader integration');
   await test('loader routes manager:spawn-guard', () => {
     freshTmp();
-    const res = spawnSync('bash', [LOADER, 'manager:spawn-guard'], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:spawn-guard'], {
       input: JSON.stringify(payload('worker', { model: 'haiku' })),
-      env: { ...process.env, TMPDIR: tmp, MANAGER_USER_SETTINGS: path.join(tmp, 'none.json') },
+      env: { ...process.env, TMPDIR: shellPath(tmp), MANAGER_USER_SETTINGS: shellPath(path.join(tmp, 'none.json')) },
       encoding: 'utf8',
       timeout: 10000,
     });
@@ -219,9 +220,9 @@ const run = async () => {
   });
   await test('HOOK_DISABLE=1 is a silent no-op', () => {
     freshTmp();
-    const res = spawnSync('bash', [LOADER, 'manager:spawn-guard'], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:spawn-guard'], {
       input: JSON.stringify(payload('worker', { model: 'haiku' })),
-      env: { ...process.env, TMPDIR: tmp, HOOK_DISABLE: '1' },
+      env: { ...process.env, TMPDIR: shellPath(tmp), HOOK_DISABLE: '1' },
       encoding: 'utf8',
       timeout: 10000,
     });

@@ -81,8 +81,7 @@ A few things worth knowing before changing it:
   section restated BARE fails the build outright - `meta` is the only one that
   keeps its bare spelling, so each page's header block sits at `config.theme`.
   The auth opt-out (`config.client.auth.config.policy: "disabled"` - the blob
-  was named `web_manager` before the framework renamed it, which is what issue
-  #98 fixed) lives in `src/_layouts/tower/page.html` so the seven pages share
+  was named `web_manager` before the framework renamed it) lives in `src/_layouts/tower/page.html` so the seven pages share
   one home.
 - **The nav is `_includes/backend/sections/sidebar.json`**, which replaces the
   framework's file wholesale. It is the `backend` spelling rather than `admin`
@@ -107,7 +106,7 @@ A few things worth knowing before changing it:
   functions the suite runs under Node.
 - **The API origin is written once**, in `assets/js/libs/tower/api.js`, and is
   overridable per page load with `?api=http://host:port`.
-- **Settings is the one page that draws without a token** (issue #167). It
+- **Settings is the one page that draws without a token**. It
   declares `tokenless: true` to the page runtime, which is what keeps the locked
   arm from returning before it renders; every other page in that state writes
   one line pointing at Settings and sends the viewer there with

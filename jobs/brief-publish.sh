@@ -59,7 +59,7 @@ wk_brief_publish() {
   # call, and it is what makes the overlap harmless.
   posted="$(wk_disc_list "$slug" "$WK_DISC_BRIEF_CATEGORY" "${date}T00:00:00Z")" || posted=''
   if [[ -n "$posted" ]] \
-    && printf '%s' "$posted" | jq -e --arg t "$title" 'any(.[]; .title == $t)' >/dev/null 2>&1; then
+    && printf '%s' "$posted" | wk_jq -e --arg t "$title" 'any(.[]; .title == $t)' >/dev/null 2>&1; then
     printf 'brief: %s already carries %s; nothing posted' "$slug" "$title"
     return 2
   fi

@@ -14,11 +14,10 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { BASH, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../lib/platform');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'suite-guard', 'run.sh');
 const LOADER = path.join(__dirname, '..', '..', 'hooks', 'loader.sh');
-const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
-
 const mkTmp = (prefix = 'suite-guard-') => fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
@@ -31,17 +30,17 @@ const mkRepo = ({ scripts = { test: 'node tests/run.js' }, pkg = true } = {}) =>
   return dir;
 };
 
-const runArgv = (argv, command, cwd, env = {}, bash = 'bash') => {
+const runArgv = (argv, command, cwd, env = {}, bash = BASH) => {
   const res = spawnSync(bash, argv, {
-    input: JSON.stringify({ tool_name: 'Bash', cwd, tool_input: { command } }),
-    env: { HOME: os.homedir(), PATH: BASE_PATH, ...env },
+    input: JSON.stringify({ tool_name: 'Bash', cwd: shellPath(cwd), tool_input: { command } }),
+    env: { HOME: shellPath(os.homedir()), PATH: SYSTEM_PATH, ...env },
     encoding: 'utf8',
     timeout: 15000,
   });
   return { code: res.status, stderr: res.stderr || '' };
 };
 
-const runHook = (command, cwd, env = {}, bash = 'bash') => runArgv([HOOK], command, cwd, env, bash);
+const runHook = (command, cwd, env = {}, bash = BASH) => runArgv([HOOK], command, cwd, env, bash);
 const runLoader = (command, cwd) => runArgv([LOADER, 'safety:suite-guard'], command, cwd);
 
 const run = async () => {
@@ -209,14 +208,14 @@ const run = async () => {
     const dir = mkRepo();
     const empty = path.join(dir, 'empty-path');
     fs.mkdirSync(empty);
-    assertEq(runHook('npm test', dir, { PATH: empty }, '/bin/bash').code, 0, 'a missing tool never wedges a session');
+    assertEq(runHook('npm test', dir, { PATH: empty }, SYSTEM_BASH).code, 0, 'a missing tool never wedges a session');
     cleanup(dir);
   });
 
   await test('missing command, exit 0', () => {
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: JSON.stringify({ tool_input: {} }),
-      env: { HOME: os.homedir(), PATH: BASE_PATH },
+      env: { HOME: shellPath(os.homedir()), PATH: SYSTEM_PATH },
       encoding: 'utf8',
       timeout: 15000,
     });
@@ -224,9 +223,9 @@ const run = async () => {
   });
 
   await test('malformed JSON, exit 0', () => {
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: 'not json',
-      env: { HOME: os.homedir(), PATH: BASE_PATH },
+      env: { HOME: shellPath(os.homedir()), PATH: SYSTEM_PATH },
       encoding: 'utf8',
       timeout: 15000,
     });

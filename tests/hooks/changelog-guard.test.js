@@ -13,6 +13,7 @@ const fs = require('fs');
 const os = require('os');
 const { spawnSync, execFileSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { BASH, NO_RC, shellPath } = require('../lib/platform');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'changelog-guard', 'run.sh');
 // Point the hook at THIS checkout's engine rather than the installed symlink,
@@ -36,9 +37,9 @@ const doc = (...bullets) => [
 ].join('\n');
 
 const runHook = (filePath) => {
-  const res = spawnSync('bash', [HOOK], {
-    input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: filePath } }),
-    env: { ...process.env, HOME: os.homedir(), WORKFLOW_DIR },
+  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
+    input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: shellPath(filePath) } }),
+    env: { ...process.env, HOME: shellPath(os.homedir()), WORKFLOW_DIR },
     encoding: 'utf8',
     timeout: 20000,
   });
@@ -77,9 +78,9 @@ const run = async () => {
   });
 
   await test('no file_path in the input: fail open', () => {
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: JSON.stringify({ tool_name: 'Write', tool_input: {} }),
-      env: { ...process.env, HOME: os.homedir(), WORKFLOW_DIR },
+      env: { ...process.env, HOME: shellPath(os.homedir()), WORKFLOW_DIR },
       encoding: 'utf8',
       timeout: 10000,
     });
@@ -97,9 +98,7 @@ const run = async () => {
 
   await test('a new entry in the format passes', () => {
     const dir = mkRepo(doc());
-    // \u2014 is the CHANGELOG entry separator (U+2014), escaped so the kit's
-    // own sources carry no em dash while the fixture still produces the format.
-    const file = append(dir, `- ${ISSUE} \u2014 Plugins install from settings.json.`);
+    const file = append(dir, `- ${ISSUE} - Plugins install from settings.json.`);
     const { code, stderr } = runHook(file);
     assertEq(code, 0, `exit 0, got: ${stderr}`);
     cleanup(dir);
@@ -118,7 +117,7 @@ const run = async () => {
   await test('a legacy entry the write did not touch does not block', () => {
     // Adopting the format must never bounce a repo for its history.
     const dir = mkRepo(doc('- A legacy essay entry with no issue link at all.'));
-    const file = append(dir, `- ${ISSUE} \u2014 A properly formatted new entry.`);
+    const file = append(dir, `- ${ISSUE} - A properly formatted new entry.`);
     const { code, stderr } = runHook(file);
     assertEq(code, 0, `exit 0, got: ${stderr}`);
     cleanup(dir);
@@ -140,7 +139,7 @@ const run = async () => {
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(
       '[Unreleased]:',
-      `- ${ISSUE} \u2014 A correct new entry.\n\n[Unreleased]:`,
+      `- ${ISSUE} - A correct new entry.\n\n[Unreleased]:`,
     ));
     const { code, stderr } = runHook(file);
     assertEq(code, 0, `exit 0, got: ${stderr}`);

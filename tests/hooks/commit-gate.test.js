@@ -9,43 +9,80 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync, execSync } = require('child_process');
-const { group, test, assert, assertEq, summary } = require('../lib/harness');
+const {
+  group, test, assert, assertEq, skipSuite, summary, selfRun,
+} = require('../lib/harness');
+const {
+  BASH, SYSTEM_BASH, NO_RC, shellPath,
+  which, digestTool, linkTool, pathWith, stubTool,
+} = require('../lib/platform');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'commit-gate', 'run.sh');
 // The gate's CHANGELOG check resolves the engine by path; point it at this
 // checkout so the suite tests the code under review, not the installed copy.
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 const LIB = path.join(__dirname, '..', '..', 'hooks', '_lib.sh');
+// The review marker lives under the SESSION's temp dir, so the gate and this
+// suite have to read the same one: Windows leaves TMPDIR unset, where node's
+// `/tmp` fallback and a Git Bash `/tmp` are two different directories. One
+// temp dir, handed to every child explicitly, and both sides agree by
+// construction.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-tmp-'));
 
 const mkRepo = () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-test-'));
-  execSync('git init && git commit --allow-empty -m "init"', { cwd: dir, stdio: 'pipe' });
+  execSync('git init && git commit --allow-empty -m "init"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
   return dir;
 };
 
 const stage = (dir, name, content) => {
   fs.writeFileSync(path.join(dir, name), content);
-  execSync(`git add "${name}"`, { cwd: dir, stdio: 'pipe' });
+  execSync(`git add "${name}"`, { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
 };
 
+// The digest THIS machine spells: macOS ships `shasum`, a Linux machine
+// `sha1sum`, and the gate names the marker through hook_sha1, which takes
+// either. The expected path this suite builds follows the same rule, or the
+// suite would only ever pass on half the platforms the kit runs on.
+const DIGEST = digestTool();
+
 const markerPath = (dir) => {
-  const hash = execSync('printf \'%s\' "$(git rev-parse --show-toplevel)" | shasum | cut -d\' \' -f1',
-    { cwd: dir, encoding: 'utf8' }).trim();
-  const mdir = path.join(process.env.TMPDIR || '/tmp', 'claude-review-marker');
+  const hash = execSync(`printf '%s' "$(git rev-parse --show-toplevel)" | "${shellPath(DIGEST)}" | cut -d' ' -f1`,
+    { cwd: dir, encoding: 'utf8', shell: SYSTEM_BASH }).trim();
+  const mdir = path.join(TMP, 'claude-review-marker');
   fs.mkdirSync(mdir, { recursive: true });
   return path.join(mdir, hash);
 };
+
+// The marker script the review skill calls, and the skill's own line calling
+// it: the cases below run the LINE, so the skill, the script and this gate
+// cannot drift apart. CLAUDE_PLUGIN_ROOT is handed over the way a hook command
+// hands it over.
+const PLUGIN_ROOT = path.join(__dirname, '..', '..');
+const skillLine = () => {
+  const skill = fs.readFileSync(path.join(PLUGIN_ROOT, 'skills', 'review', 'SKILL.md'), 'utf8');
+  const line = skill.split('\n').find((l) => l.includes('scripts/review-marker.sh') && l.startsWith('bash '));
+  assert(line, 'the skill carries the marker line');
+  return line;
+};
+const runSkillLine = (dir) => spawnSync(BASH, [...NO_RC, '-c', skillLine()], {
+  cwd: dir,
+  env: { ...process.env, CLAUDE_PLUGIN_ROOT: shellPath(PLUGIN_ROOT), TMPDIR: shellPath(TMP) },
+  encoding: 'utf8',
+  timeout: 10000,
+});
 
 const touchMarker = (dir) => fs.writeFileSync(markerPath(dir), '');
 const dropMarker = (dir) => { try { fs.rmSync(markerPath(dir)); } catch {} };
 
 const runHook = (cwd, command, spawnCwd, extraEnv = {}) => {
-  const input = JSON.stringify({ cwd, tool_input: { command } });
-  const res = spawnSync('bash', [HOOK], {
+  const input = JSON.stringify({ cwd: shellPath(cwd), tool_input: { command } });
+  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
     input,
     cwd: spawnCwd,
     env: {
-      ...process.env, HOME: os.homedir(), WORKFLOW_DIR, ...extraEnv,
+      ...process.env, HOME: shellPath(os.homedir()), TMPDIR: shellPath(TMP),
+      WORKFLOW_DIR: shellPath(WORKFLOW_DIR), ...extraEnv,
     },
     encoding: 'utf8',
     timeout: 60000,
@@ -68,6 +105,10 @@ const standDownMessage = (out) => {
 const cleanup = (dir) => { dropMarker(dir); try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const run = async () => {
+  if (!DIGEST) {
+    skipSuite('this machine has neither shasum nor sha1sum, so no review marker can be named');
+  }
+
   group('commit-gate: scope');
 
   await test('non-commit command: exit 0', () => {
@@ -104,6 +145,51 @@ const run = async () => {
     cleanup(dir);
   });
 
+  await test("the review skill's own line writes the marker this gate checks", () => {
+    const dir = mkRepo();
+    stage(dir, 'app.js', 'const x = 1;\n');
+    dropMarker(dir);
+    assertEq(runHook(dir, 'git commit -m "feat"').code, 2, 'blocked before the skill runs');
+    const res = runSkillLine(dir);
+    assertEq(res.status, 0, `the marker script runs, got: ${res.stderr}`);
+    assert(fs.existsSync(markerPath(dir)), 'and writes exactly the file this gate looks for');
+    const { code, stderr } = runHook(dir, 'git commit -m "feat"');
+    assertEq(code, 0, `so the commit passes, stderr: ${stderr}`);
+    cleanup(dir);
+  });
+
+  await test('the review skill names the script and spells no digest itself', () => {
+    const skill = fs.readFileSync(path.join(PLUGIN_ROOT, 'skills', 'review', 'SKILL.md'), 'utf8');
+    assert(skill.includes('scripts/review-marker.sh'), 'the skill calls the marker script');
+    assert(!skill.includes('shasum'), 'and carries no platform-bound command of its own');
+    assert(fs.existsSync(path.join(PLUGIN_ROOT, 'scripts', 'review-marker.sh')), 'the script exists');
+  });
+
+  await test('a machine with neither shasum nor sha1sum: exit 2 naming both spellings', () => {
+    // No digest tool means the marker cannot be NAMED. The alternative to
+    // saying so is an empty key, which is one marker shared by every repo on
+    // the machine: a review of any repo would open a commit in all of them.
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-nosha-'));
+    for (const tool of ['bash', 'jq', 'git', 'dirname', 'basename', 'cat', 'grep', 'sed', 'tr', 'awk', 'perl', 'date', 'stat', 'node']) {
+      const real = which(tool);
+      if (real) linkTool(bin, real);
+    }
+    const dir = mkRepo();
+    stage(dir, 'app.js', 'const x = 1;\n');
+    stage(dir, 'app.test.js', 'test();\n');
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
+      input: JSON.stringify({ cwd: shellPath(dir), tool_input: { command: 'git commit -m "feat: a thing"' } }),
+      env: { PATH: bin, HOME: shellPath(os.homedir()), TMPDIR: shellPath(TMP) },
+      encoding: 'utf8',
+      timeout: 60000,
+    });
+    assertEq(res.status, 2, `blocked, never allowed on an empty key, got: ${res.stdout}${res.stderr}`);
+    assert(/neither shasum nor sha1sum/.test(res.stderr),
+      `and names both spellings, got: ${res.stderr}`);
+    cleanup(dir);
+    fs.rmSync(bin, { recursive: true, force: true });
+  });
+
   await test('docs-only staged, no marker: exit 0 (review not required)', () => {
     const dir = mkRepo();
     stage(dir, 'README.md', '# docs\n');
@@ -128,7 +214,7 @@ const run = async () => {
     const dir = mkRepo();
     stage(dir, 'app.js', 'const x = 1;\n');
     touchMarker(dir);
-    execSync('git commit -m "add app"', { cwd: dir, stdio: 'pipe' });
+    execSync('git commit -m "add app"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     dropMarker(dir);
     fs.writeFileSync(path.join(dir, 'app.js'), 'const x = 2;\n');
     const { code } = runHook(dir, 'git commit -am "tweak"');
@@ -271,7 +357,7 @@ const run = async () => {
     const dir = mkRepo();
     stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
     stage(dir, 'thing.js', 'module.exports = 1;\n');
-    execSync('git commit -m "seed" --no-verify', { cwd: dir, stdio: 'pipe' });
+    execSync('git commit -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     stage(dir, 'thing.js', 'module.exports = 2;\n');
     touchMarker(dir);
     const { code, stderr } = runHook(dir, 'git commit -m "x"');
@@ -298,8 +384,8 @@ const run = async () => {
     stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
     fs.mkdirSync(path.join(dir, 'tests'));
     stage(dir, 'tests/old.test.js', 'x;\n');
-    execSync('git commit -m "seed" --no-verify', { cwd: dir, stdio: 'pipe' });
-    execSync('git rm -q tests/old.test.js', { cwd: dir, stdio: 'pipe' });
+    execSync('git commit -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+    execSync('git rm -q tests/old.test.js', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     stage(dir, 'thing.js', 'module.exports = 1;\n');
     touchMarker(dir);
     const { code } = runHook(dir, 'git commit -m "x"');
@@ -343,7 +429,7 @@ const run = async () => {
     const dir = mkRepo();
     stage(dir, 'README.md', '# docs\n');
     fs.writeFileSync(path.join(dir, 'tracked.js'), 'const x = 1;\n');
-    execSync('git add tracked.js && git commit -m "track" && git checkout -- . 2>/dev/null || true', { cwd: dir, stdio: 'pipe' });
+    execSync('git add tracked.js && git commit -m "track" && git checkout -- . 2>/dev/null || true', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     fs.writeFileSync(path.join(dir, 'tracked.js'), 'const x = 2;\n');
     const { code } = runHook(dir, 'git commit -m "fix the -alpha bug"');
     assertEq(code, 0, 'message text must not flip the -a branch');
@@ -418,9 +504,9 @@ const run = async () => {
     // the payload the gate is blind to WHERE the command runs, which is the
     // hook's own defect rather than a command shape an agent can write, and
     // blocking there would wedge every commit with nothing that could clear it.
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: JSON.stringify({ tool_input: { command: 'git commit -m "feat: x"' } }),
-      env: { ...process.env, HOME: os.homedir(), WORKFLOW_DIR },
+      env: { ...process.env, HOME: shellPath(os.homedir()), TMPDIR: shellPath(TMP), WORKFLOW_DIR: shellPath(WORKFLOW_DIR) },
       encoding: 'utf8',
       timeout: 60000,
     });
@@ -430,7 +516,7 @@ const run = async () => {
   await test('pathspec commit with nothing staged: exit 2 (bypass closed)', () => {
     const dir = mkRepo();
     fs.writeFileSync(path.join(dir, 'app.js'), 'const x = 1;\n');
-    execSync('git add app.js && git commit -m "add"', { cwd: dir, stdio: 'pipe' });
+    execSync('git add app.js && git commit -m "add"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     fs.writeFileSync(path.join(dir, 'app.js'), 'const x = 2;\n');
     dropMarker(dir);
     const { code } = runHook(dir, 'git commit -m fix app.js');
@@ -596,14 +682,14 @@ const run = async () => {
     // now applies the same coarse word test as the no-perl path.
     const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-perl-'));
     for (const tool of ['bash', 'cat', 'jq', 'dirname', 'grep', 'sed', 'tr', 'git']) {
-      const real = execSync(`command -v ${tool} || true`, { encoding: 'utf8', shell: '/bin/bash' }).trim();
-      if (real) fs.symlinkSync(real, path.join(bin, tool));
+      const real = which(tool);
+      if (real) linkTool(bin, real);
     }
-    fs.writeFileSync(path.join(bin, 'perl'), '#!/bin/bash\nexit 1\n', { mode: 0o755 });
+    stubTool(bin, 'perl', ['#!/bin/bash', 'exit 1']);
     const dir = mkRepo();
-    const runBroken = (command) => spawnSync('bash', [HOOK], {
-      input: JSON.stringify({ cwd: dir, tool_input: { command } }),
-      env: { PATH: bin, HOME: os.homedir() },
+    const runBroken = (command) => spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
+      input: JSON.stringify({ cwd: shellPath(dir), tool_input: { command } }),
+      env: { PATH: bin, HOME: shellPath(os.homedir()), TMPDIR: shellPath(TMP) },
       encoding: 'utf8',
       timeout: 60000,
     });
@@ -645,7 +731,7 @@ const run = async () => {
     // --all branch, pulling modified tracked code into a docs-only commit.
     const dir = mkRepo();
     fs.writeFileSync(path.join(dir, 'tracked.js'), 'const x = 1;\n');
-    execSync('git add tracked.js && git commit -m "track" --no-verify', { cwd: dir, stdio: 'pipe' });
+    execSync('git add tracked.js && git commit -m "track" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     fs.writeFileSync(path.join(dir, 'tracked.js'), 'const x = 2;\n');
     stage(dir, 'README.md', '# docs\n');
     fs.writeFileSync(path.join(dir, '-a'), '');
@@ -655,14 +741,6 @@ const run = async () => {
   });
 
   group('commit-gate: heal bookkeeping skips review + new-file checks (issue #15)');
-
-  // Exactly what standards.sh render_changelog_linter produces: the engine's
-  // shebang, the vendor header on line 2, then the engine's own bytes.
-  const vendoredLinter = () => {
-    const engine = fs.readFileSync(path.join(WORKFLOW_DIR, 'changelog.js'), 'utf8');
-    const nl = engine.indexOf('\n');
-    return `${engine.slice(0, nl + 1)}// Vendored from the workflow core's changelog.js by standards.sh. The kit is the SSOT; edit it there. This copy is resynced on every heal.\n${engine.slice(nl + 1)}`;
-  };
 
   const stageDeep = (dir, name, content) => {
     fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
@@ -674,7 +752,7 @@ const run = async () => {
   const mkStampedRepo = () => {
     const dir = mkRepo();
     stageDeep(dir, '.workkit/settings.json', '{ "version": 6, "enabled": true }\n');
-    execSync('git commit -m "opt in"', { cwd: dir, stdio: 'pipe' });
+    execSync('git commit -m "opt in"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     return dir;
   };
 
@@ -711,33 +789,144 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('stamp + current vendored linter, no marker, no test file: exit 0', () => {
+  // A repo whose last heal vendored the linter: the copy is committed, and so
+  // is the checks.yml an earlier template installed, whose changelog job runs
+  // that copy under the retired header paragraph. `withChecks: false` is a
+  // repo whose workflows never named the copy.
+  const OLD_HEADER = '# The `changelog` job is the only job the heal adds to an EXISTING checks.yml,\n'
+    + '# appended once at the end of `jobs:`. Its linter is the copy of the kit\'s\n'
+    + '# changelog.js the heal vendors to .github/changelog-lint.cjs on every run.\n';
+  const CHECKS_BODY = 'name: checks\n\non:\n  pull_request:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
+  const oldChecks = (copy) => `${OLD_HEADER}${CHECKS_BODY}  changelog:\n    runs-on: ubuntu-latest\n    steps:\n`
+    + `      - uses: actions/checkout@v5\n      - name: CHANGELOG entry format\n        run: node ${copy} CHANGELOG.md --unreleased-only\n`;
+  // What the heal writes over it: the template's header paragraph and its one-line job.
+  const healedChecks = () => {
+    const template = fs.readFileSync(path.join(WORKFLOW_DIR, 'templates', 'github-workflows', 'checks.yml'), 'utf8').split('\n');
+    const from = template.findIndex((l) => l.startsWith('# The `changelog` job is the only job'));
+    const to = template.findIndex((l, i) => i > from && !l.startsWith('#'));
+    return `${template.slice(from, to).join('\n')}\n${CHECKS_BODY}  changelog:\n`
+      + '    uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main\n';
+  };
+  const CHECKS = '.github/workflows/checks.yml';
+  const mkVendoredRepo = (name, { withChecks = true } = {}) => {
     const dir = mkStampedRepo();
     // A test script makes checks 1 and 5 live; the suite itself passes.
     stage(dir, 'package.json', '{ "scripts": { "test": "exit 0" } }\n');
-    execSync('git commit -m "base"', { cwd: dir, stdio: 'pipe' });
-    stage(dir, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
-    stageDeep(dir, '.github/changelog-lint.cjs', vendoredLinter());
-    const { code, stderr } = runHook(dir, 'git commit -m "chore(workflow): heal output"');
-    assertEq(code, 0, `the heal's own output needs no review or test file, stderr: ${stderr}`);
+    stageDeep(dir, `.github/${name}`, '#!/usr/bin/env node\n// Vendored from the workflow core\'s changelog.js by standards.sh.\n');
+    if (withChecks) stageDeep(dir, CHECKS, oldChecks(`.github/${name}`));
+    execSync('git commit -q -m "base"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+    return dir;
+  };
+
+  await test('the copy deleted and checks.yml rewritten by the heal, with or without the stamp, no marker: exit 0', () => {
+    for (const name of ['changelog-lint.cjs', 'changelog-lint.js']) {
+      const dir = mkVendoredRepo(name);
+      execSync(`git rm -q .github/${name}`, { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+      stage(dir, CHECKS, healedChecks());
+      const heal = runHook(dir, 'git commit -m "chore(workflow): drop the linter copy"');
+      assertEq(heal.code, 0, `${name}: the heal's two changes need no review or test file, stderr: ${heal.stderr}`);
+      stage(dir, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
+      const withStamp = runHook(dir, 'git commit -m "chore(workflow): heal output"');
+      assertEq(withStamp.code, 0, `${name}: and with the stamp beside it, stderr: ${withStamp.stderr}`);
+      cleanup(dir);
+    }
+  });
+
+  await test('the copy deleted alone where no workflow ever ran it, no marker: exit 0', () => {
+    const dir = mkVendoredRepo('changelog-lint.cjs', { withChecks: false });
+    execSync('git rm -q .github/changelog-lint.cjs', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+    const { code, stderr } = runHook(dir, 'git commit -m "chore(workflow): drop the linter copy"');
+    assertEq(code, 0, `nothing the commit leaves behind runs it, stderr: ${stderr}`);
     cleanup(dir);
   });
 
-  await test('tampered linter copy, no marker: exit 2', () => {
-    const dir = mkRepo();
-    stageDeep(dir, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
-    stageDeep(dir, '.github/changelog-lint.cjs', `${vendoredLinter()}\n// local edit\n`);
-    const { code } = runHook(dir, 'git commit -m "chore: tampered"');
-    assertEq(code, 2, 'a hand-edited linter copy gets the full gate');
+  await test('under -a, the heal\'s unstaged deletion and rewrite are bookkeeping too: exit 0', () => {
+    const dir = mkVendoredRepo('changelog-lint.cjs');
+    fs.rmSync(path.join(dir, '.github', 'changelog-lint.cjs'));
+    fs.writeFileSync(path.join(dir, CHECKS), healedChecks());
+    const { code, stderr } = runHook(dir, 'git commit -a -m "chore(workflow): drop the linter copy"');
+    assertEq(code, 0, `-a stages exactly the heal's output, stderr: ${stderr}`);
     cleanup(dir);
   });
 
-  await test('linter copy missing the vendor header, no marker: exit 2', () => {
-    const dir = mkRepo();
+  await test('under -a with autocrlf, a CRLF working tree carrying the heal\'s rewrite is bookkeeping: exit 0', () => {
+    // Git for Windows checks files out CRLF and commits them LF: the blob the
+    // commit carries is what is compared, never the working tree's bytes.
+    const dir = mkVendoredRepo('changelog-lint.cjs');
+    execSync('git config core.autocrlf true', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+    fs.rmSync(path.join(dir, '.github', 'changelog-lint.cjs'));
+    fs.writeFileSync(path.join(dir, CHECKS), healedChecks().replace(/\n/g, '\r\n'));
+    const { code, stderr } = runHook(dir, 'git commit -a -m "chore(workflow): drop the linter copy"');
+    assertEq(code, 0, `the CRLF file commits as the heal's exact rewrite, stderr: ${stderr}`);
+    cleanup(dir);
+  });
+
+  await test('checks.yml rewritten but for a trailing newline, no marker: exit 2', () => {
+    const dir = mkVendoredRepo('changelog-lint.cjs');
+    execSync('git rm -q .github/changelog-lint.cjs', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+    stage(dir, CHECKS, `${healedChecks()}\n\n`);
+    const { code } = runHook(dir, 'git commit -m "chore: heal plus blank lines"');
+    assertEq(code, 2, 'byte for byte means the trailing newlines too');
+    cleanup(dir);
+  });
+
+  await test('a header-only swap above a job already in the uses: form, no marker: exit 0', () => {
+    const dir = mkStampedRepo();
+    stage(dir, 'package.json', '{ "scripts": { "test": "exit 0" } }\n');
+    const current = healedChecks();
+    const header = current.slice(0, current.indexOf('name: checks'));
+    stageDeep(dir, CHECKS, current.replace(header, OLD_HEADER.replace('changelog-lint.cjs', 'changelog-lint.js')));
+    execSync('git commit -q -m "base"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+    stage(dir, CHECKS, current);
+    const { code, stderr } = runHook(dir, 'git commit -m "chore(workflow): the header comment"');
+    assertEq(code, 0, `the heal's header swap alone needs no review, stderr: ${stderr}`);
+    cleanup(dir);
+  });
+
+  await test('the copy deleted while checks.yml still runs it, no marker: exit 2', () => {
+    const dir = mkVendoredRepo('changelog-lint.cjs');
+    execSync('git rm -q .github/changelog-lint.cjs', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+    const { code } = runHook(dir, 'git commit -m "chore: drop the copy"');
+    assertEq(code, 2, 'a commit that breaks the CI job is not bookkeeping');
+    cleanup(dir);
+  });
+
+  await test('checks.yml rewritten with one more changed line, no marker: exit 2', () => {
+    const dir = mkVendoredRepo('changelog-lint.cjs');
+    execSync('git rm -q .github/changelog-lint.cjs', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+    stage(dir, CHECKS, healedChecks().replace('runs-on: ubuntu-latest', 'runs-on: macos-14'));
+    const { code } = runHook(dir, 'git commit -m "chore: heal plus an edit"');
+    assertEq(code, 2, 'only the heal\'s exact rewrite is bookkeeping');
+    cleanup(dir);
+  });
+
+  await test('the linter copy deleted beside a source file, no marker: exit 2', () => {
+    const dir = mkVendoredRepo('changelog-lint.cjs', { withChecks: false });
+    execSync('git rm -q .github/changelog-lint.cjs', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+    stage(dir, 'app.js', 'const x = 1;\n');
+    const { code } = runHook(dir, 'git commit -m "chore: mixed"');
+    assertEq(code, 2, 'any other file in the commit restores the full gate');
+    cleanup(dir);
+  });
+
+  await test('a linter copy MODIFIED in place is not bookkeeping, no marker: exit 2', () => {
+    const dir = mkVendoredRepo('changelog-lint.cjs', { withChecks: false });
+    stage(dir, '.github/changelog-lint.cjs', '#!/usr/bin/env node\n// Vendored from the workflow core\'s changelog.js by standards.sh.\n// an edit\n');
+    const { code } = runHook(dir, 'git commit -m "chore: edit the copy"');
+    assertEq(code, 2, 'an edited copy is not the heal\'s output');
+    cleanup(dir);
+  });
+
+  await test('a linter copy ADDED is not bookkeeping, no marker: exit 2', () => {
+    // The exact shape the heal used to vendor, byte for byte with the engine,
+    // so no content check can be what bounces it.
     const engine = fs.readFileSync(path.join(WORKFLOW_DIR, 'changelog.js'), 'utf8');
-    stageDeep(dir, '.github/changelog-lint.cjs', engine);
-    const { code } = runHook(dir, 'git commit -m "chore: raw copy"');
-    assertEq(code, 2, 'a raw engine copy without the header is not the vendored shape');
+    const nl = engine.indexOf('\n');
+    const dir = mkRepo();
+    stageDeep(dir, '.github/changelog-lint.cjs',
+      `${engine.slice(0, nl + 1)}// Vendored from the workflow core's changelog.js by standards.sh. The kit is the SSOT; edit it there. This copy is resynced on every heal.\n${engine.slice(nl + 1)}`);
+    const { code } = runHook(dir, 'git commit -m "chore: a copy"');
+    assertEq(code, 2, 'only the deletion is the heal\'s output: a copy in the tree gets the full gate');
     cleanup(dir);
   });
 
@@ -759,7 +948,7 @@ const run = async () => {
     const dir = mkRepo();
     stage(dir, 'package.json', pkg('1.0.0'));
     stage(dir, 'app.js', 'const x = 1;\n');
-    execSync('git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe' });
+    execSync('git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     return dir;
   };
 
@@ -819,7 +1008,7 @@ const run = async () => {
   const mkPluginRepo = () => {
     const dir = mkReleaseRepo();
     stageDeep(dir, '.claude-plugin/plugin.json', manifest('1.0.0'));
-    execSync('git commit -q -m "manifest" --no-verify', { cwd: dir, stdio: 'pipe' });
+    execSync('git commit -q -m "manifest" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     return dir;
   };
 
@@ -855,7 +1044,7 @@ const run = async () => {
     // so check 1 (new source needs tests) is not what answers.
     const dir = mkReleaseRepo();
     stageDeep(dir, 'hooks/docs/x/run.sh', '#!/bin/bash\necho hi\n');
-    execSync('git commit -q -m "hook" --no-verify', { cwd: dir, stdio: 'pipe' });
+    execSync('git commit -q -m "hook" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     stageDeep(dir, 'hooks/docs/x/run.sh', '#!/bin/bash\necho tweaked\n');
     dropMarker(dir);
     const first = runHook(dir, 'git commit -m "fix: the hook"');
@@ -905,7 +1094,7 @@ const run = async () => {
     // version is not the release tooling's stamp on this repo.
     const dir = mkReleaseRepo();
     stageDeep(dir, 'sub/package.json', pkg('1.0.0'));
-    execSync('git commit -q -m "sub" --no-verify', { cwd: dir, stdio: 'pipe' });
+    execSync('git commit -q -m "sub" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     stageDeep(dir, 'sub/package.json', pkg('1.0.1'));
     touchMarker(dir);
     const { code, stderr } = runHook(dir, 'git commit -m "chore: bump sub"');
@@ -1010,10 +1199,10 @@ const run = async () => {
   await test('loader routes safety:commit-gate to the script (colon spelling)', () => {
     const dir = mkRepo();
     stage(dir, 'app.js', 'const x = 1;\n');
-    const input = JSON.stringify({ cwd: dir, tool_input: { command: 'git commit -m "x"' } });
-    const res = spawnSync('bash', [LOADER, 'safety:commit-gate'], {
+    const input = JSON.stringify({ cwd: shellPath(dir), tool_input: { command: 'git commit -m "x"' } });
+    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'safety:commit-gate'], {
       input,
-      env: { ...process.env, HOME: os.homedir() },
+      env: { ...process.env, HOME: shellPath(os.homedir()), TMPDIR: shellPath(TMP) },
       encoding: 'utf8',
       timeout: 60000,
     });
@@ -1105,8 +1294,7 @@ const run = async () => {
 
   await test('a staged entry in the format commits', () => {
     const dir = mkRepo();
-    // \u2014 is the CHANGELOG entry separator; the escape keeps the character out of this source.
-    stage(dir, 'CHANGELOG.md', CHANGELOG(`- ${ISSUE} \u2014 Plugins install from settings.json.`));
+    stage(dir, 'CHANGELOG.md', CHANGELOG(`- ${ISSUE} - Plugins install from settings.json.`));
     const { code, stderr } = runHook(dir, 'git commit -m "docs: changelog"');
     assertEq(code, 0, `allowed, got: ${stderr}`);
     cleanup(dir);
@@ -1115,8 +1303,8 @@ const run = async () => {
   await test('a legacy entry the commit did not touch does not block', () => {
     const dir = mkRepo();
     stage(dir, 'CHANGELOG.md', CHANGELOG('- A legacy essay entry with no issue link.'));
-    execSync('git commit -q -m "legacy" --no-verify', { cwd: dir, stdio: 'pipe' });
-    stage(dir, 'CHANGELOG.md', CHANGELOG('- A legacy essay entry with no issue link.', `- ${ISSUE} \u2014 A new entry.`));
+    execSync('git commit -q -m "legacy" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+    stage(dir, 'CHANGELOG.md', CHANGELOG('- A legacy essay entry with no issue link.', `- ${ISSUE} - A new entry.`));
     const { code, stderr } = runHook(dir, 'git commit -m "docs: changelog"');
     assertEq(code, 0, `allowed, got: ${stderr}`);
     cleanup(dir);
@@ -1125,7 +1313,7 @@ const run = async () => {
   await test('a -am commit is judged from the working tree, which is what it carries', () => {
     const dir = mkRepo();
     stage(dir, 'CHANGELOG.md', CHANGELOG());
-    execSync('git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe' });
+    execSync('git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), CHANGELOG('- An unstaged essay entry with no issue link.'));
     const { code, stderr } = runHook(dir, 'git commit -am "docs: changelog"');
     assertEq(code, 2, `blocked, got: ${stderr}`);
@@ -1171,13 +1359,13 @@ const run = async () => {
       const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'statbin-'));
       // BSD: -c is unknown, so it errors out. GNU: -f is filesystem status,
       // which answers `?` for %m and exits 0: the trap this helper avoids.
-      const script = dialect === 'bsd'
-        ? `#!/bin/sh\ncase "$1" in -c) echo "stat: illegal option" >&2; exit 1 ;; -f) echo ${when}; exit 0 ;; esac\nexit 1\n`
-        : `#!/bin/sh\ncase "$1" in -f) echo '?'; exit 0 ;; -c) echo ${when}; exit 0 ;; esac\nexit 1\n`;
-      fs.writeFileSync(path.join(binDir, 'stat'), script, { mode: 0o755 });
-      const res = spawnSync('bash', ['-c',
-        `. "${LIB}" && hook_file_mtime "${file}"`],
-      { encoding: 'utf8', env: { ...process.env, PATH: `${binDir}:${process.env.PATH}` } });
+      const arms = dialect === 'bsd'
+        ? `case "$1" in -c) echo "stat: illegal option" >&2; exit 1 ;; -f) echo ${when}; exit 0 ;; esac`
+        : `case "$1" in -f) echo '?'; exit 0 ;; -c) echo ${when}; exit 0 ;; esac`;
+      stubTool(binDir, 'stat', ['#!/bin/sh', arms, 'exit 1']);
+      const res = spawnSync(BASH, [...NO_RC, '-c',
+        `. "${shellPath(LIB)}" && hook_file_mtime "${shellPath(file)}"`],
+      { encoding: 'utf8', env: { ...process.env, PATH: pathWith(binDir) } });
       fs.rmSync(binDir, { recursive: true, force: true });
       return res.stdout.trim();
     };
@@ -1191,12 +1379,12 @@ const run = async () => {
 
   // Collapse on ship: the turn that closes an issue writes the entry the issue
   // closes against. Prose until now, and deterministically checkable.
-  const ENTRY = CHANGELOG(`- ${ISSUE} \u2014 The thing the issue asked for.`);
+  const ENTRY = CHANGELOG(`- ${ISSUE} - The thing the issue asked for.`);
 
   await test('a Fixes trailer with no CHANGELOG staged blocks', () => {
     const dir = mkRepo();
     fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), ENTRY);
-    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe' });
+    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     stage(dir, 'app.js', 'const x = 1;\n');
     touchMarker(dir);
     const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4"');
@@ -1209,7 +1397,7 @@ const run = async () => {
   await test('the same commit with the entry staged passes', () => {
     const dir = mkRepo();
     fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), CHANGELOG());
-    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe' });
+    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     stage(dir, 'app.js', 'const x = 1;\n');
     stage(dir, 'CHANGELOG.md', ENTRY);
     touchMarker(dir);
@@ -1221,7 +1409,7 @@ const run = async () => {
   await test('Closes and Resolves are the same trailer', () => {
     const dir = mkRepo();
     fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), ENTRY);
-    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe' });
+    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     stage(dir, 'app.js', 'const x = 1;\n');
     touchMarker(dir);
     for (const word of ['Closes', 'Resolves', 'closes']) {
@@ -1234,7 +1422,7 @@ const run = async () => {
   await test('no trailer: the commit is not asked for an entry', () => {
     const dir = mkRepo();
     fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), ENTRY);
-    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe' });
+    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     stage(dir, 'app.js', 'const x = 1;\n');
     touchMarker(dir);
     const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing that closes nothing"');
@@ -1265,8 +1453,9 @@ const run = async () => {
       fs.writeFileSync(path.join(bodies, `${number}.json`),
         JSON.stringify({ comments: list.map((body) => ({ body })) }));
     }
-    fs.mkdirSync(path.join(dir, 'bin'));
-    fs.writeFileSync(path.join(dir, 'bin', 'gh'), [
+    const bin = path.join(dir, 'bin');
+    fs.mkdirSync(bin);
+    stubTool(bin, 'gh', [
       '#!/usr/bin/env bash',
       'if [[ "$1 $2" == "issue view" ]]; then',
       ...(fails ? ['  exit 1'] : [
@@ -1277,8 +1466,8 @@ const run = async () => {
       ]),
       'fi',
       'exit 0',
-    ].join('\n'), { mode: 0o755 });
-    return { env: { PATH: `${path.join(dir, 'bin')}:${process.env.PATH}` }, dir };
+    ]);
+    return { env: { PATH: pathWith(bin) }, dir };
   };
 
   // A repo whose commit is ready for every other check: CHANGELOG seeded and
@@ -1286,7 +1475,7 @@ const run = async () => {
   const shipReadyRepo = () => {
     const dir = mkRepo();
     fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), CHANGELOG());
-    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe' });
+    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     stage(dir, 'app.js', 'const x = 1;\n');
     stage(dir, 'CHANGELOG.md', ENTRY);
     touchMarker(dir);
@@ -1369,6 +1558,4 @@ module.exports = async () => {
   return summary();
 };
 
-if (require.main === module) {
-  module.exports().then(({ failed }) => process.exit(failed > 0 ? 1 : 0));
-}
+if (require.main === module) selfRun(module.exports);

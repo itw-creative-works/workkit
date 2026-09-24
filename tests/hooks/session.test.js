@@ -16,6 +16,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
+const { BASH, SYSTEM_PATH, NO_RC, shellPath, homeEnv, joinPath } = require('../lib/platform');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'session', 'run.sh');
 const TEMPLATE = path.join(__dirname, '..', '..', 'workflow', 'templates', 'session.md');
@@ -72,9 +73,9 @@ const marker = (n, checkedDaysAgo = 0) => JSON.stringify({
 });
 
 const runHook = (cwd, source = 'startup', home = BARE_HOME) => {
-  const res = spawnSync('bash', [HOOK], {
-    input: JSON.stringify({ cwd, source, hook_event_name: 'SessionStart' }),
-    env: { HOME: home, PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin' },
+  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
+    input: JSON.stringify({ cwd: shellPath(cwd), source, hook_event_name: 'SessionStart' }),
+    env: homeEnv(home, { PATH: joinPath(SYSTEM_PATH, '/opt/homebrew/bin') }),
     encoding: 'utf8',
     timeout: 15000,
   });
@@ -250,10 +251,26 @@ const run = async () => {
     cleanup(repo);
   });
 
+  await test('a settings file in a cwd that is no git repo: silent', () => {
+    // A `.workkit/settings.json` is a REPO's opt-in, so no git root means no
+    // repo layer to read at all. Outside a repo the file the cwd carries is the
+    // MACHINE's own state (the site options, no `enabled` key), and every
+    // Windows temp directory sits under the profile that holds it: read as a
+    // repo's answer it is a yes for a directory that opted into nothing.
+    const dir = mkTmp();
+    fs.mkdirSync(path.join(dir, W, 'agents'), { recursive: true });
+    fs.writeFileSync(path.join(dir, W, 'settings.json'), JSON.stringify({ version: 1, site: {} }));
+    fs.writeFileSync(path.join(dir, W, 'agents', 'session.md'), filled(['#12: mid-build']));
+    const { code, stdout } = runHook(dir);
+    assertEq(code, 0, 'exit 0');
+    assertEq(stdout, '', 'nothing is injected and nothing is said about participation');
+    cleanup(dir);
+  });
+
   await test('no cwd in the payload: silent', () => {
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: JSON.stringify({ source: 'startup' }),
-      env: { HOME: BARE_HOME, PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin' },
+      env: homeEnv(BARE_HOME, { PATH: joinPath(SYSTEM_PATH, '/opt/homebrew/bin') }),
       encoding: 'utf8',
       timeout: 15000,
     });

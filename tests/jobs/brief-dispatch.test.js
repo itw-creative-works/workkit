@@ -18,33 +18,14 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
+const {
+  BASH, NO_RC, shellPath, homeEnv, stubTool, basePathWithout, systemPathWith, joinPath,
+} = require('../lib/platform');
 
 const LIB = path.join(__dirname, '..', '..', 'jobs', 'brief-dispatch.sh');
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'brief-dispatch-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
-
-const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
-
-// The "no gh" case cannot ASSUME the machine has none: every Ubuntu runner
-// ships it in /usr/bin (the wk.test.js lesson, issue #114), so the absence is
-// built: one directory of symlinks to everything on the base PATH except gh.
-const basePathWithout = (dir, command) => {
-  const out = path.join(dir, `path-without-${command}`);
-  fs.mkdirSync(out, { recursive: true });
-  for (const entry of BASE_PATH.split(':')) {
-    let names = [];
-    try { names = fs.readdirSync(entry); } catch { continue; }
-    for (const name of names) {
-      if (name === command) continue;
-      try { fs.symlinkSync(path.join(entry, name), path.join(out, name)); } catch {}
-    }
-  }
-  // An empty mirror would pass the absence assertion vacuously: `sh` proves
-  // the mirror is real before anything leans on it.
-  if (!fs.existsSync(path.join(out, 'sh'))) throw new Error(`basePathWithout built an unusable PATH at ${out}`);
-  return out;
-};
 
 /**
  * A machine the dispatch can be asked of.
@@ -70,7 +51,7 @@ const mkWorld = ({
 
   const ghLog = path.join(root, 'gh-argv.log');
   if (gh) {
-    fs.writeFileSync(path.join(bin, 'gh'), [
+    stubTool(bin, 'gh', [
       '#!/usr/bin/env bash',
       recordArgv(ghLog),
       'case "$*" in',
@@ -78,33 +59,29 @@ const mkWorld = ({
       `  "secret list"*) ${secretsUnlistable ? 'exit 1' : `printf '%s\\n'${secrets.map((n) => ` "${n}\tUpdated 2026-07-01"`).join('')}`} ;;`,
       'esac',
       'exit 0',
-      '',
-    ].join('\n'));
-    fs.chmodSync(path.join(bin, 'gh'), 0o755);
+    ]);
   }
 
   return {
     root,
     ghCalls: () => readArgv(ghLog),
     dispatched: () => readArgv(ghLog).filter((c) => c[0] === 'workflow' && c[1] === 'run'),
-    env: {
+    env: homeEnv(path.join(root, 'home'), {
       ...process.env,
-      HOME: path.join(root, 'home'),
       WORKFLOW_HOME: workflowHome,
-      // Only the shim and the system tools. `jq` lives where the package
-      // managers put it, so those directories are on the path, except in the
-      // world that has no `gh` at all, which gets a mirror of the base PATH
-      // with gh left out, since a runner ships the real one in /usr/bin.
-      PATH: gh ? `${bin}:/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin` : `${bin}:${basePathWithout(root, 'gh')}`,
-    },
+      // Only the shim and the system tools, except in the world that has no
+      // `gh` at all, which gets a mirror of the system PATH with gh left out,
+      // since a runner ships the real one in /usr/bin.
+      PATH: gh ? systemPathWith(bin) : joinPath(bin, basePathWithout(root, 'gh')),
+    }),
   };
 };
 
 /** Source the lib, call dispatch_brief, and report what it set. */
 const dispatch = (world, lib = LIB) => {
-  const script = `. ${JSON.stringify(lib)}
+  const script = `. ${JSON.stringify(shellPath(lib))}
 if dispatch_brief; then printf 'ok\\n%s\\n' "$DISPATCH_LINE"; else printf 'refused\\n%s\\n' "$DISPATCH_REASON"; fi`;
-  const res = spawnSync('bash', ['-c', script], { encoding: 'utf8', env: world.env, timeout: 30000 });
+  const res = spawnSync(BASH, [...NO_RC, '-c', script], { encoding: 'utf8', env: world.env, timeout: 30000 });
   const [verdict, ...rest] = (res.stdout || '').split('\n');
   return { verdict, said: rest.join('\n').trim(), stderr: res.stderr || '' };
 };
@@ -113,9 +90,9 @@ const run = async () => {
   group('jobs/brief-dispatch: shape');
 
   await test('bash -n: no syntax errors, and nothing runs at load', () => {
-    const res = spawnSync('bash', ['-n', LIB], { encoding: 'utf8' });
+    const res = spawnSync(BASH, [...NO_RC, '-n', shellPath(LIB)], { encoding: 'utf8' });
     assertEq(res.status, 0, `bash -n: ${res.stderr}`);
-    const sourced = spawnSync('bash', ['-c', `. ${JSON.stringify(LIB)}`], { encoding: 'utf8', timeout: 30000 });
+    const sourced = spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(shellPath(LIB))}`], { encoding: 'utf8', timeout: 30000 });
     assertEq(sourced.status, 0, 'sourcing it is free');
     assertEq(sourced.stdout, '', 'and silent');
   });

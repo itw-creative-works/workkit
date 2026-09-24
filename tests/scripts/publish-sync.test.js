@@ -20,11 +20,10 @@ const { spawnSync } = require('child_process');
 const {
   group, test, assert, assertEq, summary, selfRun,
 } = require('../lib/harness');
+const { BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../lib/platform');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const WORKFLOW_DIR = path.join(REPO_ROOT, 'workflow');
-const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
-
 const mkTmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'workkit-sync-')));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -38,8 +37,8 @@ const write = (file, body) => {
   fs.writeFileSync(file, body);
 };
 const writeStub = (file, lines) => {
-  write(file, `${['#!/usr/bin/env bash', ...lines, ''].join('\n')}`);
-  fs.chmodSync(file, 0o755);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  return stubTool(path.dirname(file), path.basename(file), ['#!/usr/bin/env bash', ...lines]);
 };
 
 /**
@@ -113,26 +112,28 @@ const mkSyncWorld = () => {
     root,
     clone,
     app: tower.app,
-    env: {
-      HOME: homeDir,
-      PATH: `${BASE_PATH}:${path.dirname(process.execPath)}`,
-      WORKFLOW_HOME: workflowHome,
+    env: homeEnv(homeDir, {
+      PATH: joinPath(SYSTEM_PATH, NODE_DIR),
+      WORKFLOW_HOME: shellPath(workflowHome),
       WORKKIT_TOWER_APP: tower.app,
       WORKKIT_HOME_REMOTE: bare,
-    },
+    }),
   };
 };
 
 /** Source the library and run one line of shell in it: how every caller uses it. */
 const inHome = (world, script, { env = {} } = {}) => {
+  // A script path handed INTO a shell is POSIX: each of these sources its own
+  // siblings off `${BASH_SOURCE[0]%/*}`, which cuts nothing out of a native
+  // path and leaves the source target a file with a directory pasted onto it.
   const driver = [
     'set -euo pipefail',
-    `. ${JSON.stringify(path.join(WORKFLOW_DIR, 'lib.sh'))}`,
-    `. ${JSON.stringify(path.join(WORKFLOW_DIR, 'discussions.sh'))}`,
-    `. ${JSON.stringify(path.join(WORKFLOW_DIR, 'home.sh'))}`,
+    ...['lib.sh', 'discussions.sh', 'home.sh'].map(
+      (file) => `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, file)))}`,
+    ),
     script,
   ].join('\n');
-  const res = spawnSync('bash', ['-c', driver], {
+  const res = spawnSync(BASH, [...NO_RC, '-c', driver], {
     env: { ...world.env, ...env }, input: '', encoding: 'utf8', timeout: 30000,
   });
   assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
@@ -209,7 +210,7 @@ const mkPublishWorld = ({ mintFails = false, minted = false, installFails = fals
   // #166): `--prefix` names the project, the cwd names the tree npm writes.
   const npmLog = path.join(root, 'npm.log');
   writeStub(path.join(bin, 'npm'), [
-    `printf '%s|%s\\n' "$PWD" "$*" >> ${JSON.stringify(npmLog)}`,
+    `printf '%s|%s\\n' "$PWD" "$*" >> ${JSON.stringify(shellPath(npmLog))}`,
     'prefix="$PWD"',
     'if [[ "$1" == "--prefix" ]]; then prefix="$2"; fi',
     'if [[ "$*" == *install* ]]; then',
@@ -253,7 +254,7 @@ const mkPublishWorld = ({ mintFails = false, minted = false, installFails = fals
   // real mint leaves: the minted tree the "has it ever minted" check reads.
   const mintLog = path.join(root, 'mint.log');
   writeStub(path.join(tower, 'node_modules', '.bin', 'omega'), [
-    `printf '%s|%s\\n' "$PWD" "$*" >> ${JSON.stringify(mintLog)}`,
+    `printf '%s|%s\\n' "$PWD" "$*" >> ${JSON.stringify(shellPath(mintLog))}`,
     ...(mintFails
       ? ['printf \'omega: the brandmark could not be read\\n\' >&2', 'exit 1']
       : ['mkdir -p "$PWD/.omega/assets/logo/brandmark"', 'exit 0']),
@@ -273,12 +274,11 @@ const mkPublishWorld = ({ mintFails = false, minted = false, installFails = fals
     npms: () => (fs.existsSync(npmLog)
       ? fs.readFileSync(npmLog, 'utf8').trim().split('\n').filter(Boolean)
       : []),
-    env: {
-      HOME: homeDir,
-      PATH: `${bin}:${BASE_PATH}:${path.dirname(process.execPath)}`,
-      WORKFLOW_HOME: workflowHome,
+    env: homeEnv(homeDir, {
+      PATH: joinPath(bin, SYSTEM_PATH, NODE_DIR),
+      WORKFLOW_HOME: shellPath(workflowHome),
       WORKKIT_HOME_REMOTE: bare,
-    },
+    }),
   };
 };
 
@@ -286,7 +286,7 @@ const mkPublishWorld = ({ mintFails = false, minted = false, installFails = fals
 // from wherever it woke up, and a shim that keys anything off the cwd must key
 // it off a scratch directory rather than this checkout.
 const publish = (world, args = []) => {
-  const res = spawnSync('bash', [path.join(world.kit, 'workflow', 'publish.sh'), ...args], {
+  const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(world.kit, 'workflow', 'publish.sh')), ...args], {
     cwd: world.root, env: world.env, encoding: 'utf8', timeout: 60000,
   });
   assert(res.status !== null, `publish finished (no timeout): ${res.error || ''}`);
@@ -349,7 +349,7 @@ const run = async () => {
 
     const after = mtimes(world.clone);
     const rewritten = Object.keys(after).filter((rel) => after[rel] !== backdated[rel]);
-    assertEq(rewritten.join(','), 'targets/web/src/index.html',
+    assertEq(rewritten.map(shellPath).join(','), 'targets/web/src/index.html',
       `and nothing else was written at all: ${rewritten.join(', ')}`);
     cleanup(world.root);
   });
@@ -495,7 +495,7 @@ const run = async () => {
     assertEq(code, 0, `exit 0: ${out}${err}`);
     const installs = world.npms().filter((call) => /install/.test(call));
     assertEq(installs.length, before + 1, `one install for the manifest that moved: ${installs.join(' | ')}`);
-    assertEq(installs[installs.length - 1], `${world.tower}|install`,
+    assertEq(installs[installs.length - 1], `${shellPath(world.tower)}|install`,
       'in the clone, which is the project the build runs out of');
     cleanup(world.root);
   });
@@ -516,7 +516,7 @@ const run = async () => {
     assertEq(code, 0, `exit 0: ${out}${err}`);
     const installs = world.npms().filter((call) => /install/.test(call));
     assertEq(installs.length, 1, `the seeded clone’s manifests are installed once: ${installs.join(' | ')}`);
-    assertEq(installs[0], `${world.tower}|install`,
+    assertEq(installs[0], `${shellPath(world.tower)}|install`,
       'the cwd is the clone with its links resolved, and no --prefix keys the tree from elsewhere');
     cleanup(world.root);
   });
@@ -593,7 +593,7 @@ const run = async () => {
     publish(world);
     const mints = world.mints();
     assertEq(mints.length, 1, `one mint: ${mints.join(' | ')}`);
-    assertEq(mints[0], `${world.tower}|--service=assets`, 'the assets service, run at the clone’s brand root');
+    assertEq(mints[0], `${shellPath(world.tower)}|--service=assets`, 'the assets service, run at the clone’s brand root');
     cleanup(world.root);
   });
 
@@ -638,7 +638,7 @@ const run = async () => {
 
     const mintLog = path.join(world.root, 'mint.log');
     writeStub(path.join(world.tower, 'node_modules', '.bin', 'omega'), [
-      `printf '%s|%s\\n' "$PWD" "$*" >> ${JSON.stringify(mintLog)}`,
+      `printf '%s|%s\\n' "$PWD" "$*" >> ${JSON.stringify(shellPath(mintLog))}`,
       'mkdir -p "$PWD/.omega/assets/logo/brandmark"',
       'exit 0',
     ]);

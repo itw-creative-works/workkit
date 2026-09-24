@@ -31,8 +31,8 @@ set -euo pipefail
 input="$(cat)" || input=""
 command -v jq >/dev/null 2>&1 || exit 0
 
-event=$(printf '%s' "$input" | jq -r '.hook_event_name // empty' 2>/dev/null || true)
-session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null || true)
+event=$(printf '%s' "$input" | hook_jq -r '.hook_event_name // empty' 2>/dev/null || true)
+session_id=$(printf '%s' "$input" | hook_jq -r '.session_id // empty' 2>/dev/null || true)
 
 # No session id means nothing to key the stamp by. A comparison against
 # another session's state would be worse than silence.
@@ -74,18 +74,6 @@ fingerprint() {
   done < <(surfaces)
 }
 
-# Whatever digest this machine has. The fingerprint is a local listing, not an
-# adversarial input, so the point is only that equal states digest equally.
-digest() {
-  if command -v shasum >/dev/null 2>&1; then
-    shasum
-  elif command -v sha256sum >/dev/null 2>&1; then
-    sha256sum
-  else
-    cksum
-  fi | awk '{print $1}'
-}
-
 write_state() {
   mkdir -p "$STATE_DIR" 2>/dev/null || return 0
   printf '%s\n' "$2" >"$1" 2>/dev/null || true
@@ -96,7 +84,11 @@ read_state() {
   cat "$1" 2>/dev/null || true
 }
 
-current="$(fingerprint | digest)"
+# The fingerprint is a local listing, not an adversarial input, so the point
+# is only that equal states digest equally. No digest tool at all leaves the key
+# empty on both sides of every comparison below, so the guard stays silent: it
+# is a nag, and a nag fails silent rather than loud.
+current="$(fingerprint | hook_sha1 2>/dev/null || true)"
 
 case "$event" in
   SessionStart)
@@ -123,7 +115,7 @@ fi
 
 write_state "$NOTIFIED" "$current"
 
-jq -n --arg ctx "workkit changed since this session loaded. /reload-plugins picks up new agents/skills and hook wiring; engine and existing-script edits are already live" '{
+hook_jq -n --arg ctx "workkit changed since this session loaded. /reload-plugins picks up new agents/skills and hook wiring; engine and existing-script edits are already live" '{
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
     "additionalContext": $ctx

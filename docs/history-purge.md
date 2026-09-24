@@ -1,6 +1,6 @@
 # History purge: removing a leaked value from git history
 
-A value that should never have been committed (a phone number, an address, a key) is still in every clone of the repo until the history that carries it is rewritten. This is the runbook for that rewrite, written from the live run of 2026-07-30 (the dotfiles repo, a phone number, issue #92) so the next one is followed rather than rediscovered.
+A value that should never have been committed (a phone number, an address, a key) is still in every clone of the repo until the history that carries it is rewritten. This is the runbook for that rewrite, written from a live run (the dotfiles repo, a phone number) so the next one is followed rather than rediscovered.
 
 **Rewriting history is destructive and it is not automated.** No hook runs it, no skill does it for you, and the one step that actually publishes the rewrite is done BY THE HUMAN, by hand, through the GitHub UI. That friction is the feature: every gate in the way is a chance to notice that the value did not need purging, or that the wrong range was scoped. Follow the steps in order; do not improvise a rewrite.
 

@@ -13,8 +13,10 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const { execFileSync, spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { group, test, assert, assertEq, testUnless, summary, selfRun } = require('../lib/harness');
+const { IS_WINDOWS, NO_NODE_STUB, gitPath, homeEnv, pathWith, shellPath, stubTool } = require('../lib/platform');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'brief-payload.js');
 const { composeBrief, render, writeBriefMarks, INSTRUCTION } = require(SCRIPT);
@@ -62,8 +64,7 @@ const mkNewsWorld = () => {
     JSON.stringify({ data: { repository: { discussions: { nodes } } } }),
   );
   setBoard([]);
-  fs.writeFileSync(path.join(bin, 'gh'), `#!/usr/bin/env bash\ncat ${JSON.stringify(boardFile)}\n`);
-  fs.chmodSync(path.join(bin, 'gh'), 0o755);
+  stubTool(bin, 'gh', ['#!/usr/bin/env bash', `cat ${JSON.stringify(shellPath(boardFile))}`]);
 
   return {
     home,
@@ -75,13 +76,12 @@ const mkNewsWorld = () => {
       title: 'brief: 2026-07-29',
       body: `HEADLINE: yesterday happened.\n\n<!-- cc-news: ${version} -->\n`,
     }]),
-    env: {
+    env: homeEnv(home, {
       ...process.env,
-      HOME: home,
-      PATH: `${bin}:${process.env.PATH}`,
-      WORKKIT_CC_CHANGELOG: `file://${ccFixture(home)}`,
+      PATH: pathWith(bin),
+      WORKKIT_CC_CHANGELOG: pathToFileURL(ccFixture(home)).href,
       WORKKIT_BRIEF_MARK_FILE: markFile,
-    },
+    }),
   };
 };
 
@@ -118,7 +118,7 @@ const mkWorld = () => {
   fs.mkdirSync(path.join(home, '.workkit'), { recursive: true });
   fs.writeFileSync(
     path.join(home, '.workkit', '.repos.json'),
-    JSON.stringify({ version: 1, repos: { [repo]: 'enabled' } }, null, 2),
+    JSON.stringify({ version: 1, repos: { [gitPath(repo)]: 'enabled' } }, null, 2),
   );
 
   const world = {
@@ -233,7 +233,7 @@ const run = async () => {
     fs.mkdirSync(path.join(world.home, '.workkit'), { recursive: true });
     fs.writeFileSync(path.join(world.home, '.workkit', '.repos.json'), JSON.stringify({
       version: 1,
-      repos: { [world.repo]: 'declined' },
+      repos: { [gitPath(world.repo)]: 'declined' },
     }));
     const out = composeIn(world);
     assertEq(out.counts.open, 0, 'nothing is swept');
@@ -433,10 +433,10 @@ const run = async () => {
     // WORKKIT_CC_CHANGELOG points the news fetch at a fixture file, so the
     // script's one network read happens against the disk instead.
     const home = mkTmp();
-    const res = spawnSync('node', [SCRIPT], {
+    const res = spawnSync(process.execPath, [SCRIPT], {
       encoding: 'utf8',
       timeout: 60000,
-      env: { ...process.env, HOME: home, WORKKIT_CC_CHANGELOG: `file://${ccFixture(home)}` },
+      env: homeEnv(home, { ...process.env, WORKKIT_CC_CHANGELOG: pathToFileURL(ccFixture(home)).href }),
     });
     cleanup(home);
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
@@ -446,6 +446,14 @@ const run = async () => {
     assert(Array.isArray(parsed.waiting), 'and the sections');
   });
 
+  // A case whose answer rests on the `gh` shim mkNewsWorld put on PATH, which
+  // the SCRIPT spawns itself. No stub a suite writes is startable by name from
+  // Node on Windows (tests/lib/platform.js, `stubTool`), so the machine's own
+  // gh answers the board read there. The world's env seals that gh to a scratch
+  // config, so what it answers is an empty board rather than the developer's,
+  // and an empty board is not what these cases are about.
+  const newsTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
+
   group('jobs/brief-payload: the upstream news');
 
   await test('the instruction tells the digest what a CC NEWS block is', () => {
@@ -454,11 +462,11 @@ const run = async () => {
   });
 
 
-  await test('a first run prints no block and hands the runner the latest version', () => {
+  await newsTest('a first run prints no block and hands the runner the latest version', () => {
     // The cursor is a line in the latest published brief (issue #86), so the
     // world here is an empty board and a scratch mark file, never the network.
     const world = mkNewsWorld();
-    const first = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
+    const first = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
     assertEq(first.status, 0, `exit 0, stderr: ${first.stderr}`);
     // Past the instruction, which names the block it is explaining.
     assert(!/--- CC NEWS ---/.test(first.stdout.slice(INSTRUCTION.length)), 'the first morning does not dump the history');
@@ -468,7 +476,7 @@ const run = async () => {
     // above it upstream.
     world.publish('2.1.219');
     fs.writeFileSync(world.ccFile, `# Changelog\n\n## 2.1.220\n\n- Added a \`DirectoryAdded\` hook\n- Bug fixes\n${CC_CHANGELOG}`);
-    const second = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
+    const second = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
     assertEq(second.status, 0, `exit 0, stderr: ${second.stderr}`);
     assert(/--- CC NEWS ---/.test(second.stdout.slice(INSTRUCTION.length)), 'the new release is flagged');
     assert(/\[hooks\]\n2\.1\.220: Added a `DirectoryAdded` hook/.test(second.stdout), 'with the entry under its topic');
@@ -477,11 +485,11 @@ const run = async () => {
     cleanup(world.home);
   });
 
-  await test('the mark file carries both lines: the cursor and the day’s stats', () => {
+  await newsTest('the mark file carries both lines: the cursor and the day’s stats', () => {
     // Issue #55: the runner appends this file verbatim under the digest, so
     // both lines the published brief is meant to carry leave together.
     const world = mkNewsWorld();
-    const res = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
+    const res = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     const lines = world.mark().trim().split('\n');
     assertEq(lines.length, 2, `two lines, got: ${world.mark()}`);
@@ -491,12 +499,12 @@ const run = async () => {
     cleanup(world.home);
   });
 
-  await test('the stats line rides even when there was no news to carry', () => {
+  await newsTest('the stats line rides even when there was no news to carry', () => {
     // The two lines are independent: an upstream read that failed publishes no
     // cursor, and the day's numbers are not the news's to take with it.
     const world = mkNewsWorld();
     const env = { ...world.env, WORKKIT_CC_CHANGELOG: 'file:///nowhere/at/all.md' };
-    const res = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
+    const res = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     const lines = world.mark().trim().split('\n');
     assertEq(lines.length, 1, `one line, got: ${world.mark()}`);
@@ -528,21 +536,21 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('nothing on this machine records the cursor', () => {
+  await newsTest('nothing on this machine records the cursor', () => {
     const world = mkNewsWorld();
-    spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
+    spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
     assert(!fs.existsSync(path.join(world.home, '.workkit', '.cache.json')),
       'the disposable cache is not where the news cursor lives any more');
     cleanup(world.home);
   });
 
-  await test('with no mark file named, the script still prints its brief', () => {
+  await newsTest('with no mark file named, the script still prints its brief', () => {
     // The runner names the file; a human running `node jobs/brief-payload.js`
     // does not, and the payload is the whole point of the script.
     const world = mkNewsWorld();
     const env = { ...world.env };
     delete env.WORKKIT_BRIEF_MARK_FILE;
-    const res = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
+    const res = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(res.stdout.startsWith(INSTRUCTION), 'the payload printed');
     cleanup(world.home);

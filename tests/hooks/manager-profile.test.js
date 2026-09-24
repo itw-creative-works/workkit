@@ -5,6 +5,7 @@ const os = require('os');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, WORKKIT_DIR: W } = require('../lib/harness');
+const { BASH, NO_RC, shellPath } = require('../lib/platform');
 
 const REPO = path.join(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'hooks', 'manager', 'profile', 'run.sh');
@@ -30,32 +31,35 @@ const cacheSession = (sid, modelId) => {
 
 const payload = () => ({
   session_id: 'sess1',
-  transcript_path: path.join(tmp, 'no-transcript.jsonl'),
+  transcript_path: shellPath(path.join(tmp, 'no-transcript.jsonl')),
   prompt: 'hello',
 });
 
-// A repo directory carrying a manager block in its .workkit/settings.json.
-// Left plain (no git init): a bare tmpdir is in no repo, so the hook's repo
-// root falls back to the cwd itself.
+// A repo directory carrying a manager block in its .workkit/settings.json. A
+// REAL git repo: a settings file is a REPO's, and the config reads one only
+// where git names a toplevel, so a bare tmpdir would carry no repo layer and
+// prove nothing about the file in it. A string body is written verbatim, for
+// the cases about a file that says something else or does not parse.
 const repoWith = (manager) => {
   const dir = path.join(tmp, 'repo');
   fs.mkdirSync(path.join(dir, W), { recursive: true });
   fs.writeFileSync(
     path.join(dir, W, 'settings.json'),
-    JSON.stringify({ version: 1, enabled: true, manager })
+    typeof manager === 'string' ? manager : JSON.stringify({ version: 1, enabled: true, manager })
   );
+  spawnSync('git', ['-C', dir, 'init', '-q'], { encoding: 'utf8' });
   return dir;
 };
 
 const runHook = (input, env = {}) => {
-  const res = spawnSync('bash', [HOOK], {
+  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
     input: typeof input === 'string' ? input : JSON.stringify(input),
     // The user layer points at a nonexistent fixture by default, so the suite
     // never reads the running machine's own ~/.workkit/settings.json.
     env: {
       ...process.env,
-      TMPDIR: tmp,
-      MANAGER_USER_SETTINGS: path.join(tmp, 'no-user-settings.json'),
+      TMPDIR: shellPath(tmp),
+      MANAGER_USER_SETTINGS: shellPath(path.join(tmp, 'no-user-settings.json')),
       ...env,
     },
     encoding: 'utf8',
@@ -110,7 +114,7 @@ const run = async () => {
     freshTmp();
     const transcript = path.join(tmp, 't.jsonl');
     fs.writeFileSync(transcript, JSON.stringify({ type: 'assistant', message: { model: id('haiku') } }));
-    const out = runHook({ ...payload(), transcript_path: transcript });
+    const out = runHook({ ...payload(), transcript_path: shellPath(transcript) });
     assertEq(out.stdout, '');
   });
 
@@ -125,7 +129,7 @@ const run = async () => {
     assert(/[Jj]udgment stays/.test(ctx), 'the judgment boundary is missing');
     assert(ctx.includes('self-contained'), 'the owner-question rule is missing');
     assert(ctx.includes('names the framework guide'), 'the brief routes the guide read');
-    assert(ctx.includes('ONE bullet, two to three sentences for a cold reader') && ctx.includes('Restating an issue'), 'the cold-reader line rides every prompt (#221)');
+    assert(ctx.includes('ONE bullet, bold lead = number + link + five words, then two to three sentences for a cold reader') && ctx.includes('Restating an issue'), 'the cold-reader line rides every prompt (#221)');
   });
   await test('the visibility rules are present on both rungs (#154)', () => {
     // What a manager owes the chat while it delegates: the checklist that says
@@ -167,14 +171,14 @@ const run = async () => {
   await test('enabled: false silences a frontier session', () => {
     freshTmp();
     cacheSession('sess1', id('fable'));
-    const out = runHook({ ...payload(), cwd: repoWith({ enabled: false }) });
+    const out = runHook({ ...payload(), cwd: shellPath(repoWith({ enabled: false })) });
     assertEq(out.code, 0, out.stderr);
     assertEq(out.stdout, '');
   });
   await test('a repo workhorse override makes a sonnet session manager-capable', () => {
     freshTmp();
     cacheSession('sess1', id('sonnet'));
-    const out = runHook({ ...payload(), cwd: repoWith({ tiers: { workhorse: 'sonnet' } }) });
+    const out = runHook({ ...payload(), cwd: shellPath(repoWith({ tiers: { workhorse: 'sonnet' } })) });
     const ctx = contextOf(out);
     assert(ctx.includes('MANAGER'), 'the overridden workhorse tier should inject');
     assert(ctx.includes('Consult the workkit:advisor'), 'a workhorse session should consult the advisor');
@@ -184,24 +188,20 @@ const run = async () => {
     cacheSession('sess1', id('opus'));
     const userFile = path.join(tmp, 'user-settings.json');
     fs.writeFileSync(userFile, JSON.stringify({ version: 1, repos: {}, manager: { tiers: { frontier: 'opus' } } }));
-    const ctx = contextOf(runHook(payload(), { MANAGER_USER_SETTINGS: userFile }));
+    const ctx = contextOf(runHook(payload(), { MANAGER_USER_SETTINGS: shellPath(userFile) }));
     assert(ctx.includes('redundant'), 'an opus session under a frontier: opus override IS the advisor');
   });
   await test('a repo without a manager block changes nothing', () => {
     freshTmp();
     cacheSession('sess1', id('fable'));
-    const dir = path.join(tmp, 'repo');
-    fs.mkdirSync(path.join(dir, W), { recursive: true });
-    fs.writeFileSync(path.join(dir, W, 'settings.json'), JSON.stringify({ version: 1, enabled: false }));
-    assert(contextOf(runHook({ ...payload(), cwd: dir })).includes('MANAGER'), 'the workflow key is not the manager key');
+    const dir = repoWith(JSON.stringify({ version: 1, enabled: false }));
+    assert(contextOf(runHook({ ...payload(), cwd: shellPath(dir) })).includes('MANAGER'), 'the workflow key is not the manager key');
   });
   await test('unparseable repo settings fall back to the ladder', () => {
     freshTmp();
     cacheSession('sess1', id('fable'));
-    const dir = path.join(tmp, 'repo');
-    fs.mkdirSync(path.join(dir, W), { recursive: true });
-    fs.writeFileSync(path.join(dir, W, 'settings.json'), 'not json {');
-    assert(contextOf(runHook({ ...payload(), cwd: dir })).includes('MANAGER'), 'garbage settings must fail open');
+    const dir = repoWith('not json {');
+    assert(contextOf(runHook({ ...payload(), cwd: shellPath(dir) })).includes('MANAGER'), 'garbage settings must fail open');
   });
 
   group('manager-profile: robustness');
@@ -233,9 +233,9 @@ const run = async () => {
   await test('loader routes manager:profile', () => {
     freshTmp();
     cacheSession('sess1', id('fable'));
-    const res = spawnSync('bash', [LOADER, 'manager:profile'], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:profile'], {
       input: JSON.stringify(payload()),
-      env: { ...process.env, TMPDIR: tmp },
+      env: { ...process.env, TMPDIR: shellPath(tmp) },
       encoding: 'utf8',
       timeout: 10000,
     });
@@ -245,9 +245,9 @@ const run = async () => {
   await test('HOOK_DISABLE=1 is a silent no-op', () => {
     freshTmp();
     cacheSession('sess1', id('fable'));
-    const res = spawnSync('bash', [LOADER, 'manager:profile'], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:profile'], {
       input: JSON.stringify(payload()),
-      env: { ...process.env, TMPDIR: tmp, HOOK_DISABLE: '1' },
+      env: { ...process.env, TMPDIR: shellPath(tmp), HOOK_DISABLE: '1' },
       encoding: 'utf8',
       timeout: 10000,
     });

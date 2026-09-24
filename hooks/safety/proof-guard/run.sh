@@ -1,8 +1,7 @@
 #!/bin/bash
 # safety/proof-guard: PreToolUse hook (Bash)
 # The mechanical half of the spec's proof rule (docs/project-state.md, "The
-# proof"): a `Proof:` line is a HARD GATE (owner ruling, 2026-09-10, issue
-# #233), so no item reaches `status:complete` or closes without one. This guard
+# proof"): a `Proof:` line is a HARD GATE, so no item reaches `status:complete` or closes without one. This guard
 # blocks the two commands that make that move:
 #   gh issue edit <N> ... --add-label ...status:complete...
 #   gh issue close <N>
@@ -47,7 +46,9 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-cmd=$(jq -r '.tool_input.command // ""' <<<"$input" || true)
+. "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
+
+cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
 [ -n "$cmd" ] || exit 0
 
 # Cheap exits first, both on the RAW text and both above any splitting, since
@@ -64,13 +65,12 @@ if ! printf '%s' "$cmd" | grep -q 'status:complete' \
   exit 0
 fi
 
-cwd=$(jq -r '.cwd // ""' <<<"$input" || true)
+cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
 [ -n "$cwd" ] || cwd="$PWD"
 
 # Shared text handling (heredoc-body strip, quote strip, the proof read):
 # hooks/_lib.sh, the same preparation the commit hooks and tree-guard do before
 # walking clauses. A heredoc BODY is file content, not a command.
-. "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
 src=$(hook_strip_heredocs "$cmd")
 
 skipped() {

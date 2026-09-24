@@ -10,10 +10,10 @@
 # Usage: wk.sh note <text...>
 #
 # Which capture file is decided by a WALK UP from the current directory: the first
-# ancestor holding a participating `.workkit/settings.json` wins. That is a
-# directory walk rather than `git rev-parse` on purpose. The answer this needs
-# is "which participating repo am I in", and a nested checkout or a worktree
-# would make git's answer and the settings file's answer differ.
+# ancestor that is a repo root holding a participating `.workkit/settings.json`
+# wins. That is a directory walk rather than `git rev-parse` on purpose. The
+# answer this needs is "which participating repo am I in", and a nested checkout
+# or a worktree would make git's answer and the settings file's answer differ.
 #
 # There is no capture file outside a project (issues #77, #79): the tower clone at
 # `~/.workkit/tower` is engine territory and carries no `.workkit/` at all, so a
@@ -56,20 +56,32 @@ usage() {
 # repo's yes, and a deliberate `"enabled": false` is its no. A file with no
 # `enabled` key at all is a legacy opt-in and counts as yes, matching
 # hooks/docs/session/run.sh and the engine's resolve_state.
+#
+# A REPO's yes, so the file counts only at a repo root (`wk_is_repo_root`, which
+# carries what `.git` looks like in a checkout, in a worktree and in a
+# submodule): the repo is there before the settings file is read at all. The
+# engine's resolve_state is the sibling, refusing a
+# directory git gives no toplevel for; this walk asks the directory itself,
+# which is that rule in the form a walk can ask it. Without it every
+# `.workkit/` on the way up reads as an opt-in, and one of them is the
+# machine's own state directory: a temp directory built under a user profile
+# (every Windows temp directory) walks straight through a home that is not the
+# configured one, and the note buffers into a file the spec says must not
+# exist.
 participating() {
   local settings="$1/$WORKKIT_DIR/settings.json"
+  wk_is_repo_root "$1" || return 1
   [[ -f "$settings" ]] || return 1
-  # The machine's own state dir is NOT a repo opt-in. The walk passes through
-  # $HOME, where `.workkit/settings.json` is the machine settings file (the site
-  # options). With no `enabled` key it would read as a legacy
-  # yes and the note would buffer into a file the spec says must not exist.
+  # The configured state dir is refused even when it sits at a repo root, which
+  # is a home directory tracked in git. It is the machine's file (the site
+  # options) wherever it is found.
   local state_dir user_dir
   state_dir="$(cd "$1/$WORKKIT_DIR" 2>/dev/null && pwd -P)" || state_dir=""
   user_dir="$(cd "$WK_USER_DIR" 2>/dev/null && pwd -P)" || user_dir=""
   if [[ -n "$state_dir" && "$state_dir" == "$user_dir" ]]; then
     return 1
   fi
-  grep -qE '"enabled"[[:space:]]*:[[:space:]]*false' "$settings" 2>/dev/null && return 1
+  wk_settings_declined "$settings" && return 1
   return 0
 }
 
@@ -124,7 +136,7 @@ append_note() {
 # and a thought that never left the shell is not. Both attempts failing prints
 # the note back. This command has no file to fall back to by design.
 home_issue() {
-  local note="$1" slug title body url=''
+  local note="$1" slug title body clean url=''
 
   if ! command -v gh >/dev/null 2>&1; then
     wk_error "gh is not on this machine, so the note could not be filed on the home repo: $note"
@@ -139,9 +151,17 @@ home_issue() {
   # sever a multibyte character and hand gh an invalid title. iconv drops
   # whatever the cut left behind; a machine without it keeps the cut as it is,
   # since a truncated title still beats no note at all.
+  #
+  # `-c` drops what it cannot convert and STILL reports a failure: GNU iconv
+  # (Git Bash) for an invalid sequence anywhere in the input, BSD iconv when the
+  # input ENDS inside an incomplete one, which is what a note arriving with
+  # severed trailing bytes hands it. A `|| printf` in the substitution would
+  # append the unrepaired title to the repaired one, so the status is dropped
+  # and the repair is taken only when iconv answered with something.
   if [[ "${#title}" -gt 72 ]]; then title="${title:0:71}…"; fi
   if command -v iconv >/dev/null 2>&1; then
-    title="$(printf '%s' "$title" | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || printf '%s' "$title")"
+    clean="$(printf '%s' "$title" | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || true)"
+    if [[ -n "$clean" ]]; then title="$clean"; fi
   fi
   body="## Description
 

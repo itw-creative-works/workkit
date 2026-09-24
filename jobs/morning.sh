@@ -366,6 +366,17 @@ cloud_machine() {
   local settings="$WK_DIR/settings.json" roster="$WK_DIR/.repos.json"
   local home_slug slugs site_repos='' home_branch='main' entries='' slug dir
 
+  # The engine seeded beside this file (WK_HOME_RUNNER_FILES) is a REQUIREMENT
+  # of this branch, not the convenience it is on a machine: the roster below is
+  # written through the engine's own predicates, and without them every
+  # directory reads as no repo at all, so the brief would sweep a roster built
+  # on a question nothing answered. A runner missing it says so and stops, since
+  # the Actions log is the delivery here and a red run is how a gap is heard.
+  if ! declare -f wk_is_repo_root >/dev/null 2>&1; then
+    wk_error "the engine seeded beside this job is missing at $ENGINE, so the roster this brief sweeps cannot be built"
+    exit 1
+  fi
+
   # GITHUB_REPOSITORY IS the home (issue #91): the workflow lives on the home
   # repo and nowhere else, so the run already knows which repo it is standing in.
   # An existing settings file WINS: a runner handed a configured home does not
@@ -389,7 +400,7 @@ cloud_machine() {
     exit 1
   fi
 
-  home_slug="$(jq -r '.site.repo // empty' "$settings" 2>/dev/null || true)"
+  home_slug="$(wk_jq -r '.site.repo // empty' "$settings" 2>/dev/null || true)"
   if [[ -z "$home_slug" ]]; then
     wk_error "$settings names no home repo (.site.repo), so there is no board to sweep or publish to"
     exit 1
@@ -416,7 +427,7 @@ cloud_machine() {
     site_repos="$(wk_spin 'reading the slug list' gh api "repos/$home_slug/contents/data/repos.json?ref=$home_branch" -q '.content' 2>/dev/null || true)"
     site_repos="$(printf '%s' "$site_repos" | tr -d '\n' | base64 -d 2>/dev/null || true)"
   fi
-  slugs="$(printf '%s' "$site_repos" | jq -r '.repos[]? // empty' 2>/dev/null || true)"
+  slugs="$(printf '%s' "$site_repos" | wk_jq -r '.repos[]? // empty' 2>/dev/null || true)"
   if [[ -z "$slugs" ]]; then
     # No published list: the site has never been published, or the read failed.
     # The home repo ALONE is the fallback rather than an empty roster: its issues
@@ -440,7 +451,7 @@ cloud_machine() {
     dir="$WK_DIR/cloud/$slug"
     mkdir -p "$dir/.workkit"
     printf '{\n  "version": 1,\n  "enabled": true\n}\n' >"$dir/.workkit/settings.json"
-    if [[ ! -d "$dir/.git" ]]; then
+    if ! wk_is_repo_root "$dir"; then
       git init -q "$dir" >/dev/null 2>&1 || continue
     fi
     git -C "$dir" remote remove origin >/dev/null 2>&1 || true
@@ -448,7 +459,7 @@ cloud_machine() {
     entries="$entries$dir"$'\n'
   done <<<"$slugs"
 
-  printf '%s' "$entries" | jq -R -s '
+  printf '%s' "$entries" | wk_jq -R -s '
     split("\n") | map(select(length > 0))
     | { version: 1, repos: (map({ (.): "enabled" }) | add // {}) }' >"$roster"
   note "roster: $(printf '%s' "$entries" | grep -c . || true) repos in $roster"
@@ -667,7 +678,7 @@ record_brief_status() {
     return 0
   fi
 
-  slug="$(jq -r '.site.repo // empty' "$wk_dir/settings.json" 2>/dev/null || true)"
+  slug="$(wk_jq -r '.site.repo // empty' "$wk_dir/settings.json" 2>/dev/null || true)"
   if [[ -z "$slug" ]]; then
     note_skip 'marker: no home repo configured; there is no board to read the newest brief from'
     return 0
@@ -712,7 +723,7 @@ record_brief_status() {
     return 0
   fi
 
-  last="$(printf '%s' "$out" | jq -r --arg p "$prefix" '
+  last="$(printf '%s' "$out" | wk_jq -r --arg p "$prefix" '
     [ .data.repository.discussions.nodes[]? | .title | select(startswith($p)) ]
     | .[0] // empty | ltrimstr($p)' 2>/dev/null || true)"
   case "$last" in

@@ -127,6 +127,28 @@ const readSummaries = (opts = {}) => {
 };
 
 /**
+ * The newest summary of one cadence on a board ALREADY READ. Pure, so the two
+ * cadences a Monday carries are picked off one read rather than read twice.
+ *
+ * @param {Array<object>|null} nodes the board `readSummaries` brought back
+ * @param {'daily'|'weekly'} cadence
+ * @returns {{title: string, url: string, createdAt: string|null}|null}
+ */
+const pickSummary = (nodes, cadence) => {
+  const prefix = CADENCE_PREFIX[cadence];
+  if (!prefix || !nodes) return null;
+
+  // Newest first is what the query asked for, so the first match is the answer.
+  const found = nodes.find((node) => node && typeof node.title === 'string' && node.title.startsWith(prefix));
+  if (!found) return null;
+  return {
+    title: found.title,
+    url: found.url || '',
+    createdAt: found.createdAt || null,
+  };
+};
+
+/**
  * The newest published summary of one cadence, and why the board could not be
  * read where there is none.
  *
@@ -142,23 +164,13 @@ const readSummaries = (opts = {}) => {
  * @returns {{summary: {title: string, url: string, createdAt: string|null}|null, reason: string|null}}
  */
 const newestSummary = (cadence, opts = {}) => {
-  const prefix = CADENCE_PREFIX[cadence];
-  if (!prefix) return { summary: null, reason: null };
+  // A cadence nobody publishes is no summary to go looking for, and looking
+  // costs the round trip the answer never needed.
+  if (!CADENCE_PREFIX[cadence]) return { summary: null, reason: null };
 
   const { nodes, reason } = readSummaries(opts);
   if (!nodes) return { summary: null, reason };
-
-  // Newest first is what the query asked for, so the first match is the answer.
-  const found = nodes.find((node) => node && typeof node.title === 'string' && node.title.startsWith(prefix));
-  if (!found) return { summary: null, reason: null };
-  return {
-    summary: {
-      title: found.title,
-      url: found.url || '',
-      createdAt: found.createdAt || null,
-    },
-    reason: null,
-  };
+  return { summary: pickSummary(nodes, cadence), reason: null };
 };
 
 /** Is this stamp a Monday, in the local morning it belongs to? */
@@ -189,15 +201,14 @@ const isMonday = (generatedAt) => {
  * @returns {{findings: object|null, summariesReason: string|null, week?: object|null}}
  */
 const briefSummaries = (opts = {}) => {
-  const daily = newestSummary('daily', opts);
-  const out = { findings: daily.summary, summariesReason: daily.reason };
+  // ONE read, both cadences: a Monday's rollup is on the same board the daily
+  // came back on, so reading again asked GitHub a question already answered on
+  // the busiest morning of the week (issue #250). The reason is that read's
+  // own, since one board unreadable is every key here empty for one cause.
+  const { nodes, reason } = readSummaries(opts);
+  const out = { findings: pickSummary(nodes, 'daily'), summariesReason: reason };
   if (isMonday(opts.generatedAt || new Date().toISOString())) {
-    const weekly = newestSummary('weekly', opts);
-    out.week = weekly.summary;
-    // Two round trips, so a limit can land between them: the FIRST reason there
-    // is one is the one carried, since either read failing is the same board
-    // being unreadable.
-    out.summariesReason = out.summariesReason || weekly.reason;
+    out.week = pickSummary(nodes, 'weekly');
   }
   return out;
 };

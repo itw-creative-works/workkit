@@ -47,16 +47,16 @@ input="$(cat)" || input=""
 command -v jq >/dev/null 2>&1 || exit 0
 
 # Already continuing because of a Stop hook: the turn was judged once.
-stop_hook_active=$(printf '%s' "$input" | jq -r '.stop_hook_active // false' 2>/dev/null || true)
+stop_hook_active=$(printf '%s' "$input" | hook_jq -r '.stop_hook_active // false' 2>/dev/null || true)
 if [ "$stop_hook_active" = "true" ]; then exit 0; fi
 
-transcript_path=$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null || true)
+transcript_path=$(printf '%s' "$input" | hook_jq -r '.transcript_path // empty' 2>/dev/null || true)
 [ -n "$transcript_path" ] && [ -f "$transcript_path" ] || exit 0
 
 ladder="${MANAGER_LADDER:-${BASH_SOURCE[0]%/*}/../ladder.json}"
-cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null || true)
+cwd=$(printf '%s' "$input" | hook_jq -r '.cwd // empty' 2>/dev/null || true)
 hook_manager_config "$ladder" "$cwd" || exit 0
-frontier=$(printf '%s' "$HOOK_MANAGER_CONFIG" | jq -r '.tiers.frontier // "fable"' 2>/dev/null || printf 'fable')
+frontier=$(printf '%s' "$HOOK_MANAGER_CONFIG" | hook_jq_default 'fable' -r '.tiers.frontier // empty')
 
 edit_threshold="${MANAGER_CLOSE_EDITS:-5}"
 case "$edit_threshold" in ''|*[!0-9]*) edit_threshold=5 ;; esac
@@ -66,7 +66,7 @@ case "$edit_threshold" in ''|*[!0-9]*) edit_threshold=5 ;; esac
 # (both the bare and workkit:-prefixed spellings read as one class name), and
 # MODEL:<id> for an assistant entry's model, the session's own model, read from
 # the pass this hook is already making rather than from a whole-file grep.
-markers=$(tail -n "$SCAN_LINES" "$transcript_path" 2>/dev/null | jq -R -r '
+markers=$(tail -n "$SCAN_LINES" "$transcript_path" 2>/dev/null | hook_jq -R -r '
   fromjson?
   | select(type == "object")
   | select(.isSidechain != true)
@@ -110,7 +110,7 @@ verifiers=$(printf '%s\n' "$window" | grep -c '^SPAWN:verifier$' || true)
 model=$(printf '%s\n' "$markers" | grep '^MODEL:' | tail -1 || true)
 model="${model#MODEL:}"
 if [ -z "$model" ]; then
-  session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null || true)
+  session_id=$(printf '%s' "$input" | hook_jq -r '.session_id // empty' 2>/dev/null || true)
   if hook_session_model "$session_id" "$transcript_path" 2>/dev/null; then
     model="$HOOK_SESSION_MODEL"
   fi
@@ -134,5 +134,5 @@ fi
 
 [ -n "$warning" ] || exit 0
 
-jq -n --arg w "manager:close-guard: $warning." '{"systemMessage": $w}'
+hook_jq -n --arg w "manager:close-guard: $warning." '{"systemMessage": $w}'
 exit 0

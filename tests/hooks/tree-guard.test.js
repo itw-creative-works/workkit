@@ -11,6 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary } = require('../lib/harness');
+const { BASH, NO_RC, shellPath } = require('../lib/platform');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'tree-guard', 'run.sh');
 
@@ -26,9 +27,9 @@ const mkTree = () => {
 const rmTree = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const runHook = (command, cwd) => {
-  const res = spawnSync('bash', [HOOK], {
-    input: JSON.stringify({ cwd, tool_input: { command } }),
-    env: { ...process.env, HOME: os.homedir() },
+  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
+    input: JSON.stringify({ cwd: shellPath(cwd), tool_input: { command } }),
+    env: { ...process.env, HOME: shellPath(os.homedir()) },
     encoding: 'utf8',
     timeout: 30000,
   });
@@ -314,9 +315,9 @@ const run = async () => {
   group('tree-guard: fail-open and wiring');
 
   await test('missing command: exit 0', () => {
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: JSON.stringify({ tool_input: {} }),
-      env: { ...process.env, HOME: os.homedir() },
+      env: { ...process.env, HOME: shellPath(os.homedir()) },
       encoding: 'utf8',
       timeout: 10000,
     });
@@ -324,9 +325,9 @@ const run = async () => {
   });
 
   await test('malformed JSON: exit 0', () => {
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: 'not json',
-      env: { ...process.env, HOME: os.homedir() },
+      env: { ...process.env, HOME: shellPath(os.homedir()) },
       encoding: 'utf8',
       timeout: 10000,
     });
@@ -335,9 +336,9 @@ const run = async () => {
 
   await test('the loader routes safety:tree-guard to the script', () => {
     const LOADER = path.join(__dirname, '..', '..', 'hooks', 'loader.sh');
-    const res = spawnSync('bash', [LOADER, 'safety:tree-guard'], {
-      input: JSON.stringify({ cwd: os.tmpdir(), tool_input: { command: 'git stash' } }),
-      env: { ...process.env, HOME: os.homedir() },
+    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'safety:tree-guard'], {
+      input: JSON.stringify({ cwd: shellPath(os.tmpdir()), tool_input: { command: 'git stash' } }),
+      env: { ...process.env, HOME: shellPath(os.homedir()) },
       encoding: 'utf8',
       timeout: 10000,
     });

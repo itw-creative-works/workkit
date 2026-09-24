@@ -6,15 +6,18 @@
 // the sessions actually running on this machine and are never touched, and `ps`
 // is the one call that cannot be faked with a file - it gets the exec seam.
 //
-// The marker shapes here are the ones the claude:keep-awake hook writes:
-// a file named for the claude pid holding caffeinate=, cwd= and session=, and
-// `.<pid>.lock` directories alongside them for the acquire mutex.
+// The marker shapes here are the ones the claude:keep-awake hook writes: on
+// macOS a file named for the claude pid holding caffeinate=, cwd= and session=,
+// with `.<pid>.lock` directories alongside them for the acquire mutex; on
+// Windows a `win.<session>` file holding holder=, beat=, fire=, cron=, cwd=,
+// session= and transcript=, because there is no caffeinate to name there.
 //
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { asWindows } = require('../lib/platform');
 
 const { listSessions, transcriptPath, chatNameFrom, NAME_READ_BYTES } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'sessions.js'));
 
@@ -52,6 +55,19 @@ const mkMarker = (world, claudePid, { caffeinate = null, cwd = '/x/repo', sessio
     ? `caffeinate=${caffPid}\ncwd=${cwd}\nsession=${session}\n`
     : body);
   if (live) world.alive.set(caffPid, `caffeinate -d -i -w ${holds === null ? claudePid : holds}`);
+  return file;
+};
+
+/**
+ * Write a WINDOWS marker exactly as the hook's Windows branch does: named
+ * `win.<session>`, carrying the PowerShell holder, its heartbeat, the two
+ * scheduling fields and the transcript path the session was handed. `beat` is
+ * seconds of age, since that is what the reader judges the hold by.
+ */
+const mkWinMarker = (world, session, { holder = '4242', beat = 0, fire = '', cron = '', cwd = 'C:\\Users\\x\\repo', transcript = '' } = {}) => {
+  const file = path.join(world.markerDir, `win.${session}`);
+  const beatAt = Math.floor((Date.now() - beat * 1000) / 1000);
+  fs.writeFileSync(file, `holder=${holder}\nbeat=${beatAt}\nfire=${fire}\ncron=${cron}\ncwd=${cwd}\nsession=${session}\ntranscript=${transcript}\n`);
   return file;
 };
 
@@ -197,12 +213,132 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  await test('the transcript path flattens both / and . in the cwd', () => {
+  await test('the transcript path flattens every character outside [A-Za-z0-9]', () => {
     assertEq(
       transcriptPath('/home/alice', '/Users/alice/Repos/.dotfiles', 'sid'),
       path.join('/home/alice', '.claude', 'projects', '-Users-alice-Repos--dotfiles', 'sid.jsonl'),
-      'the hook does tr /. --',
+      'the slash and the dot',
     );
+    // The underscore and the space are the proof the rule is not just `/` and
+    // `.`: this machine's own projects tree holds `-Users-ian-Developer-
+    // Repositories--Claude-dictation-app` for `.../_Claude/dictation-app` and
+    // `-Users-ian-Library-Application-Support-Alfred-...` for a path whose
+    // directory name carries a space.
+    assertEq(
+      transcriptPath('/home/alice', '/Users/alice/Repos/_Claude/my app', 'sid'),
+      path.join('/home/alice', '.claude', 'projects', '-Users-alice-Repos--Claude-my-app', 'sid.jsonl'),
+      'the underscore and the space too',
+    );
+  });
+
+  group('tower/sessions: the Windows spelling');
+
+  await test('the cwd goes out in git\'s spelling and the transcript is derived from the native one', () => {
+    // Windows gives one directory two names, and the two readers want different
+    // ones: the roster keys a repo the way git prints it (`C:/Users/x`), and
+    // Claude Code names its project folder from the cwd a session was started
+    // in, so the transcript is derived from the marker's own spelling.
+    const w = mkWorld();
+    const native = 'C:\\Users\\x\\repo\\sub';
+    mkMarker(w, 4501, { cwd: native, session: 'win-1' });
+    const [s] = asWindows(() => list(w));
+    assertEq(s.cwd, 'C:/Users/x/repo/sub', 'the app compares this against a roster key');
+    assertEq(s.transcript, transcriptPath(w.home, native, 'win-1'), 'and the transcript is unfolded');
+    cleanup(w.root);
+  });
+
+  await test('a win.<session> marker is listed, placed by its folded cwd, with the transcript it names', () => {
+    // The shape the hook's Windows branch writes: no caffeinate to record and
+    // no claude pid in the name, so the file is keyed by the session and the
+    // transcript is the path Claude Code itself handed the hook.
+    const w = mkWorld();
+    const transcript = path.join(w.home, '.claude', 'projects', 'C--Users-x-repo', 'win-hold.jsonl');
+    fs.mkdirSync(path.dirname(transcript), { recursive: true });
+    fs.writeFileSync(transcript, '{"customTitle":"Named on Windows"}');
+    mkWinMarker(w, 'win-hold', { cwd: 'C:\\Users\\x\\repo', transcript });
+    const [s] = asWindows(() => list(w));
+    assertEq(s.session, 'win-hold', 'the session from the marker');
+    assertEq(s.cwd, 'C:/Users/x/repo', 'placed by the cwd a roster key is written in');
+    assertEq(s.transcript, transcript, 'the marker names it, so nothing is derived');
+    assertEq(s.state, 'working', 'a beat this fresh is a live hold');
+    assertEq(s.chatName, 'Named on Windows', 'and its transcript is read');
+    assertEq(s.claudePid, null, 'the Windows marker carries no claude pid');
+    cleanup(w.root);
+  });
+
+  await test('a Windows hold is alive by its heartbeat: three missed beats read stale', () => {
+    // MSYS `ps` cannot see a native Windows process, so the holder says it is
+    // alive by rewriting `beat=` every 30 seconds and the reader judges that,
+    // exactly as the hook's own `held` does.
+    const w = mkWorld();
+    mkWinMarker(w, 'fresh', { beat: 30, cwd: 'C:\\Users\\x\\a' });
+    mkWinMarker(w, 'gone', { beat: 600, cwd: 'C:\\Users\\x\\b' });
+    // The threshold itself, from both sides: the hook's `beat_max` is 90 and it
+    // compares with a strict less-than, so 89 holds and 91 does not.
+    mkWinMarker(w, 'lastbeat', { beat: 89, cwd: 'C:\\Users\\x\\c' });
+    mkWinMarker(w, 'onepast', { beat: 91, cwd: 'C:\\Users\\x\\d' });
+    const bySession = Object.fromEntries(asWindows(() => list(w)).map((s) => [s.session, s.state]));
+    assertEq(bySession.fresh, 'working', 'one beat ago');
+    assertEq(bySession.gone, 'stale', 'ten minutes of silence');
+    assertEq(bySession.lastbeat, 'working', 'a second inside the three missed beats');
+    assertEq(bySession.onepast, 'stale', 'and a second outside them');
+    cleanup(w.root);
+  });
+
+  await test('a Windows marker whose beat is blank or not a number reads stale', () => {
+    // The hook seeds an EMPTY beat for a hold it armed and did not take, and
+    // reads one itself only when it is digits. Anything else is not a time.
+    const w = mkWorld();
+    mkWinMarker(w, 'unarmed', { cwd: 'C:\\Users\\x\\e' });
+    fs.writeFileSync(path.join(w.markerDir, 'win.unarmed'), 'holder=\nbeat=\nfire=\ncron=\ncwd=C:\\Users\\x\\e\nsession=unarmed\ntranscript=\n');
+    mkWinMarker(w, 'garbled', { beat: 0, cwd: 'C:\\Users\\x\\f' });
+    fs.writeFileSync(path.join(w.markerDir, 'win.garbled'), 'holder=1\nbeat=soon\nfire=\ncron=\ncwd=C:\\Users\\x\\f\nsession=garbled\ntranscript=\n');
+    // Digits are the whole test, not "reads as a number": `1e12` parses as a
+    // time so far ahead that an arithmetic-only check would call it fresh.
+    mkWinMarker(w, 'exponent', { beat: 0, cwd: 'C:\\Users\\x\\g' });
+    fs.writeFileSync(path.join(w.markerDir, 'win.exponent'), 'holder=1\nbeat=1e12\nfire=\ncron=\ncwd=C:\\Users\\x\\g\nsession=exponent\ntranscript=\n');
+    const bySession = Object.fromEntries(asWindows(() => list(w)).map((s) => [s.session, s.state]));
+    assertEq(bySession.unarmed, 'stale', 'a blank beat is not a live hold');
+    assertEq(bySession.garbled, 'stale', 'and neither is a word');
+    assertEq(bySession.exponent, 'stale', 'nor a number spelled some other way');
+    cleanup(w.root);
+  });
+
+  await test('a Windows marker naming no transcript falls back to the derivation, in Claude Code\'s own spelling', () => {
+    // The hook writes an EMPTY transcript line when the payload carried no
+    // path, which is the only Windows case the derivation answers for.
+    const w = mkWorld();
+    mkWinMarker(w, 'win-2', { cwd: 'C:\\Users\\x\\repo', transcript: '' });
+    const [s] = asWindows(() => list(w));
+    assertEq(
+      s.transcript,
+      path.join(w.home, '.claude', 'projects', 'C--Users-x-repo', 'win-2.jsonl'),
+      'the colon and the backslashes flatten like everything else',
+    );
+    cleanup(w.root);
+  });
+
+  await test('the marker directory falls back to this machine\'s own temp dir, never to a literal /tmp', () => {
+    // Windows has no TMPDIR and no `getconf DARWIN_USER_TEMP_DIR`, and a Node
+    // there reads `/tmp` as `C:\tmp`, a directory the hook never writes to.
+    const w = mkWorld();
+    mkMarker(w, 4601, { cwd: '/x/found', session: 'byfallback' });
+    mkTranscript(w, '/x/found', 'byfallback', ['{}']);
+    const realTmpdir = os.tmpdir;
+    const before = process.env.TMPDIR;
+    try {
+      delete process.env.TMPDIR;
+      os.tmpdir = () => w.root;
+      // No markerDir: the resolution under test is the one listSessions makes.
+      const found = listSessions({ home: w.home, stateDir: w.stateDir, exec: w.exec });
+      assertEq(found.length, 1, 'the markers were found where this machine keeps its temp files');
+      assertEq(found[0].session, 'byfallback', 'the real one');
+    } finally {
+      os.tmpdir = realTmpdir;
+      if (before === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = before;
+    }
+    cleanup(w.root);
   });
 
   group('tower/sessions: the chat name');

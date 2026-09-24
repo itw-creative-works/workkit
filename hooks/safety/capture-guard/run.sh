@@ -4,12 +4,13 @@
 # touch is the TRIAGE DRAIN: during a triage run the contents are read and the
 # entries that landed somewhere are deleted. Outside that run the file is
 # neither read nor rewritten, and ADDING to it is never the agent's at all:
-# capture is the owner's (owner ruling, 2026-08-05: clear it on triage, never
+# capture is the owner's (clear it on triage, never
 # add to it). Seeing that it is non-empty and counting the entries stay free.
 #
-# The sanctioned path leaves a marker: the workkit:triage skill touches
-# ${TMPDIR:-/tmp}/claude-triage-marker/<sha of the anchor> before it reads
-# anything, the same recipe the workkit:review skill uses for the commit gate.
+# The sanctioned path leaves a marker: the workkit:triage skill runs
+# scripts/triage-marker.sh before it reads anything, which touches
+# ${TMPDIR:-/tmp}/claude-triage-marker/<sha of the anchor>, the same shape the
+# workkit:review skill records for the commit gate.
 # The ANCHOR is the capture file's repo root (every capture file belongs to a
 # participating repo, since there is none outside one) or, for a capture file
 # in no repo at all, the .workkit directory's own parent.
@@ -45,13 +46,15 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-tool=$(jq -r '.tool_name // ""' <<<"$input" || true)
-cwd=$(jq -r '.cwd // ""' <<<"$input" || true)
+. "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
+
+tool=$(hook_jq -r '.tool_name // ""' <<<"$input" || true)
+cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
 [ -n "$cwd" ] || cwd="$PWD"
 
-# The path the capture file lives at, spelled out: this guard sources _lib.sh only for
-# hook_file_mtime, and the directory name's SSOT is WORKKIT_DIR there. Change
-# both together.
+# The path the capture file lives at, spelled out: this guard sources _lib.sh for
+# the marker path, the digest behind it and hook_file_mtime, and the directory
+# name's SSOT is WORKKIT_DIR there. Change both together.
 CAPTURE_SUFFIX=".workkit/capture.md"
 CAPTURE_DIR="${CAPTURE_SUFFIX%/*}"
 CAPTURE_FILE="${CAPTURE_SUFFIX##*/}"
@@ -83,7 +86,7 @@ block_rewrite() {
 
 case "$tool" in
   Read)
-    file_path=$(jq -r '.tool_input.file_path // ""' <<<"$input" || true)
+    file_path=$(hook_jq -r '.tool_input.file_path // ""' <<<"$input" || true)
     [ -n "$file_path" ] || exit 0
     case "$file_path" in
       "$CAPTURE_SUFFIX"|*/"$CAPTURE_SUFFIX") ;;
@@ -92,7 +95,7 @@ case "$tool" in
     capture_path="$file_path"
     ;;
   Edit|Write)
-    file_path=$(jq -r '.tool_input.file_path // ""' <<<"$input" || true)
+    file_path=$(hook_jq -r '.tool_input.file_path // ""' <<<"$input" || true)
     [ -n "$file_path" ] || exit 0
     case "$file_path" in
       "$CAPTURE_SUFFIX"|*/"$CAPTURE_SUFFIX") ;;
@@ -102,7 +105,7 @@ case "$tool" in
     mode="write"
     ;;
   Bash)
-    cmd=$(jq -r '.tool_input.command // ""' <<<"$input" || true)
+    cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
     [ -n "$cmd" ] || exit 0
     # The capture CLI writes to the nearest capture file without ever naming it, so it
     # is caught ahead of the path filter every other shape passes through, but
@@ -157,8 +160,8 @@ case "$tool" in
     [ -n "$capture_path" ] || capture_path="$cwd/$CAPTURE_SUFFIX"
     ;;
   Grep)
-    grep_path=$(jq -r '.tool_input.path // ""' <<<"$input" || true)
-    grep_glob=$(jq -r '.tool_input.glob // ""' <<<"$input" || true)
+    grep_path=$(hook_jq -r '.tool_input.path // ""' <<<"$input" || true)
+    grep_glob=$(hook_jq -r '.tool_input.glob // ""' <<<"$input" || true)
     # Only a search pointed AT the capture file is gated: the path names the
     # file or the directory holding it, or the glob names it. A repo-wide
     # search whose results might happen to include it stays open: this
@@ -220,12 +223,14 @@ anchor=$(git -C "$probe" rev-parse --show-toplevel 2>/dev/null || true)
 [ -n "$anchor" ] || anchor="$capture_parent"
 [ -n "$anchor" ] || exit 0
 
-# The marker recipe, verbatim from the triage skill: the sha of the anchor with
-# no trailing newline.
-marker="${TMPDIR:-/tmp}/claude-triage-marker/$(printf '%s' "$anchor" | shasum | cut -d' ' -f1)"
+# The marker's name is hook_triage_marker_path's, the same helper
+# scripts/triage-marker.sh writes through, so the guard and the skill can never
+# name two different files. A machine with no digest tool cannot name it on
+# either side: that is the "no anchor to key on at all" case above, and it fails
+# open like every other error of this guard's own.
+marker="$(hook_triage_marker_path "$anchor")" || exit 0
 
 if [ -f "$marker" ]; then
-  . "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
   marker_ts=$(hook_file_mtime "$marker")
   now=$(date +%s 2>/dev/null || echo 0)
   # An unreadable mtime or clock leaves the age unknowable; the marker exists,

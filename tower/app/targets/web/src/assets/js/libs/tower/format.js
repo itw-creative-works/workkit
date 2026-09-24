@@ -44,7 +44,7 @@ export const problem = (message) => `<div class="alert alert-warning mb-0">${esc
  * The wait state a body or section shows before its feed answers - the ring
  * centered over the space the content will take, its line beneath it.
  *
- * Centered on purpose (owner ruling, 2026-08-19): the framework's inline
+ * Centered on purpose: the framework's inline
  * loading() sits flush against the top-left corner of a page body, which reads
  * as a misrender rather than a wait. The ring itself is still Bootstrap's
  * `.spinner-border`, animated by the bundle's own keyframes (#137) - this

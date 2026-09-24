@@ -2,7 +2,7 @@
 # The summaries step: the first half of the 9am job.
 #
 # It writes up the day that just ended and PUBLISHES it: generated records are
-# never files (owner ruling, 2026-07-28), so the summary goes straight to a
+# never files, so the summary goes straight to a
 # Discussion on the home repo named in `~/.workkit/settings.json` and nothing
 # lands on disk but this log. On a Sunday it also posts the week, on the 1st the
 # month, and those rollups read their inputs back from the API (the summaries
@@ -138,7 +138,7 @@ already_published() {
   posted="$(wk_disc_list "$HOME_REPO" "$(category_of "$cadence")" "${DATE}T00:00:00Z")" || return 1
   [[ -n "$posted" ]] || return 1
   printf '%s' "$posted" \
-    | jq -e --arg t "$cadence: $DATE" 'any(.[]; .title == $t)' >/dev/null 2>&1
+    | wk_jq -e --arg t "$cadence: $DATE" 'any(.[]; .title == $t)' >/dev/null 2>&1
 }
 
 # One cadence: compose the payload, have Claude write the summary, post it.

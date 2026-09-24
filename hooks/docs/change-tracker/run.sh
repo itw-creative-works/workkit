@@ -8,14 +8,21 @@
 
 set -euo pipefail
 
+# Sourced for hook_sha1 alone: the state file below is keyed by a digest of the
+# tree, and its spelling differs across the platforms this kit runs on. The
+# input is a local listing, not an adversarial one, so the point is only that
+# equal states digest equally; a machine with no digest tool at all writes no
+# state and hears the nudge every Stop, exactly as an undecided repo does.
+. "${BASH_SOURCE[0]%/*}/../../_lib.sh"
+
 input=$(cat)
 
 if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-stop_hook_active=$(jq -r '.stop_hook_active // false' <<<"$input" || true)
-cwd=$(jq -r '.cwd // ""' <<<"$input" || true)
+stop_hook_active=$(hook_jq -r '.stop_hook_active // false' <<<"$input" || true)
+cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
 
 if [ "$stop_hook_active" = "true" ]; then
   exit 0
@@ -36,8 +43,8 @@ if [ -f "INBOX.md" ]; then
 fi
 
 # Local capture file: same entry rule, deliberate drain (never auto-emptied).
-# This hook sources nothing, so the directory name is spelled out; its SSOT is
-# WORKKIT_DIR in hooks/_lib.sh. Change both together.
+# The directory name is spelled out even though _lib.sh is sourced above; its
+# SSOT is WORKKIT_DIR there. Change both together.
 scratch_count=0
 if [ -f ".workkit/capture.md" ]; then
   scratch_count=$(grep -cv -e '^#' -e '^>' -e '^[[:space:]]*$' .workkit/capture.md 2>/dev/null || true)
@@ -103,23 +110,14 @@ fingerprint() {
   # An untracked file is a NAME in the status and nothing in the diff, so a file
   # built up across turns would go silent after the first nudge. One pipeline,
   # each file read once, empty list = empty contribution.
+  # `-r` (run nothing on empty input) is a GNU extension BSD xargs adopted:
+  # verified on macOS, and Git Bash carries the GNU one, so the flag is portable
+  # across all three platforms.
   git ls-files --others --exclude-standard -z 2>/dev/null | sort -z | xargs -0 -r cat 2>/dev/null || true
   # The two capture surfaces whose entries are counted above: one is gitignored
   # by design, the other may be ignored too, so neither is reliably in the
   # streams above. Without this, an edit to an existing entry never re-fires.
   cat "INBOX.md" ".workkit/capture.md" 2>/dev/null || true
-}
-
-# Whatever digest this machine has: the input is a local listing, not an
-# adversarial one, so the point is only that equal states digest equally.
-digest() {
-  if command -v shasum >/dev/null 2>&1; then
-    shasum
-  elif command -v sha256sum >/dev/null 2>&1; then
-    sha256sum
-  else
-    cksum
-  fi | awk '{print $1}'
 }
 
 # A repo with no .workkit/ is UNDECIDED, never written to, so it has no memory
@@ -128,7 +126,7 @@ digest() {
 # repo would be asked to commit, so an unignored path keeps the old behavior.
 state_file=".workkit/agents/.change-tracker"
 if [ -d ".workkit" ] && git check-ignore -q "$state_file" 2>/dev/null; then
-  current=$(fingerprint | digest || true)
+  current=$(fingerprint | hook_sha1 2>/dev/null || true)
   if [ -n "$current" ]; then
     if [ "$(cat "$state_file" 2>/dev/null || true)" = "$current" ]; then
       exit 0
@@ -176,7 +174,7 @@ elif [ "$inbox_count" -gt 0 ] || [ "$scratch_count" -gt 0 ]; then
   reason="Change tracker: uncommitted code changes + unfiled entries detected."
 fi
 
-jq -n --arg ctx "$CONTEXT" --arg reason "$reason" '{
+hook_jq -n --arg ctx "$CONTEXT" --arg reason "$reason" '{
   "decision": "block",
   "reason": $reason,
   "hookSpecificOutput": {

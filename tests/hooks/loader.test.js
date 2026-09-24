@@ -9,13 +9,14 @@ const path = require('path');
 const os = require('os');
 const { spawnSync } = require('child_process');
 const { group, test, assertEq, summary } = require('../lib/harness');
+const { BASH, NO_RC, shellPath } = require('../lib/platform');
 
 const LOADER = path.join(__dirname, '..', '..', 'hooks', 'loader.sh');
 
 const runLoader = (args, input = '{}', env = {}) => {
-  const res = spawnSync('bash', [LOADER, ...args], {
+  const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), ...args], {
     input,
-    env: { ...process.env, HOME: os.homedir(), ...env },
+    env: { ...process.env, HOME: shellPath(os.homedir()), ...env },
     encoding: 'utf8',
     timeout: 30000,
   });

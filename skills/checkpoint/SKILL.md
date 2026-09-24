@@ -10,7 +10,7 @@ A long chat holds verdicts and findings that exist NOWHERE ELSE. Compaction thro
 
 **Invoking it is the owner's word to file AND to apply every status change they spoke**, for this run only. It drains the CONVERSATION, never the capture file. That stays `workkit:triage`'s (spec § Capture).
 
-**The trigger is loose on purpose.** Any line that mentions compacting, in any form, fires it: compact, compaction, `/compact`, context full or low or running out, clear the chat, new chat, fresh session, start over. A question form ("can I compact?", "should I compact?") is answered by running this skill first, then yes. The `docs:checkpoint` hook (`hooks/docs/checkpoint/run.sh`) matches those phrases deterministically on every prompt and injects the instruction to run this skill, so the description above is the judgment fallback for a phrasing the pattern misses (#238).
+**The trigger is loose on purpose.** Any line that mentions compacting, in any form, fires it: compact, compaction, `/compact`, context full or low or running out, clear the chat, new chat, fresh session, start over. A question form ("can I compact?", "should I compact?") is answered by running this skill first, then yes. The `docs:checkpoint` hook (`hooks/docs/checkpoint/run.sh`) matches those phrases deterministically on every prompt and injects the instruction to run this skill, so the description above is the judgment fallback for a phrasing the pattern misses.
 
 ## 1. Enumerate FIRST, before touching anything
 
@@ -18,7 +18,7 @@ Read the whole chat back, not just the last exchange. Write out ONE line per own
 
 The list is built from the chat, never from memory of what was filed. "Already on #652" is not a line; if it is on #652, the line names #652 and the run confirms it with `gh issue view`.
 
-The list is a WORKING document, never chat output (owner ruling, 2026-08-27): keep it in reasoning or a scratch file, act on it, and print only the trail in §5. The owner sees what changed, not the checklist.
+The list is a WORKING document, never chat output: keep it in reasoning or a scratch file, act on it, and print only the trail in §5. The owner sees what changed, not the checklist.
 
 ## 2. Route each line to exactly one home
 
@@ -30,7 +30,7 @@ Search first, open AND closed: `gh issue list --state all --search "<key words>"
 
 ## 3. Apply the status the owner spoke
 
-Status changes ARE checkpoint work (owner ruling, 2026-08-27). Every owner word that moves an issue's stage is applied, with the words quoted on the issue, dated:
+Status changes ARE checkpoint work. Every owner word that moves an issue's stage is applied, with the words quoted on the issue, dated:
 
 | The owner said | The flip |
 |---|---|
@@ -42,7 +42,7 @@ Status changes ARE checkpoint work (owner ruling, 2026-08-27). Every owner word 
 
 One `status:` label per issue: remove the old one in the same command (`gh issue edit <N> --remove-label status:qa --add-label status:complete`). Never `agent:ok`, and never a flip the owner did not speak. A verdict is applied, never inferred.
 
-One case where the spoken pass does NOT move the label (#233): a `status:qa` item whose comments carry no line starting `Proof:`. Quote the owner's words on the issue as always, then LEAVE it at `status:qa` and say so in the Filed trail. The proof is a hard gate (spec § The proof), so `safety/proof-guard` bounces the flip anyway, and the fix is a re-park: the agent that built the item runs its layers, comments the `Proof:` line, and the flip follows.
+One case where the spoken pass does NOT move the label: a `status:qa` item whose comments carry no line starting `Proof:`. Quote the owner's words on the issue as always, then LEAVE it at `status:qa` and say so in the Filed trail. The proof is a hard gate (spec § The proof), so `safety/proof-guard` bounces the flip anyway, and the fix is a re-park: the agent that built the item runs its layers, comments the `Proof:` line, and the flip follows.
 
 ## 4. Update `.workkit/agents/session.md`
 
@@ -50,14 +50,14 @@ One bullet per item now in flight or queued, each pointing at its issue; DELETE 
 
 ## 5. End with the Filed trail: what this run CHANGED
 
-The trail is a report of actions, not an audit log. ONE bullet per issue this run touched, leading with the issue link, listing everything done to it in plain words (comments, filings, flips). Never one line per action, never a raw URL. It is the reply's `**🗂️ Filed**` section, the one shape `workkit:triage` prints too, and every bullet reads in the cold-reader line (`docs/project-state.md` § Restating an issue). Items verified as already on the board get ONE closing count line, never a line each.
+The trail is a report of actions, not an audit log. ONE bullet per issue this run touched, its bold lead the number, the issue link and five words (§ Restating an issue), listing everything done to it in plain words (comments, filings, flips). Never one line per action, never a raw URL. It is the reply's `**🗂️ Filed**` section, the one shape `workkit:triage` prints too, and every bullet reads in the cold-reader line (`docs/project-state.md` § Restating an issue). Items verified as already on the board get ONE closing count line, never a line each.
 
 ```
 **🗂️ Filed**
-- [#209](url): the review skill's Parity lens is built and parked for your check. Commented your "watch it a few days" ruling, so it rides along unshipped until you pass it.
-- [#637](url): the palette failure line was overwritten on the desktop settings page. Quoted your "637 looks good" and flipped it to status:complete, so the next ship carries it.
-- [#211](url): findings about workkit made in another repo's session were filed on the home repo instead of the workkit repo. Filed as a bug, status:inbox, for triage to route.
-- Verified 6 earlier items already on their issues.
+- **1. [#209](url) parity lens parked**: the review skill's Parity lens is built and parked for your check. Commented your "watch it a few days" ruling, so it rides along unshipped until you pass it.
+- **2. [#637](url) palette failure line**: the palette failure line was overwritten on the desktop settings page. Quoted your "637 looks good" and flipped it to status:complete, so the next ship carries it.
+- **3. [#211](url) findings on the wrong repo**: findings about workkit made in another repo's session were filed on the home repo instead of the workkit repo. Filed as a bug, status:inbox, for triage to route.
+- **4. Verified six earlier items**: already on their issues.
 
 **✅ Safe to compact or continue in a new session.**
 ```

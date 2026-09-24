@@ -43,11 +43,11 @@ If an item's home is genuinely unclear, file it `status:inbox` and mark it `(che
 
 ## 2. CHANGELOG history → the entry format
 
-The entry rules and their reasoning live in the workkit plugin's `docs/project-state.md` → "CHANGELOG entries"; the machine SSOT is `~/.claude/workkit/changelog.js`. In short: one short paragraph per entry, starting with `[#N](../../issues/N)` or the literal `(no issue)`, ` — ` before the prose, at most 50 words.
+The entry rules and their reasoning live in the workkit plugin's `docs/project-state.md` → "CHANGELOG entries"; the machine SSOT is `~/.claude/workkit/changelog.js`. In short: one short paragraph per entry, starting with `[#N](../../issues/N)` or the literal `(no issue)`, ` - ` before the prose, at most 50 words.
 
 The depth is NOT deleted. It already lives in the commit each entry links to. That is what makes the compression safe to do.
 
-**The WHOLE file migrates, and the linter cannot scope this work for you.** `changelog.js`'s section detector deliberately skips non-semver `## [...]` headings (the `## [Plans for 2026]` guard), so a pre-issue era section (`## [cp1–cp99]: …`) lints green while every entry in it is still a massive old-format line, exactly the miss that happened in omega (2026-07-27: only `[Unreleased]` was rewritten because only its lines failed the lint). Scope by EYEBALL: every `## ` section with bullets under it migrates, and any long-line entry anywhere means the work is not done. Pre-issue-tracker entries take the literal `(no issue)`.
+**The WHOLE file migrates, and the linter cannot scope this work for you.** `changelog.js`'s section detector deliberately skips non-semver `## [...]` headings (the `## [Plans for 2026]` guard), so a pre-issue era section (`## [cp1–cp99]: …`) lints green while every entry in it is still a massive old-format line, exactly the miss that happened in omega (only `[Unreleased]` was rewritten because only its lines failed the lint). Scope by EYEBALL: every `## ` section with bullets under it migrates, and any long-line entry anywhere means the work is not done. Pre-issue-tracker entries take the literal `(no issue)`.
 
 ### Split the work by version section
 

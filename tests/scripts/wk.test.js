@@ -9,50 +9,35 @@
 // The one seam is `gh`: filing a note outside every project creates an ISSUE
 // (issue #79), and no test may reach GitHub. PATH is pinned to a scratch bin
 // plus the system one, and the shim in that bin answers every call. The machine
-// that HAS no gh is built, not assumed: see basePathWithout below.
+// that HAS no gh is built, not assumed: `basePathWithout` in tests/lib/platform.js.
 //
 
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, WORKKIT_DIR: W } = require('../lib/harness');
+const { group, test, assert, assertEq, skip, summary, WORKKIT_DIR: W } = require('../lib/harness');
+const {
+  IS_WINDOWS, BASH, NO_RC, NO_EXEC_BIT, shellPath, homeEnv, stubTool, basePathWithout,
+  systemPathWith, joinPath,
+} = require('../lib/platform');
+const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 const SCRIPT = path.join(WORKFLOW_DIR, 'wk.sh');
 const TEMPLATE = fs.readFileSync(path.join(WORKFLOW_DIR, 'templates', 'capture.md'), 'utf8');
 
-const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
-
-// A copy of the base PATH with one command left out of it. The "no gh" case
-// cannot ASSUME the machine has none: plenty of them ship it in /usr/bin (every
-// Ubuntu runner does, which is what made this case fail there, issue #114), so
-// it makes the absence instead: one directory of symlinks to everything on the
-// base PATH except the named command, in first-wins order the way a PATH lookup
-// resolves.
-const basePathWithout = (dir, command) => {
-  const out = path.join(dir, `path-without-${command}`);
-  fs.mkdirSync(out, { recursive: true });
-  for (const entry of BASE_PATH.split(':')) {
-    let names = [];
-    try { names = fs.readdirSync(entry); } catch { continue; }
-    for (const name of names) {
-      if (name === command) continue;
-      try { fs.symlinkSync(path.join(entry, name), path.join(out, name)); } catch {}
-    }
-  }
-  // An empty mirror would make the absence assertion pass vacuously: the run
-  // would fail on the missing SHELL, not the missing command. `sh` proves the
-  // mirror is real before anything leans on it.
-  if (!fs.existsSync(path.join(out, 'sh'))) throw new Error(`basePathWithout built an unusable PATH at ${out}`);
-  return out;
-};
+// The MACHINE's settings file: the site options, no `enabled` key. It is not a
+// repo opt-in anywhere it turns up, and the walk up meets it wherever a
+// directory sits under a user profile.
+const MACHINE_SETTINGS = `${JSON.stringify({ version: 1, site: { repo: 'owner/workkit', publish: false, url: null } }, null, 2)}\n`;
 
 const mkTmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wk-')));
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
-// A temp tree holding a participating repo, a nested subdirectory, an outside
-// directory, and the home the tower clone sits under. `tower: false` is the
+// A temp tree holding a participating repo (a real one: a git repo carrying the
+// committed opt-in), a nested subdirectory, an outside directory, and the home
+// the tower clone sits under. `tower: false` is the
 // machine that has never run `workkit setup`: the one case with nowhere at all
 // to put a note; `tower: 'foreign'` is somebody else's repo sitting at that
 // path, which is never adopted.
@@ -72,6 +57,9 @@ const makeTree = ({ settings = '{ "version": 1, "enabled": true }\n', tower = tr
   const bin = path.join(dir, 'bin');
   const ghLog = path.join(dir, 'gh-argv.log');
   fs.mkdirSync(path.join(repo, 'sub', 'deep'), { recursive: true });
+  // A real git repo, because the settings file is a REPO's opt-in and only
+  // counts where a repo is (issue #254).
+  spawnSync('git', ['init', '-q', '-b', 'main', repo], { encoding: 'utf8' });
   fs.mkdirSync(path.join(dir, 'outside'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'home'), { recursive: true });
   fs.mkdirSync(bin, { recursive: true });
@@ -80,10 +68,7 @@ const makeTree = ({ settings = '{ "version": 1, "enabled": true }\n', tower = tr
     fs.writeFileSync(path.join(repo, W, 'settings.json'), settings);
   }
   fs.mkdirSync(path.join(dir, 'home', W), { recursive: true });
-  fs.writeFileSync(
-    path.join(dir, 'home', W, 'settings.json'),
-    `${JSON.stringify({ version: 1, site: { repo: 'owner/workkit', publish: false, url: null } }, null, 2)}\n`,
-  );
+  fs.writeFileSync(path.join(dir, 'home', W, 'settings.json'), MACHINE_SETTINGS);
   if (tower) {
     const origin = tower === 'foreign'
       ? 'https://github.com/someone/else.git'
@@ -93,19 +78,20 @@ const makeTree = ({ settings = '{ "version": 1, "enabled": true }\n', tower = tr
     spawnSync('git', ['-C', towerDir, 'remote', 'add', 'origin', origin], { encoding: 'utf8' });
   }
   if (gh) {
-    // Every argument is logged on its own line between markers, so a body that
-    // spans lines is still one readable call.
+    // Every call is recorded with its argument boundaries intact
+    // (tests/lib/argv-log.js), so a body that spans lines is still one
+    // argument. The log is named in the SHELL's spelling: a native Windows path
+    // in the stub's redirect loses its backslashes to bash and the whole
+    // recording lands somewhere nobody reads.
     const refuse = gh === 'down'
       ? 'true'
       : (gh === 'labels' ? '[[ "$*" == *--label* ]]' : 'false');
-    fs.writeFileSync(path.join(bin, 'gh'), [
+    stubTool(bin, 'gh', [
       '#!/usr/bin/env bash',
-      `{ printf '<<<CALL\\n'; printf '%s\\n' "$@"; printf 'CALL>>>\\n'; } >> ${JSON.stringify(ghLog)}`,
+      recordArgv(ghLog),
       `if ${refuse}; then printf 'gh: it did not work\\n' >&2; exit 1; fi`,
       "printf 'https://github.com/owner/workkit/issues/7\\n'",
-      '',
-    ].join('\n'));
-    fs.chmodSync(path.join(bin, 'gh'), 0o755);
+    ]);
   }
   return {
     dir,
@@ -116,24 +102,33 @@ const makeTree = ({ settings = '{ "version": 1, "enabled": true }\n', tower = tr
     tower: towerDir,
     bin,
     repoCapture: path.join(repo, W, 'capture.md'),
-    ghCalls: () => (fs.existsSync(ghLog)
-      ? fs.readFileSync(ghLog, 'utf8').split('<<<CALL\n').slice(1).map((c) => c.split('\nCALL>>>\n')[0])
-      : []),
+    ghCalls: () => readArgv(ghLog),
   };
 };
 
-const runScript = (cwd, args, { home, bin }, extraEnv = {}) => {
-  const res = spawnSync('bash', [SCRIPT, ...args], {
-    cwd,
-    env: {
-      HOME: home,
-      WORKFLOW_HOME: '',
-      PATH: `${bin}:${BASE_PATH}`,
-      ...extraEnv,
-    },
-    encoding: 'utf8',
-    timeout: 20000,
-  });
+const spawnOpts = (cwd, { home, bin }, extraEnv = {}) => ({
+  cwd,
+  env: homeEnv(home, {
+    WORKFLOW_HOME: '',
+    PATH: systemPathWith(bin),
+    ...extraEnv,
+  }),
+  encoding: 'utf8',
+  timeout: 20000,
+});
+
+const runScript = (cwd, args, t, extraEnv = {}) => {
+  const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], spawnOpts(cwd, t, extraEnv));
+  return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
+};
+
+// One note whose BYTES are the point: bash builds the argument from a `$'...'`
+// literal, so an invalid UTF-8 sequence reaches the script as those bytes. A JS
+// string cannot carry them, since every encoding of one repairs them first.
+// `$0` is the script, so the literal is the only thing interpolated.
+const runScriptBytes = (cwd, noteLiteral, t, extraEnv = {}) => {
+  const res = spawnSync(BASH, [...NO_RC, '-c', `"$0" note ${noteLiteral}`, shellPath(SCRIPT)],
+    spawnOpts(cwd, t, extraEnv));
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
@@ -146,7 +141,7 @@ const run = async () => {
     const t = makeTree();
     const { code, out } = runScript(t.repo, ['note', 'a repo thought'], t);
     assertEq(code, 0, 'exit 0');
-    assert(out.includes(t.repoCapture), `names where it filed, got: ${out}`);
+    assert(out.includes(shellPath(t.repoCapture)), `names where it filed, got: ${out}`);
     assert(read(t.repoCapture).endsWith('- a repo thought\n'), 'the bullet is there');
     assertEq(t.ghCalls().length, 0, 'and nothing was filed on the home repo');
     cleanup(t.dir);
@@ -170,13 +165,13 @@ const run = async () => {
     assert(out.includes('✓ noted → https://github.com/owner/workkit/issues/7'), `it names the issue, got: ${out}`);
 
     const calls = t.ghCalls();
-    assertEq(calls.length, 1, `one gh call: ${calls.join(' | ')}`);
-    const argv = calls[0].split('\n');
-    assert(argv.slice(0, 2).join(' ') === 'issue create', `it creates an issue: ${argv.join(' ')}`);
+    assertEq(calls.length, 1, `one gh call: ${fmtCalls(calls)}`);
+    const argv = calls[0];
+    assert(isCall(argv, 'issue', 'create'), `it creates an issue: ${fmtCalls(calls)}`);
     assertEq(argv[argv.indexOf('--repo') + 1], 'owner/workkit', 'on the home repo');
     assertEq(argv[argv.indexOf('--title') + 1], 'a stray thought', 'the note is the title');
     assertEq(argv[argv.indexOf('--label') + 1], 'status:inbox,type:idea', 'labelled for triage');
-    const body = calls[0].slice(calls[0].indexOf('## Description'));
+    const body = argv[argv.indexOf('--body') + 1];
     assert(/^## Description\n\na stray thought\n\n## Spec\n\nNone needed: small item\.$/.test(body),
       `the body is the spec's issue anatomy, got: ${body}`);
 
@@ -201,15 +196,36 @@ const run = async () => {
     cleanup(t.dir);
   });
 
+  await test('a lookalike home between the cwd and the root is not a participating repo', async () => {
+    // Windows makes its temp directories INSIDE the user profile, so a walk up
+    // from one passes through a home that is NOT the configured one: the suite
+    // points HOME at its own temp home, and the profile the world sits in still
+    // carries the machine settings file. A settings file is a repo's opt-in
+    // where a repo is, and nowhere else (issue #254).
+    const t = makeTree();
+    const profile = path.join(t.dir, 'profile');
+    fs.mkdirSync(path.join(profile, W), { recursive: true });
+    fs.writeFileSync(path.join(profile, W, 'settings.json'), MACHINE_SETTINGS);
+    const cwd = path.join(profile, 'AppData', 'Local', 'Temp', 'wk-x');
+    fs.mkdirSync(cwd, { recursive: true });
+
+    const { code, out } = runScript(cwd, ['note', 'a thought from a lookalike home'], t);
+    assertEq(code, 0, `exit 0: ${out}`);
+    assert(out.includes('✓ noted → https://github.com/owner/workkit/issues/7'), `filed as an issue, got: ${out}`);
+    assertEq(t.ghCalls().length, 1, 'one gh call');
+    assert(!fs.existsSync(path.join(profile, W, 'capture.md')), 'and nothing was written into the profile');
+    cleanup(t.dir);
+  });
+
   await test('a note longer than a title is truncated, and the body keeps it whole', async () => {
     const t = makeTree();
     const long = `the tower poller keeps ${'x'.repeat(90)} losing its place`;
     assertEq(runScript(t.outside, ['note', long], t).code, 0, 'exit 0');
-    const argv = t.ghCalls()[0].split('\n');
+    const argv = t.ghCalls()[0];
     const title = argv[argv.indexOf('--title') + 1];
     assertEq(title.length, 72, `the title is one line: ${title}`);
     assert(title.endsWith('…'), 'and says it was cut');
-    assert(t.ghCalls()[0].includes(long), 'while the body carries the whole thought');
+    assert(argv[argv.indexOf('--body') + 1].includes(long), 'while the body carries the whole thought');
     cleanup(t.dir);
   });
 
@@ -225,11 +241,27 @@ const run = async () => {
     const raw = fs.readFileSync(path.join(t.dir, 'gh-argv.log'));
     new TextDecoder('utf-8', { fatal: true }).decode(raw);
 
-    const argv = t.ghCalls()[0].split('\n');
+    const argv = t.ghCalls()[0];
     const title = argv[argv.indexOf('--title') + 1];
     assert(title.startsWith('a'.repeat(70)), `the note is still the title: ${title}`);
     assert(title.endsWith('…'), 'and still says it was cut');
-    assert(t.ghCalls()[0].includes(long), 'while the body carries the whole thought');
+    assert(argv[argv.indexOf('--body') + 1].includes(long), 'while the body carries the whole thought');
+    cleanup(t.dir);
+  });
+
+  await test('a note whose own bytes are invalid UTF-8 is filed with the title repaired', async () => {
+    // Nothing is truncated here: the note ARRIVES ending in a severed multibyte
+    // sequence (a paste, a broken pipe, a $'...' literal). iconv drops the tail
+    // and reports a failure for it on every implementation, since the input
+    // ends inside the sequence, so a fallback reading that status would append
+    // the unrepaired note to the repaired one and file a doubled title that is
+    // still invalid.
+    const t = makeTree();
+    const { code, out } = runScriptBytes(t.outside, "$'a short note\\xe2\\x80'", t);
+    assertEq(code, 0, `exit 0: ${out}`);
+
+    const argv = t.ghCalls()[0];
+    assertEq(argv[argv.indexOf('--title') + 1], 'a short note', 'the title is the note with the severed bytes dropped, once');
     cleanup(t.dir);
   });
 
@@ -262,7 +294,7 @@ const run = async () => {
   await test('no gh on the machine refuses the note rather than losing it', async () => {
     const t = makeTree({ gh: false });
     const { code, err } = runScript(t.outside, ['note', 'no tooling here'], t,
-      { PATH: `${t.bin}:${basePathWithout(t.dir, 'gh')}` });
+      { PATH: joinPath(t.bin, basePathWithout(t.dir, 'gh')) });
     assertEq(code, 1, 'exit 1');
     assert(/gh is not on this machine/.test(err), `it names what is missing, got: ${err}`);
     assert(/no tooling here/.test(err), 'and hands the thought back');
@@ -295,6 +327,27 @@ const run = async () => {
     assertEq(code, 1, 'the caller learns the thought was not filed');
     assert(/not the home repo/.test(err), `it says whose folder that is not, got: ${err}`);
     assertEq(t.ghCalls().length, 0, 'and nothing was filed against somebody else’s repo');
+    cleanup(t.dir);
+  });
+
+  await test('a repo checked out as a git worktree is a participating repo', async () => {
+    // A worktree's `.git` is a FILE, and that is the shape the repo-root
+    // predicate asks with `-e` rather than `-d`: a `-d` reading answers no for
+    // a checkout that works perfectly, and the note is filed as an issue on the
+    // home repo instead of landing where the session is standing.
+    const t = makeTree();
+    const git = (...args) => spawnSync('git', ['-C', t.repo, ...args], { encoding: 'utf8' });
+    git('-c', 'user.name=wk', '-c', 'user.email=wk@localhost', 'commit', '-q', '--allow-empty', '-m', 'chore: seed');
+    const tree = path.join(t.dir, 'worktree');
+    git('worktree', 'add', '-q', tree, '-b', 'side');
+    assert(fs.statSync(path.join(tree, '.git')).isFile(), 'the checkout carries a `.git` FILE');
+    fs.mkdirSync(path.join(tree, W), { recursive: true });
+    fs.writeFileSync(path.join(tree, W, 'settings.json'), '{ "version": 1, "enabled": true }\n');
+
+    const { code, out } = runScript(tree, ['note', 'from a worktree'], t);
+    assertEq(code, 0, `exit 0: ${out}`);
+    assert(read(path.join(tree, W, 'capture.md')).includes('- from a worktree\n'), 'filed in the worktree');
+    assertEq(t.ghCalls().length, 0, 'and never filed as an issue somewhere else');
     cleanup(t.dir);
   });
 
@@ -386,8 +439,9 @@ const run = async () => {
 
   await test('it is executable and parses', async () => {
     // eslint-disable-next-line no-bitwise
-    assert((fs.statSync(SCRIPT).mode & 0o111) !== 0, 'the executable bit is set');
-    assertEq(spawnSync('bash', ['-n', SCRIPT], { encoding: 'utf8' }).status, 0, 'bash -n is clean');
+    if (IS_WINDOWS) skip('wk.sh carries the executable bit', NO_EXEC_BIT);
+    else assert((fs.statSync(SCRIPT).mode & 0o111) !== 0, 'the executable bit is set');
+    assertEq(spawnSync(BASH, [...NO_RC, '-n', shellPath(SCRIPT)], { encoding: 'utf8' }).status, 0, 'bash -n is clean');
   });
 
   return summary();

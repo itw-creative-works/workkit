@@ -35,11 +35,11 @@ set -euo pipefail
 input="$(cat)" || input=""
 command -v jq >/dev/null 2>&1 || exit 0
 
-tool_name=$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null || true)
+tool_name=$(printf '%s' "$input" | hook_jq -r '.tool_name // empty' 2>/dev/null || true)
 case "$tool_name" in Task|Agent) ;; *) exit 0 ;; esac
 
 # Both spellings, normalized exactly as the resolver normalizes them.
-class=$(printf '%s' "$input" | jq -r '.tool_input.subagent_type // empty' 2>/dev/null || true)
+class=$(printf '%s' "$input" | hook_jq -r '.tool_input.subagent_type // empty' 2>/dev/null || true)
 case "$class" in
   scout|worker|verifier|advisor) ;;
   workkit:scout|workkit:worker|workkit:verifier|workkit:advisor) class="${class#workkit:}" ;;
@@ -47,14 +47,14 @@ case "$class" in
 esac
 
 ladder="${MANAGER_LADDER:-${BASH_SOURCE[0]%/*}/../ladder.json}"
-cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null || true)
+cwd=$(printf '%s' "$input" | hook_jq -r '.cwd // empty' 2>/dev/null || true)
 hook_manager_config "$ladder" "$cwd" || exit 0
 config="$HOOK_MANAGER_CONFIG"
 # A ladder that carries no rungs is not a ladder: nothing below can be judged.
-[ "$(printf '%s' "$config" | jq -r '(.ladder // {}) | length' 2>/dev/null || printf '0')" -gt 0 ] 2>/dev/null || exit 0
+[ "$(printf '%s' "$config" | hook_jq_default '0' -r '(.ladder // {}) | length')" -gt 0 ] 2>/dev/null || exit 0
 
-mode=$(printf '%s' "$config" | jq -r 'if .mode == "advise" then "advise" else "rewrite" end' 2>/dev/null || echo "rewrite")
-spawn_model=$(printf '%s' "$input" | jq -r '.tool_input.model // empty' 2>/dev/null || true)
+mode=$(printf '%s' "$config" | hook_jq_default 'rewrite' -r 'if .mode == "advise" then "advise" else "rewrite" end')
+spawn_model=$(printf '%s' "$input" | hook_jq -r '.tool_input.model // empty' 2>/dev/null || true)
 
 warning=""
 add() { [ -z "$warning" ] && warning="$1" || warning="$warning $1"; }
@@ -64,9 +64,9 @@ if [ -n "$spawn_model" ] && [ "$mode" = "rewrite" ]; then
 fi
 
 if [ "$class" = "advisor" ]; then
-  frontier=$(printf '%s' "$config" | jq -r '.tiers.frontier // "fable"' 2>/dev/null || printf 'fable')
-  session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null || true)
-  transcript_path=$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null || true)
+  frontier=$(printf '%s' "$config" | hook_jq_default 'fable' -r '.tiers.frontier // empty')
+  session_id=$(printf '%s' "$input" | hook_jq -r '.session_id // empty' 2>/dev/null || true)
+  transcript_path=$(printf '%s' "$input" | hook_jq -r '.transcript_path // empty' 2>/dev/null || true)
   if hook_session_model "$session_id" "$transcript_path" 2>/dev/null \
     && hook_model_tier "$HOOK_SESSION_MODEL" 2>/dev/null \
     && [ "$HOOK_MODEL_TIER" = "$frontier" ]; then
@@ -76,7 +76,7 @@ fi
 
 [ -n "$warning" ] || exit 0
 
-jq -n --arg w "manager:spawn-guard: $warning" '{
+hook_jq -n --arg w "manager:spawn-guard: $warning" '{
   "systemMessage": $w,
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",

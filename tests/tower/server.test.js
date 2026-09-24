@@ -19,6 +19,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { resetIn, mkLimited, execError } = require('../lib/gh');
+const { gitPath } = require('../lib/platform');
 
 const {
   createServer, DEFAULT_BIND, DEFAULT_PORT, MAX_REQUEST_BYTES, MOVE_STATUSES,
@@ -64,7 +65,7 @@ const mkWorld = () => {
   fs.mkdirSync(workflowHome, { recursive: true });
   fs.writeFileSync(
     path.join(workflowHome, '.repos.json'),
-    JSON.stringify({ version: 1, repos: { [repo]: 'enabled' } }, null, 2),
+    JSON.stringify({ version: 1, repos: { [gitPath(repo)]: 'enabled' } }, null, 2),
   );
 
   const markerDir = path.join(root, 'claude-keep-awake');
@@ -299,7 +300,7 @@ const run = async () => {
     assertEq(status, 200, 'ok');
     assertEq(body.length, 1, 'one repo in the fixture root');
     assertEq(body[0].slug, SLUG, 'with its origin slug');
-    assertEq(body[0].path, w.repo, 'and its path');
+    assertEq(body[0].path, gitPath(w.repo), 'and its path');
     await c.stop();
     cleanup(w.root);
   });
@@ -576,7 +577,7 @@ const run = async () => {
     const { status, body } = await getJson(c, '/api/health');
     assertEq(status, 200, 'ok');
     assertEq(tiles(body).length, 1, 'one tile');
-    const health = body[w.repo];
+    const health = body[gitPath(w.repo)];
     assertEq(health.unreleasedEntries, 1, 'one [Unreleased] bullet');
     assertEq(health.uncommitted, 0, 'a clean fixture');
     assertEq(health.unpushed, null, 'no upstream is null, not zero');

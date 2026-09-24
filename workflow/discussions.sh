@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # workflow/discussions.sh: the home repo's Discussions API. SOURCED, never executed.
 #
-# Summaries are published, never filed (owner ruling, 2026-07-28: generated
-# records are never files). The destination is a Discussion on the home repo, so
+# Summaries are published, never filed (generated records are never files). The destination is a Discussion on the home repo, so
 # this is the one place that speaks GitHub's Discussions GraphQL. The setup
 # wizard uses it to turn Discussions on, the summaries step and the morning
 # brief to post and to read prior posts back.
@@ -59,7 +58,7 @@ wk_disc_fetch_meta() {
         discussionCategories(first:25){ nodes { id name } }
       }
     }' 2>/dev/null)" || return 1
-  printf '%s' "$out" | jq -ce '
+  printf '%s' "$out" | wk_jq -ce '
     .data.repository
     | select(. != null)
     | { repositoryId: .id,
@@ -81,7 +80,7 @@ wk_disc_meta() {
   wk_disc_ready || return 1
 
   if [[ "$refresh" != "--refresh" ]]; then
-    cached="$(jq -ce --arg s "$slug" '.homeCache[$s] // empty' "$WK_HOME_CACHE" 2>/dev/null || true)"
+    cached="$(wk_jq -ce --arg s "$slug" '.homeCache[$s] // empty' "$WK_HOME_CACHE" 2>/dev/null || true)"
     if [[ -n "$cached" ]]; then printf '%s' "$cached"; return 0; fi
   fi
 
@@ -105,7 +104,7 @@ wk_disc_meta() {
 wk_disc_repo_id() {
   local meta
   meta="$(wk_disc_meta "$1" "${2:-}")" || return 1
-  printf '%s' "$meta" | jq -r '.repositoryId // empty' 2>/dev/null
+  printf '%s' "$meta" | wk_jq -r '.repositoryId // empty' 2>/dev/null
 }
 
 # Resolve the category to post in, into WK_DISC_CATEGORY_ID and
@@ -122,10 +121,10 @@ wk_disc_resolve_category() {
   WK_DISC_CATEGORY_NAME=''
 
   meta="$(wk_disc_meta "$slug")" || return 1
-  id="$(printf '%s' "$meta" | jq -r --arg c "$want" '.categories[$c] // empty' 2>/dev/null)"
+  id="$(printf '%s' "$meta" | wk_jq -r --arg c "$want" '.categories[$c] // empty' 2>/dev/null)"
   if [[ -z "$id" ]]; then
     meta="$(wk_disc_meta "$slug" --refresh)" || return 1
-    id="$(printf '%s' "$meta" | jq -r --arg c "$want" '.categories[$c] // empty' 2>/dev/null)"
+    id="$(printf '%s' "$meta" | wk_jq -r --arg c "$want" '.categories[$c] // empty' 2>/dev/null)"
   fi
   if [[ -n "$id" ]]; then
     WK_DISC_CATEGORY_ID="$id"
@@ -134,7 +133,7 @@ wk_disc_resolve_category() {
   fi
 
   for candidate in "${WK_DISC_FALLBACKS[@]}"; do
-    id="$(printf '%s' "$meta" | jq -r --arg c "$candidate" '.categories[$c] // empty' 2>/dev/null)"
+    id="$(printf '%s' "$meta" | wk_jq -r --arg c "$candidate" '.categories[$c] // empty' 2>/dev/null)"
     if [[ -n "$id" ]]; then
       WK_DISC_CATEGORY_ID="$id"
       WK_DISC_CATEGORY_NAME="$candidate"
@@ -144,8 +143,8 @@ wk_disc_resolve_category() {
 
   # Whatever the repo does have, so a repo whose categories were renamed still
   # has somewhere to publish.
-  WK_DISC_CATEGORY_NAME="$(printf '%s' "$meta" | jq -r '.categories | keys | first // empty' 2>/dev/null)"
-  WK_DISC_CATEGORY_ID="$(printf '%s' "$meta" | jq -r '.categories | to_entries | first | .value // empty' 2>/dev/null)"
+  WK_DISC_CATEGORY_NAME="$(printf '%s' "$meta" | wk_jq -r '.categories | keys | first // empty' 2>/dev/null)"
+  WK_DISC_CATEGORY_ID="$(printf '%s' "$meta" | wk_jq -r '.categories | to_entries | first | .value // empty' 2>/dev/null)"
   [[ -n "$WK_DISC_CATEGORY_ID" ]] || return 1
   return 0
 }
@@ -163,10 +162,10 @@ wk_disc_enable() {
   local slug="$1" meta repo_id
   wk_disc_ready || return 1
   meta="$(wk_disc_meta "$slug" --refresh)" || return 1
-  if [[ "$(printf '%s' "$meta" | jq -r '.discussionsEnabled')" == "true" ]]; then
+  if [[ "$(printf '%s' "$meta" | wk_jq -r '.discussionsEnabled')" == "true" ]]; then
     return 2   # already on; the caller says "current" rather than "enabled"
   fi
-  repo_id="$(printf '%s' "$meta" | jq -r '.repositoryId // empty')"
+  repo_id="$(printf '%s' "$meta" | wk_jq -r '.repositoryId // empty')"
   [[ -n "$repo_id" ]] || return 1
   wk_spin 'turning Discussions on' gh api graphql -f repoId="$repo_id" -f query='mutation($repoId:ID!){
     updateRepository(input:{repositoryId:$repoId, hasDiscussionsEnabled:true}){
@@ -203,7 +202,7 @@ wk_disc_create() {
         discussion { url }
       }
     }' 2>/dev/null)" || return 1
-  printf '%s' "$out" | jq -r '.data.createDiscussion.discussion.url // empty' 2>/dev/null
+  printf '%s' "$out" | wk_jq -r '.data.createDiscussion.discussion.url // empty' 2>/dev/null
 }
 
 # The summaries already published in a category since a moment, newest first, as
@@ -227,7 +226,7 @@ wk_disc_list() {
         }
       }
     }' 2>/dev/null)" || return 1
-  printf '%s' "$out" | jq -c --arg since "$since" '
+  printf '%s' "$out" | wk_jq -c --arg since "$since" '
     [ .data.repository.discussions.nodes[]? | select(.createdAt >= $since) ]
   ' 2>/dev/null || return 1
 }

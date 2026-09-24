@@ -1,0 +1,33 @@
+# The CHANGELOG entry format check, published for every participating repo:
+# its checks.yml calls this file with one line,
+#   uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main
+# The linter runs from a checkout of the kit itself, so no repo carries a copy
+# of it and a change to the linter reaches every caller on its next run.
+#
+# Only the caller's [Unreleased] section is judged: released history is already
+# published, and a maintainer editing it is not what this gate is for. A caller
+# with no CHANGELOG.md passes.
+name: changelog
+
+on:
+  workflow_call:
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          repository: itw-creative-works/workkit
+          path: .workkit-kit
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+      - name: CHANGELOG entry format
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            node .workkit-kit/workflow/changelog.js CHANGELOG.md --unreleased-only
+          else
+            echo "no CHANGELOG.md, nothing to check"
+          fi

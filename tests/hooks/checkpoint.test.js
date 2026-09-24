@@ -6,6 +6,7 @@ const os = require('os');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary } = require('../lib/harness');
+const { BASH, SYSTEM_BASH, NO_RC, shellPath } = require('../lib/platform');
 
 const REPO = path.join(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'hooks', 'docs', 'checkpoint', 'run.sh');
@@ -18,10 +19,10 @@ const freshTmp = () => {
   return tmp;
 };
 
-const runHook = (input, env = {}, bin = 'bash') => {
-  const res = spawnSync(bin, [HOOK], {
+const runHook = (input, env = {}, bin = BASH) => {
+  const res = spawnSync(bin, [...NO_RC, shellPath(HOOK)], {
     input: typeof input === 'string' ? input : JSON.stringify(input),
-    env: { ...process.env, TMPDIR: tmp, ...env },
+    env: { ...process.env, TMPDIR: shellPath(tmp), ...env },
     encoding: 'utf8',
     timeout: 10000,
   });
@@ -151,7 +152,7 @@ const run = async () => {
     freshTmp();
     const empty = path.join(tmp, 'empty-path');
     fs.mkdirSync(empty, { recursive: true });
-    const out = runHook({ prompt: 'compact', session_id: 'sess1' }, { PATH: empty }, '/bin/bash');
+    const out = runHook({ prompt: 'compact', session_id: 'sess1' }, { PATH: empty }, SYSTEM_BASH);
     assertEq(out.code, 0, out.stderr);
     assertEq(out.stdout, '');
   });
@@ -159,9 +160,9 @@ const run = async () => {
   group('docs-checkpoint: loader integration');
   await test('loader routes docs:checkpoint', () => {
     freshTmp();
-    const res = spawnSync('bash', [LOADER, 'docs:checkpoint'], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'docs:checkpoint'], {
       input: JSON.stringify({ prompt: 'compact', session_id: 'sess1' }),
-      env: { ...process.env, TMPDIR: tmp },
+      env: { ...process.env, TMPDIR: shellPath(tmp) },
       encoding: 'utf8',
       timeout: 10000,
     });

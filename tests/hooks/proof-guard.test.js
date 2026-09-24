@@ -14,11 +14,12 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const {
+  BASH, SYSTEM_PATH, NO_RC, shellPath, stubTool, basePathWithout, systemPathWith,
+} = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'proof-guard', 'run.sh');
-const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
-
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'proof-guard-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
@@ -34,34 +35,52 @@ const makeGhStub = ({ comments = {}, fails = false } = {}) => {
     fs.writeFileSync(path.join(bodiesDir, `${number}.json`),
       JSON.stringify({ comments: bodies.map((body) => ({ body })) }));
   }
-  fs.mkdirSync(path.join(dir, 'bin'), { recursive: true });
+  const binDir = path.join(dir, 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
   const cwdFile = path.join(dir, 'cwd');
-  fs.writeFileSync(path.join(dir, 'bin', 'gh'), [
+  // Every path here crosses INTO a shell, so each is spelled the way the shell
+  // reads one; the values handed back stay native, because Node reads those.
+  stubTool(binDir, 'gh', [
     '#!/usr/bin/env bash',
     recordArgv(logFile),
-    `printf '%s\\n' "$PWD" >> "${cwdFile}"`,
+    `printf '%s\\n' "$PWD" >> "${shellPath(cwdFile)}"`,
     'if [[ "$1 $2" == "issue view" ]]; then',
     ...(fails ? ['  exit 1'] : [
-      `  file="${bodiesDir}/$3.json"`,
+      `  file="${shellPath(bodiesDir)}/$3.json"`,
       '  [[ -f "$file" ]] || exit 1',
       '  cat "$file"',
       '  exit 0',
     ]),
     'fi',
     'exit 0',
-  ].join('\n'), { mode: 0o755 });
-  return { binDir: path.join(dir, 'bin'), logFile, cwdFile, dir };
+  ]);
+  return { binDir, logFile, cwdFile, dir };
 };
 
 const ghCalls = (stub) => readArgv(stub.logFile);
 
+// The machine that does NOT have `gh`. A runner ships the real one in /usr/bin,
+// so a case about its absence has to take it off the PATH rather than trust the
+// system one, or the REAL gh answers and the case passes for another reason.
+// Built once, since the mirror links every system tool, and removed with the
+// suite.
+let noGhPath = null;
+const pathWithoutGh = () => {
+  if (!noGhPath) noGhPath = basePathWithout(mkTmp(), 'gh');
+  return noGhPath;
+};
+const dropPathWithoutGh = () => {
+  if (noGhPath) cleanup(path.dirname(noGhPath));
+  noGhPath = null;
+};
+
 const runHook = (command, stub, cwd = os.tmpdir()) => {
-  const input = JSON.stringify({ tool_name: 'Bash', cwd, tool_input: { command } });
-  const res = spawnSync('bash', [HOOK], {
+  const input = JSON.stringify({ tool_name: 'Bash', cwd: shellPath(cwd), tool_input: { command } });
+  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
     input,
     env: {
-      HOME: os.homedir(),
-      PATH: stub ? `${stub.binDir}:${BASE_PATH}` : BASE_PATH,
+      HOME: shellPath(os.homedir()),
+      PATH: stub ? systemPathWith(stub.binDir) : pathWithoutGh(),
     },
     encoding: 'utf8',
     timeout: 15000,
@@ -249,7 +268,7 @@ const run = async () => {
     const stub = makeGhStub(WORLD);
     const here = fs.realpathSync(mkTmp());
     assertEq(runHook('gh issue close 9', stub, here).code, 2, 'the unproved issue still blocks');
-    assertEq(fs.readFileSync(stub.cwdFile, 'utf8').trim(), here,
+    assertEq(fs.readFileSync(stub.cwdFile, 'utf8').trim(), shellPath(here),
       'an issue number with no --repo resolves against the session directory, so the read asks from there');
     cleanup(here);
     cleanup(stub.dir);
@@ -282,9 +301,9 @@ const run = async () => {
   });
 
   await test('missing command, exit 0', () => {
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: JSON.stringify({ tool_input: {} }),
-      env: { HOME: os.homedir(), PATH: BASE_PATH },
+      env: { HOME: shellPath(os.homedir()), PATH: SYSTEM_PATH },
       encoding: 'utf8',
       timeout: 15000,
     });
@@ -292,9 +311,9 @@ const run = async () => {
   });
 
   await test('malformed JSON, exit 0', () => {
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: 'not json',
-      env: { HOME: os.homedir(), PATH: BASE_PATH },
+      env: { HOME: shellPath(os.homedir()), PATH: SYSTEM_PATH },
       encoding: 'utf8',
       timeout: 15000,
     });
@@ -304,6 +323,7 @@ const run = async () => {
 
 module.exports = async () => {
   await run();
+  dropPathWithoutGh();
   return summary();
 };
 

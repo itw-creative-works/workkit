@@ -24,6 +24,7 @@ const { spawnSync } = require('child_process');
 const {
   group, test, assert, assertEq, summary, selfRun,
 } = require('../lib/harness');
+const { BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../lib/platform');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
@@ -31,8 +32,6 @@ const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 // real one, because the point of that seed is that the scripts a runner
 // executes are these scripts: a fixture would prove only that files copy.
 const KIT_DIR = path.join(__dirname, '..', '..');
-const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
-
 const mkTmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'workkit-home-')));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
@@ -148,7 +147,7 @@ const mkWorld = ({
   const npmLog = path.join(root, 'npm-argv.log');
   const npmCwdLog = path.join(root, 'npm-cwd.log');
   const npmCount = path.join(root, 'npm-count');
-  fs.writeFileSync(path.join(bin, 'npm'), [
+  stubTool(bin, 'npm', [
     '#!/usr/bin/env bash',
     recordArgv(npmLog),
     `printf '%s\\n' "$PWD" >> ${JSON.stringify(npmCwdLog)}`,
@@ -163,9 +162,7 @@ const mkWorld = ({
     '  chmod +x "$prefix/node_modules/.bin/omega"',
     'fi',
     'exit 0',
-    '',
-  ].join('\n'));
-  fs.chmodSync(path.join(bin, 'npm'), 0o755);
+  ]);
 
   const ghLog = path.join(root, 'gh-argv.log');
   // The labels the stub believes the repo carries: a STORE, not a fixture, so
@@ -179,7 +176,12 @@ const mkWorld = ({
   const asNodes = (names) => names.map((name, i) => `{ "id": "DIC_${i}", "name": "${name}" }`).join(',');
   const categoriesFile = path.join(root, 'categories.json');
   fs.writeFileSync(categoriesFile, asNodes(categories));
-  fs.writeFileSync(path.join(bin, 'gh'), [
+  // What the owner made on the page, held back until the shim has answered a
+  // few more reads: a fixture that counts READS, never seconds, so a machine
+  // where every stub in the chain costs a process spawn answers the same one.
+  const pendingFile = path.join(root, 'categories-pending.json');
+  const pendingReads = path.join(root, 'categories-pending-reads');
+  stubTool(bin, 'gh', [
     '#!/usr/bin/env bash',
     recordArgv(ghLog),
     'all="$*"',
@@ -206,49 +208,59 @@ const mkWorld = ({
       + `{"title":"daily: 2026-07-27","createdAt":"2026-07-27T09:00:00Z","body":"yesterday"},`
       + `{"title":"daily: 2026-06-01","createdAt":"2026-06-01T09:00:00Z","body":"long ago"}]}}}}' ;;`,
     '  *discussionCategories*)',
+    `    if [[ -f ${JSON.stringify(pendingFile)} ]]; then`,
+    `      left=$(cat ${JSON.stringify(pendingReads)})`,
+    '      if [[ "$left" -gt 0 ]]; then',
+    `        printf '%s' "$(( left - 1 ))" > ${JSON.stringify(pendingReads)}`,
+    '      else',
+    `        mv ${JSON.stringify(pendingFile)} ${JSON.stringify(categoriesFile)}`,
+    '      fi',
+    '    fi',
     `    printf '%s' "{\\"data\\":{\\"repository\\":{\\"id\\":\\"R_kdt\\",\\"hasDiscussionsEnabled\\":${discussionsOn},\\"discussionCategories\\":{\\"nodes\\":[$(cat ${JSON.stringify(categoriesFile)})]}}}}" ;;`,
     `  *"pages"*) exit ${pagesOn ? 0 : (pagesFails ? 1 : 0)} ;;`,
     `  *) printf '%s' '{}' ;;`,
     'esac',
     'exit 0',
-    '',
-  ].join('\n'));
-  fs.chmodSync(path.join(bin, 'gh'), 0o755);
+  ]);
 
   // The Pages calls are a GET (is it on?) then a POST (turn it on), and the two
   // must be able to answer differently.
   if (!pagesOn) {
-    fs.writeFileSync(path.join(bin, 'gh'), fs.readFileSync(path.join(bin, 'gh'), 'utf8').replace(
+    stubTool(bin, 'gh', fs.readFileSync(path.join(bin, 'gh'), 'utf8').replace(
       `  *"pages"*) exit ${pagesFails ? 1 : 0} ;;`,
       [
         '  *"-X POST"*pages*)',
         `    exit ${pagesFails ? 1 : 0} ;;`,
         '  *pages*) exit 1 ;;',
       ].join('\n'),
-    ));
-    fs.chmodSync(path.join(bin, 'gh'), 0o755);
+    ).trimEnd().split('\n'));
   }
 
   // A browser opener that records what it was handed and, when a test says
   // so, plays the owner: the page it "opened" is where the categories get
   // made, so it writes them into the store the gh shim answers from, at once
-  // or `after` seconds later (an owner still clicking while the poll runs).
+  // or held back for `afterReads` more reads (an owner still clicking while
+  // the poll runs). The wait is COUNTED, not timed: the next `afterReads`
+  // checks still miss the categories and the one after that finds them,
+  // whatever each check costs on the machine running it.
   // Every world gets the recorders: the base PATH keeps `/usr/bin/open` real
   // on a Mac, and a step that reached it unshadowed would open a browser.
   const openerLog = path.join(root, 'opener-argv.log');
   // `breaks` plays a read that fails mid-poll (the network or the token gone):
   // the store stops being JSON, so every later read returns nothing.
-  const installOpener = ({ makes = [], after = 0, breaks = false } = {}) => {
-    const write = `printf '%s' ${JSON.stringify(breaks ? 'not json' : asNodes(makes))} > ${JSON.stringify(categoriesFile)}`;
+  const installOpener = ({ makes = [], afterReads = 0, breaks = false } = {}) => {
+    const made = JSON.stringify(breaks ? 'not json' : asNodes(makes));
+    const write = afterReads
+      ? [`printf '%s' ${made} > ${JSON.stringify(pendingFile)}`,
+        `printf '%s' ${afterReads} > ${JSON.stringify(pendingReads)}`]
+      : [`printf '%s' ${made} > ${JSON.stringify(categoriesFile)}`];
     for (const opener of ['open', 'xdg-open']) {
-      fs.writeFileSync(path.join(bin, opener), [
+      stubTool(bin, opener, [
         '#!/usr/bin/env bash',
         recordArgv(openerLog),
-        ...(makes.length || breaks ? [after ? `( sleep ${after}; ${write} ) &` : write] : []),
+        ...(makes.length || breaks ? write : []),
         'exit 0',
-        '',
-      ].join('\n'));
-      fs.chmodSync(path.join(bin, opener), 0o755);
+      ]);
     }
   };
   installOpener();
@@ -271,14 +283,13 @@ const mkWorld = ({
       : []),
     settings: () => JSON.parse(fs.readFileSync(path.join(workflowHome, 'settings.json'), 'utf8')),
     pkg: (rel = 'package.json') => JSON.parse(fs.readFileSync(path.join(workflowHome, 'tower', rel), 'utf8')),
-    env: {
-      HOME: home,
-      PATH: `${bin}:${BASE_PATH}:${path.dirname(process.execPath)}`,
-      WORKFLOW_HOME: workflowHome,
+    env: homeEnv(home, {
+      PATH: joinPath(bin, SYSTEM_PATH, NODE_DIR),
+      WORKFLOW_HOME: shellPath(workflowHome),
       WORKKIT_TOWER_APP: tower.app,
       WORKKIT_KIT_DIR: KIT_DIR,
       ...(remote ? { WORKKIT_HOME_REMOTE: remote } : {}),
-    },
+    }),
   };
 };
 
@@ -290,15 +301,15 @@ const mkWorld = ({
 const inHome = (world, script, { input = '' } = {}) => {
   const driver = [
     'set -euo pipefail',
-    `. ${JSON.stringify(path.join(WORKFLOW_DIR, 'lib.sh'))}`,
-    `. ${JSON.stringify(path.join(WORKFLOW_DIR, 'discussions.sh'))}`,
-    `. ${JSON.stringify(path.join(WORKFLOW_DIR, 'home.sh'))}`,
+    `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'lib.sh')))}`,
+    `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'discussions.sh')))}`,
+    `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'home.sh')))}`,
     script,
   ].join('\n');
   // From the world's own root, never the caller's: a shim that keys anything
   // off the cwd (as npm does) must key it off a scratch directory rather
   // than this checkout.
-  const res = spawnSync('bash', ['-c', driver], {
+  const res = spawnSync(BASH, [...NO_RC, '-c', driver], {
     cwd: world.root, env: world.env, input, encoding: 'utf8', timeout: 30000,
   });
   assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
@@ -327,7 +338,7 @@ const run = async () => {
   await test('the three libraries parse and run nothing at load', () => {
     for (const lib of ['lib.sh', 'discussions.sh', 'home.sh']) {
       const file = path.join(WORKFLOW_DIR, lib);
-      assertEq(spawnSync('bash', ['-n', file], { encoding: 'utf8' }).status, 0, `bash -n is clean for ${lib}`);
+      assertEq(spawnSync(BASH, [...NO_RC, '-n', shellPath(file)], { encoding: 'utf8' }).status, 0, `bash -n is clean for ${lib}`);
     }
     const world = mkWorld();
     // Sourcing all three prints nothing: a library that acted at load would
@@ -371,9 +382,9 @@ const run = async () => {
     const world = mkWorld();
     const { out } = inHome(world, 'printf "%s\\n%s\\n%s\\n" "$WK_USER_DIR" "$WK_HOME_DIR" "$WK_HOME_SETTINGS"');
     const [userDir, homeDir, settings] = out.trim().split('\n');
-    assertEq(userDir, world.workflowHome, 'the user folder is ~/.workkit');
-    assertEq(homeDir, path.join(world.workflowHome, 'tower'), 'and the clone is the tower under it');
-    assertEq(settings, path.join(world.workflowHome, 'settings.json'),
+    assertEq(userDir, shellPath(world.workflowHome), 'the user folder is ~/.workkit');
+    assertEq(homeDir, shellPath(path.join(world.workflowHome, 'tower')), 'and the clone is the tower under it');
+    assertEq(settings, shellPath(path.join(world.workflowHome, 'settings.json')),
       'the site options live beside the roster, outside the clone the user never edits');
 
     // Nothing addresses anything INSIDE the clone but the app it builds: the
@@ -421,7 +432,7 @@ const run = async () => {
     const world = mkWorld({ settings: null });
     const { code } = inHome(world, 'wk_home_set_slug owner/workkit');
     assertEq(code, 0, 'exit 0');
-    const parsed = JSON.parse(fs.readFileSync(path.join(world.env.WORKFLOW_HOME, 'settings.json'), 'utf8'));
+    const parsed = JSON.parse(fs.readFileSync(path.join(world.workflowHome, 'settings.json'), 'utf8'));
     assertEq(parsed.site.repo, 'owner/workkit', 'the slug it was asked to record');
     assert('publish' in parsed.site, 'the switch is spelled out');
     assertEq(parsed.site.publish, null, 'and nobody has answered it');
@@ -543,12 +554,12 @@ const run = async () => {
 
     assertEq(
       world.pkg().devDependencies['@omega.js/manager'],
-      `file:${path.join(world.framework, 'manager')}`,
+      `file:${shellPath(path.join(world.framework, 'manager'))}`,
       'the root manifest points at the framework this machine resolves it from',
     );
     assertEq(
       world.pkg(path.join('targets', 'web', 'package.json')).dependencies['@omega.js/web'],
-      `file:${path.join(world.framework, 'web')}`,
+      `file:${shellPath(path.join(world.framework, 'web'))}`,
       'and so does every app, resolved from ITS own directory',
     );
     assert(/Local era/.test(world.pkg().description), 'the description says why the manifest names a path');
@@ -985,8 +996,10 @@ const run = async () => {
     });
     const { code, out } = setup(world);
     assertEq(code, 0, `exit 0: ${out}`);
-    assertEq(fs.readFileSync(path.join(world.tower, 'README.md'), 'utf8'), '# from elsewhere\n',
-      'the other machine’s project is the one here');
+    // The clone's line endings are the machine git's business (Windows checks
+    // out CRLF), and this case is about WHOSE file is here, not how it ends.
+    assertEq(fs.readFileSync(path.join(world.tower, 'README.md'), 'utf8').replace(/\r\n/g, '\n'),
+      '# from elsewhere\n', 'the other machine’s project is the one here');
     assert(!fs.existsSync(path.join(world.tower, 'targets')), 'and nothing was seeded over it');
     assert(/already in/.test(out), `it says so, got: ${out}`);
     cleanup(world.root);
@@ -1026,7 +1039,7 @@ const run = async () => {
     assertEq(code, 0, `exit 0: ${out}`);
     const cwds = world.npmCwds();
     assertEq(cwds.length, 1, `one install, and its cwd recorded: ${cwds.join(' | ')}`);
-    assertEq(cwds[0], world.tower, 'the cwd is the clone with its links resolved');
+    assertEq(cwds[0], shellPath(world.tower), 'the cwd is the clone with its links resolved');
     assert(!world.npmCalls().some((c) => c.includes('--prefix')),
       `and no --prefix keys the tree from elsewhere: ${fmtCalls(world.npmCalls())}`);
     cleanup(world.root);
@@ -1137,7 +1150,7 @@ const run = async () => {
 
   await test('Enter checks now, ahead of the interval (#244)', () => {
     const world = mkWorld({ login: 'owner', discussionsOn: true, categories: ['General'] });
-    world.installOpener({ makes: ['General', 'Daily', 'Weekly', 'Monthly', 'Brief'], after: 1 });
+    world.installOpener({ makes: ['General', 'Daily', 'Weekly', 'Monthly', 'Brief'], afterReads: 1 });
     const started = Date.now();
     const { code, out } = atTerminal(world, "printf '\\n'; sleep 2; printf '\\n'");
     const took = (Date.now() - started) / 1000;
@@ -1150,7 +1163,7 @@ const run = async () => {
 
   await test('with no key pressed, the poll checks again on its own after five seconds (#244)', () => {
     const world = mkWorld({ login: 'owner', discussionsOn: true, categories: ['General'] });
-    world.installOpener({ makes: ['General', 'Daily', 'Weekly', 'Monthly', 'Brief'], after: 1 });
+    world.installOpener({ makes: ['General', 'Daily', 'Weekly', 'Monthly', 'Brief'], afterReads: 1 });
     const started = Date.now();
     const { code, out } = atTerminal(world, "printf '\\n'; sleep 9");
     const took = (Date.now() - started) / 1000;
@@ -1384,7 +1397,7 @@ const run = async () => {
     const other = path.join(world.root, 'other');
     fs.mkdirSync(other, { recursive: true });
     spawnSync('git', ['init', '-q', other], { encoding: 'utf8' });
-    const res = spawnSync('bash', [path.join(WORKFLOW_DIR, 'standards.sh'), '--home', other], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(WORKFLOW_DIR, 'standards.sh')), '--home', shellPath(other)], {
       env: world.env, encoding: 'utf8', timeout: 30000,
     });
     assertEq(res.status, 1, 'it refuses');

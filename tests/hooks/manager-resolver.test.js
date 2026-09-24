@@ -8,6 +8,7 @@ const os = require('os');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, WORKKIT_DIR: W } = require('../lib/harness');
+const { BASH, NO_RC, shellPath } = require('../lib/platform');
 
 const REPO = path.join(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'hooks', 'manager', 'resolver', 'run.sh');
@@ -64,15 +65,15 @@ const userSettings = (manager) => {
 };
 
 const runHook = (input, env = {}) => {
-  const res = spawnSync('bash', [HOOK], {
+  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
     input: typeof input === 'string' ? input : JSON.stringify(input),
     // The user layer points at a nonexistent fixture by default, so the suite
     // never reads the running machine's own ~/.workkit/settings.json.
     env: {
       ...process.env,
-      TMPDIR: tmp,
+      TMPDIR: shellPath(tmp),
       MANAGER_DEBUG: '',
-      MANAGER_USER_SETTINGS: path.join(tmp, 'no-user-settings.json'),
+      MANAGER_USER_SETTINGS: shellPath(path.join(tmp, 'no-user-settings.json')),
       ...env,
     },
     encoding: 'utf8',
@@ -290,25 +291,29 @@ const run = async () => {
     const out = runHook({ ...payload('worker'), cwd: sub });
     assertEq(resolvedModel(out), id('sonnet'));
   });
-  await test('a plain (non-git) cwd still reads its own .workkit/settings.json', () => {
+  await test('a plain (non-git) cwd carries no repo layer: its settings file is not read', () => {
+    // A settings file is a REPO's, so no git toplevel means no repo layer at
+    // all. The file a non-repo cwd carries is the MACHINE's own state, and on
+    // Windows every temp directory sits under the profile that holds it: read
+    // as a repo's, it would let the machine layer override itself.
     freshTmp();
     const dir = settingsAt(path.join(tmp, 'plain'), { tiers: { workhorse: 'haiku' } });
     const out = runHook({ ...payload('worker'), cwd: dir });
-    assertEq(resolvedModel(out), id('haiku'));
+    assertEq(resolvedModel(out), id(ladder.tiers.workhorse), 'the ladder\'s own rung, unoverridden');
   });
   await test('the user layer applies when the repo carries no settings', () => {
     freshTmp();
     const dir = path.join(tmp, 'bare');
     fs.mkdirSync(dir, { recursive: true });
     const out = runHook({ ...payload('worker'), cwd: dir },
-      { MANAGER_USER_SETTINGS: userSettings({ tiers: { workhorse: 'haiku' } }) });
+      { MANAGER_USER_SETTINGS: shellPath(userSettings({ tiers: { workhorse: 'haiku' } })) });
     assertEq(resolvedModel(out), id('haiku'));
   });
   await test('the repo layer beats the user layer', () => {
     freshTmp();
     const repo = settingsAt(path.join(tmp, 'repo'), { tiers: { workhorse: 'sonnet' } }, { git: true });
     const out = runHook({ ...payload('worker'), cwd: repo },
-      { MANAGER_USER_SETTINGS: userSettings({ tiers: { workhorse: 'haiku' } }) });
+      { MANAGER_USER_SETTINGS: shellPath(userSettings({ tiers: { workhorse: 'haiku' } })) });
     assertEq(resolvedModel(out), id('sonnet'));
   });
   await test('an override of one tier leaves the others alone', () => {
@@ -328,7 +333,7 @@ const run = async () => {
     freshTmp();
     const repo = settingsAt(path.join(tmp, 'repo'), { enabled: true }, { git: true });
     const out = runHook({ ...payload('worker'), cwd: repo },
-      { MANAGER_USER_SETTINGS: userSettings({ enabled: false }) });
+      { MANAGER_USER_SETTINGS: shellPath(userSettings({ enabled: false })) });
     assertEq(resolvedModel(out), id('opus'));
   });
   await test('a repo cannot redefine the ladder or the class map', () => {
@@ -367,14 +372,35 @@ const run = async () => {
     const out = runHook({ ...payload('worker'), cwd: path.join(tmp, 'nowhere') });
     assertEq(resolvedModel(out), id('opus'));
   });
+  // jq writes the values it parsed BEFORE it fails on a later one, so a layer
+  // read whose default is appended to that partial answer hands the merge two
+  // layers where it declared one, and the repo's own falls off the end of the
+  // three the merge reads. Each file is truncated mid-value to make jq do it.
+  await test('a ladder file with a severed tail still lets the repo layer win', () => {
+    freshTmp();
+    const severed = path.join(tmp, 'severed-ladder.json');
+    fs.writeFileSync(severed, `${JSON.stringify(ladder)}{`);
+    const repo = settingsAt(path.join(tmp, 'repo'), { tiers: { workhorse: 'sonnet' } }, { git: true });
+    const out = runHook({ ...payload('worker'), cwd: repo }, { MANAGER_LADDER: severed });
+    assertEq(resolvedModel(out), id('sonnet'), 'the repo override still reaches the merge');
+  });
+  await test('a user settings file with a severed tail still lets the repo layer win', () => {
+    freshTmp();
+    const user = userSettings(
+      `${JSON.stringify({ version: 1, repos: {}, manager: { tiers: { workhorse: 'haiku' } } })}{`
+    );
+    const repo = settingsAt(path.join(tmp, 'repo'), { tiers: { workhorse: 'sonnet' } }, { git: true });
+    const out = runHook({ ...payload('worker'), cwd: repo }, { MANAGER_USER_SETTINGS: shellPath(user) });
+    assertEq(resolvedModel(out), id('sonnet'), 'the repo override still reaches the merge');
+  });
 
   group('manager-resolver: loader integration');
   await test('loader routes manager:resolver', () => {
     freshTmp();
     cacheSession('sess1', id('fable'));
-    const res = spawnSync('bash', [LOADER, 'manager:resolver'], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:resolver'], {
       input: JSON.stringify(payload('worker')),
-      env: { ...process.env, TMPDIR: tmp },
+      env: { ...process.env, TMPDIR: shellPath(tmp) },
       encoding: 'utf8',
       timeout: 10000,
     });
@@ -383,9 +409,9 @@ const run = async () => {
   });
   await test('HOOK_DISABLE=1 is a silent no-op', () => {
     freshTmp();
-    const res = spawnSync('bash', [LOADER, 'manager:resolver'], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:resolver'], {
       input: JSON.stringify(payload('worker')),
-      env: { ...process.env, TMPDIR: tmp, HOOK_DISABLE: '1' },
+      env: { ...process.env, TMPDIR: shellPath(tmp), HOOK_DISABLE: '1' },
       encoding: 'utf8',
       timeout: 10000,
     });

@@ -37,7 +37,9 @@ if ! command -v jq >/dev/null 2>&1 || ! command -v perl >/dev/null 2>&1; then
   exit 0
 fi
 
-cmd=$(jq -r '.tool_input.command // ""' <<<"$input" || true)
+. "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
+
+cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
 [ -n "$cmd" ] || exit 0
 
 # --- Is this a real `git ... commit` COMMAND, not a mention? ---
@@ -46,7 +48,6 @@ cmd=$(jq -r '.tool_input.command // ""' <<<"$input" || true)
 # reads the STRIPPED command; the span extraction below still reads the
 # ORIGINAL command, so the quoted `-m "$(cat <<EOF ...)"` message body stays
 # scanned (a bare `-F - <<EOF` body is unquoted, the accepted miss above).
-. "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
 hook_find_git_commit "$cmd"
 # A wrapped commit (`sh -c "git commit …"`) has no visible clause but is
 # still a commit: scan it rather than stay silent.
@@ -141,7 +142,7 @@ if [ "$len" -gt 72 ]; then
 fi
 
 if printf '%s' "$subject" | grep -Eqw 'v?[0-9]+\.[0-9]+\.[0-9]+' \
-  && ! printf '%s' "$subject" | grep -Eq '^chore\(release\): v?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
+  && ! printf '%s' "$subject" | grep -Eq '^chore\(release\): '"$HOOK_VERSION_RE"'$'; then
   {
     echo "commit-language: BLOCKED this commit: the subject line carries a version number: ${subject}"
     echo "Only the release commit names a version, as chore(release): <x.y.z>. Describe the change instead; the version bump is its own commit."

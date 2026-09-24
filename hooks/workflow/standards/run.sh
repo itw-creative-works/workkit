@@ -19,6 +19,10 @@ input=$(cat)
 
 command -v jq >/dev/null 2>&1 || exit 0
 
+# Sourced for hook_sha1 alone: the daily marker below is keyed by a digest, and
+# its spelling differs across the platforms this kit runs on.
+. "${BASH_SOURCE[0]%/*}/../../_lib.sh"
+
 # The workflow engine is this kit's own workflow/ folder. Resolve it from this
 # script's physical location, never through a symlink someone has to install
 # first. `pwd -P` resolves the link before the `..` walk, so the climb out of
@@ -64,7 +68,7 @@ $msg"
     fi
   fi
   if [ -n "$ctx" ]; then
-    jq -n --arg ctx "$ctx" '{
+    hook_jq -n --arg ctx "$ctx" '{
       "hookSpecificOutput": {
         "hookEventName": "SessionStart",
         "additionalContext": $ctx
@@ -74,7 +78,7 @@ $msg"
   exit 0
 }
 
-cwd=$(jq -r '.cwd // ""' <<<"$input" 2>/dev/null || true)
+cwd=$(hook_jq -r '.cwd // ""' <<<"$input" 2>/dev/null || true)
 [ -n "$cwd" ] || emit
 
 root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || emit
@@ -97,10 +101,8 @@ if [ -n "$broken" ]; then
   # the user file), so the committed answer is the only signal left. Speak only
   # for a repo that said YES: an explicit `"enabled": false` is a deliberate no
   # and stays silent here too, the same way the engine honors it.
-  # This hook sources nothing, so the directory name is spelled out; its SSOT is
-  # WORKKIT_DIR in hooks/_lib.sh. Change both together.
-  [ -f "$root/.workkit/settings.json" ] || emit
-  grep -qE '"enabled"[[:space:]]*:[[:space:]]*false' "$root/.workkit/settings.json" && emit
+  [ -f "$root/$WORKKIT_DIR/settings.json" ] || emit
+  wk_settings_declined "$root/$WORKKIT_DIR/settings.json" && emit
   emit "$broken"
 fi
 
@@ -126,7 +128,7 @@ esac
 # Daily cache marker, keyed by repo root.
 cache_dir="${WORKFLOW_STANDARDS_CACHE:-$HOME/.claude/logs/workflow-standards}"
 mkdir -p "$cache_dir" 2>/dev/null || true
-repo_key=$(printf '%s' "$root" | shasum 2>/dev/null | cut -d' ' -f1 || true)
+repo_key=$(printf '%s' "$root" | hook_sha1 2>/dev/null || true)
 [ -n "$repo_key" ] || repo_key="${root//[^a-zA-Z0-9]/_}"
 marker="$cache_dir/$repo_key"
 today=$(date +%Y-%m-%d)

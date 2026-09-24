@@ -46,15 +46,16 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-cmd=$(jq -r '.tool_input.command // ""' <<<"$input" || true)
+. "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
+
+cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
 [ -n "$cmd" ] || exit 0
-cwd=$(jq -r '.cwd // ""' <<<"$input" || true)
+cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
 [ -n "$cwd" ] || cwd="$PWD"
 
 # Shared text handling (heredoc-body strip, multiline quote strip): hooks/_lib.sh,
 # the same preparation the commit hooks do before walking clauses. A heredoc BODY
 # is file content, and a quoted span is data: neither is a command.
-. "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
 src=$(hook_strip_heredocs "$cmd")
 stripped=$(hook_strip_quotes "$src")
 
@@ -241,7 +242,7 @@ EOF
 # the command's fate is decided exactly as it would be with this hook silent.
 if hook_has_escape "$stripped" WORKKIT_ALLOW_DISCARD; then
   aside="tree-guard: stood aside for a deliberate discard: WORKKIT_ALLOW_DISCARD=1 is set on this command (${found})."
-  jq -n --arg m "$aside" '{
+  hook_jq -n --arg m "$aside" '{
     "systemMessage": $m,
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",

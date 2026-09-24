@@ -12,6 +12,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
+const { BASH, SYSTEM_PATH, NO_RC, shellPath, joinPath } = require('../lib/platform');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'session-guard', 'run.sh');
 
@@ -36,9 +37,9 @@ const mkFile = (content, { dir = path.join(W, 'agents'), name = 'session.md' } =
 const cleanupFile = (file) => cleanup(ROOTS.get(file));
 
 const runHook = (filePath) => {
-  const res = spawnSync('bash', [HOOK], {
-    input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: filePath } }),
-    env: { HOME: os.homedir(), PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin' },
+  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
+    input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: shellPath(filePath) } }),
+    env: { HOME: shellPath(os.homedir()), PATH: joinPath(SYSTEM_PATH, '/opt/homebrew/bin') },
     encoding: 'utf8',
     timeout: 15000,
   });
@@ -172,9 +173,9 @@ const run = async () => {
   });
 
   await test('no file_path in the input: fail open', () => {
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: JSON.stringify({ tool_name: 'Write', tool_input: {} }),
-      env: { HOME: os.homedir(), PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin' },
+      env: { HOME: shellPath(os.homedir()), PATH: joinPath(SYSTEM_PATH, '/opt/homebrew/bin') },
       encoding: 'utf8',
       timeout: 15000,
     });

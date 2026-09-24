@@ -136,7 +136,7 @@ site_teardown() {
 # file names the home repo, so every check below would otherwise report an
 # unreadable file as a machine with no home at all.
 if [[ -f "$WK_HOME_SETTINGS" ]] && command -v jq >/dev/null 2>&1 \
-  && ! jq . "$WK_HOME_SETTINGS" >/dev/null 2>&1; then
+  && ! wk_jq . "$WK_HOME_SETTINGS" >/dev/null 2>&1; then
   wk_warn "publish: $WK_HOME_SETTINGS does not parse as JSON; the site options (\`site.publish\`, \`site.url\`) cannot be read, so nothing was published; fix the file and run it again"
   exit 0
 fi
@@ -154,9 +154,8 @@ fi
 # nothing: a machine that has not said yes builds nothing and pushes nothing,
 # whoever asked for the run, because what Pages serves is public and saying so
 # once is the owner's to do. The engine takes that yes at its word and checks
-# nothing else: not the account's plan, not the repo's visibility (owner ruling,
-# 2026-07-29). It is READ here and ACTED ON below the roster: the answer decides
-# the site, and the roster is not part of the site (issue #111).
+# nothing else: not the account's plan, not the repo's visibility. It is READ here and ACTED ON below the roster: the answer decides
+# the site, and the roster is not part of the site.
 PUBLISH_SITE="$(wk_json_get "$WK_HOME_SETTINGS" '.site.publish')"
 
 if ! wk_home_ready; then

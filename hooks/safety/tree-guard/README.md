@@ -2,7 +2,7 @@
 
 **Hook type:** PreToolUse (Bash)
 
-The working tree is shared. A worker reverting its own nine files with `git checkout -- <files>` discarded ANOTHER agent's uncommitted work in the same files (issue #157, omega 2026-08-06); three later runs reached for `git stash push`/`pop` over trees carrying a whole wave of parked work, and got away with it. Every one of those commands throws away (or parks) state the agent running it cannot see, and no amount of care makes the reach safe, because "is this tree dirty beyond my own files?" is not a question the agent can answer.
+The working tree is shared. A worker reverting its own nine files with `git checkout -- <files>` discarded ANOTHER agent's uncommitted work in the same files; three later runs reached for `git stash push`/`pop` over trees carrying a whole wave of parked work, and got away with it. Every one of those commands throws away (or parks) state the agent running it cannot see, and no amount of care makes the reach safe, because "is this tree dirty beyond my own files?" is not a question the agent can answer.
 
 So the guard is ALWAYS ON, and the alternative it names is the scoped one the incident's own worker wrote down: revert your changes by reverse-editing your own hunks.
 
@@ -19,7 +19,7 @@ Each is found wherever it sits in a compound (the command is split on `;` `|` `&
 | `git clean` | a force spelling is present: `-f`, any cluster carrying `f`, `--force`. A dry run (`-n`) passes |
 | `git reset` | `--hard` is present. `--soft`, `--mixed` and a plain unstage pass |
 
-`git stash list` and `git stash show` read rather than discard, and stand aside since 2026-08-21 (issue #193, the owner reversing the reflex-breaker call that had them in): blocking a harmless lookup cost more than the one-word distance to `pop` protects against. Every other subcommand stays blocked.
+`git stash list` and `git stash show` read rather than discard, and stand aside: blocking a harmless lookup cost more than the one-word distance to `pop` protects against. Every other subcommand stays blocked.
 
 ## Where the checkout line sits, and why
 

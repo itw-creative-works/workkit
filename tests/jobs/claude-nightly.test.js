@@ -17,6 +17,9 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, skipSuite } = require('../lib/harness');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
+const {
+  BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath,
+} = require('../lib/platform');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-nightly.sh');
 
@@ -100,20 +103,15 @@ const mkWorld = ({
   const ghLog = path.join(root, 'gh-argv.log');
   const notifLog = path.join(root, 'notifly-argv.log');
   const bodyLog = path.join(root, 'posted-body.md');
-  const claude = path.join(bin, 'claude');
-  const notifly = path.join(bin, 'notifly');
-  fs.writeFileSync(claude, [
+  const claude = stubTool(bin, 'claude', [
     '#!/usr/bin/env bash',
     recordArgv(claudeLog),
     `printf '%s\\n' "$PWD" >> "${claudeCwdLog}"`,
     ...(claudeStderr ? [`printf '%s' ${JSON.stringify(claudeStderr)} >&2`] : []),
     `printf '%s' ${JSON.stringify(summary)}`,
     'exit 0',
-    '',
-  ].join('\n'));
-  fs.writeFileSync(notifly, ['#!/usr/bin/env bash', recordArgv(notifLog), 'exit 0', ''].join('\n'));
-  fs.chmodSync(claude, 0o755);
-  fs.chmodSync(notifly, 0o755);
+  ]);
+  const notifly = stubTool(bin, 'notifly', ['#!/usr/bin/env bash', recordArgv(notifLog), 'exit 0']);
 
   // The three shapes the delivery asks for, told apart by what the query text
   // names. Anything else answers empty, so an unexpected call is visible as a
@@ -127,7 +125,7 @@ const mkWorld = ({
     const priorNodes = posted.map((title) => JSON.stringify({
       title, createdAt: `${today()}T09:00:00Z`, body: 'already published',
     })).join(',');
-    fs.writeFileSync(path.join(bin, 'gh'), [
+    stubTool(bin, 'gh', [
       '#!/usr/bin/env bash',
       recordArgv(ghLog),
       ...(ghFails ? ['exit 1'] : []),
@@ -145,9 +143,7 @@ const mkWorld = ({
       '  *) printf \'%s\' \'{}\' ;;',
       'esac',
       'exit 0',
-      '',
-    ].join('\n'));
-    fs.chmodSync(path.join(bin, 'gh'), 0o755);
+    ]);
   }
 
   return {
@@ -167,22 +163,21 @@ const mkWorld = ({
     },
     settings: () => JSON.parse(fs.readFileSync(path.join(workflowHome, 'settings.json'), 'utf8')),
     cache: () => JSON.parse(fs.readFileSync(path.join(workflowHome, '.cache.json'), 'utf8')),
-    env: {
+    env: homeEnv(homeDir, {
       ...process.env,
-      HOME: homeDir,
       NOTIFLY: notifly,
       // The system tools plus the shims, and NOTHING else: `gh` is present only
       // when this world put it there.
-      PATH: `${bin}:/usr/bin:/bin:/usr/sbin:/sbin:${path.dirname(process.execPath)}`,
+      PATH: joinPath(bin, SYSTEM_PATH, NODE_DIR),
       WORKFLOW_HOME: workflowHome,
       // The transcripts root the payload indexes and the send is granted: the
       // same root, which is the whole point of the grant.
       WORKKIT_CLAUDE_PROJECTS: projects,
-    },
+    }),
   };
 };
 
-const runJob = (world, args = []) => spawnSync('bash', [SCRIPT, ...args], {
+const runJob = (world, args = []) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
   encoding: 'utf8',
   timeout: 60000,
   env: world.env,
@@ -199,7 +194,7 @@ const run = async () => {
   group('jobs/claude-nightly: shape');
 
   await test('bash -n: no syntax errors', () => {
-    const res = spawnSync('bash', ['-n', SCRIPT], { encoding: 'utf8' });
+    const res = spawnSync(BASH, [...NO_RC, '-n', shellPath(SCRIPT)], { encoding: 'utf8' });
     assertEq(res.status, 0, `bash -n: ${res.stderr}`);
   });
 

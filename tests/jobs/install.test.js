@@ -12,6 +12,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, skipSuite } = require('../lib/harness');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
+const { BASH, NO_RC, shellPath, homeEnv, stubTool, pathWith } = require('../lib/platform');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'install.sh');
 const REPO = path.join(__dirname, '..', '..');
@@ -48,8 +49,7 @@ const mkWorld = ({ loaded = false, loadedPath = null, launchdOk = true } = {}) =
   const body = loadedPath === null ? path.join(agents, `${LABEL}.plist`) : loadedPath;
 
   const log = path.join(root, 'launchctl-argv.log');
-  const stub = path.join(bin, 'launchctl');
-  fs.writeFileSync(stub, [
+  const stub = stubTool(bin, 'launchctl', [
     '#!/usr/bin/env bash',
     recordArgv(log),
     'if [[ "$1" == \'print\' ]]; then',
@@ -62,11 +62,9 @@ const mkWorld = ({ loaded = false, loadedPath = null, launchdOk = true } = {}) =
     '  exit 1',
     'fi',
     'exit 0',
-    '',
-  ].join('\n'));
-  fs.chmodSync(stub, 0o755);
+  ]);
 
-  const env = { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` };
+  const env = homeEnv(home, { ...process.env, PATH: pathWith(bin) });
   if (launchdOk) env.WORKKIT_LAUNCHD_OK = '1';
   else delete env.WORKKIT_LAUNCHD_OK;
 
@@ -81,8 +79,8 @@ const mkWorld = ({ loaded = false, loadedPath = null, launchdOk = true } = {}) =
   };
 };
 
-const install = (world) => spawnSync('bash', [SCRIPT], { encoding: 'utf8', timeout: 30000, env: world.env });
-const check = (world) => spawnSync('bash', [SCRIPT, '--check'], { encoding: 'utf8', timeout: 30000, env: world.env });
+const install = (world) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: 30000, env: world.env });
+const check = (world) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), '--check'], { encoding: 'utf8', timeout: 30000, env: world.env });
 
 const run = async () => {
   if (process.platform !== 'darwin') skipSuite('launchd and plutil are macOS');
@@ -221,7 +219,7 @@ const run = async () => {
     install(world);
     const before = world.calls().length;
 
-    const res = spawnSync('bash', [SCRIPT], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], {
       encoding: 'utf8',
       timeout: 30000,
       env: { ...world.env, WORKKIT_LAUNCHD_OK: '' },

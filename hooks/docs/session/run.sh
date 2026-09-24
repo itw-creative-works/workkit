@@ -34,8 +34,9 @@
 # the runner, because a laptop that was off is not a token that expired.
 #
 # Silent for an absent file, a file holding only its header, a marker that is
-# missing or unreadable, and a repo that has not opted in. Always exits 0. A
-# context injection must never cost a session.
+# missing or unreadable, a repo that has not opted in, and a cwd that is in no
+# git repo at all. Always exits 0. A context injection must never cost a
+# session.
 
 set -euo pipefail
 
@@ -43,26 +44,55 @@ input=$(cat)
 
 command -v jq >/dev/null 2>&1 || exit 0
 
-cwd=$(jq -r '.cwd // ""' <<<"$input" 2>/dev/null || true)
+# The two files this hook sources, both from its own physical location: the
+# CRLF-safe jq (workflow/platform.sh, `wk_jq`) and the participation predicates
+# (workflow/participation.sh, `wk_settings_declined`), each carrying its rule
+# and the reason for it. Neither is the engine this hook stays free of: both
+# define functions, set nothing, read no state and touch no file, so a seam that
+# is THERE costs a session nothing, and the gate below still asks the committed
+# file itself.
+#
+# UNGUARDED, the way every other source of these two files is: a checkout
+# missing one is an incomplete plugin, which the workflow:standards hook already
+# names ("workflow engine not found ... Reinstall the workkit plugin"), and a
+# guard here would leave the predicates undefined, the gate reading nothing, and
+# the injection blamed on the repo it was reading.
+# shellcheck source=../../../workflow/platform.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/platform.sh"
+# shellcheck source=../../../workflow/participation.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/participation.sh"
+
+cwd=$(wk_jq -r '.cwd // ""' <<<"$input" 2>/dev/null || true)
 [ -n "$cwd" ] || exit 0
 
 # The repo root, so a session opened in a subdirectory still finds the file.
-root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || root="$cwd"
+#
+# NO GIT ROOT, NO REPO: a `.workkit/settings.json` is a REPO's opt-in and is
+# read nowhere else. The file a directory outside every repo carries is the
+# MACHINE's own state (the site options, no `enabled` key at all), which reads
+# as a legacy yes: the user profile holds it on Windows and every temp directory
+# there sits under that profile, so a cwd taken as its own root injects into a
+# session standing somewhere that opted into nothing. git is what answers here,
+# rather than the repo-root predicate the walkers ask, because a cwd sits at any
+# depth inside its repo and only git can say which repo that is.
+root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || root=""
+[ -n "$root" ] || exit 0
 
-# This hook sources nothing, so the directory name is spelled out; its SSOT is
-# WORKKIT_DIR in hooks/_lib.sh. Change both together.
+# This hook sources no hook helper, so the directory name is spelled out; its
+# SSOT is WORKKIT_DIR in hooks/_lib.sh. Change both together.
 SETTINGS="$root/.workkit/settings.json"
 SESSION_FILE="$root/.workkit/agents/session.md"
 
 # Participation gate. The committed settings.json is the repo's yes; a
-# deliberate `"enabled": false` is its no. An undecided repo has no session.md
-# to read anyway (the heal never writes into one) so the committed file is the
-# whole signal this hook needs, and it stays free of the engine.
+# deliberate `"enabled": false` is its no, read through the predicate that owns
+# that spelling rather than a second copy of it. An undecided repo has no
+# session.md to read anyway (the heal never writes into one) so the committed
+# file is the whole signal this hook needs.
 [ -f "$SETTINGS" ] || exit 0
-grep -qE '"enabled"[[:space:]]*:[[:space:]]*false' "$SETTINGS" 2>/dev/null && exit 0
+wk_settings_declined "$SETTINGS" && exit 0
 
 # The MACHINE's folder, where the 9am job leaves the brief marker. Spelled out
-# for the same reason the two paths above are. This hook sources nothing.
+# for the same reason the two paths above are: this hook sources no hook helper.
 USER_DIR="$HOME/.workkit"
 BRIEF_MARKER="$USER_DIR/brief-status.json"
 
@@ -77,7 +107,7 @@ BRIEF_MARKER="$USER_DIR/brief-status.json"
 # every other answer that is not a count.
 days_since() {
   local n
-  n=$(jq -n --arg d "$1" '
+  n=$(wk_jq -n --arg d "$1" '
     def day: . + "T00:00:00Z" | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime;
     (((now | todate | .[0:10]) | day) - ($d | day)) / 86400 | floor' 2>/dev/null) || return 1
   case "$n" in ''|*[!0-9]*) return 1 ;; esac
@@ -88,7 +118,7 @@ days_since() {
 # `checkedAt` is an ISO moment, and the day is the whole of what is counted.
 marker_day() {
   local value
-  value=$(jq -r --arg k "$1" '.[$k] // empty' "$BRIEF_MARKER" 2>/dev/null) || return 1
+  value=$(wk_jq -r --arg k "$1" '.[$k] // empty' "$BRIEF_MARKER" 2>/dev/null) || return 1
   value="${value:0:10}"
   case "$value" in
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) printf '%s' "$value" ;;
@@ -138,7 +168,7 @@ brief_alert() {
   # already say which one it is. A command the owner is about to run gets no
   # guessed argument. It rides either wording: what the runs on that repo say is
   # worth reading whichever half went quiet.
-  slug=$(jq -r '.site.repo // empty' "$USER_DIR/settings.json" 2>/dev/null) || slug=''
+  slug=$(wk_jq_default '' -r '.site.repo // empty' "$USER_DIR/settings.json")
   [ -z "$slug" ] || line="$line · check: gh run list --repo $slug --workflow brief.yml"
   printf '%s' "$line"
 }
@@ -207,7 +237,7 @@ fi
 # The owner line rides the visible channel only when there is state to resume.
 # A stale brief is the manager's to report, in its own words, in the reply the
 # owner is already reading.
-jq -n --arg ctx "$msg" --arg owner "$owner" '{
+wk_jq -n --arg ctx "$msg" --arg owner "$owner" '{
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
     "additionalContext": $ctx

@@ -85,6 +85,10 @@ WK_HOME_RUNNER_FILES=(
   'jobs/brief-payload.js:brief/jobs/brief-payload.js'
   'jobs/cc-news.js:brief/jobs/cc-news.js'
   'jobs/stats.js:brief/jobs/stats.js'
+  'workflow/platform.sh:brief/workflow/platform.sh'
+  'workflow/participation.sh:brief/workflow/participation.sh'
+  'workflow/slug.sh:brief/workflow/slug.sh'
+  'workflow/slug.js:brief/workflow/slug.js'
   'workflow/lib.sh:brief/workflow/lib.sh'
   'workflow/discussions.sh:brief/workflow/discussions.sh'
   'workflow/home.sh:brief/workflow/home.sh'
@@ -256,7 +260,7 @@ wk_home_clone() {
 # only state the seed may write into. A clone that already carries the project
 # is another machine's work and is never re-seeded.
 wk_home_empty() {
-  [[ -d "$WK_HOME_DIR/.git" ]] || return 1
+  wk_is_repo_root "$WK_HOME_DIR" || return 1
   git -C "$WK_HOME_DIR" rev-parse --verify -q HEAD >/dev/null 2>&1 && return 1
   return 0
 }
@@ -276,7 +280,7 @@ wk_home_repoint_file_specs() {
   [[ -f "$pkg" ]] || return 0
   command -v jq >/dev/null 2>&1 || return 0
 
-  specs="$(jq -r '
+  specs="$(wk_jq -r '
     [(.dependencies // {}), (.devDependencies // {})]
     | add // {}
     | to_entries[]
@@ -863,7 +867,7 @@ wk_home_heal() {
 wk_home_missing_categories() {
   local meta="$1" name missing=''
   for name in "${WK_DISC_CATEGORIES[@]}"; do
-    printf '%s' "$meta" | jq -e --arg c "$name" '.categories | has($c)' >/dev/null 2>&1 || missing="$missing, $name"
+    printf '%s' "$meta" | wk_jq -e --arg c "$name" '.categories | has($c)' >/dev/null 2>&1 || missing="$missing, $name"
   done
   printf '%s' "${missing#, }"
 }

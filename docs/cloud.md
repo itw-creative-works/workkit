@@ -1,6 +1,6 @@
 # Provisioning a remote session
 
-How a cloud or headless Claude Code session comes up to the same standard as the machine you work on. The short answer: nothing personal syncs by itself (everything that travels, travels through git) and the pieces that cannot travel are few and known. (Issue #69 is where this design landed.)
+How a cloud or headless Claude Code session comes up to the same standard as the machine you work on. The short answer: nothing personal syncs by itself (everything that travels, travels through git) and the pieces that cannot travel are few and known.
 
 ## What travels on its own
 

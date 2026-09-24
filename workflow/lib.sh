@@ -6,9 +6,36 @@
 # and how to say something in whatever voice the caller already speaks.
 #
 # It sets no shell options: a sourced file that turned on `set -e` would change
-# the behavior of the script that sourced it. The one thing it runs at load is
-# `wk_palette`, which only reads the environment and sets this file's own
-# variables, so a caller speaks in the right colors from its very first line.
+# the behavior of the script that sourced it. Two things happen at load, both of
+# them reading the environment and writing only their own answer: `wk_palette`,
+# so a caller speaks in the right colors from its very first line, and the MSYS
+# symlink flag below, so every `ln -s` the engine makes is a link on Windows.
+
+# ── Platform ──────────────────────────────────────────────────────────────────
+# The spellings that differ per platform, sourced FIRST so every script that
+# sources this file has `wk_jq` before it reads any JSON. They sit in their own
+# file rather than here because the HOOKS need the same answers and source that
+# file directly (hooks/_lib.sh), and a hook has no business loading the engine's
+# addresses, its palette and its mutex to strip a carriage return.
+# shellcheck source=./platform.sh
+. "${BASH_SOURCE[0]%/*}/platform.sh"
+
+# ── Participation ─────────────────────────────────────────────────────────────
+# Is a directory a repo root, and what does a settings file's `enabled` key say:
+# the two predicates every reader of a repo's participation asks. Its own file
+# beside platform.sh, and for the same reason: the hooks ask both questions too
+# and source it directly, and a hook has no business loading the addresses below
+# to test a path for `.git`.
+# shellcheck source=./participation.sh
+. "${BASH_SOURCE[0]%/*}/participation.sh"
+
+# ── Slugs ─────────────────────────────────────────────────────────────────────
+# What a repo is called: `owner/repo` out of a remote URL, and out of a working
+# tree's origin. Its own file beside the two above, and for the same reason: a
+# HOOK names a repo too (safety/release-taken's bounce) and sources it directly,
+# and a hook has no business loading the addresses below to read an origin.
+# shellcheck source=./slug.sh
+. "${BASH_SOURCE[0]%/*}/slug.sh"
 
 # ── The addresses ─────────────────────────────────────────────────────────────
 # The user's workflow folder: a PLAIN folder and never a git repo (issue #77).
@@ -378,11 +405,68 @@ wk_poll_stop() {
 
 wk_palette
 
+# ── Real symlinks on Windows ──────────────────────────────────────────────────
+# Git Bash answers a plain `ln -s` with a COPY and exit 0 unless the MSYS
+# runtime is told otherwise, and a copy of the engine at `~/.claude/workkit` is
+# worse than no address at all: the marker scripts the skills call sit one level
+# ABOVE the engine folder (#245), so a copy hides them. Every `ln -s` the engine
+# makes goes through a script that sources this file (the engine address in
+# standards.sh, the `~/.local/bin/workkit` command in workkit.sh), so the flag
+# has one home here rather than one copy per call.
+# MSYS reads a space-separated flag list, so the flag is appended to whatever
+# the environment already set, and only once however many times this is sourced.
+# The dotfiles' setup/lib/helpers.sh carries the same three lines for the same
+# reason: same mechanism, both sides.
+case "${OSTYPE:-}" in
+  msys*|cygwin*)
+    [[ " ${MSYS:-} " == *" winsymlinks:nativestrict "* ]] \
+      || export MSYS="${MSYS:+$MSYS }winsymlinks:nativestrict"
+    ;;
+esac
+
+# Make one of those two links, and say whether the address now IS it.
+#
+# Both addresses are the MACHINE's, one path shared by every session on it, so
+# sessions opening at once in several repos all write the same one. The link is
+# therefore made under a name nobody reads and RENAMED onto the address: a
+# rename replaces whatever is there in a single step, and told not to follow
+# the address (`wk_mv_link`, platform.sh, where the two `mv` spellings for that
+# live) it never walks into the directory behind it. `ln -sfn` cannot do this
+# job. It unlinks the address and then creates it, so a session reading the
+# address in that gap finds nothing, and another session's checks in that gap
+# can delete the link the first one just made.
+#
+# It removes nothing at the address: WHAT is there when the link did not land
+# is the caller's to judge (a Git Bash copy is the engine's to clear, a real
+# file a human put there is not), and what comes back here is the one fact
+# worth judging, whether the address now resolves to the target that was asked
+# for. `ln` and `mv` keep their stderr for the same reason: a permission error
+# has to name itself instead of coming back as a silent no.
+wk_link() {
+  local target="$1" address="$2" tmp="$2.tmp.$$"
+  if ! ln -s "$target" "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  if ! wk_mv_link "$tmp" "$address"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  [ "$(readlink "$address" 2>/dev/null)" = "$target" ]
+}
+
 # ── JSON ──────────────────────────────────────────────────────────────────────
 # Write a jq edit back to a file safely: resolve symlinks first (this system's
 # whole model is symlinking config out of ~, and writing the temp file over the
 # LINK would replace it with a regular file and orphan the real one), refuse to
 # touch a file jq cannot parse, and never leave a .tmp behind.
+#
+# The WRITE goes through wk_jq too, which is not about a poisoned read: a file
+# these edits land in is committed (.workkit/settings.json), and a text-mode jq
+# would rewrite every line of it with a CRLF on a Windows run, so the file's
+# shape would flip with whichever machine touched it last. One shape, every
+# platform. A `\r` INSIDE a string is a two-character escape in JSON and is
+# never a raw byte, so nothing a value holds is touched.
 #
 # Usage: wk_json_edit <file> <jq args...>
 wk_json_edit() {
@@ -390,14 +474,14 @@ wk_json_edit() {
   local target tmp rc=0
   command -v jq >/dev/null 2>&1 || return 1
   target=$(readlink -f "$file" 2>/dev/null || printf '%s' "$file")
-  if ! jq empty "$target" 2>/dev/null; then
+  if ! wk_jq empty "$target" 2>/dev/null; then
     wk_warn "settings: $target is not valid JSON; fix or remove it, then try again"
     return 1
   fi
   tmp="$target.tmp.$$"
   # shellcheck disable=SC2064  # expand $tmp now: it is what this call must clean up
   trap "rm -f '$tmp'" RETURN
-  jq "$@" "$target" >"$tmp" || rc=$?
+  wk_jq "$@" "$target" >"$tmp" || rc=$?
   if [[ "$rc" -ne 0 ]] || [[ ! -s "$tmp" ]]; then
     wk_warn "settings: could not write $target (left unchanged)"
     return 1
@@ -421,6 +505,7 @@ wk_json_edit() {
 # whichever run holds it, and removing it on the way out of a run that never had
 # it would let a third writer race the current holder.
 WK_STATE_LOCK="$WK_USER_DIR/.state.lock"
+
 
 wk_take_state_lock() {
   local waited=0
@@ -449,25 +534,5 @@ wk_json_get() {
   local file="$1" filter="$2"
   [[ -f "$file" ]] || return 0
   command -v jq >/dev/null 2>&1 || return 0
-  jq -r "$filter // empty" "$file" 2>/dev/null || true
-}
-
-# ── Slugs ─────────────────────────────────────────────────────────────────────
-# `owner/repo` from a git remote URL, in either form git writes it. The same
-# three shapes tower/api/lib/repos.js parses, so the roster and the home repo's
-# project list can never disagree about what a repo is called.
-wk_slug_from_remote() {
-  local url="${1:-}" trimmed
-  [[ -n "$url" ]] || return 0
-  trimmed="${url%.git}"
-  trimmed="${trimmed%/}"
-  [[ "$trimmed" =~ [:/]([^:/]+)/([^/]+)$ ]] || return 0
-  printf '%s/%s' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
-}
-
-# The origin slug of a git working tree, or empty when it has none.
-wk_repo_slug() {
-  local dir="${1:-.}" url
-  url="$(git -C "$dir" remote get-url origin 2>/dev/null || true)"
-  wk_slug_from_remote "$url"
+  wk_jq -r "$filter // empty" "$file" 2>/dev/null || true
 }

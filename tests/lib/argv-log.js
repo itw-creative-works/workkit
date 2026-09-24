@@ -27,14 +27,19 @@
 //
 
 const fs = require('fs');
+const { shellPath } = require('./platform');
 
 const NUL = '\0';
 const RS = '\x1e';
 
 /**
  * Bash line that appends the current invocation's argv to `logFile`.
- * Emitted into a stub script, so `logFile` must already be shell-safe (a
- * mkdtemp path is).
+ *
+ * The path crosses INTO a shell here and nowhere else, so it is spelled for the
+ * shell here: a caller hands the native path it built and this is the one place
+ * that knows the line is bash. A path already in the shell's spelling comes
+ * back unchanged, so handing one in is harmless rather than a second
+ * translation. The path must also be shell-safe, which a mkdtemp path is.
  *
  * ONE printf, so one append, as long as the record fits bash's stdout buffer
  * (1024 bytes on macOS). Under that, O_APPEND makes the write atomic, so two
@@ -51,10 +56,12 @@ const RS = '\x1e';
  * @param {string} logFile - absolute path to append to
  * @returns {string} bash source, one line
  */
-const recordArgv = (logFile) => `printf '%s\\0' "$@" $'\\036' >> "${logFile}"`;
+const recordArgv = (logFile) => `printf '%s\\0' "$@" $'\\036' >> "${shellPath(logFile)}"`;
 
 /**
  * Read a log written by `recordArgv` back into one argv array per invocation.
+ * The path is Node's own to open, so it stays native: only the line the stub
+ * runs is spelled for a shell.
  * @param {string} logFile - path written by a stub; a missing file reads as no calls
  * @returns {string[][]} one array of arguments per recorded call
  */

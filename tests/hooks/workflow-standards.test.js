@@ -12,6 +12,9 @@ const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, hasLaunchd, WORKKIT_DIR: W } = require('../lib/harness');
+const {
+  BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, basePathWithout, joinPath,
+} = require('../lib/platform');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'workflow', 'standards', 'run.sh');
 
@@ -24,7 +27,7 @@ const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 // CHANGELOGs with it, and its hook-layer self-check counts it among the tools
 // the hooks call. A PATH without it makes every heal here report a machine that
 // does not exist.
-const BASE_PATH = `/usr/bin:/bin:/usr/sbin:/sbin:${path.dirname(process.execPath)}`;
+const BASE_PATH = joinPath(SYSTEM_PATH, NODE_DIR);
 
 // The ignore line the engine writes, built from the harness constant so the
 // directory's name lives in exactly one place here too.
@@ -49,13 +52,13 @@ const makeRepo = ({ optIn = true, settings = '{ "version": 1, "enabled": true }\
 
 // Record a decline the way the engine does, through its own entry point, so
 // the test proves the two halves agree on the file's shape.
-const decline = (repo, workflowHome) => spawnSync('bash', [
-  path.join(WORKFLOW_DIR, 'standards.sh'), '--decline', repo,
+const decline = (repo, workflowHome) => spawnSync(BASH, [...NO_RC,
+  shellPath(path.join(WORKFLOW_DIR, 'standards.sh')), '--decline', shellPath(repo),
 ], {
   env: {
     ...process.env,
-    WORKFLOW_HOME: workflowHome,
-    WORKFLOW_CLAUDE_HOME: path.join(mkTmp(), 'claude-home'),
+    WORKFLOW_HOME: shellPath(workflowHome),
+    WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp(), 'claude-home')),
   },
   encoding: 'utf8',
 });
@@ -81,27 +84,45 @@ const seedSetup = (home) => {
   return link;
 };
 
+
+// The machine that does NOT have `gh`. A runner ships the real one in /usr/bin,
+// so a case about its absence has to take it off the PATH rather than trust the
+// system one, or the REAL gh answers and the case passes for another reason.
+// Built once, since the mirror links every system tool, and removed with the
+// suite.
+let noGhPath = null;
+const pathWithoutGh = () => {
+  if (!noGhPath) noGhPath = basePathWithout(mkTmp(), 'gh');
+  return noGhPath;
+};
+const dropPathWithoutGh = () => {
+  if (noGhPath) cleanup(path.dirname(noGhPath));
+  noGhPath = null;
+};
+
 const runHook = (cwd, { cache, pathPrefix, home, workflowDir, workflowHome, setup = true } = {}) => {
   const cacheDir = cache || mkTmp();
-  const env = {
-    // A scratch HOME by default: the hook's daily run now also drives the
-    // machine-side upkeep (`workkit update --auto`), which reads
-    // ~/Library/LaunchAgents and ~/.local/bin. Neither may ever be the
-    // developer's own.
-    HOME: home || mkTmp(),
-    PATH: pathPrefix ? `${pathPrefix}:${BASE_PATH}` : BASE_PATH,
-    WORKFLOW_STANDARDS_CACHE: cacheDir,
+  // The home stays NATIVE for anything this suite writes into it, and goes
+  // through the shell's spelling only on the way into the child's environment.
+  const homeDir = home || mkTmp();
+  // A scratch HOME by default: the hook's daily run now also drives the
+  // machine-side upkeep (`workkit update --auto`), which reads
+  // ~/Library/LaunchAgents and ~/.local/bin. Neither may ever be the
+  // developer's own.
+  const env = homeEnv(homeDir, {
+    PATH: pathPrefix ? joinPath(pathPrefix, BASE_PATH) : joinPath(pathWithoutGh(), NODE_DIR),
+    WORKFLOW_STANDARDS_CACHE: shellPath(cacheDir),
     // OUTSIDE the marker cache: the engine now seeds the user settings file on
     // every run, and a workflow-home nested in the cache would be counted by
     // the tests that assert one marker file per repo.
-    WORKFLOW_HOME: workflowHome || path.join(mkTmp(), 'workflow-home'),
-    WORKFLOW_CLAUDE_HOME: path.join(mkTmp(), 'claude-home'),
-  };
-  if (setup) seedSetup(env.HOME);
+    WORKFLOW_HOME: shellPath(workflowHome || path.join(mkTmp(), 'workflow-home')),
+    WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp(), 'claude-home')),
+  });
+  if (setup) seedSetup(homeDir);
   const dir = workflowDir === undefined ? WORKFLOW_DIR : workflowDir;
-  if (dir !== null) env.WORKFLOW_DIR = dir;
-  const res = spawnSync('bash', [HOOK], {
-    input: JSON.stringify({ cwd, source: 'startup' }),
+  if (dir !== null) env.WORKFLOW_DIR = shellPath(dir);
+  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
+    input: JSON.stringify({ cwd: shellPath(cwd), source: 'startup' }),
     env,
     encoding: 'utf8',
     timeout: 20000,
@@ -257,10 +278,10 @@ const run = async () => {
     // the two can never drift apart in silence.
     const pattern = fs.readFileSync(HOOK, 'utf8').match(/grep -E '(\^\[\[:space:\]\]\*[^']+)'/);
     assert(pattern, 'the hook filters on a glyph pattern');
-    const lib = path.join(WORKFLOW_DIR, 'lib.sh');
-    const said = spawnSync('bash', ['-c',
+    const lib = shellPath(path.join(WORKFLOW_DIR, 'lib.sh'));
+    const said = spawnSync(BASH, [...NO_RC, '-c',
       `. ${JSON.stringify(lib)}; WK_LOG_INDENT='  '; WK_LOG_STDERR=1 wk_ok 'engine: linked a → b' 2>&1 | grep -E ${JSON.stringify(pattern[1])}`,
-    ], { encoding: 'utf8', env: { PATH: BASE_PATH, HOME: mkTmp(), WORKKIT_COLOR: '0' } });
+    ], { encoding: 'utf8', env: homeEnv(mkTmp(), { PATH: BASE_PATH, WORKKIT_COLOR: '0' }) });
     assertEq(said.status, 0, `the pattern matched, got: ${JSON.stringify(said.stdout)}`);
     assert(/engine: linked a → b$/.test(said.stdout.trim()), `on the whole line, got: ${JSON.stringify(said.stdout)}`);
   });
@@ -339,7 +360,7 @@ const run = async () => {
     const { code, stdout, cacheDir } = runHook(repo, { workflowDir: engine });
     assertEq(code, 0, 'a missing engine never wedges the session');
     const ctx = JSON.parse(stdout).hookSpecificOutput.additionalContext;
-    assert(ctx.includes(path.join(engine, 'standards.sh')), `names the path it looked at, got: ${ctx}`);
+    assert(ctx.includes(`${shellPath(engine)}/standards.sh`), `names the path it looked at, got: ${ctx}`);
     assert(ctx.includes('plugin'), 'tells the human what to reinstall');
     assert(!fs.existsSync(path.join(repo, '.github')), 'and heals nothing');
     cleanup(repo); cleanup(cacheDir); cleanup(engine);
@@ -461,8 +482,7 @@ const run = async () => {
   // never reached from a test.
   const launchctlShim = () => {
     const dir = mkTmp();
-    fs.writeFileSync(path.join(dir, 'launchctl'), '#!/usr/bin/env bash\nif [[ "$1" == \'print\' ]]; then exit 1; fi\nexit 0\n');
-    fs.chmodSync(path.join(dir, 'launchctl'), 0o755);
+    stubTool(dir, 'launchctl', ['#!/usr/bin/env bash', "if [[ \"$1\" == 'print' ]]; then exit 1; fi", 'exit 0']);
     return dir;
   };
 
@@ -534,6 +554,7 @@ const run = async () => {
 
 module.exports = async () => {
   await run();
+  dropPathWithoutGh();
   return summary();
 };
 

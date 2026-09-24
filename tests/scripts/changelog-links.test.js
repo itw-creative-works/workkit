@@ -12,7 +12,10 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync, execFileSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const {
+  group, test, assert, assertEq, skipSuite, summary, selfRun,
+} = require('../lib/harness');
+const { IS_WINDOWS, NO_NODE_STUB, SYSTEM_PATH, stubTool, pathWith } = require('../lib/platform');
 const { recordArgv } = require('../lib/argv-log');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'changelog-links.js');
@@ -28,15 +31,15 @@ const makeGhStub = ({ login = 'who', fails = false } = {}) => {
   const dir = mkTmp();
   const bin = path.join(dir, 'bin');
   fs.mkdirSync(bin, { recursive: true });
-  fs.writeFileSync(path.join(bin, 'gh'), [
+  stubTool(bin, 'gh', [
     '#!/usr/bin/env bash',
     recordArgv(path.join(dir, 'gh.log')),
     ...(fails ? ['exit 1'] : [`printf '%s\\n' "${login}"`, 'exit 0']),
-  ].join('\n'), { mode: 0o755 });
+  ]);
   return { binDir: bin, dir };
 };
 
-// `\u2014` in the fixtures below is the CHANGELOG entry separator (U+2014).
+// ` - ` in the fixtures below is the CHANGELOG entry separator (a spaced hyphen).
 const CHANGELOG = (...bullets) => [
   '# Changelog',
   '',
@@ -70,7 +73,7 @@ const mkRepo = (changelog, commits) => {
 const runScript = (cwd, stub, args = []) => {
   const res = spawnSync('node', [SCRIPT, ...args], {
     cwd,
-    env: { ...process.env, PATH: stub ? `${stub.binDir}:${process.env.PATH}` : '/usr/bin:/bin' },
+    env: { ...process.env, PATH: stub ? pathWith(stub.binDir) : SYSTEM_PATH },
     encoding: 'utf8',
     timeout: 20000,
   });
@@ -80,6 +83,15 @@ const runScript = (cwd, stub, args = []) => {
 const readLog = (dir) => fs.readFileSync(path.join(dir, 'CHANGELOG.md'), 'utf8');
 
 const run = async () => {
+  // Every case here puts a fake `gh` in front of the script under test, and the
+  // script reaches it through execFile: no stub is startable that way on
+  // Windows (tests/lib/platform.js, `stubTool`), so each case would ask the
+  // machine's own gh instead of the one it wrote. The suite says so rather than
+  // passing on an answer it never asked for.
+  if (IS_WINDOWS) {
+    skipSuite(NO_NODE_STUB);
+  }
+
   group('changelog-links: reading the remote');
 
   await test('parses both GitHub remote URL forms, and rejects others', () => {
@@ -98,11 +110,29 @@ const run = async () => {
     cleanup(dir);
   });
 
+  await test('the slug comes from the engine rule, behind a GitHub-only gate', () => {
+    // repoSlug reads `slugFromRemote` (workflow/slug.js) rather than parsing an
+    // origin of its own, so it inherits EVERY trailing separator coming off,
+    // not one. The gate above it stays: the links this file builds are
+    // GitHub's, so a remote anywhere else has nothing to link to.
+    const dir = mkTmp();
+    git(dir, 'init', '-q', '-b', 'main');
+    git(dir, 'remote', 'add', 'origin', 'https://github.com/alice/.dotfiles//');
+    assertEq(repoSlug(dir), 'alice/.dotfiles', 'every trailing slash, not one');
+    git(dir, 'remote', 'set-url', 'origin', 'https://github.com/alice/.dotfiles/');
+    assertEq(repoSlug(dir), 'alice/.dotfiles', 'and one is still tolerated');
+    git(dir, 'remote', 'set-url', 'origin', 'C:\\Users\\x\\theirs.git');
+    assertEq(repoSlug(dir), null, 'a local path names a repo, but not one on GitHub');
+    git(dir, 'remote', 'set-url', 'origin', 'https://gitlab.com/alice/x.git');
+    assertEq(repoSlug(dir), null, 'and neither does another host');
+    cleanup(dir);
+  });
+
   group('changelog-links: filling entries in');
 
   await test('an entry gains its commit link and the author handle', () => {
     const { dir, shas } = mkRepo(
-      CHANGELOG('- [#4](../../issues/4) \u2014 Plugins install from settings.json.'),
+      CHANGELOG('- [#4](../../issues/4) - Plugins install from settings.json.'),
       ['refactor(setup): install plugins\n\nFixes #4'],
     );
     const stub = makeGhStub({ login: 'Octocat' });
@@ -113,15 +143,15 @@ const run = async () => {
     assert(text.includes('Thanks [@Octocat]!'), `a shortcut attribution, got: ${text}`);
     assert(text.includes('[@Octocat]: https://github.com/Octocat'), `defined once at the bottom, got: ${text}`);
     assert(!text.includes('github.com/o/r'), `the repo URL appears nowhere, got: ${text}`);
-    assert(text.includes('\u2014 Plugins install from settings.json.'), `prose intact, got: ${text}`);
+    assert(text.includes('- Plugins install from settings.json.'), `prose intact, got: ${text}`);
     cleanup(dir); cleanup(stub.dir);
   });
 
   await test('a contributor is defined once however many entries name them', () => {
     const { dir } = mkRepo(
       CHANGELOG(
-        '- [#4](../../issues/4) \u2014 First.',
-        '- [#5](../../issues/5) \u2014 Second.',
+        '- [#4](../../issues/4) - First.',
+        '- [#5](../../issues/5) - Second.',
       ),
       ['feat: a\n\nFixes #4', 'feat: b\n\nFixes #5'],
     );
@@ -138,7 +168,7 @@ const run = async () => {
     // paragraph's lazy continuation and the reference renders as literal text.
     // A stray definition elsewhere in the file must not suppress the blank line.
     const { dir } = mkRepo(
-      `[@old]: https://github.com/old\n\n${CHANGELOG('- [#4](../../issues/4) \u2014 Text.')}`,
+      `[@old]: https://github.com/old\n\n${CHANGELOG('- [#4](../../issues/4) - Text.')}`,
       ['feat: a\n\nFixes #4'],
     );
     const stub = makeGhStub({ login: 'fresh' });
@@ -153,7 +183,7 @@ const run = async () => {
   await test('a definition differing only in case is not duplicated', () => {
     // Markdown labels are case-insensitive, so `[@Who]:` already defines `who`.
     const { dir } = mkRepo(
-      `${CHANGELOG('- [#4](../../issues/4) \u2014 Text.')}\n[@Who]: https://github.com/Who\n`,
+      `${CHANGELOG('- [#4](../../issues/4) - Text.')}\n[@Who]: https://github.com/Who\n`,
       ['feat: a\n\nFixes #4'],
     );
     const stub = makeGhStub({ login: 'who' });
@@ -167,7 +197,7 @@ const run = async () => {
     // file ending on what looked like a stray line. The section gives the
     // `Thanks [@who]!` credits a visible roll.
     const { dir } = mkRepo(
-      CHANGELOG('- [#4](../../issues/4) \u2014 Text.'),
+      CHANGELOG('- [#4](../../issues/4) - Text.'),
       ['feat: a\n\nFixes #4'],
     );
     const stub = makeGhStub({ login: 'who' });
@@ -185,7 +215,7 @@ const run = async () => {
     // The section is rebuilt on every run, so a non-idempotent rebuild would
     // stack a second heading or a second rule on each release.
     const { dir } = mkRepo(
-      CHANGELOG('- [#4](../../issues/4) \u2014 Text.'),
+      CHANGELOG('- [#4](../../issues/4) - Text.'),
       ['feat: a\n\nFixes #4'],
     );
     const stub = makeGhStub({ login: 'who' });
@@ -199,7 +229,7 @@ const run = async () => {
 
   await test('a bare entry ends with exactly one handle, however often the backfill runs', () => {
     const { dir } = mkRepo(
-      CHANGELOG('- [#4](../../issues/4) \u2014 Text.'),
+      CHANGELOG('- [#4](../../issues/4) - Text.'),
       ['feat: a\n\nFixes #4'],
     );
     const stub = makeGhStub({ login: 'alice' });
@@ -213,9 +243,9 @@ const run = async () => {
   await test('an entry already carrying its handle is not given a second one', () => {
     // Entries are written at build time, handle and all, the normal park flow.
     // The backfill used to append its own attribution regardless, and every
-    // such entry shipped "Thanks [@who]! Thanks [@who]! —" (issue #199).
+    // such entry shipped "Thanks [@who]! Thanks [@who]! -".
     const { dir, shas } = mkRepo(
-      CHANGELOG('- [#4](../../issues/4) Thanks [@alice]! \u2014 Text.'),
+      CHANGELOG('- [#4](../../issues/4) Thanks [@alice]! - Text.'),
       ['feat: a\n\nFixes #4'],
     );
     const stub = makeGhStub({ login: 'alice' });
@@ -229,14 +259,14 @@ const run = async () => {
 
   await test('a later contributor joins the existing section', () => {
     const { dir } = mkRepo(
-      CHANGELOG('- [#4](../../issues/4) \u2014 First.'),
+      CHANGELOG('- [#4](../../issues/4) - First.'),
       ['feat: a\n\nFixes #4'],
     );
     runScript(dir, makeGhStub({ login: 'first' }));
 
     // A second release: a new entry, a new commit, a different person.
     fs.writeFileSync(path.join(dir, 'CHANGELOG.md'),
-      readLog(dir).replace('### Added\n', '### Added\n\n- [#5](../../issues/5) \u2014 Second.\n'));
+      readLog(dir).replace('### Added\n', '### Added\n\n- [#5](../../issues/5) - Second.\n'));
     fs.appendFileSync(path.join(dir, 'work.txt'), 'more\n');
     git(dir, 'add', '-A');
     git(dir, 'commit', '-qm', 'feat: b\n\nFixes #5');
@@ -252,7 +282,7 @@ const run = async () => {
 
   await test('an existing contributor definition is never rewritten', () => {
     const { dir } = mkRepo(
-      `${CHANGELOG('- [#4](../../issues/4) \u2014 Text.')}\n[@who]: https://example.com/custom\n`,
+      `${CHANGELOG('- [#4](../../issues/4) - Text.')}\n[@who]: https://example.com/custom\n`,
       ['feat: a\n\nFixes #4'],
     );
     const stub = makeGhStub({ login: 'who' });
@@ -265,7 +295,7 @@ const run = async () => {
 
   await test('an issue closed by two commits lists both, thanking each person once', () => {
     const { dir, shas } = mkRepo(
-      CHANGELOG('- [#7](https://github.com/o/r/issues/7) \u2014 The two-part change.'),
+      CHANGELOG('- [#7](https://github.com/o/r/issues/7) - The two-part change.'),
       ['feat: part one\n\nFixes #7', 'feat: part two\n\nFixes #7'],
     );
     const stub = makeGhStub({ login: 'who' });
@@ -281,7 +311,7 @@ const run = async () => {
     // testing the whole line skipped this entry silently, never filled, never
     // reported as unmatched.
     const { dir, shas } = mkRepo(
-      CHANGELOG('- [#4](../../issues/4) \u2014 Reverts [`abcdef1`](../../commit/abcdef1) from the last release.'),
+      CHANGELOG('- [#4](../../issues/4) - Reverts [`abcdef1`](../../commit/abcdef1) from the last release.'),
       ['fix: revert\n\nFixes #4'],
     );
     const stub = makeGhStub({ login: 'who' });
@@ -298,7 +328,7 @@ const run = async () => {
     // The writer normalizes for parsing but must join with the file's dominant
     // ending. It used to hand every CRLF file back as LF.
     const { dir, shas } = mkRepo(
-      CHANGELOG('- [#4](../../issues/4) \u2014 Text.').replace(/\n/g, '\r\n'),
+      CHANGELOG('- [#4](../../issues/4) - Text.').replace(/\n/g, '\r\n'),
       ['feat: a\n\nFixes #4'],
     );
     const stub = makeGhStub({ login: 'who' });
@@ -312,7 +342,7 @@ const run = async () => {
 
   await test('re-running changes nothing: an entry with links is left alone', () => {
     const { dir } = mkRepo(
-      CHANGELOG('- [#4](https://github.com/o/r/issues/4) \u2014 Plugins install from settings.json.'),
+      CHANGELOG('- [#4](https://github.com/o/r/issues/4) - Plugins install from settings.json.'),
       ['refactor: x\n\nFixes #4'],
     );
     const stub = makeGhStub();
@@ -325,7 +355,7 @@ const run = async () => {
   });
 
   await test('an entry whose issue no commit closes is left untouched', () => {
-    const body = '- [#99](https://github.com/o/r/issues/99) \u2014 An entry from an older release.';
+    const body = '- [#99](https://github.com/o/r/issues/99) - An entry from an older release.';
     const { dir } = mkRepo(CHANGELOG(body), ['feat: unrelated work']);
     const stub = makeGhStub();
     runScript(dir, stub);
@@ -334,7 +364,7 @@ const run = async () => {
   });
 
   await test('a `(no issue)` entry is left untouched', () => {
-    const body = '- (no issue) \u2014 A change with nothing filed for it.';
+    const body = '- (no issue) - A change with nothing filed for it.';
     const { dir } = mkRepo(CHANGELOG(body), ['feat: x\n\nFixes #4']);
     const stub = makeGhStub();
     runScript(dir, stub);
@@ -346,7 +376,7 @@ const run = async () => {
     // Offline is an expected external condition, not a failure: the commit link
     // comes from git alone, so the release is never blocked on the network.
     const { dir, shas } = mkRepo(
-      CHANGELOG('- [#4](https://github.com/o/r/issues/4) \u2014 Plugins install from settings.json.'),
+      CHANGELOG('- [#4](https://github.com/o/r/issues/4) - Plugins install from settings.json.'),
       ['refactor: x\n\nFixes #4'],
     );
     const stub = makeGhStub({ fails: true });
@@ -362,8 +392,8 @@ const run = async () => {
   await test('`Closes #N` and `Resolves #N` count as closing trailers too', () => {
     const { dir } = mkRepo(
       CHANGELOG(
-        '- [#4](https://github.com/o/r/issues/4) \u2014 First.',
-        '- [#5](https://github.com/o/r/issues/5) \u2014 Second.',
+        '- [#4](https://github.com/o/r/issues/4) - First.',
+        '- [#5](https://github.com/o/r/issues/5) - Second.',
       ),
       ['feat: a\n\nCloses #4', 'feat: b\n\nResolves #5'],
     );
@@ -380,7 +410,7 @@ const run = async () => {
   // damage is permanent, so each one is pinned.
 
   await test('an example bullet inside a fenced block is left alone', () => {
-    const fenced = '- [#4](https://github.com/o/r/issues/4) \u2014 What changed.';
+    const fenced = '- [#4](https://github.com/o/r/issues/4) - What changed.';
     const { dir } = mkRepo([
       '# Changelog',
       '',
@@ -412,7 +442,7 @@ const run = async () => {
       '',
       '### Added',
       '',
-      '- [#4](../../issues/4) \u2014 Text.',
+      '- [#4](../../issues/4) - Text.',
       '',
       '## Format',
       '',
@@ -425,14 +455,14 @@ const run = async () => {
       '```',
       '',
       '## [1.0.0] - 2020-01-01',
-      '- (no issue) \u2014 The first release.',
+      '- (no issue) - The first release.',
       '',
     ].join('\n'), ['feat: x\n\nFixes #4']);
     const stub = makeGhStub({ login: 'who' });
     runScript(dir, stub);
     const text = readLog(dir);
     assert(text.includes('## [1.0.0] - 2020-01-01'), `the released section survives, got: ${text}`);
-    assert(text.includes('- (no issue) \u2014 The first release.'), 'its entry survives');
+    assert(text.includes('- (no issue) - The first release.'), 'its entry survives');
     assertEq((text.match(/```/g) || []).length, 2, 'the fence is still closed');
     cleanup(dir); cleanup(stub.dir);
   });
@@ -447,7 +477,7 @@ const run = async () => {
       '',
       '### Added',
       '',
-      '- [#4](../../issues/4) \u2014 Text.',
+      '- [#4](../../issues/4) - Text.',
       '',
       '---',
       '',
@@ -462,7 +492,7 @@ const run = async () => {
   await test('an entry in an already-released section is left alone', () => {
     // An old release whose issue number recurs in this range must not be
     // stamped with this release's sha.
-    const old = '- [#4](https://github.com/o/r/issues/4) \u2014 The 2020 entry.';
+    const old = '- [#4](https://github.com/o/r/issues/4) - The 2020 entry.';
     const { dir } = mkRepo([
       '# Changelog',
       '',
@@ -485,7 +515,7 @@ const run = async () => {
 
   await test('an entry whose issue has no closing commit is named, not passed in silence', () => {
     const { dir } = mkRepo(
-      CHANGELOG('- [#99](https://github.com/o/r/issues/99) \u2014 Nothing closes this one.'),
+      CHANGELOG('- [#99](https://github.com/o/r/issues/99) - Nothing closes this one.'),
       ['feat: unrelated work with no trailer'],
     );
     const stub = makeGhStub();
@@ -496,7 +526,7 @@ const run = async () => {
   });
 
   await test('a flag with no value is a usage error, not a stack trace', () => {
-    const { dir } = mkRepo(CHANGELOG('- [#4](x) \u2014 Text.'), ['feat: x\n\nFixes #4']);
+    const { dir } = mkRepo(CHANGELOG('- [#4](x) - Text.'), ['feat: x\n\nFixes #4']);
     const stub = makeGhStub();
     for (const flag of ['--file', '--range']) {
       const { code, out } = runScript(dir, stub, [flag]);
@@ -508,7 +538,7 @@ const run = async () => {
   });
 
   await test('a range git cannot read fails with a readable message', () => {
-    const { dir } = mkRepo(CHANGELOG('- [#4](x) \u2014 Text.'), ['feat: x\n\nFixes #4']);
+    const { dir } = mkRepo(CHANGELOG('- [#4](x) - Text.'), ['feat: x\n\nFixes #4']);
     const stub = makeGhStub();
     const { code, out } = runScript(dir, stub, ['--range', 'v9.9.9..HEAD']);
     assertEq(code, 1, 'exit 1');
@@ -518,7 +548,7 @@ const run = async () => {
 
   await test('--dry-run reports the count and writes nothing', () => {
     const { dir } = mkRepo(
-      CHANGELOG('- [#4](https://github.com/o/r/issues/4) \u2014 Plugins install from settings.json.'),
+      CHANGELOG('- [#4](https://github.com/o/r/issues/4) - Plugins install from settings.json.'),
       ['refactor: x\n\nFixes #4'],
     );
     const before = readLog(dir);
@@ -531,7 +561,7 @@ const run = async () => {
 
   await test('--range limits which commits are considered', () => {
     const { dir } = mkRepo(
-      CHANGELOG('- [#4](https://github.com/o/r/issues/4) \u2014 Plugins install from settings.json.'),
+      CHANGELOG('- [#4](https://github.com/o/r/issues/4) - Plugins install from settings.json.'),
       ['refactor: x\n\nFixes #4', 'chore: later work'],
     );
     const stub = makeGhStub();
@@ -541,7 +571,7 @@ const run = async () => {
   });
 
   await test('a repo with no GitHub remote exits non-zero instead of writing a broken link', () => {
-    const { dir } = mkRepo(CHANGELOG('- [#4](x) \u2014 Text.'), ['feat: x\n\nFixes #4']);
+    const { dir } = mkRepo(CHANGELOG('- [#4](x) - Text.'), ['feat: x\n\nFixes #4']);
     git(dir, 'remote', 'set-url', 'origin', 'https://gitlab.com/o/r.git');
     const stub = makeGhStub();
     const { code, out } = runScript(dir, stub);
@@ -553,7 +583,7 @@ const run = async () => {
   await test('a repo with no origin remote gets its own message', () => {
     // Distinct from "not a GitHub remote": the fix here is adding a remote,
     // not changing one.
-    const { dir } = mkRepo(CHANGELOG('- [#4](x) \u2014 Text.'), ['feat: x\n\nFixes #4']);
+    const { dir } = mkRepo(CHANGELOG('- [#4](x) - Text.'), ['feat: x\n\nFixes #4']);
     git(dir, 'remote', 'remove', 'origin');
     const stub = makeGhStub();
     const { code, out } = runScript(dir, stub);

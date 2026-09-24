@@ -16,15 +16,17 @@ Label vocabulary (SSOT: `~/.claude/workkit/labels.json`, and every repo's own `g
 In the FULL drain only (a scoped run never reads the capture file and sets no marker, § Scoped mode), before reading anything, record that triage is running. The `safety/capture-guard` hook checks this marker before allowing a read of `.workkit/capture.md` OR the rewrite that clears the drained entries, which is the only write this file ever takes from an agent (adding to it is the owner's alone). It is the owner's capture surface at every other moment. The marker is keyed to the repo root the capture file belongs to:
 
 ```sh
-mkdir -p "${TMPDIR:-/tmp}/claude-triage-marker" && touch "${TMPDIR:-/tmp}/claude-triage-marker/$({ git rev-parse --show-toplevel 2>/dev/null || echo "$HOME"; } | tr -d '\n' | shasum | cut -d' ' -f1)"
+bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/workkit/..}/scripts/triage-marker.sh"
 ```
+
+The script keys the marker to the repo root the session stands in, falling back to `$HOME` outside every repo, and names it through the same helper the hook reads it with, so the two can never drift. (`CLAUDE_PLUGIN_ROOT` is set only inside hook commands, so the fallback is the plugin root reached through the engine's stable address: `~/.claude/workkit` is the engine folder INSIDE the plugin, and its parent is the plugin itself.)
 
 ## Sources to drain (the FULL drain; § Scoped mode reads only the named issues)
 
 1. **Open `status:inbox` issues** on the cwd repo: `gh issue list --state open --label status:inbox --json number,title,body,labels --limit 1000`.
 2. **`.workkit/capture.md`**: the local, gitignored capture file (offline moments, free-form dumps).
 3. **Mid-chat note dumps**: same routing, no file needed first.
-4. **The HQ pass** (#100): the home repo's own open `status:inbox` issues (`gh issue list --repo <site.repo> --state open --label status:inbox ... --limit 1000`, the `site.repo` in `~/.workkit/settings.json`), routed with the same table below, from any repo. This is how the nursery drains, since no session ever opens in the clone. When captures cluster around one project, propose graduation (§ Graduation). No `site.repo`, or HQ unreachable: name the skip in the Filed trail, never silent.
+4. **The HQ pass**: the home repo's own open `status:inbox` issues (`gh issue list --repo <site.repo> --state open --label status:inbox ... --limit 1000`, the `site.repo` in `~/.workkit/settings.json`), routed with the same table below, from any repo. This is how the nursery drains, since no session ever opens in the clone. When captures cluster around one project, propose graduation (§ Graduation). No `site.repo`, or HQ unreachable: name the skip in the Filed trail, never silent.
 
 A capture made outside every participating repo is already a `status:inbox` issue on the home repo. `wk.sh note` files it there directly, so the HQ pass is where it gets drained.
 
@@ -66,7 +68,7 @@ Relabel with one command so the status stays single:
 
 Each entry becomes an issue (`gh issue create --label status:inbox,type:<kind>` then route it, or file it routed directly). Delete only the entries that actually landed somewhere; keep the file header. Offline: leave the file untouched and say the queue could not be reached.
 
-## Graduation (the HQ pass's proposal, #100)
+## Graduation (the HQ pass's proposal)
 
 The system proposes, the owner creates; no automation ever makes a repo or moves an issue on its own. When HQ captures cluster around one project (several issues or comments naming the same not-yet-project), propose graduation in chat and wait for the owner's word.
 
@@ -76,12 +78,12 @@ The system proposes, the owner creates; no automation ever makes a repo or moves
 
 ## Always end with the Filed trail
 
-The trail IS the reply's `**🗂️ Filed**` section, the same heading and bullet shape as every other Filed section the owner reads, so the two never differ. Each bullet leads with the issue link and reads in the cold-reader line (`docs/project-state.md` § Restating an issue); an entry that went somewhere with no issue (a docs page, another repo's path) leads with that destination instead.
+The trail IS the reply's `**🗂️ Filed**` section, the same heading and bullet shape as every other Filed section the owner reads, so the two never differ. Each bullet's bold lead carries its number, the issue link and five words, and the bullet reads in the cold-reader line (`docs/project-state.md` § Restating an issue); an entry that went somewhere with no issue (a docs page, another repo's path) leads with that destination instead.
 
 ```
 **🗂️ Filed**
-- [#N](url): <what the entry is, what this run did with it, what is needed next>
-- <repo or docs path>: <what the entry is and why it landed there>
+- **1. [#N](url) <five words>**: <what the entry is, what this run did with it, what is needed next>
+- **2. <repo or docs path>**: <what the entry is and why it landed there>
 - ...
 ```
 
@@ -95,7 +97,7 @@ Numbers in the ask mean SCOPED: only the issues named are read, and nothing else
 
 Nothing else runs: no `.workkit/capture.md` drain, no HQ pass, and no marker for the capture guard, since the capture file is never read.
 
-**"Accept" flips only on a real spec.** `accept 215` earns `status:specced` only when the issue already carries a `## Spec` with content: a spec the owner accepted, or the literal small-item line the routing table names. An empty Spec, or a `None yet` placeholder, is not acceptance ready. Draft one from the issue's body and comments, print it, and wait for the owner's yes; the flip follows the yes, never the draft (owner ruling, 2026-09-09: the ask itself is the accept, so a small drafted spec shown in chat earns the flip on that yes). An issue that still needs real design is the routing table's interview row, not this shortcut (spec § Specs).
+**"Accept" flips only on a real spec.** `accept 215` earns `status:specced` only when the issue already carries a `## Spec` with content: a spec the owner accepted, or the literal small-item line the routing table names. An empty Spec, or a `None yet` placeholder, is not acceptance ready. Draft one from the issue's body and comments, print it, and wait for the owner's yes; the flip follows the yes, never the draft (the ask itself is the accept, so a small drafted spec shown in chat earns the flip on that yes). An issue that still needs real design is the routing table's interview row, not this shortcut (spec § Specs).
 
 ## Merge mode (`/workkit:triage merge`)
 

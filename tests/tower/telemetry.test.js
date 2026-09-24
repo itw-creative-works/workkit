@@ -16,13 +16,14 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { asWindows } = require('../lib/platform');
 
 const lib = path.join(__dirname, '..', '..', 'tower', 'api', 'lib');
 const {
   collectTelemetry, sessionTelemetry, readUsage, resetCache, cachedPaths,
   costOf, className, dayKey, PRICING, OVERTIME_DAYS,
 } = require(path.join(lib, 'telemetry.js'));
-const { transcriptPath } = require(path.join(lib, 'sessions.js'));
+const { listSessions, transcriptPath } = require(path.join(lib, 'sessions.js'));
 const { createServer } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'server.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-telemetry-'));
@@ -629,6 +630,30 @@ const run = async () => {
     const opts = { home: w.home, markerDir: w.markerDir, stateDir: w.stateDir, exec: w.exec };
     assertEq(sessionTelemetry('sess-1', opts).tokens.total, 42, 'the drill-down');
     assertEq(sessionTelemetry('sess-nope', opts), null, 'and nothing invented');
+    cleanup(w.root);
+  });
+
+  group('tower/telemetry: the Windows spelling');
+
+  await test('a row\'s transcript is the one the sessions read named, not a second derivation', () => {
+    // A session's cwd is PUBLISHED in git's spelling while Claude Code names
+    // its project folder from the native one, so deriving the transcript from
+    // the row's cwd a second time names a different file than the sessions read
+    // named. The row carries the answer; this reads it.
+    const w = mkWorld();
+    const native = 'C:\\Users\\x\\repo\\sub';
+    mkSession(w, {
+      pid: 7401,
+      cwd: native,
+      session: 'win-1',
+      lines: [assistantLine({ id: 'w1', input: 10, output: 5 })],
+    });
+    const live = asWindows(() => listSessions({
+      markerDir: w.markerDir, home: w.home, stateDir: w.stateDir, exec: w.exec,
+    }));
+    const { sessions } = asWindows(() => collect(w));
+    assertEq(sessions[0].transcript, live[0].transcript, 'one home for where a session\'s transcript is');
+    assertEq(sessions[0].tokens.total, 15, 'and the numbers come off that file');
     cleanup(w.root);
   });
 

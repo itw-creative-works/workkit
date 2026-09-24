@@ -21,6 +21,7 @@ const WORKKIT_DIR = '.workkit';
 let passed = 0;
 let failed = 0;
 const failures = [];
+const skips = [];
 
 const group = (name) => {
   console.log(`\n\x1b[1m[${name}]\x1b[0m`);
@@ -51,6 +52,27 @@ const assertEq = (actual, expected, msg) => {
   }
 };
 
+// One CASE this machine cannot answer, named rather than quietly dropped: a
+// file mode on Windows, a tool only one platform ships. It counts as neither a
+// pass nor a failure and is carried to the runner by name, so the totals line
+// says how much of the run was left unanswered instead of letting the ⊘ lines
+// scroll past. skipSuite() below throws the whole file away, which would
+// wrongly drop the platform-independent cases sharing it.
+const skip = (name, reason) => {
+  skips.push({ name, reason });
+  console.log(`  \x1b[33m⊘\x1b[0m ${name} \x1b[33m(skipped: ${reason})\x1b[0m`);
+};
+
+// The runner for a case only one platform, or only one provisioned machine,
+// can answer: `test` where the answer is reachable, and a stand-in that names
+// the skip where it is not. A case wrapped this way is COUNTED as a skip;
+// asking the question inside the body instead scores a pass for a case that
+// asserted nothing.
+//
+//   const newsTest = testUnless(IS_WINDOWS, 'the gh shim is not startable here');
+//   await newsTest('the cursor advances', () => { ... });
+const testUnless = (skipIt, reason) => (skipIt ? (name) => skip(name, reason) : test);
+
 // A suite whose preconditions are absent SKIPS itself instead of failing. Some
 // suites can only ask their question on a provisioned machine: one with
 // caffeinate, with ~/.claude linked, with an upstream's dependencies installed.
@@ -76,10 +98,11 @@ const hasLaunchd = () => process.platform === 'darwin';
 // Snapshot + reset the running totals for THIS file, returning what it accrued.
 // The runner sums these across files. Resetting lets each file report cleanly.
 const summary = () => {
-  const result = { passed, failed, failures: failures.slice() };
+  const result = { passed, failed, failures: failures.slice(), skips: skips.slice() };
   passed = 0;
   failed = 0;
   failures.length = 0;
+  skips.length = 0;
   return result;
 };
 
@@ -96,4 +119,6 @@ const selfRun = (runner) => {
     });
 };
 
-module.exports = { group, test, assert, assertEq, skipSuite, selfRun, summary, hasLaunchd, WORKKIT_DIR };
+module.exports = {
+  group, test, assert, assertEq, skip, testUnless, skipSuite, selfRun, summary, hasLaunchd, WORKKIT_DIR,
+};

@@ -9,14 +9,15 @@ const path = require('path');
 const os = require('os');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, WORKKIT_DIR: W } = require('../lib/harness');
+const { BASH, SYSTEM_BASH, NO_RC, shellPath } = require('../lib/platform');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'vendor-guard', 'run.sh');
 
 const runHook = (filePath) => {
-  const input = JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: filePath } });
-  const res = spawnSync('bash', [HOOK], {
+  const input = JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: shellPath(filePath) } });
+  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
     input,
-    env: { ...process.env, HOME: os.homedir() },
+    env: { ...process.env, HOME: shellPath(os.homedir()) },
     encoding: 'utf8',
     timeout: 10000,
   });
@@ -146,7 +147,7 @@ const run = async () => {
   const { execSync } = require('child_process');
   const mkRepo = () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vg-test-'));
-    execSync('git init', { cwd: dir, stdio: 'pipe' });
+    execSync('git init', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     fs.writeFileSync(path.join(dir, '.gitignore'), 'generated.json\n.env\n');
     return dir;
   };
@@ -184,9 +185,9 @@ const run = async () => {
   group('vendor-guard: fail-open');
 
   await test('missing file_path: exit 0', () => {
-    const res = spawnSync('bash', [HOOK], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input: JSON.stringify({ tool_input: {} }),
-      env: { ...process.env, HOME: os.homedir() },
+      env: { ...process.env, HOME: shellPath(os.homedir()) },
       encoding: 'utf8',
       timeout: 10000,
     });

@@ -6,7 +6,7 @@
 # both, and either process ending takes the other with it, so nothing
 # lingers half-up.
 #
-# Running it RESTARTS the tower (owner ruling, issue #97): whatever is
+# Running it RESTARTS the tower: whatever is
 # already listening on either port is a previous instance (these two ports
 # belong to the tower) and is replaced, with a line saying so, instead of
 # the fresh API dying on the address being in use.
@@ -74,10 +74,23 @@ wk_ok "starting the dashboard"
 # Ending a half means ending its TREE: npm and omega both put children between
 # the pid this script holds and the server that owns the port, and a plain
 # kill of the parent leaves those children orphaned and still serving.
+#
+# Bare `kill` here, and not the platform seam's `wk_end_pid` that reclaim()
+# below routes through: every pid this walk reaches is a child of THIS shell, so
+# on Windows it is an MSYS id, and the seam spells a WINDOWS pid there. The
+# builtin is what speaks the ids a shell handed out.
+#
+# `pgrep` is not everywhere either: Git Bash ships no procps, so on Windows the
+# walk is skipped by intent and only the named process is ended, its children
+# left to the shell that spawned them. That is the same honest limit the commit
+# gate's own tree ender carries, and for the same reason: a PowerShell walk
+# would be a second mechanism for one platform.
 end_tree() {
   local pid kid
   pid="$1"
-  for kid in $(pgrep -P "$pid" 2>/dev/null); do end_tree "$kid"; done
+  if command -v pgrep >/dev/null 2>&1; then
+    for kid in $(pgrep -P "$pid" 2>/dev/null); do end_tree "$kid"; done
+  fi
   kill "$pid" 2>/dev/null || true
 }
 
@@ -86,26 +99,30 @@ end_tree() {
 # A listener that rides out the polite signal is escalated, and a port that
 # STILL cannot be freed ends the run loudly: proceeding would be the exact
 # EADDRINUSE death this reclaim exists to prevent, blamed on nothing.
+#
+# Who holds the port and how a pid is ended are the platform seam's
+# (workflow/platform.sh), so this takeover is the same one on every machine the
+# tower runs on. The port is free when the lookup ANSWERS nothing, never when a
+# tool exits nonzero: the two tools disagree about that status.
 reclaim() {
   local port pid deadline
   port="$1"
-  command -v lsof >/dev/null 2>&1 || return 0
-  for pid in $(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null); do
+  for pid in $(wk_port_pids "$port"); do
     wk_info "replacing what was listening on port $port (pid $pid)"
-    kill "$pid" 2>/dev/null || true
+    wk_end_pid "$pid" 2>/dev/null || true
   done
   deadline=$((SECONDS + 5))
-  while [ "$SECONDS" -lt "$deadline" ] && lsof -ti "tcp:$port" -sTCP:LISTEN >/dev/null 2>&1; do
+  while [ "$SECONDS" -lt "$deadline" ] && [ -n "$(wk_port_pids "$port")" ]; do
     sleep 1
   done
-  for pid in $(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null); do
-    kill -9 "$pid" 2>/dev/null || true
+  for pid in $(wk_port_pids "$port"); do
+    wk_end_pid -9 "$pid" 2>/dev/null || true
   done
   deadline=$((SECONDS + 3))
-  while [ "$SECONDS" -lt "$deadline" ] && lsof -ti "tcp:$port" -sTCP:LISTEN >/dev/null 2>&1; do
+  while [ "$SECONDS" -lt "$deadline" ] && [ -n "$(wk_port_pids "$port")" ]; do
     sleep 1
   done
-  if lsof -ti "tcp:$port" -sTCP:LISTEN >/dev/null 2>&1; then
+  if [ -n "$(wk_port_pids "$port")" ]; then
     wk_error "could not free port $port; its listener survived both signals, so nothing is started onto an occupied port"
     exit 1
   fi

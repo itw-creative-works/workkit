@@ -10,8 +10,8 @@
 //
 // Canonical shapes: every link in its short form, so the repo URL appears
 // nowhere in the file:
-//   [Unreleased]  - [#4](../../issues/4) — Plugins install from settings.json.
-//   released      - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [@who]! — Plugins install from settings.json.
+//   [Unreleased]  - [#4](../../issues/4) - Plugins install from settings.json.
+//   released      - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [@who]! - Plugins install from settings.json.
 //
 // The commit link is derivable offline (remote URL + sha) so released sections
 // require it; the @handle needs the GitHub API, so it is generated when
@@ -59,13 +59,15 @@ const ISSUE_RE = /^(?:\[#\d+\]\([^)\s]+\)|\(no issue\))/;
 const COMMIT_RE = /\[`[0-9a-f]{7,40}`\]\([^)\s]+\)/;
 // The generated metadata run: the issue, then any commit links, then the
 // attribution. The separator is required immediately AFTER it. Searching the
-// whole entry for an em dash would accept prose that merely contains one.
+// whole entry for a spaced hyphen would accept prose that merely contains one.
 const META_RE = new RegExp(
   `^(?:\\[#\\d+\\]\\([^)\\s]+\\)|\\(no issue\\))`
   + `(?:\\s+\\[\`[0-9a-f]{7,40}\`\\]\\([^)\\s]+\\))*`
   + `(?:\\s+Thanks(?:\\s+\\[@[^\\]]+\\](?:\\([^)\\s]+\\))?)+!)?`,
 );
-const SEPARATOR = ' \u2014 '; // the CHANGELOG entry separator (U+2014)
+// The CHANGELOG entry separator: a spaced hyphen. Never an em dash, so the
+// no-em-dash rule holds in this file too and the emdash hook needs no exemption.
+const SEPARATOR = ' - ';
 
 /**
  * Classify a `## [...]` heading. Only a semver-shaped label is a released
@@ -173,7 +175,7 @@ const lintEntry = (entry) => {
   const fail = (rule, message) => found.push({ line: entry.line, rule, message });
 
   if (!ISSUE_RE.test(entry.prose)) {
-    fail('issue-link', 'must start with its issue link (`- [#4](../../issues/4) \u2014 text.`) or the literal `(no issue)` when there is none.');
+    fail('issue-link', 'must start with its issue link (`- [#4](../../issues/4) - text.`) or the literal `(no issue)` when there is none.');
   }
 
   // Anchor every metadata judgment to the generated run at the START of the
@@ -188,14 +190,14 @@ const lintEntry = (entry) => {
     fail('commit-link', 'a released entry must carry its commit link (`[`1de1308`](…/commit/1de1308)`). Run changelog-links.js. The links are generated at release time, never typed.');
   }
 
-  // Anchor the separator to the END of the metadata run, never to the first em
-  // dash anywhere: entries use em dashes inside their prose, and searching the
-  // whole line accepts an entry that never separated its links from its text
-  // and then measures the word count from the wrong offset.
+  // Anchor the separator to the END of the metadata run, never to the first
+  // spaced hyphen anywhere: prose may carry one, and searching the whole line
+  // accepts an entry that never separated its links from its text and then
+  // measures the word count from the wrong offset.
   const rest = meta ? entry.prose.slice(meta[0].length) : entry.prose;
   const separated = rest.startsWith(SEPARATOR);
   if (!separated) {
-    fail('separator', 'an em dash surrounded by spaces (` \u2014 `) goes between the links and the text.');
+    fail('separator', 'a hyphen surrounded by spaces (` - `) goes between the links and the text, never an em dash.');
   }
 
   const prose = separated ? rest.slice(SEPARATOR.length) : rest;
