@@ -7,6 +7,9 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+- [#281](../../issues/281) - The tower brand config validates against the installed omega again: `targets.web` declares its type and the retired `repo` block is gone (its presence is the switch, and the tower's source is workkit's own repo). The dashboard publish had stopped at the build.
+
 ## [0.57.0] - 2026-09-24
 
 ### Added

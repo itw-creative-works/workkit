@@ -29,21 +29,9 @@
       social: "/assets/images/brand/social.png",
     },
   },
-  repo: {
-    providers: {
-      github: {
-        // false = the repo service skips entirely: no org profile, no repo
-        // settings, no GitHub Pages reconciliation; the brand hosts its source
-        // somewhere the manager does not touch.
-        enabled: true,
-        // true = the org is shared with other brands; org-level reconciliation
-        // is skipped.
-        shared: false,
-        // Brand repo visibility (default true).
-        private: true,
-      },
-    },
-  },
+  // No repo block: its presence is the switch for the repo service, and it
+  // would derive a `workkit-omega` source repo to reconcile. The tower's source
+  // is workkit's own repo, which the manager never touches.
   edge: {
     providers: {
       // Cloudflare zone reconciliation (@omega.js/manager cloudflare service):
@@ -204,12 +192,13 @@
     },
   },
 
-  // Key presence = target enabled. Web only - the tower has no backend target
-  // (its API is the plain Node server in tower/, on 8693). The port keeps the
-  // family clear of its siblings: playground 4000, dailybuild 4100,
-  // omega-brand 4200, tower 4300.
+  // Key presence = target enabled, and every entry names its framework in
+  // `type`. Web only - the tower has no backend target (its API is the plain
+  // Node server in tower/, on 8693). The port keeps the family clear of its
+  // siblings: playground 4000, dailybuild 4100, omega-brand 4200, tower 4300.
   targets: {
     web: {
+      type: "web",
       ports: {
         website: 4300,
       },

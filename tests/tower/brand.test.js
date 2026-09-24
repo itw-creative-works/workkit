@@ -12,6 +12,9 @@
 //
 // The config is JSON5 and this repo's tests carry no dependencies, so it is
 // read as TEXT - the same way app.test.js asks its questions of main.scss.
+// The last group pins two config shapes the installed omega depends on: the
+// target's type, which its validator refuses without, and the absence of a
+// repo block, whose presence would switch the repo service on.
 //
 
 const fs = require('fs');
@@ -58,6 +61,23 @@ const run = async () => {
     const config = fs.readFileSync(CONFIG, 'utf8');
     assert(/brandmark:\s*"\/assets\/images\/brand\/brandmark\.svg"/.test(config),
       'the key is not auto-set by the mint - without it the sidebar stays text-only (@omega.js/web static-assets.js copies the color variant to exactly this path)');
+  });
+
+  group('tower/brand: the target type and the repo block');
+
+  await test('targets.web declares its type', () => {
+    // Every target key is a name and every entry names its framework; an
+    // entry without one fails the build's config validation outright.
+    const config = fs.readFileSync(CONFIG, 'utf8');
+    assert(/targets:\s*\{\s*web:\s*\{[\s\S]*?type:\s*["']web["']/.test(config), 'targets.web carries type: "web"');
+  });
+
+  await test('the config carries no repo block', () => {
+    // Presence is the switch: a repo block would derive a `workkit-omega`
+    // source repo the manager should reconcile, and the tower's source is
+    // workkit's own repo, which the manager never touches.
+    const config = fs.readFileSync(CONFIG, 'utf8');
+    assert(!/^\s*repo:\s*\{/m.test(config), 'no repo: block in the brand config');
   });
 
   return summary();
