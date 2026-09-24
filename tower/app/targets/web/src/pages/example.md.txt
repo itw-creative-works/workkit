@@ -1,0 +1,96 @@
+This file is a WALKTHROUGH, not a page. The `.txt` suffix keeps it out of the
+build (Eleventy only templates .md/.html/.liquid here, and nothing under
+src/pages is copied verbatim), so it can sit in your project as a reference
+for as long as it is useful.
+
+To turn it into a real page: copy it to `src/pages/<name>.md`, drop everything
+above and below the rule lines, and edit. The file path IS the URL unless a
+permalink says otherwise: `src/pages/about.md` serves /about.
+
+Everything inside the rule lines is safe to ship as-is: the notes in it are
+Liquid comments, which the render drops. An HTML comment would NOT be. It is
+shipped bytes, published to every visitor, so keep private notes in the
+Liquid form.
+
+────────────────────────────────────────────────────────────────────────────
+---
+# Page frontmatter is META-ONLY. These are the only keys the engine reads:
+#
+#   layout                          which layout renders the page chrome
+#   permalink                       the URL, when it isn't the file path
+#   meta                            title / description / image / index for the <head>
+#   schema                          structured data (JSON-LD) for this page
+#   config                          per-page omega.json5 overrides (theme, client…)
+#   redirect                        url / querystring for the redirect layout
+#   catalog                         include / category for this page's pages.json entry
+#   translation                     include: true / false, this page's own translation switch
+#   templateEngineOverride          the engine, when it isn't inferred
+#   eleventyExcludeFromCollections  keep the page out of collections
+#
+# Any OTHER key is content-in-frontmatter, a lane that does not exist. The
+# build strips it before rendering and warns; sections never see it. Content
+# lives in the page BODY, below, as {% section %} calls. The `config:` rule
+# runs both ways: a config section (theme, client, analytics…) restated BARE
+# is a build ERROR, and a key under `config:` that omega.json5 has no section
+# for is one too. Everything above except `config` is page machinery — `meta`
+# included, which is why omega.json5 carries no meta section at all.
+layout: frontend/core/base
+permalink: /example
+meta:
+  title: Example page
+  description: How a page composes sections.
+---
+
+{% comment %}
+  A page is a stack of full-width bands. Each section call names a section
+  id and passes its args; the section's own defaults fill in the rest, so
+  you write only what you want to change.
+
+  These notes are LIQUID comments, and that is deliberate. An HTML comment
+  is shipped bytes: it survives into dist/ for every visitor to read. So
+  anything you would not publish belongs in a Liquid comment, which the
+  render drops. Two more traps worth knowing: Liquid runs INSIDE an HTML
+  comment (a tag in there really executes), and a comment of either kind is
+  still tokenized, so a stray brace is a build error even here. That is why
+  these notes spell no tags.
+{% endcomment %}
+
+{% comment %} Inline form: simple values, which are real Liquid expressions. {% endcomment %}
+{% section "marketing/hero", headline: "Everything you need", description: "Built with {{ resolved.config.brand.name }}." %}
+
+{% comment %} No args at all: the section renders its own defaults. {% endcomment %}
+{% section "marketing/stats" %}
+
+{% comment %}
+  Block form: structured args, written as YAML. Liquid output tokens
+  inside the values render against this page.
+{% endcomment %}
+{% section "marketing/faq" %}
+headline: "Questions, answered"
+items:
+  - question: "Do I have to write every page?"
+    answer: "No. The stock pages already render; this one is extra."
+  - question: "Where does the copy live?"
+    answer: "Right here, in the section call, never in frontmatter."
+{% endsection %}
+
+{% comment %} Slots pass finished MARKUP where a string won't do. {% endcomment %}
+{% section "marketing/hero" %}
+  {% slot demo_html %}
+    <div class="my-demo"><i class="fa-solid fa-rocket"></i> {{ resolved.config.brand.name }}</div>
+  {% endslot %}
+{% endsection %}
+────────────────────────────────────────────────────────────────────────────
+
+Every stock page (home, pricing, about, the legal set, the whole auth flow)
+already renders without a file here; this directory is empty on purpose. To
+start from one of them instead of a blank page, materialize it:
+
+    npx omega customize <url>
+
+`npx omega customize /pricing` writes the real pricing page into src/pages/
+with its composition intact, yours to edit. Bare `npx omega customize` lists
+every customizable URL.
+
+The framework's docs/web/sections.md is the full contract: every section id,
+the arg schemas, slots, and the directory-data lane for site-wide overrides.

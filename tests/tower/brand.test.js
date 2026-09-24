@@ -12,9 +12,12 @@
 //
 // The config is JSON5 and this repo's tests carry no dependencies, so it is
 // read as TEXT - the same way app.test.js asks its questions of main.scss.
-// The last group pins two config shapes the installed omega depends on: the
+// The next group pins two config shapes the installed omega depends on: the
 // target's type, which its validator refuses without, and the absence of a
-// repo block, whose presence would switch the repo service on.
+// repo block, whose presence would switch the repo service on. The last group
+// pins the scaffold omega writes into the target: every dev or build writes
+// any of those files it finds missing, so a committed set is what keeps the
+// tree clean after a run.
 //
 
 const fs = require('fs');
@@ -24,6 +27,18 @@ const { group, test, assert, summary, selfRun } = require('../lib/harness');
 const app = path.join(__dirname, '..', '..', 'tower', 'app');
 const MARK = path.join(app, 'assets', 'logo', 'brandmark.svg');
 const CONFIG = path.join(app, 'config', 'omega.json5');
+const TARGET = path.join(app, 'targets', 'web');
+
+// What @omega.js/web's ensure-target step writes when missing (its scaffold/
+// tree, and the brand-root workflow it composes from it).
+const SCAFFOLD = [
+  path.join(app, '.github', 'workflows', 'web-build.yml'),
+  path.join(TARGET, '.gitattributes'),
+  path.join(TARGET, '.gitignore'),
+  path.join(TARGET, '.nvmrc'),
+  path.join(TARGET, 'src', 'pages', 'example.md.txt'),
+  path.join(TARGET, 'src', 'service-worker.js'),
+];
 
 // The one hex (issue #53, owner decision 2026-08-03; blue since #149) - the
 // config's `color` composes both themes' accent ramps from it, and the mark is
@@ -78,6 +93,13 @@ const run = async () => {
     // workkit's own repo, which the manager never touches.
     const config = fs.readFileSync(CONFIG, 'utf8');
     assert(!/^\s*repo:\s*\{/m.test(config), 'no repo: block in the brand config');
+  });
+
+  group('tower/brand: the scaffold omega writes');
+
+  await test('every scaffold file is committed, so a dev or build leaves the tree clean', () => {
+    const missing = SCAFFOLD.filter((file) => !fs.existsSync(file));
+    assert(missing.length === 0, `missing: ${missing.map((file) => path.relative(app, file)).join(', ')}`);
   });
 
   return summary();

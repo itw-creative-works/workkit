@@ -1,7 +1,10 @@
-// The tower's brand layer. Deliberately TINY: only brand.id and brand.name are
-// required by the config schema (@omega.js/config src/schema.js), and the tower
-// is a localhost tool with no cloud project, no payments, no analytics and no
-// monitoring - so those sections are ABSENT rather than filled with nulls.
+// The tower's brand layer. The tower authors brand, theme and targets. Every
+// other section is the manage walk's copy of a schema default (@omega.js/config
+// src/defaults.js). The `omega dev` boot lane writes any default this file
+// lacks. A block removed here reappears on the next `npm run tower`. The file
+// is kept converged, so that boot leaves the tree clean. Only brand.id
+// and brand.name are required by the schema. The tower is a localhost tool
+// with no cloud project.
 //
 // LOCAL ERA: every @omega.js/* dependency is a relative file: spec into the
 // sibling Omega checkout (see tower/app/README.md). The specs flip to registry
@@ -68,6 +71,22 @@
       // How long the accepted offer lasts: 'once' (the next cycle only, the
       // default) or 'forever' (a permanent price cut).
       duration: "once",
+    },
+    // The ISO 4217 code every price in payment.products is quoted in (#850).
+    // One currency per brand, named wherever a price is shown or recorded: the
+    // pricing page's JSON-LD, the checkout, and the backend's order history
+    // (GET /user/orders). Defaults to 'USD', the fallback its readers carried
+    // before the fact had a home. The successor to the retired
+    // targets.web.currency.
+    currency: "USD",
+    providers: {
+      coinbase: {
+        // Coinbase Commerce (crypto) checkout, one-time purchases only. Its
+        // ONLY credential is a secret (COINBASE_COMMERCE_API_KEY), so there is
+        // no public datum to gate on: this is the switch, default OFF, because
+        // an accidental ON shows a Crypto button no key can complete.
+        enabled: false,
+      },
     },
   },
   // Marketing automation: the campaigns + newsletter roles (each
@@ -188,6 +207,17 @@
       // The consent banner + the provider-script gate (default true). false
       // ships NO banner: legal only for a site that loads no
       // analytics/marketing provider at all.
+      enabled: true,
+    },
+    exitPopup: {
+      // The exit-intent offer popup (default true). false ships no popup at
+      // all; its copy, timeout and avatars live under client.exitPopup.config.
+      enabled: true,
+    },
+    serviceWorker: {
+      // Registers the site service worker (default true): the offline/refresh
+      // lane and the push-notification registration ride it. false unregisters
+      // any worker the visitor already has.
       enabled: true,
     },
   },

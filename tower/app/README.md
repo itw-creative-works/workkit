@@ -56,11 +56,14 @@ nothing here imports through a path.
 ```
 tower/app/
 ├── package.json                 # brand root: workspaces + @omega.js/manager
-├── config/omega.json5           # brand.id, brand.name, theme, port 4300
+├── config/omega.json5           # brand, theme, targets (port 4300); the rest are omega's schema defaults
+├── .github/workflows/           # omega's scaffold: web-build.yml, composed on every dev or build; GitHub never runs it from here
 └── targets/web/
-    ├── package.json             # @omega.js/web
+    ├── package.json             # @omega.js/web; its test and deploy scripts, engines floor and license are omega's
     ├── config/omega.json5       # the local layer - targets only
+    ├── .nvmrc, .gitattributes, .gitignore   # omega's scaffold, written or re-rendered by every dev or build; committed so the tree stays clean
     └── src/
+        ├── service-worker.js, pages/example.md.txt   # omega's scaffold too, copied once when missing
         ├── pages/*.md           # seven pages: one layout line, one mount div
         ├── _layouts/tower/page.html      # turns the admin auth gate off
         ├── _includes/backend/sections/   # sidebar.json + topbar.json (the nav)

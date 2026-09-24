@@ -1,0 +1,4 @@
+# Machine-written translation string caches — committed build INPUT (they make
+# clone→build deterministic and credential-free), but collapsed in PR diffs and
+# excluded from language stats. See @omega.js/web docs/shared/translation.md.
+translations/** linguist-generated=true

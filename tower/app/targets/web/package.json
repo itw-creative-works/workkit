@@ -9,9 +9,12 @@
   "scripts": {
     "start": "omega dev",
     "build": "omega build",
-    "clean": "omega clean"
+    "clean": "omega clean",
+    "test": "omega test",
+    "deploy": "omega deploy"
   },
   "engines": {
-    "node": ">=22"
-  }
+    "node": ">=24"
+  },
+  "license": "UNLICENSED"
 }

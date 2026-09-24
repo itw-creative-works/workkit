@@ -15,8 +15,5 @@
   },
   "devDependencies": {
     "@omega.js/manager": "file:../../../../Omega/omega/packages/manager"
-  },
-  "engines": {
-    "node": ">=22"
   }
 }

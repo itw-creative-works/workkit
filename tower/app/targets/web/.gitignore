@@ -1,0 +1,27 @@
+# ========== Default Values ==========
+# macOS
+.DS_Store
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Dependency directories
+node_modules/
+
+# dotenv environment variables file
+.env
+
+# Build output + machinery (omega build / omega dev)
+/dist
+/.omega
+/.cache
+/.temp
+
+# Output of 'npm pack'
+*.tgz
+
+# ========== Custom Values ==========
+# Add your custom ignore patterns below this line
+# ...
