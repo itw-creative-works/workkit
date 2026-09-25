@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#293](../../issues/293) - The ship reads only `status:complete`: a bare "ship" with nothing there ships nothing and says so, and a ship sentence that names qa items ("ship all items in qa", "ship 210 211") is their pass, quoted on each issue, so the per-item qa question is gone.
+
 ### Fixed
 
 - [#294](../../issues/294) - The home copy's exclude list carries the `.env.*` environment overlays the app's `.gitignore` names, so neither the seed nor the sync copies a secret overlay into the published clone.

@@ -9,7 +9,7 @@ Autonomous ship pipeline: read the config, pick the bump, then run every step de
 
 ## Invocation args
 
-- Parse the invocation text BEFORE anything else. When args resolve every decision, ask NOTHING and run the full pipeline. Otherwise it asks three questions only: which repo (Step 0), a major bump (Step 1), the qa call (Step 0c). The deploy confirmation (Step 6) is a gate, not a question, and only `deploy` in the args skips it.
+- Parse the invocation text BEFORE anything else. When args resolve every decision, ask NOTHING and run the full pipeline. Otherwise it asks two questions only: which repo (Step 0) and a major bump (Step 1). The deploy confirmation (Step 6) is a gate, not a question, and only `deploy` in the args skips it.
 - Bump: `patch` / `minor` / `major` uses that bump. An explicit version (`1.0.0`, `v1.0.0`) bumps to exactly it, a major included. `skip` / `no bump` skips the bump. A bump given here is never asked about.
 - File scope: `all` / `everything` stages the whole tree (`git add -A`), the DEFAULT. Explicit paths or globs (`src/` `docs/`) stage ONLY those. A description ("just the prompt changes", "only the route files") stages only the matching files.
 - Opt out: `no deploy` / `skip deploy` skips deploy without asking. `no publish` / `skip publish` is the only way to skip publish. `no prepare` skips prepare even if `scripts.prepare` exists. `no release` skips the GitHub release. `no changelog` skips the CHANGELOG update.
@@ -23,6 +23,8 @@ Autonomous ship pipeline: read the config, pick the bump, then run every step de
 | `/ship src/ docs/` | picked from the diff | only those paths | none |
 | `/ship major deploy` | major | all | deploy to production |
 | `/ship skip` on a clean tree | none | none | publishes the tree's version where npm lacks it |
+| `ship all items in qa`, `ship 210 211` | picked from the diff | all | the sentence passes the named qa items first (Step 0c) |
+| `ship` with nothing at `status:complete` | none | none | nothing commits, Step 0c says so; Step 5 alone may publish |
 
 ## Step 0: Resolve target project
 
@@ -33,15 +35,13 @@ Autonomous ship pipeline: read the config, pick the bump, then run every step de
 
 - Read `package.json` once with the `Read` tool, NEVER a shell command (`node -e`, `cat`, `jq`, `grep`). Extract `version`, `name`, `private`, and whether `scripts.prepare` and `scripts.deploy` or `scripts.release` exist. Run `git log --oneline -5` for the commit style.
 
-## Step 0c: What this ship carries (the `status:qa` call and the proof call)
+## Step 0c: What this ship carries (the pass and the proof call)
 
-- A ship finishes items that PASSED their check, so it reads from `status:complete` (spec § the qa stage). A `status:qa` item is not its to close. If the repo participates, run `bash ~/.claude/workkit/ship-items.sh`: one line per qa or complete item, `<stage> #<N> <proved|unproved> <title>`, the proof call already read. Exit 1 (its `ship-items:` line): stop and report it.
-- Nothing at `status:qa`: say nothing. Otherwise its code is in the tree this ship commits, so the owner calls it. List each in the cold-reader line (`docs/project-state.md` § Restating an issue), ending with what its check comment waits on. Ask per item:
-  - **include**: the owner's check passed here. Run `gh issue edit <N> --remove-label status:qa --add-label status:complete` and `gh issue comment <N> --body "QA passed by <owner>, <date>."`, then ship it as complete. Its `Proof:` comment must exist first (`safety/proof-guard` bounces the flip); unproved, it is held.
-  - **delay the ship**: STOP the pipeline and say so. Nothing is committed; the item gets its check first. **ship anyway**: the item is left open (below).
-- Never grant `status:complete` for the owner: the verdict is theirs, like `agent:ok`. The one exception is an `agent:ok` issue, which its own passing check already moved.
-- The proof call is a report, not a question. An `unproved` item (no comment line starting `Proof:`) was never recorded as built at every layer (spec § The proof). A spoken pass can reach `complete` with nothing written. List each in the cold-reader line: it is HELD. None: say nothing.
-- An item left open (held, or qa shipped anyway) rides the commit as code only. It gets no `Fixes #N` trailer, keeps its `[Unreleased]` entry through the release move, and the close skips it. A held qa item stays as the qa call left it.
+- A ship finishes items that PASSED their check, so it reads from `status:complete` (spec § the qa stage). If the repo participates, run `bash ~/.claude/workkit/ship-items.sh`: one line per qa or complete item, `<stage> #<N> <proved|unproved> <title>`, the proof call already read. Exit 1 (its `ship-items:` line): stop and report it.
+- The ship sentence may name qa items ("ship all items in qa", "all items in qa are complete, ship", "ship 210 211"): that sentence IS their pass. For each named `proved` item run `gh issue edit <N> --remove-label status:qa --add-label status:complete`, comment `QA passed by <owner>, <date>: "<the sentence>"`, then ship it as complete. Never a question, never an item the sentence did not name.
+- Nothing at `status:complete` after that, in a participating repo: nothing commits. Say so, each waiting qa item in the cold-reader line, and skip Steps 1 to 4; Step 5 still publishes a version npm lacks (a rerun after a crash mid-publish, or `/ship skip` on a clean tree). `status:complete` is never granted past the sentence: the verdict is the owner's, like `agent:ok`.
+- A qa item the sentence did not name is not the ship's to close. Its code sits in the same tree, so it rides the commit as code only: no `Fixes #N` trailer, its `[Unreleased]` entry kept through the release move, the close skips it, its labels untouched. The reply lists it in the cold-reader line (`docs/project-state.md` § Restating an issue).
+- The proof call is a report, not a question. An `unproved` item (no comment line starting `Proof:`) was never recorded as built at every layer (spec § The proof), and a spoken pass can reach `complete` with nothing written. It is HELD: listed the same way, riding as code only. None: say nothing.
 - The fix for a hold is a RE-PARK. The building agent runs the layers it has a surface on and comments the `Proof:` line. Then the item is checked again. The hold is mechanical: `safety/proof-guard` bounces the flip to `status:complete` and the close. `safety/commit-gate` check 6 bounces the `Fixes #N` trailer. Never invent a `Proof:` line for the owner (spec § The pass).
 
 ## Step 1: Pick the bump type (ask ONLY for major)

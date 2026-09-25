@@ -187,6 +187,23 @@ const run = async () => {
     assertEq(missing.join(', '), '', 'Step 5 lacks');
   });
 
+  await test('the ship reads only status:complete and the ship sentence is the qa pass (#293)', () => {
+    // A bare "ship" with nothing at complete ships nothing; a sentence naming
+    // qa items passes them first; and no per-item qa question survives, in
+    // the skill or in the spec it executes.
+    const skill = path.join(SKILLS_DIR, 'ship', 'SKILL.md');
+    const step = section(skill, '## Step 0c: What this ship carries (the pass and the proof call)');
+    const missing = ['nothing commits', 'IS their pass', '"ship all items in qa"', 'rides the commit as code only']
+      .filter((needle) => !step.includes(needle));
+    assertEq(missing.join(', '), '', 'Step 0c lacks');
+    const gone = ['ship anyway', 'delay the ship', 'Ask per item', 'the qa call']
+      .filter((needle) => fs.readFileSync(skill, 'utf8').includes(needle));
+    assertEq(gone.join(', '), '', 'the ship skill still carries');
+    const spec = fs.readFileSync(path.join(REPO, 'docs', 'project-state.md'), 'utf8');
+    assert(!spec.includes('the owner calls each one'), 'the spec no longer states the per-item call');
+    assert(spec.includes('ships nothing and says so'), 'and states the bare-ship rule');
+  });
+
   group('skills: docs parity');
 
   // The two places a reader meets the roster (AGENTS.md's list and the
