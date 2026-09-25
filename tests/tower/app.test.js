@@ -1019,10 +1019,10 @@ const run = async () => {
     assert(!/omega-tower-board__caption/.test(source), 'no caption cell names a group');
     assert(/showing \$\{shown\} out of \$\{total\}/.test(source) && !/filtered out/.test(source) && !/across every repo/.test(source),
       'the count line says "showing X out of Y" and nothing else - no scope words, the picker owns the scope');
-    assert(/<div class="omega-tower-group omega-tower-group--pipeline">/.test(source), 'the pipeline is a group card, placed by class');
+    assert(/<div class="omega-tower-group omega-tower-group--pipeline">/.test(source), 'the pipeline is a group, placed by class');
     assert(/<aside class="omega-tower-group omega-tower-group--pocket" aria-label="Waiting/.test(source),
-      'and the pocket is the second group card, still a landmark of its own, placed by class');
-    assert(!/<div class="card"><div class="card-body[^>]*>\$\{counts\(/.test(source), 'and no outer card wraps both groups - two cards, not a card in a card (#203)');
+      'and the pocket is the second group, still a landmark of its own, placed by class');
+    assert(!/<div class="card"><div class="card-body[^>]*>\$\{counts\(/.test(source), 'and no card wraps the groups (#203)');
     // Both groups are drawn by ONE lane renderer, which is what keeps a pocket
     // lane a drop target like any other - a card is dragged into and out of them.
     assertEq((source.match(/const lanes = /g) || []).length, 1, 'one lane renderer draws both groups');
@@ -1037,11 +1037,12 @@ const run = async () => {
     assert(/\.omega-tower-group--pipeline \{ grid-column: 1 \/ span var\(--pipeline\); \}/.test(sheet)
       && /\.omega-tower-group--pocket \{ grid-column: calc\(var\(--pipeline\) \+ 2\) \/ span var\(--pocket\); \}/.test(sheet),
       'and each group is placed by a class rule reading those counts, the pocket skipping the spacer track');
-    assert(/\.omega-tower-group::before \{[^}]*position: absolute;[^}]*inset: -\.5rem;[^}]*z-index: 0;[^}]*background: var\(--bs-card-bg[^}]*border: 1px solid/.test(sheet)
-      && /\.omega-tower-group > \* \{ position: relative; z-index: 1; \}/.test(sheet),
-      'and its card face is an overlay drawn behind the lanes with the SAME inset on every side, costing them no width and hiding no drop tint (#203)');
-    assert(!/omega-tower-pockets/.test(sheet), 'the pocket has no rule of its own beyond its placement');
-    assert(/\.omega-tower-board \{[^}]*padding: \.5rem;/.test(sheet), 'and the strip carries the half gutter the card faces are drawn into');
+    assert(!/\.omega-tower-group::before/.test(sheet) && !/--bs-card-bg/.test(sheet.slice(sheet.indexOf('.omega-tower-board {'), sheet.indexOf('.omega-tower-issue--dragging'))),
+      'no group wears a card face (#291)');
+    assert(/\.omega-tower-group--pocket::before \{[^}]*position: absolute;[^}]*top: 0;[^}]*bottom: 0;[^}]*left: -1rem;[^}]*border-left: 1px solid/.test(sheet),
+      'and the pocket is set off by one vertical hairline, standing a whole gutter from the lane on either side (#291)');
+    assert(!/omega-tower-pockets/.test(sheet), 'the pocket has no rule of its own beyond its placement and its divider');
+    assert(!/\.omega-tower-board \{[^}]*padding:/.test(sheet), 'and the strip carries no padding now that no card face is drawn into it');
     assert(/\.omega-tower-issue__question \{[^}]*-webkit-line-clamp: 3/.test(sheet),
       'and the question the dialog draws is clamped, so the widest one cannot crowd out the body under it');
   });
@@ -2681,13 +2682,34 @@ const run = async () => {
     assertEq(api.decideLive('development', 'http://box:8693'), true, 'and an override does not change the mode');
   });
 
-  await test('a page with no configuration baked into it is published, not live', () => {
-    // The framework's own default: `_processConfiguration` fills `environment`
-    // with 'production' when the page did not name one, and `isDevelopment()`
-    // reads that key. Anything that is not the word development is published.
+  await test('a page with no build snapshot baked into it is published, not live', () => {
+    // Anything that is not the word development is published, and a page with
+    // no snapshot at all names no environment.
     assertEq(api.decideLive('', ''), false, 'no environment at all');
     assertEq(api.decideLive(undefined, ''), false, 'and no key at all');
     assertEq(api.LIVE, false, 'which is what the module itself decided under the stubs above');
+  });
+
+  await test('the environment is read off the build snapshot the framework bakes in (#292)', async () => {
+    // Omega bakes ONE snapshot into every page, `window.OMEGA_BUILD_JSON`, and
+    // its `config.environment` is the build's verdict. The `window.Configuration`
+    // global it once wrote is gone, and a read of it decided published for
+    // every dev page. The read happens at import, so each world gets a fresh
+    // instance of the module through a cache-busting query.
+    const boot = async (world, tag) => {
+      globalThis.location = { href: 'http://localhost:4300/board' };
+      globalThis.window = world;
+      const fresh = await import(`${pathToFileURL(path.join(libs, 'api.js')).href}?env=${tag}`);
+      delete globalThis.location;
+      delete globalThis.window;
+      return fresh;
+    };
+    const dev = await boot({ OMEGA_BUILD_JSON: { config: { environment: 'development' } } }, 'dev');
+    assertEq(dev.LIVE, true, 'a dev page has a tower to read');
+    const built = await boot({ OMEGA_BUILD_JSON: { config: { environment: 'production' } } }, 'prod');
+    assertEq(built.LIVE, false, 'a production page is a published copy');
+    const old = await boot({ Configuration: { environment: 'development' } }, 'old');
+    assertEq(old.LIVE, false, 'and the global the framework no longer writes counts for nothing');
   });
 
   await test('a published page arms no feeds at all - zero doomed requests', () => {

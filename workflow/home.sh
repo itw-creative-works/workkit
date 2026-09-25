@@ -49,7 +49,13 @@ WK_TOWER_APP="${WORKKIT_TOWER_APP:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../tower
 # answer as the one at the root. `.git` and `.DS_Store` ride along beyond the
 # gitignore: the app has no `.git` and the clone's is never the sync's to look
 # inside, and `.DS_Store` is Finder litter no copy should carry.
-WK_TOWER_APP_EXCLUDE=(node_modules package-lock.json .omega .cache .temp dist .env logs .git .DS_Store)
+WK_TOWER_APP_EXCLUDE=(node_modules package-lock.json .omega .cache .temp dist .env '.env.*' logs .git .DS_Store)
+
+# What the exclusions would take that the copy still needs: the gitignore's own
+# `!` lines. `.env.*` is every environment overlay, and the example beside them
+# is the template the README points at, a secret in shape and not in content.
+# Root names only: the exclusions hold at every depth, the keeps at the top.
+WK_TOWER_APP_KEEP=(.env.example)
 
 # The engine's own folder: where standards.sh sits, the script the clone's heal
 # is a scoped invocation of. Resolved from this file rather than from the kit
@@ -463,6 +469,13 @@ wk_home_seed() {
     wk_warn "home: could not copy the tower app into $WK_HOME_DIR"
     return 1
   }
+  for name in "${WK_TOWER_APP_KEEP[@]}"; do
+    [[ -f "$WK_TOWER_APP/$name" ]] || continue
+    cp -p "$WK_TOWER_APP/$name" "$WK_HOME_DIR/$name" || {
+      wk_warn "home: could not copy $name into $WK_HOME_DIR"
+      return 1
+    }
+  done
 
   # The manifests, root first and then every target: each spec resolves from the
   # directory of the manifest it was copied from, never from the clone.
@@ -578,7 +591,12 @@ wk_home_sync() {
     }
     [[ "$manifest" -eq 1 ]] && WK_HOME_SYNC_MANIFESTS=1
     copied=$((copied + 1))
-  done < <(find "$WK_TOWER_APP" \( "${prune[@]}" \) -prune -o -type f -print)
+  done < <(
+    find "$WK_TOWER_APP" \( "${prune[@]}" \) -prune -o -type f -print
+    for name in "${WK_TOWER_APP_KEEP[@]}"; do
+      [[ -f "$WK_TOWER_APP/$name" ]] && printf '%s\n' "$WK_TOWER_APP/$name"
+    done
+  )
 
   # rc=3 is a PART-refreshed clone (a mid-walk write failed) and the caller
   # must not treat it as the benign "nothing to sync from" skip (rc=1): what

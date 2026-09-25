@@ -7,6 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#291](../../issues/291) - The Board's two groups of lanes lose their card faces: one vertical hairline in the gutter now sets the pocket (blocked and backlog) apart from the pipeline, and the strip no longer carries the padding the faces needed.
+
+### Fixed
+
+- [#292](../../issues/292) - The dashboard reads its environment off the build snapshot omega bakes into every page (`OMEGA_BUILD_JSON`), so a dev page under `npm run tower` is live again instead of showing the not-connected card; the global it read before is one the framework stopped writing.
+- [#294](../../issues/294) - The home copy's exclude list carries the `.env.*` environment overlays the app's `.gitignore` names, so neither the seed nor the sync copies a secret overlay into the published clone.
+
 ## [0.59.0] - 2026-09-25
 
 ### Changed

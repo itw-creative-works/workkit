@@ -13,8 +13,11 @@ dist/
 .cache/
 .temp/
 
-# Secrets
+# Secrets: .env and the environment overlays beside it. The example is the
+# template the README points at, a secret in shape and not in content.
 .env
+.env.*
+!.env.example
 
 # Run logs (truncated on every launch - never committed)
 logs/

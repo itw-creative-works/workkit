@@ -203,8 +203,8 @@ const column = (status, issues, showRepo, open) => `<section data-column="${esc(
 
 // A GROUP of lanes - each lane a cell of the ONE strip below, so every lane
 // header on the board is on one line (#196). No caption names the group (#203):
-// the pocket's aria-label says it to a screen reader, and the card face says it
-// to the eye.
+// the pocket's aria-label says it to a screen reader, and the divider before it
+// says it to the eye (#291).
 //
 // A column reads in three priority bands - high, then the unlabelled middle,
 // then low - most recently updated first inside each. The comparator is
@@ -224,11 +224,12 @@ const lanes = (statuses, shown, showRepo, open) => statuses.map((status) => colu
 // side-by-side strips did, each with its own padding above its own lanes. The
 // pocket is still a landmark of its own: it spans its lanes' tracks and borrows
 // them back through `subgrid`, so the region says what it is to a screen reader
-// and is drawn as a box (main.scss) while costing its lanes no width at all.
+// and is set off by one vertical line (main.scss) while costing its lanes no
+// width at all.
 //
 // The lane count is the vocabulary's, so the page hands the stylesheet the two
 // numbers it needs as custom properties - how many lanes the pipeline has and
-// how many the pocket has - and every track, span and card face is a class rule
+// how many the pocket has - and every track, span and the divider is a class rule
 // reading them (#203). A vocabulary with a different split changes nothing
 // here and nothing there.
 const columns = (shown, showRepo, open) => {

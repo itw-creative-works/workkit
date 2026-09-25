@@ -81,6 +81,7 @@ const mkTowerApp = (root) => {
   write(path.join(app, '.omega', 'runs', 'one.json'), '{}\n');
   write(path.join(app, 'targets', 'web', 'dist', 'index.html'), 'stale build\n');
   write(path.join(app, '.env'), 'SECRET=1\n');
+  write(path.join(app, '.env.production'), 'SECRET=2\n');
   write(path.join(app, '.cache', 'one.json'), '{}\n');
   write(path.join(app, '.temp', 'scratch.txt'), 'temp\n');
   write(path.join(app, '.DS_Store'), 'finder\n');
@@ -314,7 +315,7 @@ const run = async () => {
 
     for (const gone of [
       'node_modules/.bin/omega', 'targets/web/node_modules/x.js', 'package-lock.json',
-      '.omega/runs/one.json', 'targets/web/dist/index.html', '.env',
+      '.omega/runs/one.json', 'targets/web/dist/index.html', '.env', '.env.production',
       '.cache/one.json', '.temp/scratch.txt', '.DS_Store',
     ]) {
       assert(!fs.existsSync(path.join(world.clone, gone)), `${gone} is never copied`);

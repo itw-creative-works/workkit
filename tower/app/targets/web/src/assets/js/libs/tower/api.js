@@ -60,13 +60,14 @@ export function apiOverride(href, scope) {
  * answer it.
  *
  * `environment` is the framework's own: `omega.isDevelopment()` is
- * `config.environment === 'development'`, and that config is `window
- * .Configuration`, baked into the page by the build (`omega dev` writes
+ * `config.environment === 'development'`, and that config rides the ONE build
+ * snapshot every OMEGA page carries, `window.OMEGA_BUILD_JSON`, written by
+ * `build.js` at the site root before any module runs (`omega dev` writes
  * `development`, `omega build` writes `production`). It is read here from the
- * global rather than through `@omega.js/client` for two reasons: the singleton
- * only holds it once `omega.initialize()` has run, which is after this module
- * evaluates, and every framework import is a bundler specifier that would take
- * this module out of reach of its own suite.
+ * snapshot rather than through `@omega.js/client` for two reasons: the
+ * singleton only holds it once `omega.initialize()` has run, which is after
+ * this module evaluates, and every framework import is a bundler specifier
+ * that would take this module out of reach of its own suite.
  *
  * An explicitly supplied origin outranks the build: a published copy given
  * `?api=` runs fully live against whatever tower it was pointed at.
@@ -102,7 +103,7 @@ export function decideMode(environment, override, hasToken) {
   return hasToken ? 'github' : 'locked';
 }
 
-const ENVIRONMENT = (typeof window.Configuration === 'object' && window.Configuration && window.Configuration.environment) || '';
+const ENVIRONMENT = (window.OMEGA_BUILD_JSON && window.OMEGA_BUILD_JSON.config && window.OMEGA_BUILD_JSON.config.environment) || '';
 
 // A handover setup opened this page with is banked before the mode is read off
 // the storage it lands in (issue #230), so a copy arriving with the fragment is

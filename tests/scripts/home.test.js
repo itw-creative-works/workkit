@@ -359,23 +359,28 @@ const run = async () => {
     // them to it: an ignore rule added to the app without the list learning it
     // is a tree the seed and the sync copy into the published clone.
     const world = mkWorld();
-    const { out } = inHome(world, 'printf "%s\\n" "${WK_TOWER_APP_EXCLUDE[@]}"');
-    const excluded = out.trim().split('\n');
+    const { out } = inHome(world, 'printf "%s\\n" "${WK_TOWER_APP_EXCLUDE[@]}"; echo --; printf "%s\\n" "${WK_TOWER_APP_KEEP[@]}"');
+    const [excluded, kept] = out.trim().split('\n--\n').map((half) => half.split('\n'));
     cleanup(world.root);
 
-    const ignored = fs.readFileSync(path.join(KIT_DIR, 'tower', 'app', '.gitignore'), 'utf8')
+    const rules = fs.readFileSync(path.join(KIT_DIR, 'tower', 'app', '.gitignore'), 'utf8')
       .split('\n')
       .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith('#') && !line.startsWith('!'))
+      .filter((line) => line && !line.startsWith('#'))
       // Matched by NAME at every depth, so only the top-level names are the
       // list's to carry: a rule spelling out a path is a different question.
       .map((line) => line.replace(/\/$/, ''))
       .filter((line) => !line.includes('/'));
+    const ignored = rules.filter((line) => !line.startsWith('!'));
+    // A `!` line is what git gives back after a rule took it, and the copy
+    // gives it back the same way: the keep list is those lines, exactly.
+    const negated = rules.filter((line) => line.startsWith('!')).map((line) => line.slice(1));
 
     assert(ignored.length > 0, 'the app’s ignore rules were read');
     for (const name of ignored) {
       assert(excluded.includes(name), `the exclude list carries ${name}`);
     }
+    assertEq(kept.join(','), negated.join(','), 'and the keep list is the gitignore’s negations, no more and no fewer');
   });
 
   await test('the addresses are the new layout: a plain folder with one repo in it', () => {
