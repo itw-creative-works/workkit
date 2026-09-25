@@ -7,6 +7,18 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+- [#285](../../issues/285) - Every skill file is rewritten as bullets under one bar, a body of at most 120 non-blank lines with no line over 400 bytes, pinned by a test.
+
+### Added
+- [#289](../../issues/289) - The Board's column headers wear the status glyph its chips wear, drawn from the one glyph table.
+- [#290](../../issues/290) - Three engine scripts take the ship's mechanical steps: `release.js` makes the release commit's edits, `ship-items.sh` reads the qa and complete items with their proof, and `ci-watch.sh` waits on a sha's CI run and answers by exit code.
+
+### Fixed
+- [#286](../../issues/286) - A ship with a clean tree and `skip` still publishes the tree's version where npm lacks it, and the publish is one command, `publish-plan.js --run`, which asks npm per package and stops at the first failure.
+- [#287](../../issues/287) - Every test suite runs by file: one `selfRun` line ends each, suite discovery lives in `tests/lib/suites.js`, and the runner's own suite fails naming a suite without the line.
+- [#288](../../issues/288) - The tower's nav, topbar and page header icons carry their full Font Awesome classes again, the theme's contract, so they draw instead of rendering blank.
+
 ## [0.58.0] - 2026-09-24
 
 ### Added

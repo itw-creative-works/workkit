@@ -234,7 +234,7 @@ if [ -n "$files" ]; then
     esac
     # Not a doc, and not code either. Deliberately its own case: the classifier
     # above stays in step with docs/change-tracker's, and this carve-out is the
-    # gate's alone.
+    # gate's alone. Twin list: VERSION_FILES in workflow/release.js, which bumps exactly these.
     case "$path" in
       package.json|.claude-plugin/plugin.json)
         if [ "$is_doc" -eq 0 ] && version_bump_only "$path"; then is_doc=1; fi ;;

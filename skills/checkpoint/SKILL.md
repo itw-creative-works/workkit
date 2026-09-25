@@ -6,31 +6,40 @@ user-invocable: true
 
 # Checkpoint: apply the chat to the board before it is compacted
 
-A long chat holds verdicts and findings that exist NOWHERE ELSE. Compaction throws them away. This skill WRITES the conversation onto the board first: it files what is new, updates what exists, and moves every issue the owner's words moved. Afterwards "go", "continue" or "resume" starts from the issues, not the scrollback.
+A long chat holds verdicts and findings that exist NOWHERE ELSE, and compaction throws them away.
 
-**Invoking it is the owner's word to file AND to apply every status change they spoke**, for this run only. It drains the CONVERSATION, never the capture file. That stays `workkit:triage`'s (spec § Capture).
+- This skill WRITES the conversation onto the board first: it files what is new, updates what exists, and moves every issue the owner's words moved.
+- Afterwards "go", "continue" or "resume" starts from the issues, not the scrollback.
+- **Invoking it is the owner's word to file AND to apply every status change they spoke**, for this run only.
+- It drains the CONVERSATION, never the capture file. That stays `workkit:triage`'s (spec § Capture).
 
-**The trigger is loose on purpose.** Any line that mentions compacting, in any form, fires it: compact, compaction, `/compact`, context full or low or running out, clear the chat, new chat, fresh session, start over. A question form ("can I compact?", "should I compact?") is answered by running this skill first, then yes. The `docs:checkpoint` hook (`hooks/docs/checkpoint/run.sh`) matches those phrases deterministically on every prompt and injects the instruction to run this skill, so the description above is the judgment fallback for a phrasing the pattern misses.
+## The trigger is loose on purpose
+
+- Any line that mentions compacting, in any form, fires it: compact, compaction, `/compact`, context full or low or running out, clear the chat, new chat, fresh session, start over.
+- A question form ("can I compact?", "should I compact?") is answered by running this skill first, then yes.
+- The `docs:checkpoint` hook (`hooks/docs/checkpoint/run.sh`) matches those phrases deterministically on every prompt and injects the instruction to run this skill.
+- The description above is the judgment fallback for a phrasing the pattern misses.
 
 ## 1. Enumerate FIRST, before touching anything
 
-Read the whole chat back, not just the last exchange. Write out ONE line per owner comment, concern, ruling, verdict, decision, and question, plus every finding the agent made that has no home yet. Quote the owner's words on each line. A single exchange usually fans out to several lines; never one blob.
-
-The list is built from the chat, never from memory of what was filed. "Already on #652" is not a line; if it is on #652, the line names #652 and the run confirms it with `gh issue view`.
-
-The list is a WORKING document, never chat output: keep it in reasoning or a scratch file, act on it, and print only the trail in §5. The owner sees what changed, not the checklist.
+- Read the whole chat back, not just the last exchange.
+- Write ONE line per owner comment, concern, ruling, verdict, decision, and question, plus every agent finding with no home yet. Quote the owner's words on each line.
+- A single exchange usually fans out to several lines; never one blob.
+- Build the list from the chat, never from memory of what was filed. "Already on #652" is not a line: the line names #652 and the run confirms it with `gh issue view`.
+- The list is a WORKING document, never chat output. Keep it in reasoning or a scratch file, act on it, and print only the trail (§5).
+- The owner sees what changed, not the checklist.
 
 ## 2. Route each line to exactly one home
 
 Search first, open AND closed: `gh issue list --state all --search "<key words>" --limit 1000`. Then:
 
-- **An issue exists** → update it: a dated comment quoting the owner's words, a spec line, a label.
-- **No issue exists** → file one, following the `workkit:triage` routing table (the SSOT for destination, the filing litmus test, and the issue anatomy: spec § Issue anatomy).
-- **An unanswered owner question** → `status:blocked` with the question in the owner's own words. A question the agent answered in chat is not blocked; the answer goes on the issue.
+- **An issue exists**: update it with whichever apply: a dated comment quoting the owner's words, a spec line, a label.
+- **No issue exists**: file one through the `workkit:triage` routing table, the SSOT for destination, the filing litmus test, and the issue anatomy (spec § Issue anatomy). An entry for another repo or for the home repo routes the same way triage routes it.
+- **An unanswered owner question**: `status:blocked`, with the question in the owner's own words. A question the agent answered in chat is not blocked; the answer goes on the issue.
 
 ## 3. Apply the status the owner spoke
 
-Status changes ARE checkpoint work. Every owner word that moves an issue's stage is applied, with the words quoted on the issue, dated:
+Status changes ARE checkpoint work. Apply every owner word that moves an issue's stage, with the words quoted on the issue, dated:
 
 | The owner said | The flip |
 |---|---|
@@ -40,17 +49,25 @@ Status changes ARE checkpoint work. Every owner word that moves an issue's stage
 | "Park that", "not now" | → `status:backlog` |
 | Asks a question no one answered | → `status:blocked` |
 
-One `status:` label per issue: remove the old one in the same command (`gh issue edit <N> --remove-label status:qa --add-label status:complete`). Never `agent:ok`, and never a flip the owner did not speak. A verdict is applied, never inferred.
-
-One case where the spoken pass does NOT move the label: a `status:qa` item whose comments carry no line starting `Proof:`. Quote the owner's words on the issue as always, then LEAVE it at `status:qa` and say so in the Filed trail. The proof is a hard gate (spec § The proof), so `safety/proof-guard` bounces the flip anyway, and the fix is a re-park: the agent that built the item runs its layers, comments the `Proof:` line, and the flip follows.
+- One `status:` label per issue: remove the old one in the same command, `gh issue edit <N> --remove-label status:qa --add-label status:complete`.
+- Never `agent:ok`, and never a flip the owner did not speak. A verdict is applied, never inferred.
+- One case where a spoken pass does NOT move the label: a `status:qa` item whose comments carry no line starting `Proof:`.
+  - Quote the owner's words on the issue as always, then LEAVE it at `status:qa` and say so in the Filed trail.
+  - The proof is a hard gate (spec § The proof), so `safety/proof-guard` bounces the flip anyway.
+  - The fix is a re-park: the agent that built the item runs its layers and comments the `Proof:` line, then the flip follows.
 
 ## 4. Update `.workkit/agents/session.md`
 
-One bullet per item now in flight or queued, each pointing at its issue; DELETE the bullets the issues now hold. The file is a queue, not a journal. The 40-line bar and the 350-character bullet cap hold (spec § Capture, `docs:session-guard`).
+- One bullet per item now in flight or queued, each pointing at its issue.
+- DELETE the bullets the issues now hold: the file is a queue, not a journal.
+- The 40-line bar and the 350-character bullet cap hold (spec § Capture, `docs:session-guard`).
 
 ## 5. End with the Filed trail: what this run CHANGED
 
-The trail is a report of actions, not an audit log. ONE bullet per issue this run touched, its bold lead the number, the issue link and five words (§ Restating an issue), listing everything done to it in plain words (comments, filings, flips). Never one line per action, never a raw URL. It is the reply's `**🗂️ Filed**` section, the one shape `workkit:triage` prints too, and every bullet reads in the cold-reader line (`docs/project-state.md` § Restating an issue). Items verified as already on the board get ONE closing count line, never a line each.
+- The trail reports actions; it is not an audit log. It is the reply's `**🗂️ Filed**` section, the one shape `workkit:triage` prints too.
+- ONE bullet per issue this run touched, listing everything done to it in plain words: comments, filings, flips. Never one line per action, never a raw URL.
+- Every bullet reads in the cold-reader line (`docs/project-state.md` § Restating an issue): its bold lead is the number, the issue link and five words.
+- Items verified as already on the board get ONE closing count line, never a line each.
 
 ```
 **🗂️ Filed**
@@ -62,10 +79,10 @@ The trail is a report of actions, not an audit log. ONE bullet per issue this ru
 **✅ Safe to compact or continue in a new session.**
 ```
 
-The trail is the whole reply: nothing printed before it but the timestamp. `**✅ Safe to compact or continue in a new session.**` prints ONLY when every enumerated item is on the board; otherwise the last line names what is still unfiled.
+- The trail is the whole reply: nothing prints before it but the timestamp.
+- `**✅ Safe to compact or continue in a new session.**` prints ONLY when every enumerated item is on the board. Otherwise the last line names what is still unfiled.
 
 ## Rules
 
-- Every rule under `workkit:triage` § Rules binds here: one home per entry, one `status:` label, never invent priority, never `agent:ok` on the owner's behalf, `(check placement)` for the ambiguous ones.
+- Every rule under `workkit:triage` § Rules binds here, including never inventing priority and `(check placement)` for the ambiguous ones.
 - Idempotent: a run with nothing new says so and writes nothing.
-- No capture-file drain here. An entry belonging to another repo or to the home repo routes the same way triage routes it.

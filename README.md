@@ -123,6 +123,8 @@ The first four are capability classes. The resolver hook gives each spawn its mo
 
 `workkit:feature` · `workkit:interview` · `workkit:diagnose` · `workkit:review` · `workkit:triage` · `workkit:status` · `workkit:checkpoint` · `workkit:migrate` · `workkit:parallel` · `workkit:ship`. Most load themselves when your message matches their triggers; you can also type them as `/workkit:<name>`.
 
+Each skill is one `SKILL.md` of bullets, its body at most 120 non-blank lines with no line over 400 bytes; the test suite fails a skill that grows past that.
+
 ### Tower: the dashboard
 
 Mission control over everything the system already knows, in two processes behind one command: `npm run tower` starts the JSON API on port 8693 and the dashboard on 4300 together.
@@ -137,7 +139,7 @@ The morning on the clock, and **one script for it: `jobs/morning.sh`, run by bot
 
 ### Engine: `workflow/`
 
-Plain shell and Node, no Claude Code knowledge: `workkit.sh` (the one command: `setup` · `update` · `doctor` · `publish` · `tower` · `enable` · `decline` · `heal` · `note`), `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `home.sh` + `discussions.sh` + `publish.sh` (the home repo's lifecycle, its Discussions API, and the gh-pages publish), `changelog.js` (the entry-format linter the hooks call), `changelog-links.js` (release-time commit links and contributor handles), `wk.sh` (the capture CLI: `wk.sh note "the thought"` drops a bullet into the nearest participating repo's `capture.md`, or files an issue on the home repo outside one), and the templates a repo receives when it opts in.
+Plain shell and Node, no Claude Code knowledge: `workkit.sh` (the one command: `setup` · `update` · `doctor` · `publish` · `tower` · `enable` · `decline` · `heal` · `note`), `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `home.sh` + `discussions.sh` + `publish.sh` (the home repo's lifecycle, its Discussions API, and the gh-pages publish), `changelog.js` (the entry-format linter the hooks call), `changelog-links.js` (release-time commit links and contributor handles), `publish-plan.js`, `release.js`, `ship-items.sh` and `ci-watch.sh` (the ship's four helpers: the publish plan, the release commit's edits, the qa read, the CI watch), `wk.sh` (the capture CLI: `wk.sh note "the thought"` drops a bullet into the nearest participating repo's `capture.md`, or files an issue on the home repo outside one), and the templates a repo receives when it opts in.
 
 ## The home repo
 

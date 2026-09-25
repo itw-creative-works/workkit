@@ -94,7 +94,7 @@ const run = async () => {
   group('agents: review skill re-route');
   await test('SKILL.md routes lenses to the scout and scoring to the verifier', () => {
     const skill = fs.readFileSync(SKILL, 'utf8');
-    assert(skill.includes('`workkit:scout` agent'), 'lens table should name the scout');
+    assert(skill.includes('`workkit:scout` agent'), 'the lens list should name the scout');
     assert(skill.includes('`workkit:verifier` agent'), 'scorer/light tier should name the verifier');
     assert(!skill.includes('general subagent'), 'no lens should remain on "general subagent"');
     assert(skill.includes('never pass a `model` param'), 'the resolver rule note is missing');

@@ -10,6 +10,9 @@
 # 6, which holds the same gate on the `Fixes #N` trailer). Two closes pass
 # untouched, because nothing was built to prove: `--reason "not planned"` (`-r`
 # is the same flag) and `--duplicate-of <M>`.
+# The pattern's four homes (hook_issue_has_proof, workflow/ship-items.sh, and
+# PROOF_LINE in tower/api/server.js and the dashboard's libs/tower/github.js)
+# are named where it lives, in hooks/_lib.sh.
 #
 # The read runs from the SESSION'S directory (the payload's `cwd`), which is
 # where the gated command itself would run: an issue number with no `--repo`

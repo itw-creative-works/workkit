@@ -11,7 +11,7 @@ config:
     header:
       title:
         content: "Overview"
-        icon: "gauge-high"
+        icon: "fa-solid fa-gauge-high"
 ---
 
 <div id="tower-overview"></div>

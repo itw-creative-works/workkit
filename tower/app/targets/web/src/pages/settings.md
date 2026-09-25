@@ -11,7 +11,7 @@ config:
     header:
       title:
         content: "Settings"
-        icon: "gear"
+        icon: "fa-solid fa-gear"
 ---
 
 <div id="tower-settings"></div>

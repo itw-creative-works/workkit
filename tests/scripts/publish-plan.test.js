@@ -6,8 +6,10 @@
 //
 // Each case builds a fixture repo in a tmp dir: a root package.json and its
 // workspace members.
-// Nothing is stubbed, because nothing here reaches anything: the script reads
-// files and prints.
+// The plan cases stub nothing, because the plan reaches nothing: the script
+// reads files and prints. The `--run` cases put a fake `npm` in front of the
+// real one, the only npm any case here may reach, and read back every argv it
+// was handed.
 //
 
 const path = require('path');
@@ -15,8 +17,10 @@ const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun,
+  group, test, testUnless, assert, assertEq, summary, selfRun,
 } = require('../lib/harness');
+const { IS_WINDOWS, NO_NODE_STUB, stubTool, pathWith } = require('../lib/platform');
+const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'publish-plan.js');
 const { plan } = require(SCRIPT);
@@ -42,6 +46,46 @@ const runPlan = (dir) => {
   const res = spawnSync('node', [SCRIPT, '--dir', dir], { encoding: 'utf8', timeout: 20000 });
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
 };
+
+/**
+ * A fake `npm`. `view` answers the version for every `name@version` in `taken`
+ * and E404 for everything else, or, with `viewBreaks`, fails some other way so
+ * the check stands down. `publish` succeeds unless its `--workspace=` names
+ * `failPublish`. Every call is recorded.
+ */
+const makeNpmStub = ({ taken = [], viewBreaks = false, failPublish = null } = {}) => {
+  const dir = mkTmp();
+  const bin = path.join(dir, 'bin');
+  fs.mkdirSync(bin, { recursive: true });
+  stubTool(bin, 'npm', [
+    '#!/usr/bin/env bash',
+    recordArgv(path.join(dir, 'npm.log')),
+    'if [ "$1" = view ]; then',
+    ...(viewBreaks ? ['  echo "npm error code ETIMEDOUT" >&2', '  echo "npm error network timeout" >&2', '  exit 1'] : []),
+    '  case "${@: -2:1}" in',
+    ...taken.map((t) => `    '${t}') echo "${t.slice(t.lastIndexOf('@') + 1)}"; exit 0 ;;`),
+    '  esac',
+    '  echo "npm error code E404" >&2',
+    '  exit 1',
+    'fi',
+    ...(failPublish ? [`case " $* " in *" --workspace=${failPublish} "*) echo "npm error code E403" >&2; exit 1 ;; esac`] : []),
+    'exit 0',
+  ]);
+  return { binDir: bin, dir, calls: () => readArgv(path.join(dir, 'npm.log')) };
+};
+
+/** The script with the stub's npm first on PATH. */
+const runWith = (dir, stub, args) => {
+  const res = spawnSync('node', [SCRIPT, '--dir', dir, ...args], {
+    env: { ...process.env, PATH: pathWith(stub.binDir) },
+    encoding: 'utf8',
+    timeout: 20000,
+  });
+  return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
+};
+
+/** The registry question the run asks, argv for argv. */
+const view = (spec) => ['view', '--no-update-notifier', '--fetch-retries=0', '--fetch-timeout=15000', spec, 'version'];
 
 // A public workspace: explicitly not private, and a `files` publish signal.
 const pub = (name, version = '0.5.0', extra = {}) => ({ name, version, private: false, files: ['dist'], ...extra });
@@ -261,6 +305,136 @@ const run = async () => {
     assertEq(stdout, '', 'no plan printed');
     assert(stderr.includes('packages/gone'), `names the member, got: ${stderr}`);
     cleanup(dir);
+  });
+
+  group('publish-plan --run');
+
+  // Every case here puts a fake `npm` in front of the script under test, which
+  // spawns it directly: no stub is startable that way on Windows
+  // (tests/lib/platform.js, `stubTool`), so each case would ask the machine's
+  // own npm instead of the one it wrote, and publish for real.
+  const runTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
+
+  await runTest('publishes in plan order, asking the registry first, with --workspace and --access public only when scoped', () => {
+    const dir = mkRepo({
+      root: { name: 'family', version: '1.0.0', private: true, workspaces: ['packages/*'] },
+      members: {
+        'packages/ui': pub('@s/ui', '1.0.0', { dependencies: { core: '1.0.0' } }),
+        'packages/core': pub('core', '1.0.0'),
+      },
+    });
+    const stub = makeNpmStub();
+    const { code, stdout, stderr } = runWith(dir, stub, ['--run']);
+    assertEq(code, 0, `a clean run is exit 0, stderr: ${stderr}`);
+    assertEq(stdout, [
+      'publish core 1.0.0 unscoped',
+      'publish @s/ui 1.0.0 scoped',
+      'published core 1.0.0',
+      'published @s/ui 1.0.0',
+      '',
+    ].join('\n'), 'the plan, then one line per package published');
+    const want = [
+      view('core@1.0.0'),
+      ['publish', '--workspace=core'],
+      view('@s/ui@1.0.0'),
+      ['publish', '--workspace=@s/ui', '--access', 'public'],
+    ];
+    assertEq(fmtCalls(stub.calls()), fmtCalls(want), 'every npm call, in order');
+    cleanup(dir);
+    cleanup(stub.dir);
+  });
+
+  await runTest('a single root package gets a plain npm publish', () => {
+    const dir = mkRepo({ root: pub('widget', '2.1.0') });
+    const stub = makeNpmStub();
+    const { code, stdout, stderr } = runWith(dir, stub, ['--run']);
+    assertEq(code, 0, `exit 0, stderr: ${stderr}`);
+    assertEq(stdout, 'publish widget 2.1.0 unscoped\npublished widget 2.1.0\n', 'the plan and the publish');
+    assertEq(fmtCalls(stub.calls()), fmtCalls([view('widget@2.1.0'), ['publish']]), 'no --workspace at a root with no workspaces');
+    cleanup(dir);
+    cleanup(stub.dir);
+  });
+
+  await runTest('a package already on npm is skipped and the rest publish', () => {
+    const dir = SPEC_FIXTURE();
+    const stub = makeNpmStub({ taken: ['@s/a@0.5.0'] });
+    const { code, stdout, stderr } = runWith(dir, stub, ['--run']);
+    assertEq(code, 0, `a skip is not a failure, stderr: ${stderr}`);
+    assert(stdout.endsWith([
+      'skipped @s/a 0.5.0 already on npm',
+      'published @s/b 0.5.0',
+      'published @s/c 0.5.0',
+      '',
+    ].join('\n')), `the skip, then the publishes, got: ${stdout}`);
+    const published = stub.calls().filter((c) => c[0] === 'publish').map((c) => c[1]);
+    assertEq(published.join(','), '--workspace=@s/b,--workspace=@s/c', 'the taken one is never published');
+    cleanup(dir);
+    cleanup(stub.dir);
+  });
+
+  await runTest('every package already on npm is one line and exit 0', () => {
+    const dir = SPEC_FIXTURE();
+    const stub = makeNpmStub({ taken: ['@s/a@0.5.0', '@s/b@0.5.0', '@s/c@0.5.0'] });
+    const { code, stdout, stderr } = runWith(dir, stub, ['--run']);
+    assertEq(code, 0, `nothing to do is not a failure, stderr: ${stderr}`);
+    assert(stdout.endsWith([
+      'skipped @s/c 0.5.0 already on npm',
+      'nothing to publish: every package is already on npm at its version',
+      '',
+    ].join('\n')), `the closing line, got: ${stdout}`);
+    assertEq(stub.calls().filter((c) => c[0] === 'publish').length, 0, 'nothing published');
+    cleanup(dir);
+    cleanup(stub.dir);
+  });
+
+  await runTest('a failed publish stops the run, names what was and was not done, and exits 1', () => {
+    const dir = SPEC_FIXTURE();
+    const stub = makeNpmStub({ failPublish: '@s/b' });
+    const { code, stdout, stderr } = runWith(dir, stub, ['--run']);
+    assertEq(code, 1, 'a failed publish is exit 1');
+    assert(stdout.endsWith('published @s/a 0.5.0\n'), `only a published, got: ${stdout}`);
+    assert(stderr.includes('npm error code E403\n'), `npm's own output reaches the terminal, got: ${stderr}`);
+    assert(stderr.endsWith('publish-plan: npm publish failed for @s/b@0.5.0 (exit 1); 1 published, 1 not attempted: @s/c.\n'),
+      `the stop line, got: ${stderr}`);
+    assert(!stub.calls().some((c) => c.some((arg) => arg.includes('@s/c'))), `c is never asked about, got: ${fmtCalls(stub.calls())}`);
+    cleanup(dir);
+    cleanup(stub.dir);
+  });
+
+  await runTest('a registry check that cannot be made says so and still publishes', () => {
+    const dir = mkRepo({ root: pub('widget', '2.1.0') });
+    const stub = makeNpmStub({ viewBreaks: true });
+    const { code, stdout, stderr } = runWith(dir, stub, ['--run']);
+    assertEq(code, 0, `a stand-down is not a failure, stderr: ${stderr}`);
+    assertEq(stderr, 'publish-plan: the npm check stood down for widget@2.1.0: npm error code ETIMEDOUT; publishing anyway, npm refuses a taken version.\n',
+      'the stand-down line, first stderr line only');
+    assert(stdout.endsWith('published widget 2.1.0\n'), `the publish went ahead, got: ${stdout}`);
+    assertEq(fmtCalls(stub.calls()), fmtCalls([view('widget@2.1.0'), ['publish']]), 'asked, then published');
+    cleanup(dir);
+    cleanup(stub.dir);
+  });
+
+  await runTest('a refused plan publishes nothing', () => {
+    const dir = mkRepo({ root: pub('widget', '1.0') });
+    const stub = makeNpmStub();
+    const { code, stdout, stderr } = runWith(dir, stub, ['--run']);
+    assertEq(code, 1, 'refused');
+    assertEq(stdout, '', 'no plan printed');
+    assertEq(stderr, 'publish-plan: widget has the version 1.0, which is not a semver version.\n', 'the refusal, alone');
+    assertEq(stub.calls().length, 0, 'npm never spawned');
+    cleanup(dir);
+    cleanup(stub.dir);
+  });
+
+  await runTest('without --run the plan prints and no npm is spawned', () => {
+    const dir = SPEC_FIXTURE();
+    const stub = makeNpmStub();
+    const { code, stdout } = runWith(dir, stub, []);
+    assertEq(code, 0, 'exit 0');
+    assert(!stdout.includes('published'), `only the plan, got: ${stdout}`);
+    assertEq(stub.calls().length, 0, 'npm never spawned');
+    cleanup(dir);
+    cleanup(stub.dir);
   });
 };
 

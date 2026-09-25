@@ -45,7 +45,7 @@
     {
       label: 'Overview',
       href: '/',
-      icon: 'gauge-high',
+      icon: 'fa-solid fa-gauge-high',
     },
     {
       // bars-progress, not table-columns: the rail's own collapse button
@@ -53,29 +53,29 @@
       // (issue #177).
       label: 'Board',
       href: '/board',
-      icon: 'bars-progress',
+      icon: 'fa-solid fa-bars-progress',
     },
     {
       label: 'Crew',
       href: '/crew',
-      icon: 'sitemap',
+      icon: 'fa-solid fa-sitemap',
     },
     {
       label: 'Usage',
       href: '/usage',
-      icon: 'chart-simple',
+      icon: 'fa-solid fa-chart-simple',
     },
     {
       label: 'Brief',
       href: '/brief',
-      icon: 'newspaper',
+      icon: 'fa-solid fa-newspaper',
     },
     {
       // Last in its group by charter (issue #177): Health is the page for
       // what is broken, and the quiet days should not put it above the work.
       label: 'Health',
       href: '/health',
-      icon: 'heart-pulse',
+      icon: 'fa-solid fa-heart-pulse',
     },
     // Its own group, because it is the one page that is not a view of the
     // board: it holds the GitHub token this browser reads GitHub with, which
@@ -89,7 +89,7 @@
     {
       label: 'Settings',
       href: '/settings',
-      icon: 'gear',
+      icon: 'fa-solid fa-gear',
     },
   ],
 }

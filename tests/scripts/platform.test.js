@@ -18,7 +18,7 @@ const net = require('net');
 const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
-const { group, test, assert, assertEq, testUnless, summary } = require('../lib/harness');
+const { group, test, assert, assertEq, testUnless, summary, selfRun } = require('../lib/harness');
 const {
   IS_WINDOWS, BASH, SYSTEM_PATH, NO_RC, NO_NODE_STUB, shellPath, cygpathStub, homeEnv,
   stubTool, which, pathWith, systemPathWith, asWindows,
@@ -323,6 +323,4 @@ const run = async () => {
 
 module.exports = run;
 
-if (require.main === module) {
-  run().then(({ failed }) => process.exit(failed > 0 ? 1 : 0));
-}
+if (require.main === module) selfRun(run);

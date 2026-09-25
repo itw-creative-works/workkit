@@ -159,7 +159,7 @@ One limit is named rather than worked around: `safety:commit-gate`'s deadline wa
 - Fails open, out loud: no `jq`, no `gh`, a view that exits non-zero, or a `--repo` value it cannot resolve (a variable, a substitution) leaves the command alone and says on stderr that the gate did not run. An unreadable `--repo` is never answered by reading the local repo instead.
 - Clause boundaries are quote aware, in ONE awk pass: a `;` or a `|` inside a quoted body is data, and splitting on it used to cut the clause before its `--add-label`. Detection reads the quote-stripped copy of each clause; the flag values are read raw, since the strip is what removes them.
 - Two literal tests on the raw command come first, so a `gh issue edit` that cannot be a flip never reaches the walk: the text has to spell `status:complete` or `gh issue close`, which neither command can do its work without.
-- The third stage of the same gate is `safety:commit-gate` check 6, the `Fixes #N` trailer. Both call one helper, `hook_issue_has_proof` in `hooks/_lib.sh`, so on the shell path the question and its pattern have one home.
+- The third stage of the same gate is `safety:commit-gate` check 6, the `Fixes #N` trailer. Both call one helper, `hook_issue_has_proof` in `hooks/_lib.sh`. The ship asks the same question outside a hook, in `workflow/ship-items.sh`, the pattern's twin on the shell path, pinned to the helper by `tests/scripts/ship-items.test.js`.
 - The tower Board's own move of a card to Complete applies the same gate off the same read, on both of its write paths; the one difference is that a read the board cannot make refuses the move, where this hook stands down. Detail: `tower/README.md`.
 
 ## `safety:suite-guard`: PreToolUse (Bash)

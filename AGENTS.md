@@ -58,13 +58,13 @@ Five, namespaced `workkit:<name>`: `scout` (recon), `worker` (implementation), `
 
 ## Skills
 
-Ten, namespaced `workkit:<name>`: `feature` · `interview` · `diagnose` · `review` · `triage` · `status` · `checkpoint` · `migrate` · `parallel` · `ship`. One `SKILL.md` each, which is that skill's own home: what it does, when it fires, and how it runs.
+Ten, namespaced `workkit:<name>`: `feature` · `interview` · `diagnose` · `review` · `triage` · `status` · `checkpoint` · `migrate` · `parallel` · `ship`. One `SKILL.md` each, which is that skill's own home: what it does, when it fires, and how it runs. Every SKILL.md body holds one bar, at most 120 non-blank lines and no line over 400 bytes, pinned by `tests/scripts/skills.test.js`.
 
 ## The engine (`workflow/`)
 
 Agent-agnostic: shell + Node, no Claude Code knowledge, which is why the hooks call it rather than contain it. `workkit.sh` is the one command and the from-zero entry point: `setup [--token]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `tower` · `enable` · `decline` · `heal` · `note`.
 
-Beside it live the label SSOT, the heal, the CHANGELOG linter, the capture CLI, the templates a repo receives on enable, and the home repo's whole lifecycle. Every file and every step: `workflow/README.md`.
+Beside it live the label SSOT, the heal, the CHANGELOG linter, the capture CLI, the ship's four helpers (`publish-plan.js`, `release.js`, `ship-items.sh`, `ci-watch.sh`), the templates a repo receives on enable, and the home repo's whole lifecycle. Every file and every step: `workflow/README.md`.
 
 ## The tower (`tower/`)
 
@@ -80,7 +80,9 @@ Each step is gated by what the environment it woke up in can do; the brief itsel
 
 ## Tests
 
-`npm test` runs `tests/run.js`, which discovers every `tests/**/*.test.js`. A suite whose precondition this machine cannot meet calls `skipSuite()` and the runner names the skip rather than hiding it. Suites live under `tests/hooks/`, `tests/scripts/`, `tests/tower/`, and `tests/jobs/`.
+`npm test` runs `tests/run.js`, which discovers every `tests/**/*.test.js` through `tests/lib/suites.js`. A suite whose precondition this machine cannot meet calls `skipSuite()` and the runner names the skip rather than hiding it. Suites live under `tests/hooks/`, `tests/scripts/`, `tests/tower/`, and `tests/jobs/`, plus the runner's own suite at `tests/runner.test.js`.
+
+Every suite ends with `if (require.main === module) selfRun(<its export>);`, so `node tests/<path>.test.js` runs it alone; `tests/runner.test.js` fails naming a suite without the line.
 
 Every suite runs on macOS and on Windows under Git Bash, or skips whole by name on the platform it cannot answer. Everything that differs (the shell a case spawns, a PATH it controls, the POSIX spelling a shell script sees, how a tool reaches a stub PATH) lives in `tests/lib/platform.js`, every export the identity on macOS and Linux.
 

@@ -11,7 +11,7 @@ config:
     header:
       title:
         content: "Crew"
-        icon: "sitemap"
+        icon: "fa-solid fa-sitemap"
 ---
 
 <div id="tower-crew"></div>

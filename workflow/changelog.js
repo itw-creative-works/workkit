@@ -346,7 +346,10 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-// Exported for the guards (RULES, parseEntries, lintText) and for
+// Exported for the guards (RULES, parseEntries, lintText), for
 // changelog-links.js, which must agree with this file about what an entry looks
-// like and what "already has its links" means: one home, no second copy.
-module.exports = { RULES, COMMIT_RE, ISSUE_LINK_RE, META_RE, parseEntries, lintText };
+// like and what "already has its links" means, and for release.js, which finds
+// the `[Unreleased]` heading by the same section rule: one home, no second copy.
+module.exports = {
+  RULES, COMMIT_RE, ISSUE_LINK_RE, META_RE, SECTION_RE, sectionKind, parseEntries, lintText,
+};

@@ -10,27 +10,14 @@
 //
 // Add a new suite by dropping a `*.test.js` anywhere under tests/ that exports
 // `async () => ({ passed, failed, failures })`. See tests/hooks/ for the shape.
+// A suite ends with `if (require.main === module) selfRun(<its export>);` so
+// `node tests/<path>.test.js` runs it on its own.
 //
 
-const fs = require('fs');
 const path = require('path');
+const { findSuites } = require('./lib/suites');
 
 const TEST_DIR = __dirname;
-
-// Recursively collect *.test.js files (skipping lib/ and node_modules).
-const findSuites = (dir) => {
-  const out = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === 'node_modules' || entry.name === 'lib') continue;
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      out.push(...findSuites(full));
-    } else if (entry.name.endsWith('.test.js')) {
-      out.push(full);
-    }
-  }
-  return out;
-};
 
 (async () => {
   const start = Date.now();

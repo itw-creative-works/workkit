@@ -11,7 +11,7 @@ config:
     header:
       title:
         content: "Brief"
-        icon: "newspaper"
+        icon: "fa-solid fa-newspaper"
 ---
 
 <div id="tower-brief"></div>

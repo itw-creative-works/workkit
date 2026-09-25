@@ -17,7 +17,7 @@
   actions: [
     {
       label: 'File an issue',
-      icon: 'plus',
+      icon: 'fa-solid fa-plus',
       class: 'btn-adaptive btn-sm',
       attributes: [
         ['data-bs-toggle', 'modal'],

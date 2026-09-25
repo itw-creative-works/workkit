@@ -129,7 +129,9 @@
 // the element the line actually lays out: the renderer FILLS the `<i>` with the
 // svg, so the svg is what sits on the baseline. The horizontal half is the
 // markup's own `me-1` - the chip is an inline-block, with no gap to inherit.
-.omega-chip i.fa-solid svg { vertical-align: -.125em; }
+// The Board's column header draws the same `<i>` before its label, so the
+// same nudge reaches it there.
+.omega-chip i.fa-solid svg, .omega-panel-head i.fa-solid svg { vertical-align: -.125em; }
 
 // ── The empty state's icon ─────────────────────────────────────────────────
 //

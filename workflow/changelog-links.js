@@ -383,4 +383,6 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-module.exports = { repoSlug, commitsByIssue, fill, defaultRange, defineContributors };
+module.exports = {
+  repoSlug, commitsByIssue, authorHandle, fill, defaultRange, defineContributors,
+};

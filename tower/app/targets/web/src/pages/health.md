@@ -11,7 +11,7 @@ config:
     header:
       title:
         content: "Health"
-        icon: "heart-pulse"
+        icon: "fa-solid fa-heart-pulse"
 ---
 
 <div id="tower-health"></div>

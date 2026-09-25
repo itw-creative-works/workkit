@@ -2,8 +2,8 @@
 /* eslint-disable no-console */
 //
 // The ship's publish plan: which packages of a repo go to npm, in which order,
-// and which are skipped and why. The ship skill's Step 5 runs this and walks
-// the lines it prints; nothing here publishes.
+// and which are skipped and why. The ship skill's Step 5 runs this; without
+// `--run` nothing here publishes, and with it the plan is published as printed.
 //
 // A root package.json with no `workspaces` is its own one candidate. With
 // `workspaces` (the array, or the object's `packages`) the members are read
@@ -30,13 +30,35 @@
 // first problem as one `publish-plan: ...` line on stderr, nothing on stdout,
 // exit 1. A usage error (a flag with no value) is exit 2.
 //
+//   node ~/.claude/workkit/publish-plan.js --run [--dir <root>]
+// Makes and prints the same plan, then publishes its `publish` lines in order
+// from the root: `npm publish --workspace=<name>` when the root declares
+// `workspaces`, a plain `npm publish` otherwise, `--access public` when the
+// name is scoped, npm's own output left on the terminal. It never runs
+// `prepare`; the ship runs that before it. A refusal publishes nothing.
+//
+// Each package asks the registry first, the question the `safety/release-taken`
+// hook asks: that hook only sees a command whose word is `npm`, so a publish
+// inside this run is not its trigger and the run asks for itself. A version
+// already out prints `skipped <name> <version> already on npm` and the run goes
+// on; a check that cannot be made says so on stderr and the publish proceeds,
+// since npm itself refuses a taken version. Each publish prints
+// `published <name> <version>`. The first failed publish stops the run with one
+// `publish-plan: npm publish failed ...` line naming what was and was not
+// published, exit 1. When every package was already out, one
+// `nothing to publish: ...` line closes the run, exit 0.
+//
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const { isSemver } = require('./semver');
 
 const DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies'];
 const GLOB_RE = /[*?[]/;
+// On Windows npm is `npm.cmd`, which Node starts only through a shell; every argument
+// passed here (a package name, a version, a flag) has no whitespace, so the shell form is safe.
+const NPM_SHELL = process.platform === 'win32';
 
 /** A refusal: the plan cannot be made, and the message says why. */
 class PlanError extends Error {
@@ -157,8 +179,9 @@ const findCycle = (left, needs) => {
 /**
  * The publish plan for a repo.
  * @param {string} root - the repo root holding the package.json
- * @returns {{publish: Array<{name: string, version: string, scoped: boolean}>, skip: Array<{name: string, version: string, reason: string}>, notes: string[]}}
- *   `notes` are the stderr lines a plan that stands still owes (a pattern that matched nothing)
+ * @returns {{publish: Array<{name: string, version: string, scoped: boolean}>, skip: Array<{name: string, version: string, reason: string}>, notes: string[], workspaces: boolean}}
+ *   `notes` are the stderr lines a plan that stands still owes (a pattern that matched nothing);
+ *   `workspaces` is whether the root declares them, which is how its packages publish
  * @throws {PlanError} when the plan cannot be made, its message the line to print
  */
 const plan = (root) => {
@@ -197,7 +220,61 @@ const plan = (root) => {
     publish: order(candidates).map((c) => ({ name: c.name, version: c.version, scoped: c.name.startsWith('@') })),
     skip: skip.sort((a, b) => (a.name < b.name ? -1 : 1)),
     notes,
+    workspaces: rootPkg.workspaces !== undefined,
   };
+};
+
+/** How an npm call ended, for a line that names it: its exit code, or why it never had one. */
+const npmEnd = (res) => {
+  if (res.error) return `npm could not be run, ${res.error.code || res.error.message}`;
+  if (res.status === null) return `npm was killed by ${res.signal}`;
+  return `npm exited ${res.status}`;
+};
+
+/**
+ * Is `name@version` already on the registry? The `safety/release-taken` hook's
+ * npm question, flag for flag: one try, fifteen seconds, no prompt, no update
+ * banner. E404 is the registry answering that the version is free; any other
+ * failure stands the check down on stderr and answers free, so the publish
+ * goes ahead and npm refuses the version itself if it is taken.
+ */
+const onRegistry = (root, { name, version }) => {
+  const res = spawnSync('npm', ['view', '--no-update-notifier', '--fetch-retries=0', '--fetch-timeout=15000', `${name}@${version}`, 'version'], {
+    cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: NPM_SHELL,
+  });
+  if (res.status === 0) return res.stdout.trim() === version;
+  const stderr = res.stderr || '';
+  if (res.status !== null && stderr.includes('E404')) return false;
+  const why = stderr.split('\n')[0].trim() || npmEnd(res);
+  console.error(`publish-plan: the npm check stood down for ${name}@${version}: ${why}; publishing anyway, npm refuses a taken version.`);
+  return false;
+};
+
+/** Publish the plan's `publish` lines in order; the first failure stops the run. */
+const publishAll = (root, result) => {
+  let published = 0;
+  for (const [i, p] of result.publish.entries()) {
+    if (onRegistry(root, p)) {
+      console.log(`skipped ${p.name} ${p.version} already on npm`);
+      continue;
+    }
+    const args = ['publish'];
+    if (result.workspaces) args.push(`--workspace=${p.name}`);
+    if (p.scoped) args.push('--access', 'public');
+    const res = spawnSync('npm', args, { cwd: root, stdio: 'inherit', shell: NPM_SHELL });
+    if (res.status !== 0) {
+      const left = result.publish.slice(i + 1).map((l) => l.name);
+      const end = res.error || res.status === null ? npmEnd(res) : `exit ${res.status}`;
+      console.error(`publish-plan: npm publish failed for ${p.name}@${p.version} (${end}); ${published} published, ${left.length} not attempted: ${left.join(', ') || 'none'}.`);
+      return 1;
+    }
+    published += 1;
+    console.log(`published ${p.name} ${p.version}`);
+  }
+  if (result.publish.length > 0 && published === 0) {
+    console.log('nothing to publish: every package is already on npm at its version');
+  }
+  return 0;
 };
 
 const main = (argv) => {
@@ -215,9 +292,10 @@ const main = (argv) => {
     return 2;
   }
 
+  const root = path.resolve(dir || process.cwd());
   let result;
   try {
-    result = plan(path.resolve(dir || process.cwd()));
+    result = plan(root);
   } catch (err) {
     if (!(err instanceof PlanError)) throw err;
     console.error(err.message);
@@ -226,7 +304,7 @@ const main = (argv) => {
   for (const note of result.notes) console.error(note);
   for (const p of result.publish) console.log(`publish ${p.name} ${p.version} ${p.scoped ? 'scoped' : 'unscoped'}`);
   for (const s of result.skip) console.log(`skip ${s.name} ${s.version} ${s.reason}`);
-  return 0;
+  return argv.includes('--run') ? publishAll(root, result) : 0;
 };
 
 if (require.main === module) {

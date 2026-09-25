@@ -13,6 +13,9 @@
 # it and nothing when the package exists without it. stdin is closed so a
 # prompt can never hold a PreToolUse hook open, and the update notifier is off
 # so its banner cannot reach stdout.
+#
+# The ship's `publish-plan.js --run` asks this same question in Node (`onRegistry`
+# in workflow/publish-plan.js), flag for flag: change one, change both.
 
 set -uo pipefail
 

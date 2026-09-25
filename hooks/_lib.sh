@@ -596,7 +596,11 @@ hook_manager_config() {
 # The gh call runs in the CURRENT directory, so an issue number with no <repo>
 # resolves the way the gated command itself would; a caller judging another
 # directory cds first, in a subshell.
-# Consumers: safety/proof-guard, safety/commit-gate (check 6).
+# Consumers: safety/proof-guard, safety/commit-gate (check 6). The pattern has
+# four homes, which change together: this one, workflow/ship-items.sh (the
+# ship's read), and PROOF_LINE in tower/api/server.js and in the dashboard's
+# libs/tower/github.js. tests/scripts/ship-items.test.js pins the ship's copy
+# to this one, and tests/tower/app.test.js the endpoint's.
 hook_issue_has_proof() {
   local number="$1" repo="${2:-}" view proof
   command -v gh >/dev/null 2>&1 || return 2

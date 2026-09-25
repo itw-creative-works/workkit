@@ -360,10 +360,12 @@ export const CHIP_GLYPHS = {
  *
  * It carries its OWN spacing, the framework's `me-1`, because the chip it sits
  * in is no flex row to gap (see below) - without it the glyph is flush against
- * the word. The other half of sitting right is vertical, and that one is the
- * sheet's: `main.scss` nudges the svg the renderer fills this `<i>` with.
+ * the word. The Board's column header draws it too, before the status label,
+ * so a lane and the chips in it say the status with one picture. The other
+ * half of sitting right is vertical, and that one is the sheet's: `main.scss`
+ * nudges the svg the renderer fills this `<i>` with, in a chip and in a header.
  */
-const chipGlyph = (key) => (CHIP_GLYPHS[key] ? `<i class="fa-solid ${CHIP_GLYPHS[key]} me-1" aria-hidden="true"></i>` : '');
+export const chipGlyph = (key) => (CHIP_GLYPHS[key] ? `<i class="fa-solid ${CHIP_GLYPHS[key]} me-1" aria-hidden="true"></i>` : '');
 
 /**
  * One chip painted in a theme token, optionally wearing a glyph.

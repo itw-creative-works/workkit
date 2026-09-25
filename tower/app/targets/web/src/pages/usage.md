@@ -11,7 +11,7 @@ config:
     header:
       title:
         content: "Usage"
-        icon: "chart-simple"
+        icon: "fa-solid fa-chart-simple"
 ---
 
 <div id="tower-usage"></div>

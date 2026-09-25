@@ -16,6 +16,13 @@ const SKILLS = ['feature', 'interview', 'diagnose', 'review', 'triage', 'status'
 // (issue #94).
 const DESCRIPTION_CAP = 300;
 
+// The body is a RULE FILE read at invocation, and a rule stated once in bullets
+// reads faster than the same rule in paragraphs. The line count and the
+// bytes-per-line cap are one bar: the density number is the one AGENTS.md
+// lives under (docs:board-guard).
+const LINE_CAP = 120;
+const BYTE_CAP = 400;
+
 const frontmatterField = (file, field) => {
   const text = fs.readFileSync(file, 'utf8');
   const match = text.match(/^---\n([\s\S]*?)\n---/);
@@ -81,6 +88,43 @@ const run = async () => {
       if (description.length > DESCRIPTION_CAP) over.push(`${name} (${description.length})`);
     }
     assertEq(over.join(', '), '', `descriptions over ${DESCRIPTION_CAP} chars`);
+  });
+
+  group('skills: the length bar');
+
+  await test(`every SKILL.md body is at most ${LINE_CAP} non-blank lines with no line over ${BYTE_CAP} bytes`, () => {
+    // Enumerated from the DIRECTORY, like the description cap. Blank lines
+    // carry nothing and buy readability, so the count is of lines with
+    // content; the byte cap still reads every line. Hard fail, never a warning.
+    const over = [];
+    for (const name of skillFolders()) {
+      const file = path.join(SKILLS_DIR, name, 'SKILL.md');
+      // The BODY is measured: the frontmatter is YAML the loader reads (its
+      // allowed-tools line alone runs past the cap), not prose the model reads.
+      const text = fs.readFileSync(file, 'utf8');
+      const frontmatter = text.match(/^---\n[\s\S]*?\n---\n/);
+      assert(frontmatter, `${name} has no frontmatter`);
+      const offset = frontmatter[0].split('\n').length - 1;
+      const lines = text.slice(frontmatter[0].length).split('\n');
+      const content = lines.filter((line) => line.trim() !== '').length;
+      if (content > LINE_CAP) over.push(`${name}: ${content} content lines`);
+      lines.forEach((line, i) => {
+        const bytes = Buffer.byteLength(line, 'utf8');
+        if (bytes > BYTE_CAP) over.push(`${name}: line ${offset + i + 1} is ${bytes} bytes`);
+      });
+    }
+    assertEq(over.join('; '), '', `over the bar (${LINE_CAP} lines, ${BYTE_CAP} bytes a line)`);
+  });
+
+  await test('README.md and AGENTS.md state the bar with the test\'s own numbers', () => {
+    // The two doc lines restate the numbers on purpose, so a changed cap
+    // fails here until both say the new one.
+    const claim = `${LINE_CAP} non-blank lines`;
+    const density = `${BYTE_CAP} bytes`;
+    for (const [file, heading] of [[path.join(REPO, 'README.md'), '### Skills'], [path.join(REPO, 'AGENTS.md'), '## Skills']]) {
+      const text = section(file, heading);
+      assert(text.includes(claim) && text.includes(density), `${path.relative(REPO, file)} does not state ${claim}, ${density}`);
+    }
   });
 
   group('skills: frontmatter is strict YAML');

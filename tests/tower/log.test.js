@@ -12,7 +12,7 @@
 
 const { spawnSync } = require('child_process');
 const path = require('path');
-const { group, test, assert, assertEq, summary } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
 const LOG = path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'log.js');
 const ESCAPE = '\u001b';
@@ -103,6 +103,4 @@ const run = async () => {
 
 module.exports = run;
 
-if (require.main === module) {
-  run().then(({ failed }) => process.exit(failed > 0 ? 1 : 0));
-}
+if (require.main === module) selfRun(run);

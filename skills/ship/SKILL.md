@@ -1,308 +1,173 @@
 ---
 name: ship
 description: Ship a release, commit (or PR), bump the version, publish, create the GitHub release, run the deploy. - Use when the OWNER commands a ship, by /workkit:ship or the word in their own message ("ship it", "ship this"). A passing mention ("we can ship later") is not it; an agent never self-invokes.
-allowed-tools: Bash(git add *), Bash(git commit *), Bash(git diff *), Bash(git log *), Bash(git status *), Bash(git push *), Bash(git rev-parse *), Bash(git stash list *), Bash(git tag *), Bash(git switch *), Bash(git checkout *), Bash(git pull *), Bash(git branch *), Bash(gh release create *), Bash(gh repo view *), Bash(gh issue list *), Bash(gh issue view *), Bash(gh issue close *), Bash(gh issue comment *), Bash(gh issue edit *), Bash(gh pr create *), Bash(gh pr merge *), Bash(gh pr checks *), Bash(gh pr view *), Bash(gh run list *), Bash(gh run watch *), Bash(gh run view *), Bash(gh workflow list *), Bash(npm publish *), Bash(npm version *), Bash(npm run prepare *), Bash(npm run deploy *), Bash(npm run release *), Bash(npx run deploy *), Bash(npx run release *), Bash(workkit publish *), Bash(workkit setup *)
+allowed-tools: Bash(git add *), Bash(git commit *), Bash(git diff *), Bash(git log *), Bash(git status *), Bash(git push *), Bash(git rev-parse *), Bash(git stash list *), Bash(git tag *), Bash(git switch *), Bash(git checkout *), Bash(git pull *), Bash(git branch *), Bash(gh release create *), Bash(gh repo view *), Bash(gh issue list *), Bash(gh issue view *), Bash(gh issue close *), Bash(gh issue comment *), Bash(gh issue edit *), Bash(gh pr create *), Bash(gh pr merge *), Bash(gh pr checks *), Bash(gh pr view *), Bash(gh run list *), Bash(gh run watch *), Bash(gh run view *), Bash(gh workflow list *), Bash(node ~/.claude/workkit/publish-plan.js *), Bash(node ~/.claude/workkit/release.js *), Bash(bash ~/.claude/workkit/ship-items.sh *), Bash(bash ~/.claude/workkit/ci-watch.sh *), Bash(npm publish *), Bash(npm version *), Bash(npm run prepare *), Bash(npm run deploy *), Bash(npm run release *), Bash(npx run deploy *), Bash(npx run release *), Bash(workkit publish *), Bash(workkit setup *)
 user-invocable: true
 ---
-
 # Ship a Release
-
-Autonomous ship pipeline. Reads the project config, picks the version bump itself (asking only when it believes the change is a breaking major), then executes everything deterministically. No round-based questioning, just ship it.
+Autonomous ship pipeline: read the config, pick the bump, then run every step deterministically, with no round-based questions.
 
 ## Invocation args
 
-Parse the user's invocation text BEFORE doing anything. Args pre-resolve decisions so the pipeline runs without asking.
+- Parse the invocation text BEFORE anything else. When args resolve every decision, ask NOTHING and run the full pipeline. Otherwise it asks three questions only: which repo (Step 0), a major bump (Step 1), the qa call (Step 0c). The deploy confirmation (Step 6) is a gate, not a question, and only `deploy` in the args skips it.
+- Bump: `patch` / `minor` / `major` uses that bump. An explicit version (`1.0.0`, `v1.0.0`) bumps to exactly it, a major included. `skip` / `no bump` skips the bump. A bump given here is never asked about.
+- File scope: `all` / `everything` stages the whole tree (`git add -A`), the DEFAULT. Explicit paths or globs (`src/` `docs/`) stage ONLY those. A description ("just the prompt changes", "only the route files") stages only the matching files.
+- Opt out: `no deploy` / `skip deploy` skips deploy without asking. `no publish` / `skip publish` is the only way to skip publish. `no prepare` skips prepare even if `scripts.prepare` exists. `no release` skips the GitHub release. `no changelog` skips the CHANGELOG update.
+- Opt in: `deploy` runs deploy WITHOUT the confirmation prompt. `pr` ships through a pull request (branch, checks, squash merge) instead of the default direct commit. `publish` changes nothing: ship means publish.
 
-**Bump type:**
-- `patch` / `minor` / `major` → use that bump, don't ask
-- an explicit version (`1.0.0`, `v1.0.0`) → bump to exactly that version, don't ask; a major named this way is the owner's word and is never asked about
-- `skip` / `no bump` → no version bump, don't ask
-
-**File scope:**
-- `all` / `everything` → stage the entire working tree (`git add -A`). This is also the DEFAULT when no file scope is given.
-- Explicit paths / globs (e.g. `src/` `docs/`) → stage ONLY those files
-- Specific descriptions (e.g. "just the prompt changes", "only the route files") → identify and stage only the matching files
-
-**Step overrides (opt OUT of a step):**
-- `no deploy` / `skip deploy` → skip the deploy step without asking
-- `no publish` / `skip publish` → skip the publish step (the only way to: ship means publish)
-- `no prepare` → skip the prepare step even if `scripts.prepare` exists
-- `no release` → skip GitHub release even if the repo is public
-- `no changelog` → skip CHANGELOG update
-
-**Step overrides (opt IN / skip the confirmation prompt):**
-- `deploy` → run deploy WITHOUT asking (skips the confirmation prompt)
-- `pr` → ship through a pull request (branch, checks, squash merge) instead of the default direct commit
-
-**Words that change nothing:**
-- `publish` → accepted, since ship means publish
-
-**Examples:**
 | Invocation | Bump | Files | Overrides |
 |---|---|---|---|
 | `/ship` | picked from the diff (ask only if major) | all | none |
-| `/ship patch` | patch | all | none |
-| `/ship 1.0.0` | exactly 1.0.0 | all | none |
 | `/ship publish 1.0.0` | exactly 1.0.0 | all | none (`publish` changes nothing) |
 | `/ship minor no deploy` | minor | all | skip deploy (no prompt) |
-| `/ship patch no prepare` | patch | all | skip prepare |
 | `/ship src/ docs/` | picked from the diff | only those paths | none |
-| `/ship patch no publish` | patch | all | skip the npm publish |
-| `/ship minor deploy` | minor | all | deploy to production |
 | `/ship major deploy` | major | all | deploy to production |
-
-If all decisions are resolved by args (bump type given, file scope clear, no ambiguity), ask NOTHING and execute the full pipeline.
+| `/ship skip` on a clean tree | none | none | publishes the tree's version where npm lacks it |
 
 ## Step 0: Resolve target project
 
-**BEFORE reading any config**, determine WHICH project is being shipped. This matters because a session often touches multiple repos (e.g., a framework repo AND a consumer project).
-
-1. Check what the user typed. If they named a project (e.g., "BEM", "optiic", a repo name, a path), target that project.
-2. If they didn't name one, check the session context: were changes made in multiple repos during this session? Look at:
-   - The primary working directory (from the environment)
-   - Any additional working directories
-   - Repos you've run `git` commands in, edited files in, or `cd`'d into
-3. **If multiple repos have uncommitted changes or were edited this session, ASK which project to ship.** Don't guess. Shipping the wrong repo is a hard-to-reverse mistake. This, a major bump, and the Step 0c `status:qa` call are the only questions the pipeline ever asks; the missing-proof call beside it is a REPORT, not a question, since an unproved item is held either way.
-4. If only one repo was touched, or the user's intent is unambiguous, proceed without asking.
-
-Once the target is resolved, `cd` into that project's root (or the appropriate subdirectory like `functions/`) before continuing.
+- Decide WHICH project ships BEFORE reading any config: a session often touches several repos (a framework AND a consumer). The user named one ("BEM", "optiic", a repo name, a path): target it.
+- Otherwise check the session: the primary and additional working directories, and repos you ran `git` in, edited, or `cd`'d into. Several repos with uncommitted changes or edits: ASK which one. Never guess: the wrong repo is hard to reverse. One repo, or a clear intent: proceed without asking. Then `cd` into its root (or the right subdirectory, like `functions/`).
 
 ## Step 0b: Read project config
 
-**Use the `Read` tool to inspect `package.json`**, NEVER `node -e`, `cat`, `jq`, `grep`, or any shell command. Read it once and extract:
-- `version` (current)
-- `name`
-- `private` (true/false)
-- `scripts.prepare` (exists?)
-- `scripts.deploy` or `scripts.release` (exists?)
-
-Also run `git log --oneline -5` to understand recent commit style.
+- Read `package.json` once with the `Read` tool, NEVER a shell command (`node -e`, `cat`, `jq`, `grep`). Extract `version`, `name`, `private`, and whether `scripts.prepare` and `scripts.deploy` or `scripts.release` exist. Run `git log --oneline -5` for the commit style.
 
 ## Step 0c: What this ship carries (the `status:qa` call and the proof call)
 
-A ship finishes the items that PASSED their check: `status:complete` is the stage it reads from (spec § the qa stage). Items still at `status:qa` are waiting on a check and are not this ship's to close.
-
-1. List both stages, if the repo participates: `gh issue list --state open --label status:complete --json number,title,comments --limit 1000` and the same for `status:qa`. The comments ride these two calls; step 5 reads them.
-2. Nothing at `status:qa` → say nothing about it and carry on.
-3. Anything at `status:qa` → its code sits in the SAME working tree this ship is about to commit, so the owner has to call it. List each one in the cold-reader line (`docs/project-state.md` § Restating an issue), ending with what it is waiting on from its check comment, and ask per item:
-   - **include**: the owner's check passed right there: grant the stage on the spot (`gh issue edit <N> --remove-label status:qa --add-label status:complete`) with the pass comment (`gh issue comment <N> --body "QA passed by <owner>, <date>."`), and the ship carries it like any other complete item. The grant needs the item's `Proof:` comment to ALREADY be there, since `safety/proof-guard` bounces the flip without one; an unproved item is a hold instead, per the proof call at 0c.5.
-   - **delay the ship**: STOP the pipeline and say so. Nothing is committed; the item gets its check first.
-   The owner may also say to ship anyway, in which case the qa item's code rides along in the commit while its issue stays open, keeping its `[Unreleased]` entry. It is untouched by this ship's close step.
-4. This is a question the pipeline DOES ask, alongside the major bump and the target repo (the missing-proof report below is not one). Never grant `status:complete` on the owner's behalf: the verdict is theirs, exactly like `agent:ok`. An `agent:ok` issue is the one exception, where the agent's own passing check already moved it.
-5. **The missing proof**. Read the same two lists for proof: any item at `status:qa` or `status:complete` whose comments carry NO line starting `Proof:` was never recorded as built at every test layer (spec § The proof), and a spoken pass reaches `complete` with nothing written down. Nothing missing, say nothing and carry on. Otherwise list each one in the cold-reader line (`docs/project-state.md` § Restating an issue), and a missing proof is a HOLD:
-   - **hold** (what happens to every one of them): the item waits for its proof and this ship does not complete it: its code rides along in the commit, it gets no `Fixes #N` trailer (step 3.4), its `[Unreleased]` entry stays where it is, and step 3.6 skips it. A held `status:qa` item stays as the qa call left it. The fix named is a RE-PARK: the agent that built the item runs the layers it has a surface on and comments the `Proof:` line, then the item is checked again.
-   The gate is mechanical: `safety/proof-guard` bounces the flip to `status:complete` and the close, and `safety/commit-gate` check 6 bounces the `Fixes #N` trailer, so an unproved item cannot ship however the ship is asked for. And never a `Proof:` line invented on the owner's behalf, exactly like the pass verdict (spec § The pass).
+- A ship finishes items that PASSED their check, so it reads from `status:complete` (spec § the qa stage). A `status:qa` item is not its to close. If the repo participates, run `bash ~/.claude/workkit/ship-items.sh`: one line per qa or complete item, `<stage> #<N> <proved|unproved> <title>`, the proof call already read. Exit 1 (its `ship-items:` line): stop and report it.
+- Nothing at `status:qa`: say nothing. Otherwise its code is in the tree this ship commits, so the owner calls it. List each in the cold-reader line (`docs/project-state.md` § Restating an issue), ending with what its check comment waits on. Ask per item:
+  - **include**: the owner's check passed here. Run `gh issue edit <N> --remove-label status:qa --add-label status:complete` and `gh issue comment <N> --body "QA passed by <owner>, <date>."`, then ship it as complete. Its `Proof:` comment must exist first (`safety/proof-guard` bounces the flip); unproved, it is held.
+  - **delay the ship**: STOP the pipeline and say so. Nothing is committed; the item gets its check first. **ship anyway**: the item is left open (below).
+- Never grant `status:complete` for the owner: the verdict is theirs, like `agent:ok`. The one exception is an `agent:ok` issue, which its own passing check already moved.
+- The proof call is a report, not a question. An `unproved` item (no comment line starting `Proof:`) was never recorded as built at every layer (spec § The proof). A spoken pass can reach `complete` with nothing written. List each in the cold-reader line: it is HELD. None: say nothing.
+- An item left open (held, or qa shipped anyway) rides the commit as code only. It gets no `Fixes #N` trailer, keeps its `[Unreleased]` entry through the release move, and the close skips it. A held qa item stays as the qa call left it.
+- The fix for a hold is a RE-PARK. The building agent runs the layers it has a surface on and comments the `Proof:` line. Then the item is checked again. The hold is mechanical: `safety/proof-guard` bounces the flip to `status:complete` and the close. `safety/commit-gate` check 6 bounces the `Fixes #N` trailer. Never invent a `Proof:` line for the owner (spec § The pass).
 
 ## Step 1: Pick the bump type (ask ONLY for major)
 
-**Parse invocation args first.** If the user typed `/workkit:ship patch`, `/workkit:ship minor`, `/workkit:ship major`, or `/workkit:ship skip`, use that directly. An explicit version (`/workkit:ship 1.0.0`) is the version itself: bump to exactly it, whatever the diff says, and never ask, a major included. Don't ask.
-
-If no bump type was given, PICK it from the session's changes and say which was picked in the ship summary:
-- **patch** for bug fixes, config changes, prompt tweaks, dependency bumps, internal refactors
-- **minor** for new features, new endpoints, new commands, new capabilities
-
-The ONE exception is **major**: a breaking change is never assumed. When the analysis says the changes break consumers, ask. Options: **Major** (X.0.0), **Minor** (0.X.0), **Skip** (no bump), with Major first as "(Recommended)".
-
-Everything else is deterministic; no other bump question is ever asked.
+- No bump in the args: PICK it from the session's changes. **patch**: bug fixes, config changes, prompt tweaks, dependency bumps, internal refactors. **minor**: new features, endpoints, commands, capabilities.
+- **major** is never assumed. When the analysis says the change breaks consumers, ask: **Major** (X.0.0) first as "(Recommended)", **Minor** (0.X.0), **Skip** (no bump). No other bump question is ever asked.
 
 ## Step 2: Prepare (if applicable)
 
-If `scripts.prepare` exists, run `npm run prepare`. This builds outputs (compiled files, generated configs, fetched data) that need to land in the working tree for the commit/tarball. Run it BEFORE analyzing the diff so generated changes are visible. If it fails, surface the error and STOP.
-
-Do NOT run `scripts.setup`. Setup is environment/machine provisioning, not release work. A repo whose ship needs codegen expresses that as `prepare`.
-
-**No test step.** The skill never runs the test suite: the `safety/commit-gate` hook runs it deterministically on every commit that carries code (docs-only commits and version-only bumps skip it). That is the single owner of test enforcement. A failing suite surfaces as a blocked commit in Step 3; fix the failure, never bypass the gate. A ship whose commits are all no-code leans on the newest code-carrying commit's gate run, which is the proof publish check 3 reads.
+- If `scripts.prepare` exists, run `npm run prepare` BEFORE the diff analysis. Its outputs (compiled files, configs, fetched data) must land for the commit and tarball. It fails: surface the error and STOP. Never run `scripts.setup`: it provisions a machine, not a release; codegen belongs in `prepare`. No test step: the commit gate owns the suite (§ The commit gates).
 
 ## Step 3: Analyze, commit, and push
 
-Run `git status` and `git diff HEAD` now, AFTER prepare has run, so any generated file changes are visible.
+- Run `git status` and `git diff HEAD` now, after prepare, so generated changes show. Any change runs the step: session work, untracked files, or the bump itself. A clean tree AND a skipped bump skips items 1 to 7 and Step 4, and ENDS after Step 5: it publishes the tree's version where npm lacks it, or says in one line that every package is out, or "Nothing to ship" when no line publishes.
 
-**No-changes guard:** if `git status` shows a clean working tree AND bump was skipped, say "Nothing to ship: working tree is clean and no version bump selected" and STOP. Don't run any subsequent steps.
+1. **Analyze**: review the diff and session context for what changed and why.
 
-This step runs if there are changes in the working tree (from the session's work, git status showing modified/untracked files, or the version bump itself).
+2. **Doc parity**: find behavior changes in the diff (new commands, flags, env vars, changed defaults, new patterns). Document any undocumented one in README.md, AGENTS.md or docs/*.md, in the same commit. Skip for internal refactors, test-only changes, and config or prompt tweaks with no user-facing impact.
 
-1. **Analyze all changes**: review the diff and session context to understand what changed and why.
+2b. **Full review, every ship**: run the `workkit:review` skill with the `full` arg on the whole ship diff (the tier is not negotiable here). Do it before any commit this ship makes. The ship diff is the widest view of the wave, so it catches drift no single brief could name.
+   - Fix every finding scored ≥80 before going on; one you deliberately do not fix is said aloud in the reply, never dropped silently. It runs EVERY time: an earlier review, a docs-only diff, or a fresh marker exempts nothing. Only an EMPTY diff (a release-only ship, or only the version stamp) skips it, in one line.
+   - A marker's age only says the review skill ran, never that this diff was reviewed. The marker stays the gate's check for ordinary code commits; the ship relies on this step.
 
-2. **Doc-parity review**: scan the diff for behavioral changes (new commands, flags, env vars, changed defaults, new patterns). If any are undocumented, update the relevant docs (README.md, AGENTS.md, docs/*.md) in the same commit. Skip for internal refactors, test-only changes, and config/prompt tweaks with no user-facing impact.
+3. **CHANGELOG**: add the entry under `[Unreleased]` (§ CHANGELOG format). The release commit moves it to a version section, never the work commit.
 
-2b. **Code review, the FULL panel, every ship**: invoke the `workkit:review` skill with the `full` arg on this ship's whole diff and act on its findings before any commit this ship makes, so it lands ahead of the work commit and the release commit both. Ship OWNS this step and the tier is not negotiable here: the ship diff is the widest view anything gets of the wave, so it is the pass that catches drift no single issue's brief could name.
-   - Fix every finding it scores ≥80 before proceeding. A finding you deliberately do not fix gets said out loud in the ship summary, never dropped silently.
-   - It runs EVERY time, with no exemptions: a review earlier in the session, a docs-only diff, and a review marker fresher than the last commit all still get the panel. The one floor is an EMPTY diff (a release-only ship whose work already landed, or only the version stamp): there is nothing to review, and the step says so in one line instead of spawning a panel over nothing.
-   - **The marker alone no longer licenses a ship.** A marker's age says only that the `workkit:review` skill ran at some point, never that this ship's diff was reviewed; it stays the `safety/commit-gate` check for ordinary code commits, and this step is what the ship relies on.
-
-3. **Update CHANGELOG**: add the entry under `[Unreleased]` (keepachangelog categories below), in the entry format: `- [#4](../../issues/4) - What changed.` (a relative link, the repo URL never appears in the file) Write ONLY the issue link and one short paragraph; the commit link and the `@handle` are generated in step 5. The move from `[Unreleased]` to a version section belongs to the release commit, not the work commit.
-
-4. **Draft commit message**: Conventional Commits. Write it straight into the commit; do NOT print it in the chat first (see § "The reply is the outcome, not the working").
-   ```
+4. **Commit message**: Conventional Commits, types feat/fix/docs/chore/refactor/test; subject lowercase, imperative, ≤72 chars; no version numbers in ordinary commits. Write it straight into the commit, never printed in chat first.
+   - Add `Fixes #N` for every issue this ship completes: GitHub closes it when the commit lands on the default branch. Always a HEREDOC:
+   ```bash
+   git commit -m "$(cat <<'EOF'
    <type>(<scope>): <subject>
 
    <body: what and why, plain sentences>
 
    Fixes #<issue>
+   EOF
+   )"
    ```
-   Types: feat/fix/docs/chore/refactor/test. Subject lowercase, imperative, ≤72 chars. NO version numbers in ordinary commits. Add a `Fixes #N` trailer for every issue this ship completes (never one held at Step 0c.5). GitHub closes them when the commit carrying the trailer lands on the default branch.
 
-5. **Commit: direct by default, PR when the work calls for it** (spec: the workkit plugin's `docs/project-state.md` → "Queue semantics", the delivery bullet):
-   A supervised session ships DIRECT: the local hook gates are the enforcement, and a PR would re-review work the gates already reviewed. The PR path is for work the local gates never saw. Take it when the invocation says `pr`, when shipping agent-authored or unattended work, or when the session is on a work branch that already has a PR open.
+5. **Commit: direct by default, PR when the work calls for it** (spec: the workkit plugin's `docs/project-state.md` "Queue semantics", the delivery bullet). A supervised session ships DIRECT: the local gates already reviewed it. The PR path is for work they never saw. Take it on `pr`, for agent-authored or unattended work, or on a work branch with an open PR.
+   - **Direct**: stage (`git add -A`, or the named paths), then commit. Always push the work commit, BEFORE any release commit. The backfill maps each `@handle` through the GitHub API, which cannot see an unpushed sha. Watch its CI run.
+   - **PR**: resolve the default branch (`gh repo view --json defaultBranchRef -q .defaultBranchRef.name`, not always `main`). On it, branch `issue/<N>-slug` (no issue: `ship/<slug>`); on a work branch, stay. Commit there (the same local gates run), `git push -u origin <branch>`, then `gh pr create`.
+   - The PR's title is the commit subject; its body ends with the `Fixes #N` trailer. Wait on `gh pr checks --watch`. Fix a FAILING check on the branch and push again, never merge around it. "no checks reported" is not a failure: CI may not exist yet, or GitHub lags minutes. Retry first.
+   - Merge with `gh pr merge --squash --delete-branch`, an explicit `--subject` (commit subject + ` (#<PR>)`) and a `--body` carrying the `Fixes #N` trailer. Without `--body`, the squash writes its own. An AGENT never merges unasked: `agent:ok` authorizes the work, not the merge, so its PR stops at green and says so.
+   - Then check out the default branch and `git pull`. The squash REWRITES the sha, so backfill only after the pull, never on a deleted branch's shas. That is why the release commit follows the merge.
+   - **Release commit** (either path, unless the bump is skipped): compute the version, then ONE command, `node ~/.claude/workkit/release.js <x.y.z> [--keep <N,M>]`, Step 0c's open items as `--keep`. Never `npm version` (it auto-commits).
+   - It sets `version` in each version file carrying one (`package.json`, `.claude-plugin/plugin.json`), backfills each entry's commit link, and moves `[Unreleased]` into `[<x.y.z>] - <date>`, the kept entries staying. A `release:` warning names an entry with no closing commit: fix it before committing.
+   - Commit `chore(release): <x.y.z>` and push straight to the default branch, never a PR. Watch its CI run, the final sha. `safety/release-taken` bounces it when npm or a GitHub release already holds the version. A taken number surfaces here, not at the publish.
 
-   **Direct path (the default):**
-   - Stage the session's changes as their OWN command (`git add -A`, or only the invocation's named paths), then commit with the drafted message in a second command. The gate reads the index before the command runs, so it bounces a compound that stages and commits in one call.
-   - **Push the work commit**: always, bump or no bump. When a bump follows, the push must land BEFORE the release commit: the backfill resolves each `@handle` through the GitHub API, which cannot map a sha it has never seen.
-   - **Watch the push's CI run** (see § "Watching a push's CI run"). When a bump follows immediately, don't block here (go make the release commit while this run works), but this run's conclusion is still owed: BOTH runs complete (nothing cancels the first: this run is the only one that ever lints the `[Unreleased]` entries, since the release commit empties that section), so after the release sha's watch, collect this one's conclusion too and hold it to the same red-is-loud standard.
+6. **Close**: every issue this ship completes (Step 0c's `status:complete` items) ends closed, pointing at its CHANGELOG entry. The trailer closes it on landing; close any still open: `gh issue close <N> --comment "Shipped in <version-or-commit>: see CHANGELOG [Unreleased]/<section>."` A partly addressed issue stays open with a progress comment.
+   - Release every claim: `gh issue edit <N> --remove-label status:complete,status:qa,status:building,agent:working`. Any of them can be there, and naming an absent one is harmless. A trailer never touches labels; per the spec, the ship close ENDS the working stage.
+   - Then PRUNE, if the repo participates: delete from `.workkit/agents/session.md` every entry this ship completed (the issues closed, the release cut). Their facts now live in the CHANGELOG and the issues; the file is the next session's queue, not an archive.
 
-   **PR path (on `pr`, agent-authored work, or an already-open PR):**
-   - Resolve the default branch (`gh repo view --json defaultBranchRef -q .defaultBranchRef.name`, not always `main`). If on it, branch `issue/<N>-slug` (no issue → `ship/<slug>`); already on a work branch, stay.
-   - Commit on the branch (the local gates run identically), `git push -u origin <branch>`, `gh pr create`: title = the commit subject, body ends with the `Fixes #N` trailer.
-   - Wait on `gh pr checks --watch`. A FAILING check gets fixed on the branch and pushed again, never merged around. "no checks reported" is NOT a failure: the repo may have no CI on the base branch yet, or GitHub has not queued the run (it can lag minutes). Retry before concluding there are no checks.
-   - Squash merge: `gh pr merge --squash --delete-branch` with an explicit `--subject` (commit subject + ` (#<PR>)`) and a `--body` carrying the `Fixes #N` trailer. The squash commit is what lands, so the trailer must live there. An AGENT never merges without being asked in words: `agent:ok` authorizes the work, not the merge, so an agent-authored PR stops at green and says so.
-   - Check out the default branch and `git pull`.
+7. **Verify**: `git status` shows a clean tree, and `git log --oneline -2` shows the expected commits on the default branch.
 
-   **Release commit** (either path, only if bump not skipped): use the `Edit` tool to bump `version` in `package.json` (NOT `npm version`: it auto-commits), run `node ~/.claude/workkit/changelog-links.js` to fill each entry's commit link and contributor handle (idempotent), move the CHANGELOG `[Unreleased]` content to a new `[<x.y.z>] <date>` section. EXCEPT any entry whose issue this ship leaves open (a qa ride-along, or a hold, from Step 0c): that entry stays under `[Unreleased]` for the ship that closes it. Commit as `chore(release): <x.y.z>`, and push directly to the default branch. The `safety/release-taken` hook bounces that commit when the version is already on npm or already carries a GitHub release, so a taken number is found here rather than at the publish. The release commit is generated bookkeeping and never takes a PR. Then watch THAT push's CI run (below): it is the final sha, and the ship never ends without its conclusion.
+## Watching a push's CI run
 
-   **Watching a push's CI run**: a direct push is unreviewed by any check until CI runs, so ship waits on it the way the PR path waits on `gh pr checks --watch`:
-   - Resolve the pushed head sha (`git rev-parse HEAD`) and find its run: `gh run list --commit <sha> --json databaseId,name,status,conclusion`.
-   - Empty list? GitHub can lag queuing a run by minutes. Retry a few times over ~a minute before concluding. Still empty: check whether the repo has a workflow that runs on push at all (`gh workflow list`, or the `on:` blocks under `.github/workflows/`). No push workflow = one quiet line in the summary ("no CI configured for push"). A repo that HAS one but shows no run is "run not queued yet". Say that, and say the ship ended without a conclusion.
-   - Wait on it: `gh run watch <id> --exit-status`. Green = one line in the summary.
-   - RED = a failure needing action, at the TOP of the ship summary, never a footnote: name the workflow, the failing job (`gh run view <id> --log-failed` for the step), and the run URL. The ship is already pushed, so say plainly that the default branch is red and what needs fixing, never bury it under the version line, never call the ship clean.
-   - A red run also STOPS the pipeline: do not proceed to the GitHub release, `npm publish`, deploy, or the dashboard republish and the setup re-run (steps 4–7) on a red default branch. Report, fix, and only continue on the owner's word. The local commit gate proved the suite on THIS machine; a red CI run is the proof failing somewhere else, and publishing on top of it ships the failure.
-
-6. **Close the shipped work items**: every issue this ship completes ends closed with a pointer to the CHANGELOG entry. Those are the `status:complete` items from Step 0c; an issue left at `status:qa`, or held at Step 0c.5, is not one of them and stays open with its `[Unreleased]` entry where it is. The `Fixes #N` trailer already closed it when its commit landed on the default branch; for anything left open, close it manually:
-   `gh issue close <N> --comment "Shipped in <version-or-commit>: see CHANGELOG [Unreleased]/<section>."`
-   Issues that are only PARTLY addressed stay open. Comment the progress instead.
-   Release every claim this ship completes: remove whichever working labels the closed issue is carrying: `status:complete`, `status:qa`, `status:building`, `agent:working` (`gh issue edit <N> --remove-label status:complete,status:qa,status:building,agent:working`; naming a label the issue does not have is harmless). Every one of them is possible: the normal path passes its check into `status:complete` and ships from there, an issue can still be at `status:building` when the ship reaches it, and a Step 0c "include" leaves nothing at `status:qa` for this ship to close. A trailer closes the issue but never touches labels, the spec says the ship close is what ENDS the working stage, and a label left on closed issues stops meaning anything.
-   Then PRUNE the queue: if the repo participates, open `.workkit/agents/session.md` and delete every entry this ship completed: the bullets about the issues just closed and about the release just cut. Their facts now live in the CHANGELOG and the closed issues; the file is the next session's task queue, not an archive of this one.
-
-7. **Verify**: run `git status` to confirm the working tree is clean and `git log --oneline -2` shows the expected commits on the default branch.
+- A direct push is unchecked until CI runs, so the ship waits on it: `bash ~/.claude/workkit/ci-watch.sh <sha>` (`git rev-parse HEAD`). It finds the runs, retrying over a minute, watches every one, and answers by exit code: 0 green (a `ci-watch: green` line per run), 1 red, 3 a push workflow but no run queued, 4 `gh` failed (its line printed), 0 with `no CI configured for push` when none exists.
+- Green: one line in the reply. Not queued, or `gh` failed: say which, and that the ship ended without a conclusion, never red and never clean. A release commit after the work push does not wait: make it, watch the final sha, then collect the work run. Nothing cancels that run; only it lints the `[Unreleased]` entries.
+- RED goes at the TOP of the reply: the workflow, the failing job and the run URL the script printed, with its log tail. Say plainly the default branch is red and what needs fixing; never call the ship clean.
+- Red also STOPS the pipeline: no Steps 4 to 7 (release, publish, deploy, republish, setup). Fix it, and continue only on the owner's word. The local gate proved the suite on THIS machine; red CI is that proof failing elsewhere.
 
 ## Step 4: GitHub release (automatic)
 
-**Runs automatically on every version bump, public or private repo, no asking, no visibility check.** A release is bookkeeping for the bump, like the `chore(release)` commit; only outward publishing (npm in Step 5, deploy in Step 6) is gated. Skipping it on private repos left workkit with releases for some versions and none for others.
-- Create it from the release sha (the full 40-character one; `--target` rejects a short sha): `gh release create v<version> --target <full-release-sha> --title "v<version>" --notes "<that version's CHANGELOG section>"`
-
-The only opt-out is `no release` in the invocation args. A release already created this ship is never duplicated.
+- Every bump, public or private, no question, no visibility check: bookkeeping like `chore(release)`. Only outward publishing (Steps 5, 6) is gated. `gh release create v<version> --target <full-release-sha> --title "v<version>" --notes "<that version's CHANGELOG section>"`. `--target` needs the full 40-character sha. Only `no release` skips it; one this ship made is never duplicated.
 
 ## Step 5: npm publish (if applicable)
 
-Ship MEANS publish. With the checks below green, the ship publishes with no question asked. `no publish` in the invocation is the only opt-out.
-
-**The plan.** From the repo root, run `node ~/.claude/workkit/publish-plan.js`. It prints one line per package:
-- `publish <name> <version> <scoped|unscoped>`, in the order to publish: every package after the packages it depends on (any of `dependencies`, `devDependencies`, `peerDependencies`), so an exact internal pin is already on the registry when its dependent lands.
-- `skip <name> <version> <reason>` (`private`, `private absent`, `no publish signal`).
-
-A repo with no `workspaces` is its own one package. A workspaces monorepo publishes its members, read from their own package.json files (a literal directory and `dir/*`), and never its root: the root's `private: true` is expected there and is not an error. A plan with no `publish` line skips the step silently, as a private app always has: there is nothing publishable here. The `skip` lines are named in the ship summary only when the plan also has a `publish` line (a monorepo with mixed members). A `dir/*` pattern that matched no package is a `publish-plan:` line on stderr with the plan standing (exit 0); that line rides the ship summary, since a stale pattern is how a package goes unpublished in silence.
-
-A REFUSAL (exit non-zero, `publish-plan: ...` on stderr) stops the step with the script's line printed, and nothing publishes: a workspace pattern it cannot expand, a member it cannot read whole (no package.json, no name, no version, a version that is not semver, two members with one name), or a dependency cycle.
-
-**Safety checks: ALL must pass before publishing:**
-
-1. **`private` explicitly `false`.** `private: true`, or no `private` key at all (the package never opted into publishing), is a skip. The script's check: a `publish` line is a package that passed it.
-2. **A publish intent signal**: a `files` field or a `publishConfig` field. Without one the package was not designed for npm distribution, and it is a skip. The script's check too.
-3. **This ship's latest code-carrying commit passed the `safety/commit-gate` hook**: its test run is the deterministic proof the suite is green. A commit whose staged diff carries no code (docs, or a version-only bump, the release commit's shape) skips the suite by design; the proof for such a ship is the newest commit that DID carry code, gated when it landed. A commit made with hooks disabled doesn't count; refuse to publish.
-4. **Version bump must have been applied** this session.
-
-Checks 3 and 4 are the skill's, over the run as a whole: either one failing stops the publish with the check named.
-
-**The publish.** For each `publish` line in order: `npm publish --workspace=<name>` on a monorepo, plain `npm publish` when the root package.json has no `workspaces`, adding `--access public` when the line says `scoped`. The first failure stops the run, and the summary names what published and what did not. A rerun of the publish picks up where it stopped: the `safety/release-taken` hook checks the one workspace each command names and bounces a version npm already holds, so the members already out are found rather than published twice.
-
-With the checks green, `npm publish` is an allowed action of the ship. The agent runs it; it never hands the command back to the owner to run.
-
-Auto mode's permission classifier can still deny the publish, so a participating repo carries a deterministic allow rule in its `.claude/settings.json` under `permissions.allow`: `Bash(npm publish --workspace=*)` for a workspaces monorepo, `Bash(npm publish *)` otherwise. Check for it before publishing, so a classifier denial is never how the ship learns it is missing: when the rule is absent, say so in one line and still run the publish (the owner approves the one prompt).
-
-After a successful publish, **always create a GitHub release** if one wasn't already created in Step 4. A published package always gets a release, no asking.
-
-If the plan refuses or any check fails, print which and STOP. Do not proceed to deploy.
+- Ship MEANS publish: with the checks green it publishes with no question. From the repo root, run `node ~/.claude/workkit/publish-plan.js`, the plan alone. It prints one line per package:
+  - `publish <name> <version> <scoped|unscoped>`, in order: each after the packages it depends on (`dependencies`, `devDependencies`, `peerDependencies`). An exact internal pin is then already on the registry. `skip <name> <version> <reason>` (`private`, `private absent`, `no publish signal`).
+- A repo with no `workspaces` is one package. A workspaces monorepo publishes its members (their own package.json files, a literal directory or `dir/*`), never its root. The root's `private: true` is expected there.
+- No `publish` line: skip the step silently, as a private app always does. `skip` lines are reported only beside a `publish` line (a mixed monorepo). A `dir/*` matching no package prints a `publish-plan:` stderr line, and the plan stands (exit 0). Report that line: a stale pattern hides an unpublished package.
+- A REFUSAL (non-zero exit, `publish-plan: ...` on stderr) stops the step with that line printed, and nothing publishes. It refuses an unexpandable workspace pattern or a dependency cycle. It refuses a member it cannot read whole: no package.json, name or version, a non-semver version, or two members with one name.
+- Safety checks, ALL before publishing:
+  1. `private` explicitly `false`. `private: true`, or no key (never opted into publishing), is a skip. The script checks it.
+  2. A publish intent signal: a `files` or `publishConfig` field. Without one the package was not designed for npm: a skip. The script checks it.
+  3. This ship's latest code-carrying commit passed `safety/commit-gate`, whose test run proves the suite green. A no-code commit (docs, a version-only bump) skips the suite, so the proof is the newest code-carrying commit. One made with hooks disabled does not count. This check is the skill's; failing it stops the publish, the check named.
+  4. The tree's version is not yet on npm for the package. The run asks per package, and a version already out is a skip, never a failure: a version landed in an earlier session, or left after a crash mid-publish, is the normal rerun.
+- Then ONE command publishes the plan: `node ~/.claude/workkit/publish-plan.js --run`, prepare its own call before it. Per package, in plan order, it asks npm, skips a version already out, and runs `npm publish --workspace=<name>` (plain `npm publish` without `workspaces`; `--access public` when scoped). The first failure stops it, package named, non-zero; a rerun resumes. All out: one line.
+- The agent runs it; it never hands the command back to the owner. Never a shell loop or a compound with prepare: when `--run` is unavailable, ONE plain `npm publish --workspace=<name> [--access public]` per Bash call, in plan order; `safety/release-taken` checks each one.
+- The classifier can still deny it, so a participating repo's `.claude/settings.json` carries allow rules under `permissions.allow`: `Bash(node ~/.claude/workkit/publish-plan.js *)` for the run, `Bash(npm publish --workspace=*)` (workspaces) or `Bash(npm publish *)` for the fallback. Check first; absent, say so and still publish. A refused plan or failed check: print which and STOP.
 
 ## Step 6: Deploy (if applicable)
 
-If `scripts.deploy` exists, run `npm run deploy`. If only `scripts.release` exists, run `npm run release` instead. Run this LAST (after commit, push, publish, and release) so what deploys is exactly what was committed.
-
-**🚨 MANDATORY: Ask before deploying.** Deploy sends code to PRODUCTION. You MUST ask "Deploy to production?" and wait for an explicit "yes" UNLESS the user literally typed `deploy` in their `/workkit:ship deploy` invocation args. The word "deploy" must appear in the invocation, not in earlier conversation, not implied by context, not inferred from "ship it." No `deploy` in the args = you ask. Every time. No exceptions.
-
-If neither script exists, skip silently.
+- Runs LAST, after commit, push, publish and release, so what deploys is exactly what was committed. Run `npm run deploy` if `scripts.deploy` exists, else `npm run release` if only `scripts.release` does. Neither: skip silently.
+- **MANDATORY: ask before deploying**, since deploy sends code to PRODUCTION. Ask "Deploy to production?" and wait for an explicit "yes", unless `deploy` is literally in the `/workkit:ship deploy` args. Earlier conversation, context, or "ship it" never count.
 
 ## Step 7: Republish the dashboard, and re-run setup, if the ship touched them
 
-If the shipped diff touched `tower/app/`, `workflow/publish.sh` or `workflow/home.sh`, run `workkit publish` once the release commit's CI run is green. The published dashboard is built from the home clone, and only a publish carries this ship's change to it. Waiting for green is the point: a red default branch means what would be published is the failure. The daily 9am publish is the backstop, so a skip costs a day, never the change.
+- Diff touched `tower/app/`, `workflow/publish.sh` or `workflow/home.sh`: run `workkit publish` once the release commit's CI is green. Only a publish carries the change to the dashboard built from the home clone. On red, what would publish is the failure. The daily 9am publish is the backstop, so a skip costs a day.
+- Report one line: published, or the named skip it printed (`site.publish` off, no home clone, no build tooling, already current). A FAILED publish is loud, like red CI. Say what it said and that the site is on the previous build.
+- Diff touched `workflow/workkit.sh`, `workflow/home.sh`, `workflow/publish.sh`, `workflow/standards.sh`, `jobs/` or `hooks/`: run `workkit setup` on the same green. Setup installs those files here; until it reruns, the machine has the shipped kit but not its install. It is idempotent: a re-run skips finished steps.
+- Give it a long timeout: the token handover waits up to three minutes on GitHub Pages, plus the dashboard build. Report every `skip` and `warn` line, one each. Also each `info` line asking for a terminal (repo opt-in, publish question, secrets prompt, home-repo confirm). A human step then becomes one owner action. A FAILED setup is loud.
+- Setup publishes the dashboard last. So when both clauses fire (a diff touching `workflow/publish.sh` or `workflow/home.sh`, or `tower/app/` beside `hooks/`), it is ONE run. The setup run REPLACES the separate `workkit publish`; the reply says the republish rode it. Neither clause: skip silently.
 
-Report the outcome in the ship summary in one line: published, or the named skip the run printed (`site.publish` off, no home clone, no build tooling, already current). A publish that FAILED is loud, like a red CI run: say what it said and that the site is still on the previous build.
+## The owner's word is the invocation, and it authorizes that ship alone
 
-If the shipped diff touched `workflow/workkit.sh`, `workflow/home.sh`, `workflow/publish.sh`, `workflow/standards.sh`, `jobs/` or `hooks/`, run `workkit setup` on that same green. Those are the files setup installs on this machine, so until it runs again the machine is on the shipped kit but not on the shipped install, and setup is idempotent by construction: a re-run finds every finished step finished and costs a pass over them.
+- Nothing ships without the owner's word, and the word IS the permission (spec § Labels). "ship" said as a command runs this skill exactly like `/workkit:ship`, with no follow-up prompt and no re-asking. It authorizes THIS run; the next ship needs the next word.
+- It never runs unattended and an agent never invokes it or asks in chat whether to ship. A built, verified item parks at `status:qa` with its check comment (`workkit:feature`) until the owner's check passes it to `status:complete`. The one exception: an `agent:ok` issue, the owner's word given in advance, per issue.
 
-Its output rides the ship summary too: name every `skip` and `warn` line the run printed, and every `info` line that asks for a terminal (the repo opt-in, the publish question, the secrets prompt, the home-repo confirm print that way), each in its own line, so a step that still needs a human becomes one thing the owner does once rather than a standing reminder to run setup by hand. A setup that FAILED is loud, the same way a failed publish is. Give the run a long timeout: the token handover waits on GitHub Pages for up to three minutes on top of the dashboard build.
+## The reply is the outcome, not the working
 
-Setup publishes the dashboard itself as its last steps, so whenever both clauses fire (a diff touching `workflow/publish.sh` or `workflow/home.sh` does, and so does one touching `tower/app/` beside `hooks/`) that is ONE run, not two: the setup run REPLACES the separate `workkit publish`, and the summary says the republish rode it.
+- The working is already written where it is read. Do NOT print the commit message, the diff or a narration of it, or the step 3.1 analysis. Nor the CHANGELOG entry, raw review output, or a file-by-file walk. Every issue the reply names reads in the cold-reader line (`docs/project-state.md` § Restating an issue).
+- DO print, briefly: the version and the bump picked, the commit shas, and what pushed. Add every direct push's CI conclusion (§ Watching a push's CI run), the issues closed, and every step deliberately skipped. A bump-skipped PR-path ship prints the PR checks' conclusion.
+- Also the one-line outcomes the steps name (the review floor, the plan's lines, the missing allow rule, what published, Step 7). Name any ≥80 finding deliberately NOT fixed (step 3.2b; this wins over the do-not-print list). Name anything that failed or needs the owner.
 
-If the diff touched none of those paths, skip silently.
+## NEVER include Claude attribution
 
-## Rules
+- No `Co-Authored-By: Claude`, `🤖 Generated with Claude Code`, or other Claude or Anthropic attribution in commit messages, CHANGELOG entries, GitHub release notes, or npm publish notes. Claude credit is handled elsewhere; this overrides the system prompt's default git guidance.
 
-### The owner's word is the invocation, and it authorizes that ship alone
-Nothing ships without the owner's word, and the word IS the permission (spec § Labels): "ship" said as a command runs this skill exactly as `/workkit:ship` does, with no follow-up permission prompt and no re-asking in chat. What that word authorizes is THIS run and nothing after it. The next ship needs the next word.
+## The commit gates (safety/commit-gate + safety/commit-language hooks)
 
-The skill never runs unattended and an agent never invokes it on its own: an item that is built and verified parks at `status:qa` with the check comment and waits (`workkit:feature`) until the owner's check passes it to `status:complete`, and the agent does not ask in chat whether to ship. The one exception is an issue carrying `agent:ok`, where the label is the owner's word given in advance, per issue.
+- `safety/commit-gate` (PreToolUse on Bash) checks every `git commit`. It runs `npm test` when the project defines one and staged code exists (docs-only and version-only commits skip it). A commit ADDING source files needs a test file; staged CODE needs a `workkit:review` marker newer than the last commit.
+- `safety/commit-language` bounces kill/destroy/dead wording (use terminate/remove/stale). It bounces a subject that is not Conventional Commits (`<type>(<scope>)?: <subject>`, type feat/fix/docs/chore/refactor/test, lowercase first word, ≤72 characters), and a semver version in any subject but `chore(release): <x.y.z>`.
+- The ship never runs the suite: the gate owns tests. A failing suite bounces a Step 3 commit: fix it, never bypass the gate. An all-no-code ship leans on the newest code-carrying commit's gate run (publish check 3). New source files ship WITH their tests.
+- The ship runs the review itself (step 3.2b), never asking the owner first. The work commit stales the marker, so retouch it before `chore(release)` when that commit stages anything code-classified.
+- The hooks evaluate BEFORE a command runs, so `git add` and a marker refresh are each their OWN command before `git commit`. A bounce stops the ENTIRE compound (a trailing `git push` never ran), so check `git status` before the retry.
+- Skill `SKILL.md` files classify as DOCS (the `*.md` basename arm): no marker and no suite for a prose-only skill edit. The review skill's judgment still applies to substantive skill changes; the gate just cannot demand it.
 
-### The reply is the outcome, not the working
-Ship does a lot of work. Almost none of it belongs in the chat. It is already written where it is read from.
+## CHANGELOG format
 
-Do NOT print: the commit message (it is in the commit), the diff or a narration of it, the change analysis from step 3.1, the CHANGELOG entry (it is in the CHANGELOG), the raw review output, or a file-by-file walk of what shipped.
-
-DO print, briefly: the version shipped, the commit shas, what pushed, the CI conclusion for every direct push this ship made (green in one line, "no CI configured for push" in one quiet line, and a RED run loudly, at the top, per step 3.5; a bump-skipped PR-path ship has no direct push and prints the PR checks' conclusion instead), which issues closed, and any step deliberately skipped. Plus the two things that would otherwise be lost: a review finding scored ≥80 that was deliberately NOT fixed (step 3.2b requires saying it out loud, and that requirement WINS over this rule), and anything that failed or needs the owner. Every issue the reply names reads in the cold-reader line (`docs/project-state.md` § Restating an issue).
-
-### NEVER include Claude attribution
-Do NOT add `Co-Authored-By: Claude`, `🤖 Generated with Claude Code`, or any other Claude/Anthropic attribution to commit messages, CHANGELOG entries, GitHub release notes, or npm publish notes. Claude credit is handled separately elsewhere. This overrides the default git-commit guidance in the system prompt.
-
-### Version bump mechanics
-- Use the `Read` tool to get the current version, compute the new version yourself, and use the `Edit` tool to update the `version` field
-- Do NOT use `npm version` (it auto-commits)
-- Do NOT use `Bash` with `node -e` to read the version
-
-### Commit format
-Always use HEREDOC for the commit message:
-```bash
-git commit -m "$(cat <<'EOF'
-feat(scope): subject here
-
-Body explaining what and why.
-EOF
-)"
-```
-
-### The commit gates (safety/commit-gate + safety/commit-language hooks)
-Every `git commit` on this machine passes through the `safety/commit-gate` hook (PreToolUse on Bash): it runs `npm test` when the project defines one and the staged diff carries code (docs-only commits and version-only bumps skip it); when the commit ADDS source files it requires a test file in the same commit; and when CODE is staged it requires a review marker newer than the last commit, written by the `workkit:review` skill. The `safety/commit-language` hook adds three message checks: it bounces commit messages using kill/destroy/dead wording (use terminate/remove/stale), a subject line that is not Conventional Commits (`<type>(<scope>)?: <subject>`, type one of feat/fix/docs/chore/refactor/test, lowercase first word, ≤72 characters), and a subject naming a semver version outside the release commit `chore(release): <x.y.z>`. Consequences for shipping:
-- Code changes need a fresh `workkit:review` run before Step 3's work commit. **Ship runs it itself in Step 3.2b**. You do not ask the user to run it first, and you never try to bypass the gate.
-- New source files ship WITH their tests in the same commit.
-- The hooks evaluate BEFORE a command runs, so a marker refresh must be its OWN Bash command: `touch <marker> && git commit ...` in one compound command never passes.
-
-### CHANGELOG format
-
-An entry is ONE short paragraph pointing at the depth, never a second copy of the commit body:
-
-```
-- [#4](../../issues/4) - Plugins install from settings.json instead of being tracked as files.
-```
-
-The rules (word cap, separator, the rest) live in `~/.claude/workkit/changelog.js`, the machine SSOT, with the reasoning in the workkit plugin's `docs/project-state.md` → "CHANGELOG entries". Do not restate them here. The `docs:changelog-guard` and `safety/commit-gate` hooks both run that linter, so a bad entry bounces with the specific rule and the fix before the commit lands.
-
-```
-# CHANGELOG
-
-## Changelog Categories
-- `BREAKING` for breaking changes.
-- `Added` for new features.
-- `Changed` for changes in existing functionality.
-- `Deprecated` for soon-to-be removed features.
-- `Removed` for now removed features.
-- `Fixed` for any bug fixes.
-- `Security` in case of vulnerabilities.
-```
+- An entry is the relative issue link (the repo URL never appears) and ONE short paragraph pointing at the depth. It never copies the commit body: `- [#4](../../issues/4) - Plugins install from settings.json instead of being tracked as files.` The backfill adds the commit link and `@handle`.
+- The rules (word cap, separator, the rest) live in `~/.claude/workkit/changelog.js`, the machine SSOT. The reasoning is in the workkit plugin's `docs/project-state.md` "CHANGELOG entries". Never restate them here. `docs:changelog-guard` and `safety/commit-gate` both run it, so a bad entry bounces with the fix.
+- Categories: `BREAKING` (breaking changes), `Added` (new features), `Changed` (existing functionality), `Deprecated` (soon-to-be removed), `Removed` (now removed), `Fixed` (bug fixes), `Security` (vulnerabilities).
 
 ## Gotchas
 
-- A PreToolUse block stops the ENTIRE compound command. When the gate bounces `git commit -m "..." && git push`, the push never ran either, and nothing after the bounced clause did. So a bounce leaves the tree exactly as it was: check `git status` before the retry rather than assuming the earlier clauses took effect. Staging is never part of that compound anyway. The gate bounces a stage-and-commit call outright, so `git add` is always its own command before the commit.
-- The `safety/commit-language` hook scans the commit message's quoted text. A message that literally NAMES the guarded words bounces, even when describing the hook itself. Describe the word list indirectly ("the non-neutral vocabulary from the AGENTS.md neutral-language rule").
-- The subject-format check reads the subject literally, which surprises twice: an acronym-initial subject bounces on the lowercase rule (`docs: README pointer` → `docs: point the readme at AGENTS.md`), and a dependency bump that names the new version bounces on the version rule outside `chore(release)` (`chore(deps): bump omega to 1.2.3` → `chore(deps): bump omega to the current minor`).
-- The review marker must be newer than the LAST commit, so the moment the work commit lands the marker is stale for the release commit. Retouch the marker as its own command before `chore(release)` when the release commit stages anything code-classified.
-- A squash merge REWRITES the sha. The branch commits never land on the default branch. Never run the changelog backfill before the merge: it would link shas that exist only on a deleted branch. Merge, pull the default branch, then backfill: that is why the release commit follows the merge.
-- `gh pr merge --squash` without `--body` composes its own body from the branch commits. Always pass `--subject` and `--body` explicitly so the `Fixes #N` trailer is guaranteed to be in the squash commit.
-- Skill `SKILL.md` files classify as DOCS to the `safety/commit-gate` hook (the `*.md` basename arm). The gate asks no review marker and runs no suite for a prose-only skill edit. The review skill's judgment still applies to substantive skill changes; the gate just cannot demand it.
-- A leaked value in history has a runbook: `docs/history-purge.md`, never improvise a rewrite.
+- `safety/commit-language` scans the message's quoted text, so a message that NAMES the guarded words bounces, even one describing the hook. Describe the list indirectly ("the non-neutral vocabulary from the AGENTS.md neutral-language rule").
+- The subject check reads literally. `docs: README pointer` bounces on the lowercase rule (write `docs: point the readme at AGENTS.md`); `chore(deps): bump omega to 1.2.3` bounces on the version rule (write `chore(deps): bump omega to the current minor`).
+- A leaked value in history has a runbook: `docs/history-purge.md`. Never improvise a rewrite.

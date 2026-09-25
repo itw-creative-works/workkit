@@ -38,7 +38,7 @@ import { startPage } from '../libs/tower/page.js';
 import { issuesFor, board, feed, issueByKey } from '../libs/tower/state.js';
 import { selectedSlugs } from '../libs/tower/scope.js';
 import {
-  esc, empty, problem, loading, issueChips, issueKey, STATUSES, statusColor, byPriority, noStatusAlert,
+  esc, empty, problem, loading, issueChips, issueKey, STATUSES, statusColor, chipGlyph, byPriority, noStatusAlert,
 } from '../libs/tower/format.js';
 import { swap } from '@omega.js/client/modules/live-page';
 import { loadGraph, graphReady, graphSlot, drawGraph } from '__main_assets__/js/libs/graph.js';
@@ -195,7 +195,7 @@ const issueCard = (issue, showRepo, open) => `<div class="card omega-tower-issue
 // flex row and its border sits on the text without it.
 const column = (status, issues, showRepo, open) => `<section data-column="${esc(status.key)}">
   <div class="omega-panel-head mb-3 pb-2" style="border-bottom: 2px solid ${statusColor(status.key)};">
-    <span>${esc(status.label)}</span>
+    <span>${chipGlyph(status.key)}${esc(status.label)}</span>
     <span class="omega-chip">${issues.length}</span>
   </div>
   ${issues.length ? issues.map((issue) => issueCard(issue, showRepo, open)).join('') : empty('nothing here', 'fa-regular fa-square-check')}

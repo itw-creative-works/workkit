@@ -71,6 +71,8 @@ The repo slug rides the github-release line when the origin says it, read throug
 
 A commit whose subject is not the release one, the release subject named mid-message included (`-m "docs(ship): explain how chore(release): 1.2.3 is judged"` is prose about a release); a publish this hook's two strips prove is a mention; a `--dry-run`; a project with no package.json at its root (then npm has nothing to ask about, and `github-release` still runs on the commit trigger when the cwd is inside a repo at all); a package with no name or no version.
 
+A publish inside `publish-plan.js --run` is not this hook's trigger, since the command's word is `node`, never `npm`; the run asks npm the same question itself, per package, before each publish.
+
 The accepted residual of reading a line start as a subject position: a heredoc BODY line that begins with the literal release subject reads as one, so a commit whose message quotes a release line at the start of a line is judged as that release. It costs one bounce on a version that is free, never a missed one that is taken.
 
 Four things it cannot read, and says so rather than passing in silence: a message in a FILE (`-F`, `--file`), where there is no subject in the command at all; a publish behind a `cd`, `pushd` or `popd`, where the package npm would publish is not the one at the directory this hook was handed; a workspace member that is absent or a pattern that matched nothing; and a publish naming a workspace that matches no member, a quoted name (the quote strip leaves nothing readable where it stood) or an empty one (`--workspace=`), where the package being published could not be placed.

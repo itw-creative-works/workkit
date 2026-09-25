@@ -6,13 +6,28 @@ user-invocable: true
 
 # Feature flow: ceremony scales with the task
 
-Every phase exists to prevent a specific failure (building the wrong thing, missing a consumer, shipping unreviewed). Skip a phase only when its failure can't happen at this size.
+Each phase prevents one failure: building the wrong thing, missing a consumer, shipping unreviewed. Skip a phase only when its failure cannot happen at this size.
 
 ## 0a. Pipeline gate: build only from `status:specced`
 
-When the work has an issue, check its stage before anything else. Builds start ONLY from `status:specced` with a real `## Spec` (the implementation layer, or the literal `None needed: small item.`). An issue at `status:inbox` (or a specced one whose Spec is missing its implementation layer) gets the SPEC PASS first: a `workkit:scout` maps the territory, the spec drafts against the issue and the map. Any Spec beyond the literal `None needed: small item.` gets the [workkit:interview](../interview/SKILL.md) BEFORE acceptance is requested, never a whole draft handed over for a yes (spec § Specs; `agent:ok` issues are exempt). The manager reviews, the owner accepts; the deepened Spec lands on the issue and the label moves to `status:specced`. That flip IS the authorization; on an issue carrying `agent:ok` an agent may make it itself. Then build. Whatever you write onto the issue follows the anatomy rules (spec § Issue anatomy), including the introduction rule: the first mention of an outside project or repo carries a link and a one-line description of what it is.
+- When the work has an issue, check its stage before anything else.
+- A build starts ONLY from `status:specced` with a real `## Spec`: the implementation layer, or the literal `None needed: small item.`
+- An issue at `status:inbox`, or a specced one whose Spec lacks the implementation layer, gets the SPEC PASS first:
+  - a `workkit:scout` maps the territory, and the spec drafts against the issue and the map;
+  - any Spec beyond the literal gets the [workkit:interview](../interview/SKILL.md) BEFORE acceptance is requested, never a whole draft handed over for a yes (spec § Specs; `agent:ok` issues are exempt);
+  - the manager reviews, the owner accepts, the deepened Spec lands on the issue, and the label moves to `status:specced`.
+- That flip IS the authorization, then build. On an issue carrying `agent:ok`, an agent may make the flip itself.
+- Whatever you write onto the issue follows spec § Issue anatomy. That includes the introduction rule: the first mention of an outside project or repo carries a link and a one-line description of what it is.
 
-Claim the issue before working it: assign it to yourself, move it to `status:building`, AND add `agent:working` (`gh issue edit <N> --add-assignee @me --remove-label status:specced --add-label status:building,agent:working`), skip an issue already assigned to someone else, and re-read the label and the assignee at the moment you start, not at the moment you listed the queue. Remove `agent:working` when you release the issue, finished or not; a claim left behind is swept by the standards heal after 24 idle hours. `status:building` is not taken off by hand. It carries the work through build and verify, and phase 6 flips it to `status:qa`, which the owner's passing check moves to `status:complete` and the ship close ends. The `agent:working` label is what tells an agent claim from a human one. An agent runs `gh` as the owner, so the assignee cannot. (The road and the rules: the workkit plugin's README and `docs/project-state.md`.)
+### The claim, and the road the labels take
+
+- Claim the issue before working it: assign yourself, move it to `status:building`, AND add `agent:working`:
+  `gh issue edit <N> --add-assignee @me --remove-label status:specced --add-label status:building,agent:working`
+- Skip an issue already assigned to someone else. Re-read the label and the assignee when you start, not when you listed the queue.
+- `agent:working` tells an agent claim from a human one. An agent runs `gh` as the owner, so the assignee cannot.
+- Remove `agent:working` when you release the issue, finished or not. The standards heal sweeps a claim left idle for 24 hours.
+- Never take `status:building` off by hand. It carries build and verify, phase 6 flips it to `status:qa`, the owner's passing check moves it to `status:complete`, and the ship close ends it.
+- The road and the rules: the workkit plugin's README and `docs/project-state.md`.
 
 ## 0. Size the task: say the size out loud
 
@@ -22,35 +37,58 @@ Claim the issue before working it: assign it to yourself, move it to `status:bui
 
 ### Plan mode (large automatically, any size on request)
 
-A large task enters plan mode (EnterPlanMode) BEFORE exploring: the session goes read-only, phases 1–3 run inside it, and the plan approved at exit IS the phase-4 gate. The whole-system consideration happens where nothing can be edited yet. Any size enters it on the owner's word ("plan this", or the plan-mode toggle). Standard tasks without it keep the chat gate in phase 4.
+- A large task enters plan mode (EnterPlanMode) BEFORE exploring. The session goes read-only, phases 1–3 run inside it, and the plan approved at exit IS the phase-4 gate.
+- The whole-system thinking happens where nothing can be edited yet.
+- Any size enters it on the owner's word ("plan this", or the plan-mode toggle). A standard task without it keeps the chat gate in phase 4.
 
 ## 1. Explore
 
-Map the territory before designing: dispatch Explore subagents that return **key-file LISTS, not content**. Then read those files yourself. Find the existing utilities and patterns the feature must reuse (never propose new code where a suitable implementation exists). Note every consumer a contract change would imply (global §4).
+- Map the territory before designing. Dispatch Explore subagents that return **key-file LISTS, not content**, then read those files yourself.
+- Find the existing utilities and patterns the feature must reuse. Never propose new code where a suitable implementation exists.
+- Note every consumer a contract change would imply (global §4).
 
 ## 2. Clarify: interview, never skip
 
-Run [workkit:interview](../interview/SKILL.md): the full category sweep, asked in chat rounds, never the AskUserQuestion tool. It CLOSES by drafting the `## Spec` from the answers, so the interview and the spec pass are one motion. Standard+ tasks NEVER skip this phase. One round of "zero open decisions" is cheap; building the wrong thing is not.
+- Run [workkit:interview](../interview/SKILL.md): the full category sweep, asked in chat rounds, never the AskUserQuestion tool.
+- It CLOSES by drafting the `## Spec` from the answers, so the interview and the spec pass are one motion.
+- Standard and large tasks NEVER skip this phase. One round of "zero open decisions" is cheap; building the wrong thing is not.
 
 ## 3. Approaches (large only)
 
-Produce 2–3 proposals with genuinely different mandates: **minimal** (smallest correct change), **clean** (right architecture even if bigger), **pragmatic** (best value-per-change), each with tradeoffs and your recommendation first.
+- Produce 2–3 proposals with genuinely different mandates, each with its tradeoffs, your recommendation first:
+  - **minimal**: the smallest correct change;
+  - **clean**: the right architecture, even if bigger;
+  - **pragmatic**: the best value per change.
 
-## 4. Gate → build
+## 4. Gate, then build
 
-Standard/large: get explicit approval of the approach before writing code (large: the plan-mode approval at exit; standard: a stated go-ahead in chat). Then build with the test obligation scaled per global §6. Red first where possible; tracer-bullet the thinnest end-to-end slice on large tasks (`js:patterns` `resources/tdd.md`).
+- Standard and large: get explicit approval of the approach before writing code. Large: the plan-mode approval at exit. Standard: a stated go-ahead in chat.
+- Build with the test obligation scaled per global §6. Red first where possible.
+- On large tasks, tracer-bullet the thinnest end-to-end slice (`js:patterns` `resources/tdd.md`).
 
 ### Crew staging
 
-Stage the class agents by phase, never all at once. Build = ONE `workkit:worker` against a brief; a test-writer + feature-writer pair only when each has its own worktree, and the dispatcher merges. The `workkit:verifier` runs ONCE, when the build claims done. The full review panel assembles only in phase 5. `workkit:scout` is recon. Dispatch it at any point.
+- Stage the class agents by phase, never all at once.
+- Build: ONE `workkit:worker` against a brief. A test-writer and feature-writer pair only when each has its own worktree; the dispatcher merges.
+- The `workkit:verifier` runs ONCE, when the build claims done. The full review panel assembles only in phase 5. `workkit:scout` is recon: dispatch it at any point.
 
 ## 5. Verify + review
 
-Run the tests the change TOUCHED, the narrowest command that proves it: the commit gate owns the full suite and runs it at the commit (`docs/project-state.md` § The proof). Then [workkit:review](../review/SKILL.md) on the diff (trivial tasks: skip formal review). Fix ≥80 findings before calling it done. The review's simplification lens covers post-green cleanup. Done-criteria: green at every layer the change has a surface on (`docs/project-state.md` § The proof), review verdict "ship", the issue and docs updated per the doc-parity rules.
+- Run the tests the change TOUCHED, with the narrowest command that proves it. The commit gate owns the full suite and runs it at the commit (`docs/project-state.md` § The proof).
+- Then [workkit:review](../review/SKILL.md) on the diff. Trivial tasks skip formal review.
+- Fix ≥80 findings before calling it done. The review's simplification lens covers post-green cleanup.
+- Done-criteria:
+  - green at every layer the change has a surface on (`docs/project-state.md` § The proof);
+  - review verdict "ship";
+  - the issue and docs updated per the doc-parity rules.
 
 ## 6. Park at `status:qa`: the flow ends here, not at a ship
 
-Build done, tests green, review passed → the work STAYS IN THE WORKING TREE (uncommitted, or committed but unpushed). Say what to check, then flip the issue: the comment lands FIRST so the park itself carries the record, since the proof is a hard gate and an item without it can neither reach `status:complete` nor close (spec § The proof). The comment's first line is `Proof:`, one entry per layer (the command, or the reason it was skipped); the check reads it before anything else.
+- Build done, tests green, review passed: the work STAYS IN THE WORKING TREE, uncommitted or committed but unpushed.
+- The park is MECHANICAL, not a question. It happens the moment the done-criteria above are met.
+- Say what to check, then flip. The comment lands FIRST so the park carries the record: the proof is a hard gate, and without it an item can neither reach `status:complete` nor close (spec § The proof).
+- The comment's first line is `Proof:`, one entry per layer: the command, or the reason it was skipped. The check reads it first.
+- The rest of the comment is the whole handover: what changed, what to look at, and where. Where is the page to open, the command to run, or the diff to read when the change has no surface.
 
 ```
 gh issue comment <N> --body "Proof: <one entry per layer: the command, or why it was skipped>
@@ -59,17 +97,24 @@ gh issue comment <N> --body "Proof: <one entry per layer: the command, or why it
 gh issue edit <N> --remove-label status:building,agent:working --add-label status:qa
 ```
 
-`agent:working` comes off with the flip: the agent is done and the wait is the owner's, and a claim left standing is swept as stale after 24 idle hours. The assignee stays. The work is still in that tree. The comment is the whole handover: what changed, what to look at, and where to look at it: the page to open, the command to run, or the diff to read when the change has no surface. The flip is MECHANICAL. It is not a question, and it happens the moment the done-criteria above are met.
+- `agent:working` comes off with the flip: the agent is done and the wait is the owner's. The assignee stays, and the work stays in that tree.
+- Do not ship, and do not ask in chat whether to ship. The owner's word runs [workkit:ship](../ship/SKILL.md), and asking for it asks them to approve their own gate (spec § Labels).
+- A failed check comes back here: fix it in place and re-comment; the label does not move. While an item sits in qa the tree holds unshipped work, so the next item waits.
 
-**This is where the flow ENDS.** Do not ship, and do not ask in chat whether to ship: the owner's word is what runs [workkit:ship](../ship/SKILL.md), and asking for it is the same as asking them to approve their own gate (spec § Labels). A failed check comes back here. Fix it in place, re-comment, and the label does not move. The tree holds unshipped work while an item sits in qa, so the next item waits.
+### The pass: only the owner's word moves it on
 
-**A passing check moves it on, and only the owner's word does that.** When the owner says the check passed (in chat, in their own words), flip the issue to `status:complete` and record the pass:
+- When the owner says the check passed (in chat, in their own words), flip the issue to `status:complete` and record the pass:
 
 ```
 gh issue edit <N> --remove-label status:qa --add-label status:complete
 gh issue comment <N> --body "QA passed by <owner>, <date>."
 ```
 
-That stage means "checked, ready to ship", and it is what the ship reads from. The verdict is the OWNER'S, like `agent:ok`: never grant it on their behalf, and never infer it from silence or from your own confidence in the work. Note the pass in the session notes too, so the next session knows the item is good to go.
+- That stage means "checked, ready to ship", and the ship reads from it. Note the pass in the session notes too, so the next session knows the item is good to go.
+- The verdict is the OWNER'S, like `agent:ok`. Never grant it on their behalf, and never infer it from silence or your own confidence in the work.
 
-The ONE exception is an issue carrying `agent:ok`: that label is the owner's word given in advance, so the park is a pass-through. Flip to `status:qa` and comment as always, then perform the check yourself, flip it to `status:complete` with the same pass comment, ship and close in the same run. On the park flip KEEP `agent:working` (`--remove-label status:building --add-label status:qa`): the claim holds because the agent is still working, and the ship close is what releases the labels (spec § the qa stage).
+### The one exception: `agent:ok`
+
+- `agent:ok` is the owner's word given in advance, so the park is a pass-through.
+- Flip to `status:qa` and comment as always, but KEEP `agent:working` on that flip (`--remove-label status:building --add-label status:qa`). The claim holds because the agent is still working.
+- Then perform the check yourself, flip to `status:complete` with the same pass comment, and ship and close in the same run. The ship close releases the labels (spec § the qa stage).
