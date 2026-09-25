@@ -7,6 +7,9 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+- [#284](../../issues/284) - A ship now publishes with no question, walking a monorepo's workspaces in dependency order.
+
 ## [0.57.2] - 2026-09-24
 
 ### Changed

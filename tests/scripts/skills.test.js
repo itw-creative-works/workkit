@@ -134,10 +134,9 @@ const run = async () => {
   group('skills: the ship publishes');
 
   await test("the ship's Step 5 says publish is the agent's to run and names both allow rules and their home", () => {
-    // Publishing is an allowed action of the ship once the checks pass and the
-    // owner's word is given, and a classifier denial is never the first time a
-    // ship learns about the allow rule: Step 5 names the rule for each repo
-    // shape and where it lives.
+    // Publishing is an allowed action of the ship once the checks pass, and a
+    // classifier denial is never the first time a ship learns about the allow
+    // rule: Step 5 names the rule for each repo shape and where it lives.
     const step = section(path.join(SKILLS_DIR, 'ship', 'SKILL.md'), '## Step 5: npm publish (if applicable)');
     const missing = ['never hands the command back', '`Bash(npm publish --workspace=*)`', '`Bash(npm publish *)`', '`.claude/settings.json`', '`permissions.allow`']
       .filter((needle) => !step.includes(needle));

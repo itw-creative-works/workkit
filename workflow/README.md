@@ -23,6 +23,8 @@ The agent-agnostic core of the issue workflow. It knows nothing about Claude Cod
 | `wk.sh` | The capture CLI: `wk.sh note <text...>` appends one bullet to the right capture file |
 | `changelog.js` | Machine SSOT for the CHANGELOG entry rules, and the CLI both guarding hooks call: `node changelog.js <file> [--added-only] [--staged] [--unreleased-only]` |
 | `changelog-links.js` | Release-time backfill of each entry's commit link and contributor handle: `node changelog-links.js [--file X] [--range A..B] [--dry-run]` |
+| `publish-plan.js` | The ship's publish plan: which packages go to npm, in dependency order, and which are skipped and why: `node publish-plan.js [--dir <root>]` |
+| `semver.js` | The kit's one version comparison, `compareVersions(a, b)` in semver's order (a missing part reads as 0, a prerelease sorts below its release), and `isSemver(v)` beside it. Required by `publish-plan.js` for the version shape and by `jobs/cc-news.js` for the upstream releases; it requires nothing |
 
 ## The one command
 
@@ -92,7 +94,7 @@ Two variables bend the rest, and nothing else does. `QUIET=1` in the caller sile
 
 Two things are deliberately not log lines: a PROMPT (it carries no newline, because the answer is typed on it) and a script's stdout that is DATA (`standards.sh --state`, the reason `jobs/brief-dispatch.sh` hands its caller, a JSON payload). `jobs/install.sh --check` is neither: its drift lines ARE glyph lines, and the caller reading them (`workkit update`) strips each one with `wk_plain` and re-says it under its own.
 
-Three things print plain glyphless lines by design. The kit's own hooks, whose output is context for an agent rather than a terminal. The engine's Node CLIs (`changelog.js`, `changelog-links.js`, `site-repos.js`), whose lines are read by CI, by a hook bounce or by the ship. And the CHILDREN a command runs (`omega` under the tower, `npm` under the publish), which speak as themselves.
+Three things print plain glyphless lines by design. The kit's own hooks, whose output is context for an agent rather than a terminal. The engine's Node CLIs (`changelog.js`, `changelog-links.js`, `publish-plan.js`, `site-repos.js`), whose lines are read by CI, by a hook bounce or by the ship. And the CHILDREN a command runs (`omega` under the tower, `npm` under the publish), which speak as themselves.
 
 ## The capture CLI
 

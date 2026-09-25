@@ -15,6 +15,7 @@ Parse the user's invocation text BEFORE doing anything. Args pre-resolve decisio
 
 **Bump type:**
 - `patch` / `minor` / `major` → use that bump, don't ask
+- an explicit version (`1.0.0`, `v1.0.0`) → bump to exactly that version, don't ask; a major named this way is the owner's word and is never asked about
 - `skip` / `no bump` → no version bump, don't ask
 
 **File scope:**
@@ -24,27 +25,31 @@ Parse the user's invocation text BEFORE doing anything. Args pre-resolve decisio
 
 **Step overrides (opt OUT of a step):**
 - `no deploy` / `skip deploy` → skip the deploy step without asking
-- `no publish` / `skip publish` → skip the publish step without asking
+- `no publish` / `skip publish` → skip the publish step (the only way to: ship means publish)
 - `no prepare` → skip the prepare step even if `scripts.prepare` exists
 - `no release` → skip GitHub release even if the repo is public
 - `no changelog` → skip CHANGELOG update
 
 **Step overrides (opt IN / skip the confirmation prompt):**
 - `deploy` → run deploy WITHOUT asking (skips the confirmation prompt)
-- `publish` → run npm publish WITHOUT asking (skips the confirmation prompt; still validated for safety)
 - `pr` → ship through a pull request (branch, checks, squash merge) instead of the default direct commit
+
+**Words that change nothing:**
+- `publish` → accepted, since ship means publish
 
 **Examples:**
 | Invocation | Bump | Files | Overrides |
 |---|---|---|---|
 | `/ship` | picked from the diff (ask only if major) | all | none |
 | `/ship patch` | patch | all | none |
+| `/ship 1.0.0` | exactly 1.0.0 | all | none |
+| `/ship publish 1.0.0` | exactly 1.0.0 | all | none (`publish` changes nothing) |
 | `/ship minor no deploy` | minor | all | skip deploy (no prompt) |
 | `/ship patch no prepare` | patch | all | skip prepare |
 | `/ship src/ docs/` | picked from the diff | only those paths | none |
-| `/ship patch publish` | patch | all | publish to npm |
+| `/ship patch no publish` | patch | all | skip the npm publish |
 | `/ship minor deploy` | minor | all | deploy to production |
-| `/ship major publish deploy` | major | all | publish + deploy |
+| `/ship major deploy` | major | all | deploy to production |
 
 If all decisions are resolved by args (bump type given, file scope clear, no ambiguity), ask NOTHING and execute the full pipeline.
 
@@ -90,7 +95,7 @@ A ship finishes the items that PASSED their check: `status:complete` is the stag
 
 ## Step 1: Pick the bump type (ask ONLY for major)
 
-**Parse invocation args first.** If the user typed `/workkit:ship patch`, `/workkit:ship minor`, `/workkit:ship major`, or `/workkit:ship skip`. Use that directly. Don't ask.
+**Parse invocation args first.** If the user typed `/workkit:ship patch`, `/workkit:ship minor`, `/workkit:ship major`, or `/workkit:ship skip`, use that directly. An explicit version (`/workkit:ship 1.0.0`) is the version itself: bump to exactly it, whatever the diff says, and never ask, a major included. Don't ask.
 
 If no bump type was given, PICK it from the session's changes and say which was picked in the ship summary:
 - **patch** for bug fixes, config changes, prompt tweaks, dependency bumps, internal refactors
@@ -178,24 +183,34 @@ The only opt-out is `no release` in the invocation args. A release already creat
 
 ## Step 5: npm publish (if applicable)
 
-If the package passes the publish safety checks below, ask "Publish to npm?" and wait for an explicit "yes" UNLESS the user literally typed `publish` in their invocation args. No `publish` in the args = you ask. Every time. If the package fails safety checks, skip silently (it's not a publishable package).
+Ship MEANS publish. With the checks below green, the ship publishes with no question asked. `no publish` in the invocation is the only opt-out.
 
-**Safety checks: ALL must pass before publishing (or even asking):**
+**The plan.** From the repo root, run `node ~/.claude/workkit/publish-plan.js`. It prints one line per package:
+- `publish <name> <version> <scoped|unscoped>`, in the order to publish: every package after the packages it depends on (any of `dependencies`, `devDependencies`, `peerDependencies`), so an exact internal pin is already on the registry when its dependent lands.
+- `skip <name> <version> <reason>` (`private`, `private absent`, `no publish signal`).
 
-1. **`private` field must be explicitly `false` or absent with publish signals.** If `private: true` → STOP with error. If `private` is not set at all (missing from package.json) → STOP with error. Missing `private` means the project never opted into publishing. Treat it as private per convention.
-2. **Package must have publish intent signals.** At least ONE of: `files` field (tarball contents), `publishConfig` field. Without these, the package wasn't designed for npm distribution → STOP with error.
+A repo with no `workspaces` is its own one package. A workspaces monorepo publishes its members, read from their own package.json files (a literal directory and `dir/*`), and never its root: the root's `private: true` is expected there and is not an error. A plan with no `publish` line skips the step silently, as a private app always has: there is nothing publishable here. The `skip` lines are named in the ship summary only when the plan also has a `publish` line (a monorepo with mixed members). A `dir/*` pattern that matched no package is a `publish-plan:` line on stderr with the plan standing (exit 0); that line rides the ship summary, since a stale pattern is how a package goes unpublished in silence.
+
+A REFUSAL (exit non-zero, `publish-plan: ...` on stderr) stops the step with the script's line printed, and nothing publishes: a workspace pattern it cannot expand, a member it cannot read whole (no package.json, no name, no version, a version that is not semver, two members with one name), or a dependency cycle.
+
+**Safety checks: ALL must pass before publishing:**
+
+1. **`private` explicitly `false`.** `private: true`, or no `private` key at all (the package never opted into publishing), is a skip. The script's check: a `publish` line is a package that passed it.
+2. **A publish intent signal**: a `files` field or a `publishConfig` field. Without one the package was not designed for npm distribution, and it is a skip. The script's check too.
 3. **This ship's latest code-carrying commit passed the `safety/commit-gate` hook**: its test run is the deterministic proof the suite is green. A commit whose staged diff carries no code (docs, or a version-only bump, the release commit's shape) skips the suite by design; the proof for such a ship is the newest commit that DID carry code, gated when it landed. A commit made with hooks disabled doesn't count; refuse to publish.
 4. **Version bump must have been applied** this session.
 
-If all checks pass: `npm publish` (or `npm publish --access public` for scoped packages like `@scope/pkg`). The `safety/release-taken` hook bounces the publish when npm already has that version.
+Checks 3 and 4 are the skill's, over the run as a whole: either one failing stops the publish with the check named.
 
-With the four safety checks green and the owner's word given (the `publish` invocation arg, or the yes to "Publish to npm?"), `npm publish` is an allowed action of the ship. The agent runs it; it never hands the command back to the owner to run.
+**The publish.** For each `publish` line in order: `npm publish --workspace=<name>` on a monorepo, plain `npm publish` when the root package.json has no `workspaces`, adding `--access public` when the line says `scoped`. The first failure stops the run, and the summary names what published and what did not. A rerun of the publish picks up where it stopped: the `safety/release-taken` hook checks the one workspace each command names and bounces a version npm already holds, so the members already out are found rather than published twice.
+
+With the checks green, `npm publish` is an allowed action of the ship. The agent runs it; it never hands the command back to the owner to run.
 
 Auto mode's permission classifier can still deny the publish, so a participating repo carries a deterministic allow rule in its `.claude/settings.json` under `permissions.allow`: `Bash(npm publish --workspace=*)` for a workspaces monorepo, `Bash(npm publish *)` otherwise. Check for it before publishing, so a classifier denial is never how the ship learns it is missing: when the rule is absent, say so in one line and still run the publish (the owner approves the one prompt).
 
 After a successful publish, **always create a GitHub release** if one wasn't already created in Step 4. A published package always gets a release, no asking.
 
-If any check fails, print which check failed and STOP. Do not proceed to deploy.
+If the plan refuses or any check fails, print which and STOP. Do not proceed to deploy.
 
 ## Step 6: Deploy (if applicable)
 

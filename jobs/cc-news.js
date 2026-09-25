@@ -50,6 +50,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const { BRIEF_TITLE_PREFIX } = require('../tower/api/lib/history');
+const { compareVersions } = require('../workflow/semver');
 
 const WORKKIT_DIR = '.workkit';
 // The hand-edited file that names the home repo: the board the cursor lives on.
@@ -114,20 +115,6 @@ const fetchChangelog = (source, exec) => {
     // Offline, DNS down, a 404 on a renamed branch: all the same answer.
     return null;
   }
-};
-
-/**
- * Compare two dotted numeric versions.
- * @returns {number} negative when a < b, positive when a > b, 0 when equal
- */
-const compareVersions = (a, b) => {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const diff = (pa[i] || 0) - (pb[i] || 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
 };
 
 /**
@@ -292,7 +279,6 @@ module.exports = {
   renderVersionMark,
   parseSections,
   topicOf,
-  compareVersions,
   BRIEF_TITLE_PREFIX,
   SOURCE,
 };

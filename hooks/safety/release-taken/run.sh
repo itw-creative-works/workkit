@@ -26,9 +26,20 @@
 #              release commit), and github-release ONCE for the repo at the
 #              subject's version (the ship tags `v<version>`).
 #   publish -> npm only, the same package set. The GitHub release legitimately
-#              precedes the publish in the ship pipeline.
-# Publish intent is the ship skill's Step 5 rule and lives there: `private` is
-# not true AND there is a `files` or a `publishConfig`.
+#              precedes the publish in the ship pipeline. A publish naming its
+#              workspaces (`--workspace=<x>`, `--workspace <x>`, `-w <x>`,
+#              `-w=<x>`, as often as it likes) narrows the set to those members,
+#              each matched by package name or by path from the root, and never
+#              the root itself: a family published one member at a time must not
+#              bounce on the member published a moment ago. Every publishing
+#              clause of a chain counts: their workspaces add up, and one clause
+#              naming none checks the whole set. A named workspace that matches
+#              no member, a quoted name, or an empty one stands down out loud.
+#              `--workspaces`, all of them, keeps the whole set.
+# Publish intent is workflow/publish-plan.js's rule and lives there (its `skip`
+# reasons): the hook asks npm about a package exactly when the plan would not
+# skip it, plus a workspaces root that carries the intent itself, since a plain
+# `npm publish` at that root publishes it even though the plan never lists it.
 #
 # Providers are the sibling scripts under providers/, one contract
 # (`providers/<name> <package-name> <version>`, exit 1 = taken, exit 0 = free
@@ -76,8 +87,15 @@ cwd=$(hook_jq -r '.cwd // ""' <<<"$input" 2>/dev/null || true)
 # rt_has_npm_publish <stripped text>: does a clause RUN `npm publish`? The
 # clause walk and the prefixes it peels are the finder's in hooks/_lib.sh; only
 # the command word and the first non-option argument are this hook's question.
+# EVERY clause is walked, since a chain can publish more than once: the
+# workspaces the publishing clauses name land in RT_WORKSPACES, one a line, and
+# a publishing clause naming none empties it, since that clause publishes the
+# whole set. RT_WS_UNREADABLE says why a named value cannot be matched: `empty`
+# (`--workspace=`), or `quoted` (the quote strip left its placeholder there).
+RT_WORKSPACES=""
+RT_WS_UNREADABLE=""
 rt_has_npm_publish() {
-  local clause sub w dry
+  local clause sub w dry ws flagged value found=1 all=0
   while IFS= read -r clause; do
     # shellcheck disable=SC2086  # word splitting is intentional; quotes are stripped
     set -- $clause
@@ -97,20 +115,45 @@ rt_has_npm_publish() {
     # The whole clause is walked, not just up to the first word: `--dry-run`
     # (and its explicit `=true`) publishes nothing and is the diagnostic
     # someone reaches for, so it is not a publish. `--dry-run=false` is.
+    # A workspace flag's value is taken with it, so `npm -w x publish` still
+    # finds `publish` as the subcommand.
     sub=""
     dry=0
+    ws=""
+    flagged=0
     while [ $# -gt 0 ]; do
       case "$1" in
         --dry-run|--dry-run=true) dry=1; shift ;;
+        --workspace=*|-w=*) flagged=1; ws="$ws${1#*=}
+"; shift ;;
+        --workspace|-w)
+          flagged=1
+          if [ $# -ge 2 ]; then ws="$ws$2
+"; shift 2; else ws="$ws
+"; shift; fi ;;
         -*) shift ;;
         *) if [ -z "$sub" ]; then sub="$1"; fi; shift ;;
       esac
     done
-    if [ "$sub" = "publish" ] && [ "$dry" -eq 0 ]; then return 0; fi
+    [ "$sub" = "publish" ] && [ "$dry" -eq 0 ] || continue
+    found=0
+    if [ "$flagged" -eq 0 ]; then all=1; continue; fi
+    RT_WORKSPACES="$RT_WORKSPACES$ws"
+    # Every value ends in its own newline; the here-string adds the last one.
+    while IFS= read -r value; do
+      case "$value" in
+        '') RT_WS_UNREADABLE="empty" ;;
+        *_hookq_*) RT_WS_UNREADABLE="quoted" ;;
+      esac
+    done <<<"${ws%?}"
   done <<EOF
 $(printf '%s' "$1" | tr ';|&' '\n')
 EOF
-  return 1
+  if [ "$all" -eq 1 ]; then
+    RT_WORKSPACES=""
+    RT_WS_UNREADABLE=""
+  fi
+  return "$found"
 }
 
 # --- Which trigger, and at what version? ---
@@ -213,6 +256,63 @@ $patterns
 EOF
 fi
 
+# --- A publish naming its workspaces: those members alone ---
+# rt_norm <path>: a member path in one spelling, without a leading `./` or a
+# trailing `/`, so `./packages/b/` and `packages/b` are one member.
+rt_norm() {
+  local p="$1"
+  while [ "${p#./}" != "$p" ]; do p="${p#./}"; done
+  while [ "${p%/}" != "$p" ]; do p="${p%/}"; done
+  printf '%s' "$p"
+}
+if [ "$trigger" = "publish" ] && [ -n "$RT_WORKSPACES" ]; then
+  case "$RT_WS_UNREADABLE" in
+    quoted)
+      printf 'release-taken: a quoted workspace name could not be read, so the publish could not be placed and the check stood down.\n' >&2
+      exit 0 ;;
+    empty)
+      printf 'release-taken: a workspace flag names no workspace, so the publish could not be placed and the check stood down.\n' >&2
+      exit 0 ;;
+  esac
+  narrowed=""
+  found=""
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    # The root is never a workspace, whatever its name.
+    [ "$file" = "$root/package.json" ] && continue
+    rel=${file#"$root"/}
+    rel=$(rt_norm "${rel%package.json}")
+    m_name=$(hook_jq -r '.name // ""' "$file" 2>/dev/null) || m_name=""
+    hit=0
+    while IFS= read -r want; do
+      [ -n "$want" ] || continue
+      if { [ -n "$m_name" ] && [ "$want" = "$m_name" ]; } || [ "$(rt_norm "$want")" = "$rel" ]; then
+        hit=1
+        found="$found$want
+"
+      fi
+    done <<EOF
+$RT_WORKSPACES
+EOF
+    if [ "$hit" -eq 1 ]; then
+      narrowed="$narrowed$file
+"
+    fi
+  done <<EOF
+$pkgs
+EOF
+  while IFS= read -r want; do
+    [ -n "$want" ] || continue
+    if ! printf '%s' "$found" | grep -Fxq -- "$want"; then
+      printf 'release-taken: the workspace %s is not a member of this project, so the publish could not be placed and the check stood down.\n' "$want" >&2
+      exit 0
+    fi
+  done <<EOF
+$RT_WORKSPACES
+EOF
+  pkgs="$narrowed"
+fi
+
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/release-taken.XXXXXX") || exit 0
 trap 'rm -rf "$tmp"' EXIT
 
@@ -223,7 +323,7 @@ while IFS= read -r file; do
   meta=$(hook_jq -r '
     (.name // ""),
     (.version // ""),
-    (if .private == true then "yes" else "no" end),
+    (if .private == false then "yes" else "no" end),
     (if (.files != null) or (.publishConfig != null) then "yes" else "no" end)' "$file" 2>/dev/null) || meta=""
   if [ -z "$meta" ]; then
     printf 'release-taken: %s could not be read as JSON, so that package was not checked.\n' "$file" >&2
@@ -231,11 +331,11 @@ while IFS= read -r file; do
   fi
   p_name=$(printf '%s\n' "$meta" | sed -n 1p)
   p_version=$(printf '%s\n' "$meta" | sed -n 2p)
-  p_private=$(printf '%s\n' "$meta" | sed -n 3p)
+  p_public=$(printf '%s\n' "$meta" | sed -n 3p)
   p_signal=$(printf '%s\n' "$meta" | sed -n 4p)
-  # Publish intent (skills/ship/SKILL.md, Step 5): a private package, or one
-  # that never opted into npm, is never asked about there.
-  if [ "$p_private" = "yes" ] || [ "$p_signal" = "no" ]; then continue; fi
+  # Publish intent (workflow/publish-plan.js): a package the plan would skip,
+  # private or never opted into npm, is never asked about there.
+  if [ "$p_public" = "no" ] || [ "$p_signal" = "no" ]; then continue; fi
   if [ -z "$p_name" ] || [ -z "$p_version" ]; then continue; fi
   jobs=$((jobs + 1))
   printf '%s\n%s\n%s\n' npm "$p_name" "$p_version" > "$tmp/$jobs.job"

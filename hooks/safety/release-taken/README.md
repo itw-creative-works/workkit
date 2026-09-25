@@ -13,7 +13,7 @@ Two triggers, and nothing else reaches a provider:
 | Trigger | Found by | Asks |
 |---|---|---|
 | the release commit | a real `git ... commit` carrying the subject `chore(release): <x.y.z>` where a SUBJECT can sit: right after a message flag (`-m`, `--message`, quote optional), or opening a line, which is where the `-m "$(cat <<'EOF'` idiom puts it | npm for every package with publish intent, at ITS OWN `package.json` version, and `github-release` once for the repo, at the subject's version |
-| `npm publish` | a clause whose command word is `npm` and whose first non-option argument is `publish` (`--access public`, `--workspaces` and the rest ride along; a `--dry-run` publishes nothing and is not one) | npm only, the same package set |
+| `npm publish` | a clause whose command word is `npm` and whose first non-option argument is `publish` (`--access public`, `--workspaces` and the rest ride along; a `--dry-run` publishes nothing and is not one) | npm only, the same package set, or only the members it names with `--workspace` |
 
 A commit with any other subject is not this hook's business, and the GitHub release legitimately precedes the publish in the ship pipeline, which is why the publish never asks about it.
 
@@ -29,7 +29,9 @@ The package.json at the cwd's git toplevel for a commit; the one at the cwd itse
 - `dir/*` expands to every direct subdirectory of `dir` holding a package.json
 - any other glob shape is named on stderr as unexpanded and skipped, never guessed at
 
-Publish intent decides who is asked at npm, and the rule is the ship skill's own (`skills/ship/SKILL.md`, Step 5): `private` is not `true`, AND there is a `files` or a `publishConfig`. A private package, or one that never opted into npm, is never asked about there.
+A publish that names its workspaces asks about those members alone. `--workspace=<x>`, `--workspace <x>`, `-w <x>` and `-w=<x>` all count, as many times as the command repeats them, and each `<x>` matches a member by its package name or by its path from the root (`@fam/core`, `packages/core`, `./packages/core/`), the two spellings npm accepts. The root is never one of them. That is what lets a family publish one member at a time, in dependency order, without the member published a moment ago bouncing the next one. Every publishing clause of a chain counts (`npm publish -w a && npm publish -w b` asks about both), and one clause naming no workspace checks the whole set. `--workspaces`, all of them, keeps the whole set.
+
+Publish intent decides who is asked at npm, and the rule's home is the ship's publish plan, [`workflow/publish-plan.js`](../../../workflow/publish-plan.js): its `skip` reasons are the rule, and the hook asks npm about exactly the packages it would not skip, plus a workspaces root that carries the intent itself (a plain `npm publish` at that root publishes it, though the plan never lists it). A private package, or one that never opted into npm, is never asked about there.
 
 ## The provider contract
 
@@ -71,7 +73,7 @@ A commit whose subject is not the release one, the release subject named mid-mes
 
 The accepted residual of reading a line start as a subject position: a heredoc BODY line that begins with the literal release subject reads as one, so a commit whose message quotes a release line at the start of a line is judged as that release. It costs one bounce on a version that is free, never a missed one that is taken.
 
-Three things it cannot read, and says so rather than passing in silence: a message in a FILE (`-F`, `--file`), where there is no subject in the command at all; a publish behind a `cd`, `pushd` or `popd`, where the package npm would publish is not the one at the directory this hook was handed; and a workspace member that is absent or a pattern that matched nothing.
+Four things it cannot read, and says so rather than passing in silence: a message in a FILE (`-F`, `--file`), where there is no subject in the command at all; a publish behind a `cd`, `pushd` or `popd`, where the package npm would publish is not the one at the directory this hook was handed; a workspace member that is absent or a pattern that matched nothing; and a publish naming a workspace that matches no member, a quoted name (the quote strip leaves nothing readable where it stood) or an empty one (`--workspace=`), where the package being published could not be placed.
 
 Fail-open on the hook's own errors, since a broken guard must never wedge a session: no `jq`, an unreadable payload, a package.json `jq` cannot parse (that one package is named on stderr and skipped), a provider that exits some way the contract does not cover.
 

@@ -13,7 +13,7 @@ const os = require('os');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR } = require('../lib/harness');
 
-const { collectCcNews, renderCcNews, renderVersionMark, parseSections, topicOf, compareVersions } =
+const { collectCcNews, renderCcNews, renderVersionMark, parseSections, topicOf } =
   require(path.join(__dirname, '..', '..', 'jobs', 'cc-news.js'));
 
 const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'cc-news-'));
@@ -112,12 +112,6 @@ const run = async () => {
   await test('a heading that is not a version carries no entries', () => {
     const sections = parseSections('# Changelog\n\n- not a release\n\n## [Unreleased]\n\n- nor this\n');
     assertEq(sections.length, 0, 'nothing is a release');
-  });
-
-  await test('versions compare numerically, not as strings', () => {
-    assert(compareVersions('2.1.220', '2.1.99') > 0, '220 is newer than 99');
-    assert(compareVersions('2.1.9', '2.2.0') < 0, 'the minor wins');
-    assertEq(compareVersions('2.1.220', '2.1.220'), 0, 'equal is equal');
   });
 
   group('jobs/cc-news: the topic map');

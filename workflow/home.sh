@@ -89,6 +89,7 @@ WK_HOME_RUNNER_FILES=(
   'workflow/participation.sh:brief/workflow/participation.sh'
   'workflow/slug.sh:brief/workflow/slug.sh'
   'workflow/slug.js:brief/workflow/slug.js'
+  'workflow/semver.js:brief/workflow/semver.js'
   'workflow/lib.sh:brief/workflow/lib.sh'
   'workflow/discussions.sh:brief/workflow/discussions.sh'
   'workflow/home.sh:brief/workflow/home.sh'
