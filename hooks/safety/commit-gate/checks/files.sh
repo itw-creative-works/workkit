@@ -18,12 +18,13 @@ check_new_files() {
     new_code=""
     while IFS= read -r path; do
       [ -n "$path" ] || continue
+      if hook_is_test_path "$path"; then continue; fi
       case "$path" in
-        tests/*|*/tests/*|test/*|*/test/*|*/__tests__/*|_attic/*|*/_attic/*) continue ;;
+        _attic/*|*/_attic/*) continue ;;
       esac
       base="$(basename "$path")"
       case "$base" in
-        *.test.*|*.spec.*|*_test.*|*.config.*) continue ;;
+        *.config.*) continue ;;
       esac
       case "$base" in
         *.js|*.cjs|*.mjs|*.ts|*.jsx|*.tsx|*.sh|*.zsh|*.py|*.rb) new_code="$new_code $path" ;;
@@ -39,12 +40,7 @@ check_new_files() {
       has_test_file=0
       while IFS= read -r path; do
         [ -n "$path" ] || continue
-        case "$path" in
-          tests/*|*/tests/*|test/*|*/test/*|*/__tests__/*) has_test_file=1; break ;;
-        esac
-        case "$(basename "$path")" in
-          *.test.*|*.spec.*|*_test.*) has_test_file=1; break ;;
-        esac
+        if hook_is_test_path "$path"; then has_test_file=1; break; fi
       done <<<"$files_present"
       if [ "$has_test_file" -eq 0 ]; then
         block "the commit adds new source files (${new_code# }) but touches no test file. The test obligation scales with the change (AGENTS.md §6): write/extend tests for the new files, stage them, then commit."

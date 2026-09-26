@@ -82,13 +82,7 @@ block() {
 # for Claude, and NO permissionDecision, so the commit's fate is decided
 # exactly as it would be with this hook silent.
 stand_down() {
-  hook_jq -n --arg m "$1" '{
-    "systemMessage": $m,
-    "hookSpecificOutput": {
-      "hookEventName": "PreToolUse",
-      "additionalContext": $m
-    }
-  }'
+  hook_pretool_notice "$1"
 }
 
 # A commit wrapped in an interpreter string (`sh -c "git commit …"`,

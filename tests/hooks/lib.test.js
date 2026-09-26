@@ -1,11 +1,9 @@
 /* eslint-disable no-console */
 //
-// Tests for hooks/_lib.sh: the two helpers every hook's PORTABILITY rests on.
-// The platform seam (hook_uname_s / hook_is_macos / hook_is_windows /
-// hook_is_linux) answers which of the three supported platforms this is, and
-// hook_sha1 is the one digest spelling, since macOS ships `shasum` and a Linux
-// machine ships `sha1sum`. A marker keyed with a different tool is a different
-// file, so the key has to be one function.
+// Tests for hooks/_lib.sh, the helper library every hook sources: one group per
+// helper, from the platform seam and hook_sha1 through hook_jq, the manager
+// config, the changelog linter path, the notice, the deadline wait, the
+// test-path shapes and the marker paths.
 //
 
 const fs = require('fs');
@@ -236,6 +234,49 @@ const run = async () => {
     const engine = shellPath(fs.realpathSync(path.join(__dirname, '..', '..', 'workflow', 'changelog.js')));
     assertEq(out.code, 0, `it resolves, got: ${out.stdout}|${out.stderr}`);
     assertEq(path.posix.normalize(out.stdout.trim()), engine, `got: ${out.stdout}`);
+  });
+
+  group('_lib.sh: hook_pretool_notice');
+
+  await test('prints the two-field JSON a PreToolUse hook exiting 0 is heard by', () => {
+    const out = runLib("hook_pretool_notice 'a line: with \"quotes\"'");
+    assertEq(out.code, 0, `it prints, got: ${out.stderr}`);
+    const parsed = JSON.parse(out.stdout);
+    assertEq(Object.keys(parsed).sort().join(','), 'hookSpecificOutput,systemMessage', 'two top-level fields');
+    assertEq(parsed.systemMessage, 'a line: with "quotes"', 'the message, escaped by jq');
+    assertEq(JSON.stringify(parsed.hookSpecificOutput),
+      JSON.stringify({ hookEventName: 'PreToolUse', additionalContext: 'a line: with "quotes"' }),
+      'the model hears the same line, and nothing decides the call');
+  });
+
+  group('_lib.sh: hook_wait_deadline and hook_end_tree');
+
+  await test('a child still running at a 1s deadline: returns 1, and the child is ended', () => {
+    const out = runLib('sleep 30 & pid=$!; hook_wait_deadline "$pid" 1; rc=$?; wait "$pid" 2>/dev/null; '
+      + 'if kill -0 "$pid" 2>/dev/null; then alive=1; else alive=0; fi; printf \'rc=%s alive=%s\' "$rc" "$alive"');
+    assertEq(out.stdout, 'rc=1 alive=0', `the deadline ended it, got: ${out.stdout}|${out.stderr}`);
+  });
+
+  await test('a quick child: returns 0 and leaves its exit status to wait', () => {
+    const out = runLib('(exit 3) & pid=$!; hook_wait_deadline "$pid" 5; rc=$?; wait "$pid"; '
+      + 'printf \'rc=%s status=%s\' "$rc" "$?"');
+    assertEq(out.stdout, 'rc=0 status=3', `it ended in time, got: ${out.stdout}|${out.stderr}`);
+  });
+
+  group('_lib.sh: the test-path shapes');
+
+  await test('hook_is_test_name: the basename shapes, at any depth, and nothing else', () => {
+    const cases = ['a.test.js', 'src/a.spec.ts', 'pkg/a_test.go', 'tests/helpers.js', 'test/run.js', 'lib/x.js'];
+    const out = runLib(`for p in ${cases.join(' ')}; do hook_is_test_name "$p" && echo "$p"; done; true`);
+    assertEq(out.stdout.trim().split('\n').join(','), 'a.test.js,src/a.spec.ts,pkg/a_test.go', `got: ${out.stdout}|${out.stderr}`);
+  });
+
+  await test('hook_is_test_path: a test name, or any test folder, the top level included', () => {
+    const cases = ['a.test.js', 'tests/helpers.js', 'test/run.js', '__tests__/x.js', 'pkg/__tests__/x.js',
+      'pkg/test/x.js', 'lib/x.js', 'contest/x.js', 'testing/x.js'];
+    const out = runLib(`for p in ${cases.join(' ')}; do hook_is_test_path "$p" && echo "$p"; done; true`);
+    assertEq(out.stdout.trim().split('\n').join(','),
+      'a.test.js,tests/helpers.js,test/run.js,__tests__/x.js,pkg/__tests__/x.js,pkg/test/x.js', `got: ${out.stdout}|${out.stderr}`);
   });
 
   group('_lib.sh: the marker paths');

@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#336](../../issues/336) - The flip to `status:qa` runs the test files the working diff touched with `node --test`, and a red one blocks the park; no touched test file passes with a line saying nothing ran, and a body that mentions `-R` no longer reads as the flag on any gated command.
+
 ## [0.59.3] - 2026-09-26
 
 ### Changed

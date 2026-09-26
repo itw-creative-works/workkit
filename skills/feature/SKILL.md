@@ -74,7 +74,7 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 
 ## 5. Verify + review
 
-- Run the tests the change TOUCHED, with the narrowest command that proves it. The commit gate owns the full suite and runs it at the commit (`docs/project-state.md` § The proof).
+- Run the tests the change TOUCHED, with the narrowest command that proves it. The commit gate owns the full suite and runs it at the commit (`docs/project-state.md` § The proof). The flip to `status:qa` runs the touched test files itself (`safety/proof-guard`), so a red one blocks the park.
 - Then [workkit:review](../review/SKILL.md) on the diff. Trivial tasks skip formal review.
 - Fix ≥80 findings before calling it done. The review's simplification lens covers post-green cleanup.
 - Done-criteria:

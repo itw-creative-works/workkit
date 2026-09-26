@@ -242,13 +242,7 @@ EOF
 # the command's fate is decided exactly as it would be with this hook silent.
 if hook_has_escape "$stripped" WORKKIT_ALLOW_DISCARD; then
   aside="tree-guard: stood aside for a deliberate discard: WORKKIT_ALLOW_DISCARD=1 is set on this command (${found})."
-  hook_jq -n --arg m "$aside" '{
-    "systemMessage": $m,
-    "hookSpecificOutput": {
-      "hookEventName": "PreToolUse",
-      "additionalContext": $m
-    }
-  }'
+  hook_pretool_notice "$aside"
   exit 0
 fi
 

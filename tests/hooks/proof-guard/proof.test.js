@@ -7,89 +7,19 @@
 //
 // Every case runs against a PATH-shim `gh` that answers `issue view` from a
 // fixture, so nothing here reaches GitHub.
+// The shared prologue (the hook runner, the gh stub, the fixtures) is ./helpers.js.
 //
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../../lib/platform');
+const { isCall, fmtCalls } = require('../../lib/argv-log');
 const {
-  BASH, SYSTEM_PATH, NO_RC, shellPath, stubTool, basePathWithout, systemPathWith,
-} = require('../lib/platform');
-const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
-
-const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'proof-guard', 'run.sh');
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'proof-guard-'));
-const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
-
-// PATH shim: records each `gh` invocation and answers `issue view <N> --json
-// comments` from a fixture keyed by issue number. `fails: true` makes every
-// view exit non-zero, the way an unauthenticated or offline gh does.
-const makeGhStub = ({ comments = {}, fails = false } = {}) => {
-  const dir = mkTmp();
-  const logFile = path.join(dir, 'gh.log');
-  const bodiesDir = path.join(dir, 'issues');
-  fs.mkdirSync(bodiesDir, { recursive: true });
-  for (const [number, bodies] of Object.entries(comments)) {
-    fs.writeFileSync(path.join(bodiesDir, `${number}.json`),
-      JSON.stringify({ comments: bodies.map((body) => ({ body })) }));
-  }
-  const binDir = path.join(dir, 'bin');
-  fs.mkdirSync(binDir, { recursive: true });
-  const cwdFile = path.join(dir, 'cwd');
-  // Every path here crosses INTO a shell, so each is spelled the way the shell
-  // reads one; the values handed back stay native, because Node reads those.
-  stubTool(binDir, 'gh', [
-    '#!/usr/bin/env bash',
-    recordArgv(logFile),
-    `printf '%s\\n' "$PWD" >> "${shellPath(cwdFile)}"`,
-    'if [[ "$1 $2" == "issue view" ]]; then',
-    ...(fails ? ['  exit 1'] : [
-      `  file="${shellPath(bodiesDir)}/$3.json"`,
-      '  [[ -f "$file" ]] || exit 1',
-      '  cat "$file"',
-      '  exit 0',
-    ]),
-    'fi',
-    'exit 0',
-  ]);
-  return { binDir, logFile, cwdFile, dir };
-};
-
-const ghCalls = (stub) => readArgv(stub.logFile);
-
-// The machine that does NOT have `gh`. A runner ships the real one in /usr/bin,
-// so a case about its absence has to take it off the PATH rather than trust the
-// system one, or the REAL gh answers and the case passes for another reason.
-// Built once, since the mirror links every system tool, and removed with the
-// suite.
-let noGhPath = null;
-const pathWithoutGh = () => {
-  if (!noGhPath) noGhPath = basePathWithout(mkTmp(), 'gh');
-  return noGhPath;
-};
-const dropPathWithoutGh = () => {
-  if (noGhPath) cleanup(path.dirname(noGhPath));
-  noGhPath = null;
-};
-
-const runHook = (command, stub, cwd = os.tmpdir()) => {
-  const input = JSON.stringify({ tool_name: 'Bash', cwd: shellPath(cwd), tool_input: { command } });
-  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-    input,
-    env: {
-      HOME: shellPath(os.homedir()),
-      PATH: stub ? systemPathWith(stub.binDir) : pathWithoutGh(),
-    },
-    encoding: 'utf8',
-    timeout: 15000,
-  });
-  return { code: res.status, stderr: res.stderr || '' };
-};
-
-// One issue with a proof, one without, in every world.
-const WORLD = { comments: { 7: ['Proof: unit: node tests/hooks/x.test.js'], 9: ['looks good to me'] } };
+  HOOK, mkTmp, cleanup, makeGhStub, ghCalls, dropPathWithoutGh, runHook, WORLD,
+} = require('./helpers');
 
 const run = async () => {
   group('proof-guard: the flip to status:complete');
@@ -148,7 +78,7 @@ const run = async () => {
     assert(gated < 1000, `the gated command answers in under a second, took ${gated}ms`);
 
     const startedOther = Date.now();
-    assertEq(runHook(`gh issue edit 9 --body "${body}" --add-label status:qa`, stub).code, 0,
+    assertEq(runHook(`gh issue edit 9 --body "${body}" --add-label status:building`, stub).code, 0,
       'an ungated edit passes');
     const ungated = Date.now() - startedOther;
     assert(ungated < 1000, `the ungated command answers in under a second, took ${ungated}ms`);
@@ -165,11 +95,14 @@ const run = async () => {
   await test('any other label flip is not this gate: exit 0, no gh call', () => {
     const stub = makeGhStub(WORLD);
     for (const c of [
-      'gh issue edit 9 --remove-label status:building --add-label status:qa',
-      'gh issue edit 9 --remove-label status:complete --add-label status:qa',
+      'gh issue edit 9 --remove-label status:specced --add-label status:building',
+      'gh issue edit 9 --remove-label status:complete --add-label status:inbox',
+      'gh issue edit 9 --remove-label status:qa --add-label status:building',
       'gh issue edit 9 --add-assignee @me',
     ]) {
-      assertEq(runHook(c, stub).code, 0, `must pass: ${c}`);
+      const out = runHook(c, stub);
+      assertEq(out.code, 0, `must pass: ${c}`);
+      assertEq(out.stdout, '', `no notice, since nothing ran: ${c}`);
     }
     assertEq(ghCalls(stub).length, 0, `no issue is read, got: ${fmtCalls(ghCalls(stub))}`);
     cleanup(stub.dir);
@@ -242,6 +175,17 @@ const run = async () => {
     }
   });
 
+  await test('a body that mentions -R is not the flag: the issue is read locally and blocks', () => {
+    const stub = makeGhStub(WORLD);
+    const { code, stderr } = runHook('gh issue edit 9 --body "pass it with -R when needed" --add-label status:complete', stub);
+    assertEq(code, 2, `the unproved issue blocks, got: ${stderr}`);
+    const calls = ghCalls(stub);
+    assertEq(calls.length, 1, `exactly one gh call, got: ${fmtCalls(calls)}`);
+    assert(isCall(calls[0], 'issue', 'view', '9', '--json', 'comments'), `no --repo forwarded, got: ${fmtCalls(calls)}`);
+    assert(!calls[0].includes('--repo'), `the local repo answers, got: ${fmtCalls(calls)}`);
+    cleanup(stub.dir);
+  });
+
   await test('a --repo value the guard cannot read stands the gate down, never reads the local repo', () => {
     for (const c of [
       'gh issue close 9 --repo "$TARGET_REPO"',
@@ -278,7 +222,7 @@ const run = async () => {
 
   await test('hooks.json registers the guard under PreToolUse Bash', () => {
     const wiring = JSON.parse(fs.readFileSync(
-      path.join(__dirname, '..', '..', 'hooks', 'hooks.json'), 'utf8'));
+      path.join(__dirname, '..', '..', '..', 'hooks', 'hooks.json'), 'utf8'));
     const bash = (wiring.hooks.PreToolUse || []).find((b) => b.matcher === 'Bash');
     assert(bash, 'a PreToolUse Bash block exists');
     assert(bash.hooks.some((h) => h.command.includes('safety:proof-guard')),

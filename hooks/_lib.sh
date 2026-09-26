@@ -16,7 +16,10 @@
 # scripts/triage-marker.sh); every hook's payload read, hook_session_model's two model reads + safety/release-taken (hook_jq);
 # safety/release-taken (wk_repo_slug, off the slug seam); safety/commit-gate
 # (wk_linter_copies, wk_workflows_run_copy, wk_changelog_job_rewrite and
-# wk_checks_template, off the changelog-job seam); no
+# wk_checks_template, off the changelog-job seam); safety/commit-gate +
+# manager/spawn-guard + safety/proof-guard + safety/tree-guard
+# (hook_pretool_notice); safety/commit-gate + safety/proof-guard
+# (hook_wait_deadline, hook_end_tree, hook_is_test_path); no
 # caller here yet for the platform seam (hook_uname_s, hook_is_macos,
 # hook_is_windows, hook_is_linux).
 #
@@ -32,7 +35,8 @@
 # side sources the other. Change both together.
 #
 # The helper groups live one file per concern under hooks/lib/ (markers.sh,
-# commit.sh, manager.sh, proof.sh), sourced at the foot of this file. The
+# commit.sh, manager.sh, proof.sh, notice.sh, deadline.sh, paths.sh), sourced
+# at the foot of this file. The
 # constants, the platform seam, hook_jq and the engine sources stay here, so a
 # hook still sources this one file and gets the whole library.
 
@@ -161,3 +165,9 @@ hook_jq_default() { wk_jq_default "$@"; }
 . "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/lib/manager.sh"
 # shellcheck source=./lib/proof.sh
 . "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/lib/proof.sh"
+# shellcheck source=./lib/notice.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/lib/notice.sh"
+# shellcheck source=./lib/deadline.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/lib/deadline.sh"
+# shellcheck source=./lib/paths.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/lib/paths.sh"

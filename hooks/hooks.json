@@ -63,7 +63,8 @@
           },
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh safety:proof-guard"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh safety:proof-guard",
+            "timeout": 600
           },
           {
             "type": "command",

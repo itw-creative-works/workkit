@@ -10,7 +10,7 @@
 // read IS a jq expression and a stubbed one would be testing itself.
 //
 // The proof rule is the one safety/proof-guard reads (hook_issue_has_proof in
-// hooks/lib/proof.sh), cased in tests/hooks/proof-guard.test.js: a comment LINE that
+// hooks/lib/proof.sh), cased in tests/hooks/proof-guard/proof.test.js: a comment LINE that
 // starts `Proof:`, leading blanks tolerated, case-sensitive.
 //
 

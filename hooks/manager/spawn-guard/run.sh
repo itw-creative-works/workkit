@@ -76,11 +76,5 @@ fi
 
 [ -n "$warning" ] || exit 0
 
-hook_jq -n --arg w "manager:spawn-guard: $warning" '{
-  "systemMessage": $w,
-  "hookSpecificOutput": {
-    "hookEventName": "PreToolUse",
-    "additionalContext": $w
-  }
-}'
+hook_pretool_notice "manager:spawn-guard: $warning"
 exit 0

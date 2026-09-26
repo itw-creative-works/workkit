@@ -2,7 +2,7 @@
 # safety/proof-guard: PreToolUse hook (Bash)
 # The mechanical half of the spec's proof rule (docs/project-state.md, "The
 # proof"): a `Proof:` line is a HARD GATE, so no item reaches `status:complete` or closes without one. This guard
-# blocks the two commands that make that move:
+# holds three moves. It blocks the two that need a proof:
 #   gh issue edit <N> ... --add-label ...status:complete...
 #   gh issue close <N>
 # when the issue's comments carry no line that starts `Proof:` (the read is
@@ -10,6 +10,8 @@
 # 6, which holds the same gate on the `Fixes #N` trailer). Two closes pass
 # untouched, because nothing was built to prove: `--reason "not planned"` (`-r`
 # is the same flag) and `--duplicate-of <M>`.
+# The third is the flip to status:qa, which runs the test files the working diff
+# touched (checks/qa-tests.sh) and blocks the flip while one is red.
 # The pattern's four homes (hook_issue_has_proof, workflow/ship-items.sh, and
 # PROOF_LINE in tower/api/server/validate.js and the dashboard's libs/tower/github/writes.js)
 # are named where it lives, in hooks/lib/proof.sh.
@@ -50,6 +52,8 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 . "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
+# shellcheck source=checks/qa-tests.sh
+. "$(dirname "${BASH_SOURCE[0]}")/checks/qa-tests.sh"
 
 cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
 [ -n "$cmd" ] || exit 0
@@ -59,11 +63,12 @@ cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
 # finding, 2026-09-10: the walk below used to run for every `gh issue edit`,
 # whatever its body).
 printf '%s' "$cmd" | grep -Eq '(^|[^[:alnum:]_./-])gh[[:space:]]+issue[[:space:]]+(edit|close)([[:space:]]|$)' || exit 0
-# Only two commands can reach the gate, and each leaves a literal string behind:
-# the flip has to spell `status:complete` for the label to be applied at all,
-# and the close has to spell `gh issue close`. Neither can hide in a variable
-# and still do what it does, so this hides nothing from the walk.
+# Only three commands can reach the guard, and each leaves a literal behind: a
+# flip has to spell `status:complete` or `status:qa` for the label to apply, and
+# the close has to spell `gh issue close`. None can hide in a variable and still
+# do its work, so this hides nothing from the walk.
 if ! printf '%s' "$cmd" | grep -q 'status:complete' \
+  && ! printf '%s' "$cmd" | grep -q 'status:qa' \
   && ! printf '%s' "$cmd" | grep -Eq '(^|[^[:alnum:]_./-])gh[[:space:]]+issue[[:space:]]+close([[:space:]]|$)'; then
   exit 0
 fi
@@ -132,6 +137,15 @@ else
   clauses_text=$(printf '%s' "$src" | tr ';|&' '\n')
 fi
 
+# A `--repo`/`-R` in any spelling gh takes, attached or not. Its presence is
+# read off the quote-stripped clause, so a body that mentions it is not one.
+repo_flag_re='(^|[[:space:]])(--repo([=[:space:]]|$)|-R)'
+
+# The qa flips seen, here and in another repo: the touched-test run happens
+# once per command, after the walk, and only for this tree.
+qa_here=0
+qa_elsewhere=0
+
 while IFS= read -r clause; do
 
   [ -n "$clause" ] || continue
@@ -156,6 +170,13 @@ while IFS= read -r clause; do
     # (quoted or bare) so a `--remove-label status:complete` never reads as one.
     labels=$(printf '%s' "$clause" \
       | grep -Eo -- '--add-label[=[:space:]]+("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:]]+)' || true)
+    if printf '%s' "$labels" | grep -q 'status:qa'; then
+      if printf '%s' "$detect" | grep -Eq -- "$repo_flag_re"; then
+        qa_elsewhere=1
+      else
+        qa_here=1
+      fi
+    fi
     printf '%s' "$labels" | grep -q 'status:complete' || continue
   fi
 
@@ -182,7 +203,7 @@ while IFS= read -r clause; do
   # whole clause unreadable rather than answered from the local repo.
   repo=""
   repo_unreadable=0
-  if printf '%s' "$clause" | grep -Eq -- '(^|[[:space:]])(--repo([=[:space:]]|$)|-R)'; then
+  if printf '%s' "$detect" | grep -Eq -- "$repo_flag_re"; then
     repo=$(printf '%s' "$clause" \
       | grep -Eo -- '(^|[[:space:]])(--repo[=[:space:]]+|-R[[:space:]]*)("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:]]+)' \
       | head -n 1 | sed -E 's/^[[:space:]]*(--repo[=[:space:]]+|-R[[:space:]]*)//' | tr -d "\"'" || true)
@@ -214,5 +235,11 @@ while IFS= read -r clause; do
 done <<EOF
 $clauses_text
 EOF
+
+if [ "$qa_here" -eq 1 ]; then
+  check_qa_tests
+elif [ "$qa_elsewhere" -eq 1 ]; then
+  hook_pretool_notice "proof-guard: the flip names another repo, so the touched-test run did not run here."
+fi
 
 exit 0

@@ -46,19 +46,7 @@ check_proof() {
 # decision is ALLOW, so without this, the biggest suites are exactly where the
 # gate stopped enforcing (issue #93).
 # Injectable so the suite can prove the bounce without a wait.
-# `pgrep` is not everywhere: Git Bash ships no procps, so on Windows only the
-# named process itself is ended and the suite's own children are left to the
-# shell that spawned them. That is the honest limit of a portable walk here; a
-# PowerShell walk would be a second mechanism for one platform.
 check_suite() {
-  gate_end_tree() {
-    local pid kid
-    pid="$1"
-    if command -v pgrep >/dev/null 2>&1; then
-      for kid in $(pgrep -P "$pid" 2>/dev/null); do gate_end_tree "$kid"; done
-    fi
-    kill -9 "$pid" 2>/dev/null || true
-  }
   if [ "$has_code" -eq 1 ] && [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
     deadline="${WORKKIT_GATE_TEST_DEADLINE:-1500}"
     # An over-raised budget would let the harness cancel the hook at its 3000s
@@ -68,12 +56,7 @@ check_suite() {
     out_file=$(mktemp "${TMPDIR:-/tmp}/commit-gate-test.XXXXXX")
     (cd "$repo_root" && npm test >"$out_file" 2>&1) &
     test_pid=$!
-    start=$SECONDS
-    while kill -0 "$test_pid" 2>/dev/null && [ $((SECONDS - start)) -lt "$deadline" ]; do
-      sleep 0.2
-    done
-    if kill -0 "$test_pid" 2>/dev/null; then
-      gate_end_tree "$test_pid"
+    if ! hook_wait_deadline "$test_pid" "$deadline"; then
       rm -f "$out_file"
       block "the test suite was still running at the gate's ${deadline}s deadline, so the gate cannot prove it green. Run \`WORKKIT_SUITE=1 npm test\` yourself; if this repo's suite genuinely needs longer, raise WORKKIT_GATE_TEST_DEADLINE in this repo's .claude/settings.json env block (2900s at most) and restart the session."
     fi
