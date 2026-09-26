@@ -349,7 +349,7 @@ export const droppedReason = (answered, nodes, errors, alias) => {
  *
  * The headers arrive as a plain lowercased object from either transport: the
  * machine splits them off `gh --include` (board.js), the browser reads the ones
- * that matter off the `Response` (github.js). One sentence for both, which is
+ * that matter off the `Response` (github/wire.js). One sentence for both, which is
  * why it is here and not written twice (issue #213).
  *
  * @param {number|null} status the response status

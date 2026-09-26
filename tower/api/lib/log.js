@@ -2,8 +2,8 @@
 // The tower's voice (issue #237): a glyph per outcome, the `task:` in bold,
 // nothing else on the line.
 //
-// One contract for everything this kit prints. `workflow/lib.sh` is the shell
-// half and this is the Node one, and the two are meant to be indistinguishable
+// One contract for everything this kit prints. `workflow/lib/voice.sh` is the
+// shell half, this the Node one, and the two are meant to be indistinguishable
 // in a scrollback: the same glyphs (`✓` acted, `·` nothing to do, `›` worth
 // knowing, `⚠` needs judgment, `✖` stopping, `✨` all current), the same
 // colors, and the same split of the first `word:` off the front of a message.
@@ -29,7 +29,7 @@ const DIM = '\u001b[0;90m';
 const BOLD = '\u001b[1m';
 
 // Color is a TERMINAL's affordance and nothing else's, and this is
-// `wk_color_on`'s rule leg for leg (workflow/lib.sh): a pipe, a log file and a
+// `wk_color_on`'s rule leg for leg (workflow/lib/voice.sh): a pipe, a log file and a
 // service manager all get the same words uncolored. Three ways to say no, every
 // one of them final: WORKKIT_COLOR=0, NO_COLOR (https://no-color.org), or a
 // TERM that cannot render any of it. WORKKIT_COLOR=1 is the yes a piped run (a

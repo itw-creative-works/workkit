@@ -87,8 +87,8 @@ export const sidebarKey = (state) => {
 // and unticking one is how a subset starts. No id and no `label` element: the
 // name beside it is a BUTTON with a job of its own, so the box carries its own
 // name for a screen reader rather than borrowing one. The button that opens the
-// menu carries `data-bs-auto-close="outside"` (page.js) so ticking does not
-// close it.
+// menu carries `data-bs-auto-close="outside"` (page/selector.js) so ticking
+// does not close it.
 const box = (slug, checked) => `<input class="form-check-input flex-shrink-0 ms-3" type="checkbox" data-tower-scope-slug="${esc(slug)}" aria-label="Include ${esc(slug)}"${checked ? ' checked' : ''}>`;
 
 // The master row's box, which says exactly what the boxes UNDER it say: every

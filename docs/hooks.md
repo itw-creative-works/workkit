@@ -49,6 +49,8 @@ The hooks run on macOS, on Windows under Git Bash, and on Linux. Where a spellin
 - `hook_file_mtime`: BSD `stat -f` against GNU `stat -c`, each spelling accepted only when its output is digits, since the GNU one prints `?` and exits 0 for the flag it does not mean.
 - `docs:checkpoint`'s `date -r <epoch>` against `date -d @<epoch>` chain, and `docs:session`'s date maths done in jq, are the portable form of a clock question.
 
+`hooks/_lib.sh` is the library's entry and keeps the seam, `hook_jq` and the engine sources; it sources its helper groups (the markers, the command-text reads, the manager's reads, the proof read) from [`hooks/lib/`](../hooks/lib/), one file per group, so a hook still sources `_lib.sh` alone.
+
 On Windows the engine's address must be a real symlink: Git Bash answers a plain `ln -s` with a copy unless the MSYS runtime is told otherwise, and a copy of the engine at `~/.claude/workkit` hides the `scripts/` folder beside it, which is what the skills' fallback resolves through. The daily heal sets that flag and, when a link still could not be made, removes the copy and says so rather than leaving a stale engine at the address.
 
 The skills carry no platform-bound command at all: the two that record a marker run [`scripts/review-marker.sh`](../scripts/review-marker.sh) and [`scripts/triage-marker.sh`](../scripts/triage-marker.sh), which source `hooks/_lib.sh` and write exactly the path the guard reads.
@@ -114,6 +116,7 @@ One limit is named rather than worked around: `safety:commit-gate`'s deadline wa
 ## `safety:commit-gate`: PreToolUse (Bash)
 
 - Blocks `git commit` unless: tests pass, new source files come with test files, code carries a fresh review marker, any added CHANGELOG entry matches the format, and a commit closing an issue (`Fixes #N`) stages the entry it closes against.
+- The hook's entry, `run.sh`, parses the command and classifies what the commit carries, then calls its six checks, which live as functions under `checks/`: `files.sh` holds checks 1 to 4, `proof-suite.sh` holds 6 and 5, in the order the gate asks them.
 - A stage-and-commit compound bounces. A PreToolUse hook reads the index before the in-command `git add` runs, so it cannot see what the commit will carry. Stage first, then commit.
 - A check that stands down says so out loud, one visible line, instead of skipping in silence.
 - The suite runs only for a commit carrying CODE. A docs-only commit, and a version-only bump in the root `package.json` or `.claude-plugin/plugin.json`, stand it down.
@@ -141,7 +144,7 @@ One limit is named rather than worked around: `safety:commit-gate`'s deadline wa
 ## `safety:tree-guard`: PreToolUse (Bash)
 
 - Blocks the git commands that DISCARD a working tree, since the tree is shared and no agent can see what else is uncommitted in it.
-- What it bounces: `git checkout` carrying a pathspec, a `git switch` carrying `--discard-changes` or `--force`, `git restore` without a bare `--staged`, every `git stash` spelling, a forced `git clean`, and `git reset --hard`, found anywhere in a compound and through the prefixes `hooks/_lib.sh`'s finder peels.
+- What it bounces: `git checkout` carrying a pathspec, a `git switch` carrying `--discard-changes` or `--force`, `git restore` without a bare `--staged`, every `git stash` spelling, a forced `git clean`, and `git reset --hard`, found anywhere in a compound and through the prefixes the finder in `hooks/lib/commit.sh` peels.
 - A plain branch switch stays legal. Where that line sits is the hook's own README.
 - Always on, with one escape: `WORKKIT_ALLOW_DISCARD=1` on the command, the owner's deliberate discard, which the guard stands aside for out loud.
 
@@ -159,7 +162,7 @@ One limit is named rather than worked around: `safety:commit-gate`'s deadline wa
 - Fails open, out loud: no `jq`, no `gh`, a view that exits non-zero, or a `--repo` value it cannot resolve (a variable, a substitution) leaves the command alone and says on stderr that the gate did not run. An unreadable `--repo` is never answered by reading the local repo instead.
 - Clause boundaries are quote aware, in ONE awk pass: a `;` or a `|` inside a quoted body is data, and splitting on it used to cut the clause before its `--add-label`. Detection reads the quote-stripped copy of each clause; the flag values are read raw, since the strip is what removes them.
 - Two literal tests on the raw command come first, so a `gh issue edit` that cannot be a flip never reaches the walk: the text has to spell `status:complete` or `gh issue close`, which neither command can do its work without.
-- The third stage of the same gate is `safety:commit-gate` check 6, the `Fixes #N` trailer. Both call one helper, `hook_issue_has_proof` in `hooks/_lib.sh`. The ship asks the same question outside a hook, in `workflow/ship-items.sh`, the pattern's twin on the shell path, pinned to the helper by `tests/scripts/ship-items.test.js`.
+- The third stage of the same gate is `safety:commit-gate` check 6, the `Fixes #N` trailer. Both call one helper, `hook_issue_has_proof` in `hooks/lib/proof.sh`. The ship asks the same question outside a hook, in `workflow/ship-items.sh`, the pattern's twin on the shell path, pinned to the helper by `tests/scripts/ship-items.test.js`.
 - The tower Board's own move of a card to Complete applies the same gate off the same read, on both of its write paths; the one difference is that a read the board cannot make refuses the move, where this hook stands down. Detail: `tower/README.md`.
 
 ## `safety:suite-guard`: PreToolUse (Bash)
@@ -168,8 +171,8 @@ One limit is named rather than worked around: `safety:commit-gate`'s deadline wa
 - It holds for EVERY class, the manager included, which the `docs/agents.md` rule alone could not reach: that one is written to the worker and the verifier.
 - A narrowed run passes untouched, since it is what proves a change: `npm test -- <scope>`, `node --test <file>`, `node tests/<dir>/<name>.test.js`, `npx omega test <scope>`, and the test script carrying an argument. A script whose name merely opens with `test` (`npm run test:unit`) is another script and is never this one. EVERY occurrence is judged, not the first: `npm test -- one && npm test` is a full run.
 - The escape is `WORKKIT_SUITE=1` on the command, the deliberate full run, the same shape as tree-guard's `WORKKIT_ALLOW_DISCARD`. The gate's own run never arrives here: it runs the suite from inside its own hook, never through the Bash tool.
-- Detection is the command TEXT in two passes, with no clause walk. The first is cheap and raw, one awk pass, and nothing else runs for a command that cannot be a suite run; only a command that matched pays for the second, over the heredoc-stripped and quote-stripped copy (`hooks/_lib.sh`), so a MENTION of the suite bounces nothing: a commit message, a `gh issue comment`, a heredoc body.
-- Fails open and silent: no `jq`, a session directory inside no git repository, no package.json at the git root, or a package.json with no test script leaves the command alone. The escape reads through `hook_has_escape` in `hooks/_lib.sh`, the one home of the `NAME=1` pattern `safety:tree-guard` uses too.
+- Detection is the command TEXT in two passes, with no clause walk. The first is cheap and raw, one awk pass, and nothing else runs for a command that cannot be a suite run; only a command that matched pays for the second, over the heredoc-stripped and quote-stripped copy (`hooks/lib/commit.sh`), so a MENTION of the suite bounces nothing: a commit message, a `gh issue comment`, a heredoc body.
+- Fails open and silent: no `jq`, a session directory inside no git repository, no package.json at the git root, or a package.json with no test script leaves the command alone. The escape reads through `hook_has_escape` in `hooks/lib/commit.sh`, the one home of the `NAME=1` pattern `safety:tree-guard` uses too.
 
 ## `safety:capture-guard`: PreToolUse (Read/Grep/Bash/Edit/Write)
 

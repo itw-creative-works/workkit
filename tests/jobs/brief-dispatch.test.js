@@ -2,10 +2,11 @@
 // Tests for jobs/brief-dispatch.sh: handing the day to the cloud.
 //
 // The function is SOURCED and called directly here, which is how both its
-// callers use it: the scheduled morning (morning-local.test.js covers what that
-// caller does with the answer) and `workkit brief` (workkit-cli.test.js). This
-// suite is about the answer itself: the dispatch that lands, and every named
-// reason one cannot be made.
+// callers use it: the scheduled morning (morning-local/cloud-brief.test.js
+// covers what that caller does with the answer) and `workkit brief`
+// (workkit-cli/brief.test.js).
+// This suite is about the answer itself: the dispatch that lands, and every
+// named reason one cannot be made.
 //
 // Every world is a scratch HOME with a recording `gh` first on PATH, so nothing
 // here reaches GitHub and a refusal is proved by a recorder that stayed silent.

@@ -59,9 +59,9 @@ trap 'rm -f "$errfile"' EXIT
 
 # One stage's lines. The proof test is safety/proof-guard's, the same regex,
 # which has four homes that change together: this one, hook_issue_has_proof in
-# hooks/_lib.sh, and PROOF_LINE in tower/api/server.js and in the dashboard's
-# libs/tower/github.js. tests/scripts/ship-items.test.js pins this one to
-# hooks/_lib.sh. Any LINE of any comment may open with it, leading blanks
+# hooks/lib/proof.sh, and PROOF_LINE in tower/api/server/validate.js and in the dashboard's
+# libs/tower/github/writes.js. tests/scripts/ship-items.test.js pins this one to
+# hooks/lib/proof.sh. Any LINE of any comment may open with it, leading blanks
 # tolerated and nothing else, case-sensitive; jq's test is not multiline by
 # default, hence the explicit newline branch.
 stage_lines() {

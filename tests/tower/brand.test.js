@@ -11,7 +11,7 @@
 // does with it.
 //
 // The config is JSON5 and this repo's tests carry no dependencies, so it is
-// read as TEXT - the same way app.test.js asks its questions of main.scss.
+// read as TEXT - the same way the tests/tower/app/ suites ask theirs of main.scss.
 // The next group pins two config shapes the installed omega depends on: the
 // target's type, which its validator refuses without, and the absence of a
 // repo block, whose presence would switch the repo service on. The last group

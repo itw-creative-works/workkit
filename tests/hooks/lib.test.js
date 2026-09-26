@@ -221,6 +221,23 @@ const run = async () => {
       fs.rmSync(dir, { recursive: true, force: true });
     });
 
+  group('_lib.sh: hook_changelog_linter');
+
+  // Both callers fail OPEN when this answers nothing, so a resolution that
+  // walks to the wrong folder would disable the CHANGELOG checks in silence.
+  // No WORKFLOW_DIR: the answer is the engine beside the hooks, found from the
+  // file that defines the helper.
+  await test('with no WORKFLOW_DIR it names the engine\'s own changelog.js', () => {
+    const out = runLib('hook_changelog_linter',
+      { PATH: systemPathWith(path.dirname(process.execPath)) });
+    // The shell answers in its own spelling (`pwd -P` resolves the links, the
+    // climb out of lib/ stays textual), so the expected path is spelled the way
+    // the shell would, as the cases below do, and the climb is collapsed here.
+    const engine = shellPath(fs.realpathSync(path.join(__dirname, '..', '..', 'workflow', 'changelog.js')));
+    assertEq(out.code, 0, `it resolves, got: ${out.stdout}|${out.stderr}`);
+    assertEq(path.posix.normalize(out.stdout.trim()), engine, `got: ${out.stdout}`);
+  });
+
   group('_lib.sh: the marker paths');
 
   const sha1 = (text) => spawnSync(BASH, [...NO_RC, '-c', `printf '%s' "$1" | "${shellPath(real)}"`, 'sh', text],

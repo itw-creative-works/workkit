@@ -7,9 +7,10 @@
 # paste-the-code prompt answerable.
 #
 # Everything the child draws is appended to the capture file the caller made
-# (600 before a byte is written: workkit.sh's mint owns its lifecycle). The
+# (600 before a byte is written: the mint in workkit/secrets.sh owns its lifecycle). The
 # command and the capture arrive through the environment: run_under_pty speaks
-# for both callers, and the mint's words carry no spaces (workkit.sh says why).
+# for both callers, and the mint's words carry no spaces (workkit/secrets.sh
+# says why).
 log_file -a $env(WK_PTY_CAPTURE)
 spawn {*}[split $env(WK_PTY_CMD) " "]
 interact {

@@ -10,7 +10,8 @@
 // stdin being a real terminal, and a pty is the only honest way to answer that
 // gate: a pipe would route every case to the `script` fallback and prove
 // nothing. No expect on this machine, nothing to test: the fallback is the
-// only path that can run here, and workkit-cli.test.js already covers it.
+// only path that can run here, and workkit-cli/cloud-secrets.test.js already
+// covers it.
 //
 
 const fs = require('fs');

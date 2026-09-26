@@ -16,13 +16,14 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 ├── hooks/                # hooks.json + the hook groups, resolved via ${CLAUDE_PLUGIN_ROOT}
 │   ├── loader.sh         # name → path router (docs:board-guard → docs/board-guard/run.sh)
 │   ├── _lib.sh           # shared helpers (sourced, never executed)
+│   ├── lib/              # _lib.sh's helper groups, one file per concern (sourced by it, never a hook)
 │   ├── docs/             # board-guard, changelog-guard, change-tracker, checkpoint, session, session-guard, state-check
 │   ├── safety/           # vendor-guard, commit-gate, commit-language, release-taken, issue-guard, proof-guard, suite-guard, capture-guard, tree-guard
 │   ├── manager/          # resolver, profile, spawn-guard, close-guard + ladder.json (the tier SSOT)
 │   └── workflow/         # standards (the daily heal) + reload-guard
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
 ├── skills/               # the ten workflow skills: surface as workkit:<name>
-├── workflow/             # the agent-agnostic engine (labels.json, standards.sh, home.sh, publish.sh, changelog.js, templates)
+├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/, lib.sh + lib/, changelog.js, templates)
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
 ├── jobs/                 # scheduled work: the 9am daily brief, its launchd plist, and install.sh
 ├── scripts/              # the two marker scripts the skills call (review, triage): the only platform-touching commands a skill has

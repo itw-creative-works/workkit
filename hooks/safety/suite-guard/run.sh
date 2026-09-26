@@ -21,12 +21,12 @@
 #
 # The escape is `WORKKIT_SUITE=1` on the command, the deliberate full run, the
 # same shape as safety/tree-guard's WORKKIT_ALLOW_DISCARD and read by the same
-# helper (hook_has_escape in hooks/_lib.sh).
+# helper (hook_has_escape in hooks/lib/commit.sh).
 #
 # Detection is the command TEXT, in two passes, and no clause walk. The first is
 # cheap and RAW: one awk pass, no sourcing and no perl, and nothing else runs
 # for a command that cannot be a suite run. Only when that matches does the
-# second pass pay for the house text handling (hooks/_lib.sh, the same
+# second pass pay for the house text handling (hooks/lib/commit.sh, the same
 # preparation the commit hooks and tree-guard do): heredoc bodies are file
 # content and quoted spans are data, so a MENTION of the suite bounces nothing
 # (`git commit -m "test: cover npm test wiring"`, a `gh issue comment` quoting

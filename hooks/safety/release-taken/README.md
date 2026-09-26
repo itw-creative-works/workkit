@@ -17,7 +17,7 @@ Two triggers, and nothing else reaches a provider:
 
 A commit with any other subject is not this hook's business, and the GitHub release legitimately precedes the publish in the ship pipeline, which is why the publish never asks about it.
 
-The two STRIPS are the house ones in [`hooks/_lib.sh`](../../_lib.sh), shared with the commit hooks: a quoted mention (`echo "chore(release): 1.2.3"`) and a heredoc body are data, never commands. So is the commit finder, and so is `HOOK_VERSION_RE`, the release version `safety:commit-language` accepts in a subject.
+The two STRIPS are the house ones in [`hooks/lib/commit.sh`](../../lib/commit.sh), shared with the commit hooks: a quoted mention (`echo "chore(release): 1.2.3"`) and a heredoc body are data, never commands. So is the commit finder, and so is `HOOK_VERSION_RE`, the release version `safety:commit-language` accepts in a subject.
 
 The npm clause walk, though, is this hook's OWN and deliberately smaller: it peels `(`, `{`, `command`, `env` and `VAR=value`, and nothing else. Two spellings of a publish therefore walk past it, and they are accepted misses rather than oversights: `eval "npm publish"` and an interpreter string (`sh -c "npm publish"`). Both are the shapes the commit finder pays a wrapped-detection pass for, and neither is how a publish is ever typed.
 

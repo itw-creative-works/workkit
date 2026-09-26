@@ -8,7 +8,7 @@
 // becomes, what happens to an edge pointing off the board - is asked here.
 //
 // An ES module written for a browser, so it is pulled in with a dynamic
-// `import()`, the way app.test.js reaches the other pure libs. It imports only
+// `import()`, the way the tests/tower/app/ suites reach the other pure libs. It imports only
 // `format.js`, which imports nothing at all, so nothing bundler-specific is in
 // reach of the load.
 //

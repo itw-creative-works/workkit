@@ -130,11 +130,11 @@ Autonomous ship pipeline: read the config, pick the bump, then run every step de
 
 ## Step 7: Republish the dashboard, and re-run setup, if the ship touched them
 
-- Diff touched `tower/app/`, `workflow/publish.sh` or `workflow/home.sh`: run `workkit publish` once the release commit's CI is green. Only a publish carries the change to the dashboard built from the home clone. On red, what would publish is the failure. The daily 9am publish is the backstop, so a skip costs a day.
+- Diff touched `tower/app/`, `workflow/publish.sh` or `workflow/home.sh`, or a `workflow/<name>/` folder either one sources: run `workkit publish` once the release commit's CI is green. Only a publish carries the change to the dashboard built from the home clone. On red, what would publish is the failure. The daily 9am publish is the backstop, so a skip costs a day.
 - Report one line: published, or the named skip it printed (`site.publish` off, no home clone, no build tooling, already current). A FAILED publish is loud, like red CI. Say what it said and that the site is on the previous build.
-- Diff touched `workflow/workkit.sh`, `workflow/home.sh`, `workflow/publish.sh`, `workflow/standards.sh`, `jobs/` or `hooks/`: run `workkit setup` on the same green. Setup installs those files here; until it reruns, the machine has the shipped kit but not its install. It is idempotent: a re-run skips finished steps.
+- Diff touched `workflow/workkit.sh`, `workflow/home.sh`, `workflow/publish.sh`, `workflow/standards.sh`, a `workflow/<name>/` folder one of them sources, `jobs/` or `hooks/`: run `workkit setup` on the same green. Setup installs those files here; until it reruns, the machine has the shipped kit but not its install. It is idempotent: a re-run skips finished steps.
 - Give it a long timeout: the token handover waits up to three minutes on GitHub Pages, plus the dashboard build. Report every `skip` and `warn` line, one each. Also each `info` line asking for a terminal (repo opt-in, publish question, secrets prompt, home-repo confirm). A human step then becomes one owner action. A FAILED setup is loud.
-- Setup publishes the dashboard last. So when both clauses fire (a diff touching `workflow/publish.sh` or `workflow/home.sh`, or `tower/app/` beside `hooks/`), it is ONE run. The setup run REPLACES the separate `workkit publish`; the reply says the republish rode it. Neither clause: skip silently.
+- Setup publishes the dashboard last. So when both clauses fire (a diff touching `workflow/publish.sh` or `workflow/home.sh` or a folder either one sources, or `tower/app/` beside `hooks/`), it is ONE run. The setup run REPLACES the separate `workkit publish`; the reply says the republish rode it. Neither clause: skip silently.
 
 ## The owner's word is the invocation, and it authorizes that ship alone
 

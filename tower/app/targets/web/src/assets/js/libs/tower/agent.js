@@ -15,7 +15,7 @@
 //
 // The glyphs are plain Font Awesome markup, which the framework's shared
 // renderer draws for elements inserted long after boot - the same bet
-// modal.js's external link already makes. Nothing here needs Pro.
+// modal/issue.js's external link already makes. Nothing here needs Pro.
 //
 
 import { esc, badgeColor, classKey } from './format.js';
@@ -243,7 +243,7 @@ export const claimGlyph = (issue) => {
  *
  * The shape `data-live-*` is written in and read back as, in ONE place because
  * there are two writers of it now: the paint below, which draws the element,
- * and the agent dialog's refresh (modal.js), which rewrites those attributes on
+ * and the agent dialog's refresh (modal/agent.js), which rewrites those attributes on
  * an element the paint drew rather than replacing it (#108). An absent stamp
  * stays absent rather than becoming the epoch.
  *

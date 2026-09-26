@@ -8,7 +8,7 @@
 # the scoped alternative: reverse-edit your own hunks.
 #
 # Blocked, wherever they sit in a compound, and through the prefixes the house
-# finder in _lib.sh peels (`git -C <path>`, a path spelling, `command`/`env`/an
+# finder in lib/commit.sh peels (`git -C <path>`, a path spelling, `command`/`env`/an
 # UNQUOTED `eval`, `VAR=x`, a `(`/`{` opener): a quoted eval body, an `sh -c`
 # string, a control-flow wrapper and a command substitution are accepted misses,
 # the same line that finder draws:
@@ -53,7 +53,7 @@ cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
 cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
 [ -n "$cwd" ] || cwd="$PWD"
 
-# Shared text handling (heredoc-body strip, multiline quote strip): hooks/_lib.sh,
+# Shared text handling (heredoc-body strip, multiline quote strip): hooks/lib/commit.sh,
 # the same preparation the commit hooks do before walking clauses. A heredoc BODY
 # is file content, and a quoted span is data: neither is a command.
 src=$(hook_strip_heredocs "$cmd")

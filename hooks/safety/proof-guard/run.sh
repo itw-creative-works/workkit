@@ -6,13 +6,13 @@
 #   gh issue edit <N> ... --add-label ...status:complete...
 #   gh issue close <N>
 # when the issue's comments carry no line that starts `Proof:` (the read is
-# hook_issue_has_proof in hooks/_lib.sh, shared with safety/commit-gate check
+# hook_issue_has_proof in hooks/lib/proof.sh, shared with safety/commit-gate check
 # 6, which holds the same gate on the `Fixes #N` trailer). Two closes pass
 # untouched, because nothing was built to prove: `--reason "not planned"` (`-r`
 # is the same flag) and `--duplicate-of <M>`.
 # The pattern's four homes (hook_issue_has_proof, workflow/ship-items.sh, and
-# PROOF_LINE in tower/api/server.js and the dashboard's libs/tower/github.js)
-# are named where it lives, in hooks/_lib.sh.
+# PROOF_LINE in tower/api/server/validate.js and the dashboard's libs/tower/github/writes.js)
+# are named where it lives, in hooks/lib/proof.sh.
 #
 # The read runs from the SESSION'S directory (the payload's `cwd`), which is
 # where the gated command itself would run: an issue number with no `--repo`
@@ -72,7 +72,7 @@ cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
 [ -n "$cwd" ] || cwd="$PWD"
 
 # Shared text handling (heredoc-body strip, quote strip, the proof read):
-# hooks/_lib.sh, the same preparation the commit hooks and tree-guard do before
+# hooks/lib/commit.sh and hooks/lib/proof.sh, the same preparation the commit hooks and tree-guard do before
 # walking clauses. A heredoc BODY is file content, not a command.
 src=$(hook_strip_heredocs "$cmd")
 

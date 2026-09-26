@@ -8,7 +8,7 @@ So the guard is ALWAYS ON, and the alternative it names is the scoped one the in
 
 ## What it bounces
 
-Each is found wherever it sits in a compound (the command is split on `;` `|` `&`), through the prefixes the house finder in `hooks/_lib.sh` peels: `git -C <path>`, a `/usr/bin/git` spelling, `command git …`, `env git …`, an UNQUOTED `eval git …`, `VAR=x git …`, a `(`/`{` opener. What that leaves out is in "What it never sees".
+Each is found wherever it sits in a compound (the command is split on `;` `|` `&`), through the prefixes the house finder in `hooks/lib/commit.sh` peels: `git -C <path>`, a `/usr/bin/git` spelling, `command git …`, `env git …`, an UNQUOTED `eval git …`, `VAR=x git …`, a `(`/`{` opener. What that leaves out is in "What it never sees".
 
 | Shape | Blocked when |
 |---|---|
@@ -42,9 +42,9 @@ The escape is read off the QUOTE-STRIPPED command, so `echo "set WORKKIT_ALLOW_D
 
 ## What it never sees
 
-A quoted mention (`echo "never run git stash"`, a commit message naming the rule) and a heredoc BODY are data, stripped before the walk, the same preparation `hooks/_lib.sh` does for the commit hooks, whose strip helpers this guard sources rather than repeating. A non-git command carrying the words (`npm run stash`, `make clean -f`) is not a git clause. A redirection's target and everything after an unquoted `#` are dropped before any judgment: they are not arguments, and counting them bounced `git checkout main > /tmp/out`.
+A quoted mention (`echo "never run git stash"`, a commit message naming the rule) and a heredoc BODY are data, stripped before the walk, the same preparation `hooks/lib/commit.sh` does for the commit hooks, whose strip helpers this guard sources rather than repeating. A non-git command carrying the words (`npm run stash`, `make clean -f`) is not a git clause. A redirection's target and everything after an unquoted `#` are dropped before any judgment: they are not arguments, and counting them bounced `git checkout main > /tmp/out`.
 
-Then the accepted misses, which are the same line `_lib.sh`'s finder draws (a clause whose command word is not git is not walked):
+Then the accepted misses, which are the same line the finder in `hooks/lib/commit.sh` draws (a clause whose command word is not git is not walked):
 
 - a QUOTED eval body or an interpreter string: `eval "git stash"`, `sh -c "git checkout -- ."` (the unquoted `eval git stash` is caught, since eval peels)
 - a control-flow or launcher wrapper: `if git stash; then …`, `for … do git stash`, `time git stash`, `sudo git stash`, `xargs git checkout --`

@@ -94,7 +94,7 @@ The app is an OMEGA brand root whose one app is the dashboard. The framework sup
 
 **An empty state is a shape, not a missing panel.** Where a column, a panel or a page has nothing in it, it draws a muted Font Awesome glyph above one quiet line (a fitting icon per place, a check where empty is good news, a chart where a reading has not arrived) so a board that is up to date reads as finished work rather than as something that failed to load. One helper (`format.empty`), one voice.
 
-**Models and crew classes carry one colour.** A model id and an agent class are drawn as coloured badges wherever they appear (the Crew cards, the Overview's crew table, the Usage table) and the Usage charts draw each bar in that same colour, so a row in a chart and a badge in the table below it are recognizably the same thing. Which name falls in which tone is `libs/tower/format.js`; the colours are the framework's categorical ramp (`.omega-tone-1..6` on `.omega-badge-tone`), so dark mode follows. Anything clickable (every issue card and row) warms and lifts under the pointer and settles again on press, which is the framework's `.omega-interactive`.
+**Models and crew classes carry one colour.** A model id and an agent class are drawn as coloured badges wherever they appear (the Crew cards, the Overview's crew table, the Usage table) and the Usage charts draw each bar in that same colour, so a row in a chart and a badge in the table below it are recognizably the same thing. Which name falls in which tone is `libs/tower/format/badges.js`, behind the `format.js` door; the colours are the framework's categorical ramp (`.omega-tone-1..6` on `.omega-badge-tone`), so dark mode follows. Anything clickable (every issue card and row) warms and lifts under the pointer and settles again on press, which is the framework's `.omega-interactive`.
 
 **Refreshes are in place.** A section that has never answered shows a spinner naming the read; the chrome shows one while a refresh is in flight; and a poll that changed nothing writes nothing, so the page keeps its focus, its scroll and its open panels. A refresh that fails leaves the last good answer on screen and marks the feed unavailable rather than replacing a full board with an error line.
 
@@ -132,13 +132,22 @@ Cost is derived from a pricing table in the library, hand-entered from published
 ```
 tower/
 ├── api/
-│   ├── server.js       # createServer(opts) + the main block: routing, caching, the gates
+│   ├── server.js       # createServer(opts) + the main block: the router and the wiring, re-exporting the pieces below
+│   ├── server/         # its pieces, one module per concern, none requiring server.js
+│   │   ├── http.js     # the plumbing: the exec seam, the cache slot, the Host and Origin allowlist, the JSON answer, the capped body
+│   │   ├── validate.js # the gates a write meets before `gh`: the intake and move validators, the status vocabulary, the proof line
+│   │   ├── feeds.js    # createFeeds: the reads behind their caches, the board's sweep in flight included
+│   │   └── writes.js   # createWrites: the two writes, an intake and a status move with its proof gate
 │   └── lib/
 │       ├── repos.js    # the roster from ~/.workkit/.repos.json, plus the home clone
 │       ├── board.js    # the machine's transport for the sweep: `gh api graphql`, batched per six repos, paged per repo, over the app's shared sweep.js
 │       ├── sessions.js # keep-awake markers + transcripts + statusline cache
 │       ├── health.js   # unpushed / uncommitted / unreleased / last tag
-│       ├── telemetry.js# token accounting and subagent attribution
+│       ├── telemetry.js# token accounting and subagent attribution: the payload assembly, re-exporting the pieces below
+│       ├── telemetry/  # its pieces, one module per concern, none requiring telemetry.js
+│       │   ├── pricing.js   # the per-million rates per model, the model lookup, the cost of a token bundle
+│       │   ├── read.js      # the bounded incremental read: the chunk size, the one read cache and its prune, one transcript's usage
+│       │   └── subagents.js # subagent attribution: the crew class, a subagent's liveness, the rows of a session's subagents/ folder
 │       └── brief.js    # the daily brief: one payload for the page and the 9am job (jobs/)
 └── app/                # the OMEGA brand root: its own npm root (workspaces do not nest)
     └── targets/web/src/
@@ -149,6 +158,31 @@ tower/
             ├── main.js                 # the one bundle every page loads: mounts the three dialogs
             ├── pages/                  # one module per page, bound by URL
             └── libs/tower/             # api, github, sweep, token, page, chrome, sidebar, favorites, scope, clock, state, format, crew, agent, modal, intake
+                ├── format.js            # the shared vocabulary's one door: every public name of the pieces below
+                ├── format/              # its sections, one module each, none importing format.js
+                │   ├── values.js        # the escaping, the empty, problem and loading states, the notices, the value formatters
+                │   ├── status.js        # the status pipeline: its tokens, its chart series, its alarm; the priority bands and their order
+                │   ├── chips.js         # the glyph table and the status, priority and type chips
+                │   ├── badges.js        # which model and crew class falls in which tone, the badges, the list cap
+                │   └── shapes.js        # the stat tile and grid, the card, the issue chip row, the pill
+                ├── github.js            # the published copy's data layer and its one door: readFeed, plus every public name of the pieces below
+                ├── github/              # its sections, one module each, none importing github.js
+                │   ├── token.js         # the viewer's token: the key, the storage guard, read, write, clear, the fragment handover
+                │   ├── wire.js          # the two requests (GraphQL, and the REST the roster and the writes share), the limit mark, the token refusal
+                │   ├── roster.js        # the home pointer, and the private roster read off the home repo with the token
+                │   ├── board.js         # the label groups restated, one answer normalized, the paged sweep
+                │   ├── summaries.js     # the published summaries off the home repo's Discussions
+                │   ├── brief.js         # the brief built from the sweep: the API brief's sections, order and headline restated
+                │   ├── history.js       # the mornings and the documents off one Discussions read, and the brief freshness
+                │   └── writes.js        # the two writes: a status move and an intake, each refused before anything leaves
+                ├── modal.js             # the dialogs' one door: every public name of the pieces below
+                ├── modal/               # its dialogs, one module each, none importing modal.js
+                │   ├── issue.js         # the issue dialog: its triggers, the external link, what an issue depends on, the delegated opener
+                │   ├── agent.js         # the crew card's dialog: its trigger, the header and rows, the live refresh
+                │   └── document.js      # the published document's dialog: its trigger, the excerpt, the body, the card
+                ├── page.js              # the runtime every page boots into: the feeds it arms, the repo selection, the paint loop; imports the piece below
+                ├── page/                # its piece, which imports nothing from page.js
+                │   └── selector.js      # the sidebar selector: its button, the menu the runtime claims, the label patched onto it, the search box
                 └── sweep.js             # the board sweep's pure half: the document, its numbers, the node-to-issue parse, the error reading; imported by github.js AND required by api/lib/board.js
 ```
 

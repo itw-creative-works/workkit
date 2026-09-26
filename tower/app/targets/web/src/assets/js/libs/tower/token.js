@@ -79,7 +79,7 @@ export const tokenCard = (options = {}) => `<div class="card h-100">
  * What that token has to be able to do - the fine-grained permissions, and the
  * classic token that covers a board spanning two owners (issue #167).
  *
- * Both sentences are github.js's, beside the URLs a viewer makes each kind at:
+ * Both sentences are github/token.js's, beside the URLs a viewer makes each kind at:
  * the guidance and the calls it describes cannot drift apart if they live in
  * one file.
  *

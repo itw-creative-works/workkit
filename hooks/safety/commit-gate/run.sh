@@ -51,12 +51,19 @@ fi
 
 . "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
 
+# The six checks are functions in checks/, sourced here and called in order at
+# the end: checks/files.sh holds 1 to 4, checks/proof-suite.sh holds 6 and 5.
+# shellcheck source=./checks/files.sh
+. "$(dirname "${BASH_SOURCE[0]}")/checks/files.sh"
+# shellcheck source=./checks/proof-suite.sh
+. "$(dirname "${BASH_SOURCE[0]}")/checks/proof-suite.sh"
+
 cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
 [ -n "$cmd" ] || exit 0
 
 # --- Find a real `git ... commit` COMMAND, not a mention. ---
 # Shared detection (heredoc-body strip, multiline quote strip, clause scan):
-# hooks/_lib.sh, used identically by the safety/commit-language hook.
+# hooks/lib/commit.sh, used identically by the safety/commit-language hook.
 hook_find_git_commit "$cmd"
 commit_clause="$HOOK_COMMIT_CLAUSE"
 saw_cd="$HOOK_SAW_CD"
@@ -332,196 +339,14 @@ if [ "$has_pathspec" -eq 0 ] && [ -n "$files" ]; then
   done <<<"$files"
 fi
 
-# 1. New source files need tests (the test-TYPE proxy): a hook cannot judge what KIND of test a file holds, but it CAN see a
-# commit that ADDS code files while touching no test file at all. Only in repos
-# that define a test script (a repo without tests isn't asked to start here),
-# and only for staged adds (pathspec commits are already gated strictly).
-if [ "$bookkeeping" -eq 0 ] && [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
-  added=$(git diff --cached --name-only --diff-filter=A 2>/dev/null || true)
-  new_code=""
-  while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    case "$path" in
-      tests/*|*/tests/*|test/*|*/test/*|*/__tests__/*|_attic/*|*/_attic/*) continue ;;
-    esac
-    base="$(basename "$path")"
-    case "$base" in
-      *.test.*|*.spec.*|*_test.*|*.config.*) continue ;;
-    esac
-    case "$base" in
-      *.js|*.cjs|*.mjs|*.ts|*.jsx|*.tsx|*.sh|*.zsh|*.py|*.rb) new_code="$new_code $path" ;;
-    esac
-  done <<<"$added"
-  if [ -n "$new_code" ]; then
-    # A test file must be PRESENT in the commit: --diff-filter=d excludes
-    # deletions, so removing tests/old.test.js cannot satisfy the proxy.
-    files_present=$(git diff --cached --name-only --diff-filter=d 2>/dev/null || true)
-    if [ "$has_all_flag" -eq 1 ]; then
-      files_present=$(printf '%s\n%s' "$files_present" "$(git diff --name-only --diff-filter=d 2>/dev/null || true)")
-    fi
-    has_test_file=0
-    while IFS= read -r path; do
-      [ -n "$path" ] || continue
-      case "$path" in
-        tests/*|*/tests/*|test/*|*/test/*|*/__tests__/*) has_test_file=1; break ;;
-      esac
-      case "$(basename "$path")" in
-        *.test.*|*.spec.*|*_test.*) has_test_file=1; break ;;
-      esac
-    done <<<"$files_present"
-    if [ "$has_test_file" -eq 0 ]; then
-      block "the commit adds new source files (${new_code# }) but touches no test file. The test obligation scales with the change (AGENTS.md §6): write/extend tests for the new files, stage them, then commit."
-    fi
-  fi
-fi
-
-# 2. Review marker (code commits only). The workkit:review skill touches the
-# marker when it finishes; it must be newer than the previous commit.
-if [ "$has_code" -eq 1 ] && [ "$bookkeeping" -eq 0 ]; then
-  # The marker's name is hook_review_marker_path's, the same helper
-  # scripts/review-marker.sh writes through, so the gate and the skill can
-  # never name two different files. No digest tool at all is loud: an empty key
-  # would be one marker shared by every repo on the machine.
-  if ! marker="$(hook_review_marker_path "$repo_root")"; then
-    block "this machine has neither shasum nor sha1sum, so the gate cannot name the review marker. Install one, then commit."
-  fi
-  if [ ! -f "$marker" ]; then
-    block "the commit contains code and no review has run. Run the workkit:review skill on the diff first (it records a marker), then commit."
-  fi
-  last_commit_ts=$(git log -1 --format=%ct 2>/dev/null || echo 0)
-  marker_ts=$(hook_file_mtime "$marker")
-  if [ "$marker_ts" -lt "$last_commit_ts" ]; then
-    block "the review marker predates the last commit. This commit's code has not been reviewed. Run the workkit:review skill again, then commit."
-  fi
-fi
-
-# 3. CHANGELOG entries must match the format. The rules live in
-# workflow/changelog.js: one home, shared with the docs/changelog-guard hook,
-# which runs the same check at write time. This is the authority of the two: it
-# sees hand edits made outside the tools. Only the lines this commit ADDS are
-# judged, so a legacy CHANGELOG is never bounced for its history. A commit
-# staged with -a is judged from the working tree, which is what it will carry.
-if linter="$(hook_changelog_linter 2>/dev/null)"; then
-  lint_source="--staged"
-  [ "$has_all_flag" -eq 1 ] && lint_source=""
-  changelogs="$(printf '%s\n' "$files" | grep -E '(^|/)CHANGELOG\.md$' || true)"
-  # A pathspec commit bypasses staging, so the file list is unknowable: the
-  # gate already treats those strictly. Judge the repo's own CHANGELOG from the
-  # working tree, which is what such a commit would carry.
-  if [ "$has_pathspec" -eq 1 ] && [ -f "$repo_root/CHANGELOG.md" ]; then
-    changelogs="CHANGELOG.md"
-    lint_source=""
-  fi
-  while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    # shellcheck disable=SC2086  # lint_source is one optional flag, not a path
-    if ! lint_out=$(cd "$repo_root" && node "$linter" "$repo_root/$path" --added-only $lint_source 2>&1); then
-      block "the CHANGELOG entry does not match the format (see docs/project-state.md). $lint_out"
-    fi
-  done <<<"$changelogs"
-fi
-
-# 4. Collapse on ship: a commit that closes an issue carries its CHANGELOG
-# entry. The rule is the spec's (docs/project-state.md § queue semantics: the
-# turn that closes an issue writes the entry pointing at it), and the trailer
-# makes it checkable. Read from the RAW command: the message text is inside a
-# quoted span, which the clause strip replaced with a placeholder, so the
-# tokenized clause cannot see it. A mention of the trailer outside the message
-# reads the same way here, and asking that commit for its entry too is the
-# harmless direction.
-# Only in repos that keep a CHANGELOG.md, and only when the staged file list is
-# knowable: a pathspec commit bypasses staging, so what it carries cannot be
-# read (the same reason check 1 stands down there).
-# The trailer pattern has ONE home, since checks 4 and 6 ask the same question
-# of the same message: which issues does this commit close?
-trailer_re='(^|[^[:alnum:]])(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+#[0-9]+'
-if [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/CHANGELOG.md" ] \
-  && printf '%s' "$cmd" | grep -Eqi "$trailer_re"; then
-  if ! printf '%s\n' "$files" | grep -Eq '(^|/)CHANGELOG\.md$'; then
-    block "the message closes an issue (Fixes/Closes/Resolves #N) but no CHANGELOG.md is staged. An issue closes against its CHANGELOG entry (docs/project-state.md): add the entry under [Unreleased], stage CHANGELOG.md, then commit."
-  fi
-fi
-
-# 6. The proof: every issue this commit
-# closes must already carry a `Proof:` comment, since the trailer is the third
-# stage of the same gate safety/proof-guard holds on the complete flip and the
-# close. Check 4's trailer pattern, and the guard's read (hook_issue_has_proof
-# in hooks/_lib.sh), with the same fail-open: a gh that cannot answer leaves the
-# commit alone and says so. It sits BEFORE the suite on purpose, so a missing
-# proof bounces without paying for a full test run. The read runs at the repo
-# ROOT, where the commit is, so an issue number resolves against this repo.
-# Only in repos that keep a CHANGELOG.md, the same participation signal check 4
-# reads: a repo outside the pipeline closes issues with a trailer the ordinary
-# way, and its issues carry no Proof: convention to check.
-if [ -f "$repo_root/CHANGELOG.md" ] && printf '%s' "$cmd" | grep -Eqi "$trailer_re"; then
-  unproved=""
-  for n in $(printf '%s' "$cmd" | grep -Eoi "$trailer_re" | grep -Eo '[0-9]+$' | sort -u); do
-    proof_status=0
-    (cd "$repo_root" 2>/dev/null || exit 2; hook_issue_has_proof "$n") || proof_status=$?
-    case "$proof_status" in
-      0) ;;
-      1) unproved="$unproved #$n" ;;
-      *) echo "commit-gate: could not read issue #$n (gh could not answer), so the proof check did not run." >&2 ;;
-    esac
-  done
-  if [ -n "$unproved" ]; then
-    block "the message closes${unproved}, and no comment there opens with a \`Proof:\` line. A proof is a hard gate (docs/project-state.md, \"The proof\"): the agent that built the item comments the Proof: line first, one entry per layer with the command or the reason it was skipped, and only then does the trailer close the issue."
-  fi
-fi
-
-# 5. Tests must pass when the repo defines them and the commit carries CODE (at
-# the repo ROOT: the session may sit in a subdirectory). The code test is
-# check 2's, so a docs-only commit and a release commit's version stamps stand
-# the suite down; the header records why that lands no untested code (#151). A
-# pathspec commit is code by definition here, so it keeps gating strictly. The
-# run carries its own deadline, kept under the hook's declared timeout (3000s
-# in hooks.json): a hook the harness cancels returns no decision, and no
-# decision is ALLOW, so without this, the biggest suites are exactly where the
-# gate stopped enforcing (issue #93).
-# Injectable so the suite can prove the bounce without a wait.
-# `pgrep` is not everywhere: Git Bash ships no procps, so on Windows only the
-# named process itself is ended and the suite's own children are left to the
-# shell that spawned them. That is the honest limit of a portable walk here; a
-# PowerShell walk would be a second mechanism for one platform.
-gate_end_tree() {
-  local pid kid
-  pid="$1"
-  if command -v pgrep >/dev/null 2>&1; then
-    for kid in $(pgrep -P "$pid" 2>/dev/null); do gate_end_tree "$kid"; done
-  fi
-  kill -9 "$pid" 2>/dev/null || true
-}
-if [ "$has_code" -eq 1 ] && [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
-  deadline="${WORKKIT_GATE_TEST_DEADLINE:-1500}"
-  # An over-raised budget would let the harness cancel the hook at its 3000s
-  # timeout first: no decision, and no decision is ALLOW (#93). Clamp so a
-  # misconfigured raise still bounces loudly instead of silently allowing.
-  [ "$deadline" -gt 2900 ] 2>/dev/null && deadline=2900
-  out_file=$(mktemp "${TMPDIR:-/tmp}/commit-gate-test.XXXXXX")
-  (cd "$repo_root" && npm test >"$out_file" 2>&1) &
-  test_pid=$!
-  start=$SECONDS
-  while kill -0 "$test_pid" 2>/dev/null && [ $((SECONDS - start)) -lt "$deadline" ]; do
-    sleep 0.2
-  done
-  if kill -0 "$test_pid" 2>/dev/null; then
-    gate_end_tree "$test_pid"
-    rm -f "$out_file"
-    block "the test suite was still running at the gate's ${deadline}s deadline, so the gate cannot prove it green. Run \`WORKKIT_SUITE=1 npm test\` yourself; if this repo's suite genuinely needs longer, raise WORKKIT_GATE_TEST_DEADLINE in this repo's .claude/settings.json env block (2900s at most) and restart the session."
-  fi
-  if ! wait "$test_pid"; then
-    {
-      echo "commit-gate: BLOCKED this commit: the test suite failed. Fix the failures, then commit. Last lines:"
-      tail -15 "$out_file"
-    } >&2
-    rm -f "$out_file"
-    exit 2
-  fi
-  rm -f "$out_file"
-elif [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
-  # The stand-down is deliberate (#151) but never silent (#155): a repo that
-  # defines a suite hears why this commit did not run it.
-  stand_down "commit-gate: suite not run: the commit carries no code (docs-only or version-stamp-only), per #151."
-fi
+# The checks, in the order the gate asks them: 6 sits before 5 so a missing
+# proof bounces without paying for a full test run. Each function ends on an
+# if, which returns 0 when it does not fire, so a bare call never stops the run.
+check_new_files
+check_review_marker
+check_changelog_format
+check_changelog_staged
+check_proof
+check_suite
 
 exit 0

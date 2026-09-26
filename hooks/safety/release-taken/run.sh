@@ -6,7 +6,7 @@
 #
 # Two triggers, and nothing else reaches the providers:
 #   1. The release commit: a real `git ... commit` (the house finder in
-#      hooks/_lib.sh, so a quoted mention and a heredoc body are data) whose
+#      hooks/lib/commit.sh, so a quoted mention and a heredoc body are data) whose
 #      command text carries the subject `chore(release): <x.y.z>`, the same
 #      subject safety/commit-language is the one hook that accepts a version
 #      in. That version is the release's.
@@ -85,7 +85,7 @@ cwd=$(hook_jq -r '.cwd // ""' <<<"$input" 2>/dev/null || true)
 [ -n "$cwd" ] || cwd="$PWD"
 
 # rt_has_npm_publish <stripped text>: does a clause RUN `npm publish`? The
-# clause walk and the prefixes it peels are the finder's in hooks/_lib.sh; only
+# clause walk and the prefixes it peels are the finder's in hooks/lib/commit.sh; only
 # the command word and the first non-option argument are this hook's question.
 # EVERY clause is walked, since a chain can publish more than once: the
 # workspaces the publishing clauses name land in RT_WORKSPACES, one a line, and

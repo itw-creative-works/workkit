@@ -44,7 +44,7 @@ cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
 
 # --- Is this a real `git ... commit` COMMAND, not a mention? ---
 # Shared detection (heredoc-body strip, multiline quote strip, clause scan):
-# hooks/_lib.sh, used identically by the safety/commit-gate hook. Detection
+# hooks/lib/commit.sh, used identically by the safety/commit-gate hook. Detection
 # reads the STRIPPED command; the span extraction below still reads the
 # ORIGINAL command, so the quoted `-m "$(cat <<EOF ...)"` message body stays
 # scanned (a bare `-F - <<EOF` body is unquoted, the accepted miss above).

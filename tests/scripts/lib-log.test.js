@@ -1,6 +1,7 @@
 //
-// Tests for workflow/lib.sh's voice and spinner (issue #237): the one home of
-// everything the engine, the jobs and the tower say to a person.
+// Tests for workflow/lib.sh's voice and spinner (issue #237), their functions in
+// workflow/lib/voice.sh: the one home of everything the engine, the jobs and
+// the tower say to a person.
 //
 // Every case sources the real library in a real bash and reads what it printed,
 // because the whole subject here is the bytes on the two streams: the glyph a
