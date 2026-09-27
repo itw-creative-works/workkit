@@ -22,7 +22,7 @@ const mkTmp = (prefix = 'suite-guard-') => fs.mkdtempSync(path.join(os.tmpdir(),
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 // A repo the hook can read: a git repository, since the test script is read
-// from the GIT ROOT's package.json, the same place safety/commit-gate reads it.
+// from the nearest package.json up to the GIT ROOT, the package safety/commit-gate names.
 const mkRepo = ({ scripts = { test: 'node tests/run.js' }, pkg = true } = {}) => {
   const dir = fs.realpathSync(mkTmp());
   spawnSync('git', ['init', '-q'], { cwd: dir });
@@ -186,6 +186,31 @@ const run = async () => {
   await test('a repo declaring no test script passes', () => {
     const dir = mkRepo({ scripts: { start: 'node index.js' } });
     assertEq(runHook('npm test', dir).code, 0, 'there is no suite here to own');
+    cleanup(dir);
+  });
+
+  await test("a nested package's own test script bounces from inside it", () => {
+    const dir = mkRepo({ scripts: { start: 'node index.js' } });
+    fs.mkdirSync(path.join(dir, 'sub'));
+    fs.writeFileSync(path.join(dir, 'sub', 'package.json'), JSON.stringify({ name: 'sub', scripts: { test: 'node --test' } }));
+    assertEq(runHook('npm test', path.join(dir, 'sub')).code, 2, 'the nearest package is the suite npm would run');
+    cleanup(dir);
+  });
+
+  await test("the root's script run directly from inside a nested package bounces", () => {
+    const dir = mkRepo();
+    fs.mkdirSync(path.join(dir, 'sub'));
+    fs.writeFileSync(path.join(dir, 'sub', 'package.json'), JSON.stringify({ name: 'sub', scripts: { test: 'node --test' } }));
+    assertEq(runHook('cd .. && node tests/run.js', path.join(dir, 'sub')).code, 2, "the root's suite is a full run from anywhere in the repo");
+    assertEq(runHook('node --test tests/a.test.js', path.join(dir, 'sub')).code, 0, 'a narrowed run of the nested script still passes');
+    cleanup(dir);
+  });
+
+  await test('a nested package with no test script never hides the root suite', () => {
+    const dir = mkRepo();
+    fs.mkdirSync(path.join(dir, 'app'));
+    fs.writeFileSync(path.join(dir, 'app', 'package.json'), JSON.stringify({ name: 'app', scripts: { start: 'node index.js' } }));
+    assertEq(runHook('npm test', path.join(dir, 'app')).code, 2, 'a package without a script is no test boundary');
     cleanup(dir);
   });
 

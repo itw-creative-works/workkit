@@ -6,8 +6,9 @@
 # spent 25 of them that way. This guard bounces the hand-run, from every class,
 # the manager included: `npm test`, `npm run test`, npm's `t` alias and npm's
 # own flags before any of them (`npm --silent test`), and the repo's test script
-# run directly (`scripts.test` in the git root's package.json, `node
-# tests/run.js` here), at a repo that declares a test script at all.
+# run directly (`scripts.test` of the nearest package at or above the session
+# directory, up to the git root, that declares one, and the root's own from
+# inside a nested package, `node tests/run.js` here).
 #
 # A NARROWED run passes untouched, since it is what proves a change: the touched
 # test files (`node tests/<dir>/<name>.test.js`), `node --test <file>`,
@@ -33,10 +34,11 @@
 # it, a heredoc carrying it). If the stripped text no longer carries a full run,
 # the command was talking about one.
 #
-# Fail open, silently: no jq, a session directory inside no git repository, no
-# package.json at the git root, or a package.json declaring no test script
+# Fail open, silently: no jq, a session directory inside no git repository, or
+# no package at or above it (the root's included) declaring a test script
 # leaves the command alone. The repo is resolved the way safety/commit-gate
-# resolves it, from the git root, so the two hooks agree on whose suite this is.
+# resolves it, from the git root, and the package the way its nested pass does
+# (hook_test_package_dir), so the two hooks agree on whose suite this is.
 
 set -euo pipefail
 set -f  # no glob expansion while handling untrusted command text
@@ -55,13 +57,28 @@ cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
 cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
 [ -n "$cwd" ] || cwd="$PWD"
 
-# The repo, and its test script: the git root's package.json, which is what the
-# commit gate judges (safety/commit-gate, "Everything below judges the REPO").
+# The repo, and its test script: the nearest package at or above the session
+# directory that declares one, else the git root's.
 repo_root=$(cd "$cwd" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null) || repo_root=""
 [ -n "$repo_root" ] || exit 0
 
-script=$(hook_jq -r '.scripts.test // ""' "$repo_root/package.json" 2>/dev/null || true)
+pkg_dir="$repo_root"
+cwd_prefix=$(cd "$cwd" 2>/dev/null && git rev-parse --show-prefix 2>/dev/null) || cwd_prefix=""
+cwd_prefix="${cwd_prefix%/}"
+if [ -n "$cwd_prefix" ]; then
+  nested_pkg=$(hook_test_package_dir "$repo_root" "$cwd_prefix")
+  if [ -n "$nested_pkg" ]; then pkg_dir="$repo_root/$nested_pkg"; fi
+fi
+
+script=$(hook_jq -r '.scripts.test // ""' "$pkg_dir/package.json" 2>/dev/null || true)
 [ -n "$script" ] || exit 0
+# The root's script is a full run from inside a nested package too (`cd .. &&
+# node tests/run.js`), so both are judged when they differ.
+scripts="$script"
+if [ "$pkg_dir" != "$repo_root" ]; then
+  root_script=$(hook_jq -r '.scripts.test // ""' "$repo_root/package.json" 2>/dev/null || true)
+  if [ -n "$root_script" ] && [ "$root_script" != "$script" ]; then scripts="$scripts"$'\n'"$root_script"; fi
+fi
 
 # npm's own spellings of the whole suite: the `run` form, the bare form, the `t`
 # alias, and npm's flags in front of any of them.
@@ -79,7 +96,15 @@ sg_npm_re='(^|[^[:alnum:]_./-])npm([[:space:]]+-[^[:space:]]+)*[[:space:]]+(run[
 # one, and the script is matched only at a command-word boundary, so a path
 # that merely ends in it (`ls node_modules/.bin/jest`) is not a run.
 sg_full_run() {
-  printf '%s' "$1" | awk -v npmre="$sg_npm_re" -v needle="$script" '
+  while IFS= read -r needle; do
+    [ -n "$needle" ] || continue
+    if [ -n "$(sg_full_run_for "$1" "$needle")" ]; then echo full; return 0; fi
+  done <<<"$scripts"
+}
+
+# sg_full_run_for <text> <script>: the awk pass for one script's spelling.
+sg_full_run_for() {
+  printf '%s' "$1" | awk -v npmre="$sg_npm_re" -v needle="$2" '
     function verdict(tail, kind,   s) {
       s = tail
       sub(/[[:space:]]*[0-9]*[;|&<>].*$/, "", s)

@@ -279,6 +279,21 @@ const run = async () => {
       'a.test.js,tests/helpers.js,test/run.js,__tests__/x.js,pkg/__tests__/x.js,pkg/test/x.js', `got: ${out.stdout}|${out.stderr}`);
   });
 
+  await test('hook_test_package_dir: the nearest package declaring a test script, below the root', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lib-pkgdir-'));
+    for (const d of ['pkg/src/deep', 'pkg/bare/src', 'other', 'node_modules/x']) fs.mkdirSync(path.join(root, d), { recursive: true });
+    const tested = JSON.stringify({ scripts: { test: 'node --test' } });
+    for (const d of ['', 'pkg', 'node_modules/x']) fs.writeFileSync(path.join(root, d, 'package.json'), tested);
+    fs.writeFileSync(path.join(root, 'pkg', 'bare', 'package.json'), '{"name":"bare"}');
+    const ask = (p) => runLib(`hook_test_package_dir "${shellPath(root)}" "${p}"`).stdout.trim();
+    assertEq(ask('pkg/src/deep/a.js'), 'pkg', 'a file under a package with a script names it');
+    assertEq(ask('pkg/bare/src/a.js'), 'pkg', 'a package without a script never hides the tested one above it');
+    assertEq(ask('other/x.js'), '', 'a file under no package names nothing');
+    assertEq(ask('app.js'), '', "a file at the root names nothing, the root's own package included");
+    assertEq(ask('node_modules/x/index.js'), '', 'a vendored package names nothing, script or not');
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
   group('_lib.sh: the marker paths');
 
   const sha1 = (text) => spawnSync(BASH, [...NO_RC, '-c', `printf '%s' "$1" | "${shellPath(real)}"`, 'sh', text],

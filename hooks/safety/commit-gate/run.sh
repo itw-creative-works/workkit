@@ -29,7 +29,9 @@
 #      headroom is what makes a per-repo raise effective without touching
 #      this plugin. A raise above 2900s is clamped back, so the harness can
 #      never cancel the hook into a silent allow. Both the raise and a
-#      plugin update take effect on a session restart.
+#      plugin update take effect on a session restart. A nested package
+#      whose folder holds a change in the commit runs its own test script
+#      after the root's, under the same budget (checks/proof-suite.sh).
 #   6. The proof: every issue the message closes (the check 4 trailer) must
 #      already carry a `Proof:` comment.
 #      The trailer is the third stage of the gate safety/proof-guard holds on
@@ -170,9 +172,9 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || no_repo
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || no_repo
 
 # Files going into the commit: staged, plus modified tracked files with -a/--all.
-files=$(git diff --cached --name-only 2>/dev/null || true)
+files=$(git -c core.quotePath=false diff --cached --name-only 2>/dev/null || true)
 if [ "$has_all_flag" -eq 1 ]; then
-  files=$(printf '%s\n%s' "$files" "$(git diff --name-only 2>/dev/null || true)")
+  files=$(printf '%s\n%s' "$files" "$(git -c core.quotePath=false diff --name-only 2>/dev/null || true)")
 fi
 files=$(printf '%s' "$files" | grep -v '^$' || true)
 # Pathspec commits (`git commit -m x src/foo.js`) bypass staging, so the file
@@ -342,5 +344,6 @@ check_changelog_format
 check_changelog_staged
 check_proof
 check_suite
+check_nested_suites
 
 exit 0

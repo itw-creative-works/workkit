@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#337](../../issues/337) - A nested package with its own `test` script runs it at the commit gate, after the root's and under the same deadline, whenever the commit changes a file inside its folder; an untouched package never runs, and `safety/suite-guard` now reads the nearest package's script.
+
 ## [0.60.0] - 2026-09-26
 
 ### Added

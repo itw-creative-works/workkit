@@ -19,9 +19,9 @@
 # wk_checks_template, off the changelog-job seam); safety/commit-gate +
 # manager/spawn-guard + safety/proof-guard + safety/tree-guard
 # (hook_pretool_notice); safety/commit-gate + safety/proof-guard
-# (hook_wait_deadline, hook_end_tree, hook_is_test_path); no
-# caller here yet for the platform seam (hook_uname_s, hook_is_macos,
-# hook_is_windows, hook_is_linux).
+# (hook_wait_deadline, hook_end_tree, hook_is_test_path); safety/commit-gate +
+# safety/suite-guard (hook_test_package_dir); no caller here yet for the
+# platform seam (hook_uname_s, hook_is_macos, hook_is_windows, hook_is_linux).
 #
 # Add helpers only with a second named consumer. PARITY with the personal hooks'
 # _lib.sh (~/.claude/hooks/_lib.sh) is the standing exemption: the seam and
