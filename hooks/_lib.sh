@@ -100,7 +100,7 @@ hook_is_windows() {
 hook_is_linux() { hook_uname_s; [ "$HOOK_UNAME_S" = "Linux" ]; }
 
 # hook_jq: the CRLF-safe jq, under the name the hooks call it by. The BODY
-# lives once, in the engine beside this layer (workflow/platform.sh, `wk_jq`),
+# lives once, in the engine beside this layer (workflow/lib/platform.sh, `wk_jq`),
 # which is where the rule and the reason for it are written down; the hook-facing
 # name stays hook_* so this library reads the way every other helper here does,
 # and so the personal hooks' _lib.sh reads name for name with it.
@@ -119,8 +119,8 @@ hook_is_linux() { hook_uname_s; [ "$HOOK_UNAME_S" = "Linux" ]; }
 # that is not there says so once, at load, in the shell's own words, and the
 # loader still fails open. Guarded, it would leave `wk_jq` undefined, every read
 # through it empty, and the caller blaming the file it was reading.
-# shellcheck source=../workflow/platform.sh
-. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../workflow/platform.sh"
+# shellcheck source=../workflow/lib/platform.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../workflow/lib/platform.sh"
 hook_jq() { wk_jq "$@"; }
 # hook_jq_default <default> <jq args...>: the same read with a default beside
 # it, under the hook-facing name. The body and the reason are the engine's
@@ -128,7 +128,7 @@ hook_jq() { wk_jq "$@"; }
 hook_jq_default() { wk_jq_default "$@"; }
 
 # The participation predicates, from the same engine beside this layer and
-# resolved the same way (workflow/participation.sh): `wk_is_repo_root <dir>`,
+# resolved the same way (workflow/lib/participation.sh): `wk_is_repo_root <dir>`,
 # which is `-e` on `.git` because a worktree's is a FILE, and
 # `wk_settings_declined <file>` / `wk_settings_enabled <file>`, the `enabled`
 # key read without jq. They keep their ENGINE names here, where hook_jq takes a
@@ -137,28 +137,28 @@ hook_jq_default() { wk_jq_default "$@"; }
 # second name for one predicate is the drift the one home was built to end.
 # Consumers: workflow/standards (the declined read on a broken install), and
 # safety/vendor-guard + docs/session, which source the file directly.
-# shellcheck source=../workflow/participation.sh
-. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../workflow/participation.sh"
+# shellcheck source=../workflow/lib/participation.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../workflow/lib/participation.sh"
 
 # The slug rule, from the same engine beside this layer and resolved the same
-# way (workflow/slug.sh): `wk_slug_from_remote <url>` and `wk_repo_slug <dir>`,
+# way (workflow/lib/slug.sh): `wk_slug_from_remote <url>` and `wk_repo_slug <dir>`,
 # `owner/repo` out of a remote in either form git writes it and either separator
 # a path is typed in. It keeps its ENGINE name here for the reason the
 # predicates above do: a second name for one rule is the drift the one home was
 # built to end, and a hand-rolled parse beside it is the same drift spelled
 # shorter. Consumers: safety/release-taken (the repo its github-release bounce
 # names).
-# shellcheck source=../workflow/slug.sh
-. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../workflow/slug.sh"
+# shellcheck source=../workflow/lib/slug.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../workflow/lib/slug.sh"
 
 # The changelog job in a repo's checks.yml and the retired linter copies, from
 # the same engine beside this layer and resolved the same way
-# (workflow/changelog-job.sh): the copies' names, whether a workflow still runs
+# (workflow/changelog/changelog-job.sh): the copies' names, whether a workflow still runs
 # one, and the rewrite the heal writes over an old job. Engine names, for the
 # reason the predicates above keep theirs. Consumers: safety/commit-gate (its
 # heal-bookkeeping arms, which prove a commit is exactly the heal's output).
-# shellcheck source=../workflow/changelog-job.sh
-. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../workflow/changelog-job.sh"
+# shellcheck source=../workflow/changelog/changelog-job.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../workflow/changelog/changelog-job.sh"
 
 # The helper groups, one file per concern under lib/ beside this file, resolved
 # the same way and UNGUARDED for the same reason: they are this library's own

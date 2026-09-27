@@ -7,7 +7,7 @@
 # stated once get buried under competing instructions.
 #
 # Injection condition: only manager-capable sessions get the profile. The
-# session tier is the frontier or workhorse rung (read from ../ladder.json),
+# session tier is the frontier or workhorse rung (read from ../resources/ladder.json),
 # or unknown (a fresh VS Code first prompt; the owner's default model is frontier,
 # so silence there would drop the profile exactly where it matters most).
 # A sonnet/haiku session is a deliberately cheap solo session: no crew, no
@@ -23,7 +23,7 @@ set -euo pipefail
 input="$(cat)" || input=""
 command -v jq >/dev/null 2>&1 || exit 0
 
-ladder="${MANAGER_LADDER:-${BASH_SOURCE[0]%/*}/../ladder.json}"
+ladder="${MANAGER_LADDER:-${BASH_SOURCE[0]%/*}/../resources/ladder.json}"
 cwd=$(printf '%s' "$input" | hook_jq -r '.cwd // empty' 2>/dev/null || true)
 hook_manager_config "$ladder" "$cwd" || exit 0
 frontier=$(printf '%s' "$HOOK_MANAGER_CONFIG" | hook_jq_default 'fable' -r '.tiers.frontier // empty')

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # manager:resolver: PreToolUse hook on the Agent tool (issue #11).
 # Supplies each CLASS agent spawn (scout / worker / verifier / advisor) its
-# concrete model from the tier ladder (../ladder.json) and the LIVE session
+# concrete model from the tier ladder (../resources/ladder.json) and the LIVE session
 # model, so a mid-session /model switch takes effect on the very next spawn.
 # Decision table:
 #   advisor          → the frontier rung, always (its whole point)
@@ -57,7 +57,7 @@ esac
 # The effective config (ladder, then the user's overrides, then this repo's),
 # resolved only once a class spawn is confirmed, so the layer reads and the git
 # call never sit on an ordinary tool use. `enabled: false` = a solo repo.
-ladder="${MANAGER_LADDER:-${BASH_SOURCE[0]%/*}/../ladder.json}"
+ladder="${MANAGER_LADDER:-${BASH_SOURCE[0]%/*}/../resources/ladder.json}"
 cwd=$(printf '%s' "$input" | hook_jq -r '.cwd // empty' 2>/dev/null || true)
 hook_manager_config "$ladder" "$cwd" || exit 0
 config="$HOOK_MANAGER_CONFIG"

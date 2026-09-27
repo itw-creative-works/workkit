@@ -1,7 +1,7 @@
 //
 // Tests for run_under_pty's expect path (issue #187): the Ctrl-C escape the
 // token mint needs. The claude CLI holds its PTY in raw mode and discards the
-// ^C byte, so `workflow/mint-pty.exp` binds it one layer out and ends the run
+// ^C byte, so `workflow/workkit/mint-pty.exp` binds it one layer out and ends the run
 // itself; these cases prove the binding with a child that IGNORES SIGINT the
 // way the CLI ignores the byte, and prove a finished child's exit status and
 // screen still pass through.

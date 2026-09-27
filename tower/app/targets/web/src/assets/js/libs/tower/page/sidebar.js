@@ -38,9 +38,9 @@
 // so a poll passing under an open filter leaves the boxes alone.
 //
 
-import { esc } from './format.js';
-import { repos } from './state.js';
-import { isNone, selectedSlugs } from './scope.js';
+import { esc } from '../format.js';
+import { repos } from '../state.js';
+import { isNone, selectedSlugs } from '../scope.js';
 
 /** The roster slugs, in roster order. */
 const slugsOf = (state) => repos(state).map((repo) => repo.slug).filter(Boolean);

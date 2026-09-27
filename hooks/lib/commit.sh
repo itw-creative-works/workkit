@@ -335,6 +335,6 @@ hook_changelog_linter() {
   # workflow/standards hook.
   local dir="${WORKFLOW_DIR:-}"
   [ -n "$dir" ] || dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/../../workflow"
-  [ -f "$dir/changelog.js" ] || return 1
-  printf '%s\n' "$dir/changelog.js"
+  [ -f "$dir/changelog/changelog.js" ] || return 1
+  printf '%s\n' "$dir/changelog/changelog.js"
 }

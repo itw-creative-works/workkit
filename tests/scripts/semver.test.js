@@ -1,5 +1,5 @@
 //
-// Tests for workflow/semver.js: the one version comparison the kit carries.
+// Tests for workflow/ship/semver.js: the one version comparison the kit carries.
 // The morning brief's upstream news walks Claude Code's releases with it and
 // the ship's publish plan checks each version's shape, so both readings are
 // the question here: semver order, and a dotted number with fewer parts.
@@ -10,7 +10,7 @@ const {
   group, test, assert, assertEq, summary, selfRun,
 } = require('../lib/harness');
 
-const { compareVersions, isSemver } = require(path.join(__dirname, '..', '..', 'workflow', 'semver.js'));
+const { compareVersions, isSemver } = require(path.join(__dirname, '..', '..', 'workflow', 'ship', 'semver.js'));
 
 const run = async () => {
   group('semver: compareVersions');

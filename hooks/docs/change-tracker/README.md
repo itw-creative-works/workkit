@@ -17,7 +17,7 @@ Both share the same detection logic (dirty tree with non-doc changes) and fire o
 - **Fire at most once per response** (`stop_hook_active` gate).
 - **Repeat only when something changed**. The hook fingerprints what it nags ABOUT: `git status --porcelain`, the diff behind it, the content of the untracked files, and the content of both capture surfaces (`INBOX.md`, `.workkit/capture.md`), and remembers the fingerprint it last nagged on in `.workkit/agents/.change-tracker`, the agents' own state. Same fingerprint on the next Stop → silent, so a parked batch and the pure Q&A turns over it cost one nudge, not one per stop. A new edit (which the diff catches even when the status line is identical), an edit to a file still untracked (which only its content catches: the status line is the same name either way), a new file, or a new capture → one more nudge and the new fingerprint. The fingerprint has no clock in it: two identical trees fingerprint identically. Nothing is remembered on a clean tree with an empty capture file (the state file is never written) and neither a repo with no `.workkit/` (UNDECIDED, never written to) nor one whose `.workkit/` is not gitignored gets a memory: the state file is session state, never a file the repo would be asked to commit, so both hear the nudge every Stop.
 - **Stay SILENT** on clean trees or doc-only changes.
-- **Prompt lives in `prompt.md`**: edit the nudge without touching bash.
+- **Prompt lives in `resources/prompt.md`**: edit the nudge without touching bash.
 - No network, no AI, runs in milliseconds. Pure git + jq.
 
 ## The three-layer system
@@ -32,7 +32,7 @@ Pipeline: work item → docs → changelog.
 
 ## Files
 
-- `run.sh`: detection logic, reads `prompt.md`, emits reminder
-- `prompt.md`: the injected context (edit this to change the nudge)
+- `run.sh`: detection logic, reads `resources/prompt.md`, emits reminder
+- `resources/prompt.md`: the injected context (edit this to change the nudge)
 - `README.md`: this file
 - `.workkit/agents/.change-tracker`: not here but in the repo being watched: the fingerprint last nudged on, written only where `.workkit/` is gitignored like it should be

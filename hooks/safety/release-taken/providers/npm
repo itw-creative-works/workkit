@@ -15,7 +15,7 @@
 # so its banner cannot reach stdout.
 #
 # The ship's `publish-plan.js --run` asks this same question in Node (`onRegistry`
-# in workflow/publish-plan.js), flag for flag: change one, change both.
+# in workflow/ship/publish-plan.js), flag for flag: change one, change both.
 
 set -uo pipefail
 

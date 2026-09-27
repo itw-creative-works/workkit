@@ -99,7 +99,7 @@ const run = async () => {
     const setSlug = [
       'set -euo pipefail',
       `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'lib.sh')))}`,
-      `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'discussions.sh')))}`,
+      `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'lib', 'discussions.sh')))}`,
       `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'home.sh')))}`,
       'wk_home_set_slug owner/workkit',
     ].join('\n');

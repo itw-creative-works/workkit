@@ -38,7 +38,7 @@ const { mkTmp } = require('../../lib/scratch');
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.sh');
 // The steps it sources, one file each: where a step's own text is read.
 const STEPS = path.join(path.dirname(SCRIPT), 'morning');
-const { INSTRUCTION } = require(path.join(__dirname, '..', '..', '..', 'jobs', 'brief-payload.js'));
+const { INSTRUCTION } = require(path.join(__dirname, '..', '..', '..', 'jobs', 'morning', 'brief', 'brief-payload.js'));
 // The title every published brief carries, from the module that owns the
 // literal, so this fixture and the step under test read one prefix.
 const { BRIEF_TITLE_PREFIX } = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'history.js'));

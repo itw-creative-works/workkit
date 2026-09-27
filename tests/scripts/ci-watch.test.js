@@ -1,5 +1,5 @@
 //
-// Tests for workflow/ci-watch.sh: the ship's CI watch, a sha in and one answer
+// Tests for workflow/ship/ci-watch.sh: the ship's CI watch, a sha in and one answer
 // out. Green, red, no CI configured for push, a run not queued yet, a usage
 // error and a `gh` that failed are the six answers, and each is an exit code the
 // ship reads, so every case asserts the code and the line together.
@@ -29,7 +29,7 @@ const {
 const { recordArgv, readArgv, isCall, eqArgv, fmtCalls } = require('../lib/argv-log');
 const { mkTmp } = require('../lib/scratch');
 
-const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ci-watch.sh');
+const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'ci-watch.sh');
 const SHA = '0123456789abcdef0123456789abcdef01234567';
 const LIST_ARGV = ['run', 'list', '--commit', SHA, '--json', 'databaseId,name,status,conclusion,url'];
 

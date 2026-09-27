@@ -124,7 +124,7 @@ report_drift() {
       local bad
       bad="$(node "$CHANGELOG_LINTER" "$root/CHANGELOG.md" 2>&1 | grep -oE '^  line [0-9]+' | sort -u | wc -l | tr -d ' ')"
       if [[ "${bad:-0}" -gt 0 ]]; then
-        wk_warn "standards: CHANGELOG.md has $bad entries not in the entry format; run the workkit:migrate skill, or 'node ~/.claude/workkit/changelog.js CHANGELOG.md' to see them"
+        wk_warn "standards: CHANGELOG.md has $bad entries not in the entry format; run the workkit:migrate skill, or 'node ~/.claude/workkit/changelog/changelog.js CHANGELOG.md' to see them"
         found=1
       fi
     else

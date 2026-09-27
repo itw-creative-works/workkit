@@ -1,5 +1,5 @@
 //
-// Tests for jobs/stats.js: the stats line a published brief carries.
+// Tests for jobs/morning/brief/stats.js: the stats line a published brief carries.
 //
 // The line is the ONLY store the history charts have (issue #55), so what is
 // pinned here is its exact text: a renderer that quietly renamed a key or
@@ -12,7 +12,7 @@
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
-const { renderStatsMark, dayOf, STATS_RE } = require(path.join(__dirname, '..', '..', 'jobs', 'stats.js'));
+const { renderStatsMark, dayOf, STATS_RE } = require(path.join(__dirname, '..', '..', 'jobs', 'morning', 'brief', 'stats.js'));
 const { parseStatsMark, STATS_RE: READ_RE } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'history.js'));
 
 /** A brief payload in the shape buildBrief returns, with the two new keys on it. */
@@ -69,7 +69,7 @@ const run = async () => {
   group('jobs/stats: the writer and the reader are one shape');
 
   await test('the pattern is the read-back’s own, not a second copy', () => {
-    assertEq(STATS_RE, READ_RE, 'jobs/stats.js re-exports tower/api/lib/history.js’s pattern');
+    assertEq(STATS_RE, READ_RE, 'jobs/morning/brief/stats.js re-exports tower/api/lib/history.js’s pattern');
   });
 
   await test('what the renderer wrote is what the reader parses back', () => {

@@ -332,7 +332,7 @@
 
 // ── The project selector's menu ────────────────────────────────────────────
 //
-// One row per repo (libs/tower/sidebar.js), so a roster of fifteen draws a menu
+// One row per repo (libs/tower/page/sidebar.js), so a roster of fifteen draws a menu
 // taller than the window and scrolls the PAGE behind it to read the bottom of
 // itself. It scrolls on its own instead, at three fifths of the viewport - short
 // enough to sit inside any window the shell fits in, long enough that a small

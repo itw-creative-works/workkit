@@ -15,7 +15,7 @@ const { asWindows, gitPath: rosterKey } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 
 const { discoverRepos, gitPath, readRoster, tempRoot } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'repos.js'));
-// The slug rule is the ENGINE's (workflow/slug.js, the twin of workflow/slug.sh
+// The slug rule is the ENGINE's (workflow/slug.js, the twin of workflow/lib/slug.sh
 // cased in tests/scripts/slug.test.js); repos.js requires it from there rather
 // than owning it, so the cases below ask it where it lives.
 const { slugFromRemote } = require(path.join(__dirname, '..', '..', 'workflow', 'slug.js'));

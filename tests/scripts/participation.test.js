@@ -1,5 +1,5 @@
 //
-// Tests for workflow/participation.sh: the engine's participation seam, the one
+// Tests for workflow/lib/participation.sh: the engine's participation seam, the one
 // home of what the kit means by a repo root and by a repo's own answer.
 //
 // The seam has its own suite because it has its own two consumers: the engine
@@ -24,7 +24,7 @@ const {
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 
-const PARTICIPATION = shellPath(path.join(__dirname, '..', '..', 'workflow', 'participation.sh'));
+const PARTICIPATION = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'participation.sh'));
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 

@@ -6,7 +6,7 @@
 // health that every other tower page already reads. Nothing is stored: a brief
 // is a question asked of the live data, not a document that accumulates.
 //
-// The 9am job does not reach the API for it. `jobs/brief-payload.js` calls this
+// The 9am job does not reach the API for it. `jobs/morning/brief/brief-payload.js` calls this
 // module directly, through the same roster, board and health reads the server
 // makes, so the morning works whether or not a tower is running.
 //
@@ -144,7 +144,7 @@ const nextUpFrom = (issues) => {
  * board is, and how much of it closed in the last day.
  *
  * They ride the payload because the morning's stats line is composed from it
- * (jobs/stats.js) and a chart drawn a month later can then say WHICH board grew
+ * (jobs/morning/brief/stats.js) and a chart drawn a month later can then say WHICH board grew
  * rather than only that the total did. `open` is the repo's totalCount rather
  * than the nodes it returned: a repo over the page cap is still that many
  * issues open, and a series that dipped at the cap would be a lie about the day.

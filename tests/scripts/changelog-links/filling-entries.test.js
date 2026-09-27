@@ -1,5 +1,5 @@
 //
-// Tests for workflow/changelog-links.js, the release-time CHANGELOG backfill:
+// Tests for workflow/changelog/changelog-links.js, the release-time CHANGELOG backfill:
 // filling each entry's commit link and handle in, and the Contributors
 // section the handles define.
 // The shared prologue (the git and gh fixtures, the script runner, the Windows skip) is ./helpers.js.

@@ -36,7 +36,7 @@
 #              naming none checks the whole set. A named workspace that matches
 #              no member, a quoted name, or an empty one stands down out loud.
 #              `--workspaces`, all of them, keeps the whole set.
-# Publish intent is workflow/publish-plan.js's rule and lives there (its `skip`
+# Publish intent is workflow/ship/publish-plan.js's rule and lives there (its `skip`
 # reasons): the hook asks npm about a package exactly when the plan would not
 # skip it, plus a workspaces root that carries the intent itself, since a plain
 # `npm publish` at that root publishes it even though the plan never lists it.
@@ -228,7 +228,7 @@ else
 fi
 
 # The repo the github-release bounce names, off the origin and no network. The
-# rule is the engine's one rule (`wk_repo_slug`, workflow/slug.sh, sourced by
+# rule is the engine's one rule (`wk_repo_slug`, workflow/lib/slug.sh, sourced by
 # _lib.sh): every spelling git writes a remote in, and a local path in either
 # separator. Left empty rather than guessed at, and the clause rides only when
 # it is known.
@@ -354,7 +354,7 @@ while IFS= read -r file; do
   p_version=$(printf '%s\n' "$meta" | sed -n 2p)
   p_public=$(printf '%s\n' "$meta" | sed -n 3p)
   p_signal=$(printf '%s\n' "$meta" | sed -n 4p)
-  # Publish intent (workflow/publish-plan.js): a package the plan would skip,
+  # Publish intent (workflow/ship/publish-plan.js): a package the plan would skip,
   # private or never opted into npm, is never asked about there.
   if [ "$p_public" = "no" ] || [ "$p_signal" = "no" ]; then continue; fi
   if [ -z "$p_name" ] || [ -z "$p_version" ]; then continue; fi

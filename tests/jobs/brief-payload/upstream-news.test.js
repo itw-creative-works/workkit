@@ -1,5 +1,5 @@
 //
-// Tests for jobs/brief-payload.js, the payload the 9am job hands to Claude:
+// Tests for jobs/morning/brief/brief-payload.js, the payload the 9am job hands to Claude:
 // the upstream news, its cursor, and the stats line the runner appends.
 // The shared prologue (the two fixture worlds, the composer seam, the summaries fixtures, the news gate) is ./helpers.js.
 //
@@ -105,7 +105,7 @@ const run = async () => {
   });
 
   await newsTest('with no mark file named, the script still prints its brief', () => {
-    // The runner names the file; a human running `node jobs/brief-payload.js`
+    // The runner names the file; a human running `node jobs/morning/brief/brief-payload.js`
     // does not, and the payload is the whole point of the script.
     const world = mkNewsWorld();
     const env = { ...world.env };

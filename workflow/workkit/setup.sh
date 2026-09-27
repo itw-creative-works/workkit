@@ -20,7 +20,7 @@ report_globals() {
   # engine beside it has no way to read a file with one, and a
   # count it cannot take is a count it says nothing about.
   if ! command -v jq >/dev/null 2>&1 || ! declare -f wk_jq >/dev/null 2>&1; then
-    wk_skip "roster: reading $USER_REPOS needs jq and the engine's platform.sh beside this script"
+    wk_skip "roster: reading $USER_REPOS needs jq and the engine's lib/platform.sh"
     return 0
   fi
 

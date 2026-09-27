@@ -1,5 +1,5 @@
 //
-// Tests for jobs/nightly-payload.js: the day's record, as the summaries step
+// Tests for jobs/claude-nightly/nightly-payload.js: the day's record, as the summaries step
 // hands it to Claude.
 //
 // The transcript index runs against a fixture projects tree whose mtimes are set
@@ -18,7 +18,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harn
 const { gitPath, homeEnv } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 
-const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'nightly-payload.js');
+const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-nightly', 'nightly-payload.js');
 const {
   composeNightly, composeRollup, transcriptIndex, commitsToday,
   render, renderRollup, rollupInstruction, INSTRUCTION,

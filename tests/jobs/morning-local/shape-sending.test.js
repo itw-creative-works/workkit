@@ -45,7 +45,7 @@ const run = async () => {
     const res = runJob(world, ['--now']);
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     const message = world.calls()[0][1];
-    assert(message.startsWith(INSTRUCTION), 'the default payload is jobs/brief-payload.js output');
+    assert(message.startsWith(INSTRUCTION), 'the default payload is jobs/morning/brief/brief-payload.js output');
     cleanup(world.root);
   });
 

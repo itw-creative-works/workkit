@@ -26,8 +26,8 @@
 //
 // The SWEEP itself is not written here: its pure half - the document, the
 // numbers that bound it, the parse that turns an answered node into a board
-// issue, and the reading of the errors beside them - lives beside this file in
-// sweep.js, and tower/api/lib/board.js reaches
+// issue, and the reading of the errors beside them - lives in
+// github/sweep.js, and tower/api/lib/board.js reaches
 // across and requires the same module (issue #195). Only the browser's transport
 // around it is here. sweep.js can be shared because it is on THIS side of the
 // copy boundary: the app is copied out of this repo and becomes a project of its
@@ -55,7 +55,7 @@ import {
   buildBoardQuery, parseLabels, blockersFor, lastCommentOf, issueFrom, closedSince,
   errorsByAlias, firstErrorFor, droppedReason,
   MAX_OPEN_ISSUES, REPOS_PER_REQUEST,
-} from './sweep.js';
+} from './github/sweep.js';
 import { limitMark } from './github/wire.js';
 import { fetchSlugs } from './github/roster.js';
 import { fetchBoard } from './github/board.js';

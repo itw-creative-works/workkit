@@ -129,7 +129,7 @@ const inHome = (world, script, { env = {} } = {}) => {
   // path and leaves the source target a file with a directory pasted onto it.
   const driver = [
     'set -euo pipefail',
-    ...['lib.sh', 'discussions.sh', 'home.sh'].map(
+    ...['lib.sh', 'lib/discussions.sh', 'home.sh'].map(
       (file) => `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, file)))}`,
     ),
     script,

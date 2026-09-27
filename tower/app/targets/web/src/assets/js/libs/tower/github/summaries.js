@@ -8,7 +8,7 @@ import { graphql } from './wire.js';
 
 // The card is SUMMARIES, and the board is shared: the 9am job publishes its
 // digest there too, as a Discussion titled `brief: <date>` (the prefix
-// `jobs/cc-news.js` reads its cursor back by), roughly one a day beside each
+// `jobs/morning/brief/cc-news.js` reads its cursor back by), roughly one a day beside each
 // summary. GraphQL has no title filter, so the read asks for a wider window and
 // the prefix is dropped here - a card of five summaries, not five posts.
 export const BRIEF_TITLE_PREFIX = 'brief: ';

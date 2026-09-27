@@ -1,5 +1,5 @@
 //
-// Tests for workflow/ship-items.sh: the ship's Step 0c read (issue #290).
+// Tests for workflow/ship/ship-items.sh: the ship's Step 0c read (issue #290).
 //
 // The script asks `gh` twice (the open `status:qa` issues, then the open
 // `status:complete` ones) and prints one line per issue with the proof call
@@ -24,7 +24,7 @@ const {
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 const { mkTmp } = require('../lib/scratch');
 
-const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship-items.sh');
+const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'ship-items.sh');
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 

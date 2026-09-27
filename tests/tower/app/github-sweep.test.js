@@ -17,7 +17,7 @@ const run = async () => {
 
   // Issue #195: the sweep's pure half - the document, the numbers that bound it,
   // the parse that turns one answered node into one board issue, and the reading
-  // of the errors beside them - is ONE module now (libs/tower/sweep.js), which
+  // of the errors beside them - is ONE module now (libs/tower/github/sweep.js), which
   // board.js requires and github.js
   // imports. What used to be pinned value by value against a second copy is
   // asked once, as IDENTITY: a browser symbol that is not the very object the

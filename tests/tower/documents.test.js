@@ -32,7 +32,7 @@ const mkHome = (repo = 'owner/private-home') => {
   return dir;
 };
 
-/** The line a morning publishes, as jobs/stats.js renders it. */
+/** The line a morning publishes, as jobs/morning/brief/stats.js renders it. */
 const mark = (date) => `<!-- workkit-stats: {"v":1,"date":"${date}","totals":{"open":9,"waiting":0,"ready":0,"inFlight":0,"inbox":0,"backlog":0},"closedDay":1,"repos":{}} -->`;
 
 /** A published brief: a digest, the news cursor, then the stats line. */

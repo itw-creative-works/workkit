@@ -5,7 +5,7 @@
 // The digest a model writes is prose, and prose is not a series. So the morning
 // leaves one machine-readable line under it, composed HERE from the payload the
 // brief was built out of and appended mechanically by the runner: the same
-// path the upstream-news cursor takes (jobs/cc-news.js, `brief-publish.sh`).
+// path the upstream-news cursor takes (jobs/morning/brief/cc-news.js, `brief-publish.sh`).
 // Nothing asks the model to reproduce JSON: a number it retyped would be a
 // number that could be wrong.
 //
@@ -18,7 +18,7 @@
 //   renderStatsMark(payload);   // '<!-- workkit-stats: {…} -->'
 //
 
-const { STATS_RE } = require('../tower/api/lib/history');
+const { STATS_RE } = require('../../../tower/api/lib/history');
 
 /**
  * The day this payload is about, from the payload's OWN stamp.

@@ -53,7 +53,7 @@ if [ "$stop_hook_active" = "true" ]; then exit 0; fi
 transcript_path=$(printf '%s' "$input" | hook_jq -r '.transcript_path // empty' 2>/dev/null || true)
 [ -n "$transcript_path" ] && [ -f "$transcript_path" ] || exit 0
 
-ladder="${MANAGER_LADDER:-${BASH_SOURCE[0]%/*}/../ladder.json}"
+ladder="${MANAGER_LADDER:-${BASH_SOURCE[0]%/*}/../resources/ladder.json}"
 cwd=$(printf '%s' "$input" | hook_jq -r '.cwd // empty' 2>/dev/null || true)
 hook_manager_config "$ladder" "$cwd" || exit 0
 frontier=$(printf '%s' "$HOOK_MANAGER_CONFIG" | hook_jq_default 'fable' -r '.tiers.frontier // empty')

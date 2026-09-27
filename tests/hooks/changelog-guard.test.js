@@ -3,7 +3,7 @@
 // CHANGELOG entry to its format at write time.
 //
 // The rules themselves are tested in tests/scripts/changelog.test.js (their one
-// home is workflow/changelog.js). These tests cover what the HOOK owns: which
+// home is workflow/changelog/changelog.js). These tests cover what the HOOK owns: which
 // files it looks at, that it blocks with exit 2, and that it judges only what a
 // change added.
 //

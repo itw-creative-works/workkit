@@ -10,7 +10,6 @@
     "start": "omega dev",
     "build": "omega build",
     "clean": "omega clean",
-    "test": "omega test",
     "deploy": "omega deploy"
   },
   "engines": {

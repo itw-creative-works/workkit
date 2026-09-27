@@ -19,11 +19,11 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 │   ├── lib/              # _lib.sh's helper groups, one file per concern (sourced by it, never a hook)
 │   ├── docs/             # board-guard, changelog-guard, change-tracker, checkpoint, session, session-guard, state-check
 │   ├── safety/           # vendor-guard, commit-gate, commit-language, release-taken, issue-guard, proof-guard, suite-guard, capture-guard, tree-guard, test-reminder
-│   ├── manager/          # resolver, profile, spawn-guard, close-guard + ladder.json (the tier SSOT)
+│   ├── manager/          # resolver, profile, spawn-guard, close-guard + resources/ladder.json (the tier SSOT)
 │   └── workflow/         # standards (the daily heal) + reload-guard
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
 ├── skills/               # the ten workflow skills: surface as workkit:<name>
-├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/, lib.sh + lib/, changelog.js, templates)
+├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/, lib.sh + lib/, changelog/, ship/, templates)
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
 ├── jobs/                 # scheduled work: the 9am daily brief, its launchd plist, and install.sh
 ├── scripts/              # the two marker scripts the skills call (review, triage): the only platform-touching commands a skill has
@@ -65,7 +65,7 @@ Ten, namespaced `workkit:<name>`: `feature` · `interview` · `diagnose` · `rev
 
 Agent-agnostic: shell + Node, no Claude Code knowledge, which is why the hooks call it rather than contain it. `workkit.sh` is the one command and the from-zero entry point: `setup [--token]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `tower` · `enable` · `decline` · `heal` · `note`.
 
-Beside it live the label SSOT, the heal, the CHANGELOG linter, the capture CLI, the ship's four helpers (`publish-plan.js`, `release.js`, `ship-items.sh`, `ci-watch.sh`), the templates a repo receives on enable, and the home repo's whole lifecycle. Every file and every step: `workflow/README.md`.
+Beside it live the label SSOT, the heal, the CHANGELOG linter in `changelog/`, the capture CLI, the ship's four helpers in `ship/` (`publish-plan.js`, `release.js`, `ship-items.sh`, `ci-watch.sh`), the templates a repo receives on enable, and the home repo's whole lifecycle. Every file and every step: `workflow/README.md`.
 
 ## The tower (`tower/`)
 
@@ -102,7 +102,7 @@ A missing `Proof:` line is a hard gate: `safety/proof-guard` holds the flip to c
 
 ## Conventions
 
-- **Portable by default.** macOS, Windows (Git Bash) and Linux all run the kit; a spelling that differs branches once, in `workflow/platform.sh` and `hooks/_lib.sh` (`docs/hooks.md` § Platforms). Nothing under `hooks/`, `agents/`, or `skills/` may carry a machine-specific absolute path. Hook commands resolve through `${CLAUDE_PLUGIN_ROOT}`; the engine's stable address is `~/.claude/workkit`.
+- **Portable by default.** macOS, Windows (Git Bash) and Linux all run the kit; a spelling that differs branches once, in `workflow/lib/platform.sh` and `hooks/_lib.sh` (`docs/hooks.md` § Platforms). Nothing under `hooks/`, `agents/`, or `skills/` may carry a machine-specific absolute path. Hook commands resolve through `${CLAUDE_PLUGIN_ROOT}`; the engine's stable address is `~/.claude/workkit`.
 - **Generic by construction.** No owner names and no personal paths anywhere in the kit; `~/.workkit` and `.workkit/` are the only filesystem anchors.
 - **One mechanism, branching by environment.** Never two parallel copies of the same job: one entry point, each step gated on what its environment can do.
 - **Idempotent.** Every heal checks before acting; running twice equals running once.

@@ -58,7 +58,7 @@ flowchart TB
 
 - The **manager** is whichever model your chat runs on, so the topology follows the model button: a frontier session never spawns the advisor, a workhorse session consults it for plans.
 - **Crew sizing is policy, not mood**: a small change is the manager alone or one worker; a feature is one worker (a pair only under worktree isolation); the verifier runs twice, at claimed-done and over the review's fixes; the full review panel assembles only inside `workkit:review` and `workkit:ship`.
-- Tiers come from `hooks/manager/ladder.json`; a repo's or a user's `.workkit/settings.json` `manager` block overrides them or turns the crew off. Effort is pinned in each agent's own frontmatter, never by the resolver.
+- Tiers come from `hooks/manager/resources/ladder.json`; a repo's or a user's `.workkit/settings.json` `manager` block overrides them or turns the crew off. Effort is pinned in each agent's own frontmatter, never by the resolver.
 
 ## Install
 
@@ -118,7 +118,7 @@ Plugins load at startup, so a new (or restarted) session is what puts a change i
 
 `workkit:scout` (read-only recon) · `workkit:worker` (builds a brief) · `workkit:verifier` (blind review and the review scorer) · `workkit:advisor` (frontier consult for plans and hard calls) · `workkit:reviewer` (compliance lens that derives its checklist from your repo's live docs).
 
-The first four are capability classes. The resolver hook gives each spawn its model from `hooks/manager/ladder.json`, so switching your own model mid-chat changes what the next spawn runs on.
+The first four are capability classes. The resolver hook gives each spawn its model from `hooks/manager/resources/ladder.json`, so switching your own model mid-chat changes what the next spawn runs on.
 
 ### Skills: the part you (or Claude) trigger with words
 
@@ -140,7 +140,7 @@ The morning on the clock, and **one script for it: `jobs/morning.sh`, run by bot
 
 ### Engine: `workflow/`
 
-Plain shell and Node, no Claude Code knowledge: `workkit.sh` (the one command: `setup` · `update` · `doctor` · `publish` · `tower` · `enable` · `decline` · `heal` · `note`), `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `home.sh` + `discussions.sh` + `publish.sh` (the home repo's lifecycle, its Discussions API, and the gh-pages publish), `changelog.js` (the entry-format linter the hooks call), `changelog-links.js` (release-time commit links and contributor handles), `publish-plan.js`, `release.js`, `ship-items.sh` and `ci-watch.sh` (the ship's four helpers: the publish plan, the release commit's edits, the qa read, the CI watch), `wk.sh` (the capture CLI: `wk.sh note "the thought"` drops a bullet into the nearest participating repo's `capture.md`, or files an issue on the home repo outside one), and the templates a repo receives when it opts in.
+Plain shell and Node, no Claude Code knowledge: `workkit.sh` (the one command: `setup` · `update` · `doctor` · `publish` · `tower` · `enable` · `decline` · `heal` · `note`), `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `home.sh` + `lib/discussions.sh` + `publish.sh` (the home repo's lifecycle, its Discussions API, and the gh-pages publish), `changelog/changelog.js` (the entry-format linter the hooks call), `changelog/changelog-links.js` (release-time commit links and contributor handles), `ship/` (the ship's four helpers: the publish plan, the release commit's edits, the qa read, the CI watch), `wk.sh` (the capture CLI: `wk.sh note "the thought"` drops a bullet into the nearest participating repo's `capture.md`, or files an issue on the home repo outside one), and the templates a repo receives when it opts in.
 
 ## The home repo
 

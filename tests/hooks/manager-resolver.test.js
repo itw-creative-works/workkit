@@ -13,7 +13,7 @@ const { mkTmp } = require('../lib/scratch');
 const REPO = path.join(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'hooks', 'manager', 'resolver', 'run.sh');
 const LOADER = path.join(REPO, 'hooks', 'loader.sh');
-const LADDER_PATH = path.join(REPO, 'hooks', 'manager', 'ladder.json');
+const LADDER_PATH = path.join(REPO, 'hooks', 'manager', 'resources', 'ladder.json');
 const ladder = JSON.parse(fs.readFileSync(LADDER_PATH, 'utf8'));
 const id = (rung) => ladder.ladder[rung];
 // The fast tier's rung comes from the ladder, never hardcoded: the scout

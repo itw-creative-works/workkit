@@ -19,7 +19,7 @@ is_canonical_checkout() {
   [[ -n "$top" ]] || return 1
   url="$(git -C "$top" remote get-url origin 2>/dev/null)" || return 1
   # The slug is what identifies it, read through the engine's one rule
-  # (`wk_slug_from_remote`, workflow/slug.sh, sourced with lib.sh above): https,
+  # (`wk_slug_from_remote`, workflow/lib/slug.sh, sourced with lib.sh above): https,
   # ssh, a local path in EITHER separator and a trailing .git all read the same,
   # so a checkout cloned from a path typed natively on Windows is the machine's
   # engine there too. A remote naming no owner names no repo and is not the kit.

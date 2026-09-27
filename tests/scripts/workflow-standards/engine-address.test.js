@@ -261,7 +261,7 @@ const run = async () => {
 
   await test('an origin spelled as a native Windows path is the kit too', () => {
     // The canonical gate reads the SLUG through the engine's one rule
-    // (wk_slug_from_remote, workflow/slug.sh), so it takes a remote in either
+    // (wk_slug_from_remote, workflow/lib/slug.sh), so it takes a remote in either
     // separator: git stores a path exactly as it was typed, and a checkout
     // cloned from a local path on Windows carries backslashes. A gate that
     // took only a forward slash refused the machine's own engine there.

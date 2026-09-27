@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# workflow/changelog-job.sh: the `changelog` job in a repo's checks.yml, read
+# workflow/changelog/changelog-job.sh: the `changelog` job in a repo's checks.yml, read
 # and rewritten, and the retired linter copy it used to run. SOURCED, never
 # executed.
 #
@@ -50,9 +50,9 @@ wk_retired_checks_headers() {
   done < <(wk_linter_copies)
 }
 
-# The checks.yml template beside this file, the one home of the job's text.
+# The checks.yml template in the engine folder, the one home of the job's text.
 wk_checks_template() {
-  printf '%s/templates/github-workflows/checks.yml\n' "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)"
+  printf '%s/templates/github-workflows/checks.yml\n' "$(cd "${BASH_SOURCE[0]%/*}/.." && pwd -P)"
 }
 
 # wk_names_linter_copy [copy]: true when the text on stdin names the copy (or,

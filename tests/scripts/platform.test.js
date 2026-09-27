@@ -1,5 +1,5 @@
 //
-// Tests for workflow/platform.sh: the engine's platform seam, the one home of
+// Tests for workflow/lib/platform.sh: the engine's platform seam, the one home of
 // the spellings macOS, Windows (Git Bash) and Linux disagree about.
 //
 // The seam has its own suite because it has its own two consumers: the engine
@@ -25,7 +25,7 @@ const {
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 
-const PLATFORM = shellPath(path.join(__dirname, '..', '..', 'workflow', 'platform.sh'));
+const PLATFORM = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'platform.sh'));
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 

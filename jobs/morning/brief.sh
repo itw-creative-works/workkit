@@ -16,7 +16,7 @@
 # naming repos the sweep could not read, a token whose reach is short. Either
 # belongs in the log, neither in what Claude is handed.
 compose() {
-  node "$SCRIPT_DIR/brief-payload.js" 2>"$PAYLOAD_ERR_FILE"
+  node "$SCRIPT_DIR/morning/brief/brief-payload.js" 2>"$PAYLOAD_ERR_FILE"
 }
 
 # The send, and the one place its rails are written. stderr goes to a FILE: the
@@ -81,7 +81,7 @@ cloud_machine() {
   # Which repos this brief covers. The roster is a machine's own knowledge and a
   # runner has none, so it is read from the one place the machine already wrote
   # it: `data/repos.json` on the home repo's DEFAULT branch, the slug list the
-  # published dashboard sweeps (workflow/site-repos.js writes it). It is on the
+  # published dashboard sweeps (workflow/publish/site-repos.js writes it). It is on the
   # default branch rather than beside the pages because gh-pages is public even
   # from a private repo and the list names private repos (issue #110), which
   # changes nothing here, since this read was always authenticated. The contents

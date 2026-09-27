@@ -28,7 +28,7 @@
 // still lands and the attribution is simply absent.
 //
 // Run at release time, from the repo root:
-//   node ~/.claude/workkit/changelog-links.js [--file CHANGELOG.md] [--range v3.1.0..HEAD] [--dry-run]
+//   node ~/.claude/workkit/changelog/changelog-links.js [--file CHANGELOG.md] [--range v3.1.0..HEAD] [--dry-run]
 //
 
 const fs = require('fs');
@@ -40,10 +40,10 @@ const { execFileSync } = require('child_process');
 // two files would disagree about which entries still need filling.
 const { COMMIT_RE, ISSUE_LINK_RE, META_RE, parseEntries } = require('./changelog');
 
-// And what a repo is CALLED comes from slug.js beside it, the twin of slug.sh,
+// And what a repo is CALLED comes from ../slug.js, the twin of lib/slug.sh,
 // for the same reason: a fourth copy of that parse would drift from the three
 // that already agree.
-const { slugFromRemote } = require('./slug');
+const { slugFromRemote } = require('../slug');
 
 const TRAILER_RE = /\b(?:fixes|closes|resolves)\s+#(\d+)\b/gi;
 

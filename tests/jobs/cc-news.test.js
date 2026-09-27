@@ -1,5 +1,5 @@
 //
-// Tests for jobs/cc-news.js: the upstream Claude Code entries the morning
+// Tests for jobs/morning/brief/cc-news.js: the upstream Claude Code entries the morning
 // brief carries, grouped by topic.
 //
 // BOTH reads are the injected exec seam: `curl` answers with a fixture
@@ -14,7 +14,7 @@ const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR } = require
 const { mkTmp } = require('../lib/scratch');
 
 const { collectCcNews, renderCcNews, renderVersionMark, parseSections, topicOf } =
-  require(path.join(__dirname, '..', '..', 'jobs', 'cc-news.js'));
+  require(path.join(__dirname, '..', '..', 'jobs', 'morning', 'brief', 'cc-news.js'));
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 

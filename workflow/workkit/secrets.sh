@@ -52,7 +52,7 @@ bounded_read() {
 # and `capture`. The mint needs it (issue #174) and nothing else does.
 #
 # When the run sits at a real terminal and `expect` exists, expect drives the
-# PTY (`mint-pty.exp`, beside workkit.sh), for one reason (issue #187): Ctrl-C. The CLI holds its PTY in raw mode
+# PTY (`mint-pty.exp`, beside this file), for one reason (issue #187): Ctrl-C. The CLI holds its PTY in raw mode
 # and DISCARDS the ^C byte, and under raw passthrough no layer turns the key
 # into a signal, so the byte is caught one layer out, at this terminal, before
 # it is forwarded. The binding ends the child and answers 130, the way an
@@ -71,8 +71,8 @@ bounded_read() {
 # space. Under bare `script` the ^C byte still reaches a child that ignores it.
 run_under_pty() {
   local capture="$1"; shift
-  if command -v expect >/dev/null 2>&1 && [[ -t 0 ]] && [[ -f "$SCRIPT_DIR/mint-pty.exp" ]]; then
-    WK_PTY_CAPTURE="$capture" WK_PTY_CMD="$*" expect "$SCRIPT_DIR/mint-pty.exp"
+  if command -v expect >/dev/null 2>&1 && [[ -t 0 ]] && [[ -f "$SCRIPT_DIR/workkit/mint-pty.exp" ]]; then
+    WK_PTY_CAPTURE="$capture" WK_PTY_CMD="$*" expect "$SCRIPT_DIR/workkit/mint-pty.exp"
   elif script --version >/dev/null 2>&1; then
     script -q -e -c "$*" "$capture"
   else

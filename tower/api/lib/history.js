@@ -6,7 +6,7 @@
 // morning leaves is the Discussion the runner publishes on the home repo, so
 // that post is where the history lives too: every brief carries a machine
 // readable `workkit-stats` line, appended after the digest exactly the way the
-// upstream-news cursor is (jobs/stats.js renders it, `jobs/brief-publish.sh`
+// upstream-news cursor is (jobs/morning/brief/stats.js renders it, `jobs/morning/brief-publish.sh`
 // appends it), and reading those lines back IS the history. No store, no
 // backfill, no second source of truth: a brief that was never published is a
 // day the charts do not have, which is the honest answer.
@@ -44,14 +44,14 @@ const { ask } = require('./board');
 const { homeSlugFor } = require('./summaries');
 
 /**
- * The title every published brief carries (`jobs/brief-publish.sh` writes it,
- * `jobs/cc-news.js` reads its cursor back by it). One home, three readers.
+ * The title every published brief carries (`jobs/morning/brief-publish.sh` writes it,
+ * `jobs/morning/brief/cc-news.js` reads its cursor back by it). One home, three readers.
  */
 const BRIEF_TITLE_PREFIX = 'brief: ';
 
 /**
  * The stats line, as it sits in a published brief's body. The renderer is
- * `jobs/stats.js`. Writer and reader are two halves of one shape, which is why
+ * `jobs/morning/brief/stats.js`. Writer and reader are two halves of one shape, which is why
  * the pattern lives beside the prefix rather than beside either half.
  */
 const STATS_RE = /<!--\s*workkit-stats:\s*(\{.*\})\s*-->/;
@@ -209,7 +209,7 @@ const briefHistory = (opts = {}) => {
 const FRESH_DAYS = 1;
 const DAY_MS = 86400000;
 
-/** The UTC day a moment falls on: the same stamp `jobs/stats.js` dates a brief with. */
+/** The UTC day a moment falls on: the same stamp `jobs/morning/brief/stats.js` dates a brief with. */
 const utcDay = (when) => when.toISOString().slice(0, 10);
 
 /**

@@ -12,7 +12,7 @@
 # is the same flag) and `--duplicate-of <M>`.
 # The third is the flip to status:qa, which runs the test files the working diff
 # touched (checks/qa-tests.sh) and blocks the flip while one is red.
-# The pattern's four homes (hook_issue_has_proof, workflow/ship-items.sh, and
+# The pattern's four homes (hook_issue_has_proof, workflow/ship/ship-items.sh, and
 # PROOF_LINE in tower/api/server/validate.js and the dashboard's libs/tower/github/writes.js)
 # are named where it lives, in hooks/lib/proof.sh.
 #

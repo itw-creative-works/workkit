@@ -4,7 +4,7 @@
 
 // ── The wire ───────────────────────────────────────────────────────────────
 
-import { rateLimitReason } from '../sweep.js';
+import { rateLimitReason } from './sweep.js';
 
 const GRAPHQL_URL = 'https://api.github.com/graphql';
 

@@ -1,5 +1,5 @@
 //
-// Tests for workflow/changelog-links.js, the release-time CHANGELOG backfill:
+// Tests for workflow/changelog/changelog-links.js, the release-time CHANGELOG backfill:
 // what it must never rewrite, and the refusals that stop it writing at all.
 // The shared prologue (the git and gh fixtures, the script runner, the Windows skip) is ./helpers.js.
 //

@@ -28,18 +28,18 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 # The two files this hook sources, both from its own physical location: the
-# CRLF-safe jq (workflow/platform.sh, `wk_jq`) and the repo-root predicate
-# (workflow/participation.sh, `wk_is_repo_root`), each carrying its rule and the
+# CRLF-safe jq (workflow/lib/platform.sh, `wk_jq`) and the repo-root predicate
+# (workflow/lib/participation.sh, `wk_is_repo_root`), each carrying its rule and the
 # reason for it. Both define functions and set nothing, so a seam that is THERE
 # costs an edit nothing.
 #
 # UNGUARDED, the way every other source of these two files is: a checkout
 # missing one is an incomplete plugin, which the workflow:standards hook already
 # names, and a guard here would leave this guard reading an undefined predicate.
-# shellcheck source=../../../workflow/platform.sh
-. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/platform.sh"
-# shellcheck source=../../../workflow/participation.sh
-. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/participation.sh"
+# shellcheck source=../../../workflow/lib/platform.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/lib/platform.sh"
+# shellcheck source=../../../workflow/lib/participation.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/lib/participation.sh"
 
 file_path=$(wk_jq -r '.tool_input.file_path // ""' <<<"$input" || true)
 [ -n "$file_path" ] || exit 0

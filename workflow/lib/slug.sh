@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# workflow/slug.sh: what a repo is CALLED, for the engine and for the hooks
+# workflow/lib/slug.sh: what a repo is CALLED, for the engine and for the hooks
 # beside it. SOURCED, never executed, and it runs nothing at load: it defines
 # functions and sets nothing.
 #

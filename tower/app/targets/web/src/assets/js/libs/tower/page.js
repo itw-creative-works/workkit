@@ -57,11 +57,11 @@ import {
 import { localOnlyNotice } from './format.js';
 import { board, localOnlySlot } from './state.js';
 import { isTokenRefusal, safeStorage } from './github.js';
-import { readFavorites, toggleFavorite } from './favorites.js';
+import { readFavorites, toggleFavorite } from './page/favorites.js';
 import { isLocalHost, towerDownNotice, settingsNotice } from './token.js';
-import { chromeMarkup, statusMarkup } from './chrome.js';
+import { chromeMarkup, statusMarkup } from './page/chrome.js';
 import { isScopedPath, NONE, scopedHref, settingsHref } from './scope.js';
-import { menuMarkup, sidebarKey } from './sidebar.js';
+import { menuMarkup, sidebarKey } from './page/sidebar.js';
 import { startClock } from './clock.js';
 import { holdBoard, refreshAgentDialog } from './modal.js';
 import {

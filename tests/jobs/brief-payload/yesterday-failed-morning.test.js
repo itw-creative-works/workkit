@@ -1,5 +1,5 @@
 //
-// Tests for jobs/brief-payload.js, the payload the 9am job hands to Claude:
+// Tests for jobs/morning/brief/brief-payload.js, the payload the 9am job hands to Claude:
 // yesterday and the week, and a failed morning that is still a morning.
 // The shared prologue (the two fixture worlds, the composer seam, the summaries fixtures, the news gate) is ./helpers.js.
 //

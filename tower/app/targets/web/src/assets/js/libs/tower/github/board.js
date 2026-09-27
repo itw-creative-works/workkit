@@ -7,7 +7,7 @@
 import {
   buildBoardQuery, issueFrom, closedSince, errorsByAlias, droppedReason,
   MAX_OPEN_ISSUES, REPOS_PER_REQUEST,
-} from '../sweep.js';
+} from './sweep.js';
 import { graphql, limitMark } from './wire.js';
 
 // The label vocabulary's groups (workflow/labels.json, the SSOT the heal reads).

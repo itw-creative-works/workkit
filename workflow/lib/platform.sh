@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# workflow/platform.sh: the spellings that differ per platform, and the read
+# workflow/lib/platform.sh: the spellings that differ per platform, and the read
 # shapes built on them, for the engine and for the hooks beside it. SOURCED,
 # never executed, and it runs nothing at load: it defines functions and sets
 # nothing.

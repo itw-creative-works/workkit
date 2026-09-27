@@ -1,5 +1,5 @@
 //
-// Tests for workflow/changelog-job.sh, the `changelog` job in a repo's
+// Tests for workflow/changelog/changelog-job.sh, the `changelog` job in a repo's
 // checks.yml, read and rewritten.
 //
 // The file has its own suite because it has two consumers: the heal
@@ -18,7 +18,7 @@ const { BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 
 const ROOT = path.join(__dirname, '..', '..');
-const SEAM = shellPath(path.join(ROOT, 'workflow', 'changelog-job.sh'));
+const SEAM = shellPath(path.join(ROOT, 'workflow', 'changelog', 'changelog-job.sh'));
 const TEMPLATE = path.join(ROOT, 'workflow', 'templates', 'github-workflows', 'checks.yml');
 const USES = '    uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main';
 
@@ -155,7 +155,7 @@ const run = async () => {
   for (const [cmd, want] of [
     ['node .github/changelog-lint.cjs CHANGELOG.md', 0],
     ['node ./.github/changelog-lint.js CHANGELOG.md', 0],
-    ['node .workkit-kit/workflow/changelog.js CHANGELOG.md', 1],
+    ['node .workkit-kit/workflow/changelog/changelog.js CHANGELOG.md', 1],
   ]) {
     await test(`a job running \`${cmd}\` ${want === 0 ? 'runs' : 'does not run'} the copy`, () => {
       const { code } = overFile(`${JOBS}  changelog:\n    steps:\n      - run: ${cmd}\n`, 'wk_changelog_job_runs_copy "$1"');

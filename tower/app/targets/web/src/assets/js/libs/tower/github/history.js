@@ -16,7 +16,7 @@
 import { graphql } from './wire.js';
 import { BRIEF_TITLE_PREFIX } from './summaries.js';
 
-/** The line a brief carries its day's numbers on - jobs/stats.js renders it. */
+/** The line a brief carries its day's numbers on - jobs/morning/brief/stats.js renders it. */
 const STATS_RE = /<!--\s*workkit-stats:\s*(\{.*\})\s*-->/;
 
 /** How many mornings a chart draws, and how wide the read that finds them is. */

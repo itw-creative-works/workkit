@@ -49,8 +49,8 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const { BRIEF_TITLE_PREFIX } = require('../tower/api/lib/history');
-const { compareVersions } = require('../workflow/semver');
+const { BRIEF_TITLE_PREFIX } = require('../../../tower/api/lib/history');
+const { compareVersions } = require('../../../workflow/ship/semver');
 
 const WORKKIT_DIR = '.workkit';
 // The hand-edited file that names the home repo: the board the cursor lives on.

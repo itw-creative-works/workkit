@@ -17,7 +17,7 @@ const { BASH, SYSTEM_BASH, NO_RC, shellPath } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'change-tracker', 'run.sh');
-const PROMPT = path.join(__dirname, '..', '..', 'hooks', 'docs', 'change-tracker', 'prompt.md');
+const PROMPT = path.join(__dirname, '..', '..', 'hooks', 'docs', 'change-tracker', 'resources', 'prompt.md');
 
 const mkTmpRepo = () => {
   const dir = mkTmp('ct-test-');
@@ -150,6 +150,36 @@ const run = async () => {
       content.includes('doc parity') || content.includes('Doc parity') || content.includes('CLAUDE.md'),
       'should reference the doc parity system'
     );
+  });
+
+  await test('the code-change block carries prompt.md itself, not the fallback', () => {
+    const dir = mkTmpRepo();
+    fs.writeFileSync(path.join(dir, 'app.js'), 'console.log("hi")');
+    const { stdout } = runHook(dir);
+    const ctx = JSON.parse(stdout).hookSpecificOutput.additionalContext;
+    assert(ctx.includes(fs.readFileSync(PROMPT, 'utf8').trim()), 'the hook reads the prompt from its resources/ path');
+    cleanup(dir);
+  });
+
+  await test('a missing prompt file fails loudly, never a built-in string', () => {
+    const dir = mkTmpRepo();
+    fs.writeFileSync(path.join(dir, 'app.js'), 'console.log("hi")');
+    const copy = mkTmp('ct-hooks-');
+    // The hook library sources workflow/lib/ and workflow/changelog/ beside hooks/, so the copy carries them.
+    fs.cpSync(path.join(__dirname, '..', '..', 'hooks'), path.join(copy, 'hooks'), { recursive: true });
+    for (const sub of ['lib', 'changelog']) {
+      fs.cpSync(path.join(__dirname, '..', '..', 'workflow', sub), path.join(copy, 'workflow', sub), { recursive: true });
+    }
+    fs.rmSync(path.join(copy, 'hooks', 'docs', 'change-tracker', 'resources', 'prompt.md'));
+    const hook = path.join(copy, 'hooks', 'docs', 'change-tracker', 'run.sh');
+    const input = JSON.stringify({ cwd: shellPath(dir), stop_hook_active: false });
+    const res = spawnSync(BASH, [...NO_RC, shellPath(hook)], {
+      input, env: { ...process.env, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: 10000,
+    });
+    assertEq(res.status, 1, 'exit 1');
+    assert(res.stderr.includes('change-tracker: prompt missing at'), 'stderr names the missing prompt');
+    assertEq(res.stdout, '', 'no block decision is printed');
+    cleanup(dir);
   });
 
   group('change-tracker: repeat only when something changed');

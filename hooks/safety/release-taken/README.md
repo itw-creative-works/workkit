@@ -31,7 +31,7 @@ The package.json at the cwd's git toplevel for a commit; the one at the cwd itse
 
 A publish that names its workspaces asks about those members alone. `--workspace=<x>`, `--workspace <x>`, `-w <x>` and `-w=<x>` all count, as many times as the command repeats them, and each `<x>` matches a member by its package name or by its path from the root (`@fam/core`, `packages/core`, `./packages/core/`), the two spellings npm accepts. The root is never one of them. That is what lets a family publish one member at a time, in dependency order, without the member published a moment ago bouncing the next one. Every publishing clause of a chain counts (`npm publish -w a && npm publish -w b` asks about both), a redirect's `&` never splits a clause (`npm publish 2>&1 -w b` still names `b`, and so does `npm publish -w 2>&1 b`), and one clause naming no workspace checks the whole set. `--workspaces`, all of them, keeps the whole set.
 
-Publish intent decides who is asked at npm, and the rule's home is the ship's publish plan, [`workflow/publish-plan.js`](../../../workflow/publish-plan.js): its `skip` reasons are the rule, and the hook asks npm about exactly the packages it would not skip, plus a workspaces root that carries the intent itself (a plain `npm publish` at that root publishes it, though the plan never lists it). A private package, or one that never opted into npm, is never asked about there.
+Publish intent decides who is asked at npm, and the rule's home is the ship's publish plan, [`workflow/ship/publish-plan.js`](../../../workflow/ship/publish-plan.js): its `skip` reasons are the rule, and the hook asks npm about exactly the packages it would not skip, plus a workspaces root that carries the intent itself (a plain `npm publish` at that root publishes it, though the plan never lists it). A private package, or one that never opted into npm, is never asked about there.
 
 ## The provider contract
 
@@ -61,7 +61,7 @@ release-taken: BLOCKED this release commit: npm already has widget@1.2.3
 release-taken: BLOCKED this release commit: github-release already has v1.2.3 at acme/widgets
 ```
 
-The repo slug rides the github-release line when the origin says it, read through the engine's one rule (`wk_repo_slug`, `workflow/slug.sh`, sourced by `hooks/_lib.sh`): every form git writes a remote in, and a local path in either separator, since git stores a remote exactly as it was typed. It is left off rather than guessed at when the origin names no repo. The second line says what to do: bump to a version no provider has yet.
+The repo slug rides the github-release line when the origin says it, read through the engine's one rule (`wk_repo_slug`, `workflow/lib/slug.sh`, sourced by `hooks/_lib.sh`): every form git writes a remote in, and a local path in either separator, since git stores a remote exactly as it was typed. It is left off rather than guessed at when the origin names no repo. The second line says what to do: bump to a version no provider has yet.
 
 ## The escape
 

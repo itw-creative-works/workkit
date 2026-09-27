@@ -125,7 +125,7 @@ publish_sync() {
 # whose failure loses work and is what SOURCE_RC carries.
 publish_roster() {
   if command -v node >/dev/null 2>&1; then
-    if node "$SCRIPT_DIR/site-repos.js" "$WK_HOME_DIR/data/repos.json" "$WK_USER_DIR" >/dev/null 2>&1; then
+    if node "$SCRIPT_DIR/publish/site-repos.js" "$WK_HOME_DIR/data/repos.json" "$WK_USER_DIR" >/dev/null 2>&1; then
       wk_info "publish: the repo list is on $(wk_home_slug)'s default branch at data/repos.json"
     else
       wk_warn "publish: the repo list could not be composed; the published dashboard and the cloud brief both read it, so both carry on with whatever list is already there, and a machine that has never composed one finds no repos to sweep"

@@ -20,7 +20,7 @@
 // under `home`, which is where the published summaries are read from.
 //
 // Usage:
-//   node workflow/site-repos.js <outfile> [workflow-home]
+//   node workflow/publish/site-repos.js <outfile> [workflow-home]
 //   composeSlugs({ workflowHome, exec })   // offline, against fixtures
 //
 
@@ -28,7 +28,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { discoverRepos, readRoster } = require('../tower/api/lib/repos');
+const { discoverRepos, readRoster } = require('../../tower/api/lib/repos');
 
 /** Parse JSON from a file, or null when it is absent or unparseable. */
 const readJson = (file) => {

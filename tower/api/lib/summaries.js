@@ -6,7 +6,7 @@
 // same board: the brief names the newest one and links it, so the morning opens
 // with what the night before actually produced rather than with counts alone.
 //
-// One helper, two readers: `jobs/brief-payload.js` (the 9am job and the cloud
+// One helper, two readers: `jobs/morning/brief/brief-payload.js` (the 9am job and the cloud
 // runner) and the tower's `/api/brief`. Both attach the SAME keys onto the
 // payload `buildBrief` returned, so the notification and the Brief page cannot
 // tell different stories.
@@ -14,9 +14,9 @@
 // THE TITLE IS WHAT SAYS WHAT A POST IS, not the category. A summary is titled
 // `<cadence>: <date>` by the job that writes it, while the category it lands in
 // is negotiable: categories cannot be created over the API, so a repo without
-// a `Daily` falls back to `General` (workflow/discussions.sh). Reading by title
+// a `Daily` falls back to `General` (workflow/lib/discussions.sh). Reading by title
 // is the one question that answers the same on every home repo, and it is the
-// same reasoning `jobs/cc-news.js` reads the briefs by.
+// same reasoning `jobs/morning/brief/cc-news.js` reads the briefs by.
 //
 // EVERY FAILURE IS "nothing to say": no home repo, no `gh`, a token that
 // refuses, an answer that is not the shape asked for, a board that carries no

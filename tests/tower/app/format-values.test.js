@@ -309,7 +309,7 @@ const run = async () => {
     // Sharing across the vocabularies is forced (ten names, six slots), so the
     // table pins WHO shares: the class chip and the model chip that sit
     // together on a real crew card - the manager ladder's pairings - never
-    // match (hooks/manager/ladder.json: manager and advisor run fable, scouts
+    // match (hooks/manager/resources/ladder.json: manager and advisor run fable, scouts
     // sonnet, workers and verifiers opus; a reviewer inherits the session's
     // model, so it pairs with fable and opus both).
     const pairings = [

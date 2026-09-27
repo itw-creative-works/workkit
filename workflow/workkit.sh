@@ -95,7 +95,7 @@ USER_REPOS="${WORKFLOW_HOME:-${HOME:-}/.workkit}/.repos.json"
 # workkit/ folder it sources below) runs without the rest of the engine, and a
 # source that assumed otherwise would end the run at its first line.
 HOME_LIBS=1
-for _lib in platform.sh lib.sh discussions.sh home.sh; do
+for _lib in lib/platform.sh lib.sh lib/discussions.sh home.sh; do
   if [[ -f "$SCRIPT_DIR/$_lib" ]]; then
     # shellcheck source=/dev/null
     . "$SCRIPT_DIR/$_lib"

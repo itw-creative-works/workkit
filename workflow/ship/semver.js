@@ -1,11 +1,11 @@
 //
-// workflow/semver.js: the kit's one version comparison, in semver's order, and
+// workflow/ship/semver.js: the kit's one version comparison, in semver's order, and
 // the shape check beside it.
 //
 // Three callers read versions and none owns the rule: the ship's
 // publish plan (`publish-plan.js`, the shape of each package version), its
 // release commit (`release.js`, the shape of the new version) and the
-// morning brief's upstream news (`jobs/cc-news.js`, Claude Code's releases).
+// morning brief's upstream news (`jobs/morning/brief/cc-news.js`, Claude Code's releases).
 //
 // The numbers compare first, as many as either side carries, a missing part
 // reading as 0 so a two-part dotted number still compares. Then a version with

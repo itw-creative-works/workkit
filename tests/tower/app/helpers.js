@@ -170,14 +170,14 @@ const loadLibs = async () => {
   const modal = await load('modal.js');
   // chrome.js is markup from state, like format.js - the DOM it goes into is
   // page.js's, which is why the split it describes is askable here.
-  const chrome = await load('chrome.js');
+  const chrome = await load('page/chrome.js');
   // scope.js is the `?repo=` value read and written - strings and arrays, no
   // DOM - and sidebar.js is markup from state, chrome.js's shape exactly.
   const scope = await load('scope.js');
-  const sidebar = await load('sidebar.js');
+  const sidebar = await load('page/sidebar.js');
   // favorites.js takes its storage as an argument, github.js's pattern, so the
   // key, the junk tolerance and the toggle all answer under Node.
-  const favorites = await load('favorites.js');
+  const favorites = await load('page/favorites.js');
   // api.js fixes its origin from `location` at import - stub it (and the
   // `window` override hatch) just long enough to load the module.
   globalThis.location = { href: 'http://localhost:4300/' };

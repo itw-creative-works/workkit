@@ -6,7 +6,7 @@
 # create|comment|edit|close|reopen` or `gh pr create|comment|edit|merge|close`
 # whose text holds something secret-shaped, a `gh api graphql` call carrying a
 # discussion or issue mutation, which is the same egress by another door
-# (workflow/discussions.sh publishes summaries that way), and a `gh api` REST
+# (workflow/lib/discussions.sh publishes summaries that way), and a `gh api` REST
 # WRITE to an issue or pull endpoint, which is that same door once more (issue
 # #83). The judgment half (private business and personal detail, which no
 # pattern can see) stays prose.

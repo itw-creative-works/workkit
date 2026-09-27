@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# jobs/brief-publish.sh: publishing the morning brief. SOURCED, never executed.
+# jobs/morning/brief-publish.sh: publishing the morning brief. SOURCED, never executed.
 #
 # The one home of "post today's digest as a Discussion on the home repo", and
 # its one caller is morning.sh's CLOUD path (issues #82, #107): the digest is
@@ -28,14 +28,14 @@ wk_brief_publish() {
   local engine="$1" response="$2" mark_file="$3" body_file="$4"
   local slug date title posted url
 
-  if [[ ! -f "$engine/lib.sh" || ! -f "$engine/discussions.sh" || ! -f "$engine/home.sh" ]]; then
+  if [[ ! -f "$engine/lib.sh" || ! -f "$engine/lib/discussions.sh" || ! -f "$engine/home.sh" ]]; then
     printf "brief: the engine's home-repo library is missing at %s; nothing published" "$engine"
     return 2
   fi
   # shellcheck source=../workflow/lib.sh
   . "$engine/lib.sh"
-  # shellcheck source=../workflow/discussions.sh
-  . "$engine/discussions.sh"
+  # shellcheck source=../workflow/lib/discussions.sh
+  . "$engine/lib/discussions.sh"
   # shellcheck source=../workflow/home.sh
   . "$engine/home.sh"
 

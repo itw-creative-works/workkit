@@ -2,7 +2,7 @@
 # docs:changelog-guard: PostToolUse hook (Edit|Write)
 # Holds a CHANGELOG entry to its format the moment it is written: one short
 # paragraph that starts with its issue link, with the depth left in the commit
-# message. The rules themselves live in workflow/changelog.js (one home, shared
+# message. The rules themselves live in workflow/changelog/changelog.js (one home, shared
 # with the safety/commit-gate hook).
 #
 # Only entries this change ADDS are judged, so a repo carrying a legacy

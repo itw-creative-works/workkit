@@ -23,14 +23,14 @@
 // has no order and refuses, spelled out.
 //
 // Run from the repo root:
-//   node ~/.claude/workkit/publish-plan.js [--dir <root>]
+//   node ~/.claude/workkit/ship/publish-plan.js [--dir <root>]
 // Prints `publish <name> <version> <scoped|unscoped>` lines in publish order,
 // then `skip <name> <version> <reason>` lines. A `dir/*` pattern that matches
 // no package is named on stderr and the plan stands. A refusal prints the
 // first problem as one `publish-plan: ...` line on stderr, nothing on stdout,
 // exit 1. A usage error (a flag with no value) is exit 2.
 //
-//   node ~/.claude/workkit/publish-plan.js --run [--dir <root>]
+//   node ~/.claude/workkit/ship/publish-plan.js --run [--dir <root>]
 // Makes and prints the same plan, then publishes its `publish` lines in order
 // from the root: `npm publish --workspace=<name>` when the root declares
 // `workspaces`, a plain `npm publish` otherwise, `--access public` when the

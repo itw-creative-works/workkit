@@ -2,7 +2,7 @@
 // The board sweep's pure half: one home for both the machine and the browser.
 //
 // The sweep has two transports and one meaning. `tower/api/lib/board.js` speaks
-// GraphQL through the `gh` login on this machine; `github.js` beside this file
+// GraphQL through the `gh` login on this machine; `../github.js`
 // speaks it from a published page with the viewer's token. Those halves cannot
 // merge (a published copy has no server, and the machine copy should keep its
 // login rather than a browser token) but everything BETWEEN the request and

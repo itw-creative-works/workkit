@@ -302,7 +302,7 @@ const inHome = (world, script, { input = '' } = {}) => {
   const driver = [
     'set -euo pipefail',
     `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'lib.sh')))}`,
-    `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'discussions.sh')))}`,
+    `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'lib', 'discussions.sh')))}`,
     `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'home.sh')))}`,
     script,
   ].join('\n');

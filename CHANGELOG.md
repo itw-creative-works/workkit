@@ -16,6 +16,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 - [#346](../../issues/346) - A review finding made while a batch is in the tree is fixed in that batch when it sits in a file the diff touches, is a parity mismatch with its sibling, or twins the defect being fixed; any other finding is filed per the fix-or-file rule in `docs/project-state.md`.
 - [#347](../../issues/347) - The feature flow caps the rounds after the review at one verification pass and one worker round, sweeps a named defect class with one scout before that round, and briefs each agent for the test files touched by the edit it made or checks, never the batch's whole touched set.
+- [#332](../../issues/332) - A file with one consumer now nests in a folder named for that consumer and a shared concern gets its own folder (`workflow/lib/`, `workflow/ship/`, `workflow/changelog/`, `jobs/morning/brief/`, the dashboard's `page/` and `github/`, the hooks' `resources/`); the ship skill, the reusable changelog workflow and the cloud runner list follow the moved paths.
 
 ### Fixed
 

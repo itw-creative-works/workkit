@@ -141,7 +141,7 @@ const run = async () => {
 
   group('issue-guard: the GraphQL door');
 
-  // The shape workflow/discussions.sh sends, with the body inline rather than
+  // The shape workflow/lib/discussions.sh sends, with the body inline rather than
   // from a file: the same mutation either way.
   const mutation = (body) => [
     'gh api graphql',

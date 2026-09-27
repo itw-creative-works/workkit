@@ -24,17 +24,17 @@
 // live on the published board rather than on this machine.
 //
 // Usage:
-//   node jobs/brief-payload.js          // the payload on stdout
+//   node jobs/morning/brief/brief-payload.js          // the payload on stdout
 //   composeBrief({ workflowHome, exec }) // offline, against fixtures
 //
 
 const fs = require('fs');
 
-const { discoverRepos } = require('../tower/api/lib/repos');
-const { fetchBoard } = require('../tower/api/lib/board');
-const { repoHealth } = require('../tower/api/lib/health');
-const { buildBrief } = require('../tower/api/lib/brief');
-const { briefSummaries, homeSlugFor } = require('../tower/api/lib/summaries');
+const { discoverRepos } = require('../../../tower/api/lib/repos');
+const { fetchBoard } = require('../../../tower/api/lib/board');
+const { repoHealth } = require('../../../tower/api/lib/health');
+const { buildBrief } = require('../../../tower/api/lib/brief');
+const { briefSummaries, homeSlugFor } = require('../../../tower/api/lib/summaries');
 const { collectCcNews, renderCcNews, renderVersionMark } = require('./cc-news');
 const { renderStatsMark } = require('./stats');
 

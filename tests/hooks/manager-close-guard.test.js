@@ -13,7 +13,7 @@ const { mkTmp } = require('../lib/scratch');
 const REPO = path.join(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'hooks', 'manager', 'close-guard', 'run.sh');
 const LOADER = path.join(REPO, 'hooks', 'loader.sh');
-const ladder = JSON.parse(fs.readFileSync(path.join(REPO, 'hooks', 'manager', 'ladder.json'), 'utf8'));
+const ladder = JSON.parse(fs.readFileSync(path.join(REPO, 'hooks', 'manager', 'resources', 'ladder.json'), 'utf8'));
 const id = (rung) => ladder.ladder[rung];
 const FRONTIER = ladder.tiers.frontier;
 

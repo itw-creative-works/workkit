@@ -74,15 +74,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 LABELS_JSON="$SCRIPT_DIR/labels.json"
 TEMPLATES_DIR="$SCRIPT_DIR/templates"
 FORMS_DIR="$TEMPLATES_DIR/issue-forms"
-CHANGELOG_LINTER="$SCRIPT_DIR/changelog.js"
+CHANGELOG_LINTER="$SCRIPT_DIR/changelog/changelog.js"
 
 # The CRLF-safe jq every read below goes through, and the one home of that
 # rule. Named here as well as reached through lib.sh, because this script reads
 # JSON from its first step and the seam it reads through belongs in the list of
 # what it depends on; the file defines functions and sets nothing, so sourcing
 # it twice is sourcing it once. Sourcing runs nothing.
-# shellcheck source=./platform.sh
-. "$SCRIPT_DIR/platform.sh"
+# shellcheck source=./lib/platform.sh
+. "$SCRIPT_DIR/lib/platform.sh"
 
 # The engine's shared helpers, for three things the heal borrows: the settings
 # mutex every writer of the user file takes, the safe JSON edit every settings
@@ -101,8 +101,8 @@ CHANGELOG_LINTER="$SCRIPT_DIR/changelog.js"
 # template's address, and the retired linter copies: its own file because the
 # safety/commit-gate hook sources it too, to prove a staged checks.yml is
 # exactly the rewrite this heal writes. Sourcing runs nothing.
-# shellcheck source=./changelog-job.sh
-. "$SCRIPT_DIR/changelog-job.sh"
+# shellcheck source=./changelog/changelog-job.sh
+. "$SCRIPT_DIR/changelog/changelog-job.sh"
 
 # The heals themselves, one file per concern under standards/. Each defines
 # functions and sets nothing, so every constant and every run-time value a
@@ -219,7 +219,7 @@ cd "$root"
 
 # The key this repo wears on the machine roster, settled ONCE here. Windows
 # spells one directory two ways and the roster must not: `wk_git_path` is the
-# one home of that rule (workflow/platform.sh), and every write and every
+# one home of that rule (workflow/lib/platform.sh), and every write and every
 # lookup below reads this variable rather than asking again. Feed it git's own
 # answer, as `root` is: `cygpath` keeps the letter case it is handed while git
 # canonicalizes it, so a `$PWD` or a hand-typed path would mint a second key.

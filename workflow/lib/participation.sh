@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# workflow/participation.sh: the two questions every reader of a repo's
+# workflow/lib/participation.sh: the two questions every reader of a repo's
 # participation asks, for the engine and for the hooks beside it. SOURCED,
 # never executed, and it runs nothing at load: it defines functions and sets
 # nothing.

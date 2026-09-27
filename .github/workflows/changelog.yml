@@ -27,7 +27,7 @@ jobs:
       - name: CHANGELOG entry format
         run: |
           if [ -f CHANGELOG.md ]; then
-            node .workkit-kit/workflow/changelog.js CHANGELOG.md --unreleased-only
+            node .workkit-kit/workflow/changelog/changelog.js CHANGELOG.md --unreleased-only
           else
             echo "no CHANGELOG.md, nothing to check"
           fi

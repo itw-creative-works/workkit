@@ -12,7 +12,7 @@
 //
 // The sweep's PURE half is not written here at all: the document, the numbers
 // that bound it, the parse that turns a node into a board issue and the reading
-// of the errors beside them live in the app's `libs/tower/sweep.js`, which the
+// of the errors beside them live in the app's `libs/tower/github/sweep.js`, which the
 // published copy of the dashboard also
 // imports (issue #195). This file is the machine's transport around it, and
 // nothing else. That module is an ES module and this one is not. Node 22
@@ -63,7 +63,7 @@ const {
   buildBoardQuery, parseLabels, blockersFor, lastCommentOf, issueFrom, closedSince,
   errorsByAlias, firstErrorFor, droppedReason, rateLimitReason,
   PAGE_SIZE, MAX_OPEN_ISSUES, REPOS_PER_REQUEST, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, CLOSED_WINDOW_MS,
-} = require('../../app/targets/web/src/assets/js/libs/tower/sweep.js');
+} = require('../../app/targets/web/src/assets/js/libs/tower/github/sweep.js');
 
 const LABELS_FILE = path.join(__dirname, '..', '..', '..', 'workflow', 'labels.json');
 

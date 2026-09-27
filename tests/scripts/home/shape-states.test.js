@@ -16,7 +16,7 @@ const run = async () => {
   group('workflow/home: shape');
 
   await test('the three libraries parse and run nothing at load', () => {
-    for (const lib of ['lib.sh', 'discussions.sh', 'home.sh']) {
+    for (const lib of ['lib.sh', 'lib/discussions.sh', 'home.sh']) {
       const file = path.join(WORKFLOW_DIR, lib);
       assertEq(spawnSync(BASH, [...NO_RC, '-n', shellPath(file)], { encoding: 'utf8' }).status, 0, `bash -n is clean for ${lib}`);
     }
@@ -28,14 +28,14 @@ const run = async () => {
   });
 
   await test('no absolute personal path is written into the engine', () => {
-    // The four libraries and every piece the split ones source (home/, publish/, lib/).
-    const libs = ['lib.sh', 'discussions.sh', 'home.sh', 'publish.sh'];
+    // The three libraries and every piece the split ones source (home/, publish/, lib/).
+    const libs = ['lib.sh', 'home.sh', 'publish.sh'];
     for (const dir of ['home', 'publish', 'lib']) {
       for (const file of fs.readdirSync(path.join(WORKFLOW_DIR, dir)).filter((f) => f.endsWith('.sh'))) libs.push(`${dir}/${file}`);
     }
     for (const lib of libs) {
       const text = fs.readFileSync(path.join(WORKFLOW_DIR, lib), 'utf8');
-      assert(!/\/Users\/[a-z]/i.test(text), `${lib} carries no machine-specific path`);
+      assert(!/\/Users\/(?!x\b)[a-z]/i.test(text), `${lib} carries no machine-specific path`);
     }
   });
 

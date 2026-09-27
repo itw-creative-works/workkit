@@ -42,7 +42,7 @@ An item whose home is genuinely unclear: file it `status:inbox` and mark it `(ch
 
 ## 2. CHANGELOG history → the entry format
 
-- The entry rules and their reasoning: the workkit plugin's `docs/project-state.md` § CHANGELOG entries. The machine SSOT is `~/.claude/workkit/changelog.js`.
+- The entry rules and their reasoning: the workkit plugin's `docs/project-state.md` § CHANGELOG entries. The machine SSOT is `~/.claude/workkit/changelog/changelog.js`.
 - In short: one short paragraph per entry, at most 50 words. It starts with `[#N](../../issues/N)` or the literal `(no issue)`, then ` - ` before the prose.
 - The depth is NOT deleted: it already lives in the commit each entry links to. That makes the compression safe.
 
@@ -75,7 +75,7 @@ Rewriting a released entry is a rewrite of the RECORD. Compress the prose; never
 Reassemble in order, then gate on the whole file:
 
 ```sh
-node ~/.claude/workkit/changelog.js CHANGELOG.md
+node ~/.claude/workkit/changelog/changelog.js CHANGELOG.md
 ```
 
 - Whole file, not `--added-only`: this pass rewrites history rather than adding lines. It must exit 0 before the work is done.

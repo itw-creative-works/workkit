@@ -6,7 +6,7 @@ const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harn
 
 const REPO = path.join(__dirname, '..', '..');
 const AGENTS_DIR = path.join(REPO, 'agents');
-const LADDER = path.join(REPO, 'hooks', 'manager', 'ladder.json');
+const LADDER = path.join(REPO, 'hooks', 'manager', 'resources', 'ladder.json');
 const README = path.join(REPO, 'docs', 'agents.md');
 const SKILL = path.join(REPO, 'skills', 'review', 'SKILL.md');
 

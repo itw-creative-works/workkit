@@ -84,7 +84,7 @@ const run = async () => {
   });
 
   await test('a package with no private key is never asked, the publish plan\'s own reading', () => {
-    // Publish intent is workflow/publish-plan.js's rule: `private` explicitly
+    // Publish intent is workflow/ship/publish-plan.js's rule: `private` explicitly
     // false. A member that never said so is a skip there, so it is not asked
     // about here either.
     const stubs = makeStubs({ npmTaken: ['@fam/loose@2.0.0'] });
@@ -116,7 +116,7 @@ const run = async () => {
   });
 
   await test('an origin spelled natively on Windows still names its repo', () => {
-    // The slug comes from the engine's one rule (workflow/slug.sh), which takes
+    // The slug comes from the engine's one rule (workflow/lib/slug.sh), which takes
     // a remote in either separator: git stores a path exactly as it was typed,
     // so a Windows checkout's origin comes back with backslashes and a reader
     // that took only a forward slash left the clause off the bounce.

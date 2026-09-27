@@ -189,7 +189,7 @@ const run = async () => {
   await test('a linter copy ADDED is not bookkeeping, no marker: exit 2', () => {
     // The exact shape the heal used to vendor, byte for byte with the engine,
     // so no content check can be what bounces it.
-    const engine = fs.readFileSync(path.join(WORKFLOW_DIR, 'changelog.js'), 'utf8');
+    const engine = fs.readFileSync(path.join(WORKFLOW_DIR, 'changelog', 'changelog.js'), 'utf8');
     const nl = engine.indexOf('\n');
     const dir = mkRepo();
     stageDeep(dir, '.github/changelog-lint.cjs',

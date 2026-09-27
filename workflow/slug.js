@@ -1,7 +1,7 @@
 //
 // workflow/slug.js: what a repo is CALLED, for the Node half of the kit.
 //
-// The twin of workflow/slug.sh beside it, shape for shape: the same trims in
+// The twin of workflow/lib/slug.sh, shape for shape: the same trims in
 // the same order and the same regex, so the shell and Node can never disagree
 // about what a repo is called. Change one and change the other.
 //
@@ -24,7 +24,7 @@
  *
  * Both separators count: git stores a remote exactly as it was given, so a
  * path typed natively on Windows comes back with backslashes. The trims and
- * the regex are `wk_slug_from_remote` in workflow/slug.sh, shape for shape, so
+ * the regex are `wk_slug_from_remote` in workflow/lib/slug.sh, shape for shape, so
  * the two never disagree: the whitespace around the URL, then EVERY trailing
  * separator, then the `.git` a path that ended in one is still wearing.
  * @param {string} url

@@ -214,7 +214,7 @@ const createFeeds = ({ opts, exec, seam, log }) => {
   // The brief is assembled from the two slots above rather than from reads of
   // its own, so the morning notification and the Brief page cannot disagree:
   // they are the same board and the same health, one derivation. The summaries
-  // attach onto it exactly as the 9am job attaches them (jobs/brief-payload.js),
+  // attach onto it exactly as the 9am job attaches them (jobs/morning/brief/brief-payload.js),
   // which is what keeps the two payloads one shape.
   // The published Discussions themselves (issues #55, #181): a second GraphQL
   // round trip on the same board the summaries come from, and cached on the same

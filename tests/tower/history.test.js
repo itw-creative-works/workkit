@@ -31,7 +31,7 @@ const mkHome = (repo = 'owner/private-home') => {
   return dir;
 };
 
-/** The line a morning publishes, as jobs/stats.js renders it. */
+/** The line a morning publishes, as jobs/morning/brief/stats.js renders it. */
 const mark = (date, open, closedDay) => `<!-- workkit-stats: {"v":1,"date":"${date}","totals":{"open":${open},"waiting":1,"ready":2,"inFlight":0,"inbox":3,"backlog":0},"closedDay":${closedDay},"repos":{"owner/repo":{"open":${open}}}} -->`;
 
 /** A published brief: a digest, the news cursor, then the stats line. */
@@ -173,8 +173,8 @@ const run = async () => {
   });
 
   await test('the title prefix is the one the publish writes', () => {
-    assertEq(BRIEF_TITLE_PREFIX, 'brief: ', 'the literal jobs/brief-publish.sh titles a brief with');
-    const shell = fs.readFileSync(path.join(__dirname, '..', '..', 'jobs', 'brief-publish.sh'), 'utf8');
+    assertEq(BRIEF_TITLE_PREFIX, 'brief: ', 'the literal jobs/morning/brief-publish.sh titles a brief with');
+    const shell = fs.readFileSync(path.join(__dirname, '..', '..', 'jobs', 'morning', 'brief-publish.sh'), 'utf8');
     assert(shell.includes('title="brief: $date"'), 'and the shell still writes exactly that');
   });
 

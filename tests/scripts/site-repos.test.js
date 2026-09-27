@@ -1,5 +1,5 @@
 //
-// Tests for workflow/site-repos.js: the roster the published site sweeps.
+// Tests for workflow/publish/site-repos.js: the roster the published site sweeps.
 //
 // The fixtures are a scratch ~/.workkit and real git repos with real `origin`
 // remotes, the same shape the roster read itself is tested against: what a slug
@@ -13,7 +13,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harn
 const { gitPath } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 
-const { composeSlugs, writeSlugs } = require(path.join(__dirname, '..', '..', 'workflow', 'site-repos.js'));
+const { composeSlugs, writeSlugs } = require(path.join(__dirname, '..', '..', 'workflow', 'publish', 'site-repos.js'));
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -118,7 +118,7 @@ const run = async () => {
     const tmp = mkTmp('workkit-site-repos-');
     const outfile = path.join(tmp, 'data', 'repos.json');
     const workflowHome = mkWorkflowHome(tmp, ['omega'], { roster: '{ not json' });
-    const script = path.join(__dirname, '..', '..', 'workflow', 'site-repos.js');
+    const script = path.join(__dirname, '..', '..', 'workflow', 'publish', 'site-repos.js');
     const res = spawnSync(process.execPath, [script, outfile, workflowHome], { encoding: 'utf8' });
     assert(res.status !== 0, `non-zero, got ${res.status}`);
     assert(/could not be read/.test(res.stderr), `it says why, got: ${res.stderr}`);

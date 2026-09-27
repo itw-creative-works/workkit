@@ -194,11 +194,11 @@ released       - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [
 
 Every link is written SHORT, so the repo URL appears nowhere in the file. `../..` is a relative link GitHub resolves against the blob path (it also follows a fork), and `[@who]` is a markdown shortcut reference whose one definition sits at the bottom of the file however many entries a person appears in. The depth assumes a CHANGELOG at the repo root.
 
-**Nobody types the metadata.** During ordinary work you write only the issue link and the sentence; the commit link and the handle are filled in at release time by `~/.claude/workkit/changelog-links.js`, which finds each entry's commits through the `Fixes #N` trailer they already carry. Re-running it is a no-op. The commit link is derivable offline (remote URL plus sha); the handle needs the GitHub API, so it is written when resolvable and never demanded: an offline release still produces a valid CHANGELOG.
+**Nobody types the metadata.** During ordinary work you write only the issue link and the sentence; the commit link and the handle are filled in at release time by `~/.claude/workkit/changelog/changelog-links.js`, which finds each entry's commits through the `Fixes #N` trailer they already carry. Re-running it is a no-op. The commit link is derivable offline (remote URL plus sha); the handle needs the GitHub API, so it is written when resolvable and never demanded: an offline release still produces a valid CHANGELOG.
 
 It fills **`[Unreleased]` entries only**, which is why the ship skill runs it BEFORE moving them into the version section. A released section is history and is never rewritten. An entry whose issue no commit closes is named in the output ("add a `Fixes #N` trailer"), never skipped in silence.
 
-The rules, with `~/.claude/workkit/changelog.js` as their machine SSOT:
+The rules, with `~/.claude/workkit/changelog/changelog.js` as their machine SSOT:
 
 | Rule | What it asks |
 |---|---|

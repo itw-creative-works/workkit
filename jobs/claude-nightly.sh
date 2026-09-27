@@ -83,11 +83,11 @@ note_warn() { note_as wk_warn "$1"; }
 # the destination, which reads exactly like having no destination. The
 # destination is the REPO, never the clone: a summary is a Discussion, posted
 # over the API, so a machine whose ~/.workkit/tower is missing still publishes.
-if [[ -f "$ENGINE_DIR/lib.sh" && -f "$ENGINE_DIR/discussions.sh" && -f "$ENGINE_DIR/home.sh" ]]; then
+if [[ -f "$ENGINE_DIR/lib.sh" && -f "$ENGINE_DIR/lib/discussions.sh" && -f "$ENGINE_DIR/home.sh" ]]; then
   # shellcheck source=../workflow/lib.sh
   . "$ENGINE_DIR/lib.sh"
-  # shellcheck source=../workflow/discussions.sh
-  . "$ENGINE_DIR/discussions.sh"
+  # shellcheck source=../workflow/lib/discussions.sh
+  . "$ENGINE_DIR/lib/discussions.sh"
   # shellcheck source=../workflow/home.sh
   . "$ENGINE_DIR/home.sh"
 else
@@ -159,7 +159,7 @@ publish_cadence() {
   fi
 
   if [[ "$cadence" == 'daily' ]]; then
-    node "$SCRIPT_DIR/nightly-payload.js" >"$payload_file" 2>/dev/null || status=$?
+    node "$SCRIPT_DIR/claude-nightly/nightly-payload.js" >"$payload_file" 2>/dev/null || status=$?
   else
     # A rollup's inputs are the summaries already published, read back from the
     # API. Nothing to roll up is not a failure: it is a quiet week.
@@ -169,7 +169,7 @@ publish_cadence() {
       return 0
     fi
     printf '%s' "$prior" \
-      | node "$SCRIPT_DIR/nightly-payload.js" --cadence "$cadence" >"$payload_file" 2>/dev/null || status=$?
+      | node "$SCRIPT_DIR/claude-nightly/nightly-payload.js" --cadence "$cadence" >"$payload_file" 2>/dev/null || status=$?
   fi
   if (( status != 0 )); then
     note_warn "summaries: the $cadence payload could not be composed (exit $status); skipped"

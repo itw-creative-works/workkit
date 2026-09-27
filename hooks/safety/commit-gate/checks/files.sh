@@ -62,7 +62,7 @@ check_review_marker() {
 }
 
 # 3. CHANGELOG entries must match the format. The rules live in
-# workflow/changelog.js: one home, shared with the docs/changelog-guard hook,
+# workflow/changelog/changelog.js: one home, shared with the docs/changelog-guard hook,
 # which runs the same check at write time. This is the authority of the two: it
 # sees hand edits made outside the tools. Only the lines this commit ADDS are
 # judged, so a legacy CHANGELOG is never bounced for its history. A commit

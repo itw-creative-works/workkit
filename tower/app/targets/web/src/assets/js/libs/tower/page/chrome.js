@@ -21,7 +21,7 @@
 // goes in it.
 //
 
-import { esc } from './format.js';
+import { esc } from '../format.js';
 
 /**
  * The chrome's frame: Refresh, and the empty region the status is written into.

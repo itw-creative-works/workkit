@@ -19,7 +19,7 @@
 # resolves the way the gated command itself would; a caller judging another
 # directory cds first, in a subshell.
 # Consumers: safety/proof-guard, safety/commit-gate (check 6). The pattern has
-# four homes, which change together: this one, workflow/ship-items.sh (the
+# four homes, which change together: this one, workflow/ship/ship-items.sh (the
 # ship's read), and PROOF_LINE in tower/api/server/validate.js and in the dashboard's
 # libs/tower/github/writes.js. tests/scripts/ship-items.test.js pins the ship's copy
 # to this one, and tests/tower/app/github-writes.test.js the endpoint's.

@@ -226,8 +226,8 @@ BRIEF_SENT_HERE=0
 if (( CLOUD )); then
   # Sourced only where it is used: this is the one home of "post today's digest
   # as a Discussion", and on this machine nothing posts one any more.
-  # shellcheck source=./brief-publish.sh
-  . "$SCRIPT_DIR/brief-publish.sh"
+  # shellcheck source=./morning/brief-publish.sh
+  . "$SCRIPT_DIR/morning/brief-publish.sh"
   cloud_brief
 elif (( $# == 0 )) && (( MANUAL == 0 )); then
   # Sourced only where it is used, like the publish above: the dispatch is the

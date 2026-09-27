@@ -1,5 +1,5 @@
 //
-// Tests for workflow/release.js: the ship's release commit, made by one command
+// Tests for workflow/ship/release.js: the ship's release commit, made by one command
 // instead of by hand. It bumps `version` in package.json, backfills each
 // entry's commit link, and moves `[Unreleased]` into a dated section, the
 // `--keep` items staying behind. Every refusal writes nothing.
@@ -20,7 +20,7 @@ const {
 const { SYSTEM_PATH, homeEnv } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 
-const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'release.js');
+const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'release.js');
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 

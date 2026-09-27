@@ -46,7 +46,7 @@ case "$class" in
   *) exit 0 ;;
 esac
 
-ladder="${MANAGER_LADDER:-${BASH_SOURCE[0]%/*}/../ladder.json}"
+ladder="${MANAGER_LADDER:-${BASH_SOURCE[0]%/*}/../resources/ladder.json}"
 cwd=$(printf '%s' "$input" | hook_jq -r '.cwd // empty' 2>/dev/null || true)
 hook_manager_config "$ladder" "$cwd" || exit 0
 config="$HOOK_MANAGER_CONFIG"

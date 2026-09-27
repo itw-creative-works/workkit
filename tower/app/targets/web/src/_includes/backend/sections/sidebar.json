@@ -12,7 +12,7 @@
 //
 // The project switch is the framework's SELECTOR module, enabled here and
 // filled at runtime: the theme draws the button and its dropdown above the nav,
-// and the page JS writes the menu into it (libs/tower/sidebar.js) from the same
+// and the page JS writes the menu into it (libs/tower/page/sidebar.js) from the same
 // `repos` feed the pages read - an All projects master row and one row per
 // repo, each row carrying the box that puts it in a subset (issue #168, one
 // list rather than two). Nothing about the roster can be baked, since

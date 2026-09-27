@@ -1,5 +1,5 @@
 //
-// The shared prologue of the jobs/brief-payload.js suites, the `*.test.js`
+// The shared prologue of the jobs/morning/brief/brief-payload.js suites, the `*.test.js`
 // files beside this one, which test the payload the 9am job hands to Claude.
 // A plain module, never a suite: the runner only loads files ending in
 // `.test.js`.
@@ -21,7 +21,7 @@ const { testUnless } = require('../../lib/harness');
 const { IS_WINDOWS, NO_NODE_STUB, gitPath, homeEnv, pathWith, shellPath, stubTool } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
 
-const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'brief-payload.js');
+const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning', 'brief', 'brief-payload.js');
 const { composeBrief, render, writeBriefMarks, INSTRUCTION } = require(SCRIPT);
 const { parseStatsMark } = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'history.js'));
 

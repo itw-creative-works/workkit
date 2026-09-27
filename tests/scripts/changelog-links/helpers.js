@@ -1,5 +1,5 @@
 //
-// The shared prologue of the workflow/changelog-links.js suites, the
+// The shared prologue of the workflow/changelog/changelog-links.js suites, the
 // `*.test.js` files beside this one, which test the release-time step that
 // fills a CHANGELOG entry's commit link and contributor handle in from git and
 // the GitHub API, so nobody types a sha. A plain module, never a suite: the
@@ -18,7 +18,7 @@ const { IS_WINDOWS, NO_NODE_STUB, SYSTEM_PATH, stubTool, pathWith } = require('.
 const { recordArgv } = require('../../lib/argv-log');
 const { mkTmp } = require('../../lib/scratch');
 
-const SCRIPT = path.join(__dirname, '..', '..', '..', 'workflow', 'changelog-links.js');
+const SCRIPT = path.join(__dirname, '..', '..', '..', 'workflow', 'changelog', 'changelog-links.js');
 const { repoSlug } = require(SCRIPT);
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };

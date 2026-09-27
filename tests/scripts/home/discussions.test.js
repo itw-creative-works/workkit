@@ -1,5 +1,5 @@
 //
-// Tests for workflow/discussions.sh: posting a summary and reading summaries back.
+// Tests for workflow/lib/discussions.sh: posting a summary and reading summaries back.
 // The shared prologue (the offline world, inHome and setup, the remote and runner factories) is ./helpers.js.
 //
 

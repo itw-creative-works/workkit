@@ -24,7 +24,7 @@
 // passed, so a refusal leaves both exactly as they were. A CRLF file stays CRLF.
 //
 // Run from the repo root:
-//   node ~/.claude/workkit/release.js <x.y.z> [--keep N,M] [--dir <root>] [--dry-run]
+//   node ~/.claude/workkit/ship/release.js <x.y.z> [--keep N,M] [--dir <root>] [--dry-run]
 // `--keep` takes issue numbers, comma separated or repeated. Prints
 // `released x.y.z (<each file bumped>): N entries moved, M kept under [Unreleased]`,
 // exit 0, and never commits, tags or pushes. `--dry-run` prints the same line
@@ -44,10 +44,10 @@ const fs = require('fs');
 const path = require('path');
 const {
   ISSUE_LINK_RE, SECTION_RE, sectionKind, parseEntries,
-} = require('./changelog');
+} = require('../changelog/changelog');
 const {
   repoSlug, commitsByIssue, authorHandle, fill, defaultRange,
-} = require('./changelog-links');
+} = require('../changelog/changelog-links');
 const { isSemver } = require('./semver');
 
 const USAGE = 'usage: release.js <x.y.z> [--keep N,M] [--dir <root>] [--dry-run]';

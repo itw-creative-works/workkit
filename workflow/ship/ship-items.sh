@@ -20,7 +20,7 @@
 #
 # Without `--repo` gh resolves the repo from the current directory, exactly as
 # the ship's own `gh issue` calls do. Reached at the engine's stable address:
-# ~/.claude/workkit/ship-items.sh.
+# ~/.claude/workkit/ship/ship-items.sh.
 
 set -euo pipefail
 
@@ -28,8 +28,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
 # wk_jq, the one jq the engine calls (the CRLF strip Windows needs). Nothing
 # else of the engine is used, so nothing else is loaded.
-# shellcheck source=./platform.sh
-. "$SCRIPT_DIR/platform.sh"
+# shellcheck source=../lib/platform.sh
+. "$SCRIPT_DIR/../lib/platform.sh"
 
 fail() {
   printf 'ship-items: %s\n' "$1" >&2

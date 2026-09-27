@@ -14,7 +14,7 @@ Agent definitions shipped by the workkit plugin. They surface in a session names
 
 ## Classes (the manager system)
 
-`scout` / `worker` / `verifier` / `advisor` are the CAPABILITY CLASSES of the manager system. Their concrete model is supplied per spawn by the `manager/resolver` hook from `../hooks/manager/ladder.json` (the tier SSOT) and the LIVE session model. A mid-session `/model` switch takes effect on the next spawn. The `model:` frontmatter in these four files is only the static fallback for when the hook is disabled; never treat it as the routing truth, and never pass a `model` param when dispatching them.
+`scout` / `worker` / `verifier` / `advisor` are the CAPABILITY CLASSES of the manager system. Their concrete model is supplied per spawn by the `manager/resolver` hook from `../hooks/manager/resources/ladder.json` (the tier SSOT) and the LIVE session model. A mid-session `/model` switch takes effect on the next spawn. The `model:` frontmatter in these four files is only the static fallback for when the hook is disabled; never treat it as the routing truth, and never pass a `model` param when dispatching them.
 
 Test scope is doctrine for every class, the manager included: a worker's mid-work proof is the test files it touched, red-green on the new cases; a verifier runs the narrowest command that checks the claim. None of them runs a package or root suite unless the brief asks or the finding is suite-scoped. The commit gate owns suites, and `safety/suite-guard` bounces the hand-run from any class. The per-feature run is enforced too: `safety/proof-guard` runs the touched test files at the flip to `status:qa`. The rule is the spec's: `project-state.md` § The proof.
 

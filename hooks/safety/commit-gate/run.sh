@@ -241,7 +241,7 @@ if [ -n "$files" ]; then
     esac
     # Not a doc, and not code either. Deliberately its own case: the classifier
     # above stays in step with docs/change-tracker's, and this carve-out is the
-    # gate's alone. Twin list: VERSION_FILES in workflow/release.js, which bumps exactly these.
+    # gate's alone. Twin list: VERSION_FILES in workflow/ship/release.js, which bumps exactly these.
     case "$path" in
       package.json|.claude-plugin/plugin.json)
         if [ "$is_doc" -eq 0 ] && version_bump_only "$path"; then is_doc=1; fi ;;
@@ -267,7 +267,7 @@ fi
 #     so the match is byte for byte, trailing newlines included, and a CRLF
 #     working tree under autocrlf is judged by what git will store.
 # The copies' names, the "still runs it" question and the rewrite are all
-# workflow/changelog-job.sh's, sourced through _lib.sh, the file the heal runs,
+# workflow/changelog/changelog-job.sh's, sourced through _lib.sh, the file the heal runs,
 # so the two cannot disagree. Under -a/--all the working tree is what the
 # commit carries, so each arm reads it there.
 

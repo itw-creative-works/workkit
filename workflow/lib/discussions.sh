@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# workflow/discussions.sh: the home repo's Discussions API. SOURCED, never executed.
+# workflow/lib/discussions.sh: the home repo's Discussions API. SOURCED, never executed.
 #
 # Summaries are published, never filed (generated records are never files). The destination is a Discussion on the home repo, so
 # this is the one place that speaks GitHub's Discussions GraphQL. The setup
@@ -22,7 +22,7 @@
 #
 # Needs: lib.sh sourced first (WK_HOME_CACHE, wk_json_edit, the wk_ok family).
 
-# The category the morning brief posts in (jobs/brief-publish.sh asks for it by
+# The category the morning brief posts in (jobs/morning/brief-publish.sh asks for it by
 # this name), and the four setup checks the home repo for: one per summary
 # cadence (the names claude-nightly.sh derives from the cadence) and the brief's.
 # A repo that has them gets a tidy archive; a repo that does not still gets its

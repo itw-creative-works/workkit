@@ -1,5 +1,5 @@
 //
-// Tests for workflow/changelog.js: the CHANGELOG entry rules and the CLI both
+// Tests for workflow/changelog/changelog.js: the CHANGELOG entry rules and the CLI both
 // the docs:changelog-guard hook and the safety/commit-gate hook call.
 //
 // The added-only tests build real git repositories in a temp dir (no network,
@@ -13,7 +13,7 @@ const { spawnSync, execFileSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { mkTmp } = require('../lib/scratch');
 
-const MODULE = path.join(__dirname, '..', '..', 'workflow', 'changelog.js');
+const MODULE = path.join(__dirname, '..', '..', 'workflow', 'changelog', 'changelog.js');
 const { parseEntries, lintText, RULES } = require(MODULE);
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };

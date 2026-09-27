@@ -232,7 +232,7 @@ const run = async () => {
     // The shell answers in its own spelling (`pwd -P` resolves the links, the
     // climb out of lib/ stays textual), so the expected path is spelled the way
     // the shell would, as the cases below do, and the climb is collapsed here.
-    const engine = shellPath(fs.realpathSync(path.join(__dirname, '..', '..', 'workflow', 'changelog.js')));
+    const engine = shellPath(fs.realpathSync(path.join(__dirname, '..', '..', 'workflow', 'changelog', 'changelog.js')));
     assertEq(out.code, 0, `it resolves, got: ${out.stdout}|${out.stderr}`);
     assertEq(path.posix.normalize(out.stdout.trim()), engine, `got: ${out.stdout}`);
   });

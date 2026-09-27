@@ -22,8 +22,8 @@
 // with. One module, so the three cadences cannot drift apart in voice.
 //
 // Usage:
-//   node jobs/nightly-payload.js                        // the day
-//   … | node jobs/nightly-payload.js --cadence weekly   // the rollup, prior summaries on stdin
+//   node jobs/claude-nightly/nightly-payload.js                        // the day
+//   … | node jobs/claude-nightly/nightly-payload.js --cadence weekly   // the rollup, prior summaries on stdin
 //   composeNightly({ projectsRoot, workflowHome, exec })  // offline, against fixtures
 //
 
@@ -32,7 +32,7 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const { discoverRepos } = require('../tower/api/lib/repos');
+const { discoverRepos } = require('../../tower/api/lib/repos');
 
 const WINDOW_HOURS = 24;
 const WINDOW_MS = WINDOW_HOURS * 60 * 60 * 1000;
@@ -306,7 +306,7 @@ if (require.main === module) {
     process.stdout.write(render(composeNightly()));
   } else if (cadence === 'weekly' || cadence === 'monthly') {
     // The prior summaries arrive on stdin: the API call belongs to the step that
-    // already holds the credentials (workflow/discussions.sh), and this module
+    // already holds the credentials (workflow/lib/discussions.sh), and this module
     // stays a pure composer. Unreadable input is an EMPTY period, said plainly:
     // a rollup invented from nothing is worse than none.
     let raw = '';

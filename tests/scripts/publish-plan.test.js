@@ -1,5 +1,5 @@
 //
-// Tests for workflow/publish-plan.js: the ship's publish step reads the plan it
+// Tests for workflow/ship/publish-plan.js: the ship's publish step reads the plan it
 // prints, so the plan is the whole question here. Which packages publish, in
 // which order, which are skipped and why, and every refusal that stops the step
 // before a single package reaches npm.
@@ -22,7 +22,7 @@ const { IS_WINDOWS, NO_NODE_STUB, stubTool, pathWith } = require('../lib/platfor
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const { mkTmp } = require('../lib/scratch');
 
-const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'publish-plan.js');
+const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'publish-plan.js');
 const { plan } = require(SCRIPT);
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };

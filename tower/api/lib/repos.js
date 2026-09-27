@@ -30,8 +30,8 @@ const os = require('os');
 const { execFileSync } = require('child_process');
 
 // What a repo is CALLED has one home for the whole kit, and it is the engine's
-// (workflow/slug.js, the twin of workflow/slug.sh). The reach out of tower/ is
-// the one workflow/site-repos.js already makes in the other direction, and the
+// (workflow/slug.js, the twin of workflow/lib/slug.sh). The reach out of tower/ is
+// the one workflow/publish/site-repos.js already makes in the other direction, and the
 // home runner seed keeps both trees at the same relative depth, so this
 // resolves in the seeded clone exactly as it does here.
 const { slugFromRemote } = require('../../../workflow/slug');
@@ -52,7 +52,7 @@ const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
  * printed. A key looked up in the other spelling matches nothing. macOS and
  * Linux spell a path one way, so there the answer is the path.
  *
- * `wk_git_path` in workflow/platform.sh answers the same question for the
+ * `wk_git_path` in workflow/lib/platform.sh answers the same question for the
  * shell, and NOT with the same fold: it runs `cygpath -m`, which converts the
  * MSYS mount form (`/c/Users/x`) as well, while this folds backslashes and
  * nothing else. Each takes the spelling its own callers hand it (`path.join`

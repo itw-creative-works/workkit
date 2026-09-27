@@ -33,7 +33,7 @@ const {
 const { mkTmp } = require('../../lib/scratch');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.sh');
-const { INSTRUCTION } = require(path.join(__dirname, '..', '..', '..', 'jobs', 'brief-payload.js'));
+const { INSTRUCTION } = require(path.join(__dirname, '..', '..', '..', 'jobs', 'morning', 'brief', 'brief-payload.js'));
 const { discoverRepos } = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'repos'));
 
 const HOME_SLUG = 'owner/private-home';

@@ -1,5 +1,5 @@
 //
-// Tests for workflow/changelog-links.js, the release-time CHANGELOG backfill:
+// Tests for workflow/changelog/changelog-links.js, the release-time CHANGELOG backfill:
 // reading the origin remote into the GitHub slug its links are built from.
 // The shared prologue (the git and gh fixtures, the script runner, the Windows skip) is ./helpers.js.
 //

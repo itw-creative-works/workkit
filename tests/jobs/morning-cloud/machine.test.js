@@ -89,7 +89,7 @@ const run = async () => {
     // The retired variable (issue #91). A leftover read would look like a
     // configured runner on the one machine that still had it set.
     const steps = path.join(path.dirname(SCRIPT), 'morning');
-    const texts = [SCRIPT, ...fs.readdirSync(steps).map((f) => path.join(steps, f))].map((f) => fs.readFileSync(f, 'utf8'));
+    const texts = [SCRIPT, ...fs.readdirSync(steps, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => path.join(steps, e.name))].map((f) => fs.readFileSync(f, 'utf8'));
     assert(!texts.some((t) => /WORKKIT_HOME_SLUG/.test(t)), 'neither the runner nor a step it sources names it');
   });
 

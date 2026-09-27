@@ -1,5 +1,5 @@
 //
-// Tests for workflow/slug.sh, the engine's slug seam: `owner/repo` out of
+// Tests for workflow/lib/slug.sh, the engine's slug seam: `owner/repo` out of
 // whatever git hands back for a remote.
 //
 // The seam has its own suite because it has its own two consumers: the engine
@@ -23,7 +23,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../lib/platform');
 
-const SLUG = shellPath(path.join(__dirname, '..', '..', 'workflow', 'slug.sh'));
+const SLUG = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'slug.sh'));
 
 /** Source slug.sh and run one line of shell in it, the way every caller does. */
 const inSeam = (script, args = []) => {

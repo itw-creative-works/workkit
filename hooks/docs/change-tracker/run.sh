@@ -2,7 +2,7 @@
 # docs:change-tracker: Stop hook
 # Nudges Claude to keep the work item (a GitHub issue) true, promote durable
 # findings out of .workkit/, and check doc-parity.
-# Prompt content lives in prompt.md (same directory).
+# Prompt content lives in resources/prompt.md.
 # Reads files and writes one state file, never calls gh. A network round trip
 # on every Stop is latency nobody agreed to pay.
 
@@ -137,13 +137,15 @@ if [ -d ".workkit" ] && git check-ignore -q "$state_file" 2>/dev/null; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROMPT_FILE="$SCRIPT_DIR/prompt.md"
+PROMPT_FILE="$SCRIPT_DIR/resources/prompt.md"
 
-if [ -f "$PROMPT_FILE" ]; then
-  CONTEXT=$(cat "$PROMPT_FILE")
-else
-  CONTEXT="The working tree has uncommitted code/config changes. Keep the work item's issue true, promote durable findings out of .workkit/, and check doc-parity per AGENTS.md rules."
+# The prompt is the plugin's own file: missing means a broken install, never a
+# case to paper over with a built-in string.
+if [ ! -f "$PROMPT_FILE" ]; then
+  printf 'change-tracker: prompt missing at %s\n' "$PROMPT_FILE" >&2
+  exit 1
 fi
+CONTEXT=$(cat "$PROMPT_FILE")
 
 # Transition guard: this repo's board is deleted in the migration, but until it
 # is, the old rules still bind the turn that touches it.

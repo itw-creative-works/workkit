@@ -45,8 +45,8 @@ input=$(cat)
 command -v jq >/dev/null 2>&1 || exit 0
 
 # The two files this hook sources, both from its own physical location: the
-# CRLF-safe jq (workflow/platform.sh, `wk_jq`) and the participation predicates
-# (workflow/participation.sh, `wk_settings_declined`), each carrying its rule
+# CRLF-safe jq (workflow/lib/platform.sh, `wk_jq`) and the participation predicates
+# (workflow/lib/participation.sh, `wk_settings_declined`), each carrying its rule
 # and the reason for it. Neither is the engine this hook stays free of: both
 # define functions, set nothing, read no state and touch no file, so a seam that
 # is THERE costs a session nothing, and the gate below still asks the committed
@@ -57,10 +57,10 @@ command -v jq >/dev/null 2>&1 || exit 0
 # names ("workflow engine not found ... Reinstall the workkit plugin"), and a
 # guard here would leave the predicates undefined, the gate reading nothing, and
 # the injection blamed on the repo it was reading.
-# shellcheck source=../../../workflow/platform.sh
-. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/platform.sh"
-# shellcheck source=../../../workflow/participation.sh
-. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/participation.sh"
+# shellcheck source=../../../workflow/lib/platform.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/lib/platform.sh"
+# shellcheck source=../../../workflow/lib/participation.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/lib/participation.sh"
 
 cwd=$(wk_jq -r '.cwd // ""' <<<"$input" 2>/dev/null || true)
 [ -n "$cwd" ] || exit 0

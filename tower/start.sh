@@ -101,7 +101,7 @@ end_tree() {
 # EADDRINUSE death this reclaim exists to prevent, blamed on nothing.
 #
 # Who holds the port and how a pid is ended are the platform seam's
-# (workflow/platform.sh), so this takeover is the same one on every machine the
+# (workflow/lib/platform.sh), so this takeover is the same one on every machine the
 # tower runs on. The port is free when the lookup ANSWERS nothing, never when a
 # tool exits nonzero: the two tools disagree about that status.
 reclaim() {

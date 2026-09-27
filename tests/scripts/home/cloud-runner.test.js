@@ -36,11 +36,11 @@ const run = async () => {
 
   await test('the manifest names every module the composer requires, the stats line included', () => {
     // Issue #55: the morning's stats line is composed on the RUNNER, out of
-    // jobs/stats.js and the lib that owns its pattern. A manifest missing
+    // jobs/morning/brief/stats.js and the lib that owns its pattern. A manifest missing
     // either is a cloud brief that publishes without the block, and a history
     // that quietly stops accruing.
     const dests = runnerPairs().map((pair) => pair.dest);
-    for (const dest of ['brief/jobs/stats.js', 'brief/tower/api/lib/history.js']) {
+    for (const dest of ['brief/jobs/morning/brief/stats.js', 'brief/tower/api/lib/history.js']) {
       assert(dests.includes(dest), `${dest} is on the runner's list`);
     }
   });
@@ -51,7 +51,7 @@ const run = async () => {
     // with the checkout invisible is what proves the list is complete.
     const world = mkWorld();
     seeded(world);
-    const entry = path.join(world.tower, 'brief', 'jobs', 'brief-payload.js');
+    const entry = path.join(world.tower, 'brief', 'jobs', 'morning', 'brief', 'brief-payload.js');
     const res = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(entry)})`], {
       encoding: 'utf8', timeout: 30000,
     });
@@ -66,7 +66,7 @@ const run = async () => {
     const world = mkWorld();
     seeded(world);
     const engine = path.join(world.tower, 'brief', 'workflow');
-    const driver = ['lib.sh', 'discussions.sh', 'home.sh']
+    const driver = ['lib.sh', 'lib/discussions.sh', 'home.sh']
       .map((lib) => `. ${JSON.stringify(path.join(engine, lib))}`).concat('declare -F wk_home_setup >/dev/null').join('\n');
     const res = spawnSync('bash', ['-c', `set -euo pipefail\n${driver}`], { cwd: '/', encoding: 'utf8', timeout: 30000 });
     assertEq(res.status, 0, `the seeded engine loads from the clone alone: ${res.stderr}`);

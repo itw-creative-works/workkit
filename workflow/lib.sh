@@ -15,7 +15,9 @@
 # section sits below: lib/voice.sh (the style and the voice), lib/flows.sh (the
 # browser flows and the link maker) and lib/state.sh (the JSON edit and the
 # state mutex). This file keeps the addresses and every line that runs at load,
-# each after the source that defines what it calls.
+# each after the source that defines what it calls. lib/ also holds the four
+# seams the hooks and the entries source directly: platform, participation,
+# slug and discussions.
 
 # ── Platform ──────────────────────────────────────────────────────────────────
 # The spellings that differ per platform, sourced FIRST so every script that
@@ -23,8 +25,8 @@
 # file rather than here because the HOOKS need the same answers and source that
 # file directly (hooks/_lib.sh), and a hook has no business loading the engine's
 # addresses, its palette and its mutex to strip a carriage return.
-# shellcheck source=./platform.sh
-. "${BASH_SOURCE[0]%/*}/platform.sh"
+# shellcheck source=./lib/platform.sh
+. "${BASH_SOURCE[0]%/*}/lib/platform.sh"
 
 # ── Participation ─────────────────────────────────────────────────────────────
 # Is a directory a repo root, and what does a settings file's `enabled` key say:
@@ -32,16 +34,16 @@
 # beside platform.sh, and for the same reason: the hooks ask both questions too
 # and source it directly, and a hook has no business loading the addresses below
 # to test a path for `.git`.
-# shellcheck source=./participation.sh
-. "${BASH_SOURCE[0]%/*}/participation.sh"
+# shellcheck source=./lib/participation.sh
+. "${BASH_SOURCE[0]%/*}/lib/participation.sh"
 
 # ── Slugs ─────────────────────────────────────────────────────────────────────
 # What a repo is called: `owner/repo` out of a remote URL, and out of a working
 # tree's origin. Its own file beside the two above, and for the same reason: a
 # HOOK names a repo too (safety/release-taken's bounce) and sources it directly,
 # and a hook has no business loading the addresses below to read an origin.
-# shellcheck source=./slug.sh
-. "${BASH_SOURCE[0]%/*}/slug.sh"
+# shellcheck source=./lib/slug.sh
+. "${BASH_SOURCE[0]%/*}/lib/slug.sh"
 
 # ── The addresses ─────────────────────────────────────────────────────────────
 # The user's workflow folder: a PLAIN folder and never a git repo (issue #77).

@@ -93,7 +93,7 @@ A few things worth knowing before changing it:
 - **The project switch is the framework's SELECTOR module, filled at runtime**
   - the dropdown the base shell draws above the nav, turned on by the
   `selector` block in that same sidebar JSON and filled by `libs/tower/
-  sidebar.js`, which `libs/tower/page.js` writes into the menu and wires. The
+  page/sidebar.js`, which `libs/tower/page.js` writes into the menu and wires. The
   roster is fetched at runtime and the sidebar JSON is baked at build time, so
   the one item in that block is a placeholder that makes Liquid ship the `ul`;
   the entries are markup from the `repos` feed like everything else, and the

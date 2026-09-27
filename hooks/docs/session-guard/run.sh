@@ -23,12 +23,12 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-# The CRLF-safe jq, from its one home (workflow/platform.sh, `wk_jq`, which
+# The CRLF-safe jq, from its one home (workflow/lib/platform.sh, `wk_jq`, which
 # carries the rule and the reason). The one file this hook sources: it defines
 # functions and sets nothing, so it can no more keep the hook from running than
 # a missing tool can.
-# shellcheck source=../../../workflow/platform.sh
-. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/platform.sh"
+# shellcheck source=../../../workflow/lib/platform.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/lib/platform.sh"
 
 file_path=$(wk_jq -r '.tool_input.file_path // ""' <<<"$input" 2>/dev/null || true)
 [ -n "$file_path" ] || exit 0

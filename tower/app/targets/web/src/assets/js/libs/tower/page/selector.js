@@ -2,7 +2,7 @@
 // runtime claims under it, the label patched onto it, and the search box at the
 // top of the menu. page.js imports it; nothing here imports page.js.
 
-import { selectorLabel } from '../sidebar.js';
+import { selectorLabel } from './sidebar.js';
 
 /** The selector's toggle button, the framework's own node (sidebar.json turns it on). */
 export const selectorButton = () => document.querySelector('#app-sidebar .omega-side__selector');

@@ -51,9 +51,9 @@ const run = async () => {
     const repo = text.match(/^ +repository: (\S+)$/m);
     const sub = text.match(/^ +path: (\S+)$/m);
     assert(repo && sub, `a second checkout carries repository: and path:, got:\n${text}`);
-    assert(text.includes(`node ${sub[1]}/workflow/changelog.js CHANGELOG.md --unreleased-only`),
+    assert(text.includes(`node ${sub[1]}/workflow/changelog/changelog.js CHANGELOG.md --unreleased-only`),
       `the linter runs from the kit's checkout over the caller's unreleased section, got:\n${text}`);
-    assert(fs.existsSync(path.join(ROOT, 'workflow', 'changelog.js')), 'at a path the kit really has');
+    assert(fs.existsSync(path.join(ROOT, 'workflow', 'changelog', 'changelog.js')), 'at a path the kit really has');
     assert(text.includes('no CHANGELOG.md, nothing to check'), 'a caller with no CHANGELOG passes with a message');
     assert(/uses: actions\/checkout@v5/.test(text) && /uses: actions\/setup-node@v5/.test(text),
       'actions pinned the way the checks template pins them');

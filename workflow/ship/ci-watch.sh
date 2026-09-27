@@ -31,7 +31,7 @@
 # list or map (`on: [pull_request, push]`), or as a key or list item directly
 # under a block `on:`. A `push` nested deeper (a branch named push) is not one.
 #
-# Reached at the engine's stable address: ~/.claude/workkit/ci-watch.sh.
+# Reached at the engine's stable address: ~/.claude/workkit/ship/ci-watch.sh.
 
 set -euo pipefail
 
@@ -39,8 +39,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
 # wk_jq and nothing else: the lines this prints are its own contract, not the
 # engine's voice, so the palette and the addresses in lib.sh stay unloaded.
-# shellcheck source=./platform.sh
-. "$SCRIPT_DIR/platform.sh"
+# shellcheck source=../lib/platform.sh
+. "$SCRIPT_DIR/../lib/platform.sh"
 
 TRIES="${WORKKIT_CI_WATCH_TRIES:-6}"
 WAIT="${WORKKIT_CI_WATCH_WAIT:-10}"
