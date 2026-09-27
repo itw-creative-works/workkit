@@ -1,15 +1,7 @@
-//
-// Tests for workflow/ship/release.js: the ship's release commit, made by one command
-// instead of by hand. It bumps `version` in package.json, backfills each
-// entry's commit link, and moves `[Unreleased]` into a dated section, the
-// `--keep` items staying behind. Every refusal writes nothing.
-//
-// Each case builds a real git repository with real commits carrying real
-// `Fixes #N` trailers, so the backfill reads the history git records. Nothing
-// here stubs `gh`: the child's world is a scratch home (`homeEnv`) on the system
-// PATH, so any `gh` it reaches is one with no account, and the handle is simply
-// absent, which is the offline release the backfill is written to allow.
-//
+// Tests for workflow/ship/release.js: the ship's release commit in one command (the
+// bump, the commit-link backfill, the dated section; a refusal writes nothing).
+// Each case builds a real repo with real `Fixes #N` commits, and the child's scratch
+// home reaches no gh account, so the handle is absent: the offline release.
 
 const path = require('path');
 const fs = require('fs');
@@ -86,7 +78,7 @@ const PLUGIN = [
 const UNVERSIONED = '{\n  "name": "scratch",\n  "private": true\n}\n';
 const PLUGIN_FILE = path.join('.claude-plugin', 'plugin.json');
 
-/** The text of a version file with its top-level version moved to 1.3.0. */
+/** The text of a version file with its top-level version bumped to 1.3.0. */
 const bumped = (text) => text.replace('"version": "1.2.3"', '"version": "1.3.0"');
 
 const COMMITS = ['feat: one\n\nFixes #1', 'feat: two\n\nFixes #2', 'fix: three\n\nFixes #3'];

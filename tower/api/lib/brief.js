@@ -1,36 +1,14 @@
-//
-// The daily brief: one payload, two readers.
-//
-// The 9am notification and the tower's Brief page must tell the SAME story, so
-// the brief is assembled here, once, from the board sweep and the per-repo
-// health that every other tower page already reads. Nothing is stored: a brief
-// is a question asked of the live data, not a document that accumulates.
-//
-// The 9am job does not reach the API for it. `jobs/morning/brief/brief-payload.js` calls this
-// module directly, through the same roster, board and health reads the server
-// makes, so the morning works whether or not a tower is running.
-//
-// The six sections answer the six questions a morning asks, in the order a
-// morning asks them:
-//   waiting    what is blocked on a human decision, the only thing that stops work
-//   complete   QA passed: finished work that needs nothing but the ship (#196)
-//   qa         built and verified, waiting on the owner's check before the ship
-//   ready      specced: what may be started right now
-//   inFlight   building: the label is what says work has started
-//   warnings   work sitting on the table: uncommitted, unpushed, unreleased
-//
-// `nextUp` is the same board asked one question further: of everything open,
-// the few things this morning could actually move, per repo.
+// The daily brief: one payload, two readers (the 9am job through
+// jobs/morning/brief/brief-payload.js, and the tower's Brief page), assembled
+// once from the board sweep and the per-repo health, so the two cannot disagree.
+// Nothing is stored: a brief is a question asked of the live data. What it says
+// beyond the counts: jobs/README.md § The payload.
 //
 // Usage:
-//   const { buildBrief } = require('./brief');
 //   buildBrief(board, health, repos);
-//
 
-// An issue as the brief carries it: the fields a one-line summary needs, plus
-// the ones the dashboard's issue dialog reads. The Brief page never fetches the
-// board, so an issue arriving without its body would be the one place on the
-// dashboard where opening an issue showed less than everywhere else.
+// An issue as the brief carries it: a one-line summary's fields plus the ones
+// the issue dialog reads, since the Brief page never fetches the board.
 const brief = (issue) => ({
   repo: issue.repo,
   number: issue.number,
@@ -66,43 +44,16 @@ const NEXT_UP_PER_REPO = 3;
 
 /**
  * The one name for one issue, `repo#number`, the browser's own idiom
- * (libs/tower/format.js), on this side of the copy boundary.
- *
- * A dependency is matched on the PAIR and never on the number alone: the sweep
- * is cross-repo, and `owner/a#12` and `owner/b#12` are two different issues.
+ * (libs/tower/format.js). A dependency matches on the pair, never the number
+ * alone: `owner/a#7` and `owner/b#7` are two different issues.
  */
 const issueKey = (issue) => `${issue.repo}#${issue.number}`;
 
 /**
- * What to work on next, per repo: the ranked few, in the order the status
- * skill reads a board in.
- *
- * `blocked` leads because it is waiting on the OWNER: a decision nobody makes
- * stops everything downstream of it, and it is the only kind of item a morning
- * can clear without opening an editor. `complete` follows (#196): the check is
- * already given and the ship is the one act left, so it is the shortest distance
- * on the board between a morning and something released. `qa` comes next for the
- * reason `blocked` leads, one rung further down: built work parked on the
- * owner's check, which nothing downstream of it ships past. `specced` comes last
- * of the four in the same urgency order every other section uses, since an
- * accepted spec is what may be started right now. Nothing else is actionable at
- * nine in the morning: `building` is already somebody's and `inbox` is not a
- * decision yet.
- *
- * Grouping is by repo because a morning is spent in one repo at a time, and the
- * repos arrive in the order their leading item does. A repo with nothing
- * actionable is left out rather than listed empty.
- *
- * An issue WAITING on another orders last inside its repo (issue #103), and
- * says which ones it waits on. A blocker counts only where the sweep can see it
- * is still open: the sweep IS the open board, so an edge whose target is in it
- * is an edge nothing has satisfied. An edge pointing outside the sweep says
- * nothing either way (a closed issue and a repo the token cannot read look
- * identical from here), so it neither demotes its issue nor is listed. That is
- * also why the cap is applied after the ordering rather than while filling: the
- * item held back has to be the one that is waiting, not whichever arrived
- * fourth.
- *
+ * What to work on next, per repo, in the order jobs/README.md § The payload
+ * gives. A blocker counts only while the sweep holds it open (closed and
+ * unreadable look alike from here), and the cap lands after the ordering so the
+ * item held back is the one that is waiting.
  * @param {object[]} issues the sweep, already sorted byUrgency
  * @returns {Array<{repo: string, items: object[]}>}
  */
@@ -140,17 +91,9 @@ const nextUpFrom = (issues) => {
 };
 
 /**
- * The sweep's per-repo counts, carried onto the brief: how big each repo's open
- * board is, and how much of it closed in the last day.
- *
- * They ride the payload because the morning's stats line is composed from it
- * (jobs/morning/brief/stats.js) and a chart drawn a month later can then say WHICH board grew
- * rather than only that the total did. `open` is the repo's totalCount rather
- * than the nodes it returned: a repo over the page cap is still that many
- * issues open, and a series that dipped at the cap would be a lie about the day.
- * A repo the sweep could not read is absent for the same reason: its zeros are
- * not counts, and a false "0 open" published once dips its series forever.
- *
+ * The sweep's per-repo counts, for the stats line (jobs/morning/brief/stats.js).
+ * `open` is totalCount, never the nodes returned, and an unread repo is absent:
+ * a series that dips at the cap or on a failed read is a lie about the day.
  * @param {{repos?: object[]}} board the sweep
  * @returns {Array<{slug: string, open: number, closedDay: number}>}
  */
@@ -169,20 +112,15 @@ const nameOf = (repos, repoPath) => {
 };
 
 /**
- * The headline: one plain sentence naming the single most useful fact.
- *
- * The order is the order of consequence: a decision waiting on a human blocks
- * everything downstream of it, so it leads even when other numbers are larger.
- *
+ * The headline: one plain sentence naming the single most useful fact, in the
+ * order of consequence, so a decision waiting on a human leads.
  * @param {object} counts the section sizes
  * @returns {string}
  */
 const headlineFor = (counts) => {
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   if (counts.waiting) return `${plural(counts.waiting, 'issue is', 'issues are')} waiting on a decision from you.`;
-  // A complete item is finished work the ship has not carried yet (#196), which
-  // outranks a check still to be given: the value is already built and is simply
-  // not out.
+  // Finished work the ship has not carried yet outranks a check still to give.
   if (counts.complete) return `${plural(counts.complete, 'issue is', 'issues are')} QA-passed and ready to ship.`;
   if (counts.qa) return `${plural(counts.qa, 'issue is', 'issues are')} built and waiting on your check.`;
   if (counts.inFlight) return `${plural(counts.inFlight, 'issue is', 'issues are')} in flight, and nothing is blocked.`;
@@ -192,11 +130,8 @@ const headlineFor = (counts) => {
 };
 
 /**
- * Assemble the brief.
- *
- * Every argument is what the tower's own endpoints already serve, so the job
- * and the page can build the same payload from the same three reads.
- *
+ * Assemble the brief from what the tower's own endpoints already serve, so the
+ * job and the page build the same payload from the same three reads.
  * @param {{ok: boolean, issues: object[], repos?: object[]}} board the sweep
  * @param {Object<string, object>} health repo path → repoHealth result
  * @param {Array<{name: string, path: string, slug: string|null}>} repos the roster
@@ -207,17 +142,12 @@ const buildBrief = (board, health, repos, generatedAt) => {
   const issues = (board && Array.isArray(board.issues) ? board.issues : []).slice().sort(byUrgency);
 
   const waiting = issues.filter((i) => i.status === 'blocked').map(brief);
-  // Its own section rather than a corner of `inFlight` (issue #135): a qa item
-  // is finished work waiting on the OWNER, which is the same kind of fact as
-  // `waiting` and the opposite of "somebody is on it".
+  // Its own section, never a corner of `inFlight`: a qa item waits on the owner.
   const qa = issues.filter((i) => i.status === 'qa').map(brief);
-  // The stage above it (#196): the check PASSED, so nothing about the item is
-  // open: it waits on the ship alone, and the ship reads from this section.
+  // The check passed: it waits on the ship alone, which reads this section.
   const complete = issues.filter((i) => i.status === 'complete').map(brief);
-  // The label is the whole answer on both of these (issue #62): `specced` is a
-  // spec accepted and nothing started, `building` is work in flight. An
-  // assignee no longer moves an issue between them: a claimed `specced` issue
-  // is a transient the standards sweep flips, not a shape to be tolerated here.
+  // The label is the whole answer on both, never the assignee: a claimed
+  // `specced` issue is a transient the standards sweep flips.
   const ready = issues.filter((i) => i.status === 'specced').map(brief);
   const inFlight = issues.filter((i) => i.status === 'building').map(brief);
   const inbox = issues.filter((i) => i.status === 'inbox').map(brief);
@@ -262,7 +192,7 @@ const buildBrief = (board, health, repos, generatedAt) => {
     generatedAt: generatedAt || new Date().toISOString(),
     headline: headlineFor(counts),
     counts,
-    // What the day SHIPPED, roster wide: the one number a count of the open
+    // What the day shipped, roster wide: the one number a count of the open
     // board cannot carry, and the one a morning's chart is drawn from.
     closedDay: repoCounts.reduce((sum, repo) => sum + repo.closedDay, 0),
     repoCounts,

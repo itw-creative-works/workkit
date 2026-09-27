@@ -3,28 +3,15 @@
 // imports github.js.
 
 // ── The two writes ─────────────────────────────────────────────────────────
-//
-// The tower has exactly two write paths, and so does this: moving an issue
-// along the pipeline (the Board's drag) and filing one (the intake dialog).
-// The published copy performs them with the SAME token it reads with, which is
-// what makes the site function exactly like the dashboard on the machine, and
-// why the token asks for Issues: Read and write.
-//
-// They speak REST where the reads speak GraphQL, for one reason: a GraphQL
-// mutation addresses a label by node ID, so each write would first have to look
-// up the issue's id and an id per label name. REST speaks label NAMES - the
-// vocabulary the columns, the sweep and workflow/labels.json already use - so a
-// write is the plainest call that can do the job. Same host, same bearer token,
-// same four-key result and the same promise never to throw.
+// REST where the reads speak GraphQL: a mutation addresses a label by node id,
+// and REST speaks label names. Same token, same four-key result, never throws.
 
 import { NO_TOKEN, limitMark, rest } from './wire.js';
 import { fetchSlugs } from './roster.js';
 
-// The intake rules, restated from tower/api/server/validate.js for the copy-boundary
-// reason the sweep is: nothing under tower/api/ is reachable from the published
-// project. A published copy has no endpoint to refuse a bad intake, so the
-// refusals are made here in the endpoint's own words, and the suite pins each
-// value against its source.
+// The intake rules, restated from tower/api/server/validate.js across the copy
+// boundary: a published copy has no endpoint to refuse a bad intake, so the
+// refusals are made here in its words, each value pinned by the suite.
 
 /** The longest title the endpoint accepts. */
 export const TITLE_MAX = 256;
@@ -40,16 +27,11 @@ export const INTAKE_LABELS = ['status:inbox', 'type:idea'];
 
 /**
  * The label set one move leaves behind: the old status off, the new one on,
- * every other label untouched.
- *
- * This is the endpoint's semantics exactly - `gh issue edit --remove-label
- * status:<from> --add-label status:<to>`, one call so the issue is never
- * momentarily unlabelled and never momentarily carrying two statuses. Pure, so
- * the invariant is askable without a request.
+ * every other label untouched, so the issue never carries zero or two statuses.
  *
  * @param {Array<{name: string}|string>} current - the labels the issue carries now
  * @param {string} from - the status being left
- * @param {string} to - the status being moved to
+ * @param {string} to - the status it goes to
  * @returns {string[]} the whole set to write
  */
 export const nextLabels = (current, from, to) => {
@@ -81,16 +63,10 @@ const PROOF_GATED = 'complete';
 export const MOVE_STATUSES = ['inbox', 'specced', 'building', 'qa', 'complete', 'blocked', 'backlog'];
 
 /**
- * What a move may do, or why it may not - the endpoint's `validateMove`, on
- * this side of the copy boundary.
- *
- * The endpoint judges every field before `gh` is reached and trusts none of
- * them for being well formed; so does this, for the same reason: a drag on a
- * page is where these values come from, which is exactly why none of that is
- * assumed. The repo is checked for SHAPE rather than membership - unlike an
- * intake, whose repo is chosen in a dialog, a move's repo is one this site
- * swept, and confirming it against the roster would cost the two reads that
- * fetch it, which the move does not otherwise need.
+ * What a move may do, or why it may not: the endpoint's `validateMove`,
+ * restated. Every field is judged, since a drag is where they come from. The
+ * repo is checked for shape, not membership: it is one this site swept, and
+ * the roster would cost two reads the move does not otherwise need.
  *
  * @param {object} move - `{ repo, number, from, to }`
  * @returns {{ok: boolean, reason?: string, repo?: string, number?: number, from?: string, to?: string}}
@@ -119,13 +95,9 @@ export const validateMove = (move) => {
 };
 
 /**
- * Move one issue along the pipeline - the Board's drag, written straight to
- * GitHub.
- *
- * Two calls, one mutation: REST replaces the whole label set, so the labels the
- * issue carries NOW are read first. They are read rather than taken from the
- * board's copy because that copy is up to a minute old, and a label added since
- * the sweep must survive a status move that knows nothing about it.
+ * Move one issue along the pipeline, straight to GitHub. REST replaces the
+ * whole label set, so the labels are read fresh first: the board's copy is up
+ * to a minute old, and a label added since must survive the move.
  *
  * @param {{repo: string, number: number, from: string, to: string}} move - api.js's `moveRequest`
  * @param {object} ctx - `{ token, fetch }`
@@ -170,7 +142,7 @@ export const moveIssueStatus = async (move, ctx = {}) => {
   const read = await rest(`/repos/${repo}/issues/${number}`, ctx);
   if (!read.ok) return read;
 
-  // A PATCH sends the WHOLE label set, so a read that answered without one is
+  // A PATCH sends the whole label set, so a read that answered without one is
   // not a base to write from: relabelling off nothing would take every label
   // the issue carries with it.
   const carried = (read.data || {}).labels;
@@ -195,14 +167,9 @@ export const moveIssueStatus = async (move, ctx = {}) => {
 };
 
 /**
- * What an intake may do, or why it may not - the endpoint's `validateIntake`,
- * on this side of the copy boundary.
- *
- * The repo is checked against the site's own slug list rather than pattern
- * matched, for the endpoint's reason: that list is the only set of repositories
- * this copy has agreed to file against. Its SPELLING is what gets filed, since
- * GitHub names are case-insensitive and a slug is whatever case the roster
- * carried.
+ * What an intake may do, or why it may not: the endpoint's `validateIntake`,
+ * restated. The repo must be on the site's own slug list, and the roster's
+ * spelling is what gets filed, since GitHub names are case-insensitive.
  *
  * @param {object} payload - `{ repo, title, body }`
  * @param {string[]} slugs - the roster this site sweeps

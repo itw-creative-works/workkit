@@ -15,8 +15,8 @@ const run = async () => {
 
   // The card as the two listeners see it: a form carrying the field and, where
   // there is a token to forget, the Clear button. Exactly the nodes
-  // `mountTokenCard` reaches for and nothing else - what the card LOOKS like is
-  // the markup tests above, and a browser's answer besides.
+  // `mountTokenCard` reaches for; what the card looks like is the markup tests
+  // above, and a browser's answer besides.
   const mkCardHost = (options = {}) => {
     const input = {
       value: options.value || '', focused: 0, focus() { input.focused += 1; },
@@ -58,8 +58,7 @@ const run = async () => {
   });
 
   await test('the clear button is drawn only where there is a token to forget', () => {
-    // The chrome's Token button, moved (#167): same rule, same reload behind
-    // it, on the page that also types the replacement.
+    // Clear forgets and reloads, on the page that also types the replacement.
     const held = token.tokenCard({ held: true });
     assert(held.includes('data-token-clear'), 'a browser holding one can forget it');
     assert(held.includes('This browser holds a token.'), 'and is told that it holds one');
@@ -74,14 +73,13 @@ const run = async () => {
     assert(markup.includes('Issues: Read and write'), 'it names the permissions, and the board moves cards, so writing issues is one');
     assert(markup.includes('Contents: Read'), 'and the one read that is not an issue: the private roster on the home repo (issue #110)');
     assert(!/admin|workflow/i.test(markup), 'and asks for nothing beyond that');
-    // A fine-grained token belongs to ONE resource owner, so a board spanning
-    // two cannot be read by one at all (#167) - the page says which token can.
+    // A fine-grained token belongs to one resource owner, so a board spanning
+    // two cannot be read by one at all: the page says which token can.
     assert(markup.includes('classic token with the repo scope'), 'the other kind is named');
     assert(/two owners/.test(markup), 'with the one case that requires it');
-    // ONE create button on the page and it is THIS card's (#241, the owner's
-    // second call): it sits under the permissions it names. The classic URL
-    // rides the words that name that token, inside the sentence, rather than
-    // a second button that reads as a mistake.
+    // One create button on the page, and it is this card's, under the
+    // permissions it names. The classic URL rides the words that name that
+    // token, inside the sentence, rather than a second button.
     const classicLink = `<a href="${format.esc(github.TOKEN_CLASSIC_URL)}" target="_blank" rel="noopener">a classic token with the repo scope</a>`;
     assert(markup.includes(`${classicLink} works too`), 'the link that makes one with the scope already ticked sits on the words that name it');
     assert(github.TOKEN_CLASSIC_URL.includes('scopes=repo'), 'which is the repo scope and nothing wider');
@@ -98,9 +96,8 @@ const run = async () => {
   });
 
   await test('a locked copy on this machine is told the tower is down, and is never asked for a token', () => {
-    // The bug (#89): a locked page served from localhost asked for a GitHub
-    // token, which a local dashboard has no use for - the tower API holds the
-    // `gh` login. The fork is on the hostname alone; the MODE is untouched.
+    // A local dashboard has no use for a GitHub token (the tower API holds the
+    // `gh` login), so the fork is on the hostname alone; the mode is untouched.
     const markup = token.towerDownNotice('http://localhost:4300/board?repo=ITW/workkit');
     for (const hostname of ['localhost', '127.0.0.1', '[::1]']) {
       assert(token.isLocalHost(hostname), `${hostname} is this machine`);
@@ -112,7 +109,7 @@ const run = async () => {
   });
 
   await test('the local notice carries the connect link, because starting the tower alone changes nothing', () => {
-    // The mode is decided from the BUILD, never from a probe (api.js): a locked
+    // The mode is decided from the build, never from a probe (api.js): a locked
     // page on this machine is a production build, so a reload after `npm run
     // tower` is locked all over again. `?api=` is what flips decideLive, and it
     // rides the URL through that reload.
@@ -148,7 +145,7 @@ const run = async () => {
       assert(!token.isLocalHost(hostname), `${hostname} is not this machine`);
     }
 
-    // A stub the wiring can be read off: every paint that WROTE the card mounts
+    // A stub the wiring can be read off: every paint that wrote the card mounts
     // it once (swap returns false otherwise), so the listener count here is one
     // per mount.
     const wired = mkCardHost({ value: '  github_pat_TEST  ' });
@@ -165,7 +162,7 @@ const run = async () => {
   });
 
   await test('a blank save leaves the stored token alone - Clear is what forgets one', () => {
-    // The trap: `writeToken(storage, '')` IS the clear, so asking it and
+    // The trap: `writeToken(storage, '')` is the clear, so asking it and
     // reacting to the empty string it hands back would already have thrown the
     // token away. The guard is before the call.
     const storage = mkStorage({ [github.TOKEN_KEY]: 'fake-token-for-tests' });
@@ -193,12 +190,10 @@ const run = async () => {
   });
 
   await test('the layout disarms the auth gate under the framework’s CURRENT key', () => {
-    // The gate re-armed itself once (#98): the framework renamed the settings
-    // blob `web_manager` → `client`, the stale key resolved to nothing, and
-    // the admin chain’s `authenticated` policy silently won. The pin is on
-    // the exact key path, so the next rename fails here instead of on screen.
-    // It rides under `config:`, the one place a page or layout overrides
-    // omega.json5. A config section restated BARE fails the build outright.
+    // The pin is on the exact key path the framework reads (`client`), so a
+    // rename fails here instead of letting the admin chain's `authenticated`
+    // policy win on screen. It rides under `config:`, the one place a layout
+    // overrides omega.json5; a section restated bare fails the build.
     const layout = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src',
       '_layouts', 'tower', 'page.html'), 'utf8');
     assert(/^config:$/m.test(layout), 'the override sits under the config namespace');
@@ -209,10 +204,8 @@ const run = async () => {
   });
 
   await test('the layout ships no unlock dialog any more, and nothing can open one', () => {
-    // It was a modal nothing could dismiss - static backdrop, no Escape, no
-    // close button - because behind it was a page with no data and no second
-    // place to type a token. The second place is now a page (#167), so the
-    // dialog is retired rather than merely made closable.
+    // The token is typed on the Settings page, so no dialog stands between a
+    // viewer and a page with no data.
     const layout = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src',
       '_layouts', 'tower', 'page.html'), 'utf8');
     assert(!layout.includes('id="tower-unlock"'), 'the dialog is gone from the layout');
@@ -266,14 +259,14 @@ const run = async () => {
     const module = fs.readFileSync(path.join(src, 'assets', 'js', 'pages', 'settings.js'), 'utf8');
     assert(/mount: 'tower-settings'/.test(module), 'the module claims that mount');
     // The option itself, not the sentence about it in the header: a page that
-    // only TALKS about being tokenless is a page the runtime routes away from.
+    // only talks about being tokenless is a page the runtime routes away from.
     assert(/^ {2}tokenless: true,$/m.test(module), 'and declares itself the page that works without a token');
     assert(/tokenCard\(\{ held, problem: state\.tokenProblem \}\)/.test(module),
       'it draws the card from what this browser holds and from any refusal the runtime carried');
     assert(/mountTokenCard\(root\)/.test(module), 'and wires it after the write');
     assert(/LIVE \? towerTokenNote\(\) : ''/.test(module), 'a copy with a tower behind it is told the token is not its credential');
-    // The two cards sit on ONE row, a column each, and stack below the lg
-    // breakpoint the way every other pair on the dashboard does (#241).
+    // The two cards sit on one row, a column each, and stack below the lg
+    // breakpoint the way every other pair on the dashboard does.
     assert(/<div class="row g-4">/.test(module), 'the two cards share a row');
     assert(/<div class="col-12 col-xl-6">\$\{tokenCard\(/.test(module), 'the token card takes half of it');
     assert(/<div class="col-12 col-xl-6">\$\{tokenGuidance\(\)\}<\/div>/.test(module), 'and what the token needs takes the other half');
@@ -288,7 +281,7 @@ const run = async () => {
   });
 
   await test('nothing token-shaped is committed anywhere in the app', () => {
-    // The whole doctrine: the token is the VIEWER's, typed into their browser.
+    // The whole doctrine: the token is the viewer's, typed into their browser.
     // A literal in the source would be published to anyone with the URL.
     const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
       const full = path.join(dir, entry.name);

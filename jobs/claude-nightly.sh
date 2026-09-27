@@ -1,21 +1,10 @@
 #!/usr/bin/env bash
-# The summaries step: the first half of the 9am job.
+# The summaries step, the first of the 9am job: writes up the day that just
+# ended and publishes it as a Discussion on the home repo (a Sunday adds the
+# week, the 1st the month, read back from the API). Every reason not to publish
+# is one logged line and exit 0 (jobs/README.md § The summaries step).
 #
-# It writes up the day that just ended and PUBLISHES it: generated records are
-# never files, so the summary goes straight to a
-# Discussion on the home repo named in `~/.workkit/settings.json` and nothing
-# lands on disk but this log. On a Sunday it also posts the week, on the 1st the
-# month, and those rollups read their inputs back from the API (the summaries
-# already published) rather than from any folder.
-#
-# No home repo means no destination, and that is a named skip, not a failure:
-# `workkit setup` creates the home repo, and until someone runs it this step
-# says which reason applied in one line and exits 0. Every API failure takes the
-# same path: a morning brief must never be lost to a summary that could not be
-# posted.
-#
-# Usage: claude-nightly.sh [--now]   (--now is the manual trigger, `npm run
-#        nightly`; it stamps the log block manual and changes nothing else)
+# Usage: claude-nightly.sh [--now]   (the manual trigger, `npm run nightly`)
 # Log: ~/Library/Logs/claude-nightly.log, appended, one timestamped block per run.
 
 set -euo pipefail
@@ -27,12 +16,9 @@ export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ENGINE_DIR="$(cd "$SCRIPT_DIR/../workflow" && pwd -P)"
 
-# The scratch directory this run works from, and it is entered before anything
-# reaches the network. Under launchd the default cwd is / and the job is its own
-# TCC identity (no inherited Terminal grants): Claude Code's startup scan from
-# / trips macOS privacy prompts (Media Library, Documents, …). An empty cwd
-# gives it nothing to scan, and the payloads and the composed summaries live
-# here and go away with the run.
+# An empty scratch cwd, entered before anything reaches the network: under
+# launchd the cwd is /, and Claude Code's startup scan from there trips macOS
+# privacy prompts. The payloads and summaries live here and go with the run.
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 cd "$WORK_DIR"
@@ -44,7 +30,7 @@ LOG_FILE="$HOME/Library/Logs/claude-nightly.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 TIMESTAMP="$(date '+%Y-%m-%d %H:%M:%S')"
 
-# --now is the manual trigger, and it BYPASSES the two guards that exist for the
+# --now is the manual trigger, and it bypasses the two guards that exist for the
 # scheduled run: the day already published and the quiet day. A person running
 # it is explicitly asking for a post: that is what testing the delivery means.
 MANUAL=0
@@ -55,9 +41,8 @@ if [[ "${1:-}" == "--now" ]]; then
 fi
 LOG_STAMP="${LOG_STAMP:-$TIMESTAMP}"
 
-# The engine's voice (issue #237), with the plain fallback for the one branch
-# below that runs BEFORE lib.sh is sourced (and for the checkout that has no
-# lib.sh at all): sourcing it replaces these with the glyph lines.
+# The engine's voice, with a plain fallback for the branch below that runs
+# before lib.sh is sourced (or a checkout without it); sourcing replaces these.
 if ! declare -f wk_ok >/dev/null 2>&1; then
   wk_ok()    { printf '%s\n' "$1"; }
   wk_skip()  { printf '%s\n' "$1"; }
@@ -67,11 +52,9 @@ if ! declare -f wk_ok >/dev/null 2>&1; then
   wk_spin()  { shift; "$@"; }
 fi
 
-# One block per note, saying what the run decided: the day's stamp (a log file
-# outlives the day), then the note itself under the glyph for what happened. One
-# stamp block, three levels through it, and BOTH streams redirected: a warning
-# is stderr's everywhere in the kit, and this file is the whole record of the
-# run.
+# One block per note: the stamp (a log file outlives the day), then the note
+# under its glyph, both streams redirected: a warning is stderr's everywhere in
+# the kit, and this file is the whole record of the run.
 note_as() {
   { printf '%s\n' "--- $LOG_STAMP ---"; "$1" "$2"; printf '\n'; } >> "$LOG_FILE" 2>&1
 }
@@ -81,7 +64,7 @@ note_warn() { note_as wk_warn "$1"; }
 
 # The engine's home-repo libraries. A checkout missing them has no way to reach
 # the destination, which reads exactly like having no destination. The
-# destination is the REPO, never the clone: a summary is a Discussion, posted
+# destination is the repo, never the clone: a summary is a Discussion, posted
 # over the API, so a machine whose ~/.workkit/tower is missing still publishes.
 if [[ -f "$ENGINE_DIR/lib.sh" && -f "$ENGINE_DIR/lib/discussions.sh" && -f "$ENGINE_DIR/home.sh" ]]; then
   # shellcheck source=../workflow/lib.sh
@@ -105,8 +88,7 @@ if ! wk_disc_ready; then
   exit 0
 fi
 
-# The cadences due today. Daily always; the week on a Sunday, the month on the
-# 1st: the same schedule the local summaries kept before they were published.
+# The cadences due today: daily always, the week on a Sunday, the month on the 1st.
 DATE="$(date '+%Y-%m-%d')"
 CADENCES=(daily)
 # Written as `if`s rather than `[[ … ]] && …`: under `set -e` the second form is
@@ -130,7 +112,7 @@ since_of() {
 }
 
 # Whether this date's summary for a cadence is already published. The titles are
-# fixed (`<cadence>: <date>`), so an EXACT title match in the window is the
+# fixed (`<cadence>: <date>`), so an exact title match in the window is the
 # question, and the answer costs one API call the composition would have cost
 # far more than.
 already_published() {
@@ -152,7 +134,7 @@ publish_cadence() {
 
   # The day is already written up. A second scheduled run (the job re-fired,
   # the machine woken twice) must not publish a second post about it, and the
-  # check comes BEFORE the composition so the duplicate costs nothing.
+  # check comes before the composition so the duplicate costs nothing.
   if (( MANUAL == 0 )) && already_published "$cadence"; then
     note_skip "summaries: $HOME_REPO already carries the $cadence summary for $DATE; nothing posted"
     return 0
@@ -176,9 +158,7 @@ publish_cadence() {
     return 0
   fi
 
-  # A quiet period (no transcripts and no commits in the window, or no prior
-  # summaries to roll up) is the payload's own verdict, and the runner acts on
-  # it: a summary composed from nothing would be invention, and publishing it
+  # A quiet period is the payload's own verdict: a summary composed from nothing
   # would put invention in the archive the rollups read. The manual trigger
   # overrides, since a person asking for a post has already decided.
   if (( MANUAL == 0 )) && grep -q '"quiet": true' "$payload_file"; then
@@ -186,12 +166,9 @@ publish_cadence() {
     return 0
   fi
 
-  # The reflection reads transcripts itself, so this send carries the three read
-  # tools and the transcripts directory: the SAME root the payload indexed, or
-  # the grant and the index would disagree.
-  #
-  # stderr goes to a FILE, never into the body: `2>&1` here would publish a
-  # warning line Claude wrote to stderr as the first paragraph of the summary.
+  # The reflection reads transcripts itself: three read tools and the same root
+  # the payload indexed, or the grant and the index would disagree. stderr goes
+  # to a file, never the body, or a warning would publish as the first paragraph.
   wk_spin "asking Claude for the $cadence summary" claude -p "$(cat "$payload_file")" \
     --model sonnet \
     --safe-mode \
@@ -207,7 +184,7 @@ publish_cadence() {
     return 0
   fi
 
-  # Resolved OUT of a substitution, so the fallback the resolution may have
+  # Resolved out of a substitution, so the fallback the resolution may have
   # taken comes back with it.
   if ! wk_disc_resolve_category "$HOME_REPO" "$category"; then
     note_warn "summaries: $HOME_REPO has no discussion category to publish the $cadence summary in; skipped, and nothing was written to disk"

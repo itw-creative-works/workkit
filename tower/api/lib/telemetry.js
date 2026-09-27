@@ -1,51 +1,11 @@
-//
-// What the crew spent: tokens and cost, read out of the transcripts.
-//
-// Nothing meters this. Claude Code already writes every assistant message to a
-// transcript with its `message.usage` block attached, and it already writes a
-// subagent's messages to its own file under the parent's `subagents/` folder.
-// Those two facts answer the whole question: how many tokens went where, under
-// which model, on which day, and on whose behalf. This module reads them and
-// adds nothing: a token ledger of its own would be a store the tower is not
-// allowed to have.
-//
-// Facts this depends on, all confirmed against real files under ~/.claude:
-//   main transcript   <home>/.claude/projects/<slug>/<session>.jsonl
-//   subagent files    <home>/.claude/projects/<slug>/<session>/subagents/
-//                     agent-<id>.jsonl, beside agent-<id>.meta.json
-//   usage             assistant lines carry message.usage with input_tokens,
-//                     output_tokens, cache_read_input_tokens and
-//                     cache_creation_input_tokens, plus message.model
-//   the class join    the agent id in the FILENAME does not appear in the
-//                     parent's tool_use. The sidecar meta carries `toolUseId`,
-//                     which IS the parent tool_use id, and the parent's input
-//                     carries `subagent_type`. So the join runs
-//                     filename -> meta.toolUseId -> parent tool_use.
-//                     meta.agentType holds the same value and is the fallback
-//                     for a subagent whose parent line has been compacted away.
-//   duplicate lines   one API response is written as SEVERAL transcript lines
-//                     (one per content block), each repeating the same usage,
-//                     and a resumed session replays its history. Both are
-//                     deduplicated by message.id. Measured on this machine:
-//                     the largest transcript here carries 200,779 usage lines
-//                     across 8,437 distinct message ids, so summing raw lines
-//                     overstates it more than twentyfold.
-//
-// Reading is BOUNDED and incremental. A working transcript passes a gigabyte,
-// and the tower polls; every file is streamed in chunks, never held whole, and
-// a second call reads only the bytes appended since the first. A file that
-// shrank or whose mtime moved backwards was rewritten, so it starts over.
-//
-// The PIECES live beside this file in telemetry/, one module per concern: the
-// rates (pricing.js), the bounded read behind its one cache (read.js) and the
-// subagent attribution (subagents.js). This file keeps the payload assembly
-// and re-exports their public names.
+// What the crew spent: tokens and cost, read out of the transcripts Claude Code
+// already writes (tower/README.md § Telemetry, and why it is careful). Usage is
+// deduplicated by message id: one transcript measured here held 200,779 usage
+// lines across 8,437 ids, so a raw sum overstates it more than twentyfold.
 //
 // Usage:
-//   const { collectTelemetry } = require('./telemetry');
 //   collectTelemetry();                               // live
 //   collectTelemetry({ home, markerDir, stateDir, exec }); // offline, fixtures
-//
 
 const { listSessions, idleWindowMs } = require('./sessions');
 const { PRICING, costOf } = require('./telemetry/pricing');
@@ -73,22 +33,17 @@ const mergeCounts = (into, from) => {
 
 /**
  * One live session's telemetry: its own tokens and cost, plus a row per
- * subagent it spawned. The session's `tokens` are ITS OWN: a subagent's tokens
- * are in its own row and are never folded into the parent's, so a caller may
- * sum the page without counting anything twice.
- *
+ * subagent, whose tokens are never folded into the parent's, so a page sums
+ * without counting twice.
  * @param {object} session a row from listSessions
  * @param {number} now
  * @param {number} idleMs the liveness window, from sessions.js
  * @returns {{row: object, usage: object, subUsage: object[], files: string[]}} the
- *   row plus the raw readings behind it, which the totals need and the response
- *   does not, and every file it read, which the cache prune needs
+ *   row, the raw readings the totals need, and every file read, for the cache prune
  */
 const sessionRow = (session, now, idleMs) => {
-  // Where a session's transcript is has ONE home, the sessions read that named
-  // it: the row's cwd is published in git's spelling and Claude Code names the
-  // project folder from the native one, so a second derivation off that cwd
-  // would name a file nothing wrote.
+  // The transcript has one home, the sessions read that named it: a second
+  // derivation off the git-spelled cwd would name a file nothing wrote.
   const { transcript } = session;
   const usage = readUsage(transcript);
   const { rows, readings, files } = readSubagents(transcript, usage.taskTypes, now, idleMs);
@@ -122,16 +77,8 @@ const sessionRow = (session, now, idleMs) => {
 };
 
 /**
- * Token accounting across every session on this machine right now.
- *
- * `byClass` credits the root session's own tokens to `manager` and each
- * subagent's to its crew class, so the two never overlap. `overTime` is the
- * last 30 local days with a zero for every quiet one, so the series always has
- * the same shape.
- *
- * Nothing here throws. One unreadable transcript costs its own numbers and
- * nothing else.
- *
+ * Token accounting across every session here: `byClass` credits a root's own
+ * tokens to `manager`, `overTime` zero-fills 30 local days, and nothing throws.
  * @param {object} [opts]
  * @param {string} [opts.home] override ~ for transcript resolution
  * @param {string} [opts.markerDir] override the marker directory

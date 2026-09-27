@@ -1,8 +1,6 @@
-//
 // Tests for hooks/safety/commit-gate: the test suite, which must pass and runs
-// only for commits carrying code (issue #151).
+// only for commits carrying code.
 // The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
-//
 
 const path = require('path');
 const fs = require('fs');
@@ -10,10 +8,6 @@ const { spawnSync, execSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { SYSTEM_BASH } = require('../../lib/platform');
 const { skipWithoutDigest, HOOK, mkRepo, stage, stageDeep, touchMarker, dropMarker, runHook, cleanup, pkg, suiteRan, mkReleaseRepo } = require('./helpers');
-
-// Check 5 (the suite, its deadline and its clamp) lives in the gate's checks/
-// piece; the header that names the budget's home stays in run.sh.
-const SUITE_CHECK = path.join(path.dirname(HOOK), 'checks', 'proof-suite.sh');
 
 const run = async () => {
   skipWithoutDigest();
@@ -40,19 +34,18 @@ const run = async () => {
   });
 
   await test('suite that outruns the gate deadline: exit 2, tree terminated (#93)', async () => {
-    // The failure this pins: a suite longer than the harness's hook timeout
-    // used to get the hook cancelled, and a cancelled hook is silently ALLOW.
-    // The gate now ends the run at its own deadline and bounces.
+    // A suite longer than the harness's hook timeout would get the hook
+    // cancelled, and a cancelled hook is a silent allow: the gate ends the run
+    // at its own deadline and bounces.
     const dir = mkRepo();
     stage(dir, 'package.json',
       '{"scripts":{"test":"echo $$ > gate.pid && sleep 30"}}');
     touchMarker(dir);
     const before = Date.now();
     // Deadline 5, not 1 or 2: bash's integer SECONDS can round a 1s deadline
-    // down toward the poll floor, and on a loaded machine (this suite running
-    // inside the real gate's own run) npm can take past 2s to boot the fake
-    // suite, either way gate.pid would not exist yet when the deadline ends
-    // the run. 5s stays far under the 15s decision assertion below.
+    // down toward the poll floor, and a loaded machine can take past 2s to boot
+    // the fake suite, so gate.pid would not exist yet. 5s stays far under the
+    // 15s decision assertion below.
     const { code, stderr } = runHook(dir, 'git commit -m "x"', undefined,
       { WORKKIT_GATE_TEST_DEADLINE: '5' });
     assertEq(code, 2, 'an unproven suite must block, never allow');
@@ -60,15 +53,10 @@ const run = async () => {
     assert(Date.now() - before < 15000, 'the gate decided well before the suite would have finished');
     assert(fs.existsSync(path.join(dir, 'gate.pid')), 'the suite had started before the deadline ended it');
     const pid = Number(fs.readFileSync(path.join(dir, 'gate.pid'), 'utf8').trim());
-    // Ended is answered by WAITING for it, not by one instant. The gate kills
-    // the tree from the leaves up, so the process it recorded loses its parent
-    // in the same breath it is killed: until the kernel hands that orphan to
-    // init and init reaps it, the pid is a ZOMBIE: dead, and still answering
-    // kill(pid, 0). How long that gap lasts is the machine's business, and on a
-    // Linux runner it outlived the assertion (#114). A suite that was genuinely
-    // left running answers for its full 30 seconds, so neither exit is hidden:
-    // this waits for gone-or-zombie and names the state it found if it gets
-    // neither.
+    // Ended is answered by waiting: the gate kills the tree leaves-up, so the
+    // recorded pid can linger as a zombie (dead, still answering kill(pid, 0))
+    // until init reaps it. A suite left running answers for its full 30s, so
+    // this waits for gone-or-zombie and names the state it found otherwise.
     const state = () => (spawnSync('ps', ['-o', 'state=', '-p', String(pid)], { encoding: 'utf8' }).stdout || '').trim();
     const gone = () => { try { process.kill(pid, 0); return false; } catch { return true; } };
     let ended = gone() || state().startsWith('Z');
@@ -82,7 +70,7 @@ const run = async () => {
   });
 
   await test('the gate deadline sits under its declared hook timeout (#93)', () => {
-    // The invariant: the gate must decide BEFORE the harness would cancel it:
+    // The invariant: the gate must decide before the harness would cancel it:
     // a cancelled hook is a silent allow, which is the whole defect.
     const hooksJson = JSON.parse(fs.readFileSync(
       path.join(__dirname, '..', '..', '..', 'hooks', 'hooks.json'), 'utf8'));
@@ -90,7 +78,7 @@ const run = async () => {
       .flatMap((m) => m.hooks)
       .find((h) => h.command.includes('safety:commit-gate'));
     assert(entry && entry.timeout > 0, 'the gate declares its own timeout');
-    const script = fs.readFileSync(SUITE_CHECK, 'utf8');
+    const script = fs.readFileSync(HOOK, 'utf8');
     const m = script.match(/WORKKIT_GATE_TEST_DEADLINE:-(\d+)/);
     assert(m, 'the gate has a default deadline');
     assert(Number(m[1]) < entry.timeout, 'and it fires before the harness cancels the hook');
@@ -106,18 +94,18 @@ const run = async () => {
       .flatMap((m) => m.hooks)
       .find((h) => h.command.includes('safety:commit-gate'));
     assertEq(entry.timeout, 3000, 'the declared timeout is 3000s');
-    const script = fs.readFileSync(SUITE_CHECK, 'utf8');
+    const script = fs.readFileSync(HOOK, 'utf8');
     assert(/WORKKIT_GATE_TEST_DEADLINE:-1500/.test(script),
       'the default budget stays 1500s for small repos');
-    assert(fs.readFileSync(HOOK, 'utf8').includes('.claude/settings.json'),
-      'the header names where a repo raises its budget');
+    assert(/raise WORKKIT_GATE_TEST_DEADLINE in this repo's \.claude\/settings\.json env block/.test(script),
+      'the bounce names where a repo raises its budget');
     assert(/\[ "\$deadline" -gt 2900 \].*deadline=2900/.test(script),
       'an over-raise clamps back under the hook timeout');
   });
 
   group('commit-gate: the suite runs only for commits carrying code (issue #151)');
 
-  // Every case here proves the RUN, not the exit code: the fixture's test
+  // Every case here proves the run, not the exit code: the fixture's test
   // script leaves a sentinel and then fails, so a suite that ran is visible as
   // the file (and as the bounce), and a suite that stood down leaves neither.
   await test('docs-only commit: the suite does not run', () => {
@@ -236,7 +224,7 @@ const run = async () => {
   });
 
   await test('-am: the working tree decides the version bump, not the index', () => {
-    // The -a/--all arm of the helper: what the commit CARRIES is the working
+    // The -a/--all arm of the helper: what the commit carries is the working
     // tree, so an edit past the version there is code even when the index holds
     // a clean bump.
     const clean = mkReleaseRepo();

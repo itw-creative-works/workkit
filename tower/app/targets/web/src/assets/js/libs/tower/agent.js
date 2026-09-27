@@ -1,44 +1,19 @@
-//
-// An agent, drawn: is it moving, how long ago did it move, and what role is it
-// playing.
-//
-// Three surfaces say those things about the same thing - a crew card, a
-// subagent card, a claimed issue on the Board - and each had its own answer
-// before this file, which is how the Crew page ended up with a green "working"
-// badge nowhere else on the tower could reproduce. One vocabulary now: the
-// indicator, the age beside it, and the role glyph.
-//
-// The CUTOFF and the arithmetic are deliberately on this side. The API hands
-// over timestamps (`lastActivity`, `aliveSince` - ms epochs), never a verdict,
-// so a paint tick can age an indicator to gray and then to nothing without the
-// page reading the API again.
-//
-// The glyphs are plain Font Awesome markup, which the framework's shared
-// renderer draws for elements inserted long after boot - the same bet
-// modal/issue.js's external link already makes. Nothing here needs Pro.
-//
+// An agent, drawn: the activity indicator, the age beside it, and the role
+// glyph, one vocabulary for the crew cards and the Board's claims. The API
+// hands over timestamps, never a verdict, so the thresholds and the arithmetic
+// live here and a paint tick can age an indicator without a new read.
 
 import { esc, badgeColor, classKey } from './format.js';
 
 /**
- * How long an agent may stay quiet before its indicator goes MUTED.
- *
- * This is the INDICATOR's window and is not the liveness rule - the API's own
- * (45 minutes, sessions.js) decides whether a session is running at all. This
- * one decides how bright the light is, and a minute is the span over which "it
- * just did something" is still true.
+ * How long an agent may stay quiet before its indicator goes muted: the
+ * indicator's window, not the API's 45-minute liveness rule.
  */
 export const ACTIVITY_WINDOW_MS = 60 * 1000;
 
 /**
- * How long a muted agent stays drawn at all.
- *
- * The minute above used to be both boundaries at once, so an agent that paused
- * for ninety seconds - between turns, waiting on a tool, thinking - left the
- * page outright and the Crew page said nobody was running while four agents
- * were (#99). Five minutes is the span over which "it is still here" is true:
- * long enough to cover a pause, short enough that a finished agent does not
- * linger as a card nobody is watching.
+ * How long a muted agent stays drawn at all: long enough to cover a pause
+ * between turns, short enough that a finished agent does not linger.
  */
 export const QUIET_WINDOW_MS = 5 * 60 * 1000;
 
@@ -49,36 +24,19 @@ export const QUIET_WINDOW_MS = 5 * 60 * 1000;
 export const MUTED_CLASS = 'text-body-secondary';
 
 /**
- * How recently the transcript must have moved for the glyph to SPIN.
- *
- * The API's `working` cannot carry this on its own. Its state flips off
- * `working` only after the idle window (45 minutes) and is decided from the
- * same file time this side reads - so "the API stopped calling it working"
- * always means "quiet far longer than a minute", which is already `none`. Take
- * the state word as necessary and the freshness as sufficient: two poll cycles
- * (the live feeds run every 10 seconds) is a transcript that moved between the
- * last read and this one, which is what motion is meant to say.
+ * How recently the transcript must have moved for the glyph to spin: two poll
+ * cycles. The API's `working` flips only after its 45-minute idle window, so
+ * the state word is necessary and this freshness sufficient.
  */
 export const WORKING_MS = 20 * 1000;
 
 /**
- * Which of the four states an agent's indicator is in.
- *
+ * Which of the four states an agent's indicator is in; with no timestamp, the
+ * state word alone decides.
  * - `working` - it is running and its transcript moved a poll or two ago.
  * - `idle` - it moved within the minute but has stopped, or is between turns.
  * - `quiet` - quiet longer than the minute: still drawn, muted.
  * - `none` - quiet longer than the five: no indicator at all.
- *
- * The gray band is the whole point of the middle cases: an agent that finished
- * ten seconds ago, and a session whose assertion has lapsed but whose file is
- * fresh, are both still worth showing - still, not spinning - and one that has
- * been silent a couple of minutes is worth showing FAINTLY rather than not at
- * all, which is the difference between a page that says "nothing is running"
- * and one that says "nothing has moved lately".
- *
- * A roster with no timestamps at all (`/api/sessions` before #46, or a session
- * whose transcript could not be probed) falls back to the state word alone,
- * which is the only thing it knows.
  *
  * @param {{state?: string, lastActivity?: number|null}} entry a normalized node
  * @param {number} [now] ms epoch
@@ -97,13 +55,9 @@ export const activityPhase = (entry, now = Date.now()) => {
 };
 
 /**
- * The muted class a phase calls for, or '' - the ONE place the two faint bands
- * are named, because a card is muted by its page's paint and un-muted by the
- * second hand, and a copy on either side is a card that stays gray after its
- * agent came back.
- *
- * `none` counts as muted: the indicator is gone, and until a paint drops the
- * card the honest thing left to say is that this one is not moving.
+ * The muted class a phase calls for, or '': the one place the faint bands are
+ * named, since the paint mutes a card and the second hand un-mutes it. `none`
+ * counts as muted until a paint drops the card.
  *
  * @param {'working'|'idle'|'quiet'|'none'} phase
  * @returns {string}
@@ -111,7 +65,7 @@ export const activityPhase = (entry, now = Date.now()) => {
 export const mutedClass = (phase) => (phase === 'quiet' || phase === 'none' ? MUTED_CLASS : '');
 
 /**
- * The muted class for a NODE - what a paint has in hand.
+ * The muted class for a node - what a paint has in hand.
  *
  * @param {{state?: string, lastActivity?: number|null}} entry a normalized node
  * @param {number} [now] ms epoch
@@ -138,14 +92,9 @@ export const sinceLabel = (ms) => {
 };
 
 /**
- * What an indicator should say THIS second, from the raw stamps alone.
- *
- * The ONE home of the arithmetic, because there are now two callers of it: the
- * paint, which draws an indicator from a node, and the clock, which re-decides
- * an already-drawn one every second from the stamps its markup carries
- * (libs/tower/clock.js). Both hand over the same three fields under the same
- * names - the `data-live-*` attributes, read back as an element's `dataset` -
- * so neither side owns a threshold the other has to match.
+ * What an indicator should say this second, from the raw stamps alone: the
+ * one home of the arithmetic, shared by the paint and the second hand
+ * (clock.js), which both hand over the `data-live-*` stamps as a `dataset`.
  *
  * @param {{liveState?: string, liveTs?: string, liveAlive?: string}} data the
  *   stamps, as the markup carries them
@@ -164,12 +113,8 @@ export const activityTick = (data, now = Date.now()) => {
 };
 
 /**
- * The classes the indicator wears for a phase - its colour, and which of the
- * two states it is in.
- *
- * Written once because the clock RE-writes it: a phase crossing between polls
- * changes the class on an element the paint drew, and a second copy of the name
- * here would be a colour that only changes on one of the two paths.
+ * The classes the indicator wears for a phase, written once because the clock
+ * rewrites them on an element the paint drew.
  *
  * @param {'working'|'idle'|'quiet'} phase
  * @returns {string}
@@ -177,24 +122,14 @@ export const activityTick = (data, now = Date.now()) => {
 export const activityClass = (phase) => `omega-tower-activity omega-tower-activity--${phase}`;
 
 /**
- * The indicator itself - one glyph, wordless.
- *
- * `working` spins in the theme's ok colour; `idle` and `quiet` are the same
- * glyph, still and faint, so a card that just stopped keeps its shape instead of
- * jumping. The word is kept for a screen reader, which has no colour or motion
- * to read.
- *
- * A GEAR, not the loader's notched ring (#137). Some of the places this glyph
- * is drawn are STILL on purpose - a specced claim is work at rest - and a
- * motionless loading spinner reads as a broken one wherever it is seen. A gear
- * says machinery either way: at rest, someone holds this; turning, the work is
- * running. It is also the honest shape to rotate, eight-fold symmetric where
- * the ring's gap advertises every pixel of a bad centre.
+ * The indicator itself: one gear, spinning for `working`, still and faint
+ * otherwise. A gear, not a loader ring: a still loader reads as broken, and a
+ * specced claim is still on purpose.
  *
  * @param {'working'|'idle'|'quiet'|'none'} phase
  * @param {string} [title] the hover text - how long it has been running
  * @param {string} [label] what a screen reader hears, when the phase is not
- *   the honest word for it: the Board's glyph means a CLAIM, not an idle agent
+ *   the honest word for it: the Board's glyph means a claim, not an idle agent
  * @returns {string} markup, or '' for `none`
  */
 export const activityIcon = (phase, title = '', label = '') => {
@@ -205,26 +140,14 @@ export const activityIcon = (phase, title = '', label = '') => {
   </span>`;
 };
 
-// The status a CLAIM at rest sits on. `building` used to sit beside it in this
-// gate, but a building card now draws unconditionally (#141), so the claim
-// gate's one status is `specced` - anything earlier is still triage's,
-// anything later has shipped or is already spinning above.
+// The status a claim at rest sits on: anything earlier is still triage's, and
+// a building card spins unconditionally.
 const CLAIMABLE = ['specced'];
 
 /**
- * The Board's version of the glyph: an issue an agent HOLDS, or work RUNNING.
- *
- * A `building` card SPINS: the status itself says the
- * work is in motion, so the gear turns even though a board card carries no
- * activity timestamps - and whether or not anyone is assigned yet, because
- * `building` without a holder is still work in flight, not work at rest. A
- * screen reader hears `building`, the honest word for it.
- *
- * A `specced` claim stays STILL: both halves of the claim gate hold (#46) -
- * an assignee, and a status the pipeline treats as authorized to build - and
- * the still gear says someone has this one and nothing more, `claimed` to a
- * screen reader rather than the word `idle`. An issue claimed while it is
- * still in triage is not work in flight and draws nothing.
+ * The Board's version of the glyph. A `building` card spins whether or not
+ * anyone is assigned, since the status says the work is in motion; a `specced`
+ * card with an assignee stays still, `claimed` to a screen reader.
  *
  * @param {object} issue one issue from /api/board
  * @returns {string} markup, or '' when the issue is neither running nor claimed
@@ -239,13 +162,9 @@ export const claimGlyph = (issue) => {
 };
 
 /**
- * The stamps an indicator carries, from the node it is drawn from.
- *
- * The shape `data-live-*` is written in and read back as, in ONE place because
- * there are two writers of it now: the paint below, which draws the element,
- * and the agent dialog's refresh (modal/agent.js), which rewrites those attributes on
- * an element the paint drew rather than replacing it (#108). An absent stamp
- * stays absent rather than becoming the epoch.
+ * The stamps an indicator carries, from the node it is drawn from: one shape
+ * for its two writers, the paint and the agent dialog's refresh
+ * (modal/agent.js). An absent stamp stays absent rather than becoming the epoch.
  *
  * @param {object} entry a normalized node, carrying `lastActivity`/`aliveSince`
  * @returns {{liveState: string, liveTs?: string, liveAlive?: string}}
@@ -261,17 +180,8 @@ export const liveStamps = (entry) => {
 
 /**
  * The indicator as a crew card wears it: the glyph, then how long since the
- * agent last moved.
- *
- * The hover text is the OTHER span - how long it has been up - because the one
- * on the card is already the freshness.
- *
- * It carries its own STAMPS as well as the words made from them: a feed lands
- * every ten seconds and this markup is drawn from it, but the numbers on it are
- * seconds and have to move in between. The `data-live-*` attributes are what
- * the second-by-second clock re-reads (libs/tower/clock.js) - the raw epochs
- * and the state word, never a verdict, so the tick decides exactly what this
- * paint decided and nothing on the page holds a threshold twice.
+ * agent last moved, with how long it has been up on hover. It carries its
+ * `data-live-*` stamps so the second hand (clock.js) moves it between feeds.
  *
  * @param {object} entry a normalized node, carrying `lastActivity`/`aliveSince`
  * @param {number} [now] ms epoch
@@ -287,12 +197,8 @@ export const crewActivity = (entry, now = Date.now()) => {
   </span>`;
 };
 
-// One glyph per role, each distinct at a glance: the manager wears the suit,
-// the worker the hammer, the scout the binoculars, the verifier the checked
-// clipboard, the advisor the lamp, the reviewer the lens. Everything else
-// Claude Code spawns - general-purpose and the built-ins - is the plain robot,
-// which is honest about being nobody in particular. Free Font Awesome, every
-// one of them.
+// One glyph per role, each distinct at a glance; everything else Claude Code
+// spawns is the plain robot. All free Font Awesome.
 const ROLE_ICONS = {
   manager: 'fa-user-tie',
   worker: 'fa-hammer',

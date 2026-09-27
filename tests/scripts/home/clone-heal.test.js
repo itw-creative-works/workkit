@@ -1,8 +1,5 @@
-//
 // Tests for workflow/home.sh: the clone's own heal, the labels and issue forms
-// every other repo gets at SessionStart (issue #123).
-// The shared prologue (the offline world, inHome and setup, the remote and runner factories) is ./helpers.js.
-//
+// every other repo gets at SessionStart. The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -15,9 +12,8 @@ const { WORKFLOW_DIR, cleanup, mkRemote, mkWorld, inHome } = require('./helpers'
 const run = async () => {
   group('workflow/home: the clone’s own heal');
 
-  // The clone is engine territory and no session ever opens in it, so the heal
-  // every other repo gets at SessionStart is invoked here instead, scoped to
-  // what makes a repo fileable into: labels and issue forms (issue #123).
+  // No session ever opens in the clone, so its heal is invoked here instead,
+  // scoped to what makes a repo fileable into: labels and issue forms.
   const cloned = () => {
     const world = mkWorld({
       login: 'owner',
@@ -87,7 +83,7 @@ const run = async () => {
 
   await test('a commit stranded by a failed push is pushed by the next heal', () => {
     // One morning the push fails: the commit stays local and the warning names
-    // it. The NEXT heal treats ahead-of-origin as a change, so the forms the
+    // it. The next heal treats ahead-of-origin as a change, so the forms the
     // home repo needs are never stranded behind one bad morning.
     const world = cloned();
     const remote = world.env.WORKKIT_HOME_REMOTE;

@@ -1,21 +1,12 @@
-//
-// The crew tree: what the Crew page draws, worked out before any of it is
-// markup.
-//
-// It reads the two rosters the API serves - a `/api/telemetry` session with its
-// subagents, and a bare `/api/sessions` row, which is the same root tier
-// without them - and answers one node shape for both. It lives apart from the
-// page so the suite can ask it what it made of a payload without a browser.
-//
+// The crew tree the Crew page draws, worked out before any of it is markup:
+// one node shape from a `/api/telemetry` session or a bare `/api/sessions` row,
+// kept apart from the page so the suite can read it without a browser.
 
 import { shortPath } from './format.js';
 
 /**
- * A moment as a ms epoch, whichever way the API said it.
- *
- * A session's file times arrive as numbers (`lastActivity`, `aliveSince`) and a
- * subagent's as the transcript's own ISO stamps (`lastAt`, `startedAt`) - one
- * scale for both, so the indicator does the same arithmetic on either.
+ * A moment as a ms epoch, whichever way the API said it: a session's file
+ * times are numbers, a subagent's are the transcript's ISO stamps.
  *
  * @param {number|string|null|undefined} value
  * @returns {number|null}
@@ -59,13 +50,9 @@ export const normalize = (node) => ({
 });
 
 /**
- * What a ROOT node is called: the repo it is working in, a slash, then the
- * chat's name - `workkit/the tower`.
- *
- * The repo is the leaf of the cwd, which is the same short name every other
- * page shows a session's repo as (format.shortPath). Both halves can be
- * missing: an unnamed chat falls back to its session id, and a session with no
- * cwd is just its name rather than a leading slash.
+ * What a root node is called: the cwd's leaf, a slash, then the chat's name
+ * (`workkit/the tower`). An unnamed chat falls back to its session id, and no
+ * cwd drops the repo and the slash.
  *
  * @param {object} entry a normalized root node
  * @returns {string} the title text - never markup, never empty
@@ -77,12 +64,9 @@ export const rootLabel = (entry) => {
 };
 
 /**
- * A session's subagents split by whether they are still running.
- *
- * The API stamps each one `working` or `done` from how recently its transcript
- * moved. A session's transcript holds every subagent it EVER spawned, so
- * drawing them all as cards shows dozens of finished agents as live crew - the
- * finished ones are a count, not a chart.
+ * A session's subagents split by whether they are still running: its
+ * transcript holds every subagent it ever spawned, and the finished ones are a
+ * count, not a chart.
  *
  * @param {object[]} children normalized subagent nodes
  * @returns {{working: object[], done: object[]}}
@@ -93,17 +77,10 @@ export const splitCrew = (children) => ({
 });
 
 /**
- * Which way the connector into one child actually flows.
- *
- * The chart's bus runs sideways from the trunk under the root out to each card,
- * and the framework animates every segment of it in ONE direction - so half the
- * lines on a wide tree crawl back towards the parent they came from. The
- * geometry says which half: a child left of centre is reached by flowing LEFT,
- * a child right of centre by flowing right, and the one sitting on the centre
- * is reached straight down with no sideways run to have a direction.
- *
- * Pure index arithmetic, because the cards are equal width and evenly spaced -
- * child `i` of `n` sits left of centre exactly when `i < (n - 1) / 2`.
+ * Which way the connector into one child flows: the framework animates every
+ * bus segment one way, so a child left of centre is reached flowing left, one
+ * right of centre flowing right, and the centre one straight down. The cards
+ * are equal width and evenly spaced, so the index says which.
  *
  * @param {number} index the child's position in the row
  * @param {number} count how many children the row holds

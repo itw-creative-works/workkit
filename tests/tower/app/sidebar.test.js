@@ -24,8 +24,7 @@ const run = async () => {
     assert(markup.includes('>All projects</button>'), 'named in words');
     assert(/data-tower-scope=""[^>]*aria-current="true"/.test(markup), 'nothing selected marks All as the one in force');
     assert(markup.includes('<button type="button" class="dropdown-item flex-grow-1 active" data-tower-scope=""'), 'in Bootstrap’s own dropdown-item shape');
-    // The whole point of #168: a repo appears once, not once as an entry and
-    // again as a checkbox in a second section below.
+    // A repo appears once, never again as a checkbox in a second section below.
     assertEq((markup.match(/<li /g) || []).length, ROSTER.length + 2, 'the roster, the master row and the search box above them, and nothing else');
     assertEq((markup.match(/>workkit</g) || []).length, 1, 'each repo is named exactly once');
     assert(!/Filter projects|dropdown-header|dropdown-divider/.test(markup), 'there is no second section to divide off');
@@ -104,8 +103,8 @@ const run = async () => {
     assert(/data-tower-scope-all[^>]* checked/.test(whole), 'so the master is ticked, like every row under it');
     assertEq((whole.match(/ checked/g) || []).length, 3, 'and the rows are ticked too');
 
-    // The other end: a link naming only repos this machine no longer carries.
-    // No row is ticked, so the master is neither ticked nor half-ticked.
+    // The other end: a link naming only repos off this machine's roster. No
+    // row is ticked, so the master is neither ticked nor half-ticked.
     const gone = sidebar.menuMarkup(mkState({ repos: ROSTER }, 'gone/away,also/gone'));
     assertEq((gone.match(/ checked/g) || []).length, 0, 'nothing on the roster is in play');
     assert(!gone.includes('data-tower-indeterminate'), 'and half-ticked would claim something is');
@@ -125,12 +124,11 @@ const run = async () => {
     assertEq(scope.inScope(scope.parseRepos(scope.NONE), 'workkit'), false, 'no repo is in scope under it');
     assert(scope.isNone(scope.parseRepos(scope.NONE)), 'the door answers for the parsed selection');
     assertEq(scope.scopedHref('/board', scope.NONE), '/board?repo=~', 'and the URL carries the tilde itself, never %7E - a query is a thing people copy');
-    // The surfaces that SAY the state say it in words (the review pass caught
-    // the tilde escaping into all three).
+    // The surfaces that say the state say it in words, never the tilde.
     const pagesDir = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     const pageSrc = (name) => require('fs').readFileSync(path.join(pagesDir, name), 'utf8');
-    // The Board has no count line to say it in (#203): its none state is the
-    // picker's own words and seven empty lanes, and the tilde never reaches the page.
+    // The Board has no count line to say it in: its none state is the picker's
+    // own words and seven empty lanes, and the tilde never reaches the page.
     assert(!/~/.test(pageSrc('board.js').replace(/\/\/.*$/gm, '')), 'the Board never prints the tilde itself');
     for (const page of ['index.js', 'health.js']) {
       assert(/isNone\(selectedSlugs\(state\)\) \? 'no projects selected/.test(pageSrc(page)), `${page} tells an unticked roster apart from an empty one`);
@@ -156,9 +154,9 @@ const run = async () => {
     assertEq(unread.name, 'All projects', 'before the roster answers the button is not blank');
     assert(!/\d/.test(unread.env), 'and it counts nothing it has not read');
 
-    // A shared link can name a repo the roster no longer carries. Every page
-    // narrows to nothing then, and the button NAMING that slug is what explains
-    // the empty board - reading "All projects" there would be a lie.
+    // A shared link can name a repo off the roster. Every page narrows to
+    // nothing then, and the button naming that slug is what explains the empty
+    // board; "All projects" there would be a lie.
     const offRoster = sidebar.selectorLabel(mkState({ repos: ROSTER }, 'gone/away'));
     assertEq(offRoster.name, 'gone/away', 'an off-roster selection is still the selection');
     assertEq(offRoster.env, '1 of 2 repos', 'counted against the roster it is not on');
@@ -186,7 +184,7 @@ const run = async () => {
     assert(sidebar.sidebarKey(CHROME_STATE) !== sidebar.sidebarKey(grown), 'and so does a repo joining the roster');
     assert(sidebar.sidebarKey(CHROME_STATE) !== sidebar.sidebarKey({ ...CHROME_STATE, favorites: ['omega'] }), 'a star redraws it too, so the toggle is on screen at the next paint');
     // The case the key's own favorites segment is there for: a star that changes
-    // which row is MARKED without changing the order the rows come in.
+    // which row is marked without changing the order the rows come in.
     const solo = mkState({ repos: [ROSTER[0]] });
     assert(sidebar.sidebarKey(solo) !== sidebar.sidebarKey({ ...solo, favorites: ['workkit'] }), 'even when the row it marks was already first');
     assertEq(sidebar.sidebarKey({ ...mkState({}), favorites: ['omega'] }), '', 'and an unread roster is still the empty key, stars or no stars');

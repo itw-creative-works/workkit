@@ -1,8 +1,6 @@
 //
-// Tests for the tower dashboard's modal.js: the issue dialog, what an issue
-// depends on, an issue as a list item, and a published brief or summary.
-// The header this suite's notes point at (why a page module is out of reach
-// under Node) is the one atop ./helpers.js, which holds the shared prologue.
+// Tests for the tower dashboard's modal.js: the issue dialog, its dependencies,
+// an issue as a list item, and a published document. Prologue: ./helpers.js.
 //
 
 const path = require('path');
@@ -31,10 +29,9 @@ const run = async () => {
     assignees: ['alice'],
   };
 
-  // The renderer is the framework's and is handed to the dialog by the mount,
-  // so the questions left here are the tower's own: is the RAW body what gets
-  // handed over, and does what comes back land in the body's own container.
-  // Whether markdown becomes safe markup is asked upstream, of the real one.
+  // The renderer is the framework's, handed over by the mount, so the questions
+  // left are the tower's own: is the raw body what gets handed over, and does
+  // what comes back land in the body's container. Markdown safety is upstream's.
   const rendered = [];
   const render = (text) => {
     rendered.push(text);
@@ -61,17 +58,14 @@ const run = async () => {
   });
 
   await test('on a Board card that button is the corner, not a neighbour of it (#142)', () => {
-    // The defect this proves against: the button hides at `opacity: 0` and
-    // KEEPS its box, so a building card's spinning gear sat one
-    // invisible-button-width in from the top-right corner and read adrift. The
-    // corner is ONE slot: the button leaves the flow into it, the gear becomes
-    // the row's last item, and the gear fades out from under the button while
-    // the card is hovered or focused so the two never stack.
+    // A button hidden at `opacity: 0` keeps its box, so the corner is one slot:
+    // the button leaves the flow into it, the gear becomes the row's last item,
+    // and the gear fades under the button on hover or focus so the two never stack.
     const fs = require('fs');
     const src = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src');
     const boardPage = fs.readFileSync(path.join(src, 'assets', 'js', 'pages', 'board.js'), 'utf8');
     assert(boardPage.includes('omega-tower-issue__top'), 'the card names the row the corner is measured from');
-    // That row is the BOARD card's alone: the Brief, the Overview and Health
+    // That row is the board card's alone: the Brief, the Overview and Health
     // draw list rows under the same `omega-tower-issue` class with the button in
     // flow, and the rules below would fling it to the nearest positioned box.
     for (const name of ['brief.js', 'health.js', 'index.js']) {
@@ -119,9 +113,8 @@ const run = async () => {
   });
 
   await test('the dialog’s date rows say a dash where the issue carried no date', () => {
-    // The shared formatter leaves an unreadable date as nothing by default,
-    // because a document's meta line drops it - a row LABELLED "filed" has to
-    // say something, so the dialog asks for the dash it has always drawn.
+    // The shared formatter leaves an unreadable date as nothing by default, but
+    // a row labelled "filed" has to say something, so the dialog asks for a dash.
     const parts = modal.issueDialog({ ...ISSUE, createdAt: '', updatedAt: '' }, render);
     assert(parts.body.includes('filed -') && parts.body.includes('updated -'),
       'a labelled row says a dash rather than trailing off into nothing');
@@ -160,10 +153,9 @@ const run = async () => {
   });
 
   await test('a blocked issue’s dialog says the question it is waiting on, and no other one does (#205)', () => {
-    // The spec's convention is that a blocked issue's question is a COMMENT on
-    // it, so the last comment is the signal the sweep carries. It is read in the
-    // DIALOG now, not on the card: only `blocked` draws it, because the newest
-    // comment on an issue that is moving is not a question anybody waits on.
+    // A blocked issue's question is a comment on it, so the last comment is the
+    // signal the sweep carries. Only `blocked` draws it: the newest comment on a
+    // moving issue is not a question anybody waits on.
     const blocked = modal.issueDialog({ ...ISSUE, status: 'blocked', lastComment: 'Which of the two?' }, render);
     assert(blocked.body.includes('Which of the two?'), 'the question is in the dialog');
     assert(blocked.body.includes('<strong>Open question</strong>'), 'labelled as what it is');
@@ -204,17 +196,16 @@ const run = async () => {
     assert(!nasty.title.includes('<img'), 'the title is escaped');
     assert(!nasty.body.includes('<b>me</b>'), 'the handle is escaped');
     assert(!nasty.body.includes('<i>x</i>'), 'and so is the status chip');
-    // The body is the ONE field this file does not escape itself - it is the
+    // The body is the one field this file does not escape itself: it is the
     // renderer's, which escapes first (@omega.js/client's utilities suite).
   });
 
   group('tower/app: modal - what an issue depends on');
 
-  // One board with one dependency in it, drawn twice over: #10 is what #11 and
-  // the cross-repo #12 are both waiting on. The second reference is written in
-  // another case on purpose - repo names are case-insensitive on GitHub and the
-  // inline `Depends on:` fallback is hand-typed, so the two spellings are one
-  // edge or the feature is a coin toss.
+  // One board with one dependency, drawn twice over: two issues, one cross-repo,
+  // both wait on a third. The second reference is spelled in another case on
+  // purpose: GitHub repo names are case-insensitive and the inline `Depends on:`
+  // fallback is hand-typed, so the two spellings are one edge.
   const BLOCKER = { ...ISSUE, number: 10, title: 'the one holding things up' };
   const WAITER = {
     ...ISSUE, number: 11, title: 'waiting on it', blockedBy: [{ repo: 'ITW/workkit', number: 10 }],
@@ -289,9 +280,8 @@ const run = async () => {
 
   await test('the runtime hands the dialog the board the paint is drawing', () => {
     // The dialog lives in the layout, outside the mount a paint writes into, and
-    // page.js is out of reach of these suites (see the header) - so what is
-    // pinned is the handover: every page's paint passes here, so no page keeps a
-    // second copy of the payload for the dialog to read.
+    // page.js is out of reach here (see ./helpers.js), so the handover is pinned:
+    // every paint passes the board, so no page keeps a copy for the dialog.
     const fs = require('fs');
     const runtime = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
     assert(/import \{[^}]*holdBoard[^}]*\} from '\.\/modal\.js'/.test(runtime), 'the runtime takes the handover from the dialog module');
@@ -318,11 +308,10 @@ const run = async () => {
     assert(bare.includes('class="omega-interactive"'), 'and the trigger just the affordance');
   });
 
-  // The Overview's "In flight" and the brief's inFlight section are the same
-  // claim about the same board, and a page cannot import the API's module, so
-  // the two copies are held together here instead. The rule is the label and
-  // nothing else (#62): a claim says who holds an issue, never which queue it
-  // is in, so a page that counted claims too would put one issue in two places.
+  // The Overview's "In flight" and the brief's inFlight are one claim, and a page
+  // cannot import the API's module, so the two copies are held together here.
+  // The rule is the label alone: a claim says who holds an issue, never which
+  // queue it is in.
   await test('the Overview counts in flight by the brief’s rule - the label alone', () => {
     const fs = require('fs');
     const overview = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'index.js'), 'utf8');
@@ -346,11 +335,9 @@ const run = async () => {
 
   group('tower/app: modal - a published brief or summary');
 
-  // Issue #181: the mornings the 9am job publishes could be read on github.com
-  // and nowhere else. The archive on the Brief page is a list of these cards,
-  // and each one opens the whole text in the dialog the issue cards open theirs
-  // in - so the same three questions are asked of it: is it a list item, is the
-  // remote text text, and does anything leave the dashboard by accident.
+  // The Brief page's archive is a list of these cards, each opening its whole
+  // text in the issue dialog, so the same three questions apply: is it a list
+  // item, is the remote text text, and does anything leave the dashboard.
   const DOCUMENT = {
     kind: 'brief',
     title: 'brief: 2026-08-19',

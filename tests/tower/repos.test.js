@@ -1,10 +1,6 @@
 //
-// Tests for tower/api/lib/repos.js - the roster read.
-//
-// The fixtures are REAL git repositories with real `origin` remotes (adding a
-// remote needs no network), because "what does git call this repo's origin" is
-// a question only git answers and a stubbed answer would test the stub. The
-// roster itself is a scratch ~/.workkit, so the real one is never read.
+// Tests for tower/api/lib/repos.js, the roster read, over real git repos with real
+// `origin` remotes (a stubbed origin tests the stub) and a scratch ~/.workkit.
 //
 
 const fs = require('fs');
@@ -15,9 +11,8 @@ const { asWindows, gitPath: rosterKey } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 
 const { discoverRepos, gitPath, readRoster, tempRoot } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'repos.js'));
-// The slug rule is the ENGINE's (workflow/slug.js, the twin of workflow/lib/slug.sh
-// cased in tests/scripts/slug.test.js); repos.js requires it from there rather
-// than owning it, so the cases below ask it where it lives.
+// The slug rule is the engine's (workflow/slug.js, cased in tests/scripts/slug.test.js);
+// repos.js requires it from there, so the cases below ask it where it lives.
 const { slugFromRemote } = require(path.join(__dirname, '..', '..', 'workflow', 'slug.js'));
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -98,10 +93,9 @@ const run = async () => {
   });
 
   await test('the roster is read from .repos.json - a `repos` key in settings.json is not one', () => {
-    // The split (issue #80): the machine writes `.repos.json`, a human writes
-    // `settings.json`, and the reader takes the roster from the file whose
-    // writer maintains it. A leftover `repos` block in the hand-edited file is
-    // not a roster and must not put a repo on the dashboard.
+    // The machine writes `.repos.json` and a human writes `settings.json`, and the
+    // roster comes from the file its writer maintains: a leftover `repos` block in
+    // the hand-edited file must not put a repo on the dashboard.
     const tmp = mkTmp('tower-repos-');
     const repo = mkRepo(tmp, 'Owner/alpha');
     const home = mkWorkflowHome(tmp, [repo]);
@@ -141,9 +135,8 @@ const run = async () => {
 
   await test('the opt-in is anything but `enabled: false` - the engine reads it that way', () => {
     // The engine's resolve_state is the SSOT of what enabled means: a committed
-    // file that does not say false is a yes, which is how a legacy
-    // `{ "version": 1 }` written before the key existed stays a member. Reading
-    // it more strictly here would drop repos the heal keeps registering.
+    // file that does not say false is a yes, so a bare `{ "version": 1 }` stays a
+    // member. Reading it more strictly would drop repos the heal keeps registering.
     const tmp = mkTmp('tower-repos-');
     const yes = mkRepo(tmp, 'Owner/yes');
     const legacy = mkRepo(tmp, 'Owner/legacy', { settings: { version: 1 } });
@@ -173,9 +166,9 @@ const run = async () => {
   });
 
   await test('the tower clone is discovered by path, though no roster lists it', () => {
-    // The home repo carries no committed opt-in of its own (issue #79): the
-    // engine knows it by path and so does the board, which exists to show
-    // exactly the cross-project issues it holds.
+    // The home repo carries no committed opt-in of its own: the engine knows it
+    // by path and so does the board, which exists to show exactly the
+    // cross-project issues it holds.
     const tmp = mkTmp('tower-repos-');
     const listed = mkRepo(tmp, 'Owner/listed');
     const home = mkWorkflowHome(tmp, [listed], { homeSlug: 'owner/workkit' });
@@ -199,10 +192,10 @@ const run = async () => {
     fs.mkdirSync(tower, { recursive: true });
     git(tower, 'init', '-q', '-b', 'main');
     git(tower, 'remote', 'add', 'origin', 'https://github.com/owner/workkit.git');
-    // The key is written the way the ENGINE writes one, through the same fold
-    // (`wk_git_path`): git's spelling, which is the joined path on this
-    // machine and the slashed one on Windows. Keying it as `path.join` spelled
-    // it would be a file no real machine holds, and the lookup would miss.
+    // The key is written the way the engine writes one, through the same fold
+    // (`wk_git_path`): git's spelling, which is the joined path on this machine
+    // and the slashed one on Windows. A `path.join` key would be a file no real
+    // machine holds, and the lookup would miss.
     fs.writeFileSync(
       path.join(home, '.repos.json'),
       `${JSON.stringify({ version: 1, repos: { [rosterKey(tower)]: 'declined' } }, null, 2)}\n`,
@@ -212,7 +205,7 @@ const run = async () => {
   });
 
   await test('a foreign repo parked at the tower path is not listed', () => {
-    // The origin slug is the only proof by-path discovery has that this IS the
+    // The origin slug is the only proof by-path discovery has that this is the
     // home repo: no origin, no recorded home slug, or a mismatch means someone
     // else's checkout is sitting at that name.
     const tmp = mkTmp('tower-repos-');
@@ -280,25 +273,18 @@ const run = async () => {
   });
 
   await test('on Windows the tower clone the roster lists is still one entry, not two', () => {
-    // The dedup is the site that proves it: `path.join` spells the
-    // tower path with backslashes on Windows while the roster holds git's
-    // slashes, so an unfolded compare misses and the clone is listed twice.
-    //
-    // One directory under two names is what Windows does and what macOS cannot,
-    // so off Windows the fixture builds the two names as two directories: the
-    // workflow home wears the native spelling and the roster is keyed on git's.
-    // The fixture folds through the seam, under asWindows: on Windows the two
-    // names are one string already, and on macOS the backslash is a real
-    // character that only the Windows branch of the seam folds into one folder.
+    // `path.join` spells the tower path with backslashes on Windows while the
+    // roster holds git's slashes, so an unfolded dedup lists the clone twice. Off
+    // Windows the fixture builds the two names as two directories, folded through
+    // the seam under asWindows.
     const tmp = mkTmp('tower-repos-');
     const twin = mkRepo(tmp, 'win/x/workflow-home/tower', { origin: 'https://github.com/owner/workkit.git' });
     const twinKey = asWindows(() => rosterKey(twin));
     const home = mkWorkflowHome(path.join(tmp, 'win\\x'), [twinKey], { homeSlug: 'owner/workkit' });
     const tower = path.join(home, 'tower');
     assertEq(asWindows(() => rosterKey(tower)), twinKey, 'the fixture is one folder git and Node spell differently');
-    // On Windows the two names ARE one folder, and it is the repo `mkRepo` just
-    // made; only off Windows is the joined spelling a second directory that
-    // needs a repo of its own.
+    // On Windows the two names are one folder, the repo `mkRepo` just made; only
+    // off Windows is the joined spelling a second directory that needs a repo.
     if (!fs.existsSync(path.join(tower, '.git'))) {
       fs.mkdirSync(tower, { recursive: true });
       git(tower, 'init', '-q', '-b', 'main');
@@ -380,7 +366,7 @@ const run = async () => {
   await test('on Windows a POSIX temp answer is refused for the directory Git Bash means by it', () => {
     // Git for Windows exports `TMP=/tmp` to every login shell, so `os.tmpdir()`
     // hands back that string and `path.join` turns it into `C:\tmp`, a
-    // directory nothing writes to. Git Bash's `/tmp` IS `%LOCALAPPDATA%\Temp`.
+    // directory nothing writes to. Git Bash's `/tmp` is `%LOCALAPPDATA%\Temp`.
     const saved = { ...process.env };
     try {
       delete process.env.TMPDIR;
@@ -443,8 +429,8 @@ const run = async () => {
   });
 
   await test('a reader cannot tell the three apart, and readRoster can', () => {
-    // Issue #116: absent and unparseable are the same empty board to a reader
-    // and two different things to a writer, so the file read says which.
+    // Absent and unparseable are the same empty board to a reader and two
+    // different things to a writer, so the file read says which.
     const tmp = mkTmp('tower-repos-');
     assertEq(readRoster(path.join(tmp, 'nope')).status, 'missing', 'nothing registered yet');
     assertEq(readRoster(mkWorkflowHome(tmp, null, { roster: { version: 1 } })).status, 'ok', 'a file that parses');

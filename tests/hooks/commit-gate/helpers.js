@@ -1,10 +1,5 @@
-//
-// The shared prologue of the hooks/safety/commit-gate suites, the `*.test.js`
-// files beside this one, which test the PreToolUse hook that gates every
-// `git commit`: code commits need a fresh workkit:review marker, and repos
-// with a test script need the suite green. One suite per check. A plain
-// module, never a suite: the runner only loads files ending in `.test.js`.
-//
+// The shared prologue of the hooks/safety/commit-gate suites beside this one,
+// one suite per check.
 
 const path = require('path');
 const fs = require('fs');
@@ -21,11 +16,8 @@ const HOOK = path.join(__dirname, '..', '..', '..', 'hooks', 'safety', 'commit-g
 // checkout so the suite tests the code under review, not the installed copy.
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 const LIB = path.join(__dirname, '..', '..', '..', 'hooks', '_lib.sh');
-// The review marker lives under the SESSION's temp dir, so the gate and this
-// suite have to read the same one: Windows leaves TMPDIR unset, where node's
-// `/tmp` fallback and a Git Bash `/tmp` are two different directories. One
-// temp dir, handed to every child explicitly, and both sides agree by
-// construction.
+// One temp dir handed to every child explicitly, so the gate and this suite
+// read the same review marker: on Windows node's `/tmp` and Git Bash's differ.
 const TMP = mkTmp('cg-tmp-');
 
 const mkRepo = () => {
@@ -44,10 +36,6 @@ const stageDeep = (dir, name, content) => {
   stage(dir, name, content);
 };
 
-// The digest THIS machine spells: macOS ships `shasum`, a Linux machine
-// `sha1sum`, and the gate names the marker through hook_sha1, which takes
-// either. The expected path this suite builds follows the same rule, or the
-// suite would only ever pass on half the platforms the kit runs on.
 const DIGEST = digestTool();
 
 // Every suite asks this first: without a digest tool no marker can be named.
@@ -66,9 +54,8 @@ const markerPath = (dir) => {
 };
 
 // The marker script the review skill calls, and the skill's own line calling
-// it: the cases below run the LINE, so the skill, the script and this gate
-// cannot drift apart. CLAUDE_PLUGIN_ROOT is handed over the way a hook command
-// hands it over.
+// it: the cases run that line, so the skill, the script and this gate cannot
+// drift apart. CLAUDE_PLUGIN_ROOT is handed over the way a hook command does.
 const PLUGIN_ROOT = path.join(__dirname, '..', '..', '..');
 const skillLine = () => {
   const skill = fs.readFileSync(path.join(PLUGIN_ROOT, 'skills', 'review', 'SKILL.md'), 'utf8');
@@ -102,7 +89,7 @@ const runHook = (cwd, command, spawnCwd, extraEnv = {}) => {
 };
 
 // A stand-down's message, off the hook's JSON stdout: the channel a
-// PreToolUse hook exiting 0 is actually heard on (#155). Empty stdout is no
+// PreToolUse hook exiting 0 is actually heard on. Empty stdout is no
 // stand-down, and is returned as such so a case can assert silence.
 const standDownMessage = (out) => {
   if (!out.stdout.trim()) return '';

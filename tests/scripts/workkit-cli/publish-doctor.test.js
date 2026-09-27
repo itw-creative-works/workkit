@@ -1,8 +1,6 @@
-//
 // Tests for workflow/workkit.sh: `publish`, `doctor`, and the output
 // contract the two speak with `update --auto`.
-// The shared prologue (the scratch world, runCli and inCli, the repo and kit factories) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -13,10 +11,9 @@ const run = async () => {
   group('workkit publish');
 
   await test('publish delegates to the engine’s script, which skips an untouched machine', () => {
-    // An untouched machine has no home repo, and since issue #111 that is the
-    // first thing the engine asks for: the roster refresh needs the clone and
-    // runs above the publish switch, so a machine with neither hears about the
-    // one `workkit setup` fixes. The engine's reason, printed in this voice.
+    // An untouched machine has no home repo, the first thing the engine asks
+    // for: the roster refresh needs the clone and runs above the publish switch.
+    // The engine's reason, printed in this voice.
     const world = mkWorld();
     const { code, out } = runCli(world, ['publish']);
     assertEq(code, 0, 'a machine that publishes nothing is not broken');
@@ -111,13 +108,9 @@ const run = async () => {
 
   group('workkit-cli: the output contract (#237)');
 
-  // One shape for every line a person reads: a GLYPH for what happened, the
-  // message after it, and no timestamp or module tag anywhere on the line. A
-  // heading (a command's title, a section, the closing line) is the one other
-  // shape, and it opens with the emoji its caller chose. The commands below are
-  // the three a piped run can drive end to end with the stubs this suite
-  // already has; `setup` is left out because its prompts are not log lines (a
-  // prompt has no newline: the answer is typed on it).
+  // One shape for every line a person reads: a glyph, the message, and no
+  // timestamp or module tag; a heading opens with its caller's emoji instead.
+  // `setup` is left out because a prompt has no newline, so it is not a log line.
   const LEVEL = /^ {0,2}[✓·›⚠✖⏳] /;
   const HEADING = /^[^\x00-\x7F]+ \S/;
   const OLD_TAG = /\[\d\d:\d\d:\d\d\]|\[workkit:/;
@@ -126,7 +119,7 @@ const run = async () => {
     await test(`${name} speaks the one line shape, a glyph per outcome`, () => {
       const world = mkWorld({ pluginInstalled: true, binOnPath: true });
       // ~/.local/bin exists here, so `update --auto` has the one thing it will
-      // actually DO in this world: a run that said nothing would pass every
+      // actually do in this world: a run that said nothing would pass every
       // check below without meaning any of them.
       fs.mkdirSync(world.localBin, { recursive: true });
       const { out, err, said } = runCli(world, args);

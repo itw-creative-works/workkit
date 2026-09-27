@@ -1,10 +1,7 @@
-//
-// Tests for workflow/home.sh: the tower sync (issue #129), asked its questions
-// as the library function it is, against fixture directories and a clone of a
-// local bare "GitHub", and the version stamp that keeps it from downgrading a
-// clone a newer kit wrote (issue #200).
-// The shared prologue (the fixture app, the sync and publish worlds, the library and publish runners, the file writers) is ./helpers.js.
-//
+// Tests for workflow/home.sh: the tower sync, asked as the library function it is
+// against fixture directories and a clone of a local bare "GitHub", and the
+// version stamp that keeps it from downgrading a clone a newer kit wrote.
+// The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -70,7 +67,7 @@ const run = async () => {
 
   await test('a second run writes nothing: the manifests included', () => {
     // The trap the content compare has to avoid: a manifest compared against the
-    // RAW source differs by construction (the seed repoints its `file:` specs),
+    // raw source differs by construction (the seed repoints its `file:` specs),
     // so a sync that compared it that way would rewrite it forever.
     const world = mkSyncWorld();
     sync(world);
@@ -132,11 +129,10 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  // Issue #200: the sync writes the checkout's app over the clone's, so two
-  // machines seeding one clone race, and the loser was whichever ran last. The
-  // stamp at the clone's root says which kit wrote what is there.
+  // The sync writes the checkout's app over the clone's, so two machines seeding
+  // one clone race; the stamp at the clone's root says which kit wrote what is there.
 
-  /** Where the stamp lives and what it is called: the name IS the contract. */
+  /** Where the stamp lives and what it is called: the name is the contract. */
   const STAMP = '.workkit-version';
   const kitVersion = () => JSON.parse(
     fs.readFileSync(path.join(REPO_ROOT, '.claude-plugin', 'plugin.json'), 'utf8'),

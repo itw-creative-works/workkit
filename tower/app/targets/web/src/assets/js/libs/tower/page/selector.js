@@ -9,12 +9,9 @@ export const selectorButton = () => document.querySelector('#app-sidebar .omega-
 
 /**
  * The one node the runtime fills inside the framework's sidebar: the selector's
- * dropdown menu.
- *
- * Reached through the BUTTON, never as a bare list in the sidebar - the nav is a `ul`
- * too, and it is the menu's sibling one level up. Claimed with a data attribute
- * on first fill, both as the marker that the menu is ours and as the handle the
- * change listener re-finds it by after a repaint.
+ * dropdown menu, reached through the button since the nav is a `ul` sibling one
+ * level up. Claimed with a data attribute on first fill, which is also the
+ * handle the listeners re-find it by.
  */
 export const projectsHost = () => {
   const button = selectorButton();
@@ -26,22 +23,17 @@ export const projectsHost = () => {
     // Bootstrap's dropdown - the toggle, the outside click, escape - is the
     // theme bundle's data-api, untouched.
     button.setAttribute('data-bs-auto-close', 'outside');
-    // The one item the theme ships is a placeholder (sidebar.json), and it is
-    // what the menu shows until the roster answers - an `href="#"` that would
-    // otherwise put a bare hash in the address bar of a page whose URL carries
-    // the selection.
+    // The theme's placeholder item is an `href="#"`, which would put a bare hash
+    // in an address bar that carries the selection.
     menu.addEventListener('click', (event) => {
       if (event.target.closest('a[href="#"]')) event.preventDefault();
     });
-    // The box at the top of the menu is there to be typed in, so the keyboard
-    // goes to it the moment the menu opens - and what it holds is forgotten when
-    // the menu closes, so the next open is the whole roster again rather than
-    // yesterday's search. Both listeners hang on the BUTTON, which is where
-    // Bootstrap fires its dropdown events, and both are wired HERE: the rows
-    // inside the menu are rewritten many times over, the menu itself never is.
+    // The keyboard goes to the search box as the menu opens, and the box is
+    // emptied as it closes. Both hang on the button, where Bootstrap fires its
+    // dropdown events, and are wired here since the menu itself is never rewritten.
     button.addEventListener('shown.bs.dropdown', () => {
       // A tick later, not now: a keyboard open (ArrowDown on the button) has
-      // Bootstrap move focus to the first row AFTER this event fires, and the
+      // Bootstrap move focus to the first row after this event fires, and the
       // box is where the keyboard belongs however the menu was opened.
       setTimeout(() => {
         const search = projectSearch(menu);
@@ -58,22 +50,15 @@ export const projectsHost = () => {
 };
 
 // ── The menu's search box ──────────────────────────────────────────────────
-//
-// Typing in it narrows the rows on screen and does nothing else (issue #185):
-// no state is written, no paint is asked for, and the markup is the same list it
-// was - a row the text does not name is hidden where it stands. That is why
-// sidebar.js knows nothing about any of this, and why a filter lives exactly as
-// long as the menu is open.
+// Typing narrows the rows on screen and nothing else: no state, no paint, so
+// sidebar.js knows nothing of it and a filter lives as long as the menu is open.
 
 /** The menu's search box, or null while the theme's placeholder is still up. */
 export const projectSearch = (menu) => menu && menu.querySelector('[data-tower-project-search]');
 
 /**
- * The repo rows' name buttons, in menu order.
- *
- * The master row is not one of them: All projects is what the rows are narrowed
- * OUT of, so it is never filtered away - and the box's Down and Enter land on a
- * repo row, the thing a typed search names.
+ * The repo rows' name buttons, in menu order. The master row is not one: it is
+ * never filtered away, and the box's Down and Enter land on a repo row.
  */
 const projectRows = (menu) => [...menu.querySelectorAll('[data-tower-scope]:not([data-tower-scope=""])')];
 
@@ -96,14 +81,9 @@ export const filterProjects = (menu, text) => {
 
 /**
  * Wire the box and the rows to the keyboard, for one rewrite of the menu.
- *
- * The arrows BETWEEN rows are not wired here at all: Bootstrap's own dropdown
- * handler, delegated from the document, already walks the visible
- * `.dropdown-item`s - the master row among them, hidden rows skipped, the ends
- * clamped - and it runs last, so anything written here about row arrows would
- * lose to it anyway. What it leaves alone is an INPUT's keys, so the box's own
- * Down and Enter are wired here, and a character typed on a row hands the
- * keyboard back to the box. Escape is Bootstrap's and is not touched.
+ * Bootstrap's delegated dropdown handler already walks the visible rows and
+ * runs last; what it leaves alone is an input's keys, so the box's Down and
+ * Enter are wired here, and a character typed on a row goes back to the box.
  *
  * @param {HTMLElement} menu - the claimed menu, just rewritten
  */
@@ -126,20 +106,16 @@ export const wireProjectKeys = (menu) => {
   });
   for (const entry of projectRows(menu)) {
     entry.addEventListener('keydown', (event) => {
-      // A character typed on a row is the start of a search, not a shortcut:
-      // the box takes the focus and the character lands in it, which is exactly
-      // why nothing is prevented here. Space stays with the row - it is how a
-      // button is pressed from the keyboard.
+      // A character typed on a row starts a search: the box takes the focus and
+      // the character lands in it. Space stays with the row, which it presses.
       if (event.key.length === 1 && event.key !== ' ' && !event.ctrlKey && !event.metaKey && !event.altKey) search.focus();
     });
   }
 };
 
 /**
- * Put the current selection on the selector button.
- *
- * The button is the framework's markup and its classes are the contract - the
- * nodes are PATCHED, never rebuilt, so the theme keeps owning how it looks.
+ * Put the current selection on the selector button. The button is the
+ * framework's markup, so its nodes are patched, never rebuilt.
  *
  * @param {object} state - the runtime's feed state
  */

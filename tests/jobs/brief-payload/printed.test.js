@@ -1,8 +1,6 @@
-//
-// Tests for jobs/morning/brief/brief-payload.js, the payload the 9am job hands to Claude:
-// what is printed, the rendered payload and the script run whole.
-// The shared prologue (the two fixture worlds, the composer seam, the summaries fixtures, the news gate) is ./helpers.js.
-//
+// Tests for jobs/morning/brief/brief-payload.js, the payload the 9am job hands
+// to Claude: what is printed, the rendered payload and the script run whole.
+// The shared prologue (fixture worlds, composer seam, news gate) is ./helpers.js.
 
 const { pathToFileURL } = require('url');
 const { spawnSync } = require('child_process');
@@ -48,7 +46,7 @@ const run = async () => {
     assert(/waits on/.test(INSTRUCTION), 'and the digest is told to say what an item waits on (#103)');
     assert(/^YESTERDAY: one line/m.test(INSTRUCTION), 'a line for what yesterday produced');
     assert(/^THE WEEK: one line/m.test(INSTRUCTION), 'and one for the week');
-    // Each omit clause is looked for inside its OWN section: the instruction is
+    // Each omit clause is looked for inside its own section: the instruction is
     // split at every labeled header, so a section that lost the clause fails
     // here instead of matching the next section's copy of it further down.
     const chunks = INSTRUCTION.split(/\n(?=[A-Z][A-Z' 0-9]+:)/);

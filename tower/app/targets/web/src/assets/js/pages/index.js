@@ -1,11 +1,6 @@
-//
-// Overview - the landing page, and the one that has to read as a control room:
-// the six numbers, what is waiting on the owner, who is running, and which repos are
-// dirty, all above the fold.
-//
-// Bound to `/` by its filename: the engine derives a page's asset key from the
-// URL ('/' → 'index'), so js/pages/index.js is this page's module.
-//
+// Overview: the landing page, read as a control room (tower/README.md § The
+// pages). Bound to `/` by its filename: the engine derives a page's asset key
+// from the URL ('/' → 'index').
 
 import { startPage } from '../libs/tower/page.js';
 import {
@@ -24,17 +19,9 @@ import { issueItem, externalLink } from '../libs/tower/modal.js';
 import { isNone, selectedSlugs, sitePath, scopedHref } from '../libs/tower/scope.js';
 import { crewActivity, cardMuted } from '../libs/tower/agent.js';
 
-// Every pointer this page draws - the tiles, the see-all lines, the panel
-// heads - keeps the repo selection. The sidebar's nav links are rewritten with
-// the current `?repo=` on every paint (libs/tower/page.js), and nothing does
-// that for a link inside the body: a tile that named its page bare would land
-// a reader who had narrowed to one repo back on the whole board, which is the
-// scope survival the nav already promises.
-//
-// `scopedHref` alone would suffice for correctness - it prefixes what it is
-// handed (issue #169) - but the inner `sitePath` stays because it is the
-// spelling the suite's bare-path guard looks for at every call site, and
-// `scopedHref` leaves an already-prefixed address where it is.
+// Every pointer in the body keeps the repo selection, as the nav links do. The
+// inner `sitePath` at each call site is the spelling the suite's bare-path
+// guard looks for.
 const pointer = (state, href) => scopedHref(href, state.selectedRepo);
 
 /** Sum a health field across the repos in play; nulls (unknowable) are skipped. */
@@ -43,33 +30,17 @@ const total = (state, field) => reposFor(state)
   .filter(Boolean)
   .reduce((sum, reading) => sum + (typeof reading[field] === 'number' ? reading[field] : 0), 0);
 
-// In flight is the brief's definition, to the letter (tower/api/lib/brief.js):
-// `status:building` IS in flight, and the label is the whole of it (issue #62).
-// A claim - an assignee, or the agent:working marker - says WHO holds an issue,
-// never which queue it is in: a claimed `status:specced` issue is a transient
-// the standards sweep flips, so counting it here would put the same issue in
-// two places and disagree with the brief the Brief page draws.
+// In flight is `status:building` alone, the brief's definition
+// (tower/api/lib/brief.js): a claim says who holds an issue, never its queue.
 
-// QA sits between them because it is the OWNER's queue (issue #135): built work
-// parked on a check, which nothing ships past. Blocked is a decision to make and
-// QA is a check to give - two different asks of the same person, so they are two
-// tiles rather than one "waiting on you" number that hides which is which.
-
-// Four of the eight numbers are the MACHINE's - the live crew and the state of
-// its working copies - and a published copy has no reading of them at all. The
-// tile says so: a dash with the local-only sentence as its tooltip, never the 0
-// that summing an empty feed would produce, because "no sessions running" and
-// "this cannot be read from here" are opposite facts and the second one must
-// not be reported as the first.
+// A machine number a published copy cannot read is a dash with the local-only
+// tooltip, never the 0 an empty feed would sum to.
 const machineStat = (state, name, label, value, href) => (localOnly(state, name)
   ? statCell(label, num(null), href, LOCAL_ONLY_NOTICE)
   : statCell(label, value, href));
 
-// How a number compares with a week ago, as the tile's sub-line (issue #55).
-// The comparison is the HISTORY's, which is the board as the published briefs
-// recorded it - roster-wide, and simply absent until two mornings have gone
-// out. Under a repo selection the tiles above are narrowed, so the sub-lines
-// go quiet rather than sit a roster-wide delta under a per-repo number.
+// The week-over-week sub-line comes from the roster-wide history, so it goes
+// quiet under a repo selection.
 const since = (entries, key) => deltaLine(weekDelta(entries, key));
 
 const numbers = (state) => {
@@ -87,14 +58,7 @@ const numbers = (state) => {
   ]);
 };
 
-// What is waiting on the owner. It sits high, it is never collapsed, and it says so
-// even when the answer is "nothing" - a blank region would read as a bug.
-//
-// The alarm is spent only when something IS waiting: an empty strip carries no
-// red border and no accent chip, because a dashboard that shouts at a clear
-// queue teaches you to stop reading it.
-// The rest of a capped list is on the Board, and the line says how many it is -
-// "see all" with no number would hide exactly the fact that matters when the
+// The rest of a capped list, with its count: a bare "see all" hides how far the
 // queue has grown.
 const seeMore = (hidden, href) => (hidden
   ? `<p class="mt-2 mb-0"><a class="omega-micro text-decoration-none" href="${esc(href)}">see all - ${hidden} more on the board</a></p>`
@@ -116,29 +80,13 @@ const waiting = (state) => {
     chip: blocked.length,
     alarm: blocked.length > 0,
     class: `mb-4${blocked.length ? ' border-danger' : ''}`,
-    // The head points home like every other panel's - the see-more line
-    // below only exists once the list is capped (issue #183).
+    // The see-more line exists only once the list is capped.
     link: { href: pointer(state, sitePath('/board')), label: 'board' },
   });
 };
 
-// What a session's `state` column says. A session that is MOVING says it with
-// the crew's own glyph and how fresh it is - the same indicator the Crew page
-// and the Board draw, so one agent reads the same on every surface (#46). The
-// states the glyph does not name - idle, stale, unknown - keep their pill,
-// because a word is the only thing that tells those two apart.
-//
-// The indicator itself is `agent.crewActivity` - the Crew page's builder, not a
-// second copy of it (#65). This page used to wrap the bare glyph in its own
-// span, which cost it the `data-live-*` stamps that markup carries, and the
-// second hand ticks exactly what carries them: the Overview's numbers stood
-// still while the Crew page's counted up. The hover text comes with the builder
-// (how long it has been up, not what it last did) because the tick rewrites
-// that attribute every second from the same arithmetic - a sentence written
-// only here would survive one second and no more.
-// The ROW goes muted with the glyph on it: a session quiet longer than a minute
-// stays in the table, faint, until five (#99). Same class as the crew card
-// wears, marked `data-live-card` so the second hand decides it too.
+// The Crew page's own builder, so the second hand ticks its `data-live-*`
+// stamps here too; the states the glyph does not name keep their pill.
 const stateCell = (session, now) => {
   // Empty is the builder saying `none` - quiet too long to draw at all.
   const indicator = crewActivity(session, now);
@@ -147,7 +95,7 @@ const stateCell = (session, now) => {
 
 const crew = (state) => {
   const live = sessionsFor(state);
-  // One `now` for the whole table, so every row ages against the same instant.
+  // One `now`, so every row ages against the same instant.
   const now = Date.now();
   const result = feed(state, 'sessions');
   let body;
@@ -157,11 +105,8 @@ const crew = (state) => {
   else if (!result.ok) body = problem(result.reason);
   else if (!live.length) body = empty('no live sessions', 'fa-regular fa-moon');
   else {
-    // The chat name WRAPS. It used to carry `text-truncate`, which on a table
-    // cell only sets `white-space: nowrap` - the cell cannot shrink, so one
-    // long session name grew the table to twice its card and pushed the state
-    // pill and the model out past the card's edge, reachable only by scrolling
-    // the table sideways. Wrapping keeps every column inside the card.
+    // The chat name wraps: `text-truncate` on a table cell only sets nowrap,
+    // and one long name pushes the columns past the card's edge.
     const { shown, hidden } = cap(live);
     body = `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
       <thead><tr><th>repo</th><th>chat</th><th>state</th><th>model</th></tr></thead>
@@ -195,10 +140,7 @@ const healthLine = (repo, reading) => {
   </li>`;
 };
 
-// How much is wrong with a repo, as one number - what the capped list is
-// ordered by. A cap that kept the roster's own order would show five clean
-// repos and hide the dirty one, which is the only row on this panel anyone is
-// looking for; the full census is the Health page, one click away.
+// What the capped list is ordered by, so the cap never hides the dirty repo.
 const trouble = (reading) => {
   if (!reading) return 0;
   if (reading.error) return Infinity;
@@ -210,15 +152,12 @@ const healthPanel = (state) => {
   const list = reposFor(state);
   const result = feed(state, 'repos');
   let body;
-  // The ROSTER answers off-machine - it is a list of names - but the readings
-  // this panel is about do not: uncommitted, unpushed and unreleased are read
-  // off working copies. So the panel is gated on `health`, not on the roster it
-  // would otherwise draw a full list of "no reading" rows from.
+  // Gated on `health`, not the roster: the roster answers off-machine, the
+  // working-copy readings do not.
   if (localOnly(state, 'health')) body = localOnlyNotice();
   else if (!result) body = loading('reading the roster…');
   else if (!result.ok) body = problem(result.reason);
-  // An empty SCOPED list has two honest readings (#188): everything unticked,
-  // or a roster with genuinely nothing on it.
+  // An empty scoped list means everything unticked, or an empty roster.
   else if (!list.length) body = empty(isNone(selectedSlugs(state)) ? 'no projects selected - tick one in the project menu' : 'no repos in the roster - nothing has opted in under the roster root', 'fa-regular fa-square-plus');
   else {
     const ranked = [...list].sort((a, b) => trouble(health(state)[b.path]) - trouble(health(state)[a.path]));
@@ -228,19 +167,8 @@ const healthPanel = (state) => {
   return card('Health', body, { class: 'h-100', link: { href: pointer(state, sitePath('/health')), label: 'all' } });
 };
 
-// Open issues by status - the same series the Board's columns count, as a
-// doughnut: the question this panel answers is what SHARE of the queue is
-// blocked or unspecced, and a ring says a share where a row of bars said that
-// many unrelated heights. The box is taller than the bars needed because the legend
-// sits under the ring and carries the labels the axis used to. The series is
-// statusBreakdown's, so an unlabeled issue is a visible slice rather than a
-// ring quietly summing short of the count beside it (#118).
-//
-// The head points at the Board, like every other panel here: a share is the
-// question this card answers and WHICH issues make up the slice is the next one,
-// which only the Board can answer. The chip says `board` rather than the `all`
-// its neighbours carry, because those two are pointing past a capped list and
-// this one caps nothing - `all` would promise a longer ring.
+// The queue's share by status; an unlabelled issue is a visible slice. The head
+// says `board`, not `all`: this panel caps nothing.
 const shape = (state) => (issuesFor(state).length
   ? card('The queue by status', chartSlot('overview-status', 260, statusBreakdown(issuesFor(state)).values), {
     class: 'mt-4',
@@ -255,30 +183,20 @@ const drawShape = (state) => {
 };
 
 // ── The board over time ────────────────────────────────────────────────────
-//
-// The history is the published briefs read back (issue #55): one point per
-// morning, and nothing at all before the first brief that carried a stats
-// block. So the three cards say WHY they are empty rather than drawing an axis
-// with nothing on it - a chart of one point is a dot claiming to be a trend.
-//
-// The five series are the queue's own, in the Board's order - which is why `qa`
-// is last - and every colour comes from the chart module's ramp: nothing here
-// names a colour.
+// The published briefs read back (tower/README.md § The pages). The series run
+// in the Board's order, `qa` last, in the chart module's own colours.
 
 const historyBody = (payload, id, height, key) => {
   if (unread(payload)) return empty(unreadLine(UNREAD, payload), 'fa-regular fa-clock');
   if (!hasSeries(payload)) return empty(ACCRUES, 'fa-regular fa-clock');
-  // The stamp is the card's OWN series - it is what tells `swap` the markup
-  // changed on a data-only tick, so a card stamped with a neighbour's series
-  // would redraw on the wrong signal.
+  // Stamped with the card's own series, which is how `swap` sees a data tick.
   return chartSlot(id, height, seriesOf(entriesOf(payload), key).values);
 };
 
 const overTime = (state) => {
   const payload = brief(state);
   const result = feed(state, 'brief');
-  // The feed has not answered yet - the cards are not drawn at all rather than
-  // drawn as an absence that a moment later turns into data.
+  // Not answered yet: draw nothing rather than an absence about to turn to data.
   if (!result) return '';
   return `<div class="row g-4 mt-0">
     <div class="col-12 col-xl-8">${card('The board over time', historyBody(payload, 'history-board', 240, 'open'), { class: 'h-100' })}</div>
@@ -320,20 +238,13 @@ const render = (root, state) => {
   const payload = board(state);
   const result = feed(state, 'board');
 
-  // The board is the section with a failure of its own to report: no gh, no
-  // login, no network. It says so where the numbers would be rather than
-  // showing seven confident zeros.
+  // A failed board says so where the numbers would be, never as zeros.
   let head;
   if (!result) head = `<div class="mb-4">${loading('reading the board…')}</div>`;
   else if (!result.ok) head = `<div class="mb-4">${problem(result.reason)}</div>`;
   else {
-    // A repo speaks here only when it has something to say: what went wrong,
-    // that its issues are still arriving, or that the sweep stopped short. The
-    // middle one is the sweep's PROGRESS (issue #194) - a repo past one page is
-    // paged, and both halves draw each page as it lands - so it is the
-    // framework's inline wait rather than a warning, and it clears by the sweep
-    // no longer marking that repo. What is left when the sweep is done is the
-    // repo that hit the ceiling with open issues this board is not showing.
+    // A repo speaks only to report an error, pages still arriving (an inline
+    // wait, not a warning), or the ceiling it stopped at.
     const warnings = ((payload && payload.repos) || [])
       .filter((repo) => repo.error || repo.loading || repo.truncated)
       .map((repo) => (repo.loading
@@ -343,9 +254,7 @@ const render = (root, state) => {
     head = `${numbers(state)}${warnings}${waiting(state)}`;
   }
 
-  // The chart is drawn only when the markup it lives on was actually written:
-  // an unchanged tick leaves the existing canvas - and its Chart.js instance -
-  // alone rather than tearing it down and building the same picture again.
+  // Charts draw only after a write, so an unchanged tick keeps its canvas.
   if (!swap(root, `
     ${head}
     <div class="row g-4">
@@ -360,9 +269,7 @@ const render = (root, state) => {
   drawHistory(state);
 };
 
-// `brief` is read for its HISTORY - the mornings before this one, which no live
-// sweep can answer (issue #55). Its counts are not drawn here; the tiles above
-// are this minute's board.
+// `brief` is read only for its history; the tiles are this minute's board.
 export default () => startPage({
   mount: 'tower-overview',
   feeds: ['repos', 'board', 'sessions', 'health', 'brief'],

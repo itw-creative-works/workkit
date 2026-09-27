@@ -1,9 +1,6 @@
-//
 // Tests for skills/ship/SKILL.md: the ship skill's publish and setup clauses
 // (the command each runs, the diff paths that trigger it, and the permission
-// to run it).
-// The shared prologue (the fixture app, the sync and publish worlds, the library and publish runners, the file writers) is ./helpers.js.
-//
+// to run it). The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const os = require('os');

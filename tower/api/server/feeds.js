@@ -21,11 +21,8 @@ const ROSTER_TTL = 60 * 1000;
 const BOARD_TTL = 60 * 1000;
 const LIVE_TTL = 5 * 1000;
 
-// The checkout this process is RUNNING FROM: three levels up from tower/api/server.
-// A node process holds the code it started with, so a tower left running past
-// a pull serves endpoints that no longer match the repo (issue #64 was exactly
-// that). Comparing this checkout's HEAD against the one captured at boot is
-// what lets the page say so.
+// The checkout this process runs from. A tower left running past a pull serves
+// the code it started with; this HEAD against the boot HEAD lets the page say so.
 const CHECKOUT = path.join(__dirname, '..', '..', '..');
 
 /**
@@ -54,43 +51,16 @@ const createFeeds = ({ opts, exec, seam, log }) => {
   }, (value) => value !== null);
   const roster = (o) => rosterOrNull(o) || [];
 
-  // The board is not one answer but a SWEEP, and a repo past a hundred open
-  // issues takes a request per hundred (issue #194). The dashboard on this
-  // machine draws each page as it lands, the way a published copy does, so this
-  // slot serves the sweep IN FLIGHT rather than holding the request until the
-  // last page: the first pages are asked for inside the request that found the
-  // slot cold (which is what gives that answer something to draw) and the
-  // continuations run on afterwards, a round to a turn of the event loop,
-  // growing the snapshot the next poll reads. A repo still being paged carries
-  // `loading: true`, which is the progress line; the finished board carries no
-  // such mark, which is what clears it.
-  //
-  // ONLY /api/board is served that way. Everything DERIVED from the board (the
-  // brief) reads `finishedBoard()` instead, because a morning composition made
-  // from half a repo's issues is a wrong answer rather than an early one: it
-  // takes the last finished board, and where none has finished it drives the
-  // sweep to its end inside the request and waits, which is what the endpoint
-  // did before any of this.
-  //
-  // The CACHE's semantics survive around it: a finished board is served for the
-  // TTL, `fresh` forces a new sweep, and only a finished board takes the slot,
-  // so a failure is never pinned in front of the next read (cached() says why).
-  // A new sweep cannot blank the last finished board either: the request that
-  // starts one is already holding its first pages by the time it answers.
+  // The board is served as a sweep in flight: tower/README.md § Endpoints.
   let boardDone;
   let boardAt = 0;
   let sweeping = null;
 
   const advance = () => {
     if (!sweeping) return;
-    // The WHOLE round is guarded, not just the ask. This runs off the request
-    // stack, where the request handler's own catch cannot reach it and an
-    // uncaught throw takes the process down with it, and the throw that did
-    // (issue #202) came out of `board()`, the shaping of what had arrived,
-    // rather than out of `step()`. The sweep answers its own failures rather
-    // than throwing (lib/board.js), so anything landing here is a board this
-    // process cannot finish: it is said out loud, dropped, and the slot stays
-    // cold, so the next read sweeps again, the course a failed sweep takes.
+    // The whole round is guarded, `board()` included: this runs off the request
+    // stack, where an uncaught throw takes the process down. A throw here is a
+    // board this process cannot finish: logged, dropped, and the next read sweeps.
     try {
       sweeping.step();
       if (sweeping.paging()) {
@@ -138,14 +108,9 @@ const createFeeds = ({ opts, exec, seam, log }) => {
   };
 
   /**
-   * The whole board, never a page of it: what everything derived from the
-   * board reads.
-   *
-   * A finished board inside the TTL is that answer, sweep in flight or not: it
-   * is the last one that finished, which is exactly what a `fresh` board read
-   * starting a new sweep must not take away from the brief. Otherwise the sweep
-   * already in flight is driven to its end here, and where there is none a new
-   * one is, so this reading blocks where /api/board no longer does.
+   * The whole board, never a page of it: what everything derived from the board
+   * reads. A finished board inside the TTL answers even with a sweep in flight;
+   * otherwise a sweep is driven to its end here, so this read blocks.
    */
   const finishedBoard = () => {
     if (boardDone !== undefined && Date.now() - boardAt < BOARD_TTL) return boardDone;
@@ -175,11 +140,9 @@ const createFeeds = ({ opts, exec, seam, log }) => {
     return out;
   });
 
-  // What this PROCESS is, as against what the checkout is now. The boot commit
-  // and the start time are captured once, here, because that is the only moment
-  // that can honestly answer them; the live head is read like every other live
-  // reading. Git being absent, or the checkout not being a repository, answers
-  // null on both sides: absence of proof is not staleness.
+  // What this process is, as against the checkout now: the boot commit and the
+  // start time are captured once, the only moment that can answer them. No git,
+  // or no repository, answers null on both sides: absence of proof is not staleness.
   const startedAt = new Date().toISOString();
   const headNow = () => {
     try {
@@ -191,11 +154,8 @@ const createFeeds = ({ opts, exec, seam, log }) => {
   const bootCommit = headNow();
   const currentHead = cached(LIVE_TTL, headNow, (value) => value !== null);
 
-  // The per-repo map with one `meta` block beside it. FLAT rather than nested
-  // because every consumer of this endpoint reads a reading by repo path (an
-  // absolute path, so it can never be the string `meta`) and nesting would
-  // move every one of them. The brief is built from `health()` itself, which
-  // stays the map alone.
+  // The per-repo map with one `meta` block beside it, flat because every consumer
+  // reads by repo path (absolute, so never `meta`). The brief reads `health()` alone.
   const healthPayload = () => ({
     ...health(),
     meta: { bootCommit, startedAt, currentHead: currentHead() },
@@ -211,36 +171,19 @@ const createFeeds = ({ opts, exec, seam, log }) => {
     exec,
   }));
 
-  // The brief is assembled from the two slots above rather than from reads of
-  // its own, so the morning notification and the Brief page cannot disagree:
-  // they are the same board and the same health, one derivation. The summaries
-  // attach onto it exactly as the 9am job attaches them (jobs/morning/brief/brief-payload.js),
-  // which is what keeps the two payloads one shape.
-  // The published Discussions themselves (issues #55, #181): a second GraphQL
-  // round trip on the same board the summaries come from, and cached on the same
-  // minute for the same reason. ONE read, because the three things drawn off it
-  // are three readings of one board: the mornings BEFORE this one, which no
-  // sweep of the live board can answer; how old the newest of them is; and the
-  // texts themselves, which are what the Brief page shows.
-  //
-  // A read that failed is null and says nothing on stderr, unlike the 9am job's
-  // named skip: this one runs every minute the tower is up, and a line per poll
-  // would bury the log it was meant to be visible in. The page draws the null as
-  // the sentence it means, and where the read had a reason to give it draws that
-  // beside it (#215) - a spent rate limit and a refused token are the two the
-  // null used to swallow.
+  // The published Discussions, cached on the board's minute: one read, since the
+  // history, its freshness and the documents are three readings of it. A failed
+  // read is null with no stderr line (it runs every minute); its reason rides along.
   const discussions = cached(BOARD_TTL, () => readDiscussions({
     workflowHome: opts.workflowHome,
     home: opts.home,
     exec,
   }));
 
-  // Beside the series, the one question about it that is not a chart (#172):
-  // how old the newest published brief is. The cloud brief failed for ten
-  // mornings and every page went on looking normal, because the date that would
-  // have said so was already in the read above and nothing asked it. Derived
-  // from THAT array, never from a read of its own, so the charts and the alarm
-  // can never disagree about which morning was the last one.
+  // Built from the slots above, never reads of its own, so the 9am notification
+  // and the Brief page cannot disagree; the summaries attach the way
+  // jobs/morning/brief/brief-payload.js attaches them. The freshness derives from
+  // the charts' own array, so the two agree on which morning was the last.
   const brief = () => {
     const { nodes, reason } = discussions();
     const entries = nodes && historyFrom(nodes);
@@ -251,8 +194,7 @@ const createFeeds = ({ opts, exec, seam, log }) => {
         history: entries,
         briefFreshness: briefFreshness(entries),
         documents: nodes && documentsFrom(nodes),
-        // One read, one reason: the series, the mornings and the freshness are
-        // three readings of it, so what stopped it is said once (#215).
+        // One read, one reason: what stopped it is said once.
         historyReason: reason,
       },
     );

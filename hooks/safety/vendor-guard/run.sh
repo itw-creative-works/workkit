@@ -1,23 +1,11 @@
 #!/bin/bash
-# safety/vendor-guard: PreToolUse hook (Edit|Write)
-# Blocks edits to generated/vendor/installed files BEFORE they happen:
-#   - vendor dir segments anywhere: node_modules/, vendor/, .bundle/
-#   - dist/ and build/ only DIRECTLY under a package root (see check_output_dir)
-#   - package-manager lockfiles (owned by their tools, never hand-edited)
-#   - gitignored files (git check-ignore): generated/runtime files aren't hand-edited
-# Mechanical half of the AGENTS.md "edit the SOURCE, not the output" rule.
-# Designed exceptions (default-deny plus a tiny visible allowlist):
-#   _attic/ (gitignored holding pen, written on purpose, checked FIRST, since
-#   an attic may hold a parked dist/), .env / .env.* (secrets live there BECAUSE
-#   they're gitignored), and .workkit/ (agent state and the local capture file,
-#   gitignored by the workflow spec and written on purpose, 2026-07-24; only
-#   .workkit/settings.json is committed, and a tracked file never trips the
-#   gitignore check anyway). .workkit/ is checked AFTER the vendor/lockfile
-#   block, so a .workkit/ inside node_modules/ or dist/ is still blocked.
-# The directory name is spelled out rather than read from a variable: this guard
-# sources no hook helper, so the variable holding it is not defined here. Its
-# SSOT is WORKKIT_DIR in hooks/_lib.sh. Change both together.
-# Fail open on missing jq/file_path: a broken guard must never wedge the session.
+# safety/vendor-guard: PreToolUse hook (Edit|Write), the mechanical half of
+# "edit the SOURCE, not the output": blocks vendor segments (node_modules/,
+# vendor/, .bundle/), a dist/ or build/ directly under a package root,
+# lockfiles, and gitignored files. The allowlist: _attic/ (checked first),
+# .env and .env.*, and .workkit/ (checked after the vendor block). It sources
+# no hook helper, so `.workkit` is spelled out; WORKKIT_DIR in hooks/_lib.sh is
+# its SSOT. Fails open on missing jq or file_path.
 
 set -euo pipefail
 
@@ -27,15 +15,9 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-# The two files this hook sources, both from its own physical location: the
-# CRLF-safe jq (workflow/lib/platform.sh, `wk_jq`) and the repo-root predicate
-# (workflow/lib/participation.sh, `wk_is_repo_root`), each carrying its rule and the
-# reason for it. Both define functions and set nothing, so a seam that is THERE
-# costs an edit nothing.
-#
-# UNGUARDED, the way every other source of these two files is: a checkout
-# missing one is an incomplete plugin, which the workflow:standards hook already
-# names, and a guard here would leave this guard reading an undefined predicate.
+# The two engine seams, from this file's physical location: wk_jq and
+# wk_is_repo_root. Both define functions and set nothing. Unguarded: a missing
+# one is an incomplete plugin, which workflow:standards already names.
 # shellcheck source=../../../workflow/lib/platform.sh
 . "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/lib/platform.sh"
 # shellcheck source=../../../workflow/lib/participation.sh
@@ -55,11 +37,9 @@ block() {
   exit 2
 }
 
-# A package root is the repo root or any directory holding a package.json; a
-# dist/ or build/ sitting DIRECTLY under one is that package's output. Deeper in
-# a source tree the name means nothing (…/src/test/suites/build/ is committed
-# source, 2026-07-28), so only the anchored case blocks. A path whose parent
-# does not exist can't be disproved and stays blocked: default-deny.
+# A dist/ or build/ directly under a package root (the repo root or a folder
+# holding a package.json) is output; deeper in a source tree it is source. A
+# path whose parent does not exist cannot be disproved and stays blocked.
 is_package_root() {
   local dir="${1:-/}"
   [ -d "$dir" ] || return 0

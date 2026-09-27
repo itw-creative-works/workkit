@@ -1,15 +1,7 @@
-//
-// The shared prologue of the tower/api/lib/telemetry suites, the `*.test.js`
-// files beside this one, which test tower/api/lib/telemetry.js (the token
-// ledger read from transcripts) one concern each. A plain module, never a
-// suite: the runner only loads files ending in `.test.js`.
-//
-// Everything is a fixture: a scratch ~/.claude projects tree written in the
-// exact shapes Claude Code uses (an assistant line carrying message.usage, a
-// subagents/ folder holding agent-<id>.jsonl beside agent-<id>.meta.json), a
-// scratch marker directory, and a fake `ps`. Nothing here reads the real
-// transcripts on this machine, and nothing here goes near the network.
-//
+// The shared prologue of the tower/api/lib/telemetry suites beside this one, one
+// concern each. Everything is a fixture: a scratch ~/.claude projects tree in
+// the exact shapes Claude Code writes, a scratch marker directory and a fake
+// `ps`, so nothing reads this machine's transcripts or the network.
 
 const fs = require('fs');
 const path = require('path');

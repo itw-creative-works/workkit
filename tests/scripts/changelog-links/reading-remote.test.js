@@ -1,8 +1,6 @@
-//
 // Tests for workflow/changelog/changelog-links.js, the release-time CHANGELOG backfill:
 // reading the origin remote into the GitHub slug its links are built from.
-// The shared prologue (the git and gh fixtures, the script runner, the Windows skip) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const { group, test, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
@@ -32,10 +30,9 @@ const run = async () => {
   });
 
   await test('the slug comes from the engine rule, behind a GitHub-only gate', () => {
-    // repoSlug reads `slugFromRemote` (workflow/slug.js) rather than parsing an
-    // origin of its own, so it inherits EVERY trailing separator coming off,
-    // not one. The gate above it stays: the links this file builds are
-    // GitHub's, so a remote anywhere else has nothing to link to.
+    // repoSlug reads `slugFromRemote` (workflow/slug.js), so every trailing
+    // separator comes off, not one. The links are GitHub's, so a remote
+    // anywhere else has nothing to link to.
     const dir = mkTmp('cll-');
     git(dir, 'init', '-q', '-b', 'main');
     git(dir, 'remote', 'add', 'origin', 'https://github.com/alice/.dotfiles//');

@@ -1,8 +1,6 @@
 //
-// Tests for tower/start.sh: the log filter (the quiet default, the failures
-// and refusals it must never swallow, the phase boundary, and the two doors
-// that open the whole wall).
-// The shared prologue (the wrapper runner, the stub halves, the poll, the pty run) is ./helpers.js.
+// Tests for tower/start.sh: the log filter (the quiet default, the refusals it never
+// swallows, the phase boundary, the doors to the whole wall). Prologue: ./helpers.js.
 //
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
@@ -27,9 +25,9 @@ const run = async () => {
       assert(/✓ dashboard at https:\/\/localhost:14300/.test(text), 'at the URL the app itself named');
       assertEq(text.match(/✓ dashboard at/g).length, 1, 'once, not once per URL the app printed');
       assert(/WARN missing key/.test(text), 'the warning came through too');
-      // The cost of #170, taken deliberately: the prefix is the whole test, so
-      // omega's benign notes ride in beside its refusals. A note is one line;
-      // a swallowed refusal is a blank terminal.
+      // The prefix is the whole test, deliberately: omega's benign notes ride in
+      // beside its refusals. A note is one line; a swallowed refusal is a blank
+      // terminal.
       assert(/omega: no cloudflare account id configured/.test(text), 'and so did the line omega says as itself');
       assert(!/compiled 42 files/.test(text), 'but not the build timings - the wall is still dropped');
     } finally {
@@ -55,10 +53,8 @@ const run = async () => {
   });
 
   await test('a refused boot reaches the terminal - the framework\'s own words, and the half that ended', async () => {
-    // The failure this pins (#170): omega's refusal carries none of the keep
-    // net's words, so every line of it was dropped, the app half died, the
-    // script took the API down with it, and the terminal showed only "starting
-    // the dashboard…" before the prompt came back.
+    // omega's refusal carries none of the keep net's words; dropped, it leaves a
+    // terminal showing only "starting the dashboard…" while both halves end.
     const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 30', REFUSING_APP, QUIET_PORTS, { capture: true });
     const out = collect(child);
@@ -106,13 +102,10 @@ const run = async () => {
   });
 
   await test('a signal to the script is a shutdown, not a boot that never happened', async () => {
-    // The failure this pins (#170 review): a TERM delivered to the script's own
-    // pid - a supervisor, a bare `kill <pid>` - runs cleanup from the trap,
-    // which removes the fifo directory and with it the announce marker. The
-    // block after the poll loop then read a run that HAD its dashboard as one
-    // that never came up, and named the wrong half besides, since cleanup had
-    // already ended both. The suite's first case sends this exact signal with
-    // the output discarded, which is why nothing caught it.
+    // A TERM to the script's own pid runs cleanup from the trap, which removes
+    // the fifo directory and the announce marker with it, so the block after the
+    // poll loop must not read a run that had its dashboard as one that never
+    // came up.
     const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 30', ANNOUNCING_APP, QUIET_PORTS, { capture: true });
     const out = collect(child);
@@ -152,9 +145,8 @@ const run = async () => {
   });
 
   await test('it says it is starting before anything else - in a verbose run too', async () => {
-    // The quiet phase is otherwise a terminal with nothing on it at all
-    // (#158): omega builds for a while before it names a URL, and every line
-    // of that is filtered, so the run looked hung.
+    // The quiet phase is otherwise a blank terminal: omega builds for a while
+    // before it names a URL, and every line of that is filtered.
     const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { capture: true });
     const out = collect(child);
@@ -211,9 +203,9 @@ const run = async () => {
       assert(!/6 passed, 0 failed, 1 warned, 20 skipped/.test(text), 'and so is the passing check summary');
       assert(/✓ dashboard at https:\/\/localhost:14300/.test(text), 'the dashboard was announced');
       assertEq(text.match(/✓ dashboard at/g).length, 1, 'once');
-      // A trigger line is judged in the phase it OPENS, so the URL line prints
-      // as itself too - the announce stands beside it, naming the dashboard in
-      // the wrapper's own voice.
+      // A trigger line is judged in the phase it opens, so the URL line prints
+      // as itself too, the announce beside it naming the dashboard in the
+      // wrapper's own voice.
       assert(/Dev server: https:\/\/localhost:14300/.test(text), "the app's own URL line came through as well");
     } finally {
       child.kill('SIGKILL');
@@ -259,7 +251,7 @@ const run = async () => {
     const child = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { capture: true, args: ['--verbose'] });
     const out = collect(child);
     try {
-      // The app half's LAST line, the way the quiet case above polls for it: a
+      // The app half's last line, the way the quiet case above polls for it: a
       // snapshot taken at an earlier line can be read before the lines after it
       // have arrived, and the assertions below are about those later lines.
       assert(await until(() => /the board failed to load/.test(out())), 'the app half was read to its last line');

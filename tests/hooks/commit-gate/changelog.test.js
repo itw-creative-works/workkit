@@ -1,8 +1,6 @@
-//
 // Tests for hooks/safety/commit-gate: the CHANGELOG entry format, and a Fixes #N
 // commit staging its CHANGELOG entry.
 // The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
-//
 
 const path = require('path');
 const fs = require('fs');
@@ -57,8 +55,8 @@ const run = async () => {
   });
 
   await test('a CRLF CHANGELOG is judged, not waved through', () => {
-    // The parser used to read a CRLF file as zero entries, so the gate passed
-    // anything in it: a guard failing open in silence.
+    // A CRLF file read as zero entries would pass anything in it: a guard
+    // failing open in silence.
     const dir = mkRepo();
     stage(dir, 'CHANGELOG.md', CHANGELOG('- an essay entry with no issue link.').replace(/\n/g, '\r\n'));
     const { code, stderr } = runHook(dir, 'git commit -m "docs: changelog"');
@@ -78,12 +76,9 @@ const run = async () => {
     cleanup(dir);
   });
 
-  // The marker check compares timestamps, so reading an mtime must survive both
-  // stat dialects. GNU's `-f` selects filesystem status, where `%m` is
-  // undefined: `stat -f %m` prints `?` and EXITS 0 there, so a plain `||` chain
-  // starting with the BSD spelling hands back a non-numeric string and every
-  // comparison against it silently passes. Each PATH below offers one dialect
-  // only, proving the helper picks the spelling that actually answers.
+  // Reading an mtime must survive both stat dialects: GNU's `stat -f %m` prints
+  // `?` and exits 0, so a BSD-first `||` chain hands back a non-numeric string
+  // and every comparison passes. Each PATH below offers one dialect only.
   await test('reads a file mtime under either stat dialect', () => {
     const dir = mkTmp('mtime-');
     const file = path.join(dir, 'f');
@@ -114,7 +109,7 @@ const run = async () => {
   group('commit-gate: a Fixes #N commit stages its CHANGELOG entry');
 
   // Collapse on ship: the turn that closes an issue writes the entry the issue
-  // closes against. Prose until now, and deterministically checkable.
+  // closes against.
 
   await test('a Fixes trailer with no CHANGELOG staged blocks', () => {
     const dir = mkRepo();

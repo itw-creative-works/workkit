@@ -1,8 +1,7 @@
 // manager/close-guard hook: the warn-only end-of-turn read of the manager's
-// own behavior. Covers both rules over fixture transcripts, the turn window
-// (only entries after the last real user prompt, sidechain entries excluded),
-// the threshold override, the fail-open preconditions, and the invariant that
-// the hook never continues a turn: no decision, no additionalContext.
+// own behavior: both rules over fixture transcripts, the turn window (after the
+// last real user prompt, sidechains excluded), the threshold override, the
+// fail-open preconditions, and that the hook never continues a turn.
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
@@ -160,7 +159,7 @@ const run = async () => {
   });
   await test('a heavy-editing turn that DID spawn a worker warns once, on rule 4', () => {
     freshTmp();
-    // A frontier turn that edited heavily AND spawned only a verifier-less
+    // A frontier turn that edited heavily and spawned only a verifier-less
     // worker fires rule 4 alone (the worker spawn clears rule 3).
     const out = runHook(payload(transcript([prompt(), ...edits(6, F), spawn('worker', F), result()])));
     const msg = warn(out);
@@ -248,7 +247,7 @@ const run = async () => {
   });
 
   group('manager-close-guard: the session model comes from the tail');
-  // A statusline cache exists in terminal sessions and is EMPTY in VS Code
+  // A statusline cache exists in terminal sessions and is empty in VS Code
   // ones, so it can never be the source this hook depends on; the tail it
   // already read is. These pin that order, and that a whole-file read is not
   // on the normal path.
@@ -282,7 +281,7 @@ const run = async () => {
   });
   await test('the read stops at the tail: a turn beyond it is not seen', () => {
     freshTmp();
-    // The turn worth warning about sits in the HEAD; 4200 lines of quiet
+    // The turn worth warning about sits in the head; 4200 lines of quiet
     // tool-result traffic follow it. Reading the whole file would warn.
     const head = [prompt(), ...edits(6, F)];
     const filler = Array.from({ length: 4200 }, () => result());

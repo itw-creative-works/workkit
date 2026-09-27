@@ -1,10 +1,6 @@
-//
 // Tests for workflow/publish/site-repos.js: the roster the published site sweeps.
-//
 // The fixtures are a scratch ~/.workkit and real git repos with real `origin`
-// remotes, the same shape the roster read itself is tested against: what a slug
-// is, is a question only git answers.
-//
+// remotes: what a slug is, is a question only git answers.
 
 const fs = require('fs');
 const path = require('path');
@@ -80,7 +76,7 @@ const run = async () => {
   });
 
   await test('a roster that cannot be read raises rather than composing an empty one', () => {
-    // Issue #116: the failure and the empty machine compose the same list, so
+    // The failure and the empty machine compose the same list, so
     // telling them apart is the whole job. An empty list published over a good
     // one tells every reader the board is gone.
     const tmp = mkTmp('workkit-site-repos-');

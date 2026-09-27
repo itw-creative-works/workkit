@@ -1,21 +1,9 @@
 #!/bin/bash
-# docs:state-check: SessionStart hook
-# Announces project-state upkeep so nothing rots silently:
-#   1. open status:inbox issues on the cwd repo (the captured-but-unrouted
-#      queue: triage is the action that drains it)
-#   2. a non-empty .workkit/capture.md (the local capture file)
-#   3. a content-bearing CLAUDE.md (doctrine: content lives in AGENTS.md;
-#      CLAUDE.md is a one-line @AGENTS.md pointer)
-#   4. an AGENTS.md over either half of its budget: >250 lines, or any line
-#      over 400 BYTES (issue #161: a markdown paragraph is one source line, so
-#      a dense file passes the count). Deep references belong in docs/. The
-#      unit is pinned to bytes (LC_ALL=C), the way board-guard pins it.
-# This is the auto-heal trigger: every session that opens in a repo learns
-# immediately what needs attention, no manual sweeps. Detection is automatic;
-# the fixing stays agent-executed. Silent when everything is current.
-#
-# The issue count is the only network call: read-only, short timeout, and any
-# failure (offline, no gh, not a repo, unauthenticated) is a silent skip.
+# docs:state-check: SessionStart hook. Announces the upkeep a repo owes: open
+# status:inbox issues, a non-empty .workkit/capture.md, a content-bearing
+# CLAUDE.md, an AGENTS.md over its budget. Detection is automatic, the fix stays
+# the agent's; silent when all is current. The issue count is the one network
+# call, bounded, and any failure is a silent skip. Detail: docs/hooks.md.
 
 set -euo pipefail
 
@@ -59,20 +47,8 @@ count_entries() {
 
 msg=""
 
-# Captured-but-unrouted work items (GitHub Issues are the SSOT).
-# The count is cached ~30 min per repo. A network call on EVERY new panel is
-# the latency the standards hook's daily marker exists to avoid (review
-# finding 2026-07-24). Stale or missing cache = refresh.
-#
-# ONLY SILENCE IS CACHED (issue #1). Triage drains status:inbox by editing
-# labels on GitHub, which leaves no local trace this hook could fingerprint,
-# and a skill cannot be relied on to run an invalidate command, so the cache
-# has to invalidate itself. It does, by never holding an announcement: an empty
-# queue is written to the cache, a non-empty one is re-queried every session and
-# the old entry removed. The moment triage empties the queue, the next session
-# asks GitHub and goes quiet, with no cooperation from the skill at all.
-# The trade is one bounded query per session while the inbox is non-empty,
-# paid only in the state the announcement is telling you to clear.
+# Captured-but-unrouted issues; only a silent count is cached, about 30
+# minutes per repo (docs/hooks.md § docs:state-check).
 if [ -n "$cwd" ] && command -v gh >/dev/null 2>&1 \
   && git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   cache_dir="${STATE_CHECK_CACHE:-$HOME/.claude/logs/state-check}"
@@ -137,8 +113,8 @@ if [ -n "$cwd" ] && [ -f "$cwd/AGENTS.md" ]; then
     [ -n "$msg" ] && msg="$msg "
     msg="${msg}AGENTS.md is $al lines (budget 250). Move deep references to docs/<topic>.md and keep pointer lines; the board-guard hook bounces writes until it fits."
   fi
-  # The density half of the same budget (issue #161): a file well inside 250
-  # lines still carries a book when its paragraphs are single source lines.
+  # The density half of the same budget: a file well inside 250 lines still
+  # carries a book when its paragraphs are single source lines.
   ad=$(LC_ALL=C awk 'length($0) > 400 { n++ } END { print n+0 }' "$cwd/AGENTS.md" 2>/dev/null) || ad=0
   case "$ad" in ''|*[!0-9]*) ad=0 ;; esac
   if [ "$ad" -gt 0 ]; then

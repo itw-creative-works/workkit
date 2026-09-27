@@ -1,8 +1,6 @@
-//
 // Tests for workflow/workkit.sh: the token handover, `setup`'s hand of
 // the gh token to the published site.
-// The shared prologue (the scratch world, runCli and inCli, the repo and kit factories) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -64,7 +62,7 @@ const run = async () => {
   await test('the URL is the site’s own address, github.io or the custom domain', () => {
     // The publish's own rule (workflow/publish.sh): a custom domain serves at
     // its root, and the default project site serves a path deeper. Only the
-    // OWNER is lowercased, because that half is a hostname.
+    // owner is lowercased, because that half is a hostname.
     for (const [site, expected] of [
       [{ repo: 'Owner/Home', publish: true, url: null }, 'https://owner.github.io/Home/settings'],
       [{ repo: 'owner/home', publish: true, url: 'https://tower.example.com/' }, 'https://tower.example.com/settings'],
@@ -91,11 +89,10 @@ const run = async () => {
   });
 
   await test('a machine with no browser opener is the same named skip', () => {
-    // `/usr/bin/open` is on every mac, so the machine WITHOUT an opener is the
-    // other branch: a `uname` that says Linux sends the step looking for
-    // `xdg-open`, which this world no longer has. The gate asks `command -v`,
-    // and a Linux runner keeps a real `xdg-open` on the base PATH, so the
-    // question itself answers no for that one name here.
+    // `/usr/bin/open` is on every mac, so the machine without an opener is a
+    // `uname` saying Linux, sent looking for an `xdg-open` this world lacks. A
+    // Linux runner keeps a real one on the base PATH, so `command -v` itself
+    // answers no for that one name here.
     const world = mkPagesWorld(PUBLISHED);
     fs.rmSync(path.join(world.bin, 'xdg-open'));
     writeStub(path.join(world.bin, 'uname'), ["printf '%s\\n' Linux"]);
@@ -110,10 +107,8 @@ const run = async () => {
 
   await test('setup hands the token over right after the publish it belongs to', () => {
     // The call site, pinned: publishing is on, so the publish runs and the
-    // handover follows it. `runCli` is a PIPE, which is the shape the ship's own
-    // run has (issue #235): the handover no longer asks for a terminal, so what
-    // lands here is the whole step, and its success line is what makes the order
-    // readable.
+    // handover follows it. `runCli` is a pipe, the shape the ship's own run has,
+    // so the whole step lands here and its success line makes the order readable.
     const world = mkPagesWorld(PUBLISHED, [['built', PUSHED]]);
     const { code, out } = runCli(world, ['setup']);
     assertEq(code, 0, 'exit 0');
@@ -126,11 +121,10 @@ const run = async () => {
   });
 
   await test('an interrupt while setup carries on takes the page with it', () => {
-    // The window the EXIT trap alone left open: the page outlives the step by
-    // design (the browser reads it asynchronously), so setup's remaining
-    // questions are asked with it on disk, and a Ctrl-C at one of those prompts
-    // has to remove it too. The signal goes to the shell that called the step,
-    // which is exactly where a Ctrl-C would land.
+    // The page outlives the step by design (the browser reads it asynchronously),
+    // so a Ctrl-C at one of setup's later prompts has to remove it too. The
+    // signal goes to the shell that called the step, which is exactly where a
+    // Ctrl-C would land.
     const world = mkPagesWorld(PUBLISHED, [['built', PUSHED]]);
     const during = path.join(world.root, 'during-the-window');
     const script = `${AT_TERMINAL}\nhandover_token\nls "$TMPDIR" > ${JSON.stringify(during)}\nkill -INT $$`;
@@ -144,7 +138,7 @@ const run = async () => {
   await test('a publish that did not finish holds the handover back', () => {
     // A token handed to a publish that failed is a token handed to whatever
     // Pages was already serving. `cmd_publish` never fails a run, so the step
-    // reads what it DID off PUBLISH_FAILED.
+    // reads what it did off PUBLISH_FAILED.
     const world = mkPagesWorld(PUBLISHED);
     const { kit, script } = mkKit('owner/kit');
     writeStub(path.join(kit, 'workflow', 'publish.sh'), ["printf '%s\\n' 'publish: this one broke' >&2", 'exit 1']);
@@ -158,10 +152,9 @@ const run = async () => {
 
   await test('three empty reads end the wait, with both causes named', () => {
     // Two things read as nothing: a repo whose Pages step was refused (its
-    // `pages/builds/latest` 404s for ever) and a read that could not be made at
-    // all, since a fired `bounded_read` bound looks exactly like a listing that
-    // would not come. The line states the condition and names both rather than
-    // diagnosing one of them as fact.
+    // `pages/builds/latest` 404s for ever) and a fired `bounded_read` bound.
+    // The line states the condition and names both rather than diagnosing one
+    // of them as fact.
     const world = mkPagesWorld(PUBLISHED, []);
     const { code, out } = inCli(world, `${AT_TERMINAL}\nhandover_token`, { env: { WORKKIT_PAGES_WAIT: '60' } });
     assertEq(code, 0, 'exit 0');
@@ -176,9 +169,7 @@ const run = async () => {
   await test('a site.url that cannot go in a URL is refused, never escaped', () => {
     // `ask_site_url` takes whatever was typed at its word, so the address is
     // checked before it reaches a message or the redirect page's JS string. A
-    // `#` is refused for a second reason: a fragment of its own would swallow
-    // the token's, and the success line would print over a Settings page that
-    // was handed nothing.
+    // `#` is refused as well: a fragment of its own would swallow the token's.
     for (const url of ['tower.example.com/"onerror="x', 'tower.example.com/#board']) {
       const world = mkPagesWorld({ repo: 'owner/home', publish: true, url });
       const { code, out } = inCli(world, `${AT_TERMINAL}\nhandover_token`, { env: { WORKKIT_PAGES_WAIT: '60' } });

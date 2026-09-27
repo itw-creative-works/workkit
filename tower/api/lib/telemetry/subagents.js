@@ -15,12 +15,8 @@ const className = (subagentType) => {
 };
 
 /**
- * Whether a transcript that last moved at `lastAt` is still being written to.
- *
- * A finished subagent never touches its file again, so quiet IS finished, and
- * the window is the one `sessions.js` derives a root session's state from, so a
- * subagent and its manager are called live by the same rule.
- *
+ * Whether a transcript that last moved at `lastAt` is still being written to:
+ * quiet is finished, on the window `sessions.js` judges a root session by.
  * @param {string|null} lastAt the last timestamp the transcript carries
  * @param {number} now
  * @param {number} idleMs
@@ -38,7 +34,7 @@ const subagentState = (lastAt, now, idleMs) => {
  * The subagents a session spawned, each with its own usage, its class and
  * whether it is still working.
  *
- * @param {string} transcript the PARENT transcript path
+ * @param {string} transcript the parent transcript path
  * @param {object} taskTypes parent tool_use id -> subagent_type
  * @param {number} now
  * @param {number} idleMs the liveness window, from sessions.js

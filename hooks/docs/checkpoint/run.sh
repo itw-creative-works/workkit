@@ -1,22 +1,9 @@
 #!/usr/bin/env bash
-# docs:checkpoint, a UserPromptSubmit hook (issue #238).
-# Any line about compacting, clearing, or restarting the chat fires the
-# workkit:checkpoint skill BEFORE the line is answered: a long chat holds
-# verdicts, decisions and questions that exist nowhere else, and a compaction
-# throws away whatever was never written to the board.
-#
-# The skill's own description already asks for this, but a description is
-# judgment: it competes with everything else in the turn and loses exactly when
-# the context is full, which is the moment the line is spoken. The pattern here
-# is deterministic, so the instruction arrives every time.
-#
-# Fired twice in one session, the second injection is a DELTA: a marker under
-# ${TMPDIR:-/tmp}/claude-checkpoint-marker, keyed by session id, carries the
-# time of the last fire, so a second run files only what has been spoken since
-# rather than walking the whole chat again.
-#
-# Always exits 0: it never blocks a prompt, and a missing jq, an unreadable
-# marker or an unparseable payload is silence rather than noise.
+# docs:checkpoint: UserPromptSubmit hook. A line about compacting, clearing or
+# restarting the chat fires the workkit:checkpoint skill before it is answered:
+# deterministic, since the skill's description loses exactly when context is
+# full. A second fire in a session asks for a delta. Always exits 0.
+# Detail: docs/hooks.md § docs:checkpoint.
 
 set -euo pipefail
 
@@ -30,14 +17,10 @@ session_id=$(printf '%s' "$input" | hook_jq -r '.session_id // empty' 2>/dev/nul
 
 [ -n "$prompt" ] || exit 0
 
-# `compact` is deliberately a substring: it carries `compaction` and `/compact`
-# with it. `context` only fires beside one of its four followers, on the same
-# line, so "the context of the bug" is not a compaction line, and each follower
-# is bounded by a non-letter so "below" is not "low". The spoken order runs
-# the other way too ("running out of context", "low on context"), so the
-# reversed arm carries those three forms. The prompt is lowercased
-# rather than matched with `grep -i`, which is what keeps those negated classes
-# meaning what they say.
+# `compact` is a substring on purpose (`compaction`, `/compact`). `context` fires
+# only beside a follower on the same line, each bounded by a non-letter ("below"
+# is not "low"), plus the reversed spoken order. The prompt is lowercased rather
+# than matched with `grep -i`, which keeps the negated classes meaning what they say.
 PATTERN='compact|clear the chat|clear this chat|new chat|fresh session|start over|context.*(^|[^a-z])(full|low|running out|window)([^a-z]|$)|(running out of|out of|low on) context'
 
 lower=$(printf '%s' "$prompt" | tr '[:upper:]' '[:lower:]')

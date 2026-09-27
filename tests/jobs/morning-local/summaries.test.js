@@ -1,8 +1,6 @@
-//
 // Tests for jobs/morning.sh as this machine runs it: the summaries step, which
 // runs first.
-// The shared prologue (the world factory, the job runner, the notification waits) is ./helpers.js.
-//
+// The shared prologue (world factory, job runner, notification waits) is ./helpers.js.
 
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
@@ -28,7 +26,7 @@ const run = async () => {
   });
 
   await test('a machine with no session transcripts names the skip and never starts the step', async () => {
-    // The capability gate from its red side (issue #107): the summaries read
+    // The capability gate from its red side: the summaries read
     // this machine's transcripts, and a machine without them has no day to write
     // up. The named skip is what tells that apart from a step that failed.
     const world = mkWorld({ transcripts: false });

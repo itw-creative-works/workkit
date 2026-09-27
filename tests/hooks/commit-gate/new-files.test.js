@@ -1,7 +1,5 @@
-//
-// Tests for hooks/safety/commit-gate: new source files need tests (the test-TYPE proxy).
+// Tests for hooks/safety/commit-gate: new source files need tests (the test-type proxy).
 // The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
-//
 
 const path = require('path');
 const fs = require('fs');
@@ -60,7 +58,7 @@ const run = async () => {
   });
 
   await test('commit from a SUBDIRECTORY is gated identically (review regression)', () => {
-    // package.json and npm test are judged at the repo ROOT, not the session
+    // package.json and npm test are judged at the repo root, not the session
     // cwd: a session sitting in repo/src must not slip past the proxy.
     const dir = mkRepo();
     stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');

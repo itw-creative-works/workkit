@@ -1,11 +1,8 @@
 /* eslint-disable no-console */
-//
-// Tests for hooks/safety/commit-language: the PreToolUse hook that bounces
-// git commit commands whose quoted message text uses non-neutral vocabulary
-// (kill/destroy/dead → terminate/remove/stale), and whose subject line is not
-// Conventional Commits or carries a version number outside a release commit.
-// Only quoted spans are scanned, so unquoted file paths never trigger it.
-//
+// Tests for hooks/safety/commit-language: the PreToolUse hook that bounces a
+// git commit whose quoted message uses non-neutral vocabulary (kill/destroy/dead
+// → terminate/remove/stale), or whose subject is not Conventional Commits or
+// carries a version outside a release commit. Only quoted spans are scanned.
 
 const path = require('path');
 const os = require('os');
@@ -78,8 +75,8 @@ const run = async () => {
   });
 
   await test('MULTI-LINE quoted mention: exit 0 (review regression)', () => {
-    // A line-based quote strip left the tail lines of a multi-line quoted
-    // string looking unquoted, misclassifying this echo as a real commit.
+    // The tail lines of a multi-line quoted string stay quoted, so this echo
+    // never reads as a real commit.
     const { code } = runHook('echo "todo list\ngit commit the fix that kills the watcher"');
     assertEq(code, 0, 'multi-line quoted text is stripped like single-line');
   });
@@ -94,7 +91,7 @@ const run = async () => {
   });
 
   await test('commit inside interpreter-fed heredoc with listed word: exit 2 (light-review finding)', () => {
-    // A heredoc body piped INTO a shell is executed code: the detection
+    // A heredoc body piped into a shell is executed code: the detection
     // strip must not hide a real commit phrased this way.
     const cmd = 'bash <<\'EOF\'\ngit commit -m "kill the watcher"\nEOF';
     const { code } = runHook(cmd);
@@ -109,8 +106,8 @@ const run = async () => {
   group('commit-language: hardening 2026-07-25');
 
   await test('listed word in OTHER quoted text on the line: exit 0 (message-scope regression)', () => {
-    // The scan used to read EVERY quoted span in the whole command, so the
-    // echo text bounced a clean commit message.
+    // Only the commit's own message span is scanned, so the echo text never
+    // bounces a clean commit message.
     const { code, stderr } = runHook('git commit -m "docs: tidy" && echo "killing the old server"');
     assertEq(code, 0, `only message spans are judged, got: ${stderr}`);
   });
@@ -122,8 +119,8 @@ const run = async () => {
   });
 
   await test('interpreter-string commit with a listed word: exit 2 (wrapper regression)', () => {
-    // `sh -c "git commit …"` had no visible clause after the quote strip, so
-    // the hook exited before scanning anything.
+    // `sh -c "git commit …"` has no visible clause after the quote strip, and
+    // the wrapped commit must still be scanned.
     const { code } = runHook('sh -c \'git commit -m "kill the watcher"\'');
     assertEq(code, 2, 'wrapped commits are still scanned');
   });
@@ -134,7 +131,7 @@ const run = async () => {
   });
 
   await test('prefixed commit spellings are scanned: env/path (prefix regression)', () => {
-    // These first words walked past the old first-word-is-git test.
+    // These first words hide git from a first-word-is-git test.
     for (const c of ['env git commit -m "kill the watcher"', '/usr/bin/git commit -m "kill the watcher"']) {
       const { code } = runHook(c);
       assertEq(code, 2, `must bounce: ${c}`);
@@ -143,15 +140,14 @@ const run = async () => {
 
   await test('unquoted eval commit with a listed word: exit 2 (eval-peel regression)', () => {
     // `eval git commit -m "kill …"` executes the words essentially as
-    // written, but eval was not peeled, so no clause was found and the hook
-    // exited before scanning the message.
+    // written, so eval is peeled and the message is scanned.
     const { code } = runHook('eval git commit -m "kill the watcher"');
     assertEq(code, 2, 'eval over plain words is a commit and must be scanned');
   });
 
   await test('attached -c string with a listed word: exit 2 (no-space regression)', () => {
-    // `bash -c"git commit …"` runs the string, but the old wrapper detector
-    // demanded whitespace between the option cluster and the quotes.
+    // `bash -c"git commit …"` runs the string: no whitespace is needed between
+    // the option cluster and the quotes.
     const { code } = runHook('bash -c"git commit -m \'kill the watcher\'"');
     assertEq(code, 2, 'the attached option-argument form is still a wrapped commit');
   });
@@ -238,14 +234,14 @@ const run = async () => {
 
   await test('command-substitution subject that is not the heredoc idiom: exit 0', () => {
     // The hook cannot expand `$(cat …)`, so the span it holds is shell text,
-    // not a subject; judging it bounced a message never actually read.
+    // not a subject; judging it would bounce a message never actually read.
     const { code, stderr } = runHook('git commit -m "$(cat /tmp/msg.txt)"');
     assertEq(code, 0, `an unexpandable subject fails open, got: ${stderr}`);
   });
 
   await test('flag-shaped span BEFORE the commit is not judged as the subject: exit 0', () => {
-    // The format extraction used to read the whole command, so grep's -F
-    // value was format-judged and bounced a clean commit.
+    // The format extraction reads the commit's own message, so grep's -F value
+    // is never format-judged.
     const { code, stderr } = runHook('grep -F "Some Thing" f && git commit -m "feat: fine"');
     assertEq(code, 0, `only spans after the commit token are judged, got: ${stderr}`);
   });
@@ -257,8 +253,8 @@ const run = async () => {
   });
 
   await test('two -m flags with "commit" in the subject: the FIRST is the subject (exit 0)', () => {
-    // A last-to-first offset walk started inside the subject text, so the
-    // body flag became the subject and bounced a clean commit.
+    // A last-to-first offset walk would start inside the subject text and take
+    // the body flag for the subject.
     const { code, stderr } = runHook('git commit -m "fix(hooks): scan the commit message" -m "Body here."');
     assertEq(code, 0, `the first -m is the subject, got: ${stderr}`);
   });

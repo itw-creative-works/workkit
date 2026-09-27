@@ -1,28 +1,18 @@
 #!/usr/bin/env bash
-# workflow/lib/flows.sh: the engine's browser flows and its link maker. The
-# Enter gate, the poll and its countdown, and the atomic symlink the machine's
-# two addresses are written through. SOURCED by lib.sh, never executed, and it
-# runs nothing at load: it defines functions and sets nothing. It reads lib.sh's
-# WK_C_* palette variables, WK_LOG_INDENT, WK_SPIN_FRAMES and WK_POLL_PID (which
-# wk_poll sets), and calls wk_opener (lib/voice.sh) and wk_mv_link
+# workflow/lib/flows.sh: the browser flows and the atomic link maker. Sourced by
+# lib.sh, functions only. Reads lib.sh's WK_C_* palette, WK_LOG_INDENT,
+# WK_SPIN_FRAMES and WK_POLL_PID; calls wk_opener (lib/voice.sh) and wk_mv_link
 # (platform.sh).
 
 # ── Browser flows ─────────────────────────────────────────────────────────────
-# omega's walkthrough shape (that monorepo's `packages/devkit/src/flows.js`,
-# `openBrowserAndPoll`), in shell and in this file's voice: say what to do on
-# the page and print its URL, gate the open behind Enter, then poll a check
-# until it passes, Enter meaning "check now" and `s` meaning skip. Both are for
-# a caller that already knows it has a terminal; a piped run prints its own
-# pointer instead of asking anyone anything.
+# omega's walkthrough shape (`packages/devkit/src/flows.js`,
+# `openBrowserAndPoll`), for a caller that already knows it has a terminal.
 
-# The Enter gate and the open. The URL is printed either way, so a terminal
-# with link support keeps it clickable; a machine with no opener says so in one
-# dim line and the caller goes on, since the URL is already on screen.
+# The URL is printed either way, so a machine with no opener still has it.
 # Usage: wk_enter_to_open <url> <label> <what to do there>
 wk_enter_to_open() {
   local url="$1" label="$2" prompt="$3" opener answer=''
-  # The palette's codes are backslash text for a FORMAT string, never a %s
-  # argument, the same as every other line in this file.
+  # The palette's codes go in the format string, never a %s argument.
   printf "\n%s%s\n%sURL: ${WK_C_CYAN}%s${WK_C_OFF}\n\n" "$WK_LOG_INDENT" "$prompt" "$WK_LOG_INDENT" "$url" >&2
   printf "${WK_C_GREEN}?${WK_C_OFF} Press Enter to open %s in your browser... " "$label" >&2
   read -r answer || true
@@ -49,23 +39,9 @@ wk_poll_draw() {
   done
 }
 
-# Poll a check until it passes. The check is a command run in THIS shell (so a
-# global it sets survives), and exit 0 means done. Between checks the countdown
-# draws (a static line where stderr is not a terminal, as wk_spin does) and the
-# keys are read one at a time: Enter checks now, `s` skips, and stdin closing
-# counts as a skip, because nobody is there to press anything. Returns 0 when
-# the check passed, 1 when skipped.
-#
-# Telling a closed stdin from a one-second timeout: bash 4 reports a timeout
-# with a status above 128, but bash 3.2 (macOS's own) returns 1 for both. The
-# closed pipe is the one that comes back at once, so three failed reads inside
-# one clock second cannot be timeouts of a second each: that is the closed
-# pipe, on either bash.
-#
-# Ctrl+C: a background job ignores the interrupt, so without a trap the shell
-# dies and the countdown goes on redrawing over the prompt that came back,
-# which reads as a poll nothing can stop. The trap takes the frame down, clears
-# the line, then re-raises the interrupt so the run ends the way it was asked to.
+# Poll a check, run in this shell so a global it sets survives, until it exits
+# 0 (return 0). Enter checks now; `s` or a closed stdin skips (return 1). The
+# INT trap takes the background countdown down before re-raising.
 # Usage: wk_poll <message> <interval-seconds> <check command...>
 wk_poll() {
   local msg="$1" interval="$2"; shift 2
@@ -93,6 +69,8 @@ wk_poll() {
         if [[ "$key" == 's' || "$key" == 'S' ]]; then key='s'; break; fi
         continue
       fi
+      # bash 3.2 returns 1 for both a timeout and a closed stdin; three failed
+      # reads in one clock second can only be the closed pipe.
       now="$(date +%s)"
       if [[ "$rc" -le 128 && "$now" == "$lastfail" ]]; then
         fast=$(( fast + 1 ))
@@ -118,28 +96,9 @@ wk_poll_stop() {
 }
 
 # ── Real symlinks on Windows ──────────────────────────────────────────────────
-# The two links are the engine address in standards.sh and the
-# `~/.local/bin/workkit` command in workkit.sh; the MSYS flag that makes them
-# real links on Windows is set at load, in lib.sh's section of this name.
-#
-# Make one of those two links, and say whether the address now IS it.
-#
-# Both addresses are the MACHINE's, one path shared by every session on it, so
-# sessions opening at once in several repos all write the same one. The link is
-# therefore made under a name nobody reads and RENAMED onto the address: a
-# rename replaces whatever is there in a single step, and told not to follow
-# the address (`wk_mv_link`, platform.sh, where the two `mv` spellings for that
-# live) it never walks into the directory behind it. `ln -sfn` cannot do this
-# job. It unlinks the address and then creates it, so a session reading the
-# address in that gap finds nothing, and another session's checks in that gap
-# can delete the link the first one just made.
-#
-# It removes nothing at the address: WHAT is there when the link did not land
-# is the caller's to judge (a Git Bash copy is the engine's to clear, a real
-# file a human put there is not), and what comes back here is the one fact
-# worth judging, whether the address now resolves to the target that was asked
-# for. `ln` and `mv` keep their stderr for the same reason: a permission error
-# has to name itself instead of coming back as a silent no.
+# Make a machine address and answer whether it now resolves to the target.
+# Renamed onto the address, never `ln -sfn`, whose unlink-then-create gap races
+# other sessions. It removes nothing: what sits there is the caller's to judge.
 wk_link() {
   local target="$1" address="$2" tmp="$2.tmp.$$"
   if ! ln -s "$target" "$tmp"; then

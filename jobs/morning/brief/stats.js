@@ -1,27 +1,14 @@
+// jobs/morning/brief/stats.js: the stats line a published brief carries, the
+// day in numbers a chart can read back. Composed here from the payload and
+// appended mechanically by the runner, so no model retypes a number;
+// `tower/api/lib/history.js` reads it back and owns the pattern it matches.
 //
-// The stats line a published brief carries: the day, in numbers a chart can
-// read back.
-//
-// The digest a model writes is prose, and prose is not a series. So the morning
-// leaves one machine-readable line under it, composed HERE from the payload the
-// brief was built out of and appended mechanically by the runner: the same
-// path the upstream-news cursor takes (jobs/morning/brief/cc-news.js, `brief-publish.sh`).
-// Nothing asks the model to reproduce JSON: a number it retyped would be a
-// number that could be wrong.
-//
-// The published Discussion is the only store. `tower/api/lib/history.js` reads
-// these lines back, and it owns the PATTERN this renders to match: writer and
-// reader are two halves of one shape.
-//
-// Usage:
-//   const { renderStatsMark } = require('./stats');
-//   renderStatsMark(payload);   // '<!-- workkit-stats: {…} -->'
-//
+// Usage: renderStatsMark(payload)   // '<!-- workkit-stats: {…} -->'
 
 const { STATS_RE } = require('../../../tower/api/lib/history');
 
 /**
- * The day this payload is about, from the payload's OWN stamp.
+ * The day this payload is about, from the payload's own stamp.
  *
  * Never `new Date()`: a brief composed at 09:00 and a line stamped whenever this
  * function happened to run are the same day almost always, and the exception
@@ -54,14 +41,9 @@ const perRepo = (repoCounts) => {
 };
 
 /**
- * The line the runner appends under the digest.
- *
- * A payload with no usable stamp renders NOTHING rather than a line dated
- * today: an undated point is a point a series cannot place, and a wrongly dated
- * one is worse than a missing day. A payload whose sweep FAILED renders nothing
- * for the same reason: buildBrief reports that morning as a failure, but its
- * counts are zeros, and a zero point in the only store would be a permanent
- * cliff in every chart.
+ * The line the runner appends under the digest, or nothing for a payload with
+ * no usable stamp or a failed sweep: an undated point cannot be placed, and a
+ * zero point in the only store would be a permanent cliff in every chart.
  *
  * @param {object} payload what buildBrief returned
  * @returns {string} the comment line, or '' when there is nothing to say

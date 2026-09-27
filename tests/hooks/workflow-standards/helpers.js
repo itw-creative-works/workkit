@@ -1,15 +1,7 @@
-//
-// The shared prologue of the hooks/workflow:standards suites, the `*.test.js`
-// files beside this one, which test the SessionStart hook that runs the
-// workflow core's standards.sh against the session's repo, at most once per
-// repo per day, and reports only what it created or corrected. One suite per
-// concern. The engine's own suites are tests/scripts/workflow-standards/. A
-// plain module, never a suite: the runner only loads files ending in
-// `.test.js`.
-//
-// The standards script's label step needs gh; every test here runs with a PATH
-// that has no gh on it (or a recording stub), so nothing touches the network.
-//
+// The shared prologue of the hooks/workflow:standards suites beside this one,
+// one suite per concern (the engine's own: tests/scripts/workflow-standards/).
+// Every run has no gh on its PATH, or a recording stub, so nothing touches the
+// network.
 
 const path = require('path');
 const fs = require('fs');
@@ -40,7 +32,7 @@ const IGNORE_GLOB = new RegExp(`^${W.replace(/\./g, '\\.')}/\\*$`, 'm');
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 // Participation gate: a committed .workkit/settings.json holding
-// `enabled: true` at the repo root IS the opt-in, so every repo fixture gets one
+// `enabled: true` at the repo root is the opt-in, so every repo fixture gets one
 // unless a test is exercising another state.
 const makeRepo = ({ optIn = true, settings = '{ "version": 1, "enabled": true }\n' } = {}) => {
   const dir = mkTmp('wf-hook-');
@@ -66,19 +58,9 @@ const decline = (repo, workflowHome) => spawnSync(BASH, [...NO_RC,
   encoding: 'utf8',
 });
 
-// Each run gets its own cache dir unless one is passed in: the daily marker
-// must never leak between tests (or into the real ~/.claude/logs).
-// `home` overrides HOME; passing workflowDir: null DROPS WORKFLOW_DIR from the
-// environment so the hook resolves the engine beside itself.
-// WORKFLOW_HOME and WORKFLOW_CLAUDE_HOME always point somewhere disposable: the
-// user-level settings file and the engine's address symlink, both written by
-// the engine on every run, must never be the real ~/.workkit or ~/.claude.
-// A machine that has run `workkit setup`, as far as the setup pester (#72) can
-// see it: the CLI symlink the wizard installs, pointed at this checkout's
-// engine: exactly what `workkit update` calls current. Every run seeds it
-// unless the test is exercising a machine that never ran setup (setup: false),
-// because a scratch HOME is otherwise indistinguishable from a fresh machine
-// and every case here would carry the pester.
+// A machine that has run `workkit setup`, as far as the setup pester can see:
+// the CLI symlink pointed at this checkout's engine. Every run seeds it unless
+// the case is a machine that never ran setup (setup: false).
 const seedSetup = (home) => {
   const dir = path.join(home, '.local', 'bin');
   fs.mkdirSync(dir, { recursive: true });
@@ -88,11 +70,8 @@ const seedSetup = (home) => {
 };
 
 
-// The machine that does NOT have `gh`. A runner ships the real one in /usr/bin,
-// so a case about its absence has to take it off the PATH rather than trust the
-// system one, or the REAL gh answers and the case passes for another reason.
-// Built once, since the mirror links every system tool, and removed with the
-// suite.
+// The machine without `gh`: a runner ships the real one in /usr/bin, so a case
+// about its absence takes it off the PATH. Built once, removed with the suite.
 let noGhPath = null;
 const pathWithoutGh = () => {
   if (!noGhPath) noGhPath = basePathWithout(mkTmp('wf-hook-'), 'gh');
@@ -103,21 +82,20 @@ const dropPathWithoutGh = () => {
   noGhPath = null;
 };
 
+// Every run gets a disposable cache, home, WORKFLOW_HOME and claude home, so the
+// daily marker and the files the engine writes never leak between tests or
+// reach the developer's own. workflowDir: null drops WORKFLOW_DIR so the hook
+// resolves the engine beside itself.
 const runHook = (cwd, { cache, pathPrefix, home, workflowDir, workflowHome, setup = true } = {}) => {
   const cacheDir = cache || mkTmp('wf-hook-');
-  // The home stays NATIVE for anything this suite writes into it, and goes
+  // The home stays native for anything this suite writes into it, and goes
   // through the shell's spelling only on the way into the child's environment.
   const homeDir = home || mkTmp('wf-hook-');
-  // A scratch HOME by default: the hook's daily run now also drives the
-  // machine-side upkeep (`workkit update --auto`), which reads
-  // ~/Library/LaunchAgents and ~/.local/bin. Neither may ever be the
-  // developer's own.
   const env = homeEnv(homeDir, {
     PATH: pathPrefix ? joinPath(pathPrefix, BASE_PATH) : joinPath(pathWithoutGh(), NODE_DIR),
     WORKFLOW_STANDARDS_CACHE: shellPath(cacheDir),
-    // OUTSIDE the marker cache: the engine now seeds the user settings file on
-    // every run, and a workflow-home nested in the cache would be counted by
-    // the tests that assert one marker file per repo.
+    // Outside the marker cache: the engine seeds the user settings file there,
+    // and the tests count one marker file per repo in the cache.
     WORKFLOW_HOME: shellPath(workflowHome || path.join(mkTmp('wf-hook-'), 'workflow-home')),
     WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-hook-'), 'claude-home')),
   });

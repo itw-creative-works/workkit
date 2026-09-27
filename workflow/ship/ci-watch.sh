@@ -1,37 +1,9 @@
 #!/usr/bin/env bash
-# ci-watch: the ship's CI watch, a pushed sha in and one answer out (issue #290).
-#
-# A direct push is unchecked until CI runs, so the ship waits on it. This is
-# that wait made mechanical: find the sha's runs, watch every one, and say what
-# they concluded, in a line the ship reads and an exit code it branches on.
-#
-# Usage: ci-watch.sh <sha>
-#
-#   0  every run green: `ci-watch: green: <workflow> <url>` per run on stdout.
-#      Or no run and no workflow triggered by a push: `ci-watch: no CI
-#      configured for push`, since there is nothing to wait for.
-#   1  a run red: `ci-watch: RED: <workflow>, job <failing job>: <url>` on
-#      stderr, then the last lines of its failed step's log. Every run is still
-#      watched, so each green one says so and each red one is named.
-#   2  usage: no sha, or not 7 to 40 hex characters.
-#   3  no run after the retries, but a workflow IS triggered by a push: `ci-watch:
-#      run not queued yet for <sha>` on stderr. The ship ends without a
-#      conclusion rather than calling the push clean.
-#   4  gh failed: `ci-watch: gh ...` on stderr, carrying what gh said. A
-#      `gh run list` that failed or answered no run list, and a watch that
-#      exited non-zero on a run gh cannot then show as finished (GitHub
-#      unreachable, the login refused): that is no answer, never a red.
-#
-# GitHub can take a minute to queue a run, so an empty list is asked again:
-# WORKKIT_CI_WATCH_TRIES times (6), WORKKIT_CI_WATCH_WAIT seconds apart (10).
-# A failed list is not an empty one and is never retried.
-#
-# The push trigger is read from `.github/workflows/*.yml` and `*.yaml` at the
-# cwd's git toplevel: a top-level `on:` naming `push`, as `on: push`, as a flow
-# list or map (`on: [pull_request, push]`), or as a key or list item directly
-# under a block `on:`. A `push` nested deeper (a branch named push) is not one.
-#
-# Reached at the engine's stable address: ~/.claude/workkit/ship/ci-watch.sh.
+# ci-watch: the ship's CI watch, a pushed sha in and one answer out. Usage:
+# ci-watch.sh <sha>. Exit 0 green (or no CI for push), 1 red, 2 usage, 3 not
+# queued yet, 4 gh failed; the lines and the retries: `workflow/README.md`, the
+# ship/ci-watch.sh row. The push trigger is a top-level `on:` naming `push` in
+# any of its YAML shapes; a `push` nested deeper is not one.
 
 set -euo pipefail
 
@@ -114,14 +86,9 @@ push_configured() {
   return 1
 }
 
-# Watch one run to its end and say what it concluded. A watch that exits
-# non-zero is only red when the run itself says it finished: one view answers
-# that and names the first failed job, and a view that fails, or a run with no
-# conclusion yet, means the watch failed rather than the run, which is exit 4.
-# Red goes on stderr with the tail of the failed step's log.
-#
-# Every gh call reads /dev/null, never the loop's stdin: that stdin is the run
-# rows, and a child that read it would swallow the runs still to be watched.
+# Watch one run to its end. A non-zero watch is red only when the run says it
+# finished; otherwise the watch failed, which is exit 4. Every gh call reads
+# /dev/null, or it would swallow the loop's remaining run rows.
 watch_run() {
   local id="$1" name="$2" url="$3" view conclusion job
   if gh run watch "$id" --exit-status </dev/null >/dev/null 2>"$ERR_FILE"; then

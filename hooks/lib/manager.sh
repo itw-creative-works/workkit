@@ -1,25 +1,14 @@
 #!/bin/bash
 # hooks/lib/manager.sh: the manager system's reads: the session's live model,
 # the family a model id belongs to, and the effective three-layer config.
-# SOURCED by hooks/_lib.sh, never executed, and it runs nothing at load: it
-# defines functions and sets nothing. It reads WORKKIT_DIR, hook_jq and
-# hook_jq_default from the entry, and hook_session_marker from lib/markers.sh;
-# the entry's header carries hook_session_model's duplication note (the
-# personal hooks hold its twin).
+# Sourced by hooks/_lib.sh; defines functions and sets nothing. It reads
+# WORKKIT_DIR, hook_jq and hook_jq_default from the entry, and
+# hook_session_marker from lib/markers.sh.
 
-# hook_session_model <session_id> <transcript_path>: the session's CURRENT
-# model, resolved the only honest way (the accuracy contract lives in
-# claude/session/context/README.md: the model/effort env vars are settings
-# defaults frozen at launch and are NEVER read). Sets:
-#   HOOK_SESSION_MODEL:      raw model id (e.g. claude-fable-5[1m]); empty when
-#                            unknowable (first prompt of a fresh VS Code session)
-#   HOOK_SESSION_MODEL_SRC:  live | transcript | none
-# Tiers: the statusline cache written per-session by claude/session/statusline
-# (live, terminal sessions only; trusted only when statusline-shaped: model or
-# thinking present), then the transcript's last assistant entry (exact, lags
-# one response). Callers treat empty as "unknown", never as an error.
-# Consumers: manager/resolver, manager/profile (and, in a user's personal
-# hooks, claude/session/context: see the duplication note at the top).
+# hook_session_model <session_id> <transcript_path>: the CURRENT model into
+# HOOK_SESSION_MODEL (empty when unknowable) and HOOK_SESSION_MODEL_SRC (live |
+# transcript | none), from the statusline cache then the transcript, never the
+# launch-frozen env vars. The personal hooks carry a twin: change both together.
 hook_session_model() {
   HOOK_SESSION_MODEL=""
   HOOK_SESSION_MODEL_SRC="none"
@@ -44,12 +33,9 @@ hook_session_model() {
   [ -n "$HOOK_SESSION_MODEL" ]
 }
 
-# hook_model_tier <model_id>: the model family a raw id belongs to. Sets
-# HOOK_MODEL_TIER to fable|opus|sonnet|haiku (empty + non-zero return for an
-# unrecognized id: callers decide their own "unknown" behavior). Pure string
-# logic: strips context-window suffixes like [1m] and matches the family word,
-# so claude-opus-5[1m], claude-opus-4-5, and a bare "opus" all read as opus.
-# Consumers: manager/resolver, manager/profile.
+# hook_model_tier <model_id>: the family (fable|opus|sonnet|haiku) into
+# HOOK_MODEL_TIER, a context suffix like [1m] ignored; an unknown id returns
+# non-zero with it empty, and the caller decides what unknown means.
 hook_model_tier() {
   HOOK_MODEL_TIER=""
   local id="${1%%[*}"
@@ -62,12 +48,9 @@ hook_model_tier() {
   esac
 }
 
-# _hook_manager_layer <settings_file>: the OVERRIDABLE slice of a settings
-# file's `manager` block, as a compact JSON object ({} for a missing file, one
-# without the block, or anything jq cannot read). Only `mode`, `enabled`, and
-# the three `tiers` keys are overridable. `classes` and `ladder` stay global,
-# so a repo can move a class onto a cheaper rung but never redefine the rungs
-# themselves. Internal to hook_manager_config.
+# _hook_manager_layer <settings_file>: the overridable slice of a file's
+# `manager` block as compact JSON, {} when unreadable. Internal to
+# hook_manager_config.
 _hook_manager_layer() {
   [ -f "$1" ] || { printf '{}'; return 0; }
   # Nothing is appended to what jq wrote: the merge below reads exactly three
@@ -78,26 +61,10 @@ _hook_manager_layer() {
     | with_entries(select(.value != null and .value != {}))' "$1"
 }
 
-# hook_manager_config <ladder_path> <cwd>: the manager system's EFFECTIVE
-# config for this session, as a compact JSON object in HOOK_MANAGER_CONFIG.
-# Three layers, deep-merged, each beating the one before it:
-#   GLOBAL  the ladder manifest (the SSOT; MANAGER_LADDER overrides the path)
-#   USER    the `manager` block of ~/.workkit/settings.json
-#           (MANAGER_USER_SETTINGS overrides the path)
-#   REPO    the `manager` block of <repo root>/.workkit/settings.json, the
-#           repo root resolved from <cwd> by GIT; skipped entirely when <cwd>
-#           is empty and when git names no toplevel, since no git root means no
-#           repo layer: that settings file is a REPO's, and the one a non-repo
-#           cwd carries is the MACHINE's own state (the user profile holds it
-#           on Windows, where every temp directory sits under that profile), so
-#           reading it here would let the machine layer override itself
-# The settings files' own top-level keys belong to the ISSUE-WORKFLOW system
-# and are never read here. The manager's config is the separate `manager` key.
-# Returns non-zero when the merged config carries `enabled: false`: the repo
-# has opted out of the crew, and both consumers do nothing at all. Every other
-# failure (no jq, missing or unparseable file, no git) contributes nothing and
-# falls through to the layer below. A config read must never break a session.
-# Consumers: manager/resolver, manager/profile.
+# hook_manager_config <ladder_path> <cwd>: the effective config, three layers
+# deep-merged, into HOOK_MANAGER_CONFIG (docs/hooks.md § manager:resolver).
+# Returns non-zero on `enabled: false`; an unreadable layer adds nothing, since
+# a config read must never break a session.
 hook_manager_config() {
   local ladder="$1" cwd="${2:-}" global="{}" user repo="{}" repo_root off
   HOOK_MANAGER_CONFIG="{}"

@@ -1,22 +1,12 @@
 #!/usr/bin/env bash
 # workflow/standards/hooks.sh: the once-a-day assertion that the hook layer
-# beside the engine is alive: every wired hook resolves, is executable and
-# parses, the pieces it sources parse, and the tools they call are present. SOURCED by standards.sh, never
-# executed, and it runs nothing at load: it defines functions and sets
-# nothing. HOOKS_DIR, HOOK_TOOLS and the hooks_checked counter are the
-# entry's.
+# beside the engine is alive (`workflow/README.md` § The hook layer
+# self-check). Sourced by standards.sh, functions only; HOOKS_DIR, HOOK_TOOLS
+# and the hooks_checked counter are the entry's.
 
 # ── 5. The hook layer is alive ──
-# Every hook fails OPEN by design (a broken hook must never wedge a session)
-# so a chmod-stripped script, a syntax error, or a missing tool disables a
-# safety layer with nothing watching (issue #2). The per-event fail-open stays;
-# this is the once-a-day assertion that the layer exists at all.
-#
-# Reports only, in two registers. A hook that cannot run is a BROKEN INSTALL:
-# it warns and flags the run, the same as a missing template. A missing TOOL is
-# a machine condition, not a repo's fault. It warns just as loudly but does not
-# flag the run, so the version stamp and the drift report are not held hostage
-# to something no repo can fix.
+# A dead hook flags the run; a missing tool warns without flagging it, since no
+# repo can fix it.
 hook_names() {
   # Each wired command is `…/loader.sh <prefix>:<name>`; the name is what
   # resolves to a directory on disk.

@@ -1,7 +1,6 @@
 //
 // Tests for the tower dashboard's runtime: the shape it takes when published.
-// The header this suite's notes point at (why a page module is out of reach
-// under Node) is the one atop ./helpers.js, which holds the shared prologue.
+// Shared prologue, and why a page module is out of reach: ./helpers.js.
 //
 
 const path = require('path');
@@ -25,10 +24,8 @@ const run = async () => {
   await test('a tokenless landing is sent to Settings, and Settings draws itself where it lands', () => {
     const source = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
     // The three arms of the locked state, in the order the runtime asks them.
-    // Settings FIRST (#167): it is the page the token is typed on, so it draws
-    // with nothing behind it - and it is asked before the hostname fork,
-    // because a viewer who opened Settings asked for it wherever this page was
-    // served from.
+    // Settings is first, before the hostname fork: it is the page the token is
+    // typed on, so it draws with nothing behind it wherever it is served from.
     assert(/MODE === 'locked'[\s\S]{0,600}if \(options\.tokenless\) \{\n\s+options\.render\(body, \{ feeds: \{\}, selectedRepo: selectedRepo\(\) \}\);/.test(source),
       'a locked Settings page is rendered, with an empty state and no poller');
     assert(/isLocalHost\(location\.hostname\)\) \{\n\s+body\.innerHTML = towerDownNotice\(location\.href\)/.test(source),
@@ -74,10 +71,8 @@ const run = async () => {
   });
 
   await test('a token GitHub refused is carried to the page that owns the token', () => {
-    // The reason used to be dumped on the page as a bare problem - on a page
-    // with no field in it - and then into a dialog nothing could dismiss. Now
-    // it goes where a token is typed: Settings reads it off the state and puts
-    // it in its own card, and every other page shows the line that points there.
+    // A token GitHub refused goes where a token is typed: Settings reads it off
+    // the state into its own card, and every other page shows the line pointing there.
     const source = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
     assert(/isTokenRefusal/.test(source), 'the refusal is recognised by the one predicate that names it');
     assert(/state\.tokenProblem = refused\.reason/.test(source), 'the reason rides the state, like the selection and the re-read do');
@@ -115,10 +110,9 @@ const run = async () => {
   });
 
   await test('the Health page names a tower older than its checkout, and nothing otherwise', () => {
-    // The page imports the framework, so it is out of reach of these suites
-    // (see the header) - what can be pinned is the source of the decision: the
-    // notice is drawn from BOTH commits being present and differing, which is
-    // what keeps an unreadable git and a published copy silent.
+    // The page imports the framework (see ./helpers.js), so the source of the
+    // decision is pinned: the notice needs both commits present and differing,
+    // which keeps an unreadable git and a published copy silent.
     const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'health.js'), 'utf8');
     assert(/meta\.bootCommit && meta\.currentHead && meta\.bootCommit !== meta\.currentHead/.test(source),
       'both shas present and differing is the whole condition');

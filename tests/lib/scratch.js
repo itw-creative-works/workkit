@@ -1,10 +1,8 @@
-//
 // The one writer of a scratch folder: every suite and helper makes its
 // throwaway directories here, and one exit handler removes them all (forced, so
 // a folder a case already removed is harmless). The path is always resolved:
 // the temp dir is a symlink on macOS, and a child's output names the resolved
 // form.
-//
 
 const fs = require('fs');
 const os = require('os');

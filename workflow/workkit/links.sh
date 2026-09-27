@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
 # workflow/workkit/links.sh: the two links this command maintains, the
 # engine's address (asked of standards.sh, which owns it) and the
-# `~/.local/bin/workkit` command itself. SOURCED by workkit.sh, never executed,
-# and it runs nothing at load: it defines functions and sets nothing. Every
-# name it reads (SCRIPT_DIR, KIT_DIR, STANDARDS, ENGINE_LINK, BIN_DIR, BIN_LINK,
-# QUIET) is the entry's.
+# `~/.local/bin/workkit` command itself. Sourced by workkit.sh, functions only;
+# every name it reads is the entry's.
 
-# The engine's address is standards.sh's own to maintain: it points
-# ~/.claude/workkit at the folder it is running from, when that folder is a real
-# workkit checkout. `--engine-link` is that step on its own, which is how this
-# command triggers it without owning a second copy of it. Its diagnostics arrive
-# on stderr, so an action line is relayed and silence stays silent.
+# standards.sh owns the engine's address; `--engine-link` runs that step alone.
+# Its diagnostics arrive on stderr, so an action line is relayed and silence
+# stays silent.
 refresh_engine_link() {
   local out rc=0
   # A missing engine is a broken checkout, never a machine that is up to date:
@@ -26,21 +22,16 @@ refresh_engine_link() {
     return 0
   fi
 
-  # The heal speaks in the same voice this command does (issue #237), so the
-  # relay strips the colors, then the indent and the glyph, and keeps the engine
-  # lines: an action line is re-said here under this command's own glyph rather
-  # than repeated with the heal's.
+  # The relay strips the heal's colors, indent and glyph, and re-says each
+  # engine line under this command's own glyph.
   out="$(printf '%s\n' "$out" | sed $'s/\033\\[[0-9;]*m//g' | wk_plain | grep '^engine:' || true)"
   if [[ -n "$out" ]]; then
     while IFS= read -r line; do
       wk_ok "$line"
     done <<<"$out"
   else
-    # Silence is two different outcomes: the address already resolves here, or
-    # the engine REFUSED to write it (no ~/.claude, no git, a checkout that is
-    # not the machine's engine). Only the first is "current", so the address is
-    # read back rather than assumed: a refusal that reads as up to date is the
-    # one report this command must not print (verifier finding, 2026-07-29).
+    # Silence is either a current address or a refusal to write it, so the
+    # address is read back: a refusal must never read as up to date.
     if [[ -L "$ENGINE_LINK" && "$(cd "$ENGINE_LINK" 2>/dev/null && pwd -P || true)" == "$SCRIPT_DIR" ]]; then
       wk_skip "engine: $ENGINE_LINK is current"
     else
@@ -54,10 +45,8 @@ refresh_engine_link() {
 # and is only reported.
 link_command() {
   local current verb=linked make=1
-  # The automatic path CREATES nothing on a machine that has no ~/.local/bin:
-  # the same restraint the engine shows with ~/.claude. A directory convention a
-  # machine has not adopted is not a session start's to introduce; a human
-  # running `setup` or `update` is asking for it.
+  # The automatic path creates no ~/.local/bin, the same restraint the engine
+  # shows with ~/.claude; a human's setup or update may.
   if [[ "$QUIET" -eq 1 && ! -d "$BIN_DIR" ]]; then
     return 0
   fi
@@ -77,10 +66,8 @@ link_command() {
     mkdir -p "$BIN_DIR"
   fi
 
-  # The engine's address and this command are the two links the engine makes,
-  # both of them one path for the whole machine, so both are written by the one
-  # atomic maker in lib/flows.sh and judged the same way: by what the address IS
-  # afterwards, never by the status of the command that wrote it.
+  # One atomic maker in lib/flows.sh for both machine-wide links, judged by
+  # what the address is afterwards, never by the command's status.
   if [[ "$make" -eq 1 ]] && wk_link "$SCRIPT_DIR/workkit.sh" "$BIN_LINK"; then
     wk_ok "command: $verb $BIN_LINK → $SCRIPT_DIR/workkit.sh"
   fi

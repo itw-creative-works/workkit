@@ -1,17 +1,8 @@
-//
-// The shared prologue of the jobs/morning/brief/brief-payload.js suites, the `*.test.js`
-// files beside this one, which test the payload the 9am job hands to Claude.
-// A plain module, never a suite: the runner only loads files ending in
-// `.test.js`.
-//
-// The whole composition runs here against a fixture roster: one
-// real, opted-in git repo and one fake exec answering `gh` while passing `git`
-// through to the real binary: the same seam the tower's server suite uses,
-// because roster discovery and health ask git questions no stub answers
-// honestly.
-//
-// Nothing here reaches the network, and nothing here runs Claude.
-//
+// The shared prologue of the jobs/morning/brief/brief-payload.js suites beside
+// this one: a fixture roster of one real opted-in git repo and a fake exec that
+// answers `gh` and passes `git` through, since roster discovery and health ask
+// git questions no stub answers honestly. Nothing here reaches the network or
+// runs Claude.
 
 const fs = require('fs');
 const path = require('path');
@@ -204,12 +195,9 @@ const localNoon = (y, m, d) => new Date(y, m - 1, d, 12, 0, 0).toISOString();
 const MONDAY = localNoon(2026, 8, 3);
 const TUESDAY = localNoon(2026, 8, 4);
 
-// A case whose answer rests on the `gh` shim mkNewsWorld put on PATH, which
-// the SCRIPT spawns itself. No stub a suite writes is startable by name from
-// Node on Windows (tests/lib/platform.js, `stubTool`), so the machine's own
-// gh answers the board read there. The world's env seals that gh to a scratch
-// config, so what it answers is an empty board rather than the developer's,
-// and an empty board is not what these cases are about.
+// A case resting on the `gh` shim the script itself spawns: no stub is
+// startable by name from Node on Windows (`stubTool`), so there the sealed
+// machine gh answers an empty board instead.
 const newsTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
 
 module.exports = {

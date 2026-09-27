@@ -1,12 +1,9 @@
-//
 // Suite discovery for the Node runner (tests/run.js) and the runner's own
 // suite (tests/runner.test.js), so which files count as a suite has one home.
-//
 
 const fs = require('fs');
 const path = require('path');
 
-// Recursively collect *.test.js files (skipping lib/ and node_modules).
 const findSuites = (dir) => {
   const out = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

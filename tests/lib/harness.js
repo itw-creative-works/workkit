@@ -1,21 +1,9 @@
 /* eslint-disable no-console */
-//
-// Tiny zero-dependency test harness shared across this repo's test suites.
-//
-// A `test()` runner that prints ✓/✗ per case, plus `assert`/`assertEq`. State
-// is module scoped and a suite reports its own results via `summary()`.
-//
-// Usage:
-//   const { test, assert, assertEq, group, summary } = require('../lib/harness');
-//   group('my group');
-//   await test('does a thing', () => { assert(cond, 'msg'); });
-//   const { passed, failed } = summary();   // call once at the end of the file
-//
+// Tiny zero-dependency test harness shared across the suites: `test()` prints
+// a mark per case and each suite reports via `summary()`. AGENTS.md § Tests.
 
-// The workflow state directory's name, for the TEST layer. Every suite builds
-// its fixture paths from this instead of spelling the directory out. The engine
-// (workflow/standards.sh) and the hooks (hooks/_lib.sh) hold their own copy;
-// the standards.sh suite asserts all three still agree.
+// The workflow state directory's name for the test layer. The engine and the
+// hooks hold their own copy; the standards.sh suite asserts all three agree.
 const WORKKIT_DIR = '.workkit';
 
 let passed = 0;
@@ -52,51 +40,33 @@ const assertEq = (actual, expected, msg) => {
   }
 };
 
-// One CASE this machine cannot answer, named rather than quietly dropped: a
-// file mode on Windows, a tool only one platform ships. It counts as neither a
-// pass nor a failure and is carried to the runner by name, so the totals line
-// says how much of the run was left unanswered instead of letting the ⊘ lines
-// scroll past. skipSuite() below throws the whole file away, which would
-// wrongly drop the platform-independent cases sharing it.
+// One case this machine cannot answer, named rather than dropped: it counts as
+// neither pass nor failure. skipSuite() would drop the whole file, cases that
+// could run included.
 const skip = (name, reason) => {
   skips.push({ name, reason });
   console.log(`  \x1b[33m⊘\x1b[0m ${name} \x1b[33m(skipped: ${reason})\x1b[0m`);
 };
 
-// The runner for a case only one platform, or only one provisioned machine,
-// can answer: `test` where the answer is reachable, and a stand-in that names
-// the skip where it is not. A case wrapped this way is COUNTED as a skip;
-// asking the question inside the body instead scores a pass for a case that
-// asserted nothing.
-//
+// `test` where the case is answerable, a named skip where it is not. Asking the
+// question inside the body instead scores a pass for a case that asserted nothing.
 //   const newsTest = testUnless(IS_WINDOWS, 'the gh shim is not startable here');
-//   await newsTest('the cursor advances', () => { ... });
 const testUnless = (skipIt, reason) => (skipIt ? (name) => skip(name, reason) : test);
 
-// A suite whose preconditions are absent SKIPS itself instead of failing. Some
-// suites can only ask their question on a provisioned machine: one with
-// caffeinate, with ~/.claude linked, with an upstream's dependencies installed.
-// Elsewhere (a Linux runner, a container, a fresh clone) their failures say
-// nothing about the code, and excluding them from the OUTSIDE (a second npm
-// script, a flag in a workflow file) puts that knowledge far from the suite it
-// describes. Each suite states its own requirement, so `npm test` is the one
-// command everywhere and reports honestly wherever it runs.
+// A suite whose preconditions are absent skips itself instead of failing, so
+// `npm test` stays the one command everywhere and the requirement lives in the
+// suite it describes.
 const skipSuite = (reason) => {
   const err = new Error(reason);
   err.suiteSkipped = true;
   throw err;
 };
 
-// The scheduling capability the 9am job is built on. A test that asserts what
-// launchd does needs launchd to exist. Where it does not, there is no schedule
-// to keep current and the case says so instead of failing. The engine itself
-// branches on `uname -s` ("launchd is macOS"), so the detector mirrors that
-// exact question rather than probing PATH for launchctl: the two must never
-// disagree about which branch the code under test takes (issue #114).
+// Mirrors the engine's `uname -s` question rather than probing PATH for
+// launchctl, so the two never disagree about which branch the code takes.
 const hasLaunchd = () => process.platform === 'darwin';
 
-// Snapshot + reset the running totals for THIS file, returning what it accrued.
-// The runner sums these across files. Resetting lets each file report cleanly.
+// Snapshot and reset this file's totals; the runner sums them across files.
 const summary = () => {
   const result = { passed, failed, failures: failures.slice(), skips: skips.slice() };
   passed = 0;
@@ -106,9 +76,8 @@ const summary = () => {
   return result;
 };
 
-// Run one suite file on its own (`node tests/hooks/x.test.js`). The runner
-// catches a skip for the whole-suite case; without this, invoking a file
-// directly would surface that same skip as an unhandled crash.
+// Runs one suite file on its own; without it a whole-suite skip would surface
+// as an unhandled crash.
 const selfRun = (runner) => {
   runner()
     .then(({ failed }) => process.exit(failed > 0 ? 1 : 0))

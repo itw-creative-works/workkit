@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# workflow/standards/state.sh: participation and the machine's own files. The
+# workflow/standards/state.sh: participation and the machine's own files: the
 # tower clone check, the user-level seeds, the offer line, the repo's committed
-# answer and standard version, the drift report, the state resolution, a
-# recorded decline, the machine roster and the committed opt-in. SOURCED by
-# standards.sh, never executed, and it runs nothing at load: it defines
-# functions and sets nothing. The four states, the files they live in and the
-# clone's address are the entry's (§ 0. Participation).
+# answer and version, the drift report, the state resolution, a recorded
+# decline, the roster and the committed opt-in. Sourced by standards.sh,
+# functions only; the states, their files and the clone's address are the
+# entry's (§ 0. Participation).
 
 # Is the repo being healed the tower clone? The clone's address and why the
 # two sides are compared by physical path sit beside HOME_CLONE_DIR in
@@ -17,24 +16,10 @@ is_home_clone() {
   [[ -n "$here" && "$here" == "$there" ]]
 }
 
-# The user's workflow folder exists from the first run, not from the first
-# decline. Someone running this system expects to find it; a folder that appears only after a particular action reads as
-# missing.
-# A machine whose dotfiles already track and symlink the folder makes this a
-# no-op: it is the path for a machine where nothing has created it yet.
-# The seed has ONE writer. `set -C` makes the create O_EXCL, so a --decline
-# landing between the test and the write cannot be truncated away. The stderr
-# redirect precedes the target: redirections apply left to right, so one written
-# last cannot suppress the shell's own message for the redirect before it.
-#
-# The hand-edited file is seeded with the site options SPELLED OUT rather than
-# empty: someone opening it has to be able to see what there is to set, and a
-# `{ "version": 1 }` teaches nothing.
-#
-# `publish` seeds as NULL, never false (issue #84): the switch has three states,
-# and a seeded false is an answer nobody gave. `true`/`false` mean someone was
-# asked; null (like an absent key) means `workkit setup` still has a question to
-# put. Every reader treats anything but `true` as off, so the site stays unpublished either way.
+# The user's folder exists from the first run. `set -C` makes the create
+# O_EXCL, so a racing --decline is never truncated, and the stderr redirect
+# comes first so it silences the target's own message. `publish` seeds null,
+# the unanswered state (`workflow/README.md` § The two settings files).
 seed_user_settings() {
   local dir="${USER_SETTINGS%/*}"
   [[ -e "$USER_SETTINGS" ]] && return 0
@@ -58,22 +43,14 @@ offer_line() {
   printf 'this repo is not in the issue workflow; say the word to enable it (bash %q/standards.sh --enable %q), or decline and it will not ask again (--decline).' "$SCRIPT_DIR" "$root"
 }
 
-# true | false | absent | unreadable: the `enabled` key of a settings file. jq
-# when it is here; a grep on our own two-key file when it is not, so a machine
-# without jq still honors a deliberate `enabled: false` instead of healing over
-# it. The file defaults to THIS repo's and is named by a caller asking about
-# another one (the roster prune, which asks the same question of every
-# registered path), so the reading has one home whichever repo it is about.
+# true | false | absent | unreadable: the `enabled` key of a settings file,
+# this repo's by default. jq when present, the no-jq readers otherwise, so a
+# machine without jq still honors a deliberate `enabled: false`.
 repo_enabled_flag() {
   local settings="${1:-$REPO_SETTINGS}"
   if command -v jq >/dev/null 2>&1; then
-    # `has`, not `//`: jq's alternative operator treats `false` as absent, which
-    # is the one value this reading exists to find.
-    #
-    # A file jq cannot parse is NOT a legacy opt-in: reporting `absent` here
-    # would heal a repo whose answer is unreadable. Say so instead, and only
-    # when jq answered nothing: a file whose first value says no and whose tail
-    # jq chokes on has still said no.
+    # `has`, not `//`, since `//` treats `false` as absent. An unparseable file
+    # reads `unreadable`, never the legacy opt-in, unless jq already read a no.
     wk_jq_default 'unreadable' \
       -r 'if has("enabled") then (.enabled | tostring) else "absent" end' "$settings"
   elif wk_settings_declined "$settings"; then
@@ -97,10 +74,8 @@ repo_version() {
   printf '%s' "$v"
 }
 
-# Report what this repo still carries from a retired convention. REPORTS ONLY:
-# every finding here is either destructive to fix (a retired file holds work
-# items nobody migrated) or needs judgment (rewriting CHANGELOG prose), and
-# neither belongs to a script that runs unattended at session start.
+# Report what this repo still carries from a retired convention, and fix
+# nothing: each finding is destructive to fix or needs judgment.
 report_drift() {
   local found=0 f
 
@@ -114,13 +89,11 @@ report_drift() {
     found=1
   fi
 
-  # The CHANGELOG check judges the WHOLE file, unlike the guards, which judge
-  # only the lines a change adds. That difference is the point: the guards keep
-  # new entries right, and this says whether the history was ever brought over.
+  # This judges the whole CHANGELOG, unlike the guards, which judge only added
+  # lines: it says whether the history was ever brought over.
   if [[ -f "$root/CHANGELOG.md" ]]; then
     if [[ -f "$CHANGELOG_LINTER" ]] && command -v node >/dev/null 2>&1; then
-      # Count ENTRIES, not violations: one entry commonly breaks several rules at
-      # once, and "12 entries" is the number a human can act on.
+      # Count entries, not violations: one entry often breaks several rules.
       local bad
       bad="$(node "$CHANGELOG_LINTER" "$root/CHANGELOG.md" 2>&1 | grep -oE '^  line [0-9]+' | sort -u | wc -l | tr -d ' ')"
       if [[ "${bad:-0}" -gt 0 ]]; then
@@ -163,10 +136,7 @@ resolve_state() {
   printf 'undecided'
 }
 
-# The state mutex is the engine's, not this script's: `wk_take_state_lock`
-# and `wk_drop_state_lock` in lib/state.sh are the single home, because the home
-# repo's writers (the id cache, the home slug) take the same one and a second
-# copy of it here would be a second mutex guarding the same files.
+# The state mutex is lib/state.sh's, shared with the home repo's writers.
 record_decline() {
   if ! command -v jq >/dev/null 2>&1; then
     wk_warn "decline: jq is required to edit $USER_REPOS"
@@ -198,25 +168,9 @@ record_decline() {
   fi
 }
 
-# The machine-local roster: every repo this machine has healed, listed in
-# `.repos.json` under the same `repos` key that holds this user's declines
-# ("enabled" against the path, "declined" where a decline was recorded). The
-# file is the ENGINE's: nothing in it is ever typed by hand, which is why it
-# sits beside the hand-edited settings.json rather than in it. It is an INDEX,
-# never the answer:
-# the repo's committed settings.json stays the SSOT of membership, and this list
-# only says which of those repos this machine has seen. The tower reads it
-# instead of walking a filesystem root, so a repo never opened here is simply
-# not on the dashboard.
-#
-# Maintained on contact and silently: a heal or an --enable adds the repo it is
-# standing in and removes any listed path that is gone, whose committed file is
-# gone, or whose committed file now says `enabled: false`, the three ways a
-# repo stops being a member, exactly as resolve_state reads them. A decline
-# entry is a decision, not an observation, and is never pruned.
-#
-# Best effort throughout: no jq, no roster file, or a roster file nobody
-# can parse each leave the roster as it is. The heal never fails over its index.
+# The machine roster in `.repos.json`, maintained on contact and silently
+# (`workflow/README.md` § The two settings files). A decline is never pruned,
+# and the heal never fails over its index.
 register_in_roster() {
   local keys key stale='' stale_json flag locked=0
 
@@ -224,8 +178,7 @@ register_in_roster() {
   seed_user_repos
   [[ -f "$USER_REPOS" ]] || return 0
 
-  # A file nobody can parse is SAID, not silently skipped: the roster would go
-  # stale forever and the tower would quietly show the wrong machine.
+  # An unparseable file is reported, or the roster would go stale unseen.
   if ! keys="$(wk_jq -r '(.repos // {}) | to_entries[] | select(.value != "declined") | .key' "$USER_REPOS" 2>/dev/null)"; then
     wk_warn "roster: $USER_REPOS is not valid JSON; fix or remove it; until then this machine's roster is not maintained"
     return 0
@@ -238,9 +191,8 @@ register_in_roster() {
       stale="$stale$key"$'\n'
       continue
     fi
-    # No committed file is the tri-state's way back to undecided or declined, so
-    # it is the same "no longer a member" case as a path that is gone. Left in,
-    # the entry would sit on the roster forever while the tower ignored it.
+    # No committed file is the tri-state's way back to undecided, so the entry
+    # leaves the roster like a path that is gone.
     if [[ ! -f "$key/$REPO_SETTINGS" ]]; then
       stale="$stale$key"$'\n'
       continue
@@ -263,13 +215,9 @@ register_in_roster() {
 
   stale_json="$(printf '%s' "$stale" | wk_jq -Rs 'split("\n") | map(select(length > 0))' 2>/dev/null)" || return 0
 
-  # The same mutex a decline takes, for the same reason: this is a whole-file
-  # read-modify-write, and sessions opening together in several repos would
-  # otherwise keep only the last one's registration. The heal runs once per repo
-  # per day, so a lost registration keeps that repo off the tower, the board and
-  # the brief until tomorrow. Released here rather than by an EXIT trap: the
-  # heal has work left after this, and holding the lock through it would make
-  # every concurrent run wait out the full five seconds.
+  # The shared mutex, since sessions opening together would otherwise keep
+  # only the last registration. Released here rather than by a trap, so
+  # concurrent runs never wait out the rest of the heal.
   if wk_take_state_lock; then locked=1; fi
 
   wk_json_edit "$USER_REPOS" --arg r "$roster_key" --argjson stale "$stale_json" \
@@ -283,11 +231,9 @@ register_in_roster() {
 write_repo_optin() {
   if [[ ! -f "$REPO_SETTINGS" ]]; then
     mkdir -p "$WORKKIT_DIR"
-    # Version 1, deliberately, even though this file is new: a repo joining
-    # TODAY is exactly the one most likely to carry a PROGRESS.md and an old
-    # CHANGELOG, and the mechanical heals do not clear either. Recording the
-    # current standard here would skip the drift report for the one case it
-    # exists to serve. The heal that follows stamps it forward.
+    # Version 1 on purpose: a repo joining now is the likeliest to carry retired
+    # files, and the drift report runs only below the current standard. The
+    # heal that follows stamps it forward.
     printf '{\n  "version": 1,\n  "enabled": true\n}\n' >"$REPO_SETTINGS"
     wk_ok "opt-in: created $REPO_SETTINGS; commit it, it is the repo's yes"
     return 0

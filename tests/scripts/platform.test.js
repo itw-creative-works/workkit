@@ -1,17 +1,7 @@
-//
 // Tests for workflow/lib/platform.sh: the engine's platform seam, the one home of
-// the spellings macOS, Windows (Git Bash) and Linux disagree about.
-//
-// The seam has its own suite because it has its own two consumers: the engine
-// sources it (lib.sh, standards.sh) and so does the hook layer beside it
-// (hooks/_lib.sh), and neither consumer's suite owns it. tests/hooks/lib.test.js
-// proves the hooks REACH it under their own names; this proves what it answers.
-//
-// Every case sources the real file in a real bash and reads what it printed.
-// The Windows branch is driven by OSTYPE, which bash honors when it is
-// inherited, plus a `cygpath` on PATH: the same way tests/hooks/lib.test.js
-// asks the hook layer's platform questions off a Windows machine.
-//
+// the spellings macOS, Windows (Git Bash) and Linux disagree about. The engine and
+// the hook layer both source it, so it has its own suite; the Windows branch is
+// driven by an inherited OSTYPE plus a `cygpath` on PATH.
 
 const fs = require('fs');
 const net = require('net');
@@ -72,7 +62,7 @@ const netstatWorld = () => {
   return dir;
 };
 
-// The port questions run on THIS machine's own PATH rather than the system one
+// The port questions run on this machine's own PATH rather than the system one
 // every other case here uses: the tools they ask (`lsof`, and on Windows
 // `netstat` in system32 and the `kill.exe` beside bash) are not one directory,
 // and a real run of the tower has the whole PATH anyway.
@@ -81,7 +71,7 @@ const PORT_TOOL_PATH = { PATH: process.env.PATH };
 /**
  * A child process listening on a free port, and the port it took: the shape a
  * port takeover finds. Written with process.stdout rather than console.log,
- * which PAINTS a number once FORCE_COLOR is set and would hand the case a port
+ * which paints a number once FORCE_COLOR is set and would hand the case a port
  * wrapped in escapes.
  *
  * `ignoreTerm` gives the child a SIGTERM handler that does nothing, which is
@@ -144,7 +134,7 @@ const run = async () => {
     // No OSTYPE override and no stub: the shell's own answer, which is the one
     // every real run of the engine gets. The drive-mount spelling is the input
     // because it is the one that differs: off Windows it comes back byte for
-    // byte, which IS the identity this seam promises there.
+    // byte, which is the identity this seam promises there.
     const { out } = inPlatform('wk_git_path /c/Users/x/repo; printf "|"');
     const expected = IS_WINDOWS ? 'C:/Users/x/repo|' : '/c/Users/x/repo|';
     assertEq(out, expected, `the platform's own spelling, got: ${JSON.stringify(out)}`);
@@ -181,12 +171,10 @@ const run = async () => {
   });
 
   await test('the Windows branch reads netstat: one pid per listener, CRLF stripped, near misses dropped', () => {
-    // Windows answered off Windows, the shape the wk_git_path cases above use:
-    // OSTYPE plus the branch's own tool on PATH. The stub's rows carry every
-    // near miss the parse has to reject: the same pid listening on both stacks
-    // (one answer, since a caller ends what it is handed), a port this one is
-    // only a suffix of, a port this one is only a prefix of, a connection whose
-    // FOREIGN port matches, and a UDP row.
+    // Windows answered off Windows: OSTYPE plus the branch's own tool on PATH.
+    // The stub's rows carry every near miss: one pid on both stacks (one answer),
+    // a port this one is only a suffix or a prefix of, a connection whose foreign
+    // port matches, and a UDP row.
     const dir = netstatWorld();
     try {
       const { out } = inPlatform('wk_port_pids 8693', { OSTYPE: 'msys', PATH: pathWith(dir) });
@@ -200,11 +188,10 @@ const run = async () => {
   });
 
   await test('the pid a port answered with is ended by the seam, politely and forced alike', async () => {
-    // The takeover the tower runs, in its two passes: look the holder up, end
-    // it, and the process is gone. A child rather than this process, since the
-    // point is that it dies. The forced pass gets a child that IGNORES SIGTERM,
-    // the only listener that pass exists for: one that dies on the polite
-    // signal would answer the same whether `-9` was carried or dropped.
+    // The takeover the tower runs, in its two passes, against a child since the
+    // point is that it dies. The forced pass gets a child that ignores SIGTERM:
+    // one that dies on the polite signal would answer the same whether `-9` was
+    // carried or dropped.
     for (const signal of ['', '-9']) {
       const forced = signal === '-9';
       const { child, port } = await listener(forced);
@@ -213,7 +200,7 @@ const run = async () => {
         assertEq(out.trim(), String(child.pid), `the child holds the port, got: ${JSON.stringify(out)}`);
         if (forced && !IS_WINDOWS) {
           // What the escalation is for: the polite call leaves this one
-          // listening. Only where a polite end EXISTS, since Windows has none
+          // listening. Only where a polite end exists, since Windows has none
           // for a process without a window and ends it on the first call.
           inPlatform(`wk_end_pid ${child.pid}`, PORT_TOOL_PATH);
           assertEq(await ended(child, 2000), false, 'the polite signal left the stubborn listener alive');
@@ -226,7 +213,7 @@ const run = async () => {
     }
   });
 
-  // The seam the SUITES spawn through (tests/lib/platform.js) rather than the
+  // The seam the suites spawn through (tests/lib/platform.js) rather than the
   // one the engine sources, because the two answer the same question for the
   // two halves of this repo and neither has another home. A suite that got
   // these wrong would reach the developer's own machine to pass.
@@ -279,7 +266,7 @@ const run = async () => {
     const home = mkTmp('wf-platform-');
     const env = homeEnv(home, {});
     assertEq(env.GH_CONFIG_DIR, path.join(home, '.config', 'gh'), 'the key the seal is made of');
-    // Not "outside the real home": a Windows temp directory sits INSIDE the
+    // Not "outside the real home": a Windows temp directory sits inside the
     // profile, so the only thing that has to miss is the config gh would have
     // read on its own.
     assert(env.GH_CONFIG_DIR !== path.join(os.homedir(), '.config', 'gh'),
@@ -309,7 +296,7 @@ const run = async () => {
 
   await test('a native path becomes the one Git Bash reads, and one already in it is returned as it came', () => {
     // `asWindows` is how a Mac reaches that branch at all, so the answer has to
-    // come from the platform as it is when the question is ASKED. A path with
+    // come from the platform as it is when the question is asked. A path with
     // spaces, because a Windows profile directory has them and a translation
     // that quoted or split would eat them.
     assertEq(asWindows(() => shellPath('C:\\Users\\My Name\\t mp')), '/c/Users/My Name/t mp',

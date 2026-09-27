@@ -40,10 +40,9 @@ const run = async () => {
     assertEq(DEFAULT_PORT, 8693, 'TOWER on a keypad');
   });
 
-  // Issue #202: the sweep met a payload shape it did not expect - GitHub had
-  // nulled every issue node - and the throw ended the API process, which takes
-  // the dashboard down with it (tower/start.sh: either half ending ends both).
-  // A bug in a lib is a 500 on that request and nothing more.
+  // A throw in a handler must not end the API process, which takes the dashboard
+  // down with it (tower/start.sh: either half ending ends both). A bug in a lib
+  // is a 500 on that request and nothing more.
   await test('a handler that throws answers 500 and the process keeps serving', async () => {
     const w = mkWorld();
     // A shape no normalizer expects: the connection's nodes are not a list.
@@ -67,10 +66,9 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  // And the same bug one page later, where no request is left to answer it: the
-  // continuations run on a TIMER, off the request stack, and the throw that
-  // ended the API came out of the shaping of what had arrived rather than out of
-  // the ask. A round that cannot finish is dropped, not fatal.
+  // The same bug one page later, where no request is left to answer it: the
+  // continuations run on a timer, off the request stack, so a round that cannot
+  // finish is dropped, not fatal.
   await test('a continuation that throws is dropped, and the process keeps serving', async () => {
     const w = mkWorld();
     // A first page that is whole and says another follows, and a continuation
@@ -108,14 +106,14 @@ const run = async () => {
         await new Promise((resolve) => { setTimeout(resolve, 5); });
       }
       assertEq(said.length, 1, 'the machine is told once, the way every other catch here tells it');
-      // The kit's one line shape (issue #237): the glyph, then the message.
+      // The kit's one line shape: the glyph, then the message.
       assert(/^✖ the board sweep was dropped: /.test(said[0]),
         `and in those words, got: ${said[0]}`);
 
       const alive = await getJson(c, '/api/repos');
       assertEq(alive.status, 200, 'the listener is still up - the timer did not take it with it');
 
-      // The slot stayed COLD, so there is nothing to serve for the minute: the
+      // The slot stayed cold, so there is nothing to serve for the minute: the
       // next read sweeps again, and a page that has stopped breaking lands.
       broken = false;
       const second = await getJson(c, '/api/board');

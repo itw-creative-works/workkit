@@ -7,12 +7,9 @@
 import { priorityRank, issueKey } from '../format.js';
 import { briefFreshness } from './history.js';
 
-// The four sections, the urgency order and the headline are tower/api/lib/brief.js's
-// rules, restated because that module is on the other side of the copy boundary.
-// `warnings` is the one thing this side cannot answer: uncommitted, unpushed and
-// unreleased are read off the working copies on a machine, and a browser has
-// none - so it is always empty here and the page says why rather than showing a
-// clean table that would read as good news.
+// The sections, the urgency order and the headline are tower/api/lib/brief.js's
+// rules, restated across the copy boundary. `warnings` is always empty here: a
+// browser has no working copies, and the page says so.
 
 const briefIssue = (issue) => ({
   repo: issue.repo,
@@ -41,16 +38,12 @@ const byUrgency = (a, b) => {
   return String(a.updatedAt || '').localeCompare(String(b.updatedAt || ''));
 };
 
-// `nextUp` is that module's rule too, and restated for the same reason: the few
-// items a morning could move, per repo - decisions, then what is ready to ship,
-// then the checks waiting on the owner, then accepted specs - three at most. The published copy carries it
-// because the payloads are one shape - the suite compares them key for key.
+// `nextUp` is that module's rule too: per repo, decisions, then what is ready
+// to ship, then checks waiting on the owner, then accepted specs, three at most.
 const NEXT_UP_PER_REPO = 3;
 
-// The per-repo sweep counts the payload carries, and the roster-wide closed
-// count summed off them - that module's `repoCountsFrom`, restated. A published
-// copy carries them for the same reason it carries `nextUp`: the payloads are
-// one shape, and the suite compares them key for key.
+// The per-repo sweep counts and the roster-wide closed count, that module's
+// `repoCountsFrom` restated; the suite compares the payloads key for key.
 const repoCountsFrom = (board) => ((board && board.repos) || [])
   .filter((repo) => !repo.error)
   .map((repo) => ({
@@ -59,10 +52,8 @@ const repoCountsFrom = (board) => ((board && board.repos) || [])
     closedDay: typeof repo.closedDay === 'number' ? repo.closedDay : 0,
   }));
 
-// An issue waiting on another orders last inside its repo and says which ones
-// (issue #103) - that module's rule as well, down to which edges count: only a
-// blocker the sweep can see is still open, matched on the `repo#number` pair
-// rather than the number alone.
+// An issue waiting on another orders last inside its repo and says which ones,
+// counting only a blocker the sweep still holds, matched on `repo#number`.
 const nextUpFrom = (issues) => {
   // Repo names are case-insensitive on GitHub and the inline fallback is
   // hand-typed, so the match folds case - and answers in the sweep's spelling.
@@ -123,15 +114,12 @@ export const buildBrief = (board, opts = {}) => {
   const generatedAt = opts.generatedAt || new Date().toISOString();
 
   const waiting = issues.filter((i) => i.status === 'blocked').map(briefIssue);
-  // Its own section, the API's brief's rule (issue #135): a qa item is finished
-  // work waiting on the OWNER, not work somebody is still on.
+  // A qa item is finished work waiting on the owner, not work still in hand.
   const qa = issues.filter((i) => i.status === 'qa').map(briefIssue);
-  // And the stage above it (issue #196): the check passed, so the item waits on
-  // the ship alone - the section the ship itself reads from.
+  // Complete: the check passed, so the item waits on the ship alone.
   const complete = issues.filter((i) => i.status === 'complete').map(briefIssue);
-  // The status label is the whole answer here as it is in the API's brief
-  // (issue #62): a claimed `specced` issue is a transient the standards sweep
-  // flips to `building`, never a second in-flight shape to be read for.
+  // The status label is the whole answer: a claimed `specced` issue is a
+  // transient the standards sweep flips to `building`.
   const ready = issues.filter((i) => i.status === 'specced').map(briefIssue);
   const inFlight = issues.filter((i) => i.status === 'building').map(briefIssue);
   const inbox = issues.filter((i) => i.status === 'inbox').map(briefIssue);
@@ -167,14 +155,12 @@ export const buildBrief = (board, opts = {}) => {
     warnings: [],
     summaries: opts.summaries || null,
     history: opts.history || null,
-    // Attached where the history is, off that same array (issue #176): the
-    // tower decides it server-side and carries it on the payload, and a
-    // published copy that carried the block only there drew no banner at all.
+    // Attached off the history array here, as the tower does server-side, so a
+    // published copy draws the same banner.
     briefFreshness: briefFreshness(opts.history || null, generatedAt),
     documents: opts.documents || null,
-    // Why the three above are empty, where the read had a reason to give: the
-    // tower carries it on this key too (tower/api/server/feeds.js), so the Brief and
-    // the Overview say the limit or the refusal on either copy (issue #215).
+    // Why the three above are empty, where the read gave a reason; the tower
+    // carries it on this key too (tower/api/server/feeds.js).
     historyReason: opts.historyReason || null,
   };
 };

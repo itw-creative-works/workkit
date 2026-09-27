@@ -1,8 +1,6 @@
-//
-// Tests for jobs/morning.sh as a GITHUB ACTIONS RUNNER runs it: the machine it
+// Tests for jobs/morning.sh as a GitHub Actions runner runs it: the machine it
 // makes (the settings file, the roster, the budget rails, the unreadable repos).
-// The shared prologue (the world factory, the no-jq PATH, the job runner, the two case gates) is ./helpers.js.
-//
+// The shared prologue (world factory, no-jq PATH, job runner, case gates) is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -18,8 +16,8 @@ const run = async () => {
   group('jobs/morning (cloud): the machine it makes');
 
   await test('an absent settings file is written from the repo the run belongs to', () => {
-    // Issue #91: the workflow lives on the home repo, so GITHUB_REPOSITORY IS
-    // the home and nothing has to be configured to say which one it is.
+    // The workflow lives on the home repo, so GITHUB_REPOSITORY is the home and
+    // nothing has to be configured to say which one it is.
     const world = mkWorld();
     const res = runJob(world);
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
@@ -41,18 +39,15 @@ const run = async () => {
   });
 
   await test('a runner without the seeded engine refuses, naming what is missing', () => {
-    // The engine seeded beside this script (home.sh's WK_HOME_RUNNER_FILES) is
-    // a REQUIREMENT of the cloud branch: the roster it writes is built through
-    // the engine's own predicates, and without them every directory reads as no
-    // repo at all. A refusal that names the gap beats a roster built on a
-    // question nothing answered. The machine branch asks nothing of it: its own
-    // logger fallback is the whole of what it needs.
+    // The cloud branch builds its roster through the seeded engine's
+    // predicates (home.sh's WK_HOME_RUNNER_FILES); without them every
+    // directory reads as no repo, so a named refusal beats an empty roster.
     const world = mkWorld();
     const seeded = path.join(world.root, 'brief');
     fs.mkdirSync(path.join(seeded, 'jobs'), { recursive: true });
     fs.mkdirSync(path.join(seeded, 'workflow'), { recursive: true });
     // The seeded jobs files are all there; `brief/workflow/` is the empty half,
-    // so the gap under test is the ENGINE and nothing else.
+    // so the gap under test is the engine and nothing else.
     const copy = path.join(seeded, 'jobs', 'morning.sh');
     fs.cpSync(path.dirname(SCRIPT), path.join(seeded, 'jobs'), { recursive: true });
     const res = spawnSync(BASH, [...NO_RC, shellPath(copy)], {
@@ -86,8 +81,8 @@ const run = async () => {
   });
 
   await test('nothing anywhere reads WORKKIT_HOME_SLUG any more', () => {
-    // The retired variable (issue #91). A leftover read would look like a
-    // configured runner on the one machine that still had it set.
+    // A leftover read would pass for a configured runner on any machine that
+    // still has the variable set.
     const steps = path.join(path.dirname(SCRIPT), 'morning');
     const texts = [SCRIPT, ...fs.readdirSync(steps, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => path.join(steps, e.name))].map((f) => fs.readFileSync(f, 'utf8'));
     assert(!texts.some((t) => /WORKKIT_HOME_SLUG/.test(t)), 'neither the runner nor a step it sources names it');
@@ -95,7 +90,7 @@ const run = async () => {
 
   await composerTest('the roster comes from the home repo’s own branch, and the composer reads it back', () => {
     // Private, and read with the cross-repo token, never from gh-pages, which
-    // is public even on a private repo (issue #110).
+    // is public even on a private repo.
     const world = mkWorld({ siteRepos: { repos: ['a/one', 'b/two', HOME_SLUG], home: HOME_SLUG } });
     const res = runJob(world);
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
@@ -108,10 +103,9 @@ const run = async () => {
   });
 
   await composerTest('the branch the roster is read from is asked for, never assumed to be main', () => {
-    // Issue #112: the publish pushes whatever branch the home clone is on. The
-    // published dashboard is told which one by data/home.json; a runner has no
-    // site to read that from, so it asks GitHub for the repo it is standing in:
-    // a hardcoded `main` was a 404 and a silently home-only board.
+    // The publish pushes whatever branch the home clone is on. A runner has no
+    // site's data/home.json to read that from, so it asks GitHub for the repo
+    // it is standing in.
     const world = mkWorld({
       defaultBranch: 'trunk',
       siteRepos: { repos: ['a/one', HOME_SLUG], home: HOME_SLUG },
@@ -160,9 +154,8 @@ const run = async () => {
     const world = mkWorld({ boardBroken: true });
     const res = runJob(world);
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    // The Actions log is both streams, and a line that needs a person is a
-    // WARNING, so it rides stderr the way every other warning in the kit does
-    // (issue #237).
+    // A line that needs a person is a warning, so it rides stderr the way
+    // every other warning in the kit does; the Actions log carries both streams.
     assert(`${res.stdout}${res.stderr}`.includes(`brief: 1 repos unreadable: ${HOME_SLUG}`),
       `the log names them: ${res.stdout}${res.stderr}`);
     const calls = world.calls();

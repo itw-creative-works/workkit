@@ -1,9 +1,6 @@
-//
 // Tests for workflow/publish.sh: the published branch (the built dashboard
 // on gh-pages and never on main, updated, regenerated and pruned as the
-// build changes).
-// The shared prologue (the world factory, the publish runner, the settings and branch readers) is ./helpers.js.
-//
+// build changes). The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -29,7 +26,7 @@ const run = async () => {
     assert(/^chore\(site\): publish \d{4}-\d{2}-\d{2}$/.test(subject), `one conventional subject, got: ${subject}`);
 
     // The wiring itself, pinned: the daily publish heals the home repo's labels
-    // on the way (issue #123): deleting the wk_home_heal call goes red here.
+    // on the way, so deleting the wk_home_heal call goes red here.
     assert(world.ghCalls().some((argv) => /label list/.test(argv)),
       `the publish healed the home repo's labels: ${world.ghCalls().join(' | ')}`);
     cleanup(world.root);
@@ -80,10 +77,10 @@ const run = async () => {
   });
 
   await test('a deleted remote branch is regenerated fresh despite the stale local one', () => {
-    // Issue #110: regenerating gh-pages (delete the remote, publish again) is
-    // the history scrub. The first publish leaves a LOCAL gh-pages branch in
-    // the clone, and an orphan checkout refuses a name that already exists:
-    // the script must drop the stale local branch first.
+    // Regenerating gh-pages (delete the remote, publish again) is the history
+    // scrub. The first publish leaves a local gh-pages branch in the clone, and
+    // an orphan checkout refuses a name that already exists: the script must
+    // drop the stale local branch first.
     const world = mkWorld();
     publish(world);
     spawnSync('git', ['-C', world.bare, 'branch', '-D', 'gh-pages']);

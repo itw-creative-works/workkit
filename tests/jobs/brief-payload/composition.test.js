@@ -1,8 +1,6 @@
-//
-// Tests for jobs/morning/brief/brief-payload.js, the payload the 9am job hands to Claude:
-// the composition, the fixture roster swept into a brief.
-// The shared prologue (the two fixture worlds, the composer seam, the summaries fixtures, the news gate) is ./helpers.js.
-//
+// Tests for jobs/morning/brief/brief-payload.js, the payload the 9am job hands
+// to Claude: the composition, the fixture roster swept into a brief.
+// The shared prologue (fixture worlds, composer seam, news gate) is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -62,9 +60,8 @@ const run = async () => {
   });
 
   await test('a built item waiting on the owner is its own section, and ranks above the specs', () => {
-    // Issue #135: `status:qa` is the park a built item sits in until the owner
-    // checks it. The composed payload carries it exactly as the tower's does:
-    // its own bucket and count, and actionable in nextUp under the decisions.
+    // `status:qa` rides as it does in the tower: its own bucket and count, and
+    // actionable in nextUp under the decisions.
     const world = mkWorld();
     world.board.data.r0.issues.totalCount = 3;
     world.board.data.r0.issues.nodes.push(issueNode(19, ['status:qa']));
@@ -78,9 +75,8 @@ const run = async () => {
   });
 
   await test('a QA-passed item rides the morning as the thing that only needs shipping', () => {
-    // Issue #196: the stage above qa. The composed payload carries it the way
-    // the tower's does: its own bucket and count, and actionable in nextUp
-    // under the decisions and above the check still to be given.
+    // The stage above qa rides as it does in the tower: its own bucket and
+    // count, and actionable in nextUp above the check still to be given.
     const world = mkWorld();
     world.board.data.r0.issues.totalCount = 3;
     world.board.data.r0.issues.nodes.push(issueNode(19, ['status:complete']));

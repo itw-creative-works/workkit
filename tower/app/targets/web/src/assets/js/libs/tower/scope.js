@@ -1,41 +1,17 @@
-//
-// The repo scope - what `?repo=` says, in the one place that reads and writes
-// it.
-//
-// The selection is a SET of slugs, not a slug: `?repo=` carries one repo, or a
-// comma-separated subset of the roster, or nothing at all for every repo. The
-// URL is its only home - nothing on the machine and nothing in localStorage
-// remembers it - so the string in the query and the set every page filters by
-// have to agree, and this file is the one translation between them.
-//
-// It is also what makes the selection survive a click on the nav: the sidebar's
-// page links are rewritten to carry the current value, and `scopedHref` is that
-// rewrite. Pure string and array functions, no DOM - which is what lets the
-// suite ask the parse, the format and the predicate the questions the browser
-// used to be the only way to ask.
-//
-// And since every one of those links is a PATH, this is also where the tower
-// learns where it is served from (issue #169). A published copy answers under a
-// prefix - `<owner>.github.io/<name>/` - and the build rewrites only the URLs it
-// emits into the HTML; a URL the runtime assembles is this app's own to get
-// right, and a root-absolute one walks off the site. `basePath` reads the
-// prefix the build stamped on the page and `sitePath` is the one thing that
-// applies it, so every address the runtime builds comes out under it. On a
-// root-served copy the prefix is the empty string and nothing moves.
-//
+// The repo scope: the one translation between the `?repo=` string and the set
+// of slugs every page filters by, the nav rewrite that carries it, and the path
+// prefix a published copy is served under (`sitePath`). Pure string and array
+// functions; the only DOM read is the prefix stamp.
 
 /**
- * Where the token is typed (issue #167) - the one page a copy holding none can
- * use, and so the one address the runtime navigates to by itself.
+ * Where the token is typed: the one page a copy holding none can use, and so
+ * the one address the runtime navigates to by itself.
  */
 export const SETTINGS_PATH = '/settings';
 
 /**
- * The tower's own pages - the links the sidebar carries the selection onto.
- *
- * These are page IDENTITIES, written from the site's root, and never an address
- * on their own: what a copy under a prefix actually serves them at is
- * `sitePath`'s answer, and `pathOf` is the way back to the identity.
+ * The tower's own pages, as identities written from the site's root:
+ * `sitePath` gives the address a copy serves them at, `pathOf` the way back.
  */
 export const SCOPED_PATHS = ['/', '/board', '/crew', '/usage', '/health', '/brief', SETTINGS_PATH];
 
@@ -43,13 +19,10 @@ export const SCOPED_PATHS = ['/', '/board', '/crew', '/usage', '/health', '/brie
 const BASE = 'http://tower.invalid';
 
 /**
- * The `?repo=` value that means NO repos at all (issue #188) - what unticking
- * every box writes. An ABSENT value already means every repo, so "none" needs a
- * value of its own, and a tilde can never collide with a repo: GitHub names
- * allow only letters, digits, `-`, `_` and `.`. It asks for no special parsing
- * - a selection naming a repo the roster does not carry already places
- * nothing, which is exactly what this state is - and `isNone` below is the one
- * door for the surfaces that DRAW the state in words rather than filter by it.
+ * The `?repo=` value that means no repos at all, what unticking every box
+ * writes: an absent value already means every repo, and a tilde can never be a
+ * GitHub name. It needs no special parsing, since a selection naming no roster
+ * repo already places nothing; `isNone` is for the surfaces that say it.
  */
 export const NONE = '~';
 
@@ -87,12 +60,9 @@ export const parseRepos = (value) => String(value == null ? '' : value)
 export const formatRepos = (slugs) => parseRepos((slugs || []).join(',')).join(',');
 
 /**
- * The slugs the runtime's selection leaves in play.
- *
- * `state.selectedRepo` stays the RAW query value - one string, the thing that
- * goes back into the URL - and every reader comes through here rather than
- * comparing against it, because a comma list compared as a slug matches nothing
- * and silently empties the page.
+ * The slugs the runtime's selection leaves in play. `state.selectedRepo` stays
+ * the raw query value; every reader comes through here, since a comma list
+ * compared as a slug matches nothing and silently empties the page.
  *
  * @param {object} state - the runtime's feed state
  * @returns {string[]}
@@ -117,23 +87,11 @@ const cleanPath = (href) => {
 };
 
 /**
- * The prefix this copy of the tower is served under: '' at a site's root, and
- * `/<name>` on a project Pages site.
- *
- * The build's own answer, read back off the page: `OMEGA_PATH_PREFIX` is what
- * the publisher hands the build (workflow/publish.sh), and the build stamps the
- * normalized value on `<html data-omega-path-prefix>` as it mounts every URL it
- * emits (@omega.js/web's path-prefix pass, omega#355). Never guessed from the
- * page's path: a path-shaped guess has to know which segment is the site and
- * which is the page, and it gets `/index.html` - and a repo named after one of
- * the pages - wrong. Every absence is the domain root, which is exactly what a
- * root-served site ships: it is stamped only when there IS a prefix.
- *
- * The value is read off the DOM rather than through the framework's own reader
- * (`__main_assets__/js/libs/path-prefix.js`, the same stamp) for api.js's
- * reason: a framework import is a bundler specifier that would take this module
- * out of reach of its own suite. The normalization mirrors the build's, since
- * this reads an attribute rather than the value that was handed over.
+ * The prefix this copy is served under: '' at a site's root, `/<name>` on a
+ * project Pages site. Read off the `data-omega-path-prefix` stamp the build
+ * leaves (workflow/publish.sh hands it `OMEGA_PATH_PREFIX`), never guessed from
+ * the path, and off the DOM rather than the framework's reader for api.js's
+ * reason. The normalization mirrors the build's.
  *
  * @returns {string} the prefix, with no trailing slash, or ''
  */
@@ -145,7 +103,7 @@ export const basePath = () => {
 };
 
 /**
- * One of the tower's paths, as THIS copy serves it - the one place the prefix is
+ * One of the tower's paths, as this copy serves it - the one place the prefix is
  * applied, and what every URL the runtime builds goes through.
  *
  * @param {string} path - a page path, written from the site's root
@@ -170,13 +128,9 @@ export const pathOf = (href) => {
 };
 
 /**
- * Whether an href is one of the tower's pages - the test the nav rewrite makes
- * before touching a link, so anything the framework puts in the sidebar that
- * points OFF the tower's own pages is left alone. The brand lockup's `/` IS one
- * of them, on purpose: brand-to-Overview keeps the scope like any other page
- * move. A hash-only href is NOT: it goes nowhere by design (the selector menu's
- * placeholder), and resolving it against the base would turn "stay here" into
- * a navigation to Overview.
+ * Whether an href is one of the tower's pages, so the nav rewrite leaves any
+ * other sidebar link alone. The brand's `/` is one, keeping the scope; a
+ * hash-only href is not: it goes nowhere by design (the selector's placeholder).
  *
  * @param {string} href
  * @returns {boolean}
@@ -184,16 +138,9 @@ export const pathOf = (href) => {
 export const isScopedPath = (href) => !href.startsWith('#') && SCOPED_PATHS.includes(pathOf(href));
 
 /**
- * The same href, carrying the current selection.
- *
- * Idempotent: a link already carrying a selection is rewritten to the new one,
- * and an empty selection takes the parameter off rather than leaving `?repo=`
- * behind.
- *
- * The path comes back out through `sitePath`, so the link lands on this copy
- * wherever it is served from - a link the build already prefixed keeps the
- * prefix it has, and one written from the root is put under it rather than
- * pointed off the site (issue #169).
+ * The same href, carrying the current selection: an existing one is replaced,
+ * an empty one takes the parameter off, and the path comes back out through
+ * `sitePath`, so the link lands on this copy wherever it is served from.
  *
  * @param {string} href - the link's href, relative or absolute
  * @param {string} value - the `?repo=` value, '' for every repo
@@ -212,11 +159,8 @@ export const scopedHref = (href, value) => {
 };
 
 /**
- * The Settings page, carrying the current selection.
- *
- * Written through the same formatter every nav link is, for the same reason:
- * a viewer sent to Settings by the runtime, or following the line that points
- * there, comes back to the board they were narrowed to (issue #167).
+ * The Settings page, carrying the current selection, so a viewer sent there
+ * comes back to the board they were narrowed to.
  *
  * @param {string} value - the `?repo=` value, '' for every repo
  * @returns {string}

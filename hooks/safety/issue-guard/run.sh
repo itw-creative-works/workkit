@@ -1,41 +1,10 @@
 #!/bin/bash
-# safety/issue-guard: PreToolUse hook (Bash)
-# The mechanical half of the spec's public-repo rule (docs/project-state.md →
-# "Issue anatomy"): every repo workkit touches is assumed PUBLIC, so outbound
-# issue/PR text carries no secrets. This guard blocks a `gh issue
-# create|comment|edit|close|reopen` or `gh pr create|comment|edit|merge|close`
-# whose text holds something secret-shaped, a `gh api graphql` call carrying a
-# discussion or issue mutation, which is the same egress by another door
-# (workflow/lib/discussions.sh publishes summaries that way), and a `gh api` REST
-# WRITE to an issue or pull endpoint, which is that same door once more (issue
-# #83). The judgment half (private business and personal detail, which no
-# pattern can see) stays prose.
-#
-# Scope: the whole command string (titles and bodies arrive as --title/--body
-# or as -f/-F/--field/--raw-field GraphQL variables, including the
-# `--body "$(cat <<'EOF' … )"` idiom), plus the CONTENT of a body path when it
-# exists: `--body-file <path>`, `-F <path>`, `--input <path>`, and the
-# `-F body=@<path>` form a mutation sends. A GraphQL QUERY and a REST GET write
-# nothing and are left alone; any other command exits fast.
-# The limit of the GraphQL door: a mutation is recognized by the keyword in the
-# COMMAND TEXT, so a call that keeps its operation out of the command (`gh api
-# graphql --input <file>`, or a query held in a shell variable) is not seen.
-# The limit of the REST door is the same shape: the path and the method are read
-# from the command text, and a body that arrives on STDIN (`--input -`, a pipe)
-# is not a file this can open.
-#
-# Two secret sources:
-#   1. Local .env values: every KEY=value in .env and .env.*, in the session's
-#      cwd AND in the repo root above it, whose value is ≥ 8 chars and not
-#      obviously non-secret, matched verbatim. The block names the KEY, never
-#      the value.
-#   2. Token shapes: the common key prefixes, and long high-entropy runs.
-#      The block names the KIND, never the match.
-# A 40-char lowercase-hex git sha is NOT high entropy by this test (mixed case
-# AND a digit are both required): commit shas appear in issue comments
-# constantly and must never bounce.
-# Fail open on the hook's OWN errors (no jq, no command): a broken guard must
-# never wedge the session.
+# safety/issue-guard: PreToolUse hook (Bash), the mechanical half of the spec's
+# public-repo rule (docs/project-state.md § Issue anatomy): a gh issue/PR write,
+# a GraphQL discussion or issue mutation, or a REST write to an issue or pull
+# endpoint bounces when its text or body file carries a local .env value (named
+# by KEY) or a token shape (named by kind). A lowercase-hex git sha is never high
+# entropy. Fails open on its own errors. Detail: docs/hooks.md § safety:issue-guard.
 
 set -euo pipefail
 
@@ -51,8 +20,7 @@ cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
 [ -n "$cmd" ] || exit 0
 
 # --- Is this an outbound gh issue/PR write? ---
-# close and reopen belong here too: their --comment posts free text publicly,
-# exactly like a plain comment (verifier finding, 2026-07-28).
+# close and reopen belong here too: their --comment posts free text publicly.
 outbound=no
 if printf '%s' "$cmd" | grep -Eq '(^|[^[:alnum:]_./-])gh[[:space:]]+(issue[[:space:]]+(create|comment|edit|close|reopen)|pr[[:space:]]+(create|comment|edit|merge|close))([[:space:]]|$)'; then
   outbound=yes
@@ -69,28 +37,10 @@ if [ "$outbound" = no ] \
   outbound=yes
 fi
 
-# The REST door (issue #83). `gh api` speaks REST as well as GraphQL, and the
-# issue and pull endpoints are the same egress: POST an issue, PATCH a body,
-# POST a comment or a review. The whole `repos/<o>/<n>/(issues|pulls)` tree is
-# matched by its prefix rather than endpoint by endpoint (every path below it
-# carries issue or PR text) with a leading slash and the full
-# `https://api.github.com/…` form both allowed.
-#
-# WHICH METHOD is the question, because gh's is implicit: GET by default, POST
-# the moment a field or an input is given. So a write is an explicit
-# `-X`/`--method` POST|PATCH|PUT, or one of those paths carrying a field or
-# input flag. An explicit method that is not one of those wins over the flags
-# (`--method GET` with `-f state=open` is a filtered LIST) and a bare path is a
-# read. Reads are never gated.
-#
-# The read exemption is deliberately narrow, because it is the one branch that
-# can UNSET the decision: the method flag is read only from the text BEFORE the
-# first field/input flag (a field VALUE may itself say `-X GET`: prose about a
-# curl command must not disarm the scan), and only when the command holds a
-# single `gh api` call (a read chained with a write in one command must not let
-# the read speak for both). A read whose method flag sits after its fields is
-# scanned like a write: the scan blocks nothing without a secret in it, so the
-# cost of over-classifying is nil and the miss it prevents is not.
+# The REST door: the whole `repos/<o>/<n>/(issues|pulls)` tree by prefix. gh's
+# method is implicit (GET, POST once a field or input is given), so a write is
+# an explicit POST|PATCH|PUT or a field-carrying call; the read exemption reads
+# the method only before the first field, and only for a single `gh api` call.
 if [ "$outbound" = no ] \
   && printf '%s' "$cmd" | grep -Eq '(^|[^[:alnum:]_./-])gh[[:space:]]+api([[:space:]]|$)' \
   && printf '%s' "$cmd" | grep -Eq '(^|[^[:alnum:]_.-])(https://api\.github\.com/)?/?repos/[^/[:space:]]+/[^/[:space:]]+/(issues|pulls)([^[:alnum:]_-]|$)'; then
@@ -111,11 +61,8 @@ cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
 [ -n "$cwd" ] || cwd="$PWD"
 
 # --- The outbound text: the command, plus any body-file content. ---
-# `-F` is gh's shorthand for --body-file on these subcommands, so both
-# spellings are extracted; a path that does not resolve is simply skipped.
-# `--input <path>` is the REST door's whole request body in a file (issue #83),
-# read the same way: `--input -` names stdin, which resolves to no file and is
-# skipped like any other path that is not there.
+# `-F` is --body-file on these subcommands and `--input <path>` the REST body;
+# a path that resolves to no file, `-` included, is skipped.
 text="$cmd"
 add_file() {
   local bf="$1" file
@@ -137,11 +84,8 @@ done <<EOF
 $(printf '%s' "$cmd" | grep -Eo -- '(--body-file|--raw-field|--field|--input|(^|[[:space:]])-F)[=[:space:]]+[^[:space:]]+' | sed -E 's/^[[:space:]]*(--body-file|--raw-field|--field|--input|-F)[=[:space:]]+//' || true)
 EOF
 
-# The GraphQL variable form: `-F body=@<path>` sends the file verbatim, which is
-# how a composed summary reaches a discussion. The path is what follows the `@`.
-# gh's long synonyms are the same door: `--field` for -F and `--raw-field` for
-# -f, and a call spelled the long way carried the file past this step
-# untouched (verifier finding, 2026-07-29).
+# The GraphQL variable form `-F body=@<path>` sends the file verbatim, and the
+# long synonyms (`--field`, `--raw-field`) are the same door.
 at_pattern="(^|[[:space:]])(-[fF]|--field|--raw-field)[=[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[\"']?@[^[:space:]\"']+"
 while IFS= read -r bf; do
   add_file "$bf"
@@ -236,12 +180,9 @@ if match '[-]{5}BEGIN'; then
   block "a private key block"
 fi
 
-# Long high-entropy runs. A candidate qualifies only with BOTH cases and a
-# digit, which is what keeps a 40-char lowercase-hex sha out.
-# The candidate class excludes `/` and `-` on purpose: with them in, an issue
-# URL, an absolute path, and a long branch name all read as one 40+ char run,
-# and the spec REQUIRES cross-repo links in issue bodies, so that false block
-# would have been the guard's end (verifier finding, 2026-07-28).
+# Long high-entropy runs need both cases and a digit, which keeps a hex sha out.
+# The class excludes `/` and `-`: with them an issue URL, a path or a branch name
+# reads as one long run, and the spec requires cross-repo links in issue bodies.
 while IFS= read -r run; do
   [ -n "$run" ] || continue
   printf '%s' "$run" | grep -q '[A-Z]' || continue

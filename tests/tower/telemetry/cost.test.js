@@ -1,7 +1,6 @@
 //
-// Tests for tower/api/lib/telemetry.js: cost (the per-million rates, the
-// unpriced model, the cache rates and the TTL split).
-// The shared prologue (the transcript line builders, the scratch world and its sessions, the collect call, the module under test) is ./helpers.js.
+// Tests for tower/api/lib/telemetry.js: cost (the per-million rates, the unpriced
+// model, the cache rates, the TTL split). Prologue: ./helpers.js.
 //
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
@@ -73,7 +72,7 @@ const run = async () => {
     // and the table carries the rate a human would write.
     const near = (n) => Math.round(n * 1e6);
     // claude-3-haiku is the one row taken from published cache rates instead,
-    // and they do NOT follow the multipliers - $0.03 against a derived $0.025.
+    // and they do not follow the multipliers ($0.03 against a derived $0.025).
     // The published number is what gets billed, so the table keeps it and this
     // check names the exception rather than bending the rate to fit.
     const published = new Set(['claude-3-haiku']);

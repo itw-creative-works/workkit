@@ -1,33 +1,7 @@
-//
-// Usage - where the tokens went: by model, by agent class, over time, how much
-// of the input was a cache read rather than fresh, what it cost, and the
-// session inventory underneath.
-//
-// Everything here comes from `/api/telemetry`, which serves:
-//
-//   { sessions: [ { id, chatName, model, cost, startedAt,
-//                   tokens: { input, output, cacheRead, cacheCreation, total },
-//                   subagents: [ { class, model, tokens, cost, state, startedAt } ] } ],
-//     byModel:  { <model>: <tokens> },
-//     byClass:  { <class>: <tokens> },
-//     overTime: [ { label: 'YYYY-MM-DD', tokens } ] }   // 30 days, quiet days 0
-//
-// That shape is the contract, and this page reads exactly it. The three
-// aggregates are AUTHORITATIVE and are what the charts draw: the API computes
-// them over every transcript on the machine, subagents included, while
-// `sessions` lists only the handful of ROOT chats. This page used to fall back
-// to recomputing them from that list, which threw the real answer away and drew
-// a far smaller one - two models instead of five, one bar for the main chat
-// instead of nine agent classes, a two-point line instead of thirty days. An
-// aggregate the endpoint did not send is the endpoint's defect, so the chart
-// says it has nothing rather than drawing a quieter wrong number.
-//
-// The session list is read for two things: the inventory table, which is
-// per-session by definition, and the cache split and the cost, which the
-// endpoint does not aggregate. Those two sum the roots AND their subagents, so
-// they cover the same spend the charts do - the four numbers at the top of the
-// page are one accounting, not two.
-//
+// Usage: where the tokens went, from `/api/telemetry` (tower/README.md
+// § Endpoints). The charts draw the endpoint's aggregates, never a recount from
+// `sessions`; a missing aggregate draws nothing. The cache split and the cost
+// sum roots and subagents, the same spend the charts show.
 
 import { startPage } from '../libs/tower/page.js';
 import { feed } from '../libs/tower/state.js';
@@ -43,16 +17,14 @@ const sortDown = (list) => [...list].sort((a, b) => b[1] - a[1]);
 /**
  * One of the endpoint's `{ label: tokens }` aggregates as sorted rows.
  *
- * A zero-token entry is dropped: an empty bar carries no information and takes
- * a row of the chart to say nothing. `<synthetic>` - Claude Code's locally
- * generated messages, which cost nothing and are billed to no model - is always
- * one of these.
+ * A zero-token entry is dropped, `<synthetic>` (Claude Code's own unbilled
+ * messages) always among them.
  */
 const aggregate = (map) => sortDown(Object.entries(map)
   .map(([label, tokens]) => [label, Number(tokens) || 0])
   .filter(([label, tokens]) => label && tokens > 0));
 
-/** '2026-07-27' → 'Jul 27'. Thirty of these share one axis. */
+/** An ISO day to its short label ('Jul 27'). Thirty of these share one axis. */
 const dayLabel = (day) => {
   const when = new Date(`${day}T00:00:00`);
   return Number.isNaN(when.getTime()) ? day : when.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
@@ -62,10 +34,8 @@ const dayLabel = (day) => {
 const series = (list) => list.map((entry) => [String(entry.label), Number(entry.tokens) || 0]);
 
 /**
- * Every transcript the payload carries - each root session, and each subagent
- * it spawned. The endpoint's aggregates are computed over exactly this set, so
- * the two numbers derived here, the cache split and the cost, account for the
- * same tokens the charts show.
+ * Every transcript the payload carries: each root session and each subagent it
+ * spawned, the set the endpoint's aggregates are computed over.
  */
 const spends = (sessions) => sessions.flatMap((session) => [
   { cost: session.cost, tokens: session.tokens },
@@ -84,8 +54,7 @@ const readUsage = (result) => {
       id: session.id,
       title: session.chatName || '',
       model: session.model || 'unknown',
-      // A root session IS the manager, which is what the endpoint's byClass
-      // calls it - the table and the class chart name the same tier the same way.
+      // A root session is the manager, as the endpoint's byClass names it.
       agentClass: 'manager',
       cost: session.cost,
       tokens: session.tokens,
@@ -111,15 +80,8 @@ const numbers = (usage) => {
   ]);
 };
 
-// A session's cache column says one thing and it is worth seeing at a glance:
-// tokens that were READ from the cache are the cheap ones, and a session that
-// read none paid full price for its whole context. So the cell is the theme's
-// status pill - green for a read, red for a miss - rather than another number
-// in a column of numbers.
-//
-// A session that has spent NOTHING gets neither. It has not missed the cache;
-// it has not asked it anything yet, and a red pill on a chat that has said one
-// word reads as a problem where there is none.
+// Green for a cache read, red for a miss; a session that has spent nothing has
+// not missed the cache, so it gets a dash.
 const cacheCell = (tokens) => {
   if (!tokens.cacheRead && !tokens.input) return '<span class="text-body-secondary">-</span>';
   return tokens.cacheRead > 0 ? pill('ok', compact(tokens.cacheRead)) : pill('danger', 'miss');
@@ -140,11 +102,8 @@ const sessionTable = (usage) => {
   </table></div>`;
 };
 
-// A ranked bar chart is as tall as it has rows - the class chart draws every
-// agent class the machine ran, and nine of them crushed into a fixed 240px box
-// would be nine unreadable slivers. The two charts share one height because
-// they sit side by side: the taller one sets it, and the shorter card is not
-// left half empty beside it.
+// A ranked bar chart is as tall as it has rows; the two side by side share the
+// taller one's height.
 const ranked = (rows) => Math.max(160, 40 + rows * 32);
 
 const charts = (usage) => {
@@ -157,9 +116,7 @@ const charts = (usage) => {
 </div>`;
 };
 
-// Each bar is drawn in the colour its model or class carries everywhere else on
-// the tower, so a row in the chart and a badge in the table below it are
-// recognizably the same thing.
+// Each bar wears its model's or class's badge colour.
 const drawCharts = (usage) => {
   if (usage.byModel.length) {
     barChart('usage-model', {
@@ -180,10 +137,7 @@ const drawCharts = (usage) => {
     });
   }
   if (usage.overTime.length) {
-    // Every one of the thirty days is on the axis, quiet ones at zero: the shape
-    // of a month - which days were busy and which were not - is the whole point,
-    // and an axis of only the days that happened to be non-zero would compress
-    // three weeks of silence into nothing.
+    // Every day is on the axis, quiet ones at zero: the month's shape is the point.
     lineChart('usage-time', {
       labels: usage.overTime.map(([label]) => dayLabel(label)),
       series: [{ label: 'tokens', values: usage.overTime.map(([, value]) => value) }],

@@ -8,11 +8,8 @@
 
 set -euo pipefail
 
-# Sourced for hook_sha1 alone: the state file below is keyed by a digest of the
-# tree, and its spelling differs across the platforms this kit runs on. The
-# input is a local listing, not an adversarial one, so the point is only that
-# equal states digest equally; a machine with no digest tool at all writes no
-# state and hears the nudge every Stop, exactly as an undecided repo does.
+# Sourced for hook_sha1 alone, which keys the state file by a digest of the
+# tree; a machine with no digest tool writes no state and hears every nudge.
 . "${BASH_SOURCE[0]%/*}/../../_lib.sh"
 
 input=$(cat)
@@ -94,23 +91,13 @@ done <<<"$status"
 
 [ "$has_code_change" -eq 1 ] || [ "$inbox_count" -gt 0 ] || [ "$scratch_count" -gt 0 ] || exit 0
 
-# Repeat only when something changed (issue #132). The fingerprint covers what
-# the nudge is ABOUT: the porcelain status, the diff behind it, the content of
-# the untracked files, and the capture surfaces' content. The one last
-# nudged on is remembered in .workkit/agents/, the agents' own state. Same fingerprint means the
-# obligations were already stated for this exact state, so the Stop is silent; a
-# new edit (which the diff catches even when the status line is identical), a
-# new file, or a new capture makes a new fingerprint and one more nudge. No
-# clock: two identical trees fingerprint identically.
+# Repeat only when something changed: the fingerprint covers what the nudge is
+# about, and a Stop on the one last nudged on is silent (README § Design principles).
 fingerprint() {
   printf '%s\n' "$status"
   git diff HEAD 2>/dev/null || git diff 2>/dev/null || true
-  # An untracked file is a NAME in the status and nothing in the diff, so a file
-  # built up across turns would go silent after the first nudge. One pipeline,
-  # each file read once, empty list = empty contribution.
-  # `-r` (run nothing on empty input) is a GNU extension BSD xargs adopted:
-  # verified on macOS, and Git Bash carries the GNU one, so the flag is portable
-  # across all three platforms.
+  # An untracked file is a name in the status and nothing in the diff, so its
+  # content goes in too. `xargs -r` is portable: BSD adopted the GNU flag.
   git ls-files --others --exclude-standard -z 2>/dev/null | sort -z | xargs -0 -r cat 2>/dev/null || true
   # The two capture surfaces whose entries are counted above: one is gitignored
   # by design, the other may be ignored too, so neither is reliably in the
@@ -118,10 +105,9 @@ fingerprint() {
   cat "INBOX.md" ".workkit/capture.md" 2>/dev/null || true
 }
 
-# A repo with no .workkit/ is UNDECIDED, never written to, so it has no memory
-# and hears the nudge every Stop, exactly as before. Same for a repo whose
-# .workkit/ is not gitignored: the memory is session state, never a file the
-# repo would be asked to commit, so an unignored path keeps the old behavior.
+# A repo with no .workkit/, or one whose .workkit/ is not gitignored, gets no
+# memory and hears the nudge every Stop: the state file is never one the repo
+# would be asked to commit.
 state_file=".workkit/agents/.change-tracker"
 if [ -d ".workkit" ] && git check-ignore -q "$state_file" 2>/dev/null; then
   current=$(fingerprint | hook_sha1 2>/dev/null || true)

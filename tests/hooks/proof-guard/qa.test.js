@@ -1,10 +1,7 @@
-//
 // Tests for hooks/safety/proof-guard at the flip to status:qa: the hook runs
-// the test files the working diff touched with `node --test`, and a red one
-// blocks the flip. Each case builds its own fixture repo, and each fixture test
-// file appends to runs.log at the repo root, so a case can count the runs.
+// the touched test files with `node --test`, and a red one blocks the flip.
+// Each fixture test file appends to runs.log at its repo root, so a case counts runs.
 // The shared prologue (the hook runner, the gh stub, the fixtures) is ./helpers.js.
-//
 
 const fs = require('fs');
 const path = require('path');

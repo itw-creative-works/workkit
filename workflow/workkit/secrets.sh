@@ -2,35 +2,17 @@
 # workflow/workkit/secrets.sh: the cloud brief's two secrets on the home repo:
 # the bounded reads, the listing and its ages, the Claude token's mint under a
 # PTY, the gh login's push, and the three callers (setup's step, `setup
-# --token`, and the report `doctor` and `update` print). SOURCED by workkit.sh,
-# never executed, and it runs nothing at load: it defines functions and sets
-# nothing. Every name it reads (SCRIPT_DIR, HOME_LIBS, SECRET_CLAUDE,
-# SECRET_HOME, SECRET_MAX_AGE_DAYS, SECRETS_TIMEOUT, the `interactive` check)
-# and the two it sets at run time (SECRETS_SLUG, SECRETS_JSON) are the entry's.
+# --token`, and the report `doctor` and `update` print). Sourced by workkit.sh,
+# functions only; every name it reads, and the SECRETS_SLUG and SECRETS_JSON it
+# sets, are the entry's.
 
-# ── The cloud secrets (issues #88, #91) ───────────────────────────────────────
-# The cloud brief runs on two repo secrets, and they live on the HOME repo:
-# `<login>/workkit`, the repo setup made for this machine and seeded the
-# workflow into. Not on this checkout's own repo: the plugin is distributed to
-# everyone who installs the kit, and a consumer cannot set secrets on a repo
-# they do not own (issue #91). The home slug is also what the daily job's
-# dispatch gates on, so the two agree by construction.
-#
-# The one rule the whole block is built around: a token value goes from the
-# command that produced it to `gh secret set` through a pipe, held in a single
-# local on the way. It is never passed as an argument, echoed, or logged, and
-# the ONE file it may transit is the mint's own capture (issue #174): 600 before
-# a byte lands in it, and gone the moment it has been read.
+# ── The cloud secrets ─────────────────────────────────────────────────────────
+# A token value travels by pipe, held in one local, and its one file is the
+# mint's own capture (`workflow/README.md` § The cloud brief's secrets).
 
-# The listing below is the only network the daily path makes (the standards
-# hook calls `update --auto` at session start) so it gets an upper
-# bound: a captive portal answers the TCP handshake and never the request, and
-# an unbounded `gh` there would hold a session open for as long as it liked.
-# macOS ships no coreutils `timeout`, so one is used when the machine has it and
-# a bash watchdog stands in when it does not. A bound that fires looks exactly
-# like a listing that could not be read, which every caller already treats as a
-# named skip. Only the READS are bounded: a write cut in half is worse than a
-# write that waits, and every write is on a path a human is sitting in front of.
+# The listing is the daily path's only network call, so it is bounded: a
+# captive portal never answers. `timeout`, `gtimeout` or a bash watchdog, and a
+# fired bound reads as an unreadable listing. Writes are never bounded.
 bounded_read() {
   local watchdog pid rc=0
   if command -v timeout >/dev/null 2>&1; then timeout "$SECRETS_TIMEOUT" "$@"; return $?; fi
@@ -48,27 +30,10 @@ bounded_read() {
   return "$rc"
 }
 
-# A command run under a PTY, with everything it draws teed to both this terminal
-# and `capture`. The mint needs it (issue #174) and nothing else does.
-#
-# When the run sits at a real terminal and `expect` exists, expect drives the
-# PTY (`mint-pty.exp`, beside this file), for one reason (issue #187): Ctrl-C. The CLI holds its PTY in raw mode
-# and DISCARDS the ^C byte, and under raw passthrough no layer turns the key
-# into a signal, so the byte is caught one layer out, at this terminal, before
-# it is forwarded. The binding ends the child and answers 130, the way an
-# interrupt ends any other command; every other keystroke passes through, which
-# is what keeps the paste-the-code prompt answerable.
-#
-# Without expect, or without a terminal (the tests drive this with a file on
-# stdin), the two `script` utilities take the command in different places, so
-# the machine is asked which one it speaks: only GNU/util-linux answers
-# `--version` at all, and only its `-e` returns the child's own exit status:
-# without it a mint that never ran would look like one that succeeded. macOS
-# returns that status on its own, but `-e` is asked for on the BSD side too: a
-# no-op there, and the flag that keeps a FreeBSD `script` from reading every
-# mint as a success. GNU takes the command as ONE string, so the words are
-# joined for it: the mint is `claude setup-token` and nothing here carries a
-# space. Under bare `script` the ^C byte still reaches a child that ignores it.
+# A command run under a PTY, its screen teed to this terminal and `capture`.
+# At a terminal with expect, `mint-pty.exp` catches Ctrl-C. Otherwise `script`,
+# GNU when `--version` answers: `-e` returns the child's status (and keeps a
+# FreeBSD `script` honest), and GNU takes the command as one string.
 run_under_pty() {
   local capture="$1"; shift
   if command -v expect >/dev/null 2>&1 && [[ -t 0 ]] && [[ -f "$SCRIPT_DIR/workkit/mint-pty.exp" ]]; then
@@ -92,9 +57,8 @@ is_listing() {
   printf '%s' "$1" | wk_jq -e 'type == "array"' >/dev/null 2>&1
 }
 
-# How many whole days ago a secret was last set: a number, `unknown` for a
-# timestamp jq could not read, and NOTHING when the repo has no such secret:
-# absent is the state every caller acts on first.
+# How many whole days ago a secret was last set: a number, `unknown` for an
+# unreadable timestamp, and nothing when the repo has no such secret.
 secret_age_days() {
   printf '%s' "$1" | wk_jq -r --arg n "$2" '
     map(select(.name == $n)) | .[0] // empty
@@ -117,19 +81,9 @@ extract_token() {
   printf '%s' "${token//[[:space:]]/}"
 }
 
-# Mint and push in one move, with the mint under a PTY. The CLI draws its ENTIRE
-# screen on stdout (the browser-open message AND the paste-the-authorization-code
-# prompt that follows the approval) so a captured stdout leaves the human staring
-# at a blank line with nothing to answer and, in the CLI's raw keyboard mode,
-# no Ctrl-C either (issue #174). Under the PTY runner that whole screen reaches
-# the terminal, a copy of it lands in the capture file, and Ctrl-C ends the run
-# where the runner can catch it (run_under_pty, issue #187). The capture is the
-# one file a token value may
-# transit: `mktemp` in TMPDIR, 600 before the mint writes a byte, read once and
-# removed, by a trap as well, so an interrupted mint leaves nothing behind.
-# From the extraction on the value is a local on its way to `gh secret set`'s
-# stdin, and every path out of here that did not push prints the two commands
-# that do the same thing by hand.
+# Mint and push in one move, under a PTY because the CLI draws its whole
+# screen, paste prompt included, on stdout. The capture is 600, read once and
+# trapped away; every path that did not push prints the manual commands.
 mint_claude_token() {
   local slug="$1" capture raw token rc=0
 
@@ -161,13 +115,8 @@ mint_claude_token() {
   wk_ok "secrets: $SECRET_CLAUDE is set on $slug; the value went from the mint into the secret, and the file it passed through is gone"
 }
 
-# The three things a mint needs and no run can supply for itself: the CLI that
-# performs it, a PTY tool (`expect`, or `script` without the Ctrl-C escape) that
-# gives that CLI a terminal to draw its
-# screen on, and a terminal to approve it in: the mint is a browser approval,
-# so a piped or backgrounded run gets the two commands instead. Every answer is
-# the same whether the mint was offered or asked for outright, which is why they
-# live here rather than in either caller.
+# What a mint needs that no run can supply: the claude CLI, a PTY tool, and a
+# terminal for the browser approval. Shared by the offer and `setup --token`.
 can_mint_claude_token() {
   local slug="$1" reason="$2"
 
@@ -202,12 +151,8 @@ offer_claude_token() {
   esac
 }
 
-# The cross-repo token, zero-click: the CLI's own
-# login already reaches every swept board, and there is no API that mints a
-# narrower one. It is the only credential that leaves the home repo: the
-# Discussion is posted with the workflow's built-in GITHUB_TOKEN. The tradeoff
-# (that login's full reach) and the least-privilege alternative are in
-# jobs/README.md.
+# The cross-repo token, zero-click from the gh login: no API mints a narrower
+# one. The tradeoff and the least-privilege alternative: jobs/README.md.
 push_home_token() {
   local slug="$1" token='' rc=0
 
@@ -284,12 +229,9 @@ secrets_step() {
   fi
 }
 
-# `setup --token`: the mint on demand (issue #174). The step above acts on
-# ABSENT or old, which is everything the listing can see, and a token can go
-# bad while it is young, a subscription that lapsed under it being the case that
-# named this. So the flag IS the yes: no age to check, no question to put, and
-# nothing else of setup runs. The guards stay, because a mint still needs the
-# CLI and a terminal whatever asked for it.
+# `setup --token`: the flag is the yes, for a token that went bad while young.
+# No age check and no question; the guards stay, since a mint still needs the
+# CLI and a terminal.
 token_step() {
   secrets_precheck || return 0
   can_mint_claude_token "$SECRETS_SLUG" "is being re-minted" || return 0

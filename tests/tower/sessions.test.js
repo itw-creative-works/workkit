@@ -1,16 +1,6 @@
 //
-// Tests for tower/api/lib/sessions.js - the live crew.
-//
-// Everything is a fixture: a scratch marker directory, a scratch ~/.claude
-// projects tree, a scratch statusline cache. The real TMPDIR markers belong to
-// the sessions actually running on this machine and are never touched, and `ps`
-// is the one call that cannot be faked with a file - it gets the exec seam.
-//
-// The marker shapes here are the ones the claude:keep-awake hook writes: on
-// macOS a file named for the claude pid holding caffeinate=, cwd= and session=,
-// with `.<pid>.lock` directories alongside them for the acquire mutex; on
-// Windows a `win.<session>` file holding holder=, beat=, fire=, cron=, cwd=,
-// session= and transcript=, because there is no caffeinate to name there.
+// Tests for tower/api/lib/sessions.js, the live crew, over fixtures in the shapes
+// the claude:keep-awake hook writes; `ps` alone goes through the exec seam.
 //
 
 const fs = require('fs');
@@ -59,7 +49,7 @@ const mkMarker = (world, claudePid, { caffeinate = null, cwd = '/x/repo', sessio
 };
 
 /**
- * Write a WINDOWS marker exactly as the hook's Windows branch does: named
+ * Write a Windows marker exactly as the hook's Windows branch does: named
  * `win.<session>`, carrying the PowerShell holder, its heartbeat, the two
  * scheduling fields and the transcript path the session was handed. `beat` is
  * seconds of age, since that is what the reader judges the hold by.
@@ -115,7 +105,7 @@ const run = async () => {
 
   await test('a recycled caffeinate pid holding someone else reads stale', () => {
     const w = mkWorld();
-    // Same shape of command, a DIFFERENT claude pid - the whole-string match is
+    // Same shape of command, a different claude pid: the whole-string match is
     // what makes pid recycling detectable.
     mkMarker(w, 4003, { holds: 9999 });
     assertEq(list(w)[0].state, 'stale', 'the assertion is not ours');
@@ -219,11 +209,9 @@ const run = async () => {
       path.join('/home/alice', '.claude', 'projects', '-Users-alice-Repos--dotfiles', 'sid.jsonl'),
       'the slash and the dot',
     );
-    // The underscore and the space are the proof the rule is not just `/` and
-    // `.`: this machine's own projects tree holds `-Users-ian-Developer-
-    // Repositories--Claude-dictation-app` for `.../_Claude/dictation-app` and
-    // `-Users-ian-Library-Application-Support-Alfred-...` for a path whose
-    // directory name carries a space.
+    // The underscore and the space prove the rule is not just `/` and `.`: real
+    // projects folders hold both, for an `_Claude/` path and for a directory name
+    // carrying a space.
     assertEq(
       transcriptPath('/home/alice', '/Users/alice/Repos/_Claude/my app', 'sid'),
       path.join('/home/alice', '.claude', 'projects', '-Users-alice-Repos--Claude-my-app', 'sid.jsonl'),
@@ -286,7 +274,7 @@ const run = async () => {
   });
 
   await test('a Windows marker whose beat is blank or not a number reads stale', () => {
-    // The hook seeds an EMPTY beat for a hold it armed and did not take, and
+    // The hook seeds an empty beat for a hold it armed and did not take, and
     // reads one itself only when it is digits. Anything else is not a time.
     const w = mkWorld();
     mkWinMarker(w, 'unarmed', { cwd: 'C:\\Users\\x\\e' });
@@ -305,7 +293,7 @@ const run = async () => {
   });
 
   await test('a Windows marker naming no transcript falls back to the derivation, in Claude Code\'s own spelling', () => {
-    // The hook writes an EMPTY transcript line when the payload carried no
+    // The hook writes an empty transcript line when the payload carried no
     // path, which is the only Windows case the derivation answers for.
     const w = mkWorld();
     mkWinMarker(w, 'win-2', { cwd: 'C:\\Users\\x\\repo', transcript: '' });
@@ -372,7 +360,7 @@ const run = async () => {
     const w = mkWorld();
     mkMarker(w, 4204, { cwd: '/x/big', session: 'big' });
     // The title is in the first line; everything after it is filler well past
-    // the budget, so only a HEAD read can find it.
+    // the budget, so only a head read can find it.
     mkTranscript(w, '/x/big', 'big', [
       '{"aiTitle":"Written early"}',
       `{"padding":"${'x'.repeat(4000)}"}`,
@@ -454,9 +442,9 @@ const run = async () => {
     const w = mkWorld();
     mkMarker(w, 4401, { cwd: '/x/i', session: 'ok' });
     mkTranscript(w, '/x/i', 'ok', ['{}']);
-    // The acquire lock, a dot file whose remainder IS numeric, a stray file, and
-    // a pid-like name with a suffix. The numeric test is the whole filter - a
-    // separate dot guard would be redundant, since a leading dot fails it too.
+    // The acquire lock, a dot file whose remainder is numeric, a stray file, and
+    // a pid-like name with a suffix. The numeric test is the whole filter: a
+    // leading dot fails it too, so no separate dot guard is needed.
     fs.mkdirSync(path.join(w.markerDir, '.4401.lock'));
     fs.writeFileSync(path.join(w.markerDir, '.12345'), 'caffeinate=1\ncwd=/x\nsession=s\n');
     fs.writeFileSync(path.join(w.markerDir, 'README'), 'not a marker');

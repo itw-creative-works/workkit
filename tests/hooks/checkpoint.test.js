@@ -1,6 +1,6 @@
 // docs/checkpoint hook: the compaction line fires the workkit:checkpoint skill
-// deterministically (issue #238), and the second fire in one session asks for a
-// delta instead of a whole-chat pass.
+// deterministically, and the second fire in one session asks for a delta
+// instead of a whole-chat pass.
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
@@ -60,7 +60,7 @@ const FIRING = [
 const SILENT = [
   'ship the release when CI is green',
   // `context` with none of its four followers, including the words that
-  // CONTAIN one ("below" is not "low", "follow" is not "low").
+  // contain one ("below" is not "low", "follow" is not "low").
   'in this context, follow the steps below',
   'the context of the bug is issue #12',
   'give me more context on the resolver',

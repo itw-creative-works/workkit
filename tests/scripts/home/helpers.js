@@ -1,24 +1,8 @@
-//
-// The shared prologue of the workflow/home.sh suites, the `*.test.js` files
-// beside this one, which test the home repo's lifecycle (issues #27, #77) one
-// stage each. A plain module, never a suite: the runner only loads files
-// ending in `.test.js`.
-//
-// Every world is a scratch HOME with a scratch ~/.workkit (WORKFLOW_HOME) and a
-// `gh` shim that answers `api user`, `repo view`, `repo create` and the
-// Discussions/Pages calls with canned JSON. The REMOTE is a local bare repo
-// (WORKKIT_HOME_REMOTE), so every clone, fetch and push in this suite runs
-// against a directory on this machine: nothing here reaches GitHub, and nothing
-// here touches the real ~/.workkit.
-//
-// The tower app the seed copies is a FIXTURE (WORKKIT_TOWER_APP) shaped like the
-// real one: a brand root with targets/web, config/, a .gitignore, and file: specs
-// pointing at a fake sibling framework. No omega, no npm install, no build.
-//
-// The library is sourced by a one-line driver rather than executed: it is a
-// library, and the shell it is asked its questions in is the one the CLI and
-// the heal ask them in.
-//
+// The shared prologue of the workflow/home.sh suites beside this one, one
+// lifecycle stage each. Every world is a scratch HOME and ~/.workkit, a `gh` shim
+// answering with canned JSON, a local bare repo as the remote, and a tower app
+// fixture (WORKKIT_TOWER_APP) with no omega, install or build. The library is
+// sourced by a one-line driver, the way the CLI and the heal ask it.
 
 const fs = require('fs');
 const path = require('path');
@@ -29,9 +13,9 @@ const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { mkTmp } = require('../../lib/scratch');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
-// The plugin checkout the cloud brief's runner is seeded FROM (issue #91). The
-// real one, because the point of that seed is that the scripts a runner
-// executes are these scripts: a fixture would prove only that files copy.
+// The plugin checkout the cloud brief's runner is seeded from: the real one,
+// because the point of that seed is that the scripts a runner executes are these
+// scripts. A fixture would prove only that files copy.
 const KIT_DIR = path.join(__dirname, '..', '..', '..');
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
@@ -137,13 +121,10 @@ const mkWorld = ({
   }
   const tower = mkTowerApp(root);
 
-  // npm is a shim throughout: a seed's install must never reach the network,
-  // and no test in this suite runs a real build.
-  // `npmLinksOn` is which invocation links the workspace bin: 1 is the ordinary
-  // machine, 2 is the fresh tree npm needs two passes on, and 0 never links.
-  // The CWD is recorded beside the argv, one path a line: that is what an
-  // install is keyed from (issue #171), and a path out of mkdtemp holds no
-  // newline, so a line is framing enough here.
+  // npm is a shim throughout, so no install reaches the network. `npmLinksOn`
+  // is which invocation links the workspace bin (1 ordinary, 2 a fresh tree, 0
+  // never). The cwd is recorded beside the argv, one path a line: an install is
+  // keyed from it.
   const npmLog = path.join(root, 'npm-argv.log');
   const npmCwdLog = path.join(root, 'npm-cwd.log');
   const npmCount = path.join(root, 'npm-count');
@@ -165,19 +146,18 @@ const mkWorld = ({
   ]);
 
   const ghLog = path.join(root, 'gh-argv.log');
-  // The labels the stub believes the repo carries: a STORE, not a fixture, so
-  // the clone's heal can be asked the question that matters: does a second run
-  // find its own work and create nothing (issue #123)?
+  // The labels the stub believes the repo carries: a store, not a fixture, so a
+  // second heal of the clone can be asked whether it finds its own work.
   const labelsFile = path.join(root, 'labels.json');
   fs.writeFileSync(labelsFile, '[]\n');
-  // The categories live in a FILE the shim reads on every call, because setup
-  // asks twice (issue #244): once, then again after the owner made them on the
-  // page it opened. The opener stub below is how a test plays that owner.
+  // The categories live in a file the shim reads on every call, because setup
+  // asks twice: once, then again after the owner made them on the page it
+  // opened. The opener stub below is how a test plays that owner.
   const asNodes = (names) => names.map((name, i) => `{ "id": "DIC_${i}", "name": "${name}" }`).join(',');
   const categoriesFile = path.join(root, 'categories.json');
   fs.writeFileSync(categoriesFile, asNodes(categories));
   // What the owner made on the page, held back until the shim has answered a
-  // few more reads: a fixture that counts READS, never seconds, so a machine
+  // few more reads: a fixture that counts reads, never seconds, so a machine
   // where every stub in the chain costs a process spawn answers the same one.
   const pendingFile = path.join(root, 'categories-pending.json');
   const pendingReads = path.join(root, 'categories-pending-reads');
@@ -236,15 +216,10 @@ const mkWorld = ({
     ).trimEnd().split('\n'));
   }
 
-  // A browser opener that records what it was handed and, when a test says
-  // so, plays the owner: the page it "opened" is where the categories get
-  // made, so it writes them into the store the gh shim answers from, at once
-  // or held back for `afterReads` more reads (an owner still clicking while
-  // the poll runs). The wait is COUNTED, not timed: the next `afterReads`
-  // checks still miss the categories and the one after that finds them,
-  // whatever each check costs on the machine running it.
-  // Every world gets the recorders: the base PATH keeps `/usr/bin/open` real
-  // on a Mac, and a step that reached it unshadowed would open a browser.
+  // A browser opener that records what it was handed and, when a test says so,
+  // plays the owner: it writes the categories into the store at once, or after
+  // `afterReads` more reads (counted, never timed). Every world gets it, so a
+  // real `/usr/bin/open` never opens a browser.
   const openerLog = path.join(root, 'opener-argv.log');
   // `breaks` plays a read that fails mid-poll (the network or the token gone):
   // the store stops being JSON, so every later read returns nothing.
@@ -313,10 +288,9 @@ const inHome = (world, script, { input = '' } = {}) => {
     cwd: world.root, env: world.env, input, encoding: 'utf8', timeout: 30000,
   });
   assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
-  // `out` is the whole transcript, both streams in the order a terminal shows
-  // them: the library prints an action on stdout and a warning on stderr
-  // (issue #237), and what these tests read is what the user was told. `err`
-  // stays separate for the checks that are about the STREAM.
+  // `out` is both streams in the order a terminal shows them, since what these
+  // tests read is what the user was told; `err` stays separate for the checks
+  // about the stream.
   return {
     code: res.status,
     out: `${res.stdout || ''}${res.stderr || ''}`,
@@ -348,7 +322,7 @@ const seeded = (world) => {
 };
 
 /**
- * A COPY of this checkout's runner sources, so a test can change one of them.
+ * A copy of this checkout's runner sources, so a test can change one of them.
  * The drift a later setup exists to heal is drift in the checkout, and the
  * real one is not a test's to edit.
  */
@@ -362,7 +336,7 @@ const mkKitCopy = (root) => {
   return kit;
 };
 
-/** Where the stamp lives and what it is called: the name IS the contract. */
+/** Where the stamp lives and what it is called: the name is the contract. */
 const STAMP = '.workkit-version';
 
 module.exports = {

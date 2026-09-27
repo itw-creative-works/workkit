@@ -1,7 +1,5 @@
-//
 // Tests for standards.sh: it fails loudly, never silently.
-// The shared prologue (the repo and gh-stub factories, runScript, the constants) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -18,15 +16,9 @@ const { mkTmp } = require('../../lib/scratch');
 const run = async () => {
   group('standards.sh: it fails loudly, never silently');
 
-  // Every case here was a reproduced defect before 3.1.0: the suite proved the
-  // happy path across all four states and nothing about what happens when the
-  // ground shifts (review findings, 2026-07-24).
-
-  // The engine runs under `set -e` on whatever bash the machine has. A bare
-  // `(( x++ ))` yields the value BEFORE the increment, so a counter starting at
-  // 0 makes the command exit non-zero on its first pass; bash 4.1 and later end
-  // the run there. Stock macOS bash is 3.2 and does not, so the shape has to be
-  // banned by inspection: no Darwin test run would ever fail on it.
+  // The engine runs under `set -e`, and a bare `(( x++ ))` yields the value before
+  // the increment, so a counter at 0 exits non-zero and bash 4.1 and later end the
+  // run. Stock macOS bash 3.2 does not, so the shape is banned by inspection.
   await test('no arithmetic command that can exit non-zero under errexit', () => {
     // The entry and every heal it sources: the shape is banned wherever the
     // script's functions live.
@@ -77,9 +69,8 @@ const run = async () => {
   });
 
   await test('a missing labels.json still answers --state and --announce, and the heal says what broke', () => {
-    // The manifest check used to sit before mode dispatch, so a broken install
-    // answered --state with exit 1, which the hook read as nogit and went
-    // silent forever.
+    // A manifest check ahead of mode dispatch would answer --state with exit 1,
+    // which the hook reads as nogit and goes silent forever.
     const engine = mkTmp('wf-std-');
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, engine]);
     fs.rmSync(path.join(engine, 'labels.json'));
@@ -103,9 +94,8 @@ const run = async () => {
   });
 
   await test('a timed-out decline leaves the other run\'s lock in place', () => {
-    // The rmdir trap used to be installed even when the lock was never
-    // acquired, so a run that gave up after 5s deleted another run's mutex on
-    // its way out.
+    // The rmdir trap belongs to a run that acquired the lock, or a run that gave
+    // up after 5s would delete another run's mutex on its way out.
     const repo = makeRepo({ settings: null });
     const home = mkTmp('wf-std-');
     fs.mkdirSync(path.join(home, '.state.lock'), { recursive: true });
@@ -130,7 +120,7 @@ const run = async () => {
   });
 
   await test('a committed no with a severed tail is still a no, never a heal', () => {
-    // jq prints the answer it parsed and THEN fails on the tail, so a read
+    // jq prints the answer it parsed and then fails on the tail, so a read
     // whose fallback is appended to that answer resolves to neither `false`
     // nor `unreadable`: it falls through to the enabled arm and heals a repo
     // that said no.
@@ -192,8 +182,7 @@ const run = async () => {
   });
 
   await test('no jq: a committed enabled:false is still honored, not healed over', () => {
-    // The grep fallback exists for exactly this; the only jq-free test used an
-    // enabled repo, so the branch that matters had no coverage.
+    // The grep fallback exists for exactly this: a committed no, read without jq.
     const repo = makeRepo({ settings: '{ "version": 1, "enabled": false }\n' });
     const binDir = mkTmp('wf-std-');
     // cygpath is the engine's path spelling on Windows (wk_git_path), as much a

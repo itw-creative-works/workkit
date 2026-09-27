@@ -1,18 +1,7 @@
-//
-// Tests for run_under_pty's expect path (issue #187): the Ctrl-C escape the
-// token mint needs. The claude CLI holds its PTY in raw mode and discards the
-// ^C byte, so `workflow/workkit/mint-pty.exp` binds it one layer out and ends the run
-// itself; these cases prove the binding with a child that IGNORES SIGINT the
-// way the CLI ignores the byte, and prove a finished child's exit status and
-// screen still pass through.
-//
-// The whole suite runs under an OUTER expect: the path under test is gated on
-// stdin being a real terminal, and a pty is the only honest way to answer that
-// gate: a pipe would route every case to the `script` fallback and prove
-// nothing. No expect on this machine, nothing to test: the fallback is the
-// only path that can run here, and workkit-cli/cloud-secrets.test.js already
-// covers it.
-//
+// Tests for run_under_pty's expect path: the Ctrl-C escape the token mint needs,
+// proved with a child that ignores SIGINT the way the claude CLI ignores ^C.
+// The suite runs under an outer expect, since the path is gated on a real
+// terminal; with no expect, workkit-cli/cloud-secrets.test.js covers the fallback.
 
 const fs = require('fs');
 const path = require('path');

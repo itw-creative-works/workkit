@@ -1,7 +1,5 @@
-//
 // Tests for standards.sh: participation, the four states and where each lives.
-// The shared prologue (the repo and gh-stub factories, runScript, the constants) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -19,7 +17,7 @@ const run = async () => {
   // Four states, two files. A yes (or a deliberate project-level no) is the
   // repo's committed settings.json; never-asked and declined are personal and
   // live in the user file, so a teammate never reads one developer's hesitation
-  // as the project's decision (Ian 2026-07-24).
+  // as the project's decision.
   const stateOf = (repo, opts) => runScript(repo, { ...opts, args: ['--state'] }).stdout.trim();
 
   // Nothing at all may land in a repo that has not said yes.
@@ -82,7 +80,7 @@ const run = async () => {
     cleanup(repo); cleanup(home);
   });
 
-  // The tower clone at <WORKFLOW_HOME>/tower is ENGINE TERRITORY (issue #79):
+  // The tower clone at <WORKFLOW_HOME>/tower is engine territory:
   // it is a git repo, but it carries no committed opt-in, is never offered, and
   // the heal writes nothing into it.
   const makeHomeClone = () => {
@@ -127,10 +125,8 @@ const run = async () => {
   });
 
   await test('the user settings file exists from the first run, before any decision', () => {
-    // It used to appear only on the first decline, so someone running the
-    // workflow system found no ~/.workkit at all and read that as broken
-    // (Ian 2026-07-25). The site options spelled out are the honest starting
-    // state: it is the hand-edited file (issue #80), and an empty one would
+    // A missing ~/.workkit reads as broken. The site options spelled out are the
+    // honest starting state: it is the hand-edited file, and an empty one would
     // show nobody what there is to set.
     const repo = makeRepo({ settings: null });
     const home = path.join(mkTmp('wf-std-'), 'never-touched');
@@ -141,7 +137,7 @@ const run = async () => {
     assertEq(parsed.version, 1, 'seeded with a version');
     assertEq(parsed.repos, undefined, 'the roster is not in the hand-edited file');
     assertEq(parsed.site.repo, null, 'the home repo is unset');
-    // Null, not false: the switch has three states (issue #84), and a seeded
+    // Null, not false: the switch has three states, and a seeded
     // false is an answer nobody gave: it is what setup reads to know there is
     // still a question to put.
     assert('publish' in parsed.site, 'the switch is spelled out');
@@ -164,7 +160,7 @@ const run = async () => {
 
   await test('--decline records the repo under repos in the machine\'s roster file', () => {
     // The decline is the machine's record, not the owner's typing, so it lands
-    // in `.repos.json` beside the settings rather than in them (issue #80).
+    // in `.repos.json` beside the settings rather than in them.
     const repo = makeRepo({ settings: null });
     const home = mkTmp('wf-std-');
     const { code, output: stdout } = runScript(repo, { args: ['--decline'], workflowHome: home });

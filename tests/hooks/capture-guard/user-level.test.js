@@ -1,9 +1,7 @@
-//
 // Tests for hooks/safety/capture-guard: the user-level capture file keyed to
 // $HOME, the hook's wiring and the triage skill's marker line, and the
 // fail-open cases.
 // The shared prologue (the scratch repo and TMPDIR, the marker helpers, the hook runner) is ./helpers.js.
-//
 
 const fs = require('fs');
 const os = require('os');
@@ -29,7 +27,7 @@ const HOME_CAPTURE = path.join(HOME, W, 'capture.md');
 const HOME_MARKER = markerFor(shellPath(HOME));
 
 // The marker script the triage skill calls, and the skill's own line calling
-// it: the test runs the LINE, so the skill and the script cannot drift apart.
+// it: the test runs the line, so the skill and the script cannot drift apart.
 // CLAUDE_PLUGIN_ROOT is handed over the way a hook command hands it over.
 const PLUGIN_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPT = path.join(PLUGIN_ROOT, 'scripts', 'triage-marker.sh');
@@ -151,7 +149,7 @@ const run = async () => {
   });
 
   await test('a machine with neither shasum nor sha1sum: exit 0, the guard fails open', () => {
-    // No digest tool means no marker can be NAMED, on either side: the skill
+    // No digest tool means no marker can be named, on either side: the skill
     // cannot write one and this guard cannot look one up. That is the same
     // class as "no anchor to key on at all", and this guard fails open on its
     // own errors rather than wedging the session.

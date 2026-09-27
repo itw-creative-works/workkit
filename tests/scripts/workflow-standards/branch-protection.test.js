@@ -1,7 +1,5 @@
-//
 // Tests for standards.sh: branch protection.
-// The shared prologue (the repo and gh-stub factories, runScript, the constants) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');

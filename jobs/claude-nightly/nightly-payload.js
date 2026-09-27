@@ -1,31 +1,12 @@
 #!/usr/bin/env node
+// jobs/claude-nightly/nightly-payload.js: what the summaries step hands Claude.
+// Pure gather, printed on stdout: the index of transcripts that moved in the last
+// 24 hours (named, never inlined; the model samples them) and the roster's
+// commits, or with --cadence the rollup over prior summaries read from stdin
+// (jobs/README.md § The summaries step).
 //
-// The nightly payload: what the summaries step hands to Claude.
-//
-// The day's two records, gathered without reading either: an INDEX of the
-// session transcripts that moved in the last 24 hours (path, size, mtime) and
-// the commits that landed across the roster in the same window. The transcripts
-// are named, never inlined: a day's sessions are far past any budget, so the
-// model samples them itself with Read/Grep/Glob, newest first, and stops when it
-// has enough. The index is what makes "newest first" possible at all.
-//
-// The roster it reads is the same `discoverRepos` the morning brief uses, so
-// the two halves of the daily job agree about which repos are the owner's work.
-//
-// Pure gather: no writes, no Claude, no notification. claude-nightly.sh owns
-// the sending and the publishing: the summary is posted as a Discussion on the
-// home repo and never written to disk (issue #27).
-//
-// The WEEKLY and MONTHLY rollups take the same shape with different inputs: a
-// week has no transcripts worth re-reading, so its material is the daily
-// summaries already published, handed in on stdin as the JSON the API answered
-// with. One module, so the three cadences cannot drift apart in voice.
-//
-// Usage:
-//   node jobs/claude-nightly/nightly-payload.js                        // the day
-//   … | node jobs/claude-nightly/nightly-payload.js --cadence weekly   // the rollup, prior summaries on stdin
+// Usage: node jobs/claude-nightly/nightly-payload.js [--cadence weekly|monthly]
 //   composeNightly({ projectsRoot, workflowHome, exec })  // offline, against fixtures
-//
 
 const fs = require('fs');
 const os = require('os');
@@ -37,10 +18,8 @@ const { discoverRepos } = require('../../tower/api/lib/repos');
 const WINDOW_HOURS = 24;
 const WINDOW_MS = WINDOW_HOURS * 60 * 60 * 1000;
 
-// The reflection instruction. It names the payload's two sections, hands the
-// model its own reading budget over the transcript index, and fixes the output
-// EXACTLY: the response is not a report about a summary, it IS the summary, and
-// claude-nightly.sh writes it to disk byte for byte.
+// The reflection instruction. It fixes the output exactly: the response is the
+// summary itself, never a report about one, and it is published byte for byte.
 const INSTRUCTION = `You are writing the owner's DAILY SUMMARY: a reflection on the day that just ended.
 
 The payload below is JSON with two parts. \`transcripts\` is an INDEX of the
@@ -90,12 +69,8 @@ const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
 });
 
 /**
- * The session transcripts that moved inside the window, newest first.
- *
- * One level down from the projects root, which is how Claude Code lays it out
- * (a directory per project, `.jsonl` files inside). An unreadable directory is
- * skipped rather than fatal: the day's record is still worth summarizing
- * without it.
+ * The session transcripts that moved inside the window, newest first, one level
+ * down from the projects root. An unreadable directory is skipped, not fatal.
  *
  * @param {object} [opts]
  * @param {string} [opts.projectsRoot] the transcripts root (default ~/.claude/projects)
@@ -147,11 +122,8 @@ const transcriptIndex = (opts = {}) => {
 };
 
 /**
- * Today's commits across the roster, one entry per repo that has any.
- *
- * A repo git cannot answer for is reported with its error rather than dropped:
- * a day with no commits and a day whose log could not be read are different
- * facts, and the model is told which it is looking at.
+ * Today's commits across the roster, one entry per repo that has any. A repo git
+ * cannot answer for keeps its error: no commits and an unreadable log differ.
  *
  * @param {object} [opts]
  * @param {string} [opts.workflowHome] the user's ~/.workkit
@@ -225,7 +197,7 @@ const composeNightly = (opts = {}) => {
 const render = (payload) => `${INSTRUCTION}\n\n${JSON.stringify(payload, null, 2)}\n`;
 
 /**
- * The rollup instruction. It says what the material IS (summaries, not raw
+ * The rollup instruction. It says what the material is (summaries, not raw
  * days) because a rollup that re-reads transcripts would spend a week's budget
  * on ground the daily summaries already covered.
  *
@@ -307,7 +279,7 @@ if (require.main === module) {
   } else if (cadence === 'weekly' || cadence === 'monthly') {
     // The prior summaries arrive on stdin: the API call belongs to the step that
     // already holds the credentials (workflow/lib/discussions.sh), and this module
-    // stays a pure composer. Unreadable input is an EMPTY period, said plainly:
+    // stays a pure composer. Unreadable input is an empty period, said plainly:
     // a rollup invented from nothing is worse than none.
     let raw = '';
     try {

@@ -1,8 +1,6 @@
-//
 // Tests for the state directory name agreeing across layers, and
 // standards.sh writing .gitignore: the .workkit/ pattern and the basics.
-// The shared prologue (the repo and gh-stub factories, runScript, the constants) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -90,9 +88,9 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  // The heal is verified by OUTCOME (git check-ignore), not by grepping for its
-  // own block: the two cases below both passed a string check while leaving
-  // settings.json untrackable (review regression, 2026-07-24).
+  // The heal is verified by outcome (git check-ignore), not by grepping for its
+  // own block: both cases below can pass a string check while leaving
+  // settings.json untrackable.
   await test('a .gitignore with only .workkit/* gains the negation', () => {
     const repo = makeRepo();
     const stub = makeGhStub();

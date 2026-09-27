@@ -1,7 +1,6 @@
 //
-// Tests for tower/api/lib/telemetry.js: the whole payload (byModel, the
-// thirty-day series, what a session row carries, and the one-session read).
-// The shared prologue (the transcript line builders, the scratch world and its sessions, the collect call, the module under test) is ./helpers.js.
+// Tests for tower/api/lib/telemetry.js: the whole payload (byModel, the thirty-day
+// series, a session row, the one-session read). Prologue: ./helpers.js.
 //
 
 const fs = require('fs');

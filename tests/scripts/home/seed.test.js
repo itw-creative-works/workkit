@@ -1,8 +1,6 @@
-//
 // Tests for workflow/home.sh: the seed (the tower app becomes the project, its
 // file: specs resolved, and the first commit carries none of the working files).
-// The shared prologue (the offline world, inHome and setup, the remote and runner factories) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -68,7 +66,7 @@ const run = async () => {
   });
 
   await test('the seed is the app and nothing else: no config file, no .workkit', () => {
-    // The clone is engine territory (issue #79): the site options are the
+    // The clone is engine territory: the site options are the
     // user's and live in the machine settings file, and the home repo is known
     // by path, so there is no opt-in to seed and no inbox to keep out.
     const world = mkWorld();
@@ -108,7 +106,7 @@ const run = async () => {
   await test('a stray .workkit/ in the clone is never committed by the daily push', () => {
     // The clone carries no participation state, so anything under that name is
     // scratch someone or something left there, and an unattended commit must
-    // not push it to the default branch (issue #79).
+    // not push it to the default branch.
     const world = mkWorld();
     const remote = mkRemote(world.root);
     world.env.WORKKIT_HOME_REMOTE = remote;

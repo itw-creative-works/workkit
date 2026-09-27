@@ -1,17 +1,8 @@
 #!/bin/bash
 # providers/github-release: does the repo already carry the release `v<version>`?
-#
-# The provider contract (every file in this directory keeps it, and the hook
-# knows nothing else about any of them):
-#   providers/<name> <package-name> <version>
-#   exit 1  the version is TAKEN
-#   exit 0  it is free, or the check could not be made
-# A check that could not be made says so on stderr first: standing down in
-# silence would read exactly like a version nobody has.
-#
-# The package name is accepted and unused here: one contract for every
-# provider beats a per-provider argument list. The repo is the origin of the
-# directory this runs in, which the hook sets to the project root.
+# The provider contract: README.md § The provider contract. The package name is
+# accepted and unused; the repo is the origin of the directory this runs in,
+# which the hook sets to the project root.
 
 set -uo pipefail
 

@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
 # workflow/workkit/commands.sh: the other four commands the dispatch names,
-# `update`, `publish`, `brief` and `doctor`. SOURCED by workkit.sh, never
-# executed, and it runs nothing at load: it defines functions and sets nothing.
-# Every name it reads (KIT_DIR, SCRIPT_DIR, STANDARDS, PUBLISH, MORNING,
-# BRIEF_DISPATCH, PLUGIN_ID, ENGINE_LINK, BIN_DIR, BIN_LINK, DAILY_PLIST,
-# DAILY_LABEL, HOME_LIBS) and the two it sets at run time (QUIET,
-# PUBLISH_FAILED) are the entry's.
+# `update`, `publish`, `brief` and `doctor`. Sourced by workkit.sh, functions
+# only; every name it reads, and the QUIET and PUBLISH_FAILED it sets, are the
+# entry's.
 
 cmd_update() {
   case "${1:-}" in
@@ -22,10 +19,8 @@ cmd_update() {
   # prompt or mint, so a missing value is a line and nothing else.
   secrets_report update || true
 
-  # The published site is rebuilt from THIS checkout, so a human's update is
-  # also how a shipped tower improvement reaches it. The automatic path leaves
-  # it alone: an app build at session start is minutes of work nobody asked for,
-  # and the daily job publishes anyway.
+  # A human's update republishes from this checkout, so a shipped tower change
+  # reaches the site; --auto leaves that to the daily job.
   if [[ "$QUIET" -eq 1 ]]; then
     wk_skip "site: the daily job publishes it; \`workkit publish\` does it now"
   else
@@ -46,15 +41,8 @@ cmd_publish() {
   return 0
 }
 
-# Today's brief, asked for now (issue #54). The scheduled morning dispatches the
-# cloud run and this is that same dispatch, through the same one function: the
-# difference is who is listening. Nine o'clock logs a refusal and carries on;
-# a human standing at a terminal is told, and the command fails.
-#
-# `--local` is the rehearsal the job already has: the full local morning, with
-# the brief composed and sent from this machine and never posted to the home
-# repo. The morning's other steps still run where they can: the summaries can
-# post their Discussion and the site publish still fires when it is switched on.
+# Today's brief, asked for now: the scheduled morning's own dispatch, except
+# that a refusal fails the command. `--local` is the full local rehearsal.
 cmd_brief() {
   if [[ "${1:-}" == '--local' ]]; then
     if [[ ! -f "$MORNING" ]]; then
@@ -150,8 +138,8 @@ cmd_doctor() {
     local home_attention=0
     wk_home_doctor || home_attention=$?
     attention=$((attention + home_attention))
-    # The seeded cloud runner drifts on a `git pull` of this checkout, and only
-    # `setup` writes it back, so doctor is the one place that can notice.
+    # The seeded cloud runner drifts on a `git pull` of this checkout; doctor
+    # reports what the last morning could not heal.
     local runner_attention=0
     wk_home_runner_doctor || runner_attention=$?
     attention=$((attention + runner_attention))

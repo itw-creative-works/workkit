@@ -1,8 +1,5 @@
-//
 // Tests for workflow/home.sh: the version stamp that keeps an older checkout
-// from writing over a clone a newer kit seeded (issue #200).
-// The shared prologue (the offline world, inHome and setup, the remote and runner factories) is ./helpers.js.
-//
+// from writing over a clone a newer kit seeded. The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -15,11 +12,8 @@ const {
 const run = async () => {
   group('workflow/home: the version stamp');
 
-  // Issue #200: two machines seed ONE clone, and before the stamp the winner
-  // was simply whichever ran last: a machine on an older kit put a month-old
-  // runner and a pre-rename app back on the home repo three mornings running.
-  // The stamp is the tie-breaker: the clone says which kit wrote what is in it,
-  // and an older checkout writes nothing at all.
+  // Two machines seed one clone, so the stamp is the tie-breaker: the clone says
+  // which kit wrote what is in it, and an older checkout writes nothing at all.
 
   const kitVersion = () => JSON.parse(
     fs.readFileSync(path.join(KIT_DIR, '.claude-plugin', 'plugin.json'), 'utf8'),
@@ -58,7 +52,7 @@ const run = async () => {
     const world = mkWorld();
     seeded(world);
     const dest = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
-    // Drift an ordinary run WOULD heal, so what stops this one is the stamp.
+    // Drift an ordinary run would heal, so what stops this one is the stamp.
     fs.writeFileSync(dest, '# the newer machine’s runner\n');
     fs.writeFileSync(path.join(world.tower, STAMP), '99.0.0\n');
 
@@ -94,7 +88,7 @@ const run = async () => {
 
   await test('a checkout that cannot say its version stamps nothing and blocks nothing', () => {
     // A partial checkout has no plugin manifest to read. Unknown is not newer
-    // and not older: the seed behaves exactly as it did before the stamp.
+    // and not older: the seed behaves as if there were no stamp.
     const world = mkWorld();
     world.env.WORKKIT_KIT_DIR = mkKitCopy(world.root);
     seeded(world);

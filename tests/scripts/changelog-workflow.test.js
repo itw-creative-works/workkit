@@ -1,10 +1,7 @@
-//
 // Tests for the reusable CHANGELOG workflow (.github/workflows/changelog.yml):
-// the one CI home of the entry-format check, which every participating repo's
-// checks.yml calls through the template's `uses:` line instead of carrying a
-// copy of the linter. The shape is read off the lines; the kit has no YAML
-// dependency and the questions here are all line-shaped.
-//
+// the one CI home of the entry-format check, called through each repo's
+// checks.yml `uses:` line. The shape is read off the lines: the kit has no YAML
+// dependency and every question here is line-shaped.
 
 const path = require('path');
 const fs = require('fs');

@@ -1,8 +1,5 @@
-//
-// Tests for workflow/home.sh: the cloud brief runner seeded onto the home repo
-// (issue #91), its drift healed, its retired files pruned.
-// The shared prologue (the offline world, inHome and setup, the remote and runner factories) is ./helpers.js.
-//
+// Tests for workflow/home.sh: the cloud brief runner seeded onto the home repo,
+// its drift healed, its retired files pruned. The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -13,10 +10,9 @@ const { KIT_DIR, cleanup, mkRemote, mkWorld, setup, runnerPairs, seeded, mkKitCo
 const run = async () => {
   group('workflow/home: the cloud brief runner');
 
-  // Issue #91: the workflow and the code it runs are seeded onto the HOME repo,
-  // because the plugin repo is distributed and a consumer cannot set secrets on
-  // a repo they do not own. The checkout stays the one source; the clone
-  // carries a copy that a later setup refreshes.
+  // The runner is seeded onto the home repo because a consumer cannot set
+  // secrets on the distributed plugin repo. The checkout stays the one source;
+  // the clone carries a copy that a later setup refreshes.
 
   await test('every file the runner needs lands in the clone, at the path the workflow names', () => {
     const world = mkWorld();
@@ -35,10 +31,9 @@ const run = async () => {
   });
 
   await test('the manifest names every module the composer requires, the stats line included', () => {
-    // Issue #55: the morning's stats line is composed on the RUNNER, out of
-    // jobs/morning/brief/stats.js and the lib that owns its pattern. A manifest missing
-    // either is a cloud brief that publishes without the block, and a history
-    // that quietly stops accruing.
+    // The stats line is composed on the runner, out of jobs/morning/brief/stats.js
+    // and the lib that owns its pattern: a manifest missing either publishes a
+    // brief without the block and a history that quietly stops accruing.
     const dests = runnerPairs().map((pair) => pair.dest);
     for (const dest of ['brief/jobs/morning/brief/stats.js', 'brief/tower/api/lib/history.js']) {
       assert(dests.includes(dest), `${dest} is on the runner's list`);
@@ -74,11 +69,10 @@ const run = async () => {
   });
 
   await test('every piece the morning and the engine source is on the list', () => {
-    // morning.sh sources its steps from jobs/morning/, home.sh its stages from
-    // workflow/home/ and lib.sh its groups from workflow/lib/, plainly, so a
-    // piece the list misses is a runner that dies at its source line. The pieces
-    // are read off disk, never named here, so one added to any of the three
-    // folders is held to the list at birth.
+    // morning.sh, home.sh and lib.sh source their pieces from jobs/morning/,
+    // workflow/home/ and workflow/lib/, so a piece the list misses kills the
+    // runner at its source line. The pieces are read off disk, so a new one is
+    // held to the list at birth.
     const pairs = runnerPairs();
     for (const dir of ['jobs/morning', 'workflow/home', 'workflow/lib']) {
       for (const file of fs.readdirSync(path.join(KIT_DIR, dir)).filter((f) => f.endsWith('.sh'))) {
@@ -103,7 +97,7 @@ const run = async () => {
     assertEq(fs.statSync(dest).mtimeMs, before, 'the file was not rewritten');
 
     // Drift, the only reason the copy is ever touched again: the file in the
-    // clone no longer matches the checkout it came from.
+    // clone differs from the checkout it came from.
     fs.writeFileSync(dest, '# an older runner\n');
     const refreshed = seeded(world);
     assert(/rc=0/.test(refreshed.out), `the drift is healed: ${refreshed.out}`);
@@ -116,9 +110,8 @@ const run = async () => {
   });
 
   await test('a file the manifest stopped naming is pruned from the clone', () => {
-    // Issue #117: #107 renamed the runner entry, and a clone seeded before it
-    // kept the old script forever. `brief/` in the clone is engine territory,
-    // so what the manifest no longer names is what a rename left behind.
+    // `brief/` in the clone is engine territory, so a file the manifest does
+    // not name is what a rename left behind.
     const world = mkWorld();
     seeded(world);
     const retired = path.join(world.tower, 'brief', 'jobs', 'claude-cloud.sh');

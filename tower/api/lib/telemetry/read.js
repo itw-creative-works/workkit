@@ -1,5 +1,5 @@
 // tower/api/lib/telemetry/read.js: the bounded incremental read: the chunk size,
-// the ONE read cache and its prune, the line fold and one transcript's usage.
+// the one read cache and its prune, the line fold and one transcript's usage.
 // telemetry.js requires it; no piece requires telemetry.js.
 
 const fs = require('fs');
@@ -22,15 +22,8 @@ const resetCache = () => cache.clear();
 const cachedPaths = () => [...cache.keys()];
 
 /**
- * Forget every file this pass did not read.
- *
- * The cache is keyed by path and would otherwise only grow: a session that
- * finished drops out of `listSessions` and its read state (a Set of message
- * ids, plus the per-day and per-model maps) would be held for as long as the
- * tower process lives. A finished session is not read again, so nothing is lost
- * by dropping it, and a session that comes back is read from zero, which is
- * what a rewritten file already does.
- *
+ * Forget every file this pass did not read: keyed by path, the cache would only
+ * grow, and a session that comes back is read from zero like a rewritten file.
  * @param {Set<string>} keep the paths this pass named
  */
 const prune = (keep) => {
@@ -39,7 +32,7 @@ const prune = (keep) => {
   }
 };
 
-/** The LOCAL calendar day a timestamp falls on, as YYYY-MM-DD. */
+/** The local calendar day a timestamp falls on, as YYYY-MM-DD. */
 const dayKey = (when) => {
   const date = when instanceof Date ? when : new Date(when);
   if (Number.isNaN(date.getTime())) return null;
@@ -54,10 +47,9 @@ const newEntry = () => ({
   offset: 0,
   // The tail of the last read, when it stopped mid-line.
   partial: '',
-  // message.id values already counted. It grows with the CONVERSATION, not with
-  // the file: the largest transcript on this machine is 1.3GB across 362k lines
-  // and carries 8.4k distinct ids, because a resumed session replays the same
-  // messages over and over. So the set stays small even where the file does not.
+  // message.id values already counted. It grows with the conversation, not the
+  // file: a resumed session replays the same messages, so a 1.3GB transcript
+  // measured here carried only 8.4k distinct ids.
   seen: new Set(),
   tokens: zeroTokens(),
   byDay: {},
@@ -98,7 +90,7 @@ const ingest = (entry, line) => {
 
   // The spawn half of the class join, collected while the file is open anyway,
   // and beside it the last tool this transcript reached for, which is the one
-  // line that says what an agent is DOING rather than how much it has spent.
+  // line that says what an agent is doing rather than how much it has spent.
   // A transcript is folded in file order, so the last one seen is the latest.
   if (Array.isArray(message.content)) {
     for (const block of message.content) {
@@ -127,7 +119,7 @@ const ingest = (entry, line) => {
   const total = input + output + cacheRead + cacheCreation;
 
   // The two cache TTLs cost different rates. The share written at the 1-hour
-  // TTL is read purely to PRICE it: it is never a counter of its own, so the
+  // TTL is read purely to price it: it is never a counter of its own, so the
   // token totals the page renders stay exactly the four the contract names.
   const split = usage.cache_creation;
   const cacheCreation1h = split && typeof split === 'object' ? num(split.ephemeral_1h_input_tokens) : 0;
@@ -147,7 +139,7 @@ const ingest = (entry, line) => {
   const price = costOf(model, {
     input, output, cacheRead, cacheCreation, cacheCreation1h,
   });
-  // A line that spent NOTHING costs nothing at any rate, so an unpriced model
+  // A line that spent nothing costs nothing at any rate, so an unpriced model
   // there is not a gap in the total. Claude Code writes `<synthetic>` lines
   // with an all-zero usage block for messages it generated locally, and one of
   // those would otherwise turn a fully priced session's cost to null.
@@ -197,7 +189,7 @@ const advance = (entry, file, size) => {
     carry += decoder.end();
     // A trailing line with no newline is either a file written without one or a
     // line still being appended. Parsing tells them apart: truncated JSON does
-    // not parse, so anything that DOES parse is a whole record and is counted
+    // not parse, so anything that does parse is a whole record and is counted
     // now rather than waiting for a newline that may never come.
     if (carry.trim()) {
       let whole = false;
@@ -244,16 +236,9 @@ const snapshot = (entry) => ({
 });
 
 /**
- * One transcript's usage, read incrementally.
- *
- * The first call streams the whole file; every call after it reads only the
- * bytes appended since, adding to the totals already stored. A file that shrank
- * or whose mtime moved backwards was rewritten rather than appended to, so its
- * state is discarded and it is read again from zero.
- *
- * A missing or unreadable file answers zeros: the tower polls, and a session
- * whose transcript has not been written yet is an ordinary condition.
- *
+ * One transcript's usage, read incrementally: the first call streams the whole
+ * file, every later one only the bytes appended since. A file that shrank or
+ * whose mtime moved backwards starts over; a missing one answers zeros.
  * @param {string} file
  * @returns {{tokens: object, byDay: object, byModel: object, taskTypes: object, model: string|null, firstAt: string|null, lastAt: string|null, lastTool: string|null, lastToolAt: string|null, cost: number|null, malformed: number, bytesRead: number, offset: number}}
  */

@@ -1,46 +1,11 @@
 #!/bin/bash
-# safety/commit-gate: PreToolUse hook (Bash)
-# Every `git commit` goes through the gate:
-#   1. New-file tests: a commit that ADDS source files while touching no test
-#      file bounces (the test-TYPE proxy, only in repos with a test script).
-#   2. Review: when the files going into the commit include CODE (not docs-only),
-#      the workkit:review skill must have run since the last commit: it leaves
-#      a marker file this hook checks. Docs-only commits skip this.
-#   3. CHANGELOG: entries this commit adds must match the entry format.
-#   4. Collapse on ship: a commit closing an issue (Fixes/Closes/Resolves #N)
-#      must stage the CHANGELOG.md entry it closes against.
-#   5. Tests: when the repo's package.json has a test script AND the commit
-#      carries CODE, the suite must pass, within the gate's own deadline
-#      (issue #93). Claude Code cancels a hook at its timeout and treats
-#      no-decision as allow, so a suite that outran the harness used to let the
-#      commit through untested. The gate now ends the run itself, under that
-#      ceiling, and BOUNCES instead. The code test is check 2's classification
-#      (issue #151), so a docs-only commit and a release commit's version stamp
-#      (a version-only bump in package.json or .claude-plugin/plugin.json)
-#      skip the suite. No untested code can land: every commit staging a code
-#      line still gates, and a release commit skips only because its tree is
-#      the previously gated tree plus generated bookkeeping, so by induction
-#      every tree that ever gained code was tested when it gained it.
-#      The run's budget is WORKKIT_GATE_TEST_DEADLINE (default 1500s), kept
-#      under the hook's declared timeout in hooks.json (3000s). A repo whose
-#      green suite outgrows the default raises the env var in its own
-#      .claude/settings.json env block (issue #189): the default stays small
-#      so small repos still bounce a hung suite quickly, and the timeout's
-#      headroom is what makes a per-repo raise effective without touching
-#      this plugin. A raise above 2900s is clamped back, so the harness can
-#      never cancel the hook into a silent allow. Both the raise and a
-#      plugin update take effect on a session restart. A nested package
-#      whose folder holds a change in the commit runs its own test script
-#      after the root's, under the same budget (checks/proof-suite.sh).
-#   6. The proof: every issue the message closes (the check 4 trailer) must
-#      already carry a `Proof:` comment.
-#      The trailer is the third stage of the gate safety/proof-guard holds on
-#      the complete flip and the close, and it reads the issue the same way.
-# Code-vs-docs classification matches the docs/change-tracker hook (same
-# definition in both: a docs PATH, then a code extension (hook_has_code_ext)
-# winning over it, then the docs basenames kept in sync by hand; the
-# version-stamp carve-out below is the gate's alone and sits outside it).
-# Fail open on anything that isn't clearly a violating commit.
+# safety/commit-gate: PreToolUse hook (Bash). Every `git commit` passes six
+# checks: 1 new files carry tests, 2 code carries a fresh review marker, 3 added
+# CHANGELOG entries match the format, 4 a `Fixes #N` commit stages its entry,
+# 6 every closed issue carries a `Proof:` comment, 5 the suite passes under the
+# gate's own deadline (nested packages included). A commit the gate cannot
+# place fails closed; anything else not clearly violating fails open.
+# Detail: docs/hooks.md § safety:commit-gate.
 
 set -euo pipefail
 set -f  # no glob expansion while handling untrusted command text
@@ -52,13 +17,6 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 . "$(dirname "${BASH_SOURCE[0]}")/../../_lib.sh"
-
-# The six checks are functions in checks/, sourced here and called in order at
-# the end: checks/files.sh holds 1 to 4, checks/proof-suite.sh holds 6 and 5.
-# shellcheck source=./checks/files.sh
-. "$(dirname "${BASH_SOURCE[0]}")/checks/files.sh"
-# shellcheck source=./checks/proof-suite.sh
-. "$(dirname "${BASH_SOURCE[0]}")/checks/proof-suite.sh"
 
 cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
 [ -n "$cmd" ] || exit 0
@@ -76,13 +34,9 @@ block() {
   exit 2
 }
 
-# A check that stands down says so on the channel a PreToolUse hook is actually
-# HEARD on (issue #155): stderr from a hook exiting 0 reaches the debug log
-# alone, never the transcript, never the model, which is how a silent skip
-# stayed invisible for a whole session. Same shape as manager/spawn-guard's
-# warning: a top-level `systemMessage` for the user plus `additionalContext`
-# for Claude, and NO permissionDecision, so the commit's fate is decided
-# exactly as it would be with this hook silent.
+# A stand-down speaks on the channel a PreToolUse hook exiting 0 is heard on
+# (stderr reaches only the debug log): systemMessage plus additionalContext and
+# no permissionDecision, so the commit's fate is unchanged.
 stand_down() {
   hook_pretool_notice "$1"
 }
@@ -95,17 +49,12 @@ stand_down() {
 
 [ -n "$commit_clause" ] || exit 0
 
-# The gate classifies the repo it is STANDING in. A commit aimed elsewhere
-# (git -C <path>, or cd/pushd/popd earlier in the same command line) would be
-# judged against the wrong repo: fail closed and ask for a plain commit
-# instead. The pushd spelling is the same act by another word and used to walk
-# past this test (issue #159); the finder flags all three.
+# The gate classifies the repo it stands in, so a commit aimed elsewhere (git -C,
+# or cd/pushd/popd earlier in the line) fails closed and asks for a plain commit.
 [ "$saw_cd" -eq 1 ] && block "the command changes directory before committing; run a plain 'git commit' with the session already in the repo so the gate can see its staging."
 
-# A command that STAGES and commits in one call is ungateable by construction
-# (issue #155): the gate is PreToolUse, so it reads the index before the `git
-# add` has run: over a clean index every check stood down silently, and even a
-# populated one may gain files the gate never saw. Same ruling as -C and cd.
+# Stage-and-commit in one call is ungateable: the gate reads the index before
+# the in-command `git add` runs. Same ruling as -C and cd.
 [ "$saw_stage" -eq 1 ] && block "the command stages and commits in one call, so the gate cannot see what the commit will carry; stage first (its own command), then run a plain 'git commit'."
 
 # Walk the commit clause's tokens: detect -C/--git-dir/--work-tree/GIT_DIR=
@@ -133,18 +82,14 @@ for w in $commit_clause; do
     --) has_pathspec=1; break ;;
     --all) has_all_flag=1 ;;
     --message=*|--file=*) ;;
-    # Every long flag that takes a SEPARATE value. Its value is now a visible
-    # token (the quote strip leaves a placeholder), so a flag missing from this
-    # list would have its value read as a pathspec and gate the commit strictly
-    # for no reason (review 2026-07-25: `--author "Jane Doe"` blocked a
-    # docs-only commit).
+    # Every long flag that takes a SEPARATE value: the quote strip leaves the
+    # value as a visible token, so a flag missing here would read it as a pathspec.
     --message|--file|--author|--date|--trailer|--fixup|--squash|--cleanup|--pathspec-from-file|--gpg-sign|--reuse-message|--reedit-message) skip_next=1 ;;
     --*) ;;
     -[!-]*)
       case "$w" in *a*) has_all_flag=1 ;; esac
-      # Only a value-taking letter at the END of the token consumes the next
-      # one. `-m"docs"` arrives as `-m_hookq_`, its value already attached, and
-      # must NOT swallow the pathspec after it (review 2026-07-25).
+    # Only a value-taking letter at the END of the token consumes the next one:
+    # `-m"docs"` arrives as `-m_hookq_`, its value already attached.
       case "$w" in *[mFtcC]) skip_next=1 ;; esac
       ;;
     # A redirect is shell syntax, never an argument: a bare operator hands its
@@ -157,15 +102,10 @@ for w in $commit_clause; do
   esac
 done
 
-# By here the command carries a real commit clause, so a cwd that resolves no
-# repository is not an ordinary Bash command passing through: it is a commit the
-# gate cannot place, and every check below would stand down over the wrong tree
-# or none at all. It fails CLOSED (issue #159): a background subagent sits at
-# the session's primary directory, which is often no repo at all, so this was
-# every one of their commits. The one thing the gate keeps failing OPEN on is a
-# payload carrying no cwd at all: that is the hook's own blindness, not a
-# reachable command shape, and blocking on it would wedge every commit with no
-# action that could clear it.
+# A real commit in a cwd that resolves no repository is a commit the gate cannot
+# place (a background subagent's steady state), so it fails closed. A payload
+# with no cwd at all still fails open: that is the hook's own blindness, and
+# blocking would wedge every commit.
 no_repo() {
   block "the session's directory is not inside a git repository, so the gate cannot see what this commit would carry. cd into the repo's root as its own command first, then run a plain 'git commit' there."
 }
@@ -173,8 +113,8 @@ cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
 [ -n "$cwd" ] || exit 0
 cd "$cwd" 2>/dev/null || no_repo
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || no_repo
-# Everything below judges the REPO, not the session cwd: a session sitting in
-# a subdirectory must be gated identically (review 2026-07-23).
+# Everything below judges the REPO, not the session cwd, so a session in a
+# subdirectory is gated identically.
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || no_repo
 
 # Files going into the commit: staged, plus modified tracked files with -a/--all.
@@ -186,24 +126,18 @@ files=$(printf '%s' "$files" | grep -v '^$' || true)
 # Pathspec commits (`git commit -m x src/foo.js`) bypass staging, so the file
 # list can't be derived: gate them strictly as code commits.
 if [ -z "$files" ] && [ "$has_pathspec" -eq 0 ]; then
-  # The gate never stands down SILENTLY (issue #155): skipping every check
-  # without saying so is how a whole session's commits went untested. The
-  # package.json probe sits on this path alone: by here the gate has already
-  # resolved a real commit clause, so it is not new work on every Bash command.
+  # The gate never stands down silently. The package.json probe sits on this
+  # path alone, past a resolved commit clause, so ordinary commands never pay it.
   if [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
     stand_down "commit-gate: nothing staged and no -a/pathspec: the gate has nothing to judge, so no check ran (suite included)."
   fi
   exit 0
 fi
 
-# The release commit's version stamp (issue #151): the bump the release tooling
-# writes into the two files a repo keeps its version in (the ROOT package.json
-# and, for a plugin repo like this one, the ROOT .claude-plugin/plugin.json) is
-# generated bookkeeping, not code: the tree is the previously gated tree plus
-# that one key. Proved by content the way the stamp arm below is, only `version`
-# may differ from HEAD. A NEW file, unreadable or unparseable JSON, or any other
-# changed key is code again, and the paths are exact: a nested package.json is
-# never this.
+# The release commit's version stamp in the ROOT package.json or
+# .claude-plugin/plugin.json is generated bookkeeping, not code: proved by
+# content, only `version` may differ from HEAD. A new file, unparseable JSON,
+# another changed key or a nested package.json is code again.
 version_bump_only() {
   local file head copy a b
   file="$1"
@@ -250,26 +184,10 @@ if [ -n "$files" ]; then
   done <<<"$files"
 fi
 
-# Heal bookkeeping: a commit whose files are ALL workflow bookkeeping carries
-# no judgment to review, so checks 1 and 2 stand down for it. Tests (check 5)
-# still run. Any other file, or an unknowable file list, restores the full
-# gate. Three arms, each proving its file is exactly the heal's output:
-#   - the .workkit/settings.json version stamp (settings_is_stamp_only);
-#   - the DELETION of a linter copy (wk_linter_copies), and only once no
-#     workflow in the tree the commit produces still runs it
-#     (linter_copy_retired). An added or edited copy, or a deletion that leaves
-#     a workflow running the copy, is not the heal's output;
-#   - .github/workflows/checks.yml, when the blob the commit carries is the
-#     blob of the heal's rewrite of HEAD's file: its job swapped where it ran a
-#     copy, its header swapped where it carried a retired paragraph, and a job
-#     of the repo's own never touched, so a file the heal would not change
-#     cannot match (checks_is_job_rewrite). Blobs are compared by object id,
-#     so the match is byte for byte, trailing newlines included, and a CRLF
-#     working tree under autocrlf is judged by what git will store.
-# The copies' names, the "still runs it" question and the rewrite are all
-# workflow/changelog/changelog-job.sh's, sourced through _lib.sh, the file the heal runs,
-# so the two cannot disagree. Under -a/--all the working tree is what the
-# commit carries, so each arm reads it there.
+# Heal bookkeeping: a commit whose files are all the heal's output stands checks
+# 1 and 2 down; the suite still runs. Three arms, each proving its file byte
+# for byte (docs/hooks.md § safety:commit-gate). Under -a/--all each arm reads
+# the working tree, which is what the commit carries.
 
 linter_copy_retired() {
   local tmp rc=1
@@ -339,15 +257,183 @@ if [ "$has_pathspec" -eq 0 ] && [ -n "$files" ]; then
   done <<<"$files"
 fi
 
-# The checks, in the order the gate asks them: 6 sits before 5 so a missing
-# proof bounces without paying for a full test run. Each function ends on an
-# if, which returns 0 when it does not fire, so a bare call never stops the run.
-check_new_files
-check_review_marker
-check_changelog_format
-check_changelog_staged
-check_proof
-check_suite
-check_nested_suites
+# 1. New source files need tests (the test-TYPE proxy): a hook cannot judge what KIND of test a file holds, but it CAN see a
+# commit that adds code files while touching no test file at all. Only in repos
+# that define a test script (a repo without tests isn't asked to start here),
+# and only for staged adds (pathspec commits are already gated strictly).
+if [ "$bookkeeping" -eq 0 ] && [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
+  added=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=A 2>/dev/null || true)
+  new_code=""
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    if hook_is_code_path "$path"; then new_code="$new_code $path"; fi
+  done <<<"$added"
+  if [ -n "$new_code" ]; then
+    # A test file must be PRESENT in the commit: --diff-filter=d excludes
+    # deletions, so removing tests/old.test.js cannot satisfy the proxy.
+    files_present=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=d 2>/dev/null || true)
+    if [ "$has_all_flag" -eq 1 ]; then
+      files_present=$(printf '%s\n%s' "$files_present" "$(git -c core.quotePath=false diff --name-only --diff-filter=d 2>/dev/null || true)")
+    fi
+    has_test_file=0
+    while IFS= read -r path; do
+      [ -n "$path" ] || continue
+      if hook_is_test_path "$path"; then has_test_file=1; break; fi
+    done <<<"$files_present"
+    if [ "$has_test_file" -eq 0 ]; then
+      block "the commit adds new source files (${new_code# }) but touches no test file. The test obligation scales with the change (AGENTS.md §6): write/extend tests for the new files, stage them, then commit."
+    fi
+  fi
+fi
+
+# 2. Review marker (code commits only). The workkit:review skill touches the
+# marker when it finishes; it must be newer than the previous commit.
+if [ "$has_code" -eq 1 ] && [ "$bookkeeping" -eq 0 ]; then
+  # The marker's name is hook_review_marker_path's, the same helper
+  # scripts/review-marker.sh writes through, so the gate and the skill can
+  # never name two different files. No digest tool at all is loud: an empty key
+  # would be one marker shared by every repo on the machine.
+  if ! marker="$(hook_review_marker_path "$repo_root")"; then
+    block "this machine has neither shasum nor sha1sum, so the gate cannot name the review marker. Install one, then commit."
+  fi
+  if [ ! -f "$marker" ]; then
+    block "the commit contains code and no review has run. Run the workkit:review skill on the diff first (it records a marker), then commit."
+  fi
+  last_commit_ts=$(git log -1 --format=%ct 2>/dev/null || echo 0)
+  marker_ts=$(hook_file_mtime "$marker")
+  if [ "$marker_ts" -lt "$last_commit_ts" ]; then
+    block "the review marker predates the last commit. This commit's code has not been reviewed. Run the workkit:review skill again, then commit."
+  fi
+fi
+
+# 3. CHANGELOG entries this commit adds must match the format (the rules live in
+# workflow/changelog/changelog.js, shared with docs/changelog-guard; this is the
+# authority, since it sees hand edits). Under -a the working tree is judged.
+if linter="$(hook_changelog_linter 2>/dev/null)"; then
+  lint_source="--staged"
+  [ "$has_all_flag" -eq 1 ] && lint_source=""
+  changelogs="$(printf '%s\n' "$files" | grep -E '(^|/)CHANGELOG\.md$' || true)"
+  # A pathspec commit bypasses staging, so the file list is unknowable: the
+  # gate already treats those strictly. Judge the repo's own CHANGELOG from the
+  # working tree, which is what such a commit would carry.
+  if [ "$has_pathspec" -eq 1 ] && [ -f "$repo_root/CHANGELOG.md" ]; then
+    changelogs="CHANGELOG.md"
+    lint_source=""
+  fi
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    # shellcheck disable=SC2086  # lint_source is one optional flag, not a path
+    if ! lint_out=$(cd "$repo_root" && node "$linter" "$repo_root/$path" --added-only $lint_source 2>&1); then
+      block "the CHANGELOG entry does not match the format (see docs/project-state.md). $lint_out"
+    fi
+  done <<<"$changelogs"
+fi
+
+# 4. Collapse on ship: a commit closing an issue carries its CHANGELOG entry
+# (docs/project-state.md § queue semantics). The trailer is read from the RAW
+# command, where the message still is; only with a CHANGELOG.md and a knowable
+# file list. The trailer pattern's one home serves checks 4 and 6 alike.
+trailer_re='(^|[^[:alnum:]])(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+#[0-9]+'
+if [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/CHANGELOG.md" ] \
+  && printf '%s' "$cmd" | grep -Eqi "$trailer_re"; then
+  if ! printf '%s\n' "$files" | grep -Eq '(^|/)CHANGELOG\.md$'; then
+    block "the message closes an issue (Fixes/Closes/Resolves #N) but no CHANGELOG.md is staged. An issue closes against its CHANGELOG entry (docs/project-state.md): add the entry under [Unreleased], stage CHANGELOG.md, then commit."
+  fi
+fi
+
+# 6. The proof: every issue this commit closes must carry a `Proof:` comment,
+# read by hook_issue_has_proof at the repo root, failing open out loud. It runs
+# before the suite so a missing proof costs no test run, and only where a
+# CHANGELOG.md marks the repo as in the pipeline.
+if [ -f "$repo_root/CHANGELOG.md" ] && printf '%s' "$cmd" | grep -Eqi "$trailer_re"; then
+  unproved=""
+  for n in $(printf '%s' "$cmd" | grep -Eoi "$trailer_re" | grep -Eo '[0-9]+$' | sort -u); do
+    proof_status=0
+    (cd "$repo_root" 2>/dev/null || exit 2; hook_issue_has_proof "$n") || proof_status=$?
+    case "$proof_status" in
+      0) ;;
+      1) unproved="$unproved #$n" ;;
+      *) echo "commit-gate: could not read issue #$n (gh could not answer), so the proof check did not run." >&2 ;;
+    esac
+  done
+  if [ -n "$unproved" ]; then
+    block "the message closes${unproved}, and no comment there opens with a \`Proof:\` line. A proof is a hard gate (docs/project-state.md, \"The proof\"): the agent that built the item comments the Proof: line first, one entry per layer with the command or the reason it was skipped, and only then does the trailer close the issue."
+  fi
+fi
+
+# run_gate_suite <folder>: `npm test` in <folder> under the repo root (the root
+# itself when empty), in the background on what is left of check 5's budget.
+# A red run, or one the budget cannot finish, bounces naming the folder.
+run_gate_suite() {
+  gate_suite="the test suite"
+  gate_raise="Run \`WORKKIT_SUITE=1 npm test\` yourself"
+  if [ -n "$1" ]; then gate_suite="the test suite of $1"; gate_raise="$gate_raise from $1"; fi
+  gate_raise="$gate_raise; if this repo's suite genuinely needs longer, raise WORKKIT_GATE_TEST_DEADLINE in this repo's .claude/settings.json env block (2900s at most) and restart the session."
+  case "$deadline" in
+    ''|*[!0-9]*) block "WORKKIT_GATE_TEST_DEADLINE is '$deadline', not a whole number of seconds, so the gate cannot time $gate_suite. Set it in this repo's .claude/settings.json env block (2900s at most) and restart the session." ;;
+  esac
+  gate_budget=$((10#$deadline - (SECONDS - suite_start)))
+  if [ "$gate_budget" -le 0 ]; then
+    block "$gate_suite had no time left under the gate's ${deadline}s deadline, so the gate cannot prove it green. $gate_raise"
+  fi
+  out_file=$(mktemp "${TMPDIR:-/tmp}/commit-gate-test.XXXXXX")
+  # stdin from /dev/null: a caller reading a list on stdin must not feed it to npm.
+  (cd "$repo_root/$1" && npm test </dev/null >"$out_file" 2>&1) &
+  test_pid=$!
+  if ! hook_wait_deadline "$test_pid" "$gate_budget"; then
+    rm -f "$out_file"
+    block "$gate_suite was still running at the gate's ${deadline}s deadline, so the gate cannot prove it green. $gate_raise"
+  fi
+  if ! wait "$test_pid"; then
+    {
+      echo "commit-gate: BLOCKED this commit: $gate_suite failed. Fix the failures, then commit. Last lines:"
+      tail -15 "$out_file"
+    } >&2
+    rm -f "$out_file"
+    exit 2
+  fi
+  rm -f "$out_file"
+}
+
+# 5. Tests pass when the repo defines them and the commit carries CODE, run at
+# the repo root under the gate's own deadline, since a hook the harness cancels
+# is an allow. A pathspec commit is code here. The budget is injectable so the
+# suite proves the bounce without a wait, and it is one for root and nested runs.
+suite_start=$SECONDS
+deadline="${WORKKIT_GATE_TEST_DEADLINE:-1500}"
+# Clamp an over-raised budget under the 3000s hook timeout: a cancelled hook
+# is an allow, and a misconfigured raise must still bounce loudly.
+[ "$deadline" -gt 2900 ] 2>/dev/null && deadline=2900
+if [ "$has_code" -eq 1 ] && [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
+  run_gate_suite ""
+elif [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
+  # The stand-down is deliberate but never silent: a repo that defines a suite
+  # hears why this commit did not run it.
+  stand_down "commit-gate: suite not run: the commit carries no code (docs-only or version-stamp-only), per #151."
+fi
+
+# 5b. The nested pass, after check 5 so the root is already green: each
+# tested package holding a change runs its own suite once, first-seen order, on
+# check 5's budget. A pathspec commit's files are unknowable, so it runs
+# none and says so, where the repo tracks a tested nested package.
+if [ "$has_code" -eq 1 ] && [ "$has_pathspec" -eq 1 ]; then
+  while IFS= read -r nested_path; do
+    [ -n "$nested_path" ] || continue
+    if [ -n "$(hook_test_package_dir "$repo_root" "${nested_path%/package.json}")" ]; then
+      stand_down "commit-gate: nested suites not run: a pathspec commit bypasses the index, so the gate cannot read which nested packages it touches."
+      break
+    fi
+  done <<<"$(cd "$repo_root" && git -c core.quotePath=false ls-files -- '*/package.json' 2>/dev/null)"
+elif [ "$has_code" -eq 1 ]; then
+  nested_pkgs=""
+  while IFS= read -r nested_path; do
+    nested_pkg=$(hook_test_package_dir "$repo_root" "$nested_path")
+    if [ -z "$nested_pkg" ] || grep -Fxq -- "$nested_pkg" <<<"$nested_pkgs"; then continue; fi
+    nested_pkgs="$nested_pkgs$nested_pkg"$'\n'
+  done <<<"$files"
+  while IFS= read -r nested_pkg; do
+    if [ -n "$nested_pkg" ]; then run_gate_suite "$nested_pkg"; fi
+  done <<<"$nested_pkgs"
+fi
 
 exit 0

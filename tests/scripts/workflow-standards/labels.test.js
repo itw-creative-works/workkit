@@ -1,7 +1,5 @@
-//
 // Tests for standards.sh: the label heal and the open-issue label report.
-// The shared prologue (the repo and gh-stub factories, runScript, the constants) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -57,7 +55,7 @@ const run = async () => {
     const writes = ghCalls(stub).filter((c) => isCall(c, 'label', 'create') || isCall(c, 'label', 'edit'));
     assertEq(writes.length, 0, `hex case ignored, got: ${fmtCalls(writes)}`);
     // Zero writes is also what a label step that never ran produces, so say the
-    // comparison actually happened (review finding, 2026-07-24).
+    // comparison actually happened.
     assert(
       stdout.includes(`${desiredLabels().length} already correct`),
       `every label was compared, got: ${stdout}`,
@@ -66,19 +64,10 @@ const run = async () => {
   });
 
   await test('a jq that writes CRLF: no phantom issue warning, no carriage return written', () => {
-    // The Windows jq is a native program whose stdout is in text mode, so every
-    // line it writes ends `\r\n`. Two reads break on that, and they are what
-    // this case reproduces. The open-issue check answers a LONE `\r` where a
-    // conforming board answers nothing, so every heal warns that issues are
-    // missing a status or type label when none are, and exits 1 saying the repo
-    // is not standardized. And the last field of each manifest line, the colour,
-    // arrives wearing a `\r`, which is handed to `gh` and on to GitHub, which
-    // refuses a colour that is not six hex digits: the label is never created,
-    // so the heal never finishes and asks again every session.
-    //
-    // The no-drift half is a GUARD, not the repro: a bare jq puts the same `\r`
-    // on both sides of that compare, so the two still match. It is here so a fix
-    // that strips one side and not the other cannot pass.
+    // A Windows jq ends every line `\r\n`: the open-issue check then answers a lone
+    // `\r` and warns of unlabelled issues that do not exist, and each colour arrives
+    // with a `\r` GitHub refuses. The no-drift half is a guard, not the repro: a
+    // fix that strips one side of that compare and not the other cannot pass.
     const jqDir = mkTmp('wf-std-');
     if (!crlfJq(jqDir)) {
       skip('a jq that writes CRLF: no phantom issue warning, no carriage return written',
@@ -120,7 +109,7 @@ const run = async () => {
       );
     }
 
-    // And what the heal WROTE: both files are jq's own output, so a text-mode jq
+    // And what the heal wrote: both files are jq's own output, so a text-mode jq
     // rewrites every line of them with a `\r` on it. One of the two is committed,
     // so its shape would flip with whichever machine healed last.
     const settings = readFile(path.join(empty, W, 'settings.json'));
@@ -157,15 +146,15 @@ const run = async () => {
     runScript(repo, { pathPrefix: stub.binDir });
     const calls = ghCalls(stub);
     // "Never deleted" is vacuously true on an empty log, so prove the label step
-    // was reached before proving what it did not do (review finding, 2026-07-24).
+    // was reached before proving what it did not do.
     assert(calls.some((c) => isCall(c, 'label', 'list')), `the label step ran, got: ${fmtCalls(calls)}`);
     assert(!calls.some((c) => isCall(c, 'label', 'delete')), `no deletions, got: ${fmtCalls(calls)}`);
     cleanup(repo); cleanup(stub.dir);
   });
 
   await test('a failed label create marks the run unfinished so it retries', () => {
-    // a warning alone let the run exit 0, the hook cached the day, and the
-    // missing label stayed missing until tomorrow.
+    // A warning alone would exit 0, the hook would cache the day, and the
+    // missing label would stay missing until tomorrow.
     const repo = makeRepo();
     const stub = makeGhStub({ labels: [], createFails: true });
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir });

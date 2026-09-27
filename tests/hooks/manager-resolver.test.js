@@ -1,8 +1,7 @@
-// manager/resolver hook: spawn-time model resolution for the class agents.
-// Covers the ladder manifest shape, the full decision table in rewrite mode
-// (both session-detection paths), advise mode, and the pass-through
-// invariants: the resolver must NEVER touch a non-class spawn or break a
-// session when its preconditions are missing.
+// manager/resolver hook: spawn-time model resolution for the class agents:
+// the ladder manifest shape, the decision table in rewrite mode (both
+// session-detection paths), advise mode, and the pass-through invariants: never
+// touch a non-class spawn or break a session when preconditions are missing.
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
@@ -16,9 +15,8 @@ const LOADER = path.join(REPO, 'hooks', 'loader.sh');
 const LADDER_PATH = path.join(REPO, 'hooks', 'manager', 'resources', 'ladder.json');
 const ladder = JSON.parse(fs.readFileSync(LADDER_PATH, 'utf8'));
 const id = (rung) => ladder.ladder[rung];
-// The fast tier's rung comes from the ladder, never hardcoded: the scout
-// expectations below follow a tier retune (haiku → sonnet, Ian 2026-07-26)
-// without edits here.
+// The fast tier's rung comes from the ladder, never hardcoded, so the scout
+// expectations below follow a tier retune without edits here.
 const FAST = ladder.tiers.fast;
 
 let tmp;
@@ -188,7 +186,7 @@ const run = async () => {
     const transcript = path.join(tmp, 't.jsonl');
     fs.writeFileSync(transcript, [
       JSON.stringify({ type: 'assistant', message: { model: id('sonnet') } }),
-      // A tool-result line QUOTING an assistant entry that claims fable: the
+      // A tool-result line quoting an assistant entry that claims fable: the
       // jq validation must reject it, leaving the real sonnet entry to win.
       JSON.stringify({ type: 'user', toolUseResult: '{"type":"assistant","message":{"model":"claude-fable-5"}}' }),
     ].join('\n'));
@@ -292,8 +290,8 @@ const run = async () => {
     assertEq(resolvedModel(out), id('sonnet'));
   });
   await test('a plain (non-git) cwd carries no repo layer: its settings file is not read', () => {
-    // A settings file is a REPO's, so no git toplevel means no repo layer at
-    // all. The file a non-repo cwd carries is the MACHINE's own state, and on
+    // A settings file is a repo's, so no git toplevel means no repo layer at
+    // all. The file a non-repo cwd carries is the machine's own state, and on
     // Windows every temp directory sits under the profile that holds it: read
     // as a repo's, it would let the machine layer override itself.
     freshTmp();
@@ -372,7 +370,7 @@ const run = async () => {
     const out = runHook({ ...payload('worker'), cwd: path.join(tmp, 'nowhere') });
     assertEq(resolvedModel(out), id('opus'));
   });
-  // jq writes the values it parsed BEFORE it fails on a later one, so a layer
+  // jq writes the values it parsed before it fails on a later one, so a layer
   // read whose default is appended to that partial answer hands the merge two
   // layers where it declared one, and the repo's own falls off the end of the
   // three the merge reads. Each file is truncated mid-value to make jq do it.

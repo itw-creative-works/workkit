@@ -1,8 +1,6 @@
-//
 // Tests for jobs/morning.sh as this machine runs it: reporting: the response
 // printed, logged and notified, and the failures that still have to be.
-// The shared prologue (the world factory, the job runner, the notification waits) is ./helpers.js.
-//
+// The shared prologue (world factory, job runner, notification waits) is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');

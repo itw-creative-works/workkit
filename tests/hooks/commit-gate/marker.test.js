@@ -1,8 +1,6 @@
-//
 // Tests for hooks/safety/commit-gate: scope (only commits are gated) and the
 // review marker a code commit needs.
 // The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
-//
 
 const path = require('path');
 const fs = require('fs');
@@ -73,7 +71,7 @@ const run = async () => {
   });
 
   await test('a machine with neither shasum nor sha1sum: exit 2 naming both spellings', () => {
-    // No digest tool means the marker cannot be NAMED. The alternative to
+    // No digest tool means the marker cannot be named. The alternative to
     // saying so is an empty key, which is one marker shared by every repo on
     // the machine: a review of any repo would open a commit in all of them.
     const bin = mkTmp('cg-nosha-');

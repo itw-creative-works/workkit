@@ -1,19 +1,7 @@
 #!/bin/bash
-# docs:session-guard: PostToolUse hook (Edit|Write), issue #126.
-# Holds `.workkit/agents/session.md` to the shape it exists in: a TASK QUEUE, read
-# back on every session start, not a journal of what already shipped. Two caps,
-# both constants below: a bullet that has grown into a paragraph, and a file
-# that has grown into the retired PROGRESS.md.
-#
-# POST, not pre: an Edit's result is only knowable once it is on disk, and the
-# caps judge the resulting file, never the patch. A write that shrinks an
-# oversized file but leaves it over still bounces. The message is what
-# finishes the prune.
-#
-# The backstop for what this never saw (hand edits, files predating the hook)
-# is the docs/session hook, which warns past the same bar at injection time.
-# The ship skill's close step is where entries normally leave: their facts move
-# to the CHANGELOG and the closed issue.
+# docs:session-guard: PostToolUse hook (Edit|Write). Holds
+# `.workkit/agents/session.md` to a task queue with two caps, a bullet's length
+# and the file's content lines, judged on the file on disk. Detail: README.md.
 
 set -euo pipefail
 
@@ -60,12 +48,9 @@ if [ -n "$offender" ]; then
   - a bullet is ${offender%%$'\t'*} chars (cap $MAX_BULLET_CHARS): ${offender#*$'\t'}…"
 fi
 
-# Content lines: non-blank, not a heading, not a blockquote note, not an HTML
-# comment, the same count the docs/session hook takes, so the two agree about
-# what "over the bar" means. The count AND the bar live in both files; change
-# them together.
-# (grep -c prints its count even when exiting 1 on zero matches. Don't add a
-# fallback echo or the count doubles.)
+# Content lines, the same count and bar the docs/session hook takes: change
+# both together. grep -c prints its count even when exiting 1 on zero matches,
+# so a fallback echo would double it.
 lines=$(grep -cvE '^[[:space:]]*$|^[[:space:]]*#|^[[:space:]]*>|^[[:space:]]*<!--' "$file_path" 2>/dev/null) || true
 lines="${lines:-0}"
 case "$lines" in ''|*[!0-9]*) lines=0 ;; esac

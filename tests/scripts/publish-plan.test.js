@@ -1,16 +1,7 @@
-//
 // Tests for workflow/ship/publish-plan.js: the ship's publish step reads the plan it
-// prints, so the plan is the whole question here. Which packages publish, in
-// which order, which are skipped and why, and every refusal that stops the step
-// before a single package reaches npm.
-//
-// Each case builds a fixture repo in a tmp dir: a root package.json and its
-// workspace members.
-// The plan cases stub nothing, because the plan reaches nothing: the script
-// reads files and prints. The `--run` cases put a fake `npm` in front of the
-// real one, the only npm any case here may reach, and read back every argv it
-// was handed.
-//
+// prints, so the plan is the whole question here. Each case builds a fixture repo;
+// the plan cases stub nothing, and the `--run` cases put a fake `npm` first on
+// PATH and read back every argv it was handed.
 
 const path = require('path');
 const fs = require('fs');

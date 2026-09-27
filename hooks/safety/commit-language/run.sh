@@ -1,32 +1,9 @@
 #!/bin/bash
-# safety/commit-language: PreToolUse hook (Bash)
-# The mechanical half of two AGENTS.md commit rules.
-#   1. Vocabulary (plan guard 5): commit MESSAGES must not carry kill/destroy/
-#      dead wording: safety classifiers judge wording without task context.
-#      The judgment half (tone, register) stays prose.
-#   2. Format: the SUBJECT line must be Conventional Commits
-#      (`<type>(<scope>)?: <subject>`, lowercase subject start, <=72 chars),
-#      and must not carry a version number unless the commit is the release
-#      commit `chore(release): <x.y.z>`. Merge/revert/fixup/squash subjects
-#      pass unexamined.
-#
-# Scope: only real `git ... commit` commands, and only the QUOTED spans of
-# their message flags (-m/--message/-F/--file): that is where message text
-# lives (-m "...", including the usual -m "$(cat <<'EOF' ...)" idiom, whose
-# body sits inside the outer quotes). Unquoted words (file paths, flags) are
-# never scanned, so committing a file named kill-switch.md cannot bounce.
-# When no message span extracts (unquoted message, unusual spelling) the scan
-# falls back to EVERY quoted span, toward gating, never toward silence. A
-# flag-adjacent quoted span elsewhere on the line (`grep -F "..."`) is the
-# accepted residual false positive: reword, or HOOK_DISABLE=1. Known accepted
-# misses (fail-open by design): a bare `git commit -F - <<EOF` body is
-# unquoted and not scanned; the '\'' apostrophe-escape idiom splits a span
-# mid-word. The FORMAT checks run only on flag-extracted spans, never on the
-# fallback: an arbitrary quoted span (`echo "done"`) is not a subject line.
-# They also read only the part of the command FROM the commit token onward,
-# so an earlier flag-shaped span (`grep -F "Some Thing" && git commit …`) is
-# never judged as a subject; the vocabulary scan keeps its whole-command
-# reach, and its flag-adjacent false positive above stands.
+# safety/commit-language: PreToolUse hook (Bash), the mechanical half of two
+# commit rules: no kill/destroy/dead wording in a message, and a Conventional
+# Commits subject (<=72 characters) carrying no version outside
+# `chore(release)`. Only the quoted message-flag spans of a real commit are
+# read. Scope and accepted misses: docs/hooks.md § safety:commit-language.
 
 set -euo pipefail
 set -f  # no glob expansion while handling untrusted command text
@@ -43,22 +20,16 @@ cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
 [ -n "$cmd" ] || exit 0
 
 # --- Is this a real `git ... commit` COMMAND, not a mention? ---
-# Shared detection (heredoc-body strip, multiline quote strip, clause scan):
-# hooks/lib/commit.sh, used identically by the safety/commit-gate hook. Detection
-# reads the STRIPPED command; the span extraction below still reads the
-# ORIGINAL command, so the quoted `-m "$(cat <<EOF ...)"` message body stays
-# scanned (a bare `-F - <<EOF` body is unquoted, the accepted miss above).
+# Detection reads the stripped command (hooks/lib/commit.sh); the span
+# extraction below reads the original, so a quoted heredoc message stays scanned.
 hook_find_git_commit "$cmd"
 # A wrapped commit (`sh -c "git commit …"`) has no visible clause but is
 # still a commit: scan it rather than stay silent.
 [ -n "$HOOK_COMMIT_CLAUSE" ] || [ "$HOOK_WRAPPED_COMMIT" -eq 1 ] || exit 0
 
 # --- Pull the MESSAGE spans: quoted values of -m/--message/-F/--file. ---
-# Scoped so quoted text elsewhere on the line (`… && echo "…"`) is not judged
-# as commit-message vocabulary (hardening 2026-07-25). When nothing extracts,
-# fall back to every quoted span (multiline-safe), toward gating.
-# One regex for both passes; PERL_FLAG_RE carries it into perl so the two
-# extractions can never drift apart.
+# With nothing extracted, every quoted span, toward gating. PERL_FLAG_RE carries
+# the one regex into perl so the two passes never drift.
 export PERL_FLAG_RE='(?:^|[\s;&|({])(?:-[a-zA-Z]*[mF]|--message|--file)[=\s]*("(?:[^"\\]|\\.)*"|\x27[^\x27]*\x27)'
 quoted=$(printf '%s' "$cmd" | perl -0777 -ne 'my $re = qr/$ENV{PERL_FLAG_RE}/s; while (/$re/g) { print substr($1, 1, -1), "\n" }' 2>/dev/null || true)
 if [ -z "$quoted" ]; then
@@ -78,17 +49,9 @@ if [ -n "$found" ]; then
 fi
 
 # --- Subject-line FORMAT, only when a message flag gave us a real span. ---
-# Re-extract from the command text starting AT the commit token, so a
-# flag-shaped span earlier on the line is not mistaken for the subject.
-# HOOK_COMMIT_CLAUSE is quote-stripped and cannot be searched for verbatim,
-# so we walk the `commit` word offsets FIRST to last and take the first
-# suffix that yields a message-flag span. Forward is the safe direction: the
-# earliest `commit` word already sits after any pre-commit flag span (the
-# case this scoping exists for), and starting early keeps every -m of a
-# multi-flag commit in order, so `-m "…the commit message" -m "Body."` still
-# reads the first flag as the subject. A `commit` word that is only prose
-# earlier on the line costs nothing: the scan from it finds the same real
-# spans. Nothing extracted → no format verdict (fail open).
+# Re-extract from each `commit` word, first to last, and take the first suffix
+# yielding a flag span: an earlier flag-shaped span is never the subject, and
+# every -m keeps its order. Nothing extracted means no verdict (fail open).
 fmt_spans=$(printf '%s' "$cmd" | perl -0777 -ne '
   my $re = qr/$ENV{PERL_FLAG_RE}/s;
   my @off; while (/\bcommit\b/g) { push @off, $-[0] }

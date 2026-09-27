@@ -1,12 +1,6 @@
 //
-// Tests for tower/api/lib/brief.js - the daily brief.
-//
-// Pure assembly over the shapes the other libs already produce, so the fixtures
-// here are those shapes verbatim: a board sweep as fetchBoard returns it, and a
-// health map keyed by repo path as the server builds it. No git, no network.
-//
-// The clock is injected. A brief that stamped itself would make every assertion
-// about `generatedAt` a test of Date.now rather than of this module.
+// Tests for tower/api/lib/brief.js, the daily brief: pure assembly, so the fixtures
+// are the other libs' shapes verbatim, and the clock is injected.
 //
 
 const path = require('path');
@@ -54,14 +48,13 @@ const run = async () => {
 
     assertEq(out.waiting.length, 1, 'one decision is waiting');
     assertEq(out.waiting[0].number, 1, 'the blocked one');
-    // Issue #62: an assignee no longer splits the specced queue. The status
-    // label is the whole answer, and a claimed spec is a transient the standards
-    // sweep flips to building - it is not a second in-flight shape.
+    // The status label is the whole answer: a claimed spec is a transient the
+    // standards sweep flips to building, not a second in-flight shape.
     assertEq(out.ready.map((i) => i.number).sort().join(','), '2,3', 'both specced issues are ready');
     assertEq(out.inFlight.length, 0, 'nothing carries the label that says work started');
     assertEq(out.inbox.length, 1, 'the inbox is its own section');
-    // Issue #135: qa is built work waiting on the OWNER, which is the same kind
-    // of fact as `waiting` and the opposite of "somebody is on it".
+    // qa is built work waiting on the owner: the same kind of fact as `waiting`
+    // and the opposite of "somebody is on it".
     assertEq(out.qa.map((i) => i.number).join(','), '6', 'a built item waiting on a check is its own section');
     assertEq(out.counts.qa, 1, 'and its own count');
     assertEq(out.counts.backlog, 1, 'backlog is counted but not listed - it is nobody’s morning');
@@ -69,9 +62,8 @@ const run = async () => {
     assertEq(out.generatedAt, STAMP, 'the stamp is the one passed in');
   });
 
-  // Issue #196: the stage above qa. The check PASSED, so the item waits on the
-  // ship and on nothing else - which is a different fact about a morning from
-  // "waiting on your check", and the ship itself reads from this section.
+  // The stage above qa: the check passed, so the item waits on the ship and
+  // nothing else, and the ship itself reads from this section.
   await test('a QA-passed issue is its own section - finished work waiting on the ship', () => {
     const board = boardOf([
       issue(1, { status: 'qa' }),
@@ -101,9 +93,9 @@ const run = async () => {
   });
 
   await test('a claim of any kind is not a status - the label alone sorts the issue', () => {
-    // Issue #62: neither an assignee nor an agent's claim marker moves an issue
-    // out of the ready queue. Work that has started carries `status:building`,
-    // which is what the claim itself sets and what the standards sweep heals to.
+    // Neither an assignee nor an agent's claim marker moves an issue out of the
+    // ready queue: started work carries `status:building`, which the claim sets
+    // and the standards sweep heals to.
     const board = boardOf([
       issue(7, { status: 'specced', agentWorking: true }),
       issue(8, { status: 'building', agentWorking: true }),
@@ -156,10 +148,9 @@ const run = async () => {
     assertEq(out.nextUp[1].items.map((i) => i.number).join(','), '3,1', 'and each list is ranked on its own');
   });
 
-  // Issue #135: a qa item is actionable - it is a check the owner gives, and the
-  // work is parked in the tree until they do. It ranks under the decisions,
-  // because a decision nobody makes stops everything downstream of it, and above
-  // the specs, because nothing else finishes while the tree holds unshipped work.
+  // A qa item is a check the owner gives, the work parked in the tree until then.
+  // It ranks under the decisions, since one nobody makes stops everything
+  // downstream, and above the specs, since nothing else finishes meanwhile.
   await test('a check waiting on the owner ranks under the decisions and above the specs', () => {
     const board = boardOf([
       issue(1, { status: 'specced', priority: 'high' }),
@@ -172,9 +163,8 @@ const run = async () => {
     assertEq(out.nextUp[0].items[1].status, 'qa', 'and the check says which it is');
   });
 
-  // Issue #196: a complete item is one act from released - the ship - so it
-  // ranks under the decisions, which nothing moves without, and above the check
-  // that has not been given yet.
+  // A complete item is one act from released (the ship), so it ranks under the
+  // decisions, which nothing moves without, and above the check not yet given.
   await test('a QA-passed item ranks under the decisions and above the check still to give', () => {
     const board = boardOf([
       issue(1, { status: 'specced', priority: 'high' }),
@@ -200,11 +190,9 @@ const run = async () => {
 
   group('tower/brief: what a morning waits on');
 
-  // Issue #103: a dependency is advisory - it changes no label - but it does
-  // change the ORDER a morning reads a repo in, and the item says what it is
-  // waiting for. Only a blocker the sweep can see is still open counts: the
-  // sweep is the open board, so an edge pointing outside it says nothing either
-  // way and is left to the graph.
+  // A dependency is advisory: it changes no label, but it changes the order a
+  // morning reads a repo in, and the item says what it waits for. Only a blocker
+  // the open-board sweep can see counts; an edge outside it is left to the graph.
 
   const blockedByOf = (...keys) => ({
     blockedBy: keys.map((key) => ({ repo: key.split('#')[0], number: Number(key.split('#')[1]) })),
@@ -299,9 +287,9 @@ const run = async () => {
 
   group('tower/brief: what the sweep counted, per repo');
 
-  // Issue #55: the payload carries the sweep's per-repo counts and the day's
-  // roster-wide closed total, because the morning's stats line is composed from
-  // this payload and a chart drawn a month later reads that line.
+  // The payload carries the sweep's per-repo counts and the day's roster-wide
+  // closed total: the morning's stats line is composed from it, and a chart
+  // drawn a month later reads that line.
 
   await test('the closed count is summed across the roster, and each repo keeps its own', () => {
     const board = {

@@ -1,9 +1,7 @@
-//
 // Tests for hooks/loader.sh: the router that resolves a hook name to its
-// script. Loader-level failures fail OPEN (a broken loader must never wedge
+// script. Loader-level failures fail open (a broken loader must never wedge
 // the session); the hook's own exit code propagates untouched so blocking
 // hooks actually block.
-//
 
 const path = require('path');
 const os = require('os');
@@ -23,8 +21,8 @@ const runLoader = (args, input = '{}', env = {}) => {
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
 };
 
-// A command the safety/commit-language hook must block (exit 2): used to
-// observe routing and exit-code propagation without any repo state.
+// A command the safety/commit-language hook must block (exit 2): it observes
+// routing and exit-code propagation without any repo state.
 const BLOCKED_COMMIT = JSON.stringify({ tool_input: { command: 'git commit -m "kill the watcher"' } });
 
 const run = async () => {

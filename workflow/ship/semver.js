@@ -1,23 +1,9 @@
+// workflow/ship/semver.js: the kit's one version comparison, in semver's order,
+// and the shape check beside it, for the publish plan, the release commit and
+// the morning brief's upstream news. A missing part reads as 0, a prerelease
+// sorts below its release, and build metadata carries no order.
 //
-// workflow/ship/semver.js: the kit's one version comparison, in semver's order, and
-// the shape check beside it.
-//
-// Three callers read versions and none owns the rule: the ship's
-// publish plan (`publish-plan.js`, the shape of each package version), its
-// release commit (`release.js`, the shape of the new version) and the
-// morning brief's upstream news (`jobs/morning/brief/cc-news.js`, Claude Code's releases).
-//
-// The numbers compare first, as many as either side carries, a missing part
-// reading as 0 so a two-part dotted number still compares. Then a version with
-// a prerelease sorts below the same numbers without one, and two prereleases
-// order by semver's rules: identifier by identifier, numbers numerically and
-// below words, words in ASCII order, a longer set above its own prefix. Build
-// metadata carries no order. It requires nothing, so this folder stays
-// self-contained.
-//
-// Usage:
-//   const { compareVersions, isSemver } = require('./semver');
-//
+// Usage: const { compareVersions, isSemver } = require('./semver');
 
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const VERSION_RE = /^(\d+(?:\.\d+)*)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;

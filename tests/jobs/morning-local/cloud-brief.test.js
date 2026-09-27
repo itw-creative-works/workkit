@@ -1,8 +1,6 @@
-//
 // Tests for jobs/morning.sh as this machine runs it: the brief is the cloud
-// one, so the morning here is the dispatch and nothing else (issue #107).
-// The shared prologue (the world factory, the job runner, the notification waits) is ./helpers.js.
-//
+// one, so the morning here is the dispatch and nothing else.
+// The shared prologue (world factory, job runner, notification waits) is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -10,16 +8,15 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
 const { BASH, NO_RC, shellPath } = require('../../lib/platform');
-const { skipUnlessDarwin, SCRIPT, STEPS, cleanup, mkWorld, runJob, settle } = require('./helpers');
+const { skipUnlessDarwin, SCRIPT, cleanup, mkWorld, runJob, settle } = require('./helpers');
 
 const run = async () => {
   skipUnlessDarwin();
 
   group('jobs/morning (local): the brief is the cloud’s');
 
-  // Since issue #107 the scheduled brief on this machine is the dispatch and
-  // nothing else. Everything below is about the day going over, or not going
-  // over, which is a briefless morning and never a local compose.
+  // Everything below is about the day going over, or not going over, which is
+  // a briefless morning and never a local compose.
 
   await test('a dispatch that lands hands the day to the cloud and composes nothing here', () => {
     const world = mkWorld({ home: 'owner/private-home', dispatch: true });
@@ -30,7 +27,7 @@ const run = async () => {
     assertEq(sent.length, 1, `one workflow run: ${fmtCalls(world.ghCalls()).slice(0, 400)}`);
     assertEq(sent[0][2], 'brief.yml', 'and it names the brief workflow');
     assertEq(sent[0][3], '--repo', 'on a repo');
-    // The HOME repo (issue #91), which is where setup seeded the workflow and
+    // The home repo, which is where setup seeded the workflow and
     // wrote the secrets, never this checkout's own, which is distributed.
     assertEq(sent[0][4], 'owner/private-home', 'the home repo this machine is configured for');
 
@@ -57,10 +54,9 @@ const run = async () => {
   });
 
   await test('a dispatch that does not land is a logged, briefless morning', async () => {
-    // Issue #107: the local compose is GONE, not no-opped. The brief needs the
-    // sweep token and the roster, which live on the home repo, so a morning the
-    // day cannot be handed over is a morning with no brief, and the log is the
-    // only place that says why.
+    // The brief needs the sweep token and the roster, which live on the home
+    // repo, so a morning the day cannot be handed over has no brief, and the
+    // log is the only place that says why.
     const world = mkWorld({ home: 'owner/private-home' });
     const res = runJob(world);
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
@@ -82,8 +78,6 @@ const run = async () => {
     const stray = path.join(world.root, 'stray-jobs');
     fs.mkdirSync(stray, { recursive: true });
     fs.copyFileSync(SCRIPT, path.join(stray, 'morning.sh'));
-    // The steps it sources are the script itself; only the lib is missing.
-    fs.cpSync(STEPS, path.join(stray, 'morning'), { recursive: true });
     const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(stray, 'morning.sh'))], { encoding: 'utf8', timeout: 60000, env: world.env });
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(world.dispatched().length, 0, 'nothing was triggered');
@@ -96,7 +90,7 @@ const run = async () => {
   await test('no secrets at all and an unlistable repo are told apart', async () => {
     // Both are briefless mornings, but the line's whole job is the honest why:
     // a successful listing that names nothing means setup never wired the
-    // secrets; a listing that FAILED means this token cannot read the repo.
+    // secrets; a listing that failed means this token cannot read the repo.
     const bare = mkWorld({ home: 'owner/private-home', dispatch: true, secrets: [] });
     let res = runJob(bare);
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
@@ -153,7 +147,7 @@ const run = async () => {
   });
 
   await test('a machine with no home repo never dispatches, and says so', async () => {
-    // Issue #91: the workflow and its secrets live on the home repo, so a
+    // The workflow and its secrets live on the home repo, so a
     // machine that has none has nowhere to hand the day to.
     const world = mkWorld({ home: null, dispatch: true });
     const res = runJob(world);
@@ -195,8 +189,8 @@ const run = async () => {
   });
 
   await test('nothing this machine sends is ever posted as a Discussion', async () => {
-    // The publishing half of issue #107: the digest is published by whoever
-    // composed it, and this machine composes no scheduled brief. A rehearsal and
+    // The digest is published by whoever composed it, and this machine
+    // composes no scheduled brief. A rehearsal and
     // a message run reach the board for nothing at all.
     const world = mkWorld({ home: 'owner/private-home', ccChangelog: '# Changelog\n\n## 2.1.220\n\n- Added a hook\n' });
     const res = runJob(world, ['--now']);

@@ -1,41 +1,13 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
+// CHANGELOG entry format: the one home of the rules, executable
+// (`docs/project-state.md` § CHANGELOG entries). The guards call it at write
+// and commit time, and CI runs it `--unreleased-only`.
 //
-// CHANGELOG entry format: the single home for the rules (SSOT).
-//
-// The layering: git history carries the full story (why, what was tried, what
-// review caught); the CHANGELOG is the index a human scans to answer "what
-// changed in this version, and does it affect me?". So an entry is one short
-// paragraph pointing at the depth, never a second copy of the commit body.
-//
-// Canonical shapes: every link in its short form, so the repo URL appears
-// nowhere in the file:
-//   [Unreleased]  - [#4](../../issues/4) - Plugins install from settings.json.
-//   released      - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [@who]! - Plugins install from settings.json.
-//
-// The commit link is derivable offline (remote URL + sha) so released sections
-// require it; the @handle needs the GitHub API, so it is generated when
-// resolvable and never demanded. An offline release still produces a valid
-// CHANGELOG. Both are written by changelog-links.js, never by hand.
-//
-// Consumers: the docs/changelog-guard hook (write time, fast feedback) and the
-// safety/commit-gate hook (commit time, the authority: it sees hand edits too).
-// Both call this module so the rule has one home.
-//
-// CLI:
-//   node changelog.js <file> [--added-only] [--staged] [--unreleased-only]
-//     --added-only  judge only entries this change introduced (vs HEAD), so a
-//                   repo with a legacy CHANGELOG is never bounced for history
-//     --staged      read the file from the index and diff the index vs HEAD
-//     --unreleased-only
-//                   judge only the [Unreleased] section: the CI mode. A
-//                   runner has the whole file and no notion of which lines a
-//                   change added, and released history is already published,
-//                   so holding a pull request to it would bounce work that
-//                   did not touch it. Unreleased entries are the ones still
-//                   being written, and the ones a release will publish.
+// CLI: node changelog.js <file> [--added-only] [--staged] [--unreleased-only]
+//   --added-only judges only the entries this change added (vs HEAD); --staged
+//   reads the index; --unreleased-only judges only [Unreleased], the CI mode.
 //   Exits 1 with the violations on stderr, 0 when clean.
-//
 
 const fs = require('fs');
 const path = require('path');
@@ -49,17 +21,14 @@ const SECTION_RE = /^##\s+\[([^\]]+)\]/;
 const HEADING_RE = /^#{1,2}(?!#)\s/;
 const FENCE_RE = /^\s*(?:```|~~~)/;
 const BULLET_RE = /^[-*+]\s+(.*)$/;
-// Links are written in their SHORT forms, so the repo URL appears nowhere in
-// the file: `../../issues/4` and `../../commit/<sha>` are relative links GitHub
-// resolves against the blob path, and `[@who]` is a shortcut reference whose one
-// definition sits at the bottom of the file. Absolute URLs still parse (a repo
-// migrating in keeps working). They are simply not what the generator writes.
+// Links are written short (`../../issues/4`, `../../commit/<sha>`, `[@who]`);
+// an absolute URL still parses, so a repo migrating in keeps working.
 const ISSUE_LINK_RE = /\[#(\d+)\]\([^)\s]+\)/;
 const ISSUE_RE = /^(?:\[#\d+\]\([^)\s]+\)|\(no issue\))/;
 const COMMIT_RE = /\[`[0-9a-f]{7,40}`\]\([^)\s]+\)/;
 // The generated metadata run: the issue, then any commit links, then the
-// attribution. The separator is required immediately AFTER it. Searching the
-// whole entry for a spaced hyphen would accept prose that merely contains one.
+// attribution. The separator must follow it directly: a search of the whole
+// entry would accept prose that merely contains a spaced hyphen.
 const META_RE = new RegExp(
   `^(?:\\[#\\d+\\]\\([^)\\s]+\\)|\\(no issue\\))`
   + `(?:\\s+\\[\`[0-9a-f]{7,40}\`\\]\\([^)\\s]+\\))*`
@@ -70,10 +39,8 @@ const META_RE = new RegExp(
 const SEPARATOR = ' - ';
 
 /**
- * Classify a `## [...]` heading. Only a semver-shaped label is a released
- * version: "any label with a digit" also caught prose headings like
- * `## [Plans for 2026]`, whose bullets then demanded commit links. Other `##`
- * headings (a prose section) are not changelog bodies and hold no entries.
+ * Classify a `## [...]` heading: only a semver-shaped label is a released
+ * version, so a prose heading like `## [Plans]` holds no entries.
  * @param {string} label the text inside the brackets
  * @returns {'unreleased'|'released'|null}
  */
@@ -84,15 +51,10 @@ const sectionKind = (label) => {
 };
 
 /**
- * Split a CHANGELOG into entries. An entry is a top-level bullet plus its
- * INDENTED continuation lines, and it belongs to the nearest `## [...]` section
- * above it.
- *
- * Three things are deliberately not entries, because a guard that judges them
- * bounces correct work: anything inside a fenced code block (a file documenting
- * its own format), anything under a `##` heading that is not a version section
- * (a prose appendix), and any flush-left line after a bullet, which is what
- * keepachangelog's `[1.0.0]: <url>` reference footer is made of.
+ * Split a CHANGELOG into entries: a top-level bullet plus its indented
+ * continuation, in the nearest `## [...]` section above it. Not entries: a
+ * fenced block, anything under a non-version `##`, and a flush-left line after
+ * a bullet (keepachangelog's reference footer).
  * @param {string} text the whole file
  * @returns {Array<{line: number, endLine: number, section: string, kind: string, prose: string, multiParagraph: boolean}>}
  */
@@ -132,9 +94,8 @@ const parseEntries = (text) => {
     const bullet = BULLET_RE.exec(lines[i]);
     if (!bullet) continue;
 
-    // Consume the wrapped continuation, which is always indented. A blank line
-    // ends the entry UNLESS indented content follows. That is a second
-    // paragraph, which the one-paragraph rule reports rather than swallowing.
+    // Consume the indented continuation. A blank line ends the entry unless
+    // indented content follows: a second paragraph, which is reported.
     const body = [bullet[1]];
     let multiParagraph = false;
     let end = i;
@@ -178,9 +139,8 @@ const lintEntry = (entry) => {
     fail('issue-link', 'must start with its issue link (`- [#4](../../issues/4) - text.`) or the literal `(no issue)` when there is none.');
   }
 
-  // Anchor every metadata judgment to the generated run at the START of the
-  // entry, never to the whole prose: an entry whose text merely MENTIONS a
-  // commit-link-shaped string must not satisfy the released-section rule.
+  // Anchor every metadata judgment to the generated run at the entry's start:
+  // prose mentioning a commit-link-shaped string must not satisfy the rule.
   const meta = META_RE.exec(entry.prose);
 
   // Only an entry naming its issue can be linked: the generator finds commits
@@ -190,10 +150,8 @@ const lintEntry = (entry) => {
     fail('commit-link', 'a released entry must carry its commit link (`[`1de1308`](…/commit/1de1308)`). Run changelog-links.js. The links are generated at release time, never typed.');
   }
 
-  // Anchor the separator to the END of the metadata run, never to the first
-  // spaced hyphen anywhere: prose may carry one, and searching the whole line
-  // accepts an entry that never separated its links from its text and then
-  // measures the word count from the wrong offset.
+  // Anchor the separator to the end of the metadata run: prose may carry a
+  // spaced hyphen, and the word count must start at the right offset.
   const rest = meta ? entry.prose.slice(meta[0].length) : entry.prose;
   const separated = rest.startsWith(SEPARATOR);
   if (!separated) {
@@ -215,8 +173,7 @@ const lintEntry = (entry) => {
 
 /**
  * Did this change touch any line of the entry? Editing only a wrapped entry's
- * SECOND line still rewrites the entry, so anchoring on its first line alone
- * lets an edit walk straight past the guard.
+ * second line still rewrites the entry.
  * @param {object} entry from parseEntries
  * @param {Set<number>} lines 1-based added line numbers
  * @returns {boolean}
@@ -245,7 +202,7 @@ const lintText = (text, onlyLines = null, unreleasedOnly = false) => parseEntrie
 const git = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 
 /**
- * The 1-based line numbers this change ADDS to a file, relative to HEAD.
+ * The 1-based line numbers this change adds to a file, relative to HEAD.
  * A file git does not know about yet counts as entirely added.
  * @param {string} file absolute path
  * @param {boolean} staged compare the index (rather than the working tree) to HEAD
@@ -282,10 +239,8 @@ const addedLines = (file, staged) => {
       inHunk = true;
       continue;
     }
-    // The `+++ b/file` header is only a header BEFORE the first hunk. Inside
-    // one, a line reading `+++ …` is file content that happens to start with a
-    // plus, and skipping it without advancing the cursor would misnumber every
-    // added line after it.
+    // `+++ b/file` is a header only before the first hunk; inside one it is
+    // content, and skipping it would misnumber every added line after it.
     if (!inHunk) continue;
     if (line.startsWith('+')) {
       lines.add(cursor);
@@ -339,10 +294,8 @@ const main = (argv) => {
 };
 
 if (require.main === module) {
-  // Set the code, never process.exit(): exiting discards whatever console.error
-  // has buffered when stdout/stderr is a PIPE, so a caller counting the
-  // violations got a short, varying list. Node exits on its own once the
-  // streams have flushed (found by review 2026-07-25, standards.sh consumer).
+  // Set the code, never process.exit(): exiting discards console.error output
+  // still buffered for a pipe, so a caller counting violations reads too few.
   process.exitCode = main(process.argv.slice(2));
 }
 

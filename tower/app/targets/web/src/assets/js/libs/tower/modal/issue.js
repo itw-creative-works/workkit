@@ -11,11 +11,8 @@ const registry = new Map();
 // the same one the Board's drop reads back off a dragged card.
 
 /**
- * The attributes that make an element open the issue dialog.
- *
- * Registering happens HERE, as the markup is written, because the issue object
- * and its markup are made in the same breath - a page never has to keep a
- * second copy of its own list for the dialog to read.
+ * The attributes that make an element open the issue dialog, registering the
+ * issue as the markup is written so no page keeps a second list for the dialog.
  *
  * @param {object} issue - one issue from /api/board or /api/brief
  * @returns {string} attributes to interpolate into the element's tag
@@ -27,17 +24,9 @@ export const issueTrigger = (issue) => {
 };
 
 /**
- * One issue as a list item - the shape three pages draw it in.
- *
- * The interactive semantics sit on the INNER element, never on the `<li>`: an
- * `<li>` given `role="button"` stops being a list item, and a screen reader
- * loses the list - how many issues there are and which one it is on. The `<li>`
- * keeps `omega-tower-issue` (what the stylesheet reveals the external link
- * from, through `:hover` and `:focus-within`, which reach the inner element
- * either way) and stays bare; the inner div takes the click target's
- * `omega-interactive`, its layout AND spacing classes, and the trigger
- * attributes - padding on the `<li>` would leave a strip of row the hover
- * tint and the click never cover (issue #42's review, browser-verified).
+ * One issue as a list item. The click target is the inner div, never the
+ * `<li>`, which would stop being a list item to a screen reader; the `<li>`
+ * keeps `omega-tower-issue`, the stylesheet's hook for the external link.
  *
  * @param {object} issue - one issue from /api/board or /api/brief
  * @param {string} body - the item's content markup
@@ -51,16 +40,9 @@ export const issueItem = (issue, body, { item = '', inner = '' } = {}) => `<li c
 </li>`;
 
 /**
- * The one external-link button: a box with an arrow leaving it, opening the
- * GitHub page in a new tab.
- *
- * `omega-tower-external` is what the stylesheet hides until a card is hovered
- * or focused; in the dialog it is passed no extra class and simply shows.
- *
- * The glyph is plain Font Awesome markup - the framework's shared renderer
- * watches for inserted elements and draws it, which is what makes it work in
- * markup this file writes long after the page booted. The anchor carries the
- * label, so the icon itself is hidden from the accessibility tree.
+ * The one external-link button, opening the GitHub page in a new tab. The
+ * stylesheet hides `omega-tower-external` until a card is hovered or focused;
+ * the framework's shared renderer draws the glyph in late-inserted markup.
  *
  * @param {string} url - the GitHub issue URL
  * @param {string} [extraClass] - layout classes the caller's context needs
@@ -70,36 +52,18 @@ export const externalLink = (url, extraClass = '') => `<a class="omega-tower-ext
   <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
 </a>`;
 
-//
 // ── What an issue depends on ───────────────────────────────────────────────
-//
-// The Board's cards say what an issue is WAITING on (issue #103); the dialog is
-// where the issue is actually read, and it says both halves of the edge (#127):
-// what it waits on, and what is waiting on IT.
-//
-// Both come off the board payload already in memory - the same sweep the cards
-// judge a "waits on" chip against - so nothing is fetched and nothing is stored.
-// The inverse direction is read at the moment the dialog opens, by asking which
-// issues on that board name this one as a blocker; keeping it anywhere would be
-// a second copy of an edge the sweep already carries.
-//
-// A blocker the board is no longer holding is SATISFIED and drawn nowhere, which
-// is `waitsOnChips`'s rule and may not be answered here a second way: closed
-// issues leave the sweep, so being in it is the whole of the question.
-//
+// Both halves of the edge come off the board payload in memory, the inverse
+// read as the dialog opens, so nothing is fetched or stored. A blocker the
+// board is not holding is satisfied and drawn nowhere, `waitsOnChips`'s rule.
 
 /** The board payload the open dialog reads its dependencies out of. */
 let held = [];
 
 /**
- * Hold the board payload the dependency line is derived from.
- *
- * Called by the paint (page.js), for the same reason the agent dialog's refresh
- * is: a dialog lives in the layout, outside the mount a page's render writes
- * into, and every page's paint passes through the runtime - so the payload is
- * handed over once, there, rather than kept a second time by each page that
- * opens an issue. A page whose feeds carry no board hands over nothing, and the
- * dialog says nothing about dependencies rather than guessing at them.
+ * Hold the board payload the dependency line is derived from: handed over by
+ * the paint (page.js), since the dialog lives outside every page's mount. A
+ * page with no board hands over nothing, and the dialog says nothing.
  *
  * @param {object|null} payload - the board payload (state.js's `board`), or null
  * @returns {void}
@@ -107,13 +71,9 @@ let held = [];
 export const holdBoard = (payload) => { held = (payload && payload.issues) || []; };
 
 /**
- * What one issue waits on, and what waits on it - both read off one board.
- *
- * Pure, and answering in the BOARD's own issue objects rather than in the
- * blocker references, because each one is drawn as a trigger that opens that
- * issue's own dialog: the object is what the registry needs. Every comparison
- * folds case, since repo names are case-insensitive on GitHub and the inline
- * `Depends on:` fallback is hand-typed.
+ * What one issue waits on, and what waits on it, answered in the board's own
+ * issue objects since each is drawn as a trigger the registry needs. Every
+ * comparison folds case: the inline `Depends on:` fallback is hand-typed.
  *
  * @param {object} issue - the issue being read
  * @param {object[]} [issues] - every open issue the sweep carries
@@ -131,23 +91,18 @@ export const dependencies = (issue, issues) => {
 };
 
 /**
- * How one issue is named on another's line - the card's chip's own spelling: the
- * short `#12` when the two share a repo, the whole key anywhere else, since
- * `#12` in another repo is a different issue.
+ * How one issue is named on another's line, the card chip's spelling: the
+ * short `#<n>` in a shared repo, the whole key anywhere else.
  */
 const dependencyRef = (target, issue) => (String(target.repo).toLowerCase() === String(issue.repo).toLowerCase()
   ? `#${target.number}`
   : issueKey(target));
 
 /**
- * One issue on the other end of an edge, as the chip that opens it.
- *
- * A SPAN and not an anchor: the delegated listener treats a link as the card's
- * escape hatch to GitHub, so an anchor here would leave the dashboard rather
- * than open the issue it names. The repo it carries is remote text like every
- * other value on the dialog, and is escaped with the rest. The direction word
- * lives in a sibling span a tab stop never reaches, so the chip carries it
- * again as its accessible name.
+ * One issue on the other end of an edge, as the chip that opens it: a span,
+ * since the delegated listener treats an anchor as the way out to GitHub. The
+ * direction word sits in a sibling a tab never reaches, so the chip repeats it
+ * as its accessible name.
  */
 const dependencyChip = (target, issue, word) => `<span class="omega-chip omega-interactive" aria-label="${esc(`${word} ${dependencyRef(target, issue)}`)}" ${issueTrigger(target)}>${esc(dependencyRef(target, issue))}</span>`;
 
@@ -166,18 +121,9 @@ const dependencyLine = (issue, issues) => {
 };
 
 /**
- * What a BLOCKED issue is waiting to be told (issue #196) - its open question,
- * in the dialog the card opens rather than on the card itself (issue #205).
- *
- * The convention the spec sets is that a blocked issue's question is a COMMENT
- * on it, so the last comment is the best signal the sweep can carry: it is the
- * question itself on an issue that has just been blocked, and the newest word on
- * one that has been discussed since. Only `blocked` draws it - the last comment
- * of an issue that is moving is not a question anybody is waiting on.
- *
- * Remote text like every other value here, escaped, and drawn as an alert in the
- * danger red `blocked` wears - a question waiting on the owner is the loudest
- * thing in the dialog, never a muted line.
+ * What a blocked issue is waiting to be told: its newest comment, where the
+ * spec puts the question, as a danger alert, the loudest thing in the dialog.
+ * Only `blocked` draws it; a moving issue's last comment asks nobody anything.
  *
  * @param {object} issue - one issue from /api/board or /api/brief
  * @returns {string} markup, or nothing at all when there is no question to show
@@ -187,10 +133,8 @@ const openQuestion = (issue) => (issue.status === 'blocked' && issue.lastComment
   : '');
 
 /**
- * The three pieces of the dialog for one issue.
- *
- * Pure - an issue in, three markup strings out - which is what lets the suite
- * ask what a hostile title renders as without a browser.
+ * The three pieces of the dialog for one issue, pure so the suite can ask what
+ * a hostile title renders as.
  *
  * @param {object} issue - one issue from /api/board or /api/brief
  * @param {(text: string) => string} renderBody - the markdown renderer, handed
@@ -226,11 +170,9 @@ export const issueDialog = (issue, renderBody, issues) => {
 };
 
 /**
- * The one pair of delegated listeners a dialog opens from - a click, and the
- * Enter/Space a div with a button role has to be given by hand.
- *
- * Delegated on the document so a page that repaints ten times a minute rebinds
- * nothing, and a new click site is one attribute.
+ * The one pair of delegated listeners a dialog opens from: a click, and the
+ * Enter/Space a div with a button role needs by hand. On the document, so a
+ * repaint rebinds nothing.
  *
  * @param {string} attribute - the data attribute's name (`issue`, `agent`)
  * @param {(key: string) => void} open - what to do with the key it carries

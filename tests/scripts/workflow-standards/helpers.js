@@ -1,13 +1,7 @@
-//
-// The shared prologue of the standards heal suites, the `*.test.js` files
-// beside this one, which test workflow/: the label vocabulary manifest
-// (labels.json) and the repo standards script (standards.sh). A plain module,
-// never a suite: the runner only loads files ending in `.test.js`.
-//
-// The script's label step talks to GitHub through `gh`; every test here runs
-// against a PATH shim that records its arguments and answers from a fixture, so
-// nothing in these suites touches the network or a real repository.
-//
+// The shared prologue of the standards heal suites beside this one, which test
+// workflow/labels.json and workflow/standards.sh. Every `gh` call reaches a PATH
+// shim that records its arguments and answers from a fixture, so nothing here
+// touches the network or a real repository.
 
 const path = require('path');
 const fs = require('fs');
@@ -52,13 +46,13 @@ const desiredLabels = () => {
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
 // The roster and the declines, out of the machine-maintained `.repos.json`:
-// absent until the engine has something to record there (issue #80).
+// absent until the engine has something to record there.
 const rosterOf = (home) => {
   const file = path.join(home, '.repos.json');
   return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')).repos || {}) : {};
 };
 
-// The roster key a repo takes on the WINDOWS branch: git's spelling of its
+// The roster key a repo takes on the Windows branch: git's spelling of its
 // root. On Windows this machine's own cygpath answers; off it, the seam's stub
 // does, prefixing the drive letter the MSYS root maps to (tests/lib/platform.js).
 const winRosterKey = (repo) => (IS_WINDOWS
@@ -82,11 +76,9 @@ const makeRepo = ({ remote = true, settings = '{ "version": 1, "enabled": true }
   return dir;
 };
 
-// PATH shim: records each `gh` invocation, answers `label list` and
-// `issue list` from fixtures. The recording keeps argument boundaries (see
-// tests/lib/argv-log.js): a label description is a phrase with spaces, and
-// losing the boundary would make an unquoted expansion in the script
-// indistinguishable from a correct call.
+// PATH shim: records each `gh` invocation with its argument boundaries (a label
+// description has spaces, so an unquoted expansion must not pass) and answers
+// `label list` and `issue list` from fixtures.
 const makeGhStub = ({
   labels = [], issues = [], authed = true, createFails = false, editFails = false,
   // `labeled` maps a label name to the issues carrying it, so
@@ -96,7 +88,7 @@ const makeGhStub = ({
   // Branch-protection knobs. `protection`: 'absent' (404s, PUT accepted),
   // 'present' (GET succeeds), or 'denied' (404s, PUT rejected: the free-plan
   // private repo). `repoView`: answer `gh repo view` with a real owner/branch;
-  // off by default so every older test exercises the "cannot resolve" bail-out.
+  // off by default, so a case meets the "cannot resolve" bail-out unless it opts in.
   protection = 'absent', repoView = false,
 } = {}) => {
   const dir = mkTmp('wf-std-');
@@ -105,14 +97,10 @@ const makeGhStub = ({
   const issuesFile = path.join(dir, 'issues.json');
   fs.writeFileSync(labelsFile, JSON.stringify(labels));
   fs.writeFileSync(issuesFile, JSON.stringify(issues));
-  // An entry is a bare number when the caller only cares which issues carry the
-  // label, or a whole object when the fields matter (the stale-claim sweep
-  // reads updatedAt and assignees).
-  // A label name is never a file name: the colon in `agent:working` opens an
-  // NTFS alternate data stream on Windows instead of creating a file, and the
-  // shell cannot see one at all, so every label query would answer the empty
-  // list there. The fixtures are numbered and the stub LOOKS ITS LABEL UP, so
-  // the name lives in the case pattern and the path is spelled once, here.
+  // An entry is a bare number, or a whole object when the fields matter (the
+  // stale-claim sweep reads updatedAt and assignees). Fixtures are numbered and
+  // the stub looks its label up: a label's colon would open an NTFS alternate
+  // data stream on Windows, so a label name is never a file name.
   const labelFixtures = Object.entries(labeled).map(([label, numbers], i) => {
     const file = path.join(dir, `issues-${i}.json`);
     fs.writeFileSync(
@@ -183,23 +171,18 @@ const readFile = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') 
 // One argv array per recorded `gh` invocation.
 const ghCalls = (stub) => readArgv(stub.logFile);
 
-// `pathPrefix: null` means run with no gh on PATH at all (the offline machine).
-// WORKFLOW_HOME always points at a throwaway directory: the user-level
-// settings file this script writes must never be the real ~/.workkit.
-// A PATH holding every tool the script needs EXCEPT one. `command -v <tool>`
-// searches every PATH entry, so the only way to prove the missing-tool branch
-// is to build the PATH: where a tool lives varies by machine (a CI runner keeps
-// gh in /usr/bin, Homebrew does not), and a test that assumed a layout was
-// testing the host instead of the script. The seam builds and checks it.
+// A PATH holding every tool the script needs except one, built rather than
+// assumed, since where a tool lives varies by machine.
 const binDirWithout = (excluded) => basePathWithout(mkTmp('wf-std-'), excluded);
 
+// `pathPrefix: null` runs with no gh on PATH (the offline machine). WORKFLOW_HOME
+// and the claude home are always throwaway directories.
 const runScript = (repoDir, {
   pathPrefix, args = [], workflowHome, claudeHome, hooksDir, env = {},
 } = {}) => {
   // node is on the PATH of any machine running this standard (the engine lints
-  // CHANGELOGs with it, and so does the hook layer), so the default PATH
-  // carries it. A test proving what happens WITHOUT a tool builds its own PATH
-  // with binDirWithout(): the suite's idiom for exactly that.
+  // CHANGELOGs with it), so the default PATH carries it; a test proving a
+  // missing tool builds its own PATH with binDirWithout().
   const basePath = joinPath(SYSTEM_PATH, NODE_DIR);
   const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args, shellPath(repoDir)], {
     env: {
@@ -222,7 +205,7 @@ const runScript = (repoDir, {
   // The engine keeps stdout for machine-readable answers (--state, --announce)
   // and sends every diagnostic to stderr. `output` is what a human sees in a
   // terminal: assert human-facing lines against it, and stdout only when the
-  // test cares that something IS machine-readable.
+  // test cares that something is machine-readable.
   const stdout = res.stdout || '';
   const stderr = res.stderr || '';
   return { code: res.status, stdout, stderr, output: stdout + stderr };

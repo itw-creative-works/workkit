@@ -1,8 +1,6 @@
-//
-// Tests for jobs/morning.sh as a GITHUB ACTIONS RUNNER runs it: the shape of
+// Tests for jobs/morning.sh as a GitHub Actions runner runs it: the shape of
 // the script, and the cloud steps that run on a runner only.
-// The shared prologue (the world factory, the no-jq PATH, the job runner, the two case gates) is ./helpers.js.
-//
+// The shared prologue (world factory, no-jq PATH, job runner, case gates) is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -27,10 +25,9 @@ const run = async () => {
   });
 
   await test('a runner runs the brief alone: every other step names its skip', () => {
-    // The capability gates from the cloud side (issue #107): the summaries read
-    // a machine's transcripts and git history, the publish builds the home
-    // clone, and a runner has neither. A named skip is what tells that apart
-    // from a step that quietly did nothing.
+    // The capability gates from the cloud side: the summaries read a machine's
+    // transcripts and git history, the publish builds the home clone, and a
+    // runner has neither. A named skip tells that from a step that did nothing.
     const world = mkWorld();
     const res = runJob(world);
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
@@ -39,9 +36,8 @@ const run = async () => {
     assert(!fs.existsSync(world.nightlyLog), 'and never started: there is no day here to write up');
     assert(/publish: the site is built from the home clone/.test(res.stdout),
       `the publish names its skip: ${res.stdout}`);
-    // Issue #173: the stale-brief marker is read at session start on a MACHINE,
-    // and a runner's home dies with the job: there is nobody there to leave it
-    // for, and a marker written into that home would be thrown away unread.
+    // The stale-brief marker is read at session start on a machine, and a
+    // runner's home dies with the job, so a marker there would go unread.
     assert(/marker: the brief marker is read at session start on a machine/.test(res.stdout),
       `the marker step names its skip: ${res.stdout}`);
     assert(!fs.existsSync(path.join(world.workflowHome, 'brief-status.json')),
@@ -51,9 +47,8 @@ const run = async () => {
   });
 
   await test('a runner never reconciles the seeded copy it is running', () => {
-    // Issue #143: the machine refreshes the home repo's `brief/` copies from its
-    // checkout every morning. On a runner those copies ARE what is executing and
-    // there is no checkout to seed them from, so the step is a named skip, and
+    // On a runner the home repo's `brief/` copies are what is executing and
+    // there is no checkout to seed them from, so the step is a named skip and
     // a home clone sitting where the machine's would be is left untouched.
     const world = mkWorld({ settings: { version: 1, site: { repo: HOME_SLUG } } });
     const remote = path.join(world.root, 'remote.git');
@@ -63,7 +58,7 @@ const run = async () => {
     const seeded = path.join(clone, 'brief', 'jobs', 'morning.sh');
     fs.mkdirSync(path.dirname(seeded), { recursive: true });
     fs.writeFileSync(seeded, '# last month’s runner\n');
-    // The engine's own seam: with it the clone IS the home repo's clone, which
+    // The engine's own seam: with it the clone is the home repo's clone, which
     // is what a machine would reconcile.
     world.env.WORKKIT_HOME_REMOTE = remote;
 
@@ -79,10 +74,9 @@ const run = async () => {
   group('jobs/morning (cloud): a runner only');
 
   await test('off a runner the cloud steps never run, and the machine’s roster is untouched', () => {
-    // The synthetic machine REPLACES what is in ~/.workkit: on a laptop that is
-    // every registered repo and every recorded decline, swapped for synthetic
-    // cloud paths that would then live on the tower forever. GITHUB_ACTIONS is
-    // the gate on all of it.
+    // The synthetic machine replaces what is in ~/.workkit: on a laptop that is
+    // every registered repo and decline, swapped for synthetic cloud paths.
+    // GITHUB_ACTIONS is the gate on all of it.
     const world = mkWorld();
     const roster = path.join(world.home, '.workkit', '.repos.json');
     fs.mkdirSync(path.join(world.home, '.workkit'), { recursive: true });

@@ -1,8 +1,6 @@
 //
-// Tests for tower/api/lib/telemetry.js: subagent attribution (the class
-// through the parent tool_use or the sidecar, byClass, and the working and
-// done states).
-// The shared prologue (the transcript line builders, the scratch world and its sessions, the collect call, the module under test) is ./helpers.js.
+// Tests for tower/api/lib/telemetry.js: subagent attribution (the class via the parent
+// tool_use or the sidecar, byClass, working and done). Prologue: ./helpers.js.
 //
 
 const { group, test, assertEq, summary, selfRun } = require('../../lib/harness');

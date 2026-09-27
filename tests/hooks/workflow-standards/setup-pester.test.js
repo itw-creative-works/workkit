@@ -1,8 +1,6 @@
-//
-// Tests for hooks/workflow:standards: the setup pester (#72), heard every
+// Tests for hooks/workflow:standards: the setup pester, heard every
 // session until the machine has run `workkit setup`.
 // The shared prologue (the repo factory, the decline, the hook runner and its gh-less PATH, the constants) is ./helpers.js.
-//
 
 const path = require('path');
 const fs = require('fs');

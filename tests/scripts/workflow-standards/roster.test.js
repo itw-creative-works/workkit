@@ -1,7 +1,5 @@
-//
 // Tests for standards.sh: the roster of enabled and declined repos.
-// The shared prologue (the repo and gh-stub factories, runScript, the constants) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -22,7 +20,7 @@ const run = async () => {
   group('standards.sh: the roster');
 
   // The machine-local index the tower reads instead of walking a disk. It is
-  // maintained ON CONTACT (a heal registers the repo it is standing in and
+  // maintained on contact (a heal registers the repo it is standing in and
   // prunes what has gone away) and it is silent, so every assertion here is
   // against the file rather than the output.
   await test('a heal registers the repo it healed', () => {
@@ -59,20 +57,10 @@ const run = async () => {
   });
 
   await test('sessions opening at once in several repos all end registered', async () => {
-    // The roster edit is a whole-file read-modify-write, so without the mutex
-    // the last writer wins and the other repos are silently left off. Three
-    // heals started together against ONE user settings file; every one of them
-    // has to be on the roster when they finish.
-    //
-    // And the home repo's writers edit that same file: `wk_home_set_slug` runs
-    // alongside them here, because a mutex only two of the three writers take
-    // is not a mutex: the slug it records has to survive as well.
-    //
-    // The roster is not the only machine-level thing they all write: the
-    // engine's address is one path for the whole machine, so the claude home
-    // below EXISTS, which is what puts that step in the race too. A heal that
-    // ends on it never reaches the roster at all, so the count alone would
-    // report a lost write for a session that died two steps earlier.
+    // The roster edit is a whole-file read-modify-write, so without the mutex the
+    // last writer wins. Three heals race on one user settings file alongside
+    // `wk_home_set_slug`, its other writer, and the claude home below exists so
+    // the engine's machine-wide address is in the race too.
     const home = mkTmp('wf-std-');
     const stub = makeGhStub({ authed: false });
     const repos = [makeRepo(), makeRepo(), makeRepo()];
@@ -80,7 +68,7 @@ const run = async () => {
     fs.mkdirSync(claudeHome, { recursive: true });
     const basePath = joinPath(stub.binDir, SYSTEM_PATH, NODE_DIR);
     // Seeded here rather than by whichever process gets there first: the race
-    // under test is the EDIT, and two creations racing is a different one.
+    // under test is the edit, and two creations racing is a different one.
     fs.writeFileSync(path.join(home, '.repos.json'), `${JSON.stringify({ version: 1, repos: {} }, null, 2)}\n`);
     fs.writeFileSync(
       path.join(home, 'settings.json'),
@@ -92,7 +80,7 @@ const run = async () => {
       WORKFLOW_HOME: shellPath(home),
       WORKFLOW_CLAUDE_HOME: shellPath(claudeHome),
     };
-    // Sourced by their POSIX spelling, like every other path handed INTO a
+    // Sourced by their POSIX spelling, like every other path handed into a
     // shell: a `C:\...` source gives `${BASH_SOURCE[0]%/*}` no `/` to cut, so
     // lib.sh dies on the sibling it loads and the writer below is never
     // defined at all.
@@ -115,7 +103,7 @@ const run = async () => {
     ]);
     assertEq(codes.join(','), '0,0,0', `every session finished, none of them ended on a step another one won: ${codes.join(',')}`);
     // Swept before it is asserted on, never after: a regression here writes a
-    // link INSIDE the tracked engine folder, and one left lying there is a
+    // link inside the tracked engine folder, and one left lying there is a
     // loop the next run of this suite walks into.
     const stray = path.join(WORKFLOW_DIR, 'workflow');
     const strayed = fs.existsSync(stray);
@@ -143,10 +131,9 @@ const run = async () => {
     cleanup(home); cleanup(stub.dir);
   });
 
-  // The global layer's half of the same fact used to be a committed project
-  // list in the home repo. Issue #77 retired it: the dashboard's board data is
-  // baked from this machine's roster at publish time and never committed as
-  // source, so the heal owes the global layer nothing but the roster above.
+  // The dashboard's board data is baked from this machine's roster at publish
+  // time and never committed as source, so the heal owes the global layer
+  // nothing but the roster above.
   await test('the heal writes nothing into the global layer but the roster', () => {
     const repo = makeRepo();
     const home = mkTmp('wf-std-');
@@ -161,7 +148,7 @@ const run = async () => {
   });
 
   await test('a ~/.workkit holding a tower clone is not touched by the heal', () => {
-    // The tower repo is a repo like any other: it is healed by standing IN it,
+    // The tower repo is a repo like any other: it is healed by standing in it,
     // never by a heal of some other repo reaching across into it.
     const repo = makeRepo();
     const home = mkTmp('wf-std-');
@@ -205,7 +192,7 @@ const run = async () => {
 
   await test('an entry whose committed settings file was deleted is pruned too', () => {
     // Removing the committed file is the tri-state's way back to undecided, so
-    // the entry is exactly as stale as a path that no longer exists.
+    // the entry is exactly as stale as a path that is gone.
     const repo = makeRepo();
     const left = makeRepo();
     fs.rmSync(path.join(left, W, 'settings.json'));
@@ -295,13 +282,10 @@ const run = async () => {
     cleanup(repo); cleanup(home); cleanup(binDir);
   });
 
-  // Windows is the machine where one repo has two spellings: git prints
-  // `C:/Users/x` and the Git Bash around it says `/c/Users/x`. A roster holding
-  // both is a repo the tower lists twice and a decline that stops nothing, so
-  // the key is git's spelling and every write and every lookup asks
-  // `wk_git_path` for it. The branch is driven from here rather than only on
-  // Windows so the rule holds at every commit: OSTYPE is what the engine
-  // branches on, and bash honors an inherited one.
+  // On Windows one repo has two spellings (git's `C:/Users/x`, Git Bash's
+  // `/c/Users/x`), so the key is git's, asked of `wk_git_path` on every write
+  // and lookup. An inherited OSTYPE drives the branch from here, so the rule
+  // holds at every commit and not only on Windows.
   const msysWorld = () => {
     const cyg = mkTmp('wf-std-');
     cygpathStub(cyg);

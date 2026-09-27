@@ -1,9 +1,7 @@
-//
 // Tests for hooks/safety/commit-gate: the nested pass of check 5, where a
 // nested package whose folder holds a change in the commit runs its own test
 // script after the root's, under the same budget.
 // The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
-//
 
 const path = require('path');
 const fs = require('fs');
@@ -19,7 +17,7 @@ const GREEN_ROOT = '{"scripts":{"test":"exit 0"}}\n';
 // A nested suite that leaves a line per run in its own folder, then passes.
 const greenPkg = () => pkg('1.0.0', { scripts: { test: 'echo ran >> suite-ran' } });
 
-// Every file seeded in one commit first, so each case stages only EDITS: check
+// Every file seeded in one commit first, so each case stages only edits: check
 // 1 (new source needs tests) is never what answers.
 const mkNested = (files, root = GREEN_ROOT) => {
   const dir = mkRepo();

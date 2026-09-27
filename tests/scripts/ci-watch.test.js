@@ -1,21 +1,7 @@
-//
-// Tests for workflow/ship/ci-watch.sh: the ship's CI watch, a sha in and one answer
-// out. Green, red, no CI configured for push, a run not queued yet, a usage
-// error and a `gh` that failed are the six answers, and each is an exit code the
-// ship reads, so every case asserts the code and the line together.
-//
-// The one seam is `gh`: a stub in a scratch bin whose every answer is a FIXTURE
-// FILE the case writes before it runs (the run list, how many times that list
-// comes back empty first, each run's watch exit, its conclusion and jobs, its
-// failed log, and whether GitHub is reachable at all for it),
-// so a case states the world it runs in rather than a stub branching per case.
-// Every call is recorded with its argument boundaries intact
-// (tests/lib/argv-log.js). The retries are the script's own env overrides, set
-// to two tries with no wait, so a run that never shows up costs nothing.
-//
-// The cwd is a real scratch git repo, since where the workflows are read from
-// is its toplevel.
-//
+// Tests for workflow/ship/ci-watch.sh: the ship's CI watch, a sha in and one
+// answer out as an exit code, so every case asserts the code and the line
+// together. `gh` is a stub answering from fixture files the case writes, and the
+// retries are env overrides set to two tries with no wait.
 
 const path = require('path');
 const fs = require('fs');
@@ -46,9 +32,8 @@ const run = (id, name) => ({
  * `empty` empty answers; `red` the run ids whose watch exits 1; `views` and
  * `logs` a run id's `--json conclusion,jobs` answer and `--log-failed` text;
  * `down` the run ids whose watch AND view fail the way an unreachable GitHub
- * does; `listFails`
- * a `gh run list` that fails, and `listRaw` one that answers that text instead
- * of a list.
+ * does; `listFails` a `gh run list` that fails, and `listRaw` one that answers
+ * that text instead of a list.
  */
 const makeWorld = ({
   runs = [], empty = 0, red = [], views = {}, logs = {}, down = [], listFails = false, listRaw = null, workflows = null,

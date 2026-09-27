@@ -1,13 +1,10 @@
-//
 // Tests for jobs/morning.sh as this machine runs it: the site publish, after
 // the brief.
-// The shared prologue (the world factory, the job runner, the notification waits) is ./helpers.js.
-//
+// The shared prologue (world factory, job runner, notification waits) is ./helpers.js.
 
 const fs = require('fs');
-const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { skipUnlessDarwin, STEPS, cleanup, mkWorld, runJob, settle } = require('./helpers');
+const { skipUnlessDarwin, SCRIPT, cleanup, mkWorld, runJob, settle } = require('./helpers');
 
 const run = async () => {
   skipUnlessDarwin();
@@ -25,7 +22,7 @@ const run = async () => {
     assert(log.indexOf('publish:') > log.indexOf('HEADLINE: one thing today.'),
       `and nothing is built before the brief has gone: ${log}`);
 
-    const text = fs.readFileSync(path.join(STEPS, 'publish.sh'), 'utf8');
+    const text = fs.readFileSync(SCRIPT, 'utf8');
     assert(/publish\.sh" --quiet/.test(text), 'the daily run asks for the quiet variant');
     assert(/publish exit %d; the brief was already sent/.test(text), 'and a failure is logged, never fatal');
     await settle();

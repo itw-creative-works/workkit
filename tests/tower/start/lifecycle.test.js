@@ -1,8 +1,6 @@
 //
-// Tests for tower/start.sh: the lifecycle of the two halves (both start, one
-// interrupt ends both, either ending takes the other with it) and the port
-// a previous instance holds, replaced rather than collided with.
-// The shared prologue (the wrapper runner, the stub halves, the poll, the pty run) is ./helpers.js.
+// Tests for tower/start.sh: the two halves' lifecycle (one interrupt or either
+// ending ends both) and a held port, replaced not collided with. Prologue: ./helpers.js.
 //
 
 const fs = require('fs');
@@ -54,11 +52,9 @@ const run = async () => {
   });
 
   await pidTest('a half that exits leaving a background child behind still ends the other', async () => {
-    // The failure this pins (#138 review, B2): with the filter DOWNSTREAM in a
-    // pipeline, the pid the down-taker watched was the pipeline's wrapper,
-    // which lives until every writer of the pipe has closed. This stub's
-    // leftover child holds that pipe, so the wrapper never ended and the tower
-    // sat half-up forever instead of coming down.
+    // With the filter downstream in a pipeline, the pid to watch is not the
+    // pipeline's wrapper, which lives until every writer of the pipe has closed;
+    // this stub's leftover child holds that pipe.
     const dir = mkTmp('tower-start-');
     const appPid = path.join(dir, 'app.pid');
     const child = start(dir,
@@ -95,7 +91,7 @@ const run = async () => {
   });
 
   await test('a previous instance on a tower port is replaced, not collided with', async () => {
-    // A stand-in for a leftover server: a child of THIS test listening on an
+    // A stand-in for a leftover server: a child of this test listening on an
     // ephemeral port, handed to the wrapper as the tower's port.
     const listener = standIn(
       "const s=require('net').createServer();s.listen(0,'127.0.0.1',()=>console.log(s.address().port));");
@@ -118,9 +114,8 @@ const run = async () => {
   });
 
   await test('a listener that ignores the polite signal is escalated, not collided with', async () => {
-    // The failure this pins (#97 review, B1): reclaim's wait loop always
-    // returned 0, so a TERM-resistant listener rode out the 5s deadline and
-    // the fresh server died EADDRINUSE with nothing explaining why.
+    // A TERM-resistant listener must not ride out the 5s deadline and leave the
+    // fresh server dying EADDRINUSE with nothing explaining why.
     const listener = standIn(
       "process.on('SIGTERM',()=>{});const s=require('net').createServer();s.listen(0,'127.0.0.1',()=>console.log(s.address().port));");
     let port = '';

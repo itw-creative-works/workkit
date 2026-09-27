@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
 # workflow/standards/labels.sh: the heals that talk to GitHub about the repo
 # itself: branch protection (best effort) and the label sync from labels.json.
-# SOURCED by standards.sh, never executed, and it runs nothing at load: it
-# defines functions and sets nothing. The sync's answer, existing_labels, is
-# the entry's, since the claim sweeps read it after.
+# Sourced by standards.sh, functions only. The sync's answer, existing_labels,
+# is the entry's, since the claim sweeps read it after.
 
 # ── 2c. Branch protection (best effort, never a failure) ──
-# Asks GitHub to require the `test` check before merging into the default
-# branch. ADVISORY by design: it needs admin on the repo, and GitHub only
-# enforces protection on public repos for free accounts: a private repo on a
-# free plan accepts the API call or rejects it by plan, and neither outcome is
-# this machine's fault. So every miss is a quiet skip, never needs_attention.
-# An EXISTING protection is left exactly as found: someone configured it.
+# Advisory: it needs admin, and free plans protect only public repos, so every
+# miss is a quiet skip. An existing protection is left exactly as found.
 ensure_branch_protection() {
   local repo branch
   command -v gh >/dev/null 2>&1 || return 0
@@ -21,7 +16,7 @@ ensure_branch_protection() {
   branch="$(wk_spin 'reading the default branch' gh repo view --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null)" || return 0
   [[ -n "$repo" && -n "$branch" ]] || return 0
 
-  # Only an explicit "not protected" answer may lead to a PUT. Any OTHER
+  # Only an explicit "not protected" answer may lead to a PUT. Any other
   # failure (rate limit, network) is indistinguishable from "protected but
   # unreadable", and writing the minimal payload over an existing
   # configuration would break the promise above, so bail without touching it.
@@ -54,17 +49,15 @@ sync_labels() {
   local existing name description color current cur_desc cur_color
   local created=0 updated=0 unchanged=0
 
-  # The manifest ships next to this script; its absence is a broken install,
-  # not an offline machine. Flag the run so the heal retries next session.
-  # Only THIS step and the issue check read it, so --state, --announce, and
-  # --decline never need it (a broken install must still answer them).
+  # A missing manifest is a broken install, so the run is flagged for a retry.
+  # Only this step and the issue check read it, so --state, --announce and
+  # --decline still answer on a broken install.
   if [[ ! -f "$LABELS_JSON" ]]; then
     wk_warn "labels: labels.json missing at $LABELS_JSON; reinstall the workflow core"
     needs_attention=1
     return 0
   fi
-  # jq reads the manifest and GitHub's answer: only THIS step needs it, so the
-  # local heals above still run on a machine without it.
+  # Only this step needs jq, so the local heals above run without it.
   if ! command -v jq >/dev/null 2>&1; then
     wk_skip "labels: jq not installed; skipped"
     return 0

@@ -1,14 +1,6 @@
-//
-// The shared prologue of the workflow/changelog/changelog-links.js suites, the
-// `*.test.js` files beside this one, which test the release-time step that
-// fills a CHANGELOG entry's commit link and contributor handle in from git and
-// the GitHub API, so nobody types a sha. A plain module, never a suite: the
-// runner only loads files ending in `.test.js`.
-//
-// Each test builds a real git repository with real commits carrying real
-// `Fixes #N` trailers; only `gh` is stubbed on PATH, because it is the one
-// dependency that would reach the network.
-//
+// The shared prologue of the workflow/changelog/changelog-links.js suites beside
+// this one: real git repos with real `Fixes #N` trailers, and only `gh` stubbed
+// on PATH, the one dependency that would reach the network.
 
 const path = require('path');
 const fs = require('fs');
@@ -81,11 +73,8 @@ const runScript = (cwd, stub, args = []) => {
 
 const readLog = (dir) => fs.readFileSync(path.join(dir, 'CHANGELOG.md'), 'utf8');
 
-// Every suite asks this first. Every case here puts a fake `gh` in front of
-// the script under test, and the script reaches it through execFile: no stub is
-// startable that way on Windows (tests/lib/platform.js, `stubTool`), so each
-// case would ask the machine's own gh instead of the one it wrote. The suite
-// says so rather than passing on an answer it never asked for.
+// Every suite asks this first: the script reaches its fake `gh` through
+// execFile, and no stub is startable that way on Windows (`stubTool`).
 const skipOnWindows = () => {
   if (IS_WINDOWS) {
     skipSuite(NO_NODE_STUB);

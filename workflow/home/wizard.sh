@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
-# workflow/home/wizard.sh: the home half of `workkit setup`, every step in
-# the Spec's order. SOURCED by home.sh, never executed, and it runs nothing at
-# load: it defines functions and sets nothing. WK_HOME_REPO_NAME is the entry's;
-# WK_HOME_DIR is lib.sh's; every step it calls lives in a sibling piece.
+# workflow/home/wizard.sh: the home half of `workkit setup`. Sourced by home.sh,
+# functions only. WK_HOME_REPO_NAME is the entry's; WK_HOME_DIR is lib.sh's.
 
-# The whole home half of the wizard, in the Spec's order. Every step is
-# idempotent and every failure warns and continues (setup never dies mid-way)
-# with one exception: something already sitting at the clone's path stops the
-# rest, because every step after it would write into whatever that is.
+# Every failure warns and continues, except something already at the clone's
+# path, which stops the rest: every later step would write into it.
 wk_home_setup() {
   local login slug rc=0
 
@@ -18,8 +14,7 @@ wk_home_setup() {
   fi
   slug="$login/$WK_HOME_REPO_NAME"
 
-  # The one confirm line, and only where there is someone to answer it. A
-  # non-interactive run prints what it would do and moves on.
+  # A non-interactive run prints what it would do and moves on.
   if [[ "$(wk_home_slug)" != "$slug" ]]; then
     if declare -f interactive >/dev/null 2>&1 && ! interactive; then
       wk_info "home: no home repo is configured; a terminal run of \`workkit setup\` creates the private $slug and makes $WK_HOME_DIR its clone"
@@ -43,15 +38,12 @@ wk_home_setup() {
 
   rc=0
   wk_home_clone "$slug" || rc=$?
-  # 3 is something else at the path, 1 is a clone that could not finish. Neither
-  # leaves anything the steps below could safely write to.
+  # Neither 3 (something else at the path) nor 1 leaves anything safe to write.
   [[ "$rc" -eq 0 ]] || return 0
 
   wk_home_set_slug "$slug" >/dev/null 2>&1 || true
 
-  # An empty clone is a repo GitHub just made, and the only state the seed may
-  # write into. A clone that already carries the project came from another
-  # machine and is left exactly as it is.
+  # Only an empty clone is seeded; one carrying the project is left as it is.
   if wk_home_empty; then
     wk_home_seed || return 0
     wk_home_seed_runner || true
@@ -64,9 +56,8 @@ wk_home_setup() {
   fi
 
   wk_skip "home: the tower project is already in $WK_HOME_DIR"
-  # The second machine's path: the project travelled, its dependencies did not.
-  # The runner is refreshed here too, and pushed on its own: the project seed
-  # is a one-time write, the runner tracks a checkout that keeps changing.
+  # The second machine's path: the runner still tracks this checkout, so it is
+  # refreshed and pushed on its own.
   rc=0
   wk_home_seed_runner || rc=$?
   if [[ "$rc" -eq 0 ]]; then

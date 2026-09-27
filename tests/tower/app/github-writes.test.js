@@ -1,7 +1,6 @@
 //
 // Tests for the tower dashboard's github.js: the two writes (the drag's relabel
-// and the intake's filing).
-// The shared prologue (the lib loader, the fetch stubs, the fixtures) is ./helpers.js.
+// and the intake's filing). Shared prologue: ./helpers.js.
 //
 
 const path = require('path');
@@ -15,9 +14,8 @@ const run = async () => {
   group('tower/app: github - the two writes');
 
   // The tower's own source is the reference for both writes: the published site
-  // must relabel and file exactly what the endpoint on the machine does, and
-  // the two live on opposite sides of the copy boundary (issue #77). The
-  // endpoint's source is the whole set: server.js and every piece in server/.
+  // relabels and files exactly what the endpoint on the machine does, across the
+  // copy boundary. The endpoint's source is server.js and every piece in server/.
   const apiDir = path.join(__dirname, '..', '..', '..', 'tower', 'api');
   const serverSrc = [path.join(apiDir, 'server.js')]
     .concat(fs.readdirSync(path.join(apiDir, 'server')).filter((name) => name.endsWith('.js')).sort().map((name) => path.join(apiDir, 'server', name)))
@@ -66,7 +64,7 @@ const run = async () => {
   });
 
   await test('a token that can only read is told so in words, and reads as a refusal', async () => {
-    // A read-only token gets through the move's READ and is refused on its write.
+    // A read-only token gets through the move's read and is refused on its write.
     const forbidden = mkFetch((url, options) => ((options && options.method) === 'PATCH'
       ? jsonResponse(403, { message: 'Resource not accessible by personal access token' })
       : jsonResponse(200, { number: 1, labels: [{ name: 'status:inbox' }] })));
@@ -155,9 +153,9 @@ const run = async () => {
     assert(serverSrc.includes('the issue is already status:'), 'and so is the refusal of a move that is not one');
   });
 
-  // The proof gate on the drag (issue #236): Complete is the one column a card
-  // has to prove itself into, and the published copy holds the same gate the
-  // endpoint and the two hooks hold - refused in the browser, before the PATCH.
+  // The proof gate on the drag: Complete is the one column a card has to prove
+  // itself into, and the published copy refuses it in the browser, before the
+  // PATCH, as the endpoint and the two hooks do.
   const COMMENTS_URL = 'https://api.github.com/repos/o/r/issues/48/comments?per_page=100';
 
   await test('a move to Complete reads the issue’s comments first, and is refused without a Proof: line', async () => {
@@ -174,7 +172,7 @@ const run = async () => {
     assert(/no comment whose line starts with "Proof:"/.test(answer.reason), `naming what is missing, got: ${answer.reason}`);
     assert(/Park it with a Proof: comment first/.test(answer.reason), 'and the fix that exists');
 
-    // A read that FAILS is a refusal too, never a pass: the gate cannot ask.
+    // A read that fails is a refusal too, never a pass: the gate cannot ask.
     const blind = mkFetch(jsonResponse(404, { message: 'Not Found' }));
     const unreadable = await github.moveIssueStatus({
       repo: 'o/r', number: 48, from: 'qa', to: 'complete',
@@ -187,7 +185,7 @@ const run = async () => {
     assert(serverSrc.includes('/(^|\\n)[ \\t]*Proof:/'), 'and the line it looks for is the endpoint’s own pattern');
     // The same pattern has a third home on the shell side, and the gated status
     // is a vocabulary word: both pinned, so a change to either cannot leave the
-    // board and the hooks disagreeing with every test green (#236).
+    // board and the hooks disagreeing with every test green.
     const fs = require('fs');
     const libSrc = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'hooks', 'lib', 'proof.sh'), 'utf8');
     assert(libSrc.includes('(^|\\n)[ \\t]*Proof:'), 'hooks/lib/proof.sh looks for the same line');

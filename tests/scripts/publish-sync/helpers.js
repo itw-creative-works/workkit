@@ -1,20 +1,8 @@
-//
-// The shared prologue of the tower sync and publish-wiring suites, the
-// `*.test.js` files beside this one, which test the tower SYNC and the brand
-// MINT (issue #129) one concern each: the two steps that run between the pull
-// and the build, and the reason the published dashboard stops being stranded
-// at the day the home repo was seeded. A plain module, never a suite: the
-// runner only loads files ending in `.test.js`.
-//
-// Two layers, and neither one touches the real ~/.workkit. The sync itself is
-// asked its questions as the library function it is, against fixture
-// directories and a clone of a local bare "GitHub". The WIRING (the sync ahead
-// of the build, the install after a sync that changed a manifest (issue #130),
-// the mint after a sync that changed something, the abort on a mint that
-// failed) is proved end to end through publish.sh in the same
-// scratch world the publish suite uses, with an `npm` shim for the build and a
-// stub `omega` for the mint. No omega, no network.
-//
+// The shared prologue of the tower sync and publish-wiring suites beside this
+// one, in two layers, neither touching the real ~/.workkit: the sync as the
+// library function it is, against fixture directories and a clone of a local
+// bare "GitHub"; and the wiring (sync, install, mint, abort) end to end through
+// publish.sh with an `npm` shim and a stub `omega`. No omega, no network.
 
 const fs = require('fs');
 const path = require('path');
@@ -91,7 +79,7 @@ const mkTowerApp = (root) => {
 
 /**
  * A scratch machine for the library layer: a ~/.workkit whose `tower` is the
- * clone of a local bare repo, and a checkout to sync FROM.
+ * clone of a local bare repo, and a checkout to sync from.
  */
 const mkSyncWorld = () => {
   const root = mkTmp('workkit-sync-');
@@ -124,7 +112,7 @@ const mkSyncWorld = () => {
 
 /** Source the library and run one line of shell in it: how every caller uses it. */
 const inHome = (world, script, { env = {} } = {}) => {
-  // A script path handed INTO a shell is POSIX: each of these sources its own
+  // A script path handed into a shell is POSIX: each of these sources its own
   // siblings off `${BASH_SOURCE[0]%/*}`, which cuts nothing out of a native
   // path and leaves the source target a file with a directory pasted onto it.
   const driver = [
@@ -165,7 +153,7 @@ const mtimes = (dir) => {
 // ── The wiring layer ─────────────────────────────────────────────────────────
 
 /**
- * A publish world: a copied engine that CARRIES a tower/app to sync from, a
+ * A publish world: a copied engine that carries a tower/app to sync from, a
  * scratch ~/.workkit, a bare "GitHub" with a project already on main, and the
  * stubs a publish needs: an `npm` that writes what a build writes, a `gh` that
  * answers everything, and the clone's `omega` binary, which is both the tooling
@@ -204,11 +192,9 @@ const mkPublishWorld = ({ mintFails = false, minted = false, installFails = fals
   write(path.join(app, 'targets', 'web', 'src', 'index.html'), '<html>the current board</html>\n');
   write(path.join(app, '.gitignore'), 'node_modules/\ndist/\n.omega/\n');
 
-  // The npm shim answers both calls a publish makes: the install of the
-  // clone's dependencies (issue #130) and the build of the app, and records
-  // its CWD and its argv, so a test can prove which one ran and where. The cwd
-  // is half the record because that is what an install is keyed from (issue
-  // #166): `--prefix` names the project, the cwd names the tree npm writes.
+  // The npm shim answers the install of the clone's dependencies and the build
+  // of the app, recording its cwd and argv: `--prefix` names the project, the
+  // cwd names the tree npm writes.
   const npmLog = path.join(root, 'npm.log');
   writeStub(path.join(bin, 'npm'), [
     `printf '%s|%s\\n' "$PWD" "$*" >> ${JSON.stringify(shellPath(npmLog))}`,
@@ -231,8 +217,8 @@ const mkPublishWorld = ({ mintFails = false, minted = false, installFails = fals
     version: 1, site: { repo: 'owner/workkit', publish: true, url: null },
   });
 
-  // The clone, carrying what a seed left BEHIND: the project as it looked the
-  // day the home repo was made, which is the whole bug (issue #129).
+  // The clone, carrying what a seed left behind: the project as it looked the
+  // day the home repo was made, the stale copy the sync has to bring current.
   const seed = path.join(root, 'seed');
   writeJson(path.join(seed, 'package.json'), {
     name: 'workkit-tower', private: true, description: 'The tower UI.', scripts: { build: 'omega build' },

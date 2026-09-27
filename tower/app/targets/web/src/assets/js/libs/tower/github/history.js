@@ -3,15 +3,8 @@
 // piece imports github.js.
 
 // ── The history, and the documents beside it ───────────────────────────────
-//
-// The board over time, read back off the published briefs (issue #55), and the
-// briefs THEMSELVES (issue #181). The server reads exactly this
-// (tower/api/lib/history.js, tower/api/lib/documents.js) and this side cannot
-// import it, so the prefix, the pattern and the caps are restated and the suite
-// pins both parses against the server's own.
-//
-// ONE read answers both, here as there: the same hundred Discussions carry the
-// numbers a morning recorded and the text it was written in.
+// tower/api/lib/history.js and documents.js restated across the copy boundary;
+// the suite pins both parses against the server's own. One read answers both.
 
 import { graphql } from './wire.js';
 import { BRIEF_TITLE_PREFIX } from './summaries.js';
@@ -29,7 +22,7 @@ const DOCUMENT_LIMIT = 40;
 /** Every machine marker a published body carries - that module's rule too. */
 const MARKER_RE = /<!--[\s\S]*?-->/g;
 
-/** The same Discussions read the summaries make, WITH the body the line lives in. */
+/** The same Discussions read the summaries make, with the body the line lives in. */
 export const buildHistoryQuery = (slug, first = HISTORY_WINDOW) => {
   const [owner, name] = slug.split('/');
   return `query {
@@ -76,12 +69,9 @@ export const normalizeHistory = (data) => {
   return entries.slice(0, HISTORY_LIMIT).sort((a, b) => a.date.localeCompare(b.date));
 };
 
-// How old the newest published brief may be before the cloud brief is judged to
-// have stopped - tower/api/lib/history.js's own bar, restated for the
-// copy-boundary reason the caps above are. ONE whole calendar day: the brief
-// posts once a morning, so at 08:00 the newest post is yesterday's and nothing
-// is wrong; it is the morning BEFORE that going unanswered which means no run
-// has landed.
+// How old the newest published brief may be before the cloud brief counts as
+// stopped: tower/api/lib/history.js's bar, restated. A brief posts once a
+// morning, so at 08:00 yesterday's is the newest and nothing is wrong.
 const FRESH_DAYS = 1;
 const DAY_MS = 86400000;
 
@@ -92,18 +82,10 @@ const utcDay = (stamp) => {
 };
 
 /**
- * Whether the cloud brief is still posting - the API's `briefFreshness`, decided
- * in the browser (issue #176).
- *
- * The local tower answers this server-side and the published copy could not, so
- * a viewer away from the machine saw a normal-looking dashboard however many
- * mornings had failed - which is the longest a stopped brief goes unnoticed.
- * It is ARITHMETIC on the history this copy just read, never a read of its own,
- * so the charts and the alarm cannot disagree about which morning was the last.
- *
- * CALENDAR DAYS in UTC, the four states and the one-day bar are all the server's
- * (tower/api/lib/history.js); the suite judges the same mornings with both and
- * compares the verdicts.
+ * Whether the cloud brief is still posting: the API's `briefFreshness`, as
+ * arithmetic on the history this copy just read, so the charts and the alarm
+ * agree on the last morning. UTC calendar days and the four states are the
+ * server's; the suite compares both verdicts.
  *
  * @param {Array<{date: string}>|null} history - the parsed history, oldest first
  * @param {string} generatedAt - the moment to judge against, as an ISO stamp
@@ -151,19 +133,10 @@ export const normalizeDocuments = (data) => ((((data || {}).repository || {}).di
   }));
 
 /**
- * The board over time and the documents it was written in - one read, two
- * readings, or nulls when it could not be read.
- *
- * NULL rather than an empty list, because the two say opposite things: a site
- * whose home repo cannot be reached has nothing to show, while a home repo whose
- * briefs carry no stats line yet has a history that is genuinely empty - and the
- * page says a different sentence for each.
- *
- * The REASON rides beside them (issue #215), as it does on the tower's own read
- * (tower/api/lib/history.js): a refusal this read already worded is a sentence
- * the pages can draw, and dropping it left them saying only that the mornings
- * were unreadable. A site with no home repo has none to give - there is nothing
- * it failed to read.
+ * The board over time and the documents it was written in: one read, two
+ * readings. Null rather than empty when unread, since an unreachable home repo
+ * and one with no stats lines yet say different sentences; a worded refusal
+ * rides as `reason`, as on the tower's read.
  *
  * @param {string} home - the home repo slug, or ''
  * @param {object} ctx

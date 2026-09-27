@@ -1,8 +1,6 @@
 //
-// Tests for tower/api/lib/telemetry.js: the Windows spelling (a row's
-// transcript is the one the sessions read named) and the two endpoints
-// served through the real server.
-// The shared prologue (the transcript line builders, the scratch world and its sessions, the collect call, the module under test) is ./helpers.js.
+// Tests for tower/api/lib/telemetry.js: the Windows spelling (a row's transcript is
+// the sessions read's) and the two endpoints through the real server. Prologue: ./helpers.js.
 //
 
 const path = require('path');
@@ -16,7 +14,7 @@ const run = async () => {
   group('tower/telemetry: the Windows spelling');
 
   await test('a row\'s transcript is the one the sessions read named, not a second derivation', () => {
-    // A session's cwd is PUBLISHED in git's spelling while Claude Code names
+    // A session's cwd is published in git's spelling while Claude Code names
     // its project folder from the native one, so deriving the transcript from
     // the row's cwd a second time names a different file than the sessions read
     // named. The row carries the answer; this reads it.

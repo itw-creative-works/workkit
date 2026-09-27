@@ -1,15 +1,7 @@
-//
-// The shared prologue of the tower/api/lib/board suites, the `*.test.js`
-// files beside this one, which test tower/api/lib/board.js (the cross-repo
-// issue sweep) one concern each. A plain module, never a suite: the runner
-// only loads files ending in `.test.js`.
-//
-// `gh` is the one thing that cannot be exercised for real here: a live call
-// needs auth and the network, and the point of the seam is that the tower
-// renders without either. So the exec seam takes a fake that answers the two
-// commands the module issues, and every OTHER fact - the label vocabulary
-// especially - comes from the real in-repo workflow/labels.json.
-//
+// The shared prologue of the tower/api/lib/board suites beside this one, one
+// concern each. `gh` reaches the exec seam as a fake answering the two commands
+// the module issues; every other fact, the label vocabulary especially, comes
+// from the real workflow/labels.json.
 
 const fs = require('fs');
 const path = require('path');

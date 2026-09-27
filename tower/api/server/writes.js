@@ -65,11 +65,9 @@ const createWrites = ({ exec, slugsNow }) => {
       return;
     }
 
-    // The proof gate (docs/project-state.md, "The proof"), which the board is
-    // the second door into: safety/proof-guard holds the shell's `gh issue
-    // edit`, and this holds the drag. It sits here rather than in validateMove
-    // because it is a READ - that function is pure and never reaches `gh` - and
-    // only a move to complete pays for it.
+    // The proof gate (docs/project-state.md § The proof) on the drag, as
+    // safety/proof-guard holds it on the shell. Here, not in the pure
+    // validateMove, because it is a read only a move to complete pays for.
     if (checked.to === PROOF_GATED) {
       let comments;
       try {
@@ -80,7 +78,7 @@ const createWrites = ({ exec, slugsNow }) => {
         ]);
         comments = JSON.parse(view).comments;
       } catch (err) {
-        // Unreadable is a REFUSAL, never a pass: a gate that cannot ask the
+        // Unreadable is a refusal, never a pass: a gate that cannot ask the
         // question must not answer it yes. Soft-failed like the write below, so
         // the page reverts the card and shows the sentence.
         const detail = String(err.stderr || err.message || '').trim().split('\n').pop();

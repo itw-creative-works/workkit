@@ -1,21 +1,7 @@
-//
-// The board over time - the payload's history turned into what a chart draws.
-//
-// The history rides the brief payload (issue #55): one entry per published
-// morning, oldest first, each carrying that day's totals, what it closed and
-// its per-repo open counts. Every page that draws it asks the same three
-// questions - what is the series, how does today compare with last week, and
-// did this morning's brief post at all (issue #172) - so the answers live here,
-// pure, rather than twice in two page modules.
-//
-// THREE ABSENCES, three different sentences, and none of them is a zero:
-//   null      the read failed, or this copy has no home repo to read from
-//   []        nothing has been published with a stats block yet
-//   one point history has started but has nothing to compare against
-// A chart drawn from any of them would be an empty axis claiming to be data,
-// which is why `hasSeries` is what the pages gate on and `ACCRUES` is the one
-// sentence they say instead.
-//
+// The board over time: the payload's history turned into what a chart draws,
+// pure, for every page that draws it. Three absences, none of them a zero:
+// null (the read failed, or no home repo), [] (nothing published with a stats
+// block yet), one point (nothing to compare against). Pages gate on `hasSeries`.
 
 /** What a page says where the charts would be until the history has two points. */
 export const ACCRUES = 'charts appear after two published briefs';
@@ -24,14 +10,8 @@ export const ACCRUES = 'charts appear after two published briefs';
 export const UNREAD = 'the published briefs could not be read, so there is no history to draw';
 
 /**
- * A page's own absence sentence with the READ's reason on the end of it, where
- * the payload carries one (issue #215).
- *
- * The two pages drawn off this read say different tails - one has no history to
- * draw, the other nothing to show - so each keeps its sentence and the reason
- * joins it here rather than in both of them. A spent rate limit and a refused
- * token are the reasons there are; an absent key is a copy that was never asked
- * the question, and the sentence stands alone as it always did.
+ * A page's own absence sentence with the read's reason on the end of it, where
+ * the payload carries one; an absent key leaves the sentence alone.
  *
  * @param {string} sentence - the page's own line
  * @param {object} payload - the brief payload
@@ -57,7 +37,7 @@ export const unread = (payload) => !payload || payload.history === null || paylo
 /**
  * One field of the totals, per day - the series a chart takes.
  *
- * The DATE is the label, short: a five-week axis of ISO stamps is unreadable at
+ * The date is the label, short: a five-week axis of ISO stamps is unreadable at
  * chart width, and the year is the same on every point.
  *
  * @param {object[]} entries - what entriesOf returned
@@ -76,14 +56,9 @@ export const seriesOf = (entries, key) => ({
 const WEEK = 7;
 
 /**
- * Today's value against the one about a week ago.
- *
- * The entry ~7 days back is found by DATE rather than by counting entries: a
- * morning whose brief never published leaves no point, so the seventh entry
- * back can be a fortnight ago. The nearest entry on or before that date is the
- * honest comparison, and when none exists the answer is null - a delta against
- * the oldest point this history happens to have would silently become "since
- * the beginning" on a young board.
+ * Today's value against the one about a week ago, found by date rather than by
+ * counting entries, since an unpublished morning leaves no point. With no entry
+ * on or before that date the answer is null, never a delta against the oldest.
  *
  * @param {object[]} entries - what entriesOf returned, oldest first
  * @param {string} key - a key of `totals`, or 'closedDay'
@@ -131,12 +106,8 @@ export const deltaLine = (delta) => {
 };
 
 // ── Whether the cloud brief is still posting ───────────────────────────────
-//
-// The same three absences, asked as a different question (issue #172): not
-// "what is there to draw" but "did this morning happen at all". The API decides
-// it off its own history read and carries the answer on the payload
-// (tower/api/lib/history.js); what lives here is the LINE a page draws for each
-// state, once, so the Health page and the Brief page cannot say it differently.
+// The API decides it (tower/api/lib/history.js); the line a page draws for each
+// state lives here once, so the Health and Brief pages cannot differ.
 
 // The two sentences that are not about a date. ACCRUES and UNREAD above are
 // exported because the pages say them where a chart would be; these are said
@@ -145,17 +116,9 @@ const UNJUDGED = 'the published briefs could not be read, so whether the cloud b
 const UNPUBLISHED = 'no brief has ever been published - the cloud brief has not posted one yet';
 
 /**
- * The line a page draws about the cloud brief, or null when there is nothing to
- * say.
- *
- * NOTHING is the answer for a morning that posted, and for a payload carrying
- * no freshness block at all - a published copy builds its brief in the browser
- * and was never asked the question, and an absent key draws nothing here as it
- * does everywhere else on this payload.
- *
- * The `level` is the alarm's, not the page's: a brief that STOPPED is a thing
- * that broke, while a read that failed and a board with no briefs yet are both
- * things worth saying and neither is red.
+ * The line a page draws about the cloud brief, or null for a morning that
+ * posted or a payload with no freshness block. The level is the alarm's: a
+ * stopped brief is red, an unread or empty history is only worth saying.
  *
  * @param {object} payload - the brief payload
  * @returns {{level: string, text: string}|null}

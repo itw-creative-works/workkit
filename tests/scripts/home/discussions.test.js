@@ -1,7 +1,5 @@
-//
 // Tests for workflow/lib/discussions.sh: posting a summary and reading summaries back.
-// The shared prologue (the offline world, inHome and setup, the remote and runner factories) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');

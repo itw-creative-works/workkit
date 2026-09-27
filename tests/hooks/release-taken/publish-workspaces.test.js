@@ -1,9 +1,7 @@
-//
 // Tests for hooks/safety/release-taken, the PreToolUse hook that refuses a
 // release whose version a provider already has: `npm publish`, and the
 // workspace members a release or a publish asks about.
 // The shared prologue (the npm and gh stubs, the repo factory, the hook runner, the release command) is ./helpers.js.
-//
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');

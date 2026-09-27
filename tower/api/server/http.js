@@ -9,7 +9,7 @@ const { execFileSync } = require('child_process');
 const MAX_REQUEST_BYTES = 64 * 1024;
 
 // The names a request may arrive under before the allowlist is extended.
-// The IPv6 loopback is listed BRACKETED: hostnameOf parses through new URL,
+// The IPv6 loopback is listed bracketed: hostnameOf parses through new URL,
 // which rejects a bare `::1` but resolves `[::1]` to the form requests carry.
 const LOCAL_HOSTS = ['127.0.0.1', 'localhost', '[::1]'];
 
@@ -20,18 +20,9 @@ const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
 });
 
 /**
- * Memoize a producer for `ttl` ms. One slot, no key: every cached call here
- * asks the same whole-roster question.
- *
- * A FAILURE is never stored. `gh` being briefly unauthenticated, or a roster read
- * that threw, would otherwise pin its own error in front of every read for the
- * whole TTL: the tower would stay broken for a minute after the machine was
- * fine again. Only an answer worth keeping takes the slot; everything else is
- * returned to this one caller and asked again next time.
- *
- * `fresh` bypasses the slot and repopulates it: the page's manual refresh
- * button, which must be able to actually refresh.
- *
+ * Memoize a producer for `ttl` ms in one slot, no key. A failure is never
+ * stored, so a briefly broken read cannot pin its error for the whole TTL;
+ * `fresh` bypasses the slot and repopulates it.
  * @param {number} ttl
  * @param {Function} produce
  * @param {Function} [keep] does this result deserve the slot?
@@ -54,14 +45,8 @@ const cached = (ttl, produce, keep = (value) => !(value && value.ok === false)) 
 
 /**
  * The hostname in a Host header or an Origin URL, port and brackets stripped.
- *
- * A value carrying `@` is REFUSED outright rather than parsed. URL parsing
- * reads everything before an `@` as userinfo and drops it, so `evil.com@
- * localhost` would answer `localhost` and walk straight through an allowlist
- * that has never heard of evil.com. Neither header has a userinfo component to
- * begin with (RFC 7230 gives Host the grammar `host [":" port]`) so a value
- * containing one is malformed, and the only safe reading of it is none.
- *
+ * A value carrying `@` is refused: URL parsing drops userinfo, so
+ * `evil.com@localhost` would read as `localhost`, and neither header has one.
  * @param {string|undefined} value a Host header or an Origin URL
  * @returns {string|null} the hostname, or null if there is not exactly one
  */
@@ -76,13 +61,8 @@ const hostnameOf = (value) => {
 
 /**
  * The `Access-Control-Allow-Origin` value for a request, or null when the
- * request carries no Origin or one this tower does not answer to.
- *
- * The judgment is the SAME allowlist the Host and intake gates use, so the app
- * on the dev server is reachable exactly because `localhost` is already a name
- * the tower answers to. It echoes the caller's origin rather than sending `*`:
- * `*` would hand every page on the machine the tower's whole board.
- *
+ * request carries no Origin or one this tower does not answer to. The origin
+ * is echoed, never `*`, which would hand every local page the whole board.
  * @param {string|undefined} origin the request's Origin header
  * @param {Set<string>} hosts the allowlist from allowedHosts
  * @returns {string|null} the origin to echo back
@@ -113,12 +93,8 @@ const sendJson = (res, status, payload) => {
 };
 
 /**
- * The request body, capped. Rejects rather than buffering an unbounded upload.
- *
- * An over-cap request is PAUSED, never destroyed here: destroying the socket
- * takes the response with it, and the client learns nothing about why. The
- * caller answers first and closes the connection once that answer is on the
- * wire.
+ * The request body, capped. An over-cap request is paused, never destroyed:
+ * destroying the socket takes the response with it, so the caller answers first.
  */
 const readBody = (req) => new Promise((resolve, reject) => {
   const chunks = [];
@@ -140,10 +116,7 @@ const readBody = (req) => new Promise((resolve, reject) => {
 
 /**
  * The JSON body of a write request, or nothing once the client has been told
- * why there is none. Both write paths read a body the same way, so the answer (
- * including the over-cap dance, where the response goes out before the socket
- * closes) is written once.
- *
+ * why there is none: the one body read both write paths share.
  * @param {import('http').IncomingMessage} req
  * @param {import('http').ServerResponse} res
  * @returns {Promise<{ok: boolean, payload?: any}>}

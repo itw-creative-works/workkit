@@ -1,29 +1,11 @@
 #!/usr/bin/env bash
-# Install this checkout's LaunchAgent: the 9am daily job, which writes the
-# summaries and then the brief. Renders jobs/<label>.plist ({{WORKKIT_DIR}} /
-# {{HOME}}) into ~/Library/LaunchAgents/ and (re)loads it, only when something
-# changed.
+# Install this checkout's LaunchAgent, the 9am daily job: renders
+# jobs/<label>.plist into ~/Library/LaunchAgents/ and (re)loads it, only when
+# something changed. Copied, never symlinked: launchd expands nothing, and
+# `launchctl bootstrap` is unreliable with symlinked plists. launchd is
+# machine-global, so it is asked only when $HOME is this account's real home
+# (jobs/README.md § The pieces).
 # Usage: bash jobs/install.sh [--check]
-#
-# Copied, never symlinked: launchd expands nothing (the plist needs absolute
-# paths baked in) and `launchctl bootstrap` is unreliable with symlinked plists.
-# Idempotent: a second run with the same checkout does nothing but confirm the
-# agents are loaded.
-#
-# `--check` is the same render and compare with nothing written and launchd
-# never asked: it prints one line per agent that is missing or out of date, and
-# nothing at all when the machine matches this checkout. That is what makes
-# `workkit update --auto` cheap enough to run at every session start: the drift
-# question is answered here, so the CLI carries no second copy of what a current
-# install looks like.
-#
-# launchd is MACHINE-GLOBAL: `launchctl bootstrap gui/$UID <plist>` registers
-# whatever plist it is handed, scratch HOME or not, so a rehearsal under a fake
-# home would rewire the real 9am job. Every launchctl call is therefore made
-# only when $HOME is this account's real home; anywhere else the run renders,
-# lints, copies into that fake home and prints what it WOULD have loaded.
-# `WORKKIT_LAUNCHD_OK=1` forces the calls anyway: that is the test suite's door,
-# and the only one.
 
 set -euo pipefail
 
@@ -37,9 +19,8 @@ esac
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKKIT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# The engine's voice (issue #237). Every line below opens with a glyph;
-# `workkit update` relays them under its own, stripping this one, so a line
-# never wears two.
+# The engine's voice. `workkit update` relays these lines under its own glyph,
+# stripping this one, so a line never wears two.
 # shellcheck source=../workflow/lib.sh
 . "$WORKKIT_DIR/workflow/lib.sh"
 
@@ -121,12 +102,9 @@ install_agent() {
       return 0
     fi
 
-    # Loaded is not the same as loaded from THIS plist: a run under a scratch
-    # HOME registers the label against a temp path that is then deleted, and the
-    # label stays claimed by a file that no longer exists. So the loaded path is
-    # compared with the one we install, and anything else (including output
-    # that carries no readable path) is re-registered rather than reported
-    # current.
+    # Loaded is not loaded from this plist: a scratch-HOME run leaves the label
+    # claimed by a deleted temp path. So anything but the path we install,
+    # unreadable output included, is re-registered rather than reported current.
     LOADED="$(printf '%s\n' "$PRINTED" | sed -n 's/^[[:space:]]*path = //p' | head -n 1)"
     if [[ "$LOADED" == "$TARGET" ]]; then
       wk_ok "$LABEL → already installed and loaded"
@@ -148,11 +126,9 @@ install_agent() {
     return 0
   fi
 
-  # An agent already loaded from the previous plist has to go before the new one
-  # can take its label. A first install has nothing to remove, so the failure is
-  # expected and ignored. Both calls are silenced, the wait line included: what
-  # this step SAYS is the one `wk_ok` under it, and `workkit update` relays
-  # every line this script prints (issue #237).
+  # An agent loaded from the previous plist has to go before the new one can take
+  # its label; a first install has nothing to remove. Both calls are silenced: the
+  # step says only the `wk_ok` under it, since `workkit update` relays every line.
   wk_spin "unloading $LABEL" launchctl bootout "gui/$UID/$LABEL" >/dev/null 2>&1 || true
   wk_spin "loading $LABEL" launchctl bootstrap "gui/$UID" "$TARGET" >/dev/null 2>&1
   wk_ok "$LABEL → installed and loaded ($WHEN)"

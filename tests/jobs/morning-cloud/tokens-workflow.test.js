@@ -1,8 +1,6 @@
-//
-// Tests for jobs/morning.sh as a GITHUB ACTIONS RUNNER runs it: the two tokens
+// Tests for jobs/morning.sh as a GitHub Actions runner runs it: the two tokens
 // its calls are made with, and the seeded workflow that runs it.
-// The shared prologue (the world factory, the no-jq PATH, the job runner, the two case gates) is ./helpers.js.
-//
+// The shared prologue (world factory, no-jq PATH, job runner, case gates) is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -15,7 +13,7 @@ const run = async () => {
   group('jobs/morning (cloud): the two tokens');
 
   await composerTest('the post is made with the built-in token, the sweep with the secret', () => {
-    // Issue #91: the Discussion lands on the repo the run belongs to, so it
+    // The Discussion lands on the repo the run belongs to, so it
     // needs nothing longer-lived than the workflow's own GITHUB_TOKEN. The
     // cross-repo secret is for the board, and only the board.
     const world = mkWorld({ siteRepos: { repos: ['a/one', HOME_SLUG], home: HOME_SLUG } });
@@ -41,7 +39,7 @@ const run = async () => {
 
   group('jobs/morning (cloud): the workflow that runs it');
 
-  // The workflow is SEEDED onto the home repo (issue #91) and lives nowhere in
+  // The workflow is seeded onto the home repo and lives nowhere in
   // this repo but here: the plugin is distributed, and a consumer cannot set
   // secrets on a repo they do not own.
   const WORKFLOW = path.join(__dirname, '..', '..', '..', 'workflow', 'templates', 'github-workflows', 'brief.yml');

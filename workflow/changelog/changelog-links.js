@@ -1,48 +1,24 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
-//
-// Fill in a CHANGELOG entry's generated metadata: the commit link and the
-// contributor handle.
-//
-// Nobody types a sha. An entry is written during ordinary work as
-//   - [#4](../../issues/4) - Plugins install from settings.json.
-// and this script turns it into
-//   - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [@who]! - Plugins install from settings.json.
-//
-// Every link is written in its SHORT form, so the repo URL appears nowhere in
-// the file: `../..` paths are relative links GitHub resolves against the blob
-// path (they also follow a fork), and `[@who]` is a shortcut reference defined
-// once at the bottom of the file however many entries a person appears in.
-//
-// `../..` assumes the CHANGELOG sits at the repo root on a branch whose name
-// has no slash: the blob path is `/<owner>/<repo>/blob/<branch>/CHANGELOG.md`.
-// A nested `--file` or a `feature/x` branch shifts that depth and the links
-// land short. Both are outside how this is used; worth knowing before moving
-// the file.
-//
-// Entries are matched to commits through the `Fixes #N` trailer the commit
-// already carries, so the mapping is the one git records rather than a second
-// list to maintain. An entry already carrying a commit link is left untouched,
-// which makes a re-run a no-op. The handle comes from the GitHub API (it maps
-// the commit email to the account exactly); without network the commit link
-// still lands and the attribution is simply absent.
+// Fill in a CHANGELOG entry's generated metadata, the commit link and the
+// contributor handle, matched through each commit's `Fixes #N` trailer. The
+// link shapes: `docs/project-state.md` § CHANGELOG entries. A `../..` link
+// assumes a root CHANGELOG on a branch with no slash in its name.
 //
 // Run at release time, from the repo root:
 //   node ~/.claude/workkit/changelog/changelog-links.js [--file CHANGELOG.md] [--range v3.1.0..HEAD] [--dry-run]
-//
 
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-// What an entry IS, and what "already linked" means, come from changelog.js,
+// What an entry is, and what "already linked" means, come from changelog.js,
 // the same shapes the guards enforce. A second copy here would drift, and the
 // two files would disagree about which entries still need filling.
 const { COMMIT_RE, ISSUE_LINK_RE, META_RE, parseEntries } = require('./changelog');
 
-// And what a repo is CALLED comes from ../slug.js, the twin of lib/slug.sh,
-// for the same reason: a fourth copy of that parse would drift from the three
-// that already agree.
+// What a repo is called comes from ../slug.js, the twin of lib/slug.sh, for the
+// same reason.
 const { slugFromRemote } = require('../slug');
 
 const TRAILER_RE = /\b(?:fixes|closes|resolves)\s+#(\d+)\b/gi;
@@ -63,15 +39,9 @@ const originUrl = (cwd) => {
 };
 
 /**
- * owner/name for the origin remote, when that remote is on GitHub.
- *
- * The slug itself is `slugFromRemote`, the kit's one rule, so every form git
- * writes a remote in reads here the way it reads everywhere else, EVERY
- * trailing separator included: remotes get pasted with one.
- *
- * The GitHub check is this file's own and stays beside it: the links it builds
- * are GitHub's (a commit URL, an `@handle`), so a remote anywhere else has
- * nothing to link to and answers null rather than a slug nobody can resolve.
+ * owner/name for the origin remote, when that remote is on GitHub. The slug is
+ * `slugFromRemote`, the kit's one rule; the GitHub check is this file's own,
+ * since the links it builds are GitHub's and any other remote has none.
  * @param {string} cwd repo directory
  * @returns {string|null}
  */
@@ -142,13 +112,9 @@ const authorHandle = (slug, sha, cwd, cache) => {
 };
 
 /**
- * Rewrite the entries that are missing their generated metadata.
- *
- * Only entries the parser reports under `[Unreleased]` are candidates. A raw
- * line-walk would also rewrite bullets inside a fenced block (a CHANGELOG
- * documenting its own format) and entries in old released sections whose issue
- * number happens to recur in the range, both permanent corruption. Filling
- * before the release move is also the documented order in the ship skill.
+ * Rewrite the entries that are missing their generated metadata. Only entries
+ * the parser reports under `[Unreleased]` are candidates: a raw line-walk would
+ * also corrupt a fenced example and a released entry whose issue recurs.
  * @param {string} text the CHANGELOG
  * @param {object} ctx { byIssue, resolve }
  * @returns {{text: string, filled: number, unmatched: string[]}}
@@ -169,9 +135,9 @@ const fill = (text, { byIssue, resolve }) => {
 
     const index = entry.line - 1;
     const line = lines[index];
-    // "Already linked" means a commit link in the generated metadata RUN, the
-    // same anchor the lint uses. A commit-link-shaped string in the prose must
-    // not suppress the fill (or it would be skipped and never reported).
+    // Already linked means a commit link in the generated metadata run, the
+    // lint's own anchor: a commit-shaped string in the prose must not suppress
+    // the fill.
     const meta = META_RE.exec(entry.prose);
     if (meta && COMMIT_RE.test(meta[0])) continue;
 
@@ -191,13 +157,8 @@ const fill = (text, { byIssue, resolve }) => {
     const links = shas.map((sha) => `[\`${sha}\`](../../commit/${sha})`).join(' ');
     const handles = [...new Set(shas.map(resolve).filter(Boolean))];
     handles.forEach((h) => contributors.add(h));
-    // Shortcut reference: one definition at the bottom serves every entry a
-    // person appears in, instead of repeating their profile URL on each line.
-    //
-    // An entry written during ordinary work often already carries its
-    // attribution, and appending regardless shipped every one of them as
-    // "Thanks [@who]! Thanks [@who]! -". What the entry has, it keeps: the
-    // attribution is only ever inserted where the metadata run has none.
+    // A shortcut reference, one definition at the bottom. An entry that already
+    // carries its attribution keeps it, and a second is never appended.
     const thanks = handles.length && !(meta && /Thanks\s+\[/.test(meta[0]))
       ? ` Thanks ${handles.map((h) => `[@${h}]`).join(' ')}!`
       : '';
@@ -228,16 +189,12 @@ const DEFINITION_RE = /^\[@([^\]]+)\]:\s*(\S.*)$/;
 const defineContributors = (lines, handles) => {
   let out = lines.slice();
 
-  // Only the TAIL of the file is rewritten. A `[@who]: url` line inside a
-  // fenced example earlier in the file (a CHANGELOG documenting its own format)
-  // is not part of this section and must survive untouched.
+  // Only the tail is rewritten, so a definition inside an earlier fenced
+  // example survives.
   let cut = out.length;
-  // Search from the END, and only accept a heading whose entire remainder is
-  // this section's own shape. Taking the FIRST match instead would cut at a
-  // `## Contributors` line inside a fenced example: everything below it, every
-  // released version section, discarded on write. Same permanent damage `fill`
-  // is written to avoid, and workkit:migrate points this script at other
-  // repos' histories.
+  // Search from the end, and accept only a heading whose whole remainder is
+  // this section's shape: a `## Contributors` inside a fenced example would
+  // otherwise cut every released section below it.
   let headingAt = -1;
   for (let i = out.length - 1; i >= 0; i--) {
     if (out[i].trim().toLowerCase() !== CONTRIBUTORS_HEADING.toLowerCase()) continue;
@@ -377,9 +334,8 @@ const main = (argv) => {
 };
 
 if (require.main === module) {
-  // Set the code, never process.exit(): exiting discards whatever console.log
-  // has buffered when stdout is a PIPE, so a caller reading this output can see
-  // it truncated. Same fix as changelog.js.
+  // Set the code, never process.exit(): exiting discards console.log output
+  // still buffered for a pipe.
   process.exitCode = main(process.argv.slice(2));
 }
 

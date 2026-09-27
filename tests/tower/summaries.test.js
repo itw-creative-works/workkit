@@ -1,13 +1,6 @@
 //
-// Tests for tower/api/lib/summaries.js - the published summaries, read back.
-//
-// The `gh` call is the module's one seam, so every case here is a fake exec
-// answering the GraphQL query with a board of Discussions. Nothing reaches
-// GitHub, and the scratch ~/.workkit is what names the home repo - the real one
-// is never read.
-//
-// The clock is injected the same way the brief's is: a Monday is a date this
-// suite states, never one it waits for.
+// Tests for tower/api/lib/summaries.js, the published summaries read back through
+// a fake `gh` and a scratch ~/.workkit; the clock is injected, so a Monday is stated.
 //
 
 const fs = require('fs');

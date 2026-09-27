@@ -49,14 +49,10 @@ const run = async () => {
   });
 
   await test('/api/brief never composes from half a board - it waits for the last page', async () => {
-    // The board is drawn as it arrives; a MORNING is not. Composing the brief
-    // from the pages that happen to have landed would count a repo's issues
-    // wrong - an early answer that is simply a wrong one - so this endpoint
-    // reads the last finished board, and drives the sweep to its end when none
-    // has finished yet.
-    // The pause is what makes the state deterministic: the brief's request is
-    // sent while a round is running and is served the moment that round ends,
-    // with a page still to fetch - the exact moment a brief must not compose in.
+    // The board is drawn as it arrives; a morning is not: a brief composed from
+    // whatever pages landed counts a repo's issues wrong, so it reads the last
+    // finished board. The pause pins the state: the request lands mid-round and
+    // is served as that round ends, with a page still to fetch.
     const w = pageTheBoard(mkWorld(), { pause: 60 });
     const c = await start(w);
 
@@ -110,9 +106,8 @@ const run = async () => {
   });
 
   await test('/api/brief carries the board over time, read off the published briefs', async () => {
-    // Issue #55: the history is the only thing on this payload that a live
-    // sweep cannot answer - it is the mornings BEFORE this one, and each one
-    // recorded itself in the brief it published.
+    // The history is the one thing on this payload a live sweep cannot answer:
+    // the mornings before this one, each recorded in the brief it published.
     const w = mkWorld();
     fs.writeFileSync(
       path.join(w.root, 'workflow-home', 'settings.json'),
@@ -135,10 +130,9 @@ const run = async () => {
   });
 
   await test('/api/brief carries the mornings themselves, off that same read', async () => {
-    // Issue #181: the Brief page is the briefs now, and a body is the one thing
-    // on this payload nothing else could supply - the numbers above are what
-    // the same posts COUNTED, and the texts are what they said. Both readings
-    // come off the one Discussions read, so the archive costs no round trip.
+    // A body is the one thing on this payload nothing else supplies: the numbers
+    // are what the posts counted, the texts what they said, both off the one
+    // Discussions read, so the archive costs no round trip.
     const w = mkWorld();
     fs.writeFileSync(
       path.join(w.root, 'workflow-home', 'settings.json'),
@@ -168,9 +162,8 @@ const run = async () => {
   });
 
   await test('/api/brief says how old the newest published brief is, off that same read', async () => {
-    // Issue #172: the cloud brief failed for ten mornings and nothing on the
-    // dashboard said so. The date was already in the history read, so the
-    // freshness rides beside it and costs no second round trip.
+    // The date is already in the history read, so the freshness rides beside it
+    // and costs no second round trip.
     const w = mkWorld();
     fs.writeFileSync(
       path.join(w.root, 'workflow-home', 'settings.json'),
@@ -250,9 +243,9 @@ const run = async () => {
   });
 
   await test('a sweep still paging is SERVED as it stands, and the next read has the rest', async () => {
-    // The board is drawn page by page on this machine too (issue #194): the
-    // request that starts a sweep answers with the first pages rather than
-    // holding the reader until the last one, marking what is still arriving.
+    // The board is drawn page by page on this machine too: the request that
+    // starts a sweep answers with the first pages rather than holding the reader
+    // until the last one, marking what is still arriving.
     const w = pageTheBoard(mkWorld());
     const c = await start(w);
 
@@ -260,7 +253,7 @@ const run = async () => {
     assertEq(first.body.issues.length, 1, 'the page that had arrived is what the first read gets');
     assertEq(first.body.repos[0].loading, true, 'with the repo saying its issues are still coming');
     assertEq(first.body.repos[0].totalCount, 3, 'which is what the progress line counts against');
-    // That body IS the proof the request did not wait for the last page:
+    // That body is the proof the request did not wait for the last page:
     // a read held until the sweep ended could only have answered with all three.
 
     // The page's next poll, without the page. Bounded, so a sweep that never
@@ -321,7 +314,7 @@ const run = async () => {
 
   await test('a process older than its checkout shows the two commits differing', async () => {
     const w = mkWorld();
-    // The #64 shape: the tower was started before the code on disk existed.
+    // The tower started before the code on disk existed.
     scriptHead(w, ['a'.repeat(40), 'b'.repeat(40)]);
     const c = await start(w);
     const { body } = await getJson(c, '/api/health');

@@ -1,8 +1,6 @@
-//
 // Tests for jobs/morning.sh as this machine runs it: the cloud brief runner,
-// reconciled on the home clone before the dispatch (issue #143).
-// The shared prologue (the world factory, the job runner, the notification waits) is ./helpers.js.
-//
+// reconciled on the home clone before the dispatch.
+// The shared prologue (world factory, job runner, notification waits) is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -15,10 +13,8 @@ const run = async () => {
 
   group('jobs/morning (local): the cloud brief’s runner');
 
-  // Issue #143: the cloud composes the brief out of SEEDED COPIES of these
-  // scripts on the home repo, and until now only `workkit setup` refreshed
-  // them, so a checkout that moved on published stale briefs until somebody
-  // remembered. The morning reconciles them, ahead of the dispatch that
+  // The cloud composes the brief out of seeded copies of these scripts on the
+  // home repo, so the morning reconciles them ahead of the dispatch that
   // consumes them.
 
   await test('a seeded copy the checkout moved past is refreshed, committed and pushed', () => {
@@ -59,10 +55,9 @@ const run = async () => {
   });
 
   await test('a clone another push left behind is brought up to date before the seed', () => {
-    // The stamp the seed guard reads is the WORKING COPY's (issue #200), so a
-    // clone that never caught up reads a stale one, seeds over what the remote
-    // already carries, and commits something it can never push - wedging every
-    // publish after it. The pull is what keeps that from being today's morning.
+    // The seed guard reads the working copy's stamp, so a clone that never
+    // caught up would seed over what the remote carries and commit something
+    // it can never push, wedging every publish after it. The pull prevents it.
     const world = mkWorld({ home: 'owner/private-home', dispatch: true, homeClone: true });
     const dest = plantStaleRunner(world);
     pushFromElsewhere(world, 'NOTE.md', 'somebody else was here\n');
@@ -75,10 +70,9 @@ const run = async () => {
       fs.readFileSync(SCRIPT, 'utf8'),
       'the runner was refreshed on top of it',
     );
-    // Read off the reconcile's OWN log block - the first one the morning writes.
-    // The later publish pulls for its own reasons and would carry a wedged
-    // commit out on its next run, which is precisely what hides this bug: the
-    // step has to push what it commits, in the step that committed it.
+    // Read off the reconcile's own log block, the first one the morning writes:
+    // the later publish would carry a wedged commit out and hide the bug, so
+    // the step has to push what it commits, in the step that committed it.
     const reconcile = world.log().split(/--- \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ---/)[1] || '';
     assert(!/could not push/.test(reconcile),
       `and it pushed under its own step rather than wedging in the clone: ${reconcile}`);
@@ -109,7 +103,7 @@ const run = async () => {
   });
 
   await test('no home clone is a named skip, and the morning carries on', () => {
-    // Nothing is ever created, cloned or enabled by the daily path (issue #71):
+    // Nothing is ever created, cloned or enabled by the daily path:
     // a machine that has not run `workkit setup` hears one line.
     const world = mkWorld({ home: 'owner/private-home', dispatch: true });
     const res = runJob(world);

@@ -1,7 +1,6 @@
 //
-// Tests for the tower dashboard's api.js: the feed adapter, live versus
-// published, the board's drop as a payload, and the three modes.
-// The shared prologue (the lib loader, the DOM double, the fixtures) is ./helpers.js.
+// Tests for the tower dashboard's api.js: the feed adapter, live versus published,
+// the board's drop as a payload, and the three modes. Shared prologue: ./helpers.js.
 //
 
 const path = require('path');
@@ -53,7 +52,7 @@ const run = async () => {
       globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ rows: [] }) });
       body = await api.feedFetcher('/api/board');
 
-      // A body that reports its own failure (`ok: false`) throws with ITS reason.
+      // A body that reports its own failure (`ok: false`) throws with its reason.
       globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: false, reason: 'gh is not logged in' }) });
       try {
         await api.feedFetcher('/api/board');
@@ -100,11 +99,9 @@ const run = async () => {
   });
 
   await test('the environment is read off the build snapshot the framework bakes in (#292)', async () => {
-    // Omega bakes ONE snapshot into every page, `window.OMEGA_BUILD_JSON`, and
-    // its `config.environment` is the build's verdict. The `window.Configuration`
-    // global it once wrote is gone, and a read of it decided published for
-    // every dev page. The read happens at import, so each world gets a fresh
-    // instance of the module through a cache-busting query.
+    // Omega bakes one snapshot into every page, `window.OMEGA_BUILD_JSON`, and its
+    // `config.environment` is the build's verdict. The read happens at import, so
+    // each world gets a fresh module instance through a cache-busting query.
     const boot = async (world, tag) => {
       globalThis.location = { href: 'http://localhost:4300/board' };
       globalThis.window = world;
@@ -200,10 +197,9 @@ const run = async () => {
   const fs = require('fs');
 
   await test('the intake dialog is inert only where it has nothing to write with', () => {
-    // A locked copy off this machine needs a TOKEN, not a tower - telling it
-    // "live data needs a local tower" sends the one viewer who can fix it after
-    // the wrong thing. An unlocked one files for real, with the same token it
-    // reads with. (On localhost the tower IS the answer - the test below.)
+    // A locked copy off this machine needs a token, not a tower, so the notice
+    // sends the one viewer who can fix it to the right thing. An unlocked copy
+    // files with the token it reads with; on localhost the tower is the answer.
     assert(format.LOCKED_NOTICE.includes('token'), 'the locked sentence asks for the token');
     assert(!format.LOCKED_NOTICE.includes('npm run tower'), 'and does not send a viewer to install a tower');
     assert(!/read-only/.test(format.LOCKED_NOTICE), 'and no longer calls the token read-only');
@@ -237,10 +233,9 @@ const run = async () => {
   });
 
   await test('a landing carrying setup’s handover boots as a copy holding a token (#230)', async () => {
-    // The one case that has to be read off the MODULE rather than off
-    // `decideMode`: the fragment is banked at import, before the storage the
-    // mode is decided from is read. A module URL evaluates once per process, so
-    // this second import carries a cache-busting query to get a fresh one.
+    // Read off the module rather than `decideMode`: the fragment is banked at
+    // import, before the storage the mode reads. A module URL evaluates once per
+    // process, so this import carries a cache-busting query.
     const storage = mkStorage();
     const rewrites = [];
     const where = { href: 'https://alice.github.io/workkit/settings#token=gho_FAKE', hash: '#token=gho_FAKE', pathname: '/workkit/settings', search: '' };

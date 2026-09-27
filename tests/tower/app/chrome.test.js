@@ -18,19 +18,16 @@ const run = async () => {
     assert(frame.includes('id="tower-refresh"'), 'Refresh is in the frame');
     assert(frame.includes('data-tower-status'), 'with an empty region the status is written into');
     assert(!frame.includes('spinner-border') && !frame.includes('read 10:00:00'), 'and nothing that changes on a read');
-    // The selection moved to the sidebar (#104), where the nav that carries it
-    // from page to page is - the dropdown above the body is gone with it.
+    // The repo selection lives in the sidebar, whose nav carries it from page
+    // to page.
     assert(!frame.includes('tower-repo') && !frame.includes('<select'), 'the repo dropdown is gone');
-    // And the token moved to Settings (#167), which is where one is typed - the
-    // button that forgot it was the last thing in this strip that varied.
+    // The token is typed on Settings, so nothing left in this strip varies.
     assert(!frame.includes('tower-token') && !/token/i.test(frame), 'and so is the Token button');
   });
 
   await test('the frame takes no state, which is why the runtime writes it once', () => {
-    // The defect it was split in two for: the frame was rewritten on both halves
-    // of every poll, so a control open when a read started was closed by the
-    // read landing. Nothing on it varies now, so there is no key to compare -
-    // page.js writes it before the loop and never again.
+    // A frame rewritten on every poll closes a control left open across a read;
+    // nothing on it varies, so page.js writes it once, before the loop.
     assertEq(chrome.chromeMarkup.length, 0, 'it is called with nothing');
     assertEq(chrome.chromeMarkup(), chrome.chromeMarkup(CHROME), 'and a state handed to it anyway changes nothing');
     assertEq(chrome.chromeKey, undefined, 'the key is gone with the button it keyed on');

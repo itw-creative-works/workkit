@@ -85,10 +85,9 @@ const run = async () => {
 
   await test('a copy served under a path prefix keeps every URL the runtime builds inside it', () => {
     // The published copy answers at `<owner>.github.io/<name>/`, and the build
-    // rewrites only the HTML it emits - a URL this app ASSEMBLES is its own to
-    // get right, and root-absolute ones walked off the site (issue #169). Where
-    // it is mounted is the BUILD's own answer, stamped on `<html>`, so the
-    // simulation is that stamp and nothing else.
+    // rewrites only the HTML it emits, so a URL this app assembles is its own to
+    // get right. The mount is the build's stamp on `<html>`, so the simulation
+    // is that stamp and nothing else.
     served(stamped('/workkit'), '/workkit/board', () => {
       assertEq(scope.basePath(), '/workkit', 'the prefix is the build’s stamp, read back off the document');
       assertEq(scope.sitePath('/settings'), '/workkit/settings', 'and applying it is what every runtime URL goes through');
@@ -102,9 +101,9 @@ const run = async () => {
       assert(scope.isScopedPath('/workkit/board') && scope.isScopedPath('/workkit/settings'), 'so a prefixed nav link is still one of the tower’s own pages');
       assert(!scope.isScopedPath('/workkit/pricing'), 'and a prefixed link that is not is still left alone');
     });
-    // The stamp is written only when there IS a prefix, so every absence says
-    // the same thing - and says it whatever the page path looks like. A copy
-    // opened at `/index.html` is the case a path-shaped guess got wrong.
+    // The stamp is written only when there is a prefix, so every absence says
+    // the same thing whatever the page path looks like. A copy opened at
+    // `/index.html` is where a path-shaped guess goes wrong.
     served(stamped(null), '/index.html', () => {
       assertEq(scope.basePath(), '', 'no stamp is no prefix, whatever the address bar says');
       assertEq(scope.sitePath('/settings'), '/settings', 'so nothing a root-served copy builds is moved');
@@ -119,9 +118,8 @@ const run = async () => {
 
   await test('no page writes a link to another page as a bare root-absolute path', () => {
     // The tiles, the see-all lines and the card links are drawn at runtime, so
-    // the build never sees them - every one of them names its page through
-    // `sitePath` or it points at the domain root from a copy that is not served
-    // there (issue #169).
+    // the build never sees them: each names its page through `sitePath` or it
+    // points at the domain root from a copy that is not served there.
     const fs = require('fs');
     const pages = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     const bare = /(?<!sitePath\()'\/(board|crew|usage|health|brief|settings)'/;

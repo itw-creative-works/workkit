@@ -1,14 +1,6 @@
-//
-// The shared prologue of the hooks/safety/release-taken suites, the `*.test.js`
-// files beside this one, which test the PreToolUse hook that refuses a
-// release whose version a provider already has: the release commit and
-// `npm publish` both ask npm for every package with publish intent, and the
-// release commit asks GitHub for the tag it is about to cut. A plain module,
-// never a suite: the runner only loads files ending in `.test.js`.
-//
+// The shared prologue of the hooks/safety/release-taken suites beside this one.
 // Every case runs against PATH-shim `npm` and `gh` stubs answering from a
 // fixture, so nothing here reaches a registry or GitHub.
-//
 
 const fs = require('fs');
 const os = require('os');
@@ -21,14 +13,10 @@ const { mkTmp } = require('../../lib/scratch');
 const HOOK = path.join(__dirname, '..', '..', '..', 'hooks', 'safety', 'release-taken', 'run.sh');
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
-// PATH shims: an `npm` answering `npm view <name>@<version> version` and a `gh`
-// answering `gh release view v<version>`, each recording its argv. `npmFails` /
-// `ghFails` make the tool answer the way an offline or unauthenticated one
-// does, which is the provider's cannot-tell.
-//
-// npm has TWO answers for a free version and the provider must read both: a
-// package it has never heard of is an E404, and a package it knows without
-// that version exits 0 printing nothing (`npmKnown`).
+// PATH shims answering `npm view <name>@<version> version` and `gh release view
+// v<version>`, each recording its argv; `npmFails` / `ghFails` answer the way an
+// offline one does. A free version is either an E404 (unknown package) or exit
+// 0 with nothing printed (`npmKnown`), and the provider must read both.
 const makeStubs = ({ npmTaken = [], npmKnown = [], tags = [], npmFails = false, ghFails = false } = {}) => {
   const dir = mkTmp('release-taken-bin-');
   const binDir = path.join(dir, 'bin');

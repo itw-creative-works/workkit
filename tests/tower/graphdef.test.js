@@ -1,16 +1,6 @@
 //
-// Tests for the tower dashboard's dependency-graph composer (issue #103).
-//
-// `libs/tower/graphdef.js` is the whole reason the Graph view is testable at
-// all: the graph module draws into a real DOM and node has none, but composing
-// the mermaid text is pure string work, so every question worth asking about
-// the picture - who is a node, which way the arrow runs, what a hostile title
-// becomes, what happens to an edge pointing off the board - is asked here.
-//
-// An ES module written for a browser, so it is pulled in with a dynamic
-// `import()`, the way the tests/tower/app/ suites reach the other pure libs. It imports only
-// `format.js`, which imports nothing at all, so nothing bundler-specific is in
-// reach of the load.
+// Tests for libs/tower/graphdef.js: the Graph view's mermaid text is pure string
+// work, so every question about the picture is asked here, via dynamic `import()`.
 //
 
 const path = require('path');
@@ -20,7 +10,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harn
 const libs = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'libs', 'tower');
 const load = (name) => import(pathToFileURL(path.join(libs, name)).href);
 
-/** One issue as the sweep normalizes it - `blockedBy` is always a list (#103). */
+/** One issue as the sweep normalizes it: `blockedBy` is always a list. */
 const issue = (repo, number, extra = {}) => ({
   repo,
   number,

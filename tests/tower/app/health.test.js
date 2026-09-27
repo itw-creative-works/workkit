@@ -1,8 +1,6 @@
 //
-// Tests for the tower dashboard's Health page (it shows only what is broken)
-// and the Brief page's archive, both pinned by their source.
-// The header this suite's notes point at (why a page module is out of reach
-// under Node) is the one atop ./helpers.js, which holds the shared prologue.
+// Tests for the tower dashboard's Health page (only what is broken) and the Brief
+// page's archive, pinned by their source (why: the header of ./helpers.js).
 //
 
 const path = require('path');
@@ -15,13 +13,10 @@ const run = async () => {
 
   group('tower/app: the Health page shows only what is broken (#182)');
 
-  // Issue #182: the page used to restate the board - a stat grid and a status
-  // doughnut per repo, with the real alarms mixed in among neutral numbers. A
-  // number that is FINE is not this page's business, and an unanswered issue is
-  // the Board's. The page imports the framework and is out of reach of these
-  // suites (see the header), so what is pinned is what the source draws from:
-  // the vocabulary it no longer speaks, the conditions that put a repo on it,
-  // and the one line a machine with nothing wrong shows.
+  // A number that is fine is not this page's business, and an unanswered issue
+  // is the Board's. The page is out of reach under Node (see the header), so its
+  // source is pinned: the vocabulary it must not speak, the conditions that put a
+  // repo on it, and the one line a machine with nothing wrong shows.
 
   const healthSource = () => fs.readFileSync(
     path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'health.js'),
@@ -31,8 +26,7 @@ const run = async () => {
   await test('the census is gone - no stat grid, no doughnut, no board feed', () => {
     const source = healthSource();
     // Each of these is another page's answer: the tiles and the chart are the
-    // Overview's, the open and blocked counts are the Board's. A rebuild that
-    // kept any of them is the page this issue is about.
+    // Overview's, the open and blocked counts are the Board's.
     for (const gone of ['statgrid', 'statCell', 'statusBreakdown', 'chartSlot', 'barChart', 'issuesFor', 'issueItem']) {
       assert(!source.includes(gone), `${gone} draws a neutral number, and this page has none`);
     }
@@ -51,8 +45,8 @@ const run = async () => {
     // report a checkout that has never left this disk as fully pushed.
     assert(source.includes('reading.unpushed === null'),
       'a branch with no upstream is its own named state, never counted as pushed work');
-    // Naming a problem without naming what ends it is the old page's stat grid
-    // with a red border, so the two halves are counted against each other.
+    // Naming a problem without naming what ends it is a stat grid with a red
+    // border, so the two halves are counted against each other.
     const wrongs = (source.match(/wrong:/g) || []).length;
     assert(wrongs >= 4, `every state the page draws is a sentence about what is wrong (${wrongs})`);
     assertEq((source.match(/fix:/g) || []).length, wrongs, 'and each one carries the act that resolves it');
@@ -65,8 +59,8 @@ const run = async () => {
     assert(source.includes('swap(root, body || (briefFeed ? allClear() : loading('),
       'and that line is drawn only when the problems came to nothing - a page with one problem on it shows the problem alone');
     // The all-clear's last clause is "the brief is current", so a brief feed
-    // that has not answered holds the sentence back, and one that FAILED is
-    // drawn as the problem it is (#182 verify, finding 1).
+    // that has not answered holds the sentence back, and a failed one is drawn
+    // as the problem it is.
     assert(source.includes('briefFeed && !briefFeed.ok'),
       'a failed brief feed is a problem on this page, never a silent absence');
   });
@@ -79,11 +73,9 @@ const run = async () => {
     assert(/await state\.refresh\('board'\)/.test(source), 'a landed move is re-read, in published mode as on a machine');
   });
 
-  // Issue #181: the Brief page mirrored the 9am notification and never showed
-  // the one thing a morning leaves behind - the brief itself. The page module
-  // imports the framework and is out of reach of these suites (see the header),
-  // so what is pinned is the source of each decision; the markup the archive is
-  // built from is modal.js's, and is asked real questions in its own group.
+  // The Brief page is the brief itself. The page is out of reach under Node (see
+  // the header), so the source of each decision is pinned; the archive's markup
+  // is modal.js's, asked real questions in its own group.
   await test('the Brief page is the mornings themselves - the newest one open, the rest an archive', () => {
     const pages = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     const source = fs.readFileSync(path.join(pages, 'brief.js'), 'utf8');
@@ -109,7 +101,7 @@ const run = async () => {
     const pages = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     const source = fs.readFileSync(path.join(pages, 'brief.js'), 'utf8');
     // The Overview owns the charts, the Board owns the queue, Health owns the
-    // warnings. Each of these was a second drawing of one of them.
+    // warnings: none of them is drawn a second time here.
     for (const dead of ['statgrid(', 'statCell(', 'payload.counts', 'payload.nextUp', 'payload.warnings', 'payload.findings', 'payload.week', 'payload.summaries', 'issueItem(', 'payload.headline']) {
       assert(!source.includes(dead), `${dead} is gone from the Brief`);
     }
@@ -118,11 +110,10 @@ const run = async () => {
   });
 
   await test('the runtime fills the sidebar’s selector menu and carries the scope onto the nav', () => {
-    // page.js reaches for `document` at import and is out of reach of these
-    // suites (see the header), so what is pinned is the wiring: where the menu
-    // is written, what writes it, and that the nav links are rewritten on the
-    // selection AND on every paint - the two halves of #104's promise that
-    // moving Overview → Board keeps the scope.
+    // page.js reaches for `document` at import (see the header), so the wiring
+    // is pinned: where the menu is written, what writes it, and that the nav
+    // links are rewritten on the selection and on every paint, so moving
+    // Overview to Board keeps the scope.
     const source = ['page.js', path.join('page', 'selector.js')].map((name) => fs.readFileSync(path.join(libs, name), 'utf8')).join('\n');
     assert(/menuMarkup\(state\)/.test(source), 'the menu is markup from state, like the chrome');
     assert(/sidebarKey\(state\)/.test(source), 'and it is rewritten only when what it shows changed');
@@ -132,9 +123,9 @@ const run = async () => {
     assert(/data-tower-projects/.test(source), 'and claimed with the one attribute the runtime marks it by');
     assert(/data-bs-auto-close/.test(source), 'ticking a subset box does not close the menu it is in');
     assert(/data-tower-scope\]/.test(source) && /data-tower-scope-slug/.test(source), 'both controls on a row are wired - the name and its box');
-    // The master row (#168): its box is the one control markup cannot fully
-    // describe, since indeterminate is a property, and a click on it moves
-    // every box on the roster.
+    // The master row: its box is the one control markup cannot fully describe,
+    // since indeterminate is a property, and a click on it moves every box on
+    // the roster.
     assert(/data-tower-scope-all/.test(source), 'the master box is wired too');
     assert(/indeterminate = .*hasAttribute\('data-tower-indeterminate'\)/.test(source), 'the marker sidebar.js writes becomes the DOM property');
     assert(/applyScope\(master\.checked \? '' : NONE, false\)/.test(source), 'ticking it is the whole board, unticking it the none scope (#188)');
@@ -148,9 +139,9 @@ const run = async () => {
     assert(/shown\.bs\.dropdown/.test(source), 'the box takes the keyboard the moment the menu opens');
     assert(/hidden\.bs\.dropdown/.test(source), 'and closing it clears the filter');
     assert(/search\.value = ''/.test(source) && /filterProjects\(menu, ''\)/.test(source), 'box emptied and every row unhidden, so the next open is the whole roster');
-    // The claim the whole feature rests on: filtering is DISPLAY. A row is
-    // hidden where it stands - nothing is re-scoped, nothing is stored and the
-    // menu is not rewritten, which is what keeps sidebar.js pure.
+    // The claim the whole feature rests on: filtering is display. A row is
+    // hidden where it stands; nothing is re-scoped, nothing is stored and the
+    // menu is not rewritten, which keeps sidebar.js pure.
     const filter = /const filterProjects = \(menu, text\) => \{([\s\S]*?)\n\};/.exec(source);
     assert(filter, 'the filter is one named function');
     assert(/classList\.toggle\('d-none'/.test(filter[1]), 'and it hides a row rather than removing it');
@@ -170,7 +161,7 @@ const run = async () => {
     assert(/readFavorites\(storage\)/.test(source), 'the list is read once, at the top of the page');
     assert(/safeStorage\(window\)/.test(source), 'through the guard github/token.js already owns, since the property itself can throw');
     assert(/state\.favorites = toggleFavorite\(storage, slug\)/.test(source), 'a click writes through the one module that owns the key, onto the state the menu is drawn from');
-    // A star is not a selection, and its click redraws NOTHING but its own
+    // A star is not a selection, and its click redraws nothing but its own
     // button: a repaint from state would wipe a subset the boxes are mid-way
     // through building, so the reorder waits for the close redraw.
     const wiring = /for \(const mark of projects\.querySelectorAll\('\[data-tower-favorite\]'\)\) \{([\s\S]*?)\n    \}/.exec(source);
@@ -191,10 +182,9 @@ const run = async () => {
     // state, in place - unticking it is how a subset is built up from nothing.
     assert(/one\.checked = master\.checked/.test(source), 'a master click sets every slug box to its own new state');
     assert(/master\.indeterminate = false;/.test(source), 'and leaves no half state behind');
-    // The shape: box clicks narrow the BOARD but never redraw the open menu -
-    // reaching exactly one tick must not collapse it to single mode under the
-    // pointer - so both handlers pass the no-reshape flag and tell the master
-    // in place instead.
+    // Box clicks narrow the board but never redraw the open menu: reaching
+    // exactly one tick must not collapse it to single mode under the pointer, so
+    // both handlers pass the no-reshape flag and tell the master in place.
     assert(/chosen\.join\(','\) : ''\) : NONE, false\)/.test(source), 'a slug box applies its scope - down to the none state (#188) - without reshaping the menu');
     assert(/master\.checked = chosen\.length === boxes\.length/.test(source), 'and updates the master summary where it stands');
     assert(/master\.indeterminate = chosen\.length > 0 && chosen\.length < boxes\.length/.test(source), 'including the half state markup cannot say');
@@ -208,10 +198,9 @@ const run = async () => {
 
   await test('every page reads the selection as a SET, and no consumer compares it as a slug', () => {
     const pages = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
-    // The Board's repo column and its denominator is the one page left that
-    // reads the selection directly rather than through state.js, converted to
-    // the set (#104). The Brief read it too until it stopped being about the
-    // board at all (#181) - a published morning is roster-wide.
+    // The Board's repo column and its denominator is the one page that reads the
+    // selection directly rather than through state.js; a published morning is
+    // roster-wide, so the Brief reads none.
     const board = fs.readFileSync(path.join(pages, 'board.js'), 'utf8');
     assert(/selectedSlugs\(state\)/.test(board), 'the Board asks for the slugs');
     assert(!/state\.selectedRepo/.test(board), 'and never for the raw value it used to compare');
@@ -227,10 +216,8 @@ const run = async () => {
   });
 
   await test('the token has one home, and it is the Settings page', () => {
-    // The button that forgot a token used to sit in the chrome of every page,
-    // and the field that typed one sat in a dialog over it. Both are one page
-    // now (#167), and the sentence the intake dialog says while locked points
-    // at it rather than at "any page".
+    // The sentence the intake dialog says while locked points at the Settings
+    // page, not at "any page".
     assert(!chrome.chromeMarkup().includes('id="tower-token"'), 'no page chrome carries a token control');
     assert(format.LOCKED_NOTICE.includes('Settings page'), 'the locked write notice names where a token goes');
     assert(!/open any page/.test(format.LOCKED_NOTICE), 'and no longer says any page will do');

@@ -1,12 +1,6 @@
 //
-// Tests for tower/api/lib/history.js - the published briefs, read back.
-//
-// The `gh` call is the module's one seam, so every case here is a fake exec
-// answering the Discussions query with a board of published briefs. Nothing
-// reaches GitHub, and the scratch ~/.workkit is what names the home repo.
-//
-// The bodies are written the way a published brief actually reads: a digest,
-// then the two appended lines. The parse has to find its own among them.
+// Tests for tower/api/lib/history.js, the published briefs read back through a
+// fake `gh`; the bodies read as a real brief does, so the parse finds its own line.
 //
 
 const fs = require('fs');
@@ -180,9 +174,7 @@ const run = async () => {
 
   group('tower/history: whether the cloud brief is still posting');
 
-  // Issue #172: the brief failed every morning for ten days and the dashboard
-  // looked normal the whole time. The answer was already in the read above -
-  // the newest entry's date - so this is arithmetic on it and nothing else.
+  // Freshness is arithmetic on the newest entry's date and nothing else.
   const day = (date) => ({ date, totals: { open: 1 }, closedDay: 0, repos: {} });
   const at = (stamp) => new Date(stamp);
 

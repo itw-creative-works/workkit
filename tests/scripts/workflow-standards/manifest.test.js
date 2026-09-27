@@ -1,7 +1,5 @@
-//
 // Tests for the label vocabulary manifest (labels.json): its shape.
-// The shared prologue (the repo and gh-stub factories, runScript, the constants) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { MANIFEST, desiredLabels } = require('./helpers');
@@ -23,11 +21,10 @@ const run = async () => {
   });
 
   await test('status:complete is the stage after qa, and its label teaches what it means (#196)', () => {
-    // The manifest lists the statuses in PIPELINE order: inbox, specced,
-    // building, qa, complete, then the side pockets, so a reader with nothing
-    // but `gh label list` learns the road in the order it is walked. The stage
-    // a ship reads from sits directly after the one whose passing check grants
-    // it, and it wears the verdict green qa gave up.
+    // The statuses are listed in pipeline order (inbox, specced, building, qa,
+    // complete, then the side pockets), so `gh label list` teaches the road in the
+    // order it is walked. The stage a ship reads sits right after qa, whose passing
+    // check grants it, and wears the verdict green qa gave up.
     const status = MANIFEST.groups.status.values;
     assertEq(Object.keys(status).slice(0, 5).join(','), 'inbox,specced,building,qa,complete', 'the pipeline in order');
     assertEq(status.complete.description, 'QA passed, ready to ship. Exactly one status: label per open issue.', 'complete says QA passed');
@@ -49,7 +46,7 @@ const run = async () => {
   });
 
   await test('descriptions fit the GitHub API limit (100 chars)', () => {
-    // Learned live 2026-07-24: the labels API 422s past 100 characters.
+    // The labels API 422s past 100 characters.
     for (const { name, description } of desiredLabels()) {
       assert(description.length <= 100, `${name} description is ${description.length} chars (max 100)`);
     }
@@ -62,13 +59,9 @@ const run = async () => {
   });
 
   await test('a fixed label’s hex is its board token’s light value: the pairing, pinned', () => {
-    // A label's colour on GitHub is not free-chosen: it is the LIGHT-mode value
-    // of the theme token the tower draws that label in, so the board and the
-    // issue page agree. Only this half can be pinned here: the token values
-    // live in the omega framework, so an edit that breaks the pairing from the
-    // hex side fails loudly instead of drifting. Every fixed label is in it
-    // since #149: `priority:high` gave up the brand accent, which no fixed hex
-    // could track, for the danger red that `status:blocked` also wears.
+    // A label's colour on GitHub is the light-mode value of the theme token the
+    // tower draws it in, so the board and the issue page agree. The token values
+    // live in the omega framework, so only the hex side is pinned here.
     const expected = {
       status: {
         inbox: '0F8FA9', specced: '7A45B5', building: 'C47206', qa: 'B0416A', complete: '12925C', blocked: 'D92D20', backlog: 'A1A19E',
@@ -84,7 +77,7 @@ const run = async () => {
   });
 
   await test('a hex repeats across the groups but never inside one (#149)', () => {
-    // The rule the palette is built on: a colour is unique WITHIN a vocabulary,
+    // The rule the palette is built on: a colour is unique within a vocabulary,
     // since a column header, a card chip and a chart slice are read by hue,
     // and free across them, since every chip carries its own word and glyph.
     for (const group of ['status', 'type', 'priority']) {

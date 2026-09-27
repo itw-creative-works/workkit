@@ -1,12 +1,7 @@
-//
 // Tests for hooks/docs:changelog-guard: the PostToolUse hook that holds a
-// CHANGELOG entry to its format at write time.
-//
-// The rules themselves are tested in tests/scripts/changelog.test.js (their one
-// home is workflow/changelog/changelog.js). These tests cover what the HOOK owns: which
-// files it looks at, that it blocks with exit 2, and that it judges only what a
-// change added.
-//
+// CHANGELOG entry to its format at write time. The rules are tested in
+// tests/scripts/changelog.test.js; these cover what the hook owns: which files
+// it reads, the exit 2, and judging only what a change added.
 
 const path = require('path');
 const fs = require('fs');
@@ -17,7 +12,7 @@ const { BASH, NO_RC, shellPath } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'changelog-guard', 'run.sh');
-// Point the hook at THIS checkout's engine rather than the installed symlink,
+// Point the hook at this checkout's engine rather than the installed symlink,
 // so the suite tests the code under review (same override the standards suite uses).
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 
@@ -124,8 +119,8 @@ const run = async () => {
   });
 
   await test('a correct entry in a keepachangelog file with a link footer passes', () => {
-    // The footer used to attach to the entry above it, so the hook bounced
-    // correct work naming a rule the author had not broken.
+    // The footer is not part of the entry above it: correct work never bounces
+    // naming a rule its author did not break.
     const dir = mkRepo([
       '# Changelog',
       '',

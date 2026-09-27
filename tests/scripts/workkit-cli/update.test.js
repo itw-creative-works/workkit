@@ -1,9 +1,7 @@
-//
 // Tests for workflow/workkit.sh: `update`: the two links, the quiet
 // `--auto` variant, and on macOS the schedule and a checkout or an installer
 // that cannot answer.
-// The shared prologue (the scratch world, runCli and inCli, the repo and kit factories) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -42,8 +40,7 @@ const run = async () => {
 
   await test('an engine that refuses the address never reports "is current"', () => {
     // A copy of the engine outside any checkout: standards.sh declines to take
-    // the machine's address, and says nothing about it. Silence read as
-    // agreement printed a link that was never written.
+    // the machine's address and says nothing, and silence is not agreement.
     const world = mkWorld();
     fs.mkdirSync(world.claudeHome, { recursive: true });
     const kit = mkTmp('workkit-cli-');
@@ -119,9 +116,9 @@ const run = async () => {
     fs.mkdirSync(world.localBin, { recursive: true });
     const first = runCli(world, ['update']);
     assert(ACTED.test(first.said), `the first run had something to do, got: ${first.said}`);
-    // The answer is STRUCTURAL, not a word list: `--auto` is the same run with
-    // QUIET=1, which silences every skip and note, so an empty stdout IS
-    // "nothing was done" (issue #237).
+    // The answer is structural, not a word list: `--auto` is the same run with
+    // QUIET=1, which silences every skip and note, so an empty stdout is
+    // "nothing was done".
     const { code, out } = runCli(world, ['update', '--auto']);
     assertEq(code, 0, 'exit 0');
     assertEq(out, '', `nothing was done the second time, got: ${out}`);
@@ -181,7 +178,7 @@ const run = async () => {
   // Everything below is launchd's: a machine without `launchctl` has no
   // schedule to name, install or keep current, and the engine says so itself
   // rather than acting (`launchd is macOS`). The cases are named as skips there
-  // instead of asserting a capability that is not on the machine (#114).
+  // instead of asserting a capability that is not on the machine.
   if (hasLaunchd()) {
     group('workkit update: the schedule (macOS)');
 

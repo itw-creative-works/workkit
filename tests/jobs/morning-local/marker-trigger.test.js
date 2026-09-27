@@ -1,23 +1,20 @@
-//
 // Tests for jobs/morning.sh as this machine runs it: the cloud brief marker
-// (issue #173), and the manual trigger.
-// The shared prologue (the world factory, the job runner, the notification waits) is ./helpers.js.
-//
+// and the manual trigger.
+// The shared prologue (world factory, job runner, notification waits) is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { skipUnlessDarwin, STEPS, INSTRUCTION, BRIEF_TITLE_PREFIX, cleanup, mkWorld, runJob } = require('./helpers');
+const { skipUnlessDarwin, SCRIPT, INSTRUCTION, BRIEF_TITLE_PREFIX, cleanup, mkWorld, runJob } = require('./helpers');
 
 const run = async () => {
   skipUnlessDarwin();
 
   group('jobs/morning (local): the cloud brief marker');
 
-  // Issue #173: the brief is composed and published in the cloud, and a runner
-  // whose token expired fails quietly: ten mornings went by with nothing
-  // posted and no chat session knew. So the morning records what is actually on
-  // the board, and the session hook reads that ONE file. This is the writer.
+  // A cloud runner whose token expired fails quietly, so the morning records
+  // what is actually on the board and the session hook reads that one file.
+  // This is the writer.
 
   await test('the newest brief on the board is recorded, summaries ignored', () => {
     const world = mkWorld({
@@ -40,9 +37,8 @@ const run = async () => {
     assert(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(marker.checkedAt),
       `and when it was checked: ${marker.checkedAt}`);
     assert(/marker: /.test(world.log()), `the log says what was recorded: ${world.log()}`);
-    // The file it was written as first is BESIDE it, so what lands is a rename
-    // - and the rename takes the name with it, leaving the directory the
-    // machine's settings live in with one file in it.
+    // The file it was written as first is beside it, so what lands is a
+    // rename, which takes the temp name with it.
     assert(!fs.existsSync(`${world.markerFile}.tmp`), 'and nothing is left beside it');
     cleanup(world.root);
   });
@@ -94,16 +90,16 @@ const run = async () => {
   await test('the board read is bounded, like every other read on the daily path', () => {
     // A captive portal answers the handshake and never the request; an
     // unbounded read here would hold the morning open for as long as it liked.
-    const text = fs.readFileSync(path.join(STEPS, 'marker.sh'), 'utf8');
+    const text = fs.readFileSync(SCRIPT, 'utf8');
     assert(/WORKKIT_GH_TIMEOUT/.test(text), 'the same bound the engine reads under, and the same knob');
   });
 
   await test('the marker is written beside itself, so what lands on it is a rename', () => {
     // The hook may read the marker at any moment and half of one must never be
-    // among the things it can find. A move ACROSS filesystems is a copy and an
-    // unlink rather than a rename, and a copy is exactly that half - so the
+    // among the things it can find. A move across filesystems is a copy and an
+    // unlink rather than a rename, and a copy is exactly that half, so the
     // temp is written in the marker's own directory, never in the scratch.
-    const text = fs.readFileSync(path.join(STEPS, 'marker.sh'), 'utf8');
+    const text = fs.readFileSync(SCRIPT, 'utf8');
     assert(/>"\$marker\.tmp"/.test(text), 'the whole file is written beside the marker');
     assert(/mv "\$marker\.tmp" "\$marker"/.test(text), 'and moved onto it from there');
     assert(!/SCRATCH_DIR\/brief-status\.json/.test(text), 'nothing writes the marker into the scratch any more');

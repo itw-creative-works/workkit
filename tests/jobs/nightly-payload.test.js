@@ -1,15 +1,7 @@
-//
-// Tests for jobs/claude-nightly/nightly-payload.js: the day's record, as the summaries step
-// hands it to Claude.
-//
-// The transcript index runs against a fixture projects tree whose mtimes are set
-// by the suite, so "the last 24 hours" is a fact of the fixture and not of the
-// clock. The commit walk runs against a fixture roster: one real,
-// opted-in git repo for the pass-through case, and a canned exec for the shapes
-// a real repo cannot be made to produce on demand.
-//
-// Nothing here reaches the network, and nothing here runs Claude.
-//
+// Tests for jobs/claude-nightly/nightly-payload.js: the day's record, as the
+// summaries step hands it to Claude. Transcript mtimes are set by the suite, so
+// "the last 24 hours" is a fact of the fixture; the commit walk uses one real
+// opted-in repo plus a canned exec. Nothing here reaches the network or Claude.
 
 const fs = require('fs');
 const path = require('path');
@@ -33,7 +25,7 @@ const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8',
 
 /**
  * A projects tree holding the named transcripts. `agoHours` is how long before
- * NOW the file was last written; `bytes` how big it is.
+ * now the file was last written; `bytes` how big it is.
  */
 const mkProjects = (files) => {
   const root = mkTmp('nightly-payload-');

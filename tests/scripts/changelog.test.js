@@ -1,11 +1,6 @@
-//
-// Tests for workflow/changelog/changelog.js: the CHANGELOG entry rules and the CLI both
-// the docs:changelog-guard hook and the safety/commit-gate hook call.
-//
-// The added-only tests build real git repositories in a temp dir (no network,
-// no fixtures to keep in sync) because "which lines did this change add" is a
-// question only git can answer, and stubbing it would test the stub.
-//
+// Tests for workflow/changelog/changelog.js: the CHANGELOG entry rules and the CLI
+// docs:changelog-guard and safety/commit-gate call. The added-only tests build
+// real git repos: which lines a change added is a question only git answers.
 
 const path = require('path');
 const fs = require('fs');
@@ -83,7 +78,7 @@ const run = async () => {
 
   await test('a wrapped entry is one entry, not several', () => {
     const text = doc('Unreleased', `- ${ISSUE} - First line of the sentence`, '  wrapped onto a second line.');
-    // The blank line the doc() helper inserts sits AFTER the wrap, so the
+    // The blank line the doc() helper inserts sits after the wrap, so the
     // continuation must attach to the bullet above it.
     const entries = parseEntries(text.replace(`- First line of the sentence\n\n  wrapped`, '- First line of the sentence\n  wrapped'));
     assertEq(entries.length, 1, 'one entry');
@@ -150,8 +145,8 @@ const run = async () => {
   });
 
   await test('a commit link mentioned in the prose does not satisfy the released rule', () => {
-    // The rule is anchored to the metadata run after the issue link; testing
-    // the whole entry let a prose mention stand in for the missing link.
+    // The rule is anchored to the metadata run after the issue link, never the
+    // whole entry, so a prose mention cannot stand in for the missing link.
     const found = lintText(doc('3.1.0] - 2026-07-24', `- ${ISSUE} - Reverts ${COMMIT} from the last release.`));
     assert(rules(found).includes('commit-link'), `got: ${rules(found)}`);
   });
@@ -190,8 +185,8 @@ const run = async () => {
 
   group('changelog: shapes a real CHANGELOG contains');
 
-  // Every case here was a reproduced defect in the first cut: each one either
-  // bounced correct work or waved a violation through in silence.
+  // Each shape here, misread, either bounces correct work or waves a violation
+  // through in silence.
 
   await test('a keepachangelog link-reference footer is not part of the entry above it', () => {
     const text = [
@@ -208,8 +203,8 @@ const run = async () => {
   });
 
   await test('a CRLF file parses exactly like an LF one', () => {
-    // `$` sits before the `\r`, so the whole file used to read as zero entries
-    // and the guards passed anything in it.
+    // `$` sits before the `\r`: an unnormalized file reads as zero entries and
+    // the guards pass anything in it.
     const lf = doc('Unreleased', '- An essay entry with no issue link.');
     assertEq(lintText(lf.replace(/\n/g, '\r\n')).length, lintText(lf).length, 'same violations');
     assert(lintText(lf).length > 0, 'and the LF case really does violate');
@@ -230,8 +225,8 @@ const run = async () => {
   });
 
   await test('a bracketed prose heading with a digit is not a released section', () => {
-    // "Any label with a digit" classified `## [Plans for 2026]` as a released
-    // version, and its bullets then demanded commit links.
+    // A label with a digit is not a version: `## [Plans for 2026]` is prose,
+    // and its bullets demand no commit links.
     const text = doc('Plans for 2026', '- ship the roadmap, someday, with no links at all');
     assertEq(parseEntries(text).length, 0, 'its bullets are not entries');
     assertEq(lintText(text).length, 0, `not judged, got: ${JSON.stringify(lintText(text))}`);
@@ -257,8 +252,8 @@ const run = async () => {
   });
 
   await test('a spaced hyphen inside the prose does not stand in for the separator', () => {
-    // The separator is anchored to the end of the links; searching the whole
-    // entry accepted this and then counted words from the wrong offset.
+    // The separator is anchored to the end of the links, so a prose hyphen
+    // neither satisfies it nor moves the offset the words are counted from.
     const found = lintText(doc('Unreleased', `- ${ISSUE} The installer - which reads settings.json - now runs.`));
     assert(rules(found).includes('separator'), `got: ${rules(found)}`);
   });
@@ -335,8 +330,8 @@ const run = async () => {
   });
 
   await test('--added-only judges an entry when only its CONTINUATION line changed', () => {
-    // Editing a wrapped entry's second line rewrites the entry; anchoring on
-    // its first line alone let the edit walk past both hooks.
+    // Editing a wrapped entry's second line rewrites the entry, so both hooks
+    // judge it whole.
     const dir = mkRepo([...doc('Unreleased').split('\n'), `- ${ISSUE} - Short`, '  and a wrap.', ''].join('\n'));
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('  and a wrap.', `  ${new Array(60).fill('word').join(' ')}`));
@@ -347,8 +342,8 @@ const run = async () => {
   });
 
   await test('a diff content line starting with + does not misnumber the lines after it', () => {
-    // `+++` was skipped as a header without advancing the cursor, so every
-    // added line after it in the hunk was numbered low and escaped judgment.
+    // A content line `+++` is not a header: skipped without advancing the
+    // cursor, every added line after it would be numbered low and go unjudged.
     const dir = mkRepo(doc('Unreleased'));
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, `${fs.readFileSync(file, 'utf8')}++ a note line\n- an added essay entry with no issue link at all\n`);
@@ -358,12 +353,9 @@ const run = async () => {
   });
 
   await test('every violation survives being piped to a consumer', () => {
-    // standards.sh derives a COUNT from this output. `process.exit()` discards
-    // whatever console.error still has buffered when stderr is a pipe, so a
-    // large file reported a short, varying list, and a count of 0 would have
-    // read as "this repo is already migrated". The invariant is asserted here;
-    // the truncation itself was timing-dependent and does not reproduce
-    // reliably, so this pins the contract rather than the race.
+    // standards.sh derives a count from this output, and `process.exit()` drops
+    // buffered stderr on a pipe. The truncation is timing-dependent, so this
+    // pins the contract rather than the race.
     const dir = mkTmp('cl-');
     const file = path.join(dir, 'CHANGELOG.md');
     const bullets = Array.from({ length: 1000 }, (_, i) => `- **Essay ${i}** with no link and no separator at all.`);

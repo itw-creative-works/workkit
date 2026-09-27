@@ -1,9 +1,6 @@
-//
 // Tests for workflow/changelog/changelog-links.js, the release-time CHANGELOG backfill:
 // filling each entry's commit link and handle in, and the Contributors
-// section the handles define.
-// The shared prologue (the git and gh fixtures, the script runner, the Windows skip) is ./helpers.js.
-//
+// section the handles define. The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -80,8 +77,7 @@ const run = async () => {
   });
 
   await test('the file ends with a Contributors section naming each person', () => {
-    // Link definitions render as nothing, so a bare one at the bottom left the
-    // file ending on what looked like a stray line. The section gives the
+    // Link definitions render as nothing; the section gives the
     // `Thanks [@who]!` credits a visible roll.
     const { dir } = mkRepo(
       CHANGELOG('- [#4](../../issues/4) - Text.'),
@@ -128,9 +124,8 @@ const run = async () => {
   });
 
   await test('an entry already carrying its handle is not given a second one', () => {
-    // Entries are written at build time, handle and all, the normal park flow.
-    // The backfill used to append its own attribution regardless, and every
-    // such entry shipped "Thanks [@who]! Thanks [@who]! -".
+    // Entries are written at build time, handle and all, so a second
+    // attribution would ship as "Thanks [@who]! Thanks [@who]! -".
     const { dir, shas } = mkRepo(
       CHANGELOG('- [#4](../../issues/4) Thanks [@alice]! - Text.'),
       ['feat: a\n\nFixes #4'],
@@ -194,9 +189,8 @@ const run = async () => {
   });
 
   await test('a commit-link-shaped string in the prose does not suppress the fill', () => {
-    // "Already linked" is anchored to the metadata run after the issue link;
-    // testing the whole line skipped this entry silently, never filled, never
-    // reported as unmatched.
+    // "Already linked" is anchored to the metadata run after the issue link,
+    // never the whole line, or this entry would be skipped silently.
     const { dir, shas } = mkRepo(
       CHANGELOG('- [#4](../../issues/4) - Reverts [`abcdef1`](../../commit/abcdef1) from the last release.'),
       ['fix: revert\n\nFixes #4'],
@@ -213,7 +207,7 @@ const run = async () => {
 
   await test('a CRLF file keeps its line endings on write', () => {
     // The writer normalizes for parsing but must join with the file's dominant
-    // ending. It used to hand every CRLF file back as LF.
+    // ending.
     const { dir, shas } = mkRepo(
       CHANGELOG('- [#4](../../issues/4) - Text.').replace(/\n/g, '\r\n'),
       ['feat: a\n\nFixes #4'],

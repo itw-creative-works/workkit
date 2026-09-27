@@ -1,19 +1,8 @@
 #!/usr/bin/env bash
-# safety:test-reminder: PostToolUse hook (Edit|Write).
-# Asks at edit time whether a code file needs a test: when the written file is
-# code outside a test folder and no test file in the repo names it, one line
-# goes into the agent's context. Whether the change needs a test stays the
-# agent's judgment, and a "no" is recorded in the item's Proof: line.
-#
-# A test NAMES the file when its text carries the basename with its extension
-# as a whole word (thing.js, run.sh; <parent>/<base> when more than one repo
-# file shares the basename), or a require or import path ending in the stem
-# ('../lib/thing'). Once per file per session: a marker under
-# ${TMPDIR:-/tmp}/workkit-test-reminder, keyed by session id, holds each file
-# already asked about. No session id asks every time.
-#
-# Always exits 0: a question never bounces a write, and anything unexpected
-# (no jq, no file, a directory inside no git repository) is silence.
+# safety:test-reminder: PostToolUse hook (Edit|Write). Asks once per file per
+# session whether a written code file that no test names needs a test; the
+# answer is the agent's, and a "no" goes in the Proof: line. Always exits 0.
+# What names a file, and the marker: docs/hooks.md § safety:test-reminder.
 
 set -euo pipefail
 

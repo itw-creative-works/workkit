@@ -1,50 +1,12 @@
 #!/usr/bin/env node
-//
-// The tower's API: one plain-Node process, zero dependencies.
-//
-// It serves JSON and nothing else: the dashboard is the OMEGA app under
-// tower/app, served by its own dev server, and it reads this API cross-origin.
-// Anything outside /api/* here is a 404.
-//
-// Every endpoint is a thin wrapper over a lib under tower/api/lib: the server
-// owns routing, caching and validation, and nothing else. It is a VIEW, so the
-// whole surface has exactly two write paths (`POST /api/intake`, which files an
-// issue, and `POST /api/issues/status`, which moves one along the pipeline) and
-// both write through the door everyone else uses, `gh`.
-//
-// Binding is 127.0.0.1 on purpose. The phone reaches the tower through
-// `tailscale serve`, which proxies to localhost, so there is never a second
-// listener to authenticate. Nothing here checks a credential because nothing
-// here is reachable without one at the Tailscale layer.
-//
-// What the bind cannot cover is a browser: any page can resolve a name it owns
-// to 127.0.0.1 and reach a localhost listener, so the Host header is checked
-// against an allowlist on EVERY request, and a request that carries an Origin
-// must carry one from that same allowlist. Because `tailscale serve` proxies
-// under the tailnet hostname, that hostname belongs in `TOWER_ALLOW_HOST`
-// (comma-separated) or `opts.allowHosts`. Otherwise the phone sees a 403.
-//
-// CORS falls out of that one allowlist: an allowed origin is ECHOED back in
-// `Access-Control-Allow-Origin` (never `*`), and the preflight is answered for
-// every POST the page makes. The dashboard on the dev server reaches the API
-// exactly because `localhost` is already a name this tower answers to.
-//
-// Caching is in memory and time based, matching the poll rates the page uses:
-// the roster and the board are expensive (a disk read, a GraphQL round trip)
-// and change slowly; sessions and health are cheap and change constantly.
-//
-// The PIECES live beside this file in server/, one module per concern: the
-// plumbing (http.js), the rules a write is judged by (validate.js), the reads
-// behind their caches (feeds.js) and the two writes (writes.js). This file keeps
-// the router, wires the pieces together, and re-exports their public names.
-//
-// Every `opts` key passes straight through to the libs, which is what lets the
-// test suite run the WHOLE server against fixture directories and a fake exec.
+// The tower's API: one plain-Node process, zero dependencies, JSON under /api/*
+// and nothing else. This file keeps the router and wires the pieces in server/;
+// every `opts` key passes through to the libs, so the suites run it on fixtures.
+// Who may reach it: tower/README.md § Who may reach it and § Phone access.
 //
 // Usage:
 //   node tower/api/server.js                // TOWER_PORT, default 8693
 //   createServer({ root, exec }).listen(0);  // offline, against fixtures
-//
 
 const http = require('http');
 
@@ -58,8 +20,8 @@ const { createFeeds } = require('./server/feeds');
 const { createWrites } = require('./server/writes');
 const { createLogger } = require('./lib/log');
 
-// One voice for everything this process prints (issue #237): the same glyph
-// lines the shell half prints from workflow/lib.sh.
+// One voice for everything this process prints: the same glyph lines the shell
+// half prints from workflow/lib.sh.
 const log = createLogger();
 
 // TOWER on a phone keypad is 86937; 8693 is what fits a port.
@@ -102,7 +64,7 @@ const createServer = (opts = {}) => {
     const pathname = url.pathname;
     const fresh = url.searchParams.get('fresh') === '1';
 
-    // The bind keeps other machines out; this keeps other PAGES out. A site
+    // The bind keeps other machines out; this keeps other pages out. A site
     // that resolves its own name to 127.0.0.1 reaches this listener, and the
     // Host header it must send is the name it used.
     const host = hostnameOf(req.headers.host);
@@ -128,12 +90,9 @@ const createServer = (opts = {}) => {
       res.setHeader('vary', 'Origin');
     }
 
-    // The preflight the page's POSTs trigger: a cross-origin JSON body is never
-    // a simple request, so the browser asks first. One answer covers both write
-    // paths: it is about the method and the headers, not the path. Only a
-    // request that carries an allowed Origin is answered: a preflight without
-    // one is not a browser asking permission, and falls through to the method
-    // check like any other unsupported verb.
+    // The preflight a cross-origin JSON POST triggers. One answer covers both
+    // write paths, since it is about the method and headers, not the path. One
+    // without an allowed Origin is no browser asking, and falls through.
     if (req.method === 'OPTIONS' && allowOrigin) {
       res.writeHead(204, {
         'access-control-allow-methods': 'GET, POST, OPTIONS',
@@ -184,10 +143,7 @@ const createServer = (opts = {}) => {
   };
 
   // A bug in a lib is a 500 on the request that met it, never the end of this
-  // process (issue #202): the sweep hit a payload shape it did not expect, the
-  // throw ended the API, and tower/start.sh took the dashboard down with it -
-  // the whole site vanished the moment the board asked for data. One line on
-  // the machine, one sentence to the caller, and the listener is still up.
+  // process: tower/start.sh takes the dashboard down with the API.
   return http.createServer((req, res) => {
     try {
       handle(req, res);

@@ -16,9 +16,8 @@ const run = async () => {
   const ROSTER_URL = 'https://api.github.com/repos/owner/workkit/contents/data/repos.json?ref=main';
 
   await test('the roster feed is the private list, read from the home repo with the viewer’s token', async () => {
-    // Issue #110: the site publishes only which repo is the home. The list of
-    // repositories is on that repo's default branch, and reading it is an
-    // authenticated call - nothing about the board's coverage is public.
+    // The site publishes only which repo is the home: the list is on that repo's
+    // default branch, and reading it is an authenticated call.
     const fetchImpl = mkSiteFetch({ repos: ['owner/workkit'], home: 'owner/workkit' }, {});
     const answer = await github.readFeed('/api/repos', { token: 'fake-token-for-tests', fetch: fetchImpl });
     assertEq(answer.ok, true, 'answered');
@@ -34,10 +33,8 @@ const run = async () => {
   });
 
   await test('the roster is read from the branch the pointer names, never an assumed main', async () => {
-    // Issue #112: the publish pushes whatever branch the home clone is on and
-    // says so in data/home.json. A home repo whose default branch is not `main`
-    // answered 404 to every roster read while this was hardcoded, and the board
-    // degraded to nothing without a word about why.
+    // The publish names the home clone's branch in data/home.json, so a home
+    // whose default branch is not `main` still answers the roster read.
     const fetchImpl = mkFetch((url) => {
       if (url === 'data/home.json') return jsonResponse(200, { home: 'owner/workkit', branch: 'trunk' });
       if (isRoster(url)) return jsonResponse(200, { repos: ['owner/workkit'], home: 'owner/workkit' });
@@ -79,8 +76,7 @@ const run = async () => {
     assertEq(answer.ok, true, 'answered');
     assertEq(answer.data.counts.inFlight, 1, 'the sections are built from the sweep');
     assertEq(answer.data.summaries.items[0].title, 'Tuesday', 'and the summaries ride with it');
-    // And the documents the Brief page IS (#181), off the same board - a
-    // published copy draws that page from this key and nothing else.
+    // A published copy draws the Brief page from this key and nothing else.
     assertEq(answer.data.documents[0].title, 'Tuesday', 'and the archive rides too');
   });
 
@@ -114,9 +110,8 @@ const run = async () => {
     assert(!github.isTokenRefusal(down), 'a server failure is not the token’s fault and must not ask for a new one');
     assert(!github.isTokenRefusal({ ok: true, status: 200 }), 'and neither is a read that worked');
 
-    // The roster read is the FIRST thing the token is asked for (issue #110), so
-    // a token that cannot see the home repo has to reach the prompt too - not
-    // read as a site published without a list.
+    // The roster read is the first thing the token is asked for, so a token
+    // blind to the home repo reaches the prompt too, not a site with no list.
     const blindRoster = mkFetch((url) => (url === 'data/home.json'
       ? jsonResponse(200, { home: 'owner/workkit' })
       : jsonResponse(403, { message: 'Resource not accessible by personal access token' })));
@@ -157,10 +152,9 @@ const run = async () => {
   });
 
   await test('a limit on the ROSTER read is a limit too - the first call the token makes (#213)', async () => {
-    // The roster is read over REST before the sweep goes out (issue #110), so a
-    // spent budget is met THERE first. That path had its own refusal wording and
-    // no mark, which sent a rate-limited viewer to Settings to type a token that
-    // was never the problem.
+    // The roster is read over REST before the sweep goes out, so a spent budget
+    // is met there first, and it has to carry the mark rather than send the
+    // viewer to Settings for a token that is not the problem.
     const reset = resetIn(18);
     const sentence = `GitHub rate limit hit for this token; resets at ${clockAt(reset)} (in 18 min).`;
     const limitedRoster = () => mkFetch((url) => (url === 'data/home.json'

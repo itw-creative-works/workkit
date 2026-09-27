@@ -1,7 +1,6 @@
 //
 // Tests for the tower dashboard's Board page: the List | Graph toggle.
-// The header this suite's notes point at (why a page module is out of reach
-// under Node) is the one atop ./helpers.js, which holds the shared prologue.
+// Why a page module is out of reach under Node: the header of ./helpers.js.
 //
 
 const path = require('path');
@@ -10,10 +9,8 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const run = async () => {
   group('tower/app: board - the List | Graph toggle');
 
-  // The page imports the framework and the graph module, so it is out of reach
-  // of these suites (see the header) - what can be pinned is the source of the
-  // decisions, the way every other page-level claim here is. The picture ITSELF
-  // is pure and has a suite of its own: tests/tower/graphdef.test.js.
+  // The page imports the framework, so what is pinned is the source of its
+  // decisions; the pure picture has its own suite, tests/tower/graphdef.test.js.
 
   await test('which view is on screen lives in the URL, and `list` is written as nothing at all', () => {
     const fs = require('fs');
@@ -36,15 +33,15 @@ const run = async () => {
     assert(/STATUSES\.filter\(\(status\) => !status\.pocket\)/.test(source), 'the pipeline group is the lanes that are stages');
     assert(/STATUSES\.filter\(\(status\) => status\.pocket\)/.test(source), 'and the pocket group is the lanes that are not');
     assert(!/'blocked', 'backlog'|"blocked", "backlog"/.test(source), 'the page names neither of them itself');
-    // ONE grid holds all of them, sized by how many the vocabulary has, so every
-    // lane on the board is one width - two strips of their own were two widths.
+    // One grid holds every lane, sized by the vocabulary's count, so every lane
+    // on the board is one width.
     assertEq((source.match(/class="omega-tower-board"/g) || []).length, 1, 'one strip holds every lane');
     assert(/style="--pipeline: \$\{pipeline\.length\}; --pocket: \$\{pocket\.length\};"/.test(source),
       'and the page hands the stylesheet the two lane counts as custom properties - never a count written by hand, never a layout inline (#203)');
     assert(!/style="grid-/.test(source), 'no grid placement is written inline on this page');
     assert(!/flex: \d/.test(source), 'the two flex regions that wrapped onto a row each - and their ratio - are gone');
-    // No caption names a group, and one line counts the board (#203): how many
-    // the filters let through out of how many it holds. The picker scopes.
+    // No caption names a group, and one line counts the board: how many the
+    // filters let through out of how many it holds. The picker scopes.
     assert(!/omega-tower-board__caption/.test(source), 'no caption cell names a group');
     assert(/showing \$\{shown\} out of \$\{total\}/.test(source) && !/filtered out/.test(source) && !/across every repo/.test(source),
       'the count line says "showing X out of Y" and nothing else - no scope words, the picker owns the scope');
@@ -52,8 +49,8 @@ const run = async () => {
     assert(/<aside class="omega-tower-group omega-tower-group--pocket" aria-label="Waiting/.test(source),
       'and the pocket is the second group, still a landmark of its own, placed by class');
     assert(!/<div class="card"><div class="card-body[^>]*>\$\{counts\(/.test(source), 'and no card wraps the groups (#203)');
-    // Both groups are drawn by ONE lane renderer, which is what keeps a pocket
-    // lane a drop target like any other - a card is dragged into and out of them.
+    // One lane renderer draws both groups, which keeps a pocket lane a drop
+    // target like any other.
     assertEq((source.match(/const lanes = /g) || []).length, 1, 'one lane renderer draws both groups');
     assert(!/openQuestion|omega-tower-issue__question/.test(source), 'and no card draws an open question line - that one is in the dialog it opens (#205)');
 

@@ -23,7 +23,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 │   └── workflow/         # standards (the daily heal) + reload-guard
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
 ├── skills/               # the ten workflow skills: surface as workkit:<name>
-├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/, lib.sh + lib/, changelog/, ship/, templates)
+├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/site-repos.js, lib.sh + lib/, changelog/, ship/, templates)
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
 ├── jobs/                 # scheduled work: the 9am daily brief, its launchd plist, and install.sh
 ├── scripts/              # the two marker scripts the skills call (review, triage): the only platform-touching commands a skill has
@@ -106,6 +106,7 @@ A missing `Proof:` line is a hard gate: `safety/proof-guard` holds the flip to c
 - **Generic by construction.** No owner names and no personal paths anywhere in the kit; `~/.workkit` and `.workkit/` are the only filesystem anchors.
 - **One mechanism, branching by environment.** Never two parallel copies of the same job: one entry point, each step gated on what its environment can do.
 - **Idempotent.** Every heal checks before acting; running twice equals running once.
+- **Comments are reminders and directions.** One to four lines saying the one thing the code cannot; a file header is one short paragraph. No issue numbers, dates or history in a comment: the why lives on the issue and in the commit. The owner's `code/lint` hook bounces a longer written run or history.
 - **No em dashes, no exceptions.** Prose, comments, printed strings, tests and `CHANGELOG.md` use a colon, a comma, parentheses, a spaced hyphen or a new sentence. The CHANGELOG entry separator is a spaced hyphen.
 - **The spec is the SSOT.** Rules live in `docs/project-state.md`; skills and hooks execute them and point at it rather than restating them.
 - **One home per fact.** Every detail lands in its topic home (`docs/<topic>.md`, a folder's README, a `SKILL.md`) and is never restated where it is pointed at from.

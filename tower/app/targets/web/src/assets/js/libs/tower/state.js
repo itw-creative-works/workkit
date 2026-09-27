@@ -1,16 +1,6 @@
-//
 // Reading the page runtime's state: which feed answered, what it said, and what
-// the repo selection leaves in play.
-//
-// It sits apart from the runtime (page.js) on purpose. Every function here is
-// pure - state in, an array or a boolean out, no DOM and no fetch - which is
-// what lets the suite import it under Node and ask it the questions the browser
-// used to be the only way to ask.
-//
-// `issueByKey` is the one that answers a question about NOW rather than about a
-// paint: the Board's drop resolves the card it was handed against the feed as it
-// currently stands, because every poll replaces the object graph underneath.
-//
+// the repo selection leaves in play. Pure and apart from the runtime (page.js),
+// so the suite asks it under Node.
 
 import { issueKey, LOCAL_ONLY_NOTICE } from './format.js';
 import { inScope, selectedSlugs } from './scope.js';
@@ -19,13 +9,9 @@ import { inScope, selectedSlugs } from './scope.js';
 export const feed = (state, name) => state.feeds[name] || null;
 
 /**
- * The slot a published copy holds for a feed only the machine can answer.
- *
- * A designed state, NOT a failure - which is the whole of its shape. The
- * poller's stale rule counts every `ok: false`, so a slot marked failed made
- * the chrome say "2 feeds unavailable" for the life of every published page;
- * this one says `ok` and carries the marker instead, and the notice rides as
- * its reason for whatever wants to draw it.
+ * The slot a published copy holds for a feed only the machine can answer: a
+ * designed state, not a failure, so it is `ok` and marked, since the poller's
+ * stale rule counts every `ok: false`. The notice rides as its reason.
  *
  * @returns {object} a feed result in the runtime's own shape
  */
@@ -58,12 +44,9 @@ export const board = (state) => {
 };
 
 /**
- * The brief payload, or null - the feed the history rides on, and with it the
- * one answer to whether this morning's brief posted at all (issue #172). Two
- * pages read it here: the Overview's charts and the Health page's stale-brief
- * row. The Brief page reads the feed itself, because a read that has not
- * answered and one that failed are two different pages there and this getter
- * makes both of them null.
+ * The brief payload, or null: the feed the history rides on. The Brief page
+ * reads the feed itself, since an unanswered read and a failed one are two
+ * different pages there and this getter makes both null.
  */
 export const brief = (state) => {
   const result = feed(state, 'brief');
@@ -97,14 +80,8 @@ export const issuesFor = (state) => {
 
 /**
  * The issue one `repo#number` key names, out of the board payload as it stands
- * RIGHT NOW.
- *
- * This is the whole reason it exists rather than a caller keeping its own map.
- * Every poll parses a new object graph into the feed, so an issue object a
- * paint held on to is detached the moment a read lands - and a page that
- * mutates that detached object (the Board's optimistic move) changes nothing
- * anybody draws. Asking at the moment of the interaction, never at the moment
- * of the paint, is what makes the answer the live one.
+ * now: every poll parses a new object graph, so an issue a paint held on to is
+ * detached, and mutating it (the Board's optimistic move) changes nothing drawn.
  *
  * @param {object} state the runtime's feed state
  * @param {string} key `repo#number`

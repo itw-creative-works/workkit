@@ -1,7 +1,5 @@
-//
 // Tests for standards.sh: the engine's address (the ~/.claude/workkit link).
-// The shared prologue (the repo and gh-stub factories, runScript, the constants) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -16,8 +14,8 @@ const { mkTmp } = require('../../lib/scratch');
 const run = async () => {
   group("standards.sh: the engine's address");
 
-  // ~/.claude/workkit → the engine. The step runs on a real HEAL from a
-  // CANONICAL checkout: this suite's SCRIPT is that checkout, and every claude
+  // ~/.claude/workkit → the engine. The step runs on a real heal from a
+  // canonical checkout: this suite's SCRIPT is that checkout, and every claude
   // home below is a temp directory, so the machine's own address is untouched.
   const ENGINE = path.resolve(WORKFLOW_DIR);
   const claudeHomeWith = () => {
@@ -58,13 +56,10 @@ const run = async () => {
     cleanup(repo); cleanup(claude); cleanup(stale);
   });
 
-  // The address is ONE path for the whole machine, so sessions opening at once
-  // in several repos all write it. What it must never be is MISSING: a maker
-  // that unlinks the address and then creates it leaves a gap, and a session
-  // reading it in that gap finds no engine at all, while every one of those
-  // sessions still exits 0 and registers its repo. Nothing but repetition can
-  // see that, so the rounds are the case: three sessions, because that is the
-  // smallest number with a loser reading while another one writes.
+  // The address is one path for the machine, so sessions opening at once all
+  // write it, and it must never be missing: a maker that unlinks and then creates
+  // leaves a gap a reading session falls into. Only repetition sees that, and
+  // three is the smallest race with a loser reading while another one writes.
   await test('sessions writing the address at once never leave it missing', async () => {
     const { claude } = claudeHomeWith();
     const address = path.join(claude, 'workkit');
@@ -92,11 +87,10 @@ const run = async () => {
     cleanup(claude);
   });
 
-  // Git Bash without symlink rights answers `ln -s` with a COPY and exit 0.
-  // A copy at the engine's address is worse than no address at all: the marker
-  // scripts the skills call sit one level ABOVE the engine folder (#245), so a
-  // copy of the engine hides them and every skill's fallback resolves into
-  // ~/.claude. The `ln` stub below is that machine, on this one.
+  // Git Bash without symlink rights answers `ln -s` with a copy and exit 0. A
+  // copy hides the marker scripts one level above the engine folder, so every
+  // skill's fallback resolves into ~/.claude. The `ln` stub below is that
+  // machine, on this one.
   await test('an `ln` that copies instead of linking: the copy is removed and named', () => {
     const repo = makeRepo();
     const { claude } = claudeHomeWith();
@@ -141,9 +135,8 @@ const run = async () => {
   });
 
   // The address belongs to the machine's real engine, and only a real heal from
-  // it may write one. A --state probe or a fixture copy that repointed it stole
-  // the machine's engine from under every other session, which is exactly what
-  // a partial-checkout test run did on 2026-07-29.
+  // it may write one: a probe or a fixture copy that repointed it would steal the
+  // engine from under every other session.
   await test('a probe never touches the address: --state and --announce', () => {
     for (const args of [['--state'], ['--announce']]) {
       const repo = makeRepo();
@@ -260,11 +253,9 @@ const run = async () => {
   });
 
   await test('an origin spelled as a native Windows path is the kit too', () => {
-    // The canonical gate reads the SLUG through the engine's one rule
+    // The canonical gate reads the slug through the engine's one rule
     // (wk_slug_from_remote, workflow/lib/slug.sh), so it takes a remote in either
-    // separator: git stores a path exactly as it was typed, and a checkout
-    // cloned from a local path on Windows carries backslashes. A gate that
-    // took only a forward slash refused the machine's own engine there.
+    // separator: a checkout cloned from a local path on Windows carries backslashes.
     const repo = makeRepo();
     const { claude } = claudeHomeWith();
     const copyRoot = mkTmp('wf-std-');

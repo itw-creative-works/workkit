@@ -1,32 +1,15 @@
 #!/usr/bin/env bash
-# jobs/brief-dispatch.sh: handing the day to the cloud. SOURCED, never executed.
+# jobs/brief-dispatch.sh: hands the day to the cloud, a `workflow_dispatch` of
+# brief.yml on the home repo. Sourced by the scheduled morning and by `workkit
+# brief`; it prints nothing, sets DISPATCH_REASON or DISPATCH_LINE, and each
+# caller decides what a refusal is worth. It resolves the engine from its own
+# location, so any command can source it.
 #
-# The one home of "dispatch today's brief on the home repo", and it has two
-# callers: the scheduled morning (`jobs/morning.sh`), where a refusal is a logged
-# line and an exit 0, and `workkit brief`, where a human asked for it now and a
-# refusal is loud. The FUNCTION decides nothing about the run: it sets the
-# reason or the line and returns a status; each caller decides what that is
-# worth.
-#
-# It sets no shell options and runs nothing at load. The engine libraries it
-# needs are sourced inside a subshell in the function, so nothing it reads leaks
-# into the caller's shell, and it resolves the engine from its OWN location
-# rather than from the caller's, which is what lets a command that knows nothing
-# about the 9am job source it and call it.
-#
-# The awaited `gh` calls below go through the caller's `wk_spin` (issue #237),
-# which both callers already have from workflow/lib.sh: the reason and the line
-# this sets are DATA the caller then prints in its own voice, so nothing here
-# prints a line of its own.
-#
-# Usage:
-#   . jobs/brief-dispatch.sh
+# Usage: . jobs/brief-dispatch.sh
 #   if dispatch_brief; then echo "$DISPATCH_LINE"; else echo "$DISPATCH_REASON"; fi
 
-# The awaited `gh` calls below go through wk_spin, which belongs to
-# workflow/lib.sh and which both callers already have. A caller that sourced
-# this file alone gets the plain pass-through instead of a command not found:
-# this file promises to need nothing, and that promise is kept here.
+# Both callers have wk_spin from workflow/lib.sh; a caller that sourced this
+# file alone gets the plain pass-through instead of a command not found.
 if ! declare -f wk_spin >/dev/null 2>&1; then
   wk_spin() { shift; "$@"; }
 fi
@@ -39,18 +22,8 @@ BRIEF_WORKFLOW='brief.yml'
 # tree setup seeds. Resolve before any cd: BASH_SOURCE may be a relative path.
 WK_DISPATCH_ENGINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../workflow" 2>/dev/null && pwd || printf '%s' "$(dirname "${BASH_SOURCE[0]}")/../workflow")"
 
-# The scheduled brief on this machine is the DISPATCH and nothing more (issue
-# #107): a `workflow_dispatch` on the HOME repo's brief.yml, which runs this same
-# script on a runner with the credentials the compose and the sweep need.
-#
-# The home repo, not this checkout's (issue #91): the workflow and its secrets
-# live on `<login>/workkit`, because the plugin repo is distributed and a
-# consumer cannot set secrets on a repo they do not own. `workkit setup` seeds
-# the workflow there and writes the secrets there, so one slug answers both.
-#
-# Every reason it cannot be made is a NAMED one in DISPATCH_REASON: nothing is
-# composed anywhere to cover for it, so what the caller does with that reason is
-# the only thing that says why nine o'clock was quiet.
+# Every reason the dispatch cannot be made is a named one: nothing is composed
+# anywhere to cover for it (jobs/README.md § The morning on this machine).
 DISPATCH_REASON=''
 DISPATCH_LINE=''
 # The home repo this dispatch was made against: what a caller points a human at
@@ -74,14 +47,9 @@ dispatch_brief() {
     return 1
   fi
   DISPATCH_SLUG="$slug"
-  # The workflow existing is not the workflow WORKING: `gh workflow run` succeeds
-  # the moment the file is on the default branch, and a runner missing either
-  # credential composes nothing worth having: no OAuth token and it composes
-  # nothing at all, no `WORKKIT_GITHUB_TOKEN` and it sweeps no board. So BOTH
-  # secrets are checked on the same repo first, in one listing.
-  # A FAILED listing and an EMPTY one are different mornings: the first is a
-  # repo this token cannot read, the second a repo that truly has no secrets,
-  # and this line's whole job is saying honestly why nine o'clock was quiet.
+  # A dispatch succeeds the moment the workflow is on the default branch, so both
+  # secrets are checked first, in one listing. A failed listing and an empty one
+  # are different mornings: a repo this token cannot read, and one with none.
   if ! secrets="$(wk_spin "reading the secrets on $slug" gh secret list --repo "$slug" 2>/dev/null)"; then
     DISPATCH_REASON="the secrets on $slug could not be listed"
     return 1

@@ -1,64 +1,18 @@
-//
-// The cross-repo issue sweep: the board's data, in one call.
-//
-// Every opted-in repo's open issues arrive from `gh api graphql` using per-repo
-// aliases (`r0:`, `r1:`, …), a BATCH of repos to a request. Batching instead of
-// one request per repo is most of the point: the board is polled, and a roster
-// of a dozen repos would otherwise be a dozen round trips and a dozen
-// rate-limit hits every refresh. Asking for the whole roster at once is the
-// other half. GitHub refuses a query that is too much work in one go
-// (REPOS_PER_REQUEST says what that cost), and the aliases restart at `r0` in
-// every request, so a batch is mapped back onto the roster by its offset.
-//
-// The sweep's PURE half is not written here at all: the document, the numbers
-// that bound it, the parse that turns a node into a board issue and the reading
-// of the errors beside them live in the app's `libs/tower/github/sweep.js`, which the
-// published copy of the dashboard also
-// imports (issue #195). This file is the machine's transport around it, and
-// nothing else. That module is an ES module and this one is not. Node 22
-// `require()`s it directly.
-//
-// The label vocabulary is not restated here either. Group names come from
-// workflow/labels.json (the SSOT the standards heal also reads) so a new
-// group appears in the parse the moment it is defined there, and a value list
-// never drifts between the two files.
-//
-// `gh` missing or unauthenticated is a SOFT skip, matching workflow/standards.sh:
-// the caller gets `{ ok: false, reason }` and an empty list, never an exception.
-// The tower has to render on a machine where `gh auth` has lapsed. Only the
-// MISSING binary is pre-checked (`gh --version`, local and free); auth is judged
-// from the sweep's own failure, because `gh auth status` is a network round trip
-// and paying for it on every poll to learn what the next call is about to say
-// costs a request per refresh for nothing.
-//
-// A PARTIAL answer is kept. GraphQL returns data and errors together (a repo
-// that was renamed, or one the token cannot see, resolves to null while every
-// other alias comes back complete) and `gh` exits non-zero whenever an errors
-// array is present, putting that complete payload on the error's stdout. So a
-// failed exit is parsed before it is believed: if there is data in it, the board
-// renders what resolved and the repos that did not carry their reason. Treating
-// that exit as total failure would blank the whole board over one bad repo.
-//
-// The sweep is STEPWISE. `startSweep` takes the first page of every repo and
-// hands back a handle on the rest, so the API can answer with what has arrived
-// and go on paging behind the answer (issue #194): the dashboard on this machine
-// draws each page as it lands, exactly as a published copy does. `fetchBoard` is
-// that handle run to the end, and stays what a caller wanting the whole board in
-// one call uses.
+// The cross-repo issue sweep: the machine's transport (`gh api graphql`, a batch
+// of repos per aliased request, paged per repo) around the pure half in the app's
+// libs/tower/github/sweep.js, which the published copy imports too. Paging and
+// soft failures: tower/README.md § Endpoints.
 //
 // Usage:
-//   const { fetchBoard, startSweep } = require('./board');
 //   fetchBoard(discoverRepos());          // live, the whole board in one call
-//   fetchBoard(repos, { exec: fake });    // offline, against a fixture payload
 //   const s = startSweep(repos);          // page by page: s.board(), s.paging(), s.step()
-//
 
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-// The sweep's pure half, shared with the published dashboard (issue #195). An
-// ES module, reached by the relative path the cloud brief's runner preserves.
+// The sweep's pure half, shared with the published dashboard. An ES module,
+// reached by the relative path the cloud brief's runner preserves.
 const {
   buildBoardQuery, parseLabels, blockersFor, lastCommentOf, issueFrom, closedSince,
   errorsByAlias, firstErrorFor, droppedReason, rateLimitReason,
@@ -106,14 +60,8 @@ const failureReason = (err) => {
 };
 
 /**
- * The status line, the headers and the body of a `gh --include` answer.
- *
- * `--include` puts the response's own headers in front of the body, which is
- * the only way the rate limit's reset time reaches this side: `gh` prints the
- * status line, the header lines, a blank line, then the JSON. Text with no
- * header block in front of it is handed back whole, so a caller holding a bare
- * body reads exactly what it read before.
- *
+ * The status line, the headers and the body of a `gh --include` answer. Text
+ * with no header block in front is handed back whole as the body.
  * @param {string} text stdout, from the call or from its error
  * @returns {{status: number|null, headers: object, body: string}} header names lowercased
  */
@@ -134,25 +82,10 @@ const splitResponse = (text) => {
 };
 
 /**
- * One `gh api graphql` round trip, believed even when the exit code says no.
- *
- * A non-zero exit still carries the response: `gh` fails whenever an errors
- * array is present, and a roster with one bad repo is exactly that shape. So
- * the payload decides, never the exit code, and only a payload with no data
- * in it at all is a failure to report.
- *
- * The call asks for the headers as well, because a spent rate limit is only
- * legible in them; they are split off before the body is parsed, and a rate
- * limit is read before every other reason so the sweep says when it lifts. The
- * errors go with them, since the GraphQL half of that limit arrives as an
- * ordinary 200 carrying one.
- *
- * The board's own document takes no variables; the two Discussions readers
- * beside it (`summaries.js`, `history.js`) send the home repo's owner and name
- * and call THIS rather than reading a refusal a second way, so one round trip
- * and one reading of it answer for every `gh api graphql` the tower makes
- * (issue #215).
- *
+ * One `gh api graphql` round trip, believed even when the exit code says no:
+ * `gh` fails whenever an errors array is present, so the payload decides. The
+ * headers come too (`--include`), since a spent rate limit is only legible in
+ * them. summaries.js and history.js call this, so one reading answers them all.
  * @param {Function} exec the `gh` seam
  * @param {string} query the document to send
  * @param {Object<string, string>} [variables] `-f name=value` pairs to send with it
@@ -184,14 +117,9 @@ const ask = (exec, query, variables = {}) => {
 };
 
 /**
- * Fold one answered PAGE into what the sweep has collected for that repo.
- *
- * The first answer is the one that carries the repo's facts (its total and its
- * closed page) because every later page repeats them for the same repo, and
- * the first reason anything went wrong is the one kept: the failure this guards
- * against answers with an error per dropped node (issue #202), and a later page
- * saying it again adds nothing.
- *
+ * Fold one answered page into what the sweep has collected for that repo. The
+ * first answer carries the repo's facts (total, closed page), and the first
+ * reason anything went wrong is the one kept.
  * @param {object} entry what has been collected for this repo so far
  * @param {object} resolved the repo's resolved alias in this answer
  * @param {object} ctx `{ errors, aliasErrors, alias, now }` from the answer it came in
@@ -199,10 +127,8 @@ const ask = (exec, query, variables = {}) => {
 const absorb = (entry, resolved, { errors, aliasErrors, alias, now }) => {
   const conn = (resolved || {}).issues || {};
   const answered = conn.nodes || [];
-  // A NULL node is an issue GitHub could not deliver, and reading a field off
-  // one is what ended this process (issue #202). It is skipped, counted, and
-  // said out loud on the repo it belongs to, so the board shows what arrived
-  // and the Overview's warning fires over what did not.
+  // A null node is an issue GitHub could not deliver: skipped, and said on its
+  // repo, so the board shows what arrived and the Overview warns over the rest.
   const nodes = answered.filter(Boolean);
   const info = conn.pageInfo || {};
 
@@ -221,25 +147,10 @@ const absorb = (entry, resolved, { errors, aliasErrors, alias, now }) => {
 };
 
 /**
- * Begin a sweep: the FIRST page of every repo, and a handle on the rest.
- *
- * The sweep is stepwise because the board is DRAWN as it arrives (issue #194).
- * A repo past a hundred open issues takes a request per hundred, and a caller
- * that has a reader waiting takes the first pages inside the request it is
- * answering, hands those back, and runs the continuations on afterwards,
- * asking `board()` again for the snapshot as it grows.
- *
- * `board()` marks every repo still being paged `loading: true`, which is the
- * progress line the Overview draws, and a finished board carries no such mark,
- * which is how that line clears. It is the same mark in the same shape the
- * browser's sweep hands its `onPage` callback, so one payload serves both.
- *
- * A round asks one page for each repo that still has one, rather than draining
- * a repo before starting the next: a round is what the reader sees move, and
- * every repo past its first page moving together is what the browser's sweep
- * shows too. The requests inside a round stay serial, for the reason the first
- * pages are.
- *
+ * Begin a sweep: the first page of every repo, and a handle on the rest, so a
+ * caller answers with what arrived and pages on behind it (tower/README.md §
+ * Endpoints). A round asks one page of every repo that has one, as the
+ * browser's sweep does, never draining one repo first.
  * @param {Array<{slug: string|null}>} repos the roster (repos without a slug are skipped)
  * @param {object} [opts] as fetchBoard's
  * @returns {{board: Function, paging: Function, step: Function}}
@@ -256,8 +167,8 @@ const startSweep = (repos, opts = {}) => {
   const settled = (value) => ({ board: () => value, paging: () => false, step: () => {} });
 
   try {
-    // Local and free: it answers "is gh installed", which no failure of the
-    // sweep itself distinguishes cleanly from a network or token problem.
+    // Local and free: "is gh installed". Auth is judged from the sweep's own
+    // failure, since `gh auth status` would be a network round trip every poll.
     exec('gh', ['--version']);
   } catch {
     return settled({ ok: false, reason: 'gh not found', issues: [], repos: [] });
@@ -270,11 +181,8 @@ const startSweep = (repos, opts = {}) => {
     slug: repo.slug, nodes: [], answers: 0, totalCount: 0, closedDay: 0, more: false, cursor: null, error: null, stopped: false,
   }));
 
-  // The FIRST page of every repo, a batch at a time, in sequence. The requests
-  // are serial because the sweep runs behind one cached endpoint on a poll.
-  // Three round trips one after the other is what the cache absorbs, and firing
-  // them together is how a roster this size meets a secondary rate limit
-  // instead of the resource one.
+  // The first page of every repo, a batch at a time, serially: firing them
+  // together is how a roster this size meets a secondary rate limit.
   for (let offset = 0; offset < withSlug.length; offset += REPOS_PER_REQUEST) {
     const batch = withSlug.slice(offset, offset + REPOS_PER_REQUEST);
     const { payload, reason } = ask(exec, buildBoardQuery(batch.map((r) => r.slug)));
@@ -286,28 +194,16 @@ const startSweep = (repos, opts = {}) => {
     });
   }
 
-  // Has this repo a page left to ask for? The CURSOR is asked for as well as
-  // `hasNextPage`: an answer claiming more without saying where it resumes is
-  // one this sweep cannot act on, and asking again without it would re-read the
-  // page it just read, forever. `stopped` is the third way it ends (a
-  // continuation that failed) and it is kept apart from `more` because the
-  // repo goes on saying it was truncated, which it was.
+  // A page is left only with a cursor too: `hasNextPage` without one would
+  // re-read the same page forever. `stopped` (a failed or stalled continuation)
+  // stays apart from `more`, since the repo was still truncated.
   const pending = (entry) => entry.more && Boolean(entry.cursor) && !entry.stopped && entry.nodes.length < MAX_OPEN_ISSUES;
 
   /**
-   * One round: the page after the last for every repo that has one, one repo
-   * to a request. A continuation that fails is carried on its repo rather than
-   * failing the sweep: the first pages are already collected, and throwing
-   * away every other repo's answer over page two of one of them is not a better
-   * board.
-   *
-   * A round that moved NOTHING ends the repo too. An answer claiming another
-   * page, handing back the cursor it was asked with and carrying no nodes, has
-   * advanced neither of the two things that end a sweep (the resume point and
-   * the count the ceiling is measured against) so `while (paging()) step()`
-   * turns forever on it, inside the request or the timer driving it. Either one
-   * moving is progress and the paging goes on; neither moving is the tell, and
-   * it is read from the round itself rather than trusted to `hasNextPage`.
+   * One round: the next page of every repo that has one, one repo to a request.
+   * A failed continuation is carried on its repo, never on the sweep. A round
+   * that moved neither the cursor nor the count stops the repo, or
+   * `while (paging()) step()` would turn forever.
    */
   const step = () => {
     for (const entry of collected.filter(pending)) {
@@ -339,7 +235,7 @@ const startSweep = (repos, opts = {}) => {
         closedDay: entry.closedDay,
         error: entry.error,
       };
-      // Added LAST and only while it is true, so a finished board is byte for
+      // Added last and only while it is true, so a finished board is byte for
       // byte the payload the browser's sweep ends on (the parity suite pins it).
       if (pending(entry)) repo.loading = true;
       repoEntries.push(repo);
@@ -352,18 +248,9 @@ const startSweep = (repos, opts = {}) => {
 };
 
 /**
- * Every open issue across the roster, normalized to the workflow's vocabulary.
- *
- * The result carries a `repos` array alongside the issues so a repo can report
- * what happened to it: `truncated: true` when the sweep stopped at the ceiling
- * with issues still to give (issue #194), and `error` when its alias did not
- * resolve or GitHub dropped issues out of its answer. The issue list itself
- * stays flat (the board sorts and groups it) with a repo's pages together and
- * the repos in roster order.
- *
- * This is `startSweep` run to the end: what a caller with nobody watching the
- * pages arrive wants (the 9am brief, a test) in one call.
- *
+ * Every open issue across the roster: `startSweep` run to the end, for a caller
+ * nobody watches. A `repos` entry says `truncated` at the ceiling and `error`
+ * where its alias did not resolve or GitHub dropped issues.
  * @param {Array<{slug: string|null}>} repos the roster (repos without a slug are skipped)
  * @param {object} [opts]
  * @param {Function} [opts.exec] (cmd, args) => stdout: the `gh` seam
@@ -377,6 +264,5 @@ const fetchBoard = (repos, opts = {}) => {
   return sweep.board();
 };
 
-// The sweep's pure half is re-exported rather than restated, so a caller that
-// has this module has the whole sweep and never reaches past it (issue #195).
+// The sweep's pure half is re-exported, so a caller never reaches past this module.
 module.exports = { fetchBoard, startSweep, ask, splitResponse, buildBoardQuery, parseLabels, issueFrom, labelGroups, errorsByAlias, firstErrorFor, droppedReason, rateLimitReason, closedSince, blockersFor, lastCommentOf, REPOS_PER_REQUEST, PAGE_SIZE, MAX_OPEN_ISSUES, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, CLOSED_WINDOW_MS, LABELS_FILE };

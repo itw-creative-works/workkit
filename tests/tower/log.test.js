@@ -1,13 +1,6 @@
 //
-// Tests for tower/api/lib/log.js (issue #237): the tower's half of the kit's
-// one voice, a glyph per outcome with the `task:` in bold.
-//
-// Every case runs a real node with the module required, because what is under
-// test is the bytes on the two streams and the color gate that reads
-// `process.stdout.isTTY`: a piped child is the no-tty branch by construction,
-// and WORKKIT_COLOR is the seam that asks for the styled shape anyway. The shell
-// half is tests/scripts/lib-log.test.js, and the two assert the same shape on
-// purpose.
+// Tests for tower/api/lib/log.js in a real piped node (the no-tty branch; the
+// WORKKIT_COLOR seam asks for styling). tests/scripts/lib-log.test.js is the shell half.
 //
 
 const { spawnSync } = require('child_process');

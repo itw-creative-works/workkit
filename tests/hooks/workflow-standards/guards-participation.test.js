@@ -1,9 +1,7 @@
-//
 // Tests for hooks/workflow:standards: the guards (a non-git or empty cwd), and
 // the participation gate that decides whether a repo is healed, offered, or
 // left alone.
 // The shared prologue (the repo factory, the decline, the hook runner and its gh-less PATH, the constants) is ./helpers.js.
-//
 
 const path = require('path');
 const fs = require('fs');

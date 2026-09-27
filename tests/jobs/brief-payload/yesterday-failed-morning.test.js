@@ -1,8 +1,6 @@
-//
-// Tests for jobs/morning/brief/brief-payload.js, the payload the 9am job hands to Claude:
-// yesterday and the week, and a failed morning that is still a morning.
-// The shared prologue (the two fixture worlds, the composer seam, the summaries fixtures, the news gate) is ./helpers.js.
-//
+// Tests for jobs/morning/brief/brief-payload.js, the payload the 9am job hands
+// to Claude: yesterday and the week, and a failed morning that is still a morning.
+// The shared prologue (fixture worlds, composer seam, news gate) is ./helpers.js.
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
@@ -48,8 +46,8 @@ const run = async () => {
     assertEq(out.counts.open, 2, 'and the board is all there');
     assertEq(out.findings, null, 'the key says there was nothing to read');
     assertEq(out.week, null, 'and so does the rollup');
-    // The line carries the read's own reason (#215): a gap with nothing to
-    // explain it read as a night that produced nothing.
+    // The line carries the read's own reason, so the gap never reads as a
+    // night that produced nothing.
     assert(/^brief: no daily summary could be read from owner\/private-home: gh graphql failed: /m.test(stderr), `the skip is named, with why: ${JSON.stringify(stderr)}`);
     assert(/^brief: it is Monday and no weekly rollup could be read from owner\/private-home: gh graphql failed: /m.test(stderr), `both of them: ${JSON.stringify(stderr)}`);
     cleanup(world.root);

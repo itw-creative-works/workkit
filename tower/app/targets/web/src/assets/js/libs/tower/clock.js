@@ -1,25 +1,7 @@
-//
-// The second hand.
-//
-// Everything else on the tower moves when a FEED moves: the poller reads every
-// ten seconds (crew) or sixty (board) and each answer repaints the page. That is
-// right for counts and columns and wrong for the one thing measured in seconds -
-// an agent's freshness, which is drawn as `12s` beside a glyph that spins while
-// it is working. Between two reads the number sat still and the phase it decides
-// (agent.activityPhase) was only ever evaluated at poll cadence, so a card went
-// from green to gray up to ten seconds late.
-//
-// This is the missing clock, and it is deliberately NOT a repaint. A page's
-// render writes its whole subtree in one `innerHTML` (live-page's `swap`), which
-// every second would restart the very animation this exists to keep running and
-// take hover and selection with it. So the tick patches instead: it finds the
-// indicators the paint already drew, re-decides each one from the stamps ITS
-// OWN markup carries (`data-live-*`, written by agent.crewActivity), and writes
-// only the text and classes that actually changed.
-//
-// One decision, two callers: `activityTick` is the paint's arithmetic too, so
-// the tick can never disagree with the render that drew the element.
-//
+// The second hand: between polls it patches the activity indicators the last
+// paint drew, re-deciding each from its own `data-live-*` stamps through the
+// paint's `activityTick`. A patch, never a repaint: a repaint every second would
+// restart the spin it exists to keep turning (`tower/README.md` § The pages).
 
 import { activityTick, activityClass, mutedClass, MUTED_CLASS } from './agent.js';
 
@@ -32,22 +14,16 @@ const TICK_MS = 1000;
 let timer = null;
 
 /**
- * Bring every drawn indicator under `host` up to `now`.
- *
- * Idempotent by construction: same stamps and same second in, same DOM out, and
- * a tick that changes nothing writes nothing - every mutation below is behind a
- * comparison, because a blind write of an unchanged class is a style
- * recalculation sixty times a minute for every card on the page.
+ * Bring every drawn indicator under `host` up to `now`. Every write is behind
+ * a comparison, so a tick that changes nothing writes nothing.
  *
  * @param {ParentNode} host the document body - the dialogs carry indicators too
  *   and live outside the page mount
  * @param {number} [now] ms epoch
  */
 export const applyLive = (host, now = Date.now()) => {
-  // The CARDS first, because the walk below takes an indicator past five
-  // minutes out of the DOM's stamps and this one decides from those stamps: a
-  // card whose agent has just gone muted (#99) has to be read while its
-  // indicator still carries the epoch that says so.
+  // The cards first: the walk below strips a gone indicator's stamps, and a
+  // card that just went muted is read while its indicator still says so.
   for (const element of host.querySelectorAll('[data-live-card]')) {
     const live = element.querySelector('[data-live-ts]');
     if (!live) continue;
@@ -57,10 +33,8 @@ export const applyLive = (host, now = Date.now()) => {
   for (const element of host.querySelectorAll('[data-live-ts]')) {
     const { phase, age, title } = activityTick(element.dataset, now);
 
-    // Past the last cutoff - five minutes - the indicator is GONE, and with its
-    // stamp removed it drops out of this walk until a paint draws it again,
-    // which is the only thing that can bring it back (a fresher timestamp
-    // arrives with a feed, never with a tick).
+    // Past five minutes the indicator is gone: with its stamp removed it drops
+    // out of this walk until a paint draws it again with a fresher timestamp.
     if (phase === 'none') {
       element.removeAttribute('data-live-ts');
       element.replaceChildren();
@@ -72,17 +46,14 @@ export const applyLive = (host, now = Date.now()) => {
 
     const icon = element.querySelector('.omega-tower-activity');
     if (!icon) continue;
-    // COUPLING: this writes the icon's class list WHOLESALE, which is correct
-    // only because `agent.activityClass` is the entire class attribute the
-    // paint gives that element. Any class a drawing path adds to the indicator
-    // span is stripped by the next tick - put it on the wrapper or inside the
-    // glyph, or teach activityClass about it.
+    // This writes the icon's whole class list, correct only because
+    // `agent.activityClass` is the entire class attribute the paint gives it:
+    // put any other class on the wrapper or inside the glyph.
     const classes = activityClass(phase);
     if (icon.className !== classes) icon.className = classes;
     if (icon.getAttribute('title') !== title) icon.setAttribute('title', title);
-    // The glyph's motion IS the phase. Toggling the one class leaves the
-    // element in place, so a card that stays working keeps one unbroken spin
-    // across every tick under it.
+    // Toggling the one class leaves the element in place, so a card that stays
+    // working keeps one unbroken spin across every tick.
     const glyph = icon.querySelector('i');
     if (glyph) glyph.classList.toggle('fa-spin', phase === 'working');
     // What a screen reader hears is the same verdict as the colour, so it moves
@@ -93,11 +64,8 @@ export const applyLive = (host, now = Date.now()) => {
 };
 
 /**
- * Start the second hand over the document.
- *
- * Harmless on a page that draws no indicators - the walk finds nothing and the
- * tick is a no-op - so the runtime arms it for every page rather than making
- * each one declare whether it has anything that ages.
+ * Start the second hand over the document. Harmless on a page with no
+ * indicators, so the runtime arms it for every page.
  *
  * @param {ParentNode} host the document body - the dialogs carry indicators too
  *   and live outside the page mount

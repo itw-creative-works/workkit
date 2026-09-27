@@ -1,15 +1,6 @@
 //
-// Tests for tower/api/lib/documents.js - the mornings themselves.
-//
-// The read is history.js's and its one seam is `gh`, so every case here is a
-// fake exec answering the Discussions query with a board of published posts.
-// Nothing reaches GitHub, and the scratch ~/.workkit is what names the home
-// repo.
-//
-// The question this module answers is the OTHER one asked of that same board:
-// not what a morning counted (history.js) but what it said. So the cases are
-// about the text - which posts are documents, what comes off a body before a
-// browser renders it, and how far back the archive goes.
+// Tests for tower/api/lib/documents.js: what each morning said (history.js has
+// what it counted), read through a fake `gh` and a scratch ~/.workkit, never GitHub.
 //
 
 const fs = require('fs');

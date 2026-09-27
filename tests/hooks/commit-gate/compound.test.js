@@ -1,8 +1,6 @@
-//
 // Tests for hooks/safety/commit-gate: stage-and-commit compounds fail closed,
-// check 5 never stands down silently (issue #155), and the loader wiring.
+// check 5 never stands down silently, and the loader wiring.
 // The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
-//
 
 const path = require('path');
 const fs = require('fs');
@@ -18,9 +16,8 @@ const run = async () => {
   group('commit-gate: stage-and-commit compounds fail closed (issue #155)');
 
   await test('git add -A && git commit over a CLEAN index: exit 2', () => {
-    // The regression this pins: the gate is PreToolUse, so it read the index
-    // BEFORE the `add` ran. Over a clean index the empty file list hit the
-    // fail-open and every check stood down, silently.
+    // The gate is PreToolUse, so it reads the index before the `add` runs: a
+    // clean index must not hit the fail-open and stand every check down.
     const dir = mkRepo();
     fs.writeFileSync(path.join(dir, 'app.js'), 'const x = 1;\n');
     const { code, stderr } = runHook(dir, 'git add -A && git commit -m "feat(x): y"');

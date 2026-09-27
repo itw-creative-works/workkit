@@ -1,7 +1,6 @@
 //
-// Tests for tower/api/lib/board.js: the label vocabulary, read from the
-// real workflow/labels.json.
-// The shared prologue (the fake gh, the issue and label builders, the roster, the module under test) is ./helpers.js.
+// Tests for tower/api/lib/board.js: the label vocabulary, read from the real
+// workflow/labels.json. Prologue: ./helpers.js.
 //
 
 const fs = require('fs');

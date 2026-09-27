@@ -1,10 +1,6 @@
-//
-// Tests for jobs/install.sh: the LaunchAgent installer.
-//
-// HOME is a scratch directory and `launchctl` is a recorder on PATH, so nothing
-// here touches ~/Library/LaunchAgents or the real gui domain: the suite reads
-// the plist that WOULD be installed and the commands that WOULD load it.
-//
+// Tests for jobs/install.sh, the LaunchAgent installer. HOME is scratch and
+// `launchctl` is a recorder on PATH, so the suite reads the plist that would be
+// installed and the commands that would load it, never the real gui domain.
 
 const fs = require('fs');
 const path = require('path');
@@ -19,7 +15,7 @@ const REPO = path.join(__dirname, '..', '..');
 
 // The one agent this checkout installs: the 9am job, which runs the summaries
 // step and then the brief. The label is the schedule's name and outlives the
-// script it points at, which since issue #107 is the one morning entry point.
+// script it points at, the one morning entry point.
 const AGENT = { label: 'com.workkit.claude-daily', runner: 'morning.sh', hour: '9' };
 const LABEL = AGENT.label;
 

@@ -1,9 +1,7 @@
-//
 // Tests for hooks/safety/release-taken, the PreToolUse hook that refuses a
 // release whose version a provider already has: failing open out loud, and
 // its wiring in hooks.json.
 // The shared prologue (the npm and gh stubs, the repo factory, the hook runner, the release command) is ./helpers.js.
-//
 
 const fs = require('fs');
 const os = require('os');

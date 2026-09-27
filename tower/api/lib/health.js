@@ -1,23 +1,10 @@
-//
-// Per-repo health: the work sitting on the table.
-//
-// Four numbers, all of them things git and the CHANGELOG already know:
-//   unpushed          commits ahead of the upstream (null when there is none:
-//                     a branch with no upstream is a DIFFERENT state from a
-//                     branch that is level with one, and collapsing them to 0
-//                     would hide the repo that has never been pushed)
-//   uncommitted       working-tree entries
-//   unreleasedEntries bullets under the CHANGELOG's [Unreleased] heading
-//   lastTag           the most recent release tag
-//
-// Nothing here throws. The tower renders a tile per repo on a poll, and one
-// unreadable checkout must not take the pane down. A broken repo reports nulls
-// and names the problem in `error`.
+// Per-repo health: the work sitting on the table, four numbers git and the
+// CHANGELOG already know. `unpushed` is null with no upstream, a different state
+// from level with one. Nothing throws: a broken repo reports nulls and names the
+// problem in `error`, so one checkout never takes the pane down.
 //
 // Usage:
-//   const { repoHealth } = require('./health');
 //   repoHealth('/path/to/repo');
-//
 
 const fs = require('fs');
 const path = require('path');
@@ -95,7 +82,7 @@ const repoHealth = (repoPath, opts = {}) => {
   }
 
   try {
-    // No upstream makes this fail; that IS the null, not an error to report.
+    // No upstream makes this fail; that is the null, not an error to report.
     health.unpushed = countLines(git('log', '@{u}..HEAD', '--oneline'));
   } catch {
     health.unpushed = null;

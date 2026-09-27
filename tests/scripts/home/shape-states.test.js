@@ -1,9 +1,6 @@
-//
 // Tests for workflow/home.sh: its shape (the three libraries load quietly and
 // carry no personal path, the copy's exclude list, the addresses, the site host)
-// and the four states a home can be in.
-// The shared prologue (the offline world, inHome and setup, the remote and runner factories) is ./helpers.js.
-//
+// and the four states a home can be in. The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -28,9 +25,9 @@ const run = async () => {
   });
 
   await test('no absolute personal path is written into the engine', () => {
-    // The three libraries and every piece the split ones source (home/, publish/, lib/).
+    // The three libraries and every shell piece the first two source (home/, lib/).
     const libs = ['lib.sh', 'home.sh', 'publish.sh'];
-    for (const dir of ['home', 'publish', 'lib']) {
+    for (const dir of ['home', 'lib']) {
       for (const file of fs.readdirSync(path.join(WORKFLOW_DIR, dir)).filter((f) => f.endsWith('.sh'))) libs.push(`${dir}/${file}`);
     }
     for (const lib of libs) {
@@ -40,9 +37,9 @@ const run = async () => {
   });
 
   await test('the copy’s exclude list covers everything the app’s .gitignore names', () => {
-    // The list says it IS the gitignore's set (issue #201). Read both and hold
-    // them to it: an ignore rule added to the app without the list learning it
-    // is a tree the seed and the sync copy into the published clone.
+    // The list is the gitignore's set, so both are read and held to it: an
+    // ignore rule the list misses is a tree the seed and the sync copy into the
+    // published clone.
     const world = mkWorld();
     const { out } = inHome(world, 'printf "%s\\n" "${WK_TOWER_APP_EXCLUDE[@]}"; echo --; printf "%s\\n" "${WK_TOWER_APP_KEEP[@]}"');
     const [excluded, kept] = out.trim().split('\n--\n').map((half) => half.split('\n'));
@@ -52,7 +49,7 @@ const run = async () => {
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line && !line.startsWith('#'))
-      // Matched by NAME at every depth, so only the top-level names are the
+      // Matched by name at every depth, so only the top-level names are the
       // list's to carry: a rule spelling out a path is a different question.
       .map((line) => line.replace(/\/$/, ''))
       .filter((line) => !line.includes('/'));
@@ -77,21 +74,17 @@ const run = async () => {
     assertEq(settings, shellPath(path.join(world.workflowHome, 'settings.json')),
       'the site options live beside the roster, outside the clone the user never edits');
 
-    // Nothing addresses anything INSIDE the clone but the app it builds: the
-    // site options moved out and the inbox is gone entirely (issue #79).
+    // Nothing addresses anything inside the clone but the app it builds.
     const lib = fs.readFileSync(path.join(WORKFLOW_DIR, 'lib.sh'), 'utf8');
     assert(!/WK_HOME_CONFIG|WK_HOME_INBOX/.test(lib), 'no address is kept for either retired file');
     cleanup(world.root);
   });
 
   await test('the site host reads one way, whatever shape the domain was typed in', () => {
-    // One reader for that option (issue #230), because three callers want the
-    // same answer: publish.sh writes it as the CNAME and decides the build's
-    // path prefix on whether it is set at all, and setup composes the published
-    // site's URL out of it. A CNAME carries a host and never a path, so the
-    // scheme and any trailing slash come off HERE rather than at a caller, and
-    // `ask_site_url` takes whatever was typed at its word. Bracketed on the way
-    // out so the empty answer is an answer and not a missing line.
+    // One reader, because the CNAME, the path prefix and the site URL all want
+    // the same answer. A CNAME carries a host and never a path, so the scheme and
+    // any trailing slash come off here rather than at a caller. Bracketed so the
+    // empty answer is an answer and not a missing line.
     for (const [typed, host] of [
       ['board.example.com', 'board.example.com'],
       ['board.example.com/', 'board.example.com'],
@@ -116,7 +109,7 @@ const run = async () => {
 
   await test('the slug write seeds the settings file when nothing has yet, with the switch unanswered', () => {
     // The one order where setup runs before any heal: this function creates the
-    // hand-edited file itself. `publish` seeds NULL (issue #84): the same
+    // hand-edited file itself. `publish` seeds null: the same
     // unanswered state the heal's seed writes, so whichever wrote it first,
     // setup still has a question to put.
     const world = mkWorld({ settings: null });

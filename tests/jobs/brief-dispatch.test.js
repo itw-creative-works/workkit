@@ -1,17 +1,7 @@
-//
-// Tests for jobs/brief-dispatch.sh: handing the day to the cloud.
-//
-// The function is SOURCED and called directly here, which is how both its
-// callers use it: the scheduled morning (morning-local/cloud-brief.test.js
-// covers what that caller does with the answer) and `workkit brief`
-// (workkit-cli/brief.test.js).
-// This suite is about the answer itself: the dispatch that lands, and every
-// named reason one cannot be made.
-//
-// Every world is a scratch HOME with a recording `gh` first on PATH, so nothing
-// here reaches GitHub and a refusal is proved by a recorder that stayed silent.
-// The home repo is named in a scratch WORKFLOW_HOME, never this machine's.
-//
+// Tests for jobs/brief-dispatch.sh, sourced and called the way both callers
+// use it: the dispatch that lands, and every named reason one cannot be made.
+// Every world is a scratch HOME with a recording `gh` first on PATH, so a
+// refusal is proved by a recorder that stayed silent.
 
 const fs = require('fs');
 const path = require('path');
@@ -147,9 +137,8 @@ const run = async () => {
   }
 
   await test('a copy of the lib with no engine beside it refuses by name', () => {
-    // The engine is resolved from the FILE's own location, which is what lets a
-    // caller that knows nothing about the 9am job source it, and what makes a
-    // partial checkout a named refusal rather than a crash.
+    // The engine resolves from the file's own location, so a partial checkout
+    // is a named refusal rather than a crash.
     const world = mkWorld();
     const lone = path.join(world.root, 'jobs');
     fs.mkdirSync(lone, { recursive: true });

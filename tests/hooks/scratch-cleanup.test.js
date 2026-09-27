@@ -1,8 +1,6 @@
-//
 // Tests that a suite leaves no scratch folder behind (tests/lib/scratch.js
 // removes them at exit): each suite runs as a child with a temp dir of its
 // own, which must be empty once the child exits.
-//
 
 const fs = require('fs');
 const path = require('path');

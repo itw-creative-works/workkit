@@ -1,44 +1,9 @@
 #!/bin/bash
-# safety/suite-guard: PreToolUse hook (Bash)
-# The commit gate owns the full suite (docs/project-state.md, "The proof", issue
-# #243): it runs the repo's suite itself at every commit carrying code, so a
-# suite run by hand before that pays the same minutes twice, and a 0.54.0 ship
-# spent 25 of them that way. This guard bounces the hand-run, from every class,
-# the manager included: `npm test`, `npm run test`, npm's `t` alias and npm's
-# own flags before any of them (`npm --silent test`), and the repo's test script
-# run directly (`scripts.test` of the nearest package at or above the session
-# directory, up to the git root, that declares one, and the root's own from
-# inside a nested package, `node tests/run.js` here).
-#
-# A NARROWED run passes untouched, since it is what proves a change: the touched
-# test files (`node tests/<dir>/<name>.test.js`), `node --test <file>`,
-# `npm test -- <scope>`, `npx omega test <scope>`. Each carries a scope, and the
-# scope is what this reads. EVERY occurrence in the command is judged, not the
-# first: `npm test -- one && npm test` is still a full run.
-#
-# The gate's own run never arrives here: it runs npm test from inside its own
-# hook, never through the Bash tool, which is the only surface a PreToolUse hook
-# sees.
-#
-# The escape is `WORKKIT_SUITE=1` on the command, the deliberate full run, the
-# same shape as safety/tree-guard's WORKKIT_ALLOW_DISCARD and read by the same
-# helper (hook_has_escape in hooks/lib/commit.sh).
-#
-# Detection is the command TEXT, in two passes, and no clause walk. The first is
-# cheap and RAW: one awk pass, no sourcing and no perl, and nothing else runs
-# for a command that cannot be a suite run. Only when that matches does the
-# second pass pay for the house text handling (hooks/lib/commit.sh, the same
-# preparation the commit hooks and tree-guard do): heredoc bodies are file
-# content and quoted spans are data, so a MENTION of the suite bounces nothing
-# (`git commit -m "test: cover npm test wiring"`, a `gh issue comment` quoting
-# it, a heredoc carrying it). If the stripped text no longer carries a full run,
-# the command was talking about one.
-#
-# Fail open, silently: no jq, a session directory inside no git repository, or
-# no package at or above it (the root's included) declaring a test script
-# leaves the command alone. The repo is resolved the way safety/commit-gate
-# resolves it, from the git root, and the package the way its nested pass does
-# (hook_test_package_dir), so the two hooks agree on whose suite this is.
+# safety/suite-guard: PreToolUse hook (Bash). The commit gate owns the full
+# suite (docs/project-state.md § The proof), so this bounces the hand-run from
+# every class: npm's test spellings and the repo's test script run directly. A
+# narrowed run passes, WORKKIT_SUITE=1 is the deliberate escape, and a mention
+# bounces nothing. Fails open, silently. Detail: docs/hooks.md § safety:suite-guard.
 
 set -euo pipefail
 set -f  # no glob expansion while handling untrusted command text
@@ -84,17 +49,10 @@ fi
 # alias, and npm's flags in front of any of them.
 sg_npm_re='(^|[^[:alnum:]_./-])npm([[:space:]]+-[^[:space:]]+)*[[:space:]]+(run[[:space:]]+test|test|t)'
 
-# sg_full_run <text>: prints `full` when <text> carries at least one FULL suite
-# run. One awk pass, line by line, since a line break is a clause break like any
-# other. Each occurrence is judged on what FOLLOWS it up to that clause's end:
-# a scope makes the run a narrow one, and narrow runs are the proof of a change.
-# For npm the scope reaches the script after `--`, the only form that narrows
-# it; the script run directly narrows on any argument at all. A redirect is
-# shell syntax, never an argument, so `node tests/run.js 2>&1 | tail` is still
-# the whole suite. A scope that continues the matched word (`npm run
-# test:unit`, `node tests/run.js.bak`) names another script and is never this
-# one, and the script is matched only at a command-word boundary, so a path
-# that merely ends in it (`ls node_modules/.bin/jest`) is not a run.
+# sg_full_run <text>: prints `full` when <text> carries at least one full suite
+# run, each judged on what follows it to its clause's end: an npm scope after
+# `--`, or any argument to the script run directly, narrows it. A redirect is
+# never an argument; a continued word (`test:unit`) or a path suffix is not a run.
 sg_full_run() {
   while IFS= read -r needle; do
     [ -n "$needle" ] || continue

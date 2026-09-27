@@ -1,9 +1,7 @@
-//
 // Tests for hooks/safety/capture-guard: the Edit and Write path, the drain's
 // marker-gated rewrite, and the append no marker opens because the agent never
 // adds to the capture file.
 // The shared prologue (the scratch repo and TMPDIR, the marker helpers, the hook runner) is ./helpers.js.
-//
 
 const path = require('path');
 const {
@@ -52,8 +50,8 @@ const run = async () => {
 
   group('capture-guard: the agent never adds to the capture file');
 
-  // Owner ruling, 2026-08-05: clear it on triage, never add to it. No marker
-  // opens an append: the marker means a DRAIN is running, not a capture.
+  // The capture file is cleared on triage, never added to. No marker opens an
+  // append: the marker means a drain is running, not a capture.
   await test('an append into the capture file: exit 2 with and without a marker', () => {
     const appends = [
       `echo "- a thought" >> ${W}/capture.md`,
@@ -93,7 +91,7 @@ const run = async () => {
     }
   });
 
-  // The CLI is caught where it is RUN, not where it is mentioned: prose about
+  // The CLI is caught where it is run, not where it is mentioned: prose about
   // capture in an issue body, and a search for it, touch no capture file.
   await test('the capture CLI merely named: exit 0', () => {
     clearMarker();
@@ -137,7 +135,7 @@ const run = async () => {
     }
   });
 
-  // tee, sed -i and perl -i are judged by their OWN argument: a pipeline whose
+  // tee, sed -i and perl -i are judged by their own argument: a pipeline whose
   // writer points at another file writes to that file, whatever the command
   // line mentions elsewhere.
   await test('a writer keyword pointed at another file: exit 0', () => {

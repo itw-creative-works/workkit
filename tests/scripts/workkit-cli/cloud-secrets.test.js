@@ -1,9 +1,7 @@
-//
 // Tests for workflow/workkit.sh: the cloud brief secrets: `setup`'s
 // wizard, the mint under a pty and its capture file, the forced re-mint
 // (`setup --token`), and the automatic and report paths.
-// The shared prologue (the scratch world, runCli and inCli, the repo and kit factories) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -17,18 +15,16 @@ const {
 const run = async () => {
   group('workkit setup: the cloud secrets');
 
-  // The fictional values these tests move around. Nothing here is a real token,
-  // and nothing here carries a vendor's prefix either: a committed literal
-  // shaped like a credential trips push protection for everyone who clones the
-  // repo. What is asserted is that the value went from the command that
-  // produced it to `gh secret set`'s stdin, and appeared nowhere else.
+  // Fictional values with no vendor's prefix: a committed credential-shaped
+  // literal trips push protection for everyone who clones the repo. What is
+  // asserted is that the value went from the command that produced it to
+  // `gh secret set`'s stdin, and appeared nowhere else.
   const MINTED = 'FAKEmintedTOKENvalue0123456789';
   const LOGIN_TOKEN = 'gho_FAKEloginTOKENfakeLOGINtoken00';
 
-  // Since issue #174 the mint runs under a pty and its whole screen is teed to
-  // the terminal, so the CLI's own copy of the token is on stdout by design:
-  // that is the screen the human reads the paste prompt on. What must never
-  // happen is a SECOND copy: workkit printing the value on a line of its own.
+  // The mint runs under a pty with its whole screen teed to the terminal, so
+  // the CLI's own copy of the token is on stdout by design. What must never
+  // happen is a second copy: workkit printing the value on a line of its own.
   // The CLI's lines are the pass-through; workkit's all open with a glyph.
   const countOf = (text, needle) => text.split(needle).length - 1;
   const workkitLines = (text) => text.split('\n').filter((l) => /^ {0,2}[✓·›⚠✖⏳] /.test(l)).join('\n');
@@ -157,10 +153,10 @@ FAKEtrailingLINEthatIsLongEnough')"`);
   });
 
   await test('the cross-repo token is set zero-click from the gh login, with no prompt at all', () => {
-    // Owner ruling 2026-07-30: maximum automation. A piped run (no terminal to
-    // ask) still writes it, which is what "no prompt" means here. The name
-    // CONTAINS `GITHUB_`, which the stub refuses only as a prefix the way the
-    // live API does, so a write that lands proves the name is a legal one.
+    // A piped run (no terminal to ask) still writes it, which is what "no
+    // prompt" means here. The name contains `GITHUB_`, which the stub refuses
+    // only as a prefix the way the live API does, so a write that lands proves
+    // the name is a legal one.
     const world = mkHomeWorld({ secrets: [], authToken: LOGIN_TOKEN });
     const { kit, script } = mkKit(SLUG);
     const { out } = runCli(world, ['setup'], { script });
@@ -173,7 +169,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
   });
 
   await test('only a name that STARTS with GITHUB_ is refused: the shipped one is accepted', () => {
-    // The rename in issue #91 rests on GitHub's actual rule, so it is asserted
+    // The secret's name rests on GitHub's actual rule, so it is asserted
     // against a stub that enforces that rule rather than against a comment: the
     // same push, twice, differing only in the secret's name.
     const world = mkHomeWorld({ authToken: LOGIN_TOKEN });
@@ -220,10 +216,9 @@ FAKEtrailingLINEthatIsLongEnough')"`);
   const mkMintWorld = (opts = {}) => mkHomeWorld({ secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }], ...opts });
 
   await mintTest('the CLI’s whole screen reaches the terminal, and the capture file is gone by the end', () => {
-    // The QA failure this fixes: the CLI draws its ENTIRE screen on stdout, so
-    // a captured stdout left the human with a blank line where the paste
-    // prompt should be. Both halves of the screen are asserted (the one the
-    // stub draws on stdout and the one it draws on stderr) because under the
+    // The CLI draws its entire screen on stdout, so a captured stdout would
+    // leave a blank line where the paste prompt should be. Both halves of the
+    // screen (the stub's stdout and its stderr) are asserted, because under the
     // pty both are the same terminal.
     const world = mkMintWorld({ claudeToken: MINTED });
     const { out } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
@@ -248,7 +243,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
   });
 
   await test('a machine with neither pty runner is a named skip with the two commands, and asks nothing', () => {
-    // PATH is narrowed to the world's own shims AFTER the CLI is loaded: this
+    // PATH is narrowed to the world's own shims after the CLI is loaded: this
     // machine has a `script` (and maybe `expect`), and the run that has
     // neither cannot be staged any other way. The claude stub is in that same
     // directory, so the check that fires is the one being tested.
@@ -264,12 +259,10 @@ FAKEtrailingLINEthatIsLongEnough')"`);
   });
 
   await test('a GNU/util-linux `script` is spoken in its own syntax, and its -e carries the status back', () => {
-    // The other `script`. It takes the command in a different place, and only
-    // its `-e` returns the child's status: without it a mint that never ran
-    // would read as one that succeeded. This machine speaks the BSD syntax, so
-    // the GNU one is pinned against a stub shaped like the real utility (it
-    // answers `--version`, which BSD's refuses), the way the gh stub is shaped
-    // like the live API.
+    // The other `script` takes the command elsewhere, and only its `-e` returns
+    // the child's status, or a mint that never ran reads as a success. This
+    // machine speaks BSD, so GNU is pinned against a stub shaped like the real
+    // utility (it answers `--version`, which BSD's refuses).
     const gnuScript = (world) => {
       const log = path.join(world.root, 'script-argv.log');
       writeStub(path.join(world.bin, 'script'), [
@@ -313,11 +306,10 @@ FAKEtrailingLINEthatIsLongEnough')"`);
   group('workkit setup --token: the forced re-mint (issue #174)');
 
   await mintTest('a young secret is re-minted anyway: the flag IS the yes', () => {
-    // The token that goes bad while young (a lapsed subscription) is the case
-    // the age check cannot see: three days old, and nothing about it is stale.
-    // The terminal is the one thing this harness cannot hand a run, so the
-    // command is called with `interactive` answering yes; everything else
-    // (the flag, the parsing, the step) is the real thing.
+    // A token that goes bad while young (a lapsed subscription) is the case the
+    // age check cannot see. The terminal is the one thing this harness cannot
+    // hand a run, so `interactive` answers yes; the flag, the parsing and the
+    // step are the real thing.
     const world = mkHomeWorld({ secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }], claudeToken: MINTED });
     const { out, err } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
     const calls = world.ghCalls();
@@ -400,7 +392,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     // A captive portal answers the handshake and never the request. The daily
     // path runs this at session start, so an unbounded read would hold the
     // session open for as long as the portal felt like it. `exec` matters: the
-    // stub must BE the process the bound signals, the way real gh is.
+    // stub must be the process the bound signals, the way real gh is.
     const world = mkHomeWorld({ binOnPath: true });
     writeStub(path.join(world.root, 'bin', 'gh'), [
       'if [[ "$1" == \'secret\' && "$2" == \'list\' ]]; then exec sleep 60; fi',
@@ -436,8 +428,8 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     });
     const { kit, script } = mkKit(SLUG);
     const { out, err, said } = runCli(world, ['doctor'], { script });
-    // The level is the STREAM now (issue #237): a warning is on stderr, and an
-    // ordinary report line is on stdout.
+    // The level is the stream: a warning is on stderr, and an ordinary report
+    // line is on stdout.
     assert(new RegExp(`CLAUDE_CODE_OAUTH_TOKEN on ${HOME} was set 40\\d days ago`).test(err), `the old one is a warning with its age, got: ${err}`);
     assert(new RegExp(`WORKKIT_GITHUB_TOKEN is set on ${HOME} \\(5 days ago\\)`).test(out), `the fresh one is a plain report line, got: ${out}`);
     assert(/item\(s\) need attention/.test(said), 'the stale token is counted');

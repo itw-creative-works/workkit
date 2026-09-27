@@ -1,32 +1,12 @@
 #!/usr/bin/env node
+// jobs/morning/brief/brief-payload.js: what the 9am job hands to Claude. The
+// tower's `/api/brief` composed without the tower, through the same `buildBrief`,
+// so it runs whether or not the tower is up (jobs/README.md § The payload). Pure
+// gather: the payload on stdout, and the cursor and stats lines written into the
+// scratch file `WORKKIT_BRIEF_MARK_FILE` names.
 //
-// The morning payload: what the 9am job hands to Claude.
-//
-// It is the tower's `/api/brief`, composed WITHOUT the tower: the same roster
-// walk, the same board sweep, the same per-repo health, through the same
-// `buildBrief`. Mirroring the server's composition rather than calling it over
-// HTTP is what lets the job run at nine in the morning whether or not anyone
-// started `npm run tower`, and because both halves derive from one module, the
-// notification and the Brief page cannot tell different stories.
-//
-// The caching the server wraps around those reads is deliberately absent. A job
-// that runs once a day has nothing to cache.
-//
-// A sweep that FAILED is printed as a failure. "Nothing is waiting on you" and
-// "gh could not answer" are opposite facts, and a morning that quietly reported
-// the first when the second happened is worse than no brief at all.
-//
-// Pure gather: no writes, no Claude, no notification. `morning.sh` owns the
-// sending, and, since issue #86, the publishing: what this script leaves
-// behind are the two lines the runner appends to the brief it publishes, the
-// upstream-news cursor and the day's stats (issue #55), both written into the
-// scratch file named by `WORKKIT_BRIEF_MARK_FILE` and gone with the run. Both
-// live on the published board rather than on this machine.
-//
-// Usage:
-//   node jobs/morning/brief/brief-payload.js          // the payload on stdout
-//   composeBrief({ workflowHome, exec }) // offline, against fixtures
-//
+// Usage: node jobs/morning/brief/brief-payload.js   // the payload on stdout
+//   composeBrief({ workflowHome, exec })              // offline, against fixtures
 
 const fs = require('fs');
 
@@ -39,7 +19,7 @@ const { collectCcNews, renderCcNews, renderVersionMark } = require('./cc-news');
 const { renderStatsMark } = require('./stats');
 
 // The digest instruction. It names the payload's sections rather than the shape
-// of a board file, and it fixes the FIRST line of the response: morning.sh puts
+// of a board file, and it fixes the first line of the response: morning.sh puts
 // that line in the desktop notification a local rehearsal fires and in the one
 // line of proof of life a runner writes to the Actions log.
 const INSTRUCTION = `You are producing the owner's MORNING KICKOFF from the brief payload below.
@@ -96,14 +76,9 @@ Nothing else: no preamble, no advice, no restating the payload.
 --- BRIEF ---`;
 
 /**
- * The repos the sweep could not read, said once on stderr.
- *
- * A PARTIAL sweep still answers `ok: true`: the board keeps every repo that
- * came back and records the others as per-repo errors, which the payload does
- * not carry. That is the shape a token whose scope is short takes: the brief
- * reads clean and simply covers less than the roster. The one line here is what
- * makes it visible, in the local log and the Actions log alike; stdout, which is
- * the payload, is untouched.
+ * The repos the sweep could not read, said once on stderr. A partial sweep still
+ * answers `ok: true` with per-repo errors the payload does not carry, which is
+ * how a token with short scope looks; this line makes it visible.
  *
  * @param {{repos?: Array<{slug: string, error: string|null}>}} board the sweep
  */
@@ -114,18 +89,10 @@ const warnUnreadable = (board) => {
 };
 
 /**
- * The published summaries, onto the payload: the ONE shape both readers of
- * `buildBrief` attach, so the morning message and the Brief page carry the same
- * keys or neither (tower/api/lib/summaries.js owns the Monday rule).
- *
- * A summary that could not be read is a NAMED line on stderr and a null key,
- * beside `warnUnreadable`'s: the brief still composes, and the log says which
- * part of it is missing rather than leaving a morning quietly thinner. The line
- * carries the read's OWN reason where it had one (issue #215), so a morning
- * thinned by a spent rate limit says so in the Actions log instead of reading as
- * a night that produced nothing. A machine with NO home repo says nothing at
- * all: it has no board to have read, which is a fact about the machine rather
- * than a gap in this morning.
+ * The published summaries, onto the payload: the one shape both readers of
+ * `buildBrief` attach (tower/api/lib/summaries.js owns the Monday rule). A
+ * summary that could not be read is a null key and a named stderr line carrying
+ * the read's own reason; a machine with no home repo says nothing.
  *
  * @param {object} payload what buildBrief returned
  * @param {object} opts composeBrief's own options
@@ -146,10 +113,8 @@ const attachSummaries = (payload, opts) => {
 };
 
 /**
- * The brief payload, assembled from the three reads the tower's endpoints make.
- *
- * Every option passes through to the libs untouched, which is what lets the
- * suite run this whole composition against a fixture roster and a fake exec.
+ * The brief payload, assembled from the three reads the tower's endpoints make;
+ * every option passes through to the libs untouched.
  *
  * @param {object} [opts]
  * @param {string} [opts.workflowHome] the user's ~/.workkit
@@ -170,13 +135,9 @@ const composeBrief = (opts = {}) => {
       exec,
     });
   } catch (err) {
-    // A read that threw leaves no roster to sweep, and an empty roster sweeps
-    // clean, which would read as an empty board rather than as a broken read.
-    // No summaries are attached here. The read that just failed was of this
-    // machine's own state, and the home repo is named in the same folder: a
-    // brief that could not learn what repos exist has no business asking that
-    // folder a second question, and an ok:false payload is a report of a broken
-    // morning rather than a morning to be enriched.
+    // A roster read that threw is a broken morning, never an empty board, and no
+    // summaries are attached: the home repo is named in the folder that just
+    // failed to read.
     return buildBrief(
       { ok: false, reason: `the roster read failed: ${err.message}`, issues: [] },
       {},
@@ -203,13 +164,8 @@ const render = (payload, news) => `${INSTRUCTION}\n\n${JSON.stringify(payload, n
 
 /**
  * Hand the runner the lines to append to the brief it publishes, through the
- * scratch file it named.
- *
- * Two lines now, and each one rides only when it has something to say: the
- * upstream-news cursor when the news could be read at all, and the day's stats
- * (issue #55) whenever a payload was composed. Nothing durable is written here:
- * the published Discussion is the store for both, which is why they leave
- * together, in one file the runner appends verbatim.
+ * scratch file it named: the news cursor when the news could be read, and the
+ * day's stats whenever a payload was composed.
  *
  * @param {object|null} news what collectCcNews returned
  * @param {object|null} payload what composeBrief returned

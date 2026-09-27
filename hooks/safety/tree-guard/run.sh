@@ -1,41 +1,10 @@
 #!/bin/bash
-# safety/tree-guard: PreToolUse hook (Bash)
-# The working tree is SHARED (issue #157): a worker reverting its own edits with
-# `git checkout -- <files>` discarded another agent's uncommitted work in the
-# same files, and three later runs reached for `git stash` over trees holding a
-# whole wave of parked work. Every one of those commands throws away, or parks,
-# state the agent running it cannot see, so this guard bounces them and names
-# the scoped alternative: reverse-edit your own hunks.
-#
-# Blocked, wherever they sit in a compound, and through the prefixes the house
-# finder in lib/commit.sh peels (`git -C <path>`, a path spelling, `command`/`env`/an
-# UNQUOTED `eval`, `VAR=x`, a `(`/`{` opener): a quoted eval body, an `sh -c`
-# string, a control-flow wrapper and a command substitution are accepted misses,
-# the same line that finder draws:
-#   git checkout   with a pathspec: `--`, a path-looking or quoted operand,
-#                  two operands, `-f`/`--force`, `--pathspec-from-file`
-#   git switch     with `--discard-changes` or `-f`/`--force` (it takes no
-#                  pathspec, so the plain switch is legal)
-#   git restore    unless `--staged` is there WITHOUT `--worktree`
-#   git stash      every subcommand, bare included, except the read-only
-#                  `list` and `show` (issue #193)
-#   git clean      with a force spelling (`-f`, `-fd`, `--force`)
-#   git reset      with `--hard`
-# Always on: whether the tree is dirty beyond this agent's own files is not
-# knowable from here, so the guard never tries to decide it. The deliberate
-# discard escapes by carrying `WORKKIT_ALLOW_DISCARD=1` as an assignment on the
-# command, which is the OWNER's to add: the hook then stands aside out loud.
-#
-# Where the checkout line sits, and why: a lone ref operand is a branch switch
-# and stays legal (the ship PR path uses it, and git refuses it over conflicting
-# changes anyway), while anything that could name a file is a discard. The
-# working tree answers the ambiguous case (`feature/thing` is a branch,
-# `src/app.js` is a file that exists) and a QUOTED operand reads as a pathspec,
-# since quoting an operand is how a glob is passed and almost never how a branch
-# is named. Fully documented in README.md.
-#
-# Fail open on the guard's own errors (no jq, unreadable payload): a broken
-# guard must never wedge a session.
+# safety/tree-guard: PreToolUse hook (Bash). The working tree is shared, so
+# this bounces the git commands that discard or park state the agent cannot
+# see: a checkout carrying a pathspec, a forced switch, restore unless
+# index-only, stash but `list`/`show`, a forced clean, `reset --hard`. Always
+# on; `WORKKIT_ALLOW_DISCARD=1` on the command is the owner's escape, heard out
+# loud. Fails open on its own errors. The checkout line and the misses: README.md.
 
 set -euo pipefail
 set -f  # no glob expansion while handling untrusted command text
@@ -60,14 +29,9 @@ src=$(hook_strip_heredocs "$cmd")
 stripped=$(hook_strip_quotes "$src")
 stripped=$(hook_fold_redirect_amp "$stripped")
 
-# Drop from a clause what is not an ARGUMENT: a redirection (with its target,
-# whether attached as `>/tmp/out` or sitting in the next token) and everything
-# from an unquoted `#` onward. Both used to be walked like operands, so
-# `git checkout main > /tmp/out` and `git checkout main # note` read as the
-# ref-plus-pathspec form and bounced a legal branch switch, and a `--hard` or a
-# `-f` inside a trailing comment answered for the command in front of it.
-# Runs for every clause, ahead of the git test, so each subcommand's judgment
-# sees the command's real words and nothing else.
+# Drop from a clause what is not an argument: a redirection with its target,
+# and everything from an unquoted `#` on, so `git checkout main > /tmp/out` stays
+# a branch switch and a `--hard` in a trailing comment answers for nothing.
 tg_strip_noise() {
   local out=() w n
   while [ $# -gt 0 ]; do
@@ -89,7 +53,7 @@ tg_is_path() {
   case "$1" in
     .|..|./*|../*|/*|\~/*) return 0 ;;
     *'*'*|*'?'*|*'['*) return 0 ;;
-    # A quoted operand, per the header: quoting is how a glob is passed.
+    # A quoted operand: quoting is how a glob is passed (README.md).
     _hookq_*) return 0 ;;
   esac
   [ -e "$cwd/$1" ]
@@ -215,8 +179,8 @@ while IFS= read -r clause; do
   done
   case "$sub" in
     stash)
-      # `list` and `show` only READ stash state (issue #193); every other
-      # subcommand (bare stash included) parks or rewrites tree state.
+      # `list` and `show` only READ stash state; every other subcommand (bare
+      # stash included) parks or rewrites tree state.
       case "${1:-}" in
         list|show) ;;
         *) found="git stash"; break ;;

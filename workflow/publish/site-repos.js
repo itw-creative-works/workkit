@@ -1,28 +1,10 @@
 #!/usr/bin/env node
+// The roster the published site sweeps: the `owner/name` slugs this machine's
+// board covers, read through the tower's own module, plus the home repo under
+// `home`. Written to the home repo's default branch, never beside the public
+// pages (`workflow/README.md` § Publishing the dashboard).
 //
-// The roster the published site sweeps: which repos its board covers.
-//
-// Nothing is baked into the site itself. The published dashboard reads GitHub
-// live from the browser with the viewer's own token (issue #81): every issue,
-// every count, every summary. So the only thing it cannot work out for itself
-// is which repositories this machine's board covers. That is a list of
-// `owner/name` strings and nothing more: no titles, no bodies, no labels, no
-// counts.
-//
-// It is written to the HOME REPO's default branch and never beside the pages
-// (issue #110): Pages is public even from a private repo, and repo NAMES are
-// themselves private when the repos are. Readers fetch it through the GitHub
-// API (the browser with the viewer's token, the cloud brief with its own) and
-// the only thing published beside the pages is which repo to ask.
-//
-// The list is read through the tower's own module, so the site sweeps exactly
-// the repos the dashboard and the morning brief do; the home repo rides along
-// under `home`, which is where the published summaries are read from.
-//
-// Usage:
-//   node workflow/publish/site-repos.js <outfile> [workflow-home]
-//   composeSlugs({ workflowHome, exec })   // offline, against fixtures
-//
+// Usage: node workflow/publish/site-repos.js <outfile> [workflow-home]
 
 const fs = require('fs');
 const os = require('os');
@@ -40,13 +22,8 @@ const readJson = (file) => {
 };
 
 /**
- * The slug list.
- *
- * The home repo is named twice on purpose: once in `repos`, because its issues
- * are the cross-project queue and the board shows them, and once as `home`,
- * because the summaries are Discussions on that one repo and the site has to
- * know which it is. It is included even when its clone is not on this machine:
- * the site sweeps GitHub, not the disk.
+ * The slug list. The home repo is named twice on purpose: in `repos` for its
+ * queue, and as `home` for its Discussions, even with no clone on this machine.
  *
  * @param {object} [opts]
  * @param {string} [opts.workflowHome] the user's ~/.workkit
@@ -59,11 +36,8 @@ const composeSlugs = (opts = {}) => {
   const home = opts.home || os.homedir();
   const workflowHome = opts.workflowHome || path.join(home, '.workkit');
 
-  // A machine that registers nothing and a roster that cannot be READ compose
-  // the same empty list, and only one of them is true (issue #116). The failure
-  // is raised so the caller keeps whatever list is already published. The
-  // readers believe this file, and an empty one tells them there is no board.
-  // The genuinely empty machine still writes `[]`, which is what it has.
+  // An unreadable roster raises, so the caller keeps the published list; an
+  // empty machine still writes `[]`.
   const { status } = readRoster(workflowHome);
   if (status === 'unreadable') {
     throw new Error(`the roster at ${path.join(workflowHome, '.repos.json')} could not be read`);

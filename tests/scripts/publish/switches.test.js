@@ -1,9 +1,6 @@
-//
 // Tests for workflow/publish.sh: the owner's switches (the roster on the
 // home repo's default branch, the custom domain and the path prefix,
-// `site.publish` and the teardown it drives).
-// The shared prologue (the world factory, the publish runner, the settings and branch readers) is ./helpers.js.
-//
+// `site.publish` and the teardown it drives). The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -27,7 +24,7 @@ const run = async () => {
   });
 
   await test('the roster never reaches the published branch: Pages is public, and the names are not', () => {
-    // Issue #110: gh-pages is served to anyone with the URL even when the repo
+    // gh-pages is served to anyone with the URL even when the repo
     // is private, so a file naming every private repo on this machine cannot be
     // beside the pages. It lives on main, where the repo's own privacy covers
     // it, and every reader fetches it with a token.
@@ -41,10 +38,9 @@ const run = async () => {
   });
 
   await test('nothing but the home repo is published: no roster, no issue data', () => {
-    // The whole doctrine of issue #81: Pages is public even from a private repo,
-    // and the published copy reads GitHub live with the viewer's own token. A
-    // baked board would be every issue title of every repo, served to anyone
-    // with the URL.
+    // Pages is public even from a private repo, so the published copy reads
+    // GitHub live with the viewer's own token: a baked board would serve every
+    // issue title of every repo to anyone with the URL.
     const world = mkWorld({ roster: ['workkit'] });
     const { code, out } = publish(world);
     assertEq(code, 0, `exit 0: ${out}`);
@@ -108,10 +104,9 @@ const run = async () => {
   });
 
   await test('a roster that will not read keeps the list already published, and the run goes on', () => {
-    // Issue #116: a compose that FAILS is not a machine with no repos on it.
-    // The list stays exactly as the last good run left it (the readers believe
-    // this file) and the warn does not cost the run its exit code, because a
-    // stale-but-good roster is the designed outcome.
+    // A compose that fails is not a machine with no repos on it. The list stays
+    // as the last good run left it (the readers believe this file) and the warn
+    // keeps the run's exit code: a stale-but-good roster is the designed outcome.
     const world = mkWorld({ roster: ['workkit', 'omega'] });
     publish(world);
     const before = fs.readFileSync(path.join(onMain(world), 'data', 'repos.json'), 'utf8');
@@ -138,15 +133,15 @@ const run = async () => {
     assertEq(code, 0, 'exit 0: a missing tool is not a crash');
     assert(/node is not on this machine/.test(out), `it names the tool, got: ${out}`);
     assert(/no repos to sweep/.test(out), `and what will be missing, got: ${out}`);
-    // Issue #111: the list feeds the cloud brief as well as the pages, so a skip
-    // that names only one reader understates by half what is now stale.
+    // The list feeds the cloud brief as well as the pages, so a skip that names
+    // only one reader understates by half what is now stale.
     assert(/dashboard/.test(out) && /cloud brief/.test(out), `and both readers of it, got: ${out}`);
     assert(fs.existsSync(path.join(fromPages(world), 'index.html')), 'and the pages still publish');
     cleanup(world.root);
   });
 
   await test('the roster is refreshed with the switch off: the cloud brief reads it too', () => {
-    // Issue #111: `data/repos.json` on the home repo's default branch is the
+    // `data/repos.json` on the home repo's default branch is the
     // cloud brief's roster as well as the dashboard's, and the two do not share
     // a fate. A machine that publishes no site still owes the brief a current
     // list, so the compose sits above the switch and above every build check.
@@ -173,8 +168,8 @@ const run = async () => {
   });
 
   await test('the home pointer names the branch the roster is on, not an assumed main', () => {
-    // Issue #112: the writer pushes whatever branch the clone is on, so the
-    // readers are TOLD which one rather than hardcoding it: a home repo whose
+    // The writer pushes whatever branch the clone is on, so the readers are
+    // told which one rather than hardcoding it: a home repo whose
     // default branch is not main 404s on every roster read otherwise.
     const world = mkWorld({ branch: 'trunk', roster: ['workkit'] });
     const { code, out } = publish(world);
@@ -193,10 +188,9 @@ const run = async () => {
     assertEq(fs.readFileSync(path.join(fromPages(world), 'CNAME'), 'utf8'), 'board.example.com\n',
       'the scheme is not part of a CNAME');
 
-    // A trailing slash is not part of one either (issue #230): `ask_site_url`
-    // takes whatever was typed at its word, and the engine's one reader of the
-    // option (`wk_site_host` in home/options.sh) is where both the scheme and the slash
-    // come off, for this file and for the handover's site URL alike.
+    // A trailing slash is not part of one either: the engine's one reader of the
+    // option (`wk_site_host` in home/options.sh) is where both the scheme and
+    // the slash come off, for this file and for the handover's site URL alike.
     setSite(world, { url: 'https://board.example.com/' });
     publish(world);
     assertEq(fs.readFileSync(path.join(fromPages(world), 'CNAME'), 'utf8'), 'board.example.com\n',
@@ -209,7 +203,7 @@ const run = async () => {
   });
 
   await test('with no custom domain the build is told the project path it serves under', () => {
-    // Issue #165: a default Pages address is `<owner>.github.io/<name>/`, so a
+    // A default Pages address is `<owner>.github.io/<name>/`, so a
     // build that emits root-relative assets 404s on every one of them. The
     // prefix is the repo's own name, from the slug the settings already carry.
     const world = mkWorld();
@@ -249,10 +243,9 @@ const run = async () => {
   });
 
   await test('`site.publish` off publishes NOTHING: not even a build', () => {
-    // The all-or-nothing switch (issue #80), and it is default off: what Pages
-    // serves is public even from a private repo, so publishing at all is the
-    // owner's yes to give. The gate is before the build, so an off machine does
-    // no work either.
+    // The all-or-nothing switch, default off: what Pages serves is public even
+    // from a private repo, so publishing at all is the owner's yes to give. The
+    // gate is before the build, so an off machine does no work either.
     const world = mkWorld({ publish: false });
     const { code, out } = publish(world);
     assertEq(code, 0, 'a machine that publishes nothing is not broken');
@@ -264,7 +257,7 @@ const run = async () => {
   });
 
   await test('an unanswered switch reads as off: null is nobody having said yes', () => {
-    // What the seed now writes (issue #84): null means the question has not
+    // What the seed writes: null means the question has not
     // been put, and a machine waiting on an answer publishes nothing.
     const world = mkWorld({ publish: null });
     const { code, out } = publish(world);
@@ -303,15 +296,15 @@ const run = async () => {
   });
 
   await test('turning the switch off takes the published site down', () => {
-    // Issue #113: off governs the site's EXISTENCE, not only its updates: a
-    // site left serving forever made the all-or-nothing switch a half-truth. The
-    // branch is generated content, so the next yes rebuilds it from scratch.
+    // Off governs the site's existence, not only its updates, or the
+    // all-or-nothing switch is a half-truth. The branch is generated content,
+    // so the next yes rebuilds it from scratch.
     const world = mkWorld({ roster: ['workkit'] });
     publish(world);
     assert(fs.existsSync(path.join(fromPages(world), 'index.html')), 'it published');
 
     // A repo that joined between the two runs: the roster refresh rides the
-    // teardown run untouched (issue #111).
+    // teardown run untouched.
     const joined = path.join(world.root, 'repos', 'dotfiles');
     fs.mkdirSync(path.join(joined, '.workkit'), { recursive: true });
     fs.writeFileSync(path.join(joined, '.workkit', 'settings.json'), '{ "version": 1, "enabled": true }\n');
@@ -342,8 +335,8 @@ const run = async () => {
     assertEq(code, 0, 'exit 0');
     assert(!/taken down/.test(out) && !/Pages is disabled/.test(out) && !/nothing to disable/.test(out),
       `nothing was removed, so nothing is reported, got: ${out}`);
-    // Scoped to Pages: the run above the switch heals the home repo's labels
-    // (issue #123), so gh is spoken to on every publish, never about Pages.
+    // Scoped to Pages: the run above the switch heals the home repo's labels,
+    // so gh is spoken to on every publish, never about Pages.
     assert(!world.ghCalls().some((argv) => /pages/.test(argv)),
       `and GitHub is never asked to disable Pages nobody enabled: ${world.ghCalls().join(' | ')}`);
     cleanup(world.root);
@@ -361,11 +354,9 @@ const run = async () => {
   });
 
   await test('a remote that cannot be reached is never read as a site that is not there', () => {
-    // Issue #111: `ls-remote` answers 2 for "no such branch" and 128 for a
-    // remote it could not reach, and reading the second as the first dropped the
-    // local branch and then failed at the push. The pull is pointed at a
-    // reachable copy of the remote so that the probe (and only the probe) is
-    // the thing that cannot connect.
+    // `ls-remote` answers 2 for "no such branch" and 128 for a remote it could
+    // not reach, and the two must not be confused. The pull is pointed at a
+    // reachable copy of the remote so that only the probe cannot connect.
     const world = mkWorld();
     publish(world);
     const before = spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim();

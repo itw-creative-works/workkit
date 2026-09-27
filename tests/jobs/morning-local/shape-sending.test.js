@@ -1,8 +1,6 @@
-//
 // Tests for jobs/morning.sh as this machine runs it: the shape of the script,
 // and what a send carries.
-// The shared prologue (the world factory, the job runner, the notification waits) is ./helpers.js.
-//
+// The shared prologue (world factory, job runner, notification waits) is ./helpers.js.
 
 const fs = require('fs');
 const { spawnSync } = require('child_process');
@@ -39,8 +37,8 @@ const run = async () => {
   });
 
   await test('the rehearsal payload is the brief, instruction first', () => {
-    // `--now`, because the scheduled morning composes nothing here any more
-    // (issue #107): the rehearsal is what still exercises the local compose.
+    // `--now`, because the scheduled morning composes nothing here: the
+    // rehearsal is what exercises the local compose.
     const world = mkWorld();
     const res = runJob(world, ['--now']);
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);

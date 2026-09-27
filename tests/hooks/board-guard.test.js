@@ -1,13 +1,6 @@
-//
 // Tests for hooks/docs:board-guard: the PostToolUse hook that enforces the
-// document rules of the project-state spec v4: CLAUDE.md pointer doctrine and
-// the AGENTS.md size budget.
-//
-// The hook reads JSON on stdin (tool_input.file_path), validates the written
-// file, and exits 2 with a fix-list on stderr when it violates a rule.
-// Board files are no longer a surface. Work-item state lives in GitHub Issues.
-// Plan files are no longer a surface either. A plan lives in its issue body.
-//
+// CLAUDE.md pointer doctrine and the AGENTS.md size budget. It reads
+// tool_input.file_path on stdin and exits 2 with a fix-list on stderr.
 
 const path = require('path');
 const fs = require('fs');
@@ -129,10 +122,8 @@ const run = async () => {
 
   group('board-guard: AGENTS.md density budget');
 
-  // A markdown paragraph is ONE source line, which is how a 137-line file came
-  // to carry three paragraphs over 2,000 bytes (issue #161). The line count and
-  // the line LENGTH are two halves of one budget, and the unit of the second is
-  // BYTES, pinned with LC_ALL=C, since one-true-awk and gawk disagree otherwise.
+  // A markdown paragraph is one source line, so the budget caps line length
+  // too, in bytes pinned with LC_ALL=C (one-true-awk and gawk disagree otherwise).
   const longLine = (n) => 'x'.repeat(n);
 
   await test('a 400-byte line: exit 0 (the boundary passes)', () => {

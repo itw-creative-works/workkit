@@ -1,7 +1,5 @@
-//
 // Tests for workflow/workkit.sh: `setup`, its site question, and its site publish.
-// The shared prologue (the scratch world, runCli and inCli, the repo and kit factories) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -79,16 +77,15 @@ const run = async () => {
     const { code, said } = runCli(world, ['setup'], { cwd: repo });
     assertEq(code, 0, 'exit 0');
     // `setup` has no quiet variant, so the verbs are the signal here: QUIET is
-    // 0 and an action and a skip are the same shape of line (issue #237).
+    // 0 and an action and a skip are the same shape of line.
     assert(!ACTED.test(said), `an already-set-up machine acts on nothing, got: ${said}`);
     cleanup(world.root); cleanup(repo);
   });
 
   await test('setup offers the home repo, and a non-interactive run only says what it would do', () => {
-    // The gh shim answers `auth status` and nothing else, so `gh api user`
-    // prints nothing: the home step has no login to work from and hands over
-    // the command instead of guessing one. What this proves is the OFFER: the
-    // wizard reaches the home steps at all, and creates nothing without a
+    // The gh shim answers `auth status` only, so the home step has no login and
+    // hands over the command instead of guessing one. What this proves is the
+    // offer: the wizard reaches the home steps and creates nothing without a
     // terminal (workflow/home.sh's own suite covers the steps themselves).
     const world = mkWorld();
     const { code, out } = runCli(world, ['setup']);
@@ -102,8 +99,7 @@ const run = async () => {
 
   await test('an unanswered switch is left unanswered where nobody can answer it', () => {
     // Non-interactive is the piped run: the question waits for a terminal
-    // rather than being decided by silence, so a later `workkit setup` asks
-    // (issue #84).
+    // rather than being decided by silence, so a later `workkit setup` asks.
     const world = mkWorld();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
     const before = fs.readFileSync(file, 'utf8');
@@ -190,9 +186,9 @@ const run = async () => {
   });
 
   await test('a fresh yes is asked for the custom domain, and what is typed is written', () => {
-    // The terminal check is the ONE thing a piped test cannot satisfy, so the
+    // The terminal check is the one thing a piped test cannot satisfy, so the
     // question step is called with `interactive` answering yes and the answers
-    // arriving on stdin: everything else is the real function (issue #85).
+    // arriving on stdin: everything else is the real function.
     const world = mkWorld();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
     const lock = path.join(world.workflowHome, '.state.lock');
@@ -209,7 +205,7 @@ const run = async () => {
   });
 
   await test('a fresh yes on a file with a severed tail is still asked about the domain', () => {
-    // jq prints the value it parsed and THEN fails on the tail, so a default
+    // jq prints the value it parsed and then fails on the tail, so a default
     // appended to that answer reads as neither `null` nor a domain, and the
     // one run that puts the domain question skips it without a word.
     const world = mkWorld();
@@ -222,7 +218,7 @@ const run = async () => {
 
   await test('an empty domain answer leaves the plain github.io address', () => {
     // Nothing written means `site.url` stays null, and publish.sh writes no
-    // CNAME: enter IS an answer.
+    // CNAME: enter is an answer.
     const world = mkWorld();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
     const { out } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'y\n\n' });
@@ -244,7 +240,7 @@ const run = async () => {
   });
 
   await test('an already-answered machine is asked about the domain no more than about the switch', () => {
-    // The domain question rides the FRESH yes only: a machine that said yes
+    // The domain question rides the fresh yes only: a machine that said yes
     // last week changes its domain by hand edit, as it does today.
     const world = mkWorld();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: true, url: null });
@@ -259,7 +255,7 @@ const run = async () => {
 
   await test('the switch ending on publishes before setup exits', () => {
     // Already true is an answer, and a piped run is not a reason to hold the
-    // site back: the publish is not a question (issue #85). The engine's own
+    // site back: the publish is not a question. The engine's own
     // script names why it stopped, which is how the call is seen from here.
     const world = mkWorld();
     seedSettings(world, { repo: 'owner/workkit', publish: true, url: null });

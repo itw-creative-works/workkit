@@ -1,55 +1,9 @@
 #!/bin/bash
-# safety/release-taken: PreToolUse hook (Bash)
-# A release whose version a provider ALREADY has is found before the release
-# commit and the tag exist, not when `npm publish` fails on top of them, by
-# which time the fix is a second release rather than a different number.
-#
-# Two triggers, and nothing else reaches the providers:
-#   1. The release commit: a real `git ... commit` (the house finder in
-#      hooks/lib/commit.sh, so a quoted mention and a heredoc body are data) whose
-#      command text carries the subject `chore(release): <x.y.z>`, the same
-#      subject safety/commit-language is the one hook that accepts a version
-#      in. That version is the release's.
-#   2. `npm publish`, in any spelling of it (`--access public`, `--workspaces`),
-#      found by the same clause walk on the stripped text.
-#
-# The project is the package.json at the git toplevel for a commit, and the one
-# at the cwd for a publish, which is where npm publishes from. A `workspaces`
-# declaration (the array, or the object's `packages`) makes every member part of
-# it too, expanded for the two shapes that carry meaning: a literal directory
-# and a `dir/*`. Any other glob shape is named on stderr and skipped, never
-# guessed at.
-#
-# Who is asked what:
-#   commit  -> npm for every package with publish intent, each at ITS OWN
-#              package.json version (the ship bumps every file before the
-#              release commit), and github-release ONCE for the repo at the
-#              subject's version (the ship tags `v<version>`).
-#   publish -> npm only, the same package set. The GitHub release legitimately
-#              precedes the publish in the ship pipeline. A publish naming its
-#              workspaces (`--workspace=<x>`, `--workspace <x>`, `-w <x>`,
-#              `-w=<x>`, as often as it likes) narrows the set to those members,
-#              each matched by package name or by path from the root, and never
-#              the root itself: a family published one member at a time must not
-#              bounce on the member published a moment ago. Every publishing
-#              clause of a chain counts: their workspaces add up, and one clause
-#              naming none checks the whole set. A named workspace that matches
-#              no member, a quoted name, or an empty one stands down out loud.
-#              `--workspaces`, all of them, keeps the whole set.
-# Publish intent is workflow/ship/publish-plan.js's rule and lives there (its `skip`
-# reasons): the hook asks npm about a package exactly when the plan would not
-# skip it, plus a workspaces root that carries the intent itself, since a plain
-# `npm publish` at that root publishes it even though the plan never lists it.
-#
-# Providers are the sibling scripts under providers/, one contract
-# (`providers/<name> <package-name> <version>`, exit 1 = taken, exit 0 = free
-# or cannot tell), so a third one is a file rather than an edit here. They run
-# CONCURRENTLY: a family of ten packages costs one round trip, not ten.
-#
-# Fail open on this hook's own errors (no jq, unreadable input, a package.json
-# jq cannot parse, a provider that exits some other way), and out loud for
-# anything that means a check did not happen. A guard that stands aside in
-# silence is how a session's checks disappear unnoticed.
+# safety/release-taken: PreToolUse hook (Bash). Bounces the release commit
+# (`chore(release): <x.y.z>`) and `npm publish` whose version a provider already
+# has, while the number is still free to change. Providers under providers/
+# share one contract and run concurrently. Fails open on its own errors and out
+# loud for a check that did not happen. Triggers, package set: README.md.
 
 set -euo pipefail
 set -f  # no glob expansion while handling untrusted command text
@@ -84,14 +38,10 @@ esac
 cwd=$(hook_jq -r '.cwd // ""' <<<"$input" 2>/dev/null || true)
 [ -n "$cwd" ] || cwd="$PWD"
 
-# rt_has_npm_publish <stripped text>: does a clause RUN `npm publish`? The
-# clause walk and the prefixes it peels are the finder's in hooks/lib/commit.sh; only
-# the command word and the first non-option argument are this hook's question.
-# EVERY clause is walked, since a chain can publish more than once: the
-# workspaces the publishing clauses name land in RT_WORKSPACES, one a line, and
-# a publishing clause naming none empties it, since that clause publishes the
-# whole set. RT_WS_UNREADABLE says why a named value cannot be matched: `empty`
-# (`--workspace=`), or `quoted` (the quote strip left its placeholder there).
+# rt_has_npm_publish <stripped text>: does a clause RUN `npm publish`? Every
+# clause is walked: the named workspaces land in RT_WORKSPACES, one a line, and a
+# publishing clause naming none empties it. RT_WS_UNREADABLE says why a named
+# value cannot be matched: `empty` or `quoted`.
 RT_WORKSPACES=""
 RT_WS_UNREADABLE=""
 rt_has_npm_publish() {
@@ -118,11 +68,9 @@ rt_has_npm_publish() {
       npm|*/npm) shift ;;
       *) continue ;;
     esac
-    # The whole clause is walked, not just up to the first word: `--dry-run`
-    # (and its explicit `=true`) publishes nothing and is the diagnostic
-    # someone reaches for, so it is not a publish. `--dry-run=false` is.
-    # A workspace flag's value is taken with it, so `npm -w x publish` still
-    # finds `publish` as the subcommand.
+    # The whole clause is walked: `--dry-run` (or `=true`) publishes nothing, and
+    # `--dry-run=false` does. A workspace flag's value goes with it, so
+    # `npm -w x publish` still finds `publish` as the subcommand.
     sub=""
     dry=0
     ws=""
@@ -183,12 +131,9 @@ version=""
 stripped=$(hook_strip_quotes "$(hook_strip_heredocs "$cmd")")
 hook_find_git_commit "$cmd"
 if [ -n "$HOOK_COMMIT_CLAUSE" ] || [ "$HOOK_WRAPPED_COMMIT" -eq 1 ]; then
-  # The subject is read off the ORIGINAL text (the strip that proves this is a
-  # commit is also what replaces the message with a placeholder), and only where
-  # a SUBJECT can sit: right after a message flag, or opening a line, which is
-  # where the `-m "$(cat <<'EOF'` idiom puts it. The release version itself is
-  # HOOK_VERSION_RE in hooks/_lib.sh, shared with safety/commit-language, the
-  # one hook that lets a subject name a version at all.
+  # The subject is read off the original text, only where a subject can sit:
+  # right after a message flag, or opening a line (the `-m "$(cat <<'EOF'`
+  # idiom). The version is HOOK_VERSION_RE, shared with safety/commit-language.
   subject_re='chore\(release\): '"$HOOK_VERSION_RE"
   match=$(printf '%s' "$cmd" \
     | grep -Eo "(^|[[:space:]])(-m|--message)[[:space:]=]*[\"']?${subject_re}|^[[:space:]]*[\"']?${subject_re}" \
@@ -227,11 +172,8 @@ else
   root="$cwd"
 fi
 
-# The repo the github-release bounce names, off the origin and no network. The
-# rule is the engine's one rule (`wk_repo_slug`, workflow/lib/slug.sh, sourced by
-# _lib.sh): every spelling git writes a remote in, and a local path in either
-# separator. Left empty rather than guessed at, and the clause rides only when
-# it is known.
+# The repo the github-release bounce names, off the origin through
+# wk_repo_slug, no network. Left empty rather than guessed at.
 slug=""
 if [ "$trigger" = "commit" ]; then
   slug=$(wk_repo_slug "$root")

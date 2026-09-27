@@ -1,15 +1,7 @@
-//
 // Tests for hooks/docs:session: the SessionStart hook that hands a session
-// back its own `.workkit/agents/session.md`.
-//
-// Every case runs the real hook against a fixture repo. The hook reaches no
-// network, so there is nothing to stub: the whole surface is the file, the
-// committed settings.json, the light bar, and the cloud brief's marker.
-//
-// HOME is a scratch directory in every case. The marker the hook reads
-// (`~/.workkit/brief-status.json`, issue #173) lives there, and a suite pointed
-// at the real home would read whatever this machine's last morning wrote.
-//
+// back its own `.workkit/agents/session.md`, run against a fixture repo with
+// nothing stubbed. HOME is scratch in every case, so the brief marker
+// (`~/.workkit/brief-status.json`) is never this machine's own.
 
 const fs = require('fs');
 const path = require('path');
@@ -251,11 +243,10 @@ const run = async () => {
   });
 
   await test('a settings file in a cwd that is no git repo: silent', () => {
-    // A `.workkit/settings.json` is a REPO's opt-in, so no git root means no
-    // repo layer to read at all. Outside a repo the file the cwd carries is the
-    // MACHINE's own state (the site options, no `enabled` key), and every
-    // Windows temp directory sits under the profile that holds it: read as a
-    // repo's answer it is a yes for a directory that opted into nothing.
+    // A `.workkit/settings.json` is a repo's opt-in, so no git root means no
+    // repo layer at all. Outside a repo the file the cwd carries is the
+    // machine's own state, and every Windows temp directory sits under the
+    // profile that holds it: read as a repo's, it is a yes nothing opted into.
     const dir = mkTmp('session-hook-');
     fs.mkdirSync(path.join(dir, W, 'agents'), { recursive: true });
     fs.writeFileSync(path.join(dir, W, 'settings.json'), JSON.stringify({ version: 1, site: {} }));
@@ -300,9 +291,8 @@ const run = async () => {
 
   group('session: the cloud brief went quiet');
 
-  // Issue #173: the brief runs in the cloud and its failures are silent. Ten
-  // mornings passed with nothing posted and no session knew. The 9am job leaves
-  // a marker; this hook is the reader, and it reads a FILE. No network, ever.
+  // The brief runs in the cloud and its failures are silent: the 9am job leaves
+  // a marker, and this hook reads that file, never the network.
 
   await test('a brief days old is named, with the fix and the check', () => {
     const repo = mkRepo();
@@ -339,7 +329,7 @@ const run = async () => {
 
   await test('a machine that has not checked in days names itself, not the runner', () => {
     // The board is read by the 9am job and by nothing else, so a laptop shut for
-    // a long weekend has an old ANSWER, not a broken runner, and sending the
+    // a long weekend has an old answer, not a broken runner, and sending the
     // owner to mint a token that was never the problem is the one way this line
     // could cost more than it is worth.
     const repo = mkRepo();
@@ -481,7 +471,7 @@ const run = async () => {
   });
 
   await test('the hook reaches no network: the marker is the only source', () => {
-    // Command position only: `gh run list` is in the message the line CARRIES,
+    // Command position only: `gh run list` is in the message the line carries,
     // and the whole point is that this hook never runs it.
     const text = fs.readFileSync(HOOK, 'utf8');
     assert(!/(^|[;&|(]|\$\()\s*(gh|curl|git ls-remote)\b/m.test(text),

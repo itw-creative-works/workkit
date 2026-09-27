@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # workflow/standards/templates.sh: the two installs a repo receives from the
 # kit's templates, once each and never overwritten: the issue forms and the
-# required-checks CI workflow. SOURCED by standards.sh, never executed, and it
-# runs nothing at load: it defines functions and sets nothing.
+# required-checks CI workflow. Sourced by standards.sh, functions only.
 
 # ── 2. Issue forms ──
 ensure_issue_forms() {
@@ -32,13 +31,9 @@ ensure_issue_forms() {
 }
 
 # ── 2b. Required-checks CI workflow ──
-# One file, installed once. A pull request from an author without the local
-# hooks (a cloud agent, a collaborator) still meets the test bar before merge.
-# Never overwritten: the installed copy belongs to the repo, which may extend
-# it (different runner, extra steps) without the heal fighting the edit.
-# PRESENCE is the check, not content, so a repo that wants no Actions run
-# keeps the file with the jobs removed (or empty) rather than deleting it;
-# a deleted file would be re-installed on the next heal.
+# Installed once and never overwritten: the copy is the repo's to extend.
+# Presence is the check, so a repo that wants no Actions run empties the file
+# rather than deleting it, which the next heal would re-install.
 ensure_ci_workflow() {
   local dest=".github/workflows/checks.yml" src
   src="$(wk_checks_template)"

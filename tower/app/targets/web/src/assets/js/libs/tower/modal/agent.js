@@ -2,33 +2,10 @@
 // the header and rows, the live refresh and the mount.
 // modal.js re-exports it whole; no piece imports modal.js.
 
-//
 // ── The crew card's dialog ─────────────────────────────────────────────────
-//
-// The same machinery for the other thing the tower draws as a card: an agent.
-// A crew card shows what it IS; this says what it is doing - the tool it last
-// reached for, what it has spent, how long it has been up, and where its
-// transcript is. Everything on it comes from the telemetry payload; a field the
-// payload does not carry is left OUT rather than drawn as a dash, because a row
-// of dashes reads as a broken dialog rather than as a session too young to have
-// spent anything.
-//
-// And it is a LIVE surface, not a snapshot (#108). Filled once at open it froze
-// at that instant's stamps - the dialogs live in the layout, outside the mount a
-// paint writes into - so the second hand, which only ever DECAYS what it walks,
-// took a dialog left open on a working agent gray at twenty seconds and empty at
-// sixty while the card behind it kept spinning. So every feed paint refreshes
-// whichever agent dialog is open (page.js's paint calls `refreshAgentDialog`),
-// from the registry the same paint just rewrote: the dialog and the card are two
-// drawings of one entry and can no longer tell different stories.
-//
-// Refreshing PATCHES rather than redraws, for the reason clock.js patches: an
-// `innerHTML` over the header would replace the glyph every ten seconds and
-// restart the animation it is meant to keep running. The body is written in two
-// halves for exactly that - a header carrying the stamped indicator, whose
-// `data-live-*` attributes the refresh rewrites and the shared tick then
-// re-decides, and a rows block, which holds no motion and is rewritten whole.
-//
+// What the agent is doing, from the telemetry payload; a missing field is left
+// out, never a dash. Every paint refreshes the open dialog (page.js), patching
+// the stamped header so its glyph keeps turning and rewriting the rows whole.
 
 import { esc, compact, money, modelBadge, classBadge, shortPath } from '../format.js';
 import { crewActivity, liveStamps, sinceLabel, roleIcon } from '../agent.js';
@@ -62,20 +39,13 @@ const detail = (label, value) => (value
 const clock = (ms) => (Number.isFinite(Number(ms)) ? new Date(Number(ms)).toLocaleTimeString() : '');
 
 /**
- * The dialog's header strip: what the agent is, and the one thing on it that
- * moves.
- *
- * The indicator is `agent.crewActivity`, the same stamped builder the Crew page
- * and the Overview draw (#65) - so the dialog carries the card's glyph, the
- * card's age beside it, and the stamps both the second hand and the refresh
- * below read back. That age is also the ONLY place the dialog says how fresh
- * the agent is: there was a "Last activity" row saying the same span in words,
- * frozen at open while the header ticked, and two numbers for one fact will
- * always end up disagreeing.
+ * The dialog's header strip: the role, the badges, and `agent.crewActivity`,
+ * the card's own stamped indicator, which is the one place the dialog says how
+ * fresh the agent is.
  *
  * @param {object} entry - a normalized crew node with `label` and `role`
  * @param {number} now - ms epoch
- * @returns {string} markup - the header's CONTENTS, so a refresh can rewrite
+ * @returns {string} markup - the header's contents, so a refresh can rewrite
  *   them without replacing the element they sit in
  */
 const agentHead = (entry, now) => `${roleIcon(entry.role || entry.agentClass)}
@@ -108,15 +78,9 @@ const agentRows = (entry, now) => {
 };
 
 /**
- * The two pieces of the dialog for one agent.
- *
- * Pure - a node and a `now` in, two markup strings out - so the suite can ask
- * what it says about a session that has spent nothing without a browser.
- *
- * The body's two halves are named in the markup (`data-agent-head`,
- * `data-agent-rows`) because the refresh below has to reach each of them
- * differently: the header is patched so its glyph keeps turning, the rows are
- * rewritten whole.
+ * The two pieces of the dialog for one agent, pure so the suite can read it
+ * without a browser. The body's halves are named (`data-agent-head`,
+ * `data-agent-rows`) because the refresh patches one and rewrites the other.
  *
  * @param {object} entry - a normalized crew node with `label` and `role`
  * @param {number} [now] - ms epoch
@@ -136,15 +100,9 @@ let agentHost = null;
 
 /**
  * Bring the open agent dialog up to `now`, from the registry as it stands.
- *
- * Called by the paint (page.js), never by the clock: the stamps change when a
- * FEED lands, and the second in between is the second hand's job.
- *
- * Quiet in every case where there is nothing true to say. No dialog open, or a
- * key with nothing behind it, and it writes nothing at all - an agent that
- * ENDED between polls stops being registered, and the honest thing to show is
- * the last stamps it had, which the second hand then decays to gray and to
- * nothing exactly as it would on the card that is no longer drawn either.
+ * Called by the paint, never the clock: stamps change when a feed lands. With
+ * no dialog open, or an agent that ended between polls, it writes nothing, and
+ * the second hand decays the last stamps as it would on the card.
  *
  * @param {number} [now] - ms epoch
  * @param {HTMLElement} [host] - the dialog; the mounted one by default
@@ -173,8 +131,8 @@ export const refreshAgentDialog = (now = Date.now(), host = agentHost) => {
     for (const [name, value] of Object.entries(stamps)) {
       if (live.dataset[name] !== value) live.dataset[name] = value;
     }
-    // A stamp the fresh entry no longer carries comes OFF - the tick would
-    // otherwise keep reading a fact the agent stopped reporting.
+    // A stamp the fresh entry dropped comes off, or the tick would keep reading
+    // a fact the agent stopped reporting.
     for (const name of ['liveTs', 'liveAlive']) {
       if (!(name in stamps) && name in live.dataset) delete live.dataset[name];
     }

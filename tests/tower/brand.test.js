@@ -1,23 +1,6 @@
 //
-// Tests for the tower's brand mark - the three AUTHORED artifacts of #53.
-//
-// Everything else the mark becomes is MINTED: the favicon set, the PNG ladder,
-// the pure-black variant, the copies the web build bridges to
-// /assets/images/brand/. Those live in the gitignored `.omega/` and `dist/`,
-// they are regenerated on every manage cycle, and asserting on them here would
-// pin a generated tree that no commit carries - a red suite on a fresh clone
-// that has never run a build. So the pins are on the SOURCE: the svg in the
-// brand repo's logo dir, and the two config keys that decide what the framework
-// does with it.
-//
-// The config is JSON5 and this repo's tests carry no dependencies, so it is
-// read as TEXT - the same way the tests/tower/app/ suites ask theirs of main.scss.
-// The next group pins two config shapes the installed omega depends on: the
-// target's type, which its validator refuses without, and the absence of a
-// repo block, whose presence would switch the repo service on. The last group
-// pins the scaffold omega writes into the target: every dev or build writes
-// any of those files it finds missing, so a committed set is what keeps the
-// tree clean after a run.
+// Tests for the tower's brand mark, pinned on the authored source (the svg and the
+// config keys, JSON5 read as text), never the minted tree a fresh clone lacks.
 //
 
 const fs = require('fs');
@@ -30,7 +13,7 @@ const CONFIG = path.join(app, 'config', 'omega.json5');
 const TARGET = path.join(app, 'targets', 'web');
 
 // What @omega.js/web's ensure-target step writes when missing (its scaffold/
-// tree, and the brand-root workflow it composes from it).
+// tree and the brand-root workflow); committed, so a dev or build leaves it clean.
 const SCAFFOLD = [
   path.join(app, '.github', 'workflows', 'web-build.yml'),
   path.join(TARGET, '.gitattributes'),
@@ -40,9 +23,8 @@ const SCAFFOLD = [
   path.join(TARGET, 'src', 'service-worker.js'),
 ];
 
-// The one hex (issue #53, owner decision 2026-08-03; blue since #149) - the
-// config's `color` composes both themes' accent ramps from it, and the mark is
-// drawn in it. ONE hex for both: an accent the mark does not wear is two brands.
+// The one hex: the config's `color` composes both themes' accent ramps from it,
+// and the mark is drawn in it. An accent the mark does not wear is two brands.
 const BRAND = '#2563EB';
 
 const run = async () => {

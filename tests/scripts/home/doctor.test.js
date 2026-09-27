@@ -1,8 +1,5 @@
-//
 // Tests for workflow/home.sh: doctor, the home clone's state and the seeded
-// runner's drift, read and never written.
-// The shared prologue (the offline world, inHome and setup, the remote and runner factories) is ./helpers.js.
-//
+// runner's drift, read and never written. The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -98,7 +95,7 @@ const run = async () => {
   });
 
   await test('a checkout older than the clone’s stamp is a finding naming the update', () => {
-    // The same refusal the seed makes (issue #200), reported by the one command
+    // The same refusal the seed makes, reported by the one command
     // whose job is to say what needs attention.
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
@@ -114,7 +111,7 @@ const run = async () => {
   });
 
   // The seeded runner drifts on a `git pull` of the checkout; setup and the
-  // morning run write it back (#143), and doctor is the read-only check that
+  // morning run write it back, and doctor is the read-only check that
   // reports drift the last morning could not heal.
   const runnerDoctor = (world) => inHome(world, 'rc=0; wk_home_runner_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
 
@@ -148,9 +145,8 @@ const run = async () => {
   });
 
   await test('a retired file awaiting the prune is drift, not current', () => {
-    // #117: the seed now removes what the manifest stopped naming, so a clone
-    // holding such a file is one setup would still change: doctor must not
-    // call it current.
+    // The seed removes what the manifest stopped naming, so a clone holding
+    // such a file is one setup would still change: doctor must not call it current.
     const world = withRunner();
     const retired = path.join(world.tower, 'brief', 'jobs', 'claude-cloud.sh');
     fs.writeFileSync(retired, '# last month’s runner\n');

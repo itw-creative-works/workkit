@@ -1,13 +1,7 @@
-//
 // Tests for hooks/safety/suite-guard, the PreToolUse hook that keeps the full
-// suite the commit gate's (docs/project-state.md, "The proof", issue #243): a
-// bare `npm test`, a bare `npm run test`, and the repo's own test script run
-// directly all bounce, while a narrowed run passes untouched. The deliberate
-// full run carries `WORKKIT_SUITE=1`.
-//
-// Every case runs against a temporary repo whose package.json declares the test
-// script, so nothing here runs a suite.
-//
+// suite the commit gate's (docs/project-state.md § The proof): a bare `npm
+// test`, `npm run test`, or the repo's test script run directly bounces, a
+// narrowed run passes, and the deliberate full run carries `WORKKIT_SUITE=1`.
 
 const fs = require('fs');
 const os = require('os');
@@ -22,7 +16,7 @@ const LOADER = path.join(__dirname, '..', '..', 'hooks', 'loader.sh');
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 // A repo the hook can read: a git repository, since the test script is read
-// from the nearest package.json up to the GIT ROOT, the package safety/commit-gate names.
+// from the nearest package.json up to the git root, the package safety/commit-gate names.
 const mkRepo = ({ scripts = { test: 'node tests/run.js' }, pkg = true } = {}) => {
   const dir = mkTmp('suite-guard-');
   spawnSync('git', ['init', '-q'], { cwd: dir });

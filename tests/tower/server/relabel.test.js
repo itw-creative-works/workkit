@@ -147,8 +147,8 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  // ── The proof gate on the drag (issue #236) ──────────────────────────────
-  // The board is the SECOND door into the flip the hooks hold on the shell path
+  // ── The proof gate on the drag ───────────────────────────────────────────
+  // The board is the second door into the flip the hooks hold on the shell path
   // (safety/proof-guard, safety/commit-gate check 6): nothing reaches Complete
   // without a `Proof:` comment, whichever door it comes through.
 

@@ -1,10 +1,8 @@
 /* eslint-disable no-console */
-//
 // Tests for hooks/_lib.sh, the helper library every hook sources: one group per
 // helper, from the platform seam and hook_sha1 through hook_jq, the manager
 // config, the changelog linter path, the notice, the deadline wait, the
 // test-path shapes and the marker paths.
-//
 
 const fs = require('fs');
 const os = require('os');
@@ -23,16 +21,14 @@ const LIB = shellPath(path.join(__dirname, '..', '..', 'hooks', '_lib.sh'));
 const SHA1_ABC = 'a9993e364706816aba3e25717850c26c9cd0d89d';
 
 // A tool this machine has, by absolute path, through the platform seam: the
-// DIGEST lookups ask SYSTEM_PATH, the world the shims below are built against,
-// so a case can ask what the helper does where only `sha1sum` exists without
-// needing a GNU machine to ask it on. Everything else asks the session's own
-// PATH, since jq is a Homebrew install on the Mac and a winget one under Git
-// Bash: neither is in /usr/bin.
+// digest lookups ask SYSTEM_PATH, the world the shims below are built against;
+// everything else asks the session's own PATH, since jq is a Homebrew or winget
+// install, never in /usr/bin.
 
 // A PATH world holding exactly one digest tool, under the name given.
 const digestWorld = (name, real) => {
   const dir = mkTmp('lib-sha1-');
-  // Under the NAME the case is asking about, which is the whole point: the tool
+  // Under the name the case is asking about, which is the whole point: the tool
   // this machine ships, wearing the other machine's spelling.
   stubTool(dir, name, ['#!/bin/bash', `exec "${shellPath(real)}" "$@"`]);
   return dir;
@@ -138,7 +134,7 @@ const run = async () => {
   });
 
   await test('hook_jq hands back jq\'s own exit status, never the strip\'s', () => {
-    // A caller that asks a QUESTION (`jq -e`, `jq empty`) reads the status and
+    // A caller that asks a question (`jq -e`, `jq empty`) reads the status and
     // nothing else, and a wrapper ending in a pipe would answer every one of
     // them yes. safety/release-taken leans on it: `patterns=$(hook_jq ...) ||
     // patterns=""` is how it survives a package.json it cannot read.
@@ -153,9 +149,9 @@ const run = async () => {
   });
 
   await test('hook_jq_default takes the default only when jq answered nothing', () => {
-    // A stream jq gets THROUGH before it fails on the tail: it has written the
-    // first value's answer by then, so the `|| printf <default>` this replaces
-    // handed back the two stuck together. The default is for silence alone.
+    // A jq that fails on a stream's tail has already written the first value's
+    // answer, so a `|| printf <default>` would hand back the two stuck
+    // together. The default is for silence alone.
     const severed = `printf '%s' '{"v":"kept"}{' |`;
     assertEq(runLib(`${severed} hook_jq_default 'fallen-back' -r '.v'`).stdout, 'kept',
       'the answer jq did write, and nothing appended to it');
@@ -181,14 +177,14 @@ const run = async () => {
   group('_lib.sh: hook_manager_config');
 
   // The three layers are read from files, so the case plants its own and points
-  // the MACHINE layer at one of them: the developer's real ~/.workkit is never
+  // the machine layer at one of them: the developer's real ~/.workkit is never
   // part of an answer here. jq and git are the real ones, since what is being
-  // asked is which FILE was read.
+  // asked is which file was read.
   const jq = which('jq');
   await testUnless(!jq, 'this machine has no jq, and the config is read with it')(
     'a settings file in a cwd that is no git repo is not the repo layer', () => {
       // No git root, no repo layer. The file a non-repo cwd carries is the
-      // MACHINE's own state (on Windows the user profile holds it and every
+      // machine's own state (on Windows the user profile holds it and every
       // temp directory sits under that profile), and read as the repo layer it
       // overrides the machine's own config with itself.
       const dir = mkTmp('lib-manager-');
@@ -212,7 +208,7 @@ const run = async () => {
       assert(outside.includes('machine-frontier'),
         `and the machine layer is still taken outside a repo, got: ${outside}`);
 
-      // The control: the same file, one `git init` later, IS that repo's layer.
+      // The control: the same file, one `git init` later, is that repo's layer.
       spawnSync('git', ['init', '-q', cwd], { encoding: 'utf8' });
       const inside = ask();
       assert(inside.includes('from-a-non-repo'),
@@ -222,7 +218,7 @@ const run = async () => {
 
   group('_lib.sh: hook_changelog_linter');
 
-  // Both callers fail OPEN when this answers nothing, so a resolution that
+  // Both callers fail open when this answers nothing, so a resolution that
   // walks to the wrong folder would disable the CHANGELOG checks in silence.
   // No WORKFLOW_DIR: the answer is the engine beside the hooks, found from the
   // file that defines the helper.

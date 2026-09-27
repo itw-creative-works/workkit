@@ -3,11 +3,8 @@
 // format.js re-exports it whole; no piece imports format.js.
 
 /**
- * HTML-escape a value for interpolation into a template string.
- *
- * EVERY GitHub-sourced value goes through this: issue titles, labels, repo
- * slugs and assignee handles are all attacker-controlled text as far as the
- * tower is concerned, and a hostile title must render as text.
+ * HTML-escape a value for interpolation into a template string. Every
+ * GitHub-sourced value goes through this: a hostile title must render as text.
  */
 export const esc = (value) => String(value === null || value === undefined ? '' : value)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -16,18 +13,9 @@ export const esc = (value) => String(value === null || value === undefined ? '' 
 export const num = (value) => (value === null || value === undefined ? '-' : String(value));
 
 /**
- * One "nothing here" state - a muted icon above one line.
- *
- * Quiet on purpose: an empty column and an empty panel are the normal condition
- * of a board that is up to date, so it is drawn in the theme's secondary ink at
- * half opacity and never as an alarm. The icon is the caller's, because "no
- * live sessions" and "nothing is waiting to ship" are different kinds of
- * nothing; the default is the neutral one, and every icon is the framework's
- * Font Awesome, decorative, with the line itself carrying the meaning.
- *
- * `omega-tower-empty` is the sheet's hook for the one thing `text-center`
- * cannot do here: `d-block` makes the glyph's box a BLOCK one em wide, and a
- * block box ignores the text alignment around it (main.scss).
+ * One "nothing here" state: a muted icon above one line, quiet because an empty
+ * column is the normal state of an up-to-date board. `omega-tower-empty` is the
+ * sheet's hook: the `d-block` glyph ignores `text-center` (main.scss).
  */
 export const empty = (message, icon = 'fa-regular fa-folder-open') => `<div class="omega-tower-empty text-center text-body-secondary py-3">
   <i class="${esc(icon)} fa-lg d-block mb-2 opacity-50" aria-hidden="true"></i>
@@ -38,14 +26,9 @@ export const empty = (message, icon = 'fa-regular fa-folder-open') => `<div clas
 export const problem = (message) => `<div class="alert alert-warning mb-0">${esc(message)}</div>`;
 
 /**
- * The wait state a body or section shows before its feed answers - the ring
- * centered over the space the content will take, its line beneath it.
- *
- * Centered on purpose: the framework's inline
- * loading() sits flush against the top-left corner of a page body, which reads
- * as a misrender rather than a wait. The ring itself is still Bootstrap's
- * `.spinner-border`, animated by the bundle's own keyframes (#137) - this
- * wrapper places it, it never redraws it.
+ * The wait state a body or section shows before its feed answers: Bootstrap's
+ * ring centered over the space the content will take, its line beneath it,
+ * since the framework's inline loading() sits flush top-left like a misrender.
  */
 export const loading = (message) => `<div class="d-flex flex-column align-items-center justify-content-center text-center gap-2 py-5 text-body-secondary" role="status">
   <span class="spinner-border" aria-hidden="true"></span>
@@ -53,11 +36,9 @@ export const loading = (message) => `<div class="d-flex flex-column align-items-
 </div>`;
 
 /**
- * What a published copy says where a MACHINE-BOUND surface would be - the crew,
- * the token spend and the per-repo git health are read off transcripts,
- * processes and working copies, and a browser away from that machine has none
- * of them. One sentence, one home, said by the whole page on those three pages
- * and by the single panel on the Overview that shows the same data.
+ * What a published copy says where a machine-bound surface would be (the crew,
+ * the spend, the git health): one sentence for the three pages and the Overview
+ * panel that show that data.
  */
 export const LOCAL_ONLY_NOTICE = 'This reads the machine the tower runs on - its sessions, its transcripts, its working copies - so it is local only. Open the dashboard on that machine to see it.';
 
@@ -65,10 +46,8 @@ export const LOCAL_ONLY_NOTICE = 'This reads the machine the tower runs on - its
 export const localOnlyNotice = () => `<p class="text-body-secondary mb-0">${esc(LOCAL_ONLY_NOTICE)}</p>`;
 
 /**
- * What a LOCKED copy says where a write would be. It has no data at all yet, so
- * the answer is "hand this one a token" - and once it has one there is nothing
- * left to say: an unlocked copy files and moves issues with that token exactly
- * as the dashboard on the machine does.
+ * What a locked copy says where a write would be: hand it a token, and it files
+ * and moves issues as the dashboard on the machine does.
  */
 export const LOCKED_NOTICE = 'This copy has no data until a GitHub token is added - add one on the Settings page. With one it files and moves issues just like the dashboard on your machine.';
 
@@ -76,9 +55,8 @@ export const LOCKED_NOTICE = 'This copy has no data until a GitHub token is adde
 export const lockedNotice = () => `<p class="text-body-secondary mb-0">${esc(LOCKED_NOTICE)}</p>`;
 
 /**
- * What a locked copy says where a write would be ON THIS MACHINE (issue #89).
- * A local page has no use for a token - the tower API holds the `gh` login - so
- * the answer is the same one its body gives: the tower is not there to read.
+ * What a locked copy says where a write would be on this machine: the tower API
+ * holds the `gh` login, so the answer is the one its body gives.
  */
 export const LOCAL_LOCKED_NOTICE = 'This copy has no data until the tower API is running - start it with npm run tower and connect this page to it. Then it files and moves issues exactly as it does with a tower.';
 
@@ -86,12 +64,8 @@ export const LOCAL_LOCKED_NOTICE = 'This copy has no data until the tower API is
 export const localLockedNotice = () => `<p class="text-body-secondary mb-0">${esc(LOCAL_LOCKED_NOTICE)}</p>`;
 
 /**
- * The one name for one issue: `repo#number`.
- *
- * Three things spell it - the `data-issue` attribute a card carries, the dialog
- * registry it is looked up in, and the Board's drop, which reads that attribute
- * off a dragged card and finds the issue in the live board payload. One home for
- * it, so the three cannot mean different things.
+ * The one name for one issue, `repo#number`: the card's `data-issue`, the
+ * dialog registry and the Board's drop all spell it through here.
  */
 export const issueKey = (issue) => `${issue.repo}#${issue.number}`;
 
@@ -116,12 +90,9 @@ export const money = (value) => {
 };
 
 /**
- * A timestamp as the day it fell on, in the reader's own locale.
- *
- * What a missing or unreadable date leaves behind is the CALLER's, because the
- * two surfaces that draw one want opposite things: a dialog row labelled "filed"
- * has to say something, so it says a dash, while a line that is only a date
- * would rather be absent than be a dash, and passes nothing.
+ * A timestamp as the day it fell on, in the reader's own locale. What a missing
+ * date leaves is the caller's: a dialog row says a dash, a date-only line would
+ * rather be absent.
  *
  * @param {string} value - an ISO timestamp off the API
  * @param {string} [fallback] - what to say when there is no date to say
@@ -133,12 +104,8 @@ export const day = (value, fallback = '') => {
 };
 
 /**
- * What a published document is, and when it was published - the line above
- * every title.
- *
- * Two surfaces spell it, the archive's cards and the newest brief open at the
- * top of the page, so it is written once here for the reason the body they draw
- * is written once: the same post in two places says one thing about itself.
+ * What a published document is, and when it was published: the line above
+ * every title, on the archive's cards and the newest brief alike.
  *
  * @param {object} doc - one entry of the brief payload's `documents`
  * @returns {string} plain text, never markup

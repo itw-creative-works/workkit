@@ -1,32 +1,10 @@
 #!/usr/bin/env bash
-# manager:spawn-guard: PreToolUse hook on the Agent tool (issue #18).
-# The manager system's WARN-ONLY companion to manager/resolver: it watches
-# class spawns for the two shapes that mean the manager is working against its
-# own wiring, and says so. It never blocks and never rewrites: the output
-# carries NO permissionDecision at all, so the spawn's fate is decided exactly
-# as it would be with this hook absent.
-# Rules:
-#   1  a class spawn (scout / worker / verifier / advisor) carrying a `model`
-#      param: the manager passed a model by hand, which in rewrite mode the
-#      resolver reads as a deliberate override and steps aside for. Silent in
-#      advise mode, where the resolver ASKS for the model param.
-#   2  an advisor spawn from a frontier session: the session already is the
-#      frontier model, so the consult buys nothing (the same clause the
-#      manager/profile hook injects).
-# Everything else is silent. Same fail-open discipline as the resolver: no jq,
-# no ladder, garbage stdin, unknown session model → exit 0 with no output.
-#
-# Warning channel: top-level `systemMessage` (shown to the user) plus
-# `hookSpecificOutput.additionalContext` (added to Claude's context alongside
-# the tool result, non-blocking, unlike the Stop event's same-named field).
-# Both are PreToolUse-legal without a decision; adding `permissionDecision:
-# "allow"` would auto-approve the spawn, which is a behavior change this hook
-# has no business making.
-#
-# Ordering note: PreToolUse hooks matching one event all run in PARALLEL and
-# each receives the ORIGINAL tool_input (hooks reference § How a hook resolves),
-# so the resolver's `updatedInput` model can never reach rule 1: only a model
-# the manager itself passed.
+# manager:spawn-guard: PreToolUse hook on the Agent tool. Warns, never blocks
+# or rewrites, on rule 1 (a class spawn carrying a hand-passed `model`, silent
+# in advise mode) and rule 2 (a frontier session spawning the advisor). The
+# output carries no permissionDecision, since "allow" would auto-approve the
+# spawn. Hooks on one event run in parallel on the original tool_input, so the
+# resolver's rewrite never reaches rule 1. Fails open like the resolver.
 
 set -euo pipefail
 

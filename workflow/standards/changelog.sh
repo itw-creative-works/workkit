@@ -2,26 +2,12 @@
 # workflow/standards/changelog.sh: the CHANGELOG heals: the retired linter
 # copies removed, the em dash separator converted once, and the changelog job
 # put in the repo's checks.yml. The job's reading and rewriting is
-# changelog-job.sh's, which the entry sources. SOURCED by standards.sh, never
-# executed, and it runs nothing at load: it defines functions and sets
-# nothing.
+# changelog-job.sh's. Sourced by standards.sh, functions only.
 
 # ── 2b-i. The CHANGELOG linter copy, retired ──
-# The entry-format gates (the docs/changelog-guard and safety/commit-gate
-# hooks) run only on a machine carrying the plugin, so CI is the enforcement
-# point every author passes through. CI reaches the linter through the kit's
-# reusable workflow (.github/workflows/changelog.yml in the kit's own repo),
-# which checks the kit out beside the caller, so no repo carries a copy of it.
-#
-# A copy an earlier heal vendored is removed, under either name it was written
-# as. The vendor header on line 2 is the proof the kit owns it; a file without
-# it is someone else's, so it is reported and left exactly as found. A copy a
-# workflow under .github/workflows still names is kept and reported too, since
-# deleting it would break that workflow; the step runs after the changelog job
-# is rewritten, so the job the heal owns never holds a copy in place. The names
-# and the "still runs it" question are changelog-job.sh's. The deletion is left
-# unstaged, like every other change the heal makes, for the owner to commit.
-# Idempotent by presence: once the copies are gone the step says nothing.
+# Only a copy carrying the kit's vendor header on line 2 is removed, and a copy
+# a workflow still runs is kept and reported. This runs after the job rewrite,
+# so the job the heal owns never holds a copy in place.
 remove_changelog_linter_copies() {
   local copy
 
@@ -51,13 +37,8 @@ remove_changelog_linter_copies() {
 }
 
 # ── 2b-ii. The CHANGELOG separator ──
-# Entries separate their links from their text with a spaced hyphen, never an
-# em dash (the no-em-dash rule has no exception, and the emdash hook judges
-# CHANGELOG.md like any other file). A repo written before that rule carries the
-# old separator on every line, so the heal converts the file once: every em
-# dash, separator and prose alike, becomes a spaced hyphen, and the linter then
-# proves the whole file. Idempotent by content: a file with no em dash is left
-# untouched and unreported.
+# A repo written before the no-em-dash rule is converted once, prose and
+# separator alike, and the linter then proves the whole file.
 ensure_changelog_separator() {
   local file="CHANGELOG.md" count
 
@@ -78,24 +59,9 @@ ensure_changelog_separator() {
 }
 
 # ── 2b-iii. The changelog job in the repo's checks.yml ──
-# checks.yml is installed once and then belongs to the repo, so this adds ONE
-# job to it rather than overwriting the file: a repo healed before this standard
-# would otherwise never get the check, and a repo that extended its workflow
-# would lose the extension. Idempotent by presence: the job is added when it is
-# not there, and looked for by name every run after.
-#
-# An existing changelog job gets the heal's rewrite (changelog-job.sh), which
-# makes two swaps, each only where it applies: a job that still runs a vendored
-# linter copy by name (`node .github/changelog-lint.cjs`, or the older `.js`) is
-# replaced in place by the template's, which calls the kit's reusable workflow,
-# and a retired header paragraph is replaced by the template's whatever form
-# the job is in. Any other existing changelog job is the repo's own and is left
-# alone. Idempotent by content: a file the rewrite leaves unchanged is a skip.
-#
-# The job's text has one home, the template, so the two can never drift.
-# Appending is only correct while `jobs:` is the last top-level block; anything
-# else is a layout this script cannot reason about, so it says what to add and
-# leaves the file alone.
+# checks.yml is the repo's own, so the heal appends the template's job or
+# rewrites an existing one (changelog-job.sh), never the whole file. Appending
+# is only safe while `jobs:` is the last top-level block.
 ensure_changelog_job() {
   local dest=".github/workflows/checks.yml" src block runs=0 last tmp
   src="$(wk_checks_template)"

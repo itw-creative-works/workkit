@@ -1,33 +1,8 @@
-//
-// The shared prologue of the tower dashboard's browser-JavaScript suites, the
-// `*.test.js` files beside this one, which test the pure half of it. A plain
-// module, never a suite: the runner only loads files ending in `.test.js`.
-//
-// The app is ES modules written for a browser, and the suites here are Node, so
-// each lib is pulled in with a dynamic `import()`. That works for exactly the
-// modules that touch neither the DOM nor the network: `format.js` (markup from
-// values), `state.js` (what a feed said, and what the repo selection leaves in
-// play), `crew.js` (the crew tree) and `modal.js` (an issue as markup). The
-// runtime itself (page.js) and the intake dialog reach for `document` and
-// `window` at import time and are out of scope here by design - the logic
-// worth asserting was moved OUT of them into the modules above. `api.js` sits
-// in between: it reads `location` once at import to fix the API origin and
-// touches `fetch` only at call time, so two stubbed globals bring its feed
-// adapter - the one translation the runtime leans on - under test, along with
-// the live-versus-published decision it makes beside it (#26), which is
-// written as pure functions for exactly that reason.
-//
-// A module that imports the FRAMEWORK is out of reach too: `@omega.js/client`
-// and `__main_assets__/…` are bundler specifiers, resolved by esbuild and by
-// nothing else, so the tower's own modules keep those imports out of the pure
-// half. Refreshing in place (`loading`/`swap`), the feed poller, the markdown
-// renderer and the chart helpers now live upstream and are tested there
-// (@omega.js/client's live-page and utilities suites, @omega.js/web's dataviz).
-//
-// The questions asked are the ones the #20 review found the hard way: does the
-// repo selection actually narrow a session list, and does a hostile issue title
-// come back as text.
-//
+// The shared prologue of the tower dashboard's browser-JavaScript suites beside
+// this one, which test its pure half. Each lib is loaded with a dynamic
+// `import()`, so only a module that reaches for neither the DOM, the network
+// nor a bundler specifier at import time is askable; `api.js` joins behind two
+// stubbed globals.
 
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -50,18 +25,9 @@ const ROSTER = [
 ];
 
 // ── A DOM small enough to hold in your head ────────────────────────────────
-//
-// clock.js is the one tower module that walks a document, and these suites are
-// Node. The tower app carries no test dependency and this is not the place to
-// start one, so what follows is EXACTLY the operations `applyLive` performs and
-// nothing else: two kinds of selector, a dataset, a class name, one attribute,
-// one class toggle, one child wipe. It is a test double for the walk, not a
-// browser - what the glyph looks like while it turns stays a browser's answer
-// (the #24 ruling), and what this can prove is the lifecycle: which nodes a
-// tick touches, and how often it touches nothing.
-//
-// Every mutation is COUNTED, because the claim worth pinning about a timer
-// firing sixty times a minute is that an unchanged second writes nothing.
+// Exactly the operations clock.js's `applyLive` performs and nothing else: a
+// test double for the walk, not a browser. Every mutation is counted, because
+// an unchanged second must write nothing.
 
 /** `data-live-ts` → `liveTs`, the way a real dataset renames its attributes. */
 const camel = (attr) => attr.replace(/^data-/, '').replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
@@ -74,10 +40,9 @@ const el = (tag, className = '', data = {}) => {
   Object.defineProperties(node, {
     className: { get: () => node.classes, set: (value) => { node.classes = value; node.writes += 1; } },
     textContent: { get: () => node.text, set: (value) => { node.text = value; node.writes += 1; } },
-    // The agent dialog's refresh (#108) rewrites one half of itself wholesale
-    // and patches the other, and the claim worth pinning is which half is
-    // which - so the double reads its own markup back, the way a comparison
-    // before a write has to.
+    // The agent dialog's refresh rewrites one half of itself wholesale and
+    // patches the other, so the double reads its own markup back, the way a
+    // comparison before a write has to.
     innerHTML: { get: () => node.html, set: (value) => { node.html = value; node.writes += 1; } },
   });
   node.classList = {
@@ -124,9 +89,9 @@ const drawnIndicator = ({ phase, stamps, age, title }) => {
   const label = el('span', 'omega-micro text-body-secondary', { liveAge: '' });
   label.text = age;
   const wrapper = el('span', 'd-inline-flex align-items-center gap-1', stamps).append(icon, label);
-  // The CARD the indicator sits on, which a page marks so the tick can mute it
-  // when the agent goes quiet (#99) - the crew card and the Overview's row both
-  // carry `data-live-card`.
+  // The card the indicator sits on, which a page marks so the tick can mute it
+  // when the agent goes quiet; the crew card and the Overview's row both carry
+  // `data-live-card`.
   const card = el('div', 'card h-100', { liveCard: '' }).append(wrapper);
   // Nothing above is a tick - reset the counters so the first one starts at nil.
   const parts = { wrapper, icon, glyph, spoken, label, card };
@@ -253,13 +218,10 @@ const SWEEP = {
           number: 82,
           title: 'A decision is waiting',
           url: 'https://github.com/ITW-Creative-Works/workkit/issues/82',
-          // Every composition branch on the item that would otherwise LEAD
-          // nextUp (issue #103): an edge into a repo this sweep could not
-          // read (carried, never acted on), a closed edge (satisfied,
-          // nobody's payload), a native OPEN edge on an issue the sweep IS
-          // carrying (what demotes it), and the same edge written inline
-          // (one edge, not two). Demotion must reorder, or the parity
-          // comparison is two lists agreeing vacuously.
+          // Every composition branch on the item that would otherwise lead
+          // nextUp: an edge into an unread repo, a closed edge, a native open
+          // edge on a carried issue (what demotes it), and the same edge inline.
+          // Demotion must reorder, or the parity comparison agrees vacuously.
           body: 'the question\n\nDepends on: #81\n',
           createdAt: '2026-07-28T09:00:00Z',
           updatedAt: '2026-07-28T10:00:00Z',
@@ -277,10 +239,10 @@ const SWEEP = {
           number: 83,
           title: 'An accepted spec sits ready',
           url: 'https://github.com/ITW-Creative-Works/workkit/issues/83',
-          // The cross-org fallback as it is really written: a markdown
-          // bullet around the label (#103). The edge points outside the
-          // sweep, so it is carried and never acted on - this item leads
-          // nextUp once #82 is demoted behind its open blocker.
+          // The cross-org fallback as it is really written: a markdown bullet
+          // around the label. The edge points outside the sweep, so it is
+          // carried and never acted on; this item leads nextUp once item 82 is
+          // demoted behind its open blocker.
           body: 'the spec\n\n- Depends on: Omega-JS-Stack/omega#144\n',
           createdAt: '2026-07-27T09:00:00Z',
           updatedAt: '2026-07-27T10:00:00Z',
@@ -290,10 +252,9 @@ const SWEEP = {
           blockedBy: { nodes: [] },
         }],
       },
-      // What the day CLOSED (issue #55) - two inside the 24-hour window and
-      // two outside it, so every comparison over this fixture is made against
-      // a real number rather than against two zeros that would agree whatever
-      // either side counted.
+      // What the day closed: two inside the 24-hour window and two outside it,
+      // so every comparison over this fixture is made against a real number
+      // rather than two zeros that agree whatever either side counted.
       closed: {
         nodes: [
           { closedAt: '2026-07-29T08:00:00Z' },
@@ -319,8 +280,8 @@ const isRoster = (url) => url.startsWith('https://api.github.com/') && url.inclu
 
 /**
  * A fetch that answers the home pointer from the site, the roster from the
- * home repo, and everything else from GraphQL - the three reads a published
- * page makes (issue #110).
+ * home repo, and everything else from GraphQL: the three reads a published
+ * page makes.
  */
 const mkSiteFetch = (list, graphqlBody) => mkFetch((url) => {
   if (url === 'data/home.json') return jsonResponse(200, { home: 'owner/workkit' });

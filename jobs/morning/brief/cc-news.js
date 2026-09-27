@@ -1,48 +1,11 @@
+// jobs/morning/brief/cc-news.js: every upstream Claude Code CHANGELOG entry
+// since the last brief, grouped by topic. The job never judges which matter; the
+// digest model does. The cursor lives on the board, read off the newest brief,
+// and every failure is silent (jobs/README.md § The upstream news).
 //
-// Upstream Claude Code news: everything that shipped since the last brief,
-// organized by topic.
-//
-// Claude Code releases most days, and its CHANGELOG is the only announcement.
-// The job does NOT judge which entries matter. That is the digest model's
-// call, made with the board in view: a new feature the kit could use, a change
-// that breaks something the kit built, an improvement worth adopting. What the
-// job owns is the mechanical half: read the upstream file, keep every entry
-// newer than the last brief, and hand them over grouped by topic so the digest
-// reads a table of contents instead of a wall.
-//
-// The source is the raw `CHANGELOG.md` on the default branch, not the releases
-// API: it is the same text without a token, a rate limit, or a schema.
-//
-// THE CURSOR LIVES ON THE BOARD (issue #86). Where the last brief counted to is
-// read back off the home repo's Discussions: every published brief carries one
-// machine-readable line, `<!-- cc-news: <version> -->`, and the newest one is
-// the "since" this run diffs against. Nothing on this machine records it: the
-// job state that used to sit in `~/.workkit/.cache.json` was a local-only
-// limitation, and the publish IS the commit, so there is no callback to call.
-//
-// FIRST RUN SEEDS, IT DOES NOT REPORT. With no brief on the board there is no
-// "since", and the honest answer for a machine that has never looked is the
-// entire history, hundreds of entries, which would bury the brief it was meant
-// to inform. So a first run reports nothing and lets the publish carry the
-// latest version, and every morning after is a true diff.
-//
-// A BOARD THAT COULD NOT BE READ IS NOT AN EMPTY BOARD. A `gh` that refuses or
-// answers something else is a FAILED read, and a failed read reports nothing AND
-// publishes no version line: the last brief that carried one stays the newest
-// cursor, so the next good morning still diffs against it. Only a board that
-// genuinely carries no brief seeds.
-//
-// Every failure here is SILENT: no network, a non-200, an unparseable file, a
-// `gh` that refuses, and the brief prints without a CC NEWS block. The morning
-// brief must never fail because GitHub was unreachable. When the upstream read
-// failed but the board had a version, that version rides forward unchanged:
-// the cursor never goes backward for want of a network.
-//
-// Usage:
-//   const { collectCcNews, renderVersionMark } = require('./cc-news');
-//   const news = collectCcNews();          // { version, since, matches }
-//   renderVersionMark(news.version);       // the line the published brief carries
-//
+// Usage: const { collectCcNews, renderVersionMark } = require('./cc-news');
+//   collectCcNews()              // { version, since, matches }
+//   renderVersionMark(version)   // the line the published brief carries
 
 const fs = require('fs');
 const os = require('os');
@@ -56,24 +19,16 @@ const WORKKIT_DIR = '.workkit';
 // The hand-edited file that names the home repo: the board the cursor lives on.
 const SETTINGS_FILE = 'settings.json';
 
-// The published briefs, by the title `brief-publish.sh` gives them, read from
-// the module that owns that prefix now that a second reader shares it
-// (tower/api/lib/history.js, issue #55), and the line each one carries. THIS
-// MODULE OWNS THE LINE'S SHAPE: the runner never writes it by hand, it appends
-// the file `renderVersionMark` was rendered into, so the writer and the reader
-// cannot drift.
+// The briefs' title prefix comes from the module that owns it; this module owns
+// the mark line's shape. The runner appends the file `renderVersionMark` was
+// rendered into, never a hand-written line, so the writer and reader cannot drift.
 const MARK_RE = /<!--\s*cc-news:\s*(\d+(?:\.\d+)*)\s*-->/;
 const renderVersionMark = (version) => `<!-- cc-news: ${version} -->`;
 
-// The briefs on the home repo, newest first. No category argument: a brief
-// publishes in whatever category the repo's fallback resolved to, and the title
-// is what says it is a brief.
-//
-// 100 is the GraphQL page maximum, and the window has to be wide because the
-// board is SHARED: the summaries post beside the briefs, and a run of mornings
-// whose send failed carries no version line at all. A narrow window lets the
-// last line-carrying brief scroll out of view, which reads as an empty board and
-// re-seeds the cursor, every entry in between silently never reported.
+// The briefs on the home repo, newest first; the title, not a category, says a
+// brief. 100 is the GraphQL page maximum, and the window needs it: summaries and
+// briefs with no version line share the board, and losing the last line-carrying
+// brief re-seeds the cursor, every entry in between silently never reported.
 const BRIEF_QUERY = `query($owner:String!,$name:String!){
   repository(owner:$owner,name:$name){
     discussions(first:100, orderBy:{field:CREATED_AT, direction:DESC}){
@@ -159,9 +114,9 @@ const homeSlug = (workflowHome) => {
 };
 
 /**
- * The board, read TRI-STATE. A version is a cursor; `ok` with no version is a
+ * The board, read tri-state. A version is a cursor; `ok` with no version is a
  * board that genuinely carries no brief (a first run, and a machine with no home
- * repo, which has no board and never will); `ok: false` is a read that FAILED
+ * repo, which has no board and never will); `ok: false` is a read that failed
  * (a `gh` that refused, an answer that is not the shape asked for) where the
  * board's real contents are unknown and must not be mistaken for empty.
  * @returns {{ok: boolean, version: string|null}}
@@ -198,13 +153,9 @@ const readBoardVersion = (workflowHome, exec) => {
 };
 
 /**
- * Every upstream entry since the last brief, each carrying its topic.
- *
- * Always answers: there is no failure return. `version` is what the brief
- * about to be published should record (null when nothing has ever been read),
- * `since` is where this run counted from, and `matches` is empty whenever there
- * is nothing to say. A board that could not be read answers null to all three:
- * no report, and no line, so the last published cursor stands.
+ * Every upstream entry since the last brief, each carrying its topic. Always
+ * answers: `version` is what the next brief records, `since` where this run
+ * counted from; a board that could not be read answers null to all three.
  *
  * @param {object} [opts]
  * @param {string} [opts.workflowHome] the user's ~/.workkit
@@ -222,7 +173,7 @@ const collectCcNews = (opts = {}) => {
 
   const board = readBoardVersion(workflowHome, exec);
   // The board could not be read. Reporting nothing is the easy half; the half
-  // that matters is publishing NO version line, so the newest cursor stays the
+  // that matters is publishing no version line, so the newest cursor stays the
   // one the last good brief carried instead of being re-seeded to latest.
   if (!board.ok) return { version: null, since: null, matches: [] };
   const since = board.version;

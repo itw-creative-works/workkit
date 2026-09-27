@@ -1,10 +1,6 @@
-//
-// The shared prologue of the hooks/safety/proof-guard suites, the `*.test.js`
-// files beside this one: the hook runner, the PATH-shim `gh` that answers
-// `issue view` from a fixture so nothing reaches GitHub, and the world with no
-// `gh` at all. A plain module, never a suite: the runner only loads files
-// ending in `.test.js`.
-//
+// The shared prologue of the hooks/safety/proof-guard suites beside this one:
+// the hook runner, the PATH-shim `gh` that answers `issue view` from a fixture,
+// and the world with no `gh` at all.
 
 const fs = require('fs');
 const os = require('os');
@@ -34,7 +30,7 @@ const makeGhStub = ({ comments = {}, fails = false } = {}) => {
   const binDir = path.join(dir, 'bin');
   fs.mkdirSync(binDir, { recursive: true });
   const cwdFile = path.join(dir, 'cwd');
-  // Every path here crosses INTO a shell, so each is spelled the way the shell
+  // Every path here crosses into a shell, so each is spelled the way the shell
   // reads one; the values handed back stay native, because Node reads those.
   stubTool(binDir, 'gh', [
     '#!/usr/bin/env bash',
@@ -55,11 +51,8 @@ const makeGhStub = ({ comments = {}, fails = false } = {}) => {
 
 const ghCalls = (stub) => readArgv(stub.logFile);
 
-// The machine that does NOT have `gh`. A runner ships the real one in /usr/bin,
-// so a case about its absence has to take it off the PATH rather than trust the
-// system one, or the REAL gh answers and the case passes for another reason.
-// Built once, since the mirror links every system tool, and removed with the
-// suite.
+// The machine without `gh`: a runner ships the real one in /usr/bin, so a case
+// about its absence takes it off the PATH. Built once, removed with the suite.
 let noGhPath = null;
 const pathWithoutGh = () => {
   if (!noGhPath) noGhPath = basePathWithout(mkTmp('proof-guard-'), 'gh');

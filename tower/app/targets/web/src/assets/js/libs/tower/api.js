@@ -1,33 +1,7 @@
-//
-// The one door to the tower API.
-//
-// The API is the plain Node server in tower/api/ on 8693; this app is served by
-// OMEGA's dev server on 4300, so every call is cross-origin. The origin is
-// named ONCE here - no page module ever writes a URL.
-//
-// CORS: the API echoes an allowed origin back in `Access-Control-Allow-Origin`
-// and answers the preflight the intake POST triggers, so the dev server's
-// origin reaches it. A rejection is still possible - a tower reached under a
-// hostname it does not answer to - and both calls here report that as a
-// readable line rather than throwing: they NEVER throw and never return
-// undefined data, so a page always has something to render.
-//
-// The two write paths the API offers are named here as well - filing an issue
-// and moving one between the board's columns - for the same reason the feeds
-// are: a page decides WHEN to write, never where to.
-//
-// A PUBLISHED copy has no tower behind it and speaks GitHub itself instead
-// (github.js), with the viewer's token. So this module answers one more
-// question than it used to: not just where the tower is, but WHICH of the three
-// modes this copy is in - `tower` (a machine with the API), `github` (published
-// and unlocked) and `locked` (published, no token yet). The mode is decided
-// once, here, and every consumer reads it off `MODE`.
-//
-// Both halves READ and both halves WRITE: an unlocked published copy files and
-// moves issues exactly as the dashboard on the machine does, with the token it
-// already holds. So each of the four doors below picks its half by the mode and
-// answers in one shape, and a page module goes on knowing neither.
-//
+// The one door to the tower API, and the copy's mode (`tower/README.md` § The
+// three modes). Every tower URL is written here, and each read and write picks
+// its half by the mode, so a page module knows neither. The fetchers never
+// throw and never return undefined data, so a page always has a line to draw.
 
 import { STATUSES } from './format.js';
 import {
@@ -35,13 +9,8 @@ import {
 } from './github.js';
 
 /**
- * The API origin this page was explicitly pointed at, or '' for none. Two
- * channels, neither needing a rebuild: `?api=http://host:port` in the URL
- * (wins, so a single link can point a page at another machine's tower) and
- * `window.TOWER_API` for a console override.
- *
- * Pure, because two answers are read off it - where to call, and whether this
- * copy has a tower at all.
+ * The API origin this page was explicitly pointed at, or '' for none:
+ * `?api=http://host:port` wins over `window.TOWER_API`.
  *
  * @param {string} href - the page URL
  * @param {object} scope - the global object carrying `TOWER_API`, if any
@@ -56,21 +25,10 @@ export function apiOverride(href, scope) {
 }
 
 /**
- * Live or published - the one mode question, decided from the two inputs that
- * answer it.
- *
- * `environment` is the framework's own: `omega.isDevelopment()` is
- * `config.environment === 'development'`, and that config rides the ONE build
- * snapshot every OMEGA page carries, `window.OMEGA_BUILD_JSON`, written by
- * `build.js` at the site root before any module runs (`omega dev` writes
- * `development`, `omega build` writes `production`). It is read here from the
- * snapshot rather than through `@omega.js/client` for two reasons: the
- * singleton only holds it once `omega.initialize()` has run, which is after
- * this module evaluates, and every framework import is a bundler specifier
- * that would take this module out of reach of its own suite.
- *
- * An explicitly supplied origin outranks the build: a published copy given
- * `?api=` runs fully live against whatever tower it was pointed at.
+ * Whether this copy has a tower; an explicit origin outranks the build.
+ * `environment` is read off `window.OMEGA_BUILD_JSON`, not `@omega.js/client`:
+ * the singleton holds it only after `omega.initialize()`, and a framework
+ * import would put this module out of its suite's reach.
  *
  * @param {string} environment - `config.environment` for this build
  * @param {string} override - the origin the page was pointed at, or ''
@@ -86,12 +44,8 @@ const OVERRIDE = apiOverride(location.href, window);
 export const API_BASE = OVERRIDE || 'http://127.0.0.1:8693';
 
 /**
- * Which of the three modes this copy is in.
- *
- * A tower outranks everything: a development build, or any build pointed at an
- * origin with `?api=`, reads the machine's API and never GitHub. Otherwise this
- * is a published copy, and the token is the whole difference between a board
- * and a prompt.
+ * Which of the three modes this copy is in: a tower outranks everything, and
+ * otherwise the token decides.
  *
  * @param {string} environment - `config.environment` for this build
  * @param {string} override - the origin the page was pointed at, or ''
@@ -105,40 +59,29 @@ export function decideMode(environment, override, hasToken) {
 
 const ENVIRONMENT = (window.OMEGA_BUILD_JSON && window.OMEGA_BUILD_JSON.config && window.OMEGA_BUILD_JSON.config.environment) || '';
 
-// A handover setup opened this page with is banked before the mode is read off
-// the storage it lands in (issue #230), so a copy arriving with the fragment is
-// a copy holding a token.
+// A setup handover is banked before the mode is read off the storage it lands
+// in, so a copy arriving with the fragment is a copy holding a token.
 takeTokenFromHash(window);
 
 /** This copy's mode - `tower`, `github` or `locked`. */
 export const MODE = decideMode(ENVIRONMENT, OVERRIDE, Boolean(readToken(safeStorage(window))));
 
 /**
- * Whether this copy of the dashboard has a TOWER to read. False in a published
- * build that was not pointed at one - which is not the same as having no data:
- * a published copy with a token reads GitHub directly. It is the question of
- * WHICH half answers, and nothing else.
+ * Whether this copy reads a tower: which half answers, never whether there is
+ * data (a published copy with a token reads GitHub).
  */
 export const LIVE = MODE === 'tower';
 
 /**
- * Whether this copy can WRITE - file an issue, move a card.
- *
- * A tower writes through its endpoints and an unlocked published copy writes
- * GitHub itself, so the only copy that cannot is the locked one: it holds no
- * token, and the token is both the credential and the auth. This, not `LIVE`,
- * is what every write path gates on.
+ * Whether this copy can write. Only a locked copy cannot, having no token;
+ * every write path gates on this, not `LIVE`.
  */
 export const WRITABLE = MODE !== 'locked';
 
 /**
- * Every feed the API offers, with its path and its re-read interval. It lives
- * beside the fetchers because this module is the one place a tower URL is
- * written.
- *
- * Cadence is the tower's old one: the board every 60 seconds (a gh sweep is
- * expensive), everything live every 10. The brief is built from the board
- * sweep and is never fresher than it, so it shares that cadence.
+ * Every feed the API offers, with its path and re-read interval: the board
+ * every minute (a gh sweep is expensive) and the brief with it, since it is
+ * built from that sweep; everything live every ten seconds.
  */
 export const FEEDS = {
   repos: { path: '/api/repos', every: 10000, fresh: '/api/repos?fresh=1' },
@@ -174,7 +117,7 @@ export const GITHUB_FEEDS = {
 };
 
 /**
- * The feed table a PUBLISHED page arms - the feeds it asked for that GitHub can
+ * The feed table a published page arms - the feeds it asked for that GitHub can
  * answer. A machine-bound feed (sessions, health, telemetry) is simply absent,
  * and the runtime fills its slot with the local-only sentence rather than
  * leaving the page waiting on a read that will never come.
@@ -193,14 +136,9 @@ const githubContext = () => ({
 });
 
 /**
- * The fetcher a published page hands the poller - the same contract
- * `feedFetcher` has, answered from GitHub instead of from a tower.
- *
- * `onPage` is the one thing it takes that the poller knows nothing about: the
- * board's sweep pages (#194), and a published copy draws each page as it lands
- * rather than at the end. The runtime passes a callback that writes the
- * board-so-far into the feed's own slot and paints (page.js); the poller's own
- * answer lands over it when the sweep finishes.
+ * The fetcher a published page hands the poller: `feedFetcher`'s contract,
+ * answered from GitHub. `onPage` lets the page draw the board as each sweep
+ * round lands (page.js).
  *
  * @param {string} path - '/api/board'
  * @param {Function} [onPage] - handed the board so far, once per round
@@ -209,13 +147,8 @@ const githubContext = () => ({
 export const githubFetcher = async (path, onPage) => unwrapFeed(await readFeed(path, { ...githubContext(), onPage }));
 
 /**
- * One feed answer from whichever half is talking - the tower's API on a
- * machine, GitHub in a published copy.
- *
- * The poller does not need this: the runtime hands it one fetcher or the other
- * up front. What needs it is a read made OUTSIDE the loop - the intake dialog's
- * roster, read when the dialog opens - which must work in both modes without
- * the dialog knowing which it is in.
+ * One feed answer from whichever half is talking, for a read made outside the
+ * poll loop (the intake dialog's roster) that must work in both modes.
  *
  * @param {string} path - '/api/repos'
  * @returns {Promise<{ok: boolean, data: any, status: number|null, reason: string|null}>}
@@ -260,15 +193,10 @@ export async function fetchFeed(path) {
 }
 
 /**
- * Translate one feed answer into the poller's fetcher contract - resolve with
- * the body, throw an Error carrying `.code` (`omega.request`'s shape). api.js
- * answers in the tower's own result shape instead, because the intake dialog
- * reads its `reason` sentence directly, so the translation between the two
- * happens here, once. The reason and the status survive it: the poller stores
- * them as `reason` and `status`, which is the shape the chrome and state.js
- * already read. A body that reported `ok: false` itself loses its `data` in
- * the throw - no consumer reads `.data` on a failed feed (state.js gates every
- * accessor on `ok`), so only the sentence and the status are worth carrying.
+ * Translate one feed answer into the poller's fetcher contract: resolve with
+ * the body, or throw an Error carrying `.code` (`omega.request`'s shape). A
+ * failed body's `data` is dropped in the throw: state.js gates every accessor
+ * on `ok`, so only the reason and the status are carried.
  *
  * @param {{ok: boolean, data: any, status: number|null, reason: string|null}} answer
  * @returns {any} the feed's body when `ok`
@@ -290,13 +218,9 @@ export function unwrapFeed(answer) {
 export const feedFetcher = async (path) => unwrapFeed(await fetchFeed(path));
 
 /**
- * POST a JSON body to one API path - how the tower writes.
- *
- * Same result shape as `fetchFeed` and the same promise never to throw, with
- * one difference that matters: the body is read at EVERY status. A refused
- * intake answers 400 carrying the reason it was refused ('title is required',
- * 'unknown repo: …'), and that sentence is the only thing worth showing a
- * human - the status line is not.
+ * POST a JSON body to one API path: `fetchFeed`'s shape and promise, except
+ * the body is read at every status, since a refused write's 400 carries the
+ * only sentence worth showing ('title is required').
  *
  * @param {string} path - '/api/intake'
  * @param {object} payload - the JSON body to send
@@ -328,22 +252,16 @@ export async function postJson(path, payload) {
 }
 
 /**
- * The statuses a card may be dragged between - the pipeline's five, taken from
- * the column list rather than written a second time. A move is `from` one label
- * `to` another, so an issue triage has not reached is at neither end of one:
- * the board draws it in an alert rather than a column, and no card of it exists
- * to pick up (#118).
+ * The statuses a card may be dragged between, taken from the column list. An
+ * issue with no status is at neither end of a move: the board draws it in an
+ * alert, never as a card.
  */
 export const MOVABLE_STATUSES = STATUSES.map((status) => status.key);
 
 /**
  * What a drop becomes: the body the status endpoint takes, or null when the
- * drop is not a move at all.
- *
- * Pure, and the write gate is one of the things it decides - a LOCKED copy has
- * nothing to write with, so a drop there produces nothing rather than a request
- * that could never be answered. An unlocked published copy writes GitHub with
- * the viewer's token, so its drops are real moves.
+ * drop is not a move. A locked copy has nothing to write with, so its drops
+ * produce nothing.
  *
  * @param {object} issue - the issue that was dragged
  * @param {string} to - the status of the column it was dropped on

@@ -1,18 +1,7 @@
-//
-// Tests for workflow/ship/ship-items.sh: the ship's Step 0c read (issue #290).
-//
-// The script asks `gh` twice (the open `status:qa` issues, then the open
-// `status:complete` ones) and prints one line per issue with the proof call
-// already made. The one seam is `gh`: a stub on PATH answers each list from a
-// fixture file named for the stage its `--label` asks about, and records every
-// call with its argument boundaries intact (tests/lib/argv-log.js), so where
-// `--repo` landed can be read back. jq is the machine's own, since the proof
-// read IS a jq expression and a stubbed one would be testing itself.
-//
-// The proof rule is the one safety/proof-guard reads (hook_issue_has_proof in
-// hooks/lib/proof.sh), cased in tests/hooks/proof-guard/proof.test.js: a comment LINE that
-// starts `Proof:`, leading blanks tolerated, case-sensitive.
-//
+// Tests for workflow/ship/ship-items.sh: the ship's Step 0c read, the open qa and
+// complete issues one line each with the proof call made. `gh` is a stub answering
+// from fixtures; jq is the machine's own, since the proof read is a jq expression.
+// The proof rule is hooks/lib/proof.sh's, cased in tests/hooks/proof-guard/.
 
 const fs = require('fs');
 const path = require('path');

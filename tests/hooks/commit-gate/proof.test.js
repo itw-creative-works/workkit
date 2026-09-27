@@ -1,8 +1,6 @@
-//
 // Tests for hooks/safety/commit-gate: check 6, a closed issue carries its Proof:
-// comment (issue #233), and the hook registered on PreToolUse Bash.
+// comment, and the hook registered on PreToolUse Bash.
 // The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
-//
 
 const path = require('path');
 const fs = require('fs');
@@ -17,10 +15,9 @@ const run = async () => {
 
   group('commit-gate: check 6, a closed issue carries its Proof: comment (issue #233)');
 
-  // A proof is a hard gate (owner ruling, 2026-09-10): the trailer is its third
-  // stage, after the complete flip and the close that safety/proof-guard holds.
-  // The read is the guard's, so the shim answers the same call, and nothing
-  // here reaches GitHub.
+  // A proof is a hard gate: the trailer is its third stage, after the complete
+  // flip and the close that safety/proof-guard holds. The read is the guard's,
+  // so the shim answers the same call, and nothing here reaches GitHub.
   const ghStub = ({ comments = {}, fails = false } = {}) => {
     const dir = mkTmp('cg-gh-');
     const bodies = path.join(dir, 'issues');

@@ -1,24 +1,16 @@
 #!/usr/bin/env bash
 # workflow/workkit/site.sh: the dashboard site question setup asks once,
 # whether the home repo publishes and at what domain, and the one guarded write
-# both answers make to the machine's settings file. SOURCED by workkit.sh,
-# never executed, and it runs nothing at load: it defines functions and sets
-# nothing. Every name it reads (SCRIPT_DIR, HOME_LIBS, the `interactive` check)
-# and the one it sets at run time (SITE_PUBLISH) are the entry's.
+# both answers make to the machine's settings file. Sourced by workkit.sh,
+# functions only; every name it reads, and the SITE_PUBLISH it sets, are the
+# entry's.
 
-# The site switch, asked once (issue #84). Setup builds the whole publish path
-# (the home repo, the clone, the tower project, its dependencies) and then left
-# `site.publish` seeded false, so going live meant knowing to hand-edit a file
-# nobody had been told about. Setup is the one command a human runs at a
-# terminal, so it is the one place the question can be put.
-#
-# The switch has THREE states: `true` and `false` are answers and are never
-# asked again, null (or no key at all) is a machine that has never been asked.
-# Every reader still treats anything but `true` as off, so an unanswered machine
-# publishes nothing while it waits.
+# The site switch, asked once: `true` and `false` are answers, and null (or no
+# key) is the unanswered state (`workflow/README.md` § The home repo's
+# lifecycle).
 offer_site_publish() {
   local current
-  # Reset at entry: only THIS run's ending may publish, never a stale value.
+  # Reset at entry: only this run's ending may publish.
   SITE_PUBLISH=''
 
   # The whole step reads and writes the machine's settings file through the
@@ -38,9 +30,8 @@ offer_site_publish() {
     return 0
   fi
 
-  # Read RAW rather than through wk_json_get: jq's `//` treats false as absent,
-  # and false is the one answer this step must be able to tell from silence.
-  # "null" is what an absent key and a null both render as: the same state.
+  # Read raw, not through wk_json_get: `//` treats false as absent. An absent
+  # key and a null both render "null", the same state.
   current="$(wk_jq -r '.site.publish | tostring' "$WK_HOME_SETTINGS" 2>/dev/null || printf '')"
   if [[ -z "$current" ]]; then
     wk_warn "site: $WK_HOME_SETTINGS does not parse as JSON; the publish question was not asked; fix the file, then re-run \`workkit setup\`"
@@ -74,21 +65,15 @@ offer_site_publish() {
   set_site_publish "$value"
   SITE_PUBLISH="$value"
 
-  # The domain rides the FRESH yes and nothing else: it is the one moment the
-  # answer is free (the site has never been built, so no address is in use yet)
-  # and asking on every later run would nag a machine that already said yes.
-  # An already-answered machine changes its domain by hand edit, as it does
-  # today. Nothing to ask either when a domain is already recorded.
+  # The domain rides the fresh yes alone, the one moment no address is in use;
+  # an answered machine changes it by hand edit.
   if [[ "$value" == 'true' ]] && [[ "$(wk_jq_default 'null' -r '.site.url | tostring' "$WK_HOME_SETTINGS")" == 'null' ]]; then
     ask_site_url
   fi
 }
 
-# The custom domain, asked right after the fresh yes. Empty input is an answer
-# too: it means the plain github.io address, so nothing is written, `site.url`
-# stays null and publish.sh writes no CNAME. Whatever is typed is taken at its
-# word: publish.sh already strips a scheme prefix on its way to the CNAME, and
-# the shape of a domain is not this command's to judge.
+# The custom domain. Empty means the plain github.io address, so nothing is
+# written; anything typed is taken at its word, and `wk_site_host` trims it.
 ask_site_url() {
   local answer=""
 

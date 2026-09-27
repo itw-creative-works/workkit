@@ -11,12 +11,11 @@ const AGENTS_DIR = path.join(REPO, 'agents');
 
 const SKILLS = ['feature', 'interview', 'diagnose', 'review', 'triage', 'status', 'checkpoint', 'migrate', 'ship', 'parallel'];
 
-// A description is a ROUTING line. The model reads every one of them on every
-// turn, so it stays one tight trigger sentence and the body carries the detail
-// (issue #94).
+// A description is a routing line the model reads on every turn, so it stays
+// one tight trigger sentence and the body carries the detail.
 const DESCRIPTION_CAP = 300;
 
-// The body is a RULE FILE read at invocation, and a rule stated once in bullets
+// The body is a rule file read at invocation, and a rule stated once in bullets
 // reads faster than the same rule in paragraphs. The line count and the
 // bytes-per-line cap are one bar: the density number is the one AGENTS.md
 // lives under (docs:board-guard).
@@ -37,7 +36,7 @@ const markdownIn = (dir) =>
     .filter((e) => e.isFile() && e.name.endsWith('.md'))
     .map((e) => path.join(e.parentPath || e.path, e.name));
 
-// The DIRECTORY is the roster every check below derives from: a skill added
+// The directory is the roster every check below derives from: a skill added
 // tomorrow is checked the day it lands, and one removed stops being asked for.
 const skillFolders = () =>
   fs.readdirSync(SKILLS_DIR, { withFileTypes: true })
@@ -75,7 +74,7 @@ const run = async () => {
   group('skills: description cap');
 
   await test(`every skill's description is at most ${DESCRIPTION_CAP} characters`, () => {
-    // Enumerated from the DIRECTORY, not the roster above: a skill added
+    // Enumerated from the directory, not the roster above: a skill added
     // tomorrow is under the cap the day it lands, and a folder without a
     // SKILL.md fails here rather than quietly dropping out of the check.
     const folders = skillFolders();
@@ -93,13 +92,13 @@ const run = async () => {
   group('skills: the length bar');
 
   await test(`every SKILL.md body is at most ${LINE_CAP} non-blank lines with no line over ${BYTE_CAP} bytes`, () => {
-    // Enumerated from the DIRECTORY, like the description cap. Blank lines
+    // Enumerated from the directory, like the description cap. Blank lines
     // carry nothing and buy readability, so the count is of lines with
     // content; the byte cap still reads every line. Hard fail, never a warning.
     const over = [];
     for (const name of skillFolders()) {
       const file = path.join(SKILLS_DIR, name, 'SKILL.md');
-      // The BODY is measured: the frontmatter is YAML the loader reads (its
+      // The body is measured: the frontmatter is YAML the loader reads (its
       // allowed-tools line alone runs past the cap), not prose the model reads.
       const text = fs.readFileSync(file, 'utf8');
       const frontmatter = text.match(/^---\n[\s\S]*?\n---\n/);
@@ -131,10 +130,9 @@ const run = async () => {
 
   await test('no plain frontmatter scalar carries a bare `: `, ` #`, or an opening `[` or `{`', () => {
     // A strict loader refuses a plain (unquoted) scalar holding `: ` or ` #`
-    // (a nested mapping, a comment) and reads one opening with `[` or `{` as
-    // a list or a map instead of text. Claude Code tolerates all of it today,
-    // so the drift is invisible in use (#227). Checked here without a YAML
-    // dependency, on every folder.
+    // and reads one opening with `[` or `{` as a list or a map. Claude Code
+    // tolerates all of it, so the drift is invisible in use; checked here
+    // without a YAML dependency, on every folder.
     const bad = [];
     for (const name of skillFolders()) {
       const file = path.join(SKILLS_DIR, name, 'SKILL.md');
@@ -153,8 +151,8 @@ const run = async () => {
 
   group('skills: no `workflow:` skill names survive');
   await test('nothing under skills/ names a workflow: skill', () => {
-    // `workflow:standards` is the HOOK, and keeps its name. Only the
-    // SKILL names moved to the workkit: prefix.
+    // `workflow:standards` is the hook, and keeps its name. Only the skill
+    // names carry the workkit: prefix.
     const bad = [];
     for (const file of markdownIn(SKILLS_DIR)) {
       const text = fs.readFileSync(file, 'utf8');
@@ -206,13 +204,10 @@ const run = async () => {
 
   group('skills: docs parity');
 
-  // The two places a reader meets the roster (AGENTS.md's list and the
-  // README's enumeration) are pinned to the FOLDERS, in both directions: a
-  // twelfth skill that lands without its name fails here, and so does a name
-  // left behind by a skill that went away (issue #128). AGENTS.md carries the
-  // bare names rather than a table since #161 (what each one DOES lives in its
-  // own SKILL.md), so the surface is every backticked plain name in the
-  // section, which `workkit:<name>` and `SKILL.md` are not.
+  // AGENTS.md's list and the README's enumeration are pinned to the folders in
+  // both directions. AGENTS.md carries bare names, so the surface is every
+  // backticked plain name in the section, which `workkit:<name>` and
+  // `SKILL.md` are not.
   await test("AGENTS.md's Skills section lists exactly the skill folders", () => {
     const named = [...section(path.join(REPO, 'AGENTS.md'), '## Skills').matchAll(/`([a-z-]+)`/g)]
       .map((m) => m[1])
@@ -250,7 +245,7 @@ const run = async () => {
   });
 
   await test('no shipped agent or skill reaches into a personal ~/.claude directory', () => {
-    // The spec may POINT at the surrounding harness (`~/.claude/hooks/README.md`
+    // The spec may point at the surrounding harness (`~/.claude/hooks/README.md`
     // is a real neighbouring document); an agent or a skill, which runs
     // anywhere, may not depend on one.
     const bad = [];

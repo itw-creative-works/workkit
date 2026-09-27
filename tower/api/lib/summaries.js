@@ -1,39 +1,10 @@
-//
-// The published summaries, read back: what the brief says about yesterday.
-//
-// The 9am job's first step COMPOSES the day and publishes it as a Discussion on
-// the home repo (`jobs/claude-nightly.sh`). This module is the read side of that
-// same board: the brief names the newest one and links it, so the morning opens
-// with what the night before actually produced rather than with counts alone.
-//
-// One helper, two readers: `jobs/morning/brief/brief-payload.js` (the 9am job and the cloud
-// runner) and the tower's `/api/brief`. Both attach the SAME keys onto the
-// payload `buildBrief` returned, so the notification and the Brief page cannot
-// tell different stories.
-//
-// THE TITLE IS WHAT SAYS WHAT A POST IS, not the category. A summary is titled
-// `<cadence>: <date>` by the job that writes it, while the category it lands in
-// is negotiable: categories cannot be created over the API, so a repo without
-// a `Daily` falls back to `General` (workflow/lib/discussions.sh). Reading by title
-// is the one question that answers the same on every home repo, and it is the
-// same reasoning `jobs/morning/brief/cc-news.js` reads the briefs by.
-//
-// EVERY FAILURE IS "nothing to say": no home repo, no `gh`, a token that
-// refuses, an answer that is not the shape asked for, a board that carries no
-// summary yet. The caller turns that into a named skip, and a brief must never
-// fail because Discussions were unreachable.
-//
-// But a `gh` failure SAYS WHY beside the null (issue #215). The round trip is
-// board.js's `ask`, the one the sweep is made of, so a spent rate limit and a
-// refused token arrive here as the sentence the board and the published copy
-// already say rather than as a second wording of it, and the reason rides the
-// keys a brief carries as `summariesReason` for the log line and the page that
-// would otherwise show a gap with nothing to explain it.
+// The published summaries, read back: the newest daily (and on Mondays the
+// weekly) on the home repo, attached onto the brief (jobs/README.md § The
+// payload). A post is known by its title, never its category, which falls back
+// to `General` on a home repo without `Daily` (workflow/lib/discussions.sh).
 //
 // Usage:
-//   const { briefSummaries, newestSummary } = require('./summaries');
 //   Object.assign(payload, briefSummaries({ generatedAt, workflowHome, exec }));
-//
 
 const fs = require('fs');
 const os = require('os');
@@ -55,10 +26,9 @@ const CADENCE_PREFIX = {
   weekly: 'weekly: ',
 };
 
-// 100 is the GraphQL page maximum, and the window is wide for the same reason
-// cc-news.js's is: the board is SHARED: the briefs publish beside the summaries
-// and a weekly rollup is one post in a week of them. A narrow window would
-// scroll the answer out of view and read as a board with nothing on it.
+// 100 is the GraphQL page maximum, and the window is wide because the board is
+// shared: the briefs publish beside the summaries, and a narrow window would
+// scroll a weekly rollup out of view.
 const WINDOW = 100;
 
 const SUMMARY_QUERY = `query($owner:String!,$name:String!){
@@ -94,10 +64,7 @@ const workflowHomeOf = (opts) => opts.workflowHome
 
 /**
  * The home repo these summaries would be read from, or null when this machine
- * has none. Exported for the callers that report a SKIP: a board that could not
- * be read and a machine that has no board at all are different silences, and
- * only the first is worth a line.
- *
+ * has none: no board at all is a different silence from a board not read.
  * @param {object} [opts] the same options the readers take
  * @returns {string|null}
  */
@@ -111,8 +78,7 @@ const homeSlugFor = (opts = {}) => homeSlug(workflowHomeOf(opts));
  */
 const readSummaries = (opts = {}) => {
   const slug = homeSlugFor(opts);
-  // A machine with NO home repo has no board to have read, which is a fact
-  // about the machine rather than a failure to report.
+  // No home repo is a fact about the machine, not a failure to report.
   if (!slug) return { nodes: null, reason: null };
   const [owner, name] = slug.split('/');
 
@@ -127,9 +93,8 @@ const readSummaries = (opts = {}) => {
 };
 
 /**
- * The newest summary of one cadence on a board ALREADY READ. Pure, so the two
- * cadences a Monday carries are picked off one read rather than read twice.
- *
+ * The newest summary of one cadence on a board already read, so a Monday's two
+ * cadences come off one read.
  * @param {Array<object>|null} nodes the board `readSummaries` brought back
  * @param {'daily'|'weekly'} cadence
  * @returns {{title: string, url: string, createdAt: string|null}|null}
@@ -150,12 +115,7 @@ const pickSummary = (nodes, cadence) => {
 
 /**
  * The newest published summary of one cadence, and why the board could not be
- * read where there is none.
- *
- * BOTH KEYS, always: a board with no summary of that cadence on it and a board
- * nobody could reach are the same absence with different causes, and only the
- * second one has anything to say (issue #215).
- *
+ * read where there is none. Both keys, always: only an unreachable board has a reason.
  * @param {'daily'|'weekly'} cadence
  * @param {object} [opts]
  * @param {string} [opts.workflowHome] the user's ~/.workkit
@@ -180,19 +140,9 @@ const isMonday = (generatedAt) => {
 };
 
 /**
- * The summary keys a brief carries: the ONE shape both call sites attach.
- *
- * `findings` is the newest daily summary and rides every morning. `week` is the
- * weekly rollup and rides MONDAYS ONLY: there is one brief a day, richer on a
- * Monday, rather than a second delivery nobody asked for. Any other day the key
- * is absent entirely. An absent key draws nothing, where a null would have to
- * be explained.
- *
- * `summariesReason` rides every morning beside them and is null on a board that
- * answered: it is why the keys above are empty, said in the board's own words,
- * so a morning thinned by a spent rate limit reads as one rather than as a
- * quiet night (issue #215).
- *
+ * The summary keys a brief carries, the one shape both call sites attach:
+ * `findings` every morning, `week` on Mondays only (absent otherwise: an absent
+ * key draws nothing), and `summariesReason`, null on a board that answered.
  * @param {object} [opts]
  * @param {string} [opts.generatedAt] the stamp the payload is built under
  * @param {string} [opts.workflowHome] the user's ~/.workkit
@@ -201,10 +151,8 @@ const isMonday = (generatedAt) => {
  * @returns {{findings: object|null, summariesReason: string|null, week?: object|null}}
  */
 const briefSummaries = (opts = {}) => {
-  // ONE read, both cadences: a Monday's rollup is on the same board the daily
-  // came back on, so reading again asked GitHub a question already answered on
-  // the busiest morning of the week (issue #250). The reason is that read's
-  // own, since one board unreadable is every key here empty for one cause.
+  // One read, both cadences, and one reason: a Monday's rollup is on the board
+  // the daily came back on.
   const { nodes, reason } = readSummaries(opts);
   const out = { findings: pickSummary(nodes, 'daily'), summariesReason: reason };
   if (isMonday(opts.generatedAt || new Date().toISOString())) {

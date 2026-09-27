@@ -32,10 +32,9 @@ const run = async () => {
   });
 
   await test('a browser that throws on the storage property itself still loads the page', () => {
-    // The documented failure is the ACCESS, not the read: a browser told to
-    // block all site data throws on `window.localStorage`. api.js touches it at
-    // module load and page.js at every Token click, so an unguarded access
-    // takes the whole bundle down rather than costing a token.
+    // The access throws, not the read: a browser blocking all site data throws
+    // on `window.localStorage`, and api.js touches it at module load, so an
+    // unguarded access takes the whole bundle down rather than costing a token.
     const hostile = {};
     Object.defineProperty(hostile, 'localStorage', {
       get() { throw new Error('storage is disabled'); },
@@ -76,10 +75,9 @@ const run = async () => {
     assertEq(landing.rewrites.length, 1, 'and the address bar is rewritten exactly once');
     assertEq(landing.rewrites[0], '/settings?repo=a,b', 'to the path and the query alone - the fragment is gone, the selection survives');
 
-    // Setup itself never sends one of these: `handover_token` REFUSES a token
-    // outside `[A-Za-z0-9_-]` rather than escaping it (workflow/workkit/token.sh, and
-    // `a token that would need escaping is refused, never escaped` proves it).
-    // The decode is the guard on this side of that contract.
+    // Setup never sends one of these: `handover_token` refuses a token outside
+    // `[A-Za-z0-9_-]` rather than escaping it (workflow/workkit/token.sh). The
+    // decode is the guard on this side of that contract.
     const encoded = mkLanding('#token=gho_a%2Fb');
     assertEq(github.takeTokenFromHash(encoded), 'gho_a/b',
       'an encoded value is decoded on the way in: the shell refuses a token that would need escaping rather than sending one, so the decode is this side\'s own guard');
@@ -96,8 +94,8 @@ const run = async () => {
     assertEq(github.takeTokenFromHash({}), '', 'a global with no location at all is the same answer');
     assertEq(github.takeTokenFromHash(undefined), '', 'and so is no global');
 
-    // Nothing to strip WITH is nothing taken: a token stored off a fragment
-    // that stays in the address bar is the leak the strip exists to close.
+    // Nothing to strip with is nothing taken: a token stored off a fragment that
+    // stays in the address bar is the leak the strip exists to close.
     const noHistory = { location: { hash: '#token=gho_FAKE', pathname: '/settings', search: '' }, localStorage: mkStorage() };
     assertEq(github.takeTokenFromHash(noHistory), '', 'a page with no history to rewrite takes nothing from the fragment');
     assertEq(Object.keys(noHistory.localStorage.held).length, 0, 'and stores nothing it could not strip');

@@ -1,8 +1,6 @@
 //
-// Tests for tower/api/lib/board.js: what the day closed (the per-repo count
-// of issues closed in the last 24 hours) and what an issue waits on (the
-// native dependency edges merged with the inline `Depends on:` line).
-// The shared prologue (the fake gh, the issue and label builders, the roster, the module under test) is ./helpers.js.
+// Tests for tower/api/lib/board.js: the day's closed count per repo and what an
+// issue waits on (native edges plus `Depends on:`). Prologue: ./helpers.js.
 //
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
@@ -11,10 +9,9 @@ const { fetchBoard, buildBoardQuery, CLOSED_PAGE, issue, fakeGh, ROSTER } = requ
 const run = async () => {
   group('tower/board: what the day closed');
 
-  // Issue #55: the sweep gains a COUNT of the issues closed in the last 24
-  // hours, per repo - never the closed issues themselves. The clock is stated,
-  // because a 24-hour window judged at whatever moment the suite runs is a
-  // window no fixture can sit either side of.
+  // The sweep carries a count of the issues closed in the last 24 hours per
+  // repo, never the issues themselves. The clock is stated: a window judged at
+  // whatever moment the suite runs is one no fixture can sit either side of.
   const NOW = Date.parse('2026-07-29T11:00:00Z');
   const closedAt = (...stamps) => ({ nodes: stamps.map((stamp) => ({ closedAt: stamp })) });
 
@@ -64,9 +61,9 @@ const run = async () => {
 
   group('tower/board: what an issue waits on');
 
-  // Issue #103: the sweep carries GitHub's own dependency edges, merged with the
-  // inline `Depends on:` line the cross-org case is written as. Advisory only -
-  // nothing here touches a label; the edges order a morning and badge a card.
+  // The sweep carries GitHub's own dependency edges, merged with the inline
+  // `Depends on:` line the cross-org case is written as. Advisory only: nothing
+  // here touches a label; the edges order a morning and badge a card.
   const blockedBy = (...edges) => ({
     nodes: edges.map(([number, state, repo]) => ({
       number,

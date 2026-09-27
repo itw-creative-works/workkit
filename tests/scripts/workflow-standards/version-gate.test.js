@@ -1,7 +1,5 @@
-//
 // Tests for standards.sh: the version gate and the drift report.
-// The shared prologue (the repo and gh-stub factories, runScript, the constants) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -77,7 +75,7 @@ const run = async () => {
 
   await test('no node with a CHANGELOG present: the version is not stamped, and the run says so', () => {
     // The CHANGELOG check is guarded on `command -v node`; stamping anyway
-    // ended the one-time drift report for a file nobody checked.
+    // would end the one-time drift report for a file nobody checked.
     const dir = makeRepo();
     const stub = makeGhStub();
     fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), [

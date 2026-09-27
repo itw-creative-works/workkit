@@ -1,13 +1,6 @@
-//
 // Tests for workflow/changelog/changelog-job.sh, the `changelog` job in a repo's
-// checks.yml, read and rewritten.
-//
-// The file has its own suite because it has two consumers: the heal
-// (standards.sh) writes the rewrite and the commit gate (through hooks/_lib.sh)
-// proves a staged checks.yml is exactly it, and neither consumer's suite owns
-// it. It is sourced DIRECTLY here, the way slug.sh is cased, and every case
-// hands a function a hand-built file and reads what it printed.
-//
+// checks.yml, read and rewritten. Sourced directly: the heal writes the job, the
+// commit gate checks it, and neither consumer's suite owns it.
 
 const fs = require('fs');
 const os = require('os');

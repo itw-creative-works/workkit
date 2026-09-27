@@ -1,9 +1,7 @@
-//
 // Tests for workflow/publish.sh: the shape of the script, and the reasons
 // not to publish (no home repo, no clone, no tooling, a clone that cannot
 // move, a settings file that does not parse, a build that fails).
-// The shared prologue (the world factory, the publish runner, the settings and branch readers) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -47,7 +45,7 @@ const run = async () => {
   });
 
   await test('no build tooling is a named skip that says what is missing', () => {
-    // The honest signal: `npm install` in the project EXITS 0 on a machine
+    // The honest signal: `npm install` in the project exits 0 on a machine
     // without the sibling omega checkout and leaves dangling symlinks, so the
     // presence of the binary is the only thing worth checking.
     const world = mkWorld({ tooling: false });
@@ -103,9 +101,8 @@ const run = async () => {
 
   await test('an autostash that cannot come back publishes nothing and puts the tree back', () => {
     // The silent half of `pull --rebase --autostash`: the rebase lands, the
-    // stash CONFLICTS on its way back, and the pull still exits 0 over a tree
-    // full of conflict markers (probed 2026-07-29). A run carrying on from
-    // there would push the markers to main.
+    // stash conflicts on its way back, and the pull still exits 0 over a tree
+    // full of conflict markers. A run carrying on would push them to main.
     const world = mkWorld();
     const other = onMain(world);
     fs.writeFileSync(path.join(other, 'README.md'), '# the tower, theirs\n');

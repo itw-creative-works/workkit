@@ -1,8 +1,6 @@
-//
 // Tests for hooks/safety/commit-gate: command parsing, and the hardening of
 // prefixed, wrapped and command-position spellings.
 // The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
-//
 
 const path = require('path');
 const fs = require('fs');
@@ -66,9 +64,8 @@ const run = async () => {
   });
 
   await test('pushd / popd elsewhere && git commit: exit 2 fail closed (issue #159)', () => {
-    // pushd does the same repo-addressing job as cd and used to pass the
-    // detector outright, which is half of the combination that landed a commit
-    // through the gate with none of its checks applied.
+    // pushd addresses a repo the way cd does, so it is detected the same: it is
+    // half of the pair that could land a commit with none of its checks applied.
     for (const c of ['pushd /somewhere/else && git commit -m "feat: x"',
       'pushd /somewhere/else >/dev/null && git commit -m "feat: x"',
       'popd && git commit -m "feat: x"']) {
@@ -82,7 +79,7 @@ const run = async () => {
 
   await test('a commit whose session cwd is in no repo: exit 2 fail closed (issue #159)', () => {
     // The other half: a session sitting outside any repo (a background subagent's
-    // steady state) resolved no toplevel, so the gate stood down entirely.
+    // steady state) resolves no toplevel, and the gate must not stand down.
     const outside = mkTmp('cg-norepo-');
     const { code, stderr } = runHook(outside, 'git commit -m "feat: x"');
     assertEq(code, 2, `a commit the gate cannot place must not pass, got: ${stderr}`);
@@ -114,7 +111,7 @@ const run = async () => {
 
   await test('a payload carrying NO cwd still fails open: exit 0 (issue #159)', () => {
     // The one thing the fail-closed deliberately does not cover: with no cwd in
-    // the payload the gate is blind to WHERE the command runs, which is the
+    // the payload the gate is blind to where the command runs, which is the
     // hook's own defect rather than a command shape an agent can write, and
     // blocking there would wedge every commit with nothing that could clear it.
     const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
@@ -138,9 +135,8 @@ const run = async () => {
   });
 
   await test('MULTI-LINE quoted mention: exit 0 (_lib.sh unification)', () => {
-    // The gate's old line-based sed strip left the tail lines of a multi-line
-    // quoted string looking unquoted; the shared hooks/lib/commit.sh strip is
-    // multiline perl, same as the commit-language hook.
+    // The tail lines of a multi-line quoted string stay quoted: the shared
+    // hooks/lib/commit.sh strip is multiline perl, same as the commit-language hook.
     const dir = mkRepo();
     stage(dir, 'app.js', 'const x = 1;\n');
     dropMarker(dir);
@@ -150,9 +146,9 @@ const run = async () => {
   });
 
   await test('quote character inside single quotes before a real commit: exit 2 (strip-ordering regression)', () => {
-    // Stripping double-quoted spans before single-quoted ones let the `"` in
-    // `grep '"'` pair with the commit message's opening quote and swallow the
-    // git commit clause; the strip must be one left-to-right alternation.
+    // Stripping double-quoted spans before single-quoted ones would pair the `"`
+    // in `grep '"'` with the message's opening quote and swallow the git commit
+    // clause; the strip must be one left-to-right alternation.
     const dir = mkRepo();
     stage(dir, 'app.js', 'const x = 1;\n');
     dropMarker(dir);
@@ -162,8 +158,8 @@ const run = async () => {
   });
 
   await test('heredoc BODY mentioning git commit: exit 0 (gotchas-sweep regression)', () => {
-    // A `cat >> file <<EOF` whose body holds a literal `git commit` example
-    // was clause-split like top-level code and blocked as a real commit.
+    // A `cat >> file <<EOF` whose body holds a literal `git commit` example is
+    // text, never clause-split like top-level code.
     const dir = mkRepo();
     stage(dir, 'app.js', 'const x = 1;\n');
     dropMarker(dir);
@@ -174,9 +170,8 @@ const run = async () => {
   });
 
   await test('commit inside interpreter-fed heredoc still gates: exit 2 (light-review finding)', () => {
-    // A heredoc body piped INTO a shell is executed code: stripping it
-    // before detection opened a bypass. The strip must skip commands whose
-    // heredoc feeds an interpreter.
+    // A heredoc body piped into a shell is executed code, so the strip skips
+    // commands whose heredoc feeds an interpreter.
     const dir = mkRepo();
     stage(dir, 'app.js', 'const x = 1;\n');
     dropMarker(dir);
@@ -199,8 +194,8 @@ const run = async () => {
   group('commit-gate: prefixed and wrapped spellings (hardening 2026-07-25)');
 
   await test('prefixed spellings still gate: command/env/path/subshell/group', () => {
-    // Each of these first words walked past the old first-word-is-git test,
-    // so the whole gate was skipped.
+    // Each of these first words hides git from a first-word-is-git test, which
+    // would skip the whole gate.
     for (const c of ['command git commit -m "x"', 'env git commit -m "x"', '/usr/bin/git commit -m "x"', '(git commit -m "x")', '{ git commit -m "x"; }']) {
       const dir = mkRepo();
       stage(dir, 'app.js', 'const x = 1;\n');
@@ -212,8 +207,8 @@ const run = async () => {
   });
 
   await test('interpreter-string commit: exit 2 asking for the plain form', () => {
-    // The -c string argument is one quoted span; the quote strip replaced it
-    // with a placeholder, so the commit inside was never seen.
+    // The -c string argument is one quoted span: the commit inside must be seen
+    // through the quote strip's placeholder.
     for (const c of ['sh -c \'git commit -m "x"\'', 'bash -c "git commit -m x"', 'bash -lc "cd /x && git commit -m x"', 'eval "git commit -m x"']) {
       const dir = mkRepo();
       stage(dir, 'app.js', 'const x = 1;\n');
@@ -237,9 +232,8 @@ const run = async () => {
   group('commit-gate: wrapper detection reads command position (review 2026-07-25)');
 
   await test('a wrapped spelling inside DATA quotes does not block: grep pattern, --grep value', () => {
-    // The old detector ran its regex over the ORIGINAL text, so a quoted span
-    // that merely mentions a wrapper read as one and blocked commands that
-    // commit nothing at all.
+    // A quoted span that merely mentions a wrapper is data: read as a wrapper,
+    // it would block commands that commit nothing at all.
     for (const c of [
       'grep -n "sh -c \'git commit\'" file.txt',
       'git log --grep "eval \'git commit\'"',
@@ -253,10 +247,8 @@ const run = async () => {
   });
 
   await test('a commit whose MESSAGE mentions a wrapped spelling gates normally', () => {
-    // The worst false positive: the block told the user to run a plain
-    // `git commit`, which is exactly what they were running, only rewording
-    // the message escaped. A docs-only commit passing proves the message span
-    // never reaches the wrapper test.
+    // A docs-only commit passing proves the message span never reaches the
+    // wrapper test; a block here would ask for the plain `git commit` it already is.
     const dir = mkRepo();
     stage(dir, 'README.md', '# docs\n');
     const { code, stderr } = runHook(dir, 'git commit -m "fix: detect sh -c \'git commit\' wrappers"');
@@ -265,9 +257,8 @@ const run = async () => {
   });
 
   await test('unquoted eval commit still gates: exit 2 (eval-peel regression)', () => {
-    // `eval git commit -m x` executes the words essentially as written, but
-    // eval was not peeled, so the clause scan never saw git in first position
-    // and the whole gate was skipped.
+    // `eval git commit -m x` executes the words essentially as written, so eval
+    // is peeled and the clause scan sees git in first position.
     const dir = mkRepo();
     stage(dir, 'app.js', 'const x = 1;\n');
     const { code, stderr } = runHook(dir, 'eval git commit -m "x"');
@@ -277,8 +268,8 @@ const run = async () => {
   });
 
   await test('attached -c string still fails closed: exit 2 (no-space regression)', () => {
-    // `bash -c"git commit -m x"` runs the string, but the old detector
-    // demanded whitespace between the option cluster and the quotes.
+    // `bash -c"git commit -m x"` runs the string: no whitespace is needed
+    // between the option cluster and the quotes.
     for (const c of ['bash -c"git commit -m x"', 'sh -lc"git commit -m x"']) {
       const dir = mkRepo();
       stage(dir, 'app.js', 'const x = 1;\n');
@@ -290,9 +281,8 @@ const run = async () => {
   });
 
   await test('a broken perl blocks only commands carrying the commit word (fail-closed scope)', () => {
-    // A perl RUNTIME failure used to set the wrapped flag unconditionally, so
-    // a machine with a broken perl blocked EVERY Bash command. The fail-closed
-    // now applies the same coarse word test as the no-perl path.
+    // A perl runtime failure falls back to the same coarse word test as the
+    // no-perl path, so a broken perl never blocks every Bash command.
     const bin = mkTmp('cg-perl-');
     for (const tool of ['bash', 'cat', 'jq', 'dirname', 'grep', 'sed', 'tr', 'git']) {
       const real = which(tool);
@@ -315,8 +305,8 @@ const run = async () => {
   });
 
   await test('GIT_DIR / --git-dir / --work-tree aimed elsewhere: exit 2 fail closed', () => {
-    // These were detected as commits but judged against the cwd's staging, so
-    // a commit aimed at another repo could pass on this repo's cleanliness.
+    // Judged against the cwd's staging, a commit aimed at another repo could
+    // pass on this repo's cleanliness.
     for (const c of ['GIT_DIR=/other/.git git commit -m "x"', 'git --git-dir=/other/.git commit -m "x"', 'git --git-dir /other/.git commit -m "x"', 'git --work-tree=/other commit -m "x"', 'env GIT_WORK_TREE=/other git commit -m "x"']) {
       const dir = mkRepo();
       const { code, stderr } = runHook(dir, c);
@@ -327,8 +317,8 @@ const run = async () => {
   });
 
   await test('the subcommand must be commit: log/show/diff with a commit argument pass', () => {
-    // Any clause `git … commit …` used to read as a commit, so
-    // `git log --grep commit` ran the FULL gate, npm test included.
+    // A clause `git … commit …` is not a commit by the word alone: read as one,
+    // `git log --grep commit` would run the full gate, npm test included.
     const dir = mkRepo();
     stage(dir, 'app.js', 'const x = 1;\n');
     for (const c of ['git log --grep commit', 'git show commit', 'git diff commit -- app.js']) {
@@ -339,9 +329,9 @@ const run = async () => {
   });
 
   await test('a glob token in the clause is not expanded against the process cwd (set -f)', () => {
-    // The token walk ran with globbing enabled: with a file named -a in the
-    // hook process cwd, the unquoted token -? expanded to -a and flipped the
-    // --all branch, pulling modified tracked code into a docs-only commit.
+    // With globbing on and a file named -a in the hook process cwd, the
+    // unquoted token -? would expand to -a and flip the --all branch, pulling
+    // modified tracked code into a docs-only commit.
     const dir = mkRepo();
     fs.writeFileSync(path.join(dir, 'tracked.js'), 'const x = 1;\n');
     execSync('git add tracked.js && git commit -m "track" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });

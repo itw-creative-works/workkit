@@ -1,20 +1,9 @@
 #!/usr/bin/env bash
-# manager:profile: UserPromptSubmit hook (issue #11).
-# Injects the MANAGER standing instruction: the main chat is the conversation
-# and judgment layer; the class agents (scout / worker / verifier / advisor)
-# do the work, with models supplied per spawn by the manager/resolver hook.
-# Re-injected every turn for the same reason comms/style is: standing rules
-# stated once get buried under competing instructions.
-#
-# Injection condition: only manager-capable sessions get the profile. The
-# session tier is the frontier or workhorse rung (read from ../resources/ladder.json),
-# or unknown (a fresh VS Code first prompt; the owner's default model is frontier,
-# so silence there would drop the profile exactly where it matters most).
-# A sonnet/haiku session is a deliberately cheap solo session: no crew, no
-# profile, no output at all. The tier names come from the LAYERED config
-# (`hook_manager_config`): this repo's `.workkit/settings.json` `manager`
-# block over the user's over the ladder, and `enabled: false` silences the
-# profile outright. Always exits 0, never blocks a prompt.
+# manager:profile: UserPromptSubmit hook. Injects the manager standing
+# instruction every turn, since rules stated once get buried. Only a
+# manager-capable session hears it: the frontier or workhorse rung, or an
+# unknown one (a fresh VS Code first prompt, where the default is frontier);
+# a cheaper session and `enabled: false` hear nothing. Always exits 0.
 
 set -euo pipefail
 

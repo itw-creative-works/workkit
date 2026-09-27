@@ -1,30 +1,13 @@
 #!/usr/bin/env bash
 # workflow/standards/claims.sh: the heals that read the open issues: stale
 # agent claims released, claimed specs flipped to building, and the check that
-# every open issue carries conforming labels. SOURCED by standards.sh, never
-# executed, and it runs nothing at load: it defines functions and sets
-# nothing. The claim labels and the staleness window are the entry's.
+# every open issue carries conforming labels. Sourced by standards.sh,
+# functions only. The claim labels and the staleness window are the entry's.
 
 # ── 3b. Agent claims that went quiet are released ──
-# An agent that claimed an issue and then died leaves it locked against every
-# other worker. The claim is the CLAIM_LABEL plus the assignee, so releasing it
-# removes both and says so in a comment: the issue's own trail records who
-# freed it and why, which a silent unassign would not.
-#
-# A released issue that was status:building goes back to status:specced in the
-# same edit: the spec is still accepted, the work is simply unclaimed again, and
-# leaving it building would keep it counted as in flight by every surface that
-# reads the pipeline. Whatever partial progress exists lives in the issue's own
-# trail, so nothing is lost by moving the label back.
-#
-# Fail-safe by shape: only an ANSWER from GitHub licenses a write. A
-# query that fails leaves every claim exactly as it is and flags the run, so the
-# next session tries again rather than releasing work that is still running.
-# A human claim (an assignee and no CLAIM_LABEL) is never in the query's answer
-# and is never touched.
-#
-# The staleness test is jq's, not the shell's: `date -d` and `date -v` disagree
-# across platforms, and jq is already required to read GitHub's answer at all.
+# Only an answer from GitHub licenses a write, and a human claim (no
+# CLAIM_LABEL) never answers the query. Why the release demotes building and
+# why jq judges staleness: `workflow/README.md`, the `standards/` row.
 sweep_stale_claims() {
   local issues stale n assignees args login building body can_flip="" moved=0 failed=0
   command -v jq >/dev/null 2>&1 || return 0
@@ -36,11 +19,8 @@ sweep_stale_claims() {
   # a query for a label a repo does not have is not a failure worth reporting.
   [[ -n "$existing_labels" ]] || return 0
   wk_jq -e --arg n "$CLAIM_LABEL" 'any(.[]; .name == $n)' <<<"$existing_labels" >/dev/null 2>&1 || return 0
-  # The flip is a bonus, the release is the job. `gh issue edit` fails whole
-  # when it is handed a label the repo does not have, so a repo whose
-  # SPECCED_LABEL never made it to GitHub would lose the release too, the one
-  # thing the sweep exists to do. Where the label is missing, release without
-  # the flip, exactly as the sweep did before the flip existed.
+  # The flip is a bonus, the release is the job: `gh issue edit` fails whole on
+  # a label the repo lacks, so a missing SPECCED_LABEL releases without the flip.
   if wk_jq -e --arg n "$SPECCED_LABEL" 'any(.[]; .name == $n)' <<<"$existing_labels" >/dev/null 2>&1; then
     can_flip=1
   fi
@@ -96,21 +76,9 @@ sweep_stale_claims() {
 }
 
 # ── 3c. A claimed spec is work in flight ──
-# `status:specced` is the authorization to start and the assignee is the claim,
-# so an open issue carrying both has STARTED: the spec's flip to
-# status:building happens the moment work does. Every surface reading the queue
-# used to tolerate the claimed-specced shape as in flight instead, which made a
-# transitional branch permanent because nothing ever flipped the issues. This
-# sweep is what flips them (issue #62), so the label says what is true and the
-# readers need no tolerance at all.
-#
-# It cannot fight the release sweep, which runs FIRST and removes the assignee
-# in the same edit that demotes an issue to specced: what it releases has no
-# claim left for this to promote. Neither ever sees the shape the other made.
-#
-# Fail-safe by shape, like the sweep above: only an ANSWER from GitHub licenses
-# a write, and a repo whose BUILDING_LABEL never reached GitHub is left alone
-# rather than edited into a whole-command failure.
+# Specced plus an assignee has started, so it flips to building. The release
+# sweep runs first and removes the assignee as it demotes, so the two never
+# fight. A repo missing BUILDING_LABEL is left alone.
 flip_claimed_specced() {
   local issues claimed n moved=0 failed=0
   command -v jq >/dev/null 2>&1 || return 0
@@ -148,16 +116,9 @@ flip_claimed_specced() {
 }
 
 # ── 4. Open issues carry conforming labels ──
-# A violation FLAGS THE RUN (a missing status is an error, a double status is
-# an error): templates can be installed before the
-# label sync ever ran, GitHub silently drops nonexistent labels at issue
-# creation, and web-filed issues arrive unlabeled, so a captured issue can sit
-# outside every queue query, and the heal must keep saying so every session
-# until it is routed, not once a day. The manifest is the rule: an `exclusive`
-# group allows at most one of its labels per issue, and a `required` group
-# (status, type) demands exactly one. Needs gh + auth like the label sync; the
-# sync already said why those are missing, so this check skips silently
-# without them.
+# A violation flags the run every session until it is routed, since a captured
+# issue can arrive unlabeled and sit outside every queue. The manifest's
+# `exclusive` and `required` groups are the rule; no gh or auth skips silently.
 check_issue_labels() {
   local issues bad
   [[ -f "$LABELS_JSON" ]] || return 0

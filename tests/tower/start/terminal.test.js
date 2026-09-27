@@ -1,8 +1,6 @@
 //
-// Tests for tower/start.sh: the terminal (the colors a half keeps, the
-// FORCE_COLOR it is handed on and off a terminal, a real Ctrl-C under a pty)
-// and the wrapper's contract with the two commands that run it.
-// The shared prologue (the wrapper runner, the stub halves, the poll, the pty run) is ./helpers.js.
+// Tests for tower/start.sh: the terminal (the colors a half keeps, FORCE_COLOR on and
+// off a terminal, a real Ctrl-C under a pty) and the CLI contract. Prologue: ./helpers.js.
 //
 
 const fs = require('fs');
@@ -20,12 +18,10 @@ const run = async () => {
   group("tower/start: the terminal, and the wrapper's contract");
 
   await test('a colored log keeps its colors, and the filter still judges what is under them', async () => {
-    // The failure this pins (#179): once the halves are painting again, the
-    // escapes sit on the very anchors the filter matches. A filter reading the
-    // raw line finds an escape where `^omega: ` and `^objc[` should be, so the
-    // framework's refusal falls out of the keep net, the duplicate-library
-    // warning rides through on the word "failures" the drop list exists to
-    // forgive, and the tag no longer opens the flowing phase.
+    // Once the halves paint, escapes sit on the very anchors the filter matches
+    // (`^omega: `, `^objc[`), so the filter judges the line under its escapes, or
+    // a refusal falls out of the keep net, a forgiven warning rides through, and
+    // the tag stops opening the flowing phase.
     const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 30', COLORED_APP, QUIET_PORTS, { capture: true });
     const out = collect(child);
@@ -50,9 +46,8 @@ const run = async () => {
   });
 
   await test('a tower that is not on a terminal hands its halves no FORCE_COLOR', async () => {
-    // The other half of #179: a run piped or redirected - this suite, a log
-    // file, a CI job - asked for plain text, and the halves must be left to
-    // decide as they always did.
+    // A run piped or redirected (this suite, a log file, a CI job) asked for
+    // plain text, so the halves are left to decide for themselves.
     const dir = mkTmp('tower-start-');
     const { app, seen } = probeStub(dir);
     const child = start(dir, 'exec sleep 30', app, QUIET_PORTS);
@@ -67,9 +62,9 @@ const run = async () => {
 
   if (hasExpect()) {
     await test('a tower on a real terminal hands its halves the colors back', async () => {
-      // What #179 is actually about, and what only a pty can show: the half
-      // writes to a fifo, so it sees a non-tty and paints nothing unless it is
-      // told to. The tower is the one that knows a terminal is watching.
+      // Only a pty shows this: the half writes to a fifo, so it sees a non-tty
+      // and paints nothing unless told to. The tower is the one that knows a
+      // terminal is watching.
       const dir = mkTmp('tower-start-');
       const { app, seen } = probeStub(dir);
       const child = ptyRun(dir, app);
@@ -96,11 +91,9 @@ const run = async () => {
     });
 
     await test('a real Ctrl-C ends it silently - no job-control lines under a terminal', async () => {
-      // Only a pty shows this (#138 review, B1): the suite's own runs redirect
-      // both streams and never signal, so bash's "Terminated: 15 … Done …"
-      // announcements - which it makes for a job some OTHER shell killed -
-      // were invisible here while filling the terminal of everyone who typed
-      // the command and pressed Ctrl-C.
+      // Only a pty shows this: the suite's own runs redirect both streams and
+      // never signal, so bash's "Terminated: 15 … Done …" lines, made for a job
+      // another shell killed, never appear here.
       const dir = mkTmp('tower-start-');
       const runner = path.join(dir, 'runner.sh');
       const script = path.join(dir, 'ctrl-c.exp');
@@ -143,8 +136,8 @@ const run = async () => {
   }
 
   await test('workkit tower hands this script its arguments, so --verbose gets here', () => {
-    // The other door, and the one that dropped the flag on the floor: the CLI
-    // exec'd the wrapper with nothing, so `workkit tower --verbose` was quiet.
+    // The other door: the CLI has to exec the wrapper with its arguments, or
+    // `workkit tower --verbose` is quiet.
     const cli = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'workflow', 'workkit.sh'), 'utf8');
     assert(/exec bash "\$TOWER_START" "\$@"/.test(cli), 'the CLI forwards what it was given');
   });

@@ -1,9 +1,7 @@
-//
 // Tests for hooks/safety/release-taken, the PreToolUse hook that refuses a
 // release whose version a provider already has: the release commit, asked at npm
 // and at GitHub.
 // The shared prologue (the npm and gh stubs, the repo factory, the hook runner, the release command) is ./helpers.js.
-//
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { isCall, fmtCalls } = require('../../lib/argv-log');
@@ -118,8 +116,8 @@ const run = async () => {
   await test('an origin spelled natively on Windows still names its repo', () => {
     // The slug comes from the engine's one rule (workflow/lib/slug.sh), which takes
     // a remote in either separator: git stores a path exactly as it was typed,
-    // so a Windows checkout's origin comes back with backslashes and a reader
-    // that took only a forward slash left the clause off the bounce.
+    // so a Windows checkout's origin comes back with backslashes, and a reader
+    // taking only a forward slash would leave the clause off the bounce.
     const stubs = makeStubs({ tags: ['v1.2.3'] });
     const dir = mkRepo({ origin: 'C:\\Users\\x\\theirs.git' });
     const { code, stderr } = runHook(RELEASE, dir, stubs);

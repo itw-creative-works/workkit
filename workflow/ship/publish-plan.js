@@ -1,53 +1,12 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
-//
 // The ship's publish plan: which packages of a repo go to npm, in which order,
-// and which are skipped and why. The ship skill's Step 5 runs this; without
-// `--run` nothing here publishes, and with it the plan is published as printed.
-//
-// A root package.json with no `workspaces` is its own one candidate. With
-// `workspaces` (the array, or the object's `packages`) the members are read
-// from their own package.json files, never through `npm query .workspace`,
-// which answers nothing until `npm install` has linked them: a fresh clone
-// would read as nothing to publish. The expansion is the one the
-// `safety/release-taken` hook makes, a literal directory and `dir/*` (every
-// direct subdirectory holding a package.json), and the root of a workspaces
-// repo is never a candidate. Any other glob shape refuses: a plan that leaves
-// packages out in silence is a wrong plan.
-//
-// A package is a candidate when `private` is explicitly false AND it carries
-// `files` or `publishConfig`; every other package is a skip with its reason.
-// Candidates publish after every candidate they name in `dependencies`,
-// `devDependencies` or `peerDependencies`, ties broken by name, so an exact
-// internal pin is already on the registry when its dependent lands. A cycle
-// has no order and refuses, spelled out.
+// and which are skipped and why (the rules and the lines: `skills/ship/SKILL.md`
+// Step 5). Members are read from their own package.json files, never through
+// `npm query .workspace`, which answers nothing before `npm install`.
 //
 // Run from the repo root:
-//   node ~/.claude/workkit/ship/publish-plan.js [--dir <root>]
-// Prints `publish <name> <version> <scoped|unscoped>` lines in publish order,
-// then `skip <name> <version> <reason>` lines. A `dir/*` pattern that matches
-// no package is named on stderr and the plan stands. A refusal prints the
-// first problem as one `publish-plan: ...` line on stderr, nothing on stdout,
-// exit 1. A usage error (a flag with no value) is exit 2.
-//
-//   node ~/.claude/workkit/ship/publish-plan.js --run [--dir <root>]
-// Makes and prints the same plan, then publishes its `publish` lines in order
-// from the root: `npm publish --workspace=<name>` when the root declares
-// `workspaces`, a plain `npm publish` otherwise, `--access public` when the
-// name is scoped, npm's own output left on the terminal. It never runs
-// `prepare`; the ship runs that before it. A refusal publishes nothing.
-//
-// Each package asks the registry first, the question the `safety/release-taken`
-// hook asks: that hook only sees a command whose word is `npm`, so a publish
-// inside this run is not its trigger and the run asks for itself. A version
-// already out prints `skipped <name> <version> already on npm` and the run goes
-// on; a check that cannot be made says so on stderr and the publish proceeds,
-// since npm itself refuses a taken version. Each publish prints
-// `published <name> <version>`. The first failed publish stops the run with one
-// `publish-plan: npm publish failed ...` line naming what was and was not
-// published, exit 1. When every package was already out, one
-// `nothing to publish: ...` line closes the run, exit 0.
-//
+//   node ~/.claude/workkit/ship/publish-plan.js [--run] [--dir <root>]
 
 const fs = require('fs');
 const path = require('path');
@@ -233,10 +192,9 @@ const npmEnd = (res) => {
 
 /**
  * Is `name@version` already on the registry? The `safety/release-taken` hook's
- * npm question, flag for flag: one try, fifteen seconds, no prompt, no update
- * banner. E404 is the registry answering that the version is free; any other
- * failure stands the check down on stderr and answers free, so the publish
- * goes ahead and npm refuses the version itself if it is taken.
+ * npm question, flag for flag, asked here since that hook never sees a publish
+ * inside this run. E404 answers free; any other failure stands the check down
+ * on stderr and answers free, so npm itself refuses a taken version.
  */
 const onRegistry = (root, { name, version }) => {
   const res = spawnSync('npm', ['view', '--no-update-notifier', '--fetch-retries=0', '--fetch-timeout=15000', `${name}@${version}`, 'version'], {
@@ -308,8 +266,8 @@ const main = (argv) => {
 };
 
 if (require.main === module) {
-  // Set the code, never process.exit(): exiting discards whatever console.log
-  // has buffered when stdout is a PIPE. Same fix as changelog.js.
+  // Set the code, never process.exit(): exiting discards console.log output
+  // still buffered for a pipe.
   process.exitCode = main(process.argv.slice(2));
 }
 

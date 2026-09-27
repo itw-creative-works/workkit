@@ -1,24 +1,9 @@
-//
-// The shared prologue of the jobs/morning.sh cloud suites, the `*.test.js`
-// files beside this one, which test the script as a GITHUB ACTIONS RUNNER runs
-// it (issues #82, #107): the same script the 9am launchd job runs, in the
-// environment where the brief is the step that can happen and the summaries
-// and the publish are named skips. The machine leg is the morning-local/
-// folder. A plain module, never a suite: the runner only loads files ending in
-// `.test.js`.
-//
-// The runner is executed for real against a scratch HOME and a PATH farm: a
-// fake `claude` recording the argument vector it was given, a recording
-// notifier, and a `gh` that answers the two APIs this path speaks: the
-// contents API it reads the published slug list from, and the Discussions
-// GraphQL it publishes through. `git`, `jq` and `node` are the real ones,
-// because the roster this script writes is only worth asserting if the tower's
-// own composer reads it back.
-//
-// HOME is the whole sandbox: the script resolves ~/.workkit from it exactly as
-// the Node composers do, so nothing here touches the real workflow folder, and
-// the recording `gh` means nothing reaches GitHub.
-//
+// The shared prologue of the jobs/morning.sh cloud suites beside this one: the
+// script run for real as an Actions runner runs it, against a scratch HOME and a
+// PATH farm (a recording `claude`, a recording notifier, and a `gh` answering the
+// contents API and the Discussions GraphQL). `git`, `jq` and `node` are real, so
+// the roster it writes is read back by the tower's own composer. The machine leg
+// is the morning-local/ folder.
 
 const fs = require('fs');
 const path = require('path');
@@ -40,29 +25,19 @@ const HOME_SLUG = 'owner/private-home';
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
-// The date the runner titles its Discussion with is the LOCAL one (`date
+// The date the runner titles its Discussion with is the local one (`date
 // '+%Y-%m-%d'`), which is not always today in UTC.
 const today = () => new Date().toLocaleDateString('en-CA');
 
 /**
  * A scratch HOME, a fake `claude` printing `response` and exiting `status`, and
- * a `gh` that answers the contents API and the Discussions GraphQL.
- *
- * `githubRepo` is GITHUB_REPOSITORY: the repo the run belongs to, which since
- * issue #91 IS the home repo, because the workflow lives on it. Null leaves it
- * unset.
- * `settings` is a settings file to plant before the run: the configured runner
- * whose file must win over the env var.
- * `siteRepos` is what the home repo's default branch carries as data/repos.json,
- * private, where gh-pages would be public (issue #110); null is the file being
- * absent, which is publishing that is off or has never run.
- * `defaultBranch` is what GitHub answers for the home repo's default branch:
- * the ref the roster is read from, asked for rather than assumed (issue #112).
- * `posted` is what the home repo's discussions already carry, as
- * `{ title, body }`: the check-before-post guard's input, and the cursor's.
- * `ghFails` makes every API call refuse.
- * `boardBroken` makes the board sweep answer a per-repo error for the first
- * repo: a token whose reach does not cover it.
+ * a `gh` answering the contents API and the Discussions GraphQL.
+ * `githubRepo`: GITHUB_REPOSITORY, the home repo the workflow lives on (null unsets it).
+ * `settings`: a settings file planted first, whose runner must win over the env var.
+ * `siteRepos`: the home repo's private data/repos.json (null: publishing off or never run).
+ * `defaultBranch`: the home repo's default branch, the ref the roster is read from.
+ * `posted`: the discussions already there, `{ title, body }`, for the check-before-post guard.
+ * `ghFails` makes every API call refuse; `boardBroken` fails the sweep for the first repo.
  * `ccChangelog` is the upstream CHANGELOG the news read is pointed at.
  */
 const mkWorld = ({
@@ -103,10 +78,9 @@ const mkWorld = ({
 
   const ghLog = path.join(root, 'gh-argv.log');
   const bodyLog = path.join(root, 'posted-body.md');
-  // Which token each kind of call was made with. The two-token split (issue
-  // #91) is only real if the value `gh` would authenticate with differs between
-  // the cross-repo sweep and the post on this repo, and this is where that is
-  // visible: one line per call, `<kind> <token>`.
+  // Which token each kind of call was made with, one line per call as
+  // `<kind> <token>`: the two-token split is only real if the cross-repo sweep
+  // and the post on this repo authenticate differently.
   const tokenLog = path.join(root, 'gh-tokens.log');
   const nodes = posted.map(({ title, body = '' }) => JSON.stringify({
     title, createdAt: `${today()}T09:00:00Z`, body,
@@ -126,7 +100,7 @@ const mkWorld = ({
     `  *.default_branch*) printf 'branch %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
     'esac',
     'case "$all" in',
-    // The default branch, asked for before the roster is read (issue #112):
+    // The default branch, asked for before the roster is read:
     // `gh api ... -q .default_branch` answers the bare string.
     `  *.default_branch*) printf '%s\\n' ${JSON.stringify(defaultBranch)} ;;`,
     `  *contents/data/repos.json\\?ref=${defaultBranch}*)`,
@@ -178,10 +152,10 @@ const mkWorld = ({
       // environment it woke up in. The world that is not a runner deletes it.
       GITHUB_ACTIONS: 'true',
     }),
-    // The workflow's two, set AFTER the scratch home, which carries no token of
-    // its own: the cross-repo secret `gh` authenticates with by default, and
-    // the built-in token the post is made with. This world MEANS to hand them
-    // over, and what each call was made with is what these cases measure.
+    // The workflow's two, set after the scratch home, which carries no token of
+    // its own: the cross-repo secret `gh` authenticates with by default, and the
+    // built-in token the post is made with. What each call carried is what
+    // these cases measure.
     GH_TOKEN: sweepToken,
     WORKKIT_POST_TOKEN: postToken,
   };
@@ -217,13 +191,9 @@ const mkWorld = ({
   };
 };
 
-// A machine without jq, built rather than filtered: on a host where jq sits in
-// /usr/bin, dropping its directory would take every other tool with it. A farm
-// of symlinks to exactly what the run needs BEFORE it asks for jq is the honest
-// shape of the missing tool.
-// `date` is on the list because every line the job prints is stamped with it
-// (issue #237): a PATH without it is a shell that cannot log, not a machine
-// missing jq.
+// A machine without jq, built as a farm of symlinks to exactly what the run
+// needs before it asks for jq: dropping jq's directory would take every other
+// tool in /usr/bin with it. `date` stamps every line the job prints.
 const NO_JQ_TOOLS = ['bash', 'dirname', 'mktemp', 'mkdir', 'rm', 'cat', 'date'];
 const withoutJq = (root, bin) => {
   const farm = path.join(root, 'no-jq');
@@ -241,12 +211,9 @@ const runJob = (world, args = []) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT
   env: world.env,
 });
 
-// A case that reads what the `gh` shim RECORDED, or what an answer of the
-// shim's put in the log. The script's own gh calls reach it on either
-// platform (a shell starts a shebang script itself), but the node composers
-// it runs spawn gh directly, and no stub is startable that way on Windows
-// (tests/lib/platform.js, `stubTool`): the machine's own gh answers those
-// reads there, sealed by this world's env to a config that has no account.
+// A case that reads what the `gh` shim recorded. The node composers the script
+// runs spawn gh directly, and no stub is startable that way on Windows
+// (`stubTool`), so there the sealed machine gh answers those reads.
 const composerTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
 
 // The whole case is the file's mode, which Windows has none of.

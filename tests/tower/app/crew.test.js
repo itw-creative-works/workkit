@@ -114,7 +114,7 @@ const run = async () => {
     assertEq(crew.connectorFlow(1, 4), 'left', 'so is the near one');
     assertEq(crew.connectorFlow(2, 4), 'right', 'and the right half flows right');
     assertEq(crew.connectorFlow(3, 4), 'right', 'to the end of the row');
-    // An odd row has a card ON the trunk - its line is the drop, with no
+    // An odd row has a card on the trunk: its line is the drop, with no
     // sideways run to have a direction at all.
     assertEq(crew.connectorFlow(1, 3), 'down', 'the middle of three is straight below the parent');
     assertEq(crew.connectorFlow(0, 1), 'down', 'and an only child is always straight below it');

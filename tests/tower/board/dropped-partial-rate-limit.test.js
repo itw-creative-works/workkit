@@ -1,8 +1,6 @@
 //
-// Tests for tower/api/lib/board.js: the answers GitHub gives short (a
-// dropped issue node, a partial answer kept) and a spent rate limit that
-// says when it lifts.
-// The shared prologue (the fake gh, the issue and label builders, the roster, the module under test) is ./helpers.js.
+// Tests for tower/api/lib/board.js: the answers GitHub gives short (a dropped
+// node, a kept partial) and a rate limit that says when it lifts. See ./helpers.js.
 //
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
@@ -14,9 +12,8 @@ const {
 const run = async () => {
   group('tower/board: a dropped issue node');
 
-  // Issue #202's crash itself: GitHub answers the shape of the board with every
-  // issue node NULL. Reading `node.labels` off one of those ended the API
-  // process and took the dashboard down with it.
+  // GitHub can answer the board's shape with every issue node null, and reading
+  // `node.labels` off one must not end the API process.
   await test('a null issue node is skipped and counted, never thrown on', () => {
     const res = fetchBoard(ROSTER, {
       exec: fakeGh({
@@ -54,9 +51,8 @@ const run = async () => {
   });
 
   await test('a null node INSIDE an issue is skipped too - the drop is not only the issue list', () => {
-    // The same failure one level down, and the second throw it caused: GitHub
-    // nulls a node it could not deliver wherever the connection is, and every
-    // other connection on an issue already skipped one. `assignees` did not.
+    // The same failure one level down: GitHub nulls a node it could not deliver
+    // in any connection, so every connection on an issue has to skip one.
     const res = fetchBoard([ROSTER[0]], {
       exec: fakeGh({
         data: {
@@ -205,15 +201,15 @@ const run = async () => {
       'the body says it when the counter did not survive');
     assert(rateLimitReason(200, {}, now, { errors: [{ type: 'RATE_LIMITED', message: 'API rate limit exceeded' }] }) === null,
       'the GraphQL tell with no reset time still has nothing to say');
-    // The wire as observed on 2026-08-29: a 200 whose error type is RATE_LIMIT
-    // (not the documented RATE_LIMITED) with the budget headers beside it.
+    // The wire as observed live: a 200 whose error type is RATE_LIMIT (not the
+    // documented RATE_LIMITED), with the budget headers beside it.
     const live = { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor((now + 34 * 60000) / 1000)) };
     const seen = rateLimitReason(200, live, now, { errors: [{ type: "RATE_LIMIT", code: "graphql_rate_limit", message: "API rate limit already exceeded for user ID 1." }] });
     assert(seen && seen.includes("(in 34 min)"), "the live RATE_LIMIT shape is read as the limit it is, got " + seen);
   });
 
   await test('a secondary limit is measured by what it was told to wait, not the shared reset', () => {
-    // Both headers on one answer: `retry-after` is THIS caller's wait, the
+    // Both headers on one answer: `retry-after` is this caller's wait, the
     // reset second is when the shared budget refills, and they disagree.
     const now = Date.UTC(2026, 7, 28, 3, 0, 0);
     const said = rateLimitReason(403, {

@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # workflow/workkit/install.sh: setup's steps that check before they act on
 # this machine and this repo: the plugin, the gh login, the tower pointer, and
-# the repo the shell stands in. SOURCED by workkit.sh, never executed, and it
-# runs nothing at load: it defines functions and sets nothing. Every name it
-# reads (KIT_DIR, PLUGIN_ID, STANDARDS, the `interactive` check) is the
-# entry's.
+# the repo the shell stands in. Sourced by workkit.sh, functions only; KIT_DIR,
+# PLUGIN_ID, STANDARDS and the `interactive` check are the entry's.
 
 # The plugin, on a machine that may not have Claude Code at all. Detection first,
 # because `marketplace add` on an installed marketplace is noise nobody needs to

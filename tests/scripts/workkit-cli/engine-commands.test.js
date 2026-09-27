@@ -1,7 +1,5 @@
-//
 // Tests for workflow/workkit.sh: the engine commands (note, enable, heal).
-// The shared prologue (the scratch world, runCli and inCli, the repo and kit factories) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -42,7 +40,7 @@ const run = async () => {
   });
 
   // The heal a session makes once a day, asked for now, so the assertion is
-  // that the pass RAN on the target, named or the one the shell stands in.
+  // that the pass ran on the target, named or the one the shell stands in.
   await test('heal runs the standards pass on the repo, named or the current one', () => {
     const world = mkWorld();
     const named = mkRepo({ optIn: true });

@@ -2,21 +2,10 @@
 // the trigger, the excerpt, the body, the card and the mount.
 // modal.js re-exports it whole; no piece imports modal.js.
 
-//
 // ── The published document's dialog ────────────────────────────────────────
-//
-// The third thing the tower draws as a card, and the last one that could only
-// be read on github.com (issue #181): a morning brief, or one of the summaries
-// published beside it. The archive lists them; clicking one opens the whole
-// text here, exactly as clicking an issue opens the issue - delegated open,
-// markdown body, the external-link button on the card while it is hovered and
-// in the dialog's header.
-//
-// A document is TEXT and nothing else. There is no live surface to refresh (a
-// published post does not change under an open dialog) and no dependency line
-// to draw, so this is the issue dialog's machinery with the parts a document
-// does not have left out rather than drawn as dashes.
-//
+// A morning brief or a summary, opened whole from the archive the way an issue
+// opens: the issue dialog's machinery without the live refresh or the
+// dependency line, since a published post neither changes nor depends.
 
 import { esc, documentMeta } from '../format.js';
 import { externalLink, openFrom } from './issue.js';
@@ -32,10 +21,8 @@ const docs = new Map();
 const documentKey = (doc) => doc.url || doc.title;
 
 /**
- * The attributes that make an element open the document dialog.
- *
- * Registering happens HERE as the markup is written, the reason `issueTrigger`
- * does: the document and its markup are made in the same breath.
+ * The attributes that make an element open the document dialog, registering
+ * the document as the markup is written, as `issueTrigger` does.
  *
  * @param {object} doc - one entry of the brief payload's `documents`
  * @returns {string} attributes to interpolate into the element's tag
@@ -50,13 +37,8 @@ export const documentTrigger = (doc) => {
 const EXCERPT_MAX = 180;
 
 /**
- * The one line a card says about a document beside its title - the first line
- * of the text itself.
- *
- * A brief opens with its headline and a summary with its own first sentence, so
- * the document's own opening is the truest short description of it; anything
- * composed here would be a second, worse title. The markdown that made it a
- * heading or a quote is dropped, since the card draws it as plain text.
+ * The one line a card says about a document beside its title: the first line
+ * of the text itself, its heading or quote markdown dropped.
  *
  * @param {string} body - the document's text
  * @returns {string} plain text, never markup
@@ -68,12 +50,9 @@ export const excerpt = (body) => {
 };
 
 /**
- * The text of one document, rendered.
- *
- * Two surfaces draw it - the newest brief, in place at the top of the page, and
- * every other document in the dialog - so it is written once here. The renderer
- * is handed in for the reason the issue dialog's is: a published body is remote
- * text, and what turns it into markup escapes first.
+ * The text of one document, rendered: the newest brief in place and every
+ * other in the dialog. The renderer is handed in since a published body is
+ * remote text, and it escapes first.
  *
  * @param {object} doc - one entry of the payload's `documents`
  * @param {(text: string) => string} renderBody - the markdown renderer
@@ -82,12 +61,8 @@ export const excerpt = (body) => {
 export const documentBody = (doc, renderBody) => `<div class="omega-tower-issue__body">${renderBody(doc.body) || '<p class="text-body-secondary mb-0">This one was published with nothing in it.</p>'}</div>`;
 
 /**
- * One document as a card - the shape the archive is a list of.
- *
- * The interactive semantics sit on the INNER element and the `<li>` stays a
- * list item, for the reason spelled out on `issueItem`: an `<li>` given a
- * button role stops being one, and the class the stylesheet reveals the
- * external link from reaches the inner element either way.
+ * One document as a card, the shape the archive is a list of; the click target
+ * is the inner element for the reason on `issueItem`.
  *
  * @param {object} doc - one entry of the payload's `documents`
  * @returns {string} markup

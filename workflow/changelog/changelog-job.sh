@@ -1,23 +1,11 @@
 #!/usr/bin/env bash
-# workflow/changelog/changelog-job.sh: the `changelog` job in a repo's checks.yml, read
-# and rewritten, and the retired linter copy it used to run. SOURCED, never
-# executed.
+# workflow/changelog/changelog-job.sh: the `changelog` job in a repo's
+# checks.yml, read and rewritten, and the retired linter copies. Sourced by
+# standards.sh and, for safety/commit-gate, by hooks/_lib.sh: one rewrite, so
+# the gate never accepts a change the heal would not make. Functions only.
 #
-# Two consumers: standards.sh rewrites a job that still runs a vendored linter
-# copy into the template's one-line job and then removes the copy, and the
-# safety/commit-gate hook (through hooks/_lib.sh) proves a staged checks.yml is
-# exactly that rewrite and a deleted copy is run by nothing, before it lets the
-# commit through as heal bookkeeping. One implementation, so the gate can never
-# accept a change the heal would not have made.
-#
-# Defines functions and sets nothing, like the seams beside it: every constant
-# is a function that prints it, so sourcing changes no caller's variables.
-#
-# Every awk here runs with `-v BINMODE=3`: gawk on Windows reads and writes in
-# text mode, which drops the carriage returns before a line is seen and
-# rewrites every ending on output, so binary mode is what keeps a file's own
-# line endings. Other awks ignore the variable. Each awk strips a trailing `\r`
-# itself before comparing a line.
+# Every awk runs with `-v BINMODE=3`, so gawk on Windows keeps a file's own
+# line endings; each awk strips a trailing `\r` itself before comparing.
 
 # The linter copies an earlier heal vendored, one path per line: the current
 # name and the older .js one.
@@ -33,11 +21,9 @@ wk_job_boundary() {
   printf '%s\n' '^(  )?[^ #]'
 }
 
-# The header paragraphs a checks.yml installed before the reusable workflow
-# carries, a blank line between them: one per linter copy, since the paragraph
-# named the copy its heal vendored and differs in nothing else. The rewrite
-# replaces whichever it finds, only on an exact match, with the template's
-# current paragraph, which opens with the same first line.
+# The header paragraphs a checks.yml carried before the reusable workflow, one
+# per linter copy with a blank line between: the rewrite swaps an exact match
+# for the template's paragraph, which opens with the same first line.
 wk_retired_checks_headers() {
   local copy sep=""
   while IFS= read -r copy; do
@@ -55,12 +41,9 @@ wk_checks_template() {
   printf '%s/templates/github-workflows/checks.yml\n' "$(cd "${BASH_SOURCE[0]%/*}/.." && pwd -P)"
 }
 
-# wk_names_linter_copy [copy]: true when the text on stdin names the copy (or,
-# with no argument, any copy) outside a comment. Naming it is running it: a
-# workflow that spells the path in a step is a workflow the deletion would
-# break, while a comment line (first non-blank character `#`) runs nothing. The
-# one definition of that question. Both greps read all of stdin, so no writer
-# upstream is cut short.
+# wk_names_linter_copy [copy]: true when stdin names the copy (or any copy)
+# outside a comment line, since naming it is running it. Both greps read all
+# of stdin, so no writer upstream is cut short.
 wk_names_linter_copy() {
   local copy args=()
   if [[ $# -gt 0 ]]; then
@@ -72,10 +55,8 @@ wk_names_linter_copy() {
 }
 
 # wk_workflows_run_copy <root> [copy]: true when any file under
-# <root>/.github/workflows names the copy (or any copy). <root> is whichever
-# tree is being judged: a working tree, or the index checked out somewhere.
-# A folder that exists and cannot be read cannot prove the copy unused, so it
-# answers yes.
+# <root>/.github/workflows names the copy (or any copy). An unreadable folder
+# cannot prove the copy unused, so it answers yes.
 wk_workflows_run_copy() {
   local dir="$1/.github/workflows" text
   [[ -d "$dir" ]] || return 1
@@ -117,16 +98,9 @@ wk_checks_header() {
 }
 
 # wk_changelog_job_rewrite <checks.yml> <template>: the file as the heal leaves
-# it. Two swaps, each made only where it applies, so a file needing neither
-# comes back unchanged and a second rewrite changes nothing:
-#   - a changelog job that runs a linter copy is replaced by the template's; a
-#     job of the repo's own is never touched. Blank lines and comments closing
-#     the old job (the ones above the next job, or at the end of the file) stay;
-#   - a retired header paragraph, either wording, present exactly, is replaced
-#     by the template's, whatever form the job is already in.
-# Carriage returns are dropped before any line is compared, and every line is
-# written back in the file's own ending, CRLF when its first line is. The status
-# is awk's, so a file that cannot be read is a failure, never an empty answer.
+# it, each swap only where it applies (`workflow/README.md`, the changelog-job
+# row). Lines are written back in the file's own ending, and awk's status is
+# the answer, so an unreadable file fails rather than coming back empty.
 wk_changelog_job_rewrite() {
   local block header retired runs=""
   block="$(wk_changelog_job_block "$2")" || return 1

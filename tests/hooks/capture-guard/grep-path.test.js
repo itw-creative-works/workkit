@@ -1,8 +1,6 @@
-//
 // Tests for hooks/safety/capture-guard: the Grep path, gated when a search is
 // pointed at the capture file and open when it only sweeps the repo.
 // The shared prologue (the scratch repo and TMPDIR, the marker helpers, the hook runner) is ./helpers.js.
-//
 
 const fs = require('fs');
 const path = require('path');

@@ -1,14 +1,8 @@
 #!/bin/bash
 # scripts/review-marker.sh: record that the workkit:review skill ran on this
-# repo. The safety/commit-gate hook reads the same marker before it lets a code
-# commit through, and reads it through the same helper, so the two can never
-# drift into two spellings of one path.
-#
-# The skill calls this instead of spelling a command, because the spelling is
-# platform-bound (macOS has shasum, Linux has sha1sum) and a skill's text is
-# read on every platform the kit runs on.
-#
-# Run it from anywhere inside the repo under review; it keys on the repo root.
+# repo, keyed on the repo root. The safety/commit-gate hook reads the marker
+# through the same helper, so the path has one spelling; the skill calls this
+# because the hash command differs by platform (shasum, sha1sum).
 
 set -euo pipefail
 

@@ -1,18 +1,8 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
-//
-// Test runner for the workkit plugin. Discovers every `tests/**/*.test.js`
-// file, runs each (each module exports an async fn returning
-// { passed, failed, failures }), aggregates the totals, and exits non-zero if
-// anything failed.
-//
-// Run with:  npm test   (or)  node tests/run.js
-//
-// Add a new suite by dropping a `*.test.js` anywhere under tests/ that exports
-// `async () => ({ passed, failed, failures })`. See tests/hooks/ for the shape.
-// A suite ends with `if (require.main === module) selfRun(<its export>);` so
-// `node tests/<path>.test.js` runs it on its own.
-//
+// The test runner behind `npm test`: runs every `tests/**/*.test.js` (each
+// exports `async () => ({ passed, failed, failures })`), totals them, and exits
+// non-zero on any failure. The suite contract: AGENTS.md § Tests.
 
 const path = require('path');
 const { findSuites } = require('./lib/suites');
@@ -63,8 +53,7 @@ const TEST_DIR = __dirname;
         skippedCases.push({ name: `${rel} › ${s.name}`, reason: s.reason });
       }
     } catch (err) {
-      // A suite that called skipSuite() is reporting a missing precondition,
-      // not a defect. This machine cannot ask the question it asks.
+      // skipSuite() reports a missing precondition, not a defect.
       if (err.suiteSkipped) {
         console.log(`\x1b[33m⊘ skipped:\x1b[0m ${err.message}`);
         skippedSuites.push({ name: rel, reason: err.message });
@@ -81,9 +70,8 @@ const TEST_DIR = __dirname;
   const caseNote = skippedCases.length ? `, ${skippedCases.length} case${skippedCases.length === 1 ? '' : 's'} skipped` : '';
   console.log(`\n\x1b[1m${passed} passed, ${failed} failed${suiteNote}${caseNote}\x1b[0m (${elapsed}s, ${suites.length} suite${suites.length === 1 ? '' : 's'})`);
 
-  // Name every skip, the whole file and the single case alike. A run that
-  // quietly covered less than the reader assumes is the failure mode this whole
-  // mechanism has to avoid.
+  // Name every skip, file and case alike: a run must never quietly cover less
+  // than the reader assumes.
   for (const s of [...skippedSuites, ...skippedCases]) {
     console.log(`  \x1b[33m⊘ ${s.name}: ${s.reason}\x1b[0m`);
   }

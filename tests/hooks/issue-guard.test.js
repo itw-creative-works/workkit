@@ -1,11 +1,8 @@
 /* eslint-disable no-console */
-//
-// Tests for hooks/safety/issue-guard: the PreToolUse hook that blocks a
-// `gh issue create|comment|edit` or `gh pr create|comment|edit|merge` whose
-// outbound text carries a secret: a value from a local .env file, or a
-// token-shaped string. Every repo is assumed public (docs/project-state.md →
-// "Issue anatomy"). A 40-char lowercase-hex sha must never bounce.
-//
+// Tests for hooks/safety/issue-guard: the PreToolUse hook that blocks a gh
+// issue or pr write whose outbound text carries a secret (a local .env value or
+// a token-shaped string). Every repo is assumed public (docs/project-state.md
+// → "Issue anatomy"); a 40-char lowercase-hex sha never bounces.
 
 const fs = require('fs');
 const os = require('os');
@@ -35,8 +32,8 @@ fs.writeFileSync(path.join(CWD, '.env'), [
 const PLACEHOLDER = 'your-api-key-here-1234';
 fs.writeFileSync(path.join(CWD, '.env.example'), `API_SECRET=${PLACEHOLDER}\n`);
 
-// A git repo whose .env sits at the ROOT while the session stands in a
-// subdirectory: the case that made value matching go blind. Realpath'd so the
+// A git repo whose .env sits at the root while the session stands in a
+// subdirectory, where value matching must still see it. Realpath'd so the
 // git toplevel and the cwd are the same string on macOS.
 const REPO = mkTmp('issue-guard-repo-');
 spawnSync('git', ['init', '-q'], { cwd: REPO });
@@ -394,9 +391,8 @@ const run = async () => {
   });
 
   await test('cross-repo links, absolute paths and long branch names: exit 0 (verifier finding)', () => {
-    // The entropy class used to include / and -, so every one of these read as
-    // one 40+ char mixed-case run. The spec REQUIRES cross-repo links in issue
-    // bodies, which made this the guard's fatal false positive.
+    // With / and - in the entropy class, each of these would read as one 40+
+    // char mixed-case run, and the spec requires cross-repo links in issue bodies.
     const bodies = [
       'see https://github.com/ITW-Creative-Works/workkit/issues/57 for the spec',
       'it lives at /Users/someone/Developer/Repositories/ITW-Creative-Works/workkit/hooks/safety/issue-guard/run.sh',

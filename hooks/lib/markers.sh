@@ -1,25 +1,12 @@
 #!/bin/bash
 # hooks/lib/markers.sh: the digest and the files the hooks name by content:
-# hook_sha1, the review and triage marker paths keyed through it, the one
-# writer the two marker scripts share, the per-session marker path, and
-# hook_file_mtime, the one modification-time read. SOURCED by hooks/_lib.sh, never executed, and it runs
-# nothing at load: it defines functions and sets nothing. It reads no name of
-# the entry's.
+# hook_sha1, the review and triage marker paths keyed through it, the one writer
+# the two marker scripts share, the per-session marker path, and hook_file_mtime.
+# Sourced by hooks/_lib.sh; defines functions and sets nothing.
 
-# hook_sha1: the hex sha1 of STDIN, and nothing else. macOS ships `shasum` and
-# no `sha1sum`; a Linux machine ships `sha1sum` and often no `shasum`; Git Bash has
-# both. A key computed with a different tool is a different key, so every hook
-# that names a marker or a cache file by content asks here instead of spelling
-# a digest itself.
-# The trailing ` -` both tools print is stripped by parameter expansion: this
-# runs on hook paths where a fork is worth avoiding, and `cut` is one more tool
-# a stripped PATH may not carry.
-# Neither tool present is LOUD (non-zero, one line on stderr): the alternative
-# is an empty key, and an empty key is one marker shared by every repo on the
-# machine. Callers decide what a refusal means for them.
-# Consumers: safety/commit-gate, safety/capture-guard, docs/state-check,
-# docs/change-tracker, workflow/standards, workflow/reload-guard, and the two
-# marker scripts (scripts/review-marker.sh, scripts/triage-marker.sh).
+# hook_sha1: the hex sha1 of STDIN, through shasum or sha1sum, so every key is
+# made by one rule (docs/hooks.md § Platforms). No tool is a loud refusal, never
+# an empty key; parameter expansion strips the ` -` to spare a fork.
 hook_sha1() {
   local out
   if command -v shasum >/dev/null 2>&1; then
@@ -51,13 +38,9 @@ _hook_write_marker() {
   printf '%s\n' "$1"
 }
 
-# hook_review_marker_path <repo root>: where the workkit:review skill records
-# that review ran, and where safety/commit-gate looks for it.
-# hook_triage_marker_path <anchor>: where the workkit:triage skill records that
-# a drain is under way, and where safety/capture-guard looks for it.
-# ONE derivation per marker, called by both sides: the skill writes through
-# scripts/review-marker.sh and scripts/triage-marker.sh, the hook reads here, so
-# the writer and the reader cannot drift apart into two spellings of one path.
+# The two marker paths, one derivation each: the skill writes through
+# scripts/review-marker.sh or scripts/triage-marker.sh and the guard
+# (commit-gate, capture-guard) reads here, so the two never drift apart.
 hook_review_marker_path() { _hook_marker_path claude-review-marker "$1"; }
 hook_triage_marker_path() { _hook_marker_path claude-triage-marker "$1"; }
 
@@ -69,12 +52,8 @@ hook_session_marker() {
   printf '%s\n' "${TMPDIR:-/tmp}/$1/${2//[^a-zA-Z0-9]/_}"
 }
 
-# A file's modification time, in seconds since the epoch; 0 when it cannot be
-# read. `stat` disagrees across platforms and does NOT fail cleanly: on GNU
-# coreutils `-f` selects filesystem status, where `%m` is undefined, so
-# `stat -f %m` prints `?` and exits 0. A plain `||` chain never reaches the
-# GNU spelling and hands the caller a non-numeric string. Each spelling is
-# therefore accepted only when its output is all digits.
+# hook_file_mtime <file>: epoch seconds, 0 when unreadable. GNU `stat -f %m`
+# prints `?` and exits 0, so each spelling counts only when it prints digits.
 hook_file_mtime() {
   local ts
   for ts in "$(stat -c %Y "$1" 2>/dev/null)" "$(stat -f %m "$1" 2>/dev/null)"; do

@@ -1,7 +1,5 @@
-//
 // Tests for standards.sh: the hook layer self-check.
-// The shared prologue (the repo and gh-stub factories, runScript, the constants) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -18,7 +16,7 @@ const {
 const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
-  // A case that STRIPS a file's executable bit to see what the heal says about
+  // A case that strips a file's executable bit to see what the heal says about
   // it. There is no bit to strip on Windows, so the whole case is the skip.
   const strippedBitTest = testUnless(IS_WINDOWS, `${NO_EXEC_BIT}, so no script can be stripped of one`);
 

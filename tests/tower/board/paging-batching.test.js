@@ -1,8 +1,6 @@
 //
-// Tests for tower/api/lib/board.js: paging past the first page (the cursor,
-// the ceiling, the loops that must stop) and the sweep batched a handful
-// of repos per request.
-// The shared prologue (the fake gh, the issue and label builders, the roster, the module under test) is ./helpers.js.
+// Tests for tower/api/lib/board.js: paging past the first page (the cursor, the
+// ceiling, the loops that stop) and the batched sweep. Prologue: ./helpers.js.
 //
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
@@ -14,17 +12,17 @@ const {
 const run = async () => {
   group('tower/board: paging past the first page');
 
-  // Issue #194: GitHub caps one connection page at 100, so a repo past that is
-  // asked again with the cursor its last page ended on - and only that repo,
-  // since the rest of the batch was already exhausted.
+  // GitHub caps one connection page at 100, so a repo past that is asked again
+  // with the cursor its last page ended on, and only that repo: the rest of the
+  // batch is already exhausted.
 
   /**
    * A fake `gh` that answers each request from a per-alias script.
    *
    * `pages` is keyed by repo slug and holds that repo's answers in order, so a
    * repo asked twice gets its second page on the second ask. The query is read
-   * back for the aliases it names, which is what makes a request for the WRONG
-   * repo - or one that forgot the cursor - visible.
+   * back for the aliases it names, which is what makes a request for the wrong
+   * repo, or one that forgot the cursor, visible.
    */
   const fakePaged = (pages, calls = []) => (cmd, args) => {
     calls.push([cmd, ...args]);
@@ -111,12 +109,10 @@ const run = async () => {
   });
 
   await test('a page that resumes where the last one did stops rather than looping', () => {
-    // The other footgun the cursor guard does not cover: an answer that claims
-    // more pages, hands back the cursor it was ASKED with, and carries nothing.
-    // Neither the resume point nor `nodes.length` moves, so the ceiling never
-    // arrives either and the loop the API drives its sweep with would turn
-    // forever. A round that moved nothing is the tell, and the fake gives up
-    // after fifty asks so a regression fails here instead of hanging the suite.
+    // An answer that claims more pages, hands back the cursor it was asked with
+    // and carries nothing moves neither the resume point nor the ceiling, so a
+    // round that moved nothing is the tell. The fake gives up after fifty asks
+    // so a regression fails here instead of hanging the suite.
     let asked = 0;
     const res = fetchBoard([ROSTER[0]], {
       exec: (cmd, args) => {
@@ -164,12 +160,9 @@ const run = async () => {
 
   group('tower/board: the sweep is batched');
 
-  // Issue #202: the whole roster in ONE request is what stopped working. At 23
-  // repos GitHub answers RESOURCE_LIMITS_EXCEEDED - every issue node null, an
-  // error per node - so the sweep asks for a handful of repos at a time and
-  // merges. The aliases restart at r0 in every request, which is the thing that
-  // can silently mis-attribute an issue, so the fake answers each request only
-  // for the repos THAT request named.
+  // At 23 repos GitHub answers the whole roster RESOURCE_LIMITS_EXCEEDED, so the
+  // sweep asks a handful of repos at a time and merges. The aliases restart at
+  // r0 in every request, so the fake answers each only for the repos it named.
   const bigRoster = (n) => Array.from({ length: n }, (_, i) => ({
     name: `repo${i}`, path: `/x/repo${i}`, slug: `owner/repo${i}`,
   }));
@@ -183,7 +176,7 @@ const run = async () => {
     const re = /(r\d+): repository\(owner: "[^"]+", name: "repo(\d+)"\)/g;
     let match = re.exec(query);
     while (match) {
-      // The issue number IS the repo's index, so a merge that mapped an alias
+      // The issue number is the repo's index, so a merge that mapped an alias
       // back onto the wrong repo shows up as a mismatched pair.
       data[match[1]] = { issues: { totalCount: 1, nodes: [issue(Number(match[2]))] } };
       match = re.exec(query);

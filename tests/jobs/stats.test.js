@@ -1,13 +1,7 @@
-//
-// Tests for jobs/morning/brief/stats.js: the stats line a published brief carries.
-//
-// The line is the ONLY store the history charts have (issue #55), so what is
-// pinned here is its exact text: a renderer that quietly renamed a key or
-// reordered the JSON would leave every published morning unreadable to the
-// module that reads them back. The expected JSON is written out by hand for
-// that reason: one composed from the implementation would agree with any
-// shape it happened to have.
-//
+// Tests for jobs/morning/brief/stats.js: the stats line a published brief
+// carries. The line is the only store the history charts have, so its exact
+// text is pinned, written out by hand: JSON composed from the implementation
+// would agree with any shape it happened to have.
 
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
@@ -15,7 +9,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harn
 const { renderStatsMark, dayOf, STATS_RE } = require(path.join(__dirname, '..', '..', 'jobs', 'morning', 'brief', 'stats.js'));
 const { parseStatsMark, STATS_RE: READ_RE } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'history.js'));
 
-/** A brief payload in the shape buildBrief returns, with the two new keys on it. */
+/** A brief payload in the shape buildBrief returns, with closedDay and repoCounts on it. */
 const PAYLOAD = {
   ok: true,
   generatedAt: '2026-08-03T09:00:00.000Z',

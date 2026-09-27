@@ -1,42 +1,7 @@
-//
-// The sidebar's project selector - the tower's one project switch.
-//
-// The switch is the FRAMEWORK's selector module, the dropdown that sits above
-// the nav in the base shell (themes/base/_includes/global/sections/
-// app-sidebar.html): a button carrying the current project and a menu of the
-// ones to switch to. The tower turns it on in its sidebar data and fills the
-// menu at runtime, because the nav is baked at build time and the roster is
-// whatever repos are on the machine when the page is open - an All projects
-// master row on top and ONE row per repo under it, the row in force marked.
-//
-// One list, never two (issue #168). Every repo used to appear twice, once as an
-// entry and again as a checkbox in a Filter projects section below, so a
-// fifteen-repo roster drew a thirty-row menu. The two questions live on the one
-// row now: its NAME scopes to that project alone, its BOX puts it in the subset
-// the board is narrowed to (`?repo=`). The boxes are only there while the whole
-// board is on screen - a subset is built by taking repos OUT of it, and a menu
-// showing one project has no whole board to take them out of.
-//
-// It is the selector rather than a list section because the selection is
-// GLOBAL: it belongs at the top of the shell, above the nav that carries it
-// from page to page, in the one control the theme already draws for exactly
-// this - not as a second nav below the first.
-//
-// One row per repo makes a long roster a long menu, and the two things that
-// answer that are written into the same rows. A SEARCH box sits above them
-// (issue #185) - the runtime hides the rows it does not match, which is why
-// nothing here knows about it: filtering is display, not state, and the markup
-// is the same list either way. A STAR rides each row (issue #186) and the ones
-// wearing it are drawn first, so the projects a viewer works in daily are at the
-// top of a fifteen-repo menu. Which ones those are comes in on `state.favorites`
-// like everything else this file draws from - the storage behind it is
-// favorites.js's, and the read of it is the runtime's.
-//
-// Pure string functions, like chrome.js: the runtime owns the DOM, this file
-// owns what goes in it, and `sidebarKey` is what tells the runtime the menu is
-// showing something new. The menu is only rewritten when that answer changes,
-// so a poll passing under an open filter leaves the boxes alone.
-//
+// The sidebar's project selector as markup from state: the framework's
+// selector module, its menu filled at runtime from the roster (`tower/README.md`
+// § The pages). Pure string functions like chrome.js; the runtime owns the DOM
+// and redraws the menu only when `sidebarKey` changes.
 
 import { esc } from '../format.js';
 import { repos } from '../state.js';
@@ -45,10 +10,8 @@ import { isNone, selectedSlugs } from '../scope.js';
 /** The roster slugs, in roster order. */
 const slugsOf = (state) => repos(state).map((repo) => repo.slug).filter(Boolean);
 
-// Which of the roster's slugs are starred, in roster order. Read off the state
-// rather than off storage, and read DEFENSIVELY: the list comes from a
-// localStorage key a viewer can edit, and the runtime hands over whatever it
-// found there.
+// Which of the roster's slugs are starred, in roster order. Read defensively:
+// the list comes from a localStorage key a viewer can edit.
 const favoritesOf = (state) => {
   const held = Array.isArray(state.favorites) ? state.favorites : [];
   return slugsOf(state).filter((slug) => held.includes(slug));
@@ -63,15 +26,9 @@ const orderedSlugs = (state) => {
 };
 
 /**
- * What the selector is showing, as one comparable string.
- *
- * An unread roster has nothing to switch between, and says so with the empty
- * key - the menu keeps the placeholder the theme baked until it answers.
- *
- * The stars are their own segment rather than left to the order below them: a
- * roster of one, or a star put on the repo that is already first, changes which
- * rows are marked without changing the sequence they are drawn in, and the key
- * is what tells the runtime to draw them again.
+ * What the selector is showing, as one comparable string; '' while the roster
+ * is unread, so the theme's placeholder stays. The stars are their own segment:
+ * a star on the first repo changes the marks without changing the order.
  *
  * @param {object} state - the runtime's feed state
  * @returns {string}
@@ -81,63 +38,39 @@ export const sidebarKey = (state) => {
   return slugs.length ? [state.selectedRepo || '', favoritesOf(state).join(','), ...slugs].join('\n') : '';
 };
 
-// A row's box: what puts one repo in the subset, or takes it out.
-//
-// Ticked while the whole board is in force, because every repo IS in play then
-// and unticking one is how a subset starts. No id and no `label` element: the
-// name beside it is a BUTTON with a job of its own, so the box carries its own
-// name for a screen reader rather than borrowing one. The button that opens the
-// menu carries `data-bs-auto-close="outside"` (page/selector.js) so ticking
-// does not close it.
+// A row's box: ticked while the whole board is in force, since unticking one
+// is how a subset starts. It carries its own screen-reader name because the
+// name beside it is a button with a job of its own.
 const box = (slug, checked) => `<input class="form-check-input flex-shrink-0 ms-3" type="checkbox" data-tower-scope-slug="${esc(slug)}" aria-label="Include ${esc(slug)}"${checked ? ' checked' : ''}>`;
 
-// The master row's box, which says exactly what the boxes UNDER it say: every
-// one ticked is ticked, some of them is INDETERMINATE, none of them is empty.
-// It is derived from the ticked count rather than from the selection's length
-// so that a `?repo=` naming every repo - or naming repos the roster does not
-// carry - cannot leave the master disagreeing with the rows it summarises.
-//
-// Indeterminate is a DOM property and not something markup can say, so the
-// markup carries the marker and the runtime sets the property from it (page.js).
+// The master row's box, derived from the ticked count rather than the
+// selection's length, so a `?repo=` naming every repo or unknown ones cannot
+// leave it disagreeing with its rows. The runtime turns the marker into the
+// indeterminate property (page.js).
 const masterBox = (ticked, total) => `<input class="form-check-input flex-shrink-0 ms-3" type="checkbox" data-tower-scope-all aria-label="All projects"${ticked === total ? ' checked' : (ticked ? ' data-tower-indeterminate' : '')}>`;
 
-// A row's star: what lifts one repo to the top of the menu, and what says it is
-// already up there. A BUTTON like the name beside it - a click changes what this
-// browser remembers and goes nowhere - carrying its own name for a screen
-// reader, since the word on the row belongs to the name button and the glyph in
-// here is decoration. Solid and warm when it is on, hollow and quiet when it is
-// not - two states that read apart down a column of fifteen rows.
+// A row's star: a button, since a click changes what this browser remembers
+// and goes nowhere; it carries its own screen-reader name, the glyph being
+// decoration.
 const star = (slug, on) => `<button type="button" class="btn btn-link btn-sm flex-shrink-0 px-2 py-0 ms-2 ${on ? 'text-warning' : 'text-body-secondary'}" data-tower-favorite="${esc(slug)}" aria-pressed="${on}" aria-label="Favorite ${esc(slug)}"><i class="fa-${on ? 'solid' : 'regular'} fa-star" aria-hidden="true"></i></button>`;
 
-// The box that narrows the list, above every row of it. Drawn only when there
-// are rows to narrow - a menu still showing the theme's placeholder has nothing
-// to search - and it says nothing about what typing in it DOES, because that is
-// the runtime's: rows are hidden and shown in place, so this is the same markup
-// whether a filter is in force or not.
+// The box that narrows the list, drawn only when there are rows. Filtering is
+// the runtime's, in place, so this markup is the same with a filter in force.
 const search = () => `<li class="px-3 pb-2" data-tower-project-filter>
       <input type="search" class="form-control form-control-sm" data-tower-project-search placeholder="Search projects" aria-label="Search projects" autocomplete="off">
     </li>`;
 
-// One row: the controls that act ON the repo - its box, when there is a subset
-// to pick, and its star - then the name that scopes to it alone. A BUTTON rather
-// than a link: the name re-scopes the page in place through
-// `history.replaceState`, so there is no href for it to point at and nothing for
-// a middle click to open.
+// One row: the box and the star, then the name that scopes to the repo alone.
+// A button, not a link: the name re-scopes in place, so there is no href.
 const row = (label, value, active, controls) => `<li class="d-flex align-items-center">
       ${controls}<button type="button" class="dropdown-item flex-grow-1${active ? ' active' : ''}" data-tower-scope="${esc(value)}"${active ? ' aria-current="true"' : ''}>${esc(label)}</button>
     </li>`;
 
 /**
  * The selector menu: the search box, the All projects master row, then one row
- * per repo - the starred ones first.
- *
- * All projects is the active row whenever the selection is not exactly one
- * repo - a subset is still a view of the whole board, narrowed - which is also
- * what keeps the boxes that made the subset on screen while it is in force. It
- * stays under the search box and above every repo, in both senses: it is the
- * master row, and a filter is about the roster rather than about it. The none
- * state is the one exception with no active row at all: nothing is in force,
- * and the board behind the menu is honestly empty.
+ * per repo, the starred ones first. All projects is the active row whenever the
+ * selection is not exactly one repo, which keeps the subset's boxes on screen;
+ * the none state has no active row at all.
  *
  * @param {object} state - the runtime's feed state
  * @returns {string} the menu's `li` children, or '' before the roster answers
@@ -147,9 +80,8 @@ export const menuMarkup = (state) => {
   if (!slugs.length) return '';
   const favored = favoritesOf(state);
   const selected = selectedSlugs(state);
-  // The none state keeps the boxes on screen with nothing ticked - it is the
-  // start of a build, not a project in force. One project IS in force is the
-  // one state with nothing to tick.
+  // The none state keeps the boxes with nothing ticked: it is the start of a
+  // build. One project in force is the one state with nothing to tick.
   const none = isNone(selected);
   const single = !none && selected.length === 1;
   const ticks = none ? [] : slugs.filter((slug) => !selected.length || selected.includes(slug));
@@ -163,22 +95,17 @@ export const menuMarkup = (state) => {
 };
 
 /**
- * What the selector BUTTON says about the current selection.
- *
- * The tile is the name's first character, the way the theme's own selector
- * spells it, and the second line is the honest count behind the name - the
- * modes read differently and the button is the only place a viewer sees which
- * one they are in without opening the menu.
+ * What the selector button says about the current selection: the tile is the
+ * name's first character, as the theme spells it, and the second line is the
+ * count behind the name, the one place the mode shows with the menu closed.
  *
  * @param {object} state - the runtime's feed state
  * @returns {{name: string, initial: string, env: string}}
  */
 export const selectorLabel = (state) => {
   const slugs = slugsOf(state);
-  // The selection is read RAW, not filtered against the roster: a `?repo=`
-  // naming a repo the roster no longer carries still narrows every page to
-  // nothing, and the button naming that slug is what explains the empty board.
-  // The menu agrees by marking no entry active.
+  // The selection is read raw: a `?repo=` naming a repo off the roster still
+  // narrows every page to nothing, and the button naming it explains why.
   const selected = selectedSlugs(state);
   const total = slugs.length;
   let name = 'All projects';
@@ -186,24 +113,17 @@ export const selectorLabel = (state) => {
   // same thing the theme baked rather than a number nothing stands behind.
   let env = total ? `all ${total} repos on the roster` : 'every repo on the roster';
   if (isNone(selected)) {
-    // The none state (issue #188): the trigger is what explains an empty
-    // board, so it says NO projects rather than naming a tilde.
+    // The trigger is what explains an empty board, so it says No projects
+    // rather than naming a tilde.
     name = 'No projects';
     env = total ? `${total} hidden` : 'nothing selected';
   } else if (selected.length === 1) {
     [name] = selected;
     env = `1 of ${total} repos`;
   } else if (selected.length > 1) {
-    // The subset says its own arithmetic on the name line (issue #168), so the
-    // line under it says the half the count leaves out rather than the same
-    // sentence twice.
-    //
-    // Both lines are written only when the roster STANDS BEHIND them. The
-    // selection is raw, so its count can outrun the roster two ways - an unread
-    // roster counts nothing yet, and a shared `?repo=` can name repos this
-    // machine no longer carries - and either way there is nothing hidden to
-    // report: the board is already showing every repo it has. The count of what
-    // was chosen is still true, and that is what the name falls back to.
+    // The subset says its arithmetic on the name line and the hidden half under
+    // it, but only when the roster stands behind the count: an unread roster or
+    // a shared `?repo=` naming unknown repos hides nothing.
     const hidden = total - selected.length;
     name = hidden > 0 ? `${selected.length} of ${total} projects` : `${selected.length} projects`;
     if (hidden > 0) env = `${hidden} hidden`;

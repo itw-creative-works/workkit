@@ -1,16 +1,6 @@
-//
-// The `gh` answers the tower suites fake, in one place.
-//
-// tower/api/lib/*.js reaches GitHub through a single exec seam, so a suite
-// exercising a limit, a refusal or a plain response builds the bytes `gh` would
-// have printed. Five suites need the same bytes, so the shapes live here: the
-// raw `--include` response, the error a non-zero exit throws, and the two `gh`
-// stubs a spent budget and a refused token wear.
-//
-// Usage:
-//   const { httpAnswer, execError, resetIn, clockAt, mkLimited, mkRefused } = require('../lib/gh');
-//   fetchBoard(ROSTER, { exec: mkLimited(resetIn(18)) });
-//
+// The `gh` answers the tower suites fake, in one place: the raw `--include`
+// response, the error a non-zero exit throws, and the two `gh` stubs a spent
+// budget and a rejected token wear, for tower/api/lib's single exec seam.
 
 /**
  * What `gh api graphql --include` prints: the status line, the response's own
@@ -25,10 +15,9 @@ const httpAnswer = (status, headers, body) => [
 ].join('\r\n');
 
 /**
- * The error execFileSync throws on a non-zero exit: the message, the streams it
- * captured, and the status. `gh api graphql` exits 1 whenever the response
- * carries an errors array - WITH the complete payload on stdout - so this shape
- * is the difference between a partial board and a blank one.
+ * The error execFileSync throws on a non-zero exit. `gh api graphql` exits 1
+ * whenever the response carries an errors array, with the complete payload on
+ * stdout, so this shape is the difference between a partial board and a blank one.
  */
 const execError = (message, { stdout = '', stderr = '', status = 1, code = null } = {}) => {
   const err = new Error(message);
@@ -39,16 +28,16 @@ const execError = (message, { stdout = '', stderr = '', status = 1, code = null 
   return err;
 };
 
-/** The epoch SECOND a limit lifting `minutes` from now resets at. */
+/** The epoch second a limit lifting `minutes` from now resets at. */
 const resetIn = (minutes) => Math.floor((Date.now() + minutes * 60 * 1000) / 1000);
 
 /** The reader's own clock, which is what the sentence promises to speak in. */
 const clockAt = (second) => new Date(second * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
 /**
- * A `gh` answering the live GraphQL rate limit (issue #216): HTTP 200, the
- * budget spent in the headers, and a RATE_LIMIT error where the data would be.
- * gh exits non-zero on an errors array, so it arrives on the error's stdout.
+ * A `gh` answering the live GraphQL rate limit: HTTP 200, the budget spent in
+ * the headers, and a RATE_LIMIT error where the data would be. gh exits
+ * non-zero on an errors array, so it arrives on the error's stdout.
  */
 const mkLimited = (reset) => () => {
   throw execError('Command failed: gh api graphql', {
@@ -59,7 +48,7 @@ const mkLimited = (reset) => () => {
   });
 };
 
-/** A `gh` whose token was refused - the same 403 a limit wears, the other problem. */
+/** A `gh` whose token was refused: the same 403 a limit wears, the other problem. */
 const mkRefused = () => () => {
   throw execError('Command failed: gh api graphql', {
     stdout: httpAnswer(403, {

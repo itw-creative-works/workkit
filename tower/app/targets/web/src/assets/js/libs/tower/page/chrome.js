@@ -1,33 +1,13 @@
-//
-// The page chrome - the strip above every page body.
-//
-// It carries Refresh, the freshness stamp and the chip that names a feed that
-// did not answer. The repo selection is NOT here (issue #104): it is global, it
-// belongs beside the nav that carries it from page to page, and it is drawn
-// into the sidebar at runtime by sidebar.js - a control drawn once per page
-// above one page's body reads as a property of that page. Neither is the token
-// (issue #167): the Token button that forgot it now lives on the Settings page,
-// which is where a token is typed in the first place.
-//
-// The strip is written in TWO pieces because it is repainted at two different
-// rates. The frame - Refresh, and the region the status goes in - never changes
-// at all now that the Token button has left it, so the runtime writes it ONCE
-// per page and never again; rebuilding it at the status's rate re-created the
-// controls under the pointer, which is the defect that first split it in two.
-// The status - the spinner, the stamp, the stale chip - changes on every read,
-// twice per poll (once as it starts, once as it lands).
-//
-// Pure string functions, both: the runtime owns the DOM, this file owns what
-// goes in it.
-//
+// The page chrome, the strip above every page body: Refresh, the freshness
+// stamp and the stale-feed chip. Two pieces, repainted at two rates: the frame
+// is written once per page, since rebuilding it would re-create the controls
+// under the pointer, and the status on every read. Pure string functions.
 
 import { esc } from '../format.js';
 
 /**
  * The chrome's frame: Refresh, and the empty region the status is written into.
- *
- * It takes no state, which is the whole of why it is written once: nothing on
- * it varies by page, by mode or by read.
+ * It takes no state, which is why it is written once.
  *
  * @returns {string} markup
  */

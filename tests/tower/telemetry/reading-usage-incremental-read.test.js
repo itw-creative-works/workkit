@@ -1,12 +1,6 @@
 //
-// Tests for tower/api/lib/telemetry.js: reading usage off a transcript (the
-// sums, the dedupe by message.id, the damaged and missing files) and the
-// incremental read.
-//
-// The incremental read is asserted through `bytesRead`, which counts the bytes
-// this process actually pulled off disk: a second call after an append must
-// read only the appended bytes, never the file again.
-// The shared prologue (the transcript line builders, the scratch world and its sessions, the collect call, the module under test) is ./helpers.js.
+// Tests for tower/api/lib/telemetry.js: reading usage off a transcript, and the
+// incremental read (`bytesRead`: an append reads only its bytes). Prologue: ./helpers.js.
 //
 
 const fs = require('fs');
@@ -112,7 +106,7 @@ const run = async () => {
     });
     assertEq(readUsage(file).tokens.total, 200, 'both lines');
 
-    // Rewritten SHORTER - the stored offset now points past the end.
+    // Rewritten shorter: the stored offset now points past the end.
     fs.writeFileSync(file, `${assistantLine({ id: 'c', input: 7 })}\n`);
     const after = readUsage(file);
     assertEq(after.tokens.total, 7, 'the old totals were discarded, not added to');

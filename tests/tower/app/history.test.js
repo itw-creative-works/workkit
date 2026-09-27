@@ -1,8 +1,6 @@
 //
-// Tests for the tower dashboard's history.js: the board over time, and the
-// line drawn when the cloud brief has stopped posting.
-// The note this suite points at (why a page module is out of reach under
-// Node) is the header atop ./helpers.js, which holds the shared prologue.
+// Tests for the tower dashboard's history.js: the board over time, and the line
+// drawn when the cloud brief has stopped posting. Shared prologue: ./helpers.js.
 //
 
 const path = require('path');
@@ -15,12 +13,10 @@ const run = async () => {
 
   group('tower/app: history - the board over time');
 
-  // The pages that DRAW these charts import the framework's chart module and
-  // are out of reach here (the note at the top of this file), so the logic they
-  // draw from lives in a lib and is asked its questions directly: what is the
-  // series, what changed since last week, and which of the three absences is
-  // this. The pages are pinned by reading their source, the way every other
-  // page claim in this suite is.
+  // The pages that draw these charts import the framework (see ./helpers.js), so
+  // the logic lives in a lib asked directly: the series, the change since last
+  // week, and which of the three absences this is. The pages are pinned by their
+  // source.
 
   const history = await load('history.js');
 
@@ -114,19 +110,17 @@ const run = async () => {
     assert(!/['"]#[0-9a-fA-F]{3,8}['"]/.test(source), 'index.js names no colour of its own');
     assert(/feeds: \['repos', 'board', 'sessions', 'health', 'brief'\]/.test(source),
       'and the Overview asks for the brief feed the history rides on');
-    // The Brief drew the same series a second time, small, beside the same
-    // counts (#55). It draws no chart at all now (#181): the page is the
-    // mornings themselves, and the series read off them is the Overview's.
+    // The Brief page is the mornings themselves, so it draws no chart; the
+    // series read off them is the Overview's.
     const brief = fs.readFileSync(path.join(pages, 'brief.js'), 'utf8');
     assert(!/chartSlot\(|lineChart\(|charts\.js/.test(brief), 'and the Brief draws no chart of its own any more');
   });
 
   group('tower/app: has the cloud brief stopped posting');
 
-  // Issue #172: the cloud brief failed every morning for ten days and both
-  // pages went on looking normal. The API decides the state off its own history
-  // read (tower/api/lib/history.js); what is asked here is the LINE each state
-  // draws, since a state drawn as nothing is exactly the blindness this fixes.
+  // The API decides the state off its own history read (tower/api/lib/history.js);
+  // what is asked here is the line each state draws, since a state drawn as
+  // nothing hides a brief that has stopped posting.
   const freshness = (state, date = null) => ({ counts: { open: 0 }, history: [], briefFreshness: { state, date } });
 
   await test('a stale brief is a red line naming the morning it last posted', () => {
@@ -159,12 +153,9 @@ const run = async () => {
     assert(!/could not be read/.test(alert.text), 'and it does not claim the read failed');
   });
 
-  // Issue #176: the line above was drawn on this machine only. A published copy
-  // builds its brief in the browser, so it was never asked the question at all -
-  // and away from the machine is exactly when a stopped brief goes unnoticed
-  // longest. The decision is mirrored into that build, and pinned here against
-  // the tower's own: a drift either way is one surface calling a dead brief
-  // healthy.
+  // A published copy builds its brief in the browser, and away from the machine
+  // is when a stopped brief goes unnoticed longest. The decision is mirrored into
+  // that build and pinned against the tower's own.
   await test('the browser judges the mornings exactly as the tower judges them', () => {
     const apiHistory = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'history.js'));
     const day = (date) => ({ date, totals: { open: 1 }, closedDay: 0, repos: {} });
@@ -213,8 +204,8 @@ const run = async () => {
       assert(/alert-\$\{/.test(source), `${name} takes the colour from the level rather than fixing one`);
       assert(/esc\(/.test(source), `${name} escapes it - the date came off a Discussion body`);
     }
-    // A builder nothing PLACES is a line nobody sees, which is the whole of the
-    // blindness this fixes - so the markup each page writes is pinned too.
+    // A builder nothing places is a line nobody sees, so the markup each page
+    // writes is pinned too.
     const health = fs.readFileSync(path.join(pages, 'health.js'), 'utf8');
     assert(/\$\{briefRow\(state\)\}/.test(health), 'the Health page writes the row into the body it swaps in');
     assert(/\$\{staleBanner\(payload\)\}/.test(fs.readFileSync(path.join(pages, 'brief.js'), 'utf8')),

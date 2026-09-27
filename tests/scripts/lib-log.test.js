@@ -1,16 +1,7 @@
-//
-// Tests for workflow/lib.sh's voice and spinner (issue #237), their functions in
-// workflow/lib/voice.sh: the one home of everything the engine, the jobs and
-// the tower say to a person.
-//
-// Every case sources the real library in a real bash and reads what it printed,
-// because the whole subject here is the bytes on the two streams: the glyph a
-// level opens with, the bold `task:`, the indent under a section, which stream
-// a level lands on, whether a color was used, and whether a wrapped command's
-// stdout and exit status came through untouched. WORKKIT_COLOR is the seam that
-// lets a pipe read the styled shape back; nothing else is stubbed, and nothing
-// here touches a file or the network.
-//
+// Tests for workflow/lib.sh's voice and spinner (workflow/lib/voice.sh): the one
+// home of everything the engine, the jobs and the tower say to a person. Every
+// case reads the bytes a real bash printed; WORKKIT_COLOR lets a pipe read the
+// styled shape back, and nothing else is stubbed.
 
 const { spawnSync } = require('child_process');
 const path = require('path');

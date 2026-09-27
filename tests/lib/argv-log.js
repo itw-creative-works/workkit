@@ -1,30 +1,8 @@
-//
-// Argv recording for PATH-shim stubs (the fake `gh` the hook and script suites
-// put on PATH).
-//
-// A stub that logs `"$*"` joins its arguments with spaces, which throws away the
-// only thing worth asserting: where one argument ended and the next began. A
-// script that drops the quotes around a value containing spaces then produces a
-// byte-identical log line and the suite stays green. So each argument is written
-// as its own NUL-terminated field, and each invocation ends with a record
-// separator (0x1e).
-//
-// NUL is the sound half: an argument physically cannot contain one, because that
-// is the byte the kernel uses to terminate it. 0x1e is a convention, not a
-// guarantee. An argument that is EXACTLY that byte would read back as a record
-// boundary. Nothing these stubs record can be: the arguments come from
-// workflow/labels.json and the hooks' own literals. A stub fed arbitrary payloads
-// wants a framing that does not rely on that.
-//
-// Arguments are decoded as UTF-8. Two arguments differing only in invalid bytes
-// read back equal; no caller here sends any.
-//
-// Usage:
-//   const { recordArgv, readArgv, isCall, eqArgv, fmtCalls } = require('../lib/argv-log');
-//   fs.writeFileSync(stubPath, ['#!/usr/bin/env bash', recordArgv(logFile), ...].join('\n'));
-//   const calls = readArgv(logFile);              // [['label', 'create', ...], ...]
-//   calls.filter((c) => isCall(c, 'label', 'create'));
-//
+// Argv recording for PATH-shim stubs (the fake `gh` the suites put on PATH).
+// Each argument is its own NUL-terminated field and each call ends with a 0x1e
+// record separator, so an assertion sees where one argument ended and the next
+// began. An argument that is exactly 0x1e would read back as a boundary; nothing
+// recorded here is one.
 
 const fs = require('fs');
 const { shellPath } = require('./platform');
@@ -33,25 +11,13 @@ const NUL = '\0';
 const RS = '\x1e';
 
 /**
- * Bash line that appends the current invocation's argv to `logFile`.
+ * Bash line that appends the current invocation's argv to `logFile`. The one
+ * place the path is spelled for a shell; a shell-spelled path comes back
+ * unchanged. The path must be shell-safe, which a mkdtemp path is.
  *
- * The path crosses INTO a shell here and nowhere else, so it is spelled for the
- * shell here: a caller hands the native path it built and this is the one place
- * that knows the line is bash. A path already in the shell's spelling comes
- * back unchanged, so handing one in is harmless rather than a second
- * translation. The path must also be shell-safe, which a mkdtemp path is.
- *
- * ONE printf, so one append, as long as the record fits bash's stdout buffer
- * (1024 bytes on macOS). Under that, O_APPEND makes the write atomic, so two
- * stubs racing cannot interleave their fields, and a terminated stub leaves
- * nothing rather than a record with no end. A record past the buffer splits
- * into several writes and can fuse again; nothing these stubs record comes near
- * it, since an existing test caps a label description at 100 characters. A stub
- * fed large payloads wants a framing that does not rely on that.
- *
- * The separator rides along as the last field, which is also why no `$#` guard
- * is needed. A call with no arguments writes just the separator, and reads
- * back as an empty argv.
+ * One printf, so one O_APPEND write while the record fits bash's stdout buffer
+ * (1024 bytes on macOS): racing stubs cannot interleave their fields. A call
+ * with no arguments writes just the separator and reads back as an empty argv.
  *
  * @param {string} logFile - absolute path to append to
  * @returns {string} bash source, one line
@@ -88,7 +54,7 @@ const readArgv = (logFile) => {
 
 /**
  * Whole-argument prefix match: `isCall(c, 'label', 'create')` is true only when
- * the first two ARGUMENTS are exactly those words, never when one argument
+ * the first two arguments are exactly those words, never when one argument
  * happens to contain them.
  * @param {string[]} call
  * @param {...string} prefix

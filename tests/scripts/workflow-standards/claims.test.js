@@ -1,8 +1,6 @@
-//
 // Tests for standards.sh: the two claim sweeps, the stale-claim sweep and the
 // claimed-spec flip.
-// The shared prologue (the repo and gh-stub factories, runScript, the constants) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { isCall, fmtCalls } = require('../../lib/argv-log');
@@ -61,7 +59,7 @@ const run = async () => {
 
   // Releasing a building issue and leaving it building would keep it counted as
   // in flight by every surface reading the pipeline, with nobody working it. The
-  // spec is still accepted, so it goes back to specced, in the SAME edit, or
+  // spec is still accepted, so it goes back to specced, in the same edit, or
   // there is a window where it is unclaimed and still reads as in flight.
   await test('a stale claim on a building issue goes back to specced in the same edit', () => {
     const repo = makeRepo();
@@ -164,9 +162,8 @@ const run = async () => {
   group('standards.sh: the claimed-spec flip');
 
   // status:specced is the authorization to start and the assignee is the claim,
-  // so an issue carrying both has started. The flip is what let the readers drop
-  // the claimed-specced tolerance (issue #62): nothing flipped these before, so
-  // the transitional branch was permanent by default.
+  // so an issue carrying both has started, and the flip is what lets the readers
+  // carry no claimed-specced tolerance.
   const SPECCED = 'status:specced';
   const BUILDING = 'status:building';
   const speccedStub = (carried, extra = {}) => makeGhStub({

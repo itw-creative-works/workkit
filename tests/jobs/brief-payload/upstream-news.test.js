@@ -1,8 +1,6 @@
-//
-// Tests for jobs/morning/brief/brief-payload.js, the payload the 9am job hands to Claude:
-// the upstream news, its cursor, and the stats line the runner appends.
-// The shared prologue (the two fixture worlds, the composer seam, the summaries fixtures, the news gate) is ./helpers.js.
-//
+// Tests for jobs/morning/brief/brief-payload.js, the payload the 9am job hands
+// to Claude: the upstream news, its cursor, and the stats line the runner appends.
+// The shared prologue (fixture worlds, composer seam, news gate) is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -23,7 +21,7 @@ const run = async () => {
 
 
   await newsTest('a first run prints no block and hands the runner the latest version', () => {
-    // The cursor is a line in the latest published brief (issue #86), so the
+    // The cursor is a line in the latest published brief, so the
     // world here is an empty board and a scratch mark file, never the network.
     const world = mkNewsWorld();
     const first = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
@@ -46,7 +44,7 @@ const run = async () => {
   });
 
   await newsTest('the mark file carries both lines: the cursor and the day’s stats', () => {
-    // Issue #55: the runner appends this file verbatim under the digest, so
+    // The runner appends this file verbatim under the digest, so
     // both lines the published brief is meant to carry leave together.
     const world = mkNewsWorld();
     const res = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });

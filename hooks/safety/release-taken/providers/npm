@@ -1,21 +1,9 @@
 #!/bin/bash
 # providers/npm: has the npm registry already published <name>@<version>?
-#
-# The provider contract (every file in this directory keeps it, and the hook
-# knows nothing else about any of them):
-#   providers/<name> <package-name> <version>
-#   exit 1  the version is TAKEN
-#   exit 0  it is free, or the check could not be made
-# A check that could not be made says so on stderr first: standing down in
-# silence would read exactly like a version nobody has.
-#
-# `npm view <name>@<version> version` prints the version when the registry has
-# it and nothing when the package exists without it. stdin is closed so a
-# prompt can never hold a PreToolUse hook open, and the update notifier is off
-# so its banner cannot reach stdout.
-#
-# The ship's `publish-plan.js --run` asks this same question in Node (`onRegistry`
-# in workflow/ship/publish-plan.js), flag for flag: change one, change both.
+# The provider contract: README.md § The provider contract (exit 1 taken, 0 free
+# or cannot tell, said on stderr). stdin is closed and the update notifier off,
+# so nothing holds the hook open or reaches stdout. `onRegistry` in
+# workflow/ship/publish-plan.js asks the same question: change both together.
 
 set -uo pipefail
 

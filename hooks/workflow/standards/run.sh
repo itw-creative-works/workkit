@@ -1,17 +1,9 @@
 #!/usr/bin/env bash
-# workflow:standards: SessionStart hook.
-# Brings the session's repo to the issue-workflow standard by running
-# the kit's own workflow/standards.sh (labels from labels.json, issue templates,
-# .workkit/ in .gitignore). The script is idempotent; this hook is its delivery.
-# Nobody runs a command by hand.
-#
-# Runs at most once per repo per DAY: the label step talks to GitHub, and a
-# session-start network call on every new panel is not worth the latency. The
-# marker lives under ~/.claude/logs/workflow-standards (TMPDIR is wiped far too
-# often to hold a daily cache).
-#
-# Silent unless something was actually created or corrected: an all-skip run
-# (already standardized, or offline with nothing to do) says nothing.
+# workflow:standards: SessionStart hook. Delivers the engine's idempotent heal
+# (workflow/standards.sh) to the session's repo, at most once per repo per day,
+# since the label step talks to GitHub; the marker lives under
+# ~/.claude/logs/workflow-standards because TMPDIR is wiped too often. Silent
+# unless something was created or corrected. Detail: docs/hooks.md.
 
 set -euo pipefail
 
@@ -23,25 +15,17 @@ command -v jq >/dev/null 2>&1 || exit 0
 # its spelling differs across the platforms this kit runs on.
 . "${BASH_SOURCE[0]%/*}/../../_lib.sh"
 
-# The workflow engine is this kit's own workflow/ folder. Resolve it from this
-# script's physical location, never through a symlink someone has to install
-# first. `pwd -P` resolves the link before the `..` walk, so the climb out of
-# hooks/workflow/standards/ lands on the real directory.
-# WORKFLOW_DIR overrides it (the tests point at a partial engine).
+# The engine is this kit's own workflow/, resolved from this script's physical
+# location so no symlink has to exist first; WORKFLOW_DIR overrides it for tests.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 ENGINE_DIR="${WORKFLOW_DIR:-$SCRIPT_DIR/../../../workflow}"
 STANDARDS="$ENGINE_DIR/standards.sh"
 MANIFEST="$ENGINE_DIR/labels.json"
 
-# Setup pester (issue #72): EVERY session until the machine is set up, with no
-# daily cache and no repo gate: the schedule, the home repo, and the CLI all
-# come from `workkit setup`, and a machine that never ran it is missing all of
-# them everywhere, not just in a participating repo. Still only a prompt: the
-# hook informs, the human runs the wizard (the #71 boundary).
-# The probe is the CLI the wizard installs: absent, dangling, or not executable
-# all mean the command is not there, and `setup` is the one step that fixes each
-# of them. A `~/.workkit` that exists without it is drift setup heals, so it
-# does not buy the machine out of the pester. Costs one stat; no gh, no engine.
+# Setup pester, every session with no cache and no repo gate: a machine that
+# never ran `workkit setup` lacks it everywhere. The probe is the CLI setup
+# installs, one stat; a `~/.workkit` without it still pesters. The hook only
+# informs, the human runs the wizard.
 pester=""
 cli_link="$HOME/.local/bin/workkit"
 if [ ! -x "$cli_link" ]; then
@@ -83,13 +67,8 @@ cwd=$(hook_jq -r '.cwd // ""' <<<"$input" 2>/dev/null || true)
 
 root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || emit
 
-# A missing engine is a real state, not a no-op: a half-installed or partially
-# updated kit has this hook live while the engine beside it is incomplete. The
-# manifest is half the engine: the label heals cannot run without it, so a
-# missing or unreadable labels.json is the same broken install and must speak,
-# not go quiet. Say so once, and only for a repo that already opted in.
-# Everyone else stays silent. Still exit 0; a broken install never wedges a
-# session start.
+# A missing engine or labels.json is a broken install, and it speaks once, only
+# for a repo that opted in; everyone else stays silent. Still exit 0.
 broken=""
 if [ ! -f "$STANDARDS" ]; then
   broken="workflow engine not found at $STANDARDS. Reinstall the workkit plugin."
@@ -106,14 +85,9 @@ if [ -n "$broken" ]; then
   emit "$broken"
 fi
 
-# Participation gate: the engine owns the five states (enabled · disabled ·
-# declined · undecided · home); this hook only routes them. A repo that has
-# not said yes is never written to, and an undecided one hears a single offer
-# line every
-# session (no daily cache: the offer costs nothing and reaches no network).
-# The engine prints its answer on stdout and every diagnostic on stderr, so this
-# capture is the state and nothing else. Take the last line defensively: a state
-# that arrived malformed must not silently match nothing and skip the repo.
+# Participation gate: the engine owns the states and this hook routes them. An
+# undecided repo hears one offer line per session and is never written to. The
+# state is stdout's last line, so a malformed answer cannot silently skip.
 state=$(bash "$STANDARDS" --state "$root" 2>/dev/null | tail -1 || printf 'nogit')
 
 case "$state" in
@@ -137,51 +111,31 @@ if [ -f "$marker" ] && [ "$(cat "$marker" 2>/dev/null)" = "$today" ]; then
   emit
 fi
 
-# Never let a failing standards run wedge the session start, but never call a
-# failure a heal either. Diagnostics arrive on stderr, so capture both streams
-# for the report and keep the exit status: only a CLEAN run caches the day, so a
-# partial heal retries next session instead of going quiet until tomorrow
-# (review finding, 2026-07-24).
-# QUIET=1 is what makes the report filterable (issue #237): the engine's one
-# voice prints an ACTION (`wk_ok`) and a warning whatever the caller asked for,
-# and silences the skips and the info lines under QUIET. So the capture below is
-# already only the two glyphs this hook reports.
+# A failing heal never wedges the session start, and never reads as a heal:
+# both streams are captured and only a clean run caches the day, so a partial
+# heal retries next session. QUIET=1 leaves only the actions and the warnings.
 rc=0
 out=$(QUIET=1 bash "$STANDARDS" "$root" 2>&1) || rc=$?
 if [ "$rc" -eq 0 ]; then
   printf '%s' "$today" >"$marker" 2>/dev/null || true
 fi
 
-# Machine-side upkeep, on the same daily schedule (issue #71). Claude Code has
-# no plugin-install hook, so this is the trigger the kit owns: a checkout that
-# moved or a job template that changed would otherwise leave the installed
-# schedule pointing at yesterday's paths until somebody remembered to re-run the
-# installer. The CLI resolves beside the engine (never through the PATH or the
-# ~/.local/bin symlink, which is exactly what may not exist yet) and only ever
-# UPDATES a schedule a human already installed. Most session starts never reach
-# this line at all: the daily marker above returns first. The run it does make
-# costs a few short shell invocations, a plutil lint, and the two read-only `gh`
-# calls behind the cloud-secrets report (issue #88): no launchd call, and no
-# network beyond those two, which the CLI bounds so a stalled api.github.com
-# cannot hold a session start open. It prints nothing when nothing drifted.
+# Machine-side upkeep on the same daily schedule, since Claude Code has no
+# plugin-install hook: `workkit update --auto`, resolved beside the engine, only
+# updates a schedule a human installed. Its two read-only gh calls are bounded
+# by the CLI; it prints nothing when nothing drifted.
 upkeep=""
 CLI="$ENGINE_DIR/workkit.sh"
 if [ -f "$CLI" ]; then
-  # Both streams: a warning from the upkeep is on STDERR now (issue #237), and
-  # a warning is the one thing this relay exists to carry.
+  # Both streams: an upkeep warning arrives on stderr, and carrying warnings is
+  # this relay's whole job.
   upkeep=$(bash "$CLI" update --auto 2>&1 || true)
 fi
 
-# ONE shape for everything this hook injects (issue #237): strip the script's
-# ANSI colors, keep the lines the ENGINE itself printed, and take the indent and
-# the glyph off each one. Both captures above are both streams, so a child
-# tool's own stderr is in them too (a `cp` refusal, a git advisory) and a line
-# the engine did not say must never be relayed as an action: the opening glyph
-# is what tells them apart, and the QUIET runs leave only the action (✓) and the
-# warning (⚠). The engine indents under a title even when QUIET silences the
-# title itself, which is the other half of why this strip is not optional.
-# (Alternation, not a bracket class: in the C locale a class of multibyte
-# characters matches on their bytes, which matches none of these glyphs.)
+# One shape for everything injected: strip the colors, keep only lines opening
+# with the engine's ✓ or ⚠ (a child tool's stderr must never read as an action),
+# and drop the indent and glyph. Alternation, not a bracket class: in the C
+# locale a class of multibyte glyphs matches bytes.
 engine_lines() {
   sed $'s/\033\\[[0-9;]*m//g' \
     | grep -E '^[[:space:]]*(✓|⚠) ' \

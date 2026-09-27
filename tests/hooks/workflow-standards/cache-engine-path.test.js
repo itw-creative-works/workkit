@@ -1,9 +1,7 @@
-//
 // Tests for hooks/workflow:standards: the daily cache marker, and the default
 // engine path the hook resolves beside itself (and what it says when the
 // engine or its manifest is missing).
 // The shared prologue (the repo factory, the decline, the hook runner and its gh-less PATH, the constants) is ./helpers.js.
-//
 
 const path = require('path');
 const fs = require('fs');
@@ -37,7 +35,7 @@ const run = async () => {
     runHook(repoA, { cache });
     const afterA = fs.readdirSync(cache);
     assertEq(afterA.length, 1, 'one marker after the first repo');
-    // The hook stamps `date +%Y-%m-%d`: LOCAL time. Comparing against a UTC
+    // The hook stamps `date +%Y-%m-%d`: local time. Comparing against a UTC
     // ISO slice fails for the hours the two dates disagree.
     const today = spawnSync('date', ['+%Y-%m-%d'], { encoding: 'utf8' }).stdout.trim();
     assertEq(fs.readFileSync(path.join(cache, afterA[0]), 'utf8'), today, 'marker holds today');
@@ -86,8 +84,8 @@ const run = async () => {
   });
 
   await test('an engine without labels.json is announced for an opted-in repo', () => {
-    // A missing manifest used to fail --state, which this hook read as nogit:
-    // a broken install went silent forever instead of speaking once.
+    // A missing manifest must not read as nogit: a broken install speaks once
+    // rather than going silent forever.
     const engine = mkTmp('wf-hook-');
     fs.symlinkSync(path.join(WORKFLOW_DIR, 'standards.sh'), path.join(engine, 'standards.sh'));
     const repo = makeRepo();
@@ -121,7 +119,7 @@ const run = async () => {
 
   // Without the engine, undecided and declined are indistinguishable, but a
   // committed `false` is resolvable from the repo alone, so the deliberate no
-  // must be honored here too (review finding, 2026-07-24).
+  // must be honored here too.
   await test('a missing engine stays silent on a deliberately disabled repo', () => {
     const engine = mkTmp('wf-hook-');
     const repo = makeRepo({ settings: '{ "version": 1, "enabled": false }\n' });

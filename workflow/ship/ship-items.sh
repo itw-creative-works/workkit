@@ -1,26 +1,9 @@
 #!/usr/bin/env bash
-# ship-items: what a ship carries, with the proof call already read (issue #290).
-#
-# The ship's Step 0c (skills/ship/SKILL.md) needs two lists and one question
-# about each item on them: the open issues at `status:qa` and at
-# `status:complete`, and whether each carries a `Proof:` line. Read by hand that
-# is a list call per stage and a comment read per issue, which is where a ship
-# drifts; here it is two calls and one line per issue:
-#
-#   <stage> #<N> <proved|unproved> <title>
-#
-# qa lines first, then complete, each by number ascending. The title is
-# everything after the third field, verbatim. Nothing at either stage prints
-# `ship-items: nothing at qa or complete` and exits 0; a `gh` that fails (or
-# answers with something that is not JSON) prints one `ship-items: ...` line on
-# stderr and exits 1, with nothing on stdout. A usage error exits 2, before gh
-# is asked anything.
-#
-# Usage: ship-items.sh [--repo owner/name]
-#
-# Without `--repo` gh resolves the repo from the current directory, exactly as
-# the ship's own `gh issue` calls do. Reached at the engine's stable address:
-# ~/.claude/workkit/ship/ship-items.sh.
+# ship-items: what a ship carries, with the proof call already read: the open
+# issues at `status:qa` then `status:complete`, one `<stage> #<N>
+# <proved|unproved> <title>` line each (`workflow/README.md`, the
+# ship/ship-items.sh row). Usage: ship-items.sh [--repo owner/name]; without
+# --repo gh resolves the repo from the current directory.
 
 set -euo pipefail
 
@@ -57,13 +40,10 @@ done
 errfile="$(mktemp)"
 trap 'rm -f "$errfile"' EXIT
 
-# One stage's lines. The proof test is safety/proof-guard's, the same regex,
-# which has four homes that change together: this one, hook_issue_has_proof in
-# hooks/lib/proof.sh, and PROOF_LINE in tower/api/server/validate.js and in the dashboard's
-# libs/tower/github/writes.js. tests/scripts/ship-items.test.js pins this one to
-# hooks/lib/proof.sh. Any LINE of any comment may open with it, leading blanks
-# tolerated and nothing else, case-sensitive; jq's test is not multiline by
-# default, hence the explicit newline branch.
+# One stage's lines. The proof test is safety/proof-guard's regex, with four
+# homes that change together: this, hook_issue_has_proof in hooks/lib/proof.sh,
+# and PROOF_LINE in tower/api/server/validate.js and the dashboard's
+# libs/tower/github/writes.js. jq's test is not multiline, hence the newline branch.
 stage_lines() {
   local stage="$1" json reason
   if ! json="$(gh issue list --state open --label "status:$stage" \

@@ -1,14 +1,8 @@
-//
-// Tests for hooks/safety/proof-guard, the PreToolUse hook that holds the
-// spec's proof gate (docs/project-state.md, "The proof", issue #233): a flip
-// to `status:complete` and a `gh issue close` both need the issue to carry a
-// comment whose line starts `Proof:`. A close of something never built
-// (`--reason "not planned"`) passes, and an unreachable `gh` fails open.
-//
-// Every case runs against a PATH-shim `gh` that answers `issue view` from a
-// fixture, so nothing here reaches GitHub.
+// Tests for hooks/safety/proof-guard, the PreToolUse hook that holds the proof
+// gate (docs/project-state.md § The proof): a flip to `status:complete` and a
+// `gh issue close` need a comment starting `Proof:`; a not-planned close passes,
+// and an unreachable `gh` fails open.
 // The shared prologue (the hook runner, the gh stub, the fixtures) is ./helpers.js.
-//
 
 const fs = require('fs');
 const os = require('os');
@@ -85,10 +79,9 @@ const run = async () => {
   });
 
   await test('a long table body stays fast, gated and ungated alike', () => {
-    // The clause walk is one pass over the command (issue #233, verifier
-    // finding): a body full of `|` rows used to be re-scanned once per
-    // fragment, which took seconds. An ungated edit never reaches the walk at
-    // all, since neither `status:complete` nor `gh issue close` is in the text.
+    // The clause walk is one pass over the command, so a body full of `|` rows
+    // is never re-scanned per fragment. An ungated edit never reaches the walk,
+    // since neither `status:complete` nor `gh issue close` is in the text.
     const stub = makeGhStub(WORLD);
     const body = ['| a | b | c |', '|---|---|---|',
       ...Array.from({ length: 100 }, (_, i) => `| row ${i} | value ${i} | note ${i} |`)].join('\n');

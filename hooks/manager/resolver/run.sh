@@ -1,37 +1,11 @@
 #!/usr/bin/env bash
-# manager:resolver: PreToolUse hook on the Agent tool (issue #11).
-# Supplies each CLASS agent spawn (scout / worker / verifier / advisor) its
-# concrete model from the tier ladder (../resources/ladder.json) and the LIVE session
-# model, so a mid-session /model switch takes effect on the very next spawn.
-# Decision table:
-#   advisor          → the frontier rung, always (its whole point)
-#   worker/verifier  → the WEAKER of the workhorse rung and the session's own
-#                      rung: the crew never outspends the session model, and
-#                      the frontier is never burned on implementation
-#   scout            → the fast rung, always
-#   anything else    → pass through UNTOUCHED (Explore, Plan, general-purpose,
-#                      reviewer, unknown types: this hook must never break them)
-# The ladder is the GLOBAL layer: `hook_manager_config` merges the `manager`
-# block of this repo's `.workkit/settings.json` over the one in
-# `~/.workkit/settings.json` over it, so a repo can move a class onto a
-# cheaper rung (`tiers`), pick a `mode`, or turn the crew off entirely
-# (`enabled: false`, every spawn then passes through untouched).
-# Modes (the merged "mode"):
-#   rewrite:  emit hookSpecificOutput.updatedInput carrying the resolved model
-#   advise:   allow a spawn already carrying the resolved model; block any
-#             other class spawn (exit 2) naming the exact model to re-issue
-#             with. The landing spot for CC versions that ignore updatedInput
-#             on the Agent tool.
-# Fails OPEN on every missing precondition (no jq, no ladder, garbage stdin):
-# a broken resolver must degrade to "agents spawn as before", never to a
-# broken session. MANAGER_DEBUG=1 appends one decision line per spawn to
-# ${TMPDIR:-/tmp}/claude-manager-resolver.log (used by the live probe).
-#
-# Probed live 2026-07-26 (CC 2.1.219): updatedInput IS honored on the Agent
-# tool: a scout under a sonnet session ran on haiku. The one constraint:
-# the tool's model param is an ALIAS ENUM (sonnet/opus/haiku/fable); a full
-# model id fails schema validation before the spawn runs, which is why the
-# ladder's model values are aliases.
+# manager:resolver: PreToolUse hook on the Agent tool. Supplies each class
+# spawn its model from the tier ladder and the live session model, so a
+# mid-session /model switch lands on the next spawn; any other agent type
+# passes through untouched. Fails open on every missing precondition: a broken
+# resolver degrades to agents spawning as before, never a broken session.
+# The decision table, the modes and the config layers: docs/hooks.md
+# § manager:resolver.
 
 set -euo pipefail
 

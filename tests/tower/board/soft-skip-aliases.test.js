@@ -1,8 +1,6 @@
 //
-// Tests for tower/api/lib/board.js: the soft skip (gh missing, a lapsed
-// token, a failed call, a roster with nothing to ask) and the one call
-// with per-repo aliases.
-// The shared prologue (the fake gh, the issue and label builders, the roster, the module under test) is ./helpers.js.
+// Tests for tower/api/lib/board.js: the soft skip (gh missing, a lapsed token, a
+// failed call, an empty roster) and the one aliased call. Prologue: ./helpers.js.
 //
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
@@ -26,8 +24,8 @@ const run = async () => {
     const res = fetchBoard(ROSTER, {
       exec: fakeGh({}, {
         calls,
-        // The real shape of a bad token: gh prints the API's JSON to STDOUT and
-        // nothing useful to stderr - the reason must be judged from that stream.
+        // The real shape of a bad token: gh prints the API's JSON to stdout and
+        // nothing useful to stderr, so the reason is judged from that stream.
         graphqlError: execError('Command failed: gh api graphql -f query=...', {
           stdout: '{"message":"Bad credentials","documentation_url":"https://docs.github.com/graphql","status":"401"}\n',
           stderr: '',
@@ -107,10 +105,9 @@ const run = async () => {
     assertEq(b.comments, 0, 'an issue with no comment count reads as none');
   });
 
-  // Issue #196: a blocked issue's open question is a COMMENT on it - the spec's
-  // own convention - so the sweep carries the newest one and the Board draws it
-  // on a blocked card. The cut is stated on both sides of the limit, since a
-  // question that arrives half-drawn with nothing to say so is worse than none.
+  // A blocked issue's open question is a comment on it (the spec's convention),
+  // so the sweep carries the newest one. The cut is stated on both sides of the
+  // limit: a question half-drawn with nothing to say so is worse than none.
   await test('an issue carries its newest comment as one line, cut where a card ends', () => {
     const comments = (...bodies) => ({ totalCount: bodies.length, nodes: bodies.map((body) => ({ body })) });
     const res = fetchBoard([ROSTER[0]], {

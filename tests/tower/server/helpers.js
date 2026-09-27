@@ -1,19 +1,8 @@
-//
-// The shared prologue of the tower/api/server suites, the `*.test.js` files
-// beside this one, which test tower/api/server.js: the endpoints, the caches,
-// the one write path. A plain module, never a suite: the runner only loads
-// files ending in `.test.js`.
-//
-// The WHOLE server runs in those suites, on port 0, against fixtures: a scratch
-// ~/.workkit whose roster lists one real git repo, a scratch marker directory
-// and statusline cache, and one fake exec standing in for `gh` and `ps` (`git`
-// is answered for real, because the roster and health both ask git questions
-// no stub could answer honestly).
-//
-// The intake endpoint is exercised for its ARGV, never for its effect: the fake
-// exec records the exact argument vector and returns what `gh issue create`
-// prints. Nothing in these suites can file an issue anywhere.
-//
+// The shared prologue of the tower/api/server suites beside this one: the whole
+// server on port 0 against a scratch ~/.workkit roster of one real git repo, a
+// scratch marker directory and statusline cache, and one fake exec standing in
+// for `gh` and `ps` while git answers for real. The intake endpoint is judged by
+// its argv, so nothing here can file an issue anywhere.
 
 const fs = require('fs');
 const http = require('http');
@@ -150,7 +139,6 @@ const listen = (server) => new Promise((resolve) => {
   });
 });
 
-/** The server options for a world - a live object, so a test may mutate it. */
 /**
  * Block this thread for `ms`, the way a real `gh api graphql` call does: the
  * sweep runs on execFileSync, so a round holds the event loop for as long as
@@ -164,17 +152,11 @@ const blockFor = (ms) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4))
 const BOARD_PAGES = [[17, ['status:specced']], [18, ['status:qa']], [19, ['status:inbox']]];
 
 /**
- * Make a world's board arrive in THREE pages: issue 17, then 18 and 19 behind
- * the cursors each page ends on. What a repo past GitHub's hundred-issue page
- * looks like to the sweep (issue #194), in three issues instead of three
- * hundred - and the only fixture where a board still arriving and a finished
- * one are told apart.
- *
- * Three rather than two because a sweep has to still be RUNNING when the next
- * request is served: with two pages the one continuation is the end of it.
- * `pause` is what makes that deterministic - a round that holds the loop for
- * long enough that a request sent while it runs is certainly waiting when it
- * ends, and is served with a round still to go.
+ * Make a world's board arrive in three pages, one issue to a page behind the
+ * cursors each page ends on: a repo past GitHub's hundred-issue page in
+ * miniature. Three because a sweep has to still be running when the next
+ * request is served; `pause` holds each round long enough that a request sent
+ * while it runs is served with a round still to go.
  */
 const pageTheBoard = (world, { pause = 0 } = {}) => {
   const plain = world.exec;
@@ -204,7 +186,7 @@ const pageTheBoard = (world, { pause = 0 } = {}) => {
 };
 
 /**
- * Answer every Discussions read with the live GraphQL rate limit (issue #216),
+ * Answer every Discussions read with the live GraphQL rate limit,
  * the shape tests/lib/gh.js owns. The board sweep is left alone: a brief whose
  * sweep failed is a different page.
  */
@@ -221,6 +203,7 @@ const limitDiscussions = (world) => {
   return world;
 };
 
+/** The server options for a world - a live object, so a test may mutate it. */
 const worldOpts = (world, opts = {}) => ({
   workflowHome: path.join(world.root, 'workflow-home'),
   markerDir: world.markerDir,
@@ -259,7 +242,7 @@ const raw = (client, { method = 'GET', path: p = '/', headers = {}, body = null 
     res.on('end', () => resolve({ status: res.statusCode, text, headers: res.headers }));
   });
   // An over-cap POST is answered mid-upload and the connection then closed, so
-  // the write end may error AFTER the response arrived. The promise is already
+  // the write end may error after the response arrived. The promise is already
   // settled by then; a late rejection is a no-op.
   req.on('error', reject);
   if (body !== null) req.write(body);

@@ -1,8 +1,6 @@
-//
 // Tests for workflow/publish.sh: the source side (an edit to the project
 // pushed to main, a source push that does not land, and --quiet).
-// The shared prologue (the world factory, the publish runner, the settings and branch readers) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');

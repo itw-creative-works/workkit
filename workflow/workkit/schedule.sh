@@ -1,20 +1,13 @@
 #!/usr/bin/env bash
 # workflow/workkit/schedule.sh: the 9am schedule, its drift against this
 # checkout, the installer run, the update that keeps an installed schedule
-# current, and the first install that only `setup` makes. SOURCED by
-# workkit.sh, never executed, and it runs nothing at load: it defines functions
-# and sets nothing. Every name it reads (JOBS_INSTALL, DAILY_PLIST,
-# DAILY_LABEL) is the entry's.
+# current, and the first install that only `setup` makes. Sourced by
+# workkit.sh, functions only; JOBS_INSTALL, DAILY_PLIST and DAILY_LABEL are the
+# entry's.
 
-# What the installed schedule differs from this checkout in, one line per agent,
-# and nothing at all when it is current. `install.sh --check` renders and
-# compares without touching launchd, which is what keeps the daily run down to a
-# couple of short shell invocations and no launchd call.
-#
-# Two failures must never read as "current": an installer this checkout does not
-# have, and a check that could not finish. Both print their reason on stdout and
-# return 1: the caller is in a command substitution, so the reason travels back
-# with the status and is reported there.
+# What the installed schedule differs from this checkout in, one line per
+# agent, empty when current. A missing installer or an unfinished check prints
+# its reason and returns 1, so neither reads as current.
 cron_drift() {
   if [[ ! -f "$JOBS_INSTALL" ]]; then
     printf 'the installer is missing at %s; this checkout is incomplete\n' "$JOBS_INSTALL"
@@ -26,11 +19,9 @@ cron_drift() {
   }
 }
 
-# Run the installer and relay what it ACTUALLY did: one line per agent, in the
-# installer's own words, so a run that changed nothing never claims to have
-# reinstalled the 9am job. A failure is reported and swallowed: this
-# runs inside a session-start hook that discards stderr, so an unguarded
-# `set -e` abort here would be invisible and would retry silently every day.
+# Run the installer and relay only what it did, in its own words. A failure is
+# reported and swallowed: under a session-start hook that discards stderr, a
+# `set -e` abort would be invisible.
 run_installer() {
   local out rc=0
   out="$(bash "$JOBS_INSTALL" 2>&1)" || rc=$?
@@ -44,9 +35,8 @@ run_installer() {
     | while IFS= read -r line; do wk_ok "schedule: $line"; done || true
 }
 
-# Re-render and reload the schedule, but ONLY on a machine that already has it:
-# installing a cron is a decision, and `setup` is where a human makes it. The
-# rest is install.sh's: it renders, compares, and reloads only on a difference.
+# Re-render and reload only a schedule the machine already has: installing one
+# is a human's decision, made in `setup`.
 update_cron() {
   local drift
   if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -70,9 +60,8 @@ update_cron() {
   run_installer
 }
 
-# The FIRST install of the schedule, which only ever happens here, under
-# `setup`: a human ran it, or a ship did after a green release (#235). `update`
-# from then on keeps it current.
+# The first install of the schedule happens only here, under `setup`, run by a
+# human or by a ship; `update` keeps it current after.
 install_cron() {
   local drift
   if [[ "$(uname -s)" != "Darwin" ]]; then

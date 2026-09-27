@@ -1,10 +1,8 @@
 /* eslint-disable no-console */
-//
 // Tests for hooks/safety/tree-guard: the PreToolUse hook that blocks the git
-// commands which DISCARD a working tree (checkout with a pathspec, restore,
+// commands which discard a working tree (checkout with a pathspec, restore,
 // stash, clean -f, reset --hard), because the tree is shared: an agent
-// reverting its own edits that way takes another agent's with it (issue #157).
-//
+// reverting its own edits that way takes another agent's with it.
 
 const path = require('path');
 const fs = require('fs');
@@ -97,9 +95,9 @@ const run = async () => {
   });
 
   await test('a redirection or a comment is not an operand: exit 0', () => {
-    // The counter used to walk every remaining word, so a redirection's separate
-    // target and a trailing comment read as the second operand of the
-    // ref+pathspec form and bounced a legal branch switch.
+    // A redirection's separate target and a trailing comment are not operands:
+    // read as the second operand of the ref+pathspec form, they would bounce a
+    // legal branch switch.
     const dir = mkTree();
     for (const c of ['git checkout main > /tmp/out', 'git checkout main 2> /tmp/err',
       'git checkout main >/tmp/out', 'git checkout main # words']) {
@@ -130,8 +128,8 @@ const run = async () => {
   });
 
   await test('a comment does not answer for the command in front of it: exit 0', () => {
-    // The same walk fed every subcommand, so a `--hard` or a `-f` sitting in a
-    // trailing comment used to block the harmless command carrying it.
+    // A `--hard` or a `-f` sitting in a trailing comment is no flag, so the
+    // harmless command carrying it passes.
     const dir = mkTree();
     for (const c of ['git reset --soft HEAD~1 # not --hard', 'git clean -n # never -f']) {
       passes(dir, c);

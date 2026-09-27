@@ -1,7 +1,5 @@
-//
 // Tests for standards.sh: offline and unauthenticated, and run from anywhere.
-// The shared prologue (the repo and gh-stub factories, runScript, the constants) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');

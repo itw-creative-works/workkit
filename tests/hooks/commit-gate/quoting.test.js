@@ -1,7 +1,5 @@
-//
-// Tests for hooks/safety/commit-gate: a quoted message never hides a pathspec (issue #25).
+// Tests for hooks/safety/commit-gate: a quoted message never hides a pathspec.
 // The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
-//
 
 const path = require('path');
 const fs = require('fs');
@@ -14,9 +12,9 @@ const run = async () => {
   group('commit-gate: a quoted message never hides a pathspec (issue #25)');
 
   await test('quoted and unquoted pathspec commits gate identically', () => {
-    // The quoted message used to be DELETED from the detection copy, leaving
-    // -m to consume the pathspec, so the file list read as empty and the gate
-    // skipped every check, review and tests included.
+    // Deleting the quoted message from the detection copy would leave -m to
+    // consume the pathspec, so the file list would read empty and the gate
+    // would skip every check, review and tests included.
     for (const message of ['"docs"', 'docs']) {
       const dir = mkRepo();
       fs.writeFileSync(path.join(dir, 'app.js'), 'const x = 1;\n');
@@ -36,9 +34,8 @@ const run = async () => {
   });
 
   await test('a value-taking flag does not have its value read as a pathspec', () => {
-    // Once quoted spans became visible tokens, any flag missing from the walk's
-    // skip list had its value counted as a file, which forced a docs-only
-    // commit to be gated as code and blocked for a missing review.
+    // Quoted spans are visible tokens, so a flag missing from the walk's skip
+    // list would count its value as a file and gate a docs-only commit as code.
     for (const flag of ['--author "Jane Doe <j@d.c>"', '--date "2020-01-01"', '--trailer "Co-Authored-By: X <x@y.z>"']) {
       const dir = mkRepo();
       stage(dir, 'README.md', '# docs\n');

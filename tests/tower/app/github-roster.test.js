@@ -26,8 +26,8 @@ const run = async () => {
   });
 
   await test('a home repo carrying no roster says so rather than showing an empty board', async () => {
-    // The list is on the home repo now (issue #110), so this is the read that
-    // can come back empty: a home that has never been published from.
+    // A home that has never been published from carries no roster, so this is
+    // the read that can come back empty.
     const answer = await github.fetchSlugs({
       token: 't',
       fetch: mkFetch((url) => (url === 'data/home.json'
@@ -53,11 +53,10 @@ const run = async () => {
     const stamp = '2026-07-29T11:00:00Z';
     const mine = github.buildBrief(board, { generatedAt: stamp });
     const theirs = apiBrief.buildBrief(board, {}, [], stamp);
-    // `summaries`, `history`, `documents`, the freshness read off that
-    // history (#176) and the history read's reason (#215) are ATTACHED after
-    // the build on the tower's side (server/feeds.js) and inside it here, so they are
-    // the five keys the comparison lifts out - everything buildBrief itself
-    // decides is compared.
+    // `summaries`, `history`, `documents`, `briefFreshness` and `historyReason`
+    // are attached after the build on the tower's side (server/feeds.js) and
+    // inside it here, so the comparison lifts those five out; everything
+    // buildBrief itself decides is compared.
     assertEq(JSON.stringify({
       ...mine, summaries: undefined, history: undefined, documents: undefined, briefFreshness: undefined, historyReason: undefined,
     }), JSON.stringify(theirs), 'the same sections, the same order, the same headline');
@@ -100,10 +99,9 @@ const run = async () => {
     fs.rmSync(home, { recursive: true, force: true });
     assertEq(JSON.stringify(mine), JSON.stringify(theirs), 'one series, whichever side read it');
 
-    // And the read the browser makes asks for the body the line lives in - the
-    // summaries query does not, which is why this is a second document. It asks
-    // for the post's URL and its day beside it (#181), because the archive that
-    // rides the same read names each document and links it back.
+    // The browser's read asks for the body the line lives in, which the
+    // summaries query does not, and for each post's URL and day, which the
+    // archive riding the same read links back to.
     const fetchImpl = mkFetch(jsonResponse(200, { data: { repository: { discussions: { nodes } } } }));
     const answer = await github.fetchDiscussions('owner/private-home', { token: 't', fetch: fetchImpl });
     assert(JSON.parse(fetchImpl.calls[0].options.body).query.includes('nodes { title url createdAt body }'), 'the history read asks for the body');
@@ -112,9 +110,8 @@ const run = async () => {
   });
 
   await test('the archive the browser reads is the archive the tower reads', async () => {
-    // Issue #181: the same Discussions again, asked the other question - not
-    // what each morning counted but what it SAID. A drift in either parse would
-    // leave one copy of the Brief page showing a document the other cannot.
+    // The same Discussions, asked what each morning said: a drift in either
+    // parse leaves one copy of the Brief page showing a document the other cannot.
     const fs = require('fs');
     const apiDocuments = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'documents.js'));
     const apiHistory = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'history.js'));
@@ -148,10 +145,8 @@ const run = async () => {
   });
 
   await test('a read that could not be made is null, never an empty series and never an empty archive', async () => {
-    // The two say opposite things: nothing published yet is a board with no
-    // history, and a refused read is a history nobody can see. Both halves of
-    // the one read answer it the same way (#181) - an archive drawn empty where
-    // the read failed would be the same lie the series refuses to tell.
+    // Nothing published yet is a board with no history; a refused read is a
+    // history nobody can see. Both halves of the one read answer it the same way.
     const nowhere = await github.fetchDiscussions('', { token: 't', fetch: mkFetch(() => { throw new Error('a request was made'); }) });
     assertEq(nowhere.history, null, 'a site published without a home repo has nowhere to read from');
     assertEq(nowhere.documents, null, 'and no archive to read either');
@@ -165,9 +160,8 @@ const run = async () => {
     assertEq(empty.history.length, 0, 'a home repo with no published briefs yet is an empty series, not a failure');
     assertEq(empty.documents.length, 0, 'and an empty archive, which is a different sentence from an unreadable one');
 
-    // And where the refusal has a SENTENCE, it rides beside those nulls (#215):
-    // the pages draw it, and dropping it left them saying only that the
-    // mornings were unreadable.
+    // Where the refusal has a sentence, it rides beside those nulls so the
+    // pages can draw it.
     const refused = await github.fetchDiscussions('owner/workkit', {
       token: 't',
       fetch: mkFetch(jsonResponse(403, { message: 'Bad credentials' })),

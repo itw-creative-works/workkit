@@ -1,15 +1,7 @@
-//
 // Tests for jobs/claude-nightly.sh: the summaries step the 9am job runs first,
-// which writes the day up and PUBLISHES it as a Discussion on the home repo
-// (issue #27).
-//
-// The runner is executed for real against shims: a `claude` that answers with a
-// summary, and a `gh` that answers the three GraphQL calls the delivery makes
-// with canned JSON. HOME and WORKFLOW_HOME are scratch directories, so the log
-// it appends to and the settings file it reads are both inside the fixture:
-// this suite never touches the real home, never reaches GitHub, never writes a
-// summary to disk, and never puts a notification on screen.
-//
+// which writes the day up and publishes it as a Discussion on the home repo.
+// It runs for real against `claude` and `gh` shims in a scratch HOME and
+// WORKFLOW_HOME, so it never reaches GitHub, writes a summary file, or notifies.
 
 const fs = require('fs');
 const path = require('path');
@@ -23,12 +15,12 @@ const { mkTmp } = require('../lib/scratch');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-nightly.sh');
 
-// The date the runner works in is the LOCAL one (`date '+%Y-%m-%d'`), which is not
+// The date the runner works in is the local one (`date '+%Y-%m-%d'`), which is not
 // always today in UTC: a fixture stamped from toISOString would be a different
 // day for half the world's clocks.
 const today = () => new Date().toLocaleDateString('en-CA');
 
-// Every cadence title the runner would publish TODAY. The script adds the
+// Every cadence title the runner would publish today. The script adds the
 // weekly on a Sunday and the monthly on the 1st, so a test seeding "already
 // published" must cover all of them: seeding the daily alone reds the test
 // on exactly those days, when the rollup legitimately composes.
@@ -43,24 +35,15 @@ const allPostedToday = () => {
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 /**
- * A scratch home and a scratch ~/.workkit, plus the shims the delivery runs
- * against. `claude` answers with a summary (and records that it was called),
- * `gh` answers the GraphQL calls, and Notifly is a trap: this step notifies
- * nobody, so any call to it is a failure.
+ * A scratch home and ~/.workkit with the delivery's shims: `claude` answers
+ * with a summary, `gh` answers the GraphQL calls, and Notifly is a trap.
  *
- * `home` is the `"home"` key to write into the settings file; null writes the
- * file without one, and `settings: null` writes no file at all.
- * `logsDir: false` leaves ~/Library/Logs out: the bare home the job has to
- * make its own log directory in.
- * `categories` is what the repo's Discussions actually offer, which is how the
- * fallback is exercised; `ghFails` makes every API call refuse.
- * `quiet` is whether the day has a record at all: a world that is not quiet
- * carries one session transcript inside the window, which is what the payload
- * reads to decide there was a day to summarize.
- * `posted` is what the repo's Daily discussions already carry: the duplicate
- * guard's input.
- * `claudeStderr` is noise the send writes to its stderr, which must reach the
- * log and never the published body.
+ * `home` is the settings file's `"home"` key (null: none; `settings: null`:
+ * no file). `logsDir: false` leaves ~/Library/Logs out. `categories` is what
+ * the repo's Discussions offer; `ghFails` makes every API call refuse. `quiet`
+ * drops the one session transcript that makes a day to summarize. `posted` is
+ * what the Daily discussions already carry; `claudeStderr` is send noise that
+ * must reach the log and never the published body.
  */
 const mkWorld = ({
   home = null, settings = {}, logsDir = true, categories = ['Daily', 'Weekly', 'Monthly'],
@@ -112,11 +95,10 @@ const mkWorld = ({
   ]);
   const notifly = stubTool(bin, 'notifly', ['#!/usr/bin/env bash', recordArgv(notifLog), 'exit 0']);
 
-  // The three shapes the delivery asks for, told apart by what the query text
-  // names. Anything else answers empty, so an unexpected call is visible as a
-  // failure rather than as a pass. The shim is ALWAYS written: the runner puts
-  // /opt/homebrew/bin on its own PATH, so a world without one here would reach
-  // the real gh and the real GitHub.
+  // The three shapes the delivery asks for, told apart by the query text;
+  // anything else answers empty so an unexpected call fails. The shim is always
+  // written: the runner puts /opt/homebrew/bin on its own PATH, so a world
+  // without one would reach the real gh.
   {
     const nodes = categories.map((name, i) => `{ "id": "DIC_${i}", "name": "${name}" }`).join(',');
     // What the repo already carries, in the shape the API answers with: the
@@ -165,7 +147,7 @@ const mkWorld = ({
     env: homeEnv(homeDir, {
       ...process.env,
       NOTIFLY: notifly,
-      // The system tools plus the shims, and NOTHING else: `gh` is present only
+      // The system tools plus the shims, and nothing else: `gh` is present only
       // when this world put it there.
       PATH: joinPath(bin, SYSTEM_PATH, NODE_DIR),
       WORKFLOW_HOME: workflowHome,
@@ -231,7 +213,7 @@ const run = async () => {
 
   await test('the repo id and the category ids are cached in the machine\'s disposable file', () => {
     // Ids are GitHub's and rebuildable, so they live in `.cache.json` and never
-    // in the hand-edited settings.json beside it (issue #80).
+    // in the hand-edited settings.json beside it.
     const world = mkWorld({ home: 'owner/private-home' });
     runJob(world);
     assert(!('homeCache' in world.settings()), 'the hand-edited file carries no cache');
@@ -406,9 +388,6 @@ const run = async () => {
 
   await test('the retired local summaries path is gone from the script', () => {
     const text = fs.readFileSync(SCRIPT, 'utf8');
-    // The machinery that used to write the summary into a folder, by name. The
-    // send itself is back: it is the destination that changed, from a file to
-    // a Discussion.
     for (const gone of ['WORKKIT_HQ', 'summaries/daily', 'DAILY_FILE']) {
       assert(!text.includes(gone), `${gone} is not in the script: generated records are never files`);
     }

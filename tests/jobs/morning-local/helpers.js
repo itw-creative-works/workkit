@@ -1,30 +1,8 @@
-//
-// The shared prologue of the jobs/morning.sh local suites, the `*.test.js`
-// files beside this one, which test the script as THIS MACHINE runs it, the
-// 9am launchd job, one step each. The same script on a runner is
-// the ../morning-cloud/ folder; the two are the two environments, not two
-// scripts. A plain module, never a suite: the runner only loads files ending
-// in `.test.js`.
-//
-// The runner is executed for real, with a fake `claude` on PATH recording the
-// argument vector it was given and a fake Notifly recording the notification.
-// HOME is a scratch directory, so the log it appends to and the empty cwd it
-// runs from are both inside the fixture: this suite never writes to the real
-// home and never puts a notification on screen. The summaries step it calls gets
-// the same treatment: a scratch WORKFLOW_HOME with no home repo named in it, so
-// it has nowhere to publish, sends nothing, and the assertions below see only
-// the brief (the step's own suite covers the publishing).
-//
-// EVERY world carries a recording `gh` shim, and it lives in ~/.local/bin rather
-// than beside the others: the runner exports a PATH of its own beginning there
-// and including /opt/homebrew/bin, so a shim anywhere else would lose to the
-// real `gh` and this suite would reach GitHub. A world with nowhere to publish
-// gets one too: a skip is proved by a recorder that stayed silent, never by the
-// tool being absent, which no assertion could tell from a skip that never ran.
-//
-// GITHUB_ACTIONS is stripped from every world: a suite run inside Actions would
-// otherwise take the cloud branch of the very script it is testing here.
-//
+// The shared prologue of the jobs/morning.sh local suites beside this one: the
+// script as the 9am launchd job runs it, one step each (the runner leg is
+// ../morning-cloud/). A scratch HOME and WORKFLOW_HOME, a fake `claude`, a fake
+// Notifly and a recording `gh` in ~/.local/bin, where the runner's own PATH puts
+// it ahead of the real one: nothing reaches GitHub, the screen, or the real home.
 
 const fs = require('fs');
 const path = require('path');
@@ -36,8 +14,6 @@ const { BASH, NO_RC, shellPath, homeEnv, stubTool, pathWith } = require('../../l
 const { mkTmp } = require('../../lib/scratch');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.sh');
-// The steps it sources, one file each: where a step's own text is read.
-const STEPS = path.join(path.dirname(SCRIPT), 'morning');
 const { INSTRUCTION } = require(path.join(__dirname, '..', '..', '..', 'jobs', 'morning', 'brief', 'brief-payload.js'));
 // The title every published brief carries, from the module that owns the
 // literal, so this fixture and the step under test read one prefix.
@@ -49,36 +25,21 @@ const BRIEF_GH = /discussions\(first|discussionCategories|createDiscussion/;
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
-// The date a Discussion would be titled with is the LOCAL one (`date
+// The date a Discussion would be titled with is the local one (`date
 // '+%Y-%m-%d'`), which is not always today in UTC.
 const today = () => new Date().toLocaleDateString('en-CA');
 
 /**
  * A scratch home, a fake `claude` printing `response` and exiting `status`, and
- * a fake Notifly. Returns everything an assertion needs to read back.
- *
- * `logsDir: false` leaves ~/Library/Logs out: the bare home the job has to
- * make its own log directory in.
- * `transcripts: false` leaves ~/.claude/projects out: the machine whose day the
- * summaries step cannot read, and that gate's red side.
- * `home` is the home repo slug to name in the settings file; null is a machine
- * with nowhere to publish, and it gets the same recording `gh` shim so the skip
- * is something an assertion can see.
- * `badSettings` writes a settings file that does not parse: the shape the site
- * publish warns about rather than reading as a default.
- * `posted` is what that repo's discussions already carry, as `{ title, body }`.
- * `ghFails` makes every API call refuse.
- * `ccChangelog` is the upstream CHANGELOG the news read is pointed at.
- * `dispatch` is whether `gh workflow run` lands: false by default, which is the
- * machine that cannot reach the cloud, and since issue #107 that is a briefless
- * morning rather than a local brief.
- * `secrets` is the names `gh secret list` reports: both by default, the repo
- * whose runner can actually compose the brief and sweep the board.
- * `homeClone` gives the world a home clone at `<WORKFLOW_HOME>/tower`: the
- * folder the reconcile step writes the cloud brief's runner into (issue #143).
- * Its remote is a local bare repo (WORKKIT_HOME_REMOTE, the engine's own seam),
- * so every clone, commit and push here runs offline and the real
- * `~/.workkit/tower` is never touched.
+ * a fake Notifly. `logsDir: false` / `transcripts: false` leave ~/Library/Logs /
+ * ~/.claude/projects out. `home` names the home repo (null: nowhere to publish).
+ * `badSettings` writes an unparseable settings file. `posted` is the discussions
+ * already there, `{ title, body }`. `ghFails` makes every API call refuse.
+ * `dispatch` is whether `gh workflow run` lands (false: a briefless morning).
+ * `secrets` is the names `gh secret list` reports, both by default. `homeClone`
+ * adds a home clone at `<WORKFLOW_HOME>/tower` whose remote is a local bare repo
+ * (WORKKIT_HOME_REMOTE), so every push runs offline. `ccChangelog` is the
+ * upstream CHANGELOG the news read is pointed at.
  */
 const mkWorld = ({
   response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n', status = 0, logsDir = true,
@@ -99,7 +60,7 @@ const mkWorld = ({
       ? '{ "version": 1, "site": { "repo": '
       : JSON.stringify({ version: 1, site: { repo: homeRepo, publish: false, url: null } }, null, 2),
   );
-  // The home clone the reconcile step refreshes (issue #143), and the tiny
+  // The home clone the reconcile step refreshes, and the tiny
   // stand-in for `tower/app` the site publish syncs into it: the real project
   // would only make this fixture slower, and neither step is the other's test.
   const tower = path.join(workflowHome, 'tower');
@@ -131,10 +92,9 @@ const mkWorld = ({
   ]);
   const notifly = stubTool(bin, 'notifly', ['#!/usr/bin/env bash', recordArgv(notifLog), 'exit 0']);
 
-  // The `gh` the publish speaks to, and the one the news cursor reads back
-  // through. EVERY world gets it, including the ones with nowhere to publish:
-  // a recorder that logged nothing is what proves a skip, and it also keeps the
-  // real `gh` off the path of a suite that must never reach GitHub.
+  // The `gh` the publish speaks to and the news cursor reads back through. Every
+  // world gets it: a recorder that logged nothing proves a skip, and it keeps
+  // the real `gh` off the path.
   const ghLog = path.join(root, 'gh-argv.log');
   const bodyLog = path.join(root, 'posted-body.md');
   const localBin = path.join(home, '.local', 'bin');
@@ -188,7 +148,7 @@ const mkWorld = ({
       WORKKIT_TOWER_APP: path.join(root, 'tower-app'),
     } : {}),
   });
-  // This suite IS the machine's environment, and the script asks Actions' own
+  // This suite is the machine's environment, and the script asks Actions' own
   // variable which one it woke up in.
   delete env.GITHUB_ACTIONS;
 
@@ -210,7 +170,7 @@ const mkWorld = ({
     created: () => readArgv(ghLog).filter((c) => c.join(' ').includes('createDiscussion')),
     dispatched: () => readArgv(ghLog).filter((c) => c[0] === 'workflow' && c[1] === 'run'),
     postedBody: () => (fs.existsSync(bodyLog) ? fs.readFileSync(bodyLog, 'utf8') : ''),
-    // The stale-brief marker (issue #173), read back the way the session hook
+    // The stale-brief marker, read back the way the session hook
     // reads it: null when the step wrote none.
     markerFile: path.join(workflowHome, 'brief-status.json'),
     marker: () => {
@@ -245,9 +205,9 @@ const plantStaleRunner = (world) => {
   return file;
 };
 
-// A commit made on the home remote by SOMEBODY ELSE - the other machine's
-// publish, or an edit taken on GitHub. It is what leaves this clone behind, and
-// a clone that has not caught up cannot push anything it seeds (issue #200).
+// A commit made on the home remote by somebody else (another machine's publish,
+// or an edit on GitHub): it leaves this clone behind, and a clone that has not
+// caught up cannot push anything it seeds.
 const pushFromElsewhere = (world, file, content) => {
   const other = path.join(world.root, 'other-clone');
   spawnSync('git', ['clone', '-q', world.homeRemote, other], { encoding: 'utf8' });
@@ -265,7 +225,7 @@ const REFRESH = 'chore(home): refresh the cloud brief runner';
 
 // The notification is fired detached on purpose: Notifly does not return until
 // it is dismissed, and the job must never wait on a human. So the job exits
-// BEFORE the recorder has written, and an assertion on it has to wait a moment.
+// before the recorder has written, and an assertion on it has to wait a moment.
 const notified = async (world, ms = 5000) => {
   const deadline = Date.now() + ms;
   for (;;) {
@@ -297,6 +257,6 @@ const skipUnlessDarwin = () => {
 };
 
 module.exports = {
-  SCRIPT, STEPS, INSTRUCTION, BRIEF_TITLE_PREFIX, cleanup, mkWorld, runJob, STALE_RUNNER, plantStaleRunner,
+  SCRIPT, INSTRUCTION, BRIEF_TITLE_PREFIX, cleanup, mkWorld, runJob, STALE_RUNNER, plantStaleRunner,
   pushFromElsewhere, subjects, REFRESH, notified, notifiedMatching, settle, skipUnlessDarwin,
 };

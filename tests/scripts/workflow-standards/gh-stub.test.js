@@ -1,7 +1,5 @@
-//
 // Tests for the gh stub itself: argument boundaries survive recording.
-// The shared prologue (the repo and gh-stub factories, runScript, the constants) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
@@ -65,8 +63,7 @@ const run = async () => {
 
   await test('concurrent calls do not fuse into one record', () => {
     // Each record is a single append, so 50 stubs racing each other still read
-    // back as 50 intact calls. Splitting the write in two produced fused records
-    // here every run (issue #19).
+    // back as 50 intact calls.
     const stub = makeGhStub();
     const n = 50;
     const calls = callStub(stub, `for i in $(seq 1 ${n}); do gh label create "name$i" --description "a phrase here $i" & done; wait`);

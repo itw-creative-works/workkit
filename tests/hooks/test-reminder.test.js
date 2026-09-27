@@ -1,11 +1,7 @@
-//
 // Tests for hooks/safety:test-reminder: the PostToolUse hook that asks, once
 // per file per session, whether a written code file no test names needs one.
-//
-// Every case runs the real hook against its own git repo under a scratch dir,
-// with a fresh TMPDIR, so a session marker never crosses cases. The hook reads
-// the tree and nothing else, so there is nothing to stub.
-//
+// Each case runs the real hook in its own git repo with a fresh TMPDIR, so a
+// session marker never crosses cases.
 
 const fs = require('fs');
 const path = require('path');

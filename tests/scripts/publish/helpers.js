@@ -1,16 +1,7 @@
-//
-// The shared prologue of the workflow/publish.sh suites, the `*.test.js`
-// files beside this one, which test building the tower project and publishing
-// it to the home repo's gh-pages branch (issues #27, #77) one concern each. A
-// plain module, never a suite: the runner only loads files ending in
-// `.test.js`.
-//
-// The script is run from a COPIED checkout, never this one, and it builds the
-// CLONE rather than the checkout: `~/.workkit/tower` is a scratch clone of a
-// local bare "GitHub", seeded by hand with the shape a real seed leaves. Its
-// build tooling is a stub `omega` binary plus an `npm` shim that writes the
-// output a build would leave in targets/web/dist. No omega, no network.
-//
+// The shared prologue of the workflow/publish.sh suites beside this one, one
+// concern each. The script runs from a copied checkout and builds the clone: a
+// scratch `~/.workkit/tower` cloned from a local bare "GitHub", its tooling a
+// stub `omega` plus an `npm` shim. No omega, no network.
 
 const fs = require('fs');
 const path = require('path');
@@ -33,22 +24,12 @@ const writeStub = (file, lines) => {
 /**
  * A world: a copied checkout, a scratch HOME and ~/.workkit, a bare "GitHub"
  * with the tower project already on main, and the two shims a publish needs.
- *
- * `tooling: false` leaves the omega binary out of the clone: the machine
- * without the sibling omega checkout, where `npm install` exits 0 and still
- * leaves nothing that can build (probed 2026-07-28).
- * `buildFails` makes the build exit non-zero.
- * `roster` is a list of repo folder names to register on this machine's roster,
- * each a real git repo with a committed opt-in: what the published slug list
- * is composed from.
- * `publish` is the owner's `site.publish` call, the all-or-nothing switch: the
- * ordinary world here has said yes, since every case below is about what a
- * publish DOES. The switch itself has its own tests.
- * `pages` is what the GitHub side answers when the teardown disables Pages
- * (issue #113): `configured` is a delete that lands, `none` the 404 of a repo
- * that never had it on.
- * `branch` is the home repo's default branch: the one the clone is on and the
- * one the roster is pushed to. Not every account's is `main` (issue #112).
+ * `tooling: false` leaves the omega binary out of the clone, a machine where
+ * `npm install` exits 0 and still leaves nothing that can build. `buildFails`
+ * makes the build exit non-zero. `roster` is repo folder names to register,
+ * each a real opted-in git repo. `publish` is the owner's `site.publish` switch,
+ * on by default. `pages` is the teardown's Pages answer (`configured` or the
+ * `none` 404). `branch` is the home repo's default branch, not always `main`.
  */
 const mkWorld = ({
   tooling = true, buildFails = false, siteUrl = null, home = true, roster = [],
@@ -69,13 +50,9 @@ const mkWorld = ({
   spawnSync('cp', ['-R', path.join(REPO_ROOT, 'workflow'), kit]);
   spawnSync('cp', ['-R', path.join(REPO_ROOT, 'tower', 'api'), path.join(kit, 'tower')]);
 
-  // The build: an `npm --prefix <clone>/targets/web run build` that leaves what a
-  // build leaves. Proved against the real app 2026-07-29: `omega build` is the
-  // APP's command and it writes dist/ beside src/.
-  //
-  // It also records the path prefix its environment carried (issue #165), so a
-  // test can prove what the build was TOLD the site serves at. The build is the
-  // last npm call a publish makes, so the file holds the build's own value.
+  // The build: an `npm --prefix <clone>/targets/web run build` that writes dist/
+  // beside src/, as `omega build` does. It records the path prefix its env
+  // carried, so a test can prove what the build was told the site serves at.
   const prefixLog = path.join(root, 'prefix.log');
   writeStub(path.join(bin, 'npm'), [
     `printf '%s' "\${OMEGA_PATH_PREFIX:-unset}" > ${JSON.stringify(prefixLog)}`,
@@ -85,7 +62,7 @@ const mkWorld = ({
         'prefix=""',
         'if [[ "$1" == "--prefix" ]]; then prefix="$2"; fi',
         'mkdir -p "$prefix/dist/assets"',
-        // The output follows the SOURCE, so a test can change what the build
+        // The output follows the source, so a test can change what the build
         // ships the way a real change would: by editing the app.
         'cp "$prefix/src/index.html" "$prefix/dist/index.html"',
         'printf \'body{}\\n\' > "$prefix/dist/assets/app.css"',
@@ -94,9 +71,8 @@ const mkWorld = ({
   ]);
 
   // The only thing this script asks `gh` for: disabling Pages when the site is
-  // taken down (issue #113). It records its argv, so a test can prove the call
-  // was made, and answers a 404 the way gh does for a repo with no Pages,
-  // which the teardown has to read as "already off" rather than as a failure.
+  // taken down. It records its argv and answers a 404 the way gh does for a repo
+  // with no Pages, which the teardown reads as "already off", not a failure.
   const ghLog = path.join(root, 'gh-argv.log');
   writeStub(path.join(bin, 'gh'), [
     `printf '%s\\n' "$*" >> ${JSON.stringify(ghLog)}`,
@@ -108,8 +84,8 @@ const mkWorld = ({
   const bare = path.join(root, 'remote.git');
   spawnSync('git', ['init', '-q', '--bare', '-b', branch, bare], { encoding: 'utf8' });
 
-  // The site options are the USER'S and live beside the roster (issue #79):
-  // the clone below is engine territory and carries nothing hand-written.
+  // The site options are the user's and live beside the roster: the clone
+  // below is engine territory and carries nothing hand-written.
   const settings = {
     version: 1,
     site: { repo: home ? 'owner/workkit' : null, publish: publishOn, url: siteUrl },
@@ -188,7 +164,7 @@ const binDirWithout = (excluded) => {
   for (const dir of [...SYSTEM_PATH.split(path.delimiter), NODE_DIR]) {
     if (!fs.existsSync(dir)) continue;
     for (const name of fs.readdirSync(dir)) {
-      // The tool a name IS, whatever extension this platform gives it: the
+      // The tool a name is, whatever extension this platform gives it: the
       // excluded one has to be missing under every spelling of itself.
       const tool = toolStem(name);
       if (tool === excluded || seen.has(tool)) continue;
@@ -204,10 +180,9 @@ const publish = (world, args = []) => {
     env: world.env, encoding: 'utf8', timeout: 60000,
   });
   assert(res.status !== null, `publish finished (no timeout): ${res.error || ''}`);
-  // `out` is the whole transcript, both streams in the order a terminal shows
-  // them: an action lands on stdout and a warning on stderr (issue #237), and
-  // what these tests read is what the run said. `err` stays separate for the
-  // checks that are about the STREAM.
+  // `out` is both streams in the order a terminal shows them, since what these
+  // tests read is what the run said; `err` stays separate for the checks about
+  // the stream.
   return {
     code: res.status,
     out: `${res.stdout || ''}${res.stderr || ''}`,

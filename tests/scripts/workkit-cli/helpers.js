@@ -1,16 +1,8 @@
-//
-// The shared prologue of the workflow/workkit.sh suites, the `*.test.js` files
-// beside this one, which test the one command (setup, update, doctor, enable,
-// decline, note). A plain module, never a suite: the runner only loads files
-// ending in `.test.js`.
-//
-// Every world is a scratch HOME with `launchctl`, `claude`, and `gh` recorders
-// on PATH, so nothing here reaches the real ~/Library/LaunchAgents, the real
-// plugin install, or the network: the suite reads what WOULD be installed and
-// which commands WOULD have run. The engine's two address overrides
-// (WORKFLOW_HOME, WORKFLOW_CLAUDE_HOME) point at the same scratch tree, because
-// `update` asks standards.sh to repoint the engine link on every run.
-//
+// The shared prologue of the workflow/workkit.sh suites beside this one, which
+// test the one command. Every world is a scratch HOME with `launchctl`, `claude`
+// and `gh` recorders on PATH, so the suite reads what would be installed and
+// which commands would have run; WORKFLOW_HOME and WORKFLOW_CLAUDE_HOME point
+// at the same scratch tree.
 
 const fs = require('fs');
 const path = require('path');
@@ -41,35 +33,15 @@ const secretList = (secrets) => JSON.stringify(secrets.map(({ name, days }) => (
 })));
 
 /**
- * A scratch machine. `claude` reports the plugin as installed or not,
- * `gh auth status` succeeds or fails, and `launchctl print` always answers "not
- * loaded" so an install path bootstraps. `binOnPath` puts ~/.local/bin on PATH,
- * which is the difference between a doctor that is all green and one asking for
- * a shell-rc line.
- *
- * The cloud-secrets world (issue #88) is the same machine with a `gh` that can
- * answer for a repo's secrets: `secrets` null is the default gh. It prints
- * nothing, which is every unreadable repo, and an array is a listing. Since
- * issue #91 the repo those secrets live on is the HOME repo, which the machine
- * settings name. `secret set` and `auth token` are recorded the same way, and
- * what arrived on a `secret set`'s STDIN is kept, because the piping is the
- * whole point of that step. `claudeToken` is what a stub `claude setup-token`
- * prints; it is fiction, and the only token any of this ever handles.
- *
- * The mint stub is shaped like the CLI issue #174 was filed against: the whole
- * screen (the browser message AND the paste-the-code prompt that follows it)
- * is drawn on the terminal, and the token is the last thing on it. `mintExit`
- * is a mint that did not finish.
- *
- * The token-handover world (issue #230) is that same `gh` answering two more
- * reads: `pagesRef` is the `gh-pages` head the publish pushed, and `pagesBuilds`
- * is what `pages/builds/latest` says, ONE ENTRY PER POLL as `[status, commit]`,
- * so a wait can be given a `building` answer first and a `built` one after. The
- * last entry repeats, the way a served build stays served. Both openers are on
- * PATH as recorders whatever the test asks for, because `/usr/bin/open` is real
- * on every mac and a step that reached it unshadowed would open a browser; each
- * one copies the page it was handed, mode and all, so the test can read what
- * the browser would have.
+ * A scratch machine. `claude` reports the plugin as installed or not, `gh auth
+ * status` succeeds or fails, `launchctl print` answers "not loaded", and
+ * `binOnPath` puts ~/.local/bin on PATH. `secrets` is the home repo's secret
+ * listing (null: an unreadable repo); what a `secret set` got on stdin is kept.
+ * `claudeToken` is what a stub `claude setup-token` prints, drawing the whole
+ * screen with the token last; `mintExit` is a mint that did not finish.
+ * `pagesRef` and `pagesBuilds` answer the token handover's reads, one
+ * `[status, commit]` per poll with the last repeating. Both openers record and
+ * copy the page they were handed, so no real browser opens.
  */
 const mkWorld = ({
   pluginInstalled = false, ghAuthed = true, claude = true, binOnPath = false,
@@ -116,9 +88,8 @@ const mkWorld = ({
   writeStub(path.join(bin, 'gh'), [
     recordArgv(ghLog),
     'if [[ "$1" == \'secret\' && "$2" == \'set\' ]]; then',
-    // Shaped like the live API: GitHub refuses a secret whose name STARTS with
-    // `GITHUB_`, and only that: a name that merely contains it is accepted,
-    // which is what the rename in issue #91 rests on.
+    // Shaped like the live API: GitHub refuses a secret whose name starts with
+    // `GITHUB_`, and only that; a name that merely contains it is accepted.
     '  if [[ "$3" == GITHUB_* ]]; then printf \'refusing to set %s: secret names must not start with GITHUB_\\n\' "$3" >&2; exit 1; fi',
     `  cat > "${stdinDir}/$3"`,
     '  exit 0',
@@ -164,10 +135,9 @@ const mkWorld = ({
     `exit ${ghAuthed ? 0 : 1}`,
   ]);
 
-  // The browser opener, whichever name this machine's kind of desktop uses.
-  // Both are recorders, and both keep a copy of the page they were handed: the
-  // CLI removes the original at exit, and its MODE is half of what the test is
-  // asking about, so the copy is made with `cp -p`.
+  // The browser opener, whichever name this machine's desktop uses. Both record
+  // and keep a copy of the page: the CLI removes the original at exit, and its
+  // mode is half the question, so the copy is made with `cp -p`.
   const openerLog = path.join(root, 'opener-argv.log');
   const openedFile = path.join(root, 'opened.html');
   for (const opener of ['open', 'xdg-open']) {
@@ -185,7 +155,7 @@ const mkWorld = ({
     root,
     home,
     bin,
-    // The world's own paths stay NATIVE for everything this suite reads and
+    // The world's own paths stay native for everything this suite reads and
     // writes; the environment below carries the same places in the spelling the
     // shell under test sees.
     workflowHome: path.join(root, 'workflow-home'),
@@ -225,31 +195,24 @@ const mkWorld = ({
       PATH: joinPath(...(binOnPath ? [localBin] : []), bin, SYSTEM_PATH),
       WORKFLOW_HOME: shellPath(path.join(root, 'workflow-home')),
       WORKFLOW_CLAUDE_HOME: shellPath(path.join(home, '.claude')),
-      // HOME here is a scratch directory, which jobs/install.sh refuses to load
-      // a schedule from: launchd is machine-global, so a fake home is exactly
-      // the run it guards against (issue #95). launchctl on this PATH is a
-      // recorder, so this world says out loud that it is the rehearsal the
-      // override exists for; the guard itself is pinned in tests/jobs.
+      // jobs/install.sh refuses a scratch HOME, since launchd is machine-global;
+      // launchctl here is a recorder, so this world is the rehearsal the override
+      // exists for. The guard itself is pinned in tests/jobs.
       WORKKIT_LAUNCHD_OK: '1',
     }),
   };
 };
 
-// A mint hands `claude setup-token` a terminal, which takes a PTY tool the
-// machine has to ship: `expect`, or `script`. Where it has neither, the CLI
-// refuses before the question these cases ask is ever reached
-// (workflow/workkit/secrets.sh, can_mint_claude_token), so they name their
-// skip rather than assert on the refusal.
+// A mint needs a PTY tool the machine ships, `expect` or `script`; without one
+// the CLI refuses first (can_mint_claude_token), so those cases name their skip.
 const HAS_PTY = Boolean(which('expect', SYSTEM_PATH) || which('script', SYSTEM_PATH));
 const mintTest = (name, fn) => (HAS_PTY
   ? test(name, fn)
   : skip(name, 'this machine has neither expect nor script, so no mint can be given a terminal'));
 
-// stdin is a pipe, never a terminal: that is the non-interactive machine, and
-// any prompt that forgot to check would hang here instead of in production.
-// `script` runs a DIFFERENT entry point: the world's symlink, or a copy of the
-// CLI in a partial checkout, which is how the suite asks where a run thinks it
-// is standing.
+// stdin is a pipe, never a terminal: a prompt that forgot to check hangs here
+// rather than in production. `script` runs another entry point (the world's
+// symlink, or a partial checkout's copy) to ask where a run thinks it stands.
 const runCli = (world, args, { cwd, script, env } = {}) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(script || CLI), ...args], {
     cwd: cwd || world.root,
@@ -259,11 +222,9 @@ const runCli = (world, args, { cwd, script, env } = {}) => {
     timeout: 30000,
   });
   assert(res.status !== null, `workkit ${args.join(' ')} finished (no timeout, no signal): ${res.error || ''}`);
-  // Three views of one run: stdout, stderr, and `said`, the whole transcript
-  // in the order a terminal shows it. Since issue #237 the level IS the stream
-  // (an action and a skip on stdout, a warning and an error on stderr), so a
-  // check about what the user was told reads `said` and a check about WHICH
-  // stream reads `out` or `err`.
+  // Three views of one run: stdout, stderr, and `said`, the whole transcript in
+  // terminal order. The level is the stream, so a check about what the user was
+  // told reads `said` and a check about which stream reads `out` or `err`.
   return {
     code: res.status,
     out: res.stdout || '',
@@ -272,11 +233,9 @@ const runCli = (world, args, { cwd, script, env } = {}) => {
   };
 };
 
-// An ACTED line, by its words. The glyphs are gone (issue #237) and an action
-// and a skip are both plain lines on stdout, so where QUIET cannot answer the
-// question the verbs the kit uses when it changes something do. Used twice: to
-// prove a first run DID something, and for `setup`, which has no quiet variant
-// to read the answer structurally from.
+// An acted line, by its words: where quiet cannot answer, the verbs the kit uses
+// when it changes something do. It proves a first run did something, and reads
+// `setup`, which has no quiet variant.
 const ACTED = /\b(linked|repointed|reloaded|created|cloned|seeded|corrected|released)\b|installed \S+ from|installed and loaded/;
 
 // A real (empty) git repo, optionally already in the workflow.
@@ -304,14 +263,10 @@ const seedSettings = (world, site) => {
 };
 
 /**
- * One of the CLI's own functions, called directly: the pattern the home suites
- * (tests/scripts/home/) use for the engine's libraries. Sourcing the script with
- * `help` loads every function and prints the map, which is thrown away.
- *
- * The answers arrive on stdin from a FILE rather than through spawnSync's
- * `input`: node's pipes are socketpairs on macOS, and BSD `script` (which the
- * mint now runs the CLI under) refuses a socket for stdin outright. A file is
- * still not a terminal, so every `interactive` check answers exactly as it did.
+ * One of the CLI's own functions, called directly, the way the home suites call
+ * the engine's libraries: sourcing with `help` loads every function. Answers
+ * arrive on stdin from a file, not spawnSync's `input`: node's pipes are
+ * socketpairs on macOS and BSD `script` refuses a socket for stdin.
  */
 const inCli = (world, script, { input = '', env } = {}) => {
   const driver = `. ${JSON.stringify(CLI)} help >/dev/null\n${script}`;
@@ -320,7 +275,7 @@ const inCli = (world, script, { input = '', env } = {}) => {
   const fd = fs.openSync(stdinFile, 'r');
   const res = spawnSync(BASH, [...NO_RC, '-c', driver], {
     cwd: world.root,
-    // `env` for the values the CLI reads at SOURCE time, which a line prepended
+    // `env` for the values the CLI reads at source time, which a line prepended
     // to the script would be too late for.
     env: { ...world.env, ...(env || {}) },
     stdio: [fd, 'pipe', 'pipe'],
@@ -344,12 +299,10 @@ const inCli = (world, script, { input = '', env } = {}) => {
 const AT_TERMINAL = 'interactive() { return 0; }';
 
 /**
- * A partial checkout: this CLI COPIED whole, the entry and the `workkit/`
- * pieces it sources (never symlinked: the link chain now resolves back to the
- * real one), into a `workflow/` holding nothing else of the kit, beside
- * whatever the test decides to give it. `installer` is the body of a stub
- * `jobs/install.sh`; without it the checkout simply has none. Returns the
- * entry point to run.
+ * A partial checkout: this CLI copied whole (the entry and the `workkit/`
+ * pieces it sources; a symlink would resolve back to the real one) into a
+ * `workflow/` holding nothing else of the kit. `installer` is the body of a stub
+ * `jobs/install.sh`, none without it. Returns the entry point to run.
  */
 const mkPartialKit = ({ installer } = {}) => {
   const kit = mkTmp('workkit-cli-');
@@ -364,12 +317,10 @@ const mkPartialKit = ({ installer } = {}) => {
 };
 
 /**
- * A checkout of the ENGINE that has an origin of its own: a DIFFERENT slug
- * from the machine's home repo, on purpose: since issue #91 the cloud secrets
- * live on the home repo, and a run that still reached for the checkout's origin
- * would be visible here. The whole `workflow/` is copied because the CLI sources
- * its libraries; nothing else is, so the schedule step is the named skip a
- * partial checkout already gets.
+ * A checkout of the engine with an origin of its own, a different slug from the
+ * machine's home repo, so a run that reached for the checkout's origin instead
+ * of the home repo is visible. Only `workflow/` is copied, so the schedule step
+ * is the named skip a partial checkout gets.
  */
 const mkKit = (slug) => {
   const kit = mkTmp('workkit-cli-');
@@ -379,10 +330,9 @@ const mkKit = (slug) => {
   return { kit, script: path.join(kit, 'workflow', 'workkit.sh') };
 };
 
-// The checkout's own origin, and the machine's home repo. They are different
-// slugs on purpose: since issue #91 the cloud secrets live on the SECOND one,
-// because the plugin repo is distributed to everyone who installs the kit and
-// a consumer cannot set secrets on a repo they do not own.
+// The checkout's own origin, and the machine's home repo. The cloud secrets
+// live on the second: the plugin repo is distributed to everyone who installs
+// the kit, and a consumer cannot set secrets on a repo they do not own.
 const SLUG = 'owner/kit';
 const HOME = 'owner/home';
 

@@ -1,40 +1,10 @@
 #!/usr/bin/env bash
-# manager:close-guard: Stop hook (issue #18).
-# Looks back over the turn that just ended and names the two manager-system
-# habits worth catching: the frontier model doing bulk implementation itself,
-# and built work ending the turn unreviewed. WARN-ONLY: it always exits 0 and
-# never continues the conversation.
-# Rules:
-#   3  a frontier session that made >= MANAGER_CLOSE_EDITS (default 5) Edit or
-#      Write calls itself and spawned no worker
-#   4  a turn that spawned >= 1 worker and no verifier
-# Both are judgment calls that are sometimes right, which is exactly why this
-# hook only says so.
-#
-# Warning channel: top-level `systemMessage` ONLY. The Stop event's
-# `hookSpecificOutput.additionalContext` CONTINUES the conversation so Claude
-# can act on it (hooks reference § Stop decision control): that is a
-# continuation this hook is not entitled to, so the user-visible line is the
-# whole output.
-#
-# The turn window: the transcript entries after the last real user prompt,
-# skipping meta entries, tool results, sidechain (subagent) entries so a
-# worker's own edits are never counted as the manager's, and the SYSTEM-INJECTED
-# pseudo-prompts that arrive as ordinary user entries. Those are the tagged
-# shapes a survey of this machine's transcripts turned up (<ide_opened_file>,
-# <ide_selection>, <task-notification>, <task-id>, <command-name>,
-# <command-message>, <local-command-stdout>, <system-reminder>) and the test is
-# the SHAPE (the text opens with a <tag>), not that closed list, because the
-# list grows with the IDE. An editing session in VS Code emits them constantly,
-# and counting one as a prompt resets the window mid-turn, the exact case rule
-# 3 exists to catch. A real prompt that happens to open with a markup tag is
-# read as an injection and widens the window: usually that means a missed
-# warning, and rarely two turns blend into one and warn together, tolerable
-# because the hook only ever warns.
-# Only the tail of the transcript is read (a resumed session's file reaches
-# gigabytes, and this runs on every Stop); when no user prompt is visible in
-# that tail the turn cannot be identified and the hook stays silent. Fails open
-# on every other missing precondition too.
+# manager:close-guard: Stop hook. Warns, never blocks, over the turn that just
+# ended: rule 3, a frontier session making >= MANAGER_CLOSE_EDITS (default 5)
+# edits itself with no worker; rule 4, a worker spawned with no verifier. The
+# line rides systemMessage alone, since a Stop hook's additionalContext would
+# continue the turn. Only the transcript tail is read; fails open.
+# Detail: docs/hooks.md § manager:close-guard.
 
 set -euo pipefail
 
@@ -61,11 +31,9 @@ frontier=$(printf '%s' "$HOOK_MANAGER_CONFIG" | hook_jq_default 'fable' -r '.tie
 edit_threshold="${MANAGER_CLOSE_EDITS:-5}"
 case "$edit_threshold" in ''|*[!0-9]*) edit_threshold=5 ;; esac
 
-# One marker word per interesting entry, oldest first: PROMPT for a real user
-# turn boundary, EDIT for an Edit/Write call, SPAWN:<class> for an agent spawn
-# (both the bare and workkit:-prefixed spellings read as one class name), and
-# MODEL:<id> for an assistant entry's model, the session's own model, read from
-# the pass this hook is already making rather than from a whole-file grep.
+# One marker word per interesting entry, oldest first: PROMPT, EDIT,
+# SPAWN:<class> (bare and workkit: spellings alike), and MODEL:<id>, the
+# session's model read from this same pass.
 markers=$(tail -n "$SCAN_LINES" "$transcript_path" 2>/dev/null | hook_jq -R -r '
   fromjson?
   | select(type == "object")
@@ -100,13 +68,9 @@ edits=$(printf '%s\n' "$window" | grep -c '^EDIT$' || true)
 workers=$(printf '%s\n' "$window" | grep -c '^SPAWN:worker$' || true)
 verifiers=$(printf '%s\n' "$window" | grep -c '^SPAWN:verifier$' || true)
 
-# The session model, from the LAST assistant entry of the tail already read.
-# hook_session_model is the fallback, not the first call: its own transcript
-# path greps the WHOLE file, which on a resumed multi-gigabyte transcript costs
-# seconds on every Stop, and the statusline cache that would short-circuit it is
-# empty in VS Code sessions, so the slow path is the normal one there. The tail
-# answers the same question from bytes already in hand, and at Stop time the
-# last assistant entry IS the model that just ran this turn.
+# The session model from the tail's last assistant entry, which at Stop is the
+# model that ran this turn. hook_session_model is only the fallback: its
+# transcript path greps the whole file, seconds on a resumed session.
 model=$(printf '%s\n' "$markers" | grep '^MODEL:' | tail -1 || true)
 model="${model#MODEL:}"
 if [ -z "$model" ]; then

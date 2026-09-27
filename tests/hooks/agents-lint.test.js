@@ -1,18 +1,7 @@
-// Agent-definition lint: the mechanically checkable half of the "no
-// machine-specific paths" rule (docs/agents.md § Defining an agent, and the
-// AGENTS.md Conventions section, which extends the same rule to everything
-// under hooks/, agents/ and skills/). These files ship to any repo on any
-// machine, so one absolute path is a broken install somewhere else.
-//
-// The OTHER agent-file rules stay JUDGMENT and are deliberately not linted
-// here. An agent file carrying knowledge content instead of pointing at the
-// live repo docs is a review call, and its home is docs/agents.md.
-//
-// Scope note: tests/scripts/skills.test.js already refuses `/Users/`,
-// `~/Developer/` and `.dotfiles` across skills, agents and the shipped docs.
-// This suite is the line-level lens on the same convention. It names the
-// offending file AND line, adds the forms that check missed (`/home/`, a
-// Windows drive letter), and is the only one that walks hooks/.
+// Agent-definition lint: no machine-specific absolute path under agents/,
+// hooks/ or skills/, named by file and line. The rule and its judgment half
+// live in docs/agents.md § Definition rules; tests/scripts/skills.test.js
+// checks the same convention per file.
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
@@ -81,8 +70,8 @@ const run = async () => {
   group('agents-lint: the shipped tree');
 
   await test('agents/ exists and holds agent definitions', () => {
-    // A missing or empty agents/ is a LOUD failure, never a skip: the check
-    // below would otherwise pass by scanning nothing.
+    // A missing or empty agents/ fails, never skips: the check below would
+    // otherwise pass by scanning nothing.
     assert(fs.existsSync(AGENTS_DIR), `missing ${AGENTS_DIR}`);
     const found = filesIn(AGENTS_DIR, (name) => name.endsWith('.md'));
     assert(found.length > 0, 'no agents/*.md found');

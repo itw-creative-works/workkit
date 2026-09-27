@@ -1,12 +1,7 @@
-//
-// Tests for jobs/morning/brief/cc-news.js: the upstream Claude Code entries the morning
-// brief carries, grouped by topic.
-//
-// BOTH reads are the injected exec seam: `curl` answers with a fixture
-// CHANGELOG, `gh` answers with a fixture board of published briefs. The home
-// repo is named in a scratch workflow home, so nothing here reaches the network
-// or touches the real ~/.workkit.
-//
+// Tests for jobs/morning/brief/cc-news.js: the upstream Claude Code entries the
+// morning brief carries, grouped by topic. Both reads go through the injected
+// exec seam (`curl` a fixture CHANGELOG, `gh` a fixture board), so nothing
+// here reaches the network or the real ~/.workkit.
 
 const fs = require('fs');
 const path = require('path');
@@ -86,7 +81,7 @@ const collectIn = (world) => collectCcNews({
   exec: world.exec,
 });
 
-// The cursor is a line in the latest published brief (issue #86), so seeding it
+// The cursor is a line in the latest published brief, so seeding it
 // means putting a brief on the board.
 const board = (world, version) => {
   world.discussions = [{

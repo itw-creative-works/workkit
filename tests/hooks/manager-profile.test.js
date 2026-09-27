@@ -1,4 +1,4 @@
-// manager/profile hook: the MANAGER standing instruction, injected only in
+// manager/profile hook: the manager standing instruction, injected only in
 // manager-capable sessions (frontier/workhorse tier, or unknown).
 const path = require('path');
 const fs = require('fs');
@@ -35,11 +35,10 @@ const payload = () => ({
   prompt: 'hello',
 });
 
-// A repo directory carrying a manager block in its .workkit/settings.json. A
-// REAL git repo: a settings file is a REPO's, and the config reads one only
-// where git names a toplevel, so a bare tmpdir would carry no repo layer and
-// prove nothing about the file in it. A string body is written verbatim, for
-// the cases about a file that says something else or does not parse.
+// A real git repo carrying a manager block in its .workkit/settings.json: the
+// config reads a settings file only where git names a toplevel, so a bare
+// tmpdir would prove nothing. A string body is written verbatim, for the cases
+// about a file that says something else or does not parse.
 const repoWith = (manager) => {
   const dir = path.join(tmp, 'repo');
   fs.mkdirSync(path.join(dir, W), { recursive: true });
@@ -156,9 +155,8 @@ const run = async () => {
   });
   await test('the injection stays under 1100 characters on both rungs (cap raised for the #221 cold-reader line)', () => {
     // The workhorse branch is the longer one (its advisor clause), so the cap
-    // must be proven per rung: the frontier ctx alone leaves untested headroom.
-    // The cap moved from 600 with the two visibility rules (#154); it is still
-    // a cap, so the next clause has to earn its place against it.
+    // must be proven per rung: the frontier ctx alone leaves untested headroom,
+    // and the next clause has to earn its place against the cap.
     for (const rung of ['fable', 'opus']) {
       freshTmp();
       cacheSession('sess1', id(rung));

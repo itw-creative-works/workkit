@@ -1,8 +1,6 @@
-//
-// Tests for jobs/morning.sh as a GITHUB ACTIONS RUNNER runs it: publishing the
+// Tests for jobs/morning.sh as a GitHub Actions runner runs it: publishing the
 // digest as a Discussion, and the log that carries no digest body.
-// The shared prologue (the world factory, the no-jq PATH, the job runner, the two case gates) is ./helpers.js.
-//
+// The shared prologue (world factory, no-jq PATH, job runner, case gates) is ./helpers.js.
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
@@ -83,7 +81,7 @@ const run = async () => {
     const res = runJob(world);
     assertEq(res.status, 1, 'in the cloud the log IS the delivery: a silent failure is invisible');
     // A post that did not land is the warning level, on stderr with the rest of
-    // them; the Actions log carries both streams (issue #237).
+    // them; the Actions log carries both streams.
     assert(res.stderr.includes('nothing posted'), `and the run says what happened: ${res.stdout}${res.stderr}`);
     cleanup(world.root);
   });

@@ -1,12 +1,7 @@
-//
 // Tests for hooks/workflow:reload-guard: the SessionStart stamp and the
 // UserPromptSubmit reminder that the kit checkout changed since the session
-// loaded.
-//
-// Every run points RELOAD_GUARD_ROOT at a fixture checkout and TMPDIR at a
-// throwaway directory: the surfaces these tests change are hooks.json, agent
-// files, and skill files, which in the real root belong to this repo.
-//
+// loaded. Every run points RELOAD_GUARD_ROOT at a fixture checkout and TMPDIR
+// at a throwaway directory, so this repo's own hooks.json, agents and skills stay untouched.
 
 const path = require('path');
 const fs = require('fs');
@@ -33,7 +28,7 @@ const makeRoot = () => {
 };
 
 // mtime resolution is one second on some filesystems, so a change that must be
-// SEEN gets an explicit backdate rather than a same-second rewrite.
+// seen gets an explicit backdate rather than a same-second rewrite.
 const touchOlder = (file, seconds) => {
   const when = new Date(Date.now() - seconds * 1000);
   fs.utimesSync(file, when, when);

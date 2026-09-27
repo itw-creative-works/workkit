@@ -1,8 +1,6 @@
-//
 // Tests for hooks/safety/capture-guard: the Read path, gated by the triage
 // marker, and every other file left open.
 // The shared prologue (the scratch repo and TMPDIR, the marker helpers, the hook runner) is ./helpers.js.
-//
 
 const path = require('path');
 const {

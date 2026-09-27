@@ -1,8 +1,6 @@
-//
 // Tests for workflow/workkit.sh: how a run is organized: titled
 // sections, and color only at a terminal that wants it.
-// The shared prologue (the scratch world, runCli and inCli, the repo and kit factories) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const { group, test, assert, summary, selfRun } = require('../../lib/harness');
@@ -16,7 +14,7 @@ const run = async () => {
   // session's context, and the log files keep the rest.
   const ESCAPE = '\u001b';
   // Where a section title sits in a transcript: a blank line, then the title
-  // with its emoji (issue #237) and nothing else.
+  // with its emoji and nothing else.
   const sectionAt = (text, title) => text.search(new RegExp(`\n\n${title}\n`));
   const SETUP_SECTIONS = ['💻 This machine', '🏠 Home repo', '🔑 Cloud brief secrets', '🌐 Dashboard site', '📁 This repo'];
   const DOCTOR_SECTIONS = ['💻 This machine', '🏠 Home repo', '🔑 Cloud brief secrets', '📁 This repo'];
@@ -54,7 +52,7 @@ const run = async () => {
   await test('at a terminal the section headers are styled and the glyphs colored', () => {
     const world = mkWorld();
     const { out, err } = runCli(world, ['doctor'], { env: AT_A_TERMINAL });
-    // The line shape, in color (issue #237): a section title in bold cyan, one
+    // The line shape, in color: a section title in bold cyan, one
     // blank line above it, its emoji riding along.
     assert(out.includes(`\n\n${ESCAPE}[1m${ESCAPE}[0;36m💻 This machine${ESCAPE}[0m\n`),
       `the header is bold and colored, got: ${JSON.stringify(out)}`);

@@ -1,42 +1,9 @@
 #!/bin/bash
-# safety/capture-guard: PreToolUse hook (Read|Grep|Bash|Edit|Write)
-# `.workkit/capture.md` is the owner's capture surface. The agent's ONE sanctioned
-# touch is the TRIAGE DRAIN: during a triage run the contents are read and the
-# entries that landed somewhere are deleted. Outside that run the file is
-# neither read nor rewritten, and ADDING to it is never the agent's at all:
-# capture is the owner's (clear it on triage, never
-# add to it). Seeing that it is non-empty and counting the entries stay free.
-#
-# The sanctioned path leaves a marker: the workkit:triage skill runs
-# scripts/triage-marker.sh before it reads anything, which touches
-# ${TMPDIR:-/tmp}/claude-triage-marker/<sha of the anchor>, the same shape the
-# workkit:review skill records for the commit gate.
-# The ANCHOR is the capture file's repo root (every capture file belongs to a
-# participating repo, since there is none outside one) or, for a capture file
-# in no repo at all, the .workkit directory's own parent.
-# A marker newer than 30 minutes means a triage run is under way and every read
-# and every rewrite is allowed; a missing or older one blocks.
-#
-# Scope:
-#   Read: .tool_input.file_path ending in .workkit/capture.md
-#   Edit/Write: the same path: the drain rewriting the file, marker-gated
-#   Grep: .tool_input.path pointing AT that file or the directory holding it
-#          (when the capture file exists there and any glob can name it), or a
-#          .tool_input.glob naming the capture file. A broad repo-wide
-#          search stays open.
-#   Bash: .tool_input.command running, against that path, either a
-#          content-reading command (cat, head, tail, less, more, grep, sed,
-#          awk, bat) or a rewrite (`>`, plain `tee`, `sed -i`, `perl -i`),
-#          both marker-gated, or an APPEND (`>>`, `tee -a`) or the capture CLI
-#          in command position (`wk.sh note`, `workkit note`, which name no
-#          path at all), which no marker opens. A count (`wc -l`) and a bare
-#          mention are neither.
-# This is a SUBSTRING TRIPWIRE, not a sandbox: an interpreter-level write
-# (`python3 -c "open(...,'a')"`, `dd of=…`) and a case-folded path go through
-# untouched, deliberately: the guard exists to stop the honest reach, and
-# chasing the dishonest one would cost every legitimate command around it.
-# Fail open on the hook's OWN errors (no jq, no readable marker mtime or clock,
-# no anchor to key on at all): a broken guard must never wedge the session.
+# safety/capture-guard: PreToolUse hook (Read|Grep|Bash|Edit|Write). Holds
+# `.workkit/capture.md` to the owner: a read or a rewrite needs the triage
+# marker (under 30 minutes old), an append is never the agent's, and a count
+# stays free. A substring tripwire, not a sandbox, failing open on its own
+# errors. Scope and marker: docs/hooks.md § safety:capture-guard.
 
 set -euo pipefail
 
@@ -107,11 +74,9 @@ case "$tool" in
   Bash)
     cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
     [ -n "$cmd" ] || exit 0
-    # The capture CLI writes to the nearest capture file without ever naming it, so it
-    # is caught ahead of the path filter every other shape passes through, but
-    # only where it is RUN: at the start of the command, after a separator, or
-    # through a path or interpreter prefix at either. Prose about the CLI in an
-    # issue body, and a search for it, write nothing.
+    # The capture CLI writes without naming the file, so it is caught before the
+    # path filter, but only where it runs: command start, after a separator, or
+    # behind a path or interpreter prefix. Prose and a search write nothing.
     if printf '%s' "$cmd" | grep -Eq \
       '(^|[;&|`]|\$\()[[:space:]]*((bash|sh|zsh)[[:space:]]+)?([^[:space:]]*/)?(wk|workkit)(\.sh)?[[:space:]]+note([[:space:]]|$)'; then
       block_write
@@ -162,11 +127,9 @@ case "$tool" in
   Grep)
     grep_path=$(hook_jq -r '.tool_input.path // ""' <<<"$input" || true)
     grep_glob=$(hook_jq -r '.tool_input.glob // ""' <<<"$input" || true)
-    # Only a search pointed AT the capture file is gated: the path names the
-    # file or the directory holding it, or the glob names it. A repo-wide
-    # search whose results might happen to include it stays open: this
-    # guard never blocks the searching of a whole repo. Every Grep carries a
-    # pattern, so unlike `wc -l` no mode of it is a mere count.
+    # Only a search pointed AT the capture file is gated (its path or folder, or
+    # a glob naming it); a repo-wide search stays open. Every Grep carries a
+    # pattern, so no mode of it is a mere count.
     while [ "${grep_path%/}" != "$grep_path" ]; do grep_path="${grep_path%/}"; done
     case "$grep_path" in
       "$CAPTURE_SUFFIX"|*/"$CAPTURE_SUFFIX") capture_path="$grep_path" ;;
@@ -209,11 +172,8 @@ if [ "${grep_dir_probe:-0}" = 1 ] && [ ! -f "$capture_path" ]; then
   exit 0
 fi
 
-# What the marker is keyed to: the capture file's own repo root (a
-# participating repo's, which is the only place one exists) or, for a capture
-# file in no repo at all, the .workkit directory's own parent. Without that
-# fallback such a file would be read with no marker check at all. The triage
-# skill's recipe falls back the same way, so both sides name the same file.
+# The marker's anchor: the capture file's repo root or, in no repo, the
+# .workkit directory's parent, the same fallback the triage skill's recipe takes.
 capture_parent="$(dirname "$(dirname "$capture_path")")"
 probe="$(dirname "$capture_path")"
 if [ ! -d "$probe" ]; then
@@ -223,11 +183,8 @@ anchor=$(git -C "$probe" rev-parse --show-toplevel 2>/dev/null || true)
 [ -n "$anchor" ] || anchor="$capture_parent"
 [ -n "$anchor" ] || exit 0
 
-# The marker's name is hook_triage_marker_path's, the same helper
-# scripts/triage-marker.sh writes through, so the guard and the skill can never
-# name two different files. A machine with no digest tool cannot name it on
-# either side: that is the "no anchor to key on at all" case above, and it fails
-# open like every other error of this guard's own.
+# The marker is hook_triage_marker_path's, the one scripts/triage-marker.sh
+# writes, so the two never name different files. No digest tool fails open.
 marker="$(hook_triage_marker_path "$anchor")" || exit 0
 
 if [ -f "$marker" ]; then

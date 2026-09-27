@@ -34,19 +34,16 @@ export const normalizeBoard = (slugs, data, errors, now = Date.now()) => {
     const resolved = (data || {})[alias];
     const conn = (resolved || {}).issues || {};
     const answered = conn.nodes || [];
-    // A NULL node is an issue GitHub could not deliver, and reading a field off
-    // one is what ended the tower's API (issue #202). It is skipped here and
-    // named by the shared droppedReason below, so the published board and the
-    // tower board drop it identically.
+    // A null node is an issue GitHub could not deliver: skipped here and named
+    // by the shared droppedReason, as the tower's board does.
     const nodes = answered.filter(Boolean);
     const total = typeof conn.totalCount === 'number' ? conn.totalCount : answered.length;
     repos.push({
       slug,
       count: nodes.length,
       totalCount: total,
-      // There are open issues this answer did not carry. The sweep pages (#194),
-      // so on the LAST page of a repo this is true only when it stopped at the
-      // ceiling - which is what the tower's entry means by it too.
+      // On a repo's last page this is true only when the sweep stopped at the
+      // ceiling, which is what the tower's entry means by it too.
       truncated: Boolean((conn.pageInfo || {}).hasNextPage),
       closedDay: closedSince(resolved, now),
       error: droppedReason(answered, nodes, errors, alias)
@@ -65,21 +62,10 @@ const nextPageOf = (resolved) => {
 };
 
 /**
- * Sweep the board.
- *
- * The STATUS survives a failure alongside the reason, because one status is
- * acted on rather than read: a token GitHub refused is the one failure a new
- * token fixes, and the runtime carries it to the Settings page (page.js).
- *
- * A repo with more than one page of open issues is asked again with the cursor
- * its last page ended on (#194), until GitHub says there is no next page or the
- * ceiling stops it - and every round is handed to `onPage` before the next one
- * goes out, so a published board DRAWS each page as it lands instead of holding
- * a viewer at a spinner while a long roster finishes. The handover carries the
- * board so far, with `loading: true` on every repo still being paged; the
- * finished board carries no such mark, which is how the progress line clears.
- * A continuation that fails leaves the pages that arrived on the board and the
- * reason on their repo, the way the tower's sweep keeps a partial answer.
+ * Sweep the board, paging each repo by its cursor until GitHub has no next
+ * page or the ceiling stops it. Every round is handed to `onPage` first, with
+ * `loading: true` on repos still paging. A failure keeps its status, since a
+ * token GitHub refused is carried to Settings (page.js).
  *
  * @param {string[]} slugs
  * @param {object} ctx - `{ token, fetch, now, onPage }`
@@ -110,7 +96,7 @@ export const fetchBoard = async (slugs, ctx = {}) => {
   const collected = slugs.map((slug) => ({ slug, issues: [], repo: null, cursor: null }));
 
   // The aliases restart at r0 in every answer, so each batch is normalized
-  // against its OWN slugs and each repo's share is taken by the count its entry
+  // against its own slugs and each repo's share is taken by the count its entry
   // reports - the issues come back in alias order, so the counts slice them.
   batches.forEach((batch, i) => {
     const part = normalizeBoard(batch, answers[i].data, answers[i].errors, ctx.now);
@@ -131,7 +117,7 @@ export const fetchBoard = async (slugs, ctx = {}) => {
     repos: collected.map((entry) => (mark && entry.cursor ? { ...entry.repo, loading: true } : entry.repo)),
   });
 
-  // The pages AFTER the first, one repo to a request and only the repos GitHub
+  // The pages after the first, one repo to a request and only the repos GitHub
   // said had more. Fired together, like the batches, and a round at a time so
   // the page is handed what has arrived before the next one goes out.
   let more = collected.filter((entry) => entry.cursor);

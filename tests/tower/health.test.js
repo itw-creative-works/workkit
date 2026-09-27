@@ -1,10 +1,6 @@
 //
-// Tests for tower/api/lib/health.js - per-repo health.
-//
-// Real git repositories throughout, including a real bare "origin" cloned
-// locally so the upstream cases are genuine: whether a branch has an upstream,
-// and how far ahead of it HEAD sits, is exactly the question a stub would beg.
-// No network - a local path is a perfectly good remote.
+// Tests for tower/api/lib/health.js, per-repo health, over real git repos and a
+// local bare origin: the upstream questions are exactly what a stub would beg.
 //
 
 const fs = require('fs');

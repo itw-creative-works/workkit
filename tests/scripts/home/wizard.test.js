@@ -1,8 +1,6 @@
-//
 // Tests for workflow/home.sh: the setup wizard (the repo, the clone, the seed and
 // the install, Discussions and its categories poll, Pages).
-// The shared prologue (the offline world, inHome and setup, the remote and runner factories) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -31,12 +29,12 @@ const run = async () => {
     assert(!fs.existsSync(path.join(world.workflowHome, 'workkit.json')), 'with nothing versioned seeded beside it');
     assert(!fs.existsSync(path.join(world.workflowHome, '.gitignore')), 'and no ignore file of its own');
 
-    // The FIRST commit, read from the bottom of the log: the clone's own heal
-    // installs the issue forms on top of it (issue #123).
+    // The first commit, read from the bottom of the log: the clone's own heal
+    // installs the issue forms on top of it.
     const subjects = spawnSync('git', ['-C', world.tower, 'log', '--pretty=%s'], { encoding: 'utf8' }).stdout.trim().split('\n');
     assertEq(subjects[subjects.length - 1], 'chore(home): seed the tower project', 'the first commit says what it is');
-    // The wiring itself, pinned: setup runs the clone's heal (issue #123):
-    // deleting the wk_home_heal calls in wk_home_setup goes red here.
+    // The wiring itself, pinned: setup runs the clone's heal, so deleting the
+    // wk_home_heal calls in wk_home_setup goes red here.
     assert(subjects.includes('chore(home): install the issue templates'),
       `and setup healed the clone's issue forms, its log: ${subjects.join(' | ')}`);
     cleanup(world.root);
@@ -66,7 +64,7 @@ const run = async () => {
     const { code, out } = setup(world);
     assertEq(code, 0, `exit 0: ${out}`);
     // The clone's line endings are the machine git's business (Windows checks
-    // out CRLF), and this case is about WHOSE file is here, not how it ends.
+    // out CRLF), and this case is about whose file is here, not how it ends.
     assertEq(fs.readFileSync(path.join(world.tower, 'README.md'), 'utf8').replace(/\r\n/g, '\n'),
       '# from elsewhere\n', 'the other machine’s project is the one here');
     assert(!fs.existsSync(path.join(world.tower, 'targets')), 'and nothing was seeded over it');
@@ -94,11 +92,9 @@ const run = async () => {
   });
 
   await test('the install is keyed from the clone’s real path, symlinked ~/.workkit or not', () => {
-    // Issue #171, the same defect publish.sh carried (#166) and the FIRST
-    // install a fresh machine ever runs: `npm --prefix <link>/tower install`
-    // resolves the project through the link while keying the tree from the
-    // CALLER'S cwd, and the lockfile takes package paths outside the project
-    // root: a corrupt tree the next install dies inside arborist on.
+    // `npm --prefix <link>/tower install` resolves the project through the link
+    // but keys the tree from the caller's cwd, and the lockfile then takes paths
+    // outside the project root: a corrupt tree the next install dies inside.
     const world = mkWorld({ login: 'owner' });
     const link = path.join(world.root, 'linked-workkit');
     fs.symlinkSync(world.workflowHome, link);
@@ -115,9 +111,8 @@ const run = async () => {
   });
 
   await test('a fresh tree that links its bins only on the second pass still installs', () => {
-    // npm's own workspace linking left node_modules/.bin holding nothing but
-    // omega-manager on the first real setup (2026-07-29); the second install
-    // linked everything. One retry is what makes that machine publishable.
+    // npm's workspace linking can leave node_modules/.bin half empty on a first
+    // install that a second one fills. One retry makes that machine publishable.
     const world = mkWorld({ login: 'owner', npmLinksOn: 2 });
     const { code, out } = setup(world);
     assertEq(code, 0, `exit 0: ${out}`);
@@ -178,7 +173,7 @@ const run = async () => {
   });
 
   await test('Discussions are enabled, and missing categories get a one-time pointer', () => {
-    // GitHub has NO mutation that creates a discussion category, probed
+    // GitHub has no mutation that creates a discussion category, probed
     // against the live schema, so the only honest step is to name the page.
     const world = mkWorld({ login: 'owner', categories: ['General'] });
     const { code, out } = inHome(world, 'wk_home_discussions owner/workkit');
@@ -191,11 +186,10 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  // The interactive runs feed the step's stdin through a process substitution,
-  // so keys can arrive AFTER the poll started; a spawnSync `input` is all
-  // read at once, and the pipe closing under the poll reads as a skip. The
-  // feeder lets go of the transcript's streams first, or a feeder still
-  // sleeping would hold the run open past the step it is feeding.
+  // Keys arrive through a process substitution, so they can land after the poll
+  // started; a spawnSync `input` is read at once and its close reads as a skip.
+  // The feeder lets go of the transcript's streams first, or a sleeping feeder
+  // would hold the run open past the step it is feeding.
   const atTerminal = (world, stdin) => inHome(world,
     `interactive() { return 0; }\nwk_home_discussions owner/workkit < <(exec 2>/dev/null; ${stdin})`);
   const categoriesCalls = (world) => world.ghCalls().filter((c) => c.join(' ').includes('discussionCategories')).length;
@@ -307,7 +301,7 @@ const run = async () => {
   });
 
   await test('setup creates no branch: the publish makes gh-pages when it first pushes', () => {
-    // Issue #71's boundary: the wizard creates the repo, Discussions and Pages;
+    // The wizard creates the repo, Discussions and Pages;
     // a branch is generated output and belongs to whatever generates it.
     const world = mkWorld({ login: 'owner' });
     setup(world);

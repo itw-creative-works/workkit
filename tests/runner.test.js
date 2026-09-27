@@ -1,12 +1,7 @@
 /* eslint-disable no-console */
-//
-// Tests for tests/run.js - the Node suite runner itself: its handling of a
-// suite that skips for a missing precondition, and the by-file contract every
-// suite it discovers must keep. `npm test` is the one command everywhere, so a
-// suite the machine cannot answer must report a named skip and leave the run
-// green, while a real throw still fails it; and `node tests/<path>.test.js`
-// must run the suite on its own, so every suite ends with the selfRun line.
-//
+// Tests for tests/run.js, the suite runner: a suite this machine cannot answer
+// reports a named skip and leaves the run green while a real throw fails it,
+// and every suite it discovers runs alone by file.
 
 const path = require('path');
 const fs = require('fs');

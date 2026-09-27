@@ -1,9 +1,6 @@
-// Hooks index parity: the WIRING in hooks/hooks.json is the roster, and the two
-// places a reader meets it are pinned to it in both directions: docs/hooks.md's
-// index table and detail sections, and the spelled-out count in AGENTS.md
-// § Hooks. A hook wired without its row, a row left behind by one that went
-// away, and a nineteenth hook that lands while AGENTS.md still says eighteen all
-// fail here (issue #162).
+// Hooks index parity: the wiring in hooks/hooks.json is the roster, and
+// docs/hooks.md's index table and detail sections and the count AGENTS.md
+// § Hooks spells out are pinned to it in both directions.
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
@@ -34,7 +31,7 @@ const section = (file, heading) => {
   return next < 0 ? rest : rest.slice(0, next);
 };
 
-// The WIRING is the roster every check below derives from. Several hooks are
+// The wiring is the roster every check below derives from. Several hooks are
 // wired on more than one event (`safety:capture-guard`, `workflow:reload-guard`),
 // so the names dedupe.
 const wiredHooks = () => {
@@ -63,7 +60,7 @@ const run = async () => {
   });
 
   await test('the detail sections are exactly the wired hooks', () => {
-    // Keyed on the BACKTICKED name, which is what keeps the file's two prose
+    // Keyed on the backticked name, which is what keeps the file's two prose
     // headings (`## The index` and `## How they are wired`) out of the set.
     const text = fs.readFileSync(HOOKS_DOC, 'utf8');
     const headings = [...text.matchAll(/^## `([^`]+)`/gm)].map((m) => m[1]).sort();

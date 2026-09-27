@@ -1,11 +1,7 @@
-//
 // Tests for hooks/docs:session-guard: the PostToolUse hook that holds
 // `.workkit/agents/session.md` to the shape of a queue: short bullets, few lines.
-//
-// Every case runs the real hook against a fixture file. The hook reads nothing
-// but the written file, so there is nothing to stub: the whole surface is the
-// path it was handed and the two caps.
-//
+// The hook reads only the written file, so every case runs it against a fixture
+// with nothing stubbed.
 
 const fs = require('fs');
 const os = require('os');
@@ -83,7 +79,7 @@ const run = async () => {
   });
 
   await test('headings, blockquotes, comments and blank lines do not count', () => {
-    // Exactly 40 content lines beside the scaffolding: ANY scaffolding line
+    // Exactly 40 content lines beside the scaffolding: any scaffolding line
     // wrongly counted makes 41 and bounces, so a weakened exclusion regex
     // fails here, not just in the drift case.
     const file = mkFile([

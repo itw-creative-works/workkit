@@ -1,18 +1,7 @@
-//
 // Tests for workflow/lib/participation.sh: the engine's participation seam, the one
-// home of what the kit means by a repo root and by a repo's own answer.
-//
-// The seam has its own suite because it has its own two consumers: the engine
-// sources it (lib.sh, and standards.sh through it) and so does the hook layer
-// beside it (hooks/_lib.sh, plus docs/session and safety/vendor-guard from their
-// own physical location), and no consumer's suite owns it. Those suites prove
-// their own callers answer correctly; this proves what the seam itself answers.
-//
-// Every case sources the real file in a real bash and reads what it printed,
-// against fixtures on disk: a repo, a worktree whose `.git` is a FILE, a plain
-// directory, and settings files carrying each of the three answers. Every
-// expected value is a literal.
-//
+// home of what the kit means by a repo root and by a repo's own answer. The engine
+// and the hook layer both source it, so it has its own suite; every case sources
+// the real file against fixtures on disk and compares literals.
 
 const fs = require('fs');
 const os = require('os');
@@ -63,11 +52,9 @@ const run = async () => {
   });
 
   await test('sourcing sets no variable and runs nothing', () => {
-    // A seam that set something would change the shell of every hook and script
-    // that loads it before doing its own work.
-    // The control runs `:` where the other sources the file, so the comparison
-    // is the seam against a command that does nothing, rather than against a
-    // shell that has run no command at all (bash sets PIPESTATUS at the first).
+    // A seam that set something would change the shell of every caller. The
+    // control runs `:` where the other sources the file, so the comparison is
+    // against a command that does nothing (bash sets PIPESTATUS at the first).
     const vars = (first) => spawnSync(
       BASH,
       [...NO_RC, '-c', `${first}\ncompgen -v | sort`],
@@ -132,7 +119,7 @@ const run = async () => {
 
   await test('a file with no `enabled` key is neither: the legacy opt-in', () => {
     // The two are not each other's negation, and this is the case that says so:
-    // a file written before the key existed is a yes by being no DECLINE.
+    // a legacy file is a yes by not being a decline.
     const dir = mkTmp('wf-participation-');
     assertEq(answers(settingsFile(dir, '{ "version": 1 }\n')), 'no/no', 'neither declined nor enabled');
     cleanup(dir);

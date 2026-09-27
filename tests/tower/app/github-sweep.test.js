@@ -15,14 +15,10 @@ const run = async () => {
 
   const apiBoard = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'board.js'));
 
-  // Issue #195: the sweep's pure half - the document, the numbers that bound it,
-  // the parse that turns one answered node into one board issue, and the reading
-  // of the errors beside them - is ONE module now (libs/tower/github/sweep.js), which
-  // board.js requires and github.js
-  // imports. What used to be pinned value by value against a second copy is
-  // asked once, as IDENTITY: a browser symbol that is not the very object the
-  // tower runs is a copy that has grown back. What each of those functions
-  // does is asked where it is now owned - the board suite - rather than twice.
+  // The sweep's pure half is one module (libs/tower/github/sweep.js) that
+  // board.js requires and github.js imports, so parity is asked as identity: a
+  // browser symbol that is not the tower's own object is a copy. What each
+  // function does is asked in the board suite.
   await test('both halves of the sweep run the one module, not two copies of it', () => {
     for (const name of ['buildBoardQuery', 'parseLabels', 'blockersFor', 'lastCommentOf', 'issueFrom', 'closedSince', 'errorsByAlias', 'firstErrorFor', 'droppedReason']) {
       assert(typeof github[name] === 'function', `${name} is reachable from the browser's half`);
@@ -52,10 +48,8 @@ const run = async () => {
   });
 
   await test('every branch of what an issue waits on survives the browser’s normalization', () => {
-    // The composition itself is one shared function (#195), so what is asked
-    // here is that the fixture above exercises every branch of it - which is
-    // what makes the JSON comparison a real proof rather than two empty lists
-    // agreeing.
+    // The composition is one shared function, so this asks that the fixture
+    // exercises every branch of it: two empty lists agreeing prove nothing.
     const keys = (issue) => issue.blockedBy.map((blocker) => `${blocker.repo}#${blocker.number}`).join(',');
     const fromBrowser = github.normalizeBoard(SLUGS, SWEEP.data, SWEEP.errors, CLOSED_NOW);
     assertEq(fromBrowser.issues[0].blockedBy.length, 0, 'an issue depending on nothing carries the empty list');
@@ -90,9 +84,8 @@ const run = async () => {
   });
 
   await test('the newest comment rides the sweep folded to one line and cut where a card ends', () => {
-    // Issue #196: the sweep carries a blocked issue's open question, which is
-    // its last comment. The fold is the shared module's (#195); what is asked
-    // here is that a browser board actually carries it.
+    // A blocked issue's open question is its last comment; the fold is the
+    // shared module's, so this asks only that a browser board carries it.
     const one = (body) => ({ data: { r0: { issues: { totalCount: 1, nodes: [{ number: 1, labels: { nodes: [] }, assignees: { nodes: [] }, comments: { totalCount: 1, nodes: [{ body }] } }] } } } });
     const long = 'z'.repeat(300);
     const fromBrowser = github.normalizeBoard(['o/r'], one('Which one?\nSay the word.').data, []).issues[0];
@@ -111,16 +104,14 @@ const run = async () => {
     assertEq(issue.bodyTruncated, true, 'and never cut silently');
   });
 
-  // Issue #202: the whole roster in one request is what GitHub refuses, so both
-  // halves of the sweep ask a batch at a time. The browser's requests go out
-  // together - a page has no cache in front of it and nothing to serialize for -
-  // and the aliases restart at r0 in every one of them, which is what the merge
-  // has to get right.
+  // GitHub refuses the whole roster in one request, so both halves ask a batch
+  // at a time. The browser's batches go out together, and the aliases restart at
+  // r0 in every one of them, which the merge has to get right.
   await test('a roster longer than one batch goes out as one request per batch, merged in order', async () => {
     const slugs = Array.from({ length: 13 }, (_, i) => `owner/repo${i}`);
-    // Each request is answered only for the aliases IT named, which is what
-    // makes a merge that ignored the offset visible: the issue number is the
-    // repo's index, so a mis-mapped alias is a mismatched pair.
+    // Each request is answered only for the aliases it named, which makes a
+    // merge that ignored the offset visible: the issue number is the repo's
+    // index, so a mis-mapped alias is a mismatched pair.
     const fetchImpl = mkFetch((url, options) => {
       const query = JSON.parse(options.body).query;
       const data = {};
@@ -152,9 +143,9 @@ const run = async () => {
     assertEq(board.status, 401, 'and the status survives, so Settings can say the token is the problem');
   });
 
-  // Issue #194: GitHub caps a connection page at 100, so a repo past that is
-  // asked again with the cursor its last page ended on - and the published copy
-  // draws each page as it lands rather than making the viewer wait for the last.
+  // GitHub caps a connection page at 100, so a repo past that is asked again
+  // with the cursor its last page ended on, and the published copy draws each
+  // page as it lands.
 
   /** One connection page: its nodes, its total, and whether another follows. */
   const connPage = (numbers, { total = numbers.length, next = null } = {}) => ({
@@ -260,8 +251,8 @@ const run = async () => {
   });
 
   await test('a null issue node is skipped on both sides, and the repo says what was dropped', () => {
-    // The crash itself (#202): GitHub answers the shape of the board with every
-    // issue node null. Reading a field off one of those ended the tower's API.
+    // GitHub can answer the board's shape with every issue node null, and
+    // reading a field off one must not end the tower's API.
     const dropped = {
       data: {
         r0: {

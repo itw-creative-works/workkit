@@ -68,9 +68,8 @@ const run = async () => {
   });
 
   await test('the dialog says how fresh the agent is ONCE, in the half that ages', () => {
-    // The defect this proves against: the header's ticking age and a "Last
-    // activity" row frozen at open, two numbers for one fact - twenty seconds
-    // in, the row still said 4s while the header said 24s.
+    // A "Last activity" row frozen at open beside the header's ticking age is
+    // two numbers for one fact, and they disagree within seconds.
     const parts = modal.agentDialog(AGENT, NOW);
     assert(!parts.body.includes('Last activity'), 'the frozen row is gone');
     assertEq(parts.body.match(/data-live-age/g).length, 1, 'and the live one is the only span saying it');
@@ -139,10 +138,9 @@ const run = async () => {
     assertEq(closed.rows.writes, 0, 'and is written to by nothing');
     assertEq(modal.refreshAgentDialog(NOW, null), false, 'nor is a page whose layout ships no dialog at all');
 
-    // An agent that ended between polls stops being drawn, so the next paint
-    // stops registering it. The honest thing is the last stamps it had: the
-    // dialog keeps them and the second hand decays them exactly as it would on
-    // the card that is no longer there - gray, then gone.
+    // An agent that ended between polls stops being registered, so the dialog
+    // keeps its last stamps and the second hand decays them as it would on the
+    // card: gray, then gone.
     const ended = openAgentDialog({
       key: 'agent-ended',
       indicator: {
@@ -173,7 +171,7 @@ const run = async () => {
   });
 
   await test('the paint is what refreshes it, on every page and not just the crew', () => {
-    // The dialogs are the LAYOUT's and outlive every page, so the refresh is
+    // The dialogs are the layout's and outlive every page, so the refresh is
     // wired where all six paints pass through rather than in the one page whose
     // cards opened it.
     const fs = require('fs');

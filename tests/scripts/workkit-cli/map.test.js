@@ -1,8 +1,6 @@
-//
 // Tests for workflow/workkit.sh: the map (no arguments, help, an unknown command)
 // and the script itself.
-// The shared prologue (the scratch world, runCli and inCli, the repo and kit factories) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const { spawnSync } = require('child_process');

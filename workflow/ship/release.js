@@ -1,44 +1,12 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
-//
-// The ship's release commit, made by one command instead of by hand: the three
-// edits the ship skill's release step used to spell out, in its order.
-//
-//   1. Bump: `version` is set by TEXT in every version file that carries a
-//      top-level one (package.json, and a plugin repo's
-//      .claude-plugin/plugin.json), the first `"version": "<old>"` in each, so
-//      its formatting, its key order and its line endings stay byte for byte
-//      (never `npm version`, which commits). A file with no version is left
-//      alone.
-//   2. Backfill: each `[Unreleased]` entry gains its commit link and handle,
-//      through changelog-links.js's own functions rather than a second copy.
-//   3. Move: every `[Unreleased]` entry whose leading `[#N](...)` link is not
-//      in `--keep` moves under a new `## [x.y.z] - <today>` section placed
-//      directly after `[Unreleased]`, in the `### Category` it sat in and the
-//      order the categories had. Kept entries stay under `[Unreleased]` in
-//      theirs. A category left empty on either side is dropped. Everything
-//      below the last `[Unreleased]` entry (the older sections, the link
-//      references at the bottom) stays where it is.
-//
-// Each file is read once and written once, and only after every check has
-// passed, so a refusal leaves both exactly as they were. A CRLF file stays CRLF.
+// The ship's release commit in one command: the bump, the backfill, and the
+// move of every `[Unreleased]` entry not in `--keep` under a new version
+// section (`workflow/README.md`, the ship/release.js row). Every check passes
+// before a write, so a refusal leaves each file as it was; CRLF stays CRLF.
 //
 // Run from the repo root:
 //   node ~/.claude/workkit/ship/release.js <x.y.z> [--keep N,M] [--dir <root>] [--dry-run]
-// `--keep` takes issue numbers, comma separated or repeated. Prints
-// `released x.y.z (<each file bumped>): N entries moved, M kept under [Unreleased]`,
-// exit 0, and never commits, tags or pushes. `--dry-run` prints the same line
-// and writes nothing. A moved entry the backfill could not link (no `Fixes #N`
-// trailer in the range) and a `--keep` number matching no `[Unreleased]` entry
-// are each named on stderr, and the release stands.
-//
-// A refusal prints one `release: ...` line on stderr, exit 1, nothing written:
-// a version that is not semver or is one a version file already carries, no
-// version file carrying a version at all, a CHANGELOG with no `[Unreleased]`
-// heading, a release that would move nothing, and a line among the
-// `[Unreleased]` entries that is neither an entry nor a category heading
-// (moving it would be a guess). A usage error is exit 2.
-//
 
 const fs = require('fs');
 const path = require('path');
@@ -295,7 +263,7 @@ const main = (argv) => {
 };
 
 if (require.main === module) {
-  // Set the code, never process.exit(): exiting discards whatever console.log
-  // has buffered when stdout is a PIPE. Same fix as changelog.js.
+  // Set the code, never process.exit(): exiting discards console.log output
+  // still buffered for a pipe.
   process.exitCode = main(process.argv.slice(2));
 }

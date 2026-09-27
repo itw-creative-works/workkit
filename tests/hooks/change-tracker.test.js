@@ -1,12 +1,7 @@
 /* eslint-disable no-console */
-//
-// Tests for hooks/docs:change-tracker: the Stop hook that detects uncommitted
-// code changes and nudges Claude to keep the work item's issue true, promote
-// durable findings out of .workkit/, and check doc-parity.
-//
-// The hook reads JSON on stdin (with cwd), checks git status, classifies
-// changes as code vs docs, and outputs a "block" decision with the prompt.md content.
-//
+// Tests for hooks/docs:change-tracker: the Stop hook that, when code changes
+// sit uncommitted, blocks with the prompt.md nudge to keep the issue true,
+// promote durable findings out of .workkit/, and check doc-parity.
 
 const path = require('path');
 const fs = require('fs');
@@ -74,7 +69,7 @@ const run = async () => {
 
   await test('a script under a docs PATH is code: blocks (review finding)', () => {
     // hooks/docs/*/run.sh is executable bash living under a docs directory.
-    // Seeded and committed first: an UNTRACKED directory collapses to its own
+    // Seeded and committed first: an untracked directory collapses to its own
     // name in porcelain output, which would classify as code for the wrong
     // reason.
     const dir = mkTmpRepo();
@@ -130,7 +125,7 @@ const run = async () => {
 
   await test('prompt.md never offers the capture file as a filing destination', () => {
     const content = fs.readFileSync(PROMPT, 'utf8');
-    // capture.md is the owner's capture surface (#145): a finding is filed as an
+    // capture.md is the owner's capture surface: a finding is filed as an
     // issue, and where GitHub is out of reach it goes in chat, never here.
     assert(/never write to `?\.workkit\/capture\.md/i.test(content), 'the rule is stated outright');
     for (const line of content.split('\n').filter((l) => /capture\.md/.test(l))) {

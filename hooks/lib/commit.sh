@@ -7,12 +7,10 @@
 # defines functions and sets nothing. It reads no name of the entry's; the
 # linter's path is resolved from this file's own location.
 
-# hook_strip_heredocs <cmd>: remove heredoc BODIES (marker to terminator)
-# for command DETECTION: bodies are file content, not commands (gotchas sweep
-# 2026-07-23). EXCEPT when a heredoc feeds an interpreter (`bash <<EOF`):
-# that body IS executed code, so the strip is disabled entirely (light review
-# 2026-07-23: stripping it opened a commit-gate bypass). Unterminated
-# heredocs don't match and stay visible: fails toward gating, never bypass.
+# hook_strip_heredocs <cmd>: remove heredoc bodies for command detection, since
+# a body is file content. Off entirely when a heredoc feeds an interpreter
+# (`bash <<EOF`), whose body is executed code; an unterminated heredoc stays
+# visible. Both fail toward gating.
 hook_strip_heredocs() {
   if ! command -v perl >/dev/null 2>&1 \
     || printf '%s' "$1" | grep -Eq '(^|[^[:alnum:]_.-])(bash|sh|zsh|dash|ksh|eval|env)([[:space:]][^;&|]*)?<<'; then
@@ -22,27 +20,10 @@ hook_strip_heredocs() {
   printf '%s' "$1" | perl -0777 -pe 's/(<<-?\s*(["\x27]?)([A-Za-z_][A-Za-z0-9_]*)\2).*?\n[\t ]*\3[\t ]*(?=\n|$)/$1/gs' 2>/dev/null || printf '%s' "$1"
 }
 
-# hook_strip_quotes <text>: replace single- and double-quoted spans with one
-# inert placeholder word each. It REPLACES rather than deletes because the
-# caller walks the result positionally: deleting the message in
-# `git commit -m "docs" app.js` left `-m` to consume `app.js`, so the pathspec
-# went unseen and the whole gate was skipped (issue #25). The placeholder holds
-# the slot, carries no clause separator, and can never be read as a flag.
-# An EMPTY span is still deleted, not replaced: deletion rejoins the text around
-# it, and `git com""mit` is a real command that must stay detectable.
-# The sed fallback stays line-based, so a multi-line quoted message there still
-# truncates the clause. It fails toward gating, but a pathspec after such a
-# message is not seen. Machines with perl (nearly all of them) take the first branch.
-# MULTILINE-safe: a line-based strip leaves the tail lines of a multi-line
-# quoted string looking unquoted, so a mention like `echo "todo\ngit commit"`
-# would classify as a real commit (review 2026-07-23). The strip is ONE
-# left-to-right alternation pass: sequential passes (doubles then singles,
-# or the reverse) let a quote character INSIDE one span type pair with a
-# later real span and swallow the command text between them (review
-# 2026-07-23: `grep '"' f; git commit ...` hid the commit clause). On perl
-# failure the text passes through UNSTRIPPED. A quoted mention may then
-# false-gate, but a real commit can never hide (fails toward gating). Falls
-# back to a line-based sed alternation only when perl is missing.
+# hook_strip_quotes <text>: each quoted span becomes one placeholder word, in one
+# left-to-right multiline pass, so a positional walk keeps its slots and a
+# mention never reads as a command; an empty span is deleted (`git com""mit`).
+# Perl failing passes the text unstripped; the no-perl sed is line-based.
 hook_strip_quotes() {
   if command -v perl >/dev/null 2>&1; then
     printf '%s' "$1" | perl -0777 -pe 's{"(?:[^"\\]|\\.)*"|\x27[^\x27]*\x27}{ length($&) > 2 ? "_hookq_" : "" }ges' 2>/dev/null || printf '%s' "$1"
@@ -51,19 +32,14 @@ hook_strip_quotes() {
   fi
 }
 
-# hook_has_escape <text> <NAME>: is the deliberate escape `NAME=1` set as an
-# assignment on this command? Every escape the kit offers is one shape
-# (WORKKIT_ALLOW_DISCARD for tree-guard, WORKKIT_SUITE for suite-guard), so the
-# pattern that recognises it has one home rather than one copy per guard. Feed
-# it the QUOTE STRIPPED text: a mention inside a body is not an assignment.
+# hook_has_escape <text> <NAME>: is `NAME=1` set as an assignment on this
+# command? The one home of every escape's shape. Feed it quote-stripped text.
 hook_has_escape() {
   printf '%s' "$1" | grep -Eq '(^|[^[:alnum:]_])'"$2"'=1([^[:alnum:]_]|$)'
 }
 
-# hook_fold_redirect_amp <text>: <text> with the `&` of a redirect folded away
-# (`>&` and `&>` to `>`, `<&` to `<`), so a split on `;|&` never cuts a clause at
-# a redirect. Consumers: hook_find_git_commit, safety/tree-guard,
-# safety/release-taken, safety/proof-guard.
+# hook_fold_redirect_amp <text>: fold a redirect's `&` away (`>&`, `&>` to `>`,
+# `<&` to `<`) so a split on `;|&` never cuts a clause at a redirect.
 hook_fold_redirect_amp() {
   local t="$1"
   t=${t//>&/>}
@@ -72,11 +48,9 @@ hook_fold_redirect_amp() {
   printf '%s' "$t"
 }
 
-# _hook_count_placeholders <text>: count the `_hookq_` placeholders the quote
-# strip left in <text>, into HOOK_PLACEHOLDER_COUNT. Pure parameter expansion:
-# this runs inside hook_find_git_commit's per-clause walk, which sits on the
-# PreToolUse path of every Bash command. Internal to hook_find_git_commit's
-# placeholder-to-span mapping, not a general helper.
+# _hook_count_placeholders <text>: the `_hookq_` count, into
+# HOOK_PLACEHOLDER_COUNT. Pure expansion: it runs per clause on every Bash
+# command. Internal to hook_find_git_commit.
 _hook_count_placeholders() {
   local s="$1"
   HOOK_PLACEHOLDER_COUNT=0
@@ -88,15 +62,9 @@ _hook_count_placeholders() {
   done
 }
 
-# _hook_span_is_commit <src> <n>: does the Nth (0-based) non-empty quoted
-# span of <src> carry both `git` and `commit` as words? <src> is the
-# heredoc-stripped ORIGINAL text, so its non-empty spans line up one-to-one
-# with the `_hookq_` placeholders the strip wrote (empty spans are deleted,
-# and the extraction skips them the same way). On a perl runtime failure (or
-# with no perl at all) the answer degrades to "does the whole command carry
-# git and commit as words": coarse, and toward the gate, but scoped (review
-# 2026-07-25: a runtime failure used to flag EVERY Bash command outright).
-# Internal to hook_find_git_commit, not a general helper.
+# _hook_span_is_commit <src> <n>: does the Nth (0-based) non-empty quoted span
+# of the heredoc-stripped original carry `git` and `commit` as words? Without
+# perl it asks the whole command instead, toward the gate. Internal.
 _hook_span_is_commit() {
   local out rc=0
   if command -v perl >/dev/null 2>&1; then
@@ -119,34 +87,10 @@ _hook_span_is_commit() {
     && printf '%s' "$1" | grep -Eq '(^|[^[:alnum:]_])commit([^[:alnum:]_]|$)'
 }
 
-# hook_find_git_commit <cmd>: scan a Bash tool command for a real
-# `git ... commit` clause (not a quoted mention, not heredoc file content).
-# Splits the stripped command on ; & | and looks for a clause that invokes
-# git (allowing `(`/`{` openers, `command`/`env`/`eval` prefixes, VAR=value
-# assignments, and path spellings like /usr/bin/git) whose SUBCOMMAND (the
-# first non-option word after git's global options) is `commit`, so
-# `git log --grep commit` is not a commit (hardening 2026-07-25; each of
-# those prefix shapes had walked past the old first-word-is-git test).
-# Sets: HOOK_COMMIT_CLAUSE (the quote-stripped clause, empty if none),
-#       HOOK_SAW_CD (1 if ANY clause starts with `cd`, `pushd` or `popd`: the
-#       wrong-repo signal; all three address a different directory for what
-#       follows, and the pushd spelling used to walk straight past this test
-#       (issue #159)),
-#       HOOK_SAW_STAGE (1 if a git clause BEFORE the commit stages: add/rm/mv/
-#       stage, so the commit's content is decided by the same command line and
-#       cannot be read ahead of it; the walk breaks at the commit clause, so
-#       only clauses that change what the commit carries are seen),
-#       HOOK_WRAPPED_COMMIT (1 when an interpreter string carries the commit:
-#       `sh -c "git commit …"` / `eval "git commit …"`: the quote strip
-#       replaces that span with a placeholder, so the clause scan can never
-#       see inside it; consumers fail toward the gate).
-# Wrapped detection reads COMMAND POSITION, never the raw text: only a clause
-# whose command (after the peel) is an interpreter carrying a -c string, or an
-# eval whose argument is a quoted span, has its ORIGINAL span tested for
-# git+commit words. A quoted span anywhere else (a grep pattern, echo text,
-# the -m message itself) is data and can never flag (review 2026-07-25: the
-# old raw-text regex blocked `git commit -m "… sh -c 'git commit' …"`, and
-# the block message asked for the plain form the user was already running).
+# hook_find_git_commit <cmd>: find a real `git ... commit` clause past the peeled
+# prefixes. Sets HOOK_COMMIT_CLAUSE (quote-stripped, or empty), HOOK_SAW_CD (a
+# cd/pushd/popd clause), HOOK_SAW_STAGE (add/rm/mv/stage before the commit), and
+# HOOK_WRAPPED_COMMIT (an `sh -c`/`eval` string carrying one, read by position).
 hook_find_git_commit() {
   HOOK_COMMIT_CLAUSE=""
   HOOK_SAW_CD=0
@@ -172,11 +116,8 @@ hook_find_git_commit() {
     # shellcheck disable=SC2086  # word splitting is intentional; quotes are stripped
     set -- $clause
     # Peel wrapper prefixes so `(git …`, `{ git …; }`, `command git …`,
-    # `env git …`, and `GIT_DIR=x git …` read as the git clause they run.
-    # `eval` peels too: over PLAIN words it executes them essentially as
-    # written, so the remainder IS the clause (hardening 2026-07-25: an
-    # unquoted `eval git commit -m x` walked past both hooks). The peeled
-    # words stay in HOOK_COMMIT_CLAUSE for consumers to judge.
+    # `env git …`, `GIT_DIR=x git …` and an unquoted `eval git …` read as the
+    # git clause they run; the peeled words stay in HOOK_COMMIT_CLAUSE.
     while [ $# -gt 0 ]; do
       case "$1" in
         \(|\{) shift ;;
@@ -196,11 +137,9 @@ hook_find_git_commit() {
     case "${1:-}" in
       cd|pushd|popd) HOOK_SAW_CD=1 ;;
     esac
-    # eval whose argument is a QUOTED span: the strip replaced the span with a
-    # placeholder, so nothing below can read it: test the ORIGINAL span. A
-    # quote character surviving here means the strip did not run (no perl, or
-    # perl failed), where the span test degrades to the coarse whole-command
-    # word test, toward the gate either way.
+    # eval of a quoted span: the placeholder hides it, so test the original span.
+    # A surviving quote means the strip did not run; the span test then degrades
+    # to the coarse whole-command test, toward the gate.
     if [ "$saw_eval" -eq 1 ]; then
       case "${1:-}" in
         _hookq_*|\"*|\'*)
@@ -210,10 +149,8 @@ hook_find_git_commit() {
           ;;
       esac
     fi
-    # An interpreter in command position carrying a -c string is the same
-    # wrapped shape by another spelling: `sh -c "git commit …"`, `bash -lc
-    # '…'`, and the attached `bash -c"…"` (no space, which the old raw-text
-    # regex demanded and so missed).
+    # An interpreter in command position with a -c string is the same wrapped
+    # shape: `sh -c "git commit …"`, `bash -lc '…'`, and the attached `bash -c"…"`.
     case "${1:-}" in
       sh|bash|zsh|dash|ksh|*/sh|*/bash|*/zsh|*/dash|*/ksh)
         shift
@@ -328,11 +265,8 @@ hook_redirect_span() {
 # node or the engine is missing, so both callers fail open the same way.
 hook_changelog_linter() {
   command -v node >/dev/null 2>&1 || return 1
-  # Resolve the engine from this file's PHYSICAL location: `pwd -P` resolves
-  # any symlink in the path before the `..` walk, so the climb out of hooks/lib/
-  # lands on the real workflow/ beside hooks/ instead of a textual path that does
-  # not exist. Same form (and the same WORKFLOW_DIR override for tests) as the
-  # workflow/standards hook.
+  # Resolve from this file's physical location so the climb out of hooks/lib/
+  # lands on the real workflow/; WORKFLOW_DIR overrides it for tests.
   local dir="${WORKFLOW_DIR:-}"
   [ -n "$dir" ] || dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/../../workflow"
   [ -f "$dir/changelog/changelog.js" ] || return 1

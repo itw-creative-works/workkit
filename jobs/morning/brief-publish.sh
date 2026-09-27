@@ -1,29 +1,12 @@
 #!/usr/bin/env bash
-# jobs/morning/brief-publish.sh: publishing the morning brief. SOURCED, never executed.
-#
-# The one home of "post today's digest as a Discussion on the home repo", and
-# its one caller is morning.sh's CLOUD path (issues #82, #107): the digest is
-# published by whoever composed it, and the brief composes on a runner. So this
-# prints ONE line saying what happened and returns a status, and decides nothing
-# about the run: the caller is the one that turns a post which did not land
-# into a red one, because there the Actions log is the delivery.
-#
-# It sets no shell options and runs nothing at load. The engine libraries it
-# needs are sourced inside the function, which is normally called inside a
-# `$(…)` capture: nothing it sources leaks into the caller's shell.
-#
-# The CATEGORY is asked for by name (WK_DISC_BRIEF_CATEGORY, the one home of
-# it) and answered by the fallback: categories cannot be created over the API,
-# so it resolves to the repo's default until setup has walked the owner through
-# making it (issue #244). The read-back in cc-news.js filters on the
-# TITLE for the same reason: it cannot know which category a repo landed in.
+# jobs/morning/brief-publish.sh: posts today's digest as a Discussion on the home
+# repo, for morning.sh's cloud path. Sourced; it prints one line and returns a
+# status, and the caller decides what a failure costs (jobs/README.md § The brief
+# is published). Its libraries are sourced inside the function, which runs in a
+# `$(…)` capture, so nothing leaks into the caller's shell.
 #
 # Usage: wk_brief_publish <engine-dir> <response> <mark-file> <body-file>
-# Prints one line. Returns:
-#   0  posted: the line carries the discussion URL
-#   2  there was nothing to post: no engine, no home repo, no gh/jq, or today's
-#      brief is already on the board (a second run, or the other runner's)
-#   1  a post was attempted and did not land
+# Returns 0 posted (the line carries the URL), 2 nothing to post, 1 not landed.
 wk_brief_publish() {
   local engine="$1" response="$2" mark_file="$3" body_file="$4"
   local slug date title posted url
@@ -54,9 +37,8 @@ wk_brief_publish() {
   # there: the one literal this shell and that module both know.
   title="brief: $date"
 
-  # Check before post: the local job, the cloud dispatch and the cron backup can
-  # all fire on one morning, and the answer is the same for each. It costs one
-  # call, and it is what makes the overlap harmless.
+  # Check before post: the dispatched run and its cron backup can both fire on
+  # one morning, and this one call makes the overlap harmless.
   posted="$(wk_disc_list "$slug" "$WK_DISC_BRIEF_CATEGORY" "${date}T00:00:00Z")" || posted=''
   if [[ -n "$posted" ]] \
     && printf '%s' "$posted" | wk_jq -e --arg t "$title" 'any(.[]; .title == $t)' >/dev/null 2>&1; then

@@ -1,15 +1,7 @@
-//
-// The shared prologue of the tower/start.sh suites, the `*.test.js` files
-// beside this one, which test the one command that runs the whole tower one
-// concern each. A plain module, never a suite: the runner only loads files
-// ending in `.test.js`.
-//
-// The script is run for REAL, but with both server commands injected
-// (WORKKIT_TOWER_API / WORKKIT_TOWER_APP), so no port is opened and no
-// framework toolchain is needed: each stub records its own pid and sleeps,
-// and the assertions are about lifecycles - both start, one interrupt ends
-// both, and one process ending takes the other with it.
-//
+// The shared prologue of the tower/start.sh suites beside this one, one concern
+// each. The script runs for real with both server commands injected
+// (WORKKIT_TOWER_API / WORKKIT_TOWER_APP): each stub records its pid and sleeps,
+// so no port opens and the assertions are about lifecycles.
 
 const fs = require('fs');
 const path = require('path');
@@ -50,9 +42,9 @@ const start = (dir, api, app, ports = '', { args = [], env = {}, capture = false
   const childEnv = {
     ...process.env, ...TMP_ENV, WORKKIT_TOWER_API: api, WORKKIT_TOWER_APP: app, WORKKIT_TOWER_PORTS: ports, ...env,
   };
-  // A FORCE_COLOR the OUTER shell exported would pass through the script
-  // untouched - spec-correct, and a red herring to every case that asserts
-  // what the tower itself decides. The caller-owned path has its own pty case.
+  // A FORCE_COLOR the outer shell exported would pass through the script
+  // untouched, a red herring to every case that asserts what the tower itself
+  // decides. The caller-owned path has its own pty case.
   if (!('FORCE_COLOR' in env)) delete childEnv.FORCE_COLOR;
   return spawn(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
     env: childEnv,
@@ -61,12 +53,10 @@ const start = (dir, api, app, ports = '', { args = [], env = {}, capture = false
   });
 };
 
-// The stand-in listener the port cases hand the wrapper. It is node's own, and
-// `console.log(<number>)` PAINTS a number once FORCE_COLOR is set - which the
-// outer shell may well have exported. The port would then arrive wrapped in
-// escapes, the reclaim pass would look up a port that does not exist, and the
-// stand-in would ride out the whole run untouched. So the ambient value goes
-// first here too, the way start() drops it for the halves.
+// The stand-in listener the port cases hand the wrapper. Node's
+// `console.log(<number>)` paints a number once FORCE_COLOR is set, and the
+// reclaim pass would then look up a port that does not exist, so the ambient
+// value goes first here too.
 const standIn = (code) => {
   const childEnv = { ...process.env };
   delete childEnv.FORCE_COLOR;
@@ -85,10 +75,10 @@ const collect = (child) => {
 // pass finds nothing and this machine's real tower is never touched.
 const QUIET_PORTS = '18693 14300';
 
-// A stand-in for the dev server's log wall - the chatter someone who typed
+// A stand-in for the dev server's log wall: the chatter someone who typed
 // `workkit tower` did not ask for, the two lines that matter, the one the
-// framework says in its own voice (kept since #170), and the URL omega
-// announces twice (its https proxy, then the dev server itself).
+// framework says in its own voice, and the URL omega announces twice (its
+// https proxy, then the dev server itself).
 const NOISY_APP = [
   "echo 'omega: no cloudflare account id configured, skipping'",
   "echo 'compiled 42 files in 1.2s'",
@@ -116,9 +106,9 @@ const FAILURE_SHAPES = [
 
 const FAILING_APP = [...FAILURE_SHAPES.map((line) => `echo '${line}'`), 'exec sleep 30'].join('; ');
 
-// A boot omega REFUSES (#170), the way it really prints one: its own prefix on
-// every line, not one of them carrying a keep-net word, then an exit. The old
-// filter dropped all of it and the run ended on a blank terminal.
+// A boot omega refuses, the way it really prints one: its own prefix on every
+// line, not one of them carrying a keep-net word, then an exit. A filter that
+// drops it all ends the run on a blank terminal.
 const REFUSING_APP = [
   "echo 'omega: the monorepo src-to-dist watch is not running'",
   "echo 'omega: dist is not built - start the watch in the monorepo root first'",
@@ -129,7 +119,7 @@ const REFUSING_APP = [
 // which one ended rather than saying "app" every time.
 const REFUSING_API = ["echo 'omega: linked packages are read-only'", 'exit 1'].join('; ');
 
-// A half that ends AFTER the dashboard was announced: the run got what it came
+// A half that ends after the dashboard was announced: the run got what it came
 // for, so its ending is an ordinary shutdown and needs no explaining.
 const ANNOUNCED_APP = ["echo 'Dev server: https://localhost:14300'", 'sleep 0.3'].join('; ');
 
@@ -146,10 +136,10 @@ const OBJC_WARNING = 'objc[77855]: Class GNotificationCenterDelegate is implemen
   + 'This may cause spurious casting failures and mysterious crashes. '
   + 'One of the duplicates must be removed or renamed.';
 
-// The lines the keep net catches on WORDING alone (#158) - that warning and a
-// passing check summary ("failed", "warned") - beside the two that must survive
-// them: a summary reporting real failures, and one with ten of them, which the
-// digit guard must not read as the zero it exempts.
+// The lines the keep net catches on wording alone (that warning and a passing
+// check summary, "failed", "warned") beside the two that must survive them: a
+// summary reporting real failures, and one with ten of them, which the digit
+// guard must not read as the zero it exempts.
 const BENIGN_APP = [
   `echo '${OBJC_WARNING}'`,
   "echo '  Results:   6 passed, 0 failed, 1 warned, 20 skipped'",
@@ -159,12 +149,10 @@ const BENIGN_APP = [
   'exec sleep 30',
 ].join('; ');
 
-// The app half's two phases in one run (#158), the way omega really prints
-// them: the manage cycle first - including the bracketed `[11ty]` lines of its
-// embedded build, which are NOT the web target and must not open the phase -
-// then the dev server, every line of it tagged `[web]` at column 0 from its
-// first boot line on. The tag is the boundary; the URL arrives later and still
-// gets its announce, beside its own raw line rather than instead of it.
+// The app half's two phases in one run, the way omega prints them: the manage
+// cycle (its `[11ty]` build lines must not open the phase), then the dev server,
+// every line tagged `[web]` at column 0. The tag is the boundary; the URL
+// arrives later and still gets its announce beside its own raw line.
 const WEB_APP = [
   "echo '[11ty] Wrote 87 files in 1.24 seconds'",
   "echo 'some manage step'",
@@ -175,10 +163,9 @@ const WEB_APP = [
   'exec sleep 30',
 ].join('; ');
 
-// The fallback the trigger keeps (#158): an app that never tags a line still
-// switches at the URL it names - the framework's boot wall, the URL line that
-// ends it, then the dev server actually serving. Only what comes after the
-// boundary belongs on the terminal - minus the drop list, which outlives it.
+// The fallback the trigger keeps: an app that never tags a line still switches
+// at the URL it names. Only what comes after the boundary belongs on the
+// terminal, minus the drop list, which outlives it.
 const PHASED_APP = [
   "echo 'omega: some build step'",
   "echo 'copying 12 assets'",
@@ -210,18 +197,13 @@ const BUMPED_APP = [
   'exec sleep 30',
 ].join('; ');
 
-// A half painting its log the way omega really does once the tower has forced
-// its colors back on (#179). The escapes land on the very anchors the filter
-// judges by - the `omega: ` prefix and the `objc[` one at column 0, the `[web]`
-// tag, the URL - so a filter reading the raw line sees an escape where it
-// expects the anchor: the refusal and the tag stop matching, and the drop list
-// stops recognising the warning it exists to drop. One set of escape constants
-// serves the stub and the assertions both, so what is read back off the
-// terminal is compared against exactly what was printed into it.
-// The tower's own first line, in the kit's one shape (issue #237): the glyph,
-// then what it is doing.
+// The tower's own first line, in the kit's one shape: the glyph, then what it
+// is doing.
 const STARTING = /^✓ starting the dashboard$/;
 
+// A half painting its log the way omega does once the tower forced its colors
+// back on: the escapes land on the anchors the filter judges by. One set of
+// escape constants serves the stub and the assertions both.
 const RED = '\u001b[31m';
 const CYAN = '\u001b[36m';
 const GREEN = '\u001b[32m';
@@ -239,7 +221,7 @@ const COLORED_APP = [
 ].join('; ');
 
 // A half that reports the one thing the FORCE_COLOR cases are about: what it
-// was handed. It WRITES that rather than printing it, since anything printed
+// was handed. It writes that rather than printing it, since anything printed
 // goes through the filter, and it names a URL so a pty run has something to
 // wait for before it interrupts.
 const probeStub = (dir) => {
@@ -255,7 +237,7 @@ const probeStub = (dir) => {
   return { app: `bash '${shellPath(stub)}'`, seen };
 };
 
-// A run under a REAL terminal. The tower's whole color decision is `[ -t 1 ]`,
+// A run under a real terminal. The tower's whole color decision is `[ -t 1 ]`,
 // which a piped run can never exercise - and piped is exactly the case that
 // must stay plain, so the positive half of it only shows up here. The expect
 // script waits for the announce and then ends the run the way a user does.
@@ -290,7 +272,7 @@ const ptyRun = (dir, app, exports = []) => {
 // pretending the case ran.
 const hasExpect = () => Boolean(which('expect'));
 
-// A case that asks whether a HALF is still running. The stub records itself
+// A case that asks whether a half is still running. The stub records itself
 // with the shell's `$$`, which under Git Bash is an MSYS id Node cannot ask
 // about: process.kill() throws for a shell that is demonstrably alive, so the
 // question answers about nothing on that machine.

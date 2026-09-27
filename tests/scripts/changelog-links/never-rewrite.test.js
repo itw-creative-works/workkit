@@ -1,8 +1,6 @@
-//
 // Tests for workflow/changelog/changelog-links.js, the release-time CHANGELOG backfill:
 // what it must never rewrite, and the refusals that stop it writing at all.
-// The shared prologue (the git and gh fixtures, the script runner, the Windows skip) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
@@ -14,8 +12,7 @@ const run = async () => {
 
   group('changelog-links: what it must never rewrite');
 
-  // Both cases wrote real commit links into the file on the first cut. The
-  // damage is permanent, so each one is pinned.
+  // A wrong link written into the file is permanent, so each shape is pinned.
 
   await test('an example bullet inside a fenced block is left alone', () => {
     const fenced = '- [#4](https://github.com/o/r/issues/4) - What changed.';
@@ -39,10 +36,8 @@ const run = async () => {
 
   await test('a Contributors heading inside a fenced example does not truncate the file', () => {
     // The rebuild cuts the file at the Contributors heading and re-emits the
-    // tail. Taking the FIRST match discarded everything below a heading that
-    // merely appeared in a fenced example: every released section, gone, on a
-    // write. The heading is only this section's when the whole remainder has
-    // this section's shape.
+    // tail, so the heading is only this section's when the whole remainder has
+    // this section's shape; a fenced example above it is not.
     const { dir } = mkRepo([
       '# Changelog',
       '',

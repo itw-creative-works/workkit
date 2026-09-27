@@ -1,18 +1,9 @@
 #!/bin/bash
-# scripts/triage-marker.sh: record that a workkit:triage drain is under way.
-# The safety/capture-guard hook reads the same marker before it opens
-# `.workkit/capture.md`, and reads it through the same helper, so the two can
-# never drift into two spellings of one path.
-#
-# The skill calls this instead of spelling a command, because the spelling is
-# platform-bound (macOS has shasum, Linux has sha1sum) and a skill's text is
-# read on every platform the kit runs on.
-#
-# The ANCHOR is the repo root the capture file belongs to, or $HOME for a drain
-# run outside every repo (where the capture file is ~/.workkit/capture.md). The
-# guard derives the same anchor from the capture file's own path, which is the
-# same answer whenever the session stands in the repo it is draining: the file
-# it gates is that repo's.
+# scripts/triage-marker.sh: record that a workkit:triage drain is under way. The
+# safety/capture-guard hook reads the marker through the same helper before it
+# opens `.workkit/capture.md`; the skill calls this because the hash command
+# differs by platform (shasum, sha1sum). The anchor is the repo root, or $HOME
+# outside every repo, the same one the guard derives from the capture path.
 
 set -euo pipefail
 

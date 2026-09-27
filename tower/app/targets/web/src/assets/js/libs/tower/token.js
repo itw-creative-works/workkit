@@ -1,38 +1,7 @@
-//
-// The token - what a published copy is given before it has any data, and the
-// page that owns it.
-//
-// The published site bakes no data at all: it reads GitHub live - and moves and
-// files issues there - with a personal access token the viewer hands over
-// (issue #81). With no token there is nothing to draw and nothing to write
-// with, so handing one over is the one thing a viewer is asked.
-//
-// Where it is asked moved to the SETTINGS page (issue #167). It used to be a
-// dialog the runtime opened over whichever page was landed on, and that dialog
-// could not be dismissed - a tokenless viewer stood on a data page that could
-// not load anything, with nowhere else to be. Now there is somewhere: `/settings`
-// is a page like the other six, in the sidebar, and it works with no token
-// because it is where one is typed. Every other page points at it in a line and
-// the runtime sends a tokenless landing there (page.js).
-//
-// It says three things and asks for one: what to create, which permissions it
-// needs, and where the token is kept. The token is written to this browser's
-// localStorage and is never sent anywhere but api.github.com - no repo, no
-// build, no URL, no server.
-//
-// Split the way every other lib here is: the markup is pure string functions
-// the suite can ask questions of, and `mountTokenCard()` is the two listeners
-// that markup needs - the save that stores what was typed and the clear that
-// forgets it, which used to be the chrome's Token button.
-//
-// A locked copy served from THIS machine is a different story, and asking it
-// for a token would be asking for the wrong thing (issue #89): on localhost the
-// tower API holds the `gh` login and the app runs tokenless, so a copy that
-// found no tower there has one problem - the API is not running. It gets
-// `towerDownNotice()` as its page body; the fork is the hostname the page was
-// served from and nothing else, and the mode itself is api.js's and is
-// untouched. Settings is the exception, because a viewer who opened it asked.
-//
+// The token's page: the Settings cards a published copy is unlocked from, the
+// line every other page points at them with, and the notices a locked copy
+// served from this machine gets instead (`tower/README.md` § The three modes).
+// Markup is pure string functions; `mountTokenCard()` is the two listeners.
 
 import { esc, lockedNotice, localLockedNotice } from './format.js';
 import {
@@ -43,13 +12,9 @@ import {
 export const SETTINGS_LABEL = 'Settings';
 
 /**
- * The token card on the Settings page: what this browser holds, the field that
- * replaces it, and the button that forgets it. Making one is the guidance
- * card's button, under the permissions it names.
- *
- * The field is drawn whether or not a token is held - replacing one is typing
- * the next over it - and the clear button only where there is something to
- * forget, which is the same rule the chrome's Token button was drawn by.
+ * The token card on the Settings page: the field, drawn whether or not a token
+ * is held since replacing one is typing over it, and Clear only when there is
+ * something to forget.
  *
  * @param {object} [options]
  * @param {boolean} [options.held] - whether this browser holds a token
@@ -76,20 +41,9 @@ export const tokenCard = (options = {}) => `<div class="card h-100">
 </div>`;
 
 /**
- * What that token has to be able to do - the fine-grained permissions, and the
- * classic token that covers a board spanning two owners (issue #167).
- *
- * Both sentences are github/token.js's, beside the URLs a viewer makes each kind at:
- * the guidance and the calls it describes cannot drift apart if they live in
- * one file.
- *
- * ONE create button on the page, and it is THIS card's (issue #241, the
- * owner's second call): the button sits under the permissions it names, so a
- * viewer reads what the token needs and then makes one. The token card only
- * takes what was made. The classic URL rides the words that NAME that token
- * instead, inside the sentence explaining when it is the only kind that works
- * - one click away, with nothing to mistake it for. The suite pins the phrase,
- * so a reworded sentence is caught rather than quietly losing its link.
+ * What that token has to be able to do, in github/token.js's sentences. The
+ * page's one create button is this card's, under the permissions it names; the
+ * classic URL rides the words naming that token, a phrase the suite pins.
  *
  * @returns {string} markup
  */
@@ -103,24 +57,17 @@ export const tokenGuidance = () => `<div class="card h-100">
 </div>`;
 
 /**
- * What Settings says on a copy that has a TOWER behind it.
- *
- * There the machine's API holds the `gh` login and the token is not this copy's
- * credential at all - so the page says whose it is rather than letting the card
- * under it read as this dashboard's own key.
+ * What Settings says on a copy with a tower behind it: the machine's API holds
+ * the `gh` login, so the token is not this copy's credential.
  *
  * @returns {string} markup
  */
 export const towerTokenNote = () => `<p class="text-body-secondary">This copy reads the tower API on this machine, which holds the gh login - it needs no token of its own. A token saved here is what a published copy of this dashboard uses.</p>`;
 
 /**
- * The one line every OTHER page shows when this copy holds no token, and the
- * line a refused token leaves in place of the page.
- *
- * The runtime sends a tokenless landing to Settings, so this is what the page
- * says on its way there - and what it goes on saying if the viewer came back to
- * it. One line, pointing at the one place a token is typed: there is nothing
- * else a page with no data can honestly show.
+ * The one line every other page shows when this copy holds no token, and the
+ * line left in place of the page when GitHub refuses the token: it points at
+ * the one place a token is typed.
  *
  * @param {string} href - the Settings page, carrying the current repo selection
  * @param {string} [problem] - why the token this copy holds did not work
@@ -132,18 +79,10 @@ export const settingsNotice = (href, problem = '') => `<p class="text-body-secon
 export const isLocalHost = (hostname) => hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
 
 /**
- * The same page, pointed at the tower with `?api=` - the link the local notice
- * offers.
- *
- * It is the whole of the advice, because the mode is decided from the BUILD and
- * never from a probe (api.js): a locked page on this machine is a production
- * build, so starting the API changes nothing a reload can see. The override is
- * what flips `decideLive`, and it survives a reload in the URL.
- *
- * The origin is the tower's default rather than api.js's `API_BASE`: a locked
- * copy is by definition one that was given no override, so the two are the same
- * string - and importing api.js here would put this module's suite behind a
- * `location` it does not need.
+ * The same page, pointed at the tower with `?api=`: the whole of the local
+ * advice, since the mode is decided from the build and only the override flips
+ * it. The origin is the tower's default, not api.js's `API_BASE`: a locked copy
+ * had no override, and importing api.js would tie this suite to `location`.
  *
  * @param {string} href - the page URL
  * @param {string} [origin] - where the tower answers
@@ -156,7 +95,7 @@ export const connectHref = (href, origin = 'http://127.0.0.1:8693') => {
 };
 
 /**
- * What a locked copy says on THIS machine: the tower API is not answering, or
+ * What a locked copy says on this machine: the tower API is not answering, or
  * this copy was never pointed at it - never a token, which a local page has no
  * use for.
  *
@@ -174,9 +113,7 @@ export const towerDownNotice = (href) => `<div class="card">
 
 /**
  * What the intake dialog says where its roster and its write would be, forked
- * the same way and on the same predicate - the dialog rides every page, so a
- * local page telling one story in its body and another in its dialog is the
- * contradiction this fork exists to end.
+ * on the same predicate as the page body so the two never disagree.
  *
  * @param {string} hostname - the host the page was served from
  * @returns {string}
@@ -184,14 +121,8 @@ export const towerDownNotice = (href) => `<div class="card">
 export const lockedIntakeNotice = (hostname) => (isLocalHost(hostname) ? localLockedNotice() : lockedNotice());
 
 /**
- * Wire the token card: store what was typed, or forget what is held, and read
- * the page again either way.
- *
- * A reload rather than a re-render, because the mode is decided once at module
- * load (api.js) - asking the page to start over is both simpler and exactly
- * what the viewer expects from handing over a key. Forgetting reloads for the
- * same reason it did from the chrome's Token button: a copy with no token is a
- * different copy.
+ * Wire the token card: store what was typed, or forget what is held, then
+ * reload, since the mode is decided once at module load (api.js).
  *
  * @param {HTMLElement} host - the element the card was drawn into
  * @param {object} [seams] - `{ storage, reload }`, injectable for the suite
@@ -206,10 +137,8 @@ export const mountTokenCard = (host, seams = {}) => {
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const input = form.querySelector('[data-token-input]');
-    // An empty field is not a request to forget - Clear is - and the guard is
-    // HERE rather than on the answer, because `writeToken('')` is the clear:
-    // asking it and reacting to the empty string back would already have
-    // removed the token this browser holds.
+    // An empty field is not a request to forget: `writeToken('')` is the
+    // clear, so the guard sits before the write.
     const typed = String(input.value || '').trim();
     if (!typed) {
       input.focus();

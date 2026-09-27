@@ -1,41 +1,12 @@
 #!/usr/bin/env bash
-# workkit: the one command (issue #71).
-#
-# Installing the plugin wires the hooks, the skills, and the agents. Everything
-# else a working machine needs (the 9am schedule, the engine's address, the
-# per-repo opt-in, a `workkit` on the PATH) was a set of separate commands
-# nobody could find. This is the front door for all of them:
-#
-#   workkit help                the map
-#   workkit setup               from zero: plugin, gh, the schedule, the home
-#                               repo, the symlink
-#   workkit setup --token       that wizard's Claude-token step alone, forced
-#   workkit update [--auto]     re-run the machine-side installs
-#   workkit doctor              report drift, print the fix for what it cannot reach
-#   workkit publish             build and publish the dashboard from the home repo
-#   workkit enable [repo]       the repo's committed yes
-#   workkit decline [repo]      this developer's no, recorded personally
-#   workkit note <text...>      capture a thought
-#
-# Agent-agnostic like the rest of the engine: shell only, no Claude Code
-# knowledge beyond the name of a CLI it looks for. The checkout is resolved from
-# this script's own location: the link chain walked to the real file FIRST, so
-# `~/.local/bin/workkit` and `~/.claude/workkit/workkit.sh` both land on the
-# checkout rather than on the directory the link happens to sit in.
-#
-# UPKEEP IS AUTOMATIC. Claude Code has no plugin-install hook, so the trigger is
-# the one this kit owns: the workflow:standards SessionStart hook's once-per-day
-# run calls `update --auto`. That path only ever UPDATES a schedule a human
-# already installed (the installed daily plist is the marker). A first install
-# belongs to `setup`, run by a person.
+# workkit: the one command, the front door to the engine. `usage` below is the
+# map; workflow/README.md § The one command is the mechanism.
 
 set -euo pipefail
 
-# The link chain, walked before the dirname. `pwd -P` alone resolves the
-# DIRECTORIES on the way in, never the final component, so a run through
-# ~/.local/bin/workkit would otherwise call ~/.local/bin the checkout, and
-# every path below it (the engine, the installer, the symlink this script
-# maintains) would name a file that does not exist.
+# The link chain, walked before the dirname: `pwd -P` never resolves the final
+# component, so a run through ~/.local/bin/workkit would call ~/.local/bin the
+# checkout.
 SOURCE="${BASH_SOURCE[0]}"
 while [[ -L "$SOURCE" ]]; do
   TARGET="$(readlink "$SOURCE")"
@@ -52,9 +23,8 @@ CAPTURE="$SCRIPT_DIR/wk.sh"
 PUBLISH="$SCRIPT_DIR/publish.sh"
 JOBS_INSTALL="$KIT_DIR/jobs/install.sh"
 TOWER_START="$KIT_DIR/tower/start.sh"
-# The morning, and the one function that hands it to the cloud: the same two
-# files the 9am schedule runs, so `workkit brief` is that morning on demand
-# rather than a second way of doing it.
+# The same two files the 9am schedule runs, so `workkit brief` is that morning
+# on demand.
 MORNING="$KIT_DIR/jobs/morning.sh"
 BRIEF_DISPATCH="$KIT_DIR/jobs/brief-dispatch.sh"
 
@@ -65,35 +35,20 @@ PLUGIN_ID="workkit@workkit"
 DAILY_LABEL="com.workkit.claude-daily"
 DAILY_PLIST="${HOME:-}/Library/LaunchAgents/$DAILY_LABEL.plist"
 
-# The command's own address. ~/.local/bin because it is the one directory a user
-# owns that every shell setup already knows about; the PATH line is printed and
-# never written: someone's rc file is theirs.
+# The PATH line for this is printed and never written: someone's rc file is
+# theirs.
 BIN_DIR="${HOME:-}/.local/bin"
 BIN_LINK="$BIN_DIR/workkit"
 
-# The engine's address, maintained by standards.sh. Named here only so `doctor`
-# can report it: this script never writes it.
+# Maintained by standards.sh; named here only so `doctor` can report it.
 CLAUDE_HOME="${WORKFLOW_CLAUDE_HOME:-${HOME:-}/.claude}"
 ENGINE_LINK="$CLAUDE_HOME/workkit"
 
-# The machine-maintained roster file (issue #80: the hand-edited settings.json
-# holds the site options, and this one holds what the engine records). Read by
-# `doctor`, written only by the engine.
+# The machine-maintained roster, read by `doctor`.
 USER_REPOS="${WORKFLOW_HOME:-${HOME:-}/.workkit}/.repos.json"
 
-# The platform seam and the home repo's lifecycle: the CRLF-safe jq every JSON
-# read here goes through, then creating the repo, cloning it into
-# ~/.workkit/tower, seeding the tower project, Discussions, Pages, the doctor
-# lines. Sourced rather than shelled out to, so its steps speak in this
-# command's own voice (lib.sh's logger, tagged with whichever command the
-# dispatch named). Each file is a library: sourcing them runs nothing.
-#
-# An incomplete checkout is REPORTED by the steps that need them, never by a
-# source that aborts before this command can say anything at all: the same
-# restraint refresh_engine_link shows about a missing standards.sh. The seam
-# rides in the same list for that reason: the command (this entry and the
-# workkit/ folder it sources below) runs without the rest of the engine, and a
-# source that assumed otherwise would end the run at its first line.
+# Sourced tolerantly: an incomplete checkout is reported by the steps that need
+# these, never by a source that aborts before the command can speak.
 HOME_LIBS=1
 for _lib in lib/platform.sh lib.sh lib/discussions.sh home.sh; do
   if [[ -f "$SCRIPT_DIR/$_lib" ]]; then
@@ -105,12 +60,7 @@ for _lib in lib/platform.sh lib.sh lib/discussions.sh home.sh; do
 done
 
 # ── Output ────────────────────────────────────────────────────────────────────
-# Everything a person reads goes to STDOUT: this is a human command, and its one
-# machine caller (the standards hook) relays what it prints. The voice is
-# lib.sh's, one home for the glyphs, the colors and the question of whether to
-# use them at all (issue #237); each command opens with its own title, and the
-# steps print indented under it. A partial checkout with no lib.sh beside this
-# script still speaks; it speaks plainly, through the fallbacks below.
+# A partial checkout with no lib.sh still speaks, plainly, through these.
 if ! declare -f wk_ok >/dev/null 2>&1; then
   wk_ok()    { printf '%s\n' "$1"; }
   wk_skip()  { [[ "$QUIET" -eq 1 ]] || printf '%s\n' "$1"; }
@@ -124,13 +74,11 @@ if ! declare -f wk_ok >/dev/null 2>&1; then
   wk_plain() { cat; }
 fi
 
-# --auto is the quiet variant: only ACTIONS and warnings speak, so a session
-# start that found nothing to do says nothing at all.
+# --auto sets it: only actions and warnings speak.
 QUIET=0
 
-# A step that needs a human answer must never block a script. Every prompt in
-# `setup` asks this first and prints the command instead when the answer cannot
-# be given: a piped or backgrounded run finishes rather than hanging.
+# Every prompt asks this first and prints the command instead, so a piped or
+# backgrounded run finishes rather than hanging.
 interactive() { [[ -t 0 ]]; }
 
 usage() {
@@ -174,25 +122,18 @@ docs/project-state.md in the checkout.
 EOF
 }
 
-# The site step's answer: the step is `offer_site_publish` in workkit/site.sh,
-# which says how the question is put.
-# What the step LEAVES the switch reading, for the caller that acts on it:
-# 'true' when publishing is on (freshly answered yes or already true), 'false'
-# on a fresh no, and empty for every other ending, including every skip.
-# `cmd_setup` publishes on 'true' and adds nothing at all otherwise (issue #85).
+# What `offer_site_publish` (workkit/site.sh) leaves the switch reading: 'true'
+# when publishing is on, 'false' on a fresh no, empty for every other ending.
+# `cmd_setup` publishes on 'true' only.
 SITE_PUBLISH=''
 
-# What the last `cmd_publish` DID, for the step that runs after it (issue #230).
-# The publish never fails a run: it names its own refusal and returns 0, so an
-# exit code says nothing about whether the site actually moved. A caller that
-# has to know reads this instead: 0 is a publish that finished, 1 is one that
-# did not, and it is reset at every entry so only THIS run's ending is read.
+# 1 when the last `cmd_publish` did not finish: its exit code is always 0, so a
+# caller that must know reads this. Reset at every entry.
 PUBLISH_FAILED=0
 
-# The cloud brief's two secrets, by name (workkit/secrets.sh holds the rule a
-# value lives by).
+# The cloud brief's two secrets, by name (the rules: workkit/secrets.sh).
 SECRET_CLAUDE='CLAUDE_CODE_OAUTH_TOKEN'
-# Only names STARTING with `GITHUB_` are refused by GitHub; one that contains it
+# Only names starting with `GITHUB_` are refused by GitHub; one that contains it
 # is accepted, which is what lets this say plainly what it is.
 SECRET_HOME='WORKKIT_GITHUB_TOKEN'
 
@@ -200,14 +141,11 @@ SECRET_HOME='WORKKIT_GITHUB_TOKEN'
 # is worth offering: early enough that a morning brief never meets the expiry.
 SECRET_MAX_AGE_DAYS=330
 
-# The bound, in seconds, on every read of the cloud secrets block
-# (`bounded_read`, workkit/secrets.sh says why).
+# The bound, in seconds, on every read of the cloud secrets (`bounded_read`).
 SECRETS_TIMEOUT="${WORKKIT_GH_TIMEOUT:-10}"
 
-# How long the token handover waits for GitHub Pages to serve the publish before
-# it prints the URL instead. A publish is usually served inside a minute, and
-# three is where waiting stops being useful. The override is what lets the suite
-# drive that poll loop in seconds rather than in minutes.
+# How long the token handover waits for Pages to serve the publish before it
+# prints the URL instead. The override is the suite's seam.
 PAGES_WAIT="${WORKKIT_PAGES_WAIT:-180}"
 
 # The home repo and its secrets listing, set by `secrets_precheck`
@@ -217,12 +155,8 @@ SECRETS_JSON=''
 
 # ── The pieces ────────────────────────────────────────────────────────────────
 
-# The command's own body, one file per concern under workkit/. Each defines
-# functions and sets nothing, so every constant and every run-time value a
-# piece reads is still this script's own, defined above. Sourced plainly and
-# never through the tolerant loop: the pieces ARE the command, so a checkout
-# without them is broken, and a source that fails says so. Sourcing runs
-# nothing.
+# Sourced plainly, never through the tolerant loop: the pieces are the command,
+# so a checkout without them is broken and the source says so.
 # shellcheck source=./workkit/links.sh
 . "$SCRIPT_DIR/workkit/links.sh"
 # shellcheck source=./workkit/schedule.sh
@@ -242,8 +176,6 @@ SECRETS_JSON=''
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 
-# Each command opens with its own title (issue #237), which is what makes
-# `setup`, `publish` and the 9am job legible in one scrollback.
 case "${1:-help}" in
   help|-h|--help) usage ;;
   setup)   shift; cmd_setup "$@" ;;
@@ -261,8 +193,7 @@ case "${1:-help}" in
     fi
     exec bash "$TOWER_START" "$@"
     ;;
-  # The four that hand the whole run to another script: each one speaks in its
-  # own voice the moment it starts.
+  # These four hand the whole run to another script, which speaks for itself.
   enable)  shift; exec bash "$STANDARDS" --enable "${1:-$PWD}" ;;
   decline) shift; exec bash "$STANDARDS" --decline "${1:-$PWD}" ;;
   heal)    shift; exec bash "$STANDARDS" "${1:-$PWD}" ;;

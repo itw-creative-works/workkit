@@ -1,21 +1,7 @@
-//
 // Tests for workflow/lib/slug.sh, the engine's slug seam: `owner/repo` out of
-// whatever git hands back for a remote.
-//
-// The seam has its own suite because it has its own two consumers: the engine
-// sources it (lib.sh, and home.sh through it) and so does the hook layer beside
-// it (hooks/_lib.sh, for safety/release-taken's bounce), and neither consumer's
-// suite owns it. The file is sourced DIRECTLY here, the way platform.sh and
-// participation.sh are cased: a suite that reached the rule through lib.sh
-// would pass on a library that had quietly grown a second parse.
-//
-// The subject is a pure function, so every case sources the real file in a real
-// bash and reads what it printed, against literal URLs: no repo, no network.
-// Its Node twin is `slugFromRemote` in workflow/slug.js beside it, cased in
-// tests/tower/repos.test.js against these same forms, because the roster, the
-// home repo's project list and the CHANGELOG links must never disagree about
-// what a repo is called.
-//
+// whatever git hands back for a remote. Sourced directly, so a second parse in
+// lib.sh cannot pass here. Its Node twin, `slugFromRemote` in workflow/slug.js,
+// is cased against the same forms in tests/tower/repos.test.js.
 
 const os = require('os');
 const path = require('path');
@@ -65,11 +51,9 @@ const run = async () => {
   });
 
   await test('sourcing sets no variable and runs nothing', () => {
-    // A seam that set something would change the shell of every hook and script
-    // that loads it before doing its own work.
-    // The control runs `:` where the other sources the file, so the comparison
-    // is the seam against a command that does nothing, rather than against a
-    // shell that has run no command at all (bash sets PIPESTATUS at the first).
+    // A seam that set something would change the shell of every caller. The
+    // control runs `:` where the other sources the file, so the comparison is
+    // against a command that does nothing (bash sets PIPESTATUS at the first).
     const vars = (first) => spawnSync(
       BASH,
       [...NO_RC, '-c', `${first}\ncompgen -v | sort`],

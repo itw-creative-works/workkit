@@ -1,16 +1,7 @@
-//
-// Tests for workflow/wk.sh: the capture CLI.
-//
-// Every case runs the real script against a real temp tree: which capture file a note
-// lands in is a question about directories and a settings file, so there is
-// nothing here worth stubbing. HOME points at a temp directory throughout, so
-// nothing can reach the developer's own repos.
-//
-// The one seam is `gh`: filing a note outside every project creates an ISSUE
-// (issue #79), and no test may reach GitHub. PATH is pinned to a scratch bin
-// plus the system one, and the shim in that bin answers every call. The machine
-// that HAS no gh is built, not assumed: `basePathWithout` in tests/lib/platform.js.
-//
+// Tests for workflow/wk.sh: the capture CLI, run for real against a temp tree with
+// HOME pointed into it. The one seam is `gh`: a note outside every project is filed
+// as an issue, so PATH is a scratch bin plus the system one, and the machine with
+// no gh is built by `basePathWithout` in tests/lib/platform.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -27,28 +18,17 @@ const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 const SCRIPT = path.join(WORKFLOW_DIR, 'wk.sh');
 const TEMPLATE = fs.readFileSync(path.join(WORKFLOW_DIR, 'templates', 'capture.md'), 'utf8');
 
-// The MACHINE's settings file: the site options, no `enabled` key. It is not a
+// The machine's settings file: the site options, no `enabled` key. It is not a
 // repo opt-in anywhere it turns up, and the walk up meets it wherever a
 // directory sits under a user profile.
 const MACHINE_SETTINGS = `${JSON.stringify({ version: 1, site: { repo: 'owner/workkit', publish: false, url: null } }, null, 2)}\n`;
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
-// A temp tree holding a participating repo (a real one: a git repo carrying the
-// committed opt-in), a nested subdirectory, an outside directory, and the home
-// the tower clone sits under. `tower: false` is the
-// machine that has never run `workkit setup`: the one case with nowhere at all
-// to put a note; `tower: 'foreign'` is somebody else's repo sitting at that
-// path, which is never adopted.
-//
-// The clone is a REAL git repo with the home repo's origin, because which
-// folder counts as the home is the engine's own `wk_home_ready` question: a
-// bare `.git` directory is not the answer. It carries no `.workkit/` of its
-// own: the clone is engine territory (issue #79).
-//
-// `gh` is the shim: `true` files the issue, `'labels'` refuses any call
-// carrying --label (a fresh home repo without the vocabulary), `'down'` refuses
-// every call (offline), `false` leaves the machine without gh at all.
+// A temp tree: a participating repo, a nested subdir, an outside dir, and the home
+// whose tower clone is a real git repo (`wk_home_ready` asks, not a bare `.git`).
+// `tower`: false never ran setup, 'foreign' is someone else's repo at that path.
+// `gh`: true files, 'labels' refuses --label, 'down' refuses all, false has no gh.
 const makeTree = ({ settings = '{ "version": 1, "enabled": true }\n', tower = true, gh = true } = {}) => {
   const dir = mkTmp('wk-');
   const repo = path.join(dir, 'repo');
@@ -56,8 +36,8 @@ const makeTree = ({ settings = '{ "version": 1, "enabled": true }\n', tower = tr
   const bin = path.join(dir, 'bin');
   const ghLog = path.join(dir, 'gh-argv.log');
   fs.mkdirSync(path.join(repo, 'sub', 'deep'), { recursive: true });
-  // A real git repo, because the settings file is a REPO's opt-in and only
-  // counts where a repo is (issue #254).
+  // A real git repo, because the settings file is a repo's opt-in and only
+  // counts where a repo is.
   spawnSync('git', ['init', '-q', '-b', 'main', repo], { encoding: 'utf8' });
   fs.mkdirSync(path.join(dir, 'outside'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'home'), { recursive: true });
@@ -78,10 +58,8 @@ const makeTree = ({ settings = '{ "version": 1, "enabled": true }\n', tower = tr
   }
   if (gh) {
     // Every call is recorded with its argument boundaries intact
-    // (tests/lib/argv-log.js), so a body that spans lines is still one
-    // argument. The log is named in the SHELL's spelling: a native Windows path
-    // in the stub's redirect loses its backslashes to bash and the whole
-    // recording lands somewhere nobody reads.
+    // (tests/lib/argv-log.js). The log is named in the shell's spelling: a native
+    // Windows path in the stub's redirect loses its backslashes to bash.
     const refuse = gh === 'down'
       ? 'true'
       : (gh === 'labels' ? '[[ "$*" == *--label* ]]' : 'false');
@@ -121,7 +99,7 @@ const runScript = (cwd, args, t, extraEnv = {}) => {
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
-// One note whose BYTES are the point: bash builds the argument from a `$'...'`
+// One note whose bytes are the point: bash builds the argument from a `$'...'`
 // literal, so an invalid UTF-8 sequence reaches the script as those bytes. A JS
 // string cannot carry them, since every encoding of one repairs them first.
 // `$0` is the script, so the literal is the only thing interpolated.
@@ -155,9 +133,8 @@ const run = async () => {
   });
 
   await test('a non-participating cwd files the note as an issue on the home repo', async () => {
-    // There is no capture file outside a project any more (issue #79): a capture
-    // that belongs to no project goes straight to the queue triage would have
-    // put it in.
+    // A capture that belongs to no project goes straight to the queue triage
+    // would have put it in.
     const t = makeTree();
     const { code, out } = runScript(t.outside, ['note', 'a stray thought'], t);
     assertEq(code, 0, `exit 0: ${out}`);
@@ -181,9 +158,8 @@ const run = async () => {
 
   await test('a cwd under $HOME still files the issue: the machine settings are not a repo opt-in', async () => {
     // The walk up passes through $HOME, where `.workkit/settings.json` is the
-    // MACHINE settings file (roster, site options, home slug). With no
-    // `enabled` key it read as a legacy yes, and the note buffered into
-    // ~/.workkit/capture.md: a file the spec says must not exist (issue #79).
+    // machine settings file (roster, site options, home slug). With no
+    // `enabled` key it must not read as a legacy yes.
     const t = makeTree();
     const scratch = path.join(t.home, 'Documents', 'scratch');
     fs.mkdirSync(scratch, { recursive: true });
@@ -196,11 +172,10 @@ const run = async () => {
   });
 
   await test('a lookalike home between the cwd and the root is not a participating repo', async () => {
-    // Windows makes its temp directories INSIDE the user profile, so a walk up
-    // from one passes through a home that is NOT the configured one: the suite
-    // points HOME at its own temp home, and the profile the world sits in still
-    // carries the machine settings file. A settings file is a repo's opt-in
-    // where a repo is, and nowhere else (issue #254).
+    // Windows makes its temp directories inside the user profile, so a walk up
+    // passes through a home that is not the configured one and still carries the
+    // machine settings file. A settings file is a repo's opt-in where a repo is,
+    // and nowhere else.
     const t = makeTree();
     const profile = path.join(t.dir, 'profile');
     fs.mkdirSync(path.join(profile, W), { recursive: true });
@@ -229,13 +204,13 @@ const run = async () => {
   });
 
   await test('under a byte locale the truncated title is still valid UTF-8', async () => {
-    // LC_ALL=C makes bash count and cut BYTES, so the 72-char cut lands inside
+    // LC_ALL=C makes bash count and cut bytes, so the 72-char cut lands inside
     // a multibyte character and would otherwise hand gh a title no API accepts.
     const t = makeTree();
     const long = `${'a'.repeat(70)}→ the rest of the thought`;
     assertEq(runScript(t.outside, ['note', long], t, { LC_ALL: 'C' }).code, 0, 'exit 0');
 
-    // Read the log as BYTES: a string read would have replaced whatever
+    // Read the log as bytes: a string read would have replaced whatever
     // invalid sequence the cut left behind before the assertion could see it.
     const raw = fs.readFileSync(path.join(t.dir, 'gh-argv.log'));
     new TextDecoder('utf-8', { fatal: true }).decode(raw);
@@ -249,12 +224,9 @@ const run = async () => {
   });
 
   await test('a note whose own bytes are invalid UTF-8 is filed with the title repaired', async () => {
-    // Nothing is truncated here: the note ARRIVES ending in a severed multibyte
-    // sequence (a paste, a broken pipe, a $'...' literal). iconv drops the tail
-    // and reports a failure for it on every implementation, since the input
-    // ends inside the sequence, so a fallback reading that status would append
-    // the unrepaired note to the repaired one and file a doubled title that is
-    // still invalid.
+    // Nothing is truncated here: the note arrives ending in a severed multibyte
+    // sequence. iconv drops the tail and reports a failure for it everywhere, so
+    // a fallback reading that status would file a doubled title, still invalid.
     const t = makeTree();
     const { code, out } = runScriptBytes(t.outside, "$'a short note\\xe2\\x80'", t);
     assertEq(code, 0, `exit 0: ${out}`);
@@ -330,7 +302,7 @@ const run = async () => {
   });
 
   await test('a repo checked out as a git worktree is a participating repo', async () => {
-    // A worktree's `.git` is a FILE, and that is the shape the repo-root
+    // A worktree's `.git` is a file, and that is the shape the repo-root
     // predicate asks with `-e` rather than `-d`: a `-d` reading answers no for
     // a checkout that works perfectly, and the note is filed as an issue on the
     // home repo instead of landing where the session is standing.

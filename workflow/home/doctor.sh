@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# workflow/home/doctor.sh: the doctor lines. The home clone's state and the
-# cloud brief's runner, checked and never written. SOURCED by home.sh, never
-# executed, and it runs nothing at load: it defines functions and sets nothing.
+# workflow/home/doctor.sh: the doctor lines for the home clone and the cloud
+# brief's runner, checked and never written. Sourced by home.sh, functions only.
 # WK_HOME_RUNNER_FILES and WK_KIT_DIR are the entry's; WK_HOME_DIR is lib.sh's.
 
 # ── Doctor ────────────────────────────────────────────────────────────────────
@@ -31,14 +30,11 @@ wk_home_doctor() {
       return 1 ;;
   esac
 
-  # A checkout OLDER than what the clone carries: the seed and the sync both
-  # refuse to write from here (issue #200), so nothing this machine does reaches
-  # the home repo until it catches up. Asked FIRST: every answer below it is
-  # about a clone this checkout may no longer write to.
+  # Asked first: a checkout older than the clone's stamp writes nothing, so
+  # every answer below would be about a clone it cannot write to.
   wk_home_downgrades && return 1
 
-  # A clone. The only question left is where it stands against its upstream, and
-  # `git status -sb` answers all three without a network call.
+  # `git status -sb` answers ahead, behind and diverged without a network call.
   track="$(git -C "$WK_HOME_DIR" status -sb 2>/dev/null | head -1 || true)"
   if [[ "$track" == *'[ahead '*'behind '* ]]; then
     wk_warn "home: $slug has diverged from its upstream; \`git -C $WK_HOME_DIR pull --rebase\` on a clean tree reconciles it; the engine never force-pushes"
@@ -56,16 +52,9 @@ wk_home_doctor() {
   return 0
 }
 
-# The cloud brief's runner, checked rather than written (issue #91).
-#
-# Since issue #143 the morning reconciles the copy itself (`jobs/morning/runner.sh`
-# calls `wk_home_seed_runner` every day, ahead of the dispatch) so what this
-# reports is drift the last morning could not heal: a machine whose job has not
-# run yet, or one whose home clone the reconcile named a skip on. It only ever
-# READS, and the fix it names is `workkit setup`, the one command that also
-# clones and creates.
-#
-# Returns 1 when the seeded copy is behind, 0 otherwise (current, or a skip).
+# The cloud brief's runner, read only: drift the last morning's reconcile could
+# not heal, fixed by `workkit setup`. Returns 1 when the seeded copy is behind,
+# 0 otherwise (current, or a skip).
 wk_home_runner_doctor() {
   local pair src dest behind=0 compared=0 retired=0
 
@@ -91,9 +80,8 @@ wk_home_runner_doctor() {
     return 0
   fi
 
-  # Current means what the seed would leave alone, so a retired file awaiting
-  # the prune is drift too, counted through the same lister the seed removes
-  # from (#117).
+  # A retired file awaiting the prune is drift too, counted through the lister
+  # the seed removes from.
   retired=$(wk_home_runner_retired | awk 'END { print NR }')
 
   if [[ "$behind" -gt 0 || "$retired" -gt 0 ]]; then

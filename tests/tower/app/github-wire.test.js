@@ -1,7 +1,6 @@
 //
-// Tests for the tower dashboard's github.js: the wire (the GraphQL request,
-// its refusals, and the rate limit).
-// The shared prologue (the lib loader, the fetch stub, the fixtures) is ./helpers.js.
+// Tests for the tower dashboard's github.js: the wire (the GraphQL request, its
+// refusals, and the rate limit). Shared prologue: ./helpers.js.
 //
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
@@ -88,7 +87,7 @@ const run = async () => {
     assertEq(quiet.reason, `GitHub rate limit hit for this token; resets at ${clockAt(reset)} (in 9 min).`,
       'and it says when it lifts, not "GitHub answered without data"');
 
-    // A SECONDARY limit hands back the seconds this caller must wait, which is
+    // A secondary limit hands back the seconds this caller must wait, which is
     // not the hour the shared budget takes to refill.
     const secondary = await github.graphql('q', {
       token: 't',

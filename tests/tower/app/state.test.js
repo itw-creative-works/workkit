@@ -1,7 +1,6 @@
 //
 // Tests for the tower dashboard's state.js: what a feed said, what the repo
-// selection leaves in play, and the issue behind a dragged card.
-// The shared prologue (the lib loader, the DOM double, the fixtures) is ./helpers.js.
+// selection leaves in play, the issue behind a dragged card. Prologue: ./helpers.js.
 //
 
 const path = require('path');
@@ -25,8 +24,8 @@ const run = async () => {
 
   await test('the brief payload has one reader, and three pages take it from there', () => {
     // The Overview's charts, the Brief itself and the Health page's stale-brief
-    // row (#172) all want the same feed's data; it is read here rather than
-    // copied into each page module.
+    // row all want the same feed's data; it is read here rather than copied into
+    // each page module.
     const answered = mkState({ brief: { counts: { open: 3 } } });
     assertEq(state.brief(answered).counts.open, 3, 'a feed that answered hands back its payload');
     assertEq(state.brief({ feeds: { brief: failed('connection refused') }, selectedRepo: '' }), null,
@@ -36,8 +35,8 @@ const run = async () => {
     for (const name of ['index.js', 'health.js']) {
       const source = fs.readFileSync(path.join(pages, name), 'utf8');
       assert(/brief\(state\)/.test(source), `${name} reads it through the one accessor`);
-      // Asking the raw slot whether it has ANSWERED yet is a different question,
-      // and the Overview still asks it - what no page keeps is a second copy of
+      // Asking the raw slot whether it has answered yet is a different question,
+      // and the Overview still asks it; what no page keeps is a second copy of
       // the reader that turns the slot into the payload.
       assert(!/briefPayload/.test(source), `${name} keeps no reader of its own`);
     }
@@ -51,10 +50,9 @@ const run = async () => {
   });
 
   await test('a local-only slot is a designed state, not an unavailable feed', () => {
-    // The chrome's chip counts every feed that is not `ok` (the poller's own
-    // stale rule), so a published copy marking its machine-bound slots failed
-    // said "2 feeds unavailable" from first paint to last. The slot is `ok` and
-    // MARKED instead, and the marker is what the panels draw from.
+    // The chrome's chip counts every feed that is not `ok` (the poller's stale
+    // rule), so a published copy's machine-bound slot is `ok` and marked, never
+    // failed, and the panels draw from the marker.
     const slot = state.localOnlySlot();
     assertEq(slot.ok, true, 'nothing failed - this copy simply is not that machine');
     assertEq(slot.localOnly, true, 'and the marker says which of the two it is');
@@ -90,8 +88,8 @@ const run = async () => {
   });
 
   await test('a comma list narrows to the SUBSET it names, not to nothing', () => {
-    // The bug class #104 hunts: `?repo=` became a list, and any predicate still
-    // comparing it as one slug matches no repo at all and empties the page.
+    // `?repo=` is a list, and any predicate still comparing it as one slug
+    // matches no repo at all and empties the page.
     const roster = [...ROSTER, { slug: 'dotfiles', path: '/repos/dotfiles', name: 'dotfiles' }];
     const two = mkState({
       repos: roster,
@@ -111,7 +109,7 @@ const run = async () => {
     assert(state.inSelectedRepo(one, '/repos/ITW/workkit/tower/api'), 'and anything under it');
     assert(!state.inSelectedRepo(one, '/repos/Omega/omega'), 'another repo is out');
     // The prefix test has to respect the separator, or a sibling directory whose
-    // name merely STARTS with the repo's would read as inside it.
+    // name merely starts with the repo's would read as inside it.
     assert(!state.inSelectedRepo(one, '/repos/ITW/workkit-scratch'), 'a lookalike sibling is out too');
     assert(!state.inSelectedRepo(one, ''), 'and a session with no cwd cannot be placed here');
   });
@@ -135,7 +133,7 @@ const run = async () => {
 
   group('tower/app: state - the issue behind a dragged card');
 
-  /** A board feed as a poll writes it: a NEW object graph every time. */
+  /** A board feed as a poll writes it: a new object graph every time. */
   const mkBoardState = () => mkState({
     board: {
       issues: [
@@ -162,11 +160,9 @@ const run = async () => {
   });
 
   await test('the answer is the LIVE object - the regression a quiet poll used to cause', () => {
-    // The defect: the Board resolved a drop against a map built when the page
-    // was last PAINTED. A poll that changed no markup does not repaint, so the
-    // map went on holding issue objects from a graph nothing draws from any
-    // more - the optimistic move mutated a detached object and the card sat
-    // still until the write came back.
+    // A drop resolves against the live graph, not a map built at the last paint:
+    // a quiet poll repaints nothing, so a paint-time map holds objects nothing
+    // draws from, and the optimistic move would mutate a detached one.
     const live = mkBoardState();
     const atPaint = state.issueByKey(live, 'ITW/workkit#48');
 

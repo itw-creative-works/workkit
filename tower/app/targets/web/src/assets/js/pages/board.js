@@ -1,38 +1,7 @@
-//
-// Board - every open issue on the roster, in columns by `status:`.
-//
-// The columns are the status labels, in two groups of one strip (issue #196):
-// the PIPELINE, in stage order, which reads as a flow, and the side POCKETS
-// beside it, which are the states of waiting rather than stages of progress. An
-// open issue carrying none of them is not a further place to be - it is a fault
-// the pipeline forbids and the daily heal repairs - so it is drawn as the danger
-// alert above the board (format.js's `noStatusAlert`), named and linked, and
-// nowhere else: not as a card, not in a column count, not in the denominator
-// below (#118).
-//
-// The filters live in the URL query alongside the chrome's `?repo=`, so a
-// filtered board is a link someone else can open. They are read back out of the
-// URL on every draw, which also makes the 60-second repaint harmless: the
-// toolbar is rebuilt from the URL, not from whatever the DOM last held.
-//
-// So does which VIEW is on screen (issue #103): the columns, or the dependency
-// graph the same issues draw. `?view=graph` is one more thing the URL carries
-// and the toolbar reads back, and the repo scope and every filter narrow both
-// views identically - the graph is the same board, drawn as arrows. The picture
-// itself is composed in `libs/tower/graphdef.js` and drawn by the framework's
-// graph module; what is here is the toggle, the slot and the sequencing.
-//
-// A card is DRAGGED between those columns, and the drop really relabels the
-// issue: the payload and the mode gate are api.js's `moveRequest`, the write is
-// its `postIssueStatus`, and everything here is what the browser
-// contributes - which card was picked up, which column it landed on, and the
-// optimistic move that puts it there before the write has answered. A failed
-// write puts the card back and says why. A PUBLISHED copy behaves identically:
-// the sweep is GitHub's and the browser makes it, and so is the write, with the
-// viewer's own token (libs/tower/github.js). The only copy that does not drag is
-// the locked one, which never draws its cards - a locked viewer is routed to
-// the Settings page instead.
-//
+// Board: every open issue on the roster, in columns by `status:`, or as the
+// dependency graph (tower/README.md § The pages). The filters and the view live
+// in the URL, read back on every draw, so a filtered board is a shareable link
+// and a repaint is harmless. The drag's payload and write are api.js's.
 
 import { startPage } from '../libs/tower/page.js';
 import { issuesFor, board, feed, issueByKey } from '../libs/tower/state.js';
@@ -47,15 +16,12 @@ import { claimGlyph } from '../libs/tower/agent.js';
 import { boardGraph } from '../libs/tower/graphdef.js';
 import { WRITABLE, MOVABLE_STATUSES, moveRequest, postIssueStatus } from '../libs/tower/api.js';
 
-// The filter names, which are also their URL parameter names. `repo` is not one
-// of them - the page chrome owns that globally and every page obeys it, and
-// neither is `view`, which is not something a filter clears.
+// The filter names, which are also their URL parameter names. `repo` is the
+// chrome's, and `view` is not something a filter clears.
 const PARAMS = ['type', 'priority', 'agent', 'assignee', 'q'];
 
-// The two ways this board is drawn. `list` is the default and is written into
-// the URL as nothing at all, so a plain `/board` link is the board it always
-// was; anything else the query carries reads as the default rather than as an
-// empty page.
+// `list` is the default, written into the URL as nothing at all; an unknown
+// value reads as the default rather than an empty page.
 const VIEWS = ['list', 'graph'];
 
 const readView = () => {
@@ -109,10 +75,8 @@ const select = (id, label, chosen, values) => `<label>
   </select>
 </label>`;
 
-// The view toggle - two real buttons rather than a select, because there are
-// two of them and the one in force is worth seeing without opening anything.
-// The active one is the filled button and says `aria-pressed`, so what the eye
-// reads and what a screen reader is told are the same fact.
+// Two buttons, not a select, so the view in force shows without opening
+// anything; `aria-pressed` tells a screen reader what the fill tells the eye.
 const viewToggle = (view) => `<span class="btn-group btn-group-sm" role="group" aria-label="Board view">
     ${VIEWS.map((name) => `<button class="btn btn-sm btn-${view === name ? '' : 'outline-'}adaptive" type="button" data-view="${name}" aria-pressed="${view === name}">${name === 'list' ? 'List' : 'Graph'}</button>`).join('')}
   </span>`;
@@ -142,42 +106,10 @@ const toolbar = (issues, filters, view) => `<form class="d-flex flex-wrap align-
 /** Whether this card may be picked up - something to write with, and a status to move from. */
 const draggable = (issue) => WRITABLE && MOVABLE_STATUSES.includes(issue.status);
 
-// A card OPENS the issue in the dialog; GitHub is reached only through the
-// button in its corner, which shows while the card is hovered or focused.
-//
-// Every card is the same size, which takes all three of its rows holding one
-// shape: the slug line truncates, the title is clamped to two lines
-// (`omega-tower-issue__title`), and the chips stay on one row
-// (`omega-tower-issue__chips`) - so the only remaining variation is a short
-// title, which the floor on `.omega-tower-board .omega-tower-issue` absorbs
-// while `mt-auto` keeps the chips against the bottom edge. Nothing is lost to
-// any of it: the card opens the dialog, which says the whole of all three.
-//
-// The claim indicator is the crew's own glyph, gate and all (agent.claimGlyph):
-// what it looks like, when it is earned and what it says to a screen reader are
-// one decision, and it is made in the lib the Crew page draws from too.
-//
-// Every card the board draws carries one of the pipeline statuses, so every
-// card is draggable wherever there is something to write with. The card's
-// `data-issue` key is what the drop reads back - the same key the dialog
-// registry uses, so the two never mean different things.
-//
-// What the card says about a DEPENDENCY rides that same chip row (issue #103):
-// the row is one line and clipped, so a "waits on #12" chip costs the card no
-// height at all, where a line of its own would make every blocked card taller
-// than its neighbours.
-//
-// A BLOCKED card carries no line the others do not (issue #205): the open
-// question it is waiting to be told is in the dialog the card opens, where
-// there is room to read it, rather than a line of its own on the face of every
-// stuck card.
-//
-// The top row is NAMED because its right end is one slot rather than two: the
-// open button is lifted out of the flow into that corner where there is a
-// pointer to reveal it with, which is the sheet's job and needs an element to
-// position against (main.scss). It is the board card's row alone - the list
-// rows the Brief, the Overview and Health draw carry the same `omega-tower-issue`
-// class and their button stays in flow.
+// One size per card: slug truncated, title clamped, chips (dependencies
+// included) on one row. `data-issue` is the dialog registry's key, read back by
+// the drop. The named top row is what main.scss positions the open button
+// against; the list rows elsewhere keep theirs in flow.
 const issueCard = (issue, showRepo, open) => `<div class="card omega-tower-issue omega-interactive omega-interactive--lift mb-2${issue.status === 'blocked' ? ' border-danger' : ''}"${draggable(issue) ? ' draggable="true"' : ''} ${issueTrigger(issue)}>
   <div class="card-body p-3 d-flex flex-column">
     <div class="d-flex align-items-start gap-2 omega-tower-issue__top">
@@ -190,9 +122,7 @@ const issueCard = (issue, showRepo, open) => `<div class="card omega-tower-issue
   </div>
 </div>`;
 
-// Every column names a status to move TO, so every one of them takes a drop.
-// `pb-2` is the air between the title and the rule under it - the head is a
-// flex row and its border sits on the text without it.
+// Every column takes a drop. `pb-2` keeps the head's border off its text.
 const column = (status, issues, showRepo, open) => `<section data-column="${esc(status.key)}">
   <div class="omega-panel-head mb-3 pb-2" style="border-bottom: 2px solid ${statusColor(status.key)};">
     <span>${chipGlyph(status.key)}${esc(status.label)}</span>
@@ -201,37 +131,13 @@ const column = (status, issues, showRepo, open) => `<section data-column="${esc(
   ${issues.length ? issues.map((issue) => issueCard(issue, showRepo, open)).join('') : empty('nothing here', 'fa-regular fa-square-check')}
 </section>`;
 
-// A GROUP of lanes - each lane a cell of the ONE strip below, so every lane
-// header on the board is on one line (#196). No caption names the group (#203):
-// the pocket's aria-label says it to a screen reader, and the divider before it
-// says it to the eye (#291).
-//
-// A column reads in three priority bands - high, then the unlabelled middle,
-// then low - most recently updated first inside each. The comparator is
-// format.js's (`byPriority`), the same module that colours those bands.
+// A group of lanes, each a cell of the one strip below. No caption: the
+// pocket's aria-label and divider say it.
 const lanes = (statuses, shown, showRepo, open) => statuses.map((status) => column(status, shown.filter((issue) => issue.status === status.key).sort(byPriority), showRepo, open)).join('');
 
-// The board is ONE strip in TWO groups (issue #196). The pipeline is the flow -
-// inbox to complete, in stage order, read left to right - and the pocket beside
-// it holds the two states that are not stages: `blocked` and `backlog` are
-// waiting, and a lane of them standing in the middle of the flow made the board
-// read as though an issue progressed through them. Which lanes are which is the
-// vocabulary's own `pocket` flag (format.js), never a second list of statuses
-// here.
-//
-// Every lane is a track of the same grid, so all seven are one width and the
-// pocket's headers cannot sit lower than the pipeline's - which is what two
-// side-by-side strips did, each with its own padding above its own lanes. The
-// pocket is still a landmark of its own: it spans its lanes' tracks and borrows
-// them back through `subgrid`, so the region says what it is to a screen reader
-// and is set off by one vertical line (main.scss) while costing its lanes no
-// width at all.
-//
-// The lane count is the vocabulary's, so the page hands the stylesheet the two
-// numbers it needs as custom properties - how many lanes the pipeline has and
-// how many the pocket has - and every track, span and the divider is a class rule
-// reading them (#203). A vocabulary with a different split changes nothing
-// here and nothing there.
+// One grid, so every lane is one width; the pocket borrows its tracks back
+// through `subgrid` to stay a landmark. The split is the vocabulary's `pocket`
+// flag, and the two counts go to the stylesheet as custom properties.
 const columns = (shown, showRepo, open) => {
   const pipeline = STATUSES.filter((status) => !status.pocket);
   const pocket = STATUSES.filter((status) => status.pocket);
@@ -245,22 +151,12 @@ const columns = (shown, showRepo, open) => {
 </div>`;
 };
 
-// The one number the lanes cannot say between them (#203): how many issues the
-// filters let through, out of how many the board holds in all. The scope is
-// the project picker's, so the line does not repeat it. An unlabelled issue
-// is in neither number - it is drawn in the alert above and nowhere else.
+// An unlabelled issue is in neither number: it is the alert's alone.
 const counts = (shown, total) => `<p class="omega-micro text-body-secondary mb-2">showing ${shown} out of ${total}</p>`;
 
 // ── The graph view ─────────────────────────────────────────────────────────
-//
-// The same issues, drawn as what waits on what (issue #103). The definition is
-// composed by `libs/tower/graphdef.js` and everything about the picture is
-// decided there; the slot, the height floor and the sentence under it are the
-// page's.
-//
-// It is a READING, not a surface: nothing is dragged, opened or filed here, and
-// the line under the diagram says so rather than leaving a viewer clicking at
-// boxes. The List view is where the board is worked.
+// The picture is `libs/tower/graphdef.js`'s; the slot, the height floor and the
+// line saying the List view is where the board is worked are the page's.
 
 /** The height floor the diagram reserves before it has drawn anything. */
 const GRAPH_HEIGHT = 420;
@@ -273,17 +169,11 @@ const graph = (definition) => (definition
 /**
  * Draw the composed definition into the slot the paint just wrote.
  *
- * mermaid is a split chunk the framework fetches on demand, so the first paint
- * in this view has no library to draw with and `graphSlot` says so in place of
- * the host. The load is idempotent; when it lands the page draws itself again,
- * which is how every charted page sequences its own (libs/tower/page.js).
+ * mermaid loads on demand; when it lands the page draws itself again.
  *
- * Draws are SERIALIZED and the newest definition wins: a filter keystroke can
- * re-compose mid-draw, and a slower old render landing last would stand stale
- * forever - swap compares what IT last wrote, so the next poll would never
- * repair the host. And the definition is composed from remote titles, so a
- * shape the sanitizer missed that strict mermaid refuses says so in the host
- * instead of leaving the reserved box blank.
+ * Draws are serialized and the newest definition wins: a slower old render
+ * landing last would stand stale, since swap compares only what it last wrote.
+ * A definition strict mermaid refuses says so in the host.
  */
 let drawing = Promise.resolve();
 let queuedDefinition = null;
@@ -313,9 +203,7 @@ const paintGraph = (root, state, definition) => {
   });
 };
 
-// Why the last move did not land, until another one is tried. It sits outside
-// render because a repaint arriving between the failed write and the next drop
-// must not swallow the only explanation the page has.
+// Outside render, so a repaint before the next drop keeps the explanation.
 let moveError = null;
 
 /**
@@ -326,27 +214,19 @@ let moveError = null;
 const render = (root, state) => {
   const result = feed(state, 'board');
   const all = issuesFor(state);
-  // The board IS the labelled issues. The rest are the alert's, and the toolbar
-  // never narrows that: a type filter hiding a pipeline fault would be the
-  // comfortable lie a lane for them would tell.
+  // The unlabelled are the alert's, and no filter narrows that.
   const labelled = all.filter((issue) => issue.status);
   const filters = readFilters();
   const shown = labelled.filter((issue) => matches(issue, filters));
   const selected = selectedSlugs(state);
-  // The repo column is dropped only when every card on the board is from the
-  // same repo - one selected slug. A subset still mixes repos and still needs
-  // saying which is which.
   const showRepo = selected.length !== 1;
-  // A blocker is unsatisfied while the SWEEP is still carrying it, and the sweep
-  // is the whole payload rather than the scoped view: an issue waiting on one in
-  // a repo the selection hides is still waiting on it (issue #103). Lowercased -
-  // the chip's contract - since repo names are case-insensitive on GitHub.
+  // The whole sweep, not the scoped view: a blocker in a hidden repo still
+  // blocks. Lowercased, since GitHub repo names are case-insensitive.
   const sweep = (board(state) || {}).issues || [];
   const open = new Set(sweep.map((issue) => issueKey(issue).toLowerCase()));
   const view = readView();
 
-  // Composed once and used twice: the markup carries the definition as the
-  // stamp `swap` compares on, and the draw below takes it as its text.
+  // Used twice: the stamp `swap` compares on, and the text the draw takes.
   let definition = '';
   let body;
   if (!result) body = loading('reading the board…');
@@ -358,10 +238,7 @@ const render = (root, state) => {
     body = `${moveError ? problem(moveError) : ''}${noStatusAlert(all, showRepo)}${counts(shown.length, labelled.length)}${drawn}`;
   }
 
-  // The page repaints every poll, and a repaint must not take the caret out of
-  // the search box mid-word - so where the focus was is put back where it goes.
-  // A poll that changed nothing does not write at all (swap), and then there is
-  // nothing to restore.
+  // A repaint must not take the caret out of the search box mid-word.
   const focused = document.activeElement;
   const focusId = focused && root.contains(focused) ? focused.id : null;
   const caret = focusId && typeof focused.selectionStart === 'number' ? focused.selectionStart : null;
@@ -377,8 +254,7 @@ const render = (root, state) => {
   }
 
   const form = root.querySelector('#board-filters');
-  // `input` covers both the search box and the selects, so one listener on the
-  // form is the whole toolbar - and every control is always in the markup.
+  // `input` covers the search box and the selects alike.
   form.addEventListener('input', () => {
     const next = {};
     for (const control of form.querySelectorAll('[data-filter]')) next[control.dataset.filter] = control.value.trim();
@@ -398,10 +274,7 @@ const render = (root, state) => {
 
   wireDrag(root, state);
 
-  // Only ever after a write: `swap` returned above when the markup - the
-  // definition stamp included - was the one already on the page, so the
-  // 60-second repaint leaves an unchanged diagram standing rather than
-  // rendering the same picture again.
+  // Only after a write: an unchanged diagram is left standing.
   if (view === 'graph' && definition) paintGraph(root, state, definition);
 };
 
@@ -409,16 +282,9 @@ const render = (root, state) => {
  * Make the cards draggable and the columns droppable, for the markup that was
  * just written.
  *
- * Bound per paint rather than delegated: a paint that changed nothing does not
- * write at all (swap returns false above), so the elements holding these
- * listeners are exactly as long-lived as the listeners are.
- *
- * What is NOT held across paints is the data. A card carries its key, and the
- * issue behind it is looked up when the drop happens - every poll parses a new
- * object graph into the feed, and a quiet poll (unchanged markup, so no repaint
- * and no rebinding) would otherwise leave these handlers holding issue objects
- * nothing draws from any more: the optimistic move would mutate a detached
- * object and the card would sit still until the write came back.
+ * Bound per paint, since an unchanged paint writes nothing. The issue is looked
+ * up by key at drop time: a quiet poll swaps the feed's objects without a
+ * rebind, and a held one would be detached.
  *
  * @param {HTMLElement} root the page body
  * @param {object} state the runtime's feed state
@@ -429,9 +295,7 @@ const wireDrag = (root, state) => {
     const request = moveRequest(issue, to);
     if (!request) return;
 
-    // Optimistic: this issue IS the board payload's own, so moving its status
-    // moves the card on the repaint below, and the poll that follows keeps it
-    // there instead of flickering it back.
+    // Optimistic: this is the payload's own issue, so the next poll keeps it.
     const from = issue.status;
     issue.status = to;
     moveError = null;
@@ -445,9 +309,7 @@ const wireDrag = (root, state) => {
       return;
     }
 
-    // The board is polled once a minute and the API caches the sweep for as
-    // long: without asking for a fresh one, the next poll would paint the old
-    // labels back over a move that actually landed.
+    // Without a fresh sweep the next poll paints the cached old labels back.
     await state.refresh('board');
   };
 
@@ -461,8 +323,7 @@ const wireDrag = (root, state) => {
   }
 
   for (const section of root.querySelectorAll('[data-column]')) {
-    // A dragover that is not prevented means "not a drop target" - preventing it
-    // is how an element says it takes the drop at all.
+    // Preventing dragover is how an element takes the drop.
     section.addEventListener('dragover', (event) => {
       event.preventDefault();
       event.dataTransfer.dropEffect = 'move';

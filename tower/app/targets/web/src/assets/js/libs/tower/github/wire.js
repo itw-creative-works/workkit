@@ -12,12 +12,9 @@ const GRAPHQL_URL = 'https://api.github.com/graphql';
 export const NO_TOKEN = 'no GitHub token in this browser - add one to unlock the board';
 
 /**
- * The rate-limit MARK, carried only when there is one.
- *
- * A failure travels graphql -> fetchBoard -> readFeed before the runtime reads
- * it, and the status alone cannot say which kind of 403 this was. The mark is
- * added last and only while it is true, so every other result is the payload it
- * always was.
+ * The rate-limit mark, carried only when there is one: a failure travels
+ * graphql, fetchBoard, readFeed before the runtime reads it, and the status
+ * alone cannot say which kind of 403 it was.
  *
  * @param {{rateLimited?: boolean}} result - the answer it is read off
  * @returns {{rateLimited?: boolean}}
@@ -42,14 +39,10 @@ const limitHeaders = (response) => {
 };
 
 /**
- * One GraphQL request.
- *
- * Never throws, and reports the four ways it can fail apart: no token, a
- * transport failure, a status GitHub refused it with (a spent rate limit told
- * apart from a token that will not do), and a body that is not JSON. A payload
- * carrying BOTH data and errors is a success - a roster with one unreadable
- * repo is the ordinary shape, and the caller hangs each error on the repo it
- * names.
+ * One GraphQL request. Never throws, and tells its four failures apart: no
+ * token, transport, a refusing status (a spent limit told apart from a bad
+ * token), and a body that is not JSON. Data and errors together is a success:
+ * the caller hangs each error on the repo it names.
  *
  * @param {string} query - the document
  * @param {object} ctx
@@ -83,12 +76,9 @@ export const graphql = async (query, ctx = {}) => {
     payload = null;
   }
 
-  // The limit is read BEFORE the refusal, because it wears the same status and
-  // the wrong sentence sends the viewer off making a token they already have.
-  // On GraphQL it does not wear a refusing status at all: the primary limit is
-  // an ordinary 200 whose only tell is the error type, which is why the errors
-  // go in with the headers. A PARTIAL answer is still an answer, so they speak
-  // only when nothing came back.
+  // The limit is read before the refusal: it wears the same status, and on
+  // GraphQL the primary limit is a 200 told only by the error type. A partial
+  // answer is still an answer, so the errors speak only when no data came back.
   const limited = rateLimitReason(response.status, limitHeaders(response), Date.now(), {
     message: payload && payload.message,
     errors: payload && payload.data ? null : payload && payload.errors,
@@ -114,19 +104,13 @@ export const graphql = async (query, ctx = {}) => {
   return { ok: true, data: payload.data, errors: payload.errors || [], status: response.status, reason: null };
 };
 
-/** The two statuses that mean the TOKEN is the problem, not the read. */
+/** The two statuses that mean the token is the problem, not the read. */
 const REFUSED = [401, 403];
 
 /**
- * Whether a feed result is GitHub refusing the token itself.
- *
- * One home for the question, because two places ask it: the fetchers here and
- * the runtime, which answers a refusal with the Settings pointer instead of a page problem.
- *
- * A spent rate limit wears the same 403 and is NOT this (issue #213): there is
- * nothing to type on the Settings page that fixes it, so a marked result is
- * left to the page, which draws the sentence in its own alert and lets the next
- * poll clear it.
+ * Whether a feed result is GitHub refusing the token itself: asked by the
+ * fetchers and by the runtime, which answers it with the Settings pointer. A
+ * spent rate limit wears the same 403 and is not this: no token fixes it.
  *
  * @param {{ok: boolean, status: number|null, rateLimited?: boolean}} result - a feed result
  * @returns {boolean}
@@ -136,12 +120,9 @@ export const isTokenRefusal = (result) => Boolean(result) && result.ok === false
 const REST_URL = 'https://api.github.com';
 
 /**
- * What a refused WRITE means - which is not what a refused read means.
- *
- * A token that reads these repositories and cannot change them answers 403 on
- * the write and nothing else, and the viewer holding it has no way of knowing
- * that from "GitHub refused the token": the board just drew itself with it. So
- * the sentence names the missing permission and how to get it.
+ * What a refused write means: a token that reads but cannot change these
+ * repositories answers 403 on the write alone, so the sentence names the
+ * missing permission.
  *
  * @param {number} status - 401 or 403
  * @returns {string}
@@ -151,11 +132,8 @@ const writeRefusal = (status) => (status === 403
   : 'GitHub refused the token (401) - it is expired, or it is not a token any more. Hand over a fresh one.');
 
 /**
- * What a refused READ means - the other half, and the reason the two are split.
- *
- * A write is two calls: the issue is read, then patched. A 403 on the READ says
- * the token cannot SEE that repository, and telling that viewer to make a token
- * with write access sends them after the wrong permission.
+ * What a refused read means: a 403 on a write's first call says the token
+ * cannot see the repository, which is a different permission to ask for.
  *
  * @param {number} status - 401 or 403
  * @returns {string}
@@ -199,10 +177,8 @@ export const rest = async (path, ctx = {}, init = {}) => {
     payload = null;
   }
 
-  // Read BEFORE the refusal, as the sweep reads it: a spent budget wears the
-  // same 403 and no token typed on Settings lifts it. This is the path the
-  // ROSTER is read on - the first thing the token is asked for (issue #110) -
-  // so a limit hit here is the one the viewer meets first.
+  // Read before the refusal, as the sweep reads it. The roster is read on this
+  // path, so a limit hit here is the one the viewer meets first.
   const limited = rateLimitReason(response.status, limitHeaders(response), Date.now(), { message: payload && payload.message });
   if (limited) return { ok: false, data: null, status: response.status, reason: limited, rateLimited: true };
 

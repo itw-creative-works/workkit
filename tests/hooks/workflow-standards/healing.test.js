@@ -1,8 +1,6 @@
-//
 // Tests for hooks/workflow:standards: healing a repo, and relaying only the
 // lines the engine itself printed.
 // The shared prologue (the repo factory, the decline, the hook runner and its gh-less PATH, the constants) is ./helpers.js.
-//
 
 const path = require('path');
 const fs = require('fs');
@@ -45,10 +43,10 @@ const run = async () => {
     cleanup(repo); cleanup(first.cacheDir); cleanup(second.cacheDir);
   });
 
-  // What the relay carries, and what it must not (issue #237). The heal's
-  // capture is BOTH streams, so a child tool the engine ran writes into it too:
-  // a `cp` refusal, a git advisory. Only a line the engine itself printed is a
-  // heal action, and the opening glyph is what says which is which.
+  // What the relay carries, and what it must not. The heal's capture is both
+  // streams, so a child tool the engine ran writes into it too (a `cp`
+  // refusal, a git advisory); only a line the engine itself printed is a heal
+  // action, and the opening glyph says which is which.
   await test('a raw line from a child tool is not relayed as a heal action', () => {
     const engine = mkTmp('wf-hook-');
     fs.writeFileSync(path.join(engine, 'labels.json'), '{ "version": 1, "groups": {} }\n');
@@ -72,7 +70,7 @@ const run = async () => {
 
   await test("the relay's pattern matches a line the engine really prints", () => {
     // The one place this hook restates the engine's line shape. Read the
-    // pattern out of the hook itself and put a REAL logger line through it, so
+    // pattern out of the hook itself and put a real logger line through it, so
     // the two can never drift apart in silence.
     const pattern = fs.readFileSync(HOOK, 'utf8').match(/grep -E '(\^\[\[:space:\]\]\*[^']+)'/);
     assert(pattern, 'the hook filters on a glyph pattern');
@@ -88,7 +86,7 @@ const run = async () => {
     const repo = makeRepo();
     const nested = path.join(repo, 'src', 'deep');
     fs.mkdirSync(nested, { recursive: true });
-    // settings.json sits at the ROOT: the gate reads the resolved root, not the cwd.
+    // settings.json sits at the root: the gate reads the resolved root, not the cwd.
     const { cacheDir } = runHook(nested);
     assert(fs.existsSync(path.join(repo, '.gitignore')), 'root healed');
     assert(!fs.existsSync(path.join(nested, '.gitignore')), 'nothing written in the subdirectory');

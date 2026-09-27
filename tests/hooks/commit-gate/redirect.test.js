@@ -1,8 +1,6 @@
-//
 // Tests for hooks/safety/commit-gate: a shell redirect after the commit clause
 // is syntax, never a pathspec, so it never gates a docs-only commit as code.
 // The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
-//
 
 const path = require('path');
 const fs = require('fs');

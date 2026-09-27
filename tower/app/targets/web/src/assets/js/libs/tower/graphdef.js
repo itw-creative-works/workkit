@@ -1,51 +1,19 @@
-//
-// The dependency graph, as mermaid text - the Board's Graph view, composed
-// (issue #103).
-//
-// The graph MODULE takes a definition in and puts an SVG out
-// (`__main_assets__/js/libs/graph.js`), so the words and the shapes in the
-// picture are the tower's business and they are written here: pure string work,
-// no DOM and no fetch, which is what lets the suite ask what a hostile title
-// renders as without a browser.
-//
-// What is drawn is what PARTICIPATES: an issue waiting on nothing and blocking
-// nothing is not a node, because a diagram of the whole board is a wall of
-// unconnected boxes saying less than the columns beside it. A board with no
-// edges at all composes nothing, and the page says so in a line.
-//
-// Two lists come in, and the second one is not decoration. The scoped issues
-// are what the board is showing; the SWEEP is every open issue the payload
-// carries, and it is what makes a drawn issue's downstream visible - an issue
-// in a repo the scope hides, or filtered off this board, that waits on one of
-// these is still waiting on it, and the arrow out of the drawn node is the
-// whole point of the picture. Whatever the edge reaches that the board is not
-// showing is drawn as a STUB: the reference alone, dashed, never dropped -
-// silence there would draw a blocker as if it were free.
-//
-// Titles and repo slugs are REMOTE text, exactly as they are on a card. A
-// mermaid label is a quoted string with no escape for its own quote, so nothing
-// a title carries may reach one: the quote characters become apostrophes and
-// the syntax characters become spaces, which is the same decision `esc` makes
-// for markup, made for a different grammar.
-//
+// The Board's Graph view as mermaid text, pure so the suite can ask what a
+// hostile title renders as (`tower/README.md` § The pages). A mermaid label has
+// no escape for its own quote, so `safe` strips what could break out of one.
 
 import { issueKey } from './format.js';
 
 /** How much of a title fits in a node before it stops being readable. */
 export const MAX_TITLE = 40;
 
-/** The mermaid class a stub node wears - dashed and faint, and NOT a colour. */
+/** The mermaid class a stub node wears - dashed and faint, and not a colour. */
 const STUB_CLASS = 'stub';
 
 /**
- * A `repo#number` as a mermaid node id: deterministic, so the same issue is the
- * same node on every draw, and derived from the reference rather than from
- * where it happened to fall in an array.
- *
- * Lowercased for the same reason every other comparison here is - repo names
- * are case-insensitive on GitHub and the inline fallback is hand-typed - and
- * prefixed, so an id can never start with a digit or collide with a mermaid
- * keyword.
+ * A `repo#number` as a mermaid node id: deterministic, lowercased (GitHub repo
+ * names are case-insensitive and the inline fallback is hand-typed), and
+ * prefixed so it never starts with a digit or collides with a keyword.
  *
  * @param {{repo: string, number: number}} ref - an issue or a blocker
  * @returns {string} a mermaid-safe id
@@ -72,13 +40,8 @@ const safe = (text) => String(text === null || text === undefined ? '' : text)
 const clip = (title) => (title.length > MAX_TITLE ? `${title.slice(0, MAX_TITLE).trimEnd()}…` : title);
 
 /**
- * The one repo every drawn issue is in, or '' when the board is showing
- * several.
- *
- * It is what decides how a node is NAMED, the same way the Board's repo column
- * and a "waits on" chip decide: on a single-repo board `#12` is unambiguous and
- * is how its own author would write it; anywhere else a slug is the only
- * spelling that means one issue.
+ * The one repo every drawn issue is in, or '' when the board shows several: on
+ * a single-repo board a node is named `#<n>`, anywhere else by its slug too.
  *
  * @param {object[]} issues - the scoped issues
  * @returns {string} the lowercased slug, or ''
@@ -89,7 +52,7 @@ const baseRepo = (issues) => {
 };
 
 /**
- * How one issue is referred to on this board: `#12`, or `owner/repo#12` -
+ * How one issue is referred to on this board: `#<n>`, or `owner/repo#<n>` -
  * `issueKey`'s spelling, with the remote halves put through the sanitizer and
  * the `#` supplied here, since a title's `#` is an entity escape and this one
  * is a number sign.

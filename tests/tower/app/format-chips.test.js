@@ -35,9 +35,8 @@ const run = async () => {
   });
 
   await test('a type is drawn through the one colour system, in a ramp slot no other type holds', () => {
-    // #149: the rule is within-category uniqueness - three types, three hues.
-    // Across the categories a hue is free (`idea` and `specced` share the
-    // purple), because a chip says its own word and wears its own glyph.
+    // A hue is unique within a category (three types, three hues) and free
+    // across them: every chip says its own word and wears its own glyph.
     const slots = { bug: '--omega-danger', enhancement: '--omega-chart-5', idea: '--omega-chart-3' };
     for (const [type, token] of Object.entries(slots)) {
       const chips = format.issueChips({ type, priority: '' });
@@ -54,17 +53,15 @@ const run = async () => {
   });
 
   await test('every status, type and priority has one glyph, and one table is the whole of it (#136, #149)', () => {
-    // Hard-coded on purpose: the glyphs are what makes a column of cards
-    // readable at a glance, and a silent re-pick is a different board. The
-    // table is the ONE home - the card and the dialog both read it, so a chip
-    // cannot say different things on the two surfaces.
+    // Hard-coded on purpose: a silent re-pick is a different board. The table is
+    // the one home, read by the card and the dialog alike.
     assertEq(format.CHIP_GLYPHS.bug, 'fa-bug', 'a bug is a bug');
     assertEq(format.CHIP_GLYPHS.enhancement, 'fa-wand-magic-sparkles', 'an enhancement is the wand');
     assertEq(format.CHIP_GLYPHS.idea, 'fa-lightbulb', 'an idea is the lamp');
     assertEq(format.CHIP_GLYPHS.high, 'fa-angles-up', 'high points up');
     assertEq(format.CHIP_GLYPHS.low, 'fa-angles-down', 'and low points down');
-    // #149: a status wears the act it names, which is also what lets it share
-    // a hue with a type or a priority without the two being read as one.
+    // A status wears the act it names, which lets it share a hue with a type or
+    // a priority without the two reading as one.
     assertEq(format.CHIP_GLYPHS.inbox, 'fa-inbox', 'inbox is the tray it was captured into');
     assertEq(format.CHIP_GLYPHS.specced, 'fa-clipboard-check', 'specced is the signed-off clipboard');
     assertEq(format.CHIP_GLYPHS.building, 'fa-hammer', 'building is the hammer');
@@ -84,9 +81,8 @@ const run = async () => {
   });
 
   await test('a chip draws its glyph before the word, decorative and in the chip’s own colour (#136)', () => {
-    // This row IS the Board card's chip row - the page hands it the card's
-    // spacing and nothing more (pinned in the board suite below) - so what one
-    // card renders is what this renders.
+    // This row is the Board card's chip row (the page adds only spacing, pinned
+    // in the board suite), so what one card renders is what this renders.
     const chips = format.issueChips({ type: 'bug', priority: 'high' }, 'mt-auto omega-tower-issue__chips');
     assert(chips.includes('<i class="fa-solid fa-bug me-1" aria-hidden="true"></i>bug'), 'the type chip is glyph then word');
     assert(chips.includes('<i class="fa-solid fa-angles-up me-1" aria-hidden="true"></i>high'), 'and so is the priority chip');
@@ -99,12 +95,9 @@ const run = async () => {
   });
 
   await test('the glyph is spaced off the word and sits on its optical centre (#136)', () => {
-    // The defect this proves against: the chip is an inline-BLOCK - the theme's
-    // `.omega-badge-tone` sets it and comes after `.omega-chip`'s inline-flex
-    // at equal specificity - so the flex gap the markup was written against
-    // never applied and the glyph rendered flush against the word. Both halves
-    // of the fix are pinned by hand: neither is visible from Node, and both are
-    // exactly the kind of thing a later edit drops without noticing.
+    // The theme's `.omega-badge-tone` makes the chip inline-block after
+    // `.omega-chip`'s inline-flex at equal specificity, so a flex gap never
+    // applies. Both halves of the fix are pinned by hand: Node sees neither.
     const fs = require('fs');
     for (const chip of [format.typeChip('bug'), format.priorityChip('low')]) {
       assert(/<i class="fa-solid fa-[a-z-]+ me-1"/.test(chip), 'the glyph carries the framework\'s own margin utility, since there is no gap to inherit');
@@ -141,8 +134,8 @@ const run = async () => {
     const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
     assert(/import \{[^}]*chipGlyph[^}]*\} from '\.\.\/libs\/tower\/format\.js'/.test(source), 'the glyph comes from format.js');
     assert(source.includes('<span>${chipGlyph(status.key)}${esc(status.label)}</span>'), 'and the header draws it before the label');
-    // The header is no chip, so the chip's vertical nudge (the case above)
-    // has to name it too, or the glyph sits high there exactly as #136 found.
+    // The header is no chip, so the chip's vertical nudge (the case above) has
+    // to name it too, or its glyph sits high.
     const sheet = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
     assert(/\.omega-panel-head i\.fa-solid svg[^{]*\{ vertical-align: -\.125em; \}/.test(sheet), 'and the sheet nudges the header glyph by the same number');
   });
@@ -171,9 +164,8 @@ const run = async () => {
   });
 
   await test('an issue waiting on one the board still holds wears a chip saying so', () => {
-    // Issue #103: advisory and nothing more - the chip is the plain muted one
-    // every undyed value wears, never a status or priority hue, and it is drawn
-    // only while the blocker is on the board the card sits on.
+    // Advisory only: the plain muted chip every undyed value wears, drawn only
+    // while the blocker is on the board the card sits on.
     const issue = {
       repo: 'owner/repo',
       type: 'bug',

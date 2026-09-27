@@ -1,9 +1,7 @@
-//
 // Tests for workflow/ship/semver.js: the one version comparison the kit carries.
 // The morning brief's upstream news walks Claude Code's releases with it and
 // the ship's publish plan checks each version's shape, so both readings are
 // the question here: semver order, and a dotted number with fewer parts.
-//
 
 const path = require('path');
 const {

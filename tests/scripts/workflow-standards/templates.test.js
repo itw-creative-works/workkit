@@ -1,8 +1,6 @@
-//
 // Tests for standards.sh: the issue templates, the CI workflow, and the
 // CHANGELOG separator.
-// The shared prologue (the repo and gh-stub factories, runScript, the constants) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -35,7 +33,7 @@ const run = async () => {
   });
 
   // The whole point of markdown templates over YAML forms: the pre-filled body
-  // IS the spec's anatomy, so a filed issue conforms without triage rewriting it.
+  // is the spec's anatomy, so a filed issue conforms without triage rewriting it.
   await test('every template pre-fills the issue anatomy', () => {
     const repo = makeRepo();
     const stub = makeGhStub();

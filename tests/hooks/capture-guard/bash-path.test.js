@@ -1,8 +1,6 @@
-//
 // Tests for hooks/safety/capture-guard: the Bash path, where a content-reading
 // command is gated and a count or another file stays open.
 // The shared prologue (the scratch repo and TMPDIR, the marker helpers, the hook runner) is ./helpers.js.
-//
 
 const {
   group, test, assertEq, summary, WORKKIT_DIR: W, selfRun,

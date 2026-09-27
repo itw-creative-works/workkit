@@ -20,11 +20,9 @@ const run = async () => {
   });
 
   await test('the gray band is reachable - the state word alone can never decide it', () => {
-    // The defect this proves against: gating gray on `state !== 'working'`
-    // makes it unreachable, because the API only drops that word after its own
-    // 45-minute window, decided from the SAME file time - by which point the
-    // indicator is long gone. Freshness decides the motion; the word is only
-    // necessary for it.
+    // Gating gray on `state !== 'working'` makes it unreachable: the API drops
+    // that word only after its own 45-minute window, long after the indicator is
+    // gone. Freshness decides the motion; the word is only necessary for it.
     assertEq(agent.WORKING_MS, 20000, 'two poll cycles of the live feeds');
     assertEq(agent.activityPhase({ state: 'working', lastActivity: NOW - 30000 }, NOW), 'idle', 'still called working by the API, but quiet half a minute - gray');
     assertEq(agent.activityPhase({ state: 'working', lastActivity: NOW - 20000 }, NOW), 'working', 'exactly two cycles still spins');
@@ -41,10 +39,8 @@ const run = async () => {
   });
 
   await test('a briefly quiet agent stays on the page for five minutes, muted (#99)', () => {
-    // The defect this proves against: one boundary for both questions. An agent
-    // that stops for ninety seconds - between turns, waiting on a tool - used
-    // to vanish from the Crew page outright, so the page said nobody was
-    // running while four agents were. Muted and still IS the honest middle.
+    // A ninety-second pause between turns must not empty the Crew page while
+    // agents are running: muted and still is the honest middle.
     assertEq(agent.QUIET_WINDOW_MS, 5 * 60000, 'five minutes before it leaves');
     assertEq(agent.activityPhase({ state: 'working', lastActivity: NOW - 5000 }, NOW), 'working', 'inside the working window it still spins');
     assertEq(agent.activityPhase({ state: 'working', lastActivity: NOW - 60000 }, NOW), 'idle', 'at the minute it is gray and still on the clock');
@@ -143,10 +139,8 @@ const run = async () => {
   });
 
   await test('a drawn indicator carries the stamps the clock reads back off it', () => {
-    // The defect this proves against: markup that carries only the WORDS made
-    // from the stamps. A feed lands every ten seconds; the second hand has to
-    // re-decide the phase and the age in between, and it has nothing to decide
-    // from unless the element itself holds the raw epochs.
+    // The element holds the raw epochs: feeds land every ten seconds, and the
+    // second hand re-decides the phase and the age in between from them alone.
     const markup = agent.crewActivity({ state: 'working', lastActivity: NOW - 12000, aliveSince: NOW - 3 * 60000 }, NOW);
     assert(markup.includes(`data-live-ts="${NOW - 12000}"`), 'the epoch it last moved, raw');
     assert(markup.includes(`data-live-alive="${NOW - 3 * 60000}"`), 'and the one it started at');
@@ -206,10 +200,8 @@ const run = async () => {
   });
 
   await test('the paint and the double draw the same node - the selectors the tick walks by', () => {
-    // What keeps the fake DOM below honest: every hook applyLive reaches for is
-    // one the real builder actually writes. If crewActivity renames one of
-    // these, this fails here rather than leaving the lifecycle test passing
-    // against a shape that no longer exists.
+    // Every hook applyLive reaches for is one the real builder writes, so a
+    // rename in crewActivity fails here instead of leaving the fake DOM stale.
     const markup = agent.crewActivity({ state: 'working', lastActivity: NOW - 12000, aliveSince: NOW - 3 * 60000 }, NOW);
     assert(markup.includes('data-live-ts='), 'the wrapper the walk finds');
     assert(markup.includes('class="omega-tower-activity omega-tower-activity--working"'), 'the icon the tick re-classes');
@@ -291,10 +283,6 @@ const run = async () => {
   });
 
   await test('the agent dialog carries the stamps too, so an open one ages like the card behind it', () => {
-    // The defect this proves against: the dialog drew the bare glyph, with no
-    // stamps on it, so it was the one surface the second hand could not reach -
-    // a dialog left open showed a green spinning circle for an agent that had
-    // been quiet for ten minutes.
     const body = modal.agentDialog({
       id: 'a1', role: 'worker', state: 'working', lastActivity: NOW - 6000, aliveSince: NOW - 4 * 60000,
     }, NOW).body;
@@ -304,10 +292,8 @@ const run = async () => {
   });
 
   await test('the Overview draws its state cell with the one shared builder, stamps and all', () => {
-    // The defect this proves against: a SECOND hand-rolled copy of the crew
-    // card's wrapper. The Overview built its own span around the bare glyph, so
-    // its indicator carried no stamps, the second hand walked straight past it,
-    // and the landing page's numbers sat still while the Crew page's moved.
+    // A hand-rolled wrapper around the bare glyph carries no stamps, so the
+    // second hand walks straight past it.
     const fs = require('fs');
     const overview = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'index.js'), 'utf8');
     assert(!overview.includes('activityIcon('), 'it wraps nothing of its own around the bare glyph');
@@ -319,17 +305,14 @@ const run = async () => {
   });
 
   await test('the class the glyph spins on names a rule that exists', () => {
-    // The defect this proves against: `fa-spin` is Font Awesome's class and the
-    // theme ships its icons WITHOUT its stylesheet, so the markup asked for an
-    // animation nothing in the bundle defined and the glyph was still from the
-    // day it shipped. Whether it visibly turns is a browser's answer; that the
-    // rule is in the sheet at all is this one's.
+    // `fa-spin` is Font Awesome's class and the theme ships its icons without
+    // that stylesheet, so the rule has to live in the tower's own sheet.
     const fs = require('fs');
     const sheet = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
     const rule = /\.omega-tower-activity \.fa-spin \{ animation: (\S+) /.exec(sheet);
     assert(rule, 'the indicator gives its own glyph the animation');
     assertEq(rule[1], 'spin', 'reusing the keyframes the framework already ships');
-    // Anchored on the block that disables THIS animation, not on the sheet's
+    // Anchored on the block that disables this animation, not on the sheet's
     // first `prefers-reduced-motion` - an unrelated reduced-motion block added
     // higher up would otherwise fail a rule that is perfectly well ordered.
     const disable = /@media \(prefers-reduced-motion: reduce\) \{\s*\.omega-tower-activity \.fa-spin \{ animation: none; \}/.exec(sheet);
@@ -338,12 +321,9 @@ const run = async () => {
   });
 
   await test('the glyph turns about its own centre, still or spinning (#137)', () => {
-    // The defect this proves against: the animation was on an `<i>` with no box
-    // of its own, so its size was the LINE it sat on - taller than the 1em SVG
-    // the framework's renderer fills it with, since a replaced element rests on
-    // the baseline with the strut's leading under it. A rotation turns about
-    // the box's centre, which sat ~2px below the glyph's at .75rem, so the
-    // glyph orbited instead of turning. The box has to BE the glyph.
+    // An `<i>` with no box of its own takes the line's height, so its centre
+    // sits below the 1em SVG's and a rotation orbits instead of turning: the
+    // box has to be the glyph.
     const fs = require('fs');
     const sheet = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
     const box = /\.omega-tower-activity i \{([^}]*)\}/.exec(sheet);
@@ -355,22 +335,19 @@ const run = async () => {
       assert(box[1].includes(declaration), `and the glyph is centred in it (${declaration}), never laid out on a baseline`);
     }
     assert(/^\.omega-tower-activity i \{/m.test(sheet), 'at the top level - a box behind a media query is a box half the readers do not get');
-    // The box is NOT the spinning phase's: the still glyph wears the same one,
-    // so a card keeps its size across the second the motion starts or stops.
+    // The still glyph wears the same box, so a card keeps its size the second
+    // the motion starts or stops.
     const motion = /\.omega-tower-activity \.fa-spin \{ (.*?) \}/.exec(sheet);
     assertEq(motion[1], 'animation: spin 1s linear infinite;', 'the phase rule says the motion and nothing about the box');
-    // And what the sheet is scoped to is what the markup actually draws - the
-    // rule missing its element is the whole of #65 and half of this one.
+    // The rule is scoped to what the markup actually draws.
     const working = agent.activityIcon('working', 'running for 3m');
     assert(/class="omega-tower-activity[^"]*"/.test(working), 'the wrapper the box and the motion are both scoped under');
     assert(/<i class="fa-solid fa-gear fa-spin"/.test(working), 'the `i` the box sizes, wearing the class the motion is on');
   });
 
   await test('the indicator is a gear, so a still one does not read as a broken spinner (#137)', () => {
-    // The defect this proves against: the notched ring - the universal loading
-    // spinner - drawn STILL on a claimed Board card, which is what a board
-    // whose spinners "do not work" looks like. A specced claim is still on
-    // purpose (work at rest), so the fix is a shape that reads at rest.
+    // A specced claim is still on purpose (work at rest), so its glyph has to
+    // read at rest rather than as a stalled loading ring.
     const held = agent.claimGlyph({ status: 'specced', assignees: ['alice'] });
     assert(held.includes('fa-gear'), 'the Board says a claim with a gear at rest');
     assert(!held.includes('fa-spin'), 'still - a specced claim is held, not running');
@@ -381,12 +358,9 @@ const run = async () => {
   });
 
   await test('the loading ring is the framework\'s, placed centered by the tower (#137)', () => {
-    // The ring is still Bootstrap's `.spinner-border`, animated by the bundle's
-    // own `@keyframes spinner-border` - format.loading only PLACES it, centered
-    // over the space the content will take (owner ruling, 2026-08-19), because
-    // a spinner crushed into the top-left corner of a body reads as a misrender
-    // rather than a wait. It keeps spinning only while this sheet writes no
-    // rule of that name; a local override is exactly how a working spinner stops.
+    // The ring is Bootstrap's `.spinner-border`, spun by the bundle's own
+    // `@keyframes spinner-border`; format.loading only centres it over the body.
+    // A local rule of that name is how a working spinner stops.
     const markup = format.loading('reading the board…');
     assert(markup.includes('spinner-border'), 'the ring is Bootstrap\'s, never one the tower draws itself');
     assert(markup.includes('justify-content-center') && markup.includes('align-items-center'),
@@ -405,8 +379,8 @@ const run = async () => {
   });
 
   await test('the muted band borrows the gray the still glyph already wears', () => {
-    // No new colour pairing for #99: the quiet phase names the SAME faint token
-    // the idle one does, so there is one gray on the tower rather than two.
+    // The quiet phase names the same faint token the idle one does: one gray on
+    // the tower, not two.
     const fs = require('fs');
     const sheet = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
     const rule = /\.omega-tower-activity--idle,\s*\.omega-tower-activity--quiet \{ color: (.+?); \}/.exec(sheet);
@@ -415,10 +389,8 @@ const run = async () => {
   });
 
   await test('both crew surfaces mark the card the tick mutes (#99)', () => {
-    // The defect this proves against: the mute drawn only at paint time. The
-    // feeds land every ten seconds and the crossing is measured in seconds, so
-    // the card has to carry the hook the second hand walks - the same bet the
-    // `data-live-*` stamps beside it make.
+    // The mute rides on the card as a hook the second hand walks, not only at
+    // paint time: the crossing falls between the ten-second feeds.
     const fs = require('fs');
     const pages = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
     for (const name of ['crew.js', 'index.js']) {
@@ -444,11 +416,9 @@ const run = async () => {
   });
 
   await test('that glyph wears the shell\'s tile, and keeps its own colour inside it (#142)', () => {
-    // A bare coloured glyph on a crew card, where every other icon in the shell
-    // sits in a small rounded square. The box is the THEME's - the markup wears
-    // `.omega-icon-chip--neutral` rather than the sheet hand-rolling the same
-    // tile - and only the box is borrowed: the colour is the role's, written
-    // inline by the markup, which beats the chip's neutral ink.
+    // The tile is the theme's `.omega-icon-chip--neutral`, never redrawn in the
+    // sheet. Only the box is borrowed: the role colour is written inline and
+    // beats the chip's neutral ink.
     assert(agent.roleIcon('worker').includes('omega-icon-chip omega-icon-chip--neutral'), 'the markup wears the theme\'s own tile');
     assert(agent.roleIcon('worker').includes(`color: ${format.badgeColor('worker')}`), 'and still writes the role colour inline');
     const fs = require('fs');
@@ -459,9 +429,9 @@ const run = async () => {
       // Anchored to a declaration start so `line-height` does not read as `height`.
       assert(!new RegExp(`(^|[\\s;])${declaration}:`).test(local[1]), `without redrawing what the chip ships (${declaration})`);
     }
-    // The chip is inline-flex, which is what keeps BOTH placements: the crew
-    // card centres the tile with `text-center`, which reaches inline-level boxes
-    // and nothing else, and the agent dialog's head lays it out as one flex item.
+    // The chip is inline-flex, which keeps both placements: the crew card
+    // centres it with `text-center` (inline-level boxes only), and the agent
+    // dialog's head lays it out as one flex item.
     const crewPage = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'crew.js'), 'utf8');
     assert(/<div class="text-center mb-2">\$\{roleIcon\(/.test(crewPage), 'the crew card centres it as inline content');
   });

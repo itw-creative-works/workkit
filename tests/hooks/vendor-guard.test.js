@@ -1,9 +1,7 @@
 /* eslint-disable no-console */
-//
 // Tests for hooks/safety/vendor-guard: the PreToolUse hook that blocks edits
 // to generated/vendor/installed files (node_modules, dist, build, vendor,
 // .bundle, lockfiles) before they happen. _attic/ is exempt by design.
-//
 
 const path = require('path');
 const os = require('os');

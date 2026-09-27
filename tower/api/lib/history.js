@@ -1,40 +1,10 @@
-//
-// The published briefs, read back: what the board looked like on the mornings
-// before this one.
-//
-// Nothing on a machine records the shape of a day. The one durable trace a
-// morning leaves is the Discussion the runner publishes on the home repo, so
-// that post is where the history lives too: every brief carries a machine
-// readable `workkit-stats` line, appended after the digest exactly the way the
-// upstream-news cursor is (jobs/morning/brief/stats.js renders it, `jobs/morning/brief-publish.sh`
-// appends it), and reading those lines back IS the history. No store, no
-// backfill, no second source of truth: a brief that was never published is a
-// day the charts do not have, which is the honest answer.
-//
-// THIS MODULE OWNS THE TWO LITERALS the writer and the reader share: the title
-// prefix a brief publishes under, and the pattern its stats line matches. They
-// live here rather than in `jobs/` because both halves can reach `tower/api/lib`
-// while nothing under `tower/` may reach back into the job layer.
-//
-// It owns the READ as well, and one read answers two questions (issue #181):
-// the series above, and the ARCHIVE the Brief page draws - the mornings and the
-// summaries themselves, whole. Both come off the same hundred Discussions, so
-// `readDiscussions` is the round trip and `historyFrom` / `documents.js` are two
-// pure readings of what it brought back. Asking twice would be two round trips
-// for one answer.
-//
-// EVERY FAILURE IS null, the posture `summaries.js` reads its board with: no
-// home repo, no `gh`, a token that refuses, an answer of another shape. A page
-// says the history could not be read; it never says the board was empty. And it
-// says WHY where there is a why (issue #215): the round trip is board.js's
-// `ask`, so a spent rate limit and a refused token ride back beside the null in
-// the sentence the board and the published copy already say, and `/api/brief`
-// carries it as `historyReason` for the two pages drawn off this one read.
+// The published briefs, read back: the mornings before this one, off the
+// `workkit-stats` line each brief carries (tower/README.md § The pages). It owns
+// the two literals writer and reader share (the title prefix, the stats pattern):
+// jobs/ can reach tower/api/lib, and nothing under tower/ reaches back.
 //
 // Usage:
-//   const { briefHistory, STATS_RE } = require('./history');
 //   briefHistory({ workflowHome, exec });   // ascending by date, oldest first
-//
 
 const { execFileSync } = require('child_process');
 
@@ -50,15 +20,14 @@ const { homeSlugFor } = require('./summaries');
 const BRIEF_TITLE_PREFIX = 'brief: ';
 
 /**
- * The stats line, as it sits in a published brief's body. The renderer is
- * `jobs/morning/brief/stats.js`. Writer and reader are two halves of one shape, which is why
- * the pattern lives beside the prefix rather than beside either half.
+ * The stats line, as it sits in a published brief's body; its renderer is
+ * `jobs/morning/brief/stats.js`.
  */
 const STATS_RE = /<!--\s*workkit-stats:\s*(\{.*\})\s*-->/;
 
 // How many mornings a chart draws. Five weeks is enough to see a trend and
 // short enough that a line chart's points stay distinguishable; the read itself
-// asks for the page maximum, since the board is SHARED (the summaries publish
+// asks for the page maximum, since the board is shared (the summaries publish
 // beside the briefs) and a narrow window would answer with half as many days.
 const HISTORY_LIMIT = 35;
 const WINDOW = 100;
@@ -82,12 +51,8 @@ const defaultExec = (cmd, args) => execFileSync(cmd, args, {
 });
 
 /**
- * One brief body's stats block, or null.
- *
- * A brief without one is not a failure: every morning published before the
- * block existed is exactly that shape, and so is a morning whose payload could
- * not be composed. The caller skips it and the series is one day shorter.
- *
+ * One brief body's stats block, or null: a brief without one (published before
+ * the line, or whose payload failed) is skipped, never a failure.
  * @param {string} body the Discussion body
  * @returns {{date: string, totals: object, closedDay: number, repos: object}|null}
  */
@@ -113,18 +78,9 @@ const parseStatsMark = (body) => {
 };
 
 /**
- * The home repo's Discussions, newest first: the ONE round trip both readings
- * are made from.
- *
- * Every field is normalized here so neither reading has to defend itself
- * against a node of another shape: a title that is not a string cannot start
- * with the prefix, and a body that is not a string carries no stats line.
- *
- * BOTH KEYS, always. `nodes` is null where the board could not be read at all,
- * and `reason` is why when there is a why to give: a refusal has one, while a
- * machine with no home repo and an answer of another shape have nothing to name
- * beyond the null itself (issue #215).
- *
+ * The home repo's Discussions, newest first: the one round trip every reading
+ * is made from, each node normalized here. Both keys, always: `nodes` is null
+ * where nothing could be read, and `reason` says why when there is a why.
  * @param {object} [opts]
  * @param {string} [opts.workflowHome] the user's ~/.workkit
  * @param {string} [opts.home] overrides ~ for the default above
@@ -154,13 +110,8 @@ const readDiscussions = (opts = {}) => {
 };
 
 /**
- * The board over time, oldest first: one entry per published brief that
- * carried a stats line.
- *
- * ASCENDING because that is the order a chart draws in, and the axis is the one
- * consumer: a caller that wanted the newest would ask for the last entry rather
- * than reverse a series.
- *
+ * The board over time, oldest first (the order a chart draws in): one entry per
+ * published brief that carried a stats line.
  * @param {Array<{title: string, body: string}>} nodes the `nodes` readDiscussions returned
  * @returns {Array<{date: string, totals: object, closedDay: number, repos: object}>}
  */
@@ -180,12 +131,8 @@ const historyFrom = (nodes) => {
 };
 
 /**
- * The read and the reading, for a caller that wants only the series.
- *
- * The reason the read may carry is not passed on: a caller that has to SAY why
- * the series is missing reads `readDiscussions` itself, the way `/api/brief`
- * does.
- *
+ * The read and the reading, for a caller that wants only the series; one that
+ * must say why it is missing reads `readDiscussions` itself.
  * @param {object} [opts] what readDiscussions takes
  * @returns {Array<object>|null} null when the board could not be read at all
  */
@@ -194,18 +141,9 @@ const briefHistory = (opts = {}) => {
   return nodes && historyFrom(nodes);
 };
 
-// How old the newest published brief may be before the cloud brief is judged to
-// have stopped. ONE whole calendar day: the brief posts once a morning, so at
-// 08:00 the newest post is yesterday's and nothing is wrong: it is the morning
-// BEFORE that going unanswered which means no run has landed.
-//
-// The same bar is spelled out again in `hooks/docs/session/run.sh` (issue #173),
-// which asks the same question of the same board at session start, off the
-// marker the 9am job leaves rather than over the network. Change both together.
-// What the two COUNT diverges on purpose: this one reads the dates off briefs
-// carrying a `workkit-stats` line, because a chart is what it feeds, while the
-// marker counts any `brief: `-titled Discussion: a brief published without a
-// stats line is still a morning that arrived, which is all that hook asks.
+// How old the newest brief may be, in whole UTC calendar days, before the cloud
+// brief is judged stopped. `hooks/docs/session/run.sh` holds the same bar off the
+// 9am marker (which counts any `brief: ` post): change both together.
 const FRESH_DAYS = 1;
 const DAY_MS = 86400000;
 
@@ -213,24 +151,9 @@ const DAY_MS = 86400000;
 const utcDay = (when) => when.toISOString().slice(0, 10);
 
 /**
- * Whether the cloud brief is still posting (issue #172).
- *
- * Ten mornings failed in a row and every page looked normal, because the one
- * fact that would have said so (the newest published brief's date) was
- * already in the read above and nobody asked it. So this is ARITHMETIC on what
- * `briefHistory` returned: no second round trip, and no second definition of
- * what counts as a published brief.
- *
- * CALENDAR DAYS, not 24-hour windows, and in UTC like every other date in this
- * store: the post happens once a day, so "yesterday's" is the honest unit and a
- * brief read at 09:05 the morning after a 09:00 post is one day old, not none.
- *
- * FOUR ANSWERS, and the last two are never each other:
- *   fresh       today's morning or yesterday's posted
- *   stale       the newest post is older than that; `date` says which day it was
- *   never       the home repo has published no brief carrying a stats line
- *   unreadable  the history could not be read, so nothing can be judged at all
- *
+ * Whether the cloud brief is still posting: arithmetic on what `briefHistory`
+ * returned, never a second round trip. Its four states (fresh, stale, never,
+ * unreadable): tower/README.md § The pages.
  * @param {Array<{date: string}>|null} history what briefHistory returned
  * @param {Date} [now] the moment to judge against
  * @returns {{state: string, date: string|null}}

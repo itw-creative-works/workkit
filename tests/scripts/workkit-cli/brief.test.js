@@ -1,8 +1,6 @@
-//
 // Tests for workflow/workkit.sh: `brief` (today's brief, asked for now),
 // and `tower` and `decline` beside it.
-// The shared prologue (the scratch world, runCli and inCli, the repo and kit factories) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -96,12 +94,10 @@ const run = async () => {
     const world = mkWorld();
     const api = path.join(world.root, 'api.ran');
     const app = path.join(world.root, 'app.ran');
-    // Each half records itself and then waits for the other's marker. A half
-    // that exits the instant it is started ends the whole RUN: the wrapper
-    // takes the other one down the moment either is gone, and a shell takes
-    // longer to start than that poll takes to notice, so the second half was
-    // being killed before it ran its command at all. Waiting ends the run when
-    // both halves have demonstrably run, which is what this case claims.
+    // Each half records itself and then waits for the other's marker: the
+    // wrapper takes one half down the moment the other is gone, so a half that
+    // exits at once can kill its sibling before it runs. Waiting ends the run
+    // once both halves have demonstrably run, which is what this case claims.
     const half = (mine, theirs) => [
       `echo x > '${shellPath(mine)}'`,
       `while [ ! -e '${shellPath(theirs)}' ]; do sleep 0.2; done`,

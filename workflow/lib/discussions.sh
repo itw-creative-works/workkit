@@ -1,45 +1,21 @@
 #!/usr/bin/env bash
-# workflow/lib/discussions.sh: the home repo's Discussions API. SOURCED, never executed.
-#
-# Summaries are published, never filed (generated records are never files). The destination is a Discussion on the home repo, so
-# this is the one place that speaks GitHub's Discussions GraphQL. The setup
-# wizard uses it to turn Discussions on, the summaries step and the morning
-# brief to post and to read prior posts back.
-#
-# WHAT THE API ACTUALLY OFFERS, probed against the live schema 2026-07-28:
-#   · `updateRepository(hasDiscussionsEnabled:)`: Discussions can be ENABLED.
-#   · `createDiscussion(repositoryId, categoryId, title, body)`: posts exist.
-#   · `repository.discussions(categoryId:, orderBy:)`: prior posts read back;
-#     there is no date argument, so the window is applied here.
-#   · there is NO createDiscussionCategory mutation. Categories cannot be made
-#     over the API at all, which is why `wk_disc_category_id` falls back to the
-#     repo's default category and setup walks the owner to the page that makes
-#     them (issue #244), printing a one-time pointer where it has no terminal.
-#
-# Every call is best effort: a machine with no `gh`, no network, or a token that
-# refuses gets an empty answer and a non-zero status, never an abort. The
-# summaries step exits 0 either way, the same doctrine the brief runs under.
-#
+# workflow/lib/discussions.sh: the one place that speaks GitHub's Discussions
+# GraphQL for the home repo, sourced and never executed. Best effort: no `gh`,
+# no network or a refusing token is an empty answer and a non-zero status.
+# Categories cannot be created over the API (README § The home repo's lifecycle).
 # Needs: lib.sh sourced first (WK_HOME_CACHE, wk_json_edit, the wk_ok family).
 
-# The category the morning brief posts in (jobs/morning/brief-publish.sh asks for it by
-# this name), and the four setup checks the home repo for: one per summary
-# cadence (the names claude-nightly.sh derives from the cadence) and the brief's.
-# A repo that has them gets a tidy archive; a repo that does not still gets its
-# posts (see the fallback below), because a post nobody can file is worse than
-# a post in General.
+# The brief's category and the four setup checks for, one per summary cadence
+# plus the brief's. A repo without them still gets its posts, in a fallback.
 WK_DISC_BRIEF_CATEGORY='Brief'
 WK_DISC_CATEGORIES=('Daily' 'Weekly' 'Monthly' "$WK_DISC_BRIEF_CATEGORY")
 WK_DISC_FALLBACKS=('General' 'Announcements')
 
-# What the last category resolution landed on. GLOBALS rather than a printed
-# pair, because the caller needs BOTH the id and the name and a `$(…)` capture
-# would only carry one of them back. A fallback learned inside a subshell is a
-# fallback nobody can report.
+# What the last category resolution landed on: globals, since a `$(…)` capture
+# would carry back only one of the id and the name.
 WK_DISC_CATEGORY_ID=''
 WK_DISC_CATEGORY_NAME=''
 
-# The tools this file needs. `gh` carries the auth, `jq` reads the answers.
 wk_disc_ready() {
   command -v gh >/dev/null 2>&1 && command -v jq >/dev/null 2>&1
 }
@@ -68,12 +44,8 @@ wk_disc_fetch_meta() {
   return 0
 }
 
-# The cached meta for the home repo, fetching and caching when it is absent or
-# when the caller asks for a refresh. The cache lives in the machine's DISPOSABLE
-# file (`~/.workkit/.cache.json`, issue #80): node ids are GitHub's, not the
-# project's, they are never hand-edited, and deleting the file costs one round
-# trip, which is why it is created here on demand rather than seeded anywhere.
-#
+# The cached meta for the home repo, fetched on a miss or a refresh into the
+# disposable cache file, created here on demand.
 # Usage: wk_disc_meta <slug> [--refresh]
 wk_disc_meta() {
   local slug="$1" refresh="${2:-}" cached fresh locked=0
@@ -86,10 +58,8 @@ wk_disc_meta() {
 
   fresh="$(wk_disc_fetch_meta "$slug")" || return 1
   [[ -n "$fresh" ]] || return 1
-  # Under the shared mutex: this is a whole-file read-modify-write, and the
-  # summaries step and the brief both reach it inside the same minute of a
-  # morning. Taking the lock is best effort like every other writer's: a cache
-  # that lost a race is re-fetched, never wrong.
+  # Under the shared mutex, best effort: a cache that lost a race is re-fetched,
+  # never wrong.
   if [[ -d "$WK_USER_DIR" ]] || mkdir -p "$WK_USER_DIR" 2>/dev/null; then
     if wk_take_state_lock; then locked=1; fi
     [[ -f "$WK_HOME_CACHE" ]] || printf '{}\n' >"$WK_HOME_CACHE" 2>/dev/null || true
@@ -107,14 +77,9 @@ wk_disc_repo_id() {
   printf '%s' "$meta" | wk_jq -r '.repositoryId // empty' 2>/dev/null
 }
 
-# Resolve the category to post in, into WK_DISC_CATEGORY_ID and
-# WK_DISC_CATEGORY_NAME. Call it DIRECTLY (never inside `$(…)`). That is the
-# whole point of it setting globals.
-#
-# A cache miss is refreshed ONCE (a category created by hand after the cache
-# was written is the ordinary reason for a miss) and a name that still is not
-# there falls back to the repo's default, because categories cannot be created
-# over the API (see the header).
+# Resolve the category into WK_DISC_CATEGORY_ID and WK_DISC_CATEGORY_NAME; call
+# it directly, never inside `$(…)`. A miss is refreshed once (a category made by
+# hand since), then falls back to the repo's default.
 wk_disc_resolve_category() {
   local slug="$1" want="$2" meta id candidate
   WK_DISC_CATEGORY_ID=''
@@ -177,14 +142,9 @@ wk_disc_enable() {
   return 0
 }
 
-# Post one summary or brief. The body comes from a FILE: a day's reflection is
-# far past what an argument list should carry, and `gh`'s `@file` form sends it
-# verbatim.
-# Prints the discussion URL.
-#
-# The category is an ID, not a name: the caller resolves it with
-# wk_disc_resolve_category first, which is what lets it report a fallback.
-#
+# Post one summary or brief and print its URL. The body is a file, sent
+# verbatim by `gh`'s `@file` form; the category is an id the caller resolved,
+# so it can report a fallback.
 # Usage: wk_disc_create <slug> <category-id> <title> <body-file>
 wk_disc_create() {
   local slug="$1" cat_id="$2" title="$3" body_file="$4" repo_id out
@@ -205,11 +165,9 @@ wk_disc_create() {
   printf '%s' "$out" | wk_jq -r '.data.createDiscussion.discussion.url // empty' 2>/dev/null
 }
 
-# The summaries already published in a category since a moment, newest first, as
-# a JSON array of { title, createdAt, body }: what a weekly or monthly rollup
-# reads instead of a folder of files. The window is applied here: the API takes
-# no date argument (probed 2026-07-28), only an order.
-#
+# The posts in a category since a moment, newest first, as a JSON array of
+# { title, createdAt, body }. The API takes no date argument, so the window is
+# applied here.
 # Usage: wk_disc_list <slug> <category> <since-iso8601> [limit]
 wk_disc_list() {
   local slug="$1" category="$2" since="$3" limit="${4:-50}" owner="${1%%/*}" name="${1##*/}" cat_id out

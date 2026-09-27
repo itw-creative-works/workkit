@@ -1,8 +1,6 @@
-//
 // Tests for hooks/safety/commit-gate: heal bookkeeping skips the review and
-// new-file checks (issue #15).
+// new-file checks.
 // The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
-//
 
 const path = require('path');
 const fs = require('fs');
@@ -16,7 +14,7 @@ const run = async () => {
 
   group('commit-gate: heal bookkeeping skips review + new-file checks (issue #15)');
 
-  // A repo with a committed settings.json: the stamp arm only exempts an EDIT
+  // A repo with a committed settings.json: the stamp arm only exempts an edit
   // that touches nothing but the version key.
   const mkStampedRepo = () => {
     const dir = mkRepo();
@@ -187,8 +185,8 @@ const run = async () => {
   });
 
   await test('a linter copy ADDED is not bookkeeping, no marker: exit 2', () => {
-    // The exact shape the heal used to vendor, byte for byte with the engine,
-    // so no content check can be what bounces it.
+    // The exact vendored shape, byte for byte with the engine, so no content
+    // check can be what bounces it.
     const engine = fs.readFileSync(path.join(WORKFLOW_DIR, 'changelog', 'changelog.js'), 'utf8');
     const nl = engine.indexOf('\n');
     const dir = mkRepo();

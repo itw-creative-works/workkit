@@ -1,11 +1,7 @@
-//
-// Tests for hooks/docs:state-check: the SessionStart hook that announces
-// open status:inbox issues, a non-empty .workkit/capture.md, a content-bearing
-// CLAUDE.md, and an oversized AGENTS.md. Silent when everything is current.
-//
-// The issue count is the hook's only network call; every test here runs with a
-// PATH that carries no gh (or a recording stub), so nothing hits the API.
-//
+// Tests for hooks/docs:state-check: the SessionStart hook that announces open
+// status:inbox issues, a non-empty .workkit/capture.md, a content-bearing
+// CLAUDE.md, and an oversized AGENTS.md, silent when everything is current.
+// Every PATH carries no gh or a recording stub, so nothing hits the API.
 
 const path = require('path');
 const fs = require('fs');
@@ -58,11 +54,10 @@ const ghCalls = (stub) => readArgv(stub.logFile);
 // share one across runs (that is what the cache tests exercise); a shared dir is
 // the caller's to clean up.
 
-// The machine that does NOT have `gh`. A runner ships the real one in /usr/bin,
-// so a case about its absence has to take it off the PATH rather than trust the
-// system one, or the REAL gh answers and the case passes for another reason.
-// Built once, since the mirror links every system tool, and removed with the
-// suite.
+// The machine without `gh`. A runner ships the real one in /usr/bin, so a case
+// about its absence takes it off the PATH, or the real gh answers and the case
+// passes for another reason. Built once, since the mirror links every system
+// tool, and removed with the suite.
 let noGhPath = null;
 const pathWithoutGh = () => {
   if (!noGhPath) noGhPath = basePathWithout(mkTmp('ic-test-'), 'gh');
@@ -136,7 +131,7 @@ const run = async () => {
     runHook(repo, { pathPrefix: stub.binDir });
     const calls = ghCalls(stub);
     assertEq(calls.length, 1, `exactly one gh call, got: ${fmtCalls(calls)}`);
-    // Flag and value must be SEPARATE arguments. `--label status:inbox` arriving
+    // Flag and value must be separate arguments. `--label status:inbox` arriving
     // as one word (or as two words that got split further) is a different query.
     const hasFlag = (call, flag, value) => call.some((a, i) => a === flag && call[i + 1] === value);
     assert(hasFlag(calls[0], '--state', 'open'), `open only, got: ${fmtCalls(calls)}`);
@@ -267,9 +262,9 @@ const run = async () => {
     cleanup(dir);
   });
 
-  // The density half of the same budget (issue #161): a markdown paragraph is
-  // one source line, so a file well inside 250 lines still carries a book. The
-  // unit is BYTES, pinned with LC_ALL=C the way board-guard pins it.
+  // The density half of the same budget: a markdown paragraph is one source
+  // line, so a file well inside 250 lines still carries a book. The unit is
+  // bytes, pinned with LC_ALL=C the way board-guard pins it.
   await test('a dense AGENTS.md inside the line count: announces the density rule', () => {
     const dir = mkTmp('ic-test-');
     fs.writeFileSync(path.join(dir, 'AGENTS.md'), `# repo\n${'x'.repeat(2100)}\n${'line\n'.repeat(100)}`);
@@ -311,10 +306,9 @@ const run = async () => {
 
   group('state-check: the issue-count cache');
 
-  // Only SILENCE is cached (issue #1). An announcement describes a queue that
-  // triage can empty at any moment, and triage leaves no local trace this hook
-  // could fingerprint, so the announcing state is re-asked every session and
-  // the cache invalidates itself.
+  // Only silence is cached. An announcement describes a queue that triage can
+  // empty at any moment, leaving no local trace this hook could fingerprint,
+  // so the announcing state is re-asked every session.
   const issueCount = (stub) => ghCalls(stub).filter((c) => isCall(c, 'issue', 'list')).length;
   // The stub answers `issue list` from this file, so rewriting it is what the
   // repo's queue changing between two sessions looks like.
@@ -347,9 +341,8 @@ const run = async () => {
   });
 
   await test('triage drains the inbox and the very next session goes quiet', () => {
-    // The reported bug (issue #1): the drained inbox kept announcing until the
-    // cache aged out. Nothing here invalidates anything. The announcing state
-    // simply has no cache entry to go stale.
+    // A drained inbox stops announcing at once, not when a cache ages out: the
+    // announcing state simply has no cache entry to go stale.
     const repo = mkRepo();
     const stub = makeGhStub({ issues: [{ number: 1 }, { number: 2 }] });
     const cache = mkTmp('ic-test-');

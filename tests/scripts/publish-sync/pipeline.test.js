@@ -1,11 +1,7 @@
-//
 // Tests for workflow/publish.sh: the wiring (the sync ahead of the build, the
-// install after a sync that changed a manifest (issue #130), the mint after a
-// sync that changed something, the abort on a mint, an install or a write that
-// failed), proved end to end with an `npm` shim for the build and a stub
-// `omega` for the mint. No omega, no network.
-// The shared prologue (the fixture app, the sync and publish worlds, the library and publish runners, the file writers) is ./helpers.js.
-//
+// install after a manifest change, the mint after any change, the abort on a
+// failed mint, install or write), end to end with an `npm` shim and a stub
+// `omega`. The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -42,9 +38,8 @@ const run = async () => {
   });
 
   await test('a sync that changed a manifest installs the clone’s dependencies', () => {
-    // The lag issue #130 closes: the sync brings the new package.json and
-    // nothing installs it, so the build that follows resolves against the tree
-    // the last install left.
+    // The sync brings the new package.json; without an install, the build that
+    // follows resolves against the tree the last install left.
     const world = mkPublishWorld();
     publish(world);
     const before = world.npms().filter((call) => /install/.test(call)).length;
@@ -62,12 +57,10 @@ const run = async () => {
   });
 
   await test('the install is keyed from the clone’s real path, symlinked ~/.workkit or not', () => {
-    // Issue #166: `~/.workkit` is a symlink on the machine that publishes, and
-    // `npm --prefix <link>/tower install` resolved the project through the link
-    // while keying the tree from the CALLER'S cwd: the lockfile took package
-    // paths outside the project root, the workspace went extraneous, and the
-    // next run crashed arborist. An install run from inside the resolved path
-    // is the whole fix, so the cwd is what this pins.
+    // `npm --prefix <link>/tower install` keys the tree from the caller's cwd,
+    // so through a symlinked `~/.workkit` the lockfile takes paths outside the
+    // project root. An install run from inside the resolved path is the fix, so
+    // the cwd is what this pins.
     const world = mkPublishWorld();
     const link = path.join(world.root, 'linked-workkit');
     fs.symlinkSync(path.join(world.root, 'workflow-home'), link);
@@ -184,11 +177,9 @@ const run = async () => {
   });
 
   await test('a failed mint stays failed: the next run aborts too, until a mint succeeds', () => {
-    // The dangerous shape: a clone that minted fine in the past (the dir
-    // exists), then a sync brings the change that breaks the mint. Run 1
-    // aborts on the mint; run 2's sync is current and the dir exists, so
-    // without a sticky marker nothing would mint and the failure would
-    // publish. The marker is what keeps the abort until a mint goes green.
+    // A clone that minted fine before (the dir exists), then a sync that breaks
+    // the mint: run 2's sync is current and the dir exists, so only the sticky
+    // marker keeps the abort until a mint goes green.
     const world = mkPublishWorld({ mintFails: true, minted: true });
     const first = publish(world);
     assert(first.code !== 0, 'run 1 aborts on the failing mint');
@@ -211,7 +202,7 @@ const run = async () => {
   });
 
   await test('a partial write is its own failure, and the publish aborts before committing it', () => {
-    // Library layer: a dest path the copy cannot write (the clone holds a FILE
+    // Library layer: a dest path the copy cannot write (the clone holds a file
     // where the app now has a directory) must come back as its own code, not
     // as the "nothing to sync from" skip.
     const world = mkSyncWorld();

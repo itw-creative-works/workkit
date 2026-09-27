@@ -1,16 +1,9 @@
 #!/bin/bash
-# docs:changelog-guard: PostToolUse hook (Edit|Write)
-# Holds a CHANGELOG entry to its format the moment it is written: one short
-# paragraph that starts with its issue link, with the depth left in the commit
-# message. The rules themselves live in workflow/changelog/changelog.js (one home, shared
-# with the safety/commit-gate hook).
-#
-# Only entries this change ADDS are judged, so a repo carrying a legacy
-# CHANGELOG is never bounced for its history. The format arrives going forward.
-#
-# This hook sees only writes made through the tools. The commit gate runs the
-# same linter on the staged diff and is the authority; a hand edit in an editor
-# reaches git through a commit either way.
+# docs:changelog-guard: PostToolUse hook (Edit|Write). Holds each CHANGELOG
+# entry this write adds to its format (one short paragraph opening with its
+# issue link); the rules live in workflow/changelog/changelog.js, shared with
+# safety/commit-gate, which runs the same linter on the staged diff and is the
+# authority for hand edits.
 
 set -euo pipefail
 

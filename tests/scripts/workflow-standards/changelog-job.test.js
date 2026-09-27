@@ -1,8 +1,6 @@
-//
 // Tests for standards.sh: the retired CHANGELOG linter copy and the changelog
 // job in checks.yml.
-// The shared prologue (the repo and gh-stub factories, runScript, the constants) is ./helpers.js.
-//
+// The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -247,7 +245,7 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  // The heal rewrites the job BEFORE it removes the copy: the other order finds
+  // The heal rewrites the job before it removes the copy: the other order finds
   // the old job still naming the copy, keeps the copy, and leaves a repo that
   // needs a second heal.
   await test('one heal rewrites a job running the copy and then removes the copy', () => {

@@ -1,32 +1,10 @@
-//
-// The board sweep's pure half: one home for both the machine and the browser.
-//
-// The sweep has two transports and one meaning. `tower/api/lib/board.js` speaks
-// GraphQL through the `gh` login on this machine; `../github.js`
-// speaks it from a published page with the viewer's token. Those halves cannot
-// merge (a published copy has no server, and the machine copy should keep its
-// login rather than a browser token) but everything BETWEEN the request and
-// the payload is the same rules, and it was written twice with a suite pinning
-// the copies together (issue #195). It is written once here instead.
-//
-// What lives here is what has no transport in it: the document to ask, the
-// numbers that bound it, the parse that turns one answered node into one board
-// issue, and the reading of the errors that came back beside them. No fetch, no
-// token, no `gh`: the callers own all three, and their own assembly around the
-// pages this shapes.
-//
-// It lives on the APP's side of the copy boundary because that is the side that
-// gets copied out: the app becomes a project of its own in `~/.workkit/tower`
-// (issue #77) and can reach nothing under `tower/api/`, while board.js can
-// reach here: Node 22 `require()`s an ES module directly, and the cloud
-// brief's runner carries this file at its checkout-relative path so the same
-// require resolves there (workflow/home.sh).
-//
+// The board sweep's pure half, shared by the machine (`tower/api/lib/board.js`,
+// through `gh`) and the browser (`../github.js`): no fetch, no token, no `gh`.
+// It sits on the app's side because the app is what gets copied out to
+// `~/.workkit/tower`; board.js `require()`s this ES module.
 
-// Per repo, per request. GitHub caps a connection page at 100, so a repo with
-// more open issues than that is PAGED rather than cut off at the first hundred
-// (issue #194): every page carries the cursor it ended on and the next request
-// resumes there.
+// Per repo, per request: GitHub caps a connection page at 100, so a bigger repo
+// is paged by the cursor each page ended on.
 export const PAGE_SIZE = 100;
 
 // Where the paging stops whatever GitHub still has to give. A ceiling rather
@@ -34,47 +12,31 @@ export const PAGE_SIZE = 100;
 // many open issues is a repo whose board is not the thing to fix first.
 export const MAX_OPEN_ISSUES = 1000;
 
-// How many repos ride ONE request (issue #202). GitHub scores a query before it
-// runs it and refuses the ones that are too much work: measured 2026-08-26 on a
-// 23-repo roster, every repo alone passed and batches of 4 and of 8 passed with
-// zero nulls, while all 23 in one request came back RESOURCE_LIMITS_EXCEEDED:
-// 357 of 357 issue nodes null. Six is inside what passed with room for repos
-// that grow, and the roster is swept a batch at a time rather than whole.
+// How many repos ride one request. GitHub refuses a query it scores as too much
+// work, and a whole roster in one request came back RESOURCE_LIMITS_EXCEEDED
+// with every node null; six sits inside what passed, with room to grow.
 export const REPOS_PER_REQUEST = 6;
 
-// How much of an issue body the sweep carries. The dashboard's issue dialog
-// reads the body straight off the board payload, so the whole roster's bodies
-// ride every poll, and one issue with a pasted log in it would be larger than
-// the rest of the board put together. What is cut is reported (`bodyTruncated`)
-// and the rest is one click away on GitHub.
+// How much of an issue body the sweep carries: every body rides every poll for
+// the issue dialog, and one pasted log would outweigh the board. What is cut is
+// flagged `bodyTruncated`.
 export const BODY_LIMIT = 4000;
 
-// How much of an issue's LAST COMMENT the sweep carries (issue #196). A blocked
-// issue's open question is a comment on it (that is the spec's convention) so
-// the newest comment is the best signal there is for what the board is waiting
-// to be told, and the Board draws it under the title of a blocked card. One
-// line's worth is what a card can show; the whole thread is one click away.
+// How much of an issue's newest comment the sweep carries: a blocked issue's
+// open question is its newest comment, and a card shows one line of it.
 export const LAST_COMMENT_LIMIT = 280;
 
-// The closed issues a repo is asked for, and the window they are counted over.
-// The sweep is about the OPEN board, and closed issues never enter it: what is
-// wanted is one number per repo, "how much shipped in the last day", which the
-// morning's stats line records and the history charts draw. Thirty is well past
-// a day's worth on any repo this board covers, and the count is what survives:
-// no closed issue is carried, so nothing downstream can start rendering one.
+// The closed issues a repo is asked for, and the window they are counted over:
+// only the count of what shipped in the last day survives, for the stats line,
+// so no closed issue is ever carried.
 export const CLOSED_PAGE = 30;
 export const CLOSED_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
- * The GraphQL document for a roster, one aliased field per repo, one document
- * per BATCH of them (issue #202), the aliases restarting at `r0` in each.
- *
- * `cursors` is what makes it the document for a LATER page too (issue #194):
- * the entry at a repo's index is the cursor its last page ended on, and a repo
- * with none starts where the connection does. A continuation names one repo,
- * so it re-asks for that repo's closed page as well: thirty stamps, ignored
- * on arrival, against a second document that would have to be kept in step
- * with this one forever.
+ * The GraphQL document for one batch of repos, one aliased field per repo from
+ * `r0`. `cursors[i]` resumes repo i where its last page ended; a continuation
+ * re-asks for the closed page too, ignored on arrival, rather than keeping a
+ * second document in step with this one.
  *
  * @param {string[]} slugs `owner/name`, in the order the aliases are read back
  * @param {Array<string|null>} [cursors] where each repo resumes
@@ -110,12 +72,8 @@ export const buildBoardQuery = (slugs, cursors = []) => {
 
 /**
  * Split `group:value` label names into a map of group → values, keeping only
- * the groups the vocabulary defines. An unknown group is ignored: a repo may
- * carry labels this workflow knows nothing about.
- *
- * The vocabulary is an ARGUMENT because its two readers reach it differently (
- * the machine reads workflow/labels.json, the published page carries the list
- * it was built with) and neither of those is this module's to know.
+ * the groups the vocabulary defines. The vocabulary is an argument because the
+ * machine and the published page each reach it their own way.
  *
  * @param {Array<{name: string}>} nodes
  * @param {Set<string>} groups
@@ -135,23 +93,16 @@ export const parseLabels = (nodes, groups) => {
   return out;
 };
 
-// The inline fallback for a dependency GitHub itself will not hold (issue #103):
-// a `Depends on:` line in the issue body, naming `<owner>/<repo>#<n>` where the
-// edge crosses orgs and bare `#<n>` where it does not. The label is matched as
-// plain text at the head of a line, so a `#12` anywhere else in the body is not
-// a dependency, and the one expression below reads every reference on that line.
+// The inline `Depends on:` fallback the spec defines: only a line headed by the
+// label counts, and the expression reads every reference on that line.
 const DEPENDS_LABEL = 'depends on:';
 const DEPENDS_RE = /(?:^|[\s,;(])(?:([\w.-]+\/[\w.-]+))?#(\d+)\b/g;
 
 /**
- * What one issue is WAITING on: the native dependency edges GitHub keeps,
- * merged with the inline fallback its body may carry (issue #103).
- *
- * A blocker that is CLOSED is satisfied (no ordering effect, nothing to draw)
- * which is the whole reason the edge's `state` rides the sweep. An inline
- * reference carries no state, so it counts as an edge until the line is edited
- * away: native edges are the norm and the line is the rare cross-org case the
- * API refuses to hold, so a stale one lingering is the accepted trade.
+ * What one issue is waiting on: GitHub's native edges merged with the inline
+ * fallback. A closed blocker is satisfied, which is why an edge's `state`
+ * rides the sweep; an inline reference has no state, so it counts until the
+ * line is edited away.
  *
  * @param {object} node the issue node as GraphQL answered it
  * @param {string} slug the repo it was swept from: what a bare `#<n>` means
@@ -161,7 +112,7 @@ export const blockersFor = (node, slug) => {
   const out = [];
   const seen = new Set();
   // Repo names are case-insensitive on GitHub, so the same blocker written two
-  // ways is one edge; what is KEPT is the spelling the sweep answered with.
+  // ways is one edge; what is kept is the spelling the sweep answered with.
   const add = (repo, number) => {
     const key = `${repo}#${number}`.toLowerCase();
     if (seen.has(key)) return;
@@ -174,7 +125,7 @@ export const blockersFor = (node, slug) => {
     add(((edge.repository || {}).nameWithOwner) || slug, edge.number);
   }
 
-  // The WHOLE body, not the cut one the issue carries: a line past the body
+  // The whole body, not the cut one the issue carries: a line past the body
   // limit is still a dependency somebody wrote down.
   for (const line of String(node.body || '').split('\n')) {
     const lower = line.toLowerCase();
@@ -194,12 +145,8 @@ export const blockersFor = (node, slug) => {
 };
 
 /**
- * The issue's newest comment as one line, cut to what a card can show.
- *
- * The query asks for the LAST one, so the connection holds at most a single
- * node. Its body is markdown over many lines and the surfaces that draw it draw
- * one line, so the whitespace is folded here rather than in each of them, and a
- * cut says so with an ellipsis instead of stopping mid-word in silence.
+ * The issue's newest comment as one line, cut with an ellipsis to what a card
+ * can show.
  *
  * @param {object} node the issue node as GraphQL answered it
  * @returns {string} '' on an issue nobody has commented on
@@ -239,22 +186,16 @@ export const issueFrom = (node, slug, groups) => {
     priority: (parsed.priority || [])[0] || null,
     agentOk: agent.includes('ok'),
     agentWorking: agent.includes('working'),
-    // `filter(Boolean)` for the reason the issue list itself has one: GitHub
-    // nulls out a node it could not deliver (issue #202), at whatever depth the
-    // connection sits, and reading a field off one of those holes is what ended
-    // the tower's API. Every other connection an issue carries already skips
-    // them (the labels, the comment, the blockers) and this was the last that
-    // did not.
+    // GitHub nulls out a node it could not deliver, at any depth, and reading a
+    // field off one crashes the API: every connection here skips them.
     assignees: ((node.assignees || {}).nodes || []).filter(Boolean).map((a) => a.login),
     blockedBy: blockersFor(node, slug),
   };
 };
 
 /**
- * How many of a repo's closed issues were closed in the last 24 hours.
- *
- * The clock is an argument for the reason every other seam here is one: a count
- * that depends on the hour the suite runs at is a count no test can state.
+ * How many of a repo's closed issues were closed in the last 24 hours; the
+ * clock is an argument so a suite can state the count.
  *
  * @param {object} resolved the repo's resolved alias
  * @param {number} now epoch ms the window is measured back from
@@ -272,12 +213,8 @@ export const closedSince = (resolved, now) => {
 };
 
 /**
- * A GraphQL errors array indexed by the alias it names.
- *
- * `path` is the field path GitHub reports, so `["r1"]` is repo r1's failure; an
- * error with no path belongs to the request as a whole and has no repo to hang
- * on. Several errors against one alias join, because each of them is a separate
- * thing that went wrong to that repo.
+ * A GraphQL errors array indexed by the alias its `path` names (`["r1"]`); a
+ * pathless error belongs to the whole request, and several on one alias join.
  *
  * @param {object[]} errors the answer's `errors`, if any
  * @returns {Object<string, string>}
@@ -294,10 +231,8 @@ export const errorsByAlias = (errors) => {
 };
 
 /**
- * The FIRST message GitHub reported against an alias: what a dropped-node
- * reason quotes. The failure this exists for answers with one error per dropped
- * node (464 of them on the roster that found it, issue #202); they all say the
- * same thing, and one of them is what a repo entry has room for.
+ * The first message GitHub reported against an alias: what a dropped-node
+ * reason quotes, since GitHub answers one identical error per dropped node.
  *
  * @param {object[]} errors the answer's `errors`, if any
  * @param {string} alias the repo's alias in that answer
@@ -312,11 +247,8 @@ export const firstErrorFor = (errors, alias) => {
 
 /**
  * What a repo says when GitHub delivered fewer issues than it answered with,
- * or null when it delivered them all.
- *
- * A NULL node is an issue GitHub could not deliver, and reading a field off one
- * is what ended the tower's API (issue #202). Both halves skip it, count it, and
- * say it out loud on the repo it belongs to, in these words.
+ * or null when it delivered them all. Both halves skip a null node, count it,
+ * and say so on its repo in these words.
  *
  * @param {object[]} answered the nodes as they arrived, holes and all
  * @param {object[]} nodes what survived `filter(Boolean)`
@@ -332,25 +264,9 @@ export const droppedReason = (answered, nodes, errors, alias) => {
 
 /**
  * The rate limit said in the reader's own clock, or null when this is not one.
- *
- * GitHub says a spent budget three different ways and they all mean wait:
- * the PRIMARY limit on REST answers 403 (429 on some routes) with
- * `x-ratelimit-remaining: 0`; the same limit on GraphQL answers HTTP 200 with
- * `errors[].type` of `RATE_LIMIT` (observed live, 2026-08-29; the docs say
- * `RATE_LIMITED`), which is a success as far as the status
- * line is concerned; and a SECONDARY limit answers 403 with `retry-after`
- * seconds and a budget that is not spent at all. A refused TOKEN wears that
- * same 403 and is the opposite problem: one is waited out, the other needs a
- * new token, so the board can only say which by reading these.
- *
- * WHEN it lifts is read from `retry-after` first, because the answer carrying
- * one is telling this caller how long IT must wait, which a shared budget's
- * reset second does not say.
- *
- * The headers arrive as a plain lowercased object from either transport: the
- * machine splits them off `gh --include` (board.js), the browser reads the ones
- * that matter off the `Response` (github/wire.js). One sentence for both, which is
- * why it is here and not written twice (issue #213).
+ * The three shapes and why `retry-after` wins: `tower/README.md` § Endpoints.
+ * A token GitHub refused wears the same 403, so this reading tells them apart.
+ * The headers arrive as a plain lowercased object from either transport.
  *
  * @param {number|null} status the response status
  * @param {Object<string, string|null>} headers the response headers, lowercased

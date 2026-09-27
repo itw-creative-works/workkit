@@ -76,9 +76,8 @@ const run = async () => {
       'and each column is titled the way a human reads it');
     assertEq(format.STATUSES.length, 7, 'seven lanes - a missing label is not a place an issue lives (#118)');
     assert(!format.STATUSES.some((s) => !s.key), 'so no column stands for the absence of one');
-    // The pocket flag is what the Board splits its two regions on (#196), so a
-    // status added without one lands in the pipeline by default - which is what
-    // a new STAGE is, and a new waiting state has to say otherwise out loud.
+    // The pocket flag splits the Board's two regions, so a status added without
+    // one lands in the pipeline as a stage; a waiting state has to say so.
     assertEq(format.STATUSES.filter((s) => !s.pocket).map((s) => s.key).join(','), 'inbox,specced,building,qa,complete',
       'the pipeline is the five stages, and they read as a flow');
     assertEq(format.STATUSES.filter((s) => s.pocket).map((s) => s.key).join(','), 'blocked,backlog',
@@ -92,14 +91,12 @@ const run = async () => {
     assertEq(format.statusToken('nonsense'), '--omega-ink-muted', 'an unknown status is drawn, not dropped');
     assert(format.statusToken('building') !== format.statusToken(''),
       'in-flight work and a status the vocabulary does not name never share a colour');
-    // Issue #135: one lane, one colour. A column header, a card chip and a
-    // chart slice are all read by hue, so two statuses sharing one would make
-    // the board say less than it draws.
+    // One lane, one colour: a column header, a card chip and a chart slice are
+    // all read by hue.
     const tokens = format.STATUSES.map((status) => format.statusToken(status.key));
     assertEq(new Set(tokens).size, tokens.length, 'no two statuses are drawn in one colour');
-    // Issue #196: the ok green is a VERDICT, so it moved up a rung with the
-    // verdict - `complete` is the check passed, and `qa` is now the waiting for
-    // it, drawn in the one ramp slot no vocabulary had taken.
+    // The ok green is a verdict: `complete` is the check passed, and `qa`, the
+    // wait for it, wears the one ramp slot no vocabulary had taken.
     assertEq(format.statusToken('complete'), '--omega-ok', 'complete wears the ok green - the check passed, ready to ship');
     assertEq(format.statusToken('qa'), '--omega-chart-4', 'qa gives that green up for the magenta - waiting on a check is no verdict (#203)');
     assertEq(format.statusToken('specced'), '--omega-chart-3', 'and specced gave it up for the categorical purple before either');
@@ -110,11 +107,9 @@ const run = async () => {
     assertEq(format.priorityToken('low'), '--omega-ink-faint', 'and low the faint end');
     assertEq(format.priorityToken(''), '--omega-ink-muted', 'normal priority is never written on an issue and is drawn neutral');
     assertEq(format.priorityToken('nonsense'), '--omega-ink-muted', 'and so is a priority the vocabulary does not name');
-    // Both ends are shared with the status they say the same thing as (#149):
-    // a hue is unique inside a vocabulary and free across them, since every
-    // chip carries its own word and its own glyph. "High" and "blocked" are
-    // both the thing that wants attention; "low" and "backlog" both say the
-    // opposite about urgency.
+    // A hue is unique inside a vocabulary and free across them, since every chip
+    // carries its own word and glyph. "High" and "blocked" both want attention;
+    // "low" and "backlog" both say the opposite about urgency.
     assertEq(format.priorityToken('high'), format.statusToken('blocked'), 'the loud end is the one the pipeline raises its hand in');
     assertEq(format.priorityToken('low'), format.statusToken('backlog'), 'and the quiet end is the one the pipeline parks in');
     assertEq(new Set([format.priorityToken('high'), format.priorityToken('low')]).size, 2,
@@ -132,11 +127,9 @@ const run = async () => {
     assert(!format.statusChip('<img src=x>').includes('<img'), 'a hostile status is escaped');
   });
 
-  // ── The alert that replaced the No-status column (#118) ──────────────────
-  //
+  // ── The missing-status alert ─────────────────────────────────────────────
   // A missing `status:` label is a pipeline fault the daily heal repairs, not a
-  // place an issue lives, so it is drawn as an alarm above the board instead of
-  // a lane of its own. These are the questions that lane used to answer.
+  // place an issue lives, so it is drawn as an alarm above the board.
 
   await test('issues carrying no status label become one danger alert, not a column', () => {
     const markup = format.noStatusAlert([
@@ -178,8 +171,7 @@ const run = async () => {
   });
 
   await test('the chart series keeps unlabeled issues visible, and only while they exist', () => {
-    // #118: the Board surfaces a missing status as its danger alert; a chart
-    // that silently dropped those issues would sum short of the open count
+    // A chart that dropped unlabeled issues would sum short of the open count
     // beside it. Hard-coded expectations either side of the boundary.
     const clean = format.statusBreakdown([
       { status: 'inbox' }, { status: 'building' }, { status: 'building' },
@@ -187,8 +179,7 @@ const run = async () => {
     assertEq(clean.labels.join(','), 'Inbox,Specced,Building,QA,Complete,Blocked,Backlog', 'no drift means seven slices, nothing more');
     assertEq(clean.values.join(','), '1,0,2,0,0,0,0', 'each status counts its own');
     assertEq(clean.labels.length, clean.colors.length, 'labels and colors stay in step');
-    // The series is the column list's own (#196): the Overview's ring gained the
-    // `complete` slice from STATUSES rather than from a list of its own.
+    // The series is the column list's own: STATUSES, never a list of its own.
     assertEq(clean.labels.length, format.STATUSES.length, 'one slice per lane, and the lanes are format.js’s');
 
     const drifted = format.statusBreakdown([{ status: 'inbox' }, { status: '' }, {}]);
@@ -229,9 +220,8 @@ const run = async () => {
   });
 
   await test('the Board sorts its columns with the shared comparator, not one of its own', () => {
-    // The band arithmetic is pinned above; this pins the PAGE to it. Without
-    // this, a silent revert to a date-only sort in board.js leaves every other
-    // test green and the issue's headline behavior gone.
+    // The band arithmetic is pinned above; this pins the page to it, since a
+    // date-only sort in board.js would leave every other test green.
     const fs = require('fs');
     const boardPage = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
     assert(/import \{[^}]*byPriority[^}]*\} from '\.\.\/libs\/tower\/format\.js'/.test(boardPage),
@@ -252,13 +242,10 @@ const run = async () => {
   });
 
   await test('that icon is centred by a rule of its own, over the line it sits above (#142)', () => {
-    // The defect this proves against: the glyph sat LEFT of the line under it,
-    // on every empty state the tower draws. `text-center` centres inline
-    // content and this icon is not inline - `d-block` is one of Bootstrap's
-    // `!important` utilities and beats the framework's
-    // `i[data-omega-fa] { display: inline-flex }`, which leaves a BLOCK box one
-    // em wide hugging the left edge whatever the text around it is aligned to.
-    // Neither half is visible from Node, so both are pinned by hand.
+    // `text-center` centres inline content, and `d-block` (a Bootstrap
+    // `!important` utility) beats the framework's `i[data-omega-fa] { display:
+    // inline-flex }`, leaving a block box hugging the left edge. Neither half
+    // is visible from Node, so both are pinned by hand.
     const fs = require('fs');
     assert(format.empty('nothing here').includes('class="omega-tower-empty '), 'the helper carries the hook the sheet centres from');
     const sheet = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
@@ -306,12 +293,10 @@ const run = async () => {
     // ink `.omega-badge-tone` falls back to, never in another name's colour.
     assertEq(format.badgeColor('other'), 'var(--omega-ink-muted)', 'and everything else is neutral');
     assert(!format.classBadge('general-purpose').includes('omega-tone-'), 'which is no tone class at all');
-    // Sharing across the vocabularies is forced (ten names, six slots), so the
-    // table pins WHO shares: the class chip and the model chip that sit
-    // together on a real crew card - the manager ladder's pairings - never
-    // match (hooks/manager/resources/ladder.json: manager and advisor run fable, scouts
-    // sonnet, workers and verifiers opus; a reviewer inherits the session's
-    // model, so it pairs with fable and opus both).
+    // Ten names over six slots forces sharing, so the table pins who shares: a
+    // class chip and the model chip beside it on a real crew card never match
+    // (pairings per hooks/manager/resources/ladder.json; a reviewer inherits the
+    // session's model, so it pairs with fable and opus both).
     const pairings = [
       ['manager', 'fable'], ['advisor', 'fable'], ['scout', 'sonnet'],
       ['worker', 'opus'], ['verifier', 'opus'], ['reviewer', 'opus'], ['reviewer', 'fable'],
@@ -346,8 +331,8 @@ const run = async () => {
   });
 
   await test('a tile wears a sub-line only when there is a comparison to draw', () => {
-    // Issue #55: how this number compares with a week ago, under it. A tile
-    // with no history behind it keeps exactly the shape it always had.
+    // The sub-line compares the number with a week ago; a tile with no history
+    // behind it keeps its plain shape.
     const cell = format.statCell('Open issues', 12, '/board', undefined, 'down 3 from last week');
     assert(cell.includes('>down 3 from last week</p>'), 'the comparison is drawn as its own line');
     assert(cell.indexOf('</h3>') < cell.indexOf('down 3'), 'under the number, not beside the label');
