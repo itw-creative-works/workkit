@@ -11,7 +11,6 @@
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { spawnSync } = require('child_process');
 const { WORKKIT_DIR: W } = require('../../lib/harness');
 const {
@@ -19,6 +18,7 @@ const {
   joinPath,
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
+const { mkTmp } = require('../../lib/scratch');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 const SCRIPT = path.join(WORKFLOW_DIR, 'standards.sh');
@@ -49,7 +49,6 @@ const desiredLabels = () => {
   return out;
 };
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'wf-std-'));
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
 // The roster and the declines, out of the machine-maintained `.repos.json`:
@@ -71,7 +70,7 @@ const winRosterKey = (repo) => (IS_WINDOWS
 // Participation: the committed .workkit/settings.json is the repo's yes, so
 // every fixture carries one unless a test is exercising another state.
 const makeRepo = ({ remote = true, settings = '{ "version": 1, "enabled": true }\n' } = {}) => {
-  const dir = mkTmp();
+  const dir = mkTmp('wf-std-');
   spawnSync('git', ['init', '-q'], { cwd: dir });
   if (remote) {
     spawnSync('git', ['remote', 'add', 'origin', 'https://example.invalid/alice/repo.git'], { cwd: dir });
@@ -100,7 +99,7 @@ const makeGhStub = ({
   // off by default so every older test exercises the "cannot resolve" bail-out.
   protection = 'absent', repoView = false,
 } = {}) => {
-  const dir = mkTmp();
+  const dir = mkTmp('wf-std-');
   const logFile = path.join(dir, 'gh.log');
   const labelsFile = path.join(dir, 'labels.json');
   const issuesFile = path.join(dir, 'issues.json');
@@ -192,7 +191,7 @@ const ghCalls = (stub) => readArgv(stub.logFile);
 // is to build the PATH: where a tool lives varies by machine (a CI runner keeps
 // gh in /usr/bin, Homebrew does not), and a test that assumed a layout was
 // testing the host instead of the script. The seam builds and checks it.
-const binDirWithout = (excluded) => basePathWithout(mkTmp(), excluded);
+const binDirWithout = (excluded) => basePathWithout(mkTmp('wf-std-'), excluded);
 
 const runScript = (repoDir, {
   pathPrefix, args = [], workflowHome, claudeHome, hooksDir, env = {},
@@ -209,10 +208,10 @@ const runScript = (repoDir, {
       // Unset means the real hook layer beside the engine, which is what most
       // of this suite runs against; the self-check tests point at a fixture.
       ...(hooksDir ? { WORKFLOW_HOOKS_DIR: shellPath(hooksDir) } : {}),
-      WORKFLOW_HOME: shellPath(workflowHome || path.join(mkTmp(), 'workflow-home')),
+      WORKFLOW_HOME: shellPath(workflowHome || path.join(mkTmp('wf-std-'), 'workflow-home')),
       // Same rule as WORKFLOW_HOME for the engine's address symlink: the step
       // that maintains ~/.claude/workkit must never reach the real ~/.claude.
-      WORKFLOW_CLAUDE_HOME: shellPath(claudeHome || path.join(mkTmp(), 'claude-home')),
+      WORKFLOW_CLAUDE_HOME: shellPath(claudeHome || path.join(mkTmp('wf-std-'), 'claude-home')),
       // Last, so a case driving another platform's branch (OSTYPE) wins over
       // the environment this suite inherited.
       ...env,
@@ -237,6 +236,6 @@ const repoVersion = (dir) => JSON.parse(readFile(path.join(dir, W, 'settings.jso
 
 module.exports = {
   WORKFLOW_DIR, SCRIPT, MANIFEST, IGNORE_GLOB, IGNORE_GLOB_ALL, IGNORE_NEGATION, HOOK_LIB,
-  desiredLabels, mkTmp, cleanup, rosterOf, winRosterKey, makeRepo, makeGhStub, readFile, ghCalls,
+  desiredLabels, cleanup, rosterOf, winRosterKey, makeRepo, makeGhStub, readFile, ghCalls,
   binDirWithout, runScript, STANDARD_VERSION, repoVersion,
 };

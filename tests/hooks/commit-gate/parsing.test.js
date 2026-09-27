@@ -11,6 +11,7 @@ const { spawnSync, execSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { BASH, SYSTEM_BASH, NO_RC, shellPath, which, linkTool, stubTool } = require('../../lib/platform');
 const { skipWithoutDigest, HOOK, WORKFLOW_DIR, TMP, mkRepo, stage, touchMarker, dropMarker, runHook, cleanup } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   skipWithoutDigest();
@@ -82,7 +83,7 @@ const run = async () => {
   await test('a commit whose session cwd is in no repo: exit 2 fail closed (issue #159)', () => {
     // The other half: a session sitting outside any repo (a background subagent's
     // steady state) resolved no toplevel, so the gate stood down entirely.
-    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-norepo-'));
+    const outside = mkTmp('cg-norepo-');
     const { code, stderr } = runHook(outside, 'git commit -m "feat: x"');
     assertEq(code, 2, `a commit the gate cannot place must not pass, got: ${stderr}`);
     assert(stderr.includes('not inside a git repository'), `names the reason, got: ${stderr}`);
@@ -104,7 +105,7 @@ const run = async () => {
   await test('a NON-commit command outside any repo stays silent (issue #159)', () => {
     // The fail-closed sits after the commit-clause test, so ordinary Bash in a
     // scratch directory hears nothing.
-    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-norepo-'));
+    const outside = mkTmp('cg-norepo-');
     const out = runHook(outside, 'ls -la && npm test');
     assertEq(out.code, 0, `no commit clause, no verdict, got: ${out.stderr}`);
     assertEq(out.stderr, '', 'and no message at all');
@@ -292,7 +293,7 @@ const run = async () => {
     // A perl RUNTIME failure used to set the wrapped flag unconditionally, so
     // a machine with a broken perl blocked EVERY Bash command. The fail-closed
     // now applies the same coarse word test as the no-perl path.
-    const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-perl-'));
+    const bin = mkTmp('cg-perl-');
     for (const tool of ['bash', 'cat', 'jq', 'dirname', 'grep', 'sed', 'tr', 'git']) {
       const real = which(tool);
       if (real) linkTool(bin, real);

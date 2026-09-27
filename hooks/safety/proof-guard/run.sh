@@ -140,6 +140,58 @@ else
   clauses_text=$(printf '%s' "$src" | tr ';|&' '\n')
 fi
 
+# The shell words of one clause, one a line, in ONE awk pass that keeps a quoted
+# span inside its word: a flag named in a body is part of the body's word.
+pg_words='
+  {
+    n = length($0); w = ""; st = ""; inw = 0
+    for (i = 1; i <= n; i++) {
+      c = substr($0, i, 1)
+      if (st == "") {
+        if (c == " " || c == "\t") { if (inw) { print w; w = ""; inw = 0 }; continue }
+        inw = 1; w = w c
+        if (c == DQ || c == SQ) st = c
+        else if (c == BS && i < n) { i++; w = w substr($0, i, 1) }
+      } else {
+        w = w c
+        if (st == DQ && c == BS && i < n) { i++; w = w substr($0, i, 1) }
+        else if (c == st) st = ""
+      }
+    }
+    if (inw) print w
+  }
+'
+
+# pg_flag_values <clause> <long> [<short>]: every value the clause hands the
+# flag, raw, one a line (`--flag v`, `--flag=v`, `-Sv`), a redirect before a
+# separate value skipped. Without awk the words split on blanks, quote blind.
+pg_flag_values() {
+  local w words want=0 skip_next=0 span
+  words=$(printf '%s\n' "$1" | awk -v DQ='"' -v SQ="'" -v BS='\\' "$pg_words" 2>/dev/null) \
+    || words=$(printf '%s\n' "$1" | tr ' \t' '\n\n')
+  while IFS= read -r w; do
+    [ -n "$w" ] || continue
+    if [ "$skip_next" -gt 0 ]; then skip_next=$((skip_next - 1)); continue; fi
+    if [ "$want" -eq 1 ]; then
+      span=$(hook_redirect_span "$w")
+      if [ "$span" -gt 0 ]; then skip_next=$((span - 1)); continue; fi
+      want=0; printf '%s\n' "$w"; continue
+    fi
+    case "$w" in
+      "$2") want=1 ;;
+      "$2"=*) printf '%s\n' "${w#"$2"=}" ;;
+      *)
+        if [ -n "${3:-}" ]; then
+          case "$w" in "$3") want=1 ;; "$3"?*) printf '%s\n' "${w#"$3"}" ;; esac
+        fi
+        ;;
+    esac
+  done <<EOF
+$words
+EOF
+  return 0
+}
+
 # A `--repo`/`-R` in any spelling gh takes, attached or not. Its presence is
 # read off the quote-stripped clause, so a body that mentions it is not one.
 repo_flag_re='(^|[[:space:]])(--repo([=[:space:]]|$)|-R)'
@@ -171,8 +223,7 @@ while IFS= read -r clause; do
   else
     # An edit only matters when it ADDS status:complete. The value is read whole
     # (quoted or bare) so a `--remove-label status:complete` never reads as one.
-    labels=$(printf '%s' "$clause" \
-      | grep -Eo -- '--add-label[=[:space:]]+("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:]]+)' || true)
+    labels=$(pg_flag_values "$clause" --add-label)
     if printf '%s' "$labels" | grep -q 'status:qa'; then
       if printf '%s' "$detect" | grep -Eq -- "$repo_flag_re"; then
         qa_elsewhere=1
@@ -185,9 +236,17 @@ while IFS= read -r clause; do
 
   after=$(printf '%s' "$detect" | sed -E "s/^.*gh[[:space:]]+issue[[:space:]]+$sub[[:space:]]+//")
   issues=""
+  skip_next=0
   for tok in $after; do
+    if [ "$skip_next" -eq 1 ]; then skip_next=0; continue; fi
+    # A redirect is shell syntax, never the positional: a bare operator hands
+    # its target to the next word, an attached one carries it.
     case "$tok" in
       -*) break ;;
+      *'>'*|*'<'*)
+        span=$(hook_redirect_span "$tok")
+        if [ "$span" -gt 0 ]; then skip_next=$((span - 1)); continue; fi
+        ;;
     esac
     n="${tok#\#}"
     case "$n" in
@@ -207,9 +266,8 @@ while IFS= read -r clause; do
   repo=""
   repo_unreadable=0
   if printf '%s' "$detect" | grep -Eq -- "$repo_flag_re"; then
-    repo=$(printf '%s' "$clause" \
-      | grep -Eo -- '(^|[[:space:]])(--repo[=[:space:]]+|-R[[:space:]]*)("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:]]+)' \
-      | head -n 1 | sed -E 's/^[[:space:]]*(--repo[=[:space:]]+|-R[[:space:]]*)//' | tr -d "\"'" || true)
+    repo=$(pg_flag_values "$clause" --repo -R | sed -n 1p)
+    repo=$(printf '%s' "$repo" | tr -d "\"'")
     case "$repo" in
       ''|*'$'*|*'`'*|*_hookq_*) repo_unreadable=1 ;;
     esac

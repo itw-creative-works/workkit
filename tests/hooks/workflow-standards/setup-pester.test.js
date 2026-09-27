@@ -8,8 +8,9 @@ const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  mkTmp, cleanup, makeRepo, decline, runHook, dropPathWithoutGh,
+  cleanup, makeRepo, decline, runHook, dropPathWithoutGh,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('workflow:standards: the setup pester (#72)');
@@ -18,8 +19,8 @@ const run = async () => {
 
   await test('a machine that never ran setup is told to, every session', () => {
     const repo = makeRepo();
-    const home = mkTmp();
-    const cache = mkTmp();
+    const home = mkTmp('wf-hook-');
+    const cache = mkTmp('wf-hook-');
     const first = runHook(repo, { home, cache, setup: false });
     assertEq(first.code, 0, 'exit 0');
     const ctx = contextOf(first.stdout);
@@ -35,7 +36,7 @@ const run = async () => {
 
   await test('a set-up machine hears nothing about setup', () => {
     const repo = makeRepo();
-    const home = mkTmp();
+    const home = mkTmp('wf-hook-');
     const first = runHook(repo, { home });
     assert(!first.stdout.includes('SETUP:'), `the pester ends when setup has run, got: ${first.stdout}`);
     const second = runHook(repo, { home });
@@ -44,8 +45,8 @@ const run = async () => {
   });
 
   await test('setup is a machine question: the pester reaches a non-git cwd too', () => {
-    const dir = mkTmp();
-    const home = mkTmp();
+    const dir = mkTmp('wf-hook-');
+    const home = mkTmp('wf-hook-');
     const { code, stdout, cacheDir } = runHook(dir, { home, setup: false });
     assertEq(code, 0, 'exit 0');
     assert(contextOf(stdout).includes('workkit.sh setup'), `nothing about the machine needs a repo, got: ${stdout}`);
@@ -55,8 +56,8 @@ const run = async () => {
 
   await test('a declined repo still hears the setup pester and nothing else', () => {
     const repo = makeRepo({ optIn: false });
-    const home = mkTmp();
-    const workflowHome = mkTmp();
+    const home = mkTmp('wf-hook-');
+    const workflowHome = mkTmp('wf-hook-');
     decline(repo, workflowHome);
     const { stdout, cacheDir } = runHook(repo, { home, workflowHome, setup: false });
     const ctx = contextOf(stdout);

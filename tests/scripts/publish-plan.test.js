@@ -14,18 +14,17 @@
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { spawnSync } = require('child_process');
 const {
   group, test, testUnless, assert, assertEq, summary, selfRun,
 } = require('../lib/harness');
 const { IS_WINDOWS, NO_NODE_STUB, stubTool, pathWith } = require('../lib/platform');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
+const { mkTmp } = require('../lib/scratch');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'publish-plan.js');
 const { plan } = require(SCRIPT);
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'pplan-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 /**
@@ -33,7 +32,7 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
  * directory to its package.json.
  */
 const mkRepo = ({ root, members = {} } = {}) => {
-  const dir = mkTmp();
+  const dir = mkTmp('pplan-');
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(root));
   for (const [rel, pkg] of Object.entries(members)) {
     fs.mkdirSync(path.join(dir, rel), { recursive: true });
@@ -54,7 +53,7 @@ const runPlan = (dir) => {
  * `failPublish`. Every call is recorded.
  */
 const makeNpmStub = ({ taken = [], viewBreaks = false, failPublish = null } = {}) => {
-  const dir = mkTmp();
+  const dir = mkTmp('pplan-');
   const bin = path.join(dir, 'bin');
   fs.mkdirSync(bin, { recursive: true });
   stubTool(bin, 'npm', [

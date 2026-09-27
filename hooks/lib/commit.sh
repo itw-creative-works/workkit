@@ -152,7 +152,7 @@ hook_find_git_commit() {
   HOOK_SAW_CD=0
   HOOK_SAW_STAGE=0
   HOOK_WRAPPED_COMMIT=0
-  local src stripped clause sub w pre expect saw_eval nc ci pi=0 had_glob=1
+  local src stripped clause sub w n pre expect saw_eval nc ci pi=0 had_glob=1
   src=$(hook_strip_heredocs "$1")
   stripped=$(hook_strip_quotes "$src")
   # The `&` of a redirect (`2>&1`, `&>f`, `<&3`) belongs to the redirect, never
@@ -184,6 +184,12 @@ hook_find_git_commit() {
         command|env) shift ;;
         eval) saw_eval=1; shift ;;
         [A-Za-z_]*=*) _hook_count_placeholders "$1"; ci=$((ci + HOOK_PLACEHOLDER_COUNT)); shift ;;
+        # A redirect ahead of the command word is syntax; its target may hold a placeholder.
+        *'>'*|*'<'*)
+          n=$(hook_redirect_span "$1")
+          [ "$n" -gt 0 ] || break
+          [ "$n" -le $# ] || n=$#
+          _hook_count_placeholders "${*:1:$n}"; ci=$((ci + HOOK_PLACEHOLDER_COUNT)); shift "$n" ;;
         *) break ;;
       esac
     done
@@ -239,6 +245,11 @@ hook_find_git_commit() {
               shift
               ;;
             --*) _hook_count_placeholders "$1"; ci=$((ci + HOOK_PLACEHOLDER_COUNT)); shift ;;
+            *'>'*|*'<'*)
+              n=$(hook_redirect_span "$1")
+              [ "$n" -gt 0 ] || break
+              [ "$n" -le $# ] || n=$#
+              _hook_count_placeholders "${*:1:$n}"; ci=$((ci + HOOK_PLACEHOLDER_COUNT)); shift "$n" ;;
             *) break ;;
           esac
         done
@@ -259,6 +270,11 @@ hook_find_git_commit() {
       case "$1" in
         -C|-c|--git-dir|--work-tree|--namespace|--exec-path) [ $# -ge 2 ] || break; shift 2 ;;
         -*) shift ;;
+        *'>'*|*'<'*)
+          n=$(hook_redirect_span "$1")
+          [ "$n" -gt 0 ] || { sub="$1"; break; }
+          [ "$n" -le $# ] || n=$#
+          shift "$n" ;;
         *) sub="$1"; break ;;
       esac
     done
@@ -278,8 +294,8 @@ EOF
 
 # hook_redirect_word <word>: a QUOTE STRIPPED word that is a shell redirect.
 # Prints `bare` when its target is the next word (`>`, `2>`, `<<<`, `&>>`),
-# `attached` when the word carries it (`2>&1`, `>file`, `<<<msg`); returns 1
-# for anything else. Consumers: safety/commit-gate, safety/tree-guard.
+# `attached` when the word carries it (`2>&1`, `>file`, `<<<msg`); else 1.
+# Consumer: hook_redirect_span, the form every walk calls.
 hook_redirect_word() {
   local fd op
   fd="${1%%[!0-9]*}"
@@ -291,6 +307,18 @@ hook_redirect_word() {
     '>'|'>>'|'>|'|'<'|'<>'|'<<'|'<<-'|'<<<') printf '%s\n' bare ;;
     '>'*|'<'*) printf '%s\n' attached ;;
     *) return 1 ;;
+  esac
+}
+
+# hook_redirect_span <word>: how many words a redirect starting at this QUOTE
+# STRIPPED word spans (2 bare, its target being the next word; 1 attached; 0 no
+# redirect), so a walk skips it whole. Always exits 0. Consumers: commit-gate,
+# tree-guard, proof-guard, release-taken, and hook_find_git_commit's three walks.
+hook_redirect_span() {
+  case "$(hook_redirect_word "$1")" in
+    bare) printf '2\n' ;;
+    attached) printf '1\n' ;;
+    *) printf '0\n' ;;
   esac
 }
 

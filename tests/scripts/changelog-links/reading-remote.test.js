@@ -6,8 +6,9 @@
 
 const { group, test, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  skipOnWindows, repoSlug, mkTmp, cleanup, git,
+  skipOnWindows, repoSlug, cleanup, git,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   skipOnWindows();
@@ -15,7 +16,7 @@ const run = async () => {
   group('changelog-links: reading the remote');
 
   await test('parses both GitHub remote URL forms, and rejects others', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('cll-');
     git(dir, 'init', '-q', '-b', 'main');
     git(dir, 'remote', 'add', 'origin', 'git@github.com:alice/.dotfiles.git');
     assertEq(repoSlug(dir), 'alice/.dotfiles', 'ssh form');
@@ -35,7 +36,7 @@ const run = async () => {
     // origin of its own, so it inherits EVERY trailing separator coming off,
     // not one. The gate above it stays: the links this file builds are
     // GitHub's, so a remote anywhere else has nothing to link to.
-    const dir = mkTmp();
+    const dir = mkTmp('cll-');
     git(dir, 'init', '-q', '-b', 'main');
     git(dir, 'remote', 'add', 'origin', 'https://github.com/alice/.dotfiles//');
     assertEq(repoSlug(dir), 'alice/.dotfiles', 'every trailing slash, not one');

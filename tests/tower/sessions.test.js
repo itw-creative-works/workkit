@@ -18,17 +18,17 @@ const os = require('os');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { asWindows } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const { listSessions, transcriptPath, chatNameFrom, NAME_READ_BYTES } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'sessions.js'));
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-sessions-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const MINUTE = 60 * 1000;
 
 /** A scratch world: marker dir, fake home, statusline cache dir. */
 const mkWorld = () => {
-  const root = mkTmp();
+  const root = mkTmp('tower-sessions-');
   const world = {
     root,
     markerDir: path.join(root, 'claude-keep-awake'),

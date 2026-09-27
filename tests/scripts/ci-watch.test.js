@@ -19,7 +19,6 @@
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { spawnSync } = require('child_process');
 const {
   group, test, assert, assertEq, skip, summary, selfRun,
@@ -28,12 +27,12 @@ const {
   IS_WINDOWS, BASH, NO_RC, NO_EXEC_BIT, shellPath, homeEnv, stubTool, systemPathWith,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, eqArgv, fmtCalls } = require('../lib/argv-log');
+const { mkTmp } = require('../lib/scratch');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ci-watch.sh');
 const SHA = '0123456789abcdef0123456789abcdef01234567';
 const LIST_ARGV = ['run', 'list', '--commit', SHA, '--json', 'databaseId,name,status,conclusion,url'];
 
-const mkTmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ci-watch-')));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const run = (id, name) => ({
@@ -54,7 +53,7 @@ const run = (id, name) => ({
 const makeWorld = ({
   runs = [], empty = 0, red = [], views = {}, logs = {}, down = [], listFails = false, listRaw = null, workflows = null,
 } = {}) => {
-  const dir = mkTmp();
+  const dir = mkTmp('ci-watch-');
   const repo = path.join(dir, 'repo');
   const bin = path.join(dir, 'bin');
   const fx = path.join(dir, 'fixtures');

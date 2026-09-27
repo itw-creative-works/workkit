@@ -13,9 +13,10 @@ const {
 const { shellPath } = require('../../lib/platform');
 const { isCall, fmtCalls } = require('../../lib/argv-log');
 const {
-  WORKFLOW_DIR, CLI, LABEL, mkTmp, cleanup, mkWorld, runCli, ACTED, mkRepo, installSchedule,
+  WORKFLOW_DIR, CLI, LABEL, cleanup, mkWorld, runCli, ACTED, mkRepo, installSchedule,
   mkPartialKit,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('workkit update: the two links');
@@ -45,7 +46,7 @@ const run = async () => {
     // agreement printed a link that was never written.
     const world = mkWorld();
     fs.mkdirSync(world.claudeHome, { recursive: true });
-    const kit = mkTmp();
+    const kit = mkTmp('workkit-cli-');
     fs.cpSync(WORKFLOW_DIR, path.join(kit, 'workflow'), { recursive: true });
     const { code, out } = runCli(world, ['update'], { script: path.join(kit, 'workflow', 'workkit.sh') });
     assertEq(code, 0, 'exit 0');

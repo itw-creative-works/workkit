@@ -14,12 +14,12 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { execFileSync } = require('child_process');
 const { testUnless } = require('../../lib/harness');
 const { IS_WINDOWS, NO_NODE_STUB, gitPath, homeEnv, pathWith, shellPath, stubTool } = require('../../lib/platform');
+const { mkTmp } = require('../../lib/scratch');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'brief-payload.js');
 const { composeBrief, render, writeBriefMarks, INSTRUCTION } = require(SCRIPT);
@@ -28,7 +28,6 @@ const { parseStatsMark } = require(path.join(__dirname, '..', '..', '..', 'tower
 const SLUG = 'ITW-Creative-Works/fixture';
 const STAMP = '2026-07-27T16:00:00.000Z';
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'brief-payload-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -51,7 +50,7 @@ const ccFixture = (home) => {
  * reaches GitHub: the shim is first on PATH and never calls out.
  */
 const mkNewsWorld = () => {
-  const home = mkTmp();
+  const home = mkTmp('brief-payload-');
   const bin = path.join(home, 'bin');
   const boardFile = path.join(home, 'board.json');
   const markFile = path.join(home, 'cc-version');
@@ -103,7 +102,7 @@ const issueNode = (number, labels) => ({
  * seam that answers gh and lets git through.
  */
 const mkWorld = () => {
-  const root = mkTmp();
+  const root = mkTmp('brief-payload-');
   const repo = path.join(root, 'repos', 'Owner', 'fixture');
   fs.mkdirSync(repo, { recursive: true });
   git(repo, 'init', '-q', '-b', 'main');
@@ -214,7 +213,7 @@ const TUESDAY = localNoon(2026, 8, 4);
 const newsTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
 
 module.exports = {
-  SCRIPT, composeBrief, render, writeBriefMarks, INSTRUCTION, parseStatsMark, SLUG, STAMP, mkTmp, cleanup,
+  SCRIPT, composeBrief, render, writeBriefMarks, INSTRUCTION, parseStatsMark, SLUG, STAMP, cleanup,
   CC_CHANGELOG, ccFixture, mkNewsWorld, issueNode, mkWorld, captureStderr, composeIn, nameHomeRepo, discussion,
   MONDAY, TUESDAY, newsTest,
 };

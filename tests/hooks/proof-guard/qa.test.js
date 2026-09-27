@@ -15,8 +15,9 @@ const {
 } = require('../../lib/platform');
 const { fmtCalls } = require('../../lib/argv-log');
 const {
-  mkTmp, cleanup, makeGhStub, ghCalls, dropPathWithoutGh, runHook, WORLD,
+  cleanup, makeGhStub, ghCalls, dropPathWithoutGh, runHook, WORLD,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const REPO = path.join(__dirname, '..', '..', '..');
 const QA = 'gh issue edit 3 --remove-label status:building --add-label status:qa';
@@ -35,7 +36,7 @@ const UNPROVABLE = 'node --test cannot prove a file that neither names node:test
 
 // Fixture git runs in a scratch home, so the developer's gitconfig never
 // shapes a fixture; every commit names its own identity.
-const FIXTURE_HOME = mkTmp();
+const FIXTURE_HOME = mkTmp('proof-guard-');
 const COMMIT = '-c user.name=test -c user.email=test@example.com commit -q';
 const git = (dir, args) => execSync(`git ${args}`, {
   cwd: dir, encoding: 'utf8', stdio: 'pipe', shell: SYSTEM_BASH, env: homeEnv(FIXTURE_HOME, { PATH: process.env.PATH }),
@@ -51,7 +52,7 @@ const runs = (dir) => {
 
 // A repo on `main` with a test script and one committed green test file.
 const mkQaRepo = () => {
-  const dir = fs.realpathSync(mkTmp());
+  const dir = mkTmp('proof-guard-');
   git(dir, 'init -q');
   git(dir, 'symbolic-ref HEAD refs/heads/main');
   write(dir, 'package.json', `${JSON.stringify({ name: 'fixture', scripts: { test: 'node --test' } })}\n`);
@@ -190,7 +191,7 @@ const run = async () => {
   });
 
   await qaCase('the commits since the default branch count, with nothing uncommitted', (dir, stub) => {
-    const bare = fs.realpathSync(mkTmp());
+    const bare = mkTmp('proof-guard-');
     try {
       git(bare, 'init -q --bare');
       git(dir, `remote add origin "${shellPath(bare)}"`);
@@ -212,7 +213,7 @@ const run = async () => {
 
   // A repo whose origin names no default branch: pushed, never set-head.
   const withOrigin = (dir) => {
-    const bare = fs.realpathSync(mkTmp());
+    const bare = mkTmp('proof-guard-');
     git(bare, 'init -q --bare');
     git(dir, `remote add origin "${shellPath(bare)}"`);
     git(dir, 'push -q origin main');
@@ -249,7 +250,7 @@ const run = async () => {
   await qaCase('a default branch with no merge base: exit 0, the notice names the unread commits', (dir, stub) => {
     // An orphan branch shares no history with origin/main, so the committed
     // leg has no base to diff from and the notice must say so.
-    const bare = fs.realpathSync(mkTmp());
+    const bare = mkTmp('proof-guard-');
     try {
       git(bare, 'init -q --bare');
       git(dir, `remote add origin "${shellPath(bare)}"`);
@@ -283,6 +284,14 @@ const run = async () => {
     assert(!out.stdout.includes('did not run here'), `never read as another repo, got: ${out.stdout}`);
   });
 
+  await qaCase('a body naming --add-label status:qa starts no run', (dir, stub) => {
+    write(dir, 'tests/a.test.js', RED);
+    const out = runHook('gh issue edit 3 --body "run --add-label status:qa later"', stub, dir);
+    assertEq(out.code, 0, `no qa flip, got: ${out.stderr}`);
+    assertEq(out.stdout, '', `no notice, got: ${out.stdout}`);
+    assertEq(runs(dir), 0, 'no test ran');
+  });
+
   await qaCase('a compound flipping two issues runs the tests once', (dir, stub) => {
     write(dir, 'tests/a.test.js', `${GREEN}// touched\n`);
     const out = runHook('gh issue edit 3 --add-label status:qa && gh issue edit 4 --add-label status:qa', stub, dir);
@@ -307,7 +316,7 @@ const run = async () => {
 
   await qaCase('node missing from PATH: exit 0, says the run did not run', (dir, stub) => {
     write(dir, 'tests/a.test.js', RED);
-    const mirror = mkTmp();
+    const mirror = mkTmp('proof-guard-');
     try {
       const out = runHook(QA, stub, dir, joinPath(stub.binDir, basePathWithout(mirror, 'node')));
       assertEq(out.code, 0, `no node fails open, got: ${out.stderr}`);
@@ -320,7 +329,7 @@ const run = async () => {
   });
 
   await test('a session outside any git repository: exit 0, one notice', () => {
-    const here = fs.realpathSync(mkTmp());
+    const here = mkTmp('proof-guard-');
     const stub = makeGhStub(WORLD);
     try {
       const out = runHook(QA, stub, here);

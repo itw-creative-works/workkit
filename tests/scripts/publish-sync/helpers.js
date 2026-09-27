@@ -17,15 +17,14 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { assert } = require('../../lib/harness');
 const { BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
+const { mkTmp } = require('../../lib/scratch');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const WORKFLOW_DIR = path.join(REPO_ROOT, 'workflow');
-const mkTmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'workkit-sync-')));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
 
@@ -95,7 +94,7 @@ const mkTowerApp = (root) => {
  * clone of a local bare repo, and a checkout to sync FROM.
  */
 const mkSyncWorld = () => {
-  const root = mkTmp();
+  const root = mkTmp('workkit-sync-');
   const homeDir = path.join(root, 'home');
   const workflowHome = path.join(root, 'workflow-home');
   fs.mkdirSync(homeDir, { recursive: true });
@@ -178,7 +177,7 @@ const mtimes = (dir) => {
  * way an unresolvable dependency would.
  */
 const mkPublishWorld = ({ mintFails = false, minted = false, installFails = false } = {}) => {
-  const root = mkTmp();
+  const root = mkTmp('workkit-sync-');
   const kit = path.join(root, 'kit');
   const bin = path.join(root, 'bin');
   const homeDir = path.join(root, 'home');

@@ -1,11 +1,11 @@
 // manager/profile hook: the MANAGER standing instruction, injected only in
 // manager-capable sessions (frontier/workhorse tier, or unknown).
 const path = require('path');
-const os = require('os');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const REPO = path.join(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'hooks', 'manager', 'profile', 'run.sh');
@@ -16,7 +16,7 @@ const id = (rung) => ladder.ladder[rung];
 
 let tmp;
 const freshTmp = () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-test-'));
+  tmp = mkTmp('profile-test-');
   return tmp;
 };
 

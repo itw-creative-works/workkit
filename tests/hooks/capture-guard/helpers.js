@@ -16,24 +16,18 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { skipSuite, WORKKIT_DIR: W } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath, digestTool } = require('../../lib/platform');
+const { mkTmp } = require('../../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', '..', 'hooks', 'safety', 'capture-guard', 'run.sh');
 
 // One throwaway git repo holding the capture file, plus a TMPDIR of its own so
 // the marker this suite writes can never be the machine's real one.
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-guard-tmp-'));
-const REPO = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-guard-'));
+const TMP = mkTmp('capture-guard-tmp-');
+const REPO = mkTmp('capture-guard-');
 spawnSync('git', ['init', '-q'], { cwd: REPO });
 fs.mkdirSync(path.join(REPO, W, 'agents'), { recursive: true });
 fs.writeFileSync(path.join(REPO, W, 'capture.md'), '# capture\n\n- a private thought\n');
 fs.writeFileSync(path.join(REPO, W, 'agents', 'session.md'), '# Session\n');
-// Every suite beside this one reads the same repo and TMPDIR, and the runner
-// loads them all in one process, so they are removed when the process ends,
-// not when any one suite does.
-process.on('exit', () => {
-  fs.rmSync(REPO, { recursive: true, force: true });
-  fs.rmSync(TMP, { recursive: true, force: true });
-});
 
 // The repo root as GIT reports it: on macOS the temp dir is reached through a
 // symlink, and the marker's name is the sha of the PHYSICAL path.

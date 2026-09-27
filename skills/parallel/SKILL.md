@@ -39,8 +39,8 @@ Per group, by the file-handoff convention (`docs/agents.md`):
 
 - ONE `workkit:worker` against ONE per-group brief: the group's issues and their Specs, the seam it owns, its done-criteria.
 - Dispatch it with the Agent tool's `isolation: "worktree"` param. The group builds on its own tree; two groups never share one. That one field is the whole isolation: an ordinary spawn writes the shared checkout.
-- A `workkit:verifier` judges THAT worktree's diff against THAT brief, blind. Never land a group the verifier has not passed.
-- Findings ≥80 go back to the group's worker on the same worktree. The group does not land until they are answered.
+- A `workkit:verifier` judges THAT worktree's diff against THAT brief, blind. Never land a group before its verifier has reported.
+- A ≥80 finding the fix-or-file rule keeps in the batch goes back to the group's worker on the same worktree for ONE round; any other is filed (`docs/project-state.md` § How big is one issue). The group lands after that round, its fixes checked by the qa flip's test run; a finding made later is filed and worked in the next batch (the feature flow's cap, its § 5).
 - Launch the group WORKERS in ONE message so they run concurrently. Each verifier follows its own group's worker, never alongside it.
 - Stay out of the volume while they run. A manager editing the main tree under running groups is the one thing worktrees cannot isolate.
 

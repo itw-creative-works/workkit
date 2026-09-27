@@ -14,13 +14,13 @@ const os = require('os');
 const { spawnSync, execFileSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'changelog-guard', 'run.sh');
 // Point the hook at THIS checkout's engine rather than the installed symlink,
 // so the suite tests the code under review (same override the standards suite uses).
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'clg-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -48,7 +48,7 @@ const runHook = (filePath) => {
 
 /** A repo whose committed CHANGELOG is `initial`, so diffs are genuine. */
 const mkRepo = (initial) => {
-  const dir = mkTmp();
+  const dir = mkTmp('clg-');
   git(dir, 'init', '-q', '-b', 'main');
   git(dir, 'config', 'user.email', 'test@example.com');
   git(dir, 'config', 'user.name', 'Test');
@@ -68,7 +68,7 @@ const run = async () => {
   group('changelog-guard: scope');
 
   await test('a file that is not a CHANGELOG is ignored', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('clg-');
     const file = path.join(dir, 'README.md');
     fs.writeFileSync(file, '- an essay bullet with no issue link whatsoever.\n');
     const { code, stderr } = runHook(file);
@@ -88,7 +88,7 @@ const run = async () => {
   });
 
   await test('a CHANGELOG that no longer exists: fail open', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('clg-');
     const { code } = runHook(path.join(dir, 'CHANGELOG.md'));
     assertEq(code, 0, 'exit 0');
     cleanup(dir);
@@ -159,7 +159,7 @@ const run = async () => {
   await test('a CHANGELOG outside git is judged in full', () => {
     // With no git to ask, everything is new. A first CHANGELOG is still held
     // to the format rather than slipping through unjudged.
-    const dir = mkTmp();
+    const dir = mkTmp('clg-');
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, doc('- An essay entry with no issue link.'));
     assertEq(runHook(file).code, 2, 'blocked');

@@ -17,6 +17,7 @@ const {
   IS_WINDOWS, BASH, SYSTEM_BASH, SYSTEM_PATH, NO_RC, NO_EXEC_BIT,
   shellPath, which, digestTool, stubTool, crlfJq, systemPathWith,
 } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const LIB = shellPath(path.join(__dirname, '..', '..', 'hooks', '_lib.sh'));
 const SHA1_ABC = 'a9993e364706816aba3e25717850c26c9cd0d89d';
@@ -30,7 +31,7 @@ const SHA1_ABC = 'a9993e364706816aba3e25717850c26c9cd0d89d';
 
 // A PATH world holding exactly one digest tool, under the name given.
 const digestWorld = (name, real) => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lib-sha1-'));
+  const dir = mkTmp('lib-sha1-');
   // Under the NAME the case is asking about, which is the whole point: the tool
   // this machine ships, wearing the other machine's spelling.
   stubTool(dir, name, ['#!/bin/bash', `exec "${shellPath(real)}" "$@"`]);
@@ -71,7 +72,7 @@ const run = async () => {
   });
 
   await test('a world with neither: non-zero, one line on stderr, never an empty key', () => {
-    const world = fs.mkdtempSync(path.join(os.tmpdir(), 'lib-nosha-'));
+    const world = mkTmp('lib-nosha-');
     const out = runLib("key=$(printf '%s' abc | hook_sha1); printf 'rc=%s key=[%s]' \"$?\" \"$key\"",
       { PATH: world });
     assert(out.stdout.includes('key=[]'), `no key at all, got: ${out.stdout}`);
@@ -120,7 +121,7 @@ const run = async () => {
   // seam builds it, since the standards suite asks the same machine the same
   // question about the engine's own `wk_jq`.
   const crlfWorld = () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lib-crlf-jq-'));
+    const dir = mkTmp('lib-crlf-jq-');
     crlfJq(dir);
     return dir;
   };
@@ -190,7 +191,7 @@ const run = async () => {
       // MACHINE's own state (on Windows the user profile holds it and every
       // temp directory sits under that profile), and read as the repo layer it
       // overrides the machine's own config with itself.
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lib-manager-'));
+      const dir = mkTmp('lib-manager-');
       const ladder = path.join(dir, 'ladder.json');
       fs.writeFileSync(ladder, JSON.stringify({ tiers: { fast: 'ladder-fast' } }));
       const user = path.join(dir, 'user-settings.json');
@@ -266,6 +267,46 @@ const run = async () => {
     assertEq(out.stdout, 'git clean 2>1 -f >/dev/null <3 & ls && pwd', `got: ${out.stdout}|${out.stderr}`);
   });
 
+  await test('hook_redirect_span: 2 for bare, 1 for attached, 0 for no redirect, and exit 0 always', () => {
+    const words = { '>': 2, '2>': 2, '<<<': 2, '2>&1': 1, '>file': 1, '2>1': 1, 'app.js': 0, 'a>b': 0, '_hookq_': 0 };
+    const out = runLib(`for w in ${Object.keys(words).map((w) => `'${w}'`).join(' ')}; do `
+      + 'n=$(hook_redirect_span "$w"); printf \'%s=%s:%s\\n\' "$w" "$n" "$?"; done');
+    assertEq(out.stdout.trim(), Object.entries(words).map(([w, n]) => `${w}=${n}:0`).join('\n'),
+      `got: ${out.stdout}|${out.stderr}`);
+  });
+
+  await test('hook_find_git_commit: a redirect between git and its subcommand never hides it', () => {
+    for (const cmd of ['git 2>&1 commit -m "x"', 'git > /tmp/o commit -m "x"', 'git -C . 2>/dev/null commit -m "x"']) {
+      const out = runLib(`hook_find_git_commit '${cmd}'; printf '%s' "$HOOK_COMMIT_CLAUSE"`);
+      assert(/commit/.test(out.stdout), `${cmd} is a commit clause, got: ${out.stdout}|${out.stderr}`);
+    }
+  });
+
+  await test('hook_find_git_commit: a redirect between an interpreter and its -c string never hides it', () => {
+    for (const cmd of ['bash 2>&1 -c "git commit -m x"', 'sh > /tmp/o -c "git commit -m x"']) {
+      const out = runLib(`hook_find_git_commit '${cmd}'; printf '%s' "$HOOK_WRAPPED_COMMIT"`);
+      assertEq(out.stdout, '1', `${cmd} wraps a commit, got: ${out.stdout}|${out.stderr}`);
+    }
+  });
+
+  await test('hook_find_git_commit: a quoted redirect target is counted, so the right span is judged', () => {
+    for (const [cmd, want] of [
+      ['bash > "out file" -c "git commit -m x"', '1'],
+      ['bash > "git commit" -c "echo hi"', '0'],
+      ['> "git commit" bash -c "echo hi"', '0'],
+    ]) {
+      const out = runLib(`hook_find_git_commit '${cmd}'; printf '%s' "$HOOK_WRAPPED_COMMIT"`);
+      assertEq(out.stdout, want, `${cmd}, got: ${out.stdout}|${out.stderr}`);
+    }
+  });
+
+  await test('hook_find_git_commit: a redirect before the command word never ends the peel', () => {
+    for (const cmd of ['2>&1 git commit -m "x"', '> /tmp/out git commit -m "x"']) {
+      const out = runLib(`hook_find_git_commit '${cmd}'; printf '%s' "$HOOK_COMMIT_CLAUSE"`);
+      assert(/git commit/.test(out.stdout), `${cmd} is a commit clause, got: ${out.stdout}|${out.stderr}`);
+    }
+  });
+
   group('_lib.sh: hook_pretool_notice');
 
   await test('prints the two-field JSON a PreToolUse hook exiting 0 is heard by', () => {
@@ -325,7 +366,7 @@ const run = async () => {
   });
 
   await test('hook_test_package_dir: the nearest package declaring a test script, below the root', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lib-pkgdir-'));
+    const root = mkTmp('lib-pkgdir-');
     for (const d of ['pkg/src/deep', 'pkg/bare/src', 'other', 'node_modules/x']) fs.mkdirSync(path.join(root, d), { recursive: true });
     const tested = JSON.stringify({ scripts: { test: 'node --test' } });
     for (const d of ['', 'pkg', 'node_modules/x']) fs.writeFileSync(path.join(root, d, 'package.json'), tested);
@@ -346,7 +387,7 @@ const run = async () => {
 
   // TMPDIR is handed over explicitly: the marker lives under whatever temp dir
   // the session has, which is the seam the two guard suites move.
-  const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'lib-marker-'));
+  const TMP = mkTmp('lib-marker-');
 
   await test('hook_review_marker_path is the review marker dir plus the sha of the root', () => {
     const out = runLib('hook_review_marker_path /repos/thing', { TMPDIR: shellPath(TMP) });
@@ -368,7 +409,7 @@ const run = async () => {
   });
 
   await test('no digest tool: a marker path is refused, never half-built', () => {
-    const world = fs.mkdtempSync(path.join(os.tmpdir(), 'lib-nosha-'));
+    const world = mkTmp('lib-nosha-');
     const out = runLib('p=$(hook_review_marker_path /repos/thing); printf \'rc=%s p=[%s]\' "$?" "$p"',
       { PATH: world });
     assert(out.stdout.includes('p=[]'), `no path at all, got: ${out.stdout}`);

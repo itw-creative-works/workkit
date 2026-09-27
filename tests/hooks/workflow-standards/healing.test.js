@@ -12,8 +12,9 @@ const {
 } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath, homeEnv } = require('../../lib/platform');
 const {
-  HOOK, WORKFLOW_DIR, BASE_PATH, IGNORE_GLOB, mkTmp, cleanup, makeRepo, runHook, dropPathWithoutGh,
+  HOOK, WORKFLOW_DIR, BASE_PATH, IGNORE_GLOB, cleanup, makeRepo, runHook, dropPathWithoutGh,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('workflow:standards: healing a repo');
@@ -49,7 +50,7 @@ const run = async () => {
   // a `cp` refusal, a git advisory. Only a line the engine itself printed is a
   // heal action, and the opening glyph is what says which is which.
   await test('a raw line from a child tool is not relayed as a heal action', () => {
-    const engine = mkTmp();
+    const engine = mkTmp('wf-hook-');
     fs.writeFileSync(path.join(engine, 'labels.json'), '{ "version": 1, "groups": {} }\n');
     fs.writeFileSync(path.join(engine, 'standards.sh'), [
       '#!/usr/bin/env bash',
@@ -78,7 +79,7 @@ const run = async () => {
     const lib = shellPath(path.join(WORKFLOW_DIR, 'lib.sh'));
     const said = spawnSync(BASH, [...NO_RC, '-c',
       `. ${JSON.stringify(lib)}; WK_LOG_INDENT='  '; WK_LOG_STDERR=1 wk_ok 'engine: linked a → b' 2>&1 | grep -E ${JSON.stringify(pattern[1])}`,
-    ], { encoding: 'utf8', env: homeEnv(mkTmp(), { PATH: BASE_PATH, WORKKIT_COLOR: '0' }) });
+    ], { encoding: 'utf8', env: homeEnv(mkTmp('wf-hook-'), { PATH: BASE_PATH, WORKKIT_COLOR: '0' }) });
     assertEq(said.status, 0, `the pattern matched, got: ${JSON.stringify(said.stdout)}`);
     assert(/engine: linked a → b$/.test(said.stdout.trim()), `on the whole line, got: ${JSON.stringify(said.stdout)}`);
   });

@@ -3,11 +3,11 @@
 // fail-open preconditions, and the invariant the whole hook rests on: no path
 // ever returns a permission decision, so a spawn is never blocked or altered.
 const path = require('path');
-const os = require('os');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const REPO = path.join(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'hooks', 'manager', 'spawn-guard', 'run.sh');
@@ -19,7 +19,7 @@ const FRONTIER = ladder.tiers.frontier;
 
 let tmp;
 const freshTmp = () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'spawn-guard-test-'));
+  tmp = mkTmp('spawn-guard-test-');
   return tmp;
 };
 

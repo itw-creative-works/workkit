@@ -15,13 +15,13 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SEAM = shellPath(path.join(ROOT, 'workflow', 'changelog-job.sh'));
 const TEMPLATE = path.join(ROOT, 'workflow', 'templates', 'github-workflows', 'checks.yml');
 const USES = '    uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main';
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'cl-job-'));
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
 /** Source the seam and run one line of shell in it, the way every caller does. */
@@ -37,7 +37,7 @@ const inSeam = (script, args = []) => {
 
 /** Write `body` to a scratch file, run `fn` in the seam over it, clean up. */
 const overFile = (body, script) => {
-  const dir = mkTmp();
+  const dir = mkTmp('cl-job-');
   const file = path.join(dir, 'checks.yml');
   fs.writeFileSync(file, body);
   try {
@@ -177,7 +177,7 @@ const run = async () => {
   });
 
   await test('a workflow folder runs a copy when any file in it names one', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('cl-job-');
     const wf = path.join(dir, '.github', 'workflows');
     fs.mkdirSync(wf, { recursive: true });
     fs.writeFileSync(path.join(wf, 'checks.yml'), `${JOBS}  changelog:\n${USES}\n`);

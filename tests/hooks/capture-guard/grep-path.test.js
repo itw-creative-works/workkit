@@ -5,7 +5,6 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
@@ -15,6 +14,7 @@ const { shellPath } = require('../../lib/platform');
 const {
   REPO, CAPTURE, skipWithoutDigest, clearMarker, touchMarker, runHook,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 // A Grep's `path` is read by the guard the way a shell reads one, so it goes
 // over in the shell's own spelling, like every other path in a payload.
@@ -99,7 +99,7 @@ const run = async () => {
 
   await test('a .workkit Grep where no capture file exists: exit 0', () => {
     clearMarker();
-    const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-guard-bare-'));
+    const bare = mkTmp('capture-guard-bare-');
     spawnSync('git', ['init', '-q'], { cwd: bare });
     fs.mkdirSync(path.join(bare, W, 'agents'), { recursive: true });
     fs.writeFileSync(path.join(bare, W, 'agents', 'session.md'), '# Session\n');

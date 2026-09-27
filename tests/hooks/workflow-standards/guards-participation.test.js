@@ -11,14 +11,15 @@ const {
   group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W,
 } = require('../../lib/harness');
 const {
-  mkTmp, cleanup, makeRepo, decline, runHook, dropPathWithoutGh,
+  cleanup, makeRepo, decline, runHook, dropPathWithoutGh,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('workflow:standards: guards');
 
   await test('non-git cwd: silent exit 0, creates nothing', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('wf-hook-');
     const { code, stdout, cacheDir } = runHook(dir);
     assertEq(code, 0, 'exit 0');
     assertEq(stdout, '', 'no output');
@@ -62,7 +63,7 @@ const run = async () => {
 
   await test('a declined repo is never mentioned again', () => {
     const repo = makeRepo({ optIn: false });
-    const workflowHome = mkTmp();
+    const workflowHome = mkTmp('wf-hook-');
     decline(repo, workflowHome);
     const { code, stdout, cacheDir } = runHook(repo, { workflowHome });
     assertEq(code, 0, 'exit 0');
@@ -73,7 +74,7 @@ const run = async () => {
 
   await test('the offer repeats every session: it is not daily-cached', () => {
     const repo = makeRepo({ optIn: false });
-    const cache = mkTmp();
+    const cache = mkTmp('wf-hook-');
     const first = runHook(repo, { cache });
     const second = runHook(repo, { cache });
     assert(first.stdout.length > 0 && second.stdout.length > 0, 'both sessions hear it');

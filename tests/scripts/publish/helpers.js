@@ -13,16 +13,15 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { assert } = require('../../lib/harness');
 const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, toolStem, homeEnv, linkTool, stubTool, joinPath,
 } = require('../../lib/platform');
+const { mkTmp } = require('../../lib/scratch');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
-const mkTmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'workkit-publish-')));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
 
@@ -55,7 +54,7 @@ const mkWorld = ({
   tooling = true, buildFails = false, siteUrl = null, home = true, roster = [],
   publish: publishOn = true, pages = 'configured', branch = 'main',
 } = {}) => {
-  const root = mkTmp();
+  const root = mkTmp('workkit-publish-');
   const kit = path.join(root, 'kit');
   const bin = path.join(root, 'bin');
   const homeDir = path.join(root, 'home');
@@ -184,7 +183,7 @@ const mkWorld = ({
  * claiming to prove something about the excluded one.
  */
 const binDirWithout = (excluded) => {
-  const binDir = mkTmp();
+  const binDir = mkTmp('workkit-publish-');
   const seen = new Set();
   for (const dir of [...SYSTEM_PATH.split(path.delimiter), NODE_DIR]) {
     if (!fs.existsSync(dir)) continue;

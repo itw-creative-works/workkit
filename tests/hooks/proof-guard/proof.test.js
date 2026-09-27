@@ -18,8 +18,9 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const { BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../../lib/platform');
 const { isCall, fmtCalls } = require('../../lib/argv-log');
 const {
-  HOOK, mkTmp, cleanup, makeGhStub, ghCalls, dropPathWithoutGh, runHook, WORLD,
+  HOOK, cleanup, makeGhStub, ghCalls, dropPathWithoutGh, runHook, WORLD,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('proof-guard: the flip to status:complete');
@@ -70,6 +71,19 @@ const run = async () => {
     cleanup(stub.dir);
   });
 
+  await test('a redirect before or after the issue number never hides it', () => {
+    const stub = makeGhStub(WORLD);
+    for (const c of [
+      'gh issue edit 2>&1 9 --add-label status:complete',
+      'gh issue edit > /tmp/out 9 --add-label status:complete',
+      'gh issue edit 9 --add-label status:complete > /tmp/out',
+    ]) {
+      const { code, stderr } = runHook(c, stub);
+      assertEq(code, 2, `the number after the redirect is the issue, so the unproved flip blocks: ${c}, got: ${stderr}`);
+    }
+    cleanup(stub.dir);
+  });
+
   await test('a long table body stays fast, gated and ungated alike', () => {
     // The clause walk is one pass over the command (issue #233, verifier
     // finding): a body full of `|` rows used to be re-scanned once per
@@ -89,6 +103,42 @@ const run = async () => {
       'an ungated edit passes');
     const ungated = Date.now() - startedOther;
     assert(ungated < 1000, `the ungated command answers in under a second, took ${ungated}ms`);
+    cleanup(stub.dir);
+  });
+
+  await test('a redirect between --add-label and its value is skipped, never read as the label', () => {
+    const stub = makeGhStub(WORLD);
+    for (const c of [
+      'gh issue edit 9 --add-label 2>&1 status:complete',
+      'gh issue edit 9 --add-label > /tmp/out status:complete',
+    ]) {
+      const { code, stderr } = runHook(c, stub);
+      assertEq(code, 2, `the flip is still to status:complete: ${c}, got: ${stderr}`);
+    }
+    cleanup(stub.dir);
+  });
+
+  await test('a flag named inside a quoted body is data, never the flag', () => {
+    const stub = makeGhStub(WORLD);
+    for (const c of [
+      'gh issue edit 9 --body "see --add-label status:complete here"',
+      "gh issue edit 9 --body 'x --add-label=status:complete'",
+    ]) {
+      const { code, stderr } = runHook(c, stub);
+      assertEq(code, 0, `no label is added: ${c}, got: ${stderr}`);
+    }
+    assertEq(ghCalls(stub).length, 0, `no issue is read, got: ${fmtCalls(ghCalls(stub))}`);
+    cleanup(stub.dir);
+  });
+
+  await test('the attached and quoted label spellings are read whole', () => {
+    const stub = makeGhStub(WORLD);
+    for (const c of ['gh issue edit 9 --add-label=status:complete', 'gh issue edit 9 --add-label "type:bug, status:complete"']) {
+      assertEq(runHook(c, stub).code, 2, `the unproved flip blocks: ${c}`);
+    }
+    for (const c of ["gh issue edit 9 --add-label 'a b'", 'gh issue edit 9 --add-label "x y" status:complete']) {
+      assertEq(runHook(c, stub).code, 0, `only the flag's own value is a label: ${c}`);
+    }
     cleanup(stub.dir);
   });
 
@@ -182,6 +232,31 @@ const run = async () => {
     }
   });
 
+  await test('a redirect between --repo and its value is skipped, never read as the repo', () => {
+    for (const c of [
+      'gh issue edit 9 --add-label status:complete --repo 2>&1 owner/name',
+      'gh issue edit 9 --add-label status:complete -R > /tmp/out owner/name',
+    ]) {
+      const stub = makeGhStub(WORLD);
+      const { code, stderr } = runHook(c, stub);
+      assertEq(code, 2, `the issue is still unproved: ${c}, got: ${stderr}`);
+      const calls = ghCalls(stub);
+      assert(isCall(calls[0], 'issue', 'view', '9', '--repo', 'owner/name', '--json', 'comments'),
+        `the repo after the redirect is forwarded for ${c}, got: ${fmtCalls(calls)}`);
+      cleanup(stub.dir);
+    }
+  });
+
+  await test('a -R named in a body before the real --repo never takes its place', () => {
+    const stub = makeGhStub(WORLD);
+    const { code, stderr } = runHook('gh issue edit 9 --body "pass -R other/repo" --repo owner/name --add-label status:complete', stub);
+    assertEq(code, 2, `the issue is still unproved, got: ${stderr}`);
+    const calls = ghCalls(stub);
+    assert(isCall(calls[0], 'issue', 'view', '9', '--repo', 'owner/name', '--json', 'comments'),
+      `the real repo is asked, got: ${fmtCalls(calls)}`);
+    cleanup(stub.dir);
+  });
+
   await test('a body that mentions -R is not the flag: the issue is read locally and blocks', () => {
     const stub = makeGhStub(WORLD);
     const { code, stderr } = runHook('gh issue edit 9 --body "pass it with -R when needed" --add-label status:complete', stub);
@@ -217,7 +292,7 @@ const run = async () => {
 
   await test("the read runs from the session's directory, where the command would", () => {
     const stub = makeGhStub(WORLD);
-    const here = fs.realpathSync(mkTmp());
+    const here = mkTmp('proof-guard-');
     assertEq(runHook('gh issue close 9', stub, here).code, 2, 'the unproved issue still blocks');
     assertEq(fs.readFileSync(stub.cwdFile, 'utf8').trim(), shellPath(here),
       'an issue number with no --repo resolves against the session directory, so the read asks from there');

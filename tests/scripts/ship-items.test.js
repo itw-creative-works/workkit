@@ -15,7 +15,6 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, skip, summary, selfRun } = require('../lib/harness');
@@ -23,10 +22,10 @@ const {
   IS_WINDOWS, BASH, NO_RC, NO_EXEC_BIT, shellPath, homeEnv, stubTool, pathWith,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
+const { mkTmp } = require('../lib/scratch');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship-items.sh');
 
-const mkTmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ship-items-')));
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
 /** One issue in the shape `gh issue list --json number,title,comments` returns. */
@@ -40,7 +39,7 @@ const issue = (number, title, ...bodies) => ({ number, title, comments: bodies.m
  * unauthenticated; `fail: '<stage>'` refuses only that stage's call.
  */
 const mkWorld = ({ qa = [], complete = [], fail = false } = {}) => {
-  const dir = mkTmp();
+  const dir = mkTmp('ship-items-');
   const bin = path.join(dir, 'bin');
   const home = path.join(dir, 'home');
   const fixtures = path.join(dir, 'fixtures');

@@ -8,8 +8,9 @@ const fs = require('fs');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  REPO, fetchBoard, labelGroups, LABELS_FILE, mkTmp, cleanup, labels, assignees, issue, fakeGh, ROSTER,
+  REPO, fetchBoard, labelGroups, LABELS_FILE, cleanup, labels, assignees, issue, fakeGh, ROSTER,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('tower/board: the label vocabulary');
@@ -76,7 +77,7 @@ const run = async () => {
   });
 
   await test('an unparseable vocabulary file leaves every group unparsed rather than crashing', () => {
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-board-');
     const file = path.join(tmp, 'labels.json');
     fs.writeFileSync(file, '{ not json');
     const res = fetchBoard([ROSTER[0]], {

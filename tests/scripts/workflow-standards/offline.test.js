@@ -12,9 +12,10 @@ const {
 const { BASH, SYSTEM_BASH, NO_RC, shellPath, systemPathWith } = require('../../lib/platform');
 const { isCall } = require('../../lib/argv-log');
 const {
-  SCRIPT, IGNORE_GLOB, mkTmp, cleanup, makeRepo, makeGhStub, readFile, ghCalls, binDirWithout,
+  SCRIPT, IGNORE_GLOB, cleanup, makeRepo, makeGhStub, readFile, ghCalls, binDirWithout,
   runScript,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('standards.sh: offline and unauthenticated');
@@ -89,7 +90,7 @@ const run = async () => {
         ...process.env, PATH: systemPathWith(stub.binDir),
         // Inherited HOME plus the two user-level seeds would write the real
         // ~/.workkit and repoint the real ~/.claude/workkit.
-        WORKFLOW_HOME: shellPath(path.join(mkTmp(), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp(), 'ch')),
+        WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')),
       },
       encoding: 'utf8',
       timeout: 20000,

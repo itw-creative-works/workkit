@@ -15,16 +15,16 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { BASH, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'suite-guard', 'run.sh');
 const LOADER = path.join(__dirname, '..', '..', 'hooks', 'loader.sh');
-const mkTmp = (prefix = 'suite-guard-') => fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 // A repo the hook can read: a git repository, since the test script is read
 // from the nearest package.json up to the GIT ROOT, the package safety/commit-gate names.
 const mkRepo = ({ scripts = { test: 'node tests/run.js' }, pkg = true } = {}) => {
-  const dir = fs.realpathSync(mkTmp());
+  const dir = mkTmp('suite-guard-');
   spawnSync('git', ['init', '-q'], { cwd: dir });
   if (pkg) fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts }));
   return dir;

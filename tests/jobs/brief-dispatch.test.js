@@ -14,7 +14,6 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
@@ -22,10 +21,10 @@ const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const {
   BASH, NO_RC, shellPath, homeEnv, stubTool, basePathWithout, systemPathWith, joinPath,
 } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const LIB = path.join(__dirname, '..', '..', 'jobs', 'brief-dispatch.sh');
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'brief-dispatch-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 /**
@@ -40,7 +39,7 @@ const mkWorld = ({
   home = 'owner/private-home', secrets = ['CLAUDE_CODE_OAUTH_TOKEN', 'WORKKIT_GITHUB_TOKEN'],
   secretsUnlistable = false, dispatch = true, gh = true,
 } = {}) => {
-  const root = mkTmp();
+  const root = mkTmp('brief-dispatch-');
   const bin = path.join(root, 'bin');
   const workflowHome = path.join(root, 'workflow-home');
   fs.mkdirSync(bin, { recursive: true });

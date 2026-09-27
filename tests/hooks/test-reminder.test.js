@@ -8,17 +8,16 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync, execSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const {
   BASH, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath, joinPath, homeEnv,
 } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'test-reminder', 'run.sh');
 
-const mkTmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'test-reminder-')));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const write = (dir, name, content) => {
@@ -28,7 +27,7 @@ const write = (dir, name, content) => {
 
 // One scratch world per case: a home, a TMPDIR, and a git repo holding `files`.
 const mkWorld = (files, { repo = true } = {}) => {
-  const root = mkTmp();
+  const root = mkTmp('test-reminder-');
   const world = { root, home: path.join(root, 'home'), tmp: path.join(root, 'tmp'), repo: path.join(root, 'repo') };
   for (const dir of [world.home, world.tmp, world.repo]) fs.mkdirSync(dir);
   if (repo) execSync('git init -q', { cwd: world.repo, stdio: 'pipe', shell: SYSTEM_BASH, env: homeEnv(world.home, { PATH: process.env.PATH }) });

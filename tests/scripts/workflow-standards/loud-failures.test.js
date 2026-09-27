@@ -11,8 +11,9 @@ const {
   BASH, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath, gitPath, which, linkTool, systemPathWith,
 } = require('../../lib/platform');
 const {
-  WORKFLOW_DIR, SCRIPT, mkTmp, cleanup, rosterOf, makeRepo, makeGhStub, runScript, STANDARD_VERSION,
+  WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, makeRepo, makeGhStub, runScript, STANDARD_VERSION,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('standards.sh: it fails loudly, never silently');
@@ -56,7 +57,7 @@ const run = async () => {
   });
 
   await test('a missing template warns, keeps healing, and exits non-zero', () => {
-    const engine = mkTmp();
+    const engine = mkTmp('wf-std-');
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, engine]);
     fs.rmSync(path.join(engine, 'templates', 'session.md'));
     const repo = makeRepo();
@@ -64,7 +65,7 @@ const run = async () => {
     const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), shellPath(repo)], {
       env: {
         ...process.env, PATH: systemPathWith(stub.binDir),
-        WORKFLOW_HOME: shellPath(path.join(mkTmp(), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp(), 'ch')),
+        WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')),
       },
       encoding: 'utf8', timeout: 20000,
     });
@@ -79,13 +80,13 @@ const run = async () => {
     // The manifest check used to sit before mode dispatch, so a broken install
     // answered --state with exit 1, which the hook read as nogit and went
     // silent forever.
-    const engine = mkTmp();
+    const engine = mkTmp('wf-std-');
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, engine]);
     fs.rmSync(path.join(engine, 'labels.json'));
     const repo = makeRepo();
     const env = {
       ...process.env, PATH: SYSTEM_PATH,
-      WORKFLOW_HOME: shellPath(path.join(mkTmp(), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp(), 'ch')),
+      WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')),
     };
     const state = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), '--state', shellPath(repo)], { env, encoding: 'utf8', timeout: 20000 });
     assertEq(state.status, 0, '--state answers without the manifest');
@@ -106,14 +107,14 @@ const run = async () => {
     // acquired, so a run that gave up after 5s deleted another run's mutex on
     // its way out.
     const repo = makeRepo({ settings: null });
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     fs.mkdirSync(path.join(home, '.state.lock'), { recursive: true });
     const { output } = runScript(repo, { args: ['--decline'], workflowHome: home });
     assert(output.includes('without the lock'), `says it proceeded unlocked, got: ${output}`);
     assert(fs.existsSync(path.join(home, '.state.lock')), 'the mutex it never held survives');
     assertEq(rosterOf(home)[gitPath(fs.realpathSync(repo))], 'declined', 'the decline is still recorded');
     // And a decline that did acquire the lock removes its own on exit.
-    const home2 = mkTmp();
+    const home2 = mkTmp('wf-std-');
     runScript(repo, { args: ['--decline'], workflowHome: home2 });
     assert(!fs.existsSync(path.join(home2, '.state.lock')), 'a held lock is released');
     cleanup(repo); cleanup(home); cleanup(home2);
@@ -155,7 +156,7 @@ const run = async () => {
   });
 
   await test('a malformed roster file: declines cleanly, records nothing, leaves no litter', () => {
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     fs.writeFileSync(path.join(home, '.repos.json'), '{ this is not json\n');
     const repo = makeRepo({ settings: null });
     const { output } = runScript(repo, { args: ['--decline'], workflowHome: home });
@@ -167,8 +168,8 @@ const run = async () => {
   await test('a symlinked roster file is updated in place, not replaced', () => {
     // This repo's whole model is symlinking config out of ~, so writing over the
     // link would replace it with a regular file and orphan the real one.
-    const home = mkTmp();
-    const realDir = mkTmp();
+    const home = mkTmp('wf-std-');
+    const realDir = mkTmp('wf-std-');
     const realFile = path.join(realDir, '.repos.json');
     fs.writeFileSync(realFile, '{\n  "version": 1,\n  "repos": {},\n  "digest": { "hour": 9 }\n}\n');
     fs.symlinkSync(realFile, path.join(home, '.repos.json'));
@@ -182,7 +183,7 @@ const run = async () => {
   });
 
   await test('declining a repo whose committed file says yes admits it will not take effect', () => {
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     const repo = makeRepo();
     const { output } = runScript(repo, { args: ['--decline'], workflowHome: home });
     assert(/committed answer, which wins/.test(output), `does not claim a decline it cannot deliver, got: ${output}`);
@@ -194,7 +195,7 @@ const run = async () => {
     // The grep fallback exists for exactly this; the only jq-free test used an
     // enabled repo, so the branch that matters had no coverage.
     const repo = makeRepo({ settings: '{ "version": 1, "enabled": false }\n' });
-    const binDir = mkTmp();
+    const binDir = mkTmp('wf-std-');
     // cygpath is the engine's path spelling on Windows (wk_git_path), as much a
     // need there as git; `which` answers nothing for it on macOS and Linux.
     for (const tool of ['git', 'grep', 'tail', 'head', 'cp', 'mkdir', 'tr', 'cat', 'dirname', 'basename', 'cygpath']) {
@@ -209,7 +210,7 @@ const run = async () => {
   });
 
   await test('the offer line survives a repo path containing a space', () => {
-    const parent = mkTmp();
+    const parent = mkTmp('wf-std-');
     const repo = path.join(parent, 'has space');
     fs.mkdirSync(repo);
     spawnSync('git', ['init', '-q'], { cwd: repo });

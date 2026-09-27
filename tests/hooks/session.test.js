@@ -12,16 +12,15 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
 const { BASH, SYSTEM_PATH, NO_RC, shellPath, homeEnv, joinPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'session', 'run.sh');
 const TEMPLATE = path.join(__dirname, '..', '..', 'workflow', 'templates', 'session.md');
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'session-hook-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 /**
@@ -30,7 +29,7 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
  * writes the project-level no.
  */
 const mkRepo = ({ session, optedIn = true, enabled = true } = {}) => {
-  const dir = mkTmp();
+  const dir = mkTmp('session-hook-');
   spawnSync('git', ['init', '-q'], { cwd: dir });
   fs.mkdirSync(path.join(dir, W), { recursive: true });
   if (optedIn) {
@@ -46,7 +45,7 @@ const mkRepo = ({ session, optedIn = true, enabled = true } = {}) => {
 // The home every case runs against unless it wants a marker: an empty scratch
 // directory, so `~/.workkit/brief-status.json` is absent and the brief half of
 // the hook says nothing.
-const BARE_HOME = mkTmp();
+const BARE_HOME = mkTmp('session-hook-');
 
 /**
  * A scratch home carrying the cloud brief's marker and the machine's settings.
@@ -54,7 +53,7 @@ const BARE_HOME = mkTmp();
  * not parse is one of the cases.
  */
 const mkHome = ({ marker, settings } = {}) => {
-  const home = mkTmp();
+  const home = mkTmp('session-hook-');
   fs.mkdirSync(path.join(home, W), { recursive: true });
   if (marker !== undefined) fs.writeFileSync(path.join(home, W, 'brief-status.json'), marker);
   if (settings !== undefined) fs.writeFileSync(path.join(home, W, 'settings.json'), settings);
@@ -257,7 +256,7 @@ const run = async () => {
     // MACHINE's own state (the site options, no `enabled` key), and every
     // Windows temp directory sits under the profile that holds it: read as a
     // repo's answer it is a yes for a directory that opted into nothing.
-    const dir = mkTmp();
+    const dir = mkTmp('session-hook-');
     fs.mkdirSync(path.join(dir, W, 'agents'), { recursive: true });
     fs.writeFileSync(path.join(dir, W, 'settings.json'), JSON.stringify({ version: 1, site: {} }));
     fs.writeFileSync(path.join(dir, W, 'agents', 'session.md'), filled(['#12: mid-build']));

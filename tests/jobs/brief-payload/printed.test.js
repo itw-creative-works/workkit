@@ -9,8 +9,9 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { homeEnv } = require('../../lib/platform');
 const {
-  SCRIPT, render, INSTRUCTION, mkTmp, cleanup, ccFixture, mkWorld, composeIn,
+  SCRIPT, render, INSTRUCTION, cleanup, ccFixture, mkWorld, composeIn,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('jobs/brief-payload: what is printed');
@@ -62,7 +63,7 @@ const run = async () => {
     // An empty HOME: the live machine's repos are none of this suite's business.
     // WORKKIT_CC_CHANGELOG points the news fetch at a fixture file, so the
     // script's one network read happens against the disk instead.
-    const home = mkTmp();
+    const home = mkTmp('brief-payload-');
     const res = spawnSync(process.execPath, [SCRIPT], {
       encoding: 'utf8',
       timeout: 60000,

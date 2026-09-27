@@ -11,9 +11,10 @@ const {
 const { gitPath, crlfJq, joinPath } = require('../../lib/platform');
 const { isCall, eqArgv, fmtCalls } = require('../../lib/argv-log');
 const {
-  desiredLabels, mkTmp, cleanup, rosterOf, makeRepo, makeGhStub, readFile, ghCalls, runScript,
+  desiredLabels, cleanup, rosterOf, makeRepo, makeGhStub, readFile, ghCalls, runScript,
   repoVersion,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('standards.sh: labels');
@@ -78,7 +79,7 @@ const run = async () => {
     // The no-drift half is a GUARD, not the repro: a bare jq puts the same `\r`
     // on both sides of that compare, so the two still match. It is here so a fix
     // that strips one side and not the other cannot pass.
-    const jqDir = mkTmp();
+    const jqDir = mkTmp('wf-std-');
     if (!crlfJq(jqDir)) {
       skip('a jq that writes CRLF: no phantom issue warning, no carriage return written',
         'this machine has no jq to wrap in one that writes CRLF');
@@ -100,7 +101,7 @@ const run = async () => {
     // finishes silently, and each create carries the manifest's own description
     // and colour byte for byte.
     const empty = makeRepo();
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     const none = makeGhStub({
       labels: [],
       issues: [{ number: 1, labels: [{ name: 'status:specced' }, { name: 'type:bug' }] }],

@@ -17,18 +17,16 @@ const {
   HOOK, TMP, REPO, MARKER, CAPTURE, skipWithoutDigest, markerFor, clearMarker, touchMarker,
   runHook, read, bash,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 // The user-level capture file: a stray ~/.workkit/capture.md made by hand.
 // wk.sh never writes there (outside a repo it files on the home repo), but the
 // guard gates it anyway. $HOME is not a git repo, so the anchor is $HOME itself.
-const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-guard-home-'));
+const HOME = mkTmp('capture-guard-home-');
 fs.mkdirSync(path.join(HOME, W), { recursive: true });
 fs.writeFileSync(path.join(HOME, W, 'capture.md'), '# capture\n\n- a private thought\n');
 const HOME_CAPTURE = path.join(HOME, W, 'capture.md');
 const HOME_MARKER = markerFor(shellPath(HOME));
-// Removed when the process ends, like the shared fixtures in ./helpers.js, so
-// a skipped run leaves nothing behind either.
-process.on('exit', () => fs.rmSync(HOME, { recursive: true, force: true }));
 
 // The marker script the triage skill calls, and the skill's own line calling
 // it: the test runs the LINE, so the skill and the script cannot drift apart.
@@ -157,7 +155,7 @@ const run = async () => {
     // cannot write one and this guard cannot look one up. That is the same
     // class as "no anchor to key on at all", and this guard fails open on its
     // own errors rather than wedging the session.
-    const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-guard-nosha-'));
+    const bin = mkTmp('capture-guard-nosha-');
     for (const tool of ['bash', 'jq', 'git', 'dirname', 'basename', 'cat', 'grep', 'sed', 'tr', 'date', 'stat']) {
       const real = which(tool);
       if (real) linkTool(bin, real);
@@ -174,7 +172,7 @@ const run = async () => {
   });
 
   await test('a cwd outside any git repo still keys off the .workkit parent', () => {
-    const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-guard-bare-'));
+    const bare = mkTmp('capture-guard-bare-');
     const bareMarker = markerFor(shellPath(bare));
     clearMarker(bareMarker);
     const call = () => spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {

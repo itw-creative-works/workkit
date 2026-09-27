@@ -12,14 +12,12 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { execError } = require('../../lib/gh');
 
 const REPO = path.join(__dirname, '..', '..', '..');
 const { fetchBoard, splitResponse, rateLimitReason, buildBoardQuery, labelGroups, LABELS_FILE, PAGE_SIZE, MAX_OPEN_ISSUES, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, REPOS_PER_REQUEST } = require(path.join(REPO, 'tower', 'api', 'lib', 'board.js'));
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-board-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const labels = (...names) => ({ nodes: names.map((name) => ({ name })) });
@@ -54,5 +52,5 @@ const ROSTER = [
 module.exports = {
   REPO, fetchBoard, splitResponse, rateLimitReason, buildBoardQuery, labelGroups, LABELS_FILE,
   PAGE_SIZE, MAX_OPEN_ISSUES, BODY_LIMIT, LAST_COMMENT_LIMIT, CLOSED_PAGE, REPOS_PER_REQUEST,
-  mkTmp, cleanup, labels, assignees, issue, fakeGh, ROSTER,
+  cleanup, labels, assignees, issue, fakeGh, ROSTER,
 };

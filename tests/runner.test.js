@@ -10,10 +10,10 @@
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, selfRun, summary } = require('./lib/harness');
 const { findSuites } = require('./lib/suites');
+const { mkTmp } = require('./lib/scratch');
 
 const RUNNER = path.join(__dirname, 'run.js');
 const HARNESS = path.join(__dirname, 'lib', 'harness.js');
@@ -21,7 +21,7 @@ const SUITES = path.join(__dirname, 'lib', 'suites.js');
 
 // A throwaway tests/ tree holding one suite, run through the real runner.
 const runWithSuite = (body) => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'runner-'));
+  const dir = mkTmp('runner-');
   fs.mkdirSync(path.join(dir, 'lib'));
   // The runner discovers suites beside itself and skips lib/, so the fixture
   // mirrors that layout: a copy of the runner, the real harness and suite

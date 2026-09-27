@@ -11,9 +11,10 @@ const { spawn } = require('child_process');
 const { group, test, assert, assertEq, skip, summary, selfRun } = require('../../lib/harness');
 const { shellPath } = require('../../lib/platform');
 const {
-  SCRIPT, mkTmp, cleanup, until, start, collect, QUIET_PORTS, RED, CYAN, OFF, COLORED_APP,
+  SCRIPT, TMP_ENV, cleanup, until, start, collect, QUIET_PORTS, RED, CYAN, OFF, COLORED_APP,
   probeStub, ptyRun, hasExpect,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group("tower/start: the terminal, and the wrapper's contract");
@@ -25,7 +26,7 @@ const run = async () => {
     // framework's refusal falls out of the keep net, the duplicate-library
     // warning rides through on the word "failures" the drop list exists to
     // forgive, and the tag no longer opens the flowing phase.
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 30', COLORED_APP, QUIET_PORTS, { capture: true });
     const out = collect(child);
     try {
@@ -52,7 +53,7 @@ const run = async () => {
     // The other half of #179: a run piped or redirected - this suite, a log
     // file, a CI job - asked for plain text, and the halves must be left to
     // decide as they always did.
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const { app, seen } = probeStub(dir);
     const child = start(dir, 'exec sleep 30', app, QUIET_PORTS);
     try {
@@ -69,7 +70,7 @@ const run = async () => {
       // What #179 is actually about, and what only a pty can show: the half
       // writes to a fifo, so it sees a non-tty and paints nothing unless it is
       // told to. The tower is the one that knows a terminal is watching.
-      const dir = mkTmp();
+      const dir = mkTmp('tower-start-');
       const { app, seen } = probeStub(dir);
       const child = ptyRun(dir, app);
       try {
@@ -82,7 +83,7 @@ const run = async () => {
     });
 
     await test('a FORCE_COLOR the caller exported is the caller\'s - a deliberate 0 included', async () => {
-      const dir = mkTmp();
+      const dir = mkTmp('tower-start-');
       const { app, seen } = probeStub(dir);
       const child = ptyRun(dir, app, ['export FORCE_COLOR=0']);
       try {
@@ -100,7 +101,7 @@ const run = async () => {
       // announcements - which it makes for a job some OTHER shell killed -
       // were invisible here while filling the terminal of everyone who typed
       // the command and pressed Ctrl-C.
-      const dir = mkTmp();
+      const dir = mkTmp('tower-start-');
       const runner = path.join(dir, 'runner.sh');
       const script = path.join(dir, 'ctrl-c.exp');
       fs.writeFileSync(runner, [
@@ -120,7 +121,7 @@ const run = async () => {
         '',
       ].join('\n'));
 
-      const child = spawn('expect', [script], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = spawn('expect', [script], { env: { ...process.env, ...TMP_ENV }, stdio: ['ignore', 'pipe', 'pipe'] });
       const out = collect(child);
       try {
         assert(await until(() => child.exitCode !== null, 25000), 'the run came down on the interrupt');

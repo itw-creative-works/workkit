@@ -7,16 +7,17 @@
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  mkTmp, cleanup, until, start, collect, QUIET_PORTS, NOISY_APP, FAILURE_SHAPES, FAILING_APP,
+  cleanup, until, start, collect, QUIET_PORTS, NOISY_APP, FAILURE_SHAPES, FAILING_APP,
   REFUSING_APP, REFUSING_API, ANNOUNCED_APP, ANNOUNCING_APP, BENIGN_APP, STARTING, WEB_APP,
   PHASED_APP, CHATTY_API, BUMPED_APP,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('tower/start: the log filter');
 
   await test('the default run is quiet: the log wall is dropped, the problems and one URL line survive', async () => {
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { capture: true });
     const out = collect(child);
     try {
@@ -38,7 +39,7 @@ const run = async () => {
   });
 
   await test('the shapes a failure really arrives in all survive the filter', async () => {
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 30', FAILING_APP, QUIET_PORTS, { capture: true });
     const out = collect(child);
     try {
@@ -58,7 +59,7 @@ const run = async () => {
     // net's words, so every line of it was dropped, the app half died, the
     // script took the API down with it, and the terminal showed only "starting
     // the dashboard…" before the prompt came back.
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 30', REFUSING_APP, QUIET_PORTS, { capture: true });
     const out = collect(child);
     try {
@@ -75,7 +76,7 @@ const run = async () => {
   });
 
   await test('the half named is the one that ended - the API side says so too', async () => {
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const child = start(dir, REFUSING_API, 'exec sleep 30', QUIET_PORTS, { capture: true });
     const out = collect(child);
     try {
@@ -90,7 +91,7 @@ const run = async () => {
   });
 
   await test('a run that got its dashboard explains nothing when it ends', async () => {
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 30', ANNOUNCED_APP, QUIET_PORTS, { capture: true });
     const out = collect(child);
     try {
@@ -112,7 +113,7 @@ const run = async () => {
     // that never came up, and named the wrong half besides, since cleanup had
     // already ended both. The suite's first case sends this exact signal with
     // the output discarded, which is why nothing caught it.
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 30', ANNOUNCING_APP, QUIET_PORTS, { capture: true });
     const out = collect(child);
     const closed = new Promise((resolve) => { child.on('close', resolve); });
@@ -130,7 +131,7 @@ const run = async () => {
   });
 
   await test('the known-benign lines are dropped, and a summary with real failures is not', async () => {
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 30', BENIGN_APP, QUIET_PORTS, { capture: true });
     const out = collect(child);
     try {
@@ -154,7 +155,7 @@ const run = async () => {
     // The quiet phase is otherwise a terminal with nothing on it at all
     // (#158): omega builds for a while before it names a URL, and every line
     // of that is filtered, so the run looked hung.
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { capture: true });
     const out = collect(child);
     const loud = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { capture: true, args: ['--verbose'] });
@@ -172,7 +173,7 @@ const run = async () => {
   });
 
   await test('the web target\'s own tag is the phase boundary - the manage cycle before it is not', async () => {
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 30', WEB_APP, QUIET_PORTS, { capture: true });
     const out = collect(child);
     try {
@@ -194,7 +195,7 @@ const run = async () => {
   });
 
   await test('an app that never tags a line still switches at the URL it names', async () => {
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 30', PHASED_APP, QUIET_PORTS, { capture: true });
     const out = collect(child);
     try {
@@ -221,7 +222,7 @@ const run = async () => {
   });
 
   await test('the API half owns no port, so it never switches - chatter stays hidden for its whole life', async () => {
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const child = start(dir, CHATTY_API, 'exec sleep 30', QUIET_PORTS, { capture: true });
     const out = collect(child);
     try {
@@ -238,7 +239,7 @@ const run = async () => {
   });
 
   await test('an app on a bumped port is still announced - and says it was bumped', async () => {
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 30', BUMPED_APP, QUIET_PORTS, { capture: true });
     const out = collect(child);
     try {
@@ -254,7 +255,7 @@ const run = async () => {
   });
 
   await test('--verbose passes the whole wall through, as before', async () => {
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { capture: true, args: ['--verbose'] });
     const out = collect(child);
     try {
@@ -274,7 +275,7 @@ const run = async () => {
   });
 
   await test('WORKKIT_TOWER_VERBOSE=1 is the same door, for callers that pass no arguments', async () => {
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS,
       { capture: true, env: { WORKKIT_TOWER_VERBOSE: '1' } });
     const out = collect(child);

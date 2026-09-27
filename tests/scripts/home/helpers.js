@@ -21,19 +21,18 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { assert } = require('../../lib/harness');
 const { BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
+const { mkTmp } = require('../../lib/scratch');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 // The plugin checkout the cloud brief's runner is seeded FROM (issue #91). The
 // real one, because the point of that seed is that the scripts a runner
 // executes are these scripts: a fixture would prove only that files copy.
 const KIT_DIR = path.join(__dirname, '..', '..', '..');
-const mkTmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'workkit-home-')));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -126,7 +125,7 @@ const mkWorld = ({
   categories = ['Daily', 'Weekly', 'Monthly', 'Brief'], pagesOn = false, pagesFails = false,
   settings = { version: 1, site: { repo: null, publish: false, url: null } }, remote = null, npmLinksOn = 1,
 } = {}) => {
-  const root = mkTmp();
+  const root = mkTmp('workkit-home-');
   const bin = path.join(root, 'bin');
   const home = path.join(root, 'home');
   const workflowHome = path.join(root, 'workflow-home');

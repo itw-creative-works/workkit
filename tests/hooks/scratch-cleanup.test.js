@@ -1,19 +1,25 @@
 //
-// Tests that the hook suites sharing a temp-dir helper leave no scratch folder
-// behind: each suite runs as a child with a temp dir of its own, which must
-// be empty once the child exits.
+// Tests that a suite leaves no scratch folder behind (tests/lib/scratch.js
+// removes them at exit): each suite runs as a child with a temp dir of its
+// own, which must be empty once the child exits.
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
   group, test, assertEq, summary, selfRun,
 } = require('../lib/harness');
+const { mkTmp } = require('../lib/scratch');
 
-// One suite per helper that makes scratch folders in the temp dir.
-const SUITES = ['workflow-standards/healing.test.js', 'commit-gate/parsing.test.js'];
+// One suite per kind of scratch maker: a shared helper's folders, a load-time
+// folder, and a suite's own made in its setup, each under tests/.
+const SUITES = [
+  'hooks/workflow-standards/healing.test.js',
+  'hooks/commit-gate/parsing.test.js',
+  'scripts/workflow-standards/guards.test.js',
+  'hooks/manager-resolver.test.js',
+];
 
 const run = async () => {
   group('scratch cleanup: a suite removes the temp folders its helpers made');
@@ -22,8 +28,8 @@ const run = async () => {
     await test(`${suite} leaves nothing in the temp dir`, () => {
       // The child's own temp dir, so a run elsewhere on the machine cannot move
       // the count. TMPDIR is what node reads on POSIX, TEMP and TMP on Windows.
-      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'scratch-cleanup-'));
-      const res = spawnSync(process.execPath, [path.join(__dirname, suite)], {
+      const tmp = mkTmp('scratch-cleanup-');
+      const res = spawnSync(process.execPath, [path.join(__dirname, '..', suite)], {
         env: { ...process.env, TMPDIR: tmp, TEMP: tmp, TMP: tmp },
         encoding: 'utf8',
         timeout: 120000,

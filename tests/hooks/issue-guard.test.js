@@ -13,12 +13,13 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'issue-guard', 'run.sh');
 
 // One throwaway repo-ish directory per run, holding the .env the value scan
 // reads and any --body-file fixture.
-const CWD = fs.mkdtempSync(path.join(os.tmpdir(), 'issue-guard-'));
+const CWD = mkTmp('issue-guard-');
 const SECRET = 'sup3rSecretValue_9f2a';
 fs.writeFileSync(path.join(CWD, '.env'), [
   '# a comment',
@@ -37,7 +38,7 @@ fs.writeFileSync(path.join(CWD, '.env.example'), `API_SECRET=${PLACEHOLDER}\n`);
 // A git repo whose .env sits at the ROOT while the session stands in a
 // subdirectory: the case that made value matching go blind. Realpath'd so the
 // git toplevel and the cwd are the same string on macOS.
-const REPO = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'issue-guard-repo-')));
+const REPO = mkTmp('issue-guard-repo-');
 spawnSync('git', ['init', '-q'], { cwd: REPO });
 const ROOT_SECRET = 'r00tSecretValue_7c1b';
 fs.writeFileSync(path.join(REPO, '.env'), `ROOT_TOKEN=${ROOT_SECRET}\n`);
@@ -365,7 +366,7 @@ const run = async () => {
   });
 
   await test('a cwd in no repo at all: exit 0, the toplevel lookup never errors', () => {
-    const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'issue-guard-norepo-'));
+    const bare = mkTmp('issue-guard-norepo-');
     const { code, stderr } = runHook('gh issue create --title "x" --body "plain text"', bare);
     assertEq(code, 0, `no repo → just the cwd scan, got: ${stderr}`);
     fs.rmSync(bare, { recursive: true, force: true });
@@ -464,7 +465,7 @@ const run = async () => {
   });
 
   await test('a cwd with no .env at all: exit 0', () => {
-    const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'issue-guard-bare-'));
+    const empty = mkTmp('issue-guard-bare-');
     const { code, stderr } = runHook('gh issue create --title "x" --body "plain text"', empty);
     assertEq(code, 0, `no .env is not an error, got: ${stderr}`);
     fs.rmSync(empty, { recursive: true, force: true });

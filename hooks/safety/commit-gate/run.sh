@@ -150,11 +150,8 @@ for w in $commit_clause; do
     # A redirect is shell syntax, never an argument: a bare operator hands its
     # target to the next token, an attached one carries it.
     *[\<\>]*)
-      case "$(hook_redirect_word "$w")" in
-        bare) skip_next=1 ;;
-        attached) ;;
-        *) has_pathspec=1 ;;
-      esac
+      span=$(hook_redirect_span "$w")
+      if [ "$span" -gt 0 ]; then skip_next=$((span - 1)); else has_pathspec=1; fi
       ;;
     *) has_pathspec=1 ;;
   esac

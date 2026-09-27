@@ -27,6 +27,34 @@ const run = async () => {
     cleanup(stubs.dir);
   });
 
+  await test('a redirect between npm and publish is skipped, and a script named publish is none', () => {
+    for (const command of ['npm 2>&1 publish', 'npm > out publish']) {
+      const stubs = makeStubs({ npmTaken: ['widget@1.2.3'] });
+      const dir = mkRepo();
+      const { code, stderr } = runHook(command, dir, stubs);
+      assertEq(code, 2, `${command} publishes a taken version, got: ${stderr}`);
+      assert(stderr.includes('npm already has widget@1.2.3'), `${command} names the pair, got: ${stderr}`);
+      cleanup(dir);
+      cleanup(stubs.dir);
+    }
+    const stubs = makeStubs({ npmTaken: ['widget@1.2.3'] });
+    const dir = mkRepo();
+    const { code, stderr } = runHook('npm run publish', dir, stubs);
+    assertEq(code, 0, `a script named publish is not the subcommand, got: ${stderr}`);
+    cleanup(dir);
+    cleanup(stubs.dir);
+  });
+
+  await test('a redirect before npm never ends the prefix peel', () => {
+    const stubs = makeStubs({ npmTaken: ['widget@1.2.3'] });
+    const dir = mkRepo();
+    const { code, stderr } = runHook('2>/dev/null npm publish', dir, stubs);
+    assertEq(code, 2, `the publish behind the redirect is still a publish, got: ${stderr}`);
+    assert(stderr.includes('npm already has widget@1.2.3'), `names the pair, got: ${stderr}`);
+    cleanup(dir);
+    cleanup(stubs.dir);
+  });
+
   group('release-taken: workspaces');
 
   await test('a packages/* member that is taken bounces, and a private member is not asked', () => {
@@ -155,6 +183,18 @@ const run = async () => {
     cleanup(dir);
     cleanup(other.dir);
     cleanup(named.dir);
+  });
+
+  await test('a redirect between a workspace flag and its value is skipped, never read as the name', () => {
+    for (const command of ['npm publish --workspace 2>&1 @s/a', 'npm publish -w > out @s/a']) {
+      const stubs = makeStubs({ npmTaken: ['@s/a@0.5.0'] });
+      const dir = FAMILY();
+      const { code, stderr } = runHook(command, dir, stubs);
+      assertEq(code, 2, `${command} publishes a taken @s/a, got: ${stderr}`);
+      assert(stderr.includes('npm already has @s/a@0.5.0'), `${command} names the pair, got: ${stderr}`);
+      cleanup(dir);
+      cleanup(stubs.dir);
+    }
   });
 
   await test('a chain with one unnarrowed publish checks the whole set', () => {

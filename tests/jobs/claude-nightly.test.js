@@ -12,7 +12,6 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, skipSuite } = require('../lib/harness');
@@ -20,6 +19,7 @@ const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath,
 } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-nightly.sh');
 
@@ -40,7 +40,6 @@ const allPostedToday = () => {
   return titles;
 };
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'claude-nightly-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 /**
@@ -68,7 +67,7 @@ const mkWorld = ({
   ghFails = false, summary = '## Went well\nThe suite is green.\n', quiet = false,
   posted = [], claudeStderr = '',
 } = {}) => {
-  const root = mkTmp();
+  const root = mkTmp('claude-nightly-');
   const homeDir = path.join(root, 'home');
   // ~/.local/bin, and not just any directory: the runner exports a PATH of its
   // own that begins there and includes /opt/homebrew/bin, so a shim anywhere

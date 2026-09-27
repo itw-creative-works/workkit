@@ -14,7 +14,6 @@
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, skip, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
 const {
@@ -22,6 +21,7 @@ const {
   systemPathWith, joinPath,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
+const { mkTmp } = require('../lib/scratch');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 const SCRIPT = path.join(WORKFLOW_DIR, 'wk.sh');
@@ -32,7 +32,6 @@ const TEMPLATE = fs.readFileSync(path.join(WORKFLOW_DIR, 'templates', 'capture.m
 // directory sits under a user profile.
 const MACHINE_SETTINGS = `${JSON.stringify({ version: 1, site: { repo: 'owner/workkit', publish: false, url: null } }, null, 2)}\n`;
 
-const mkTmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wk-')));
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
 // A temp tree holding a participating repo (a real one: a git repo carrying the
@@ -51,7 +50,7 @@ const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 // carrying --label (a fresh home repo without the vocabulary), `'down'` refuses
 // every call (offline), `false` leaves the machine without gh at all.
 const makeTree = ({ settings = '{ "version": 1, "enabled": true }\n', tower = true, gh = true } = {}) => {
-  const dir = mkTmp();
+  const dir = mkTmp('wk-');
   const repo = path.join(dir, 'repo');
   const towerDir = path.join(dir, 'home', W, 'tower');
   const bin = path.join(dir, 'bin');

@@ -10,20 +10,19 @@
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'workflow', 'reload-guard', 'run.sh');
 const LOADER = path.join(__dirname, '..', '..', 'hooks', 'loader.sh');
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'rg-test-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 // A minimal checkout carrying the three load-time surfaces the hook watches.
 const makeRoot = () => {
-  const dir = mkTmp();
+  const dir = mkTmp('rg-test-');
   fs.mkdirSync(path.join(dir, 'hooks'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'agents'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'skills', 'ship'), { recursive: true });
@@ -42,7 +41,7 @@ const touchOlder = (file, seconds) => {
 
 // A session-keyed state directory shared across the runs of one test. That
 // sharing is what makes the stamp comparison meaningful.
-const makeSession = () => ({ id: `sess-${Math.random().toString(36).slice(2)}`, state: mkTmp() });
+const makeSession = () => ({ id: `sess-${Math.random().toString(36).slice(2)}`, state: mkTmp('rg-test-') });
 
 const runHook = (event, { root, session, script = HOOK, args = [], env = {} } = {}) => {
   const input = JSON.stringify({
@@ -289,7 +288,7 @@ const run = async () => {
   });
 
   await test('a checkout missing every surface: exit 0, silent', () => {
-    const root = mkTmp();
+    const root = mkTmp('rg-test-');
     const session = makeSession();
     assertEq(runHook('SessionStart', { root, session }).code, 0, 'stamping an empty tree is fine');
     const { code, stdout } = runHook('UserPromptSubmit', { root, session });

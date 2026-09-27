@@ -9,14 +9,15 @@ const fs = require('fs');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  mkTmp, cleanup, alive, until, readPid, start, standIn, pidTest,
+  cleanup, alive, until, readPid, start, standIn, pidTest,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('tower/start: one command, both processes');
 
   await pidTest('both halves start, and one interrupt ends both', async () => {
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const apiPid = path.join(dir, 'api.pid');
     const appPid = path.join(dir, 'app.pid');
     const child = start(dir,
@@ -36,7 +37,7 @@ const run = async () => {
   });
 
   await pidTest('either half ending takes the other with it - nothing lingers half-up', async () => {
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const appPid = path.join(dir, 'app.pid');
     const child = start(dir,
       'sleep 0.3',
@@ -58,7 +59,7 @@ const run = async () => {
     // which lives until every writer of the pipe has closed. This stub's
     // leftover child holds that pipe, so the wrapper never ended and the tower
     // sat half-up forever instead of coming down.
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const appPid = path.join(dir, 'app.pid');
     const child = start(dir,
       'sleep 15 & exit 0',
@@ -75,7 +76,7 @@ const run = async () => {
   });
 
   await pidTest('ending a half ends its whole tree - a grandchild server dies with it', async () => {
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const kidPid = path.join(dir, 'kid.pid');
     // The app stub puts a child between itself and the sleeper, the way npm
     // and omega put children between the wrapper and the real server.
@@ -102,7 +103,7 @@ const run = async () => {
     listener.stdout.on('data', (chunk) => { port += chunk.toString(); });
     assert(await until(() => port.trim().length > 0), 'the stand-in took a port');
 
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 0.5', 'exec sleep 0.5', port.trim());
     try {
       assert(await until(() => listener.exitCode !== null || listener.signalCode !== null),
@@ -126,7 +127,7 @@ const run = async () => {
     listener.stdout.on('data', (chunk) => { port += chunk.toString(); });
     assert(await until(() => port.trim().length > 0), 'the stubborn stand-in took a port');
 
-    const dir = mkTmp();
+    const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 0.5', 'exec sleep 0.5', port.trim());
     try {
       assert(await until(() => listener.exitCode !== null || listener.signalCode !== null, 15000),

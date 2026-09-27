@@ -11,6 +11,7 @@ const { spawnSync, execSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { BASH, SYSTEM_BASH, NO_RC, shellPath, which, linkTool } = require('../../lib/platform');
 const { skipWithoutDigest, HOOK, TMP, PLUGIN_ROOT, mkRepo, stage, markerPath, runSkillLine, touchMarker, dropMarker, runHook, cleanup } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   skipWithoutDigest();
@@ -75,7 +76,7 @@ const run = async () => {
     // No digest tool means the marker cannot be NAMED. The alternative to
     // saying so is an empty key, which is one marker shared by every repo on
     // the machine: a review of any repo would open a commit in all of them.
-    const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-nosha-'));
+    const bin = mkTmp('cg-nosha-');
     for (const tool of ['bash', 'jq', 'git', 'dirname', 'basename', 'cat', 'grep', 'sed', 'tr', 'awk', 'perl', 'date', 'stat', 'node']) {
       const real = which(tool);
       if (real) linkTool(bin, real);

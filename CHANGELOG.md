@@ -12,6 +12,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 - [#337](../../issues/337) - A nested package with its own `test` script runs it at the commit gate, after the root's and under the same deadline, whenever the commit changes a file inside its folder; an untouched package never runs, and `safety/suite-guard` now reads the nearest package's script.
 - [#338](../../issues/338) - A new hook, `safety/test-reminder`, asks once per file per session, never blocking, whether a written code file that no test names needs a test; a "no" is recorded in the `Proof:` line.
 
+### Changed
+
+- [#346](../../issues/346) - A review finding made while a batch is in the tree is fixed in that batch when it sits in a file the diff touches, is a parity mismatch with its sibling, or twins the defect being fixed; any other finding is filed per the fix-or-file rule in `docs/project-state.md`.
+- [#347](../../issues/347) - The feature flow caps the rounds after the review at one verification pass and one worker round, sweeps a named defect class with one scout before that round, and briefs each agent for the test files touched by the edit it made or checks, never the batch's whole touched set.
+
 ### Fixed
 
 - [#330](../../issues/330) - The daily heal's hook check now parses the pieces the hooks source (`hooks/_lib.sh`, every `*.sh` under `hooks/lib/` and under a wired hook's `checks/` folder), so a syntax error there is named and marks the run unfinished instead of taking every hook that sources it offline unnoticed.
@@ -19,6 +24,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 - [#340](../../issues/340) - A shell redirect after `git commit` (`2>&1`, `> out.txt`) no longer reads as a pathspec at the commit gate, so a version-only release commit piped through `tail` passes as bookkeeping instead of gating as code, and a heredoc-fed `-F -` commit is judged on its index like any other.
 - [#341](../../issues/341) - The commit gate's new-file check reads staged names unquoted, so a new source file with a non-ASCII name (`café.js`) is caught and named as written.
 - [#343](../../issues/343) - `safety/release-taken` and `safety/proof-guard` no longer split a clause at a redirect's `&`, so `npm publish 2>&1 --workspace=<x>` checks that member alone and `gh issue edit <N> 2>&1 --add-label status:complete` is now held by the proof gate.
+- [#345](../../issues/345) - The commit, proof and release hooks skip a redirect word before any word they read (`git`, `npm`, a shell's `-c` string, the subcommand, the issue number, a `--repo`, label or workspace value), so `gh issue edit 2>&1 <N> --add-label status:complete` and `npm 2>&1 publish` are both gated.
 
 ## [0.60.0] - 2026-09-26
 

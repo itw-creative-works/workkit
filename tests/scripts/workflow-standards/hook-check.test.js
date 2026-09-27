@@ -13,8 +13,9 @@ const {
   IS_WINDOWS, SYSTEM_BASH, NO_RC, NO_EXEC_BIT, shellPath, stubTool, joinPath,
 } = require('../../lib/platform');
 const {
-  SCRIPT, mkTmp, cleanup, makeRepo, makeGhStub, binDirWithout, runScript,
+  SCRIPT, cleanup, makeRepo, makeGhStub, binDirWithout, runScript,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   // A case that STRIPS a file's executable bit to see what the heal says about
@@ -31,7 +32,7 @@ const run = async () => {
   const makeHooksDir = ({
     missing = [], notExecutable = [], badSyntax = [], badPieces = [],
   } = {}) => {
-    const dir = mkTmp();
+    const dir = mkTmp('wf-std-');
     fs.writeFileSync(path.join(dir, 'hooks.json'), `${JSON.stringify({
       hooks: {
         SessionStart: [{
@@ -199,7 +200,7 @@ const run = async () => {
   await test('an engine installed without a hook layer beside it checks nothing', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
-    const empty = mkTmp();
+    const empty = mkTmp('wf-std-');
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir, hooksDir: empty });
     assertEq(code, 0, 'exit 0');
     assert(!output.includes('hooks:'), `no hooks.json means no hook layer to judge, got: ${output}`);

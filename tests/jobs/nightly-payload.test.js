@@ -12,11 +12,11 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { gitPath, homeEnv } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'nightly-payload.js');
 const {
@@ -27,7 +27,6 @@ const {
 const NOW = Date.parse('2026-07-28T03:00:00.000Z');
 const HOUR = 60 * 60 * 1000;
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'nightly-payload-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -37,7 +36,7 @@ const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8',
  * NOW the file was last written; `bytes` how big it is.
  */
 const mkProjects = (files) => {
-  const root = mkTmp();
+  const root = mkTmp('nightly-payload-');
   for (const file of files) {
     const dir = path.join(root, file.project);
     fs.mkdirSync(dir, { recursive: true });
@@ -57,7 +56,7 @@ const indexIn = (projectsRoot) => transcriptIndex({ projectsRoot, now: NOW });
  * both read, so nothing here walks a disk.
  */
 const mkRepos = () => {
-  const root = mkTmp();
+  const root = mkTmp('nightly-payload-');
   const repo = path.join(root, 'repos', 'Owner', 'fixture');
   fs.mkdirSync(repo, { recursive: true });
   git(repo, 'init', '-q', '-b', 'main');
@@ -271,7 +270,7 @@ const run = async () => {
   await test('run as a script it prints a payload and exits 0', () => {
     // An empty HOME: the live machine's repos and transcripts are none of this
     // suite's business.
-    const home = mkTmp();
+    const home = mkTmp('nightly-payload-');
     const res = spawnSync(process.execPath, [SCRIPT], {
       encoding: 'utf8',
       timeout: 60000,
@@ -311,7 +310,7 @@ const run = async () => {
   });
 
   await test('run as a script, --cadence reads the prior summaries from stdin', () => {
-    const home = mkTmp();
+    const home = mkTmp('nightly-payload-');
     const res = spawnSync(process.execPath, [SCRIPT, '--cadence', 'weekly'], {
       encoding: 'utf8',
       timeout: 60000,

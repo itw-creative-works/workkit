@@ -4,11 +4,11 @@
 // the threshold override, the fail-open preconditions, and the invariant that
 // the hook never continues a turn: no decision, no additionalContext.
 const path = require('path');
-const os = require('os');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const REPO = path.join(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'hooks', 'manager', 'close-guard', 'run.sh');
@@ -19,7 +19,7 @@ const FRONTIER = ladder.tiers.frontier;
 
 let tmp;
 const freshTmp = () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'close-guard-test-'));
+  tmp = mkTmp('close-guard-test-');
   return tmp;
 };
 

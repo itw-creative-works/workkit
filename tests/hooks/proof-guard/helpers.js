@@ -14,16 +14,16 @@ const {
   BASH, NO_RC, NODE_DIR, shellPath, stubTool, basePathWithout, systemPathWith, homeEnv,
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
+const { mkTmp } = require('../../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', '..', 'hooks', 'safety', 'proof-guard', 'run.sh');
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'proof-guard-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 // PATH shim: records each `gh` invocation and answers `issue view <N> --json
 // comments` from a fixture keyed by issue number. `fails: true` makes every
 // view exit non-zero, the way an unauthenticated or offline gh does.
 const makeGhStub = ({ comments = {}, fails = false } = {}) => {
-  const dir = mkTmp();
+  const dir = mkTmp('proof-guard-');
   const logFile = path.join(dir, 'gh.log');
   const bodiesDir = path.join(dir, 'issues');
   fs.mkdirSync(bodiesDir, { recursive: true });
@@ -62,7 +62,7 @@ const ghCalls = (stub) => readArgv(stub.logFile);
 // suite.
 let noGhPath = null;
 const pathWithoutGh = () => {
-  if (!noGhPath) noGhPath = basePathWithout(mkTmp(), 'gh');
+  if (!noGhPath) noGhPath = basePathWithout(mkTmp('proof-guard-'), 'gh');
   return noGhPath;
 };
 const dropPathWithoutGh = () => {
@@ -76,7 +76,7 @@ const dropPathWithoutGh = () => {
 // scratch home, so no git or node child reads the developer's.
 const runHook = (command, stub, cwd = os.tmpdir(), envPath = null) => {
   const input = JSON.stringify({ tool_name: 'Bash', cwd: shellPath(cwd), tool_input: { command } });
-  const home = mkTmp();
+  const home = mkTmp('proof-guard-');
   try {
     const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
       input,
@@ -96,5 +96,5 @@ const runHook = (command, stub, cwd = os.tmpdir(), envPath = null) => {
 const WORLD = { comments: { 7: ['Proof: unit: node tests/hooks/x.test.js'], 9: ['looks good to me'] } };
 
 module.exports = {
-  HOOK, mkTmp, cleanup, makeGhStub, ghCalls, pathWithoutGh, dropPathWithoutGh, runHook, WORLD,
+  HOOK, cleanup, makeGhStub, ghCalls, pathWithoutGh, dropPathWithoutGh, runHook, WORLD,
 };

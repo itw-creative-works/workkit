@@ -21,7 +21,6 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { spawnSync } = require('child_process');
@@ -31,6 +30,7 @@ const {
   IS_WINDOWS, BASH, NO_RC, NO_EXEC_BIT, NO_NODE_STUB, shellPath, which, homeEnv, linkTool,
   stubTool, pathWith, joinPath,
 } = require('../../lib/platform');
+const { mkTmp } = require('../../lib/scratch');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.sh');
 const { INSTRUCTION } = require(path.join(__dirname, '..', '..', '..', 'jobs', 'brief-payload.js'));
@@ -38,7 +38,6 @@ const { discoverRepos } = require(path.join(__dirname, '..', '..', '..', 'tower'
 
 const HOME_SLUG = 'owner/private-home';
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'morning-cloud-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 // The date the runner titles its Discussion with is the LOCAL one (`date
@@ -72,7 +71,7 @@ const mkWorld = ({
   ghFails = false, ccChangelog = null, boardBroken = false, defaultBranch = 'main',
   sweepToken = 'SWEEP-TOKEN', postToken = 'POST-TOKEN',
 } = {}) => {
-  const root = mkTmp();
+  const root = mkTmp('morning-cloud-');
   const bin = path.join(root, 'bin');
   const home = path.join(root, 'home');
   fs.mkdirSync(bin, { recursive: true });

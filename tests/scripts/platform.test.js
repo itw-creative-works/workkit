@@ -23,10 +23,10 @@ const {
   IS_WINDOWS, BASH, SYSTEM_PATH, NO_RC, NO_NODE_STUB, shellPath, cygpathStub, homeEnv,
   stubTool, which, pathWith, systemPathWith, asWindows,
 } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const PLATFORM = shellPath(path.join(__dirname, '..', '..', 'workflow', 'platform.sh'));
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'wf-platform-'));
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
 /** Source platform.sh and run one line of shell in it, the way every caller does. */
@@ -41,7 +41,7 @@ const inPlatform = (script, env = {}) => {
 
 /** A PATH directory holding the seam's cygpath, the Windows branch's one tool. */
 const cygpathWorld = () => {
-  const dir = mkTmp();
+  const dir = mkTmp('wf-platform-');
   cygpathStub(dir);
   return dir;
 };
@@ -54,7 +54,7 @@ const cygpathWorld = () => {
  * above answers the Windows path spelling.
  */
 const netstatWorld = () => {
-  const dir = mkTmp();
+  const dir = mkTmp('wf-platform-');
   stubTool(dir, 'netstat', [
     '#!/bin/bash',
     'printf "%s\\r\\n" \\',
@@ -234,7 +234,7 @@ const run = async () => {
 
   /** A PATH directory holding one stub, written the one way the seam writes them. */
   const stubWorld = () => {
-    const dir = mkTmp();
+    const dir = mkTmp('wf-platform-');
     stubTool(dir, 'wkstub', ['#!/usr/bin/env bash', `printf 'stub says %s\n' "$1"`]);
     return dir;
   };
@@ -266,7 +266,7 @@ const run = async () => {
   await test('the scratch home the builder names is the one a child answers with', () => {
     // HOME alone is not a scratch home on Windows: os.homedir() there reads
     // USERPROFILE, so a child given only HOME sweeps the developer's own.
-    const home = mkTmp();
+    const home = mkTmp('wf-platform-');
     const res = spawnSync(process.execPath, ['-p', 'require("os").homedir()'], {
       env: homeEnv(home, { PATH: process.env.PATH }), encoding: 'utf8', timeout: 30000,
     });
@@ -276,7 +276,7 @@ const run = async () => {
   });
 
   await test('gh is pointed at a config under that same home, on every platform', () => {
-    const home = mkTmp();
+    const home = mkTmp('wf-platform-');
     const env = homeEnv(home, {});
     assertEq(env.GH_CONFIG_DIR, path.join(home, '.config', 'gh'), 'the key the seal is made of');
     // Not "outside the real home": a Windows temp directory sits INSIDE the
@@ -293,7 +293,7 @@ const run = async () => {
     // The whole point, end to end: whichever gh a spawn resolved, the real one
     // included, it can reach nothing of the developer's, even when the shell
     // this suite was started from carries a token of its own.
-    const home = mkTmp();
+    const home = mkTmp('wf-platform-');
     const res = spawnSync(which('gh'), ['auth', 'status'], {
       env: homeEnv(home, { ...process.env, GH_TOKEN: 'gho_a_token_the_shell_carried' }),
       encoding: 'utf8',

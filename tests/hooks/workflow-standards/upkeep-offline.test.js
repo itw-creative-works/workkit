@@ -11,8 +11,9 @@ const {
 } = require('../../lib/harness');
 const { stubTool } = require('../../lib/platform');
 const {
-  mkTmp, cleanup, makeRepo, runHook, dropPathWithoutGh,
+  cleanup, makeRepo, runHook, dropPathWithoutGh,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('workflow:standards: machine-side upkeep');
@@ -31,7 +32,7 @@ const run = async () => {
   // A launchctl that records nothing and answers "not loaded": the real one is
   // never reached from a test.
   const launchctlShim = () => {
-    const dir = mkTmp();
+    const dir = mkTmp('wf-hook-');
     stubTool(dir, 'launchctl', ['#!/usr/bin/env bash', "if [[ \"$1\" == 'print' ]]; then exit 1; fi", 'exit 0']);
     return dir;
   };
@@ -40,7 +41,7 @@ const run = async () => {
     // The whole cron boundary: the hook UPDATES what a human installed and
     // installs nothing fresh.
     const repo = makeRepo();
-    const home = mkTmp();
+    const home = mkTmp('wf-hook-');
     const shim = launchctlShim();
     const { code, cacheDir } = runHook(repo, { home, pathPrefix: shim });
     assertEq(code, 0, 'exit 0');
@@ -50,7 +51,7 @@ const run = async () => {
 
   await test('an all-current machine stays silent', () => {
     const repo = makeRepo();
-    const home = mkTmp();
+    const home = mkTmp('wf-hook-');
     const first = runHook(repo, { home });
     assert(first.stdout.length > 0, 'the first run reported the heals');
     const second = runHook(repo, { home });
@@ -67,7 +68,7 @@ const run = async () => {
 
     await test('a repo’s daily run corrects a schedule left by another checkout', () => {
       const repo = makeRepo();
-      const home = mkTmp();
+      const home = mkTmp('wf-hook-');
       const shim = launchctlShim();
       const plist = seedStalePlist(home);
       const { code, stdout, cacheDir } = runHook(repo, { home, pathPrefix: shim });

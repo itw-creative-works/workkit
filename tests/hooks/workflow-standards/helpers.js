@@ -13,12 +13,12 @@
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { spawnSync } = require('child_process');
 const { WORKKIT_DIR: W } = require('../../lib/harness');
 const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, basePathWithout, joinPath,
 } = require('../../lib/platform');
+const { mkTmp } = require('../../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', '..', 'hooks', 'workflow', 'standards', 'run.sh');
 
@@ -38,22 +38,12 @@ const BASE_PATH = joinPath(SYSTEM_PATH, NODE_DIR);
 const IGNORE_GLOB = new RegExp(`^${W.replace(/\./g, '\\.')}/\\*$`, 'm');
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
-// Every folder made here is removed when the process ends, since the runner
-// loads every suite in one process and most of these are never handed back to
-// a case. A case that already cleaned its own leaves nothing for this to do.
-const scratch = [];
-const mkTmp = () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-hook-'));
-  scratch.push(dir);
-  return dir;
-};
-process.on('exit', () => scratch.forEach(cleanup));
 
 // Participation gate: a committed .workkit/settings.json holding
 // `enabled: true` at the repo root IS the opt-in, so every repo fixture gets one
 // unless a test is exercising another state.
 const makeRepo = ({ optIn = true, settings = '{ "version": 1, "enabled": true }\n' } = {}) => {
-  const dir = mkTmp();
+  const dir = mkTmp('wf-hook-');
   spawnSync('git', ['init', '-q'], { cwd: dir });
   spawnSync('git', ['remote', 'add', 'origin', 'https://example.invalid/alice/repo.git'], { cwd: dir });
   if (optIn) {
@@ -71,7 +61,7 @@ const decline = (repo, workflowHome) => spawnSync(BASH, [...NO_RC,
   env: {
     ...process.env,
     WORKFLOW_HOME: shellPath(workflowHome),
-    WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp(), 'claude-home')),
+    WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-hook-'), 'claude-home')),
   },
   encoding: 'utf8',
 });
@@ -105,7 +95,7 @@ const seedSetup = (home) => {
 // suite.
 let noGhPath = null;
 const pathWithoutGh = () => {
-  if (!noGhPath) noGhPath = basePathWithout(mkTmp(), 'gh');
+  if (!noGhPath) noGhPath = basePathWithout(mkTmp('wf-hook-'), 'gh');
   return noGhPath;
 };
 const dropPathWithoutGh = () => {
@@ -114,10 +104,10 @@ const dropPathWithoutGh = () => {
 };
 
 const runHook = (cwd, { cache, pathPrefix, home, workflowDir, workflowHome, setup = true } = {}) => {
-  const cacheDir = cache || mkTmp();
+  const cacheDir = cache || mkTmp('wf-hook-');
   // The home stays NATIVE for anything this suite writes into it, and goes
   // through the shell's spelling only on the way into the child's environment.
-  const homeDir = home || mkTmp();
+  const homeDir = home || mkTmp('wf-hook-');
   // A scratch HOME by default: the hook's daily run now also drives the
   // machine-side upkeep (`workkit update --auto`), which reads
   // ~/Library/LaunchAgents and ~/.local/bin. Neither may ever be the
@@ -128,8 +118,8 @@ const runHook = (cwd, { cache, pathPrefix, home, workflowDir, workflowHome, setu
     // OUTSIDE the marker cache: the engine now seeds the user settings file on
     // every run, and a workflow-home nested in the cache would be counted by
     // the tests that assert one marker file per repo.
-    WORKFLOW_HOME: shellPath(workflowHome || path.join(mkTmp(), 'workflow-home')),
-    WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp(), 'claude-home')),
+    WORKFLOW_HOME: shellPath(workflowHome || path.join(mkTmp('wf-hook-'), 'workflow-home')),
+    WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-hook-'), 'claude-home')),
   });
   if (setup) seedSetup(homeDir);
   const dir = workflowDir === undefined ? WORKFLOW_DIR : workflowDir;
@@ -144,6 +134,6 @@ const runHook = (cwd, { cache, pathPrefix, home, workflowDir, workflowHome, setu
 };
 
 module.exports = {
-  HOOK, WORKFLOW_DIR, BASE_PATH, IGNORE_GLOB, mkTmp, cleanup, makeRepo, decline, runHook,
+  HOOK, WORKFLOW_DIR, BASE_PATH, IGNORE_GLOB, cleanup, makeRepo, decline, runHook,
   dropPathWithoutGh,
 };

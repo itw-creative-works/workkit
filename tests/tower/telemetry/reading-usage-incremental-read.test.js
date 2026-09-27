@@ -13,8 +13,9 @@ const fs = require('fs');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  readUsage, resetCache, cachedPaths, mkTmp, cleanup, assistantLine, mkWorld, mkSession, mkSubagent, collect,
+  readUsage, resetCache, cachedPaths, cleanup, assistantLine, mkWorld, mkSession, mkSubagent, collect,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('tower/telemetry: reading usage');
@@ -74,7 +75,7 @@ const run = async () => {
 
   await test('a final line with no trailing newline is still counted', () => {
     const w = mkWorld();
-    const file = path.join(mkTmp(), 'x.jsonl');
+    const file = path.join(mkTmp('tower-telemetry-'), 'x.jsonl');
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, assistantLine({ id: 'tail', input: 42 }));
     assertEq(readUsage(file).tokens.total, 42, 'a whole record is a whole record');

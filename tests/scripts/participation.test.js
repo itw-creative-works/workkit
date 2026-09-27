@@ -22,10 +22,10 @@ const { group, test, assertEq, testUnless, summary, selfRun } = require('../lib/
 const {
   IS_WINDOWS, BASH, SYSTEM_PATH, NO_RC, NO_EXEC_BIT, shellPath,
 } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const PARTICIPATION = shellPath(path.join(__dirname, '..', '..', 'workflow', 'participation.sh'));
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'wf-participation-'));
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
 /** Source participation.sh and run one line of shell in it, the way every caller does. */
@@ -82,7 +82,7 @@ const run = async () => {
   group('participation.sh: wk_is_repo_root');
 
   await test('a checkout says yes and a plain directory says no', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('wf-participation-');
     const repo = path.join(dir, 'repo');
     const plain = path.join(dir, 'plain');
     fs.mkdirSync(repo, { recursive: true });
@@ -97,7 +97,7 @@ const run = async () => {
     // The whole reason the test is `-e` and never `-d`. A `-d` reading answers
     // no here, and every walk, guard and roster that asked would skip a
     // checkout that works perfectly.
-    const dir = mkTmp();
+    const dir = mkTmp('wf-participation-');
     const repo = path.join(dir, 'repo');
     fs.mkdirSync(repo, { recursive: true });
     const git = (...args) => spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
@@ -111,7 +111,7 @@ const run = async () => {
   });
 
   await test('a directory that does not exist says no', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('wf-participation-');
     assertEq(ask('wk_is_repo_root', path.join(dir, 'never-made')), 'no', 'nothing there is not a repo');
     cleanup(dir);
   });
@@ -121,11 +121,11 @@ const run = async () => {
   const answers = (file) => `${ask('wk_settings_declined', file)}/${ask('wk_settings_enabled', file)}`;
 
   await test('a declined file is declined, and an enabled file is enabled', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('wf-participation-');
     assertEq(answers(settingsFile(dir, '{ "version": 1, "enabled": false }\n')), 'yes/no',
       'the deliberate no');
     cleanup(dir);
-    const other = mkTmp();
+    const other = mkTmp('wf-participation-');
     assertEq(answers(settingsFile(other, '{ "version": 1, "enabled": true }\n')), 'no/yes', 'the yes');
     cleanup(other);
   });
@@ -133,7 +133,7 @@ const run = async () => {
   await test('a file with no `enabled` key is neither: the legacy opt-in', () => {
     // The two are not each other's negation, and this is the case that says so:
     // a file written before the key existed is a yes by being no DECLINE.
-    const dir = mkTmp();
+    const dir = mkTmp('wf-participation-');
     assertEq(answers(settingsFile(dir, '{ "version": 1 }\n')), 'no/no', 'neither declined nor enabled');
     cleanup(dir);
   });
@@ -141,16 +141,16 @@ const run = async () => {
   await test('the spacing of the key is not the answer', () => {
     // The published file is jq's, which spaces the colon; a hand-edited one may
     // not, and the repo's answer cannot depend on that.
-    const dir = mkTmp();
+    const dir = mkTmp('wf-participation-');
     assertEq(answers(settingsFile(dir, '{"enabled":false}\n')), 'yes/no', 'no space after the colon');
     cleanup(dir);
-    const spaced = mkTmp();
+    const spaced = mkTmp('wf-participation-');
     assertEq(answers(settingsFile(spaced, '{ "enabled"  :   true }\n')), 'no/yes', 'and spaces around it');
     cleanup(spaced);
   });
 
   await test('a missing file and an empty file are both no answer at all', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('wf-participation-');
     assertEq(answers(path.join(dir, 'settings.json')), 'no/no', 'a file that is not there');
     assertEq(answers(settingsFile(dir, '')), 'no/no', 'and one holding nothing');
     cleanup(dir);
@@ -159,7 +159,7 @@ const run = async () => {
   await testUnless(IS_WINDOWS, NO_EXEC_BIT)('an unreadable file is no answer, and says nothing on stderr', () => {
     // A guard reading this must not print the shell's complaint into a session's
     // context, so the silencing lives in the seam rather than at each call.
-    const dir = mkTmp();
+    const dir = mkTmp('wf-participation-');
     const file = settingsFile(dir, '{ "enabled": false }\n');
     fs.chmodSync(file, 0o000);
     const out = inSeam(`wk_settings_declined ${JSON.stringify(shellPath(file))}; printf 'rc=%s' "$?"`);

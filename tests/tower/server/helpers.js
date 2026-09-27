@@ -16,18 +16,17 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const http = require('http');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { resetIn, mkLimited } = require('../../lib/gh');
 const { gitPath } = require('../../lib/platform');
+const { mkTmp } = require('../../lib/scratch');
 
 const {
   createServer, DEFAULT_BIND, DEFAULT_PORT, MAX_REQUEST_BYTES, MOVE_STATUSES,
 } = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'server.js'));
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-server-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -50,7 +49,7 @@ const issueNode = (number, labels) => ({
  * gh and ps while passing git through to the real binary.
  */
 const mkWorld = () => {
-  const root = mkTmp();
+  const root = mkTmp('tower-server-');
   const repo = path.join(root, 'repos', 'Owner', 'fixture');
   fs.mkdirSync(repo, { recursive: true });
   git(repo, 'init', '-q', '-b', 'main');

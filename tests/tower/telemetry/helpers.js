@@ -12,8 +12,8 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
+const { mkTmp } = require('../../lib/scratch');
 
 const lib = path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib');
 const {
@@ -23,7 +23,6 @@ const {
 const { listSessions, transcriptPath } = require(path.join(lib, 'sessions.js'));
 const { createServer } = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'server.js'));
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-telemetry-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const PRICED = 'claude-opus-4-1';
@@ -69,7 +68,7 @@ const spawnLine = ({ id, toolUseId, subagentType, timestamp = '2026-07-27T12:00:
 
 /** A scratch world: fake home, marker dir, statusline cache, and a fake `ps`. */
 const mkWorld = () => {
-  const root = mkTmp();
+  const root = mkTmp('tower-telemetry-');
   const world = {
     root,
     home: path.join(root, 'home'),
@@ -133,5 +132,5 @@ const getJson = async (client, p) => {
 module.exports = {
   sessionTelemetry, readUsage, resetCache, cachedPaths, costOf, className, dayKey, PRICING, OVERTIME_DAYS,
   listSessions, createServer,
-  mkTmp, cleanup, PRICED, assistantLine, spawnLine, mkWorld, mkSession, mkSubagent, collect, listen, getJson,
+  cleanup, PRICED, assistantLine, spawnLine, mkWorld, mkSession, mkSubagent, collect, listen, getJson,
 };

@@ -14,6 +14,7 @@ const { assert, assertEq, skipSuite } = require('../../lib/harness');
 const {
   BASH, SYSTEM_BASH, NO_RC, shellPath, digestTool,
 } = require('../../lib/platform');
+const { mkTmp } = require('../../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', '..', 'hooks', 'safety', 'commit-gate', 'run.sh');
 // The gate's CHANGELOG check resolves the engine by path; point it at this
@@ -25,13 +26,10 @@ const LIB = path.join(__dirname, '..', '..', '..', 'hooks', '_lib.sh');
 // `/tmp` fallback and a Git Bash `/tmp` are two different directories. One
 // temp dir, handed to every child explicitly, and both sides agree by
 // construction.
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-tmp-'));
-// Every suite beside this one shares it, and the runner loads them all in one
-// process, so it is removed when the process ends.
-process.on('exit', () => fs.rmSync(TMP, { recursive: true, force: true }));
+const TMP = mkTmp('cg-tmp-');
 
 const mkRepo = () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-test-'));
+  const dir = mkTmp('cg-test-');
   execSync('git init && git commit --allow-empty -m "init"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
   return dir;
 };

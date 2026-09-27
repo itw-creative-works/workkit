@@ -13,7 +13,6 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { test, assert, skip, WORKKIT_DIR: W } = require('../../lib/harness');
@@ -21,16 +20,13 @@ const {
   BASH, SYSTEM_PATH, NO_RC, shellPath, which, homeEnv, stubTool, joinPath,
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
+const { mkTmp } = require('../../lib/scratch');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 const CLI = path.join(WORKFLOW_DIR, 'workkit.sh');
 const JOBS_INSTALL = path.join(__dirname, '..', '..', '..', 'jobs', 'install.sh');
 const LABEL = 'com.workkit.claude-daily';
 
-// A PATH with the ordinary system tools and nothing else: the shims are
-// prepended per world, so a command this script looks for is present only when
-// the test put it there.
-const mkTmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'workkit-cli-')));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const writeStub = (file, lines) => stubTool(
@@ -80,7 +76,7 @@ const mkWorld = ({
   secrets = null, authToken = '', claudeToken = '', mintExit = 0,
   pagesRef = '', pagesBuilds = [],
 } = {}) => {
-  const root = mkTmp();
+  const root = mkTmp('workkit-cli-');
   const bin = path.join(root, 'bin');
   const home = path.join(root, 'home');
   const tmp = path.join(root, 'tmp');
@@ -285,7 +281,7 @@ const ACTED = /\b(linked|repointed|reloaded|created|cloned|seeded|corrected|rele
 
 // A real (empty) git repo, optionally already in the workflow.
 const mkRepo = ({ optIn = false } = {}) => {
-  const dir = mkTmp();
+  const dir = mkTmp('workkit-cli-');
   spawnSync('git', ['init', '-q'], { cwd: dir });
   if (optIn) {
     fs.mkdirSync(path.join(dir, W), { recursive: true });
@@ -356,7 +352,7 @@ const AT_TERMINAL = 'interactive() { return 0; }';
  * entry point to run.
  */
 const mkPartialKit = ({ installer } = {}) => {
-  const kit = mkTmp();
+  const kit = mkTmp('workkit-cli-');
   fs.mkdirSync(path.join(kit, 'workflow'), { recursive: true });
   fs.copyFileSync(CLI, path.join(kit, 'workflow', 'workkit.sh'));
   fs.cpSync(path.join(WORKFLOW_DIR, 'workkit'), path.join(kit, 'workflow', 'workkit'), { recursive: true });
@@ -376,7 +372,7 @@ const mkPartialKit = ({ installer } = {}) => {
  * partial checkout already gets.
  */
 const mkKit = (slug) => {
-  const kit = mkTmp();
+  const kit = mkTmp('workkit-cli-');
   fs.cpSync(WORKFLOW_DIR, path.join(kit, 'workflow'), { recursive: true });
   spawnSync('git', ['init', '-q'], { cwd: kit });
   spawnSync('git', ['remote', 'add', 'origin', `https://github.com/${slug}.git`], { cwd: kit });
@@ -398,6 +394,6 @@ const mkHomeWorld = (opts = {}) => {
 };
 
 module.exports = {
-  WORKFLOW_DIR, CLI, LABEL, mkTmp, cleanup, writeStub, mkWorld, mintTest, runCli, ACTED, mkRepo,
+  WORKFLOW_DIR, CLI, LABEL, cleanup, writeStub, mkWorld, mintTest, runCli, ACTED, mkRepo,
   installSchedule, seedSettings, inCli, AT_TERMINAL, mkPartialKit, mkKit, SLUG, HOME, mkHomeWorld,
 };

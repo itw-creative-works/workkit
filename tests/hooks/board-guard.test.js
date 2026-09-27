@@ -15,10 +15,10 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'board-guard', 'run.sh');
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'bg-test-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const runHook = (filePath, envOverride = {}) => {
@@ -42,7 +42,7 @@ const run = async () => {
   group('board-guard: scope');
 
   await test('unguarded file: silent exit 0', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('bg-test-');
     const p = writeFile(dir, 'anything at all', 'README.md');
     const { code, stderr } = runHook(p);
     assertEq(code, 0, 'unguarded files are ignored');
@@ -51,7 +51,7 @@ const run = async () => {
   });
 
   await test('PROGRESS.md / BOARD.md are no longer validated: exit 0', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('bg-test-');
     for (const name of ['PROGRESS.md', 'BOARD.md']) {
       const p = writeFile(dir, '# whatever\n\n## Random\n- GO 1: anywhere\n', name);
       const { code, stderr } = runHook(p);
@@ -79,7 +79,7 @@ const run = async () => {
   group('board-guard: CLAUDE.md pointer doctrine');
 
   await test('bare @AGENTS.md pointer: exit 0', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('bg-test-');
     const p = writeFile(dir, '@AGENTS.md\n', 'CLAUDE.md');
     const { code, stderr } = runHook(p);
     assertEq(code, 0, `pointer file passes, stderr: ${stderr}`);
@@ -87,7 +87,7 @@ const run = async () => {
   });
 
   await test('content-bearing CLAUDE.md: exit 2 POINTER DOCTRINE with convert recipe', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('bg-test-');
     const p = writeFile(dir, '# My Project\n\nReal instructions here.\n@AGENTS.md\n', 'CLAUDE.md');
     const { code, stderr } = runHook(p);
     assertEq(code, 2, 'content in CLAUDE.md must block');
@@ -97,7 +97,7 @@ const run = async () => {
   });
 
   await test('CLAUDE.md missing the import line entirely: exit 2', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('bg-test-');
     const p = writeFile(dir, '\n', 'CLAUDE.md');
     const { code, stderr } = runHook(p);
     assertEq(code, 2, 'pointer-less CLAUDE.md must block');
@@ -110,7 +110,7 @@ const run = async () => {
   const agentsLines = (n) => `# repo: overview\n${Array.from({ length: n - 1 }, (_, i) => `line ${i}`).join('\n')}\n`;
 
   await test('AGENTS.md at 250 lines: exit 0', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('bg-test-');
     const p = writeFile(dir, agentsLines(250), 'AGENTS.md');
     const { code, stderr } = runHook(p);
     assertEq(code, 0, `250 lines is within budget, stderr: ${stderr}`);
@@ -118,7 +118,7 @@ const run = async () => {
   });
 
   await test('AGENTS.md over 250 lines: exit 2 AGENTS BUDGET with offload instruction', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('bg-test-');
     const p = writeFile(dir, agentsLines(251), 'AGENTS.md');
     const { code, stderr } = runHook(p);
     assertEq(code, 2, 'oversized AGENTS.md must block');
@@ -136,7 +136,7 @@ const run = async () => {
   const longLine = (n) => 'x'.repeat(n);
 
   await test('a 400-byte line: exit 0 (the boundary passes)', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('bg-test-');
     const p = writeFile(dir, `# repo: overview\n${longLine(400)}\n`, 'AGENTS.md');
     const { code, stderr } = runHook(p);
     assertEq(code, 0, `400 bytes is within the density budget, stderr: ${stderr}`);
@@ -144,7 +144,7 @@ const run = async () => {
   });
 
   await test('a 401-byte line: exit 2 AGENTS DENSITY naming the line and its length', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('bg-test-');
     const p = writeFile(dir, `# repo: overview\n${longLine(401)}\n`, 'AGENTS.md');
     const { code, stderr } = runHook(p);
     assertEq(code, 2, 'one character over must block');
@@ -155,7 +155,7 @@ const run = async () => {
   });
 
   await test('a 137-line file with a 3,000-byte line: the count passes, the density bounces', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('bg-test-');
     const body = Array.from({ length: 135 }, (_, i) => `line ${i}`);
     body.splice(60, 0, longLine(3000));
     const p = writeFile(dir, `# repo: overview\n${body.join('\n')}\n`, 'AGENTS.md');
@@ -168,7 +168,7 @@ const run = async () => {
   });
 
   await test('many offenders: the first three are named and the rest counted', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('bg-test-');
     const p = writeFile(dir, `# repo: overview\n${Array.from({ length: 5 }, () => longLine(500)).join('\n')}\n`, 'AGENTS.md');
     const { code, stderr } = runHook(p);
     assertEq(code, 2, 'blocks');
@@ -182,7 +182,7 @@ const run = async () => {
   // while a character count still reads it as comfortably inside: 370
   // characters, 410 bytes. The message has to name the number the rule judges.
   await test('a non-ASCII line: judged in bytes, and the message says 410', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('bg-test-');
     const line = `${'x'.repeat(350)}${'\u2014'.repeat(20)}`;
     assertEq(line.length, 370, 'the fixture is 370 characters');
     assertEq(Buffer.byteLength(line, 'utf8'), 410, 'and 410 bytes');
@@ -202,7 +202,7 @@ const run = async () => {
   group('board-guard: plans are no longer a surface');
 
   await test('markdown under plans/ passes silently: exit 0', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('bg-test-');
     const d = path.join(dir, 'plans');
     fs.mkdirSync(d, { recursive: true });
     const p = path.join(d, 'thing.md');
@@ -214,7 +214,7 @@ const run = async () => {
   });
 
   await test('ordinary markdown untouched: exit 0', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('bg-test-');
     const p = writeFile(dir, 'anything - [ ] checkbox', 'notes.md');
     const { code } = runHook(p);
     assertEq(code, 0, 'ordinary markdown is ignored');

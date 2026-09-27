@@ -7,15 +7,14 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { gitPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const { composeSlugs, writeSlugs } = require(path.join(__dirname, '..', '..', 'workflow', 'site-repos.js'));
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'workkit-site-repos-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -58,7 +57,7 @@ const run = async () => {
   group('workflow/site-repos: what the list says');
 
   await test('every registered repo is a slug, and the home repo rides along', () => {
-    const tmp = mkTmp();
+    const tmp = mkTmp('workkit-site-repos-');
     const workflowHome = mkWorkflowHome(tmp, ['omega', 'dotfiles']);
     const list = composeSlugs({ workflowHome, home: tmp });
     assertEq(list.repos.sort().join(','), 'owner/dotfiles,owner/omega,owner/workkit', 'the roster plus the home repo');
@@ -71,7 +70,7 @@ const run = async () => {
   await test('a machine that registers nothing writes the empty list, it is true', () => {
     // The truth case: no roster file at all is not a failure, it is a machine
     // that has enabled nothing, and the list it composes says exactly that.
-    const tmp = mkTmp();
+    const tmp = mkTmp('workkit-site-repos-');
     const workflowHome = mkWorkflowHome(tmp, [], { homeSlug: null, roster: null });
     const outfile = path.join(tmp, 'data', 'repos.json');
     assertEq(writeSlugs(outfile, { workflowHome, home: tmp }), true, 'the file was written');
@@ -84,7 +83,7 @@ const run = async () => {
     // Issue #116: the failure and the empty machine compose the same list, so
     // telling them apart is the whole job. An empty list published over a good
     // one tells every reader the board is gone.
-    const tmp = mkTmp();
+    const tmp = mkTmp('workkit-site-repos-');
     const workflowHome = mkWorkflowHome(tmp, ['omega'], { roster: '{ not json' });
     let raised = null;
     try {
@@ -98,7 +97,7 @@ const run = async () => {
   });
 
   await test('the list already published survives a roster that will not read', () => {
-    const tmp = mkTmp();
+    const tmp = mkTmp('workkit-site-repos-');
     const outfile = path.join(tmp, 'data', 'repos.json');
     const workflowHome = mkWorkflowHome(tmp, ['omega']);
     assertEq(writeSlugs(outfile, { workflowHome, home: tmp }), true, 'a good roster writes the list');
@@ -116,7 +115,7 @@ const run = async () => {
   });
 
   await test('the CLI exits non-zero and writes nothing when the roster will not read', () => {
-    const tmp = mkTmp();
+    const tmp = mkTmp('workkit-site-repos-');
     const outfile = path.join(tmp, 'data', 'repos.json');
     const workflowHome = mkWorkflowHome(tmp, ['omega'], { roster: '{ not json' });
     const script = path.join(__dirname, '..', '..', 'workflow', 'site-repos.js');

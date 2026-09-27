@@ -7,12 +7,12 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, skipSuite } = require('../lib/harness');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 const { BASH, NO_RC, shellPath, homeEnv, stubTool, pathWith } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'install.sh');
 const REPO = path.join(__dirname, '..', '..');
@@ -23,7 +23,6 @@ const REPO = path.join(__dirname, '..', '..');
 const AGENT = { label: 'com.workkit.claude-daily', runner: 'morning.sh', hour: '9' };
 const LABEL = AGENT.label;
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'workkit-install-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 /**
@@ -39,7 +38,7 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
  * recorder rather than the machine.
  */
 const mkWorld = ({ loaded = false, loadedPath = null, launchdOk = true } = {}) => {
-  const root = mkTmp();
+  const root = mkTmp('workkit-install-');
   const bin = path.join(root, 'bin');
   const home = path.join(root, 'home');
   fs.mkdirSync(bin, { recursive: true });

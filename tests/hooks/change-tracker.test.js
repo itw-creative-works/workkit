@@ -14,12 +14,13 @@ const os = require('os');
 const { spawnSync, execSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
 const { BASH, SYSTEM_BASH, NO_RC, shellPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'change-tracker', 'run.sh');
 const PROMPT = path.join(__dirname, '..', '..', 'hooks', 'docs', 'change-tracker', 'prompt.md');
 
 const mkTmpRepo = () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-test-'));
+  const dir = mkTmp('ct-test-');
   execSync('git init && git commit --allow-empty -m "init"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
   return dir;
 };
@@ -298,7 +299,7 @@ const run = async () => {
   group('change-tracker: fail-open / guards');
 
   await test('non-git directory: exits 0 silently (fail open)', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-nogit-'));
+    const dir = mkTmp('ct-nogit-');
     const { code, stdout } = runHook(dir);
     assertEq(code, 0, 'non-git dir should exit 0');
     assert(!stdout.includes('block'), 'should not block');

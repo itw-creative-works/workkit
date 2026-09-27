@@ -6,11 +6,11 @@
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { execSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { SYSTEM_BASH, pathWith, stubTool } = require('../../lib/platform');
 const { skipWithoutDigest, mkRepo, stage, touchMarker, runHook, cleanup, CHANGELOG, ENTRY } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   skipWithoutDigest();
@@ -22,7 +22,7 @@ const run = async () => {
   // The read is the guard's, so the shim answers the same call, and nothing
   // here reaches GitHub.
   const ghStub = ({ comments = {}, fails = false } = {}) => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-gh-'));
+    const dir = mkTmp('cg-gh-');
     const bodies = path.join(dir, 'issues');
     fs.mkdirSync(bodies);
     for (const [number, list] of Object.entries(comments)) {

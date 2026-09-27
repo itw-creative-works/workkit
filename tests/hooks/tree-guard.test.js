@@ -12,13 +12,14 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'tree-guard', 'run.sh');
 
 // A working directory the path probe can answer about: `src/app.js` exists here,
 // so it reads as a pathspec, while `feature/thing` does not and reads as a branch.
 const mkTree = () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-test-'));
+  const dir = mkTmp('tg-test-');
   fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'src', 'app.js'), 'const x = 1;\n');
   fs.writeFileSync(path.join(dir, 'notes.md'), '# notes\n');

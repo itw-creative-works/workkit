@@ -10,6 +10,7 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
 const { BASH, SYSTEM_BASH, NO_RC, shellPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'vendor-guard', 'run.sh');
 
@@ -97,7 +98,7 @@ const run = async () => {
   // A monorepo fixture: repo root (git + package.json), a package with its own
   // package.json, and a committed source tree whose path merely holds a build/.
   const mkMonorepo = () => {
-    const dir = fsp.mkdtempSync(path.join(os.tmpdir(), 'vg-pkg-'));
+    const dir = mkTmp('vg-pkg-');
     fsp.mkdirSync(path.join(dir, '.git'), { recursive: true });
     fsp.writeFileSync(path.join(dir, 'package.json'), '{}\n');
     fsp.mkdirSync(path.join(dir, 'build'), { recursive: true });
@@ -146,7 +147,7 @@ const run = async () => {
   const fs = require('fs');
   const { execSync } = require('child_process');
   const mkRepo = () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vg-test-'));
+    const dir = mkTmp('vg-test-');
     execSync('git init', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     fs.writeFileSync(path.join(dir, '.gitignore'), 'generated.json\n.env\n');
     return dir;
@@ -176,7 +177,7 @@ const run = async () => {
   });
 
   await test('file outside any git repo: exit 0', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vg-norepo-'));
+    const dir = mkTmp('vg-norepo-');
     const { code } = runHook(path.join(dir, 'scratch.txt'));
     assertEq(code, 0, 'non-repo files pass (scratchpad, tmp)');
     rmDir(dir);

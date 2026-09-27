@@ -12,23 +12,22 @@
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { spawnSync, execFileSync } = require('child_process');
 const { skipSuite } = require('../../lib/harness');
 const { IS_WINDOWS, NO_NODE_STUB, SYSTEM_PATH, stubTool, pathWith } = require('../../lib/platform');
 const { recordArgv } = require('../../lib/argv-log');
+const { mkTmp } = require('../../lib/scratch');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'workflow', 'changelog-links.js');
 const { repoSlug } = require(SCRIPT);
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'cll-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 /** A fake `gh` that answers the commit-author query, or fails outright. */
 const makeGhStub = ({ login = 'who', fails = false } = {}) => {
-  const dir = mkTmp();
+  const dir = mkTmp('cll-');
   const bin = path.join(dir, 'bin');
   fs.mkdirSync(bin, { recursive: true });
   stubTool(bin, 'gh', [
@@ -52,7 +51,7 @@ const CHANGELOG = (...bullets) => [
 
 /** A repo whose CHANGELOG is the given text, plus commits closing the issues. */
 const mkRepo = (changelog, commits) => {
-  const dir = mkTmp();
+  const dir = mkTmp('cll-');
   git(dir, 'init', '-q', '-b', 'main');
   git(dir, 'config', 'user.email', 'test@example.com');
   git(dir, 'config', 'user.name', 'Test');
@@ -94,5 +93,5 @@ const skipOnWindows = () => {
 };
 
 module.exports = {
-  repoSlug, mkTmp, cleanup, git, makeGhStub, CHANGELOG, mkRepo, runScript, readLog, skipOnWindows,
+  repoSlug, cleanup, git, makeGhStub, CHANGELOG, mkRepo, runScript, readLog, skipOnWindows,
 };

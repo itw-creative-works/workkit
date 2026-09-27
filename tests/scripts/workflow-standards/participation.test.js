@@ -10,7 +10,8 @@ const {
   group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W,
 } = require('../../lib/harness');
 const { gitPath } = require('../../lib/platform');
-const { mkTmp, cleanup, rosterOf, makeRepo, runScript, STANDARD_VERSION } = require('./helpers');
+const { cleanup, rosterOf, makeRepo, runScript, STANDARD_VERSION } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('standards.sh: participation');
@@ -71,7 +72,7 @@ const run = async () => {
 
   await test('a declined repo is silent and stays untouched', () => {
     const repo = makeRepo({ settings: null });
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     runScript(repo, { args: ['--decline'], workflowHome: home });
     assertEq(stateOf(repo, { workflowHome: home }), 'declined', 'state');
     const { code, output: stdout } = runScript(repo, { workflowHome: home });
@@ -85,7 +86,7 @@ const run = async () => {
   // it is a git repo, but it carries no committed opt-in, is never offered, and
   // the heal writes nothing into it.
   const makeHomeClone = () => {
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     const tower = path.join(home, 'tower');
     fs.mkdirSync(tower, { recursive: true });
     spawnSync('git', ['init', '-q'], { cwd: tower });
@@ -132,7 +133,7 @@ const run = async () => {
     // state: it is the hand-edited file (issue #80), and an empty one would
     // show nobody what there is to set.
     const repo = makeRepo({ settings: null });
-    const home = path.join(mkTmp(), 'never-touched');
+    const home = path.join(mkTmp('wf-std-'), 'never-touched');
     runScript(repo, { args: ['--state'], workflowHome: home });
     const file = path.join(home, 'settings.json');
     assert(fs.existsSync(file), 'created without any decline');
@@ -151,7 +152,7 @@ const run = async () => {
 
   await test('an existing user settings file is never overwritten by the ensure', () => {
     const repo = makeRepo({ settings: null });
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     const file = path.join(home, 'settings.json');
     fs.writeFileSync(file, JSON.stringify({ version: 1, site: { repo: 'owner/workkit', publish: true, url: null } }));
     runScript(repo, { args: ['--state'], workflowHome: home });
@@ -165,7 +166,7 @@ const run = async () => {
     // The decline is the machine's record, not the owner's typing, so it lands
     // in `.repos.json` beside the settings rather than in them (issue #80).
     const repo = makeRepo({ settings: null });
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     const { code, output: stdout } = runScript(repo, { args: ['--decline'], workflowHome: home });
     assertEq(code, 0, 'exit 0');
     assert(stdout.includes('recorded'), `reports the record, got: ${stdout}`);
@@ -182,7 +183,7 @@ const run = async () => {
 
   await test('--decline writes only the repos key: every other key survives', () => {
     const repo = makeRepo({ settings: null });
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     const seeded = {
       version: 1,
       editor: 'code',
@@ -226,7 +227,7 @@ const run = async () => {
   });
 
   await test('--state on a non-git directory says so instead of guessing', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('wf-std-');
     assertEq(stateOf(dir), 'nogit', 'a directory with no repo has no participation state');
     cleanup(dir);
   });

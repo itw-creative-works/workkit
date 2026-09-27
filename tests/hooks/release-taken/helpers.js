@@ -16,9 +16,9 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { BASH, NO_RC, shellPath, stubTool, systemPathWith } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
+const { mkTmp } = require('../../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', '..', 'hooks', 'safety', 'release-taken', 'run.sh');
-const mkTmp = (prefix = 'release-taken-') => fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 // PATH shims: an `npm` answering `npm view <name>@<version> version` and a `gh`
@@ -78,7 +78,7 @@ const ghCalls = (stubs) => readArgv(stubs.ghLog);
 // github-release bounce names) and a package.json, plus any workspace members.
 const PKG = { name: 'widget', version: '1.2.3', private: false, files: ['dist'] };
 const mkRepo = ({ pkg = PKG, members = {}, origin = 'https://github.com/acme/widgets.git' } = {}) => {
-  const dir = fs.realpathSync(mkTmp());
+  const dir = mkTmp('release-taken-');
   spawnSync('git', ['init', '-q'], { cwd: dir });
   if (origin) spawnSync('git', ['remote', 'add', 'origin', origin], { cwd: dir });
   if (pkg) fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg));

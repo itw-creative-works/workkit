@@ -13,10 +13,10 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
 const { BASH, SYSTEM_PATH, NO_RC, shellPath, joinPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'session-guard', 'run.sh');
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'session-guard-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 // The tmp root each fixture file was made under, so a cleanup does not have to
@@ -25,7 +25,7 @@ const ROOTS = new Map();
 
 /** A session.md (or any other name/dir) holding `content`, returning its path. */
 const mkFile = (content, { dir = path.join(W, 'agents'), name = 'session.md' } = {}) => {
-  const root = mkTmp();
+  const root = mkTmp('session-guard-');
   fs.mkdirSync(path.join(root, dir), { recursive: true });
   const file = path.join(root, dir, name);
   fs.writeFileSync(file, content);
@@ -167,7 +167,7 @@ const run = async () => {
   });
 
   await test('a session.md that no longer exists: fail open', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('session-guard-');
     assertEq(runHook(path.join(dir, W, 'agents', 'session.md')).code, 0, 'exit 0');
     cleanup(dir);
   });

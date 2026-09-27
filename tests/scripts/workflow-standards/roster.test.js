@@ -13,9 +13,10 @@ const {
   BASH, SYSTEM_BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, cygpathStub, joinPath,
 } = require('../../lib/platform');
 const {
-  WORKFLOW_DIR, SCRIPT, mkTmp, cleanup, rosterOf, winRosterKey, makeRepo, makeGhStub, binDirWithout,
+  WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, winRosterKey, makeRepo, makeGhStub, binDirWithout,
   runScript,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('standards.sh: the roster');
@@ -26,7 +27,7 @@ const run = async () => {
   // against the file rather than the output.
   await test('a heal registers the repo it healed', () => {
     const repo = makeRepo();
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     const stub = makeGhStub({ authed: false });
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
     assertEq(code, 0, 'exit 0');
@@ -37,7 +38,7 @@ const run = async () => {
 
   await test('running twice registers once: no duplicate, no rewrite', () => {
     const repo = makeRepo();
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     const stub = makeGhStub({ authed: false });
     runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
     const file = path.join(home, '.repos.json');
@@ -50,7 +51,7 @@ const run = async () => {
 
   await test('--enable registers the repo it just opted in', () => {
     const repo = makeRepo({ settings: null });
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     const stub = makeGhStub({ authed: false });
     runScript(repo, { args: ['--enable'], pathPrefix: stub.binDir, workflowHome: home });
     assertEq(rosterOf(home)[gitPath(fs.realpathSync(repo))], 'enabled', 'joining and being indexed are one act');
@@ -72,10 +73,10 @@ const run = async () => {
     // below EXISTS, which is what puts that step in the race too. A heal that
     // ends on it never reaches the roster at all, so the count alone would
     // report a lost write for a session that died two steps earlier.
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     const stub = makeGhStub({ authed: false });
     const repos = [makeRepo(), makeRepo(), makeRepo()];
-    const claudeHome = path.join(mkTmp(), 'claude-home');
+    const claudeHome = path.join(mkTmp('wf-std-'), 'claude-home');
     fs.mkdirSync(claudeHome, { recursive: true });
     const basePath = joinPath(stub.binDir, SYSTEM_PATH, NODE_DIR);
     // Seeded here rather than by whichever process gets there first: the race
@@ -148,7 +149,7 @@ const run = async () => {
   // source, so the heal owes the global layer nothing but the roster above.
   await test('the heal writes nothing into the global layer but the roster', () => {
     const repo = makeRepo();
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     const stub = makeGhStub({ authed: false });
     const { code } = runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
     assertEq(code, 0, 'exit 0');
@@ -163,7 +164,7 @@ const run = async () => {
     // The tower repo is a repo like any other: it is healed by standing IN it,
     // never by a heal of some other repo reaching across into it.
     const repo = makeRepo();
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     const tower = path.join(home, 'tower');
     fs.mkdirSync(tower, { recursive: true });
     spawnSync('git', ['init', '-q'], { cwd: tower });
@@ -184,9 +185,9 @@ const run = async () => {
 
   await test('an entry whose path is gone, and one that turned itself off, are pruned', () => {
     const repo = makeRepo();
-    const gone = mkTmp();
+    const gone = mkTmp('wf-std-');
     const off = makeRepo({ settings: '{ "version": 1, "enabled": false }\n' });
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     fs.writeFileSync(path.join(home, '.repos.json'), JSON.stringify({
       version: 1,
       repos: { [gitPath(gone)]: 'enabled', [gitPath(fs.realpathSync(off))]: 'enabled' },
@@ -208,7 +209,7 @@ const run = async () => {
     const repo = makeRepo();
     const left = makeRepo();
     fs.rmSync(path.join(left, W, 'settings.json'));
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     fs.writeFileSync(path.join(home, '.repos.json'), JSON.stringify({
       version: 1,
       repos: { [gitPath(fs.realpathSync(left))]: 'enabled' },
@@ -225,7 +226,7 @@ const run = async () => {
     // prune has to read it the same way or it would evict a member.
     const repo = makeRepo();
     const legacy = makeRepo({ settings: '{ "version": 1 }\n' });
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     fs.writeFileSync(path.join(home, '.repos.json'), JSON.stringify({
       version: 1,
       repos: { [gitPath(fs.realpathSync(legacy))]: 'enabled' },
@@ -239,8 +240,8 @@ const run = async () => {
 
   await test('a decline is a decision, not an observation: it is never pruned', () => {
     const repo = makeRepo();
-    const declined = mkTmp();
-    const home = mkTmp();
+    const declined = mkTmp('wf-std-');
+    const home = mkTmp('wf-std-');
     fs.writeFileSync(path.join(home, '.repos.json'), JSON.stringify({
       version: 1,
       editor: 'code',
@@ -258,7 +259,7 @@ const run = async () => {
 
   await test('an undecided repo is never registered: nothing observes it', () => {
     const repo = makeRepo({ settings: null });
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     const stub = makeGhStub({ authed: false });
     runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
     assertEq(Object.keys(rosterOf(home)).length, 0, 'the offer writes nothing, here included');
@@ -267,7 +268,7 @@ const run = async () => {
 
   await test('a malformed roster file warns and skips: the heal still finishes', () => {
     const repo = makeRepo();
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     fs.writeFileSync(path.join(home, '.repos.json'), '{ not json');
     const stub = makeGhStub({ authed: false });
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
@@ -280,12 +281,12 @@ const run = async () => {
 
   await test('without jq the roster is simply not maintained', () => {
     const repo = makeRepo();
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     // A PATH with no jq anywhere on it: the roster edit is a jq edit, and a
     // machine without it must lose the index, never the heal.
     const binDir = binDirWithout('jq');
     const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
-      env: { PATH: binDir, WORKFLOW_HOME: shellPath(home), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp(), 'ch')) },
+      env: { PATH: binDir, WORKFLOW_HOME: shellPath(home), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')) },
       encoding: 'utf8',
       timeout: 20000,
     });
@@ -302,14 +303,14 @@ const run = async () => {
   // Windows so the rule holds at every commit: OSTYPE is what the engine
   // branches on, and bash honors an inherited one.
   const msysWorld = () => {
-    const cyg = mkTmp();
+    const cyg = mkTmp('wf-std-');
     cygpathStub(cyg);
     return cyg;
   };
 
   await test('the roster key is git\'s spelling of the repo root, on the Windows branch too', () => {
     const repo = makeRepo();
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     const stub = makeGhStub({ authed: false });
     const cyg = msysWorld();
     const { code } = runScript(repo, {
@@ -324,7 +325,7 @@ const run = async () => {
 
   await test('a decline writes that same key, and the state read after it finds it', () => {
     const repo = makeRepo({ settings: null });
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     const stub = makeGhStub({ authed: false });
     const cyg = msysWorld();
     const opts = {

@@ -16,14 +16,14 @@ const {
   BASH, SYSTEM_PATH, NO_RC, shellPath, stubTool, basePathWithout, systemPathWith,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
+const { mkTmp } = require('../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'state-check', 'run.sh');
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ic-test-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const mkRepo = () => {
-  const dir = mkTmp();
+  const dir = mkTmp('ic-test-');
   spawnSync('git', ['init', '-q'], { cwd: dir });
   return dir;
 };
@@ -33,7 +33,7 @@ const mkRepo = () => {
 // The recording keeps argument boundaries (see tests/lib/argv-log.js), so a
 // flag whose value lost its quoting cannot pass as a correct call.
 const makeGhStub = ({ issues = [] } = {}) => {
-  const dir = mkTmp();
+  const dir = mkTmp('ic-test-');
   const logFile = path.join(dir, 'gh.log');
   const issuesFile = path.join(dir, 'issues.json');
   fs.writeFileSync(issuesFile, JSON.stringify(issues || []));
@@ -65,7 +65,7 @@ const ghCalls = (stub) => readArgv(stub.logFile);
 // suite.
 let noGhPath = null;
 const pathWithoutGh = () => {
-  if (!noGhPath) noGhPath = basePathWithout(mkTmp(), 'gh');
+  if (!noGhPath) noGhPath = basePathWithout(mkTmp('ic-test-'), 'gh');
   return noGhPath;
 };
 const dropPathWithoutGh = () => {
@@ -75,7 +75,7 @@ const dropPathWithoutGh = () => {
 
 const runHook = (cwd, { pathPrefix, cache } = {}) => {
   const input = JSON.stringify({ cwd: shellPath(cwd), source: 'startup' });
-  const cacheDir = cache || fs.mkdtempSync(path.join(os.tmpdir(), 'sc-cache-'));
+  const cacheDir = cache || mkTmp('sc-cache-');
   const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
     input,
     env: {
@@ -94,7 +94,7 @@ const run = async () => {
   group('state-check: silence when nothing needs attention');
 
   await test('bare directory: silent exit 0', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('ic-test-');
     const { code, stdout } = runHook(dir);
     assertEq(code, 0, 'exit 0');
     assertEq(stdout, '', 'no output');
@@ -165,7 +165,7 @@ const run = async () => {
   });
 
   await test('non-git directory: gh is never called', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('ic-test-');
     const stub = makeGhStub({ issues: [{ number: 1 }] });
     const { stdout } = runHook(dir, { pathPrefix: stub.binDir });
     assertEq(ghCalls(stub).length, 0, 'no query outside a repo');
@@ -176,7 +176,7 @@ const run = async () => {
   group('state-check: local .workkit/capture.md');
 
   await test('a non-empty capture file: announces it', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('ic-test-');
     fs.mkdirSync(path.join(dir, W));
     fs.writeFileSync(path.join(dir, W, 'capture.md'), '# capture\n> dump anything\n\nan idea\nanother\n');
     const { stdout } = runHook(dir);
@@ -186,7 +186,7 @@ const run = async () => {
   });
 
   await test('a header-only capture file: silent', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('ic-test-');
     fs.mkdirSync(path.join(dir, W));
     fs.writeFileSync(path.join(dir, W, 'capture.md'), '# capture\n> dump anything here\n\n');
     const { stdout } = runHook(dir);
@@ -207,7 +207,7 @@ const run = async () => {
   group('state-check: retired board checks');
 
   await test('a PROGRESS.md is no longer the hook\'s business', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('ic-test-');
     fs.writeFileSync(path.join(dir, 'PROGRESS.md'), '# Project Progress Tracker\n\n## Current Focus\n* stuff\n');
     const { stdout } = runHook(dir);
     assertEq(stdout, '', 'board files are dying: no legacy-format announcement');
@@ -215,7 +215,7 @@ const run = async () => {
   });
 
   await test('an INBOX.md is no longer counted', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('ic-test-');
     fs.writeFileSync(path.join(dir, 'INBOX.md'), '# INBOX\n\nfix the thing\nidea: new skill\n');
     const { stdout } = runHook(dir);
     assertEq(stdout, '', 'capture lives in issues and .workkit/ now');
@@ -225,7 +225,7 @@ const run = async () => {
   group('state-check: content-bearing CLAUDE.md (pointer doctrine)');
 
   await test('content-bearing CLAUDE.md: announces conversion', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('ic-test-');
     fs.writeFileSync(path.join(dir, 'CLAUDE.md'), '# Big Doc\n\nlots of rules\nmore rules\nand more\n');
     const { stdout } = runHook(dir);
     assert(stdout.includes('CLAUDE.md holds content'), `announces conversion, got: ${stdout}`);
@@ -234,7 +234,7 @@ const run = async () => {
   });
 
   await test('pointer CLAUDE.md: silent', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('ic-test-');
     fs.writeFileSync(path.join(dir, 'CLAUDE.md'), '@AGENTS.md\n');
     const { stdout } = runHook(dir);
     assert(!stdout.includes('CLAUDE.md holds content'), 'a compliant pointer stays silent');
@@ -242,7 +242,7 @@ const run = async () => {
   });
 
   await test('no CLAUDE.md: silent', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('ic-test-');
     const { stdout } = runHook(dir);
     assert(!stdout.includes('CLAUDE.md'), 'missing file is fine');
     cleanup(dir);
@@ -251,7 +251,7 @@ const run = async () => {
   group('state-check: oversized AGENTS.md');
 
   await test('AGENTS.md over 250 lines: announces the offload', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('ic-test-');
     fs.writeFileSync(path.join(dir, 'AGENTS.md'), `# repo\n${'line\n'.repeat(255)}`);
     const { stdout } = runHook(dir);
     assert(stdout.includes('AGENTS.md'), `announces the oversized file, got: ${stdout}`);
@@ -260,7 +260,7 @@ const run = async () => {
   });
 
   await test('AGENTS.md within budget: silent', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('ic-test-');
     fs.writeFileSync(path.join(dir, 'AGENTS.md'), `# repo\n${'line\n'.repeat(100)}`);
     const { stdout } = runHook(dir);
     assert(!stdout.includes('AGENTS.md'), 'compliant file stays silent');
@@ -271,7 +271,7 @@ const run = async () => {
   // one source line, so a file well inside 250 lines still carries a book. The
   // unit is BYTES, pinned with LC_ALL=C the way board-guard pins it.
   await test('a dense AGENTS.md inside the line count: announces the density rule', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('ic-test-');
     fs.writeFileSync(path.join(dir, 'AGENTS.md'), `# repo\n${'x'.repeat(2100)}\n${'line\n'.repeat(100)}`);
     const { stdout } = runHook(dir);
     assert(stdout.includes('1 line over 400 bytes'), `announces the dense line, got: ${stdout}`);
@@ -282,7 +282,7 @@ const run = async () => {
   });
 
   await test('several dense lines: the count is plural', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('ic-test-');
     fs.writeFileSync(path.join(dir, 'AGENTS.md'), `# repo\n${`${'x'.repeat(500)}\n`.repeat(3)}`);
     const { stdout } = runHook(dir);
     assert(stdout.includes('3 lines over 400 bytes'), `counts them, got: ${stdout}`);
@@ -290,7 +290,7 @@ const run = async () => {
   });
 
   await test('a 400-byte line: silent (the boundary passes)', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('ic-test-');
     fs.writeFileSync(path.join(dir, 'AGENTS.md'), `# repo\n${'x'.repeat(400)}\n`);
     const { stdout } = runHook(dir);
     assert(!stdout.includes('AGENTS.md'), 'exactly 400 is within the budget');
@@ -298,7 +298,7 @@ const run = async () => {
   });
 
   await test('a non-ASCII line: 370 characters, 410 bytes, and it counts', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('ic-test-');
     const line = `${'x'.repeat(350)}${'\u2014'.repeat(20)}`;
     assertEq(Buffer.byteLength(line, 'utf8'), 410, 'the fixture is 410 bytes');
     fs.writeFileSync(path.join(dir, 'AGENTS.md'), `# repo\n${line}\n`);
@@ -323,7 +323,7 @@ const run = async () => {
   await test('an empty queue is cached: a second session inside 30 minutes makes no gh call', () => {
     const repo = mkRepo();
     const stub = makeGhStub({ issues: [] });
-    const cache = mkTmp();
+    const cache = mkTmp('ic-test-');
     const first = runHook(repo, { pathPrefix: stub.binDir, cache });
     assertEq(first.stdout, '', 'an empty queue is not news');
     assertEq(issueCount(stub), 1, 'exactly one query');
@@ -336,7 +336,7 @@ const run = async () => {
   await test('a count worth announcing is never cached: the next session asks again', () => {
     const repo = mkRepo();
     const stub = makeGhStub({ issues: [{ number: 1 }, { number: 2 }] });
-    const cache = mkTmp();
+    const cache = mkTmp('ic-test-');
     const first = runHook(repo, { pathPrefix: stub.binDir, cache });
     assert(first.stdout.includes('2 open status:inbox'), `first run announces, got: ${first.stdout}`);
     assertEq(fs.readdirSync(cache).length, 0, 'nothing was written to the cache');
@@ -352,7 +352,7 @@ const run = async () => {
     // simply has no cache entry to go stale.
     const repo = mkRepo();
     const stub = makeGhStub({ issues: [{ number: 1 }, { number: 2 }] });
-    const cache = mkTmp();
+    const cache = mkTmp('ic-test-');
     const before = runHook(repo, { pathPrefix: stub.binDir, cache });
     assert(before.stdout.includes('2 open status:inbox'), `announced first, got: ${before.stdout}`);
     setIssues(stub, []);
@@ -364,7 +364,7 @@ const run = async () => {
   await test('a cached silence older than 30 minutes re-queries', () => {
     const repo = mkRepo();
     const stub = makeGhStub({ issues: [] });
-    const cache = mkTmp();
+    const cache = mkTmp('ic-test-');
     runHook(repo, { pathPrefix: stub.binDir, cache });
     const cacheFile = path.join(cache, fs.readdirSync(cache)[0]);
     assertEq(fs.readFileSync(cacheFile, 'utf8'), '0', 'the cache holds the empty count');

@@ -11,15 +11,16 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { shellPath } = require('../../lib/platform');
 const {
-  WORKFLOW_DIR, mkTmp, cleanup, makeRepo, runHook, dropPathWithoutGh,
+  WORKFLOW_DIR, cleanup, makeRepo, runHook, dropPathWithoutGh,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('workflow:standards: daily cache');
 
   await test('second session the same day: no re-run, no output', () => {
     const repo = makeRepo();
-    const cache = mkTmp();
+    const cache = mkTmp('wf-hook-');
     const first = runHook(repo, { cache });
     assert(first.stdout.length > 0, 'first run reported');
     fs.rmSync(path.join(repo, '.github'), { recursive: true, force: true });
@@ -32,7 +33,7 @@ const run = async () => {
   await test('the marker is dated, one file per repo', () => {
     const repoA = makeRepo();
     const repoB = makeRepo();
-    const cache = mkTmp();
+    const cache = mkTmp('wf-hook-');
     runHook(repoA, { cache });
     const afterA = fs.readdirSync(cache);
     assertEq(afterA.length, 1, 'one marker after the first repo');
@@ -48,7 +49,7 @@ const run = async () => {
 
   await test('a stale marker re-arms the run', () => {
     const repo = makeRepo();
-    const cache = mkTmp();
+    const cache = mkTmp('wf-hook-');
     runHook(repo, { cache });
     const marker = path.join(cache, fs.readdirSync(cache)[0]);
     fs.writeFileSync(marker, '2000-01-01');
@@ -63,7 +64,7 @@ const run = async () => {
   await test('no WORKFLOW_DIR: resolves the engine beside the hook and heals', () => {
     // No symlink, no HOME: the hook climbs out of its own directory to the
     // kit's workflow/, so a fresh plugin install works with nothing installed.
-    const home = mkTmp();
+    const home = mkTmp('wf-hook-');
     const repo = makeRepo();
     const { code, stdout, cacheDir } = runHook(repo, { home, workflowDir: null });
     assertEq(code, 0, 'exit 0');
@@ -73,7 +74,7 @@ const run = async () => {
   });
 
   await test('a missing engine: says where it looked, exit 0', () => {
-    const engine = mkTmp();
+    const engine = mkTmp('wf-hook-');
     const repo = makeRepo();
     const { code, stdout, cacheDir } = runHook(repo, { workflowDir: engine });
     assertEq(code, 0, 'a missing engine never wedges the session');
@@ -87,7 +88,7 @@ const run = async () => {
   await test('an engine without labels.json is announced for an opted-in repo', () => {
     // A missing manifest used to fail --state, which this hook read as nogit:
     // a broken install went silent forever instead of speaking once.
-    const engine = mkTmp();
+    const engine = mkTmp('wf-hook-');
     fs.symlinkSync(path.join(WORKFLOW_DIR, 'standards.sh'), path.join(engine, 'standards.sh'));
     const repo = makeRepo();
     const { code, stdout, cacheDir } = runHook(repo, { workflowDir: engine });
@@ -100,7 +101,7 @@ const run = async () => {
   });
 
   await test('a missing manifest stays silent on a repo that never opted in', () => {
-    const engine = mkTmp();
+    const engine = mkTmp('wf-hook-');
     fs.symlinkSync(path.join(WORKFLOW_DIR, 'standards.sh'), path.join(engine, 'standards.sh'));
     const repo = makeRepo({ optIn: false });
     const { code, stdout, cacheDir } = runHook(repo, { workflowDir: engine });
@@ -110,7 +111,7 @@ const run = async () => {
   });
 
   await test('a missing engine stays silent on a repo that never opted in', () => {
-    const engine = mkTmp();
+    const engine = mkTmp('wf-hook-');
     const repo = makeRepo({ optIn: false });
     const { code, stdout, cacheDir } = runHook(repo, { workflowDir: engine });
     assertEq(code, 0, 'exit 0');
@@ -122,7 +123,7 @@ const run = async () => {
   // committed `false` is resolvable from the repo alone, so the deliberate no
   // must be honored here too (review finding, 2026-07-24).
   await test('a missing engine stays silent on a deliberately disabled repo', () => {
-    const engine = mkTmp();
+    const engine = mkTmp('wf-hook-');
     const repo = makeRepo({ settings: '{ "version": 1, "enabled": false }\n' });
     const { code, stdout, cacheDir } = runHook(repo, { workflowDir: engine });
     assertEq(code, 0, 'exit 0');

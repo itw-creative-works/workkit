@@ -4,11 +4,11 @@
 // invariants: the resolver must NEVER touch a non-class spawn or break a
 // session when its preconditions are missing.
 const path = require('path');
-const os = require('os');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const REPO = path.join(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'hooks', 'manager', 'resolver', 'run.sh');
@@ -23,7 +23,7 @@ const FAST = ladder.tiers.fast;
 
 let tmp;
 const freshTmp = () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'resolver-test-'));
+  tmp = mkTmp('resolver-test-');
   return tmp;
 };
 

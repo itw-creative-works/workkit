@@ -6,11 +6,11 @@
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { spawnSync, execSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { BASH, SYSTEM_BASH, NO_RC, shellPath, pathWith, stubTool } = require('../../lib/platform');
 const { skipWithoutDigest, LIB, mkRepo, stage, touchMarker, runHook, cleanup, CHANGELOG, ISSUE, ENTRY } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   skipWithoutDigest();
@@ -85,14 +85,14 @@ const run = async () => {
   // comparison against it silently passes. Each PATH below offers one dialect
   // only, proving the helper picks the spelling that actually answers.
   await test('reads a file mtime under either stat dialect', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mtime-'));
+    const dir = mkTmp('mtime-');
     const file = path.join(dir, 'f');
     fs.writeFileSync(file, 'x');
     const when = 1600000000;
     fs.utimesSync(file, when, when);
 
     const readWith = (dialect) => {
-      const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'statbin-'));
+      const binDir = mkTmp('statbin-');
       // BSD: -c is unknown, so it errors out. GNU: -f is filesystem status,
       // which answers `?` for %m and exits 0: the trap this helper avoids.
       const arms = dialect === 'bsd'

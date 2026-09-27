@@ -62,7 +62,7 @@ Autonomous ship pipeline: read the config, pick the bump, then run every step de
 2. **Doc parity**: find behavior changes in the diff (new commands, flags, env vars, changed defaults, new patterns). Document any undocumented one in README.md, AGENTS.md or docs/*.md, in the same commit. Skip for internal refactors, test-only changes, and config or prompt tweaks with no user-facing impact.
 
 2b. **Full review, every ship**: run the `workkit:review` skill with the `full` arg on the whole ship diff (the tier is not negotiable here). Do it before any commit this ship makes. The ship diff is the widest view of the wave, so it catches drift no single brief could name.
-   - Fix every finding scored ≥80 before going on; one you deliberately do not fix is said aloud in the reply, never dropped silently. It runs EVERY time: an earlier review, a docs-only diff, or a fresh marker exempts nothing. Only an EMPTY diff (a release-only ship, or only the version stamp) skips it, in one line.
+   - Every finding scored ≥80 is fixed in this ship or filed before going on, per the fix-or-file rule (`docs/project-state.md` § How big is one issue); none is ever dropped. It runs EVERY time: an earlier review, a docs-only diff, or a fresh marker exempts nothing. Only an EMPTY diff (a release-only ship, or only the version stamp) skips it, in one line.
    - A marker's age only says the review skill ran, never that this diff was reviewed. The marker stays the gate's check for ordinary code commits; the ship relies on this step.
 
 3. **CHANGELOG**: add the entry under `[Unreleased]` (§ CHANGELOG format). The release commit moves it to a version section, never the work commit.
@@ -145,7 +145,7 @@ Autonomous ship pipeline: read the config, pick the bump, then run every step de
 
 - The working is already written where it is read. Do NOT print the commit message, the diff or a narration of it, or the step 3.1 analysis. Nor the CHANGELOG entry, raw review output, or a file-by-file walk. Every issue the reply names reads in the cold-reader line (`docs/project-state.md` § Restating an issue).
 - DO print, briefly: the version and the bump picked, the commit shas, and what pushed. Add every direct push's CI conclusion (§ Watching a push's CI run), the issues closed, and every step deliberately skipped. A bump-skipped PR-path ship prints the PR checks' conclusion.
-- Also the one-line outcomes the steps name (the review floor, the plan's lines, the missing allow rule, what published, Step 7). Name any ≥80 finding deliberately NOT fixed (step 3.2b; this wins over the do-not-print list). Name anything that failed or needs the owner.
+- Also the one-line outcomes the steps name (the review floor, the plan's lines, the missing allow rule, what published, Step 7). Name every ≥80 finding filed rather than fixed, with the issue it landed on (step 3.2b; this wins over the do-not-print list). Name anything that failed or needs the owner.
 
 ## NEVER include Claude attribution
 

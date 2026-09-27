@@ -70,13 +70,16 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 
 - Stage the class agents by phase, never all at once.
 - Build: ONE `workkit:worker` against a brief. A test-writer and feature-writer pair only when each has its own worktree; the dispatcher merges.
-- The `workkit:verifier` runs ONCE, when the build claims done. The full review panel assembles only in phase 5. `workkit:scout` is recon: dispatch it at any point.
+- The `workkit:verifier` runs twice: when the build claims done, and after the review (phase 5). The full review panel assembles only in phase 5. `workkit:scout` is recon: dispatch it at any point.
+- A finding that names a class ("one more site reads the value the same wrong way") gets one `workkit:scout` sweep of the whole class before the worker round, so the class is one round, never one round per instance.
+- An edit that touches many test files rides its own batch: the qa flip runs every test file the working diff touched, so a wide edit makes every other item in the batch wait on them.
 
 ## 5. Verify + review
 
-- Run the tests the change TOUCHED, with the narrowest command that proves it. The commit gate owns the full suite and runs it at the commit (`docs/project-state.md` § The proof). The flip to `status:qa` runs the touched test files itself (`safety/proof-guard`), so a red one blocks the park.
+- Each agent runs only the test files touched by the edit it made or checks, by path (`docs/project-state.md` § The proof). The flip to `status:qa` runs every test file the working diff touched (`safety/proof-guard`) and the commit gate runs the full suite, so no brief asks an agent for the whole touched set.
 - Then [workkit:review](../review/SKILL.md) on the diff. Trivial tasks skip formal review.
-- Fix ≥80 findings before calling it done. The review's simplification lens covers post-green cleanup.
+- A ≥80 finding is fixed in the batch or filed before calling it done, per the fix-or-file rule (`docs/project-state.md` § How big is one issue). The review's simplification lens covers post-green cleanup.
+- After the review: ONE light verification pass over the fixes, ONE worker round for what it finds, then the park. A finding made after that round is filed per the fix-or-file rule and worked in the next batch, never in another round. The one exception is a bug in a `safety/` hook, fixed before the park.
 - Done-criteria:
   - green at every layer the change has a surface on (`docs/project-state.md` § The proof);
   - review verdict "ship";

@@ -33,7 +33,7 @@ Score 0–100: how certain are you this is a REAL issue a maintainer would fix?
 - **40–69**: possible, needs a human look; report only if consequential.
 - **0–39**: speculative, do not report.
 
-**False-positive list, never report:** anything a linter/formatter would catch · issues in lines the diff did not touch · pre-existing problems (mention ONCE in Notes, not as findings) · style preferences with no written rule · hypothetical scenarios the codebase can't reach.
+**False-positive list, never report:** anything a linter/formatter would catch · style preferences with no written rule · hypothetical scenarios the codebase can't reach · a Parity finding whose file has no sibling. The score measures how real a problem is, never where it sits; what then happens to it is the fix-or-file rule's (`docs/project-state.md` § How big is one issue).
 
 ## Report format
 
@@ -53,7 +53,7 @@ Score 0–100: how certain are you this is a REAL issue a maintainer would fix?
 [Suggestions with no rule backing, clearly separated]
 
 ## Notes
-[Pre-existing issues seen (once), compliant patterns worth keeping]
+[Compliant patterns worth keeping]
 ```
 
 ## Dispatch contract

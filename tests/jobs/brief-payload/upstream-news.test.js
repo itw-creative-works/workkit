@@ -9,8 +9,9 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  SCRIPT, writeBriefMarks, INSTRUCTION, parseStatsMark, CC_CHANGELOG, mkTmp, cleanup, mkNewsWorld, newsTest,
+  SCRIPT, writeBriefMarks, INSTRUCTION, parseStatsMark, CC_CHANGELOG, cleanup, mkNewsWorld, newsTest,
 } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group('jobs/brief-payload: the upstream news');
@@ -74,7 +75,7 @@ const run = async () => {
   await test('the stats line says what the payload said, not what the day happened to be', () => {
     // Composed directly, so the numbers are stated rather than swept: the line
     // is the payload's own counts, and its date is the payload's own stamp.
-    const dir = mkTmp();
+    const dir = mkTmp('brief-payload-');
     const file = path.join(dir, 'mark');
     const before = process.env.WORKKIT_BRIEF_MARK_FILE;
     process.env.WORKKIT_BRIEF_MARK_FILE = file;

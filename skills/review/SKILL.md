@@ -56,7 +56,7 @@ Downgrade to light ONLY when ALL of these hold (any miss = stay full):
 - The `workkit:verifier` agent scores every collected finding 0–100: "how certain is this a real issue a maintainer would fix?"
 - It is never a finder in the same pass. Finder-never-scores is the integrity core of both tiers.
 - It gets the finding and the relevant code, and re-checks the claim against the actual file before scoring.
-- The false-positive list scores 0: linter-catchable, unmodified lines, pre-existing, no written rule, unreachable hypotheticals. So does a Parity finding whose file has no sibling.
+- The false-positive list scores 0: linter-catchable, no written rule, unreachable hypotheticals, and a Parity finding whose file has no sibling. The score measures how real a problem is; what happens to it is the fix-or-file rule's (`docs/project-state.md` § How big is one issue).
 - Where a lens attached its own confidence, the scorer's number wins.
 - The final ship/fix/rework verdict stays with the dispatching session: frontier-or-session judgment by construction.
 
@@ -69,10 +69,7 @@ Downgrade to light ONLY when ALL of these hold (any miss = stay full):
 - End with a verdict: ship / fix-then-ship / rework.
 - Every item in the report, and every issue one names, reads in the cold-reader line (`docs/project-state.md` § Restating an issue).
 - Done-criteria: every ≥80 finding names its file:line and a concrete fix; no lens output pasted raw into chat.
-- A finding that gets FILED rather than fixed passes the filing litmus test first: *would closing an open issue automatically mean this is done too?*
-  - Yes: it attaches to that issue, never as a sibling issue.
-  - Polish-grade findings batch as checklist lines onto the surface's rolling `polish: <surface>` issue.
-  - The rules: `docs/project-state.md` § How big is one issue.
+- Every finding ≥80 is fixed in the batch or filed per the fix-or-file rule (`docs/project-state.md` § How big is one issue), and the report names each filed one with the issue it landed on.
 
 ## 5. Marker (feeds the commit gate)
 

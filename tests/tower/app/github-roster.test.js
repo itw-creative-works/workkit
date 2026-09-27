@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs, libs, mkFetch, jsonResponse, SWEEP, SLUGS, CLOSED_NOW } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const apiBrief = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'brief.js'));
 
@@ -76,7 +77,6 @@ const run = async () => {
     // the browser through GraphQL. A drift in either parse would leave one
     // surface drawing a chart the other cannot.
     const fs = require('fs');
-    const os = require('os');
     const apiHistory = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'history.js'));
     const mark = (date, open, closedDay) => `<!-- workkit-stats: {"v":1,"date":"${date}","totals":{"open":${open},"waiting":1,"ready":2,"inFlight":0,"inbox":3,"backlog":0},"closedDay":${closedDay},"repos":{"owner/repo":{"open":${open}}}} -->`;
     const nodes = [
@@ -91,7 +91,7 @@ const run = async () => {
     assertEq(mine[1].totals.open, 12, 'the totals are read off the line');
     assertEq(mine[1].closedDay, 4, 'and what the day closed');
 
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'app-history-'));
+    const home = mkTmp('app-history-');
     fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ version: 1, site: { repo: 'owner/private-home' } }));
     const theirs = apiHistory.briefHistory({
       workflowHome: home,
@@ -116,7 +116,6 @@ const run = async () => {
     // what each morning counted but what it SAID. A drift in either parse would
     // leave one copy of the Brief page showing a document the other cannot.
     const fs = require('fs');
-    const os = require('os');
     const apiDocuments = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'documents.js'));
     const apiHistory = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'history.js'));
     const nodes = [
@@ -138,7 +137,7 @@ const run = async () => {
     assertEq(mine[0].body, 'HEADLINE: today.', 'the machine markers come off - a renderer that escapes first would draw them as text');
     assertEq(mine[0].url, 'https://github.com/owner/private-home/discussions/9', 'and each one links back to the post');
 
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'app-documents-'));
+    const home = mkTmp('app-documents-');
     fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ version: 1, site: { repo: 'owner/private-home' } }));
     const theirs = apiDocuments.documentsFrom(apiHistory.readDiscussions({
       workflowHome: home,

@@ -15,16 +15,15 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
   group, test, assert, assertEq, skipSuite, selfRun, summary,
 } = require('../lib/harness');
+const { mkTmp } = require('../lib/scratch');
 
 const CLI = path.join(__dirname, '..', '..', 'workflow', 'workkit.sh');
 
-const mkTmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'workkit-mintpty-')));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const hasExpect = () => spawnSync('expect', ['-v'], { encoding: 'utf8' }).status === 0;
@@ -75,7 +74,7 @@ const run = async () => {
   group('workflow: mint-pty: Ctrl-C ends a mint whose child ignores it (#187)');
 
   await test('one ^C ends an INT-ignoring child and answers 130', () => {
-    const root = mkTmp();
+    const root = mkTmp('workkit-mintpty-');
     try {
       const out = runMint(root, {
         child: '#!/bin/bash\ntrap "" INT\necho CHILD-UP\nsleep 60\necho CHILD-DONE\n',
@@ -87,7 +86,7 @@ const run = async () => {
   });
 
   await test('a child that finishes passes its screen and its exit status through', () => {
-    const root = mkTmp();
+    const root = mkTmp('workkit-mintpty-');
     try {
       const out = runMint(root, {
         child: '#!/bin/bash\necho CHILD-UP\necho FAKE-TOKEN-LINE\nexit 3\n',

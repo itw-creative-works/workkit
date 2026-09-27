@@ -95,7 +95,7 @@ cwd=$(hook_jq -r '.cwd // ""' <<<"$input" 2>/dev/null || true)
 RT_WORKSPACES=""
 RT_WS_UNREADABLE=""
 rt_has_npm_publish() {
-  local clause sub w dry ws flagged value found=1 all=0
+  local clause sub w n dry ws flagged value found=1 all=0
   while IFS= read -r clause; do
     # shellcheck disable=SC2086  # word splitting is intentional; quotes are stripped
     set -- $clause
@@ -105,6 +105,12 @@ rt_has_npm_publish() {
         \(*) w="${1#\(}"; shift; set -- "$w" "$@" ;;
         command|env) shift ;;
         [A-Za-z_]*=*) shift ;;
+        # A redirect ahead of the command word is syntax, never the command.
+        *'>'*|*'<'*)
+          n=$(hook_redirect_span "$1")
+          [ "$n" -gt 0 ] || break
+          [ "$n" -le $# ] || n=$#
+          shift "$n" ;;
         *) break ;;
       esac
     done
@@ -128,10 +134,25 @@ rt_has_npm_publish() {
 "; shift ;;
         --workspace|-w)
           flagged=1
-          if [ $# -ge 2 ]; then ws="$ws$2
-"; shift 2; else ws="$ws
-"; shift; fi ;;
+          shift
+          # A redirect between the flag and its value is syntax, never the name.
+          while [ $# -gt 0 ]; do
+            n=$(hook_redirect_span "$1")
+            [ "$n" -gt 0 ] || break
+            [ "$n" -le $# ] || n=$#
+            shift "$n"
+          done
+          if [ $# -ge 1 ]; then ws="$ws$1
+"; shift; else ws="$ws
+"; fi ;;
         -*) shift ;;
+        # A redirect is shell syntax, never the subcommand: a bare operator
+        # hands its target to the next word, an attached one carries it.
+        *'>'*|*'<'*)
+          n=$(hook_redirect_span "$1")
+          [ "$n" -gt 0 ] || { [ -n "$sub" ] || sub="$1"; n=1; }
+          [ "$n" -le $# ] || n=$#
+          shift "$n" ;;
         *) if [ -z "$sub" ]; then sub="$1"; fi; shift ;;
       esac
     done

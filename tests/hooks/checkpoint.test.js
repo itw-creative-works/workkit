@@ -2,11 +2,11 @@
 // deterministically (issue #238), and the second fire in one session asks for a
 // delta instead of a whole-chat pass.
 const path = require('path');
-const os = require('os');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { BASH, SYSTEM_BASH, NO_RC, shellPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const REPO = path.join(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'hooks', 'docs', 'checkpoint', 'run.sh');
@@ -15,7 +15,7 @@ const MARKER_DIR = 'claude-checkpoint-marker';
 
 let tmp;
 const freshTmp = () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'checkpoint-test-'));
+  tmp = mkTmp('checkpoint-test-');
   return tmp;
 };
 

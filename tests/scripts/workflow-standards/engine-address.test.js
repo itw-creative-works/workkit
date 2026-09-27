@@ -10,7 +10,8 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, stubTool, joinPath,
 } = require('../../lib/platform');
-const { WORKFLOW_DIR, SCRIPT, mkTmp, cleanup, makeRepo, runScript } = require('./helpers');
+const { WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, runScript } = require('./helpers');
+const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
   group("standards.sh: the engine's address");
@@ -20,7 +21,7 @@ const run = async () => {
   // home below is a temp directory, so the machine's own address is untouched.
   const ENGINE = path.resolve(WORKFLOW_DIR);
   const claudeHomeWith = () => {
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
     return { home, claude: path.join(home, '.claude') };
   };
@@ -49,7 +50,7 @@ const run = async () => {
   await test('an address pointing somewhere else is repaired', () => {
     const repo = makeRepo();
     const { claude } = claudeHomeWith();
-    const stale = mkTmp();
+    const stale = mkTmp('wf-std-');
     fs.symlinkSync(stale, path.join(claude, 'workkit'));
     const { output } = runScript(repo, { claudeHome: claude });
     assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(ENGINE), 'repointed at this engine');
@@ -70,7 +71,7 @@ const run = async () => {
     const env = {
       ...process.env,
       PATH: joinPath(SYSTEM_PATH, NODE_DIR),
-      WORKFLOW_HOME: shellPath(path.join(mkTmp(), 'workflow-home')),
+      WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'workflow-home')),
       WORKFLOW_CLAUDE_HOME: shellPath(claude),
     };
     for (let round = 1; round <= 20; round++) {
@@ -99,7 +100,7 @@ const run = async () => {
   await test('an `ln` that copies instead of linking: the copy is removed and named', () => {
     const repo = makeRepo();
     const { claude } = claudeHomeWith();
-    const bin = mkTmp();
+    const bin = mkTmp('wf-std-');
     stubTool(bin, 'ln', [
       '#!/bin/bash',
       '# Git Bash without symlink rights: a copy, and exit 0.',
@@ -131,7 +132,7 @@ const run = async () => {
 
   await test('no ~/.claude on the machine: nothing is created', () => {
     const repo = makeRepo();
-    const home = mkTmp();
+    const home = mkTmp('wf-std-');
     const claude = path.join(home, '.claude');
     const { output } = runScript(repo, { claudeHome: claude });
     assert(!fs.existsSync(claude), 'the engine creates no agent directory of its own');
@@ -168,7 +169,7 @@ const run = async () => {
   await test('a probe leaves an EXISTING address alone', () => {
     const repo = makeRepo();
     const { claude } = claudeHomeWith();
-    const other = mkTmp();
+    const other = mkTmp('wf-std-');
     fs.symlinkSync(other, path.join(claude, 'workkit'));
     runScript(repo, { args: ['--state'], claudeHome: claude });
     assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(other),
@@ -179,7 +180,7 @@ const run = async () => {
   await test('a repo that has not said yes never repoints it', () => {
     const repo = makeRepo({ settings: null });
     const { claude } = claudeHomeWith();
-    runScript(repo, { claudeHome: claude, workflowHome: path.join(mkTmp(), 'wh') });
+    runScript(repo, { claudeHome: claude, workflowHome: path.join(mkTmp('wf-std-'), 'wh') });
     assert(!fs.existsSync(path.join(claude, 'workkit')), 'an undecided repo is offered, and nothing else happens');
     cleanup(repo); cleanup(claude);
   });
@@ -189,13 +190,13 @@ const run = async () => {
     const { claude } = claudeHomeWith();
     // A copy in a temp directory: no git repo above it, which is what a
     // fixture, an archive, or a partial checkout looks like.
-    const copy = mkTmp();
+    const copy = mkTmp('wf-std-');
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
     const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
       env: {
         ...process.env,
         PATH: joinPath(SYSTEM_PATH, NODE_DIR),
-        WORKFLOW_HOME: shellPath(path.join(mkTmp(), 'wh')),
+        WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')),
         WORKFLOW_CLAUDE_HOME: shellPath(claude),
       },
       encoding: 'utf8',
@@ -211,7 +212,7 @@ const run = async () => {
     const repo = makeRepo();
     const { claude } = claudeHomeWith();
     // A git repo this time, so only the origin tells the two apart.
-    const copyRoot = mkTmp();
+    const copyRoot = mkTmp('wf-std-');
     const copy = path.join(copyRoot, 'workflow');
     fs.mkdirSync(copy, { recursive: true });
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
@@ -221,7 +222,7 @@ const run = async () => {
       env: {
         ...process.env,
         PATH: joinPath(SYSTEM_PATH, NODE_DIR),
-        WORKFLOW_HOME: shellPath(path.join(mkTmp(), 'wh')),
+        WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')),
         WORKFLOW_CLAUDE_HOME: shellPath(claude),
       },
       encoding: 'utf8',
@@ -235,7 +236,7 @@ const run = async () => {
   await test('a copy whose origin IS the kit takes the address', () => {
     const repo = makeRepo();
     const { claude } = claudeHomeWith();
-    const copyRoot = mkTmp();
+    const copyRoot = mkTmp('wf-std-');
     const copy = path.join(copyRoot, 'workflow');
     fs.mkdirSync(copy, { recursive: true });
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
@@ -246,7 +247,7 @@ const run = async () => {
       env: {
         ...process.env,
         PATH: joinPath(SYSTEM_PATH, NODE_DIR),
-        WORKFLOW_HOME: shellPath(path.join(mkTmp(), 'wh')),
+        WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')),
         WORKFLOW_CLAUDE_HOME: shellPath(claude),
       },
       encoding: 'utf8',
@@ -266,7 +267,7 @@ const run = async () => {
     // took only a forward slash refused the machine's own engine there.
     const repo = makeRepo();
     const { claude } = claudeHomeWith();
-    const copyRoot = mkTmp();
+    const copyRoot = mkTmp('wf-std-');
     const copy = path.join(copyRoot, 'workflow');
     fs.mkdirSync(copy, { recursive: true });
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
@@ -277,7 +278,7 @@ const run = async () => {
       env: {
         ...process.env,
         PATH: joinPath(SYSTEM_PATH, NODE_DIR),
-        WORKFLOW_HOME: shellPath(path.join(mkTmp(), 'wh')),
+        WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')),
         WORKFLOW_CLAUDE_HOME: shellPath(claude),
       },
       encoding: 'utf8',

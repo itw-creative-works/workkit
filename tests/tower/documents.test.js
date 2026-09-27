@@ -13,19 +13,18 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { mkTmp } = require('../lib/scratch');
 
 const { documentsFrom, readable, DOCUMENT_LIMIT } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'documents.js'));
 const { readDiscussions, historyFrom } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'history.js'));
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-documents-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 /** A scratch ~/.workkit naming a home repo - or naming none. */
 const mkHome = (repo = 'owner/private-home') => {
-  const dir = mkTmp();
+  const dir = mkTmp('tower-documents-');
   fs.writeFileSync(
     path.join(dir, 'settings.json'),
     JSON.stringify({ version: 1, site: { repo, publish: false, url: null } }),

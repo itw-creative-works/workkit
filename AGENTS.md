@@ -89,6 +89,8 @@ Every suite runs on macOS and on Windows under Git Bash, or skips whole by name 
 
 A world a case spawns comes from the same seam: `homeEnv()` is the scratch home in every spelling a tool reads one by (HOME, USERPROFILE, `GH_CONFIG_DIR`, and no ambient token), so no child of a test reads the developer's own home or reaches GitHub as them, and `stubTool()` is the one writer of a PATH stub, which a shell starts on either platform and Node starts on neither.
 
+A scratch folder has one writer as well: `mkTmp(prefix)` in `tests/lib/scratch.js`, which resolves the path and removes every folder it made when the process exits.
+
 A case only one platform can answer names its skip through the harness's `skip()`. The Windows lane is manual: pull the clone on that machine, then run `WORKKIT_SUITE=1 node tests/run.js` there (the suite guard bounces the bare run there as here); how a session reaches that machine is the owner's own tooling, not the kit's.
 
 Lanes per layer (`docs/project-state.md` § The proof):

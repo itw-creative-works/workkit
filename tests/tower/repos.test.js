@@ -8,11 +8,11 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { group, test, testUnless, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { asWindows, gitPath: rosterKey } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const { discoverRepos, gitPath, readRoster, tempRoot } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'repos.js'));
 // The slug rule is the ENGINE's (workflow/slug.js, the twin of workflow/slug.sh
@@ -20,7 +20,6 @@ const { discoverRepos, gitPath, readRoster, tempRoot } = require(path.join(__dir
 // than owning it, so the cases below ask it where it lives.
 const { slugFromRemote } = require(path.join(__dirname, '..', '..', 'workflow', 'slug.js'));
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-repos-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -90,7 +89,7 @@ const run = async () => {
   group('tower/repos: which repos are in');
 
   await test('a registered, opted-in repo is on the roster', () => {
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const repo = mkRepo(tmp, 'Owner/alpha');
     const found = discoverRepos({ workflowHome: mkWorkflowHome(tmp, [repo]) });
     assertEq(names(found), 'alpha', 'alpha listed');
@@ -103,7 +102,7 @@ const run = async () => {
     // `settings.json`, and the reader takes the roster from the file whose
     // writer maintains it. A leftover `repos` block in the hand-edited file is
     // not a roster and must not put a repo on the dashboard.
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const repo = mkRepo(tmp, 'Owner/alpha');
     const home = mkWorkflowHome(tmp, [repo]);
     assertEq(names(discoverRepos({ workflowHome: home })), 'alpha', 'the roster file is what is read');
@@ -118,7 +117,7 @@ const run = async () => {
   });
 
   await test('a repo nobody registered is NOT found, however opted in it is', () => {
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const listed = mkRepo(tmp, 'Owner/listed');
     mkRepo(tmp, 'Owner/unlisted');
     const found = discoverRepos({ workflowHome: mkWorkflowHome(tmp, [listed]) });
@@ -127,7 +126,7 @@ const run = async () => {
   });
 
   await test('a registered repo that lost its opt-in is dropped silently', () => {
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const yes = mkRepo(tmp, 'Owner/yes');
     const no = mkRepo(tmp, 'Owner/no', { settings: { version: 7, enabled: false } });
     const broken = mkRepo(tmp, 'Owner/broken', { settings: '{ not json' });
@@ -145,7 +144,7 @@ const run = async () => {
     // file that does not say false is a yes, which is how a legacy
     // `{ "version": 1 }` written before the key existed stays a member. Reading
     // it more strictly here would drop repos the heal keeps registering.
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const yes = mkRepo(tmp, 'Owner/yes');
     const legacy = mkRepo(tmp, 'Owner/legacy', { settings: { version: 1 } });
     const off = mkRepo(tmp, 'Owner/off', { settings: { version: 1, enabled: false } });
@@ -155,7 +154,7 @@ const run = async () => {
   });
 
   await test('a declined entry is skipped, and the enabled ones beside it are not', () => {
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const kept = mkRepo(tmp, 'Owner/kept');
     const declined = mkRepo(tmp, 'Owner/declined');
     const workflowHome = mkWorkflowHome(tmp, {
@@ -167,7 +166,7 @@ const run = async () => {
   });
 
   await test('a hidden repo directory is listed - .dotfiles is a real repo', () => {
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const repo = mkRepo(tmp, 'Owner/.dotfiles');
     assertEq(names(discoverRepos({ workflowHome: mkWorkflowHome(tmp, [repo]) })), '.dotfiles', 'dot names are ordinary');
     cleanup(tmp);
@@ -177,7 +176,7 @@ const run = async () => {
     // The home repo carries no committed opt-in of its own (issue #79): the
     // engine knows it by path and so does the board, which exists to show
     // exactly the cross-project issues it holds.
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const listed = mkRepo(tmp, 'Owner/listed');
     const home = mkWorkflowHome(tmp, [listed], { homeSlug: 'owner/workkit' });
     const tower = path.join(home, 'tower');
@@ -194,7 +193,7 @@ const run = async () => {
   await test('a tower path this user declined is not listed', () => {
     // By-path discovery has no committed file to read, so the decline in the
     // roster is the only record of the answer - and it is an answer.
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const home = mkWorkflowHome(tmp, {}, { homeSlug: 'owner/workkit' });
     const tower = path.join(home, 'tower');
     fs.mkdirSync(tower, { recursive: true });
@@ -216,7 +215,7 @@ const run = async () => {
     // The origin slug is the only proof by-path discovery has that this IS the
     // home repo: no origin, no recorded home slug, or a mismatch means someone
     // else's checkout is sitting at that name.
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const home = mkWorkflowHome(tmp, {}, { homeSlug: 'owner/workkit' });
     const tower = path.join(home, 'tower');
     fs.mkdirSync(tower, { recursive: true });
@@ -232,7 +231,7 @@ const run = async () => {
   });
 
   await test('the tower clone is skipped when the settings file records no home slug', () => {
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const home = mkWorkflowHome(tmp, {});
     const tower = path.join(home, 'tower');
     fs.mkdirSync(tower, { recursive: true });
@@ -243,7 +242,7 @@ const run = async () => {
   });
 
   await test('a tower path that is not a git repo, or absent, adds nothing', () => {
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const listed = mkRepo(tmp, 'Owner/listed');
     const home = mkWorkflowHome(tmp, [listed]);
     assertEq(names(discoverRepos({ workflowHome: home })), 'listed', 'nothing cloned yet');
@@ -253,7 +252,7 @@ const run = async () => {
   });
 
   await test('a tower clone the roster also lists is one entry, not two', () => {
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const home = mkWorkflowHome(tmp, []);
     const tower = path.join(home, 'tower');
     fs.mkdirSync(path.join(tower, '.workkit'), { recursive: true });
@@ -291,7 +290,7 @@ const run = async () => {
     // The fixture folds through the seam, under asWindows: on Windows the two
     // names are one string already, and on macOS the backslash is a real
     // character that only the Windows branch of the seam folds into one folder.
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const twin = mkRepo(tmp, 'win/x/workflow-home/tower', { origin: 'https://github.com/owner/workkit.git' });
     const twinKey = asWindows(() => rosterKey(twin));
     const home = mkWorkflowHome(path.join(tmp, 'win\\x'), [twinKey], { homeSlug: 'owner/workkit' });
@@ -316,7 +315,7 @@ const run = async () => {
     // The other compare the same fold serves: the decline is the
     // only record there is of that answer, and a lookup in the joined spelling
     // reads a declined clone as one nobody has been asked about.
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     // The folded spelling holds the repo the lookup reaches, as in the case above.
     mkRepo(tmp, 'win/x/workflow-home/tower', { origin: 'https://github.com/owner/workkit.git' });
     const home = mkWorkflowHome(path.join(tmp, 'win\\x'), {}, { homeSlug: 'owner/workkit' });
@@ -338,7 +337,7 @@ const run = async () => {
   group('tower/repos: the origin slug');
 
   await test('ssh, ssh-URL and https remotes all parse to owner/repo', () => {
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const repos = [
       mkRepo(tmp, 'Owner/ssh', { origin: 'git@github.com:ITW-Creative-Works/workkit.git' }),
       mkRepo(tmp, 'Owner/sshurl', { origin: 'ssh://git@github.com/ITW-Creative-Works/workkit' }),
@@ -354,7 +353,7 @@ const run = async () => {
   });
 
   await test('a repo with no origin is still listed, with slug null', () => {
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const repo = mkRepo(tmp, 'Owner/local');
     const found = discoverRepos({ workflowHome: mkWorkflowHome(tmp, [repo]) });
     assertEq(found.length, 1, 'still listed - health works locally');
@@ -432,13 +431,13 @@ const run = async () => {
   group('tower/repos: a roster that says nothing');
 
   await test('no settings file, no repos key, and an unparseable file are all empty', () => {
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const absent = discoverRepos({ workflowHome: path.join(tmp, 'nope') });
     assert(Array.isArray(absent) && absent.length === 0, 'a machine that has healed nothing yet');
     assertEq(discoverRepos({ workflowHome: mkWorkflowHome(tmp, null, { version: 1 }) }).length, 0, 'no repos key');
     cleanup(tmp);
 
-    const tmp2 = mkTmp();
+    const tmp2 = mkTmp('tower-repos-');
     assertEq(discoverRepos({ workflowHome: mkWorkflowHome(tmp2, null, '{ not json') }).length, 0, 'unparseable');
     cleanup(tmp2);
   });
@@ -446,18 +445,18 @@ const run = async () => {
   await test('a reader cannot tell the three apart, and readRoster can', () => {
     // Issue #116: absent and unparseable are the same empty board to a reader
     // and two different things to a writer, so the file read says which.
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     assertEq(readRoster(path.join(tmp, 'nope')).status, 'missing', 'nothing registered yet');
     assertEq(readRoster(mkWorkflowHome(tmp, null, { roster: { version: 1 } })).status, 'ok', 'a file that parses');
     cleanup(tmp);
 
-    const tmp2 = mkTmp();
+    const tmp2 = mkTmp('tower-repos-');
     assertEq(readRoster(mkWorkflowHome(tmp2, null, { roster: '{ not json' })).status, 'unreadable', 'a file that does not');
     cleanup(tmp2);
   });
 
   await test('the sort is by path, so the answer is stable however the map was written', () => {
-    const tmp = mkTmp();
+    const tmp = mkTmp('tower-repos-');
     const b = mkRepo(tmp, 'Owner/b');
     const a = mkRepo(tmp, 'Owner/a');
     const found = discoverRepos({ workflowHome: mkWorkflowHome(tmp, [b, a]) });

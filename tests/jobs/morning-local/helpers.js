@@ -27,13 +27,13 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { spawnSync } = require('child_process');
 const { skipSuite } = require('../../lib/harness');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { BASH, NO_RC, shellPath, homeEnv, stubTool, pathWith } = require('../../lib/platform');
+const { mkTmp } = require('../../lib/scratch');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.sh');
 // The steps it sources, one file each: where a step's own text is read.
@@ -47,7 +47,6 @@ const { BRIEF_TITLE_PREFIX } = require(path.join(__dirname, '..', '..', '..', 't
 // posts, resolving a category, creating the Discussion.
 const BRIEF_GH = /discussions\(first|discussionCategories|createDiscussion/;
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'morning-local-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 // The date a Discussion would be titled with is the LOCAL one (`date
@@ -88,7 +87,7 @@ const mkWorld = ({
   secretsUnlistable = false,
   transcripts = true, homeClone = false,
 } = {}) => {
-  const root = mkTmp();
+  const root = mkTmp('morning-local-');
   const bin = path.join(root, 'bin');
   const home = path.join(root, 'home');
   const workflowHome = path.join(root, 'workflow-home');

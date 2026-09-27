@@ -9,14 +9,13 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR } = require('../lib/harness');
+const { mkTmp } = require('../lib/scratch');
 
 const { collectCcNews, renderCcNews, renderVersionMark, parseSections, topicOf } =
   require(path.join(__dirname, '..', '..', 'jobs', 'cc-news.js'));
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'cc-news-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 // Two releases of harness news and one of housekeeping, in the shape upstream
@@ -49,7 +48,7 @@ const SLUG = 'owner/private-home';
  * a board that cannot be read at all.
  */
 const mkWorld = (text = CHANGELOG, { slug = SLUG } = {}) => {
-  const home = mkTmp();
+  const home = mkTmp('cc-news-');
   const world = {
     home,
     workflowHome: path.join(home, WORKKIT_DIR),

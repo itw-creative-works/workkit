@@ -9,14 +9,13 @@
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { spawnSync, execFileSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { mkTmp } = require('../lib/scratch');
 
 const MODULE = path.join(__dirname, '..', '..', 'workflow', 'changelog.js');
 const { parseEntries, lintText, RULES } = require(MODULE);
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'cl-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const ISSUE = '[#4](https://github.com/o/r/issues/4)';
@@ -43,7 +42,7 @@ const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8',
 
 /** A real git repo with a committed CHANGELOG, so diffs are genuine. */
 const mkRepo = (initialContent) => {
-  const dir = mkTmp();
+  const dir = mkTmp('cl-');
   git(dir, 'init', '-q', '-b', 'main');
   git(dir, 'config', 'user.email', 'test@example.com');
   git(dir, 'config', 'user.name', 'Test');
@@ -267,7 +266,7 @@ const run = async () => {
   group('changelog: the CLI and --added-only');
 
   await test('a clean file exits 0 and says nothing', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('cl-');
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, doc('Unreleased', `- ${ISSUE} - A short entry.`));
     const { code, out } = runCli(file, [], dir);
@@ -277,7 +276,7 @@ const run = async () => {
   });
 
   await test('a violating file exits 1 and names the line and rule', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('cl-');
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, doc('Unreleased', '- An entry with no issue link at all.'));
     const { code, out } = runCli(file, [], dir);
@@ -327,7 +326,7 @@ const run = async () => {
   await test('an untracked CHANGELOG is judged in full', () => {
     // Nothing to diff against, so every entry is new. A first CHANGELOG must
     // not slip in unjudged.
-    const dir = mkTmp();
+    const dir = mkTmp('cl-');
     git(dir, 'init', '-q', '-b', 'main');
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, doc('Unreleased', '- An essay entry with no issue link.'));
@@ -365,7 +364,7 @@ const run = async () => {
     // read as "this repo is already migrated". The invariant is asserted here;
     // the truncation itself was timing-dependent and does not reproduce
     // reliably, so this pins the contract rather than the race.
-    const dir = mkTmp();
+    const dir = mkTmp('cl-');
     const file = path.join(dir, 'CHANGELOG.md');
     const bullets = Array.from({ length: 1000 }, (_, i) => `- **Essay ${i}** with no link and no separator at all.`);
     fs.writeFileSync(file, doc('1.0.0] - 2020-01-01', ...bullets));
@@ -377,7 +376,7 @@ const run = async () => {
   });
 
   await test('a missing file exits 0 rather than erroring', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('cl-');
     assertEq(runCli(path.join(dir, 'CHANGELOG.md'), [], dir).code, 0, 'fail open');
     cleanup(dir);
   });
@@ -405,7 +404,7 @@ const run = async () => {
   ].join('\n');
 
   await test('released history never fails the check', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('cl-');
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, mixed(`- ${ISSUE} - A clean unreleased entry.`));
     assertEq(runCli(file, [], dir).code, 1, 'the whole file does violate');
@@ -414,7 +413,7 @@ const run = async () => {
   });
 
   await test('a violating unreleased entry fails, naming its rule', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('cl-');
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, mixed('- An unreleased entry with no issue link.'));
     const { code, out } = runCli(file, ['--unreleased-only'], dir);
@@ -427,7 +426,7 @@ const run = async () => {
   await test('a released entry missing its commit link is not judged either', () => {
     // The rule that only applies to released sections is the one a CI run has
     // no business enforcing: the links are generated at release time.
-    const dir = mkTmp();
+    const dir = mkTmp('cl-');
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, doc('1.0.0] - 2020-01-01', `- ${ISSUE} - Released without its commit link.`));
     assertEq(runCli(file, [], dir).code, 1, 'the commit-link rule does apply to it');
@@ -436,7 +435,7 @@ const run = async () => {
   });
 
   await test('a file with no [Unreleased] section passes', () => {
-    const dir = mkTmp();
+    const dir = mkTmp('cl-');
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, doc('1.0.0] - 2020-01-01', '- An old entry with nothing right about it.'));
     assertEq(runCli(file, ['--unreleased-only'], dir).code, 0, 'nothing to judge');

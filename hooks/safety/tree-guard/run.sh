@@ -69,17 +69,14 @@ stripped=$(hook_fold_redirect_amp "$stripped")
 # Runs for every clause, ahead of the git test, so each subcommand's judgment
 # sees the command's real words and nothing else.
 tg_strip_noise() {
-  local out=() w
+  local out=() w n
   while [ $# -gt 0 ]; do
     w="$1"; shift
     case "$w" in
       \#*) break ;;
       *'>'*|*'<'*)
-        case "$(hook_redirect_word "$w")" in
-          bare) [ $# -ge 1 ] && shift ;;
-          attached) ;;
-          *) out+=("$w") ;;
-        esac
+        n=$(hook_redirect_span "$w")
+        if [ "$n" -eq 0 ]; then out+=("$w"); elif [ "$n" -eq 2 ] && [ $# -ge 1 ]; then shift; fi
         ;;
       *) out+=("$w") ;;
     esac

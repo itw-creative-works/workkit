@@ -13,16 +13,15 @@
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { spawnSync, execFileSync } = require('child_process');
 const {
   group, test, assert, assertEq, summary, selfRun,
 } = require('../lib/harness');
 const { SYSTEM_PATH, homeEnv } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'release.js');
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'release-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -101,7 +100,7 @@ const COMMITS = ['feat: one\n\nFixes #1', 'feat: two\n\nFixes #2', 'fix: three\n
 const mkRepo = ({
   changelog = CHANGELOG, pkg = PACKAGE, plugin = null, commits = COMMITS, remote = true,
 } = {}) => {
-  const dir = mkTmp();
+  const dir = mkTmp('release-');
   git(dir, 'init', '-q', '-b', 'main');
   git(dir, 'config', 'user.email', 'test@example.com');
   git(dir, 'config', 'user.name', 'Test');
@@ -126,7 +125,7 @@ const mkRepo = ({
 
 /** The script run from a scratch home against `--dir <repo>`. */
 const release = (dir, args) => {
-  const home = mkTmp();
+  const home = mkTmp('release-');
   const res = spawnSync(process.execPath, [SCRIPT, ...args, '--dir', dir], {
     cwd: home,
     env: homeEnv(home, { PATH: SYSTEM_PATH }),

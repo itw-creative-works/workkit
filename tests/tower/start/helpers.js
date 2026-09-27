@@ -12,16 +12,20 @@
 //
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { testUnless } = require('../../lib/harness');
 const { IS_WINDOWS, BASH, NO_RC, shellPath, which } = require('../../lib/platform');
+const { mkTmp } = require('../../lib/scratch');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'tower', 'start.sh');
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tower-start-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
+
+// The script makes its fifo folder under TMPDIR, and a case that ends a run with
+// SIGKILL skips the trap that removes it, so every run is handed a tracked one.
+const TMP = mkTmp('tower-start-tmp-');
+const TMP_ENV = { TMPDIR: shellPath(TMP) };
 
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
@@ -44,7 +48,7 @@ const readPid = (file) => Number(fs.readFileSync(file, 'utf8').trim());
 // run here never touches whatever this machine really has on 8693/4300.
 const start = (dir, api, app, ports = '', { args = [], env = {}, capture = false } = {}) => {
   const childEnv = {
-    ...process.env, WORKKIT_TOWER_API: api, WORKKIT_TOWER_APP: app, WORKKIT_TOWER_PORTS: ports, ...env,
+    ...process.env, ...TMP_ENV, WORKKIT_TOWER_API: api, WORKKIT_TOWER_APP: app, WORKKIT_TOWER_PORTS: ports, ...env,
   };
   // A FORCE_COLOR the OUTER shell exported would pass through the script
   // untouched - spec-correct, and a red herring to every case that asserts
@@ -278,7 +282,7 @@ const ptyRun = (dir, app, exports = []) => {
     'expect eof',
     '',
   ].join('\n'));
-  return spawn('expect', [script], { stdio: ['ignore', 'pipe', 'pipe'] });
+  return spawn('expect', [script], { env: { ...process.env, ...TMP_ENV }, stdio: ['ignore', 'pipe', 'pipe'] });
 };
 
 // The pty case needs a real terminal to send a real Ctrl-C down; expect is the
@@ -293,7 +297,7 @@ const hasExpect = () => Boolean(which('expect'));
 const pidTest = testUnless(IS_WINDOWS, 'a Git Bash $$ is an MSYS id, not a pid Node can query');
 
 module.exports = {
-  SCRIPT, mkTmp, cleanup, alive, until, readPid, start, standIn, collect, QUIET_PORTS,
+  SCRIPT, TMP_ENV, cleanup, alive, until, readPid, start, standIn, collect, QUIET_PORTS,
   NOISY_APP, FAILURE_SHAPES, FAILING_APP, REFUSING_APP, REFUSING_API, ANNOUNCED_APP, ANNOUNCING_APP,
   BENIGN_APP, WEB_APP, PHASED_APP, CHATTY_API, BUMPED_APP, STARTING, RED, CYAN, OFF, COLORED_APP,
   probeStub, ptyRun, hasExpect, pidTest,
