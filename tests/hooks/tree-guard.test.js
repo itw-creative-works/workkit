@@ -113,6 +113,21 @@ const run = async () => {
     rmTree(dir);
   });
 
+  await test("a redirect's & never splits the clause: the discard after it is seen, exit 2", () => {
+    const dir = mkTree();
+    for (const c of ['git checkout 2>&1 -- file.txt', 'git clean 2>&1 -f', 'git reset 2>&1 --hard',
+      'git checkout &>/dev/null -- file.txt']) {
+      blocks(dir, c);
+    }
+    rmTree(dir);
+  });
+
+  await test('a word carrying > that is no redirect stays an operand: exit 2', () => {
+    const dir = mkTree();
+    blocks(dir, 'git checkout HEAD~1 file.txt>/dev/null');
+    rmTree(dir);
+  });
+
   await test('a comment does not answer for the command in front of it: exit 0', () => {
     // The same walk fed every subcommand, so a `--hard` or a `-f` sitting in a
     // trailing comment used to block the harmless command carrying it.

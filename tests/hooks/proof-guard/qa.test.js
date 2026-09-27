@@ -22,8 +22,16 @@ const REPO = path.join(__dirname, '..', '..', '..');
 const QA = 'gh issue edit 3 --remove-label status:building --add-label status:qa';
 
 const RUN_LOG = "require('fs').appendFileSync(require('path').join(__dirname, '..', 'runs.log'), 'ran\\n');";
-const GREEN = `${RUN_LOG}\n`;
-const RED = `${RUN_LOG}\nprocess.exit(1);\n`;
+// The fixtures name node:test, so the flip reads them as files it can prove.
+const GREEN = `require('node:test');\n${RUN_LOG}\n`;
+const RED = `require('node:test');\n${RUN_LOG}\nprocess.exit(1);\n`;
+// Shapes node --test cannot prove: another runner's describe/it file, and a
+// module that only exports its cases. Each would log a run if it were executed.
+const DESCRIBE = `${RUN_LOG}\ndescribe('x', () => { it('y', () => {}); });\n`;
+const EXPORTS = `${RUN_LOG}\nmodule.exports = { tests: [] };\n`;
+// A self-running suite, the shape this repo's own suites take.
+const SELF_RUN = `${RUN_LOG}\nconst run = () => 0;\nif (require.main===module) process.exit(run());\n`;
+const UNPROVABLE = 'node --test cannot prove a file that neither names node:test nor runs itself';
 
 // Fixture git runs in a scratch home, so the developer's gitconfig never
 // shapes a fixture; every commit names its own identity.
@@ -119,6 +127,40 @@ const run = async () => {
     const msg = notice(out);
     assert(msg.includes('nothing ran'), `nothing ran, got: ${msg}`);
     assert(msg.includes('node --test runs only') && msg.includes('tests/x.test.sh'), `names it as not run, got: ${msg}`);
+  });
+
+  for (const [shape, body] of [['a describe/it file', DESCRIBE], ['a module that only exports its cases', EXPORTS]]) {
+    await qaCase(`${shape}: exit 0, never run, named as not run`, (dir, stub) => {
+      write(dir, 'tests/d.test.js', body);
+      const out = runHook(QA, stub, dir);
+      assertEq(out.code, 0, `a file node --test cannot prove never blocks, got: ${out.stderr}`);
+      const msg = notice(out);
+      assert(msg.includes('nothing ran'), `never counted green, got: ${msg}`);
+      assert(msg.includes(`${UNPROVABLE}`) && msg.includes('tests/d.test.js'), `names it as not run, got: ${msg}`);
+      assert(!JSON.parse(out.stdout).hookSpecificOutput.permissionDecision, 'the notice decides nothing');
+      assertEq(runs(dir), 0, 'the file never ran');
+    });
+  }
+
+  await qaCase('a self-running suite: runs, and the notice lists it green', (dir, stub) => {
+    write(dir, 'tests/self.test.js', SELF_RUN);
+    const out = runHook(QA, stub, dir);
+    assertEq(out.code, 0, `a green self-running file passes, got: ${out.stderr}`);
+    const msg = notice(out);
+    assert(msg.includes('ran 1 touched test file(s) green') && msg.includes('tests/self.test.js'), `listed green, got: ${msg}`);
+    assert(!msg.includes(UNPROVABLE), `never named as unprovable, got: ${msg}`);
+    assertEq(runs(dir), 1, 'the file ran once');
+  });
+
+  await qaCase('a describe/it file beside a green node:test file: one runs, the notice names both', (dir, stub) => {
+    write(dir, 'tests/a.test.js', `${GREEN}// touched\n`);
+    write(dir, 'tests/d.test.js', DESCRIBE);
+    const out = runHook(QA, stub, dir);
+    assertEq(out.code, 0, `green passes, got: ${out.stderr}`);
+    const msg = notice(out);
+    assert(msg.includes('ran 1 touched test file(s) green') && msg.includes('tests/a.test.js'), `the green one, got: ${msg}`);
+    assert(msg.includes(`${UNPROVABLE}`) && msg.includes('tests/d.test.js'), `the unprovable one, got: ${msg}`);
+    assertEq(runs(dir), 1, 'only the node:test file ran');
   });
 
   for (const name of ['tests/x.sh', 'tests/helpers.js']) {

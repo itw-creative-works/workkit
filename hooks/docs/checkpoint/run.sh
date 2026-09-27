@@ -50,8 +50,8 @@ ctx="$FIRST"
 # No session id means no marker to key: the full line every time, which is the
 # safe direction (a whole-chat pass files more than a delta, never less).
 if [ -n "$session_id" ]; then
-  marker_dir="${TMPDIR:-/tmp}/claude-checkpoint-marker"
-  marker="$marker_dir/${session_id//[^a-zA-Z0-9]/_}"
+  marker=$(hook_session_marker claude-checkpoint-marker "$session_id")
+  marker_dir="${marker%/*}"
   if [ -f "$marker" ]; then
     mtime=$(hook_file_mtime "$marker")
     # BSD `date -r` takes the epoch seconds; GNU spells it `-d @<epoch>` and

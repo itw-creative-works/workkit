@@ -1,8 +1,8 @@
 #!/bin/bash
 # hooks/lib/markers.sh: the digest and the files the hooks name by content:
 # hook_sha1, the review and triage marker paths keyed through it, the one
-# writer the two marker scripts share, and hook_file_mtime, the one
-# modification-time read. SOURCED by hooks/_lib.sh, never executed, and it runs
+# writer the two marker scripts share, the per-session marker path, and
+# hook_file_mtime, the one modification-time read. SOURCED by hooks/_lib.sh, never executed, and it runs
 # nothing at load: it defines functions and sets nothing. It reads no name of
 # the entry's.
 
@@ -60,6 +60,14 @@ _hook_write_marker() {
 # the writer and the reader cannot drift apart into two spellings of one path.
 hook_review_marker_path() { _hook_marker_path claude-review-marker "$1"; }
 hook_triage_marker_path() { _hook_marker_path claude-triage-marker "$1"; }
+
+# hook_session_marker <dir-name> <session_id>: the per-session file under
+# ${TMPDIR:-/tmp}/<dir-name>, the id with every non-alphanumeric as `_`. Prints
+# the path; the caller makes the directory. Consumers: safety/test-reminder,
+# docs/checkpoint, workflow/reload-guard, hook_session_model.
+hook_session_marker() {
+  printf '%s\n' "${TMPDIR:-/tmp}/$1/${2//[^a-zA-Z0-9]/_}"
+}
 
 # A file's modification time, in seconds since the epoch; 0 when it cannot be
 # read. `stat` disagrees across platforms and does NOT fail cleanly: on GNU

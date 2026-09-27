@@ -37,9 +37,9 @@
 #      The trailer is the third stage of the gate safety/proof-guard holds on
 #      the complete flip and the close, and it reads the issue the same way.
 # Code-vs-docs classification matches the docs/change-tracker hook (same
-# definition in both: a docs PATH, then a code extension winning over it, then
-# the docs basenames, kept in sync by hand, no second consumer shape yet); the
-# version-stamp carve-out below is the gate's alone and sits outside it.
+# definition in both: a docs PATH, then a code extension (hook_has_code_ext)
+# winning over it, then the docs basenames kept in sync by hand; the
+# version-stamp carve-out below is the gate's alone and sits outside it).
 # Fail open on anything that isn't clearly a violating commit.
 
 set -euo pipefail
@@ -147,6 +147,15 @@ for w in $commit_clause; do
       # must NOT swallow the pathspec after it (review 2026-07-25).
       case "$w" in *[mFtcC]) skip_next=1 ;; esac
       ;;
+    # A redirect is shell syntax, never an argument: a bare operator hands its
+    # target to the next token, an attached one carries it.
+    *[\<\>]*)
+      case "$(hook_redirect_word "$w")" in
+        bare) skip_next=1 ;;
+        attached) ;;
+        *) has_pathspec=1 ;;
+      esac
+      ;;
     *) has_pathspec=1 ;;
   esac
 done
@@ -228,9 +237,7 @@ if [ -n "$files" ]; then
     # repo keeps hooks/docs/*/run.sh, executable bash sitting under a docs
     # directory, and classifying it as docs would let a hook change commit with
     # no suite and no review marker.
-    case "$base" in
-      *.js|*.cjs|*.mjs|*.ts|*.jsx|*.tsx|*.sh|*.zsh|*.py|*.rb) is_doc=0 ;;
-    esac
+    if hook_has_code_ext "$base"; then is_doc=0; fi
     # Docs basenames are docs wherever they live, extension arm included.
     case "$base" in
       *.md|CHANGELOG|CHANGELOG.*|LICENSE|LICENSE.*) is_doc=1 ;;

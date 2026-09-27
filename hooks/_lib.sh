@@ -8,18 +8,25 @@
 # (the git-commit detection trio in lib/commit.sh); safety/proof-guard + safety/tree-guard +
 # safety/suite-guard + safety/release-taken (the two text strips); safety/commit-gate + docs/changelog-guard (hook_changelog_linter);
 # safety/proof-guard + safety/commit-gate (hook_issue_has_proof);
-# safety/tree-guard + safety/suite-guard (hook_has_escape);
+# safety/tree-guard + safety/suite-guard (hook_has_escape); safety/commit-gate +
+# safety/tree-guard (hook_redirect_word); safety/tree-guard + hook_find_git_commit
+# (hook_fold_redirect_amp);
 # manager/resolver + manager/profile (hook_session_model, hook_model_tier,
 # hook_manager_config); safety/commit-language + safety/release-taken
 # (HOOK_VERSION_RE); every hook that keys a marker or a cache file
 # (hook_sha1 and the two marker paths in lib/markers.sh, plus scripts/review-marker.sh and
-# scripts/triage-marker.sh); every hook's payload read, hook_session_model's two model reads + safety/release-taken (hook_jq);
+# scripts/triage-marker.sh); safety/test-reminder + docs/checkpoint +
+# workflow/reload-guard + hook_session_model (hook_session_marker); every
+# hook's payload read, hook_session_model's two model reads + safety/release-taken (hook_jq);
 # safety/release-taken (wk_repo_slug, off the slug seam); safety/commit-gate
 # (wk_linter_copies, wk_workflows_run_copy, wk_changelog_job_rewrite and
 # wk_checks_template, off the changelog-job seam); safety/commit-gate +
 # manager/spawn-guard + safety/proof-guard + safety/tree-guard
 # (hook_pretool_notice); safety/commit-gate + safety/proof-guard
-# (hook_wait_deadline, hook_end_tree, hook_is_test_path); safety/commit-gate +
+# (hook_wait_deadline, hook_end_tree, hook_is_test_path, which
+# safety/test-reminder reads too); safety/commit-gate + safety/test-reminder
+# (hook_is_code_path); safety/commit-gate + docs/change-tracker
+# (hook_has_code_ext, which hook_is_code_path reads too); safety/commit-gate +
 # safety/suite-guard (hook_test_package_dir); no caller here yet for the
 # platform seam (hook_uname_s, hook_is_macos, hook_is_windows, hook_is_linux).
 #

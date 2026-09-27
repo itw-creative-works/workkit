@@ -3,8 +3,9 @@
 # the family a model id belongs to, and the effective three-layer config.
 # SOURCED by hooks/_lib.sh, never executed, and it runs nothing at load: it
 # defines functions and sets nothing. It reads WORKKIT_DIR, hook_jq and
-# hook_jq_default from the entry, whose header carries hook_session_model's
-# duplication note (the personal hooks hold its twin).
+# hook_jq_default from the entry, and hook_session_marker from lib/markers.sh;
+# the entry's header carries hook_session_model's duplication note (the
+# personal hooks hold its twin).
 
 # hook_session_model <session_id> <transcript_path>: the session's CURRENT
 # model, resolved the only honest way (the accuracy contract lives in
@@ -22,10 +23,9 @@
 hook_session_model() {
   HOOK_SESSION_MODEL=""
   HOOK_SESSION_MODEL_SRC="none"
-  local session_id="$1" transcript_path="${2:-}" safe state_file
+  local session_id="$1" transcript_path="${2:-}" state_file
   [ -n "$session_id" ] || return 1
-  safe="${session_id//[^a-zA-Z0-9]/_}"
-  state_file="${TMPDIR:-/tmp}/claude-session-state/${safe}.json"
+  state_file="$(hook_session_marker claude-session-state "$session_id").json"
   if [ -f "$state_file" ]; then
     # The statusline-shape trust gate (model/thinking present) exists for the
     # cache's EFFORT fields; for the model itself, present is trustworthy and

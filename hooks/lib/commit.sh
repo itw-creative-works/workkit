@@ -1,7 +1,8 @@
 #!/bin/bash
 # hooks/lib/commit.sh: the command-text reads the guards share: the heredoc and
-# quote strips, the `NAME=1` escape, the git-commit finder with its two internal
-# helpers, and hook_changelog_linter, the path to the engine's CHANGELOG linter.
+# quote strips, the `NAME=1` escape, the redirect `&` fold, the git-commit
+# finder with its two internal helpers, the redirect-word test, and
+# hook_changelog_linter, the path to the engine's CHANGELOG linter.
 # SOURCED by hooks/_lib.sh, never executed, and it runs nothing at load: it
 # defines functions and sets nothing. It reads no name of the entry's; the
 # linter's path is resolved from this file's own location.
@@ -57,6 +58,17 @@ hook_strip_quotes() {
 # it the QUOTE STRIPPED text: a mention inside a body is not an assignment.
 hook_has_escape() {
   printf '%s' "$1" | grep -Eq '(^|[^[:alnum:]_])'"$2"'=1([^[:alnum:]_]|$)'
+}
+
+# hook_fold_redirect_amp <text>: <text> with the `&` of a redirect folded away
+# (`>&` and `&>` to `>`, `<&` to `<`), so a split on `;|&` never cuts a clause at
+# a redirect. Consumers: hook_find_git_commit, safety/tree-guard.
+hook_fold_redirect_amp() {
+  local t="$1"
+  t=${t//>&/>}
+  t=${t//<&/<}
+  t=${t//&>/>}
+  printf '%s' "$t"
 }
 
 # _hook_count_placeholders <text>: count the `_hookq_` placeholders the quote
@@ -142,6 +154,9 @@ hook_find_git_commit() {
   local src stripped clause sub w pre expect saw_eval nc ci pi=0 had_glob=1
   src=$(hook_strip_heredocs "$1")
   stripped=$(hook_strip_quotes "$src")
+  # The `&` of a redirect (`2>&1`, `&>f`, `<&3`) belongs to the redirect, never
+  # separates a clause: fold it away so the split below keeps what follows.
+  stripped=$(hook_fold_redirect_amp "$stripped")
   # No glob expansion during the word split below; restore on return.
   case $- in *f*) had_glob=0 ;; esac
   set -f
@@ -258,6 +273,24 @@ $(printf '%s' "$stripped" | tr ';|&' '\n')
 EOF
   [ "$had_glob" -eq 1 ] && set +f
   return 0
+}
+
+# hook_redirect_word <word>: a QUOTE STRIPPED word that is a shell redirect.
+# Prints `bare` when its target is the next word (`>`, `2>`, `<<<`, `&>>`),
+# `attached` when the word carries it (`2>&1`, `>file`, `<<<msg`); returns 1
+# for anything else. Consumers: safety/commit-gate, safety/tree-guard.
+hook_redirect_word() {
+  local fd op
+  fd="${1%%[!0-9]*}"
+  op="${1#"$fd"}"
+  if [ -z "$fd" ]; then
+    case "$op" in '&>'*) op="${op#&}" ;; esac
+  fi
+  case "$op" in
+    '>'|'>>'|'>|'|'<'|'<>'|'<<'|'<<-'|'<<<') printf '%s\n' bare ;;
+    '>'*|'<'*) printf '%s\n' attached ;;
+    *) return 1 ;;
+  esac
 }
 
 # Resolve the workflow engine's CHANGELOG linter: the single home for the

@@ -64,9 +64,9 @@ while IFS= read -r line; do
   base="$(basename "$path")"
 
   # Code-vs-docs classification matches the safety/commit-gate hook (same
-  # definition in both: a docs PATH, then a code extension winning over it,
-  # then the docs basenames, kept in sync by hand; the .workkit arm is this
-  # hook's alone).
+  # definition in both: a docs PATH, then a code extension (hook_has_code_ext)
+  # winning over it, then the docs basenames kept in sync by hand; the
+  # .workkit arm is this hook's alone).
   is_doc=0
   case "$path" in
     docs/*|*/docs/*) is_doc=1 ;;
@@ -74,9 +74,7 @@ while IFS= read -r line; do
   # A code EXTENSION wins over the docs path: this repo keeps hooks/docs/*/run.sh,
   # executable bash sitting under a docs directory, and an edit to one of those
   # is exactly the uncommitted code this hook watches for.
-  case "$base" in
-    *.js|*.cjs|*.mjs|*.ts|*.jsx|*.tsx|*.sh|*.zsh|*.py|*.rb) is_doc=0 ;;
-  esac
+  if hook_has_code_ext "$base"; then is_doc=0; fi
   case "$path" in
     # Session state, never committed. It has its own nudge below, and it is
     # never the "uncommitted code" this hook is watching for. After the

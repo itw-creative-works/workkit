@@ -51,7 +51,11 @@ check_qa_tests() {
   # (tests/run.js runs the whole suite) is named, never executed.
   qa_run=()
   qa_skipped=""
+  qa_unprovable=""
   qa_helpers=""
+  # node --test proves a file only when it names node:test or runs itself;
+  # judged from the text, since a self-running suite reports as one test.
+  qa_provable_re="[\"']node:test[\"']|require\.main[[:space:]]*===[[:space:]]*module"
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     hook_is_test_path "$path" || continue
@@ -61,13 +65,22 @@ check_qa_tests() {
       continue
     fi
     case "$path" in
-      *.js|*.mjs|*.cjs) qa_run+=("$path") ;;
+      *.js|*.mjs|*.cjs)
+        if grep -Eq "$qa_provable_re" "$qa_root/$path" 2>/dev/null; then
+          qa_run+=("$path")
+        else
+          qa_unprovable="$qa_unprovable $path"
+        fi
+        ;;
       *) qa_skipped="$qa_skipped $path" ;;
     esac
   done <<<"$(qa_touched_paths "$qa_root" "$qa_base")"
   qa_not_run=""
   if [ -n "$qa_skipped" ]; then
     qa_not_run=" Not run, since node --test runs only .js, .mjs and .cjs:${qa_skipped}."
+  fi
+  if [ -n "$qa_unprovable" ]; then
+    qa_not_run="${qa_not_run} Not run, since node --test cannot prove a file that neither names node:test nor runs itself (a describe or it file for another runner, a module that only exports its cases):${qa_unprovable}."
   fi
   if [ -n "$qa_helpers" ]; then
     qa_not_run="${qa_not_run} Touched under a test folder but not a test file, so not run:${qa_helpers}."

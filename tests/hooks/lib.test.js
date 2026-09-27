@@ -236,6 +236,36 @@ const run = async () => {
     assertEq(path.posix.normalize(out.stdout.trim()), engine, `got: ${out.stdout}`);
   });
 
+  group('_lib.sh: hook_redirect_word');
+
+  // One judgment per word, spelled the way a guard's walk hands it over: the
+  // quote strip has already turned a quoted span into `_hookq_`.
+  const redirectVerdicts = (words) => runLib(`for w in ${words.map((w) => `'${w}'`).join(' ')}; do `
+    + 'printf \'%s=%s\\n\' "$w" "$(hook_redirect_word "$w" || echo no)"; done');
+
+  await test('a bare operator hands its target to the next word', () => {
+    const words = ['>', '>>', '<', '<<<', '&>', '&>>', '>|', '2>', '2>>', '0<', '<<'];
+    const out = redirectVerdicts(words);
+    assertEq(out.stdout.trim(), words.map((w) => `${w}=bare`).join('\n'), `got: ${out.stdout}|${out.stderr}`);
+  });
+
+  await test('an attached operator carries its target', () => {
+    const words = ['2>&1', '>file', '2>>err', '&>all', '0<in', '3>&-', '<<<msg', '>_hookq_'];
+    const out = redirectVerdicts(words);
+    assertEq(out.stdout.trim(), words.map((w) => `${w}=attached`).join('\n'), `got: ${out.stdout}|${out.stderr}`);
+  });
+
+  await test('a plain argument or a quoted placeholder is no redirect', () => {
+    const words = ['app.js', '-m', '-', '2', '_hookq_', 'a>b', '&'];
+    const out = redirectVerdicts(words);
+    assertEq(out.stdout.trim(), words.map((w) => `${w}=no`).join('\n'), `got: ${out.stdout}|${out.stderr}`);
+  });
+
+  await test("hook_fold_redirect_amp: a redirect's & is folded, a clause separator is kept", () => {
+    const out = runLib("hook_fold_redirect_amp 'git clean 2>&1 -f &>/dev/null <&3 & ls && pwd'");
+    assertEq(out.stdout, 'git clean 2>1 -f >/dev/null <3 & ls && pwd', `got: ${out.stdout}|${out.stderr}`);
+  });
+
   group('_lib.sh: hook_pretool_notice');
 
   await test('prints the two-field JSON a PreToolUse hook exiting 0 is heard by', () => {
@@ -279,6 +309,21 @@ const run = async () => {
       'a.test.js,tests/helpers.js,test/run.js,__tests__/x.js,pkg/__tests__/x.js,pkg/test/x.js', `got: ${out.stdout}|${out.stderr}`);
   });
 
+  await test('hook_is_code_path: a code extension, never a test path, a config file or the attic', () => {
+    const cases = ['lib/x.js', 'run.sh', 'a/b.tsx', 'tool.py', 'README.md', 'data.json', 'a.test.js', 'tests/helpers.js',
+      'eslint.config.js', '_attic/old.js', 'pkg/_attic/old.sh'];
+    const out = runLib(`for p in ${cases.join(' ')}; do hook_is_code_path "$p" && echo "$p"; done; true`);
+    assertEq(out.stdout.trim().split('\n').join(','), 'lib/x.js,run.sh,a/b.tsx,tool.py', `got: ${out.stdout}|${out.stderr}`);
+  });
+
+  await test('hook_has_code_ext: the code extensions, read off the basename alone', () => {
+    const cases = ['x.js', 'x.cjs', 'x.mjs', 'x.ts', 'x.jsx', 'x.tsx', 'run.sh', 'rc.zsh', 'tool.py', 'gem.rb',
+      'README.md', 'data.json', 'x.json.bak', 'Makefile'];
+    const out = runLib(`for p in ${cases.join(' ')}; do hook_has_code_ext "$p" && echo "$p"; done; true`);
+    assertEq(out.stdout.trim().split('\n').join(','), 'x.js,x.cjs,x.mjs,x.ts,x.jsx,x.tsx,run.sh,rc.zsh,tool.py,gem.rb',
+      `got: ${out.stdout}|${out.stderr}`);
+  });
+
   await test('hook_test_package_dir: the nearest package declaring a test script, below the root', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lib-pkgdir-'));
     for (const d of ['pkg/src/deep', 'pkg/bare/src', 'other', 'node_modules/x']) fs.mkdirSync(path.join(root, d), { recursive: true });
@@ -315,6 +360,11 @@ const run = async () => {
     assertEq(out.stdout.trim(),
       shellPath(path.join(TMP, 'claude-triage-marker', sha1('/repos/thing'))),
       `got: ${out.stdout}|${out.stderr}`);
+  });
+
+  await test('hook_session_marker is the named dir plus the session id with every non-alphanumeric as _', () => {
+    const out = runLib('hook_session_marker workkit-thing "ab-12/c.d e"', { TMPDIR: shellPath(TMP) });
+    assertEq(out.stdout.trim(), `${shellPath(TMP)}/workkit-thing/ab_12_c_d_e`, `got: ${out.stdout}|${out.stderr}`);
   });
 
   await test('no digest tool: a marker path is refused, never half-built', () => {

@@ -97,6 +97,19 @@ const run = async () => {
     cleanup(dir);
   });
 
+  await test('a new non-ASCII file name is named unquoted: exit 2', () => {
+    // git quotes a non-ASCII path in octal escapes by default, so the bounce
+    // would name a file that does not exist under that spelling.
+    const dir = mkRepo();
+    stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
+    stage(dir, 'café.js', 'module.exports = 1;\n');
+    touchMarker(dir);
+    const { code, stderr } = runHook(dir, 'git commit -m "x"');
+    assertEq(code, 2, 'new source without tests must block');
+    assert(stderr.includes('café.js'), `names the file as spelled, got: ${stderr}`);
+    cleanup(dir);
+  });
+
   return summary();
 };
 

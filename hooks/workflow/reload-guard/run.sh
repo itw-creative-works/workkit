@@ -40,10 +40,10 @@ session_id=$(printf '%s' "$input" | hook_jq -r '.session_id // empty' 2>/dev/nul
 
 ROOT="${RELOAD_GUARD_ROOT:-$(cd "${BASH_SOURCE[0]%/*}/../../.." && pwd -P)}"
 
-STATE_DIR="${TMPDIR:-/tmp}/workkit-reload-guard"
-SAFE="${session_id//[^a-zA-Z0-9]/_}"
-STAMP="$STATE_DIR/$SAFE.stamp"
-NOTIFIED="$STATE_DIR/$SAFE.notified"
+MARKER=$(hook_session_marker workkit-reload-guard "$session_id")
+STATE_DIR="${MARKER%/*}"
+STAMP="$MARKER.stamp"
+NOTIFIED="$MARKER.notified"
 
 # The load-time file surfaces, one path per line, sorted. The LIST is part of
 # the fingerprint as well as the mtimes: a brand-new agent or skill file has no

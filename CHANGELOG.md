@@ -10,6 +10,13 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 ### Added
 
 - [#337](../../issues/337) - A nested package with its own `test` script runs it at the commit gate, after the root's and under the same deadline, whenever the commit changes a file inside its folder; an untouched package never runs, and `safety/suite-guard` now reads the nearest package's script.
+- [#338](../../issues/338) - A new hook, `safety/test-reminder`, asks once per file per session, never blocking, whether a written code file that no test names needs a test; a "no" is recorded in the `Proof:` line.
+
+### Fixed
+
+- [#339](../../issues/339) - The flip to `status:qa` names a touched test file `node --test` cannot prove (one that neither imports `node:test` nor runs itself, such as a describe or it file) as not run, never as green and never as a block.
+- [#340](../../issues/340) - A shell redirect after `git commit` (`2>&1`, `> out.txt`) no longer reads as a pathspec at the commit gate, so a version-only release commit piped through `tail` passes as bookkeeping instead of gating as code, and a heredoc-fed `-F -` commit is judged on its index like any other.
+- [#341](../../issues/341) - The commit gate's new-file check reads staged names unquoted, so a new source file with a non-ASCII name (`café.js`) is caught and named as written.
 
 ## [0.60.0] - 2026-09-26
 

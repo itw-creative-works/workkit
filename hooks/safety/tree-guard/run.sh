@@ -58,6 +58,7 @@ cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
 # is file content, and a quoted span is data: neither is a command.
 src=$(hook_strip_heredocs "$cmd")
 stripped=$(hook_strip_quotes "$src")
+stripped=$(hook_fold_redirect_amp "$stripped")
 
 # Drop from a clause what is not an ARGUMENT: a redirection (with its target,
 # whether attached as `>/tmp/out` or sitting in the next token) and everything
@@ -73,8 +74,13 @@ tg_strip_noise() {
     w="$1"; shift
     case "$w" in
       \#*) break ;;
-      *'>'|*'<') [ $# -ge 1 ] && shift ;;
-      *'>'*|*'<'*) ;;
+      *'>'*|*'<'*)
+        case "$(hook_redirect_word "$w")" in
+          bare) [ $# -ge 1 ] && shift ;;
+          attached) ;;
+          *) out+=("$w") ;;
+        esac
+        ;;
       *) out+=("$w") ;;
     esac
   done

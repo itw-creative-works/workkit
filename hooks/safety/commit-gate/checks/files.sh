@@ -14,28 +14,18 @@
 # and only for staged adds (pathspec commits are already gated strictly).
 check_new_files() {
   if [ "$bookkeeping" -eq 0 ] && [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
-    added=$(git diff --cached --name-only --diff-filter=A 2>/dev/null || true)
+    added=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=A 2>/dev/null || true)
     new_code=""
     while IFS= read -r path; do
       [ -n "$path" ] || continue
-      if hook_is_test_path "$path"; then continue; fi
-      case "$path" in
-        _attic/*|*/_attic/*) continue ;;
-      esac
-      base="$(basename "$path")"
-      case "$base" in
-        *.config.*) continue ;;
-      esac
-      case "$base" in
-        *.js|*.cjs|*.mjs|*.ts|*.jsx|*.tsx|*.sh|*.zsh|*.py|*.rb) new_code="$new_code $path" ;;
-      esac
+      if hook_is_code_path "$path"; then new_code="$new_code $path"; fi
     done <<<"$added"
     if [ -n "$new_code" ]; then
       # A test file must be PRESENT in the commit: --diff-filter=d excludes
       # deletions, so removing tests/old.test.js cannot satisfy the proxy.
-      files_present=$(git diff --cached --name-only --diff-filter=d 2>/dev/null || true)
+      files_present=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=d 2>/dev/null || true)
       if [ "$has_all_flag" -eq 1 ]; then
-        files_present=$(printf '%s\n%s' "$files_present" "$(git diff --name-only --diff-filter=d 2>/dev/null || true)")
+        files_present=$(printf '%s\n%s' "$files_present" "$(git -c core.quotePath=false diff --name-only --diff-filter=d 2>/dev/null || true)")
       fi
       has_test_file=0
       while IFS= read -r path; do
