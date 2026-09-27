@@ -34,12 +34,14 @@ block() {
   exit 2
 }
 
-# A stand-down speaks on the channel a PreToolUse hook exiting 0 is heard on
-# (stderr reaches only the debug log): systemMessage plus additionalContext and
-# no permissionDecision, so the commit's fate is unchanged.
+# A stand-down collects its line; on exit 0 the trap prints them as ONE notice,
+# since the harness reads a single stdout JSON object (stderr reaches only the
+# debug log). A bounce exits 2, so it prints none.
+gate_notices=""
 stand_down() {
-  hook_pretool_notice "$1"
+  if [ -n "$gate_notices" ]; then gate_notices="$gate_notices"$'\n'"$1"; else gate_notices="$1"; fi
 }
+trap 'if [ "$?" -eq 0 ] && [ -n "$gate_notices" ]; then hook_pretool_notice "$gate_notices"; fi' EXIT
 
 # A commit wrapped in an interpreter string (`sh -c "git commit …"`,
 # `eval "git commit …"`) carries its flags, message, and pathspecs inside one
@@ -366,7 +368,7 @@ fi
 # A red run, or one the budget cannot finish, bounces naming the folder.
 run_gate_suite() {
   gate_suite="the test suite"
-  gate_raise="Run \`WORKKIT_SUITE=1 npm test\` yourself"
+  gate_raise="Run \`npm test\` yourself"
   if [ -n "$1" ]; then gate_suite="the test suite of $1"; gate_raise="$gate_raise from $1"; fi
   gate_raise="$gate_raise; if this repo's suite genuinely needs longer, raise WORKKIT_GATE_TEST_DEADLINE in this repo's .claude/settings.json env block (2900s at most) and restart the session."
   case "$deadline" in
@@ -405,7 +407,14 @@ deadline="${WORKKIT_GATE_TEST_DEADLINE:-1500}"
 # is an allow, and a misconfigured raise must still bounce loudly.
 [ "$deadline" -gt 2900 ] 2>/dev/null && deadline=2900
 if [ "$has_code" -eq 1 ] && [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
-  run_gate_suite ""
+  # A green run proved the tree this commit carries (the real index); the gate's
+  # own green run records the working tree, so a hand run right after is a repeat.
+  if hook_suite_proved "$repo_root" "$(hook_suite_index_tree "$repo_root")"; then
+    stand_down "commit-gate: suite proved by the run on this tree, skipped"
+  else
+    run_gate_suite ""
+    hook_suite_marker_write "$repo_root" || true
+  fi
 elif [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
   # The stand-down is deliberate but never silent: a repo that defines a suite
   # hears why this commit did not run it.

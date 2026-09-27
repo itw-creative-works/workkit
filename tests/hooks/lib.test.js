@@ -2,7 +2,7 @@
 // Tests for hooks/_lib.sh, the helper library every hook sources: one group per
 // helper, from the platform seam and hook_sha1 through hook_jq, the manager
 // config, the changelog linter path, the notice, the deadline wait, the
-// test-path shapes and the marker paths.
+// test-path shapes, the marker paths and the suite record.
 
 const fs = require('fs');
 const os = require('os');
@@ -399,6 +399,13 @@ const run = async () => {
       `got: ${out.stdout}|${out.stderr}`);
   });
 
+  await test('hook_suite_marker_path is the suite marker dir plus the sha of the root', () => {
+    const out = runLib('hook_suite_marker_path /repos/thing', { TMPDIR: shellPath(TMP) });
+    assertEq(out.stdout.trim(),
+      shellPath(path.join(TMP, 'claude-suite-marker', sha1('/repos/thing'))),
+      `got: ${out.stdout}|${out.stderr}`);
+  });
+
   await test('hook_session_marker is the named dir plus the session id with every non-alphanumeric as _', () => {
     const out = runLib('hook_session_marker workkit-thing "ab-12/c.d e"', { TMPDIR: shellPath(TMP) });
     assertEq(out.stdout.trim(), `${shellPath(TMP)}/workkit-thing/ab_12_c_d_e`, `got: ${out.stdout}|${out.stderr}`);
@@ -411,6 +418,106 @@ const run = async () => {
     assert(out.stdout.includes('p=[]'), `no path at all, got: ${out.stdout}`);
     assert(!out.stdout.includes('rc=0'), `and says so, got: ${out.stdout}`);
     fs.rmSync(world, { recursive: true, force: true });
+  });
+
+  group('_lib.sh: the suite record');
+
+  const git = (dir, ...args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' }).stdout.trim();
+  const treeHash = (dir) => runLib(`hook_tree_hash "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP) }).stdout.trim();
+
+  await test('hook_tree_hash: the working tree as write-tree names it, untracked in, ignored out, index untouched', () => {
+    const dir = mkTmp('lib-tree-');
+    git(dir, 'init', '-q');
+    fs.writeFileSync(path.join(dir, '.gitignore'), 'ignored.txt\n');
+    fs.writeFileSync(path.join(dir, 'a.js'), 'one\n');
+    git(dir, 'add', '-A');
+    git(dir, 'commit', '-q', '-m', 'seed');
+    fs.writeFileSync(path.join(dir, 'a.js'), 'two\n');
+    const edited = treeHash(dir);
+    assert(/^[0-9a-f]{40,64}$/.test(edited), `a tree id, got: ${edited}`);
+    assertEq(git(dir, 'diff', '--cached', '--name-only'), '', 'the real index is never touched');
+    assertEq(git(dir, 'status', '--porcelain'), 'M a.js', 'and the edit is still unstaged');
+    fs.writeFileSync(path.join(dir, 'ignored.txt'), 'x\n');
+    assertEq(treeHash(dir), edited, 'an ignored file never counts');
+    fs.writeFileSync(path.join(dir, 'new.js'), 'x\n');
+    const untracked = treeHash(dir);
+    assert(untracked !== edited, 'an untracked file changes the hash');
+    git(dir, 'add', '-A');
+    assertEq(untracked, git(dir, 'write-tree'), 'the hash is what a real add -A then write-tree names');
+  });
+
+  await test("hook_tree_hash: a same-size edit in the index's own second is still seen", () => {
+    const dir = mkTmp('lib-racy-');
+    git(dir, 'init', '-q');
+    fs.writeFileSync(path.join(dir, 'a.js'), 'one\n');
+    git(dir, 'add', '-A');
+    git(dir, 'commit', '-q', '-m', 'seed');
+    fs.writeFileSync(path.join(dir, 'a.js'), 'two\n');
+    // Past the index's second, so a copy stamped now would trust the stale stat.
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1100);
+    const index = path.join(mkTmp('lib-racy-index-'), 'index');
+    const fresh = { ...process.env, GIT_INDEX_FILE: index };
+    spawnSync('git', ['add', '-A'], { cwd: dir, env: fresh });
+    const want = spawnSync('git', ['write-tree'], { cwd: dir, env: fresh, encoding: 'utf8' }).stdout.trim();
+    assertEq(treeHash(dir), want, 'the edited content, not the stat cache');
+  });
+
+  await test("hook_suite_index_tree: the real index's write-tree id, never the edit on disk", () => {
+    const dir = mkTmp('lib-index-tree-');
+    git(dir, 'init', '-q');
+    fs.writeFileSync(path.join(dir, 'a.js'), 'one\n');
+    git(dir, 'add', '-A');
+    const staged = git(dir, 'write-tree');
+    fs.writeFileSync(path.join(dir, 'a.js'), 'two\n');
+    const out = runLib(`hook_suite_index_tree "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP) }).stdout.trim();
+    assertEq(out, staged, 'the staged content names the tree');
+    assert(out !== treeHash(dir), 'and the unstaged edit is not in it');
+  });
+
+  await test('hook_suite_proved: true only when the marker holds the tree it is handed', () => {
+    const dir = mkTmp('lib-proved-');
+    git(dir, 'init', '-q');
+    const env = { TMPDIR: shellPath(TMP) };
+    const marker = runLib(`hook_suite_marker_path "${shellPath(dir)}"`, env).stdout.trim();
+    const proved = (tree) => runLib(`hook_suite_proved "${shellPath(dir)}" "${tree}"`, env).code === 0;
+    const id = '1111111111111111111111111111111111111111';
+    assert(!proved(id), 'no marker proves nothing');
+    fs.mkdirSync(path.dirname(marker), { recursive: true });
+    fs.writeFileSync(marker, `${id}\n`);
+    assert(proved(id), 'the recorded tree is proved');
+    assert(!proved('2222222222222222222222222222222222222222'), 'another tree is not');
+    assert(!proved(''), 'an empty tree (a failed hash) is never a match');
+    fs.rmSync(marker);
+  });
+
+  await test('hook_suite_root_run: the root suite from the root or a nested dir, never a nested package npm run', () => {
+    const dir = mkTmp('lib-rootrun-');
+    git(dir, 'init', '-q');
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node tests/run.js' } }));
+    fs.mkdirSync(path.join(dir, 'sub'));
+    fs.writeFileSync(path.join(dir, 'sub', 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+    const ask = (cmd, cwd) => runLib(`hook_suite_root_run "${cmd}" "${shellPath(dir)}" "${shellPath(cwd)}"`).stdout.trim();
+    assertEq(ask('npm test', dir), 'full', "npm at the root runs the root's suite");
+    assertEq(ask('node tests/run.js', dir), 'full', "the root's script run directly");
+    assertEq(ask('npm test', path.join(dir, 'sub')), '', "npm inside a nested tested package runs that package's suite");
+    assertEq(ask('cd .. && node tests/run.js', path.join(dir, 'sub')), 'full', "the root's script from a nested dir");
+  });
+
+  await test('hook_suite_exact_run: only the whole command, at the root, is the suite', () => {
+    const dir = mkTmp('lib-exactrun-');
+    git(dir, 'init', '-q');
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node tests/run.js' } }));
+    fs.mkdirSync(path.join(dir, 'sub'));
+    fs.writeFileSync(path.join(dir, 'sub', 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+    const ask = (cmd, cwd = dir) => runLib(`hook_suite_exact_run "${cmd}" "${shellPath(dir)}" "${shellPath(cwd)}"`).stdout.trim();
+    for (const cmd of ['npm test', 'npm run test', 'npm t', 'node tests/run.js', ' npm test ']) {
+      assertEq(ask(cmd), 'full', `${cmd}: the suite, its exit status the suite's`);
+    }
+    for (const cmd of ['cd sub && npm test', 'npm test -w sub', 'npm test --workspace=sub', 'npm --prefix=sub test',
+      'npm test tests/a.test.js', 'npm test && git push', 'npm test 2>&1 | tail -20']) {
+      assertEq(ask(cmd), '', `${cmd}: refused`);
+    }
+    assertEq(ask('node tests/run.js', path.join(dir, 'sub')), '', 'the root script from inside a nested tested package');
   });
 
   group('_lib.sh: the marker scripts');

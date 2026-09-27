@@ -55,7 +55,7 @@ hook_is_code_path() {
 # hook_test_package_dir <root> <path>: the nearest folder at or above <path>
 # (relative to <root>), short of the root, whose package.json declares a test
 # script, relative to <root>. Nothing means the root's; nothing under
-# node_modules. Consumers: safety/commit-gate, safety/suite-guard.
+# node_modules. Consumers: safety/commit-gate, _hook_suite_at_root.
 hook_test_package_dir() {
   local root dir
   root="$1"

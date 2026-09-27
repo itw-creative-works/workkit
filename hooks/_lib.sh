@@ -74,3 +74,5 @@ hook_jq_default() { wk_jq_default "$@"; }
 . "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/lib/deadline.sh"
 # shellcheck source=./lib/paths.sh
 . "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/lib/paths.sh"
+# shellcheck source=./lib/suite.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/lib/suite.sh"

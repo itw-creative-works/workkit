@@ -109,13 +109,17 @@ const pkg = (version, extra) => `${JSON.stringify({
   name: 'fixture', version, scripts: { test: `touch ${SENTINEL} && exit 1` }, ...extra,
 }, null, 2)}\n`;
 const suiteRan = (dir) => fs.existsSync(path.join(dir, SENTINEL));
+// The green variant: the same sentinel, then a pass.
+const greenPkg = (version) => `${JSON.stringify({
+  name: 'fixture', version, scripts: { test: `touch ${SENTINEL}` },
+}, null, 2)}\n`;
 
 // package.json and a source file already committed, so each case stages only
 // what it is about, and so the version bumps a case stages have a HEAD copy to
 // be judged against.
-const mkReleaseRepo = () => {
+const mkReleaseRepo = (manifest = pkg('1.0.0')) => {
   const dir = mkRepo();
-  stage(dir, 'package.json', pkg('1.0.0'));
+  stage(dir, 'package.json', manifest);
   stage(dir, 'app.js', 'const x = 1;\n');
   execSync('git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
   return dir;
@@ -138,5 +142,5 @@ const ENTRY = CHANGELOG(`- ${ISSUE} - The thing the issue asked for.`);
 module.exports = {
   HOOK, WORKFLOW_DIR, LIB, TMP, PLUGIN_ROOT,
   mkRepo, stage, stageDeep, skipWithoutDigest, markerPath, runSkillLine, touchMarker, dropMarker,
-  runHook, standDownMessage, cleanup, pkg, suiteRan, mkReleaseRepo, CHANGELOG, ISSUE, ENTRY,
+  runHook, standDownMessage, cleanup, pkg, greenPkg, suiteRan, mkReleaseRepo, CHANGELOG, ISSUE, ENTRY,
 };

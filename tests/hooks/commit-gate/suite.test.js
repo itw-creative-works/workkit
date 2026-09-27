@@ -1,5 +1,5 @@
 // Tests for hooks/safety/commit-gate: the test suite, which must pass and runs
-// only for commits carrying code.
+// only for commits carrying code, and the suite record it skips on and writes.
 // The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
 
 const path = require('path');
@@ -7,7 +7,11 @@ const fs = require('fs');
 const { spawnSync, execSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { SYSTEM_BASH } = require('../../lib/platform');
-const { skipWithoutDigest, HOOK, mkRepo, stage, stageDeep, touchMarker, dropMarker, runHook, cleanup, pkg, suiteRan, mkReleaseRepo } = require('./helpers');
+const {
+  skipWithoutDigest, HOOK, TMP, mkRepo, stage, stageDeep, touchMarker, dropMarker, runHook, standDownMessage, cleanup,
+  pkg, greenPkg, suiteRan, mkReleaseRepo,
+} = require('./helpers');
+const { suiteMarkerPath, treeHash } = require('../../lib/suite-record');
 
 const run = async () => {
   skipWithoutDigest();
@@ -50,6 +54,8 @@ const run = async () => {
       { WORKKIT_GATE_TEST_DEADLINE: '5' });
     assertEq(code, 2, 'an unproven suite must block, never allow');
     assert(stderr.includes('deadline'), 'names the deadline as the reason');
+    assert(stderr.includes('Run `npm test` yourself'), `names the plain hand run, got: ${stderr}`);
+    assert(!stderr.includes('WORKKIT_SUITE'), `and no flag, got: ${stderr}`);
     assert(Date.now() - before < 15000, 'the gate decided well before the suite would have finished');
     assert(fs.existsSync(path.join(dir, 'gate.pid')), 'the suite had started before the deadline ended it');
     const pid = Number(fs.readFileSync(path.join(dir, 'gate.pid'), 'utf8').trim());
@@ -256,6 +262,88 @@ const run = async () => {
     const { code, stderr } = runHook(dir, 'git commit -m "chore: bump sub"');
     assertEq(code, 2, 'a nested package.json stays code');
     assert(suiteRan(dir), `the suite ran, got: ${stderr}`);
+    cleanup(dir);
+  });
+
+  group('commit-gate: the suite record');
+
+  // A code commit on the red fixture, reviewed, with the suite marker holding <tree>.
+  const codeCommit = (manifest, tree) => {
+    const dir = mkReleaseRepo(manifest);
+    stage(dir, 'app.js', 'const x = 2;\n');
+    touchMarker(dir);
+    if (tree !== undefined) {
+      fs.mkdirSync(path.dirname(suiteMarkerPath(TMP, dir)), { recursive: true });
+      fs.writeFileSync(suiteMarkerPath(TMP, dir), `${tree === 'current' ? treeHash(dir) : tree}\n`);
+    }
+    return dir;
+  };
+
+  await test('a marker holding this tree: the suite is skipped, out loud', () => {
+    const dir = codeCommit(pkg('1.0.0'), 'current');
+    const out = runHook(dir, 'git commit -m "feat: thing"');
+    assertEq(out.code, 0, `a proved tree needs no second run, got: ${out.stderr}`);
+    assertEq(standDownMessage(out), 'commit-gate: suite proved by the run on this tree, skipped', 'the skip line');
+    assert(!suiteRan(dir), 'the suite never ran');
+    cleanup(dir);
+  });
+
+  await test('a marker holding the disk tree while the index holds another: the suite runs', () => {
+    const dir = codeCommit(pkg('1.0.0'));
+    fs.writeFileSync(path.join(dir, 'app.js'), 'const x = 3;\n');
+    fs.mkdirSync(path.dirname(suiteMarkerPath(TMP, dir)), { recursive: true });
+    fs.writeFileSync(suiteMarkerPath(TMP, dir), `${treeHash(dir)}\n`);
+    const out = runHook(dir, 'git commit -m "feat: thing"');
+    assertEq(out.code, 2, `the staged tree was never proved, so the red suite blocks, got: ${out.stderr}`);
+    assert(suiteRan(dir), 'the suite ran');
+    assert(!out.stdout.includes('suite proved'), `no skip line, got: ${out.stdout}`);
+    cleanup(dir);
+  });
+
+  await test('two stand-downs in one run: one notice carrying both lines', () => {
+    const dir = mkReleaseRepo(greenPkg('1.0.0'));
+    stageDeep(dir, 'sub/package.json', pkg('1.0.0'));
+    execSync('git commit -q -m "sub" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+    stage(dir, 'app.js', 'const x = 2;\n');
+    touchMarker(dir);
+    fs.mkdirSync(path.dirname(suiteMarkerPath(TMP, dir)), { recursive: true });
+    fs.writeFileSync(suiteMarkerPath(TMP, dir), `${treeHash(dir)}\n`);
+    const out = runHook(dir, 'git commit -m "feat: x" app.js');
+    assertEq(out.code, 0, `a proved tree passes, got: ${out.stderr}`);
+    const msg = standDownMessage(out);
+    assert(msg.includes('commit-gate: suite proved by the run on this tree, skipped'), `the skip line, got: ${out.stdout}`);
+    assert(msg.includes('commit-gate: nested suites not run'), `and the pathspec line, got: ${out.stdout}`);
+    assert(!suiteRan(dir) && !suiteRan(path.join(dir, 'sub')), 'no suite ran');
+    cleanup(dir);
+  });
+
+  await test('a stale marker: the suite runs', () => {
+    const dir = codeCommit(pkg('1.0.0'), '0000000000000000000000000000000000000000');
+    assertEq(runHook(dir, 'git commit -m "feat: thing"').code, 2, 'the red suite blocks');
+    assert(suiteRan(dir), 'another tree is no proof of this one');
+    cleanup(dir);
+  });
+
+  await test('no marker: the suite runs', () => {
+    const dir = codeCommit(pkg('1.0.0'));
+    assertEq(runHook(dir, 'git commit -m "feat: thing"').code, 2, 'the red suite blocks');
+    assert(suiteRan(dir), 'nothing proved the tree');
+    cleanup(dir);
+  });
+
+  await test("the gate's green root run records the tree it proved", () => {
+    const dir = codeCommit(greenPkg('1.0.0'));
+    const { code, stderr } = runHook(dir, 'git commit -m "feat: thing"');
+    assertEq(code, 0, `green, got: ${stderr}`);
+    assert(suiteRan(dir), 'the suite ran');
+    assertEq(fs.readFileSync(suiteMarkerPath(TMP, dir), 'utf8'), `${treeHash(dir)}\n`, 'the marker holds the tree hash');
+    cleanup(dir);
+  });
+
+  await test('a red root run records nothing', () => {
+    const dir = codeCommit(pkg('1.0.0'));
+    runHook(dir, 'git commit -m "feat: thing"');
+    assert(!fs.existsSync(suiteMarkerPath(TMP, dir)), 'a red run proves nothing');
     cleanup(dir);
   });
 

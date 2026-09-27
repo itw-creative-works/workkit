@@ -48,7 +48,7 @@ Per group, by the file-handoff convention (`docs/agents.md`):
 
 - One group at a time onto the main tree: dependency order first, verified-first after that.
 - A landing is the MANAGER applying the group's worktree diff onto the main tree. Workers never commit, so that uncommitted diff is the group's whole output, and ship (§5) makes the batch's only commits.
-- The FULL suite is green after each landing before the next begins: the manager's one deliberate full run (`WORKKIT_SUITE=1 npm test`). A landing is not a commit, so the gate does not run there.
+- The FULL suite is green after each landing before the next begins: the manager's one deliberate full run, plain `npm test` (the guard passes the first run on a tree). A landing is not a commit, so the gate does not run there.
 - A red suite stops the queue and belongs to the group that just landed. Never start the next landing over a red suite.
 - A conflict surfaces at apply time. The landing group's crew resolves it on its own worktree, never patched blind on main.
 

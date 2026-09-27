@@ -102,7 +102,9 @@ gh issue edit <N> --remove-label status:building,agent:working --add-label statu
 
 - `agent:working` comes off with the flip: the agent is done and the wait is the owner's. The assignee stays, and the work stays in that tree.
 - Do not ship, and do not ask in chat whether to ship. The owner's word runs [workkit:ship](../ship/SKILL.md), and asking for it asks them to approve their own gate (spec § Labels).
-- A failed check comes back here: fix it in place and re-comment; the label does not move. While an item sits in qa the tree holds unshipped work, so the next item waits.
+- A failed check comes back here: fix it in place and re-comment; the label does not move.
+- When the parked issue's batch has more items, claim and build the next one. The batch is the plan in `.workkit/agents/session.md`, or the Batches bullet of `docs/project-state.md` § Queue semantics when no plan is written.
+- The commit word comes once, when the whole batch is parked. Commit and ship still wait on the owner's word; the batch only decides what rides it.
 
 ### The pass: only the owner's word moves it on
 

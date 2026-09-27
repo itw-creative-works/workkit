@@ -6,7 +6,7 @@ disallowed-tools: AskUserQuestion
 
 # Status: tell, don't do
 
-**Read-only.** A plain-language answer about the open issues, never an action on them.
+**Read-only on the board.** A plain-language answer about the open issues, never an action on them.
 
 ## Modes
 
@@ -32,8 +32,8 @@ One query does it: `gh issue list --state open --json number,title,labels,assign
    - This section asks the most of you. The tree holds their work, and nothing else finishes until they are checked.
 3. **Waiting on you**: `status:blocked` issues. Name the actual question for each.
 4. **In flight**: `status:building` issues. Say who and what.
-5. **Up next**: `status:specced` issues, grouped into themed BATCHES of roughly 3–8 so the owner can authorize a batch at once.
-   - Group by dependency chains first, then by a shared seam or surface, then by the otherwise-alike. Each batch carries one line of why-together. An item that groups with nothing stands alone.
+5. **Up next**: `status:specced` issues, grouped into BATCHES in build order, so the owner can authorize a batch at once. What makes a batch has one home: `docs/project-state.md` § Queue semantics, the Batches bullet.
+   - Each batch carries one line of why-together.
    - Order the batches, and the items inside each, by priority: `priority:high`, then unlabeled (= normal), then `priority:low`.
    - Within one priority, order by dependency, risk, and reviewability. Blockers first, then bugs, then shared seams, then dependent feature work.
    - A shared seam is the file or module several queued items all touch.
@@ -41,6 +41,8 @@ One query does it: `gh issue list --state open --json number,title,labels,assign
    - An edge onto a CLOSED issue is satisfied and orders nothing.
    - The top batch's why-together line says WHY it is top ("first because #12 unblocks the other two").
    - This is the order the autonomy loop uses; the rule's home is `docs/project-state.md` § Queue semantics.
+   - Write the same grouping into `.workkit/agents/session.md` as the plan: one bullet per batch under `## Queue`, replacing the previous plan, never appending to it.
+   - A written plan's batches stand: only the owner's word regroups them. A new specced issue joins the batch it fits or opens the next.
 6. **Inbox**: the `status:inbox` count, then offer the `workkit:triage` skill.
 7. **The recommendation**: the digest ENDS with ONE explicit recommendation.
    - It is the FIRST batch from section 5, or the single next item when nothing groups ("Start with #12, the auth bug, because #14 and #15 wait on it.").
@@ -63,7 +65,7 @@ One query does it: `gh issue list --state open --json number,title,labels,assign
 
 ## Rules
 
-- Never start work, begin the top item, edit an issue, or write a file. No digest files: the answer is generated on demand, never stored. `qa` mode never closes an issue: the owner confirms a check in chat and the manager acts on it there.
+- Never start work, begin the top item, or edit an issue. The one file this skill writes is the batch plan in the session queue. No digest files: the answer is generated on demand, never stored. `qa` mode never closes an issue: the owner confirms a check in chat and the manager acts on it there.
 - **The reply IS the deliverable.** End with the last section the mode carries, then STOP. In the full digest and `build`, that is the recommendation.
 - Never the AskUserQuestion tool (the frontmatter removes it). The owner picks in chat, and the manager acts on that word.
 - Every issue is RESTATED wherever it appears, as an OUTCOME brief in the cold-reader line. Its shape, cap and example pair have one home, `docs/project-state.md` § Restating an issue; this skill carries none of its own.

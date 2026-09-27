@@ -1,7 +1,8 @@
 #!/bin/bash
 # hooks/lib/markers.sh: the digest and the files the hooks name by content:
-# hook_sha1, the review and triage marker paths keyed through it, the one writer
-# the two marker scripts share, the per-session marker path, and hook_file_mtime.
+# hook_sha1, the review, triage and suite marker paths keyed through it, the one
+# writer the two marker scripts share, the per-session marker path, and
+# hook_file_mtime.
 # Sourced by hooks/_lib.sh; defines functions and sets nothing.
 
 # hook_sha1: the hex sha1 of STDIN, through shasum or sha1sum, so every key is
@@ -21,7 +22,7 @@ hook_sha1() {
 }
 
 # _hook_marker_path <dir> <anchor>: the marker file <dir> holds for <anchor>.
-# Internal to the two helpers below, which are the only marker names there are.
+# Internal to the three helpers below, which are the only marker names there are.
 _hook_marker_path() {
   local key
   key=$(printf '%s' "$2" | hook_sha1) || return 1
@@ -38,11 +39,12 @@ _hook_write_marker() {
   printf '%s\n' "$1"
 }
 
-# The two marker paths, one derivation each: the skill writes through
-# scripts/review-marker.sh or scripts/triage-marker.sh and the guard
-# (commit-gate, capture-guard) reads here, so the two never drift apart.
+# The three marker paths, one derivation each: the writers (the two marker
+# scripts, hook_suite_marker_write) and the readers (commit-gate, capture-guard,
+# suite-guard) name the file here, so the two sides never drift apart.
 hook_review_marker_path() { _hook_marker_path claude-review-marker "$1"; }
 hook_triage_marker_path() { _hook_marker_path claude-triage-marker "$1"; }
+hook_suite_marker_path() { _hook_marker_path claude-suite-marker "$1"; }
 
 # hook_session_marker <dir-name> <session_id>: the per-session file under
 # ${TMPDIR:-/tmp}/<dir-name>, the id with every non-alphanumeric as `_`. Prints
