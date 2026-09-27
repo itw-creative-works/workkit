@@ -14,9 +14,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ### Fixed
 
+- [#330](../../issues/330) - The daily heal's hook check now parses the pieces the hooks source (`hooks/_lib.sh`, every `*.sh` under `hooks/lib/` and under a wired hook's `checks/` folder), so a syntax error there is named and marks the run unfinished instead of taking every hook that sources it offline unnoticed.
 - [#339](../../issues/339) - The flip to `status:qa` names a touched test file `node --test` cannot prove (one that neither imports `node:test` nor runs itself, such as a describe or it file) as not run, never as green and never as a block.
 - [#340](../../issues/340) - A shell redirect after `git commit` (`2>&1`, `> out.txt`) no longer reads as a pathspec at the commit gate, so a version-only release commit piped through `tail` passes as bookkeeping instead of gating as code, and a heredoc-fed `-F -` commit is judged on its index like any other.
 - [#341](../../issues/341) - The commit gate's new-file check reads staged names unquoted, so a new source file with a non-ASCII name (`café.js`) is caught and named as written.
+- [#343](../../issues/343) - `safety/release-taken` and `safety/proof-guard` no longer split a clause at a redirect's `&`, so `npm publish 2>&1 --workspace=<x>` checks that member alone and `gh issue edit <N> 2>&1 --add-label status:complete` is now held by the proof gate.
 
 ## [0.60.0] - 2026-09-26
 

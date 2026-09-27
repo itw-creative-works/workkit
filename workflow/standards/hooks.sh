@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # workflow/standards/hooks.sh: the once-a-day assertion that the hook layer
 # beside the engine is alive: every wired hook resolves, is executable and
-# parses, and the tools they call are present. SOURCED by standards.sh, never
+# parses, the pieces it sources parse, and the tools they call are present. SOURCED by standards.sh, never
 # executed, and it runs nothing at load: it defines functions and sets
 # nothing. HOOKS_DIR, HOOK_TOOLS and the hooks_checked counter are the
 # entry's.
@@ -51,10 +51,24 @@ check_hook_layer() {
   # The router every wired command goes through is checked first: unusable here
   # means no hook runs at all, whatever the scripts behind it look like.
   check_hook_script "loader.sh" "$HOOKS_DIR/loader.sh"
+  local pieces=("$HOOKS_DIR/_lib.sh" "$HOOKS_DIR"/lib/*.sh)
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue
     check_hook_script "$name" "$HOOKS_DIR/${name//://}/run.sh"
+    pieces+=("$HOOKS_DIR/${name//://}"/checks/*.sh)
   done < <(hook_names)
+
+  # `bash -n` on a run.sh never follows its `source`, so the pieces it sources
+  # are parsed on their own. Counted apart: hooks_checked is the wired count.
+  local piece pieces_checked=0
+  for piece in "${pieces[@]}"; do
+    [[ -f "$piece" ]] || continue
+    pieces_checked=$((pieces_checked + 1))
+    if ! bash -n "$piece" 2>/dev/null; then
+      wk_warn "hooks: ${piece#"$HOOKS_DIR"/} has a syntax error; every hook that sources it exits non-zero before doing anything (bash -n $piece)"
+      needs_attention=1
+    fi
+  done
 
   # The extraction's name filter is exact on purpose, so a wired command it
   # cannot parse would silently fall out of the check. Compare against the
@@ -66,7 +80,7 @@ check_hook_layer() {
     wk_warn "hooks: $wired commands are wired through loader.sh but only $((hooks_checked - 1)) resolved to checkable names; a hook name the checker cannot parse is going unchecked"
   fi
 
-  [[ "$hooks_checked" -gt 0 ]] && wk_skip "hooks: $hooks_checked hook scripts resolve, are executable, and parse"
+  [[ "$hooks_checked" -gt 0 ]] && wk_skip "hooks: $hooks_checked hook scripts resolve, are executable, and parse; $pieces_checked sourced pieces parse"
   return 0
 }
 

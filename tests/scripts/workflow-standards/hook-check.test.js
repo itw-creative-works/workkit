@@ -27,7 +27,10 @@ const run = async () => {
   // error, or a missing tool disables a safety layer with nothing watching.
   // This is the once-a-day assertion that the layer is alive.
   const HOOK_NAMES = ['docs:one', 'safety:two'];
-  const makeHooksDir = ({ missing = [], notExecutable = [], badSyntax = [] } = {}) => {
+  // badPieces: sourced files (paths under the hooks dir) written with a syntax error.
+  const makeHooksDir = ({
+    missing = [], notExecutable = [], badSyntax = [], badPieces = [],
+  } = {}) => {
     const dir = mkTmp();
     fs.writeFileSync(path.join(dir, 'hooks.json'), `${JSON.stringify({
       hooks: {
@@ -49,6 +52,10 @@ const run = async () => {
         badSyntax.includes(name) ? '#!/bin/bash\nif [ 1 ; then\n' : '#!/bin/bash\nexit 0\n',
         { mode: notExecutable.includes(name) ? 0o644 : 0o755 },
       );
+    }
+    for (const piece of badPieces) {
+      fs.mkdirSync(path.dirname(path.join(dir, piece)), { recursive: true });
+      fs.writeFileSync(path.join(dir, piece), 'if [ 1 ; then\n');
     }
     return dir;
   };
@@ -73,6 +80,8 @@ const run = async () => {
     assert(!output.includes('⚠'), `every wired hook resolves and parses, got: ${output}`);
     assert(/hooks: \d+ hook scripts resolve/.test(output),
       `and the count is a skip line, which the session never sees, got: ${output}`);
+    assert(/; [1-9]\d* sourced pieces parse/.test(output),
+      `and the sourced pieces are counted apart, got: ${output}`);
     cleanup(repo); cleanup(stub.dir);
   });
 
@@ -107,6 +116,19 @@ const run = async () => {
     assert(output.includes('docs:one has a syntax error'), `names the hook, got: ${output}`);
     cleanup(repo); cleanup(stub.dir); cleanup(hooks);
   });
+
+  // `bash -n` on a run.sh never follows its `source`, so the pieces are parsed on their own.
+  for (const piece of ['_lib.sh', 'lib/broken.sh', 'safety/two/checks/broken.sh']) {
+    await test(`a sourced piece that does not parse is named: ${piece}`, () => {
+      const repo = makeRepo();
+      const stub = makeGhStub();
+      const hooks = makeHooksDir({ badPieces: [piece] });
+      const { code, output } = runScript(repo, { pathPrefix: stub.binDir, hooksDir: hooks });
+      assertEq(code, 1, 'reported as unfinished');
+      assert(output.includes(`${piece} has a syntax error`), `names the piece, got: ${output}`);
+      cleanup(repo); cleanup(stub.dir); cleanup(hooks);
+    });
+  }
 
   await strippedBitTest('the loader itself is checked: nothing runs without it', () => {
     const repo = makeRepo();

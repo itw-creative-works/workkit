@@ -76,10 +76,13 @@ fi
 cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
 [ -n "$cwd" ] || cwd="$PWD"
 
-# Shared text handling (heredoc-body strip, quote strip, the proof read):
+# Shared text handling (heredoc-body strip, redirect fold, quote strip, the proof read):
 # hooks/lib/commit.sh and hooks/lib/proof.sh, the same preparation the commit hooks and tree-guard do before
 # walking clauses. A heredoc BODY is file content, not a command.
 src=$(hook_strip_heredocs "$cmd")
+# A redirect's `&` is folded before either split below, so `2>&1` never cuts a clause.
+# The fold is quote blind and safe on raw text: it never moves a quote or a real separator.
+src=$(hook_fold_redirect_amp "$src")
 
 skipped() {
   echo "proof-guard: could not read issue #$1 ($2), so the proof gate did not run on this command." >&2

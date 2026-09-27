@@ -26,6 +26,9 @@ const LIB = path.join(__dirname, '..', '..', '..', 'hooks', '_lib.sh');
 // temp dir, handed to every child explicitly, and both sides agree by
 // construction.
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-tmp-'));
+// Every suite beside this one shares it, and the runner loads them all in one
+// process, so it is removed when the process ends.
+process.on('exit', () => fs.rmSync(TMP, { recursive: true, force: true }));
 
 const mkRepo = () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-test-'));

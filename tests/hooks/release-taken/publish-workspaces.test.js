@@ -140,6 +140,23 @@ const run = async () => {
     }
   });
 
+  await test("a redirect's & never cuts the publish clause before its workspace flag", () => {
+    // Cut at `2>&1`, the clause reads as an unnarrowed publish of the whole set.
+    const command = 'npm publish 2>&1 --workspace=@s/b';
+    const dir = FAMILY();
+    const other = makeStubs({ npmTaken: ['@s/a@0.5.0'] });
+    const passed = runHook(command, dir, other);
+    assertEq(passed.code, 0, `only @s/b is published, so the taken @s/a does not bounce it, got: ${passed.stderr}`);
+    assertEq(npmCalls(other).length, 1, `only the named member is asked, got: ${fmtCalls(npmCalls(other))}`);
+    const named = makeStubs({ npmTaken: ['@s/b@0.5.0'] });
+    const bounced = runHook(command, dir, named);
+    assertEq(bounced.code, 2, `the named member is taken, got: ${bounced.stderr}`);
+    assert(bounced.stderr.includes('npm already has @s/b@0.5.0'), `names the pair, got: ${bounced.stderr}`);
+    cleanup(dir);
+    cleanup(other.dir);
+    cleanup(named.dir);
+  });
+
   await test('a chain with one unnarrowed publish checks the whole set', () => {
     const stubs = makeStubs({ npmTaken: ['@s/a@0.5.0'] });
     const dir = FAMILY();

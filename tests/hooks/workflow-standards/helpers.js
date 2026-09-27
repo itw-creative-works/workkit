@@ -37,8 +37,17 @@ const BASE_PATH = joinPath(SYSTEM_PATH, NODE_DIR);
 // directory's name lives in exactly one place here too.
 const IGNORE_GLOB = new RegExp(`^${W.replace(/\./g, '\\.')}/\\*$`, 'm');
 
-const mkTmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'wf-hook-'));
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
+// Every folder made here is removed when the process ends, since the runner
+// loads every suite in one process and most of these are never handed back to
+// a case. A case that already cleaned its own leaves nothing for this to do.
+const scratch = [];
+const mkTmp = () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-hook-'));
+  scratch.push(dir);
+  return dir;
+};
+process.on('exit', () => scratch.forEach(cleanup));
 
 // Participation gate: a committed .workkit/settings.json holding
 // `enabled: true` at the repo root IS the opt-in, so every repo fixture gets one

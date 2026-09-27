@@ -62,7 +62,8 @@ hook_has_escape() {
 
 # hook_fold_redirect_amp <text>: <text> with the `&` of a redirect folded away
 # (`>&` and `&>` to `>`, `<&` to `<`), so a split on `;|&` never cuts a clause at
-# a redirect. Consumers: hook_find_git_commit, safety/tree-guard.
+# a redirect. Consumers: hook_find_git_commit, safety/tree-guard,
+# safety/release-taken, safety/proof-guard.
 hook_fold_redirect_amp() {
   local t="$1"
   t=${t//>&/>}

@@ -147,7 +147,7 @@ rt_has_npm_publish() {
       esac
     done <<<"${ws%?}"
   done <<EOF
-$(printf '%s' "$1" | tr ';|&' '\n')
+$(hook_fold_redirect_amp "$1" | tr ';|&' '\n')
 EOF
   if [ "$all" -eq 1 ]; then
     RT_WORKSPACES=""

@@ -9,8 +9,8 @@
 # safety/suite-guard + safety/release-taken (the two text strips); safety/commit-gate + docs/changelog-guard (hook_changelog_linter);
 # safety/proof-guard + safety/commit-gate (hook_issue_has_proof);
 # safety/tree-guard + safety/suite-guard (hook_has_escape); safety/commit-gate +
-# safety/tree-guard (hook_redirect_word); safety/tree-guard + hook_find_git_commit
-# (hook_fold_redirect_amp);
+# safety/tree-guard (hook_redirect_word); safety/tree-guard + hook_find_git_commit +
+# safety/release-taken + safety/proof-guard (hook_fold_redirect_amp);
 # manager/resolver + manager/profile (hook_session_model, hook_model_tier,
 # hook_manager_config); safety/commit-language + safety/release-taken
 # (HOOK_VERSION_RE); every hook that keys a marker or a cache file

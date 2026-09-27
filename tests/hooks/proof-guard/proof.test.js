@@ -63,6 +63,13 @@ const run = async () => {
     cleanup(stub.dir);
   });
 
+  await test("a redirect's & never cuts the clause before its labels", () => {
+    const stub = makeGhStub(WORLD);
+    const { code, stderr } = runHook('gh issue edit 9 2>&1 --remove-label status:qa --add-label status:complete', stub);
+    assertEq(code, 2, `the redirect is not a clause break, so the unproved flip blocks, got: ${stderr}`);
+    cleanup(stub.dir);
+  });
+
   await test('a long table body stays fast, gated and ungated alike', () => {
     // The clause walk is one pass over the command (issue #233, verifier
     // finding): a body full of `|` rows used to be re-scanned once per
