@@ -26,7 +26,7 @@ export function apiOverride(href, scope) {
 
 /**
  * Whether this copy has a tower; an explicit origin outranks the build.
- * `environment` is read off `window.OMEGA_BUILD_JSON`, not `@omega.js/client`:
+ * `environment` is read off `window.OMEGA_BUILD_JSON`, not `@omega.js/web/runtime`:
  * the singleton holds it only after `omega.initialize()`, and a framework
  * import would put this module out of its suite's reach.
  *

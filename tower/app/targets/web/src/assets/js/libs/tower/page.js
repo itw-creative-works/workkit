@@ -3,7 +3,7 @@
 // module supplies a mount id, its feeds and `render(root, state)`; the feed
 // table is api.js's and the polling is the framework's `createFeedPoller`.
 
-import omega from '@omega.js/client';
+import omega from '@omega.js/web/runtime';
 import { createFeedPoller, swap } from '@omega.js/client/modules/live-page';
 import { loadCharts } from '__main_assets__/js/libs/charts.js';
 import {
@@ -59,7 +59,7 @@ const scopeNav = (value) => {
  * @returns {Promise<void>}
  */
 export async function startPage(options) {
-  await omega.dom().ready();
+  await omega.dom.ready();
 
   const host = document.getElementById(options.mount);
   // A missing mount means the page was renamed: say so once rather than

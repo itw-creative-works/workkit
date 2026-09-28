@@ -79,23 +79,30 @@ const run = async () => {
   });
 
   await test('a long table body stays fast, gated and ungated alike', () => {
-    // The clause walk is one pass over the command, so a body full of `|` rows
-    // is never re-scanned per fragment. An ungated edit never reaches the walk,
-    // since neither `status:complete` nor `gh issue close` is in the text.
+    // Guards the clause walk staying one pass: a per-fragment walk costs about 80
+    // times the ungated edit, which never reaches the walk; the bodiless edit bounds
+    // the ungated exit, so a walk reached there shows. Rounds interleave all three
+    // sides, best of three each, so load lands on every side alike.
     const stub = makeGhStub(WORLD);
     const body = ['| a | b | c |', '|---|---|---|',
       ...Array.from({ length: 100 }, (_, i) => `| row ${i} | value ${i} | note ${i} |`)].join('\n');
-    const started = Date.now();
-    assertEq(runHook(`gh issue edit 9 --body "${body}" --add-label status:complete`, stub).code, 2,
-      'the unproved issue still bounces, table body and all');
-    const gated = Date.now() - started;
-    assert(gated < 1000, `the gated command answers in under a second, took ${gated}ms`);
-
-    const startedOther = Date.now();
-    assertEq(runHook(`gh issue edit 9 --body "${body}" --add-label status:building`, stub).code, 0,
-      'an ungated edit passes');
-    const ungated = Date.now() - startedOther;
-    assert(ungated < 1000, `the ungated command answers in under a second, took ${ungated}ms`);
+    const sides = [
+      [`gh issue edit 9 --body "${body}" --add-label status:complete`, 2, 'the unproved issue still bounces, table body and all'],
+      [`gh issue edit 9 --body "${body}" --add-label status:building`, 0, 'an ungated edit passes'],
+      ['gh issue edit 9 --add-label status:building', 0, 'a bodiless ungated edit passes'],
+    ];
+    const times = sides.map(() => []);
+    for (let round = 0; round < 3; round++) {
+      sides.forEach(([command, code, why], i) => {
+        const started = Date.now();
+        assertEq(runHook(command, stub).code, code, why);
+        times[i].push(Date.now() - started);
+      });
+    }
+    const [gated, ungated, bare] = times.map((t) => Math.min(...t));
+    const bound = (baseline) => Math.max(10 * baseline, 1000);
+    assert(gated <= bound(ungated), `the gated walk stays within ${bound(ungated)}ms, took ${gated}ms (ungated ${ungated}ms)`);
+    assert(ungated <= bound(bare), `the ungated exit stays within ${bound(bare)}ms, took ${ungated}ms (no body ${bare}ms)`);
     cleanup(stub.dir);
   });
 

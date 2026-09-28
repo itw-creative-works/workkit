@@ -45,9 +45,9 @@ wk_git_path() {
 }
 
 # wk_port_pids: the pids listening on a TCP port, one per line, nothing when it
-# is free. netstat's local address ends in `:<port>` on either stack, so the
-# match is that suffix (`:18693` is not 8693), each pid once. A machine with
-# neither tool answers nothing, and the port reads as free.
+# is free. netstat matches the `:<port>` suffix on either stack (`:18693` is not
+# 8693), each pid once; lsof `-b` skips stat() on every mount, which a stalled
+# network share blocks 15s a call. Neither tool: nothing, the port reads free.
 wk_port_pids() {
   local port="$1"
   case "${OSTYPE:-}" in
@@ -57,7 +57,7 @@ wk_port_pids() {
         index($2, suffix) == length($2) - length(suffix) + 1 &&
         !seen[$5]++ { print $5 }'
       ;;
-    *) lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null ;;
+    *) lsof -bti "tcp:$port" -sTCP:LISTEN 2>/dev/null ;;
   esac
 }
 

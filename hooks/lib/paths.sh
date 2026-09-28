@@ -52,6 +52,21 @@ hook_is_code_path() {
   hook_has_code_ext "${1##*/}"
 }
 
+# hook_has_test_script <dir>: <dir>/package.json exists and defines scripts.test.
+# Consumers: safety/commit-gate, hook_test_package_dir.
+hook_has_test_script() {
+  [ -f "$1/package.json" ] && hook_jq -e '.scripts.test' "$1/package.json" >/dev/null 2>&1
+}
+
+# hook_test_script_text <dir>: prints <dir>/package.json's scripts.test text;
+# nothing when it is absent or unreadable, never what jq parsed before failing.
+# Consumers: hook_suite_root_run, hook_suite_exact_run.
+hook_test_script_text() {
+  local text
+  text=$(hook_jq -r '.scripts.test // ""' "$1/package.json" 2>/dev/null) || return 0
+  printf '%s' "$text"
+}
+
 # hook_test_package_dir <root> <path>: the nearest folder at or above <path>
 # (relative to <root>), short of the root, whose package.json declares a test
 # script, relative to <root>. Nothing means the root's; nothing under
@@ -62,7 +77,7 @@ hook_test_package_dir() {
   dir="$2"
   case "/$dir/" in */node_modules/*) return 0 ;; esac
   while [ -n "$dir" ]; do
-    if [ -f "$root/$dir/package.json" ] && hook_jq -e '.scripts.test' "$root/$dir/package.json" >/dev/null 2>&1; then
+    if hook_has_test_script "$root/$dir"; then
       printf '%s\n' "$dir"
       return 0
     fi

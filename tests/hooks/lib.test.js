@@ -376,6 +376,36 @@ const run = async () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
+  await test('hook_has_test_script: a package.json that defines scripts.test, and nothing else', () => {
+    const root = mkTmp('lib-testscript-');
+    for (const d of ['tested', 'bare', 'none']) fs.mkdirSync(path.join(root, d));
+    fs.writeFileSync(path.join(root, 'tested', 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+    fs.writeFileSync(path.join(root, 'bare', 'package.json'), JSON.stringify({ name: 'bare', scripts: { lint: 'x' } }));
+    const ask = (d) => runLib(`hook_has_test_script "${shellPath(path.join(root, d))}"`).code;
+    assertEq(ask('tested'), 0, 'a package.json with a test script answers yes');
+    assertEq(ask('bare'), 1, 'a package.json without a test script answers no');
+    assertEq(ask('none'), 1, 'a folder with no package.json answers no');
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  await test('hook_test_script_text: the scripts.test text, empty when absent, unreadable or with no package.json', () => {
+    const root = mkTmp('lib-scripttext-');
+    for (const d of ['tested', 'bare', 'broken', 'none']) fs.mkdirSync(path.join(root, d));
+    fs.writeFileSync(path.join(root, 'tested', 'package.json'), JSON.stringify({ scripts: { test: 'node tests/run.js' } }));
+    fs.writeFileSync(path.join(root, 'bare', 'package.json'), JSON.stringify({ name: 'bare', scripts: { lint: 'x' } }));
+    // jq answers the first value before failing on the second: that half answer is never the text.
+    fs.writeFileSync(path.join(root, 'broken', 'package.json'), '{"scripts":{"test":"half"}} {');
+    const ask = (d) => runLib(`hook_test_script_text "${shellPath(path.join(root, d))}"`);
+    const tested = ask('tested');
+    assertEq(tested.stdout, 'node tests/run.js', `the script text, got: ${tested.stdout}|${tested.stderr}`);
+    for (const d of ['bare', 'broken', 'none']) {
+      const res = ask(d);
+      assertEq(res.stdout, '', `${d}: nothing printed, got: ${JSON.stringify(res.stdout)}`);
+      assertEq(res.code, 0, `${d}: and a clean exit, so a caller reads the empty text`);
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
   group('_lib.sh: the marker paths');
 
   const sha1 = (text) => spawnSync(BASH, [...NO_RC, '-c', `printf '%s' "$1" | "${shellPath(real)}"`, 'sh', text],

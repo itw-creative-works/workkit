@@ -23,6 +23,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 - [#334](../../issues/334) - The morning job is one file again: the five step scripts under `jobs/morning/` fold back into `jobs/morning.sh`, and the folder keeps only `brief-publish.sh` and `brief/`.
 - [#335](../../issues/335) - The commit gate is one file again: its `checks/` pieces fold back into `hooks/safety/commit-gate/run.sh` as the top-level blocks they were, and the folder is gone.
 - [#348](../../issues/348) - A full `npm test` that ends green records the tree it proved: the new `safety/suite-marker` hook writes the record, the commit gate skips its own run on that unchanged tree, and `safety/suite-guard` bounces only a repeat run. `WORKKIT_SUITE=1` is gone.
+- [#350](../../issues/350) - The commit gate reads a test script through one helper, `hook_has_test_script` in `hooks/lib/paths.sh`, and proves a `.workkit/settings.json` stamp with the same check as the release version files; its no-code suite notice no longer cites an issue.
 
 ### Fixed
 
@@ -32,6 +33,8 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 - [#341](../../issues/341) - The commit gate's new-file check reads staged names unquoted, so a new source file with a non-ASCII name (`café.js`) is caught and named as written.
 - [#343](../../issues/343) - `safety/release-taken` and `safety/proof-guard` no longer split a clause at a redirect's `&`, so `npm publish 2>&1 --workspace=<x>` checks that member alone and `gh issue edit <N> 2>&1 --add-label status:complete` is now held by the proof gate.
 - [#345](../../issues/345) - The commit, proof and release hooks skip a redirect word before any word they read (`git`, `npm`, a shell's `-c` string, the subcommand, the issue number, a `--repo`, label or workspace value), so `gh issue edit 2>&1 <N> --add-label status:complete` and `npm 2>&1 publish` are both gated.
+- [#352](../../issues/352) - A port lookup no longer stalls on a sleeping network share: `wk_port_pids` runs `lsof -b`, skipping the blocking stat of every mount. The proof-guard long-table timing case now bounds each time against a baseline measured in the same run, so load inflates both sides alike.
+- [#353](../../issues/353) - The published dashboard boots again: every page stopped at load with `dom is not a function` and the service worker failed to start, because the app still called the framework's old API; it now follows omega's one-instance form.
 
 ## [0.60.0] - 2026-09-26
 

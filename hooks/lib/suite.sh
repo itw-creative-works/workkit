@@ -17,7 +17,7 @@ _hook_suite_at_root() {
 # never an argument. Consumer: safety/suite-guard.
 hook_suite_root_run() {
   local script use_npm=0 npm_re
-  script=$(hook_jq -r '.scripts.test // ""' "$2/package.json" 2>/dev/null) || script=""
+  script=$(hook_test_script_text "$2")
   [ -n "$script" ] || return 0
   # From inside a nested tested package, `npm test` is that package's suite.
   _hook_suite_at_root "$2" "$3" && use_npm=1
@@ -56,7 +56,7 @@ hook_suite_root_run() {
 # on the line, so its exit status is the suite's. Consumer: safety/suite-marker.
 hook_suite_exact_run() {
   local script cmd="$1"
-  script=$(hook_jq -r '.scripts.test // ""' "$2/package.json" 2>/dev/null) || script=""
+  script=$(hook_test_script_text "$2")
   [ -n "$script" ] || return 0
   _hook_suite_at_root "$2" "$3" || return 0
   cmd="${cmd#"${cmd%%[![:space:]]*}"}"

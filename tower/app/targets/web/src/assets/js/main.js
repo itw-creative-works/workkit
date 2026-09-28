@@ -3,22 +3,22 @@
 // here because this is the one entry every page loads.
 
 import coreMain from '__main_assets__/js/main.js';
-import omega from '@omega.js/client';
 import { mountIntake } from './libs/tower/intake.js';
 import { mountIssueModal, mountAgentModal } from './libs/tower/modal.js';
 
 /**
  * The global module, run once per page by the boot runtime.
  *
- * @param {object} context - `{ manager, options }` from runtime/boot.js
+ * @param {object} context - `{ omega, options }` from runtime/boot.js
  * @returns {Promise<void>}
  */
 export default async function (context) {
+  const { omega } = context;
   await coreMain(context);
-  await omega.dom().ready();
+  await omega.dom.ready();
   mountIntake();
   // Handed in here, where the singleton is, so modal.js stays pure string
   // functions the suite can run under Node.
-  mountIssueModal({ render: (text) => omega.utilities().renderMarkdown(text) });
+  mountIssueModal({ render: (text) => omega.utilities.renderMarkdown(text) });
   mountAgentModal();
 }

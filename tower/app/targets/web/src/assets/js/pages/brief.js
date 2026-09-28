@@ -2,7 +2,7 @@
 // it (tower/README.md § The pages). Its documents ride the `brief` feed. A brief
 // is roster-wide, so nothing here is narrowed by the repo selection.
 
-import omega from '@omega.js/client';
+import omega from '@omega.js/web/runtime';
 import { startPage } from '../libs/tower/page.js';
 import { feed } from '../libs/tower/state.js';
 import { esc, empty, problem, loading, card, documentMeta } from '../libs/tower/format.js';
@@ -12,7 +12,7 @@ import { briefAlert, unreadLine } from '../libs/tower/history.js';
 
 // This page holds the singleton because it draws a body in place as well as in
 // the dialog; modal.js stays pure string functions the suite runs under Node.
-const renderMarkdown = (text) => omega.utilities().renderMarkdown(text);
+const renderMarkdown = (text) => omega.utilities.renderMarkdown(text);
 
 // Leads with the day the brief last posted when that is older than yesterday.
 // The date came off a Discussion body, hence the escape.

@@ -130,16 +130,16 @@ files=$(printf '%s' "$files" | grep -v '^$' || true)
 if [ -z "$files" ] && [ "$has_pathspec" -eq 0 ]; then
   # The gate never stands down silently. The package.json probe sits on this
   # path alone, past a resolved commit clause, so ordinary commands never pay it.
-  if [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
+  if hook_has_test_script "$repo_root"; then
     stand_down "commit-gate: nothing staged and no -a/pathspec: the gate has nothing to judge, so no check ran (suite included)."
   fi
   exit 0
 fi
 
-# The release commit's version stamp in the ROOT package.json or
-# .claude-plugin/plugin.json is generated bookkeeping, not code: proved by
-# content, only `version` may differ from HEAD. A new file, unparseable JSON,
-# another changed key or a nested package.json is code again.
+# A version stamp in the ROOT package.json, .claude-plugin/plugin.json or
+# .workkit/settings.json is generated bookkeeping, not code: proved by content,
+# only `version` may differ from HEAD. A new file, unparseable JSON, another
+# changed key, a nested package.json or anything else fails the proof.
 version_bump_only() {
   local file head copy a b
   file="$1"
@@ -227,30 +227,12 @@ checks_is_job_rewrite() {
   return "$rc"
 }
 
-# The stamp arm proves its content: only the `version` key may differ from
-# HEAD. Any other edit (flipping `enabled`, rewriting the
-# `manager` block that picks every spawn's model) gets the full gate, and so
-# does a NEW settings.json (the one-time opt-in commit is not a stamp).
-settings_is_stamp_only() {
-  local head staged a b
-  head="$(cd "$repo_root" && git show "HEAD:.workkit/settings.json" 2>/dev/null)" || return 1
-  if [ "$has_all_flag" -eq 1 ]; then
-    staged="$(cat "$repo_root/.workkit/settings.json" 2>/dev/null)" || return 1
-  else
-    staged="$(cd "$repo_root" && git show ":.workkit/settings.json" 2>/dev/null)" || return 1
-  fi
-  [ -n "$staged" ] || return 1
-  a="$(hook_jq -Sc 'del(.version)' <<<"$head" 2>/dev/null)" || return 1
-  b="$(hook_jq -Sc 'del(.version)' <<<"$staged" 2>/dev/null)" || return 1
-  [ -n "$a" ] && [ "$a" = "$b" ]
-}
-
 bookkeeping=0
 if [ "$has_pathspec" -eq 0 ] && [ -n "$files" ]; then
   bookkeeping=1
   while IFS= read -r path; do
     case "$path" in
-      .workkit/settings.json) settings_is_stamp_only || { bookkeeping=0; break; } ;;
+      .workkit/settings.json) version_bump_only ".workkit/settings.json" || { bookkeeping=0; break; } ;;
       .github/workflows/checks.yml) checks_is_job_rewrite || { bookkeeping=0; break; } ;;
       *)
         grep -Fxq -- "$path" <<<"$(wk_linter_copies)" || { bookkeeping=0; break; }
@@ -263,7 +245,7 @@ fi
 # commit that adds code files while touching no test file at all. Only in repos
 # that define a test script (a repo without tests isn't asked to start here),
 # and only for staged adds (pathspec commits are already gated strictly).
-if [ "$bookkeeping" -eq 0 ] && [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
+if [ "$bookkeeping" -eq 0 ] && [ "$has_pathspec" -eq 0 ] && hook_has_test_script "$repo_root"; then
   added=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=A 2>/dev/null || true)
   new_code=""
   while IFS= read -r path; do
@@ -406,7 +388,7 @@ deadline="${WORKKIT_GATE_TEST_DEADLINE:-1500}"
 # Clamp an over-raised budget under the 3000s hook timeout: a cancelled hook
 # is an allow, and a misconfigured raise must still bounce loudly.
 [ "$deadline" -gt 2900 ] 2>/dev/null && deadline=2900
-if [ "$has_code" -eq 1 ] && [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
+if [ "$has_code" -eq 1 ] && hook_has_test_script "$repo_root"; then
   # A green run proved the tree this commit carries (the real index); the gate's
   # own green run records the working tree, so a hand run right after is a repeat.
   if hook_suite_proved "$repo_root" "$(hook_suite_index_tree "$repo_root")"; then
@@ -415,10 +397,10 @@ if [ "$has_code" -eq 1 ] && [ -f "$repo_root/package.json" ] && hook_jq -e '.scr
     run_gate_suite ""
     hook_suite_marker_write "$repo_root" || true
   fi
-elif [ -f "$repo_root/package.json" ] && hook_jq -e '.scripts.test' "$repo_root/package.json" >/dev/null 2>&1; then
+elif hook_has_test_script "$repo_root"; then
   # The stand-down is deliberate but never silent: a repo that defines a suite
   # hears why this commit did not run it.
-  stand_down "commit-gate: suite not run: the commit carries no code (docs-only or version-stamp-only), per #151."
+  stand_down "commit-gate: suite not run: the commit carries no code (docs-only or version-stamp-only)."
 fi
 
 # 5b. The nested pass, after check 5 so the root is already green: each

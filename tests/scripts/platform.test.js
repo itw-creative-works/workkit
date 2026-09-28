@@ -26,6 +26,7 @@ const inPlatform = (script, env = {}) => {
     encoding: 'utf8',
     timeout: 30000,
   });
+  assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
