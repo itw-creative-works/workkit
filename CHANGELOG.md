@@ -7,6 +7,8 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.61.1] - 2026-09-27
+
 ### Fixed
 
 - [#353](../../issues/353) - The published dashboard boots again: every page stopped at load with `dom is not a function` and the service worker failed to start, because the app still called the framework's old API; it now follows omega's one-instance form.
