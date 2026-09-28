@@ -1,136 +1,71 @@
-// Tests for hooks/safety/commit-gate: the test suite, which must pass and runs
-// only for commits carrying code, and the suite record it skips on and writes.
-// The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
+// Tests for hooks/safety/commit-gate check 5: a commit carrying code needs the
+// record a green root `npm test` wrote for the tree it carries; the gate runs no
+// suite itself. The shared prologue (the hook runner, the repo and marker
+// factories, the fixtures) is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
-const { spawnSync, execSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { SYSTEM_BASH } = require('../../lib/platform');
+const { execSync } = require('child_process');
 const {
-  skipWithoutDigest, HOOK, TMP, mkRepo, stage, stageDeep, touchMarker, dropMarker, runHook, standDownMessage, cleanup,
-  pkg, greenPkg, suiteRan, mkReleaseRepo,
+  group, test, skip, assert, assertEq, summary, selfRun,
+} = require('../../lib/harness');
+const {
+  IS_WINDOWS, SYSTEM_BASH, NODE_DIR, which, joinPath, cygpathStub,
+} = require('../../lib/platform');
+const { mkTmp } = require('../../lib/scratch');
+const {
+  skipWithoutDigest, TMP, stage, stageDeep, touchMarker, dropMarker, runHook, standDownMessage, cleanup,
+  pkg, suiteRan, mkReleaseRepo, WRAPPER, scratchNpmrc,
 } = require('./helpers');
-const { suiteMarkerPath, treeHash } = require('../../lib/suite-record');
+const { plantRecord } = require('../../lib/suite-record');
+
+const PROVED = 'commit-gate: suite proved: a green root `npm test` recorded this tree.';
+const NO_CODE = 'commit-gate: suite not run: the commit carries no code (docs-only or version-stamp-only).';
+
+// The block check 5 bounces with, and proof the gate ran nothing on the way.
+const recordRequired = (out, dir) => {
+  assertEq(out.code, 2, `no record for this tree blocks, got: ${out.stderr}`);
+  assert(out.stderr.includes('no green run proves this tree'), `for the record reason, got: ${out.stderr}`);
+  assert(out.stderr.includes('Run `npm test` at the repo root'), `naming the fix, got: ${out.stderr}`);
+  assert(!suiteRan(dir), 'the gate never runs the suite');
+};
+
+// The block when the record proves the disk tree and the commit carries another.
+const diskProved = (out, dir) => {
+  assertEq(out.code, 2, `the disk tree is not the commit's, got: ${out.stderr}`);
+  assert(out.stderr.includes('the green run proved the tree on disk, and this commit carries a different one'),
+    `for the gap reason, got: ${out.stderr}`);
+  assert(out.stderr.includes('`git add -A`'), `naming the fix, got: ${out.stderr}`);
+  assert(!suiteRan(dir), 'the gate never runs the suite');
+};
+
+// A no-code commit passes with the stand-down line and no suite.
+const recordNotRequired = (out, dir) => {
+  assertEq(out.code, 0, `allowed, got: ${out.stderr}`);
+  assertEq(standDownMessage(out), NO_CODE, 'the no-code stand-down');
+  assert(!suiteRan(dir), 'the gate never runs the suite');
+};
 
 const run = async () => {
   skipWithoutDigest();
 
-  group('commit-gate: tests must pass');
+  group('commit-gate: the record is required only for commits carrying code');
 
-  await test('failing test script: exit 2 with output tail', () => {
-    const dir = mkRepo();
-    stage(dir, 'package.json', '{"scripts":{"test":"echo BOOM && exit 1"}}');
-    touchMarker(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m "x"');
-    assertEq(code, 2, 'red suite must block the commit');
-    assert(stderr.includes('BOOM'), 'carries the failure output');
-    cleanup(dir);
-  });
-
-  await test('passing test script + marker: exit 0', () => {
-    const dir = mkRepo();
-    stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
-    touchMarker(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m "x"');
-    assertEq(code, 0, `green suite + review passes, stderr: ${stderr}`);
-    cleanup(dir);
-  });
-
-  await test('suite that outruns the gate deadline: exit 2, tree terminated (#93)', async () => {
-    // A suite longer than the harness's hook timeout would get the hook
-    // cancelled, and a cancelled hook is a silent allow: the gate ends the run
-    // at its own deadline and bounces.
-    const dir = mkRepo();
-    stage(dir, 'package.json',
-      '{"scripts":{"test":"echo $$ > gate.pid && sleep 30"}}');
-    touchMarker(dir);
-    const before = Date.now();
-    // Deadline 5, not 1 or 2: bash's integer SECONDS can round a 1s deadline
-    // down toward the poll floor, and a loaded machine can take past 2s to boot
-    // the fake suite, so gate.pid would not exist yet. 5s stays far under the
-    // 15s decision assertion below.
-    const { code, stderr } = runHook(dir, 'git commit -m "x"', undefined,
-      { WORKKIT_GATE_TEST_DEADLINE: '5' });
-    assertEq(code, 2, 'an unproven suite must block, never allow');
-    assert(stderr.includes('deadline'), 'names the deadline as the reason');
-    assert(stderr.includes('Run `npm test` yourself'), `names the plain hand run, got: ${stderr}`);
-    assert(!stderr.includes('WORKKIT_SUITE'), `and no flag, got: ${stderr}`);
-    assert(Date.now() - before < 15000, 'the gate decided well before the suite would have finished');
-    assert(fs.existsSync(path.join(dir, 'gate.pid')), 'the suite had started before the deadline ended it');
-    const pid = Number(fs.readFileSync(path.join(dir, 'gate.pid'), 'utf8').trim());
-    // Ended is answered by waiting: the gate kills the tree leaves-up, so the
-    // recorded pid can linger as a zombie (dead, still answering kill(pid, 0))
-    // until init reaps it. A suite left running answers for its full 30s, so
-    // this waits for gone-or-zombie and names the state it found otherwise.
-    const state = () => (spawnSync('ps', ['-o', 'state=', '-p', String(pid)], { encoding: 'utf8' }).stdout || '').trim();
-    const gone = () => { try { process.kill(pid, 0); return false; } catch { return true; } };
-    let ended = gone() || state().startsWith('Z');
-    const until = Date.now() + 5000;
-    while (!ended && Date.now() < until) {
-      await new Promise((r) => setTimeout(r, 50));
-      ended = gone() || state().startsWith('Z');
-    }
-    assert(ended, `the suite process tree was ended, not left running (ps state: ${state() || 'none'})`);
-    cleanup(dir);
-  });
-
-  await test('the gate deadline sits under its declared hook timeout (#93)', () => {
-    // The invariant: the gate must decide before the harness would cancel it:
-    // a cancelled hook is a silent allow, which is the whole defect.
-    const hooksJson = JSON.parse(fs.readFileSync(
-      path.join(__dirname, '..', '..', '..', 'hooks', 'hooks.json'), 'utf8'));
-    const entry = hooksJson.hooks.PreToolUse
-      .flatMap((m) => m.hooks)
-      .find((h) => h.command.includes('safety:commit-gate'));
-    assert(entry && entry.timeout > 0, 'the gate declares its own timeout');
-    const script = fs.readFileSync(HOOK, 'utf8');
-    const m = script.match(/WORKKIT_GATE_TEST_DEADLINE:-(\d+)/);
-    assert(m, 'the gate has a default deadline');
-    assert(Number(m[1]) < entry.timeout, 'and it fires before the harness cancels the hook');
-  });
-
-  await test('the hook timeout leaves headroom for a raised per-repo budget (#189)', () => {
-    // Grown suites raise WORKKIT_GATE_TEST_DEADLINE in their own settings; the
-    // declared timeout must sit above any such raise or the harness cancels the
-    // hook mid-suite and the cancellation is a silent allow.
-    const hooksJson = JSON.parse(fs.readFileSync(
-      path.join(__dirname, '..', '..', '..', 'hooks', 'hooks.json'), 'utf8'));
-    const entry = hooksJson.hooks.PreToolUse
-      .flatMap((m) => m.hooks)
-      .find((h) => h.command.includes('safety:commit-gate'));
-    assertEq(entry.timeout, 3000, 'the declared timeout is 3000s');
-    const script = fs.readFileSync(HOOK, 'utf8');
-    assert(/WORKKIT_GATE_TEST_DEADLINE:-1500/.test(script),
-      'the default budget stays 1500s for small repos');
-    assert(/raise WORKKIT_GATE_TEST_DEADLINE in this repo's \.claude\/settings\.json env block/.test(script),
-      'the bounce names where a repo raises its budget');
-    assert(/\[ "\$deadline" -gt 2900 \].*deadline=2900/.test(script),
-      'an over-raise clamps back under the hook timeout');
-  });
-
-  group('commit-gate: the suite runs only for commits carrying code (issue #151)');
-
-  // Every case here proves the run, not the exit code: the fixture's test
-  // script leaves a sentinel and then fails, so a suite that ran is visible as
-  // the file (and as the bounce), and a suite that stood down leaves neither.
-  await test('docs-only commit: the suite does not run', () => {
+  // The fixture's test script leaves a sentinel, so a suite the gate ran would
+  // be visible; every case asserts it never is.
+  await test('docs-only commit: no record required', () => {
     const dir = mkReleaseRepo();
     stage(dir, 'README.md', '# docs\n');
     dropMarker(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m "docs: readme"');
-    assertEq(code, 0, `allowed, got: ${stderr}`);
-    assert(!suiteRan(dir), 'a docs-only commit never starts the suite');
+    recordNotRequired(runHook(dir, 'git commit -m "docs: readme"'), dir);
     cleanup(dir);
   });
 
-  await test('version-only root package.json bump: the suite does not run', () => {
+  await test('version-only root package.json bump: no record required', () => {
     const dir = mkReleaseRepo();
     stage(dir, 'package.json', pkg('1.0.1'));
     dropMarker(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m "chore(release): 1.0.1"');
-    assertEq(code, 0, `the release commit's shape passes, got: ${stderr}`);
-    assert(!suiteRan(dir), 'the version stamp is generated bookkeeping, not code');
+    recordNotRequired(runHook(dir, 'git commit -m "chore(release): 1.0.1"'), dir);
     cleanup(dir);
   });
 
@@ -141,23 +76,17 @@ const run = async () => {
     const first = runHook(dir, 'git commit -m "chore: bump"');
     assertEq(first.code, 2, 'any second change restores code classification');
     assert(first.stderr.includes('workkit:review'), `the review marker is demanded as today, got: ${first.stderr}`);
-    assert(!suiteRan(dir), 'the review bounce comes before the suite');
     touchMarker(dir);
-    const second = runHook(dir, 'git commit -m "chore: bump"');
-    assertEq(second.code, 2, 'and past the marker the suite runs and its failure blocks');
-    assert(suiteRan(dir), 'the suite ran');
+    recordRequired(runHook(dir, 'git commit -m "chore: bump"'), dir);
     cleanup(dir);
   });
 
-  await test('a code file alongside the version bump: the suite runs', () => {
+  await test('a code file alongside the version bump: record required', () => {
     const dir = mkReleaseRepo();
     stage(dir, 'package.json', pkg('1.0.1'));
     stage(dir, 'app.js', 'const x = 2;\n');
     touchMarker(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m "feat: thing"');
-    assertEq(code, 2, 'any staged code line still gates on the suite');
-    assert(stderr.includes('test suite failed'), `for the suite reason, got: ${stderr}`);
-    assert(suiteRan(dir), 'the suite ran');
+    recordRequired(runHook(dir, 'git commit -m "feat: thing"'), dir);
     cleanup(dir);
   });
 
@@ -174,14 +103,12 @@ const run = async () => {
     return dir;
   };
 
-  await test('version-only plugin.json bump: the suite does not run', () => {
+  await test('version-only plugin.json bump: no record required', () => {
     const dir = mkPluginRepo();
     stage(dir, 'package.json', pkg('1.0.1'));
     stageDeep(dir, '.claude-plugin/plugin.json', manifest('1.0.1'));
     dropMarker(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m "chore(release): 1.0.1"');
-    assertEq(code, 0, `the plugin release commit's shape passes, got: ${stderr}`);
-    assert(!suiteRan(dir), 'both version stamps are bookkeeping, not code');
+    recordNotRequired(runHook(dir, 'git commit -m "chore(release): 1.0.1"'), dir);
     cleanup(dir);
   });
 
@@ -193,17 +120,14 @@ const run = async () => {
     assertEq(first.code, 2, 'any second change restores code classification');
     assert(first.stderr.includes('workkit:review'), `the review marker is demanded, got: ${first.stderr}`);
     touchMarker(dir);
-    const second = runHook(dir, 'git commit -m "chore: bump"');
-    assertEq(second.code, 2, 'and past the marker the suite runs and its failure blocks');
-    assert(suiteRan(dir), 'the suite ran');
+    recordRequired(runHook(dir, 'git commit -m "chore: bump"'), dir);
     cleanup(dir);
   });
 
-  await test('a script under a docs PATH is code: the suite runs (review finding)', () => {
-    // hooks/docs/*/run.sh is executable bash living under a docs directory:
-    // six of them in this repo. Classifying it as docs would let a hook change
-    // commit with no suite and no review marker. Seeded first, then modified,
-    // so check 1 (new source needs tests) is not what answers.
+  await test('a script under a docs PATH is code: record required', () => {
+    // hooks/docs/*/run.sh is executable bash living under a docs directory.
+    // Seeded first, then modified, so check 1 (new source needs tests) is not
+    // what answers.
     const dir = mkReleaseRepo();
     stageDeep(dir, 'hooks/docs/x/run.sh', '#!/bin/bash\necho hi\n');
     execSync('git commit -q -m "hook" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
@@ -213,19 +137,15 @@ const run = async () => {
     assertEq(first.code, 2, 'a code extension wins over the docs path');
     assert(first.stderr.includes('workkit:review'), `the review marker is demanded, got: ${first.stderr}`);
     touchMarker(dir);
-    const second = runHook(dir, 'git commit -m "fix: the hook"');
-    assertEq(second.code, 2, 'and the suite runs for it');
-    assert(suiteRan(dir), 'the suite ran');
+    recordRequired(runHook(dir, 'git commit -m "fix: the hook"'), dir);
     cleanup(dir);
   });
 
-  await test('a .md under a docs path is still docs: the suite does not run', () => {
+  await test('a .md under a docs path is still docs: no record required', () => {
     const dir = mkReleaseRepo();
     stageDeep(dir, 'docs/notes.md', '# notes\n');
     dropMarker(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m "docs: notes"');
-    assertEq(code, 0, `the docs basenames are unchanged, got: ${stderr}`);
-    assert(!suiteRan(dir), 'a docs file under docs/ still stands the suite down');
+    recordNotRequired(runHook(dir, 'git commit -m "docs: notes"'), dir);
     cleanup(dir);
   });
 
@@ -236,22 +156,18 @@ const run = async () => {
     const clean = mkReleaseRepo();
     stage(clean, 'package.json', pkg('1.0.1'));
     dropMarker(clean);
-    const bump = runHook(clean, 'git commit -am "chore(release): 1.0.1"');
-    assertEq(bump.code, 0, `a -am version-only bump still passes, got: ${bump.stderr}`);
-    assert(!suiteRan(clean), 'and stands the suite down');
+    recordNotRequired(runHook(clean, 'git commit -am "chore(release): 1.0.1"'), clean);
     cleanup(clean);
 
     const dir = mkReleaseRepo();
     stage(dir, 'package.json', pkg('1.0.1'));
     fs.writeFileSync(path.join(dir, 'package.json'), pkg('1.0.1', { description: 'edited past the bump' }));
     touchMarker(dir);
-    const { code, stderr } = runHook(dir, 'git commit -am "chore(release): 1.0.1"');
-    assertEq(code, 2, 'the unstaged second change is what -a would carry');
-    assert(suiteRan(dir), `the suite ran, got: ${stderr}`);
+    recordRequired(runHook(dir, 'git commit -am "chore(release): 1.0.1"'), dir);
     cleanup(dir);
   });
 
-  await test('a NESTED package.json version bump is code: the suite runs', () => {
+  await test('a NESTED package.json version bump is code: record required', () => {
     // The carve-out is the root package.json alone; a workspace member's
     // version is not the release tooling's stamp on this repo.
     const dir = mkReleaseRepo();
@@ -259,91 +175,157 @@ const run = async () => {
     execSync('git commit -q -m "sub" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     stageDeep(dir, 'sub/package.json', pkg('1.0.1'));
     touchMarker(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m "chore: bump sub"');
-    assertEq(code, 2, 'a nested package.json stays code');
-    assert(suiteRan(dir), `the suite ran, got: ${stderr}`);
+    recordRequired(runHook(dir, 'git commit -m "chore: bump sub"'), dir);
     cleanup(dir);
   });
 
   group('commit-gate: the suite record');
 
-  // A code commit on the red fixture, reviewed, with the suite marker holding <tree>.
-  const codeCommit = (manifest, tree) => {
-    const dir = mkReleaseRepo(manifest);
+  // A code commit, reviewed, everything staged.
+  const codeCommit = () => {
+    const dir = mkReleaseRepo();
     stage(dir, 'app.js', 'const x = 2;\n');
     touchMarker(dir);
-    if (tree !== undefined) {
-      fs.mkdirSync(path.dirname(suiteMarkerPath(TMP, dir)), { recursive: true });
-      fs.writeFileSync(suiteMarkerPath(TMP, dir), `${tree === 'current' ? treeHash(dir) : tree}\n`);
-    }
     return dir;
   };
 
-  await test('a marker holding this tree: the suite is skipped, out loud', () => {
-    const dir = codeCommit(pkg('1.0.0'), 'current');
+  await test('a record holding the index tree: exit 0 and the stand-down line', () => {
+    const dir = codeCommit();
+    plantRecord(TMP, dir);
     const out = runHook(dir, 'git commit -m "feat: thing"');
-    assertEq(out.code, 0, `a proved tree needs no second run, got: ${out.stderr}`);
-    assertEq(standDownMessage(out), 'commit-gate: suite proved by the run on this tree, skipped', 'the skip line');
-    assert(!suiteRan(dir), 'the suite never ran');
+    assertEq(out.code, 0, `a proved tree passes, got: ${out.stderr}`);
+    assertEq(standDownMessage(out), PROVED, 'the stand-down line');
+    assert(!suiteRan(dir), 'the gate never runs the suite');
     cleanup(dir);
   });
 
-  await test('a marker holding the disk tree while the index holds another: the suite runs', () => {
-    const dir = codeCommit(pkg('1.0.0'));
+  await test('no record: blocked, naming npm test at the repo root', () => {
+    const dir = codeCommit();
+    recordRequired(runHook(dir, 'git commit -m "feat: thing"'), dir);
+    cleanup(dir);
+  });
+
+  // npm beside this node answers the hint's config read.
+  const withNpm = (npmrc) => ({ PATH: joinPath(NODE_DIR, process.env.PATH), NPM_CONFIG_USERCONFIG: npmrc });
+  const npmTest = (name, fn) => (which('npm', NODE_DIR) ? test(name, fn) : skip(name, 'no npm beside this node'));
+
+  await npmTest("no record and npm's script-shell unset: blocked, naming workkit setup", () => {
+    const dir = codeCommit();
+    const out = runHook(dir, 'git commit -m "feat: thing"', undefined, withNpm(scratchNpmrc('')));
+    assertEq(out.code, 2, `no record blocks, got: ${out.stderr}`);
+    assert(out.stderr.includes("the commit carries code and no green run proves this tree, and npm's script-shell does not point at the kit's wrapper, so a root `npm test` writes no record. Run `workkit setup` once, then `npm test` at the repo root, then commit."),
+      `the cause and its fix, got: ${out.stderr}`);
+    assert(!suiteRan(dir), 'the gate never runs the suite');
+    cleanup(dir);
+  });
+
+  await (WRAPPER ? npmTest : (n) => skip(n, 'no C# compiler on this Windows, so the script shell cannot be built'))("no record and npm's script-shell set to the wrapper: the plain block", () => {
+    const dir = codeCommit();
+    const out = runHook(dir, 'git commit -m "feat: thing"', undefined, withNpm(scratchNpmrc(WRAPPER)));
+    recordRequired(out, dir);
+    assert(!out.stderr.includes('workkit setup'), `no setup hint, got: ${out.stderr}`);
+    cleanup(dir);
+  });
+
+  // The Windows compare driven from any machine: the platform the hooks read,
+  // a stub cygpath inverting its own `C:` prefix, and a scratch machine folder.
+  const onWindows = (npmrcShell) => {
+    const home = mkTmp('cg-workkit-home-');
+    const cyg = mkTmp('cg-cygpath-');
+    cygpathStub(cyg);
+    fs.writeFileSync(path.join(home, 'script-shell.exe'), '');
+    const shell = npmrcShell(path.join(home, 'script-shell.exe'));
+    return {
+      home,
+      env: {
+        ...withNpm(scratchNpmrc(shell)), PATH: joinPath(cyg, NODE_DIR, process.env.PATH), HOOK_UNAME_S: 'MSYS', WORKFLOW_HOME: home,
+      },
+    };
+  };
+  const stubWindowsTest = (name, fn) => {
+    if (IS_WINDOWS) return skip(name, 'a stub cygpath cannot shadow the real one on Windows');
+    return npmTest(name, fn);
+  };
+
+  await stubWindowsTest("Windows, npm's script-shell naming the built executable: the plain block", () => {
+    const dir = codeCommit();
+    const { home, env } = onWindows((exe) => `C:${exe}`);
+    const out = runHook(dir, 'git commit -m "feat: thing"', undefined, env);
+    recordRequired(out, dir);
+    assert(!out.stderr.includes('workkit setup'), `no setup hint, got: ${out.stderr}`);
+    cleanup(dir); cleanup(home);
+  });
+
+  await stubWindowsTest("Windows, npm's script-shell naming another program: blocked, naming workkit setup", () => {
+    const dir = codeCommit();
+    // A file that exists, so the compare answers rather than a failed `cd`.
+    const { home, env } = onWindows((exe) => {
+      const other = path.join(path.dirname(exe), 'other.exe');
+      fs.writeFileSync(other, '');
+      return `C:${other}`;
+    });
+    const out = runHook(dir, 'git commit -m "feat: thing"', undefined, env);
+    assertEq(out.code, 2, `no record blocks, got: ${out.stderr}`);
+    assert(out.stderr.includes('Run `workkit setup` once'), `the setup hint, got: ${out.stderr}`);
+    cleanup(dir); cleanup(home);
+  });
+
+  await test('a stale record, holding another tree: blocked', () => {
+    const dir = codeCommit();
+    plantRecord(TMP, dir, '0000000000000000000000000000000000000000');
+    recordRequired(runHook(dir, 'git commit -m "feat: thing"'), dir);
+    cleanup(dir);
+  });
+
+  await test('a record holding the disk tree while the index holds another: blocked, naming the gap', () => {
+    const dir = codeCommit();
     fs.writeFileSync(path.join(dir, 'app.js'), 'const x = 3;\n');
-    fs.mkdirSync(path.dirname(suiteMarkerPath(TMP, dir)), { recursive: true });
-    fs.writeFileSync(suiteMarkerPath(TMP, dir), `${treeHash(dir)}\n`);
+    plantRecord(TMP, dir);
     const out = runHook(dir, 'git commit -m "feat: thing"');
-    assertEq(out.code, 2, `the staged tree was never proved, so the red suite blocks, got: ${out.stderr}`);
-    assert(suiteRan(dir), 'the suite ran');
-    assert(!out.stdout.includes('suite proved'), `no skip line, got: ${out.stdout}`);
+    diskProved(out, dir);
+    assert(!out.stdout.includes('suite proved'), `no stand-down line, got: ${out.stdout}`);
     cleanup(dir);
   });
 
-  await test('two stand-downs in one run: one notice carrying both lines', () => {
-    const dir = mkReleaseRepo(greenPkg('1.0.0'));
-    stageDeep(dir, 'sub/package.json', pkg('1.0.0'));
-    execSync('git commit -q -m "sub" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+  await test('an untracked file the green run saw: blocked, naming the gap', () => {
+    const dir = codeCommit();
+    fs.writeFileSync(path.join(dir, 'notes.txt'), 'scratch\n');
+    plantRecord(TMP, dir);
+    diskProved(runHook(dir, 'git commit -m "feat: thing"'), dir);
+    cleanup(dir);
+  });
+
+  await test('a pathspec code commit: blocked even when the record matches the index', () => {
+    const dir = codeCommit();
+    plantRecord(TMP, dir);
+    const out = runHook(dir, 'git commit -m "feat: thing" -- app.js');
+    assertEq(out.code, 2, `a pathspec tree is never compared, got: ${out.stderr}`);
+    assert(out.stderr.includes('a pathspec commit carries a tree the gate cannot compare with the record'),
+      `for the pathspec reason, got: ${out.stderr}`);
+    assert(out.stderr.includes('stage the files and commit from the index'), `naming the fix, got: ${out.stderr}`);
+    assert(!suiteRan(dir), 'the gate never runs the suite');
+    cleanup(dir);
+  });
+
+  await test('-a: the record proves the tree -a carries, the tracked edits on disk', () => {
+    const dir = mkReleaseRepo();
+    fs.writeFileSync(path.join(dir, 'app.js'), 'const x = 2;\n');
+    touchMarker(dir);
+    recordRequired(runHook(dir, 'git commit -am "feat: thing"'), dir);
+    plantRecord(TMP, dir);
+    const out = runHook(dir, 'git commit -am "feat: thing"');
+    assertEq(out.code, 0, `the working tree is what -a commits, got: ${out.stderr}`);
+    assertEq(standDownMessage(out), PROVED, 'the stand-down line');
+    cleanup(dir);
+  });
+
+  await test('a repo with no root test script: code commits need no record', () => {
+    const dir = mkReleaseRepo(`${JSON.stringify({ name: 'fixture', version: '1.0.0' }, null, 2)}\n`);
     stage(dir, 'app.js', 'const x = 2;\n');
     touchMarker(dir);
-    fs.mkdirSync(path.dirname(suiteMarkerPath(TMP, dir)), { recursive: true });
-    fs.writeFileSync(suiteMarkerPath(TMP, dir), `${treeHash(dir)}\n`);
-    const out = runHook(dir, 'git commit -m "feat: x" app.js');
-    assertEq(out.code, 0, `a proved tree passes, got: ${out.stderr}`);
-    const msg = standDownMessage(out);
-    assert(msg.includes('commit-gate: suite proved by the run on this tree, skipped'), `the skip line, got: ${out.stdout}`);
-    assert(msg.includes('commit-gate: nested suites not run'), `and the pathspec line, got: ${out.stdout}`);
-    assert(!suiteRan(dir) && !suiteRan(path.join(dir, 'sub')), 'no suite ran');
-    cleanup(dir);
-  });
-
-  await test('a stale marker: the suite runs', () => {
-    const dir = codeCommit(pkg('1.0.0'), '0000000000000000000000000000000000000000');
-    assertEq(runHook(dir, 'git commit -m "feat: thing"').code, 2, 'the red suite blocks');
-    assert(suiteRan(dir), 'another tree is no proof of this one');
-    cleanup(dir);
-  });
-
-  await test('no marker: the suite runs', () => {
-    const dir = codeCommit(pkg('1.0.0'));
-    assertEq(runHook(dir, 'git commit -m "feat: thing"').code, 2, 'the red suite blocks');
-    assert(suiteRan(dir), 'nothing proved the tree');
-    cleanup(dir);
-  });
-
-  await test("the gate's green root run records the tree it proved", () => {
-    const dir = codeCommit(greenPkg('1.0.0'));
-    const { code, stderr } = runHook(dir, 'git commit -m "feat: thing"');
-    assertEq(code, 0, `green, got: ${stderr}`);
-    assert(suiteRan(dir), 'the suite ran');
-    assertEq(fs.readFileSync(suiteMarkerPath(TMP, dir), 'utf8'), `${treeHash(dir)}\n`, 'the marker holds the tree hash');
-    cleanup(dir);
-  });
-
-  await test('a red root run records nothing', () => {
-    const dir = codeCommit(pkg('1.0.0'));
-    runHook(dir, 'git commit -m "feat: thing"');
-    assert(!fs.existsSync(suiteMarkerPath(TMP, dir)), 'a red run proves nothing');
+    const out = runHook(dir, 'git commit -m "feat: thing"');
+    assertEq(out.code, 0, `there is no suite to prove, got: ${out.stderr}`);
+    assertEq(standDownMessage(out), '', 'and says nothing about one');
     cleanup(dir);
   });
 

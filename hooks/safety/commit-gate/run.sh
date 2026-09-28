@@ -2,9 +2,9 @@
 # safety/commit-gate: PreToolUse hook (Bash). Every `git commit` passes six
 # checks: 1 new files carry tests, 2 code carries a fresh review marker, 3 added
 # CHANGELOG entries match the format, 4 a `Fixes #N` commit stages its entry,
-# 6 every closed issue carries a `Proof:` comment, 5 the suite passes under the
-# gate's own deadline (nested packages included). A commit the gate cannot
-# place fails closed; anything else not clearly violating fails open.
+# 6 every closed issue carries a `Proof:` comment, 5 code carries the record a
+# green root `npm test` wrote for its tree. A commit the gate cannot place fails
+# closed; anything else not clearly violating fails open.
 # Detail: docs/hooks.md § safety:commit-gate.
 
 set -euo pipefail
@@ -187,9 +187,9 @@ if [ -n "$files" ]; then
 fi
 
 # Heal bookkeeping: a commit whose files are all the heal's output stands checks
-# 1 and 2 down; the suite still runs. Three arms, each proving its file byte
-# for byte (docs/hooks.md § safety:commit-gate). Under -a/--all each arm reads
-# the working tree, which is what the commit carries.
+# 1 and 2 down; check 5 still reads the suite record. Three arms, each proving
+# its file byte for byte (docs/hooks.md § safety:commit-gate). Under -a/--all
+# each arm reads the working tree, which is what the commit carries.
 
 linter_copy_retired() {
   local tmp rc=1
@@ -326,9 +326,8 @@ if [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/CHANGELOG.md" ] \
 fi
 
 # 6. The proof: every issue this commit closes must carry a `Proof:` comment,
-# read by hook_issue_has_proof at the repo root, failing open out loud. It runs
-# before the suite so a missing proof costs no test run, and only where a
-# CHANGELOG.md marks the repo as in the pipeline.
+# read by hook_issue_has_proof at the repo root, failing open out loud, and
+# only where a CHANGELOG.md marks the repo as in the pipeline.
 if [ -f "$repo_root/CHANGELOG.md" ] && printf '%s' "$cmd" | grep -Eqi "$trailer_re"; then
   unproved=""
   for n in $(printf '%s' "$cmd" | grep -Eoi "$trailer_re" | grep -Eo '[0-9]+$' | sort -u); do
@@ -345,86 +344,49 @@ if [ -f "$repo_root/CHANGELOG.md" ] && printf '%s' "$cmd" | grep -Eqi "$trailer_
   fi
 fi
 
-# run_gate_suite <folder>: `npm test` in <folder> under the repo root (the root
-# itself when empty), in the background on what is left of check 5's budget.
-# A red run, or one the budget cannot finish, bounces naming the folder.
-run_gate_suite() {
-  gate_suite="the test suite"
-  gate_raise="Run \`npm test\` yourself"
-  if [ -n "$1" ]; then gate_suite="the test suite of $1"; gate_raise="$gate_raise from $1"; fi
-  gate_raise="$gate_raise; if this repo's suite genuinely needs longer, raise WORKKIT_GATE_TEST_DEADLINE in this repo's .claude/settings.json env block (2900s at most) and restart the session."
-  case "$deadline" in
-    ''|*[!0-9]*) block "WORKKIT_GATE_TEST_DEADLINE is '$deadline', not a whole number of seconds, so the gate cannot time $gate_suite. Set it in this repo's .claude/settings.json env block (2900s at most) and restart the session." ;;
-  esac
-  gate_budget=$((10#$deadline - (SECONDS - suite_start)))
-  if [ "$gate_budget" -le 0 ]; then
-    block "$gate_suite had no time left under the gate's ${deadline}s deadline, so the gate cannot prove it green. $gate_raise"
+# script_shell_unwired: npm's script-shell is not the kit's, so a root `npm
+# test` writes no record: the wrapper beside this hook's engine, or on Windows
+# the script-shell.exe setup builds in the machine's own folder, compared by
+# physical path. No npm to ask: false.
+script_shell_unwired() {
+  local have dir want
+  command -v npm >/dev/null 2>&1 || return 1
+  have=$(npm config get script-shell 2>/dev/null | tr -d '\r') || return 1
+  case "$have" in ''|null|undefined) return 0 ;; esac
+  if hook_is_windows; then
+    want="$(cd "${WORKFLOW_HOME:-$HOME/.workkit}" 2>/dev/null && pwd -P)/script-shell.exe" || return 0
+    have=$(cygpath -u "$have" 2>/dev/null) || return 0
+  else
+    want="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../workflow" 2>/dev/null && pwd -P)/script-shell.sh"
   fi
-  out_file=$(mktemp "${TMPDIR:-/tmp}/commit-gate-test.XXXXXX")
-  # stdin from /dev/null: a caller reading a list on stdin must not feed it to npm.
-  (cd "$repo_root/$1" && npm test </dev/null >"$out_file" 2>&1) &
-  test_pid=$!
-  if ! hook_wait_deadline "$test_pid" "$gate_budget"; then
-    rm -f "$out_file"
-    block "$gate_suite was still running at the gate's ${deadline}s deadline, so the gate cannot prove it green. $gate_raise"
-  fi
-  if ! wait "$test_pid"; then
-    {
-      echo "commit-gate: BLOCKED this commit: $gate_suite failed. Fix the failures, then commit. Last lines:"
-      tail -15 "$out_file"
-    } >&2
-    rm -f "$out_file"
-    exit 2
-  fi
-  rm -f "$out_file"
+  dir=$(cd "$(dirname "$have")" 2>/dev/null && pwd -P) || return 0
+  [ "$dir/$(basename "$have")" != "$want" ]
 }
 
-# 5. Tests pass when the repo defines them and the commit carries CODE, run at
-# the repo root under the gate's own deadline, since a hook the harness cancels
-# is an allow. A pathspec commit is code here. The budget is injectable so the
-# suite proves the bounce without a wait, and it is one for root and nested runs.
-suite_start=$SECONDS
-deadline="${WORKKIT_GATE_TEST_DEADLINE:-1500}"
-# Clamp an over-raised budget under the 3000s hook timeout: a cancelled hook
-# is an allow, and a misconfigured raise must still bounce loudly.
-[ "$deadline" -gt 2900 ] 2>/dev/null && deadline=2900
+# 5. A commit carrying CODE, in a repo that defines tests, needs the record a
+# green root `npm test` wrote for the tree it carries: the real index, or under
+# -a/--all the index plus every tracked change. The gate runs nothing, and a
+# pathspec commit's tree is never built, so it has nothing to compare.
 if [ "$has_code" -eq 1 ] && hook_has_test_script "$repo_root"; then
-  # A green run proved the tree this commit carries (the real index); the gate's
-  # own green run records the working tree, so a hand run right after is a repeat.
-  if hook_suite_proved "$repo_root" "$(hook_suite_index_tree "$repo_root")"; then
-    stand_down "commit-gate: suite proved by the run on this tree, skipped"
+  [ "$has_pathspec" -eq 1 ] && block "a pathspec commit carries a tree the gate cannot compare with the record: stage the files and commit from the index."
+  if [ "$has_all_flag" -eq 1 ]; then
+    commit_tree=$(hook_tree_hash "$repo_root" -u) || commit_tree=""
   else
-    run_gate_suite ""
-    hook_suite_marker_write "$repo_root" || true
+    commit_tree=$(hook_suite_index_tree "$repo_root") || commit_tree=""
+  fi
+  if hook_suite_proved "$repo_root" "$commit_tree"; then
+    stand_down "commit-gate: suite proved: a green root \`npm test\` recorded this tree."
+  elif hook_suite_proved "$repo_root" "$(hook_tree_hash "$repo_root" || true)"; then
+    block "the green run proved the tree on disk, and this commit carries a different one (an untracked file or an unstaged edit the commit leaves out): stage everything that ran (\`git add -A\`) or stash what the commit leaves out, then commit."
+  elif script_shell_unwired; then
+    block "the commit carries code and no green run proves this tree, and npm's script-shell does not point at the kit's wrapper, so a root \`npm test\` writes no record. Run \`workkit setup\` once, then \`npm test\` at the repo root, then commit."
+  else
+    block "the commit carries code and no green run proves this tree. Run \`npm test\` at the repo root (once per tree; the shell records a green run), then commit."
   fi
 elif hook_has_test_script "$repo_root"; then
   # The stand-down is deliberate but never silent: a repo that defines a suite
-  # hears why this commit did not run it.
+  # hears why this commit did not need it.
   stand_down "commit-gate: suite not run: the commit carries no code (docs-only or version-stamp-only)."
-fi
-
-# 5b. The nested pass, after check 5 so the root is already green: each
-# tested package holding a change runs its own suite once, first-seen order, on
-# check 5's budget. A pathspec commit's files are unknowable, so it runs
-# none and says so, where the repo tracks a tested nested package.
-if [ "$has_code" -eq 1 ] && [ "$has_pathspec" -eq 1 ]; then
-  while IFS= read -r nested_path; do
-    [ -n "$nested_path" ] || continue
-    if [ -n "$(hook_test_package_dir "$repo_root" "${nested_path%/package.json}")" ]; then
-      stand_down "commit-gate: nested suites not run: a pathspec commit bypasses the index, so the gate cannot read which nested packages it touches."
-      break
-    fi
-  done <<<"$(cd "$repo_root" && git -c core.quotePath=false ls-files -- '*/package.json' 2>/dev/null)"
-elif [ "$has_code" -eq 1 ]; then
-  nested_pkgs=""
-  while IFS= read -r nested_path; do
-    nested_pkg=$(hook_test_package_dir "$repo_root" "$nested_path")
-    if [ -z "$nested_pkg" ] || grep -Fxq -- "$nested_pkg" <<<"$nested_pkgs"; then continue; fi
-    nested_pkgs="$nested_pkgs$nested_pkg"$'\n'
-  done <<<"$files"
-  while IFS= read -r nested_pkg; do
-    if [ -n "$nested_pkg" ]; then run_gate_suite "$nested_pkg"; fi
-  done <<<"$nested_pkgs"
 fi
 
 exit 0

@@ -6,9 +6,11 @@
 const path = require('path');
 const fs = require('fs');
 const {
-  group, test, assert, assertEq, summary, selfRun, hasLaunchd,
+  group, test, skip, assert, assertEq, summary, selfRun, hasLaunchd,
 } = require('../../lib/harness');
-const { shellPath } = require('../../lib/platform');
+const {
+  IS_WINDOWS, NODE_DIR, WINDOWS_CSC, shellPath, which, joinPath,
+} = require('../../lib/platform');
 const { isCall, fmtCalls } = require('../../lib/argv-log');
 const {
   WORKFLOW_DIR, CLI, LABEL, cleanup, mkWorld, runCli, ACTED, mkRepo, installSchedule,
@@ -154,6 +156,57 @@ const run = async () => {
     const { out } = runCli(world, ['update', '--auto']);
     assertEq(fs.readlinkSync(world.link), CLI, 'a machine with the convention gets the address');
     assert(out.includes('command:'), `and hears about it, got: ${out}`);
+    cleanup(world.root);
+  });
+
+  const scriptShellSkip = (IS_WINDOWS && !fs.existsSync(WINDOWS_CSC)
+    && `no C# compiler at ${WINDOWS_CSC}, so the script shell cannot be built`)
+    || (!which('npm', NODE_DIR) && 'no npm beside this node');
+  const scriptShellCase = scriptShellSkip ? (name) => skip(name, scriptShellSkip) : test;
+  await scriptShellCase('an unset npm script-shell is left unset and unsaid; a human update sets it', () => {
+    // The automatic path runs at session start, so the machine's npm config is
+    // changed only on a human's run, and the commit gate is where it is named.
+    const world = mkWorld();
+    const npmrc = path.join(world.root, 'npmrc');
+    const env = { PATH: joinPath(NODE_DIR, world.env.PATH), NPM_CONFIG_USERCONFIG: npmrc };
+    const auto = runCli(world, ['update', '--auto'], { env });
+    assertEq(auto.code, 0, 'exit 0');
+    assert(!auto.said.includes('npm:'), `session start hears nothing about npm, got: ${auto.said}`);
+    assert(!fs.existsSync(npmrc), 'and no npm config was written');
+    runCli(world, ['update'], { env });
+    assert(fs.readFileSync(npmrc, 'utf8').includes('script-shell='), 'a human update sets it');
+    const again = runCli(world, ['update', '--auto'], { env });
+    assert(!again.said.includes('npm:'), `a current value is silent under --auto, got: ${again.said}`);
+    cleanup(world.root);
+  });
+
+  await scriptShellCase('a foreign npm script-shell is unsaid under --auto and warned about on a human update', () => {
+    const world = mkWorld();
+    const npmrc = path.join(world.root, 'npmrc');
+    fs.writeFileSync(npmrc, 'script-shell=/opt/other/shell\n');
+    const env = { PATH: joinPath(NODE_DIR, world.env.PATH), NPM_CONFIG_USERCONFIG: npmrc };
+    const auto = runCli(world, ['update', '--auto'], { env });
+    assertEq(auto.code, 0, 'exit 0');
+    assert(!auto.said.includes('npm:'), `session start hears nothing about npm, got: ${auto.said}`);
+    const human = runCli(world, ['update'], { env });
+    assert(/npm: script-shell is \/opt\/other\/shell, set by someone else/.test(human.err), `a human hears it, got: ${human.said}`);
+    assert(human.err.includes('`npm config set script-shell'), `with the command that changes it, got: ${human.err}`);
+    cleanup(world.root);
+  });
+
+  await scriptShellCase('an exported npm_config_script_shell is named as the source, not npm config set', () => {
+    // npm's environment outranks every npmrc, so `npm config set` would change
+    // nothing npm sees.
+    const world = mkWorld();
+    const npmrc = path.join(world.root, 'npmrc');
+    const env = {
+      PATH: joinPath(NODE_DIR, world.env.PATH), NPM_CONFIG_USERCONFIG: npmrc, npm_config_script_shell: '/opt/other/shell',
+    };
+    const { code, err, said } = runCli(world, ['update'], { env });
+    assertEq(code, 0, 'exit 0');
+    assert(err.includes('npm: script-shell is /opt/other/shell, exported as npm_config_script_shell by your shell'),
+      `the export is named, got: ${said}`);
+    assert(!said.includes('npm config set'), `and no config command is offered, got: ${said}`);
     cleanup(world.root);
   });
 

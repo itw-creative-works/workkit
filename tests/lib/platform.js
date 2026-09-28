@@ -61,6 +61,12 @@ const SH = IS_WINDOWS ? path.join(SYSTEM_DIR, 'sh.exe') : '/bin/sh';
 // the spawn itself searches that PATH, on either platform.
 const SYSTEM_BASH = IS_WINDOWS ? BASH : '/bin/bash';
 
+// The compiler every Windows ships, which the setup step builds npm's script
+// shell with there; null elsewhere.
+const WINDOWS_CSC = IS_WINDOWS
+  ? path.join(process.env.SystemRoot || 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe')
+  : null;
+
 /**
  * Flags that keep a spawned shell's world the test's own: a bash started by
  * sshd reads ~/.bashrc even when not interactive, putting the machine's tools
@@ -181,14 +187,16 @@ const crlfJq = (dir, { singleValueClean = false } = {}) => {
 /**
  * A `cygpath` on PATH answering the mixed form Git Bash answers with, so a suite
  * drives the engine's Windows branch (`OSTYPE=msys`) from a Mac: `/c/Users/x`
- * becomes `C:/Users/x`, any other path gets `C:` prefixed. On Windows the real
- * tool answers and nothing is written.
+ * becomes `C:/Users/x`, any other path gets `C:` prefixed. `-u` strips a leading
+ * drive (`C:/x` becomes `/x`), inverting the prefix. On Windows the real tool
+ * answers and nothing is written.
  * @param {string} dir - the PATH directory, which must exist
  * @returns {string|null} the stub that was written, or null on Windows
  */
 const cygpathStub = (dir) => (IS_WINDOWS ? null : stubTool(dir, 'cygpath', [
   '#!/bin/bash',
   'p="${@: -1}"',
+  'if [[ "$1" == -u ]]; then printf "%s\\n" "${p#[A-Za-z]:}"; exit 0; fi',
   'case "$p" in',
   '  /[a-zA-Z]/*) printf "%s:/%s\\n" "$(printf "%s" "${p:1:1}" | tr "a-z" "A-Z")" "${p:3}" ;;',
   '  *) printf "C:%s\\n" "$p" ;;',
@@ -308,7 +316,7 @@ const asWindows = (fn) => {
 };
 
 module.exports = {
-  IS_WINDOWS, BASH, SH, SYSTEM_BASH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH,
+  IS_WINDOWS, BASH, SH, SYSTEM_BASH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
   shellPath, gitPath, which, digestTool, toolStem, linkTool, stubTool, crlfJq,
   cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, basePathWithout,
   NO_EXEC_BIT, NO_NODE_STUB, asWindows,

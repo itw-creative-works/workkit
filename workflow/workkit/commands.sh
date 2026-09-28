@@ -14,6 +14,7 @@ cmd_update() {
   wk_title "🔄 workkit update in $KIT_DIR"
   refresh_engine_link
   link_command
+  script_shell
   update_cron
   # Reported, never wired: the daily --auto run is the one path that must not
   # prompt or mint, so a missing value is a line and nothing else.
@@ -105,6 +106,8 @@ cmd_doctor() {
     wk_warn "command: $BIN_LINK is missing or points elsewhere; run \`workkit update\`"
     attention=$((attention + 1))
   fi
+
+  script_shell doctor || attention=$((attention + 1))
 
   if [[ "$(uname -s)" != "Darwin" ]]; then
     wk_skip "schedule: launchd is macOS"

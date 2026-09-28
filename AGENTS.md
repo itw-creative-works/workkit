@@ -18,7 +18,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 │   ├── _lib.sh           # shared helpers (sourced, never executed)
 │   ├── lib/              # _lib.sh's helper groups, one file per concern (sourced by it, never a hook)
 │   ├── docs/             # board-guard, changelog-guard, change-tracker, checkpoint, session, session-guard, state-check
-│   ├── safety/           # vendor-guard, commit-gate, commit-language, release-taken, issue-guard, proof-guard, suite-guard, suite-marker, capture-guard, tree-guard, test-reminder
+│   ├── safety/           # vendor-guard, commit-gate, commit-language, release-taken, issue-guard, proof-guard, suite-guard, capture-guard, tree-guard, test-reminder
 │   ├── manager/          # resolver, profile, spawn-guard, close-guard + resources/ladder.json (the tier SSOT)
 │   └── workflow/         # standards (the daily heal) + reload-guard
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
@@ -34,7 +34,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 
 ## Install
 
-From zero: clone, then `./workflow/workkit.sh setup`. One pass, each step checked before it acts: the plugin, `gh`, the 9am schedule, the home repo and its clone at `~/.workkit/tower`, the publish question, the token handover to the published site, the cloud brief's seeded runner and its two secrets, this repo's opt-in, the `~/.local/bin/workkit` symlink. Every mechanic: `workflow/README.md`.
+From zero: clone, then `./workflow/workkit.sh setup`. One pass, each step checked before it acts: the plugin, `gh`, the 9am schedule, the home repo and its clone at `~/.workkit/tower`, the publish question, the site's token handover, the cloud brief's runner and its two secrets, this repo's opt-in, the `~/.local/bin/workkit` symlink, npm's `script-shell`. Every mechanic: `workflow/README.md`.
 
 A SHIP re-runs it: when the shipped diff touched the setup surface, the ship runs `workkit setup` itself once the release commit's CI is green, so the install follows the kit rather than waiting on the owner. The paths and the clause: `skills/ship/SKILL.md` Step 7.
 
@@ -51,7 +51,7 @@ The engine's stable filesystem address is `~/.claude/workkit` → this repo's `w
 
 Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh` so settings reference a hook by `prefix:name` rather than a path. A LOADER-level failure fails open (exit 0); the hook's own exit code passes through untouched, which blocking hooks (exit 2) need.
 
-The index of all twenty-four and what each one does: `docs/hooks.md`. Four carry a README beside the script as well: `tree-guard`, `release-taken`, `session-guard`, `change-tracker`.
+The index of all twenty-three and what each one does: `docs/hooks.md`. Four carry a README beside the script as well: `tree-guard`, `release-taken`, `session-guard`, `change-tracker`.
 
 ## Agents
 
@@ -91,7 +91,7 @@ A world a case spawns comes from the same seam: `homeEnv()` is the scratch home 
 
 A scratch folder has one writer as well: `mkTmp(prefix)` in `tests/lib/scratch.js`, which resolves the path and removes every folder it made when the process exits.
 
-A case only one platform can answer names its skip through the harness's `skip()`. The Windows lane is manual: pull the clone on that machine, then run `node tests/run.js` there (the first full run on a tree passes; a repeat on an unchanged tree bounces); how a session reaches that machine is the owner's own tooling, not the kit's.
+A case only one platform can answer names its skip through the harness's `skip()`. The Windows lane is manual: pull the clone on that machine, then run `npm test` there; `workkit setup` there builds the kit's script shell (`workflow/script-shell.cs`) and points npm at it, so a root `npm test` there records its tree; how a session reaches that machine is the owner's own tooling, not the kit's.
 
 Lanes per layer (`docs/project-state.md` § The proof):
 - Unit: a module called directly.

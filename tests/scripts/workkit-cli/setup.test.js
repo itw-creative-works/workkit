@@ -4,12 +4,17 @@
 const path = require('path');
 const fs = require('fs');
 const {
-  group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W,
+  group, test, skip, assert, assertEq, summary, selfRun, WORKKIT_DIR: W,
 } = require('../../lib/harness');
-const { shellPath } = require('../../lib/platform');
-const { isCall, fmtCalls } = require('../../lib/argv-log');
+const {
+  IS_WINDOWS, NODE_DIR, WINDOWS_CSC, shellPath, gitPath, which, joinPath, cygpathStub,
+} = require('../../lib/platform');
+const {
+  isCall, fmtCalls, recordArgv, readArgv,
+} = require('../../lib/argv-log');
 const {
   WORKFLOW_DIR, cleanup, mkWorld, runCli, ACTED, mkRepo, seedSettings, inCli, AT_TERMINAL,
+  writeStub,
 } = require('./helpers');
 
 const run = async () => {
@@ -273,6 +278,163 @@ const run = async () => {
       assert(!/^.*publish: /m.test(out), `${publish} publishes nothing, got: ${out}`);
       cleanup(world.root);
     }
+  });
+
+  group('workkit setup: npm script-shell');
+
+  // npm beside this node, and a scratch user npmrc: the machine's own is never
+  // read or written.
+  const withNpm = (world) => {
+    const npmrc = path.join(world.root, 'npmrc');
+    return { npmrc, env: { PATH: joinPath(NODE_DIR, world.env.PATH), NPM_CONFIG_USERCONFIG: npmrc } };
+  };
+  const npmrcShell = (npmrc) => (fs.existsSync(npmrc)
+    ? (fs.readFileSync(npmrc, 'utf8').match(/^script-shell=(.*)$/m) || [])[1] : undefined);
+  const HAS_NPM = Boolean(which('npm', NODE_DIR));
+  // On Windows the step builds the script shell first, so a case there needs
+  // the machine's compiler.
+  const NO_CSC = IS_WINDOWS && !fs.existsSync(WINDOWS_CSC)
+    ? `no C# compiler at ${WINDOWS_CSC}, so the script shell cannot be built` : '';
+  const npmTest = (name, fn) => {
+    if (NO_CSC) return skip(name, NO_CSC);
+    return HAS_NPM ? test(name, fn) : skip(name, 'no npm beside this node');
+  };
+  // What npm is pointed at: the wrapper through the engine address, or on
+  // Windows the built executable in git's spelling.
+  const wantShell = (world) => (IS_WINDOWS
+    ? gitPath(path.join(world.workflowHome, 'script-shell.exe'))
+    : `${shellPath(world.engineLink)}/script-shell.sh`);
+
+  await npmTest('unset: set to the wrapper at the engine address, then current on a second run', () => {
+    const world = mkWorld();
+    const { npmrc, env } = withNpm(world);
+    const want = wantShell(world);
+    const first = runCli(world, ['setup'], { env });
+    assertEq(first.code, 0, `exit 0, got: ${first.said}`);
+    assertEq(npmrcShell(npmrc), want, 'the user npmrc names the wrapper through the engine address');
+    assert(first.said.includes(`npm: script-shell set to ${want}`), `it says what it did, got: ${first.said}`);
+    const second = runCli(world, ['setup'], { env });
+    assert(second.said.includes('npm: script-shell is current'), `a second run is a skip, got: ${second.said}`);
+    assert(!second.said.includes('script-shell set to'), 'and sets nothing');
+    const doctor = runCli(world, ['doctor'], { env });
+    assert(/^ *✓ npm: script-shell is current$/m.test(doctor.out), `doctor reports it at the ok level, got: ${doctor.said}`);
+    assert(/^ *· npm: script-shell is current$/m.test(second.out), `setup keeps the skip level, got: ${second.said}`);
+    cleanup(world.root);
+  });
+
+  await npmTest('a foreign value is warned about, named, and left', () => {
+    const world = mkWorld();
+    const { npmrc, env } = withNpm(world);
+    fs.writeFileSync(npmrc, 'script-shell=/opt/other/shell\n');
+    const { code, err } = runCli(world, ['setup'], { env });
+    assertEq(code, 0, 'exit 0');
+    assert(/npm: script-shell is \/opt\/other\/shell/.test(err), `a warning naming what is there, got: ${err}`);
+    assert(err.includes('npm config set script-shell'), `and the command that changes it, got: ${err}`);
+    assertEq(npmrcShell(npmrc), '/opt/other/shell', 'the value is left as it is');
+    cleanup(world.root);
+  });
+
+  await (NO_CSC ? (n) => skip(n, NO_CSC) : (n, fn) => test(n, fn))('no npm on PATH: a named skip', () => {
+    const world = mkWorld();
+    const { code, said } = runCli(world, ['setup']);
+    assertEq(code, 0, 'exit 0');
+    assert(said.includes('npm: not on this machine'), `it names the skip, got: ${said}`);
+    cleanup(world.root);
+  });
+
+  // The Windows branch driven from any machine: OSTYPE is what the kit reads a
+  // platform by, a stub cygpath answers in git's spelling (the real one on
+  // Windows), and SYSTEMROOT holds a stub compiler that writes its -out: file.
+  const winWorld = (world, { compiler = true } = {}) => {
+    const { npmrc, env } = withNpm(world);
+    const cyg = path.join(world.root, 'cygpath-bin');
+    fs.mkdirSync(cyg, { recursive: true });
+    cygpathStub(cyg);
+    const systemRoot = path.join(world.root, 'windows');
+    const cscDir = path.join(systemRoot, 'Microsoft.NET', 'Framework64', 'v4.0.30319');
+    fs.mkdirSync(cscDir, { recursive: true });
+    const cscLog = path.join(world.root, 'csc-argv.log');
+    if (compiler) {
+      writeStub(path.join(cscDir, 'csc.exe'), [
+        recordArgv(cscLog),
+        'for a in "$@"; do case "$a" in -out:*) o="${a#-out:}"; : > "${o#C:}" ;; esac; done',
+      ]);
+    }
+    return {
+      npmrc,
+      cscCalls: () => readArgv(cscLog),
+      env: { ...env, PATH: joinPath(cyg, env.PATH), SYSTEMROOT: shellPath(systemRoot) },
+    };
+  };
+  const stubCompilerTest = (name, fn) => {
+    if (IS_WINDOWS) return skip(name, 'a stub cygpath and compiler cannot stand in for the real ones on Windows');
+    return HAS_NPM ? test(name, fn) : skip(name, 'no npm beside this node');
+  };
+
+  await stubCompilerTest("Windows: builds the script shell with the machine's compiler and points npm at it in git's spelling; a second run is current", () => {
+    const world = mkWorld();
+    const { npmrc, cscCalls, env } = winWorld(world);
+    const exe = path.join(world.workflowHome, 'script-shell.exe');
+    const first = inCli(world, 'OSTYPE=msys\nscript_shell', { env });
+    assertEq(first.code, 0, `exit 0, got: ${first.said}`);
+    assert(fs.existsSync(exe), `the executable is built in the machine's own folder, got: ${first.said}`);
+    const calls = cscCalls();
+    assertEq(calls.length, 1, `the compiler ran once: ${fmtCalls(calls)}`);
+    assert(calls[0].includes('-target:exe'), `as a console program: ${fmtCalls(calls)}`);
+    assert(calls[0].includes(`-out:C:${exe}`), `into the executable: ${fmtCalls(calls)}`);
+    assert(calls[0][calls[0].length - 1].endsWith('script-shell.cs'), `from the kit's source: ${fmtCalls(calls)}`);
+    assertEq(npmrcShell(npmrc), `C:${exe}`, "npm names the executable in git's spelling");
+    assert(first.said.includes('npm: built'), `it says what it built, got: ${first.said}`);
+    const second = inCli(world, 'OSTYPE=msys\nscript_shell', { env });
+    assert(second.said.includes('npm: script-shell is current'), `a second run is current, got: ${second.said}`);
+    assertEq(cscCalls().length, 1, 'and compiles nothing');
+    cleanup(world.root);
+  });
+
+  await stubCompilerTest('Windows: --auto builds nothing and sets nothing', () => {
+    const world = mkWorld();
+    const { npmrc, cscCalls, env } = winWorld(world);
+    const { code, said } = inCli(world, 'OSTYPE=msys\nQUIET=1\nscript_shell', { env });
+    assertEq(code, 0, `exit 0, got: ${said}`);
+    assertEq(cscCalls().length, 0, `the compiler never ran: ${fmtCalls(cscCalls())}`);
+    assert(!fs.existsSync(path.join(world.workflowHome, 'script-shell.exe')), 'no executable was built');
+    assertEq(npmrcShell(npmrc), undefined, 'and no npmrc was written');
+    assert(!said.includes('npm:'), `and nothing is said about npm, got: ${said}`);
+    cleanup(world.root);
+  });
+
+  await stubCompilerTest('Windows: doctor warns when the executable is older than its source', () => {
+    const world = mkWorld();
+    const { env } = winWorld(world);
+    const exe = path.join(world.workflowHome, 'script-shell.exe');
+    const built = inCli(world, 'OSTYPE=msys\nscript_shell', { env });
+    assert(fs.existsSync(exe), `the human path built it, got: ${built.said}`);
+    const stale = fs.statSync(path.join(WORKFLOW_DIR, 'script-shell.cs')).mtimeMs / 1000 - 3600;
+    fs.utimesSync(exe, stale, stale);
+    const { out, err } = inCli(world, 'OSTYPE=msys\nrc=0\nscript_shell doctor || rc=$?\necho "rc=$rc"', { env });
+    assert(out.includes('rc=1'), `doctor asks for attention, got: ${out}`);
+    assert(err.includes('is missing or older than script-shell.cs; run `workkit update`'), `naming the fix, got: ${err}`);
+    cleanup(world.root);
+  });
+
+  await test('Windows: no compiler is a named skip, and nothing is set', () => {
+    const world = mkWorld();
+    const { npmrc, env } = winWorld(world, { compiler: false });
+    const { code, said } = inCli(world, 'OSTYPE=msys\nscript_shell', { env });
+    assertEq(code, 0, 'exit 0');
+    assert(/npm: no C# compiler at .*csc\.exe, so the Windows script shell cannot be built and script-shell stays unset/.test(said),
+      `the skip names the compiler, got: ${said}`);
+    assertEq(npmrcShell(npmrc), undefined, 'and no npmrc was written');
+    cleanup(world.root);
+  });
+
+  await test('Windows: doctor warns when the executable is missing', () => {
+    const world = mkWorld();
+    const { env } = winWorld(world, { compiler: false });
+    const { out, err } = inCli(world, 'OSTYPE=msys\nrc=0\nscript_shell doctor || rc=$?\necho "rc=$rc"', { env });
+    assert(out.includes('rc=1'), `doctor asks for attention, got: ${out}`);
+    assert(err.includes('is missing or older than script-shell.cs; run `workkit update`'), `naming the fix, got: ${err}`);
+    cleanup(world.root);
   });
 
   return summary();

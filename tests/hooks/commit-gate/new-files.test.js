@@ -6,7 +6,9 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { SYSTEM_BASH } = require('../../lib/platform');
-const { skipWithoutDigest, mkRepo, stage, touchMarker, runHook, cleanup } = require('./helpers');
+const {
+  skipWithoutDigest, mkRepo, stage, touchMarker, proveTree, runHook, cleanup,
+} = require('./helpers');
 
 const run = async () => {
   skipWithoutDigest();
@@ -31,6 +33,7 @@ const run = async () => {
     stage(dir, 'thing.js', 'module.exports = 1;\n');
     stage(dir, 'thing.test.js', 'require("./thing");\n');
     touchMarker(dir);
+    proveTree(dir);
     const { code, stderr } = runHook(dir, 'git commit -m "x"');
     assertEq(code, 0, `test file present → passes, stderr: ${stderr}`);
     cleanup(dir);
@@ -52,6 +55,7 @@ const run = async () => {
     execSync('git commit -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     stage(dir, 'thing.js', 'module.exports = 2;\n');
     touchMarker(dir);
+    proveTree(dir);
     const { code, stderr } = runHook(dir, 'git commit -m "x"');
     assertEq(code, 0, `only ADDED files trigger the proxy, stderr: ${stderr}`);
     cleanup(dir);
@@ -90,6 +94,7 @@ const run = async () => {
     stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
     stage(dir, 'eslint.config.mjs', 'export default [];\n');
     touchMarker(dir);
+    proveTree(dir);
     const { code, stderr } = runHook(dir, 'git commit -m "x"');
     assertEq(code, 0, `config files need no tests, stderr: ${stderr}`);
     cleanup(dir);

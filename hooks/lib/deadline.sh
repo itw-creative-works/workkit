@@ -20,7 +20,7 @@ hook_end_tree() {
 # hook_wait_deadline <pid> <seconds>: poll until the process ends or the
 # deadline passes. 0 = it ended in time, 1 = it was still running, and its tree
 # has been ended. The caller still `wait`s on a 0 for the exit status.
-# Consumers: safety/commit-gate (check 5), safety/proof-guard (the qa flip).
+# Consumer: safety/proof-guard (the qa flip).
 hook_wait_deadline() {
   local pid limit start
   pid="$1"

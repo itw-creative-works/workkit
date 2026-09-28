@@ -75,3 +75,29 @@ wk_end_pid() {
     *) kill ${signal:+"$signal"} "$1" ;;
   esac
 }
+
+# wk_sha1: the hex sha1 of STDIN, through shasum or sha1sum, so every key is
+# made by one rule. No tool is a loud refusal, never an empty key; parameter
+# expansion strips the ` -` to spare a fork.
+wk_sha1() {
+  local out
+  if command -v shasum >/dev/null 2>&1; then
+    out=$(shasum)
+  elif command -v sha1sum >/dev/null 2>&1; then
+    out=$(sha1sum)
+  else
+    printf 'wk_sha1: neither shasum nor sha1sum is on PATH\n' >&2
+    return 1
+  fi
+  printf '%s\n' "${out%% *}"
+}
+
+# wk_marker_path <dir> <anchor>: the marker file ${TMPDIR:-/tmp}/<dir> holds for
+# <anchor>, keyed by its wk_sha1. Every marker name is derived here, so a
+# writer and its readers never drift apart.
+wk_marker_path() {
+  local key
+  key=$(printf '%s' "$2" | wk_sha1) || return 1
+  [ -n "$key" ] || return 1
+  printf '%s\n' "${TMPDIR:-/tmp}/$1/$key"
+}

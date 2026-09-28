@@ -44,8 +44,11 @@ BIN_LINK="$BIN_DIR/workkit"
 CLAUDE_HOME="${WORKFLOW_CLAUDE_HOME:-${HOME:-}/.claude}"
 ENGINE_LINK="$CLAUDE_HOME/workkit"
 
-# The machine-maintained roster, read by `doctor`.
-USER_REPOS="${WORKFLOW_HOME:-${HOME:-}/.workkit}/.repos.json"
+# The machine's own folder and its roster, read by `doctor`.
+USER_DIR="${WORKFLOW_HOME:-${HOME:-}/.workkit}"
+USER_REPOS="$USER_DIR/.repos.json"
+# The Windows script shell, built by the links step.
+SCRIPT_SHELL_EXE="$USER_DIR/script-shell.exe"
 
 # Sourced tolerantly: an incomplete checkout is reported by the steps that need
 # these, never by a source that aborts before the command can speak.
@@ -91,15 +94,15 @@ usage: workkit <command> [args]
   setup                from zero on this machine: the plugin, gh, the 9am
                        schedule, the home repo and whether it publishes its
                        dashboard, the cloud brief's secrets, the tower pointer,
-                       this repo's opt-in, and the workkit symlink. Safe to
-                       re-run
+                       this repo's opt-in, the workkit symlink, and npm's
+                       script-shell. Safe to re-run
   setup --token        that wizard's Claude-token step alone, forced: mint a
                        new CLAUDE_CODE_OAUTH_TOKEN and push it to the home
                        repo, however young the one there is
   update [--auto]      re-run the machine-side installs: the engine address,
-                       the symlink, and the schedule (only where one is already
-                       installed). --auto is the quiet variant the standards
-                       hook runs once a day
+                       the symlink, npm's script-shell, and the schedule (only
+                       where one is already installed). --auto is the quiet
+                       variant the standards hook runs once a day
   doctor               report what is set up, what has drifted, and the command
                        that fixes anything out of reach
   publish              build the dashboard and publish it from the home repo

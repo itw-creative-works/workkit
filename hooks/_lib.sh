@@ -41,6 +41,15 @@ hook_is_linux() { hook_uname_s; [ "$HOOK_UNAME_S" = "Linux" ]; }
 hook_jq() { wk_jq "$@"; }
 # hook_jq_default <default> <jq args...>: wk_jq_default under the hook name.
 hook_jq_default() { wk_jq_default "$@"; }
+# hook_sha1: the one digest; the body is wk_sha1, since the engine keys the
+# suite record with it too.
+hook_sha1() { wk_sha1 "$@"; }
+# The proved-tree record under the hook names; the bodies are the wk_ twins
+# in workflow/lib/suite.sh.
+hook_suite_marker_path() { wk_suite_marker_path "$@"; }
+hook_tree_hash() { wk_tree_hash "$@"; }
+hook_suite_index_tree() { wk_suite_index_tree "$@"; }
+hook_suite_proved() { wk_suite_proved "$@"; }
 
 # The participation predicates (wk_is_repo_root, wk_settings_declined,
 # wk_settings_enabled) keep their engine names: they have no personal-hooks
@@ -52,6 +61,9 @@ hook_jq_default() { wk_jq_default "$@"; }
 # reason; release-taken reads it rather than parsing an origin of its own.
 # shellcheck source=../workflow/lib/slug.sh
 . "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../workflow/lib/slug.sh"
+
+# shellcheck source=../workflow/lib/suite.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../workflow/lib/suite.sh"
 
 # The changelog job helpers, engine names; commit-gate's heal-bookkeeping arms
 # read them to prove a commit is exactly the heal's output.

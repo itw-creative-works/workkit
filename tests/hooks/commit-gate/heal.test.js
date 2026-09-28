@@ -7,7 +7,9 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const { group, test, assertEq, summary, selfRun } = require('../../lib/harness');
 const { SYSTEM_BASH } = require('../../lib/platform');
-const { skipWithoutDigest, WORKFLOW_DIR, mkRepo, stage, stageDeep, runHook, cleanup } = require('./helpers');
+const {
+  skipWithoutDigest, WORKFLOW_DIR, mkRepo, stage, stageDeep, proveTree, runHook, cleanup,
+} = require('./helpers');
 
 const run = async () => {
   skipWithoutDigest();
@@ -77,7 +79,8 @@ const run = async () => {
   const CHECKS = '.github/workflows/checks.yml';
   const mkVendoredRepo = (name, { withChecks = true } = {}) => {
     const dir = mkStampedRepo();
-    // A test script makes checks 1 and 5 live; the suite itself passes.
+    // A test script makes checks 1 and 5 live; a case expecting a pass plants
+    // the record a green root `npm test` would leave.
     stage(dir, 'package.json', '{ "scripts": { "test": "exit 0" } }\n');
     stageDeep(dir, `.github/${name}`, '#!/usr/bin/env node\n// Vendored from the workflow core\'s changelog.js by standards.sh.\n');
     if (withChecks) stageDeep(dir, CHECKS, oldChecks(`.github/${name}`));
@@ -90,9 +93,11 @@ const run = async () => {
       const dir = mkVendoredRepo(name);
       execSync(`git rm -q .github/${name}`, { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
       stage(dir, CHECKS, healedChecks());
+      proveTree(dir);
       const heal = runHook(dir, 'git commit -m "chore(workflow): drop the linter copy"');
       assertEq(heal.code, 0, `${name}: the heal's two changes need no review or test file, stderr: ${heal.stderr}`);
       stage(dir, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
+      proveTree(dir);
       const withStamp = runHook(dir, 'git commit -m "chore(workflow): heal output"');
       assertEq(withStamp.code, 0, `${name}: and with the stamp beside it, stderr: ${withStamp.stderr}`);
       cleanup(dir);
@@ -102,6 +107,7 @@ const run = async () => {
   await test('the copy deleted alone where no workflow ever ran it, no marker: exit 0', () => {
     const dir = mkVendoredRepo('changelog-lint.cjs', { withChecks: false });
     execSync('git rm -q .github/changelog-lint.cjs', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+    proveTree(dir);
     const { code, stderr } = runHook(dir, 'git commit -m "chore(workflow): drop the linter copy"');
     assertEq(code, 0, `nothing the commit leaves behind runs it, stderr: ${stderr}`);
     cleanup(dir);
@@ -111,6 +117,7 @@ const run = async () => {
     const dir = mkVendoredRepo('changelog-lint.cjs');
     fs.rmSync(path.join(dir, '.github', 'changelog-lint.cjs'));
     fs.writeFileSync(path.join(dir, CHECKS), healedChecks());
+    proveTree(dir);
     const { code, stderr } = runHook(dir, 'git commit -a -m "chore(workflow): drop the linter copy"');
     assertEq(code, 0, `-a stages exactly the heal's output, stderr: ${stderr}`);
     cleanup(dir);
@@ -123,6 +130,7 @@ const run = async () => {
     execSync('git config core.autocrlf true', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     fs.rmSync(path.join(dir, '.github', 'changelog-lint.cjs'));
     fs.writeFileSync(path.join(dir, CHECKS), healedChecks().replace(/\n/g, '\r\n'));
+    proveTree(dir);
     const { code, stderr } = runHook(dir, 'git commit -a -m "chore(workflow): drop the linter copy"');
     assertEq(code, 0, `the CRLF file commits as the heal's exact rewrite, stderr: ${stderr}`);
     cleanup(dir);
@@ -145,6 +153,7 @@ const run = async () => {
     stageDeep(dir, CHECKS, current.replace(header, OLD_HEADER.replace('changelog-lint.cjs', 'changelog-lint.js')));
     execSync('git commit -q -m "base"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
     stage(dir, CHECKS, current);
+    proveTree(dir);
     const { code, stderr } = runHook(dir, 'git commit -m "chore(workflow): the header comment"');
     assertEq(code, 0, `the heal's header swap alone needs no review, stderr: ${stderr}`);
     cleanup(dir);

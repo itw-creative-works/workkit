@@ -7,6 +7,18 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#357](../../issues/357) - npm's `script-shell` is wired on Windows too: `workkit setup` builds the kit's script shell from `workflow/script-shell.cs` with the compiler every Windows ships and points npm at it, so a root `npm test` there records the tree it proved and a code commit passes the gate.
+
+### Changed
+
+- [#354](../../issues/354) - The commit gate no longer runs tests: a root `npm test`, run by anyone, records the tree it proved (npm's `script-shell` points at the kit's wrapper; `workkit setup` sets it), and the gate checks that record; the nested per-package pass and the gate's test deadline are gone.
+
+### Fixed
+
+- [#356](../../issues/356) - npm's script shell is parsed whole before the suite runs, so an in-place edit to the kit during a long run no longer executes a fragment and loses the record; a green run whose record cannot be written now exits 1 and says so.
+
 ## [0.61.2] - 2026-09-27
 
 ### Changed

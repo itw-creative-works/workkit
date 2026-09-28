@@ -1,7 +1,7 @@
 #!/bin/bash
-# safety/suite-guard: PreToolUse hook (Bash). Bounces a REPEAT full suite run: the
-# root suite on a tree the suite marker already records as proved green. A first
-# run, a narrowed run and a mention pass. Fails open, silently.
+# safety/suite-guard: PreToolUse hook (Bash). Bounces a REPEAT full suite run
+# (the root `npm test`) on a tree the suite marker already records as proved
+# green. A first run, a narrowed run and a mention pass. Fails open.
 # Detail: docs/hooks.md § safety:suite-guard.
 
 set -euo pipefail
@@ -34,5 +34,5 @@ stripped=$(hook_strip_quotes "$(hook_strip_heredocs "$cmd")")
 hook_suite_proved "$repo_root" "$(hook_tree_hash "$repo_root")" || exit 0
 marker=$(hook_suite_marker_path "$repo_root")
 
-echo "suite-guard: this tree is already proved: the full suite ran green on it and $marker records it. Run the narrowest test that proves the change (node tests/<dir>/<name>.test.js); the commit gate reads the same record and skips its run when the staged tree matches it." >&2
+echo "suite-guard: this tree is already proved: the full suite ran green on it and $marker records it. Run the narrowest test that proves the change (node tests/<dir>/<name>.test.js); the commit gate reads the same record for a commit whose staged tree matches it." >&2
 exit 2

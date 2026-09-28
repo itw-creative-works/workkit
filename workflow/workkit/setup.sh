@@ -67,6 +67,7 @@ cmd_setup() {
   check_gh
   refresh_engine_link
   link_command
+  script_shell
   install_cron
   # The tower pointer is about this machine's dashboard, not the repo the shell
   # stands in: it lives here, not under "This repo".

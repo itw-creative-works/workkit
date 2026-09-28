@@ -51,7 +51,7 @@ Autonomous ship pipeline: read the config, pick the bump, then run every step de
 
 ## Step 2: Prepare (if applicable)
 
-- If `scripts.prepare` exists, run `npm run prepare` BEFORE the diff analysis. Its outputs (compiled files, configs, fetched data) must land for the commit and tarball. It fails: surface the error and STOP. Never run `scripts.setup`: it provisions a machine, not a release; codegen belongs in `prepare`. No test step: the commit gate owns the suite (§ The commit gates).
+- If `scripts.prepare` exists, run `npm run prepare` BEFORE the diff analysis. Its outputs (compiled files, configs, fetched data) must land for the commit and tarball. It fails: surface the error and STOP. Never run `scripts.setup`: it provisions a machine, not a release; codegen belongs in `prepare`. No test step here: Step 3 item 5 runs `npm test` at the repo root on the final tree.
 
 ## Step 3: Analyze, commit, and push
 
@@ -81,8 +81,8 @@ Autonomous ship pipeline: read the config, pick the bump, then run every step de
    ```
 
 5. **Commit: direct by default, PR when the work calls for it** (spec: the workkit plugin's `docs/project-state.md` "Queue semantics", the delivery bullet). A supervised session ships DIRECT: the local gates already reviewed it. The PR path is for work they never saw. Take it on `pr`, for agent-authored or unattended work, or on a work branch with an open PR.
-   - **Direct**: stage (`git add -A`, or the named paths), then commit. Always push the work commit, BEFORE any release commit. The backfill maps each `@handle` through the GitHub API, which cannot see an unpushed sha. Watch its CI run.
-   - **PR**: resolve the default branch (`gh repo view --json defaultBranchRef -q .defaultBranchRef.name`, not always `main`). On it, branch `issue/<N>-slug` (no issue: `ship/<slug>`); on a work branch, stay. Commit there (the same local gates run), `git push -u origin <branch>`, then `gh pr create`.
+   - **Direct**: run `npm test` at the repo root once on the final tree (the guard bounces it only when that tree is already proved; fix any red), then stage (`git add -A`, or the named paths), then commit. Always push the work commit, BEFORE any release commit. The backfill maps each `@handle` through the GitHub API, which cannot see an unpushed sha. Watch its CI run.
+   - **PR**: the same root `npm test` on the final tree first. Resolve the default branch (`gh repo view --json defaultBranchRef -q .defaultBranchRef.name`, not always `main`). On it, branch `issue/<N>-slug` (no issue: `ship/<slug>`); on a work branch, stay. Commit there (the same local gates run), `git push -u origin <branch>`, then `gh pr create`.
    - The PR's title is the commit subject; its body ends with the `Fixes #N` trailer. Wait on `gh pr checks --watch`. Fix a FAILING check on the branch and push again, never merge around it. "no checks reported" is not a failure: CI may not exist yet, or GitHub lags minutes. Retry first.
    - Merge with `gh pr merge --squash --delete-branch`, an explicit `--subject` (commit subject + ` (#<PR>)`) and a `--body` carrying the `Fixes #N` trailer. Without `--body`, the squash writes its own. An AGENT never merges unasked: `agent:ok` authorizes the work, not the merge, so its PR stops at green and says so.
    - Then check out the default branch and `git pull`. The squash REWRITES the sha, so backfill only after the pull, never on a deleted branch's shas. That is why the release commit follows the merge.
@@ -117,7 +117,7 @@ Autonomous ship pipeline: read the config, pick the bump, then run every step de
 - Safety checks, ALL before publishing:
   1. `private` explicitly `false`. `private: true`, or no key (never opted into publishing), is a skip. The script checks it.
   2. A publish intent signal: a `files` or `publishConfig` field. Without one the package was not designed for npm: a skip. The script checks it.
-  3. This ship's latest code-carrying commit passed `safety/commit-gate`, whose test run proves the suite green. A no-code commit (docs, a version-only bump) skips the suite, so the proof is the newest code-carrying commit. One made with hooks disabled does not count. This check is the skill's; failing it stops the publish, the check named.
+  3. This ship's newest code-carrying commit passed `safety/commit-gate`, whose record proves the suite green. A no-code commit (docs, a version-only bump) needs no record, so the proof is the newest code-carrying commit. One made with hooks disabled does not count. This check is the skill's; failing it stops the publish, the check named.
   4. The tree's version is not yet on npm for the package. The run asks per package, and a version already out is a skip, never a failure: a version landed in an earlier session, or left after a crash mid-publish, is the normal rerun.
 - Then ONE command publishes the plan: `node ~/.claude/workkit/ship/publish-plan.js --run`, prepare its own call before it. Per package, in plan order, it asks npm, skips a version already out, and runs `npm publish --workspace=<name>` (plain `npm publish` without `workspaces`; `--access public` when scoped). The first failure stops it, package named, non-zero; a rerun resumes. All out: one line.
 - The agent runs it; it never hands the command back to the owner. Never a shell loop or a compound with prepare: when `--run` is unavailable, ONE plain `npm publish --workspace=<name> [--access public]` per Bash call, in plan order; `safety/release-taken` checks each one.
@@ -153,12 +153,12 @@ Autonomous ship pipeline: read the config, pick the bump, then run every step de
 
 ## The commit gates (safety/commit-gate + safety/commit-language hooks)
 
-- `safety/commit-gate` (PreToolUse on Bash) checks every `git commit`. It runs `npm test` when the project defines one and staged code exists (docs-only and version-only commits skip it). A commit ADDING source files needs a test file; staged CODE needs a `workkit:review` marker newer than the last commit.
+- `safety/commit-gate` (PreToolUse on Bash) checks every `git commit`. When the project defines a root `test` script and staged code exists, it passes only a tree a green root `npm test` recorded (docs-only and version-only commits need no record). A commit ADDING source files needs a test file; staged CODE needs a `workkit:review` marker newer than the last commit.
 - `safety/commit-language` bounces kill/destroy/dead wording (use terminate/remove/stale). It bounces a subject that is not Conventional Commits (`<type>(<scope>)?: <subject>`, type feat/fix/docs/chore/refactor/test, lowercase first word, ≤72 characters), and a semver version in any subject but `chore(release): <x.y.z>`.
-- The ship never runs the suite: the gate owns tests. A failing suite bounces a Step 3 commit: fix it, never bypass the gate. An all-no-code ship leans on the newest code-carrying commit's gate run (publish check 3). New source files ship WITH their tests.
+- The ship's one run is a root `npm test` on the final tree (Step 3 item 5), and the gate checks its record. A Step 3 commit whose tree no green run recorded (an edit after the run) bounces: run the root `npm test` again, fix any red, never bypass the gate. An all-no-code ship leans on the newest code-carrying commit's record (publish check 3). New source files ship WITH their tests.
 - The ship runs the review itself (step 3.2b), never asking the owner first. The work commit stales the marker, so retouch it before `chore(release)` when that commit stages anything code-classified.
 - The hooks evaluate BEFORE a command runs, so `git add` and a marker refresh are each their OWN command before `git commit`. A bounce stops the ENTIRE compound (a trailing `git push` never ran), so check `git status` before the retry.
-- Skill `SKILL.md` files classify as DOCS (the `*.md` basename arm): no marker and no suite for a prose-only skill edit. The review skill's judgment still applies to substantive skill changes; the gate just cannot demand it.
+- Skill `SKILL.md` files classify as DOCS (the `*.md` basename arm): no marker and no record for a prose-only skill edit. The review skill's judgment still applies to substantive skill changes; the gate just cannot demand it.
 
 ## CHANGELOG format
 

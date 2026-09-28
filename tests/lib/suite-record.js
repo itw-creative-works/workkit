@@ -1,22 +1,23 @@
-// The suite marker read independently of hooks/lib/suite.sh: its path under a
-// temp dir, the working tree's hash by the temp-index recipe, and one run of
-// the recorder, safety/suite-marker. Consumers: the suite-guard, suite-marker
-// and commit-gate suites.
+// The suite marker read and written independently of workflow/lib/suite.sh: its
+// path (and the review marker's) under a temp dir, the working tree's hash by
+// the temp-index recipe, and a record planted as a green root `npm test` would
+// leave it. Consumers: the suite-guard, commit-gate and script-shell suites.
 
 const crypto = require('crypto');
-const os = require('os');
+const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { BASH, NO_RC, SYSTEM_PATH, shellPath } = require('./platform');
 const { mkTmp } = require('./scratch');
-
-const RECORDER = path.join(__dirname, '..', '..', 'hooks', 'safety', 'suite-marker', 'run.sh');
 
 const repoRoot = (dir) => spawnSync('git', ['rev-parse', '--show-toplevel'],
   { cwd: dir, encoding: 'utf8' }).stdout.trim();
 
 /** The marker file for <dir>'s repo under <tmp>, keyed by the sha1 of its root. */
 const suiteMarkerPath = (tmp, dir) => path.join(tmp, 'claude-suite-marker',
+  crypto.createHash('sha1').update(repoRoot(dir)).digest('hex'));
+
+/** The review marker file for <dir>'s repo under <tmp>, keyed the same way. */
+const reviewMarkerPath = (tmp, dir) => path.join(tmp, 'claude-review-marker',
   crypto.createHash('sha1').update(repoRoot(dir)).digest('hex'));
 
 /** The working tree's `git write-tree` id, built in a throwaway index. */
@@ -26,19 +27,14 @@ const treeHash = (dir) => {
   return spawnSync('git', ['write-tree'], { cwd: dir, env, encoding: 'utf8' }).stdout.trim();
 };
 
-/** The Bash tool_response PostToolUse carries: no exit code, since it fires only after exit 0. */
-const RESPONSE = { stdout: '', stderr: '', interrupted: false, isImage: false, noOutputExpected: false };
+/** Plant the record holding <tree>, the working tree's hash by default. */
+const plantRecord = (tmp, dir, tree = treeHash(dir)) => {
+  const marker = suiteMarkerPath(tmp, dir);
+  fs.mkdirSync(path.dirname(marker), { recursive: true });
+  fs.writeFileSync(marker, `${tree}\n`);
+  return marker;
+};
 
-/** Run the recorder on a Bash tool result; the default is a finished `npm test` at <dir>. */
-const record = (tmp, dir, {
-  command = 'npm test', cwd = dir, toolInput = {}, response = RESPONSE, env = {}, bash = BASH,
-} = {}) => spawnSync(bash, [...NO_RC, shellPath(RECORDER)], {
-  input: JSON.stringify({
-    tool_name: 'Bash', cwd: shellPath(cwd), tool_input: { command, ...toolInput }, tool_response: response,
-  }),
-  env: { HOME: shellPath(os.homedir()), PATH: SYSTEM_PATH, TMPDIR: shellPath(tmp), ...env },
-  encoding: 'utf8',
-  timeout: 15000,
-});
-
-module.exports = { RECORDER, RESPONSE, suiteMarkerPath, treeHash, record };
+module.exports = {
+  suiteMarkerPath, reviewMarkerPath, treeHash, plantRecord,
+};

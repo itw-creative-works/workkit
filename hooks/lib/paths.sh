@@ -52,15 +52,13 @@ hook_is_code_path() {
   hook_has_code_ext "${1##*/}"
 }
 
-# hook_has_test_script <dir>: <dir>/package.json exists and defines scripts.test.
-# Consumers: safety/commit-gate, hook_test_package_dir.
-hook_has_test_script() {
-  [ -f "$1/package.json" ] && hook_jq -e '.scripts.test' "$1/package.json" >/dev/null 2>&1
-}
+# hook_has_test_script <dir>: the body is wk_has_test_script in the engine's
+# lib/suite.sh. Consumers: safety/commit-gate, hook_test_package_dir.
+hook_has_test_script() { wk_has_test_script "$@"; }
 
 # hook_test_script_text <dir>: prints <dir>/package.json's scripts.test text;
 # nothing when it is absent or unreadable, never what jq parsed before failing.
-# Consumers: hook_suite_root_run, hook_suite_exact_run.
+# Consumer: hook_suite_root_run.
 hook_test_script_text() {
   local text
   text=$(hook_jq -r '.scripts.test // ""' "$1/package.json" 2>/dev/null) || return 0
@@ -70,7 +68,7 @@ hook_test_script_text() {
 # hook_test_package_dir <root> <path>: the nearest folder at or above <path>
 # (relative to <root>), short of the root, whose package.json declares a test
 # script, relative to <root>. Nothing means the root's; nothing under
-# node_modules. Consumers: safety/commit-gate, _hook_suite_at_root.
+# node_modules. Consumer: _hook_suite_at_root.
 hook_test_package_dir() {
   local root dir
   root="$1"

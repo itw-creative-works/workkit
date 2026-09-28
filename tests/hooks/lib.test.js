@@ -388,6 +388,15 @@ const run = async () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
+  await test('an empty scripts.test is no script, to the hook predicate and the engine one alike', () => {
+    const root = mkTmp('lib-emptyscript-');
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: '' } }));
+    for (const fn of ['hook_has_test_script', 'wk_has_test_script']) {
+      assertEq(runLib(`${fn} "${shellPath(root)}"`).code, 1, `${fn} answers no`);
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
   await test('hook_test_script_text: the scripts.test text, empty when absent, unreadable or with no package.json', () => {
     const root = mkTmp('lib-scripttext-');
     for (const d of ['tested', 'bare', 'broken', 'none']) fs.mkdirSync(path.join(root, d));
@@ -472,6 +481,8 @@ const run = async () => {
     fs.writeFileSync(path.join(dir, 'new.js'), 'x\n');
     const untracked = treeHash(dir);
     assert(untracked !== edited, 'an untracked file changes the hash');
+    const tracked = runLib(`hook_tree_hash "${shellPath(dir)}" -u`, { TMPDIR: shellPath(TMP) }).stdout.trim();
+    assertEq(tracked, edited, 'under -u, the tree `git commit -a` carries: the untracked file is out');
     git(dir, 'add', '-A');
     assertEq(untracked, git(dir, 'write-tree'), 'the hash is what a real add -A then write-tree names');
   });
@@ -531,23 +542,6 @@ const run = async () => {
     assertEq(ask('node tests/run.js', dir), 'full', "the root's script run directly");
     assertEq(ask('npm test', path.join(dir, 'sub')), '', "npm inside a nested tested package runs that package's suite");
     assertEq(ask('cd .. && node tests/run.js', path.join(dir, 'sub')), 'full', "the root's script from a nested dir");
-  });
-
-  await test('hook_suite_exact_run: only the whole command, at the root, is the suite', () => {
-    const dir = mkTmp('lib-exactrun-');
-    git(dir, 'init', '-q');
-    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node tests/run.js' } }));
-    fs.mkdirSync(path.join(dir, 'sub'));
-    fs.writeFileSync(path.join(dir, 'sub', 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
-    const ask = (cmd, cwd = dir) => runLib(`hook_suite_exact_run "${cmd}" "${shellPath(dir)}" "${shellPath(cwd)}"`).stdout.trim();
-    for (const cmd of ['npm test', 'npm run test', 'npm t', 'node tests/run.js', ' npm test ']) {
-      assertEq(ask(cmd), 'full', `${cmd}: the suite, its exit status the suite's`);
-    }
-    for (const cmd of ['cd sub && npm test', 'npm test -w sub', 'npm test --workspace=sub', 'npm --prefix=sub test',
-      'npm test tests/a.test.js', 'npm test && git push', 'npm test 2>&1 | tail -20']) {
-      assertEq(ask(cmd), '', `${cmd}: refused`);
-    }
-    assertEq(ask('node tests/run.js', path.join(dir, 'sub')), '', 'the root script from inside a nested tested package');
   });
 
   group('_lib.sh: the marker scripts');

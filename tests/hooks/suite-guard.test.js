@@ -10,11 +10,11 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { BASH, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
-const { suiteMarkerPath, record } = require('../lib/suite-record');
+const { suiteMarkerPath, plantRecord } = require('../lib/suite-record');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'suite-guard', 'run.sh');
 const LOADER = path.join(__dirname, '..', '..', 'hooks', 'loader.sh');
-// One temp dir handed to every child, so the recorder and the guard read one marker.
+// One temp dir handed to every child, so the record and the guard read one marker.
 const TMP = mkTmp('suite-guard-tmp-');
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
@@ -27,10 +27,9 @@ const mkRepo = ({ scripts = { test: 'node tests/run.js' }, pkg = true } = {}) =>
   return dir;
 };
 
-// A green `npm test` at the root, recorded by the real recorder: the tree is proved.
+// The record a green root `npm test` leaves: the tree is proved.
 const prove = (dir) => {
-  record(TMP, dir);
-  assert(fs.existsSync(suiteMarkerPath(TMP, dir)), 'the recorder wrote the marker');
+  plantRecord(TMP, dir);
   return dir;
 };
 const mkProved = (opts) => prove(mkRepo(opts));
@@ -81,8 +80,7 @@ const run = async () => {
 
   await test('a stale marker, holding another tree, passes', () => {
     const dir = mkRepo();
-    fs.mkdirSync(path.dirname(suiteMarkerPath(TMP, dir)), { recursive: true });
-    fs.writeFileSync(suiteMarkerPath(TMP, dir), '0000000000000000000000000000000000000000\n');
+    plantRecord(TMP, dir, '0000000000000000000000000000000000000000');
     assertEq(runHook('npm test', dir).code, 0, 'only the tree the marker names is proved');
     cleanup(dir);
   });
