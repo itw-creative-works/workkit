@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.61.2] - 2026-09-27
+
 ### Changed
 
-- [#355](../../issues/355) - The spec's cold-reader rule now carries the batch check shape: a QA or Todos item restates one issue per bullet (what it does, how to check it), the QA section covers only that turn's parks, and a check ask never defers to the issue's comments.
+- [#355](../../issues/355) [`71229bc`](../../commit/71229bc) Thanks [@ianwieds]! - The spec's cold-reader rule now carries the batch check shape: a QA or Todos item restates one issue per bullet (what it does, how to check it), the QA section covers only that turn's parks, and a check ask never defers to the issue's comments.
 
 ## [0.61.1] - 2026-09-27
 
