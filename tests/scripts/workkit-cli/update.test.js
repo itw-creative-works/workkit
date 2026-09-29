@@ -9,11 +9,11 @@ const {
   group, test, skip, assert, assertEq, summary, selfRun, hasLaunchd,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, NODE_DIR, WINDOWS_CSC, shellPath, which, joinPath,
+  IS_WINDOWS, NODE_DIR, WINDOWS_CSC, shellPath, gitPath, which,
 } = require('../../lib/platform');
 const { isCall, fmtCalls } = require('../../lib/argv-log');
 const {
-  WORKFLOW_DIR, CLI, LABEL, cleanup, mkWorld, runCli, ACTED, mkRepo, installSchedule,
+  WORKFLOW_DIR, CLI, LABEL, cleanup, mkWorld, withNpm, runCli, ACTED, mkRepo, installSchedule,
   mkPartialKit,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
@@ -167,8 +167,7 @@ const run = async () => {
     // The automatic path runs at session start, so the machine's npm config is
     // changed only on a human's run, and the commit gate is where it is named.
     const world = mkWorld();
-    const npmrc = path.join(world.root, 'npmrc');
-    const env = { PATH: joinPath(NODE_DIR, world.env.PATH), NPM_CONFIG_USERCONFIG: npmrc };
+    const { npmrc, env } = withNpm(world);
     const auto = runCli(world, ['update', '--auto'], { env });
     assertEq(auto.code, 0, 'exit 0');
     assert(!auto.said.includes('npm:'), `session start hears nothing about npm, got: ${auto.said}`);
@@ -182,9 +181,8 @@ const run = async () => {
 
   await scriptShellCase('a foreign npm script-shell is unsaid under --auto and warned about on a human update', () => {
     const world = mkWorld();
-    const npmrc = path.join(world.root, 'npmrc');
+    const { npmrc, env } = withNpm(world);
     fs.writeFileSync(npmrc, 'script-shell=/opt/other/shell\n');
-    const env = { PATH: joinPath(NODE_DIR, world.env.PATH), NPM_CONFIG_USERCONFIG: npmrc };
     const auto = runCli(world, ['update', '--auto'], { env });
     assertEq(auto.code, 0, 'exit 0');
     assert(!auto.said.includes('npm:'), `session start hears nothing about npm, got: ${auto.said}`);
@@ -196,15 +194,14 @@ const run = async () => {
 
   await scriptShellCase('an exported npm_config_script_shell is named as the source, not npm config set', () => {
     // npm's environment outranks every npmrc, so `npm config set` would change
-    // nothing npm sees.
+    // nothing npm sees. The value is native: Git Bash rewrites a POSIX path in
+    // the env of the npm it starts, so npm would see another spelling.
     const world = mkWorld();
-    const npmrc = path.join(world.root, 'npmrc');
-    const env = {
-      PATH: joinPath(NODE_DIR, world.env.PATH), NPM_CONFIG_USERCONFIG: npmrc, npm_config_script_shell: '/opt/other/shell',
-    };
-    const { code, err, said } = runCli(world, ['update'], { env });
+    const other = gitPath(path.join(world.root, 'other-shell'));
+    const { env } = withNpm(world);
+    const { code, err, said } = runCli(world, ['update'], { env: { ...env, npm_config_script_shell: other } });
     assertEq(code, 0, 'exit 0');
-    assert(err.includes('npm: script-shell is /opt/other/shell, exported as npm_config_script_shell by your shell'),
+    assert(err.includes(`npm: script-shell is ${other}, exported as npm_config_script_shell by your shell`),
       `the export is named, got: ${said}`);
     assert(!said.includes('npm config set'), `and no config command is offered, got: ${said}`);
     cleanup(world.root);

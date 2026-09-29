@@ -275,6 +275,17 @@ const run = async () => {
     cleanup(home);
   });
 
+  await test('a child started in that home writes no compile cache, the leftover npm 10 would leave', () => {
+    const home = mkTmp('wf-platform-');
+    const cache = path.join(home, 'compile-cache');
+    const script = "require('node:module').enableCompileCache(process.argv[1]); require('node:path');";
+    const res = spawnSync(process.execPath, ['-e', script, cache], { env: homeEnv(home, {}), encoding: 'utf8' });
+    assertEq(res.status, 0, `the child ran, got: ${res.stderr}`);
+    const left = fs.existsSync(cache) ? fs.readdirSync(cache) : [];
+    assertEq(left.length, 0, `nothing cached under the scratch home, got: ${left.join(', ')}`);
+    cleanup(home);
+  });
+
   const ghTest = testUnless(!which('gh'), 'this machine has no gh to ask');
 
   await ghTest('a gh spawned in that world is a gh with no account', () => {

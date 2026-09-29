@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { BASH, NO_RC, shellPath } = require('../../lib/platform');
 const { KIT_DIR, cleanup, mkRemote, mkWorld, setup, runnerPairs, seeded, mkKitCopy } = require('./helpers');
 
 const run = async () => {
@@ -62,8 +63,8 @@ const run = async () => {
     seeded(world);
     const engine = path.join(world.tower, 'brief', 'workflow');
     const driver = ['lib.sh', 'lib/discussions.sh', 'home.sh']
-      .map((lib) => `. ${JSON.stringify(path.join(engine, lib))}`).concat('declare -F wk_home_setup >/dev/null').join('\n');
-    const res = spawnSync('bash', ['-c', `set -euo pipefail\n${driver}`], { cwd: '/', encoding: 'utf8', timeout: 30000 });
+      .map((lib) => `. ${JSON.stringify(shellPath(path.join(engine, lib)))}`).concat('declare -F wk_home_setup >/dev/null').join('\n');
+    const res = spawnSync(BASH, [...NO_RC, '-c', `set -euo pipefail\n${driver}`], { cwd: '/', encoding: 'utf8', timeout: 30000 });
     assertEq(res.status, 0, `the seeded engine loads from the clone alone: ${res.stderr}`);
     cleanup(world.root);
   });

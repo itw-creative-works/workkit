@@ -1,7 +1,7 @@
 // The suite marker read and written independently of workflow/lib/suite.sh: its
 // path (and the review marker's) under a temp dir, the working tree's hash by
 // the temp-index recipe, and a record planted as a green root `npm test` would
-// leave it. Consumers: the suite-guard, commit-gate and script-shell suites.
+// leave it. Consumers: the suite-guard, commit-gate, script-shell and _lib suites.
 
 const crypto = require('crypto');
 const fs = require('fs');

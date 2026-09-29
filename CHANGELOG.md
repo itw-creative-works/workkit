@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#358](../../issues/358) - The checks workflow runs the suite on a Windows runner beside Linux on every push, so a Windows break shows up in CI instead of waiting for a manual check on a Windows machine; the eight tests that failed on Windows now pass there.
+
 ## [0.62.0] - 2026-09-28
 
 ### Added

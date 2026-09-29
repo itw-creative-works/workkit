@@ -9,7 +9,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { test, assert, skip, WORKKIT_DIR: W } = require('../../lib/harness');
 const {
-  BASH, SYSTEM_PATH, NO_RC, shellPath, which, homeEnv, stubTool, joinPath,
+  BASH, SYSTEM_PATH, NO_RC, NODE_DIR, shellPath, which, homeEnv, stubTool, joinPath,
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { mkTmp } = require('../../lib/scratch');
@@ -203,6 +203,16 @@ const mkWorld = ({
   };
 };
 
+// npm beside this node with a scratch user npmrc, and the world's root as npm's
+// project root: npm walks up from its cwd for a project `.npmrc`, and on Windows
+// the temp dir sits inside the user's home, whose own `.npmrc` answers when that
+// home holds a package.json.
+const withNpm = (world) => {
+  const npmrc = path.join(world.root, 'npmrc');
+  fs.writeFileSync(path.join(world.root, 'package.json'), '{}\n');
+  return { npmrc, env: { PATH: joinPath(NODE_DIR, world.env.PATH), NPM_CONFIG_USERCONFIG: npmrc } };
+};
+
 // A mint needs a PTY tool the machine ships, `expect` or `script`; without one
 // the CLI refuses first (can_mint_claude_token), so those cases name their skip.
 const HAS_PTY = Boolean(which('expect', SYSTEM_PATH) || which('script', SYSTEM_PATH));
@@ -344,6 +354,6 @@ const mkHomeWorld = (opts = {}) => {
 };
 
 module.exports = {
-  WORKFLOW_DIR, CLI, LABEL, cleanup, writeStub, mkWorld, mintTest, runCli, ACTED, mkRepo,
+  WORKFLOW_DIR, CLI, LABEL, cleanup, writeStub, mkWorld, withNpm, mintTest, runCli, ACTED, mkRepo,
   installSchedule, seedSettings, inCli, AT_TERMINAL, mkPartialKit, mkKit, SLUG, HOME, mkHomeWorld,
 };

@@ -87,11 +87,11 @@ Every suite ends with `if (require.main === module) selfRun(<its export>);`, so 
 
 Every suite runs on macOS and on Windows under Git Bash, or skips whole by name on the platform it cannot answer. Everything that differs (the shell a case spawns, a PATH it controls, the POSIX spelling a shell script sees, how a tool reaches a stub PATH) lives in `tests/lib/platform.js`, every export the identity on macOS and Linux.
 
-A world a case spawns comes from the same seam: `homeEnv()` is the scratch home in every spelling a tool reads one by (HOME, USERPROFILE, `GH_CONFIG_DIR`, and no ambient token), so no child of a test reads the developer's own home or reaches GitHub as them, and `stubTool()` is the one writer of a PATH stub, which a shell starts on either platform and Node starts on neither.
+A world a case spawns comes from the same seam: `homeEnv()` is the scratch home in every spelling a tool reads one by (HOME, USERPROFILE, `GH_CONFIG_DIR`, no ambient token, Node's compile cache off), so no child of a test reads the developer's own home or reaches GitHub as them, and `stubTool()` is the one writer of a PATH stub, which a shell starts on either platform and Node starts on neither.
 
 A scratch folder has one writer as well: `mkTmp(prefix)` in `tests/lib/scratch.js`, which resolves the path and removes every folder it made when the process exits.
 
-A case only one platform can answer names its skip through the harness's `skip()`. The Windows lane is manual: pull the clone on that machine, then run `npm test` there; `workkit setup` there builds the kit's script shell (`workflow/script-shell.cs`) and points npm at it, so a root `npm test` there records its tree; how a session reaches that machine is the owner's own tooling, not the kit's.
+A case only one platform can answer names its skip through the harness's `skip()`. The Windows lane runs in CI: `checks.yml` runs the suite on a Windows runner on every push, beside Linux. On a Windows machine `workkit setup` builds the kit's script shell (`workflow/script-shell.cs`) and points npm at it, so a root `npm test` there records its tree.
 
 Lanes per layer (`docs/project-state.md` § The proof):
 - Unit: a module called directly.

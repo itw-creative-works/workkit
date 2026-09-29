@@ -247,7 +247,9 @@ const joinPath = (...entries) => entries.filter(Boolean).join(path.delimiter);
  * reads a home by: HOME in the shell's spelling, USERPROFILE (Node's homedir on
  * Windows) and GH_CONFIG_DIR (which gh reads first everywhere) native. Both
  * token names are blanked; a case that means to hand its stub a token sets it
- * after this call.
+ * after this call. Node's compile cache is off: npm turns it on in the temp
+ * dir, which on Windows is the suite's own (libuv hands every child the
+ * parent's TEMP), so a world that reaches npm would leave it behind.
  * @param {string} home - the scratch home, by absolute path
  * @param {object} [env] - the rest of the child's env; the home keys win over it
  * @returns {object} the env to spawn with
@@ -259,6 +261,7 @@ const homeEnv = (home, env = {}) => ({
   GH_CONFIG_DIR: path.join(home, '.config', 'gh'),
   GH_TOKEN: '',
   GITHUB_TOKEN: '',
+  NODE_DISABLE_COMPILE_CACHE: '1',
 });
 
 /**

@@ -22,20 +22,30 @@ on:
 
 jobs:
   test:
-    # Ubuntu: the suites that need a provisioned Mac skip themselves and say so,
-    # and a macOS runner bills at ten times the rate for no added coverage.
-    runs-on: ubuntu-latest
+    # Ubuntu and Windows: the suites that need a provisioned Mac skip themselves
+    # and say so, and a macOS runner bills at ten times the rate for no added
+    # coverage. Windows runs the Git Bash spellings and the script shell's build.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
+      # Before the checkout: Git for Windows defaults to CRLF line endings, which
+      # bash cannot run, and the scratch repos the tests make inherit it too. A
+      # runner also has no git identity, so a scratch commit fails without one.
+      - name: Configure git
+        run: |
+          git config --global core.autocrlf false
+          git config --global user.name "checks"
+          git config --global user.email "checks@ci.local"
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: lts/*
-      # A runner has no global git identity, so any test that builds a scratch
-      # repo and commits into it fails at "Author identity unknown".
-      - name: Configure git identity
-        run: |
-          git config --global user.name "checks"
-          git config --global user.email "checks@ci.local"
       - name: Install dependencies
         run: |
           if [ -f package-lock.json ]; then

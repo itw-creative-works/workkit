@@ -13,7 +13,7 @@ const {
   isCall, fmtCalls, recordArgv, readArgv,
 } = require('../../lib/argv-log');
 const {
-  WORKFLOW_DIR, cleanup, mkWorld, runCli, ACTED, mkRepo, seedSettings, inCli, AT_TERMINAL,
+  WORKFLOW_DIR, cleanup, mkWorld, withNpm, runCli, ACTED, mkRepo, seedSettings, inCli, AT_TERMINAL,
   writeStub,
 } = require('./helpers');
 
@@ -282,12 +282,6 @@ const run = async () => {
 
   group('workkit setup: npm script-shell');
 
-  // npm beside this node, and a scratch user npmrc: the machine's own is never
-  // read or written.
-  const withNpm = (world) => {
-    const npmrc = path.join(world.root, 'npmrc');
-    return { npmrc, env: { PATH: joinPath(NODE_DIR, world.env.PATH), NPM_CONFIG_USERCONFIG: npmrc } };
-  };
   const npmrcShell = (npmrc) => (fs.existsSync(npmrc)
     ? (fs.readFileSync(npmrc, 'utf8').match(/^script-shell=(.*)$/m) || [])[1] : undefined);
   const HAS_NPM = Boolean(which('npm', NODE_DIR));

@@ -16,6 +16,7 @@ const {
   shellPath, which, digestTool, stubTool, crlfJq, systemPathWith,
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
+const { plantRecord } = require('../lib/suite-record');
 
 const LIB = shellPath(path.join(__dirname, '..', '..', 'hooks', '_lib.sh'));
 const SHA1_ABC = 'a9993e364706816aba3e25717850c26c9cd0d89d';
@@ -518,13 +519,14 @@ const run = async () => {
   await test('hook_suite_proved: true only when the marker holds the tree it is handed', () => {
     const dir = mkTmp('lib-proved-');
     git(dir, 'init', '-q');
+    // The root as a hook hands it over, and the record planted at its native
+    // path: the lib answers a shell path, which Node on Windows cannot open.
+    const root = git(dir, 'rev-parse', '--show-toplevel');
     const env = { TMPDIR: shellPath(TMP) };
-    const marker = runLib(`hook_suite_marker_path "${shellPath(dir)}"`, env).stdout.trim();
-    const proved = (tree) => runLib(`hook_suite_proved "${shellPath(dir)}" "${tree}"`, env).code === 0;
+    const proved = (tree) => runLib(`hook_suite_proved "${root}" "${tree}"`, env).code === 0;
     const id = '1111111111111111111111111111111111111111';
     assert(!proved(id), 'no marker proves nothing');
-    fs.mkdirSync(path.dirname(marker), { recursive: true });
-    fs.writeFileSync(marker, `${id}\n`);
+    const marker = plantRecord(TMP, dir, id);
     assert(proved(id), 'the recorded tree is proved');
     assert(!proved('2222222222222222222222222222222222222222'), 'another tree is not');
     assert(!proved(''), 'an empty tree (a failed hash) is never a match');
