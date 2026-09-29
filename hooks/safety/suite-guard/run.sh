@@ -31,8 +31,8 @@ repo_root=$(cd "$cwd" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null) 
 stripped=$(hook_strip_quotes "$(hook_strip_heredocs "$cmd")")
 [ -n "$(hook_suite_root_run "$stripped" "$repo_root" "$cwd")" ] || exit 0
 
-hook_suite_proved "$repo_root" "$(hook_tree_hash "$repo_root")" || exit 0
-marker=$(hook_suite_marker_path "$repo_root")
+wk_suite_proved "$repo_root" "$(wk_tree_hash "$repo_root")" || exit 0
+marker=$(wk_suite_marker_path "$repo_root")
 
 echo "suite-guard: this tree is already proved: the full suite ran green on it and $marker records it. Run the narrowest test that proves the change (node tests/<dir>/<name>.test.js); the commit gate reads the same record for a commit whose staged tree matches it." >&2
 exit 2

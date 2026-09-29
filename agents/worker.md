@@ -3,6 +3,7 @@ name: worker
 description: Implements a brief end-to-end. Builds exactly what the brief asks, runs its named tests, and reports by the handoff convention
 tools: Bash, Glob, Grep, Read, Edit, Write, NotebookEdit, TodoWrite
 model: opus
+effort: xhigh
 ---
 
 # Identity

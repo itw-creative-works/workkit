@@ -81,21 +81,26 @@ link_command() {
 }
 
 # The Windows script shell is current when it exists and its source is not newer.
-script_shell_exe_current() { [[ -f "$SCRIPT_SHELL_EXE" && ! "$SCRIPT_DIR/script-shell.cs" -nt "$SCRIPT_SHELL_EXE" ]]; }
+script_shell_exe_current() {
+  local exe
+  exe="$(wk_script_shell_exe)" || return 1
+  [[ -f "$exe" && ! "$SCRIPT_DIR/script-shell.cs" -nt "$exe" ]]
+}
 
 # npm on Windows starts its shell as a plain program, so there it is an
 # executable built from script-shell.cs with the compiler every Windows ships,
 # into the machine's own folder; built when missing or older than its source.
 script_shell_exe() {
   local csc="${SYSTEMROOT:-${SystemRoot:-C:/Windows}}/Microsoft.NET/Framework64/v4.0.30319/csc.exe"
-  local src="$SCRIPT_DIR/script-shell.cs" out="$SCRIPT_SHELL_EXE"
+  local src="$SCRIPT_DIR/script-shell.cs" out
+  out="$(wk_script_shell_exe)" || return 1
   script_shell_exe_current && return 0
   if [[ ! -f "$csc" ]]; then
     wk_skip "npm: no C# compiler at $csc, so the Windows script shell cannot be built and script-shell stays unset"
     return 1
   fi
   local -a build=("$csc" -nologo -optimize -target:exe "-out:$(cygpath -w "$out")" "$(cygpath -w "$src")")
-  mkdir -p "$USER_DIR"
+  mkdir -p "${out%/*}"
   if MSYS_NO_PATHCONV=1 "${build[@]}" >/dev/null 2>&1; then
     wk_ok "npm: built $out from script-shell.cs"
   else
@@ -109,13 +114,14 @@ script_shell_exe() {
 # human's run sets it (never --auto); someone else's value is reported, never
 # replaced; `doctor` reports and returns 1 on attention.
 script_shell() {
-  local want="$ENGINE_LINK/script-shell.sh" have note
+  local want="$ENGINE_LINK/script-shell.sh" have note exe
   case "${OSTYPE:-}" in
     msys*|cygwin*)
-      want="$(wk_git_path "$SCRIPT_SHELL_EXE")" || return 0
+      exe="$(wk_script_shell_exe)" || return 0
+      want="$(wk_git_path "$exe")" || return 0
       if [[ "${1:-}" == doctor ]]; then
         if ! script_shell_exe_current; then
-          wk_warn "npm: $SCRIPT_SHELL_EXE is missing or older than script-shell.cs; run \`workkit update\`"
+          wk_warn "npm: $exe is missing or older than script-shell.cs; run \`workkit update\`"
           return 1
         fi
       elif [[ "$QUIET" -ne 1 ]]; then
@@ -126,7 +132,7 @@ script_shell() {
     wk_skip "npm: not on this machine, so there is no script-shell to point at the kit"
     return 0
   fi
-  if ! have="$(npm config get script-shell 2>/dev/null)"; then
+  if ! have="$(wk_npm_script_shell)"; then
     wk_warn "npm: \`npm config get script-shell\` failed; run it to see why"
     [[ "${1:-}" == doctor ]] && return 1
     return 0
@@ -143,10 +149,7 @@ script_shell() {
         wk_warn "npm: script-shell is not set, so a root \`npm test\` records nothing; run \`workkit update\`"
         return 1
       fi
-      if [[ "$QUIET" -eq 1 ]]; then
-        wk_info "npm: script-shell is unset; run workkit setup to point it at the kit's wrapper"
-        return 0
-      fi
+      [[ "$QUIET" -eq 1 ]] && return 0
       if npm config set script-shell "$want" >/dev/null 2>&1; then
         wk_ok "npm: script-shell set to $want (a root npm test now records the tree it proved)"
       else
@@ -159,7 +162,7 @@ script_shell() {
       if [[ -n "${npm_config_script_shell:-}" ]]; then
         note="npm: script-shell is $have, exported as npm_config_script_shell by your shell, and left as it is; drop that export so \`workkit update\` can point npm at the kit"
       fi
-      if [[ "$QUIET" -eq 1 ]]; then wk_info "$note"; else wk_warn "$note"; fi
+      [[ "$QUIET" -eq 1 ]] || wk_warn "$note"
       [[ "${1:-}" == doctor ]] && return 1 ;;
   esac
   return 0

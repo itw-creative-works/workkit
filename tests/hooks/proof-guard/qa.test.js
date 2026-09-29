@@ -274,6 +274,28 @@ const run = async () => {
     assertEq(runs(dir), 0, 'no test ran');
   });
 
+  // The origin names the repo in another letter case than every flag below.
+  const THIS_REPO = 'git@github.com:Owner/Name.git';
+  for (const flag of ['--repo owner/NAME', '--repo=owner/NAME', '-R owner/NAME', '-Rowner/NAME', '-R "owner/NAME"', "--repo='owner/NAME'"]) {
+    await qaCase(`${flag} naming this repo's origin: the touched red file blocks`, (dir, stub) => {
+      git(dir, `remote add origin ${THIS_REPO}`);
+      write(dir, 'tests/a.test.js', RED);
+      const out = runHook(`gh issue edit 3 ${flag} --add-label status:qa`, stub, dir);
+      assertEq(out.code, 2, `the flip is this repo's, got: ${out.stderr}`);
+      assert(out.stderr.includes('tests/a.test.js'), `names the file, got: ${out.stderr}`);
+      assertEq(runs(dir), 1, 'the touched file ran once');
+    });
+  }
+
+  await qaCase('-R naming another repo than the origin: exit 0, says the run did not run here', (dir, stub) => {
+    git(dir, `remote add origin ${THIS_REPO}`);
+    write(dir, 'tests/a.test.js', RED);
+    const out = runHook('gh issue edit 3 -R owner/other --add-label status:qa', stub, dir);
+    assertEq(out.code, 0, `another repo's flip passes, got: ${out.stderr}`);
+    assert(notice(out).includes('did not run here'), `says so, got: ${out.stdout}`);
+    assertEq(runs(dir), 0, 'no test ran');
+  });
+
   await qaCase('a body that mentions -R is not the flag: the red file still blocks', (dir, stub) => {
     write(dir, 'tests/a.test.js', RED);
     const out = runHook('gh issue edit 3 --body "pass it with -R when needed" --add-label status:qa', stub, dir);

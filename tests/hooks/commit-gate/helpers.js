@@ -105,8 +105,9 @@ const scratchNpmrc = (shell) => {
   fs.writeFileSync(file, shell ? `script-shell=${shell}\n` : '');
   return file;
 };
-// The gate compares only the folder's physical path plus the name, so the
-// wired value needs no built file behind it.
+// The gate asks only that the executable exists before it compares paths, so
+// with no compiler an empty stand-in wires it.
+if (IS_WINDOWS && !fs.existsSync(EXE)) fs.writeFileSync(EXE, '');
 const WIRED_NPMRC = scratchNpmrc(IS_WINDOWS ? gitPath(EXE) : WRAPPER);
 
 // A parent `npm test` exports its own npm_config_* (the real userconfig among

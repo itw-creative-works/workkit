@@ -142,7 +142,7 @@ const run = async () => {
   await test('prompt.md mentions doc parity', () => {
     const content = fs.readFileSync(PROMPT, 'utf8');
     assert(
-      content.includes('doc parity') || content.includes('Doc parity') || content.includes('CLAUDE.md'),
+      content.includes('doc parity') || content.includes('Doc parity'),
       'should reference the doc parity system'
     );
   });

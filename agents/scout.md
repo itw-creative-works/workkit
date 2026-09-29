@@ -3,7 +3,7 @@ name: scout
 description: Fast read-only recon. Answers a specific question about code, files, or history by reading, and returns a compressed map with evidence
 tools: Glob, Grep, Read, Bash
 model: sonnet
-effort: low
+effort: medium
 ---
 
 # Identity

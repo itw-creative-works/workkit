@@ -26,11 +26,17 @@ main() {
   [ "$pkg_dir" = "$(cd "$root" && pwd -P)" ] || exec sh "$@"
 
   # Hashed before and after: an edit made while the suite runs is never proved.
-  before=$(wk_tree_hash "$root") || before=""
+  # A failed hash is its own answer, never an empty id read as a changed tree.
+  hashed=1
+  before=$(wk_tree_hash "$root") || hashed=0
   rc=0
   sh "$@" || rc=$?
   [ "$rc" -eq 0 ] || exit "$rc"
-  after=$(wk_tree_hash "$root") || after=""
+  after=$(wk_tree_hash "$root") || hashed=0
+  if [ "$hashed" -eq 0 ]; then
+    printf 'script-shell: the suite passed, but the tree of %s could not be hashed, so no record was written\n' "$root" >&2
+    exit 1
+  fi
   if [ "$before" != "$after" ]; then
     printf 'script-shell: the suite passed, but the tree changed during the run, so no record was written; run npm test again\n' >&2
     exit 0

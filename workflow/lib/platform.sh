@@ -44,6 +44,19 @@ wk_git_path() {
   printf '%s' "$p"
 }
 
+# wk_script_shell_exe: npm's script shell on Windows, the executable setup
+# builds into the machine's own folder. Setup writes it; the commit gate reads it.
+wk_script_shell_exe() {
+  printf '%s\n' "${WORKFLOW_HOME:-${HOME:-}/.workkit}/script-shell.exe"
+}
+
+# wk_npm_script_shell: npm's script-shell value. npm on Windows ends it with a
+# CRLF a command substitution keeps half of; npm's own exit status comes back.
+wk_npm_script_shell() {
+  npm config get script-shell 2>/dev/null | tr -d '\r'
+  return "${PIPESTATUS[0]}"
+}
+
 # wk_port_pids: the pids listening on a TCP port, one per line, nothing when it
 # is free. netstat matches the `:<port>` suffix on either stack (`:18693` is not
 # 8693), each pid once; lsof `-b` skips stat() on every mount, which a stalled

@@ -52,10 +52,6 @@ hook_is_code_path() {
   hook_has_code_ext "${1##*/}"
 }
 
-# hook_has_test_script <dir>: the body is wk_has_test_script in the engine's
-# lib/suite.sh. Consumers: safety/commit-gate, hook_test_package_dir.
-hook_has_test_script() { wk_has_test_script "$@"; }
-
 # hook_test_script_text <dir>: prints <dir>/package.json's scripts.test text;
 # nothing when it is absent or unreadable, never what jq parsed before failing.
 # Consumer: hook_suite_root_run.
@@ -75,7 +71,7 @@ hook_test_package_dir() {
   dir="$2"
   case "/$dir/" in */node_modules/*) return 0 ;; esac
   while [ -n "$dir" ]; do
-    if hook_has_test_script "$root/$dir"; then
+    if wk_has_test_script "$root/$dir"; then
       printf '%s\n' "$dir"
       return 0
     fi

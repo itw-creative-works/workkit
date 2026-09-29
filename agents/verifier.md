@@ -3,7 +3,7 @@ name: verifier
 description: Blind review of another agent's output. Judges the diff against the brief, scores findings with confidence; also the workkit:review scorer
 tools: Glob, Grep, Read, Bash
 model: opus
-effort: high
+effort: xhigh
 ---
 
 # Identity

@@ -6,8 +6,9 @@
 # own, so repo-specific steps (extra tools, matrix builds) belong here, not in
 # the workflow core's template.
 #
-# The job mirrors what the local safety/commit-gate hook runs: the npm test
-# suite. A repo without a test script passes trivially. The check exists so
+# The job runs the root npm test suite, the same proof the local
+# safety/commit-gate hook requires a record of before a code commit. A repo
+# without a test script passes trivially. The check exists so
 # a pull request from ANY author (cloud agent, collaborator, laptop without
 # the hooks) meets the same bar before merge.
 #
@@ -21,7 +22,7 @@ on:
   push:
 
 jobs:
-  test:
+  suite:
     # Ubuntu and Windows: the suites that need a provisioned Mac skip themselves
     # and say so, and a macOS runner bills at ten times the rate for no added
     # coverage. Windows runs the Git Bash spellings and the script shell's build.
@@ -42,6 +43,12 @@ jobs:
           git config --global core.autocrlf false
           git config --global user.name "checks"
           git config --global user.email "checks@ci.local"
+      # The runner's temp dir is 8.3 (RUNNER~1) while git and `pwd -P` answer the
+      # long name, so scratch goes to runner.temp. TMP stays: Git Bash mounts /tmp
+      # at TMP, and a scratch dir under that mount reads back as /tmp/... instead.
+      - name: Long-form temp dir
+        if: runner.os == 'Windows'
+        run: printf 'TEMP=%s\nTMPDIR=%s\n' '${{ runner.temp }}' '${{ runner.temp }}' >> "$GITHUB_ENV"
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
@@ -55,5 +62,13 @@ jobs:
           fi
       - name: Test
         run: npm test
+  test:
+    # The one check branch protection requires by name: a matrix job reports
+    # one check per leg, so this fans them in and fails unless every leg passed.
+    needs: suite
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.suite.result }}" = success
   changelog:
     uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main

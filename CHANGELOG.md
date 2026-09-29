@@ -7,9 +7,26 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#360](../../issues/360) - Personal add-ons stack onto workkit agents: a new `manager:addon` hook adds the text of `~/.workkit/agents/<name>.md` to every `workkit:<name>` spawn, so a personal layer adds to the shipped agent instead of replacing it; the review skill's compliance lens is now always `workkit:reviewer`.
+
 ### Changed
 
-- [#358](../../issues/358) - The checks workflow runs the suite on a Windows runner beside Linux on every push, so a Windows break shows up in CI instead of waiting for a manual check on a Windows machine; the eight tests that failed on Windows now pass there.
+- [#361](../../issues/361) - The crew runs at higher effort by default: scout at `medium`, worker and verifier at `xhigh`, the advisor still following the session; the ladder and `docs/agents.md` now say effort lives in each agent file's `effort:` line.
+
+- [#358](../../issues/358) - The checks workflow runs the suite on a Windows runner beside Linux on every push, so a Windows break shows up in CI; one `test` check reports both, the name branch protection requires. The eight tests a Windows machine failed are fixed and pass on macOS, pending the Windows job.
+
+- [#359](../../issues/359) - A repo no longer carries a `CLAUDE.md`, since Claude Code reads `AGENTS.md` itself: at session start `docs:state-check` says to delete a pointer-only one, rename a lone content one, or merge one by hand beside an `AGENTS.md`; `docs:board-guard` stops bouncing `CLAUDE.md` writes.
+
+- [#364](../../issues/364) - The hooks call the suite record's engine names (`wk_tree_hash` and the rest) directly, with no `hook_` second names; setup and the commit gate read npm's `script-shell` through one helper that drops Windows' carriage return; `--auto` loses two script-shell lines it never printed.
+
+### Fixed
+
+- [#365](../../issues/365) - A flip to `status:qa` whose `--repo`/`-R` names this tree's own repo, in any letter case, now runs the touched test files; only a flag naming a different repo skips the run with its notice.
+- [#362](../../issues/362) - A green root `npm test` whose tree cannot be hashed before or after the run now exits 1 with its own `script-shell:` line, instead of reading as a tree the run changed and exiting 0 with no record.
+
+- [#363](../../issues/363) - On Windows the commit gate reads a deleted `script-shell.exe` as unwired, so its bounce names `workkit setup`; the executable's path has one home in the engine's `lib/platform.sh`, read by setup and the gate.
 
 ## [0.62.0] - 2026-09-28
 
@@ -19,7 +36,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ### Changed
 
-- [#354](../../issues/354) [`c420bcf`](../../commit/c420bcf) Thanks [@ianwieds]! - The commit gate no longer runs tests: a root `npm test`, run by anyone, records the tree it proved (npm's `script-shell` points at the kit's wrapper; `workkit setup` sets it), and the gate checks that record; the nested per-package pass and the gate's test deadline are gone.
+- [#354](../../issues/354) [`c420bcf`](../../commit/c420bcf) Thanks [@ianwieds]! - The commit gate no longer runs tests: a root `npm test`, run by anyone, records the tree it proved (npm's `script-shell` points at the kit's wrapper; `workkit setup` sets it), and the gate checks that record; the nested per-package pass, the gate's test deadline and 0.61.0's `safety/suite-marker` hook are gone.
 
 ### Fixed
 
@@ -35,7 +52,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ### Fixed
 
-- [#353](../../issues/353) - The published dashboard boots again: every page stopped at load with `dom is not a function` and the service worker failed to start, because the app still called the framework's old API; it now follows omega's one-instance form.
+- [#353](../../issues/353) [`45ad99f`](../../commit/45ad99f) Thanks [@ianwieds]! - The published dashboard boots again: every page stopped at load with `dom is not a function` and the service worker failed to start, because the app still called the framework's old API; it now follows omega's one-instance form.
 
 ## [0.61.0] - 2026-09-27
 

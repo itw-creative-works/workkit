@@ -1,6 +1,7 @@
 // Tests for hooks/docs:state-check: the SessionStart hook that announces open
-// status:inbox issues, a non-empty .workkit/capture.md, a content-bearing
-// CLAUDE.md, and an oversized AGENTS.md, silent when everything is current.
+// status:inbox issues, a non-empty .workkit/capture.md, a repo CLAUDE.md (to
+// delete, rename or merge), and an oversized AGENTS.md, silent when everything
+// is current.
 // Every PATH carries no gh or a recording stub, so nothing hits the API.
 
 const path = require('path');
@@ -68,13 +69,13 @@ const dropPathWithoutGh = () => {
   noGhPath = null;
 };
 
-const runHook = (cwd, { pathPrefix, cache } = {}) => {
+const runHook = (cwd, { pathPrefix, cache, home } = {}) => {
   const input = JSON.stringify({ cwd: shellPath(cwd), source: 'startup' });
   const cacheDir = cache || mkTmp('sc-cache-');
   const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
     input,
     env: {
-      HOME: shellPath(os.homedir()),
+      HOME: shellPath(home || os.homedir()),
       PATH: pathPrefix ? systemPathWith(pathPrefix) : pathWithoutGh(),
       STATE_CHECK_CACHE: shellPath(cacheDir),
     },
@@ -146,7 +147,7 @@ const run = async () => {
     const { code, stdout } = runHook(repo);
     assertEq(code, 0, 'exit 0');
     assert(!stdout.includes('status:inbox'), 'no issue line without gh');
-    assert(stdout.includes('CLAUDE.md holds content'), 'the local checks still run');
+    assert(stdout.includes('git mv CLAUDE.md AGENTS.md'), 'the local checks still run');
     cleanup(repo);
   });
 
@@ -217,23 +218,59 @@ const run = async () => {
     cleanup(dir);
   });
 
-  group('state-check: content-bearing CLAUDE.md (pointer doctrine)');
+  group('state-check: a repo CLAUDE.md is deleted, renamed or merged');
 
-  await test('content-bearing CLAUDE.md: announces conversion', () => {
+  // Claude Code reads AGENTS.md itself, and a project CLAUDE.md stops that read,
+  // so every repo CLAUDE.md is announced with the one fix its shape calls for.
+  const claudeCase = (claude, { agents } = {}) => {
     const dir = mkTmp('ic-test-');
-    fs.writeFileSync(path.join(dir, 'CLAUDE.md'), '# Big Doc\n\nlots of rules\nmore rules\nand more\n');
+    fs.writeFileSync(path.join(dir, 'CLAUDE.md'), claude);
+    if (agents !== undefined) fs.writeFileSync(path.join(dir, 'AGENTS.md'), agents);
     const { stdout } = runHook(dir);
-    assert(stdout.includes('CLAUDE.md holds content'), `announces conversion, got: ${stdout}`);
-    assert(stdout.includes('SEPARATE commit'), 'includes the rename-safe recipe');
     cleanup(dir);
+    return stdout;
+  };
+
+  await test('a pointer-only CLAUDE.md: says to delete it', () => {
+    const stdout = claudeCase('@AGENTS.md\n', { agents: '# repo\n' });
+    assert(stdout.includes('git rm CLAUDE.md'), `names the delete, got: ${stdout}`);
+    assert(!stdout.includes('git mv'), 'never the rename');
+    assert(!stdout.includes('by hand'), 'never the merge');
   });
 
-  await test('pointer CLAUDE.md: silent', () => {
-    const dir = mkTmp('ic-test-');
-    fs.writeFileSync(path.join(dir, 'CLAUDE.md'), '@AGENTS.md\n');
-    const { stdout } = runHook(dir);
-    assert(!stdout.includes('CLAUDE.md holds content'), 'a compliant pointer stays silent');
-    cleanup(dir);
+  await test('a pointer with blank lines and trailing spaces: still pointer-only', () => {
+    const stdout = claudeCase('\n  @AGENTS.md  \r\n\n');
+    assert(stdout.includes('git rm CLAUDE.md'), `names the delete, got: ${stdout}`);
+  });
+
+  await test('a content CLAUDE.md with no AGENTS.md beside it: says to rename it', () => {
+    const stdout = claudeCase('# Big Doc\n\nlots of rules\n');
+    assert(stdout.includes('git mv CLAUDE.md AGENTS.md'), `names the rename, got: ${stdout}`);
+    assert(stdout.includes('history'), 'says the rename keeps history');
+    assert(!stdout.includes('@AGENTS.md'), `no pointer goes back in its place, got: ${stdout}`);
+    assert(!stdout.includes('git rm CLAUDE.md'), 'never the delete');
+  });
+
+  await test('a single content line with no AGENTS.md: still a rename', () => {
+    const stdout = claudeCase('Use tabs.\n');
+    assert(stdout.includes('git mv CLAUDE.md AGENTS.md'), `one line of content is content, got: ${stdout}`);
+    assert(!stdout.includes('@AGENTS.md'), `no pointer goes back in its place, got: ${stdout}`);
+  });
+
+  await test('a content CLAUDE.md beside an AGENTS.md: says to merge by hand', () => {
+    const stdout = claudeCase('@AGENTS.md\n\nUse tabs.\n', { agents: '# repo\n\nthe overview\n' });
+    assert(stdout.includes('by hand'), `names the hand merge, got: ${stdout}`);
+    assert(!stdout.includes('git mv'), 'never the rename: AGENTS.md is already there');
+  });
+
+  await test('the user-level ~/.claude/CLAUDE.md is out of scope: silent', () => {
+    const home = mkTmp('ic-home-');
+    const claudeDir = path.join(home, '.claude');
+    fs.mkdirSync(claudeDir);
+    fs.writeFileSync(path.join(claudeDir, 'CLAUDE.md'), '@AGENTS.md\n');
+    const { stdout } = runHook(claudeDir, { home });
+    assertEq(stdout, '', `the global pointer stays, got: ${stdout}`);
+    cleanup(home);
   });
 
   await test('no CLAUDE.md: silent', () => {

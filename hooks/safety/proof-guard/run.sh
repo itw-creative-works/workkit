@@ -145,12 +145,28 @@ EOF
   return 0
 }
 
+# pg_repo_value <clause>: the first `--repo`/`-R` value the clause hands gh,
+# in any spelling it takes, with its quotes off.
+pg_repo_value() {
+  pg_flag_values "$1" --repo -R | sed -n 1p | tr -d "\"'"
+}
+
+# pg_repo_is_here <clause>: whether the clause's repo value names the origin of
+# the session's tree, owner/name in any letter case. No origin is never here.
+pg_repo_is_here() {
+  local want here
+  here=$(wk_repo_slug "$cwd" | tr '[:upper:]' '[:lower:]')
+  want=$(pg_repo_value "$1" | tr '[:upper:]' '[:lower:]')
+  [ -n "$here" ] && [ "$want" = "$here" ]
+}
+
 # A `--repo`/`-R` in any spelling gh takes, attached or not. Its presence is
 # read off the quote-stripped clause, so a body that mentions it is not one.
 repo_flag_re='(^|[[:space:]])(--repo([=[:space:]]|$)|-R)'
 
 # The qa flips seen, here and in another repo: the touched-test run happens
-# once per command, after the walk, and only for this tree.
+# once per command, after the walk, and only for this tree. A repo flag that
+# names this tree's origin is a flip here.
 qa_here=0
 qa_elsewhere=0
 
@@ -178,7 +194,7 @@ while IFS= read -r clause; do
     # (quoted or bare) so a `--remove-label status:complete` never reads as one.
     labels=$(pg_flag_values "$clause" --add-label)
     if printf '%s' "$labels" | grep -q 'status:qa'; then
-      if printf '%s' "$detect" | grep -Eq -- "$repo_flag_re"; then
+      if printf '%s' "$detect" | grep -Eq -- "$repo_flag_re" && ! pg_repo_is_here "$clause"; then
         qa_elsewhere=1
       else
         qa_here=1
@@ -219,8 +235,7 @@ while IFS= read -r clause; do
   repo=""
   repo_unreadable=0
   if printf '%s' "$detect" | grep -Eq -- "$repo_flag_re"; then
-    repo=$(pg_flag_values "$clause" --repo -R | sed -n 1p)
-    repo=$(printf '%s' "$repo" | tr -d "\"'")
+    repo=$(pg_repo_value "$clause")
     case "$repo" in
       ''|*'$'*|*'`'*|*_hookq_*) repo_unreadable=1 ;;
     esac

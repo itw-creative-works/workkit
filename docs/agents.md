@@ -14,7 +14,7 @@ Agent definitions shipped by the workkit plugin. They surface in a session names
 
 ## Classes (the manager system)
 
-`scout` / `worker` / `verifier` / `advisor` are the CAPABILITY CLASSES of the manager system. Their concrete model is supplied per spawn by the `manager/resolver` hook from `../hooks/manager/resources/ladder.json` (the tier SSOT) and the LIVE session model. A mid-session `/model` switch takes effect on the next spawn. The `model:` frontmatter in these four files is only the static fallback for when the hook is disabled; never treat it as the routing truth, and never pass a `model` param when dispatching them.
+`scout` / `worker` / `verifier` / `advisor` are the CAPABILITY CLASSES of the manager system. Their concrete model is supplied per spawn by the `manager/resolver` hook from `../hooks/manager/resources/ladder.json` (the tier SSOT) and the LIVE session model. A mid-session `/model` switch takes effect on the next spawn. The `model:` frontmatter in these four files is only the static fallback for when the hook is disabled; never treat it as the routing truth, and never pass a `model` param when dispatching them. Effort is the other way round: the ladder sets models only, and each class's effort lives in its own file's `effort:` frontmatter line, the one place Claude Code reads it (the Agent tool takes no effort per spawn). An agent file with no `effort:` line follows the session's.
 
 Test scope is doctrine for every class, the manager included: a worker's mid-work proof is the test files it touched, red-green on the new cases; a verifier runs the narrowest command that checks the claim. None of them runs a package or root suite unless the brief asks or the finding is suite-scoped. The full suite runs once per tree, as `npm test` at the repo root before the commit: the shell records the tree it proved, and the gate checks the record (spec § The proof); `safety/suite-guard` bounces a repeat full run on a tree already proved green, from any class. The per-feature run is enforced too: `safety/proof-guard` runs the touched test files at the flip to `status:qa`. The rule is the spec's: `project-state.md` § The proof.
 
@@ -41,6 +41,17 @@ A decision put to the owner is SELF-CONTAINED: the question carries its full bac
 A session's agents come from three places: any plugin ships them in its own `agents/` directory (this repo's, namespaced `workkit:`, is one such set), a repo ships them in `.claude/agents/`, and a user in `~/.claude/agents/`. Precedence on a name collision is **project > user > plugin**.
 
 The `manager/resolver` hook routes ONLY the four workkit classes above. Every other `subagent_type`, foreign or built-in, passes through untouched. So a foreign agent's `model:` frontmatter IS its contract: nothing here overrides it, and nothing here needs to know it exists. Ladder routing for foreign agents is deliberately unbuilt; it waits for a real consumer to name what it needs.
+
+## Personal add-ons
+
+A workkit agent is customized by STACKING onto it, never by replacing it: the flows always dispatch `workkit:<name>`, and a personal layer adds to that agent at spawn.
+
+- **Where it lives**: `~/.workkit/agents/<name>.md` (the workkit GLOBAL layer; `WORKFLOW_HOME` moves it), one file per agent, named by the agent's bare name: `scout.md` stacks onto `workkit:scout`, `reviewer.md` onto `workkit:reviewer`.
+- **How it arrives**: the `manager:addon` hook (SubagentStart) reads the file each time that agent spawns and adds its text to the agent's context, under a one-line header naming the file. One mechanism serves every workkit agent, present and future; there is no per-agent code.
+- **What it can do**: add context. Preloads, house rules, the skill or doc to read first, anything the agent should know before its first prompt.
+- **What it cannot do**: change the agent's `tools`, `model` or `effort`, or remove anything the shipped definition says. Those stay the agent file's (and the resolver's, for the model).
+- **No file, or a blank one**: the agent runs exactly as shipped, which is the normal case. A file that exists but cannot be read is an error, shown as a hook error notice in that agent's transcript, never a silent skip.
+- A change to the file lands on the next spawn; no restart needed.
 
 ## File-handoff convention (all dispatches)
 
@@ -70,4 +81,4 @@ After **3 failed attempts** at the same obstacle, stop and return `BLOCKED` with
 - **No knowledge in agent files**: agents define behavior and preloads; knowledge lives in skills/docs. The reviewer's "derive the checklist from live docs" pattern is the model.
 - **Every markdown file in `agents/` surfaces as an agent type**, which is why this document lives in `docs/` instead: a contract kept beside the definitions would become a definition.
 - **No machine-specific paths.** These files ship to any repo on any machine: no absolute paths, no pointers into a personal `~/.claude` tree beyond what every Claude Code install has.
-- Repo-doc entry point: AGENTS.md (CLAUDE.md is a one-line pointer in migrated repos; a repo that hasn't migrated may still carry content in CLAUDE.md: read whichever bears content).
+- Repo-doc entry point: AGENTS.md. A repo carries no `CLAUDE.md`; one still present is healed by the spec's § Repo docs.

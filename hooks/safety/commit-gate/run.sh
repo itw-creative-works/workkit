@@ -130,7 +130,7 @@ files=$(printf '%s' "$files" | grep -v '^$' || true)
 if [ -z "$files" ] && [ "$has_pathspec" -eq 0 ]; then
   # The gate never stands down silently. The package.json probe sits on this
   # path alone, past a resolved commit clause, so ordinary commands never pay it.
-  if hook_has_test_script "$repo_root"; then
+  if wk_has_test_script "$repo_root"; then
     stand_down "commit-gate: nothing staged and no -a/pathspec: the gate has nothing to judge, so no check ran (suite included)."
   fi
   exit 0
@@ -245,7 +245,7 @@ fi
 # commit that adds code files while touching no test file at all. Only in repos
 # that define a test script (a repo without tests isn't asked to start here),
 # and only for staged adds (pathspec commits are already gated strictly).
-if [ "$bookkeeping" -eq 0 ] && [ "$has_pathspec" -eq 0 ] && hook_has_test_script "$repo_root"; then
+if [ "$bookkeeping" -eq 0 ] && [ "$has_pathspec" -eq 0 ] && wk_has_test_script "$repo_root"; then
   added=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=A 2>/dev/null || true)
   new_code=""
   while IFS= read -r path; do
@@ -346,15 +346,17 @@ fi
 
 # script_shell_unwired: npm's script-shell is not the kit's, so a root `npm
 # test` writes no record: the wrapper beside this hook's engine, or on Windows
-# the script-shell.exe setup builds in the machine's own folder, compared by
-# physical path. No npm to ask: false.
+# the script-shell.exe setup builds, which must exist, compared by physical
+# path. No npm to ask: false.
 script_shell_unwired() {
-  local have dir want
+  local have dir want exe
   command -v npm >/dev/null 2>&1 || return 1
-  have=$(npm config get script-shell 2>/dev/null | tr -d '\r') || return 1
+  have=$(wk_npm_script_shell) || return 1
   case "$have" in ''|null|undefined) return 0 ;; esac
   if hook_is_windows; then
-    want="$(cd "${WORKFLOW_HOME:-$HOME/.workkit}" 2>/dev/null && pwd -P)/script-shell.exe" || return 0
+    exe=$(wk_script_shell_exe)
+    [ -f "$exe" ] || return 0
+    want="$(cd "${exe%/*}" 2>/dev/null && pwd -P)/${exe##*/}" || return 0
     have=$(cygpath -u "$have" 2>/dev/null) || return 0
   else
     want="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../workflow" 2>/dev/null && pwd -P)/script-shell.sh"
@@ -367,23 +369,23 @@ script_shell_unwired() {
 # green root `npm test` wrote for the tree it carries: the real index, or under
 # -a/--all the index plus every tracked change. The gate runs nothing, and a
 # pathspec commit's tree is never built, so it has nothing to compare.
-if [ "$has_code" -eq 1 ] && hook_has_test_script "$repo_root"; then
+if [ "$has_code" -eq 1 ] && wk_has_test_script "$repo_root"; then
   [ "$has_pathspec" -eq 1 ] && block "a pathspec commit carries a tree the gate cannot compare with the record: stage the files and commit from the index."
   if [ "$has_all_flag" -eq 1 ]; then
-    commit_tree=$(hook_tree_hash "$repo_root" -u) || commit_tree=""
+    commit_tree=$(wk_tree_hash "$repo_root" -u) || commit_tree=""
   else
-    commit_tree=$(hook_suite_index_tree "$repo_root") || commit_tree=""
+    commit_tree=$(wk_suite_index_tree "$repo_root") || commit_tree=""
   fi
-  if hook_suite_proved "$repo_root" "$commit_tree"; then
+  if wk_suite_proved "$repo_root" "$commit_tree"; then
     stand_down "commit-gate: suite proved: a green root \`npm test\` recorded this tree."
-  elif hook_suite_proved "$repo_root" "$(hook_tree_hash "$repo_root" || true)"; then
+  elif wk_suite_proved "$repo_root" "$(wk_tree_hash "$repo_root" || true)"; then
     block "the green run proved the tree on disk, and this commit carries a different one (an untracked file or an unstaged edit the commit leaves out): stage everything that ran (\`git add -A\`) or stash what the commit leaves out, then commit."
   elif script_shell_unwired; then
     block "the commit carries code and no green run proves this tree, and npm's script-shell does not point at the kit's wrapper, so a root \`npm test\` writes no record. Run \`workkit setup\` once, then \`npm test\` at the repo root, then commit."
   else
     block "the commit carries code and no green run proves this tree. Run \`npm test\` at the repo root (once per tree; the shell records a green run), then commit."
   fi
-elif hook_has_test_script "$repo_root"; then
+elif wk_has_test_script "$repo_root"; then
   # The stand-down is deliberate but never silent: a repo that defines a suite
   # hears why this commit did not need it.
   stand_down "commit-gate: suite not run: the commit carries no code (docs-only or version-stamp-only)."

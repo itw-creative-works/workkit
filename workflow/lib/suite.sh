@@ -5,7 +5,7 @@
 # readers); it reads wk_jq, wk_marker_path and wk_git_path from platform.sh.
 
 # wk_has_test_script <dir>: <dir>/package.json declares scripts.test as a
-# non-empty string. Consumer: hook_has_test_script.
+# non-empty string. Consumers: safety/commit-gate, hook_test_package_dir.
 wk_has_test_script() {
   [ -f "$1/package.json" ] \
     && wk_jq -e '.scripts.test | type == "string" and length > 0' "$1/package.json" >/dev/null 2>&1

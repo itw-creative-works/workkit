@@ -141,6 +141,20 @@ const run = async () => {
     cleanup(world.root); cleanup(repo);
   });
 
+  await test('a tree that cannot be hashed after the run: exit 1, the line names the hash, no record', () => {
+    const world = mkWorld();
+    // The suite turns the temp folder into a file, so the hash before it runs
+    // succeeds and the one after it fails at mktemp.
+    const repo = mkRepo({ scripts: { test: 'rm -rf "$TMPDIR" && : > "$TMPDIR"' } });
+    const res = npm(world, repo, ['test']);
+    assertEq(res.code, 1, `a green run with no hash is not green, got: ${res.code} ${res.err}`);
+    assert(res.err.includes('script-shell: the suite passed, but the tree of ')
+      && res.err.includes(' could not be hashed, so no record was written\n'), `the line names the hash, got: ${res.err}`);
+    assert(!res.err.includes('the tree changed during the run'), `never read as a changed tree, got: ${res.err}`);
+    assertEq(recorded(world, repo), undefined, 'no record was written');
+    cleanup(world.root); cleanup(repo);
+  });
+
   group('script-shell: the wrapper is parsed whole before the run');
 
   await test('an in-place rewrite of the wrapper during the run changes nothing: green, the record holds the tree', () => {

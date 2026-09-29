@@ -81,11 +81,12 @@ const PORT_TOOL_PATH = { PATH: process.env.PATH };
  * @param {boolean} [ignoreTerm]
  */
 const listener = (ignoreTerm = false) => new Promise((resolve, reject) => {
-  const child = spawn(process.execPath, ['-e',
-    (ignoreTerm ? "process.on('SIGTERM',()=>{});" : '')
-    + "const s=require('net').createServer();"
-    + "s.listen(0,'127.0.0.1',()=>process.stdout.write(`${s.address().port}\\n`));"
-    + 'setInterval(()=>{},1000);'], { stdio: ['ignore', 'pipe', 'ignore'] });
+  const child = spawn(process.execPath, ['-e', [
+    ignoreTerm ? "process.on('SIGTERM',()=>{});" : '',
+    "const s=require('net').createServer();",
+    "s.listen(0,'127.0.0.1',()=>process.stdout.write(`${s.address().port}\\n`));",
+    'setInterval(()=>{},1000);',
+  ].join('')], { stdio: ['ignore', 'pipe', 'ignore'] });
   let out = '';
   child.on('error', reject);
   child.stdout.on('data', (chunk) => {
@@ -149,6 +150,32 @@ const run = async () => {
   await test('sourcing the file runs nothing and sets nothing', () => {
     const { out } = inPlatform('printf "sourced"');
     assertEq(out, 'sourced', `only what the caller asked for, got: ${JSON.stringify(out)}`);
+  });
+
+  group("platform.sh: npm's script shell");
+
+  await test("wk_npm_script_shell: npm's value without the carriage return a Windows npm ends it with", () => {
+    const dir = mkTmp('wf-platform-');
+    stubTool(dir, 'npm', ['#!/bin/bash', 'printf "C:/h/.workkit/script-shell.exe\\r\\n"']);
+    const { code, out } = inPlatform('v=$(wk_npm_script_shell); printf "[%s]" "$v"', { PATH: systemPathWith(dir) });
+    assertEq(code, 0, 'npm answered');
+    assertEq(out, '[C:/h/.workkit/script-shell.exe]', `the value alone, got: ${JSON.stringify(out)}`);
+    cleanup(dir);
+  });
+
+  await test("wk_npm_script_shell: npm's own failure comes back", () => {
+    const dir = mkTmp('wf-platform-');
+    stubTool(dir, 'npm', ['#!/bin/bash', 'exit 3']);
+    const { code } = inPlatform('wk_npm_script_shell', { PATH: systemPathWith(dir) });
+    assertEq(code, 3, "npm's exit status, never tr's");
+    cleanup(dir);
+  });
+
+  await test('wk_script_shell_exe: the executable in the machine folder, WORKFLOW_HOME first', () => {
+    assertEq(inPlatform('wk_script_shell_exe', { WORKFLOW_HOME: '/w/kit', HOME: '/h' }).out,
+      '/w/kit/script-shell.exe\n', 'the named machine folder');
+    assertEq(inPlatform('wk_script_shell_exe', { HOME: '/h' }).out,
+      '/h/.workkit/script-shell.exe\n', 'else the home one');
   });
 
   group('platform.sh: wk_port_pids and wk_end_pid');
@@ -279,7 +306,7 @@ const run = async () => {
     const home = mkTmp('wf-platform-');
     const cache = path.join(home, 'compile-cache');
     const script = "require('node:module').enableCompileCache(process.argv[1]); require('node:path');";
-    const res = spawnSync(process.execPath, ['-e', script, cache], { env: homeEnv(home, {}), encoding: 'utf8' });
+    const res = spawnSync(process.execPath, ['-e', script, cache], { env: homeEnv(home, {}), encoding: 'utf8', timeout: 30000 });
     assertEq(res.status, 0, `the child ran, got: ${res.stderr}`);
     const left = fs.existsSync(cache) ? fs.readdirSync(cache) : [];
     assertEq(left.length, 0, `nothing cached under the scratch home, got: ${left.join(', ')}`);
@@ -315,6 +342,39 @@ const run = async () => {
       'the drive becomes a mount and every separator turns');
     assertEq(asWindows(() => shellPath('/c/Users/My Name/t mp')), '/c/Users/My Name/t mp',
       'nothing is translated twice');
+  });
+
+  await test('a path under the folder Git Bash mounts at /tmp reads as /tmp, any other keeps its drive', () => {
+    // The mount is asked of Git Bash once per process, so a fresh node asks it: a
+    // Mac through the seam's cygpath (which mounts /tmp at C:\tmp), Windows
+    // through the real one, whose mount a child's TEMP does not move.
+    const dir = cygpathWorld();
+    const root = IS_WINDOWS
+      ? spawnSync(which('cygpath'), ['-w', '/tmp'], { encoding: 'utf8', timeout: 30000 }).stdout.trim()
+      : 'C:\\tmp';
+    const probe = [
+      `const { shellPath, asWindows } = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'platform.js'))});`,
+      'const root = process.argv[1];',
+      'const asked = asWindows(() => [`${root}\\\\wf\\\\x y`, `${root.toUpperCase()}\\\\x`,',
+      "  `${root.replace(/\\\\/g, '/')}/x`, root, `${root}x\\\\y`, 'C:\\\\Windows\\\\x'].map(shellPath));",
+      "const native = process.platform === 'win32' ? null : shellPath(`${root}\\\\x`);",
+      'process.stdout.write(JSON.stringify({ asked, native }));',
+    ].join('\n');
+    const res = spawnSync(process.execPath, ['-e', probe, root], {
+      env: { ...process.env, PATH: pathWith(dir) },
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+    assertEq(res.status, 0, `the probe ran, stderr: ${res.stderr}`);
+    const { asked: [under, upper, slashed, itself, sibling, other], native } = JSON.parse(res.stdout);
+    assertEq(under, '/tmp/wf/x y', 'a path under the mount reads as /tmp');
+    assertEq(upper, '/tmp/x', 'the drive and folder names compare without case');
+    assertEq(slashed, '/tmp/x', 'forward slashes compare the same as backslashes');
+    assertEq(itself, '/tmp', 'the mount root itself is /tmp');
+    assert(/^\/[a-z]\/.*x\/y$/.test(sibling), `a sibling sharing the prefix keeps its drive, got: ${sibling}`);
+    assertEq(other, '/c/Windows/x', 'any other path keeps its drive');
+    if (!IS_WINDOWS) assertEq(native, 'C:\\tmp\\x', 'macOS leaves the path as it came');
+    cleanup(dir);
   });
 
   return summary();

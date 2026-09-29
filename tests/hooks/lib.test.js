@@ -377,24 +377,22 @@ const run = async () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  await test('hook_has_test_script: a package.json that defines scripts.test, and nothing else', () => {
+  await test('wk_has_test_script: a package.json that defines scripts.test, and nothing else', () => {
     const root = mkTmp('lib-testscript-');
     for (const d of ['tested', 'bare', 'none']) fs.mkdirSync(path.join(root, d));
     fs.writeFileSync(path.join(root, 'tested', 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
     fs.writeFileSync(path.join(root, 'bare', 'package.json'), JSON.stringify({ name: 'bare', scripts: { lint: 'x' } }));
-    const ask = (d) => runLib(`hook_has_test_script "${shellPath(path.join(root, d))}"`).code;
+    const ask = (d) => runLib(`wk_has_test_script "${shellPath(path.join(root, d))}"`).code;
     assertEq(ask('tested'), 0, 'a package.json with a test script answers yes');
     assertEq(ask('bare'), 1, 'a package.json without a test script answers no');
     assertEq(ask('none'), 1, 'a folder with no package.json answers no');
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  await test('an empty scripts.test is no script, to the hook predicate and the engine one alike', () => {
+  await test('an empty scripts.test is no script', () => {
     const root = mkTmp('lib-emptyscript-');
     fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: '' } }));
-    for (const fn of ['hook_has_test_script', 'wk_has_test_script']) {
-      assertEq(runLib(`${fn} "${shellPath(root)}"`).code, 1, `${fn} answers no`);
-    }
+    assertEq(runLib(`wk_has_test_script "${shellPath(root)}"`).code, 1, 'wk_has_test_script answers no');
     fs.rmSync(root, { recursive: true, force: true });
   });
 
@@ -439,8 +437,8 @@ const run = async () => {
       `got: ${out.stdout}|${out.stderr}`);
   });
 
-  await test('hook_suite_marker_path is the suite marker dir plus the sha of the root', () => {
-    const out = runLib('hook_suite_marker_path /repos/thing', { TMPDIR: shellPath(TMP) });
+  await test('wk_suite_marker_path is the suite marker dir plus the sha of the root', () => {
+    const out = runLib('wk_suite_marker_path /repos/thing', { TMPDIR: shellPath(TMP) });
     assertEq(out.stdout.trim(),
       shellPath(path.join(TMP, 'claude-suite-marker', sha1('/repos/thing'))),
       `got: ${out.stdout}|${out.stderr}`);
@@ -463,9 +461,15 @@ const run = async () => {
   group('_lib.sh: the suite record');
 
   const git = (dir, ...args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' }).stdout.trim();
-  const treeHash = (dir) => runLib(`hook_tree_hash "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP) }).stdout.trim();
+  const treeHash = (dir) => runLib(`wk_tree_hash "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP) }).stdout.trim();
 
-  await test('hook_tree_hash: the working tree as write-tree names it, untracked in, ignored out, index untouched', () => {
+  await test('the record and the test-script predicate keep their engine names, with no hook_ second name', () => {
+    const names = ['suite_marker_path', 'tree_hash', 'suite_index_tree', 'suite_proved', 'has_test_script'];
+    const out = runLib(names.map((n) => `declare -F wk_${n} hook_${n}`).join('; ')).stdout;
+    assertEq(out.trim(), names.map((n) => `wk_${n}`).join('\n'), `only the engine names, got: ${out}`);
+  });
+
+  await test('wk_tree_hash: the working tree as write-tree names it, untracked in, ignored out, index untouched', () => {
     const dir = mkTmp('lib-tree-');
     git(dir, 'init', '-q');
     fs.writeFileSync(path.join(dir, '.gitignore'), 'ignored.txt\n');
@@ -482,13 +486,13 @@ const run = async () => {
     fs.writeFileSync(path.join(dir, 'new.js'), 'x\n');
     const untracked = treeHash(dir);
     assert(untracked !== edited, 'an untracked file changes the hash');
-    const tracked = runLib(`hook_tree_hash "${shellPath(dir)}" -u`, { TMPDIR: shellPath(TMP) }).stdout.trim();
+    const tracked = runLib(`wk_tree_hash "${shellPath(dir)}" -u`, { TMPDIR: shellPath(TMP) }).stdout.trim();
     assertEq(tracked, edited, 'under -u, the tree `git commit -a` carries: the untracked file is out');
     git(dir, 'add', '-A');
     assertEq(untracked, git(dir, 'write-tree'), 'the hash is what a real add -A then write-tree names');
   });
 
-  await test("hook_tree_hash: a same-size edit in the index's own second is still seen", () => {
+  await test("wk_tree_hash: a same-size edit in the index's own second is still seen", () => {
     const dir = mkTmp('lib-racy-');
     git(dir, 'init', '-q');
     fs.writeFileSync(path.join(dir, 'a.js'), 'one\n');
@@ -504,26 +508,26 @@ const run = async () => {
     assertEq(treeHash(dir), want, 'the edited content, not the stat cache');
   });
 
-  await test("hook_suite_index_tree: the real index's write-tree id, never the edit on disk", () => {
+  await test("wk_suite_index_tree: the real index's write-tree id, never the edit on disk", () => {
     const dir = mkTmp('lib-index-tree-');
     git(dir, 'init', '-q');
     fs.writeFileSync(path.join(dir, 'a.js'), 'one\n');
     git(dir, 'add', '-A');
     const staged = git(dir, 'write-tree');
     fs.writeFileSync(path.join(dir, 'a.js'), 'two\n');
-    const out = runLib(`hook_suite_index_tree "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP) }).stdout.trim();
+    const out = runLib(`wk_suite_index_tree "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP) }).stdout.trim();
     assertEq(out, staged, 'the staged content names the tree');
     assert(out !== treeHash(dir), 'and the unstaged edit is not in it');
   });
 
-  await test('hook_suite_proved: true only when the marker holds the tree it is handed', () => {
+  await test('wk_suite_proved: true only when the marker holds the tree it is handed', () => {
     const dir = mkTmp('lib-proved-');
     git(dir, 'init', '-q');
     // The root as a hook hands it over, and the record planted at its native
     // path: the lib answers a shell path, which Node on Windows cannot open.
     const root = git(dir, 'rev-parse', '--show-toplevel');
     const env = { TMPDIR: shellPath(TMP) };
-    const proved = (tree) => runLib(`hook_suite_proved "${root}" "${tree}"`, env).code === 0;
+    const proved = (tree) => runLib(`wk_suite_proved "${root}" "${tree}"`, env).code === 0;
     const id = '1111111111111111111111111111111111111111';
     assert(!proved(id), 'no marker proves nothing');
     const marker = plantRecord(TMP, dir, id);

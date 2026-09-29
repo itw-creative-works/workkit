@@ -43,9 +43,9 @@ flowchart TB
     Manager <-->|plans, hard calls| Advisor
 
     subgraph Crew["the class agents"]
-        Scout["scout<br>read-only recon<br>Sonnet (low)"]
-        Worker["worker<br>builds a brief<br>Opus (session effort)"]
-        Verifier["verifier<br>blind review<br>Opus (high)"]
+        Scout["scout<br>read-only recon<br>Sonnet (medium)"]
+        Worker["worker<br>builds a brief<br>Opus (xhigh)"]
+        Verifier["verifier<br>blind review<br>Opus (xhigh)"]
     end
 
     Manager -->|recon| Scout
@@ -93,10 +93,11 @@ Plugins load at startup, so a new (or restarted) session is what puts a change i
 | Hook | When | What it does for you |
 |---|---|---|
 | `workflow/standards` | session opens | Brings an opted-in repo to the standard once a day: labels, issue templates, the required-checks CI workflow and its CHANGELOG lint, branch protection where it can, `.workkit/` seeded and ignored. Then runs `workkit update --auto` to keep the machine's own installs current. Reports only what it fixed, and until `workkit setup` has run on this machine, every session is told to ask you to run it |
-| `docs/state-check` | session opens | Tells you about open `status:inbox` issues, unfiled captures, and document anomalies |
+| `docs/state-check` | session opens | Tells you about open `status:inbox` issues, unfiled captures, and document anomalies: a repo `CLAUDE.md` (delete, rename or merge into `AGENTS.md`) and an `AGENTS.md` over its budget |
 | `docs/session` | session opens, compaction included | Hands the session back its `.workkit/agents/session.md` (the task queue it keeps across a compaction or a restart) and says when the file has grown past being a queue |
 | `workflow/reload-guard` | session opens, then every message | Says once when the kit's agents, skills, or hook wiring changed after your session loaded: the case `/reload-plugins` exists for |
 | `manager/resolver` | before a subagent spawns | Picks that spawn's model from the tier ladder and your live session model |
+| `manager/addon` | when a workkit agent spawns | Adds your personal add-on for that agent, `~/.workkit/agents/<name>.md` if you wrote one, to its context: your additions stack onto the shipped agent instead of replacing it |
 | `manager/profile` | every message | Reminds a capable session it is the MANAGER and should delegate |
 | `docs/checkpoint` | every message | Catches any message about compacting, clearing, or starting a fresh chat and has the session save the conversation to the board first, so the verdicts and decisions in it survive; a second time in the same session, it saves only what you have said since |
 | `safety/vendor-guard` | before any edit | Blocks edits to generated, vendored, and gitignored files |
@@ -108,7 +109,7 @@ Plugins load at startup, so a new (or restarted) session is what puts a change i
 | `safety/proof-guard` | before a `gh issue edit` that adds `status:complete` or `status:qa`, or a `gh issue close` | The flip to `status:complete` and the close are blocked when the issue carries no comment starting `Proof:`, the record of which test layers actually ran. Closing something that was never built (`--reason "not planned"`) passes, and a `gh` that cannot answer stands the check down out loud. The flip to `status:qa` is a separate check: it runs the test files your change touched with `node --test` and blocks while one is red, and names a file `node --test` cannot prove (one that neither imports `node:test` nor runs itself) as not run, never as green |
 | `safety/suite-guard` | before a Bash command that runs the whole test suite | Bounces a second full run of the root suite (`npm test` at the repo root) on a tree a green root `npm test` already recorded, since running it again pays the same minutes twice. Your first run on a tree always runs; change a file and the next one runs too. Run the narrowest test that proves your change instead |
 | `safety/capture-guard` | before a read or a write of the capture file | Keeps `.workkit/capture.md` the owner's capture surface: reading it and clearing it open only during a triage run, adding to it never. Counting stays free |
-| `docs/board-guard` | after any edit | Holds `AGENTS.md` / `CLAUDE.md` to the document rules |
+| `docs/board-guard` | after any edit | Holds `AGENTS.md` to its size budget |
 | `docs/changelog-guard` | after any edit | Holds a CHANGELOG entry to one short linked paragraph |
 | `docs/session-guard` | after any edit | Holds `.workkit/agents/session.md` to a lean task queue: bounces a write leaving it over 40 content lines or a bullet over 350 characters |
 | `safety/test-reminder` | after any edit | Asks once per file per session, never blocking, whether a code file no test names needs one; a "no" goes in the item's `Proof:` line |

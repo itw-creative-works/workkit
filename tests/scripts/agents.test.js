@@ -1,5 +1,6 @@
 // Agent roster parity: the four class agents, the ladder they must agree
-// with, the README roster, and the review skill's re-route.
+// with, the effort each one runs at, the README roster, and the review skill's
+// re-route.
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
@@ -49,9 +50,14 @@ const run = async () => {
       );
     }
   });
-  await test('verifier runs at effort high; scout at effort low', () => {
-    assertEq(frontmatter(path.join(AGENTS_DIR, 'verifier.md')).effort, 'high');
-    assertEq(frontmatter(path.join(AGENTS_DIR, 'scout.md')).effort, 'low');
+  await test('effort: scout medium, worker and verifier xhigh, advisor follows the session', () => {
+    assertEq(frontmatter(path.join(AGENTS_DIR, 'scout.md')).effort, 'medium');
+    assertEq(frontmatter(path.join(AGENTS_DIR, 'worker.md')).effort, 'xhigh');
+    assertEq(frontmatter(path.join(AGENTS_DIR, 'verifier.md')).effort, 'xhigh');
+    assertEq(frontmatter(path.join(AGENTS_DIR, 'advisor.md')).effort, undefined);
+  });
+  await test('the ladder note points at the agent files for effort', () => {
+    assert(ladder.note.includes('`effort:`'), 'ladder.json note does not say where effort lives');
   });
   await test('advisor and scout/verifier toolsets carry no Write', () => {
     for (const cls of ['scout', 'verifier', 'advisor']) {
@@ -98,6 +104,13 @@ const run = async () => {
     assert(skill.includes('`workkit:verifier` agent'), 'scorer/light tier should name the verifier');
     assert(!skill.includes('general subagent'), 'no lens should remain on "general subagent"');
     assert(skill.includes('never pass a `model` param'), 'the resolver rule note is missing');
+  });
+  await test('the compliance lens is always workkit:reviewer, never a user-level override', () => {
+    const skill = fs.readFileSync(SKILL, 'utf8');
+    const line = skill.split('\n').find((l) => l.includes('**Compliance + spec**'));
+    assert(line, 'the compliance lens line is missing');
+    assert(line.includes('`workkit:reviewer`'), line);
+    assert(!/user-level|if one exists/.test(line), `the lens still offers an override: ${line}`);
   });
 };
 

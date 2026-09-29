@@ -1,6 +1,6 @@
-// Tests for hooks/docs:board-guard: the PostToolUse hook that enforces the
-// CLAUDE.md pointer doctrine and the AGENTS.md size budget. It reads
-// tool_input.file_path on stdin and exits 2 with a fix-list on stderr.
+// Tests for hooks/docs:board-guard: the PostToolUse hook that holds AGENTS.md
+// to its size budget. It reads tool_input.file_path on stdin and exits 2 with a
+// fix-list on stderr.
 
 const path = require('path');
 const fs = require('fs');
@@ -69,32 +69,25 @@ const run = async () => {
     assertEq(code, 0, 'missing file → fail open');
   });
 
-  group('board-guard: CLAUDE.md pointer doctrine');
+  group('board-guard: CLAUDE.md is not a guard surface');
 
-  await test('bare @AGENTS.md pointer: exit 0', () => {
-    const dir = mkTmp('bg-test-');
-    const p = writeFile(dir, '@AGENTS.md\n', 'CLAUDE.md');
-    const { code, stderr } = runHook(p);
-    assertEq(code, 0, `pointer file passes, stderr: ${stderr}`);
-    cleanup(dir);
-  });
-
-  await test('content-bearing CLAUDE.md: exit 2 POINTER DOCTRINE with convert recipe', () => {
+  // docs:state-check owns CLAUDE.md now: it names the delete, the rename or the
+  // hand merge at session start, and a write to the file is never bounced.
+  await test('a content-bearing CLAUDE.md write: silent exit 0', () => {
     const dir = mkTmp('bg-test-');
     const p = writeFile(dir, '# My Project\n\nReal instructions here.\n@AGENTS.md\n', 'CLAUDE.md');
     const { code, stderr } = runHook(p);
-    assertEq(code, 2, 'content in CLAUDE.md must block');
-    assert(stderr.includes('POINTER DOCTRINE'), 'names the violation');
-    assert(stderr.includes('git mv'), 'carries the two-commit convert recipe');
+    assertEq(code, 0, `a CLAUDE.md write passes, stderr: ${stderr}`);
+    assertEq(stderr, '', 'no output');
     cleanup(dir);
   });
 
-  await test('CLAUDE.md missing the import line entirely: exit 2', () => {
+  await test('a CLAUDE.md with no import line: silent exit 0', () => {
     const dir = mkTmp('bg-test-');
     const p = writeFile(dir, '\n', 'CLAUDE.md');
     const { code, stderr } = runHook(p);
-    assertEq(code, 2, 'pointer-less CLAUDE.md must block');
-    assert(stderr.includes('missing the bare'), 'names the missing import');
+    assertEq(code, 0, `a CLAUDE.md write passes, stderr: ${stderr}`);
+    assertEq(stderr, '', 'no output');
     cleanup(dir);
   });
 
@@ -116,7 +109,17 @@ const run = async () => {
     const { code, stderr } = runHook(p);
     assertEq(code, 2, 'oversized AGENTS.md must block');
     assert(stderr.includes('AGENTS BUDGET'), 'names the violation');
+    assert(stderr.includes('251 lines (max 250)'), `states the count and the limit, got: ${stderr}`);
     assert(stderr.includes('docs/'), 'tells the writer to offload detail to docs/');
+    cleanup(dir);
+  });
+
+  await test('251 lines with no final newline: still over, exit 2', () => {
+    const dir = mkTmp('bg-test-');
+    const p = writeFile(dir, agentsLines(251).trimEnd(), 'AGENTS.md');
+    const { code, stderr } = runHook(p);
+    assertEq(code, 2, 'the last line counts whether or not a newline ends it');
+    assert(stderr.includes('251 lines (max 250)'), `counts every line, got: ${stderr}`);
     cleanup(dir);
   });
 
@@ -141,6 +144,7 @@ const run = async () => {
     assertEq(code, 2, 'one character over must block');
     assert(stderr.includes('AGENTS DENSITY'), 'names the violation');
     assert(stderr.includes('line 2 (401 bytes)'), `names the offender, got: ${stderr}`);
+    assert(stderr.includes('No line may exceed 400 bytes'), `states the limit, got: ${stderr}`);
     assert(stderr.includes('docs/'), 'tells the writer where the detail goes');
     cleanup(dir);
   });
@@ -181,6 +185,19 @@ const run = async () => {
     const { code, stderr } = runHook(p);
     assertEq(code, 2, 'over 400 BYTES blocks, whatever the character count says');
     assert(stderr.includes('line 2 (410 bytes)'), `names the byte length, got: ${stderr}`);
+    cleanup(dir);
+  });
+
+  await test('the bounce names the spec file that exists', () => {
+    const dir = mkTmp('bg-test-');
+    const p = writeFile(dir, agentsLines(251), 'AGENTS.md');
+    const { code, stderr } = runHook(p);
+    assertEq(code, 2, 'blocks');
+    const named = (stderr.match(/\(spec: (.+?)\)\. Fix these/) || [])[1];
+    assert(named, `names a spec path, got: ${stderr}`);
+    const spec = fs.realpathSync(path.join(__dirname, '..', '..', 'docs', 'project-state.md'));
+    assertEq(named, shellPath(spec), 'the path is the kit\'s own docs/project-state.md');
+    assert(fs.existsSync(spec), 'and that file exists');
     cleanup(dir);
   });
 

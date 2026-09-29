@@ -1,9 +1,9 @@
 #!/bin/bash
 # docs:state-check: SessionStart hook. Announces the upkeep a repo owes: open
-# status:inbox issues, a non-empty .workkit/capture.md, a content-bearing
-# CLAUDE.md, an AGENTS.md over its budget. Detection is automatic, the fix stays
-# the agent's; silent when all is current. The issue count is the one network
-# call, bounded, and any failure is a silent skip. Detail: docs/hooks.md.
+# status:inbox issues, a non-empty .workkit/capture.md, a repo CLAUDE.md, an
+# AGENTS.md over its budget. Detection is automatic, the fix stays the agent's;
+# silent when all is current. The issue count is the one network call, bounded,
+# and any failure is a silent skip. Detail: docs/hooks.md.
 
 set -euo pipefail
 
@@ -13,8 +13,8 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-# Sourced for hook_sha1 alone: the cache key below is a digest, and its
-# spelling differs across the platforms this kit runs on.
+# Sourced for hook_sha1 (the cache key is a digest, spelled per platform) and
+# for the AGENTS.md budget.
 . "${BASH_SOURCE[0]%/*}/../../_lib.sh"
 
 cwd=$(hook_jq -r '.cwd // ""' <<<"$input")
@@ -96,30 +96,33 @@ if [ -n "$cwd" ] && [ -f "$cwd/.workkit/capture.md" ]; then
   fi
 fi
 
-# Content-bearing CLAUDE.md detection (pointer doctrine). A compliant file is
-# essentially just the @AGENTS.md import. >3 non-blank lines means content.
-if [ -n "$cwd" ] && [ -f "$cwd/CLAUDE.md" ]; then
-  cl=$(grep -cv '^[[:space:]]*$' "$cwd/CLAUDE.md" 2>/dev/null) || true
-  if [ "${cl:-0}" -gt 3 ] || ! grep -q '@AGENTS.md' "$cwd/CLAUDE.md" 2>/dev/null; then
-    [ -n "$msg" ] && msg="$msg "
-    msg="${msg}CLAUDE.md holds content. Convert BEFORE other work: git mv CLAUDE.md AGENTS.md (own commit), THEN add a one-line @AGENTS.md-pointer CLAUDE.md in a SEPARATE commit (same commit breaks rename history)."
+# A repo CLAUDE.md (docs/project-state.md § Repo docs): Claude Code reads
+# AGENTS.md itself, and a project CLAUDE.md stops that read. Its shape picks the fix.
+# The user-level ~/.claude/CLAUDE.md is no repo file and has no AGENTS.md to yield to.
+user_claude=$(cd "$HOME/.claude" 2>/dev/null && pwd -P) || user_claude=""
+if [ -n "$cwd" ] && [ -f "$cwd/CLAUDE.md" ] \
+  && [ "$(cd "$cwd" 2>/dev/null && pwd -P)" != "$user_claude" ]; then
+  [ -n "$msg" ] && msg="$msg "
+  if ! grep -qv -e '^[[:space:]]*$' -e '^[[:space:]]*@AGENTS\.md[[:space:]]*$' "$cwd/CLAUDE.md" 2>/dev/null; then
+    msg="${msg}CLAUDE.md is only the @AGENTS.md pointer, and Claude Code reads AGENTS.md itself. Delete it: git rm CLAUDE.md."
+  elif [ ! -e "$cwd/AGENTS.md" ]; then
+    msg="${msg}CLAUDE.md holds content and no AGENTS.md sits beside it; a project CLAUDE.md stops Claude Code reading AGENTS.md. Rename it: git mv CLAUDE.md AGENTS.md (the rename keeps its history)."
+  else
+    msg="${msg}CLAUDE.md holds content beside an AGENTS.md; a project CLAUDE.md stops Claude Code reading AGENTS.md. Merge it into AGENTS.md by hand, then git rm CLAUDE.md."
   fi
 fi
 
-# Oversized AGENTS.md detection (doc-parity doctrine: ≤250 lines, meat in docs/)
 if [ -n "$cwd" ] && [ -f "$cwd/AGENTS.md" ]; then
-  al=$(wc -l <"$cwd/AGENTS.md" | tr -d ' ')
-  if [ "${al:-0}" -gt 250 ]; then
+  read -r al ad _ <<<"$(hook_agents_budget "$cwd/AGENTS.md")"
+  if [ "$al" -gt "$HOOK_AGENTS_MAX_LINES" ]; then
     [ -n "$msg" ] && msg="$msg "
-    msg="${msg}AGENTS.md is $al lines (budget 250). Move deep references to docs/<topic>.md and keep pointer lines; the board-guard hook bounces writes until it fits."
+    msg="${msg}AGENTS.md is $al lines (budget $HOOK_AGENTS_MAX_LINES). Move deep references to docs/<topic>.md and keep pointer lines; the board-guard hook bounces writes until it fits."
   fi
-  # The density half of the same budget: a file well inside 250 lines still
-  # carries a book when its paragraphs are single source lines.
-  ad=$(LC_ALL=C awk 'length($0) > 400 { n++ } END { print n+0 }' "$cwd/AGENTS.md" 2>/dev/null) || ad=0
-  case "$ad" in ''|*[!0-9]*) ad=0 ;; esac
+  # The density half of the same budget: a file well inside the line count
+  # still carries a book when its paragraphs are single source lines.
   if [ "$ad" -gt 0 ]; then
     [ -n "$msg" ] && msg="$msg "
-    msg="${msg}AGENTS.md has $ad line$([ "$ad" -eq 1 ] && echo '' || echo s) over 400 bytes (density rule). Bulletize them or move the detail to docs/<topic>.md; the board-guard hook bounces writes until it fits."
+    msg="${msg}AGENTS.md has $ad line$([ "$ad" -eq 1 ] && echo '' || echo s) over $HOOK_AGENTS_MAX_BYTES bytes (density rule). Bulletize them or move the detail to docs/<topic>.md; the board-guard hook bounces writes until it fits."
   fi
 fi
 

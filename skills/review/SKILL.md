@@ -36,7 +36,7 @@ Downgrade to light ONLY when ALL of these hold (any miss = stay full):
 
 - Dispatch per the file-handoff convention: the brief goes to a file in the session scratchpad, and each lens returns its full findings INLINE.
 - Launch every lens in ONE message:
-  - **Compliance + spec**: a user-level agent named `reviewer` if one exists (personal preloads), else `workkit:reviewer`. It derives its checklist from live docs and judges Spec-faithfulness against the task context.
+  - **Compliance + spec**: `workkit:reviewer`. It derives its checklist from live docs and judges Spec-faithfulness against the task context.
   - **Bugs**: `workkit:scout` agent. Trace the diff for defects: logic, edge states, silent fallbacks. Read the surrounding code, not just the diff.
   - **Simplification**: `workkit:scout` agent. Run the deletion test over the diff's ADDITIONS (`js:patterns` `resources/code-design.md`): wrappers that add nothing, options with one caller, defensive branches for impossible states, needless indirection.
     - Clarity over brevity. Clearer sometimes means more lines, and an abstraction serving a NAMED second consumer is not clutter (global §3).

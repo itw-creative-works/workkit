@@ -205,13 +205,13 @@ const run = async () => {
     cleanup(dir);
   });
 
-  // npm beside this node answers the hint's config read.
-  const withNpm = (npmrc) => ({ PATH: joinPath(NODE_DIR, process.env.PATH), NPM_CONFIG_USERCONFIG: npmrc });
+  // npm beside this node answers the hint's config read, from <npmrc>.
+  const npmEnv = (npmrc) => ({ PATH: joinPath(NODE_DIR, process.env.PATH), NPM_CONFIG_USERCONFIG: npmrc });
   const npmTest = (name, fn) => (which('npm', NODE_DIR) ? test(name, fn) : skip(name, 'no npm beside this node'));
 
   await npmTest("no record and npm's script-shell unset: blocked, naming workkit setup", () => {
     const dir = codeCommit();
-    const out = runHook(dir, 'git commit -m "feat: thing"', undefined, withNpm(scratchNpmrc('')));
+    const out = runHook(dir, 'git commit -m "feat: thing"', undefined, npmEnv(scratchNpmrc('')));
     assertEq(out.code, 2, `no record blocks, got: ${out.stderr}`);
     assert(out.stderr.includes("the commit carries code and no green run proves this tree, and npm's script-shell does not point at the kit's wrapper, so a root `npm test` writes no record. Run `workkit setup` once, then `npm test` at the repo root, then commit."),
       `the cause and its fix, got: ${out.stderr}`);
@@ -221,24 +221,25 @@ const run = async () => {
 
   await (WRAPPER ? npmTest : (n) => skip(n, 'no C# compiler on this Windows, so the script shell cannot be built'))("no record and npm's script-shell set to the wrapper: the plain block", () => {
     const dir = codeCommit();
-    const out = runHook(dir, 'git commit -m "feat: thing"', undefined, withNpm(scratchNpmrc(WRAPPER)));
+    const out = runHook(dir, 'git commit -m "feat: thing"', undefined, npmEnv(scratchNpmrc(WRAPPER)));
     recordRequired(out, dir);
     assert(!out.stderr.includes('workkit setup'), `no setup hint, got: ${out.stderr}`);
     cleanup(dir);
   });
 
   // The Windows compare driven from any machine: the platform the hooks read,
-  // a stub cygpath inverting its own `C:` prefix, and a scratch machine folder.
-  const onWindows = (npmrcShell) => {
+  // a stub cygpath inverting its own `C:` prefix, and a scratch machine folder
+  // holding the built executable unless <built> is false.
+  const onWindows = (npmrcShell, { built = true } = {}) => {
     const home = mkTmp('cg-workkit-home-');
     const cyg = mkTmp('cg-cygpath-');
     cygpathStub(cyg);
-    fs.writeFileSync(path.join(home, 'script-shell.exe'), '');
+    if (built) fs.writeFileSync(path.join(home, 'script-shell.exe'), '');
     const shell = npmrcShell(path.join(home, 'script-shell.exe'));
     return {
       home,
       env: {
-        ...withNpm(scratchNpmrc(shell)), PATH: joinPath(cyg, NODE_DIR, process.env.PATH), HOOK_UNAME_S: 'MSYS', WORKFLOW_HOME: home,
+        ...npmEnv(scratchNpmrc(shell)), PATH: joinPath(cyg, NODE_DIR, process.env.PATH), HOOK_UNAME_S: 'MSYS', WORKFLOW_HOME: home,
       },
     };
   };
@@ -253,6 +254,15 @@ const run = async () => {
     const out = runHook(dir, 'git commit -m "feat: thing"', undefined, env);
     recordRequired(out, dir);
     assert(!out.stderr.includes('workkit setup'), `no setup hint, got: ${out.stderr}`);
+    cleanup(dir); cleanup(home);
+  });
+
+  await stubWindowsTest("Windows, npm's script-shell naming the executable, deleted: blocked, naming workkit setup", () => {
+    const dir = codeCommit();
+    const { home, env } = onWindows((exe) => `C:${exe}`, { built: false });
+    const out = runHook(dir, 'git commit -m "feat: thing"', undefined, env);
+    assertEq(out.code, 2, `no record blocks, got: ${out.stderr}`);
+    assert(out.stderr.includes('Run `workkit setup` once'), `the setup hint, got: ${out.stderr}`);
     cleanup(dir); cleanup(home);
   });
 

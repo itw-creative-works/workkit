@@ -15,6 +15,11 @@ WORKKIT_DIR=".workkit"
 # both read it, so one hook never accepts a release the other misses.
 readonly HOOK_VERSION_RE='v?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?'
 
+# The AGENTS.md budget: board-guard bounces a write past it and state-check
+# announces a file past it, both measuring through hook_agents_budget.
+readonly HOOK_AGENTS_MAX_LINES=250
+readonly HOOK_AGENTS_MAX_BYTES=400
+
 # The platform split, $OSTYPE first so it costs no fork and needs no PATH
 # (docs/hooks.md § Platforms). Cached: a process cannot change platform.
 hook_uname_s() {
@@ -44,12 +49,6 @@ hook_jq_default() { wk_jq_default "$@"; }
 # hook_sha1: the one digest; the body is wk_sha1, since the engine keys the
 # suite record with it too.
 hook_sha1() { wk_sha1 "$@"; }
-# The proved-tree record under the hook names; the bodies are the wk_ twins
-# in workflow/lib/suite.sh.
-hook_suite_marker_path() { wk_suite_marker_path "$@"; }
-hook_tree_hash() { wk_tree_hash "$@"; }
-hook_suite_index_tree() { wk_suite_index_tree "$@"; }
-hook_suite_proved() { wk_suite_proved "$@"; }
 
 # The participation predicates (wk_is_repo_root, wk_settings_declined,
 # wk_settings_enabled) keep their engine names: they have no personal-hooks
@@ -62,6 +61,8 @@ hook_suite_proved() { wk_suite_proved "$@"; }
 # shellcheck source=../workflow/lib/slug.sh
 . "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../workflow/lib/slug.sh"
 
+# The proved-tree record (wk_tree_hash, wk_suite_proved and the rest), engine
+# names for the same reason.
 # shellcheck source=../workflow/lib/suite.sh
 . "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../workflow/lib/suite.sh"
 
@@ -88,3 +89,5 @@ hook_suite_proved() { wk_suite_proved "$@"; }
 . "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/lib/paths.sh"
 # shellcheck source=./lib/suite.sh
 . "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/lib/suite.sh"
+# shellcheck source=./lib/agents.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/lib/agents.sh"

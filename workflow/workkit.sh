@@ -47,8 +47,6 @@ ENGINE_LINK="$CLAUDE_HOME/workkit"
 # The machine's own folder and its roster, read by `doctor`.
 USER_DIR="${WORKFLOW_HOME:-${HOME:-}/.workkit}"
 USER_REPOS="$USER_DIR/.repos.json"
-# The Windows script shell, built by the links step.
-SCRIPT_SHELL_EXE="$USER_DIR/script-shell.exe"
 
 # Sourced tolerantly: an incomplete checkout is reported by the steps that need
 # these, never by a source that aborts before the command can speak.

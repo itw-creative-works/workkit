@@ -6,7 +6,7 @@ How a cloud or headless Claude Code session comes up to the same standard as the
 
 A remote session (a claude.ai/code cloud environment, or a headless run on a CI runner) receives, with no help:
 
-- The repo it opened: `CLAUDE.md` / `AGENTS.md`, the repo's own `.claude/` directory, and a committed `.mcp.json`.
+- The repo it opened: `AGENTS.md`, the repo's own `.claude/` directory, and a committed `.mcp.json`.
 - Plugins declared in the repo's `.claude/settings.json`, auto-installed from their marketplace, when the marketplace source is one the session can reach.
 - Organization-managed settings, fetched from Anthropic's servers.
 

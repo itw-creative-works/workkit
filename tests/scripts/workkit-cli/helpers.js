@@ -192,7 +192,10 @@ const mkWorld = ({
       // Scratch too: the mint writes its capture file here, and a test that
       // asks whether one was left behind must be asking about this world's.
       TMPDIR: shellPath(tmp),
-      PATH: joinPath(...(binOnPath ? [localBin] : []), bin, SYSTEM_PATH),
+      // ~/.local/bin in HOME's own spelling: Git Bash converts a native entry
+      // through its mount table, so one under the /tmp mount would read as
+      // /tmp/... and never equal $HOME/.local/bin.
+      PATH: joinPath(...(binOnPath ? [shellPath(localBin)] : []), bin, SYSTEM_PATH),
       WORKFLOW_HOME: shellPath(path.join(root, 'workflow-home')),
       WORKFLOW_CLAUDE_HOME: shellPath(path.join(home, '.claude')),
       // jobs/install.sh refuses a scratch HOME, since launchd is machine-global;

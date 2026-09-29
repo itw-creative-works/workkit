@@ -4,6 +4,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -78,18 +79,45 @@ const NO_RC = ['--noprofile', '--norc'];
 // branch from a Mac; the real-tool lookups keep the load-time answer.
 const onWindows = () => process.platform === 'win32';
 
+let tmpMount;
+
+/**
+ * The folder Git Bash mounts at `/tmp`, slashed, as Git Bash itself answers:
+ * asked once per process, never guessed from TEMP. A Mac driving the Windows
+ * branch has no mount unless the seam's cygpath is on PATH.
+ * @returns {string|null}
+ */
+const tmpMountRoot = () => {
+  if (tmpMount !== undefined) return tmpMount;
+  const res = spawnSync(IS_WINDOWS ? path.join(SYSTEM_DIR, 'cygpath.exe') : 'cygpath', ['-w', '/tmp'],
+    { encoding: 'utf8', timeout: 30000 });
+  if (res.status !== 0 && IS_WINDOWS) {
+    throw new Error(`tests/lib/platform: cygpath -w /tmp failed: ${res.error || res.stderr}`);
+  }
+  tmpMount = res.status === 0 ? res.stdout.trim().replace(/\\/g, '/').replace(/\/$/, '') : null;
+  return tmpMount;
+};
+
 /**
  * A native path as the shell under test sees it: `C:\Users\x` to `/c/Users/x`
- * under Git Bash, unchanged on macOS. Use it for anything a shell script
- * receives (argv, a JSON payload it reads, an env var it manipulates) and for
- * anything compared against what a shell printed. A path already in that
- * spelling comes back as it came, so asking twice costs nothing.
+ * under Git Bash, unchanged on macOS. A path under the folder Git Bash mounts at
+ * `/tmp` reads as `/tmp/...`, compared without case as Git Bash does. Use it for
+ * anything a shell script receives (argv, a JSON payload it reads, an env var it
+ * manipulates) and for anything compared against what a shell printed. A path
+ * already in that spelling comes back as it came, so asking twice costs nothing.
  * @param {string} p
  * @returns {string}
  */
-const shellPath = (p) => (onWindows()
-  ? p.replace(/^([A-Za-z]):[\\/]/, (_, drive) => `/${drive.toLowerCase()}/`).replace(/\\/g, '/')
-  : p);
+const shellPath = (p) => {
+  if (!onWindows()) return p;
+  const slashed = p.replace(/\\/g, '/');
+  const root = /^[A-Za-z]:\//.test(slashed) ? tmpMountRoot() : null;
+  const lower = slashed.toLowerCase();
+  if (root && (lower === root.toLowerCase() || lower.startsWith(`${root.toLowerCase()}/`))) {
+    return `/tmp${slashed.slice(root.length)}`;
+  }
+  return slashed.replace(/^([A-Za-z]):\//, (_, drive) => `/${drive.toLowerCase()}/`);
+};
 
 /**
  * A path as git prints it: under Git for Windows a drive letter with forward

@@ -16,7 +16,7 @@ _hook_write_marker() {
 
 # The two skill marker paths: the writers (the two marker scripts) and the
 # readers (commit-gate, capture-guard) name the file here, so the two sides
-# never drift apart. The suite record's path is hook_suite_marker_path.
+# never drift apart. The suite record's path is wk_suite_marker_path.
 hook_review_marker_path() { wk_marker_path claude-review-marker "$1"; }
 hook_triage_marker_path() { wk_marker_path claude-triage-marker "$1"; }
 

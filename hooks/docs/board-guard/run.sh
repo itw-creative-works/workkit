@@ -1,8 +1,7 @@
 #!/bin/bash
-# docs:board-guard: PostToolUse hook (Edit|Write). Holds CLAUDE.md to the bare
-# `@AGENTS.md` pointer and AGENTS.md to its budget (250 lines, no line over 400
-# bytes), exiting 2 with a fix-list so the writing agent corrects at once.
-# Detail: docs/hooks.md § docs:board-guard.
+# docs:board-guard: PostToolUse hook (Edit|Write). Holds AGENTS.md to its budget
+# (the limits in hooks/_lib.sh), exiting 2 with a fix-list so the writing agent
+# corrects at once. Detail: docs/hooks.md § docs:board-guard.
 
 set -euo pipefail
 
@@ -18,18 +17,13 @@ file_path=$(hook_jq -r '.tool_input.file_path // ""' <<<"$input")
 [ -n "$file_path" ] || exit 0
 
 base="$(basename "$file_path")"
-kind=""
-case "$base" in
-  CLAUDE.md) kind="pointer" ;;
-  AGENTS.md) kind="agents" ;;
-  *) exit 0 ;;
-esac
+[ "$base" = "AGENTS.md" ] || exit 0
 
 [ -f "$file_path" ] || exit 0
 
 # Spec ships in this kit; resolve it relative to this hook.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
-SPEC="$SCRIPT_DIR/../../../../docs/project-state.md"
+SPEC="$SCRIPT_DIR/../../../docs/project-state.md"
 if SPEC_DIR="$(cd "$(dirname "$SPEC")" 2>/dev/null && pwd)"; then
   SPEC="$SPEC_DIR/$(basename "$SPEC")"
 fi
@@ -40,29 +34,10 @@ add() {
 "
 }
 
-if [ "$kind" = "pointer" ]; then
-  # Pointer doctrine: every non-blank line must be the bare import.
-  bad_lines=$(grep -nv -e '^[[:space:]]*$' -e '^@AGENTS\.md$' "$file_path" | head -3 || true)
-  [ -z "$bad_lines" ] || add "POINTER DOCTRINE: CLAUDE.md is exactly one line: a bare '@AGENTS.md' import. Content belongs in AGENTS.md. Converting a content-bearing CLAUDE.md: 'git mv CLAUDE.md AGENTS.md', commit, THEN add the pointer in a SEPARATE commit (same-commit pointer breaks rename detection). First offending line(s): $(printf '%s' "$bad_lines" | tr '\n' ' ')"
-  grep -q '^@AGENTS\.md$' "$file_path" || add "POINTER DOCTRINE: missing the bare '@AGENTS.md' import line."
-fi
-
-if [ "$kind" = "agents" ]; then
-  total=$(wc -l <"$file_path" | tr -d ' ')
-  [ "$total" -le 250 ] || add "AGENTS BUDGET: $total lines (max 250). AGENTS.md is the architectural overview; deep references move to docs/<topic>.md and AGENTS.md keeps a pointer line."
-
-  # Density: the same budget judged per line, in BYTES (LC_ALL=C). The first few
-  # offenders are named so the writing agent can go straight to them. An awk that
-  # fails names nothing rather than blocking on an empty read.
-  dense=$(LC_ALL=C awk '
-    length($0) > 400 {
-      n++
-      if (n <= 3) printf "%sline %d (%d bytes)", (n > 1 ? ", " : ""), NR, length($0)
-    }
-    END { if (n > 3) printf ", and %d more", n - 3 }
-  ' "$file_path" 2>/dev/null) || dense=""
-  [ -z "$dense" ] || add "AGENTS DENSITY: $dense. No line may exceed 400 bytes. A markdown paragraph is one source line, so AGENTS.md passes the 250-line budget while carrying a book. Bulletize those lines, or move the detail to docs/<topic>.md and keep a pointer here."
-fi
+read -r total dense named <<<"$(hook_agents_budget "$file_path")"
+[ "$total" -le "$HOOK_AGENTS_MAX_LINES" ] || add "AGENTS BUDGET: $total lines (max $HOOK_AGENTS_MAX_LINES). AGENTS.md is the architectural overview; deep references move to docs/<topic>.md and AGENTS.md keeps a pointer line."
+# The first few density offenders are named so the writer goes straight to them.
+[ "$dense" -eq 0 ] || add "AGENTS DENSITY: $named. No line may exceed $HOOK_AGENTS_MAX_BYTES bytes. A markdown paragraph is one source line, so AGENTS.md passes the $HOOK_AGENTS_MAX_LINES-line budget while carrying a book. Bulletize those lines, or move the detail to docs/<topic>.md and keep a pointer here."
 
 if [ -n "$violations" ]; then
   {

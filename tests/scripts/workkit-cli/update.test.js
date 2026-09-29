@@ -194,8 +194,8 @@ const run = async () => {
 
   await scriptShellCase('an exported npm_config_script_shell is named as the source, not npm config set', () => {
     // npm's environment outranks every npmrc, so `npm config set` would change
-    // nothing npm sees. The value is native: Git Bash rewrites a POSIX path in
-    // the env of the npm it starts, so npm would see another spelling.
+    // nothing npm sees. The value is git's spelling, which Git Bash leaves alone
+    // in a child's env: it rewrites only a value starting with `/`.
     const world = mkWorld();
     const other = gitPath(path.join(world.root, 'other-shell'));
     const { env } = withNpm(world);
