@@ -11,6 +11,7 @@ const os = require('os');
 const path = require('path');
 
 const { discoverRepos, readRoster } = require('../../tower/api/lib/repos');
+const { userDir, homeUserDir } = require('../user-dir');
 
 /** Parse JSON from a file, or null when it is absent or unparseable. */
 const readJson = (file) => {
@@ -34,7 +35,7 @@ const readJson = (file) => {
  */
 const composeSlugs = (opts = {}) => {
   const home = opts.home || os.homedir();
-  const workflowHome = opts.workflowHome || path.join(home, '.workkit');
+  const workflowHome = opts.workflowHome || homeUserDir(home);
 
   // An unreadable roster raises, so the caller keeps the published list; an
   // empty machine still writes `[]`.
@@ -83,7 +84,7 @@ if (require.main === module) {
     process.exit(1);
   }
   try {
-    writeSlugs(outfile, { workflowHome: process.argv[3] || process.env.WORKFLOW_HOME || undefined });
+    writeSlugs(outfile, { workflowHome: process.argv[3] || userDir() });
   } catch (err) {
     process.stderr.write(`site-repos: ${err.message}; nothing was written\n`);
     process.exit(1);

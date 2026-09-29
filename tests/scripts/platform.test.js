@@ -152,6 +152,16 @@ const run = async () => {
     assertEq(out, 'sourced', `only what the caller asked for, got: ${JSON.stringify(out)}`);
   });
 
+  group('platform.sh: wk_user_dir');
+
+  await test('wk_user_dir: WORKFLOW_HOME wins, else ~/.workkit, and an unset HOME never aborts set -u', () => {
+    assertEq(inPlatform('wk_user_dir', { WORKFLOW_HOME: '/w/kit', HOME: '/h' }).out, '/w/kit\n', 'the override');
+    assertEq(inPlatform('wk_user_dir', { HOME: '/h' }).out, '/h/.workkit\n', 'the default');
+    const bare = inPlatform('set -u; unset HOME; wk_user_dir');
+    assertEq(bare.code, 0, `no unbound-variable abort: ${bare.err}`);
+    assertEq(bare.out, '/.workkit\n', 'the default with no HOME');
+  });
+
   group("platform.sh: npm's script shell");
 
   await test("wk_npm_script_shell: npm's value without the carriage return a Windows npm ends it with", () => {

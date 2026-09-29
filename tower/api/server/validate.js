@@ -15,7 +15,7 @@ const DEFAULT_BODY = 'Filed from the tower.';
 const MOVE_STATUSES = Object.keys(require(LABELS_FILE).groups.status.values);
 
 // The line that proves an item was built (docs/project-state.md § The proof).
-// Its shell twin is `hook_issue_has_proof` in hooks/lib/proof.sh: the two change together.
+// Its shell twin is `hook_view_has_proof` in hooks/lib/proof.sh: the two change together.
 const PROOF_LINE = /(^|\n)[ \t]*Proof:/;
 
 // The one status a move has to prove itself to reach. The board is the second

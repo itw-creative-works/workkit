@@ -184,6 +184,18 @@ const run = async () => {
     assertEq(ask(), 1, 'a repo with no workflow folder runs nothing');
   });
 
+  await test('a tool that fails is 2, never a yes or a no', () => {
+    const dir = mkTmp('cl-job-');
+    fs.mkdirSync(path.join(dir, '.github', 'workflows'), { recursive: true });
+    const unread = inSeam('find() { echo "find: stub" >&2; return 1; }\nwk_workflows_run_copy "$1"', [shellPath(dir)]);
+    assertEq(unread.code, 2, 'a folder find could not read');
+    assert(unread.err.includes('find: stub'), `find's stderr is left for the caller: ${unread.err}`);
+    assertEq(inSeam('grep() { return 2; }\nwk_names_linter_copy <<<"jobs:"').code, 2, 'a grep that failed');
+    assertEq(overFile(`${JOBS}  changelog:\n${USES}\n`, 'grep() { return 2; }\nwk_changelog_job_runs_copy "$1"').code, 2,
+      'a job the grep could not read');
+    cleanup(dir);
+  });
+
   return summary();
 };
 

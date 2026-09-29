@@ -7,10 +7,11 @@ const os = require('os');
 const { spawnSync, execSync } = require('child_process');
 const { assert, assertEq, skipSuite } = require('../../lib/harness');
 const {
-  IS_WINDOWS, BASH, SYSTEM_BASH, NO_RC, WINDOWS_CSC, shellPath, gitPath, digestTool,
+  IS_WINDOWS, BASH, SYSTEM_BASH, NO_RC, WINDOWS_CSC, shellPath, gitPath, digestTool, pathWith, stubTool,
 } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
 const { plantRecord, reviewMarkerPath } = require('../../lib/suite-record');
+const { recordArgv, readArgv } = require('../../lib/argv-log');
 
 const HOOK = path.join(__dirname, '..', '..', '..', 'hooks', 'safety', 'commit-gate', 'run.sh');
 // The gate's CHANGELOG check resolves the engine by path; point it at this
@@ -143,6 +144,43 @@ const standDownMessage = (out) => {
   return parsed.systemMessage;
 };
 
+// A `gh` on PATH answering `issue view <N>` from fixtures, so checks 6 and 7
+// read issues without reaching GitHub. Each issue is `{ comments, state,
+// labels, url }`, an OPEN issue at status:complete unless a case says
+// otherwise; `fails: true` makes every view exit non-zero, like an offline gh.
+const ghStub = ({ issues = {}, fails = false } = {}) => {
+  const dir = mkTmp('cg-gh-');
+  const bodies = path.join(dir, 'issues');
+  fs.mkdirSync(bodies);
+  for (const [number, issue] of Object.entries(issues)) {
+    const {
+      comments = [], state = 'OPEN', labels = ['status:complete'], url = `https://github.com/o/r/issues/${number}`,
+    } = issue;
+    fs.writeFileSync(path.join(bodies, `${number}.json`), JSON.stringify({
+      state, url, labels: labels.map((name) => ({ name })), comments: comments.map((body) => ({ body })),
+    }));
+  }
+  const bin = path.join(dir, 'bin');
+  fs.mkdirSync(bin);
+  const logFile = path.join(dir, 'gh.log');
+  stubTool(bin, 'gh', [
+    '#!/usr/bin/env bash',
+    recordArgv(logFile),
+    'if [[ "$1 $2" == "issue view" ]]; then',
+    ...(fails ? ['  echo "gh: offline" >&2', '  exit 1'] : [
+      `  file="${shellPath(bodies)}/$3.json"`,
+      '  [[ -f "$file" ]] || exit 1',
+      '  cat "$file"',
+      '  exit 0',
+    ]),
+    'fi',
+    'exit 0',
+  ]);
+  return { env: { PATH: pathWith(bin) }, dir, logFile };
+};
+
+const ghCalls = (stub) => readArgv(stub.logFile);
+
 const cleanup = (dir) => { dropMarker(dir); try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 // The repo the check 5 cases are asked in: its test script leaves a sentinel
@@ -178,8 +216,20 @@ const CHANGELOG = (...bullets) => [
 const ISSUE = '[#4](https://github.com/o/r/issues/4)';
 const ENTRY = CHANGELOG(`- ${ISSUE} - The thing the issue asked for.`);
 
+// A repo whose commit is ready for every check but 6 and 7: CHANGELOG seeded
+// and its entry staged (check 4), code staged, review marker fresh.
+const shipReadyRepo = () => {
+  const dir = mkRepo();
+  fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), CHANGELOG());
+  execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+  stage(dir, 'app.js', 'const x = 1;\n');
+  stage(dir, 'CHANGELOG.md', ENTRY);
+  touchMarker(dir);
+  return dir;
+};
+
 module.exports = {
   HOOK, WORKFLOW_DIR, LIB, TMP, PLUGIN_ROOT, WRAPPER, EXE_CLAUDE_HOME, EXE_ENV, scratchNpmrc,
   mkRepo, stage, stageDeep, skipWithoutDigest, markerPath, runSkillLine, touchMarker, dropMarker, proveTree,
-  runHook, standDownMessage, cleanup, pkg, suiteRan, mkReleaseRepo, CHANGELOG, ISSUE, ENTRY,
+  runHook, standDownMessage, ghStub, ghCalls, shipReadyRepo, cleanup, pkg, suiteRan, mkReleaseRepo, CHANGELOG, ISSUE, ENTRY,
 };

@@ -44,10 +44,17 @@ wk_git_path() {
   printf '%s' "$p"
 }
 
+# wk_user_dir: the machine's own workkit folder, ~/.workkit, which WORKFLOW_HOME
+# moves. Every engine script, hook and job reads the folder through this one;
+# its Node twin is ../user-dir.js, shape for shape.
+wk_user_dir() {
+  printf '%s\n' "${WORKFLOW_HOME:-${HOME:-}/.workkit}"
+}
+
 # wk_script_shell_exe: npm's script shell on Windows, the executable setup
 # builds into the machine's own folder. Setup writes it; the commit gate reads it.
 wk_script_shell_exe() {
-  printf '%s\n' "${WORKFLOW_HOME:-${HOME:-}/.workkit}/script-shell.exe"
+  printf '%s\n' "$(wk_user_dir)/script-shell.exe"
 }
 
 # wk_npm_script_shell: npm's script-shell value. npm on Windows ends it with a

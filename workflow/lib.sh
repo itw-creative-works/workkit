@@ -20,7 +20,7 @@
 # ── The addresses ─────────────────────────────────────────────────────────────
 # The user's workflow folder: a plain folder of this machine's own state, never
 # a git repo. The suite points WORKFLOW_HOME at a fixture.
-WK_USER_DIR="${WORKFLOW_HOME:-${HOME:-}/.workkit}"
+WK_USER_DIR="$(wk_user_dir)"
 
 # Three files, split by who writes them: README § The two settings files.
 WK_HOME_SETTINGS="$WK_USER_DIR/settings.json"

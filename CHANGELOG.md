@@ -11,6 +11,8 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 - [#360](../../issues/360) - Personal add-ons stack onto workkit agents: a new `manager:addon` hook adds the text of `~/.workkit/agents/<name>.md` to every `workkit:<name>` spawn, so a personal layer adds to the shipped agent instead of replacing it; the review skill's compliance lens is now always `workkit:reviewer`.
 
+- [#370](../../issues/370) - The commit gate bounces a commit whose message names an open issue of this repo that is not at `status:complete`, naming each issue and its stage, so parked work stays uncommitted until the owner's pass; closed issues, other repos' `owner/repo#N` and messages naming no issue pass.
+
 ### Changed
 
 - [#361](../../issues/361) - The crew runs at higher effort by default: scout at `medium`, worker and verifier at `xhigh`, the advisor still following the session; the ladder and `docs/agents.md` now say effort lives in each agent file's `effort:` line.
@@ -27,6 +29,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 - [#362](../../issues/362) - A green root `npm test` whose tree cannot be hashed before or after the run now exits 1 with its own `script-shell:` line, instead of reading as a tree the run changed and exiting 0 with no record.
 
 - [#363](../../issues/363) - On Windows the commit gate reads a deleted `script-shell.exe` as unwired, so its bounce names `workkit setup`; the executable's path has one home in the engine's `lib/platform.sh`, read by setup and the gate.
+
+- [#368](../../issues/368) - The commit gate names a tool that fails inside a heal-output check (the check, the command, its stderr) instead of bouncing the commit as unreviewed code; proof-guard says a `--repo` value it cannot read went unread on a qa flip, never that it names another repo.
+
+- [#369](../../issues/369) - The machine folder (`~/.workkit`, moved by `WORKFLOW_HOME`) has one spelling per language, `wk_user_dir` in the engine's `lib/platform.sh` and its Node twin `workflow/user-dir.js`; the session hook's brief marker and the manager's user settings now honor `WORKFLOW_HOME` too.
 
 ## [0.62.0] - 2026-09-28
 

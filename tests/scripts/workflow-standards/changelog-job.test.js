@@ -7,6 +7,7 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { WORKFLOW_DIR, cleanup, makeRepo, makeGhStub, readFile, runScript } = require('./helpers');
+const { stubTool } = require('../../lib/platform');
 
 const run = async () => {
   group('standards.sh: the retired CHANGELOG linter copy');
@@ -283,6 +284,19 @@ const run = async () => {
     assertEq(readFile(other), owned, 'and the workflow the heal does not own is untouched');
     assert(output.includes('changelog lint: kept .github/changelog-lint.cjs: a workflow under .github/workflows still runs it'),
       `the keep is reported, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a copy is kept when the workflows cannot be read, and the heal says why', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const cjs = writeCopy(repo, 'changelog-lint.cjs', VENDORED_COPY);
+    fs.mkdirSync(path.join(repo, '.github', 'workflows'), { recursive: true });
+    stubTool(stub.binDir, 'find', ['#!/bin/bash', 'echo "find: stub" >&2', 'exit 1']);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(readFile(cjs), VENDORED_COPY, `nothing proves the copy unused, so it stays, got: ${output}`);
+    assert(output.includes('changelog lint: kept .github/changelog-lint.cjs: .github/workflows could not be read'),
+      `the keep names the unread folder, got: ${output}`);
     cleanup(repo); cleanup(stub.dir);
   });
 

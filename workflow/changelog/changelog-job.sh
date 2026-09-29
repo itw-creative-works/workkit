@@ -41,26 +41,29 @@ wk_checks_template() {
   printf '%s/templates/github-workflows/checks.yml\n' "$(cd "${BASH_SOURCE[0]%/*}/.." && pwd -P)"
 }
 
-# wk_names_linter_copy [copy]: true when stdin names the copy (or any copy)
-# outside a comment line, since naming it is running it. Both greps read all
-# of stdin, so no writer upstream is cut short.
+# wk_names_linter_copy [copy]: 0 when stdin names the copy (or any copy)
+# outside a comment line, since naming it is running it; 1 when it does not; 2
+# when a grep failed. Both greps read all of stdin, so no writer is cut short.
 wk_names_linter_copy() {
-  local copy args=()
+  local copy args=() status
   if [[ $# -gt 0 ]]; then
     args=(-e "$1")
   else
     while IFS= read -r copy; do args+=(-e "$copy"); done < <(wk_linter_copies)
   fi
   grep -v '^[[:space:]]*#' | grep -F "${args[@]}" >/dev/null
+  status=("${PIPESTATUS[@]}")
+  if (( status[0] > 1 || status[1] > 1 )); then return 2; fi
+  return "${status[1]}"
 }
 
-# wk_workflows_run_copy <root> [copy]: true when any file under
-# <root>/.github/workflows names the copy (or any copy). An unreadable folder
-# cannot prove the copy unused, so it answers yes.
+# wk_workflows_run_copy <root> [copy]: 0 when any file under
+# <root>/.github/workflows names the copy (or any copy), 1 when none does, 2
+# when the folder could not be read; find's stderr is the caller's to keep.
 wk_workflows_run_copy() {
   local dir="$1/.github/workflows" text
   [[ -d "$dir" ]] || return 1
-  text="$(find "$dir" -type f -exec cat {} + 2>/dev/null)" || return 0
+  text="$(find "$dir" -type f -exec cat {} +)" || return 2
   wk_names_linter_copy "${@:2}" <<<"$text"
 }
 
@@ -76,11 +79,11 @@ wk_changelog_job_block() {
   ' "$1"
 }
 
-# wk_changelog_job_runs_copy <file>: true when the file's changelog job names a
-# linter copy.
+# wk_changelog_job_runs_copy <file>: 0 when the file's changelog job names a
+# linter copy, 1 when it does not, 2 when the file or a grep could not be read.
 wk_changelog_job_runs_copy() {
   local job
-  job="$(wk_changelog_job_block "$1")" || return 1
+  job="$(wk_changelog_job_block "$1")" || return 2
   wk_names_linter_copy <<<"$job"
 }
 
@@ -102,12 +105,13 @@ wk_checks_header() {
 # row). Lines are written back in the file's own ending, and awk's status is
 # the answer, so an unreadable file fails rather than coming back empty.
 wk_changelog_job_rewrite() {
-  local block header retired runs=""
+  local block header retired runs="" asked=0
   block="$(wk_changelog_job_block "$2")" || return 1
   header="$(wk_checks_header "$2")" || return 1
   retired="$(wk_retired_checks_headers)"
   [[ -n "$block" && -n "$header" ]] || return 1
-  if wk_changelog_job_runs_copy "$1"; then runs=1; fi
+  wk_changelog_job_runs_copy "$1" || asked=$?
+  case "$asked" in 0) runs=1 ;; 1) ;; *) return 1 ;; esac
 
   BLOCK="$block" HEADER="$header" RETIRED="$retired" RUNS="$runs" BOUNDARY="$(wk_job_boundary)" awk -v BINMODE=3 '
     function emit(s) { printf "%s%s", s, eol }

@@ -47,6 +47,7 @@ WK_HOME_RUNNER_FILES=(
   'workflow/lib/slug.sh:brief/workflow/lib/slug.sh'
   'workflow/lib/suite.sh:brief/workflow/lib/suite.sh'
   'workflow/slug.js:brief/workflow/slug.js'
+  'workflow/user-dir.js:brief/workflow/user-dir.js'
   'workflow/ship/semver.js:brief/workflow/ship/semver.js'
   'workflow/lib.sh:brief/workflow/lib.sh'
   'workflow/lib/voice.sh:brief/workflow/lib/voice.sh'

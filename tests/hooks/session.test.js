@@ -63,10 +63,10 @@ const marker = (n, checkedDaysAgo = 0) => JSON.stringify({
   checkedAt: `${daysAgo(checkedDaysAgo)}T09:00:00Z`,
 });
 
-const runHook = (cwd, source = 'startup', home = BARE_HOME) => {
+const runHook = (cwd, source = 'startup', home = BARE_HOME, env = {}) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
     input: JSON.stringify({ cwd: shellPath(cwd), source, hook_event_name: 'SessionStart' }),
-    env: homeEnv(home, { PATH: joinPath(SYSTEM_PATH, '/opt/homebrew/bin') }),
+    env: homeEnv(home, { PATH: joinPath(SYSTEM_PATH, '/opt/homebrew/bin'), ...env }),
     encoding: 'utf8',
     timeout: 15000,
   });
@@ -310,6 +310,15 @@ const run = async () => {
       `and the check names the home repo: ${ctx}`);
     cleanup(repo);
     cleanup(home);
+  });
+
+  await test('the marker is read from WORKFLOW_HOME, the folder the 9am job writes it to', () => {
+    const repo = mkRepo();
+    const moved = mkHome({ marker: marker(10) });
+    const { stdout } = runHook(repo, 'startup', BARE_HOME, { WORKFLOW_HOME: shellPath(path.join(moved, W)) });
+    assert(stdout && ctxOf(stdout).startsWith('cloud brief: last posted'), `the moved folder's marker is heard: ${stdout}`);
+    cleanup(repo);
+    cleanup(moved);
   });
 
   await test('the line rides alone: no session.md is still a session that hears it', () => {

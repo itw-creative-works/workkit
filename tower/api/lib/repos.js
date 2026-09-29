@@ -15,6 +15,7 @@ const { execFileSync } = require('child_process');
 // What a repo is called has one home, the engine's workflow/slug.js. The home
 // runner seed keeps both trees at the same relative depth, so this resolves there too.
 const { slugFromRemote } = require('../../../workflow/slug');
+const { homeUserDir } = require('../../../workflow/user-dir');
 
 const WORKKIT_DIR = '.workkit';
 
@@ -116,8 +117,7 @@ const isEnabled = (dir) => {
  * @returns {Array<{name: string, path: string, slug: string|null}>}
  */
 const discoverRepos = (opts = {}) => {
-  const home = opts.home || os.homedir();
-  const workflowHome = opts.workflowHome || path.join(home, WORKKIT_DIR);
+  const workflowHome = opts.workflowHome || homeUserDir(opts.home);
   const exec = opts.exec || defaultExec;
 
   const { roster } = readRoster(workflowHome);

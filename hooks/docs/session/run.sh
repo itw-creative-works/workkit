@@ -13,8 +13,8 @@ input=$(cat)
 
 command -v jq >/dev/null 2>&1 || exit 0
 
-# The two engine seams, from this file's physical location: wk_jq and
-# wk_settings_declined. They define functions and set nothing, so this hook
+# The two engine seams, from this file's physical location: wk_jq, wk_user_dir
+# and wk_settings_declined. They define functions and set nothing, so this hook
 # still sources no hook helper. Unguarded: a missing one is an incomplete
 # plugin, which workflow:standards already names.
 # shellcheck source=../../../workflow/lib/platform.sh
@@ -42,9 +42,9 @@ SESSION_FILE="$root/.workkit/agents/session.md"
 [ -f "$SETTINGS" ] || exit 0
 wk_settings_declined "$SETTINGS" && exit 0
 
-# The MACHINE's folder, where the 9am job leaves the brief marker. Spelled out
-# for the same reason the two paths above are: this hook sources no hook helper.
-USER_DIR="$HOME/.workkit"
+# The MACHINE's folder, where the 9am job leaves the brief marker, through the
+# engine's one spelling of it (wk_user_dir in platform.sh, sourced above).
+USER_DIR="$(wk_user_dir)"
 BRIEF_MARKER="$USER_DIR/brief-status.json"
 
 # Whole calendar days between a YYYY-MM-DD and today, both pinned to UTC

@@ -8,14 +8,13 @@
 //   renderVersionMark(version)   // the line the published brief carries
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
 const { BRIEF_TITLE_PREFIX } = require('../../../tower/api/lib/history');
 const { compareVersions } = require('../../../workflow/ship/semver');
+const { userDir } = require('../../../workflow/user-dir');
 
-const WORKKIT_DIR = '.workkit';
 // The hand-edited file that names the home repo: the board the cursor lives on.
 const SETTINGS_FILE = 'settings.json';
 
@@ -165,10 +164,7 @@ const readBoardVersion = (workflowHome, exec) => {
  * @returns {{version: string|null, since: string|null, matches: Array<{version: string, topic: string, entry: string}>}}
  */
 const collectCcNews = (opts = {}) => {
-  const home = opts.home || os.homedir();
-  const workflowHome = opts.workflowHome
-    || process.env.WORKFLOW_HOME
-    || path.join(home, WORKKIT_DIR);
+  const workflowHome = opts.workflowHome || userDir(opts.home);
   const exec = opts.exec || defaultExec;
 
   const board = readBoardVersion(workflowHome, exec);

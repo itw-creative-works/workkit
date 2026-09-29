@@ -7,15 +7,15 @@
 //   Object.assign(payload, briefSummaries({ generatedAt, workflowHome, exec }));
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
 // The sweep's round trip, and with it the reading of a refusal: one `gh api
 // graphql` and one answer to "why did that come back empty" for the whole tower.
 const { ask } = require('./board');
+// The machine folder has one home, the engine's workflow/user-dir.js.
+const { userDir } = require('../../../workflow/user-dir');
 
-const WORKKIT_DIR = '.workkit';
 // The hand-edited file that names the home repo: the board the summaries live on.
 const SETTINGS_FILE = 'settings.json';
 
@@ -58,9 +58,7 @@ const homeSlug = (workflowHome) => {
 };
 
 /** Where ~/.workkit is for this call: the same resolution cc-news.js makes. */
-const workflowHomeOf = (opts) => opts.workflowHome
-  || process.env.WORKFLOW_HOME
-  || path.join(opts.home || os.homedir(), WORKKIT_DIR);
+const workflowHomeOf = (opts) => opts.workflowHome || userDir(opts.home);
 
 /**
  * The home repo these summaries would be read from, or null when this machine

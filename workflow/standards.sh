@@ -117,14 +117,14 @@ roster_key="$(wk_git_path "$root")"
 # ── 0. Participation ──────────────────────────────────────────────────────────
 # The states: README § Participation: the tri-state. The heal reads and writes
 # `.repos.json`; the hand-edited user settings.json is only seeded when absent.
-USER_SETTINGS="${WORKFLOW_HOME:-${HOME:-}/$WORKKIT_DIR}/settings.json"
-USER_REPOS="${WORKFLOW_HOME:-${HOME:-}/$WORKKIT_DIR}/.repos.json"
+USER_SETTINGS="$WK_USER_DIR/settings.json"
+USER_REPOS="$WK_USER_DIR/.repos.json"
 REPO_SETTINGS="$WORKKIT_DIR/settings.json"
 
 # The `home` state, the tower clone, known by path. Compared by physical path
 # (cd + pwd -P, since realpath is not on every machine), so a symlinked home
 # directory is still one folder. lib.sh owns the address.
-HOME_CLONE_DIR="${WK_HOME_DIR:-${WORKFLOW_HOME:-${HOME:-}/$WORKKIT_DIR}/tower}"
+HOME_CLONE_DIR="${WK_HOME_DIR:-$WK_USER_DIR/tower}"
 
 seed_user_settings
 

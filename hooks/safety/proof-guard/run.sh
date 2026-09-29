@@ -151,6 +151,16 @@ pg_repo_value() {
   pg_flag_values "$1" --repo -R | sed -n 1p | tr -d "\"'"
 }
 
+# pg_repo_unreadable <value>: true when a `--repo`/`-R` value cannot be
+# resolved here (empty, a variable, a substitution, a hook-quoted span), so it
+# is reported unread and never answered from the local repo.
+pg_repo_unreadable() {
+  case "$1" in
+    ''|*'$'*|*'`'*|*_hookq_*) return 0 ;;
+  esac
+  return 1
+}
+
 # pg_repo_is_here <clause>: whether the clause's repo value names the origin of
 # the session's tree, owner/name in any letter case. No origin is never here.
 pg_repo_is_here() {
@@ -164,11 +174,12 @@ pg_repo_is_here() {
 # read off the quote-stripped clause, so a body that mentions it is not one.
 repo_flag_re='(^|[[:space:]])(--repo([=[:space:]]|$)|-R)'
 
-# The qa flips seen, here and in another repo: the touched-test run happens
-# once per command, after the walk, and only for this tree. A repo flag that
-# names this tree's origin is a flip here.
+# The qa flips seen, here, in another repo, or behind a repo value that could
+# not be read: the touched-test run happens once per command, after the walk,
+# and only for this tree. A repo flag that names this tree's origin is a flip here.
 qa_here=0
 qa_elsewhere=0
+qa_unread=0
 
 while IFS= read -r clause; do
 
@@ -194,10 +205,12 @@ while IFS= read -r clause; do
     # (quoted or bare) so a `--remove-label status:complete` never reads as one.
     labels=$(pg_flag_values "$clause" --add-label)
     if printf '%s' "$labels" | grep -q 'status:qa'; then
-      if printf '%s' "$detect" | grep -Eq -- "$repo_flag_re" && ! pg_repo_is_here "$clause"; then
-        qa_elsewhere=1
-      else
+      if ! printf '%s' "$detect" | grep -Eq -- "$repo_flag_re" || pg_repo_is_here "$clause"; then
         qa_here=1
+      elif pg_repo_unreadable "$(pg_repo_value "$clause")"; then
+        qa_unread=1
+      else
+        qa_elsewhere=1
       fi
     fi
     printf '%s' "$labels" | grep -q 'status:complete' || continue
@@ -236,9 +249,7 @@ while IFS= read -r clause; do
   repo_unreadable=0
   if printf '%s' "$detect" | grep -Eq -- "$repo_flag_re"; then
     repo=$(pg_repo_value "$clause")
-    case "$repo" in
-      ''|*'$'*|*'`'*|*_hookq_*) repo_unreadable=1 ;;
-    esac
+    if pg_repo_unreadable "$repo"; then repo_unreadable=1; fi
   fi
 
   for n in $issues; do
@@ -267,6 +278,8 @@ EOF
 
 if [ "$qa_here" -eq 1 ]; then
   check_qa_tests
+elif [ "$qa_unread" -eq 1 ]; then
+  hook_pretool_notice "proof-guard: could not read the repo value, so the touched-test run did not run."
 elif [ "$qa_elsewhere" -eq 1 ]; then
   hook_pretool_notice "proof-guard: the flip names another repo, so the touched-test run did not run here."
 fi

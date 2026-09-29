@@ -525,8 +525,15 @@ record_brief_status() {
     return 0
   fi
 
+  # The folder and the board reads are the engine's (lib.sh), which a partial
+  # checkout lacks.
+  if ! declare -f wk_user_dir >/dev/null 2>&1; then
+    note_skip "marker: the engine library is missing beside $SCRIPT_DIR; the brief marker was left as it was"
+    return 0
+  fi
+
   local wk_dir marker prefix slug owner name out last
-  wk_dir="${WORKFLOW_HOME:-$HOME/.workkit}"
+  wk_dir="$(wk_user_dir)"
   marker="$wk_dir/brief-status.json"
 
   if ! command -v gh >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then

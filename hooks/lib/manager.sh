@@ -2,7 +2,7 @@
 # hooks/lib/manager.sh: the manager system's reads: the session's live model,
 # the family a model id belongs to, and the effective three-layer config.
 # Sourced by hooks/_lib.sh; defines functions and sets nothing. It reads
-# WORKKIT_DIR, hook_jq and hook_jq_default from the entry, and
+# WORKKIT_DIR, hook_jq, hook_jq_default and wk_user_dir from the entry, and
 # hook_session_marker from lib/markers.sh.
 
 # hook_session_model <session_id> <transcript_path>: the CURRENT model into
@@ -72,7 +72,7 @@ hook_manager_config() {
   if [ -f "$ladder" ]; then
     global=$(hook_jq_default '{}' -c 'if type == "object" then . else {} end' "$ladder")
   fi
-  user=$(_hook_manager_layer "${MANAGER_USER_SETTINGS:-$HOME/$WORKKIT_DIR/settings.json}")
+  user=$(_hook_manager_layer "${MANAGER_USER_SETTINGS:-$(wk_user_dir)/settings.json}")
   if [ -n "$cwd" ]; then
     repo_root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)
     if [ -n "$repo_root" ]; then

@@ -307,6 +307,17 @@ const run = async () => {
       { MANAGER_USER_SETTINGS: shellPath(userSettings({ tiers: { workhorse: 'haiku' } })) });
     assertEq(resolvedModel(out), id('haiku'));
   });
+  await test('with no MANAGER_USER_SETTINGS the user layer is the machine folder, WORKFLOW_HOME first', () => {
+    freshTmp();
+    const dir = path.join(tmp, 'bare');
+    const home = path.join(tmp, 'machine-folder');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(home, { recursive: true });
+    fs.copyFileSync(userSettings({ tiers: { workhorse: 'haiku' } }), path.join(home, 'settings.json'));
+    const out = runHook({ ...payload('worker'), cwd: dir },
+      { MANAGER_USER_SETTINGS: '', WORKFLOW_HOME: shellPath(home) });
+    assertEq(resolvedModel(out), id('haiku'));
+  });
   await test('the repo layer beats the user layer', () => {
     freshTmp();
     const repo = settingsAt(path.join(tmp, 'repo'), { tiers: { workhorse: 'sonnet' } }, { git: true });

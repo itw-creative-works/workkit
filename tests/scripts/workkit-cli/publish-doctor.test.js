@@ -5,7 +5,7 @@
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { cleanup, mkWorld, runCli, mkRepo } = require('./helpers');
+const { cleanup, mkWorld, runCli, mkRepo, mkPartialKit } = require('./helpers');
 
 const run = async () => {
   group('workkit publish');
@@ -88,6 +88,17 @@ const run = async () => {
     const { out } = runCli(world, ['doctor']);
     assert(/roster: .*does not exist yet/.test(out), `no invented count, got: ${out}`);
     cleanup(world.root);
+  });
+
+  await test('a checkout without the engine library names the gap, never a roster path', () => {
+    const world = mkWorld();
+    const { kit, script } = mkPartialKit();
+    const { code, said } = runCli(world, ['doctor'], { script });
+    assertEq(code, 0, 'doctor still finishes');
+    const line = said.split('\n').find((l) => l.includes('roster:'));
+    assert(line && line.includes('library is missing'), `the missing library is named, got: ${line}`);
+    assert(!line.includes('.repos.json'), `and no path it cannot know, got: ${line}`);
+    cleanup(world.root); cleanup(kit);
   });
 
   await test('an empty roster reports as a notice, not as a green check', () => {

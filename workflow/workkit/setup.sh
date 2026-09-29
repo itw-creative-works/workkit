@@ -11,28 +11,33 @@
 report_globals() {
   local count home
 
-  if [[ ! -f "$USER_REPOS" ]]; then
-    wk_info "roster: $USER_REPOS does not exist yet; the first heal writes it"
+  # The roster's address is the engine's (WK_HOME_REPOS in lib.sh), so a
+  # checkout without the library cannot name it.
+  if [[ "$HOME_LIBS" -ne 1 ]]; then
+    wk_skip "roster: the engine library is missing beside $SCRIPT_DIR; this checkout cannot name the roster"
     return 0
   fi
-  # A count it cannot take (no jq, or no engine beside it) is a count it says
-  # nothing about.
-  if ! command -v jq >/dev/null 2>&1 || ! declare -f wk_jq >/dev/null 2>&1; then
-    wk_skip "roster: reading $USER_REPOS needs jq and the engine's lib/platform.sh"
+  if [[ ! -f "$WK_HOME_REPOS" ]]; then
+    wk_info "roster: $WK_HOME_REPOS does not exist yet; the first heal writes it"
+    return 0
+  fi
+  # A count it cannot take (no jq) is a count it says nothing about.
+  if ! command -v jq >/dev/null 2>&1; then
+    wk_skip "roster: reading $WK_HOME_REPOS needs jq"
     return 0
   fi
 
-  count="$(wk_jq -r '[(.repos // {}) | to_entries[] | select(.value != "declined")] | length' "$USER_REPOS" 2>/dev/null || printf '')"
+  count="$(wk_jq -r '[(.repos // {}) | to_entries[] | select(.value != "declined")] | length' "$WK_HOME_REPOS" 2>/dev/null || printf '')"
   if [[ -z "$count" ]]; then
-    wk_warn "roster: $USER_REPOS is not valid JSON; fix or remove it, then re-run a session in any repo"
+    wk_warn "roster: $WK_HOME_REPOS is not valid JSON; fix or remove it, then re-run a session in any repo"
     return 0
   fi
   # Zero is the one count worth a different voice: an empty roster means the
   # tower, the board and the brief have nothing to read.
   if [[ "$count" == "0" ]]; then
-    wk_info "roster: no repos registered in $USER_REPOS yet; it fills as a session opens in each enabled repo"
+    wk_info "roster: no repos registered in $WK_HOME_REPOS yet; it fills as a session opens in each enabled repo"
   else
-    wk_ok "roster: $count repo(s) registered in $USER_REPOS"
+    wk_ok "roster: $count repo(s) registered in $WK_HOME_REPOS"
   fi
 
 }

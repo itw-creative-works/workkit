@@ -296,6 +296,18 @@ const run = async () => {
     assertEq(runs(dir), 0, 'no test ran');
   });
 
+  for (const value of ['$D', '"$(cat repo.txt)"', '`cat repo.txt`']) {
+    await qaCase(`--repo ${value} on the qa flip: exit 0, says the value could not be read`, (dir, stub) => {
+      write(dir, 'tests/a.test.js', RED);
+      const out = runHook(`gh issue edit 3 --repo ${value} --add-label status:qa`, stub, dir);
+      assertEq(out.code, 0, `an unread value never blocks, got: ${out.stderr}`);
+      assert(notice(out).includes('could not read the repo value, so the touched-test run did not run'),
+        `says the value was unread, got: ${out.stdout}`);
+      assert(!out.stdout.includes('another repo'), `never read as another repo, got: ${out.stdout}`);
+      assertEq(runs(dir), 0, 'no test ran');
+    });
+  }
+
   await qaCase('a body that mentions -R is not the flag: the red file still blocks', (dir, stub) => {
     write(dir, 'tests/a.test.js', RED);
     const out = runHook('gh issue edit 3 --body "pass it with -R when needed" --add-label status:qa', stub, dir);

@@ -87,7 +87,7 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 
 ## 6. Park at `status:qa`: the flow ends here, not at a ship
 
-- Build done, tests green, review passed: the work STAYS IN THE WORKING TREE, uncommitted or committed but unpushed.
+- Build done, tests green, review passed: the work STAYS IN THE WORKING TREE, uncommitted until the owner's pass. `safety/commit-gate` bounces a commit whose message names an open issue not at `status:complete`.
 - The park is MECHANICAL, not a question. It happens the moment the done-criteria above are met.
 - Say what to check, then flip. The comment lands FIRST so the park carries the record: the proof is a hard gate, and without it an item can neither reach `status:complete` nor close (spec § The proof).
 - The comment's first line is `Proof:`, one entry per layer: the command, or the reason it was skipped. The check reads it first.
@@ -104,7 +104,7 @@ gh issue edit <N> --remove-label status:building,agent:working --add-label statu
 - Do not ship, and do not ask in chat whether to ship. The owner's word runs [workkit:ship](../ship/SKILL.md), and asking for it asks them to approve their own gate (spec § Labels).
 - A failed check comes back here: fix it in place and re-comment; the label does not move.
 - When the parked issue's batch has more items, claim and build the next one. The batch is the plan in `.workkit/agents/session.md`, or the Batches bullet of `docs/project-state.md` § Queue semantics when no plan is written.
-- The commit word comes once, when the whole batch is parked. Commit and ship still wait on the owner's word; the batch only decides what rides it.
+- The commit word comes once, when the whole batch is parked. Commit and ship still wait on the owner's word, and a commit naming the batch's issues waits on their pass; the batch only decides what rides it.
 
 ### The pass: only the owner's word moves it on
 

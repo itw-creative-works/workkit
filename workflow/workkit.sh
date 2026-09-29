@@ -44,10 +44,6 @@ BIN_LINK="$BIN_DIR/workkit"
 CLAUDE_HOME="${WORKFLOW_CLAUDE_HOME:-${HOME:-}/.claude}"
 ENGINE_LINK="$CLAUDE_HOME/workkit"
 
-# The machine's own folder and its roster, read by `doctor`.
-USER_DIR="${WORKFLOW_HOME:-${HOME:-}/.workkit}"
-USER_REPOS="$USER_DIR/.repos.json"
-
 # Sourced tolerantly: an incomplete checkout is reported by the steps that need
 # these, never by a source that aborts before the command can speak.
 HOME_LIBS=1

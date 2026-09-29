@@ -9,7 +9,7 @@
 # a workflow still runs is kept and reported. This runs after the job rewrite,
 # so the job the heal owns never holds a copy in place.
 remove_changelog_linter_copies() {
-  local copy
+  local copy runs
 
   while IFS= read -r copy; do
     [[ -f "$copy" ]] || continue
@@ -22,8 +22,16 @@ remove_changelog_linter_copies() {
         ;;
     esac
 
-    if wk_workflows_run_copy . "$copy"; then
+    runs=0
+    wk_workflows_run_copy . "$copy" 2>/dev/null || runs=$?
+    if [[ "$runs" -eq 0 ]]; then
       wk_warn "changelog lint: kept $copy: a workflow under .github/workflows still runs it; point that step at the kit's workflow and the next heal removes the copy"
+      needs_attention=1
+      continue
+    fi
+    # An unreadable folder cannot prove the copy unused, so it stays.
+    if [[ "$runs" -ne 1 ]]; then
+      wk_warn "changelog lint: kept $copy: .github/workflows could not be read, so nothing proves the copy unused"
       needs_attention=1
       continue
     fi

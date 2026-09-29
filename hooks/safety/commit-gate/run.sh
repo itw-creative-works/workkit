@@ -1,10 +1,11 @@
 #!/bin/bash
-# safety/commit-gate: PreToolUse hook (Bash). Every `git commit` passes six
+# safety/commit-gate: PreToolUse hook (Bash). Every `git commit` passes seven
 # checks: 1 new files carry tests, 2 code carries a fresh review marker, 3 added
 # CHANGELOG entries match the format, 4 a `Fixes #N` commit stages its entry,
-# 6 every closed issue carries a `Proof:` comment, 5 code carries the record a
-# green root `npm test` wrote for its tree. A commit the gate cannot place fails
-# closed; anything else not clearly violating fails open.
+# 6 every closed issue carries a `Proof:` comment, 7 every named open issue is at
+# status:complete, 5 code carries the record a green root `npm test` wrote. A
+# commit the gate cannot place fails closed; anything else not clearly
+# violating fails open.
 # Detail: docs/hooks.md § safety:commit-gate.
 
 set -euo pipefail
@@ -38,10 +39,11 @@ block() {
 # since the harness reads a single stdout JSON object (stderr reaches only the
 # debug log). A bounce exits 2, so it prints none.
 gate_notices=""
+heal_tmp=""
 stand_down() {
   if [ -n "$gate_notices" ]; then gate_notices="$gate_notices"$'\n'"$1"; else gate_notices="$1"; fi
 }
-trap 'if [ "$?" -eq 0 ] && [ -n "$gate_notices" ]; then hook_pretool_notice "$gate_notices"; fi' EXIT
+trap 'gate_rc=$?; [ -z "$heal_tmp" ] || rm -rf "$heal_tmp"; if [ "$gate_rc" -eq 0 ] && [ -n "$gate_notices" ]; then hook_pretool_notice "$gate_notices"; fi' EXIT
 
 # A commit wrapped in an interpreter string (`sh -c "git commit …"`,
 # `eval "git commit …"`) carries its flags, message, and pathspecs inside one
@@ -136,24 +138,57 @@ if [ -z "$files" ] && [ "$has_pathspec" -eq 0 ]; then
   exit 0
 fi
 
+# The heal-output checks below answer yes (0) or no (1). A tool that fails
+# inside one is neither: the gate blocks naming the check, the command and its
+# stderr, so an unknown answer never reads as code awaiting review.
+heal_failed() {
+  block "the $1 check could not run: \`$2\` exited $3${4:+ ($4)}. Its answer is unknown, so the commit is held; fix what failed, then commit."
+}
+
+# heal_ask <check> <max-answer> <cmd...>: cmd's status when it is an answer (0
+# up to <max-answer>), its stdout passed on; any status past that is a failure.
+heal_ask() {
+  local check="$1" max="$2" err rc=0
+  shift 2
+  { err=$("$@" 2>&1 1>&3 3>&-) || rc=$?; } 3>&1
+  [ "$rc" -le "$max" ] && return "$rc"
+  heal_failed "$check" "$*" "$rc" "$err"
+}
+
+# heal_tool <check> <cmd...>: heal_ask for a command with no "no" answer.
+heal_tool() { heal_ask "$1" 0 "${@:2}"; }
+
+# The checks' one scratch folder, made on first use and removed by the trap.
+heal_scratch() {
+  local out rc=0
+  [ -z "$heal_tmp" ] || return 0
+  out=$(mktemp -d 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || heal_failed "heal-output" "mktemp -d" "$rc" "$out"
+  heal_tmp="$out"
+}
+
 # A version stamp in the ROOT package.json, .claude-plugin/plugin.json or
 # .workkit/settings.json is generated bookkeeping, not code: proved by content,
 # only `version` may differ from HEAD. A new file, unparseable JSON, another
 # changed key, a nested package.json or anything else fails the proof.
 version_bump_only() {
-  local file head copy a b
-  file="$1"
-  head="$(cd "$repo_root" && git show "HEAD:$file" 2>/dev/null)" || return 1
+  local file="$1" a b
+  heal_scratch
+  heal_ask "version stamp" 1 git -C "$repo_root" rev-parse -q --verify "HEAD:$file" >/dev/null || return 1
+  heal_tool "version stamp" git -C "$repo_root" show "HEAD:$file" >"$heal_tmp/stamp-head"
   # Judge the bytes the COMMIT will carry: the staged blob normally, the
   # working tree under -a/--all.
   if [ "$has_all_flag" -eq 1 ]; then
-    copy="$(cat "$repo_root/$file" 2>/dev/null)" || return 1
+    [ -f "$repo_root/$file" ] || return 1
+    heal_tool "version stamp" cat "$repo_root/$file" >"$heal_tmp/stamp-copy"
   else
-    copy="$(cd "$repo_root" && git show ":$file" 2>/dev/null)" || return 1
+    heal_ask "version stamp" 1 git -C "$repo_root" rev-parse -q --verify ":$file" >/dev/null || return 1
+    heal_tool "version stamp" git -C "$repo_root" show ":$file" >"$heal_tmp/stamp-copy"
   fi
-  [ -n "$copy" ] || return 1
-  a="$(hook_jq -Sc 'del(.version)' <<<"$head" 2>/dev/null)" || return 1
-  b="$(hook_jq -Sc 'del(.version)' <<<"$copy" 2>/dev/null)" || return 1
+  [ -s "$heal_tmp/stamp-copy" ] || return 1
+  # jq refusing a file is the "unparseable JSON" no, not a failed tool.
+  a="$(hook_jq -Sc 'del(.version)' "$heal_tmp/stamp-head" 2>/dev/null)" || return 1
+  b="$(hook_jq -Sc 'del(.version)' "$heal_tmp/stamp-copy" 2>/dev/null)" || return 1
   [ -n "$a" ] && [ "$a" = "$b" ]
 }
 
@@ -191,40 +226,43 @@ fi
 # its file byte for byte (docs/hooks.md § safety:commit-gate). Under -a/--all
 # each arm reads the working tree, which is what the commit carries.
 
+# The index's workflows under <dir>, where the linter-copy question can read them.
+index_workflows() {
+  (cd "$repo_root" && git ls-files -z -- .github/workflows | xargs -0 git checkout-index --prefix="$(wk_git_path "$1")/" --)
+}
+
 linter_copy_retired() {
-  local tmp rc=1
-  {
-    git diff --cached --name-only --diff-filter=D 2>/dev/null || true
-    if [ "$has_all_flag" -eq 1 ]; then git diff --name-only --diff-filter=D 2>/dev/null || true; fi
-  } | grep -Fxq -- "$1" || return 1
+  local root rc=0
+  heal_scratch
+  heal_tool "linter copy" git -C "$repo_root" diff --cached --name-only --diff-filter=D >"$heal_tmp/deleted"
   if [ "$has_all_flag" -eq 1 ]; then
-    wk_workflows_run_copy "$repo_root" "$1" && return 1
-    return 0
+    heal_tool "linter copy" git -C "$repo_root" diff --name-only --diff-filter=D >>"$heal_tmp/deleted"
   fi
-  # The index's workflows, checked out where the question can read them.
-  tmp="$(mktemp -d 2>/dev/null)" || return 1
-  if (cd "$repo_root" && git ls-files -z -- .github/workflows | xargs -0 git checkout-index --prefix="$(wk_git_path "$tmp")/" --) >/dev/null 2>&1; then
-    wk_workflows_run_copy "$tmp" "$1" || rc=0
+  grep -Fxq -- "$1" "$heal_tmp/deleted" || return 1
+  root="$repo_root"
+  if [ "$has_all_flag" -eq 0 ]; then
+    root="$heal_tmp/index"
+    heal_tool "linter copy" index_workflows "$root"
   fi
-  rm -rf "$tmp"
-  return "$rc"
+  heal_ask "linter copy" 1 wk_workflows_run_copy "$root" "$1" || rc=$?
+  [ "$rc" -eq 1 ]
 }
 
 checks_is_job_rewrite() {
-  local file=".github/workflows/checks.yml" tmp want have rc=1
-  tmp="$(mktemp -d 2>/dev/null)" || return 1
-  if (cd "$repo_root" && git show "HEAD:$file") >"$tmp/head" 2>/dev/null \
-    && wk_changelog_job_rewrite "$tmp/head" "$(wk_checks_template)" >"$tmp/rewrite" 2>/dev/null \
-    && want="$(cd "$repo_root" && git hash-object --path="$file" "$(wk_git_path "$tmp/rewrite")" 2>/dev/null)"; then
-    if [ "$has_all_flag" -eq 1 ]; then
-      have="$(cd "$repo_root" && git hash-object --path="$file" "$file" 2>/dev/null)" || have=""
-    else
-      have="$(cd "$repo_root" && git rev-parse -q --verify ":$file" 2>/dev/null)" || have=""
-    fi
-    if [ -n "$want" ] && [ "$want" = "$have" ]; then rc=0; fi
+  local file=".github/workflows/checks.yml" have
+  heal_scratch
+  heal_ask "checks.yml rewrite" 1 git -C "$repo_root" rev-parse -q --verify "HEAD:$file" >/dev/null || return 1
+  heal_tool "checks.yml rewrite" git -C "$repo_root" show "HEAD:$file" >"$heal_tmp/checks-head"
+  heal_tool "checks.yml rewrite" wk_changelog_job_rewrite "$heal_tmp/checks-head" "$(wk_checks_template)" >"$heal_tmp/checks-rewrite"
+  heal_tool "checks.yml rewrite" git -C "$repo_root" hash-object --path="$file" "$(wk_git_path "$heal_tmp/checks-rewrite")" >"$heal_tmp/checks-want"
+  if [ "$has_all_flag" -eq 1 ]; then
+    [ -f "$repo_root/$file" ] || return 1
+    heal_tool "checks.yml rewrite" git -C "$repo_root" hash-object --path="$file" "$file" >"$heal_tmp/checks-have"
+  else
+    heal_ask "checks.yml rewrite" 1 git -C "$repo_root" rev-parse -q --verify ":$file" >"$heal_tmp/checks-have" || return 1
   fi
-  rm -rf "$tmp"
-  return "$rc"
+  have="$(cat "$heal_tmp/checks-have")"
+  [ -n "$have" ] && [ "$have" = "$(cat "$heal_tmp/checks-want")" ]
 }
 
 bookkeeping=0
@@ -325,20 +363,45 @@ if [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/CHANGELOG.md" ] \
   fi
 fi
 
-# 6. The proof: every issue this commit closes must carry a `Proof:` comment,
-# read by hook_issue_has_proof at the repo root, failing open out loud, and
-# only where a CHANGELOG.md marks the repo as in the pipeline.
-if [ -f "$repo_root/CHANGELOG.md" ] && printf '%s' "$cmd" | grep -Eqi "$trailer_re"; then
+# 6. The proof: every issue this commit closes must carry a `Proof:` comment.
+# 7. The stage: every OPEN issue of this repo the message names must be at
+# status:complete, the owner's pass. One read per named issue answers both, at
+# the repo root, failing open out loud, only where a CHANGELOG.md marks the repo.
+if [ -f "$repo_root/CHANGELOG.md" ]; then
+  closes=" $(printf '%s' "$cmd" | grep -Eoi "$trailer_re" | grep -Eo '[0-9]+$' | tr '\n' ' ' || true)"
+  # A #N glued to a run that opens with a letter, `_`, `.`, `/`, `-`, `&` or `$`
+  # (owner/repo2#N, page#12, &#12, $#) is dropped before the plain ones are
+  # read; a run of digits alone never opens one, so #123#456 reads as two.
+  named=$(printf '%s\n' "$cmd" | sed -E 's/[[:alpha:]_./&$-][[:alnum:]_./&$-]*#[0-9]+//g' | grep -Eo '#[0-9]+' | tr -d '#' | sort -un || true)
   unproved=""
-  for n in $(printf '%s' "$cmd" | grep -Eoi "$trailer_re" | grep -Eo '[0-9]+$' | sort -u); do
-    proof_status=0
-    (cd "$repo_root" 2>/dev/null || exit 2; hook_issue_has_proof "$n") || proof_status=$?
-    case "$proof_status" in
-      0) ;;
-      1) unproved="$unproved #$n" ;;
-      *) echo "commit-gate: could not read issue #$n (gh could not answer), so the proof check did not run." >&2 ;;
+  unpassed=""
+  for n in $named; do
+    if ! view=$(cd "$repo_root" 2>/dev/null && hook_issue_view "$n" state,labels,comments,url) \
+      || ! stage=$(hook_view_stage <<<"$view"); then
+      stand_down "commit-gate: could not read issue #$n (gh could not answer), so its stage and proof checks did not run."
+      continue
+    fi
+    case "$stage" in
+      pull) continue ;;
+      closed|status:complete) ;;
+      none) unpassed="$unpassed, #$n has no status label" ;;
+      *) unpassed="$unpassed, #$n is at $stage" ;;
+    esac
+    case "$closes" in
+      *" $n "*)
+        proof_status=0
+        hook_view_has_proof <<<"$view" || proof_status=$?
+        case "$proof_status" in
+          0) ;;
+          1) unproved="$unproved #$n" ;;
+          *) stand_down "commit-gate: could not read issue #$n's comments, so the proof check did not run." ;;
+        esac
+        ;;
     esac
   done
+  if [ -n "$unpassed" ]; then
+    block "the message names issues the owner has not passed: ${unpassed#, }. The owner's pass moves an issue to status:complete before a commit names it (docs/project-state.md, \"The park\"): leave the work uncommitted until then, or drop the reference."
+  fi
   if [ -n "$unproved" ]; then
     block "the message closes${unproved}, and no comment there opens with a \`Proof:\` line. A proof is a hard gate (docs/project-state.md, \"The proof\"): the agent that built the item comments the Proof: line first, one entry per layer with the command or the reason it was skipped, and only then does the trailer close the issue."
   fi

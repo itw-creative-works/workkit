@@ -5,8 +5,9 @@
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
-const { group, test, assertEq, summary, selfRun } = require('../../lib/harness');
-const { SYSTEM_BASH } = require('../../lib/platform');
+const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { SYSTEM_BASH, stubTool, pathWith, shellPath, which } = require('../../lib/platform');
+const { mkTmp } = require('../../lib/scratch');
 const {
   skipWithoutDigest, WORKFLOW_DIR, mkRepo, stage, stageDeep, proveTree, runHook, cleanup,
 } = require('./helpers');
@@ -203,6 +204,44 @@ const run = async () => {
       `${engine.slice(0, nl + 1)}// Vendored from the workflow core's changelog.js by standards.sh. The kit is the SSOT; edit it there. This copy is resynced on every heal.\n${engine.slice(nl + 1)}`);
     const { code } = runHook(dir, 'git commit -m "chore: a copy"');
     assertEq(code, 2, 'only the deletion is the heal\'s output: a copy in the tree gets the full gate');
+    cleanup(dir);
+  });
+
+  group('commit-gate: a heal-output check whose tool fails is held by name');
+
+  await test('a find that fails inside the linter-copy check is named with its stderr, never read as code', () => {
+    const dir = mkVendoredRepo('changelog-lint.cjs');
+    execSync('git rm -q .github/changelog-lint.cjs', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+    stage(dir, CHECKS, healedChecks());
+    proveTree(dir);
+    const bin = mkTmp('cg-find-');
+    stubTool(bin, 'find', ['#!/bin/bash', 'echo "find: the stub cannot read this folder" >&2', 'exit 1']);
+    const { code, stderr } = runHook(dir, 'git commit -m "chore(workflow): drop the linter copy"', undefined, { PATH: pathWith(bin) });
+    assertEq(code, 2, `the unknown answer holds the commit, stderr: ${stderr}`);
+    assert(stderr.includes('the linter copy check') && stderr.includes('`wk_workflows_run_copy '),
+      `the check and the command are named: ${stderr}`);
+    assert(stderr.includes('the stub cannot read this folder'), `and the tool's own stderr: ${stderr}`);
+    assert(!stderr.includes('no review has run'), `never the review bounce: ${stderr}`);
+    cleanup(dir);
+  });
+
+  await test('a git that fails inside the version-stamp probe is named with its stderr, never read as a no', () => {
+    // Exit 128 is git failing, not the "absent" 1 the probe answers no with.
+    const dir = mkStampedRepo();
+    stage(dir, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
+    const bin = mkTmp('cg-git-');
+    stubTool(bin, 'git', [
+      '#!/bin/bash',
+      'case " $* " in *" rev-parse -q --verify HEAD:.workkit/settings.json "*)',
+      '  echo "fatal: the stub index is corrupt" >&2; exit 128 ;;',
+      'esac',
+      `exec "${shellPath(which('git'))}" "$@"`,
+    ]);
+    const { code, stderr } = runHook(dir, 'git commit -m "chore(workflow): stamp"', undefined, { PATH: pathWith(bin) });
+    assertEq(code, 2, `the unknown answer holds the commit, stderr: ${stderr}`);
+    assert(stderr.includes('the version stamp check') && stderr.includes('rev-parse -q --verify HEAD:.workkit/settings.json'),
+      `the check and the command are named: ${stderr}`);
+    assert(stderr.includes('exited 128') && stderr.includes('the stub index is corrupt'), `and git's status and stderr: ${stderr}`);
     cleanup(dir);
   });
 
