@@ -304,6 +304,30 @@ const run = async () => {
     }
   });
 
+  await test('hook_clause_changes_dir: a cd, pushd or popd past the peeled prefixes, and nothing else', () => {
+    const ask = (clause) => runLib(`set -f; c='${clause}'; hook_clause_changes_dir $c && printf yes || printf no`).stdout;
+    for (const clause of ['cd /x', 'pushd /x', 'popd', '(cd /x', '( cd /x', '{ cd /x', 'command cd /x',
+      'env cd /x', 'X=1 cd /x', '2>/dev/null cd /x', '> out cd /x', 'builtin cd /x', 'time cd /x', '! cd /x',
+      '\\cd /x', '(\\cd /x', 'if cd /x', 'then cd /x', 'elif cd /x', 'else cd /x', 'do cd /x', 'while cd /x',
+      'until cd /x']) {
+      assertEq(ask(clause), 'yes', `${clause} changes directory`);
+    }
+    for (const clause of ['gh issue close 7', 'echo cd', 'git commit -m _hookq_', 'cdx /x', '']) {
+      assertEq(ask(clause), 'no', `${clause || '(empty)'} changes no directory`);
+    }
+  });
+
+  await test('hook_find_git_commit: the one peel reads a commit, and a cd before it, past every prefix', () => {
+    for (const cmd of ['time git commit -m x', 'if git commit -m x', '\\git commit -m x', '! git commit -m x']) {
+      const out = runLib(`hook_find_git_commit '${cmd}'; printf '%s' "$HOOK_COMMIT_CLAUSE"`);
+      assert(/git commit/.test(out.stdout), `${cmd} is a commit clause, got: ${out.stdout}|${out.stderr}`);
+    }
+    for (const cmd of ['builtin cd /x && git commit -m x', 'X=1 cd /x && git commit -m x']) {
+      const out = runLib(`hook_find_git_commit '${cmd}'; printf '%s' "$HOOK_SAW_CD"`);
+      assertEq(out.stdout, '1', `${cmd} changes directory before the commit`);
+    }
+  });
+
   group('_lib.sh: hook_pretool_notice');
 
   await test('prints the two-field JSON a PreToolUse hook exiting 0 is heard by', () => {

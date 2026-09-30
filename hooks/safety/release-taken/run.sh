@@ -45,27 +45,14 @@ cwd=$(hook_jq -r '.cwd // ""' <<<"$input" 2>/dev/null || true)
 RT_WORKSPACES=""
 RT_WS_UNREADABLE=""
 rt_has_npm_publish() {
-  local clause sub w n dry ws flagged value found=1 all=0
+  local clause sub n dry ws flagged value found=1 all=0
   while IFS= read -r clause; do
     # shellcheck disable=SC2086  # word splitting is intentional; quotes are stripped
     set -- $clause
-    while [ $# -gt 0 ]; do
-      case "$1" in
-        \(|\{) shift ;;
-        \(*) w="${1#\(}"; shift; set -- "$w" "$@" ;;
-        command|env) shift ;;
-        [A-Za-z_]*=*) shift ;;
-        # A redirect ahead of the command word is syntax, never the command.
-        *'>'*|*'<'*)
-          n=$(hook_redirect_span "$1")
-          [ "$n" -gt 0 ] || break
-          [ "$n" -le $# ] || n=$#
-          shift "$n" ;;
-        *) break ;;
-      esac
-    done
-    case "${1:-}" in
-      npm|*/npm) shift ;;
+    # The shared peel skips the prefixes and redirects ahead of the command word.
+    hook_peel_prefixes "$@"
+    case "$HOOK_PEEL_WORD" in
+      npm|*/npm) shift "$((HOOK_PEEL_SKIP + 1))" ;;
       *) continue ;;
     esac
     # The whole clause is walked: `--dry-run` (or `=true`) publishes nothing, and

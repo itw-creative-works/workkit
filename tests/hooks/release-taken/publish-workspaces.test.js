@@ -53,6 +53,18 @@ const run = async () => {
     cleanup(stubs.dir);
   });
 
+  await test('the shared prefix peel reads a publish behind time, a backslash, if and !', () => {
+    const stubs = makeStubs({ npmTaken: ['widget@1.2.3'] });
+    const dir = mkRepo();
+    for (const c of ['time npm publish', '\\npm publish', 'if npm publish', '! npm publish']) {
+      const { code, stderr } = runHook(c, dir, stubs);
+      assertEq(code, 2, `the publish behind the prefix is still a publish: ${c}, got: ${stderr}`);
+      assert(stderr.includes('npm already has widget@1.2.3'), `names the pair: ${c}, got: ${stderr}`);
+    }
+    cleanup(dir);
+    cleanup(stubs.dir);
+  });
+
   group('release-taken: workspaces');
 
   await test('a packages/* member that is taken bounces, and a private member is not asked', () => {

@@ -300,6 +300,37 @@ const run = async () => {
     cleanup(stub.dir);
   });
 
+  await test('a directory change before a gated close or complete flip bounces, reading no issue', () => {
+    for (const c of [
+      'cd /somewhere/else && gh issue close 7',
+      'pushd /somewhere/else >/dev/null && gh issue close 7',
+      'popd && gh issue edit 7 --add-label status:complete',
+      '(cd /somewhere/else && gh issue edit 7 --add-label status:complete)',
+    ]) {
+      const stub = makeGhStub(WORLD);
+      const { code, stderr } = runHook(c, stub);
+      assertEq(code, 2, `the proved issue still bounces, the tree unplaced: ${c}, got: ${stderr}`);
+      assert(stderr.includes('changes directory') && stderr.includes('own Bash call'),
+        `names the directory change and the fix: ${c}, got: ${stderr}`);
+      assertEq(ghCalls(stub).length, 0, `reads no issue: ${c}`);
+      cleanup(stub.dir);
+    }
+  });
+
+  await test('a directory change beside a close the gate does not read, or after the gated one, passes', () => {
+    for (const c of [
+      'cd /somewhere/else && gh issue close 7 --reason "not planned"',
+      'gh issue close 7 && cd /somewhere/else',
+      'cd /somewhere/else && gh issue close https://github.com/a/b/issues/5',
+      'cd /somewhere/else && gh issue close $N',
+    ]) {
+      const stub = makeGhStub(WORLD);
+      const { code, stderr } = runHook(c, stub);
+      assertEq(code, 0, `must pass: ${c}, got: ${stderr}`);
+      cleanup(stub.dir);
+    }
+  });
+
   group('proof-guard: wiring and fail-open');
 
   await test('hooks.json registers the guard under PreToolUse Bash', () => {

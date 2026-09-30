@@ -25,6 +25,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ### Fixed
 
+- [#371](../../issues/371) - proof-guard bounces a gated flip or close behind a `cd`, `pushd` or `popd`, telling the caller to change directory in its own Bash call first; the hook judged the session's directory instead, so a qa flip into another checkout read as another repo and skipped its test run.
+
+- [#371](../../issues/371) - The commit gate, tree-guard and release-taken read a command behind `time`, `builtin`, `!`, a leading backslash or a shell keyword (`if`, `while` and the rest), through one shared prefix list.
+
 - [#365](../../issues/365) - A flip to `status:qa` whose `--repo`/`-R` names this tree's own repo, in any letter case, now runs the touched test files; only a flag naming a different repo skips the run with its notice.
 - [#362](../../issues/362) - A green root `npm test` whose tree cannot be hashed before or after the run now exits 1 with its own `script-shell:` line, instead of reading as a tree the run changed and exiting 0 with no record.
 

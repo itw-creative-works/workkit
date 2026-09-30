@@ -257,7 +257,8 @@ const run = async () => {
   await test('wrapper prefixes do not hide it: exit 2', () => {
     const dir = mkTree();
     for (const c of ['command git stash', 'env git reset --hard', '/usr/bin/git clean -fd',
-      '(git stash pop)']) {
+      '(git stash pop)', 'time git stash', 'builtin command git reset --hard', '\\git clean -fd',
+      'if git stash', '! git reset --hard', '2>/dev/null git stash']) {
       blocks(dir, c);
     }
     rmTree(dir);

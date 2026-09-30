@@ -150,23 +150,14 @@ while IFS= read -r clause; do
   set -- $clause
   tg_strip_noise "$@"
   set -- ${TG_WORDS[@]+"${TG_WORDS[@]}"}
-  # Peel the wrapper prefixes, exactly as the commit finder does, so `(git …`,
-  # `command git …`, `env git …`, `eval git …` and `VAR=x git …` read as the git
-  # clause they run.
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      \(|\{) shift ;;
-      \(*) w="${1#\(}"; shift; set -- "$w" "$@" ;;
-      command|env|eval) shift ;;
-      [A-Za-z_]*=*) shift ;;
-      *) break ;;
-    esac
-  done
-  case "${1:-}" in
+  # The commit finder's own peel (hook_peel_prefixes), so `(git …`, `command git …`,
+  # `time git …`, `VAR=x git …` and the rest of its list read as the git clause they run.
+  hook_peel_prefixes "$@"
+  case "$HOOK_PEEL_WORD" in
     git|*/git) ;;
     *) continue ;;
   esac
-  shift
+  shift "$((HOOK_PEEL_SKIP + 1))"
   # git's own options before the subcommand; the value-taking ones consume their
   # value, so `git -C <path> stash` is the stash it runs.
   sub=""

@@ -4,7 +4,8 @@
 # status:complete and `gh issue close <N>` while the issue carries no `Proof:`
 # line (the never-built closes pass), and the flip to status:qa while a touched
 # test file is red (checks/qa-tests.sh). The read runs from the session's
-# directory; it fails open, out loud. Detail: docs/hooks.md § safety:proof-guard.
+# directory, so any of them behind a cd bounces; it fails open, out loud.
+# Detail: docs/hooks.md § safety:proof-guard.
 
 set -euo pipefail
 set -f  # no glob expansion while handling untrusted command text
@@ -55,6 +56,13 @@ block() {
     echo "proof-guard: BLOCKED this command. Issue #$1 carries no comment whose line starts with \"Proof:\", so it cannot $2 (docs/project-state.md, \"The proof\": the proof is a hard gate)."
     echo "The proof is written at the PARK by the agent that built the item, from the layers it actually ran (skills/feature/SKILL.md section 6): comment the Proof: line on the issue first, one entry per layer with the command or the reason that layer was skipped, then run this again. It is never invented at ship time and never written on the owner's behalf."
   } >&2
+  exit 2
+}
+
+# The hook is handed the session's directory, so a flip or close behind a cd
+# acts on a tree and repo it cannot see: bounce it, never judge the wrong one.
+block_cd() {
+  echo "proof-guard: BLOCKED this command. It changes directory (cd, pushd or popd) before a gated gh issue flip or close, so the gate cannot tell which tree and repo that command acts on. Run the cd in its own Bash call first, then the gh command alone; where the directory resets between calls (a subagent), run the flip from a session whose directory is that repo." >&2
   exit 2
 }
 
@@ -180,11 +188,15 @@ repo_flag_re='(^|[[:space:]])(--repo([=[:space:]]|$)|-R)'
 qa_here=0
 qa_elsewhere=0
 qa_unread=0
+# A cd, pushd or popd clause seen before the one being judged.
+saw_cd=0
 
 while IFS= read -r clause; do
 
   [ -n "$clause" ] || continue
   detect=$(hook_strip_quotes "$clause")
+  # shellcheck disable=SC2086  # the stripped clause's words; globbing is off
+  if hook_clause_changes_dir $detect; then saw_cd=1; continue; fi
   sub=$(printf '%s' "$detect" \
     | grep -Eo '(^|[^[:alnum:]_./-])gh[[:space:]]+issue[[:space:]]+(edit|close)([[:space:]]|$)' \
     | head -n 1 | grep -Eo '(edit|close)$|(edit|close)[[:space:]]' | tr -d '[:space:]' || true)
@@ -205,6 +217,7 @@ while IFS= read -r clause; do
     # (quoted or bare) so a `--remove-label status:complete` never reads as one.
     labels=$(pg_flag_values "$clause" --add-label)
     if printf '%s' "$labels" | grep -q 'status:qa'; then
+      [ "$saw_cd" -eq 0 ] || block_cd
       if ! printf '%s' "$detect" | grep -Eq -- "$repo_flag_re" || pg_repo_is_here "$clause"; then
         qa_here=1
       elif pg_repo_unreadable "$(pg_repo_value "$clause")"; then
@@ -216,7 +229,7 @@ while IFS= read -r clause; do
     printf '%s' "$labels" | grep -q 'status:complete' || continue
   fi
 
-  after=$(printf '%s' "$detect" | sed -E "s/^.*gh[[:space:]]+issue[[:space:]]+$sub[[:space:]]+//")
+  after=$(printf '%s' "$detect" | sed -E "s/^.*gh[[:space:]]+issue[[:space:]]+${sub}[[:space:]]+//")
   issues=""
   skip_next=0
   for tok in $after; do
@@ -240,6 +253,7 @@ while IFS= read -r clause; do
     issues="$issues $n"
   done
   [ -n "$issues" ] || continue
+  [ "$saw_cd" -eq 0 ] || block_cd
 
   # The repo, in every spelling gh takes: `--repo owner/name`,
   # `--repo=owner/name`, `-R owner/name`, `-Rowner/name`, quoted or bare. A

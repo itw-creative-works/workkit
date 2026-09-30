@@ -308,6 +308,40 @@ const run = async () => {
     });
   }
 
+  // The session sits in one repo while the command changes into another: the
+  // hook is handed the first, so it cannot place the flip and bounces it.
+  const DIR_CHANGES = [
+    (to) => `cd ${to} && gh issue edit 3 --repo owner/name --add-label status:qa`,
+    (to) => `cd ${to} && gh issue edit 3 --add-label status:qa`,
+    (to) => `(cd ${to} && gh issue edit 3 --add-label status:qa)`,
+    (to) => `pushd ${to} >/dev/null && gh issue edit 3 --add-label status:qa`,
+    () => 'popd && gh issue edit 3 --add-label status:qa',
+  ];
+  for (const shape of DIR_CHANGES) {
+    await qaCase(`a directory change before the flip bounces: ${shape('<dir>')}`, (dir, stub) => {
+      const session = mkQaRepo();
+      try {
+        git(dir, `remote add origin ${THIS_REPO}`);
+        write(dir, 'tests/a.test.js', RED);
+        const out = runHook(shape(shellPath(dir)), stub, session);
+        assertEq(out.code, 2, `a flip the gate cannot place bounces, got: ${out.stderr}`);
+        assert(out.stderr.includes('changes directory'), `names the directory change, got: ${out.stderr}`);
+        assert(out.stderr.includes('own Bash call'), `names the fix, got: ${out.stderr}`);
+        assertEq(out.stdout, '', `a bounce prints no notice, got: ${out.stdout}`);
+        assertEq(runs(dir) + runs(session), 0, 'no test ran in either tree');
+      } finally {
+        cleanup(session);
+      }
+    });
+  }
+
+  await qaCase('a directory change after the flip is not its tree: the red file still blocks', (dir, stub) => {
+    write(dir, 'tests/a.test.js', RED);
+    const out = runHook(`${QA} && cd /`, stub, dir);
+    assertEq(out.code, 2, `the flip ran here, so the red file blocks, got: ${out.stderr}`);
+    assert(!out.stderr.includes('changes directory'), `never read as a directory change, got: ${out.stderr}`);
+  });
+
   await qaCase('a body that mentions -R is not the flag: the red file still blocks', (dir, stub) => {
     write(dir, 'tests/a.test.js', RED);
     const out = runHook('gh issue edit 3 --body "pass it with -R when needed" --add-label status:qa', stub, dir);

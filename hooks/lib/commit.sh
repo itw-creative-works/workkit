@@ -1,8 +1,8 @@
 #!/bin/bash
 # hooks/lib/commit.sh: the command-text reads the guards share: the heredoc and
-# quote strips, the `NAME=1` escape, the redirect `&` fold, the git-commit
-# finder with its two internal helpers, the redirect-word test, and
-# hook_changelog_linter, the path to the engine's CHANGELOG linter.
+# quote strips, the `NAME=1` escape, the redirect `&` fold, the directory-change
+# test, the git-commit finder with its two internal helpers, the redirect-word
+# test, and hook_changelog_linter, the path to the engine's CHANGELOG linter.
 # SOURCED by hooks/_lib.sh, never executed, and it runs nothing at load: it
 # defines functions and sets nothing. It reads no name of the entry's; the
 # linter's path is resolved from this file's own location.
@@ -87,6 +87,49 @@ _hook_span_is_commit() {
     && printf '%s' "$1" | grep -Eq '(^|[^[:alnum:]_])commit([^[:alnum:]_]|$)'
 }
 
+# hook_peel_prefixes <word>...: the one prefix peel every command-word reader
+# uses: `(`, `{`, `!`, command, builtin, env, eval, time, NAME=v, a redirect, and
+# if/then/elif/else/do/while/until. Sets HOOK_PEEL_SKIP (words skipped),
+# HOOK_PEEL_EVAL, and HOOK_PEEL_WORD (the command word, `(` and `\` off).
+hook_peel_prefixes() {
+  local head n
+  HOOK_PEEL_SKIP=0
+  HOOK_PEEL_EVAL=0
+  HOOK_PEEL_WORD=""
+  while [ $# -gt 0 ]; do
+    head="$1"
+    while :; do
+      case "$head" in \(?*) head="${head#\(}" ;; *) break ;; esac
+    done
+    head="${head#\\}"
+    case "$head" in
+      \(|\{|\!|command|builtin|env|time|if|then|elif|else|do|while|until|[A-Za-z_]*=*) ;;
+      eval) HOOK_PEEL_EVAL=1 ;;
+      *'>'*|*'<'*)
+        n=$(hook_redirect_span "$head")
+        if [ "$n" -eq 0 ]; then HOOK_PEEL_WORD="$head"; break; fi
+        [ "$n" -le $# ] || n=$#
+        shift "$n"
+        HOOK_PEEL_SKIP=$((HOOK_PEEL_SKIP + n))
+        continue ;;
+      *) HOOK_PEEL_WORD="$head"; break ;;
+    esac
+    shift
+    HOOK_PEEL_SKIP=$((HOOK_PEEL_SKIP + 1))
+  done
+}
+
+# hook_clause_changes_dir <word>...: is the clause, handed as its QUOTE STRIPPED
+# words, a directory change, its command word past the peeled prefixes being
+# cd, pushd or popd? The one home of that test; it leaves HOOK_PEEL_* set.
+hook_clause_changes_dir() {
+  hook_peel_prefixes "$@"
+  case "$HOOK_PEEL_WORD" in
+    cd|pushd|popd) return 0 ;;
+  esac
+  return 1
+}
+
 # hook_find_git_commit <cmd>: find a real `git ... commit` clause past the peeled
 # prefixes. Sets HOOK_COMMIT_CLAUSE (quote-stripped, or empty), HOOK_SAW_CD (a
 # cd/pushd/popd clause), HOOK_SAW_STAGE (add/rm/mv/stage before the commit), and
@@ -96,7 +139,7 @@ hook_find_git_commit() {
   HOOK_SAW_CD=0
   HOOK_SAW_STAGE=0
   HOOK_WRAPPED_COMMIT=0
-  local src stripped clause sub w n pre expect saw_eval nc ci pi=0 had_glob=1
+  local src stripped clause sub n pre expect saw_eval nc ci pi=0 had_glob=1
   src=$(hook_strip_heredocs "$1")
   stripped=$(hook_strip_quotes "$src")
   # The `&` of a redirect (`2>&1`, `&>f`, `<&3`) belongs to the redirect, never
@@ -111,32 +154,18 @@ hook_find_git_commit() {
     # walked, so a candidate's span sits at ordinal pi+ci in the ORIGINAL.
     _hook_count_placeholders "$clause"
     nc=$HOOK_PLACEHOLDER_COUNT
-    ci=0
-    saw_eval=0
     # shellcheck disable=SC2086  # word splitting is intentional; quotes are stripped
     set -- $clause
     # Peel wrapper prefixes so `(git …`, `{ git …; }`, `command git …`,
-    # `env git …`, `GIT_DIR=x git …` and an unquoted `eval git …` read as the
-    # git clause they run; the peeled words stay in HOOK_COMMIT_CLAUSE.
-    while [ $# -gt 0 ]; do
-      case "$1" in
-        \(|\{) shift ;;
-        \(*) w="${1#\(}"; shift; set -- "$w" "$@" ;;
-        command|env) shift ;;
-        eval) saw_eval=1; shift ;;
-        [A-Za-z_]*=*) _hook_count_placeholders "$1"; ci=$((ci + HOOK_PLACEHOLDER_COUNT)); shift ;;
-        # A redirect ahead of the command word is syntax; its target may hold a placeholder.
-        *'>'*|*'<'*)
-          n=$(hook_redirect_span "$1")
-          [ "$n" -gt 0 ] || break
-          [ "$n" -le $# ] || n=$#
-          _hook_count_placeholders "${*:1:$n}"; ci=$((ci + HOOK_PLACEHOLDER_COUNT)); shift "$n" ;;
-        *) break ;;
-      esac
-    done
-    case "${1:-}" in
-      cd|pushd|popd) HOOK_SAW_CD=1 ;;
-    esac
+    # `GIT_DIR=x git …`, an unquoted `eval git …` and the rest of the peel's list
+    # read as the git clause they run; the peeled words stay in HOOK_COMMIT_CLAUSE.
+    if hook_clause_changes_dir "$@"; then HOOK_SAW_CD=1; fi
+    saw_eval=$HOOK_PEEL_EVAL
+    # A skipped assignment or redirect target may hold a placeholder.
+    _hook_count_placeholders "${*:1:$HOOK_PEEL_SKIP}"
+    ci=$HOOK_PLACEHOLDER_COUNT
+    shift "$HOOK_PEEL_SKIP"
+    if [ $# -gt 0 ]; then shift; set -- "$HOOK_PEEL_WORD" "$@"; fi
     # eval of a quoted span: the placeholder hides it, so test the original span.
     # A surviving quote means the strip did not run; the span test then degrades
     # to the coarse whole-command test, toward the gate.
@@ -249,8 +278,8 @@ hook_redirect_word() {
 
 # hook_redirect_span <word>: how many words a redirect starting at this QUOTE
 # STRIPPED word spans (2 bare, its target being the next word; 1 attached; 0 no
-# redirect), so a walk skips it whole. Always exits 0. Consumers: commit-gate,
-# tree-guard, proof-guard, release-taken, and hook_find_git_commit's three walks.
+# redirect), so a walk skips it whole. Always exits 0. Every command-text walk
+# uses it: hook_peel_prefixes, the finder's two, and the hooks' own.
 hook_redirect_span() {
   case "$(hook_redirect_word "$1")" in
     bare) printf '2\n' ;;
