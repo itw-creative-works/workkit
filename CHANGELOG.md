@@ -7,38 +7,40 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.63.0] - 2026-09-29
+
 ### Added
 
-- [#360](../../issues/360) - Personal add-ons stack onto workkit agents: a new `manager:addon` hook adds the text of `~/.workkit/agents/<name>.md` to every `workkit:<name>` spawn, so a personal layer adds to the shipped agent instead of replacing it; the review skill's compliance lens is now always `workkit:reviewer`.
+- [#360](../../issues/360) [`5de2633`](../../commit/5de2633) Thanks [@ianwieds]! - Personal add-ons stack onto workkit agents: a new `manager:addon` hook adds the text of `~/.workkit/agents/<name>.md` to every `workkit:<name>` spawn, so a personal layer adds to the shipped agent instead of replacing it; the review skill's compliance lens is now always `workkit:reviewer`.
 
-- [#370](../../issues/370) - The commit gate bounces a commit whose message names an open issue of this repo that is not at `status:complete`, naming each issue and its stage, so parked work stays uncommitted until the owner's pass; closed issues, other repos' `owner/repo#N` and messages naming no issue pass.
+- [#370](../../issues/370) [`0027bd4`](../../commit/0027bd4) Thanks [@ianwieds]! - The commit gate bounces a commit whose message names an open issue of this repo that is not at `status:complete`, naming each issue and its stage, so parked work stays uncommitted until the owner's pass; closed issues, other repos' `owner/repo#N` and messages naming no issue pass.
 
 ### Changed
 
-- [#361](../../issues/361) - The crew runs at higher effort by default: scout at `medium`, worker and verifier at `xhigh`, the advisor still following the session; the ladder and `docs/agents.md` now say effort lives in each agent file's `effort:` line.
+- [#361](../../issues/361) [`5de2633`](../../commit/5de2633) Thanks [@ianwieds]! - The crew runs at higher effort by default: scout at `medium`, worker and verifier at `xhigh`, the advisor still following the session; the ladder and `docs/agents.md` now say effort lives in each agent file's `effort:` line.
 
-- [#358](../../issues/358) - The checks workflow runs the suite on a Windows runner beside Linux on every push, so a Windows break shows up in CI; one `test` check reports both, the name branch protection requires. The eight tests a Windows machine failed are fixed and pass on macOS, pending the Windows job.
+- [#358](../../issues/358) [`5de2633`](../../commit/5de2633) Thanks [@ianwieds]! - The checks workflow runs the suite on a Windows runner beside Linux on every push, so a Windows break shows up in CI; one `test` check reports both, the name branch protection requires. The eight tests a Windows machine failed are fixed and pass on macOS, pending the Windows job.
 
-- [#359](../../issues/359) - A repo no longer carries a `CLAUDE.md`, since Claude Code reads `AGENTS.md` itself: at session start `docs:state-check` says to delete a pointer-only one, rename a lone content one, or merge one by hand beside an `AGENTS.md`; `docs:board-guard` stops bouncing `CLAUDE.md` writes.
+- [#359](../../issues/359) [`5de2633`](../../commit/5de2633) Thanks [@ianwieds]! - A repo no longer carries a `CLAUDE.md`, since Claude Code reads `AGENTS.md` itself: at session start `docs:state-check` says to delete a pointer-only one, rename a lone content one, or merge one by hand beside an `AGENTS.md`; `docs:board-guard` stops bouncing `CLAUDE.md` writes.
 
-- [#364](../../issues/364) - The hooks call the suite record's engine names (`wk_tree_hash` and the rest) directly, with no `hook_` second names; setup and the commit gate read npm's `script-shell` through one helper that drops Windows' carriage return; `--auto` loses two script-shell lines it never printed.
+- [#364](../../issues/364) [`5de2633`](../../commit/5de2633) Thanks [@ianwieds]! - The hooks call the suite record's engine names (`wk_tree_hash` and the rest) directly, with no `hook_` second names; setup and the commit gate read npm's `script-shell` through one helper that drops Windows' carriage return; `--auto` loses two script-shell lines it never printed.
 
 ### Fixed
 
-- [#372](../../issues/372) - The tower's Board page header draws the same icon as its sidebar row (`fa-bars-progress`); it drew the columns glyph the rail's collapse button already wears. A test holds every page header to its sidebar row's icon.
+- [#372](../../issues/372) [`7ecbcfc`](../../commit/7ecbcfc) Thanks [@ianwieds]! - The tower's Board page header draws the same icon as its sidebar row (`fa-bars-progress`); it drew the columns glyph the rail's collapse button already wears. A test holds every page header to its sidebar row's icon.
 
-- [#371](../../issues/371) - proof-guard bounces a gated flip or close behind a `cd`, `pushd` or `popd`, telling the caller to change directory in its own Bash call first; the hook judged the session's directory instead, so a qa flip into another checkout read as another repo and skipped its test run.
+- [#371](../../issues/371) [`6d944cf`](../../commit/6d944cf) Thanks [@ianwieds]! - proof-guard bounces a gated flip or close behind a `cd`, `pushd` or `popd`, telling the caller to change directory in its own Bash call first; the hook judged the session's directory instead, so a qa flip into another checkout read as another repo and skipped its test run.
 
-- [#371](../../issues/371) - The commit gate, tree-guard and release-taken read a command behind `time`, `builtin`, `!`, a leading backslash or a shell keyword (`if`, `while` and the rest), through one shared prefix list.
+- [#371](../../issues/371) [`6d944cf`](../../commit/6d944cf) Thanks [@ianwieds]! - The commit gate, tree-guard and release-taken read a command behind `time`, `builtin`, `!`, a leading backslash or a shell keyword (`if`, `while` and the rest), through one shared prefix list.
 
-- [#365](../../issues/365) - A flip to `status:qa` whose `--repo`/`-R` names this tree's own repo, in any letter case, now runs the touched test files; only a flag naming a different repo skips the run with its notice.
-- [#362](../../issues/362) - A green root `npm test` whose tree cannot be hashed before or after the run now exits 1 with its own `script-shell:` line, instead of reading as a tree the run changed and exiting 0 with no record.
+- [#365](../../issues/365) [`5de2633`](../../commit/5de2633) Thanks [@ianwieds]! - A flip to `status:qa` whose `--repo`/`-R` names this tree's own repo, in any letter case, now runs the touched test files; only a flag naming a different repo skips the run with its notice.
+- [#362](../../issues/362) [`5de2633`](../../commit/5de2633) Thanks [@ianwieds]! - A green root `npm test` whose tree cannot be hashed before or after the run now exits 1 with its own `script-shell:` line, instead of reading as a tree the run changed and exiting 0 with no record.
 
-- [#363](../../issues/363) - On Windows the commit gate reads a deleted `script-shell.exe` as unwired, so its bounce names `workkit setup`; the executable's path has one home in the engine's `lib/platform.sh`, read by setup and the gate.
+- [#363](../../issues/363) [`5de2633`](../../commit/5de2633) Thanks [@ianwieds]! - On Windows the commit gate reads a deleted `script-shell.exe` as unwired, so its bounce names `workkit setup`; the executable's path has one home in the engine's `lib/platform.sh`, read by setup and the gate.
 
-- [#368](../../issues/368) - The commit gate names a tool that fails inside a heal-output check (the check, the command, its stderr) instead of bouncing the commit as unreviewed code; proof-guard says a `--repo` value it cannot read went unread on a qa flip, never that it names another repo.
+- [#368](../../issues/368) [`0027bd4`](../../commit/0027bd4) Thanks [@ianwieds]! - The commit gate names a tool that fails inside a heal-output check (the check, the command, its stderr) instead of bouncing the commit as unreviewed code; proof-guard says a `--repo` value it cannot read went unread on a qa flip, never that it names another repo.
 
-- [#369](../../issues/369) - The machine folder (`~/.workkit`, moved by `WORKFLOW_HOME`) has one spelling per language, `wk_user_dir` in the engine's `lib/platform.sh` and its Node twin `workflow/user-dir.js`; the session hook's brief marker and the manager's user settings now honor `WORKFLOW_HOME` too.
+- [#369](../../issues/369) [`0027bd4`](../../commit/0027bd4) Thanks [@ianwieds]! - The machine folder (`~/.workkit`, moved by `WORKFLOW_HOME`) has one spelling per language, `wk_user_dir` in the engine's `lib/platform.sh` and its Node twin `workflow/user-dir.js`; the session hook's brief marker and the manager's user settings now honor `WORKFLOW_HOME` too.
 
 ## [0.62.0] - 2026-09-28
 
