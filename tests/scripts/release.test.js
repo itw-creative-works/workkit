@@ -408,14 +408,18 @@ const run = async () => {
   group('release: the script itself');
 
   await test('its version files are the ones the commit gate passes as bookkeeping', () => {
-    // VERSION_FILES and the gate's version-stamp case arm are twins tied by a
-    // comment at each home; this pins them, the way the Proof pattern's twins
-    // are pinned in tests/scripts/ship-items.test.js.
+    // The gate's version-stamp case arm is VERSION_FILES plus nested package.json
+    // files and nothing else; a comment at each home ties them, and this pins
+    // them, the way the Proof pattern's twins are pinned in ship-items.test.js.
     const files = /const VERSION_FILES = \[([^\]]+)\]/.exec(fs.readFileSync(SCRIPT, 'utf8'));
     assert(files, 'release.js declares VERSION_FILES');
     const names = files[1].split(',').map((s) => s.trim().replace(/^'|'$/g, ''));
     const gate = fs.readFileSync(path.join(__dirname, '..', '..', 'hooks', 'safety', 'commit-gate', 'run.sh'), 'utf8');
-    assert(gate.includes(`      ${names.join('|')})\n`), `the gate's case arm is ${names.join('|')}`);
+    const arm = /^ {6}(\S*package\.json\S*)\)$/m.exec(gate);
+    assert(arm, "the gate declares its version-stamp case arm");
+    const alternatives = arm[1].split('|').sort();
+    const expected = [...names, '*/package.json'].sort();
+    assertEq(alternatives.join('|'), expected.join('|'), "the gate's case arm");
   });
 };
 

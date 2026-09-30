@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#373](../../issues/373) - The commit gate reads a version-only bump in a nested `package.json` as a version stamp, not code, including exact pins equal to its version that move in lockstep with it, so a workspaces release commit needs no review marker or suite record; any other pin or key change still gates.
+
 ## [0.63.0] - 2026-09-29
 
 ### Added

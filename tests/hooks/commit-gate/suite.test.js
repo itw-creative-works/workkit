@@ -167,15 +167,80 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('a NESTED package.json version bump is code: record required', () => {
-    // The carve-out is the root package.json alone; a workspace member's
-    // version is not the release tooling's stamp on this repo.
+  // A workspace member's package.json, committed, so a case stages its bump.
+  const DEPS = { '@fixture/other': '1.0.0', lodash: '^4.0.0' };
+  const mkWorkspaceRepo = (member) => {
     const dir = mkReleaseRepo();
-    stageDeep(dir, 'sub/package.json', pkg('1.0.0'));
+    stageDeep(dir, 'sub/package.json', member);
     execSync('git commit -q -m "sub" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    stageDeep(dir, 'sub/package.json', pkg('1.0.1'));
+    return dir;
+  };
+
+  // A nested bump is gated as code: the marker first, then the record.
+  const gatesAsCode = (dir) => {
+    dropMarker(dir);
+    const first = runHook(dir, 'git commit -m "chore: bump sub"');
+    assertEq(first.code, 2, `the nested file is code, got: ${first.stderr}`);
+    assert(first.stderr.includes('workkit:review'), `the review marker is demanded, got: ${first.stderr}`);
     touchMarker(dir);
     recordRequired(runHook(dir, 'git commit -m "chore: bump sub"'), dir);
+  };
+
+  await test('a nested package.json version bump is a version stamp: no record required', () => {
+    const dir = mkWorkspaceRepo(pkg('1.0.0'));
+    stageDeep(dir, 'sub/package.json', pkg('1.0.1'));
+    dropMarker(dir);
+    recordNotRequired(runHook(dir, 'git commit -m "chore: bump sub"'), dir);
+    cleanup(dir);
+  });
+
+  await test('a nested package.json lockstep bump moves version and exact pins together: no record required', () => {
+    const dir = mkWorkspaceRepo(pkg('1.0.0', { dependencies: DEPS }));
+    stageDeep(dir, 'sub/package.json', pkg('1.0.1', { dependencies: { ...DEPS, '@fixture/other': '1.0.1' } }));
+    dropMarker(dir);
+    recordNotRequired(runHook(dir, 'git commit -m "chore: bump sub"'), dir);
+    cleanup(dir);
+  });
+
+  await test('a version bumped alone past a pin equal to the old version: no record required', () => {
+    // The pin stays put, so only the lockstep reading would call it moved.
+    const dir = mkReleaseRepo(pkg('1.0.0', { dependencies: { foo: '1.0.0' } }));
+    stage(dir, 'package.json', pkg('1.0.1', { dependencies: { foo: '1.0.0' } }));
+    dropMarker(dir);
+    recordNotRequired(runHook(dir, 'git commit -m "chore(release): 1.0.1"'), dir);
+    cleanup(dir);
+  });
+
+  await test('a nested package.json lockstep bump moves a devDependencies pin too: no record required', () => {
+    const dir = mkWorkspaceRepo(pkg('1.0.0', { devDependencies: DEPS }));
+    stageDeep(dir, 'sub/package.json', pkg('1.0.1', { devDependencies: { ...DEPS, '@fixture/other': '1.0.1' } }));
+    dropMarker(dir);
+    recordNotRequired(runHook(dir, 'git commit -m "chore: bump sub"'), dir);
+    cleanup(dir);
+  });
+
+  await test('a range pin moved with the version gates as code: only exact pins are lockstep', () => {
+    const range = { ...DEPS, '@fixture/other': '^1.0.0' };
+    const dir = mkWorkspaceRepo(pkg('1.0.0', { dependencies: range }));
+    stageDeep(dir, 'sub/package.json', pkg('1.0.1', { dependencies: { ...range, '@fixture/other': '^1.0.1' } }));
+    gatesAsCode(dir);
+    cleanup(dir);
+  });
+
+  await test('a pin moved to a value other than the version gates as code', () => {
+    const dir = mkWorkspaceRepo(pkg('1.0.0', { dependencies: DEPS }));
+    stageDeep(dir, 'sub/package.json', pkg('1.0.1', { dependencies: { ...DEPS, '@fixture/other': '1.0.2' } }));
+    gatesAsCode(dir);
+    cleanup(dir);
+  });
+
+  await test('a dependency added beside the bump gates as code', () => {
+    // The added pin equals the new version, so only the new key tells it apart.
+    const dir = mkWorkspaceRepo(pkg('1.0.0', { dependencies: DEPS }));
+    stageDeep(dir, 'sub/package.json', pkg('1.0.1', {
+      dependencies: { ...DEPS, '@fixture/other': '1.0.1', '@fixture/third': '1.0.1' },
+    }));
+    gatesAsCode(dir);
     cleanup(dir);
   });
 

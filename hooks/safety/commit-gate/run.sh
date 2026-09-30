@@ -167,12 +167,13 @@ heal_scratch() {
   heal_tmp="$out"
 }
 
-# A version stamp in the ROOT package.json, .claude-plugin/plugin.json or
-# .workkit/settings.json is generated bookkeeping, not code: proved by content,
-# only `version` may differ from HEAD. A new file, unparseable JSON, another
-# changed key, a nested package.json or anything else fails the proof.
+# A version stamp in any package.json, .claude-plugin/plugin.json or
+# .workkit/settings.json is bookkeeping, not code: only `version` may differ
+# from HEAD, or only it and the exact pins equal to it on each side.
+# A new file, unparseable JSON, an added key or any other pin fails the proof.
 version_bump_only() {
   local file="$1" a b
+  local lockstep='.version as $v | del(.version) | with_entries(if (.key | test("[dD]ependencies$")) and (.value | type) == "object" then .value |= with_entries(if .value == $v then .value = "<lockstep>" else . end) else . end)'
   heal_scratch
   heal_ask "version stamp" 1 git -C "$repo_root" rev-parse -q --verify "HEAD:$file" >/dev/null || return 1
   heal_tool "version stamp" git -C "$repo_root" show "HEAD:$file" >"$heal_tmp/stamp-head"
@@ -189,7 +190,11 @@ version_bump_only() {
   # jq refusing a file is the "unparseable JSON" no, not a failed tool.
   a="$(hook_jq -Sc 'del(.version)' "$heal_tmp/stamp-head" 2>/dev/null)" || return 1
   b="$(hook_jq -Sc 'del(.version)' "$heal_tmp/stamp-copy" 2>/dev/null)" || return 1
-  [ -n "$a" ] && [ "$a" = "$b" ]
+  [ -n "$a" ] || return 1
+  [ "$a" = "$b" ] && return 0
+  a="$(hook_jq -Sc "$lockstep" "$heal_tmp/stamp-head" 2>/dev/null)" || return 1
+  b="$(hook_jq -Sc "$lockstep" "$heal_tmp/stamp-copy" 2>/dev/null)" || return 1
+  [ "$a" = "$b" ]
 }
 
 has_code=0
@@ -212,9 +217,10 @@ if [ -n "$files" ]; then
     esac
     # Not a doc, and not code either. Deliberately its own case: the classifier
     # above stays in step with docs/change-tracker's, and this carve-out is the
-    # gate's alone. Twin list: VERSION_FILES in workflow/ship/release.js, which bumps exactly these.
+    # gate's alone. release.js's VERSION_FILES bumps the root two; a nested
+    # package.json is bumped by the consumer's own lockstep tooling.
     case "$path" in
-      package.json|.claude-plugin/plugin.json)
+      package.json|*/package.json|.claude-plugin/plugin.json)
         if [ "$is_doc" -eq 0 ] && version_bump_only "$path"; then is_doc=1; fi ;;
     esac
     if [ "$is_doc" -eq 0 ]; then has_code=1; break; fi
