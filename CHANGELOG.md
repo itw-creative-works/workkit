@@ -25,6 +25,8 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ### Fixed
 
+- [#372](../../issues/372) - The tower's Board page header draws the same icon as its sidebar row (`fa-bars-progress`); it drew the columns glyph the rail's collapse button already wears. A test holds every page header to its sidebar row's icon.
+
 - [#371](../../issues/371) - proof-guard bounces a gated flip or close behind a `cd`, `pushd` or `popd`, telling the caller to change directory in its own Bash call first; the hook judged the session's directory instead, so a qa flip into another checkout read as another repo and skipped its test run.
 
 - [#371](../../issues/371) - The commit gate, tree-guard and release-taken read a command behind `time`, `builtin`, `!`, a leading backslash or a shell keyword (`if`, `while` and the rest), through one shared prefix list.

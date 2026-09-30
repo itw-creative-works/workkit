@@ -190,6 +190,22 @@ const run = async () => {
     assertEq(sidebar.sidebarKey({ ...mkState({}), favorites: ['omega'] }), '', 'and an unread roster is still the empty key, stars or no stars');
   });
 
+  await test('every page header draws the icon its sidebar row draws', () => {
+    const fs = require('fs');
+    const src = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src');
+    const nav = fs.readFileSync(path.join(src, '_includes', 'backend', 'sections', 'sidebar.json'), 'utf8');
+    const rows = {};
+    for (const [, href, icon] of nav.matchAll(/href: '([^']+)',\s*icon: '([^']+)'/g)) rows[href] = icon;
+    const pages = fs.readdirSync(path.join(src, 'pages')).filter((name) => name.endsWith('.md'));
+    assertEq(pages.length, Object.keys(rows).length, 'one sidebar row per page, and no page without a row');
+    for (const name of pages) {
+      const page = fs.readFileSync(path.join(src, 'pages', name), 'utf8');
+      const href = page.match(/^permalink: (\S+)/m)[1];
+      const icon = page.match(/^\s*icon: "([^"]+)"/m)[1];
+      assertEq(icon, rows[href], `${name}: the header and the sidebar row for ${href} are one icon`);
+    }
+  });
+
   await test('a hostile slug is text, in the attribute and in the label', () => {
     const markup = sidebar.menuMarkup(mkState({ repos: [{ slug: '"><img src=x>', path: '/x' }] }));
     assert(!markup.includes('<img'), 'no markup comes through the roster');

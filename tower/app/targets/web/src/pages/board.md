@@ -11,7 +11,7 @@ config:
     header:
       title:
         content: "Board"
-        icon: "fa-solid fa-table-columns"
+        icon: "fa-solid fa-bars-progress"
 ---
 
 <div id="tower-board"></div>
