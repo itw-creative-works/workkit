@@ -28,7 +28,7 @@ flowchart TB
     Ship --> Closed([closed])
 ```
 
-Capture puts an item in `status:inbox`; triage is what routes it out. Five labels sit on the road: the flip to `status:specced` is the go-ahead to build, `status:building` carries the work from the moment it starts, `status:qa` is where it parks once it is built and verified (in your working tree, waiting on your check) and your passing check moves it to `status:complete`, the stage a ship reads from, until your word "ship" runs the ship and the close ends it. Related issues park one after another and ride one commit, and the ship closes the lot. `blocked` and `backlog` are side pockets: an answered question rejoins the road, a revived item goes back through triage. You still claim an issue by assigning it to yourself: the assignee is who holds it, the label is what makes it visible in flight. The letter of every hop (what each label means, who may flip it, how a claim expires): [`docs/project-state.md`](docs/project-state.md).
+Capture puts an item in `status:inbox`; triage is what routes it out. Five labels sit on the road: the flip to `status:specced` is the go-ahead to build, `status:building` carries the work from the moment it starts, `status:qa` is where it parks once it is built and verified (in your working tree, waiting on your check) and your passing check moves it to `status:complete`, the stage a ship reads from, until your word "ship" runs the ship and the close ends it. Related issues build together in parallel groups on the shared tree, each group a feature-developer and a test-developer (one worker when it has no test surface), park together after one review of the whole batch, and ride one commit, and the ship closes the lot. `blocked` and `backlog` are side pockets: an answered question rejoins the road, a revived item goes back through triage. You still claim an issue by assigning it to yourself: the assignee is who holds it, the label is what makes it visible in flight. The letter of every hop (what each label means, who may flip it, how a claim expires): [`docs/project-state.md`](docs/project-state.md).
 
 ## The crew that works it
 
@@ -57,7 +57,7 @@ flowchart TB
 ```
 
 - The **manager** is whichever model your chat runs on, so the topology follows the model button: a frontier session never spawns the advisor, a workhorse session consults it for plans.
-- **Crew sizing is policy, not mood**: a small change is the manager alone or one worker; a feature is one worker (a pair only under worktree isolation); the verifier runs twice, at claimed-done and over the review's fixes; the full review panel assembles only inside `workkit:review` and `workkit:ship`.
+- **Crew sizing is policy, not mood**: a small change is the manager alone; anything bigger is a pair of workers (one when the group has no test surface), a feature-developer who writes only the source and a test-developer who writes only the tests, both from the issue's Contract, and the verifier proves the tests fail without the source before it calls them green; every crew brief starts from its role template in `briefs/`, one per crew job, the manager filling in the task; the verifier runs twice, at claimed-done and over the review's fixes; the full review panel assembles only inside `workkit:review` and `workkit:ship`.
 - Tiers come from `hooks/manager/resources/ladder.json`; a repo's or a user's `.workkit/settings.json` `manager` block overrides them or turns the crew off. Effort is pinned in each agent's own frontmatter, never by the resolver.
 
 ## Install
@@ -100,6 +100,7 @@ Plugins load at startup, so a new (or restarted) session is what puts a change i
 | `manager/addon` | when a workkit agent spawns | Adds your personal add-on for that agent, `~/.workkit/agents/<name>.md` if you wrote one, to its context: your additions stack onto the shipped agent instead of replacing it |
 | `manager/profile` | every message | Reminds a capable session it is the MANAGER and should delegate |
 | `docs/checkpoint` | every message | Catches any message about compacting, clearing, or starting a fresh chat and has the session save the conversation to the board first, so the verdicts and decisions in it survive; a second time in the same session, it saves only what you have said since |
+| `workflow/feature` | every message | Loads the `workkit:feature` skill on any message about working an issue or the queue (an issue number, "work on", "continue", "what next"), once per session, so the build procedure is in context before the work starts |
 | `safety/vendor-guard` | before any edit | Blocks edits to generated, vendored, and gitignored files |
 | `safety/commit-gate` | before `git commit` | No commit unless a green root `npm test` recorded the tree it commits, new source files come with tests, code carries a fresh review, and any CHANGELOG entry is in format. The gate never runs tests itself: a commit carrying code bounces until a green `npm test` at the repo root, run once per tree by anyone, proves the tree it stages; npm's `script-shell`, which `workkit setup` points at the kit's wrapper, is what records that run. A docs-only commit and a version-only bump in any `package.json` (exact pins equal to its version may move in lockstep with it) or in `.claude-plugin/plugin.json` need no record. Staging and committing in one command bounces too. The gate reads the index before your command runs, so it cannot see what an in-command `git add` will sweep in: stage first, then commit. And a check that stands down says so in one visible line, never in silence. A commit the gate cannot place (the session sitting in no repository at all, or a `pushd` into one) bounces rather than passing unchecked. Heal bookkeeping (the version stamp, and the deletion of a vendored linter copy with the `checks.yml` rewrite that retires it, alone) skips the review and new-file checks. An issue the message closes (`Fixes #N`) must already carry its `Proof:` comment, the same gate the proof guard holds on the flip and the close. And an open issue the message names anywhere (`#N`, never another repo's `owner/repo#N`) must be at `status:complete`: work waits uncommitted until the owner's pass |
 | `safety/commit-language` | before `git commit` | Bounces kill/destroy/dead wording in commit messages, and off-format subject lines |
@@ -107,6 +108,7 @@ Plugins load at startup, so a new (or restarted) session is what puts a change i
 | `safety/tree-guard` | before a tree-discarding git command | Blocks `git checkout` with a pathspec, a `git switch` that discards local changes, `git restore` without `--staged`, every `git stash`, a forced `git clean`, and `git reset --hard`. The tree is shared, and revert-by-discard takes whatever else is uncommitted with it. Switching branches stays legal; `WORKKIT_ALLOW_DISCARD=1` in front of the command is your deliberate discard, and the guard says when it stood aside |
 | `safety/issue-guard` | before a `gh issue`/`gh pr` write, a GraphQL discussion/issue mutation, or a `gh api` REST write to an issue or pull endpoint | Blocks outbound text carrying a local `.env` value or a token-shaped string. Every repo is assumed public. Names the key or the kind, never the match |
 | `safety/proof-guard` | before a `gh issue edit` that adds `status:complete` or `status:qa`, or a `gh issue close` | The flip to `status:complete` and the close are blocked when the issue carries no comment starting `Proof:`, the record of which test layers actually ran. Closing something that was never built (`--reason "not planned"`) passes, and a `gh` that cannot answer stands the check down out loud. The flip to `status:qa` is a separate check: it runs the test files your change touched with `node --test` and blocks while one is red, and names a file `node --test` cannot prove (one that neither imports `node:test` nor runs itself) as not run, never as green. A flip or close the guard cannot place (a `cd`, `pushd` or `popd` ahead of it in the same command) bounces rather than being judged against the wrong repo: change directory in its own Bash call first |
+| `safety/spec-guard` | before a `gh issue edit` that adds `status:specced` | Holds the flip to `status:specced` while the issue's `## Spec` is written but carries no `### Contract` (its Files, Names and Cases); a `None needed: small item.` Spec passes |
 | `safety/suite-guard` | before a Bash command that runs the whole test suite | Bounces a second full run of the root suite (`npm test` at the repo root) on a tree a green root `npm test` already recorded, since running it again pays the same minutes twice. Your first run on a tree always runs; change a file and the next one runs too. Run the narrowest test that proves your change instead |
 | `safety/capture-guard` | before a read or a write of the capture file | Keeps `.workkit/capture.md` the owner's capture surface: reading it and clearing it open only during a triage run, adding to it never. Counting stays free |
 | `docs/board-guard` | after any edit | Holds `AGENTS.md` to its size budget |
@@ -123,7 +125,7 @@ The first four are capability classes. The resolver hook gives each spawn its mo
 
 ### Skills: the part you (or Claude) trigger with words
 
-`workkit:feature` · `workkit:interview` · `workkit:diagnose` · `workkit:review` · `workkit:triage` · `workkit:status` · `workkit:checkpoint` · `workkit:migrate` · `workkit:parallel` · `workkit:ship`. Most load themselves when your message matches their triggers; you can also type them as `/workkit:<name>`.
+`workkit:feature` · `workkit:interview` · `workkit:diagnose` · `workkit:review` · `workkit:triage` · `workkit:status` · `workkit:checkpoint` · `workkit:migrate` · `workkit:ship`. Most load themselves when your message matches their triggers; you can also type them as `/workkit:<name>`.
 
 Each skill is one `SKILL.md` of bullets, its body at most 120 non-blank lines with no line over 400 bytes; the test suite fails a skill that grows past that.
 
@@ -157,11 +159,12 @@ Participation is deliberate. `workkit enable <repo>` writes that repo's `.workki
 .claude-plugin/   plugin.json + marketplace.json (this repo is its own marketplace)
 hooks/            hooks.json + the hook groups, resolved via ${CLAUDE_PLUGIN_ROOT}
 agents/           the crew (namespaced workkit:<name>)
-skills/           the ten workflow skills (namespaced workkit:<name>)
+briefs/           the role brief templates, one per crew job (the manager fills the slots)
+skills/           the nine workflow skills (namespaced workkit:<name>)
 workflow/         the agent-agnostic engine
 tower/            mission control: api/ (the JSON API) + app/ (the OMEGA dashboard)
 jobs/             the 9am job: summaries, brief, publish: payload builders, runners, launchd schedule
-scripts/          the marker scripts the review and triage skills call
+scripts/          four scripts: the review and triage markers, red-proof (the verifier's red run), review-covers (the ship's review tier)
 docs/             project-state.md (the spec) · agents.md (the crew contract) · hooks.md (what each hook does) · history-purge.md (the rewrite runbook)
 tests/            npm test
 ```

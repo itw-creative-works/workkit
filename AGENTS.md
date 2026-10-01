@@ -18,15 +18,16 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 │   ├── _lib.sh           # shared helpers (sourced, never executed)
 │   ├── lib/              # _lib.sh's helper groups, one file per concern (sourced by it, never a hook)
 │   ├── docs/             # board-guard, changelog-guard, change-tracker, checkpoint, session, session-guard, state-check
-│   ├── safety/           # vendor-guard, commit-gate, commit-language, release-taken, issue-guard, proof-guard, suite-guard, capture-guard, tree-guard, test-reminder
+│   ├── safety/           # vendor-guard, commit-gate, commit-language, release-taken, issue-guard, proof-guard, spec-guard, suite-guard, capture-guard, tree-guard, test-reminder
 │   ├── manager/          # resolver, profile, spawn-guard, close-guard, addon + resources/ladder.json (the tier SSOT)
-│   └── workflow/         # standards (the daily heal) + reload-guard
+│   └── workflow/         # standards (the daily heal) + reload-guard + feature
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
-├── skills/               # the ten workflow skills: surface as workkit:<name>
+├── briefs/               # the role brief templates, one per crew job, the manager fills the slots: docs/agents.md § File-handoff convention
+├── skills/               # the nine workflow skills: surface as workkit:<name>
 ├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/site-repos.js, lib.sh + lib/, changelog/, ship/, templates)
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
 ├── jobs/                 # scheduled work: the 9am daily brief, its launchd plist, and install.sh
-├── scripts/              # the two marker scripts the skills call (review, triage): the only platform-touching commands a skill has
+├── scripts/              # four scripts, the only platform-touching commands the skills and agents have: the two markers the skills call (review, triage), red-proof.sh (the verifier's red run), review-covers.sh (the ship's review tier)
 ├── docs/                 # project-state.md (the spec) · agents.md (the crew contract) · hooks.md (the hook detail) · cloud.md (remote provisioning) · history-purge.md (the rewrite runbook)
 ├── tests/                # Node runner + hook/script/tower suites (npm test)
 └── .workkit/             # settings.json is COMMITTED (this repo's own opt-in)
@@ -51,15 +52,15 @@ The engine's stable filesystem address is `~/.claude/workkit` → this repo's `w
 
 Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh` so settings reference a hook by `prefix:name` rather than a path. A LOADER-level failure fails open (exit 0); the hook's own exit code passes through untouched, which blocking hooks (exit 2) need.
 
-The index of all twenty-four and what each one does: `docs/hooks.md`. Four carry a README beside the script as well: `tree-guard`, `release-taken`, `session-guard`, `change-tracker`.
+The index of all twenty-six and what each one does: `docs/hooks.md`. Four carry a README beside the script as well: `tree-guard`, `release-taken`, `session-guard`, `change-tracker`.
 
 ## Agents
 
-Five, namespaced `workkit:<name>`: `scout` (recon), `worker` (implementation), `verifier` (blind review), `advisor` (frontier consult), `reviewer` (compliance lens). The first four are CAPABILITY CLASSES, their model supplied per spawn by the `manager/resolver` hook. Roster, classes, crew sizing, the file-handoff convention, the definition rules: `docs/agents.md`.
+Five, namespaced `workkit:<name>`: `scout` (recon), `worker` (implementation), `verifier` (blind review), `advisor` (frontier consult), `reviewer` (compliance lens). The first four are CAPABILITY CLASSES, their model supplied per spawn by the `manager/resolver` hook. Roster, classes, crew sizing, the file-handoff convention and its `briefs/` role templates, the definition rules: `docs/agents.md`.
 
 ## Skills
 
-Ten, namespaced `workkit:<name>`: `feature` · `interview` · `diagnose` · `review` · `triage` · `status` · `checkpoint` · `migrate` · `parallel` · `ship`. One `SKILL.md` each, which is that skill's own home: what it does, when it fires, and how it runs. Every SKILL.md body holds one bar, at most 120 non-blank lines and no line over 400 bytes, pinned by `tests/scripts/skills.test.js`.
+Nine, namespaced `workkit:<name>`: `feature` · `interview` · `diagnose` · `review` · `triage` · `status` · `checkpoint` · `migrate` · `ship`. One `SKILL.md` each, which is that skill's own home: what it does, when it fires, and how it runs. Every SKILL.md body holds one bar, at most 120 non-blank lines and no line over 400 bytes, pinned by `tests/scripts/skills.test.js`.
 
 ## The engine (`workflow/`)
 

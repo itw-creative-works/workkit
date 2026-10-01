@@ -1,6 +1,6 @@
 #!/bin/bash
-# hooks/lib/markers.sh: the files the hooks name by content: the review and
-# triage marker paths, the one writer the two marker scripts share, the
+# hooks/lib/markers.sh: the files the hooks name by content: the review,
+# full-panel and triage marker paths, the one writer the marker scripts share, the
 # per-session marker path, and hook_file_mtime. The digest and the key rule
 # are the engine's (wk_sha1, wk_marker_path in workflow/lib/platform.sh).
 # Sourced by hooks/_lib.sh; defines functions and sets nothing.
@@ -14,16 +14,17 @@ _hook_write_marker() {
   printf '%s\n' "$1"
 }
 
-# The two skill marker paths: the writers (the two marker scripts) and the
-# readers (commit-gate, capture-guard) name the file here, so the two sides
-# never drift apart. The suite record's path is wk_suite_marker_path.
+# The skill marker paths: the writers (the two marker scripts) and the readers
+# (commit-gate, capture-guard, review-covers.sh for the full panel) name the file
+# here, so the two sides never drift apart. The suite record's is wk_suite_marker_path.
 hook_review_marker_path() { wk_marker_path claude-review-marker "$1"; }
+hook_review_full_marker_path() { wk_marker_path claude-review-full-marker "$1"; }
 hook_triage_marker_path() { wk_marker_path claude-triage-marker "$1"; }
 
 # hook_session_marker <dir-name> <session_id>: the per-session file under
 # ${TMPDIR:-/tmp}/<dir-name>, the id with every non-alphanumeric as `_`. Prints
 # the path; the caller makes the directory. Consumers: safety/test-reminder,
-# docs/checkpoint, workflow/reload-guard, hook_session_model.
+# docs/checkpoint, workflow/reload-guard, workflow/feature, hook_session_model.
 hook_session_marker() {
   printf '%s\n' "${TMPDIR:-/tmp}/$1/${2//[^a-zA-Z0-9]/_}"
 }

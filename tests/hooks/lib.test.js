@@ -107,6 +107,14 @@ const run = async () => {
     assertEq(out.stdout.trim(), uname, `the shell's own answer, got: ${out.stdout}`);
   });
 
+  await test('Git Bash asks for real symlinks once, however often the seam is sourced', () => {
+    const seam = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'platform.sh'));
+    const win = runLib(`. "${seam}"; printf '%s' "$MSYS"`, { OSTYPE: 'msys', MSYS: 'noglob' });
+    assertEq(win.stdout, 'noglob winsymlinks:nativestrict', `appended once to the list, got: ${win.stdout}|${win.stderr}`);
+    const mac = runLib('printf "%s" "${MSYS-unset}"', { OSTYPE: 'darwin24' });
+    assertEq(mac.stdout, 'unset', `macOS sets nothing, got: ${mac.stdout}`);
+  });
+
   await test('the reading is cached: a set HOOK_UNAME_S is never re-probed', () => {
     const out = runLib('hook_is_linux && echo linux', { HOOK_UNAME_S: 'Linux', PATH: '' });
     assertEq(out.stdout.trim(), 'linux', `the cache decides, got: ${out.stdout}`);
@@ -454,6 +462,13 @@ const run = async () => {
       `got: ${out.stdout}|${out.stderr}`);
   });
 
+  await test('hook_review_full_marker_path is the full-panel marker dir plus the sha of the root', () => {
+    const out = runLib('hook_review_full_marker_path /repos/thing', { TMPDIR: shellPath(TMP) });
+    assertEq(out.stdout.trim(),
+      shellPath(path.join(TMP, 'claude-review-full-marker', sha1('/repos/thing'))),
+      `got: ${out.stdout}|${out.stderr}`);
+  });
+
   await test('hook_triage_marker_path is the triage marker dir plus the sha of the anchor', () => {
     const out = runLib('hook_triage_marker_path /repos/thing', { TMPDIR: shellPath(TMP) });
     assertEq(out.stdout.trim(),
@@ -574,11 +589,16 @@ const run = async () => {
     assertEq(ask('cd .. && node tests/run.js', path.join(dir, 'sub')), 'full', "the root's script from a nested dir");
   });
 
-  group('_lib.sh: the marker scripts');
+  group('_lib.sh: the scripts');
 
-  for (const [script, fn, dir] of [
-    ['review-marker.sh', 'hook_review_marker_path', 'claude-review-marker'],
-    ['triage-marker.sh', 'hook_triage_marker_path', 'claude-triage-marker'],
+  // A marker script, and the reader keyed on the same marker, name it only
+  // through its helper; red-proof.sh reads no marker.
+  for (const [script, keys] of [
+    ['review-marker.sh', [['hook_review_marker_path', 'claude-review-marker'],
+      ['hook_review_full_marker_path', 'claude-review-full-marker']]],
+    ['triage-marker.sh', [['hook_triage_marker_path', 'claude-triage-marker']]],
+    ['review-covers.sh', [['hook_review_full_marker_path', 'claude-review-full-marker']]],
+    ['red-proof.sh', []],
   ]) {
     await test(`scripts/${script} exists, is executable, and parses`, () => {
       const file = path.join(__dirname, '..', '..', 'scripts', script);
@@ -588,8 +608,10 @@ const run = async () => {
       const parsed = spawnSync(BASH, [...NO_RC, '-n', shellPath(file)], { encoding: 'utf8' });
       assertEq(parsed.status, 0, `${script} parses, got: ${parsed.stderr}`);
       const text = fs.readFileSync(file, 'utf8');
-      assert(text.includes(fn), `${script} keys through ${fn}, never its own spelling`);
-      assert(!text.includes(`${dir}/`), `${script} never spells the marker path itself`);
+      for (const [fn, dir] of keys) {
+        assert(text.includes(fn), `${script} keys through ${fn}, never its own spelling`);
+        assert(!text.includes(`${dir}/`), `${script} never spells the marker path itself`);
+      }
     });
   }
 };

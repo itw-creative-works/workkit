@@ -12,7 +12,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const { BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../../lib/platform');
 const { isCall, fmtCalls } = require('../../lib/argv-log');
 const {
-  HOOK, cleanup, makeGhStub, ghCalls, dropPathWithoutGh, runHook, WORLD,
+  HOOK, cleanup, makeGhStub, ghCalls, dropPathWithoutGh, runHook, WORLD, comments,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
 
@@ -41,7 +41,7 @@ const run = async () => {
   });
 
   await test('the Proof: line inside a longer comment counts', () => {
-    const stub = makeGhStub({ comments: { 4: ['what to check: the board page\n\nProof: unit: node tests/x.js'] } });
+    const stub = makeGhStub({ field: 'comments', issues: { 4: comments('what to check: the board page\n\nProof: unit: node tests/x.js') } });
     assertEq(runHook('gh issue edit 4 --add-label status:complete', stub).code, 0, 'any line may open with it');
     cleanup(stub.dir);
   });
@@ -282,6 +282,21 @@ const run = async () => {
     }
   });
 
+  await test('the issue number is read past the flags', () => {
+    for (const c of [
+      'gh issue edit --add-label status:complete 9',
+      'gh issue edit -R owner/name 9 --add-label status:complete',
+      'gh issue close --comment done 9',
+      'gh issue close https://github.com/owner/name/issues/9',
+    ]) {
+      const stub = makeGhStub(WORLD);
+      const { code, stderr } = runHook(c, stub);
+      assertEq(code, 2, `the unproved issue is judged: ${c}, got: ${stderr}`);
+      assert(stderr.includes('#9'), `names it: ${c}, got: ${stderr}`);
+      cleanup(stub.dir);
+    }
+  });
+
   await test('every issue in a compound is judged', () => {
     const stub = makeGhStub(WORLD);
     const { code, stderr } = runHook('gh issue close 7 && gh issue close 9', stub);
@@ -306,6 +321,7 @@ const run = async () => {
       'pushd /somewhere/else >/dev/null && gh issue close 7',
       'popd && gh issue edit 7 --add-label status:complete',
       '(cd /somewhere/else && gh issue edit 7 --add-label status:complete)',
+      'cd /somewhere/else && gh issue close https://github.com/a/b/issues/7',
     ]) {
       const stub = makeGhStub(WORLD);
       const { code, stderr } = runHook(c, stub);
@@ -321,7 +337,6 @@ const run = async () => {
     for (const c of [
       'cd /somewhere/else && gh issue close 7 --reason "not planned"',
       'gh issue close 7 && cd /somewhere/else',
-      'cd /somewhere/else && gh issue close https://github.com/a/b/issues/5',
       'cd /somewhere/else && gh issue close $N',
     ]) {
       const stub = makeGhStub(WORLD);

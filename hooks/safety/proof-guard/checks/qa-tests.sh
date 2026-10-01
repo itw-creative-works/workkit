@@ -19,13 +19,12 @@ qa_find_base() {
   fi
 }
 
-# The working diff's paths under root $1, one per line: tracked changes against
-# HEAD, untracked files, and the commits since base $2 when there is one.
-# Deletions never count, and paths come unquoted.
+# The paths under root $1, one per line: the working diff (hook_working_paths)
+# and the commits since base $2 when there is one. Deletions never count (the
+# caller skips a path with no file), and paths come unquoted.
 qa_touched_paths() {
   {
-    git -C "$1" -c core.quotePath=false diff --name-only --diff-filter=d HEAD 2>/dev/null || true
-    git -C "$1" -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null || true
+    { hook_working_paths "$1" || true; } | tr '\0' '\n'
     if [ -n "$2" ]; then
       git -C "$1" -c core.quotePath=false diff --name-only --diff-filter=d "$2" HEAD 2>/dev/null || true
     fi

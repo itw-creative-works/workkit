@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
 # workflow/lib/platform.sh: the spellings that differ per platform and the read
-# shapes built on them, for the engine and the hooks. Sourced, functions only.
-# The shell twin of tests/lib/platform.js; every function is the identity on
-# macOS and Linux. What each answers: workflow/README.md, the lib/platform.sh row.
+# shapes built on them, for the engine and the hooks. Sourced: functions, plus
+# the one MSYS export below. The shell twin of tests/lib/platform.js; every
+# function is the identity on macOS and Linux. What each answers:
+# workflow/README.md, the lib/platform.sh row.
+
+# Git Bash makes `ln -s` a copy unless MSYS says otherwise (docs/hooks.md
+# § Platforms). Appended once to MSYS's space-separated list, however many
+# times this is sourced; the engine and every hook source this file.
+case "${OSTYPE:-}" in
+  msys*|cygwin*)
+    [[ " ${MSYS:-} " == *" winsymlinks:nativestrict "* ]] \
+      || export MSYS="${MSYS:+$MSYS }winsymlinks:nativestrict"
+    ;;
+esac
 
 # wk_jq: jq on Windows writes CRLF (docs/hooks.md § Platforms). Every jq call
 # goes through this, and jq's own exit status comes back, so a predicate still

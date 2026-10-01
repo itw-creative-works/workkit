@@ -1,4 +1,4 @@
-// Skills parity: the ten workflow skills ship here, each folder's name is the
+// Skills parity: the nine workflow skills ship here, each folder's name is the
 // frontmatter name (plugin namespacing supplies the `workkit:` prefix), and
 // nothing under agents/ or skills/ still points at the dotfiles they came from.
 const path = require('path');
@@ -9,7 +9,7 @@ const REPO = path.join(__dirname, '..', '..');
 const SKILLS_DIR = path.join(REPO, 'skills');
 const AGENTS_DIR = path.join(REPO, 'agents');
 
-const SKILLS = ['feature', 'interview', 'diagnose', 'review', 'triage', 'status', 'checkpoint', 'migrate', 'ship', 'parallel'];
+const SKILLS = ['feature', 'interview', 'diagnose', 'review', 'triage', 'status', 'checkpoint', 'migrate', 'ship'];
 
 // A description is a routing line the model reads on every turn, so it stays
 // one tight trigger sentence and the body carries the detail.
@@ -59,7 +59,7 @@ const section = (file, heading) => {
 };
 
 const run = async () => {
-  group('skills: the ten folders');
+  group('skills: the nine folders');
   for (const name of SKILLS) {
     await test(`${name}/SKILL.md exists and its frontmatter name matches the folder`, () => {
       const file = path.join(SKILLS_DIR, name, 'SKILL.md');
@@ -151,12 +151,14 @@ const run = async () => {
 
   group('skills: no `workflow:` skill names survive');
   await test('nothing under skills/ names a workflow: skill', () => {
-    // `workflow:standards` is the hook, and keeps its name. Only the skill
-    // names carry the workkit: prefix.
+    // A `workflow:` name with a folder under hooks/workflow/ is that hook
+    // (`workflow:feature` loads the feature skill) and keeps its name. Only
+    // the skill names carry the workkit: prefix.
+    const hooks = fs.readdirSync(path.join(REPO, 'hooks', 'workflow'));
     const bad = [];
     for (const file of markdownIn(SKILLS_DIR)) {
       const text = fs.readFileSync(file, 'utf8');
-      for (const name of SKILLS) {
+      for (const name of SKILLS.filter((n) => !hooks.includes(n))) {
         if (text.includes(`workflow:${name}`)) bad.push(`${path.relative(REPO, file)} → workflow:${name}`);
       }
     }
@@ -254,6 +256,19 @@ const run = async () => {
       if (/~\/\.claude\/(agents|skills|hooks)\b/.test(text)) bad.push(path.relative(REPO, file));
     }
     assertEq(bad.join(', '), '', 'files reaching into a personal ~/.claude directory');
+  });
+
+  await test('no shipped doc, agent or skill names the retired worktree pair', () => {
+    // Every build past the manager-alone tier is a feature-developer and
+    // test-developer pair on the shared tree (docs/agents.md § Crew sizing).
+    const bad = [];
+    for (const file of [...markdownIn(SKILLS_DIR), ...markdownIn(AGENTS_DIR), ...shippedDocs()]) {
+      const text = fs.readFileSync(file, 'utf8');
+      for (const name of ['test-writer', 'feature-writer', 'isolation: "worktree"']) {
+        if (text.includes(name)) bad.push(`${path.relative(REPO, file)} → ${name}`);
+      }
+    }
+    assertEq(bad.join('; '), '', 'the retired pair names');
   });
 };
 

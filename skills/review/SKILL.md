@@ -35,6 +35,7 @@ Downgrade to light ONLY when ALL of these hold (any miss = stay full):
 ## 2. Lenses: parallel subagents
 
 - Dispatch per the file-handoff convention: the brief goes to a file in the session scratchpad, and each lens returns its full findings INLINE.
+  - Each brief starts from its template in `briefs/`: `compliance-reviewer`, `bugs-scout`, `simplification-scout`, `history-scout`, `firestore-scout`, `parity-scout`; the light tier's `light-reviewer`; the scorer's `review-scorer`.
 - Launch every lens in ONE message:
   - **Compliance + spec**: `workkit:reviewer`. It derives its checklist from live docs and judges Spec-faithfulness against the task context.
   - **Bugs**: `workkit:scout` agent. Trace the diff for defects: logic, edge states, silent fallbacks. Read the surrounding code, not just the diff.
@@ -43,7 +44,7 @@ Downgrade to light ONLY when ALL of these hold (any miss = stay full):
     - Findings name the collapse, never apply it.
   - **History**: `workkit:scout` agent. `git log`/`blame` on touched files: does the diff fight a past fix, revert intent, or repeat a reverted approach?
   - **Firestore rules**: `workkit:scout` agent, ONLY when the diff touches BEM/Firestore work. Check reads against rules coverage, both ways.
-  - **Parity**: `workkit:scout` agent, full tier only. This entry is the kit's one home of the mandate's wording; the light tier and the per-issue drift question in `agents/verifier.md` both quote it.
+  - **Parity**: `workkit:scout` agent, full tier only. This entry is the kit's one home of the mandate's wording; the light tier and the per-group drift question in `agents/verifier.md` both quote it.
     - For every file the diff adds or changes, name its siblings from the repo's docs and directory shape: the same kind of thing on another surface, target, command, or package.
     - Report where the new code's shape, naming, entry point, logging, or call form differs from them.
     - The principle is the global AGENTS.md parity rule (like things use like systems). The lens quotes it, never owns it.
@@ -75,9 +76,11 @@ Downgrade to light ONLY when ALL of these hold (any miss = stay full):
 
 - After the report, record that review ran, from inside the repo under review.
 - The `safety/commit-gate` hook checks this marker before it allows a code commit. The script names the marker through the same helper the hook reads it with, so the two cannot drift.
+- The light tier runs it plain. The full tier passes `full`, and so does the retouch that closes a full panel's fix round (`workkit:feature` § 5); `full` also writes the full-panel marker beside the plain one; `scripts/review-covers.sh` reads only that one.
 
 ```sh
-bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/workkit/..}/scripts/review-marker.sh"
+bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/workkit/..}/scripts/review-marker.sh"        # light tier
+bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/workkit/..}/scripts/review-marker.sh" full   # full tier
 ```
 
 - `CLAUDE_PLUGIN_ROOT` is set only inside hook commands. The fallback reaches the plugin root through the engine's stable address: `~/.claude/workkit` is the engine folder INSIDE the plugin, and its parent is the plugin itself.
@@ -88,4 +91,4 @@ bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/workkit/..}/scripts/review-marker.sh"
 - A report FILE is the explicit-ask exception. Name its path in the brief only for a large artifact meant to be read selectively, and never ask a lens without Write for one.
 - Do not re-run a full panel over edits that merely implement findings the scorer already judged this session: that reviews the review's own output.
   - The honest check is a light verification pass: "does each edit implement its finding without contradictions?"
-  - The one exception is the `workkit:ship` panel: it runs full over the whole ship diff every time (its step 3.2b).
+  - The `workkit:ship` panel (its step 3.2b) runs light when `scripts/review-covers.sh` says the full-panel marker covers the ship diff, and full otherwise.

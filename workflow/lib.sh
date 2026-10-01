@@ -59,17 +59,6 @@ WK_POLL_PID=''
 
 wk_palette
 
-# ── Real symlinks on Windows ──────────────────────────────────────────────────
-# Git Bash makes `ln -s` a copy unless MSYS says otherwise (docs/hooks.md
-# § Platforms). Appended once to MSYS's space-separated list, however many
-# times this is sourced.
-case "${OSTYPE:-}" in
-  msys*|cygwin*)
-    [[ " ${MSYS:-} " == *" winsymlinks:nativestrict "* ]] \
-      || export MSYS="${MSYS:+$MSYS }winsymlinks:nativestrict"
-    ;;
-esac
-
 # ── JSON ──────────────────────────────────────────────────────────────────────
 # shellcheck source=./lib/state.sh
 . "${BASH_SOURCE[0]%/*}/lib/state.sh"

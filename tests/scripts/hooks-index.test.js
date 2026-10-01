@@ -15,6 +15,7 @@ const AGENTS_DOC = path.join(REPO, 'AGENTS.md');
 const COUNT_WORDS = {
   fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
   'twenty-one': 21, 'twenty-two': 22, 'twenty-three': 23, 'twenty-four': 24, 'twenty-five': 25,
+  'twenty-six': 26,
 };
 
 // The section of a markdown file under one heading, up to the next heading of
@@ -72,7 +73,7 @@ const run = async () => {
   await test('AGENTS.md § Hooks spells out the number of wired hooks', () => {
     const text = section(AGENTS_DOC, '## Hooks');
     const word = Object.keys(COUNT_WORDS).find((w) => new RegExp(`\\b${w}\\b(?!-)`).test(text));
-    assert(word, 'AGENTS.md § Hooks carries no count word this test recognises (fifteen through twenty-five)');
+    assert(word, 'AGENTS.md § Hooks carries no count word this test recognises (fifteen through twenty-six)');
     assertEq(COUNT_WORDS[word], wiredHooks().length, `AGENTS.md § Hooks says "${word}"`);
   });
 };

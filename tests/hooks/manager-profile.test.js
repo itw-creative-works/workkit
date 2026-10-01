@@ -129,6 +129,9 @@ const run = async () => {
     assert(ctx.includes('self-contained'), 'the owner-question rule is missing');
     assert(ctx.includes('names the framework guide'), 'the brief routes the guide read');
     assert(ctx.includes('ONE bullet, bold lead = number + link + five words, then two to three sentences for a cold reader') && ctx.includes('Restating an issue'), 'the cold-reader line rides every prompt (#221)');
+    for (const term of ['feature-developer', 'test-developer', 'scripts/red-proof.sh', 'docs/agents.md § Batches', 'briefs/']) {
+      assert(ctx.includes(term), `the batch shape rides every prompt: "${term}" is missing`);
+    }
   });
   await test('the visibility rules are present on both rungs (#154)', () => {
     // What a manager owes the chat while it delegates: the checklist that says
@@ -149,11 +152,11 @@ const run = async () => {
     freshTmp();
     cacheSession('sess1', id('fable'));
     const ctx = contextOf(runHook(payload()));
-    for (const moved of ['Size the crew', 'worktree isolation', 'review panel', '.workkit/agents/session.md', 'Subagents never spawn']) {
+    for (const moved of ['Size the crew', 'worktree isolation', 'full review panel assembles', '.workkit/agents/session.md', 'Subagents never spawn']) {
       assert(!ctx.includes(moved), `"${moved}" belongs in docs/agents.md, not the injection`);
     }
   });
-  await test('the injection stays under 1100 characters on both rungs (cap raised for the #221 cold-reader line)', () => {
+  await test('the injection stays under 1450 characters on both rungs', () => {
     // The workhorse branch is the longer one (its advisor clause), so the cap
     // must be proven per rung: the frontier ctx alone leaves untested headroom,
     // and the next clause has to earn its place against the cap.
@@ -161,7 +164,7 @@ const run = async () => {
       freshTmp();
       cacheSession('sess1', id(rung));
       const ctx = contextOf(runHook(payload()));
-      assert(ctx.length < 1100, `${rung} injection is ${ctx.length} chars`);
+      assert(ctx.length < 1450, `${rung} injection is ${ctx.length} chars`);
     }
   });
 

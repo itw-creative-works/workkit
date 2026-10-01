@@ -43,8 +43,8 @@ Split every source into discrete entries. A wall of mixed notes fans out to MANY
 |---|---|
 | Already covered by an existing issue | `gh issue comment <N>` on that issue, never a duplicate |
 | Already rejected (a closed **not planned** issue) | Cite the rejection in the Filed trail; do NOT re-file |
-| Actionable, spec written and accepted (or a small item: Spec is `None needed: small item.`) | Relabel `status:specced` (+ `type:`, + `priority:` if clearly high/low). The flip AUTHORIZES the build: make it only on a genuinely accepted spec |
-| Actionable, but still needs design or detail | Stays `status:inbox`; draft what you have into `## Spec` (or a comment). QUEUE the interview and say so. Never show a whole drafted spec for a bare yes (spec § Specs, the collaborative rule). Its later acceptance earns `status:specced` |
+| Actionable, spec written with its `### Contract` and accepted (or a small item: Spec is `None needed: small item.`) | Relabel `status:specced` (+ `type:`, + `priority:` if clearly high/low). The flip AUTHORIZES the build: make it only on a genuinely accepted spec |
+| Actionable, but still needs design or detail | Stays `status:inbox`; draft what you have into `## Spec` (or a comment). QUEUE the interview and say so. Never show a whole drafted spec for a bare yes (spec § Specs, the collaborative rule). Its later acceptance, its `### Contract` written, earns `status:specced` |
 | A polish nit, docs nit, or cosmetic finding | A checklist line in the `## Spec` of the surface's open `polish: <surface>` issue. None open: open one (`status:inbox` + `type:enhancement`). Mechanics, the freeze rule and "bugs never batch" included: spec § How big is one issue |
 | Waiting on the owner's decision, or needs their yes/no before it is even accepted | `status:blocked` + a comment naming the question. The yes/no case first drafts the proposal into `## Spec` |
 | Worth keeping, deliberately not now | `status:backlog` |
@@ -94,7 +94,7 @@ Numbers in the ask mean SCOPED: only the named issues are read, nothing else is 
 3. End with the Filed trail, listing only the numbers named. Nothing else runs: no capture-file drain, no HQ pass, and no marker, since the capture file is never read.
 
 **"Accept" flips only on a real spec.**
-- `accept 215` earns `status:specced` only on a `## Spec` with content: a spec the owner accepted, or the table's literal small-item line. An issue that still needs real design takes the table's interview row instead (spec § Specs).
+- `accept 215` earns `status:specced` only on a `## Spec` with content: a spec the owner accepted AND its `### Contract`, or the table's literal small-item line, which passes as is. An issue that still needs real design takes the table's interview row instead (spec § Specs).
 - An empty Spec or a `None yet` placeholder: draft one from the body and comments, print it, and wait for the owner's yes. The flip follows the yes, never the draft. The ask itself is the accept, so a small drafted spec shown in chat flips on that yes.
 
 ## Merge mode (`/workkit:triage merge`)

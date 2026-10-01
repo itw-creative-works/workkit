@@ -68,6 +68,10 @@
           },
           {
             "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh safety:spec-guard"
+          },
+          {
+            "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh safety:suite-guard"
           },
           {
@@ -156,6 +160,10 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh docs:checkpoint"
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh workflow:feature"
           },
           {
             "type": "command",
