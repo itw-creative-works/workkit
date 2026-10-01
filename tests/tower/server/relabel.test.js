@@ -8,6 +8,9 @@ const { execError } = require('../../lib/gh');
 const {
   MOVE_STATUSES, cleanup, SLUG, mkWorld, start, getJson, postJson, raw, ghCalls,
 } = require('./helpers');
+const {
+  WITH_CONTRACT, WITHOUT_CONTRACT, SMALL_ITEM, SMALL_ITEM_PADDED, NO_SPEC, contractReason, noSpecReason,
+} = require('../spec-bodies');
 
 const run = async () => {
   group('tower/api/server: the board’s relabel write path');
@@ -216,15 +219,125 @@ const run = async () => {
     cleanup(w.root);
   });
 
-  await test('a move to any other column reads no comments at all', async () => {
+  await test('a move to any column but Complete or Specced reads nothing at all', async () => {
     const w = mkWorld();
     const c = await start(w);
-    for (const to of ['specced', 'building', 'qa', 'blocked', 'backlog']) {
+    for (const to of ['building', 'qa', 'blocked', 'backlog']) {
       const { body } = await postJson(c, MOVE, { ...validMove, from: 'inbox', to });
-      assertEq(body.ok, true, `a move to ${to} is not the gated one`);
+      assertEq(body.ok, true, `a move to ${to} is not a gated one`);
     }
-    assertEq(moveCalls(w, 'view').length, 0, 'only the flip to Complete pays for the read');
-    assertEq(moveCalls(w, 'edit').length, 5, 'and every one of them was written');
+    assertEq(moveCalls(w, 'view').length, 0, 'only the two gated flips pay for a read - no comments, no body');
+    assertEq(moveCalls(w, 'edit').length, 4, 'and every one of them was written');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  // ── The Spec gate on the drag ────────────────────────────────────────────
+  // The board's door into status:specced holds the rule safety/spec-guard holds
+  // on the shell path: a written `## Spec` carries a `### Contract`, or is the
+  // small-item line, and an issue with no Spec has nothing to be specced on.
+
+  /** An issue body as `gh issue view --json body` answers it. */
+  const bodyView = (text) => JSON.stringify({ body: text });
+  const toSpecced = { ...validMove, from: 'inbox', to: 'specced' };
+
+  const CONTRACT_REASON = contractReason(17);
+  const NO_SPEC_REASON = noSpecReason(17);
+
+  await test('a move to Specced whose Spec holds a ### Contract reads the body once, then writes the move', async () => {
+    const w = mkWorld();
+    w.viewResult = bodyView(WITH_CONTRACT);
+    const c = await start(w);
+    const { status, body } = await postJson(c, MOVE, toSpecced);
+    assertEq(status, 200, 'ok');
+    assertEq(body.ok, true, 'the Spec carries its Contract, past a fenced ## line');
+    assertEq(body.status, 'specced', 'and the card lands');
+    const views = moveCalls(w, 'view');
+    assertEq(views.length, 1, 'one read');
+    assertEq(views[0].join(' '), `gh issue view 17 --repo ${SLUG} --json body`,
+      'of the issue’s own body, the same read safety/spec-guard makes');
+    const [edit] = moveCalls(w, 'edit');
+    assertEq(edit && edit.join(' '),
+      `gh issue edit 17 --repo ${SLUG} --remove-label status:inbox --add-label status:specced`,
+      'the ordinary move, after the gate said yes');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a move to Specced whose Spec is exactly the small-item line goes through', async () => {
+    const w = mkWorld();
+    w.viewResult = bodyView(SMALL_ITEM);
+    const c = await start(w);
+    const { status, body } = await postJson(c, MOVE, toSpecced);
+    assertEq(status, 200, 'ok');
+    assertEq(body.ok, true, 'None needed: small item. is a whole Spec');
+    assertEq(moveCalls(w, 'edit').length, 1, 'and the move was written');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a small-item Spec saved with CRLF line ends and a padded line goes through', async () => {
+    const w = mkWorld();
+    w.viewResult = bodyView(SMALL_ITEM_PADDED);
+    const c = await start(w);
+    const { body } = await postJson(c, MOVE, toSpecced);
+    assertEq(body.ok, true, 'the line is judged trimmed, CRLF read as LF');
+    assertEq(moveCalls(w, 'edit').length, 1, 'and the move was written');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a move to Specced whose Spec is prose with no ### Contract is refused, and nothing is written', async () => {
+    const w = mkWorld();
+    w.viewResult = bodyView(WITHOUT_CONTRACT);
+    const c = await start(w);
+    const { status, body } = await postJson(c, MOVE, toSpecced);
+    assertEq(status, 200, 'soft, like the proof refusal - the page reverts the card on the body');
+    assertEq(body.ok, false, 'the gate refused it - a Contract outside the Spec does not count');
+    assertEq(body.reason, CONTRACT_REASON, 'the reason names what is missing and the fix');
+    assertEq(moveCalls(w, 'view').length, 1, 'the body was read');
+    assertEq(moveCalls(w, 'edit').length, 0, 'the drag is not a door around safety/spec-guard');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a move to Specced on an issue with no ## Spec is refused, and nothing is written', async () => {
+    const w = mkWorld();
+    w.viewResult = bodyView(NO_SPEC);
+    const c = await start(w);
+    const { status, body } = await postJson(c, MOVE, toSpecced);
+    assertEq(status, 200, 'soft, like the proof refusal - the page reverts the card on the body');
+    assertEq(body.ok, false, 'nothing to be specced on');
+    assertEq(body.reason, NO_SPEC_REASON, 'and the reason says so');
+    assertEq(moveCalls(w, 'edit').length, 0, 'nothing was written');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a Spec that cannot be READ refuses the move to Specced - the gate never fails open', async () => {
+    const w = mkWorld();
+    w.viewResult = execError('Command failed: gh issue view', { stderr: 'gh: could not resolve to an Issue\n' });
+    const c = await start(w);
+    const { status, body } = await postJson(c, MOVE, toSpecced);
+    assertEq(status, 200, 'the tower stays up');
+    assertEq(body.ok, false, 'and the move did not land');
+    assert(/could not be read/.test(body.reason), `the reason says the question could not be asked, got: ${body.reason}`);
+    assert(/status:specced/.test(body.reason), 'names the move it refused');
+    assert(/could not resolve to an Issue/.test(body.reason), 'carrying gh’s own message');
+    assertEq(moveCalls(w, 'edit').length, 0, 'nothing was written');
+    await c.stop();
+    cleanup(w.root);
+  });
+
+  await test('a body read that is not JSON is unreadable too, and refuses the move to Specced the same way', async () => {
+    const w = mkWorld();
+    w.viewResult = 'gh printed something else entirely';
+    const c = await start(w);
+    const { body } = await postJson(c, MOVE, toSpecced);
+    assertEq(body.ok, false, 'an answer that does not parse is not a Spec');
+    assert(/could not be read/.test(body.reason), `and says so, got: ${body.reason}`);
+    assert(/status:specced/.test(body.reason), 'naming the move it refused');
+    assertEq(moveCalls(w, 'edit').length, 0, 'nothing was written');
     await c.stop();
     cleanup(w.root);
   });

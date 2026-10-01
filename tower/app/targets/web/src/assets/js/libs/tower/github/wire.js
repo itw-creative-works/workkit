@@ -159,6 +159,8 @@ export const rest = async (path, ctx = {}, init = {}) => {
   try {
     response = await ctx.fetch(`${REST_URL}${path}`, {
       method,
+      // GitHub lets a browser reuse a GET for a minute; every read here wants what GitHub holds now.
+      ...(method === 'GET' ? { cache: 'no-store' } : {}),
       headers: {
         authorization: `Bearer ${token}`,
         accept: init.accept || 'application/vnd.github+json',

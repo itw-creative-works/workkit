@@ -56,6 +56,36 @@ const PROOF_LINE = /(^|\n)[ \t]*Proof:/;
 const PROOF_GATED = 'complete';
 
 /**
+ * The status that demands a Contract, and the test it is held to - the
+ * endpoint's `SPEC_GATED` and `specOk`, restated across the copy boundary for
+ * the reason `MOVE_STATUSES` is. The rule is the spec's (docs/project-state.md,
+ * "Specs"): the `## Spec` holds a `### Contract` heading or says only the
+ * small-item line, and a `## ` line inside a code fence is never the next section.
+ */
+const SPEC_GATED = 'specced';
+const specOk = (body) => {
+  if (typeof body !== 'string') return { ok: false, reason: 'no-spec' };
+  let fence = false;
+  let section = null;
+  for (const line of body.replace(/\r/g, '').split('\n')) {
+    if (line.startsWith('```')) fence = !fence;
+    if (line.startsWith('## ') && !fence) {
+      if (section) break;
+      if (/^## Spec\s*$/.test(line)) {
+        section = [];
+        continue;
+      }
+    }
+    if (section) section.push(line);
+  }
+  if (!section) return { ok: false, reason: 'no-spec' };
+  if (section.some((line) => /^### Contract\s*$/.test(line))) return { ok: true };
+  const said = section.map((line) => line.trim()).filter(Boolean);
+  if (said.length === 1 && said[0] === 'None needed: small item.') return { ok: true };
+  return { ok: false, reason: 'no-contract' };
+};
+
+/**
  * The statuses a move may name - the label vocabulary's `status` group,
  * restated across the copy boundary for the reason LABEL_GROUPS (board.js) is,
  * and pinned to `workflow/labels.json` by the suite.
@@ -141,6 +171,22 @@ export const moveIssueStatus = async (move, ctx = {}) => {
 
   const read = await rest(`/repos/${repo}/issues/${number}`, ctx);
   if (!read.ok) return read;
+
+  // The Contract gate, off the body this read already carries: the endpoint
+  // refuses in the same words, and safety/spec-guard holds it on the shell path.
+  if (to === SPEC_GATED) {
+    const spec = specOk((read.data || {}).body);
+    if (!spec.ok) {
+      return {
+        ok: false,
+        data: null,
+        status: read.status,
+        reason: spec.reason === 'no-spec'
+          ? `issue #${number} has no ## Spec, so it cannot move to status:specced.`
+          : `issue #${number} has a written Spec with no ### Contract, so it cannot move to status:specced. Add Files, Names and Cases, or the small-item line None needed: small item., then move the card.`,
+      };
+    }
+  }
 
   // A PATCH sends the whole label set, so a read that answered without one is
   // not a base to write from: relabelling off nothing would take every label

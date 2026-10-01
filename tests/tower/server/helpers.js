@@ -90,9 +90,9 @@ const mkWorld = () => {
     createResult: `https://github.com/${SLUG}/issues/99\n`,
     // And what `gh issue edit` does - the relabel the board's drag performs.
     editResult: `https://github.com/${SLUG}/issues/17\n`,
-    // What `gh issue view --json comments` answers - the proof read a move to
-    // Complete makes. Proved by default, so a test that is about anything else
-    // is not about the gate.
+    // What `gh issue view` answers: the proof read a move to Complete makes and
+    // the Spec read a move to Specced makes. Proved by default; a move to
+    // Specced sets its own body, since this default carries none.
     viewResult: JSON.stringify({ comments: [{ body: 'Proof:\n- unit: node tests/tower/server.test.js' }] }),
     // Flip to make the `gh --version` probe fail, as an unprovisioned machine does.
     ghMissing: false,

@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#377](../../issues/377) - The tower Board's drag to Specced holds the Contract rule: both move twins read the issue body first and refuse the drop, card back in place, unless its `## Spec` holds a `### Contract` or is the small-item line. The same rule `safety/spec-guard` holds on the shell route.
+
 ## [0.64.0] - 2026-09-30
 
 ### Added

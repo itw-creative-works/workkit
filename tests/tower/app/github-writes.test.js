@@ -7,6 +7,9 @@ const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs, mkFetch, jsonResponse, isRoster, mkSiteFetch } = require('./helpers');
+const {
+  WITH_CONTRACT, WITHOUT_CONTRACT, SMALL_ITEM, SMALL_ITEM_PADDED, NO_SPEC, contractReason, noSpecReason,
+} = require('../spec-bodies');
 
 const run = async () => {
   const { github } = await loadLibs();
@@ -46,6 +49,7 @@ const run = async () => {
     assertEq(fetchImpl.calls.length, 2, 'the labels the issue carries now, then the one write');
     assertEq(fetchImpl.calls[0].url, 'https://api.github.com/repos/ITW/workkit/issues/48', 'read from the issue itself - the board’s copy is up to a minute old');
     assertEq(fetchImpl.calls[0].options.method, 'GET', 'a read');
+    assertEq(fetchImpl.calls[0].options.cache, 'no-store', 'never answered from the browser’s cache - a gate judges what the issue says now');
     assertEq(fetchImpl.calls[1].url, 'https://api.github.com/repos/ITW/workkit/issues/48', 'and the write is the same resource');
     assertEq(fetchImpl.calls[1].options.method, 'PATCH', 'one call, so the issue is never unlabelled nor twice-labelled');
     assertEq(fetchImpl.calls[1].options.headers.authorization, 'Bearer fake-token-for-tests', 'the token is the whole of the auth');
@@ -69,7 +73,7 @@ const run = async () => {
       ? jsonResponse(403, { message: 'Resource not accessible by personal access token' })
       : jsonResponse(200, { number: 1, labels: [{ name: 'status:inbox' }] })));
     const answer = await github.moveIssueStatus({
-      repo: 'o/r', number: 1, from: 'inbox', to: 'specced',
+      repo: 'o/r', number: 1, from: 'inbox', to: 'building',
     }, { token: 'read-only', fetch: forbidden });
     assertEq(answer.ok, false, 'the move did not land');
     assert(/write/i.test(answer.reason) && /Issues: Read and write/.test(answer.reason),
@@ -111,7 +115,7 @@ const run = async () => {
       ? jsonResponse(403, { message: 'Resource not accessible by personal access token' })
       : jsonResponse(200, { number: 1, labels: [{ name: 'status:inbox' }] })));
     const refused = await github.moveIssueStatus({
-      repo: 'o/r', number: 1, from: 'inbox', to: 'specced',
+      repo: 'o/r', number: 1, from: 'inbox', to: 'building',
     }, { token: 'read-only', fetch: blindWrite });
     assert(/Issues: Read and write/.test(refused.reason), `and the write leg names the permission it wants, got: ${refused.reason}`);
   });
@@ -153,7 +157,7 @@ const run = async () => {
     assert(serverSrc.includes('the issue is already status:'), 'and so is the refusal of a move that is not one');
   });
 
-  // The proof gate on the drag: Complete is the one column a card has to prove
+  // The proof gate on the drag: Complete is a column a card has to prove
   // itself into, and the published copy refuses it in the browser, before the
   // PATCH, as the endpoint and the two hooks do.
   const COMMENTS_URL = 'https://api.github.com/repos/o/r/issues/48/comments?per_page=100';
@@ -211,16 +215,102 @@ const run = async () => {
     assertEq(answer.data.status, 'complete', 'on the column it was dropped on');
   });
 
-  await test('a move to any other column reads no comments at all', async () => {
+  await test('a move to any column but Complete or Specced reads no comments at all', async () => {
+    for (const to of ['building', 'qa', 'blocked', 'backlog']) {
+      const fetchImpl = mkFetch((url, options) => ((options && options.method) === 'PATCH'
+        ? jsonResponse(200, { number: 48 })
+        : jsonResponse(200, { number: 48, labels: [{ name: 'status:inbox' }] })));
+      const answer = await github.moveIssueStatus({
+        repo: 'o/r', number: 48, from: 'inbox', to,
+      }, { token: 't', fetch: fetchImpl });
+      assertEq(answer.ok, true, `a move to ${to} is not a gated one, and an issue with no body still moves`);
+      assertEq(fetchImpl.calls.length, 2, `the read and the write for ${to}, as before either gate existed`);
+      assert(!fetchImpl.calls.some((call) => call.url.includes('/comments')), 'only the flip to Complete pays for the proof read');
+    }
+  });
+
+  // The Spec gate on the drag: Specced is the second column a card has to prove
+  // itself into. The issue read the move already makes carries the body, so the
+  // gate costs no request, and the refusal comes before the PATCH.
+  const ISSUE_URL = 'https://api.github.com/repos/o/r/issues/48';
+
+  const CONTRACT_REASON = contractReason(48);
+  const NO_SPEC_REASON = noSpecReason(48);
+
+  /** A move to Specced against an issue whose read answers `body`. */
+  const moveToSpecced = async (body) => {
     const fetchImpl = mkFetch((url, options) => ((options && options.method) === 'PATCH'
       ? jsonResponse(200, { number: 48 })
-      : jsonResponse(200, { number: 48, labels: [{ name: 'status:inbox' }] })));
+      : jsonResponse(200, { number: 48, labels: [{ name: 'status:inbox' }, { name: 'type:enhancement' }], body })));
     const answer = await github.moveIssueStatus({
       repo: 'o/r', number: 48, from: 'inbox', to: 'specced',
-    }, { token: 't', fetch: fetchImpl });
-    assertEq(answer.ok, true, 'moved');
-    assertEq(fetchImpl.calls.length, 2, 'the read and the write, as before the gate existed');
-    assert(!fetchImpl.calls.some((call) => call.url.includes('/comments')), 'only the flip to Complete pays for the proof read');
+    }, { token: 'fake-token-for-tests', fetch: fetchImpl });
+    return { answer, calls: fetchImpl.calls };
+  };
+
+  await test('a move to Specced whose Spec holds a ### Contract is the read and the write, nothing more', async () => {
+    const { answer, calls } = await moveToSpecced(WITH_CONTRACT);
+    assertEq(calls.length, 2, 'no extra request - the issue read carries the body the gate judges');
+    assertEq(calls[0].url, ISSUE_URL, 'the read is the issue itself');
+    assertEq(calls[0].options.method, 'GET', 'a read');
+    assertEq(calls[1].options.method, 'PATCH', 'then the write the gate let through');
+    assertEq(JSON.parse(calls[1].options.body).labels.join(','), 'type:enhancement,status:specced', 'landing on Specced with its other labels intact');
+    assertEq(answer.ok, true, 'the Spec carries its Contract, past a fenced ## line');
+    assertEq(answer.data.status, 'specced', 'on the column it was dropped on');
+  });
+
+  await test('a move to Specced whose Spec is exactly the small-item line goes through, as on the endpoint', async () => {
+    const { answer, calls } = await moveToSpecced(SMALL_ITEM);
+    assertEq(answer.ok, true, 'None needed: small item. is a whole Spec');
+    assertEq(calls.length, 2, 'the read and the write');
+    assertEq(calls[1].options.method, 'PATCH', 'and the write happened');
+  });
+
+  await test('a small-item Spec saved with CRLF line ends and a padded line goes through, as on the endpoint', async () => {
+    const { answer, calls } = await moveToSpecced(SMALL_ITEM_PADDED);
+    assertEq(answer.ok, true, 'the line is judged trimmed, CRLF read as LF');
+    assertEq(calls.length, 2, 'the read and the write');
+  });
+
+  await test('a move to Specced whose Spec has no ### Contract is refused after the read, before any PATCH', async () => {
+    const { answer, calls } = await moveToSpecced(WITHOUT_CONTRACT);
+    assertEq(calls.length, 1, 'the issue was read and nothing was written');
+    assertEq(calls[0].options.method, 'GET', 'the one call is the read');
+    assertEq(answer.ok, false, 'refused in the browser - a Contract outside the Spec does not count');
+    assertEq(answer.data, null, 'with no data, the refusal shape');
+    assertEq(answer.reason, CONTRACT_REASON, 'in the endpoint’s own words');
+  });
+
+  await test('a move to Specced on an issue with no ## Spec is refused after the read, before any PATCH', async () => {
+    const { answer, calls } = await moveToSpecced(NO_SPEC);
+    assertEq(calls.length, 1, 'the issue was read and nothing was written');
+    assertEq(answer.ok, false, 'nothing to be specced on');
+    assertEq(answer.data, null, 'with no data, the refusal shape');
+    assertEq(answer.reason, NO_SPEC_REASON, 'in the endpoint’s own words');
+  });
+
+  await test('the Spec rule is one rule in three homes - the endpoint, this copy and the hook', () => {
+    // The sentences are the endpoint's, across the copy boundary, and the gated
+    // status is a vocabulary word.
+    assert(serverSrc.includes('has a written Spec with no ### Contract'), 'the Contract refusal is the endpoint’s own sentence');
+    assert(serverSrc.includes('Add Files, Names and Cases, or the small-item line'), 'with the endpoint’s own fix');
+    assert(serverSrc.includes('has no ## Spec'), 'and so is the no-Spec refusal');
+    const statusWords = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'workflow', 'labels.json'), 'utf8')).groups.status.values);
+    assert(statusWords.includes('specced'), 'and the gated status is one the vocabulary names');
+
+    // The rule's spellings: both headings and the small-item line, the same in each
+    // JS copy and in the hook's own dialect. The walk around them is held by the shared bodies.
+    const root = path.join(__dirname, '..', '..', '..');
+    const pageSrc = fs.readFileSync(path.join(root, 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'libs', 'tower', 'github', 'writes.js'), 'utf8');
+    const hookSrc = fs.readFileSync(path.join(root, 'hooks', 'safety', 'spec-guard', 'run.sh'), 'utf8');
+    for (const [home, src] of [['the endpoint', serverSrc], ['the page-side copy', pageSrc]]) {
+      assert(src.includes('/^## Spec\\s*$/'), `${home} opens the section on the Spec heading`);
+      assert(src.includes('/^### Contract\\s*$/'), `${home} looks for the Contract heading`);
+      assert(src.includes("=== 'None needed: small item.'"), `${home} passes the small-item line and nothing near it`);
+    }
+    assert(hookSrc.includes('/^## Spec[[:space:]]*$/'), 'the hook opens the section on the same heading');
+    assert(hookSrc.includes("'^### Contract[[:space:]]*$'"), 'looks for the same Contract heading');
+    assert(hookSrc.includes("= 'None needed: small item.'"), 'and passes the same small-item line');
   });
 
   await test('intake files the issue the endpoint files - same labels, same default body', async () => {

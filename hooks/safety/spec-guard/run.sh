@@ -52,7 +52,8 @@ clauses_text=$(hook_gh_clauses "$src")
 
 # sg_spec_ok: is the issue body on stdin's `## Spec` the small-item line or
 # holding a `### Contract` heading? No Spec section at all is not ok. A `## `
-# line inside a code fence is an example, never the next section.
+# line inside a code fence is an example, never the next section. The rule's
+# three homes change together: docs/hooks.md § safety:spec-guard.
 sg_spec_ok() {
   local spec
   spec=$(tr -d '\r' | awk '

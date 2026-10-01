@@ -109,7 +109,9 @@ const run = async () => {
 
   await test('Git Bash asks for real symlinks once, however often the seam is sourced', () => {
     const seam = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'platform.sh'));
-    const win = runLib(`. "${seam}"; printf '%s' "$MSYS"`, { OSTYPE: 'msys', MSYS: 'noglob' });
+    // The seed is set in the shell, never in the env: a real MSYS runtime reads
+    // MSYS at start, and `noglob` changes how it parses bash's own command line.
+    const win = runLib(`MSYS=noglob; . "${seam}"; . "${seam}"; printf '%s' "$MSYS"`, { OSTYPE: 'msys' });
     assertEq(win.stdout, 'noglob winsymlinks:nativestrict', `appended once to the list, got: ${win.stdout}|${win.stderr}`);
     const mac = runLib('printf "%s" "${MSYS-unset}"', { OSTYPE: 'darwin24' });
     assertEq(mac.stdout, 'unset', `macOS sets nothing, got: ${mac.stdout}`);

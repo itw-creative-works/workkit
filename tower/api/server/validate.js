@@ -1,6 +1,6 @@
 // tower/api/server/validate.js: the rules a write is judged by before `gh` is
-// reached: the intake and move validators, their limits, the status vocabulary
-// and the proof line. server.js requires it; no piece requires server.js.
+// reached: the intake and move validators, their limits, the status vocabulary,
+// the proof line and the spec test. server.js requires it; no piece requires server.js.
 
 const { LABELS_FILE } = require('../lib/board');
 
@@ -18,9 +18,43 @@ const MOVE_STATUSES = Object.keys(require(LABELS_FILE).groups.status.values);
 // Its shell twin is `hook_view_has_proof` in hooks/lib/proof.sh: the two change together.
 const PROOF_LINE = /(^|\n)[ \t]*Proof:/;
 
-// The one status a move has to prove itself to reach. The board is the second
+// The status a move has to show a `Proof:` line to reach. The board is the second
 // door into the gate the two hooks hold on the shell path.
 const PROOF_GATED = 'complete';
+
+// The status a move has to show a Contract to reach (docs/project-state.md § Specs).
+// The board is the second door into the gate safety/spec-guard holds on the shell path.
+const SPEC_GATED = 'specced';
+
+/**
+ * Does the body's `## Spec` hold a `### Contract` heading, or say only the
+ * small-item line? Its shell twin is `sg_spec_ok` in hooks/safety/spec-guard/run.sh
+ * and the dashboard restates it: the three change together. A `## ` line
+ * inside a code fence is never the next section.
+ * @param {string} body the issue body
+ * @returns {{ok: boolean, reason?: 'no-spec'|'no-contract'}}
+ */
+const specOk = (body) => {
+  if (typeof body !== 'string') return { ok: false, reason: 'no-spec' };
+  let fence = false;
+  let section = null;
+  for (const line of body.replace(/\r/g, '').split('\n')) {
+    if (line.startsWith('```')) fence = !fence;
+    if (line.startsWith('## ') && !fence) {
+      if (section) break;
+      if (/^## Spec\s*$/.test(line)) {
+        section = [];
+        continue;
+      }
+    }
+    if (section) section.push(line);
+  }
+  if (!section) return { ok: false, reason: 'no-spec' };
+  if (section.some((line) => /^### Contract\s*$/.test(line))) return { ok: true };
+  const said = section.map((line) => line.trim()).filter(Boolean);
+  if (said.length === 1 && said[0] === 'None needed: small item.') return { ok: true };
+  return { ok: false, reason: 'no-contract' };
+};
 
 // `owner/name` and nothing else: the first gate, before the roster comparison.
 const SLUG_SHAPE = /^[\w.-]+\/[\w.-]+$/;
@@ -89,4 +123,6 @@ module.exports = {
   MOVE_STATUSES,
   PROOF_LINE,
   PROOF_GATED,
+  SPEC_GATED,
+  specOk,
 };
