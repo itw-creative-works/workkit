@@ -7,14 +7,16 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.64.0] - 2026-09-30
+
 ### Added
 
-- [#376](../../issues/376) - Role brief templates under `briefs/`, one per crew job (`<job>-<role>.md`), so the manager fills the slots instead of writing each brief from scratch. The shared-tree rules (no stash, no checkout, touch only the named paths) move into the worker and verifier agent files.
+- [#376](../../issues/376) [`3cf4c15`](../../commit/3cf4c15) Thanks [@ianwieds]! - Role brief templates under `briefs/`, one per crew job (`<job>-<role>.md`), so the manager fills the slots instead of writing each brief from scratch. The shared-tree rules (no stash, no checkout, touch only the named paths) move into the worker and verifier agent files.
 
 ### Changed
 
-- [#374](../../issues/374) - Batches build in parallel groups on the shared tree, replacing the worktree parallel skill and the one-at-a-time batch: one verifier per group, one review panel per batch. The `workkit:parallel` skill is removed, and a new `workflow:feature` hook loads the feature skill on any prompt about issue work.
-- [#375](../../issues/375) - Every build with a test surface is a feature-developer and test-developer pair per group, the verifier proving red by execution (`scripts/red-proof.sh`). A written Spec carries a Contract, held by `safety/spec-guard`; `safety/proof-guard` reads the issue from any argument, URLs included; the ship panel runs light under a covering full-panel marker.
+- [#374](../../issues/374) [`3cf4c15`](../../commit/3cf4c15) Thanks [@ianwieds]! - Batches build in parallel groups on the shared tree, replacing the worktree parallel skill and the one-at-a-time batch: one verifier per group, one review panel per batch. The `workkit:parallel` skill is removed, and a new `workflow:feature` hook loads the feature skill on any prompt about issue work.
+- [#375](../../issues/375) [`3cf4c15`](../../commit/3cf4c15) Thanks [@ianwieds]! - Every build with a test surface is a feature-developer and test-developer pair per group, the verifier proving red by execution (`scripts/red-proof.sh`). A written Spec carries a Contract, held by `safety/spec-guard`; `safety/proof-guard` reads the issue from any argument, URLs included; the ship panel runs light under a covering full-panel marker.
 
 ## [0.63.1] - 2026-09-30
 
