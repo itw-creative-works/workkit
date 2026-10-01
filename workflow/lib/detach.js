@@ -60,7 +60,7 @@ const writeDone = (done, code) => {
 };
 
 /**
- * The supervisor: runs the command with stdout and stderr appended to the log,
+ * The supervisor: runs the command with stdout and stderr written to the log,
  * then records its exit code. A command killed by a signal records 128 plus
  * the signal's number, the way a shell reports it.
  * @param {string[]} argv
@@ -72,7 +72,9 @@ const supervise = (argv) => {
     console.error(USAGE);
     return 2;
   }
-  const out = fs.openSync(job.log, 'a');
+  // Opened for writing, never 'a': a Git Bash child cannot write to the
+  // append-only handle Node makes on Windows, and its output would be lost.
+  const out = fs.openSync(job.log, 'w');
   let finished = false;
   const finish = (code) => {
     if (finished) return;

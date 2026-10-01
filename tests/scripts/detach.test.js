@@ -34,6 +34,9 @@ const runDetachedArgs = (dir, script, before = ':') => [...NO_RC, '-c', [
   'wk_run_detached "$1" "$2" -- node -e "$3"; rc=$?; printf "ran=%s\\nrc=%s\\n" "$WK_RAN_CODE" "$rc"',
 ].join('\n'), 'wk', shellPath(path.join(dir, 'log')), shellPath(path.join(dir, 'lock')), script];
 const RUN_ENV = { PATH: systemPathWith(NODE_DIR) };
+// A path written into a `node -e` script: forward slashes, since Git Bash
+// halves a Windows path's backslashes on the way to node.
+const jsPath = (p) => JSON.stringify(p.replace(/\\/g, '/'));
 
 const rcOf = (out) => { const m = /rc=(\d+)\n$/.exec(out); return m ? Number(m[1]) : null; };
 const ranOf = (out) => { const m = /(?:^|\n)ran=(\d*)\nrc=\d+\n$/.exec(out); return m ? m[1] : null; };
@@ -93,6 +96,22 @@ const run = async () => {
     assert(!text.includes('stale line'), `the log was truncated first, got: ${JSON.stringify(text)}`);
   });
 
+  await test('a shell command under the supervisor: its output reaches the log, its code the done file', async () => {
+    // The suite and the CI watch are both shell commands, and on Windows a
+    // shell child writes nothing to a log the supervisor opened append-only.
+    const dir = mkTmp('detach-shell-');
+    const log = path.join(dir, 'log');
+    const done = path.join(dir, 'done');
+    const res = spawnSync(process.execPath, [DETACH, log, done, '--', BASH, ...NO_RC, '-c', 'echo from-the-shell; echo to-stderr >&2; exit 3'],
+      { encoding: 'utf8', timeout: 30000 });
+    assertEq(res.status, 0, `detach.js exits 0, stderr: ${res.stderr}`);
+    assert(await until(() => fs.existsSync(done), 15000), `the done file never appeared at ${done}`);
+    assertEq(fs.readFileSync(done, 'utf8'), '3\n', "the done file holds the shell's exit code");
+    const text = fs.readFileSync(log, 'utf8');
+    assert(text.includes('from-the-shell'), `the log holds the shell's stdout, got: ${JSON.stringify(text)}`);
+    assert(text.includes('to-stderr'), `the log holds the shell's stderr, got: ${JSON.stringify(text)}`);
+  });
+
   group('detach.sh: wk_run_detached and its lock');
 
   await test('a lock whose pid was rewritten mid-run: the command\'s own code comes back and the lock stays', async () => {
@@ -101,7 +120,7 @@ const run = async () => {
     const dir = mkTmp('detach-owner-');
     const lock = path.join(dir, 'lock');
     const go = path.join(dir, 'go');
-    const script = `const fs=require('fs');setInterval(()=>{if(fs.existsSync(${JSON.stringify(go)}))process.exit(7)},50)`;
+    const script = `const fs=require('fs');setInterval(()=>{if(fs.existsSync(${jsPath(go)}))process.exit(7)},50)`;
     const child = spawn(BASH, runDetachedArgs(dir, script), { env: RUN_ENV, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
@@ -133,7 +152,7 @@ const run = async () => {
     fs.mkdirSync(lock);
     fs.writeFileSync(path.join(lock, 'pid'), `${dead}\n`);
     fs.writeFileSync(path.join(lock, 'done'), '0\n');
-    const script = `require('fs').writeFileSync(${JSON.stringify(ran)},'');process.exit(6)`;
+    const script = `require('fs').writeFileSync(${jsPath(ran)},'');process.exit(6)`;
     const start = Date.now();
     const res = spawnSync(BASH, runDetachedArgs(dir, script), { env: RUN_ENV, encoding: 'utf8', timeout: 30000 });
     const took = Date.now() - start;
@@ -150,7 +169,7 @@ const run = async () => {
       const lock = path.join(dir, 'lock');
       const go = path.join(dir, 'go');
       const first = startDetached(runDetachedArgs(dir,
-        `const fs=require('fs');setInterval(()=>{if(fs.existsSync(${JSON.stringify(go)}))process.exit(0)},20)`));
+        `const fs=require('fs');setInterval(()=>{if(fs.existsSync(${jsPath(go)}))process.exit(0)},20)`));
       const second = startDetached(runDetachedArgs(dir, 'process.exit(5)',
         'until [ -e "$2/done" ]; do :; done'));
       try {

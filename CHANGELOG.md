@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#379](../../issues/379) - On Windows a detached suite or CI watch lost all its output and failed: Git Bash cannot write to the append-only log handle Node opens there. The log is now opened for plain writing, and a test runs a shell command under the supervisor.
+
 ## [0.66.0] - 2026-10-01
 
 ### Changed
