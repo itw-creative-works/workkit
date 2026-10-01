@@ -10,12 +10,15 @@ const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const { group, test, assert, assertEq, testUnless, summary, selfRun } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, SYSTEM_PATH, NO_RC, NO_NODE_STUB, shellPath, cygpathStub, homeEnv,
+  IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, NO_NODE_STUB, shellPath, cygpathStub, homeEnv,
   stubTool, which, pathWith, systemPathWith, asWindows,
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
+const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
+const { until, alive } = require('../lib/process');
 
 const PLATFORM = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'platform.sh'));
+const DETACH = path.join(__dirname, '..', '..', 'workflow', 'lib', 'detach.js');
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
@@ -249,6 +252,81 @@ const run = async () => {
         child.kill('SIGKILL');
       }
     }
+  });
+
+  group('platform.sh: wk_end_run and wk_pid_alive');
+
+  /**
+   * A PATH directory whose named tools only log their argv, one log per tool,
+   * so the Windows arm is answered off Windows and ends nothing real.
+   */
+  const loggingWorld = (...tools) => {
+    const dir = mkTmp('wf-platform-');
+    for (const tool of tools) stubTool(dir, tool, ['#!/bin/bash', recordArgv(path.join(dir, `${tool}.log`))]);
+    return { dir, calls: (tool) => readArgv(path.join(dir, `${tool}.log`)) };
+  };
+
+  await test('the Windows arm ends the tree through taskkill, and through wk_end_pid where there is none', () => {
+    // The system PATH holds no taskkill on either platform (only Git Bash's own
+    // directory on Windows), so a stub is the only one either half could find.
+    const both = loggingWorld('taskkill', 'kill');
+    try {
+      const res = inPlatform('wk_end_run 4242', { OSTYPE: 'msys', PATH: systemPathWith(both.dir) });
+      assertEq(res.code, 0, `the call returns 0, stderr: ${res.err}`);
+      assertEq(fmtCalls(both.calls('taskkill')), fmtCalls([['//T', '//F', '//PID', '4242']]), 'the whole tree, forced, by pid');
+      assertEq(both.calls('kill').length, 0, `and nothing else: ${fmtCalls(both.calls('kill'))}`);
+    } finally {
+      cleanup(both.dir);
+    }
+    const bare = loggingWorld('kill');
+    try {
+      const res = inPlatform('wk_end_run 4242', { OSTYPE: 'msys', PATH: systemPathWith(bare.dir) });
+      assertEq(res.code, 0, `the call returns 0, stderr: ${res.err}`);
+      assertEq(fmtCalls(bare.calls('kill')), fmtCalls([['-f', '-W', '4242']]), "wk_end_pid's Windows spelling ran instead");
+    } finally {
+      cleanup(bare.dir);
+    }
+  });
+
+  await testUnless(IS_WINDOWS, 'the process-group arm is the off-Windows one; Windows ends the tree through taskkill')(
+    'off Windows a detached run, its command and its supervisor, is gone within 4 s and the call returns 0',
+    async () => {
+      // The command rides out INT and TERM, so only the whole escalation ends it in time.
+      const dir = mkTmp('wf-platform-');
+      const pidFile = path.join(dir, 'cmd.pid');
+      const cmd = [process.execPath, '-e', [
+        `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));`,
+        "process.on('SIGINT', () => {}); process.on('SIGTERM', () => {});",
+        'setInterval(() => {}, 1000);',
+      ].join(' ')];
+      const launched = spawnSync(process.execPath, [DETACH, path.join(dir, 'log'), path.join(dir, 'done'), '--', ...cmd],
+        { encoding: 'utf8', timeout: 30000 });
+      assertEq(launched.status, 0, `detach.js launched the run, stderr: ${launched.stderr}`);
+      const supervisor = Number(launched.stdout.trim());
+      let command;
+      try {
+        assert(await until(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8') !== '', 10000), 'the command started');
+        command = Number(fs.readFileSync(pidFile, 'utf8'));
+        const start = Date.now();
+        const res = inPlatform(`wk_end_run ${supervisor}`);
+        assertEq(res.code, 0, `the call returns 0, stderr: ${res.err}`);
+        const gone = await until(() => !alive(command) && !alive(supervisor), Math.max(0, 4000 - (Date.now() - start)));
+        assert(gone, `the command (pid ${command}) and the supervisor (pid ${supervisor}) are gone within 4 s`);
+      } finally {
+        for (const pid of [command, supervisor].filter(Boolean)) { try { process.kill(pid, 'SIGKILL'); } catch {} }
+        cleanup(dir);
+      }
+    },
+  );
+
+  await test('wk_pid_alive: 0 for a live pid, non-zero for one that is gone', () => {
+    // Node on PATH, since a pid Node printed is the kind the seam is asked about.
+    const env = { PATH: systemPathWith(NODE_DIR) };
+    const live = inPlatform(`wk_pid_alive ${process.pid}`, env);
+    assertEq(live.code, 0, `this process is alive, stderr: ${live.err}`);
+    const dead = spawnSync(process.execPath, ['-e', '0']).pid;
+    const gone = inPlatform(`wk_pid_alive ${dead}`, env);
+    assert(gone.code !== 0 && gone.code !== null, `a pid that has ended answers non-zero, got: ${gone.code}`);
   });
 
   // The seam the suites spawn through (tests/lib/platform.js) rather than the

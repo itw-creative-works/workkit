@@ -7,6 +7,13 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#379](../../issues/379) - A root `npm test` runs its suite in its own session, so a shell killed mid-run leaves it running to its record. Its output also lands in `.workkit/suite.log`; Ctrl-C still stops it, a second run while one is in flight refuses, and the gate's bounce names the log.
+- [#380](../../issues/380) - A root `npm test` runs the commit gate's CHANGELOG format check before the suite starts, so an entry past the word cap fails in a second instead of after a long green run. The check and its message have one home, `workflow/lib/changelog.sh`, which the gate shares.
+- [#381](../../issues/381) - The ship's CI watch runs in its own session, so a cut-off shell leaves it watching to its answer. Its output lands in `.workkit/ci.log`, ending with `ci-watch: exit <code>`; a second watch while one runs refuses, and Ctrl-C still stops it.
+- [#378](../../issues/378) - The README is rewritten for a first-time reader: an animated hero, install, the first thing to type, and how it works. The setup walkthrough, the home repo and the layout move to the new `docs/setup.md`; the two diagrams move to the spec and the crew contract.
+
 ## [0.65.0] - 2026-10-01
 
 ### Added

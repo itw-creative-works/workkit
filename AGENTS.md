@@ -28,23 +28,17 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
 ├── jobs/                 # scheduled work: the 9am daily brief, its launchd plist, and install.sh
 ├── scripts/              # four scripts, the only platform-touching commands the skills and agents have: the two markers the skills call (review, triage), red-proof.sh (the verifier's red run), review-covers.sh (the ship's review tier)
-├── docs/                 # project-state.md (the spec) · agents.md (the crew contract) · hooks.md (the hook detail) · cloud.md (remote provisioning) · history-purge.md (the rewrite runbook)
+├── docs/                 # project-state.md (the spec) · agents.md (the crew contract) · hooks.md (the hook detail) · setup.md (the install walkthrough) · cloud.md (remote provisioning) · history-purge.md (the rewrite runbook)
+│   └── assets/           # the README's hero and its mark in two inks, rendered by the showcase repo (ITW-Creative-Works/showcase, private)
 ├── tests/                # Node runner + hook/script/tower suites (npm test)
 └── .workkit/             # settings.json is COMMITTED (this repo's own opt-in)
 ```
 
 ## Install
 
-From zero: clone, then `./workflow/workkit.sh setup`. One pass, each step checked before it acts: the plugin, `gh`, the 9am schedule, the home repo and its clone at `~/.workkit/tower`, the publish question, the site's token handover, the cloud brief's runner and its two secrets, this repo's opt-in, the `~/.local/bin/workkit` symlink, npm's `script-shell`. Every mechanic: `workflow/README.md`.
+From zero: clone, then `./workflow/workkit.sh setup`. One pass, each step checked before it acts. The steps in order, the plugin-only install, the home repo, opting a repo in and the layout: `docs/setup.md`. Every mechanic: `workflow/README.md`.
 
 A SHIP re-runs it: when the shipped diff touched the setup surface, the ship runs `workkit setup` itself once the release commit's CI is green, so the install follows the kit rather than waiting on the owner. The paths and the clause: `skills/ship/SKILL.md` Step 7.
-
-The plugin alone is still two lines:
-
-```sh
-claude plugin marketplace add <path-to-checkout>
-claude plugin install workkit@workkit
-```
 
 The engine's stable filesystem address is `~/.claude/workkit` → this repo's `workflow/`; the hooks resolve the engine from their own location instead, so they never wait on it. Mechanics: `workflow/README.md` § How it is reached.
 
@@ -82,7 +76,7 @@ Each step is gated by what the environment it woke up in can do; the brief itsel
 
 ## Tests
 
-`npm test` runs `tests/run.js`, which discovers every `tests/**/*.test.js` through `tests/lib/suites.js`. A suite whose precondition this machine cannot meet calls `skipSuite()` and the runner names the skip rather than hiding it. Suites live under `tests/hooks/`, `tests/scripts/`, `tests/tower/`, and `tests/jobs/`, plus the runner's own suite at `tests/runner.test.js`.
+`npm test` runs `tests/run.js`, which discovers every `tests/**/*.test.js` through `tests/lib/suites.js`. A suite whose precondition this machine cannot meet calls `skipSuite()` and the runner names the skip rather than hiding it. Suites live under `tests/hooks/`, `tests/scripts/`, `tests/tower/`, `tests/jobs/`, and `tests/docs/`, plus the runner's own suite at `tests/runner.test.js`.
 
 Every suite ends with `if (require.main === module) selfRun(<its export>);`, so `node tests/<path>.test.js` runs it alone; `tests/runner.test.js` fails naming a suite without the line.
 

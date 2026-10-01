@@ -9,6 +9,9 @@ const { spawn } = require('child_process');
 const { testUnless } = require('../../lib/harness');
 const { IS_WINDOWS, BASH, NO_RC, shellPath, which } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
+const {
+  alive, until, readPid, collect,
+} = require('../../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'tower', 'start.sh');
 
@@ -18,23 +21,6 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
 // SIGKILL skips the trap that removes it, so every run is handed a tracked one.
 const TMP = mkTmp('tower-start-tmp-');
 const TMP_ENV = { TMPDIR: shellPath(TMP) };
-
-const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
-
-const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
-
-// Poll until the predicate holds or the deadline passes - the script's own
-// down-taker polls at one-second ticks, so lifecycle assertions wait for it.
-const until = async (predicate, ms = 8000) => {
-  const end = Date.now() + ms;
-  while (Date.now() < end) {
-    if (predicate()) return true;
-    await sleep(100);
-  }
-  return predicate();
-};
-
-const readPid = (file) => Number(fs.readFileSync(file, 'utf8').trim());
 
 // The port takeover is aimed at nothing unless a test says otherwise, so a
 // run here never touches whatever this machine really has on 8693/4300.
@@ -61,14 +47,6 @@ const standIn = (code) => {
   const childEnv = { ...process.env };
   delete childEnv.FORCE_COLOR;
   return spawn(process.execPath, ['-e', code], { env: childEnv, stdio: ['ignore', 'pipe', 'ignore'] });
-};
-
-// What the user actually sees: both streams of a captured run, in one string.
-const collect = (child) => {
-  let out = '';
-  child.stdout.on('data', (chunk) => { out += chunk.toString(); });
-  child.stderr.on('data', (chunk) => { out += chunk.toString(); });
-  return () => out;
 };
 
 // The ports the output tests hand the wrapper: high and unused, so the reclaim

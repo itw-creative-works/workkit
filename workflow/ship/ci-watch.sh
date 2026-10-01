@@ -1,22 +1,14 @@
 #!/usr/bin/env bash
 # ci-watch: the ship's CI watch, a pushed sha in and one answer out. Usage:
 # ci-watch.sh <sha>. Exit 0 green (or no CI for push), 1 red, 2 usage, 3 not
-# queued yet, 4 gh failed; the lines and the retries: `workflow/README.md`, the
-# ship/ci-watch.sh row. The push trigger is a top-level `on:` naming `push` in
-# any of its YAML shapes; a `push` nested deeper is not one.
+# queued yet, 4 gh failed or the watch did not finish, 5 a watch already
+# running, 130 interrupted; the lines and the log: `workflow/README.md`, the
+# ship/ci-watch.sh row. The foreground runs this file as `--watch-body <sha>`,
+# detached, and tails its log. The push trigger is a top-level `on:` naming
+# `push` in any of its YAML shapes; a `push` nested deeper is not one.
 
-set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-
-# wk_jq and nothing else: the lines this prints are its own contract, not the
-# engine's voice, so the palette and the addresses in lib.sh stay unloaded.
-# shellcheck source=../lib/platform.sh
-. "$SCRIPT_DIR/../lib/platform.sh"
-
-TRIES="${WORKKIT_CI_WATCH_TRIES:-6}"
-WAIT="${WORKKIT_CI_WATCH_WAIT:-10}"
-LOG_TAIL=40
+# Functions only, called on the last line: bash reads a script as it runs, but
+# parses a function whole, and a watch outlives many edits to the kit.
 
 usage() {
   printf 'usage: ci-watch.sh <sha>\n' >&2
@@ -24,11 +16,21 @@ usage() {
   exit 2
 }
 
-[[ $# -eq 1 && "$1" =~ ^[0-9a-fA-F]{7,40}$ ]] || usage
-SHA="$1"
+repo_root() { git rev-parse --show-toplevel 2>/dev/null || pwd -P; }
 
-ERR_FILE="$(mktemp)"
-trap 'rm -f "$ERR_FILE"' EXIT
+# The sha a running watch names on its log's first line. A body just launched
+# may not have written it yet, so it is waited for, two seconds at most.
+watched_sha() {
+  local line='' waited=0
+  while ((waited < 20)); do
+    line="$(head -n 1 "$1" 2>/dev/null)" || line=''
+    [[ "$line" == 'ci-watch: watching '* ]] && break
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  [[ "$line" == 'ci-watch: watching '* ]] || { printf 'an unlogged sha\n'; return 0; }
+  printf '%s\n' "${line#ci-watch: watching }"
+}
 
 # The sha's runs, one `<id>\t<workflow>\t<url>` row each (nothing when there
 # are none yet), or exit 4 with gh's own first line of complaint. An answer
@@ -51,7 +53,7 @@ list_runs() {
 # `"on":` key and a CRLF file answer the same as the plain one.
 push_configured() {
   local root file
-  root="$(git rev-parse --show-toplevel 2>/dev/null)" || root="$(pwd -P)"
+  root="$(repo_root)"
   shopt -s nullglob
   for file in "$root"/.github/workflows/*.yml "$root"/.github/workflows/*.yaml; do
     if tr -d '\r' <"$file" | tr "'" '"' | awk '
@@ -108,24 +110,85 @@ watch_run() {
   return 1
 }
 
-rows=''
-for ((try = 1; try <= TRIES; try++)); do
-  rows="$(list_runs)" || exit $?
-  [[ -z "$rows" ]] || break
-  if ((try < TRIES)); then sleep "$WAIT"; fi
-done
+# platform.sh, detach.sh and (in the foreground) suite.sh, never lib.sh: the
+# lines this prints are its own contract, not the engine's voice, so the
+# palette and the addresses stay unloaded.
+load_libs() {
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+  # shellcheck source=../lib/platform.sh
+  . "$SCRIPT_DIR/../lib/platform.sh"
+  # shellcheck source=../lib/detach.sh
+  . "$SCRIPT_DIR/../lib/detach.sh"
+}
 
-if [[ -z "$rows" ]]; then
-  if push_configured; then
-    printf 'ci-watch: run not queued yet for %s\n' "$SHA" >&2
-    exit 3
+# The foreground: run this same script as the body, detached, and answer with
+# its code. A 3 with WK_HELD_PID set is a held lock, nothing run; a 3 without it
+# is the body's own "not queued". A code the body never logged is the runner
+# failing, which is no answer, never a red.
+foreground() {
+  local root log lock rc=0 last
+  # shellcheck source=../lib/suite.sh
+  . "$SCRIPT_DIR/../lib/suite.sh"
+  root="$(repo_root)"
+  log="$(wk_ci_log_path "$root")"
+  lock="$(wk_ci_lock_path "$root")"
+  wk_run_detached "$log" "$lock" -- "$BASH" "$SCRIPT_DIR/ci-watch.sh" --watch-body "$SHA" || rc=$?
+  if ((rc == 3)) && [[ -n "$WK_HELD_PID" ]]; then
+    printf 'ci-watch: a watch is already running for %s (pid %s); its output is in %s\n' \
+      "$(watched_sha "$log")" "$WK_HELD_PID" "$log" >&2
+    exit 5
   fi
-  printf 'ci-watch: no CI configured for push\n'
-  exit 0
-fi
+  last="$(tail -n 1 "$log" 2>/dev/null)" || last=''
+  if ((rc != 0)) && { [[ -z "$WK_RAN_CODE" ]] || [[ "$last" != "ci-watch: exit $rc" ]]; }; then
+    printf 'ci-watch: the watch did not finish, so there is no answer; its output is in %s\n' "$log" >&2
+    exit 4
+  fi
+  exit "$rc"
+}
 
-status=0
-while IFS=$'\t' read -r id name url; do
-  watch_run "$id" "$name" "$url" || status=1
-done <<<"$rows"
-exit "$status"
+# The body: its first line names the sha, its last is always its exit code.
+watch_body() {
+  local rows='' try status=0 id name url
+  wk_body_traps ci-watch 'rm -f "${ERR_FILE:-}"'
+  printf 'ci-watch: watching %s\n' "$SHA"
+  ERR_FILE="$(mktemp)"
+
+  for ((try = 1; try <= TRIES; try++)); do
+    rows="$(list_runs)" || exit $?
+    [[ -z "$rows" ]] || break
+    if ((try < TRIES)); then sleep "$WAIT"; fi
+  done
+
+  if [[ -z "$rows" ]]; then
+    if push_configured; then
+      printf 'ci-watch: run not queued yet for %s\n' "$SHA" >&2
+      exit 3
+    fi
+    printf 'ci-watch: no CI configured for push\n'
+    exit 0
+  fi
+
+  while IFS=$'\t' read -r id name url; do
+    watch_run "$id" "$name" "$url" || status=1
+  done <<<"$rows"
+  exit "$status"
+}
+
+main() {
+  local body=0
+  set -euo pipefail
+  load_libs
+  TRIES="${WORKKIT_CI_WATCH_TRIES:-6}"
+  WAIT="${WORKKIT_CI_WATCH_WAIT:-10}"
+  LOG_TAIL=40
+  if [[ $# -eq 2 && "$1" == --watch-body ]]; then
+    body=1
+    shift
+  fi
+  [[ $# -eq 1 && "$1" =~ ^[0-9a-fA-F]{7,40}$ ]] || usage
+  SHA="$1"
+  if ((body == 1)); then watch_body; fi
+  foreground
+}
+
+main "$@"

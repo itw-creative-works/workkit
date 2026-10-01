@@ -16,6 +16,32 @@ Agent definitions shipped by the workkit plugin. They surface in a session names
 
 `scout` / `worker` / `verifier` / `advisor` are the CAPABILITY CLASSES of the manager system. Their concrete model is supplied per spawn by the `manager/resolver` hook from `../hooks/manager/resources/ladder.json` (the tier SSOT) and the LIVE session model. A mid-session `/model` switch takes effect on the next spawn. The `model:` frontmatter in these four files is only the static fallback for when the hook is disabled; never treat it as the routing truth, and never pass a `model` param when dispatching them. Effort is the other way round: the ladder sets models only, and each class's effort lives in its own file's `effort:` frontmatter line, the one place Claude Code reads it (the Agent tool takes no effort per spawn). An agent file with no `effort:` line follows the session's.
 
+```mermaid
+%%{init: {"flowchart": {"curve": "linear"}}}%%
+flowchart TB
+    Human([human])
+    Manager["MANAGER<br>the main chat<br>judgment, dispatch, final verdicts"]
+    Advisor["advisor<br>plans, never implements"]
+
+    Human <--> Manager
+    Manager <-->|plans, hard calls| Advisor
+
+    subgraph Crew["the class agents"]
+        Scout["scout<br>read-only recon"]
+        Worker["worker<br>builds a brief"]
+        Verifier["verifier<br>blind review"]
+    end
+
+    Manager -->|recon| Scout
+    Manager -->|brief| Worker
+    Manager -->|diff + brief| Verifier
+    Scout -.-> Manager
+    Worker -.->|reports back| Manager
+    Verifier -.-> Manager
+```
+
+The manager is whichever model the chat runs on, so the topology follows the session's model: a frontier session never spawns the advisor, and a workhorse session consults it for plans and hard calls.
+
 Test scope is doctrine for every class, the manager included: a worker's mid-work proof is the test files it touched, red-green on the new cases; a verifier runs the narrowest command that checks the claim. None of them runs a package or root suite unless the brief asks or the finding is suite-scoped. The full suite runs once per tree, as `npm test` at the repo root before the commit: the shell records the tree it proved, and the gate checks the record (spec § The proof); `safety/suite-guard` bounces a repeat full run on a tree already proved green, from any class. The per-feature run is enforced too: `safety/proof-guard` runs the touched test files at the flip to `status:qa`. The rule is the spec's: `project-state.md` § The proof.
 
 Drift is verifier doctrine: every blind verification also asks the three DRIFT questions past its brief, parity siblings on the other surfaces, duplicates of anything hand-typed the diff adds (found by grep), and the docs the change made stale. They live in `../agents/verifier.md` § Behavior, which quotes the Parity mandate `../skills/review/SKILL.md` § 2 owns, and they are asked per group, each group's verifier over its group's diff, while the batch's one review panel carries the check across groups through its Parity lens (§ Batches). The worker carries the other half of the same ruling: a hand-typed thing found wrong once is grepped across every package, fixed at the sites the brief covers, and every other site is NAMED in the report (`../agents/worker.md`, fix the class). The wider counterpart is per SHIP, not per batch: `workkit:ship` reviews the whole ship diff every time, light when the full-panel review marker already covers it and full otherwise (`../skills/ship/SKILL.md` step 3.2b).

@@ -28,7 +28,7 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 - `agent:working` tells an agent claim from a human one. An agent runs `gh` as the owner, so the assignee cannot.
 - Remove `agent:working` when you release the issue, finished or not. The standards heal sweeps a claim left idle for 24 hours.
 - Never take `status:building` off by hand. It carries build and verify, phase 6 flips it to `status:qa`, the owner's passing check moves it to `status:complete`, and the ship close ends it.
-- The road and the rules: the workkit plugin's README and `docs/project-state.md`.
+- The road and the rules: the workkit plugin's `docs/project-state.md` § Labels.
 
 ## 0. Size the task: say the size out loud
 

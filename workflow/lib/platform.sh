@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # workflow/lib/platform.sh: the spellings that differ per platform and the read
 # shapes built on them, for the engine and the hooks. Sourced: functions, plus
-# the one MSYS export below. The shell twin of tests/lib/platform.js; every
-# function is the identity on macOS and Linux. What each answers:
+# the one MSYS export below. The shell twin of tests/lib/platform.js; on macOS
+# and Linux every function is the plain POSIX spelling. What each answers:
 # workflow/README.md, the lib/platform.sh row.
 
 # Git Bash makes `ln -s` a copy unless MSYS says otherwise (docs/hooks.md
@@ -104,6 +104,47 @@ wk_end_pid() {
   case "${OSTYPE:-}" in
     msys*|cygwin*) env kill -f -W "$1" ;;
     *) kill ${signal:+"$signal"} "$1" ;;
+  esac
+}
+
+# _wk_group_gone <pgid>: wait up to 1.5s for a process group to empty.
+_wk_group_gone() {
+  local waited=0
+  while kill -0 -- "-$1" 2>/dev/null; do
+    [ "$waited" -lt 15 ] || return 1
+    sleep 0.1
+    waited=$(( waited + 1 ))
+  done
+}
+
+# wk_end_run <pid>: end a detached run, the supervisor and everything under it.
+# Windows ends its process tree (taskkill /T; wk_end_pid where there is none).
+# Elsewhere the supervisor leads its own process group: INT first, so the body
+# logs its own code, then TERM, then KILL, 1.5s apart. Always 0.
+wk_end_run() {
+  case "${OSTYPE:-}" in
+    msys*|cygwin*)
+      if command -v taskkill >/dev/null 2>&1; then
+        taskkill //T //F //PID "$1" >/dev/null 2>&1 || true
+      else
+        wk_end_pid "$1" || true
+      fi
+      return 0
+      ;;
+  esac
+  kill -INT -- "-$1" 2>/dev/null || return 0
+  _wk_group_gone "$1" && return 0
+  kill -TERM -- "-$1" 2>/dev/null || return 0
+  _wk_group_gone "$1" && return 0
+  kill -KILL -- "-$1" 2>/dev/null || true
+}
+
+# wk_pid_alive <pid>: <pid> is running. A pid Node printed is a Windows pid
+# there, which bash's kill cannot see, so Node is asked.
+wk_pid_alive() {
+  case "${OSTYPE:-}" in
+    msys*|cygwin*) node -e 'process.kill(Number(process.argv[1]), 0)' "$1" 2>/dev/null ;;
+    *) kill -0 "$1" 2>/dev/null ;;
   esac
 }
 

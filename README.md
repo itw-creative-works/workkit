@@ -1,181 +1,95 @@
-# workkit
+<p align="center"><img src="docs/assets/hero.gif" width="640" alt="An issue card moves across a board from Inbox through Specced, Building and QA to Complete, ending on a Shipped v1.4.0 note"></p>
 
-The issue-pipeline workflow system as a Claude Code plugin. Install it and every session gains the same working standard: GitHub Issues as the single home for work items, labels as the pipeline, guard hooks that hold the line at commit time, a manager crew to delegate to, and the skills that drive the flow from "build this" to a shipped release.
+<h1 align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/mark-dark.svg"><img src="docs/assets/mark.svg" height="28" alt=""></picture> workkit</h1>
 
-## The road every item travels
+Install it, and every Claude Code session works the same way: each change starts as a GitHub issue, gets a spec you approve, is built and tested by a small crew of agents, and ships only when you say so.
 
-```mermaid
-%%{init: {"flowchart": {"curve": "linear"}}}%%
-flowchart TB
-    Form["issue form"] --> Inbox([status:inbox])
-    Note["chat note"] --> Inbox
-    File[".workkit/capture.md"] --> Inbox
-    Inbox --> Triage["Triage<br>route it out of the inbox<br>/workkit:triage"]
-    Triage -->|needs shaping| Spec["Write the spec"]
-    Triage -->|not now| Backlog([status:backlog])
-    Backlog -.->|revived| Triage
-    Spec -->|accepted, or a small item| Specced([status:specced])
-    Spec -->|a call to make| Blocked([status:blocked])
-    Blocked -.->|answered| Spec
-    Specced -->|claim: assign yourself| Building([status:building])
-    Building --> Build["Build<br>/workkit:feature"]
-    Build --> Verify["Verify"]
-    Verify -.->|findings| Build
-    Verify -->|clean| QA([status:qa])
-    QA -.->|findings| Build
-    QA -->|the check passes| Complete([status:complete])
-    Complete -->|the owner says ship| Ship["Ship<br>commit, CHANGELOG, Fixes #N<br>/workkit:ship"]
-    Ship --> Closed([closed])
-```
-
-Capture puts an item in `status:inbox`; triage is what routes it out. Five labels sit on the road: the flip to `status:specced` is the go-ahead to build, `status:building` carries the work from the moment it starts, `status:qa` is where it parks once it is built and verified (in your working tree, waiting on your check) and your passing check moves it to `status:complete`, the stage a ship reads from, until your word "ship" runs the ship and the close ends it. Related issues build together in parallel groups on the shared tree, each group a feature-developer and a test-developer (one worker when it has no test surface), park together after one review of the whole batch, and ride one commit, and the ship closes the lot. `blocked` and `backlog` are side pockets: an answered question rejoins the road, a revived item goes back through triage. You still claim an issue by assigning it to yourself: the assignee is who holds it, the label is what makes it visible in flight. The letter of every hop (what each label means, who may flip it, how a claim expires): [`docs/project-state.md`](docs/project-state.md).
-
-## The crew that works it
-
-```mermaid
-%%{init: {"flowchart": {"curve": "linear"}}}%%
-flowchart TB
-    Human([human])
-    Manager["MANAGER<br>the main chat<br>judgment, dispatch, final verdicts"]
-    Advisor["advisor<br>plans, never implements<br>Fable (session effort)"]
-
-    Human <--> Manager
-    Manager <-->|plans, hard calls| Advisor
-
-    subgraph Crew["the class agents"]
-        Scout["scout<br>read-only recon<br>Sonnet (medium)"]
-        Worker["worker<br>builds a brief<br>Opus (xhigh)"]
-        Verifier["verifier<br>blind review<br>Opus (xhigh)"]
-    end
-
-    Manager -->|recon| Scout
-    Manager -->|brief| Worker
-    Manager -->|diff + brief| Verifier
-    Scout -.-> Manager
-    Worker -.->|reports back| Manager
-    Verifier -.-> Manager
-```
-
-- The **manager** is whichever model your chat runs on, so the topology follows the model button: a frontier session never spawns the advisor, a workhorse session consults it for plans.
-- **Crew sizing is policy, not mood**: a small change is the manager alone; anything bigger is a pair of workers (one when the group has no test surface), a feature-developer who writes only the source and a test-developer who writes only the tests, both from the issue's Contract, and the verifier proves the tests fail without the source before it calls them green; every crew brief starts from its role template in `briefs/`, one per crew job, the manager filling in the task; the verifier runs twice, at claimed-done and over the review's fixes; the full review panel assembles only inside `workkit:review` and `workkit:ship`.
-- Tiers come from `hooks/manager/resources/ladder.json`; a repo's or a user's `.workkit/settings.json` `manager` block overrides them or turns the crew off. Effort is pinned in each agent's own frontmatter, never by the resolver.
+workkit is a plugin for [Claude Code](https://code.claude.com/docs/en/overview), Anthropic's coding agent for the terminal.
 
 ## Install
 
-The kit runs on macOS, on Windows under Git Bash, and on Linux; the one piece that is macOS only is the 9am schedule, which is launchd (the same brief runs in the cloud from your home repo everywhere else).
-
-From zero, one command:
-
 ```sh
-git clone <this repo> && cd workkit
+git clone https://github.com/ITW-Creative-Works/workkit.git
+cd workkit
 ./workflow/workkit.sh setup
 ```
 
-`setup` installs the plugin from this checkout, checks `gh`, loads the 9am daily-brief schedule (macOS launchd), creates your private HOME REPO and clones the tower project into `~/.workkit/tower`, seeds the cloud brief's workflow and the code it runs into that clone, wires the brief's two secrets onto that same home repo, never onto this one, which is the plugin everybody installs (the Claude token is minted only if you say yes at the prompt; the other is set from what your machine already knows), offers to enable the repo you are standing in, puts `workkit` on your PATH at `~/.local/bin`, printing the `export` line to add when that directory is not on it, never editing a shell rc, and points npm's `script-shell` at the kit's wrapper, so a root `npm test` records the tree it proved (a value someone else set is warned about and left; on Windows setup first builds the kit's script shell with the compiler every Windows ships). It is safe to re-run: every step checks before acting. `workkit doctor` reports what is set up and what has drifted; `workkit help` is the map.
+Setup prints one line per step, so you can see what it did.
+It asks before anything big: creating your home repo (a private GitHub repo for work that belongs to no single project), minting a Claude token, publishing the dashboard, and turning workkit on for the repo you are standing in.
+It is safe to run again: every step checks first and only fixes what is missing.
 
-The plugin alone is still two lines, if that is all you want:
+When it finishes, the `workkit` command is in `~/.local/bin` (setup prints the PATH line to add if that folder is not on it).
+`workkit doctor` shows what is set up, and `workkit help` lists every command.
+Start a new Claude Code session so the plugin loads.
+
+The plugin on its own, every setup step, and how to turn workkit on in another repo: [docs/setup.md](docs/setup.md).
+
+## First use
+
+Turn workkit on in a project of yours, then open Claude Code there:
 
 ```sh
-claude plugin marketplace add <path-to-checkout>
-claude plugin install workkit@workkit
+cd <your-project> && workkit enable
+claude
 ```
 
-The engine's stable address, `~/.claude/workkit` → this repo's `workflow/`, is installed by the standards heal itself the first time a session runs it in a participating repo, and from a real checkout only, so a fixture copy never takes the machine's address. A machine whose repos have not joined yet gets the same address from `workkit setup` or `workkit update`. The skills and anything scripting the standard directly reach the engine there.
+Type `/workkit:status` for a plain-language list of the open issues and what each one is waiting on.
+No issues yet? Tell Claude what you want built, and it files the first one.
 
-Plugins load at startup, so a new (or restarted) session is what puts a change into effect.
+Then type `work on #12`, with a real issue number.
+Claude checks the issue has an accepted spec, and interviews you to write one if not.
+Then it builds the change with tests, has it reviewed, and leaves it in your working tree for you to try.
 
-**It keeps itself current.** The session-start standards heal runs `workkit update --auto` once a day per repo, which re-renders the schedule when the checkout moved or the job template changed. It only ever updates a schedule you already installed, and it never creates a directory your machine does not have.
+When you are happy, say `ship`.
 
-## What ships
+## How it works
 
-### Hooks: the part that runs by itself
+Every piece of work travels one road, and each stop is a label on its GitHub issue (`status:inbox`, `status:specced`, and so on).
 
-| Hook | When | What it does for you |
+1. **Capture.** An idea becomes an issue: from an issue form, a chat note, or `workkit note "the thought"` in any shell. It lands in the inbox.
+2. **Triage.** `/workkit:triage` routes each new issue: shape it now, keep it for later, or close it.
+3. **Spec.** You and Claude write down what done looks like. Accepting the spec is the go-ahead to build.
+4. **Build.** Your chat acts as a manager. It hands the work to helper agents: one writes the code, one writes the tests, and a third checks both without seeing how they were made.
+5. **Check.** The finished work waits, uncommitted, until you have tried it and said it is good.
+6. **Ship.** Say `ship`. Claude writes the changelog entry, commits, releases, and closes the issue.
+
+Hooks guard each step on their own. For example, no code commits until the full test suite has passed on exactly what is being committed.
+The rules for every stop: [docs/project-state.md](docs/project-state.md).
+
+## What is inside
+
+| Part | Count | What it does |
 |---|---|---|
-| `workflow/standards` | session opens | Brings an opted-in repo to the standard once a day: labels, issue templates, the required-checks CI workflow and its CHANGELOG lint, branch protection where it can, `.workkit/` seeded and ignored. Then runs `workkit update --auto` to keep the machine's own installs current. Reports only what it fixed, and until `workkit setup` has run on this machine, every session is told to ask you to run it |
-| `docs/state-check` | session opens | Tells you about open `status:inbox` issues, unfiled captures, and document anomalies: a repo `CLAUDE.md` (delete, rename or merge into `AGENTS.md`) and an `AGENTS.md` over its budget |
-| `docs/session` | session opens, compaction included | Hands the session back its `.workkit/agents/session.md` (the task queue it keeps across a compaction or a restart) and says when the file has grown past being a queue |
-| `workflow/reload-guard` | session opens, then every message | Says once when the kit's agents, skills, or hook wiring changed after your session loaded: the case `/reload-plugins` exists for |
-| `manager/resolver` | before a subagent spawns | Picks that spawn's model from the tier ladder and your live session model |
-| `manager/addon` | when a workkit agent spawns | Adds your personal add-on for that agent, `~/.workkit/agents/<name>.md` if you wrote one, to its context: your additions stack onto the shipped agent instead of replacing it |
-| `manager/profile` | every message | Reminds a capable session it is the MANAGER and should delegate |
-| `docs/checkpoint` | every message | Catches any message about compacting, clearing, or starting a fresh chat and has the session save the conversation to the board first, so the verdicts and decisions in it survive; a second time in the same session, it saves only what you have said since |
-| `workflow/feature` | every message | Loads the `workkit:feature` skill on any message about working an issue or the queue (an issue number, "work on", "continue", "what next"), once per session, so the build procedure is in context before the work starts |
-| `safety/vendor-guard` | before any edit | Blocks edits to generated, vendored, and gitignored files |
-| `safety/commit-gate` | before `git commit` | No commit unless a green root `npm test` recorded the tree it commits, new source files come with tests, code carries a fresh review, and any CHANGELOG entry is in format. The gate never runs tests itself: a commit carrying code bounces until a green `npm test` at the repo root, run once per tree by anyone, proves the tree it stages; npm's `script-shell`, which `workkit setup` points at the kit's wrapper, is what records that run. A docs-only commit and a version-only bump in any `package.json` (exact pins equal to its version may move in lockstep with it) or in `.claude-plugin/plugin.json` need no record. Staging and committing in one command bounces too. The gate reads the index before your command runs, so it cannot see what an in-command `git add` will sweep in: stage first, then commit. And a check that stands down says so in one visible line, never in silence. A commit the gate cannot place (the session sitting in no repository at all, or a `pushd` into one) bounces rather than passing unchecked. Heal bookkeeping (the version stamp, and the deletion of a vendored linter copy with the `checks.yml` rewrite that retires it, alone) skips the review and new-file checks. An issue the message closes (`Fixes #N`) must already carry its `Proof:` comment, the same gate the proof guard holds on the flip and the close. And an open issue the message names anywhere (`#N`, never another repo's `owner/repo#N`) must be at `status:complete`: work waits uncommitted until the owner's pass |
-| `safety/commit-language` | before `git commit` | Bounces kill/destroy/dead wording in commit messages, and off-format subject lines |
-| `safety/release-taken` | before the release commit, and before `npm publish` | Checks the version you are about to release against the places it could already exist: npm, for every package with publish intent (workspace members included, or only the one a `npm publish --workspace=<name>` names), and the repo's GitHub releases for the `v<version>` tag. A version somebody already published bounces here, while the number is still free to change, instead of at the failed publish on top of a finished commit and tag. A check that cannot be made (offline, no auth) says so and stands aside |
-| `safety/tree-guard` | before a tree-discarding git command | Blocks `git checkout` with a pathspec, a `git switch` that discards local changes, `git restore` without `--staged`, every `git stash`, a forced `git clean`, and `git reset --hard`. The tree is shared, and revert-by-discard takes whatever else is uncommitted with it. Switching branches stays legal; `WORKKIT_ALLOW_DISCARD=1` in front of the command is your deliberate discard, and the guard says when it stood aside |
-| `safety/issue-guard` | before a `gh issue`/`gh pr` write, a GraphQL discussion/issue mutation, or a `gh api` REST write to an issue or pull endpoint | Blocks outbound text carrying a local `.env` value or a token-shaped string. Every repo is assumed public. Names the key or the kind, never the match |
-| `safety/proof-guard` | before a `gh issue edit` that adds `status:complete` or `status:qa`, or a `gh issue close` | The flip to `status:complete` and the close are blocked when the issue carries no comment starting `Proof:`, the record of which test layers actually ran. Closing something that was never built (`--reason "not planned"`) passes, and a `gh` that cannot answer stands the check down out loud. The flip to `status:qa` is a separate check: it runs the test files your change touched with `node --test` and blocks while one is red, and names a file `node --test` cannot prove (one that neither imports `node:test` nor runs itself) as not run, never as green. A flip or close the guard cannot place (a `cd`, `pushd` or `popd` ahead of it in the same command) bounces rather than being judged against the wrong repo: change directory in its own Bash call first |
-| `safety/spec-guard` | before a `gh issue edit` that adds `status:specced` | Holds the flip to `status:specced` while the issue's `## Spec` is written but carries no `### Contract` (its Files, Names and Cases); a `None needed: small item.` Spec passes |
-| `safety/suite-guard` | before a Bash command that runs the whole test suite | Bounces a second full run of the root suite (`npm test` at the repo root) on a tree a green root `npm test` already recorded, since running it again pays the same minutes twice. Your first run on a tree always runs; change a file and the next one runs too. Run the narrowest test that proves your change instead |
-| `safety/capture-guard` | before a read or a write of the capture file | Keeps `.workkit/capture.md` the owner's capture surface: reading it and clearing it open only during a triage run, adding to it never. Counting stays free |
-| `docs/board-guard` | after any edit | Holds `AGENTS.md` to its size budget |
-| `docs/changelog-guard` | after any edit | Holds a CHANGELOG entry to one short linked paragraph |
-| `docs/session-guard` | after any edit | Holds `.workkit/agents/session.md` to a lean task queue: bounces a write leaving it over 40 content lines or a bullet over 350 characters |
-| `safety/test-reminder` | after any edit | Asks once per file per session, never blocking, whether a code file no test names needs one; a "no" goes in the item's `Proof:` line |
-| `docs/change-tracker` | when a reply finishes | Nags about uncommitted work, a stale issue, and unfiled notes: once per change, then silent until something moves |
+| [Hooks](docs/hooks.md) | 26 | Run by themselves: at session start, before edits and commits, and when a reply ends |
+| [Agents](docs/agents.md) | 5 | The crew your chat delegates to, each briefed from a role template in [`briefs/`](briefs/) |
+| Skills | 9 | Procedures Claude follows when your words match, or when you type `/workkit:<name>` |
+| [Dashboard](tower/README.md) | 7 pages | `workkit tower` opens a local view of every board, the running agents, token spend, and repo health |
+| [Daily brief](jobs/README.md) | 1 job | A 9am summary of every repo, posted as a GitHub Discussion on your home repo |
 
-### Agents: the crew
+### Skills
 
-`workkit:scout` (read-only recon) · `workkit:worker` (builds a brief) · `workkit:verifier` (blind review and the review scorer) · `workkit:advisor` (frontier consult for plans and hard calls) · `workkit:reviewer` (compliance lens that derives its checklist from your repo's live docs).
+`workkit:feature` · `workkit:interview` · `workkit:diagnose` · `workkit:review` · `workkit:triage` · `workkit:status` · `workkit:checkpoint` · `workkit:migrate` · `workkit:ship`.
+Each is one `SKILL.md` of bullets, at most 120 non-blank lines with no line over 400 bytes; the test suite fails a skill that grows past that.
 
-The first four are capability classes. The resolver hook gives each spawn its model from `hooks/manager/resources/ladder.json`, so switching your own model mid-chat changes what the next spawn runs on.
+## Requirements
 
-### Skills: the part you (or Claude) trigger with words
+- git
+- the GitHub CLI (`gh`), signed in with `gh auth login`
+- jq
+- Node.js with npm, a current LTS release
+- the Claude Code CLI (`claude`)
+- for the dashboard only: a checkout of the OMEGA framework, which it is built with ([tower/README.md](tower/README.md) says where)
 
-`workkit:feature` · `workkit:interview` · `workkit:diagnose` · `workkit:review` · `workkit:triage` · `workkit:status` · `workkit:checkpoint` · `workkit:migrate` · `workkit:ship`. Most load themselves when your message matches their triggers; you can also type them as `/workkit:<name>`.
-
-Each skill is one `SKILL.md` of bullets, its body at most 120 non-blank lines with no line over 400 bytes; the test suite fails a skill that grows past that.
-
-### Tower: the dashboard
-
-Mission control over everything the system already knows, in two processes behind one command: `npm run tower` starts the JSON API on port 8693 and the dashboard on 4300 together.
-
-Seven pages, one focus each. **Overview** is the control room: a little of everything, every tile pointing into the page that owns the depth. **Board** is the full issue board across every repo, columns by `status:` label with filters. **Crew** draws the running Claude sessions as an org chart, each subagent under its parent with its class, model and token spend. **Usage** is where the tokens went: by model, by agent class, over thirty days, and what it cost. **Brief** is the mornings themselves: the newest brief rendered in place, then every published brief and summary as a card that opens its full text in a dialog. **Health** shows only what is broken (dirty repos with the fix named, unreadable checkouts, a stale brief) and says so plainly when nothing is. **Settings** holds the GitHub token a published copy reads with, and is the only page that works before one is handed over. An intake dialog sits on the topbar of all seven.
-
-A view over the system's own data, with two deliberate write paths: filing an issue from the intake dialog, and dragging a card between the Board's status columns, which really relabels it. Phone access goes through Tailscale. Reference: [`tower/README.md`](tower/README.md).
-
-### The daily brief (jobs/)
-
-The morning on the clock, and **one script for it: `jobs/morning.sh`, run by both schedulers**, your machine's 9am agent and the GitHub Actions workflow on your home repo. Each of its five steps asks whether the place it woke up in can do that step, and says so by name when it cannot. The summaries go first, on your machine, where the transcripts and the git history are. `jobs/claude-nightly.sh` writes the day that just ended up and publishes it as a Discussion on your home repo, with a weekly rollup on a Sunday and a monthly on the 1st, each reading its inputs back from the API. Then the seeded runner is reconciled: the copies of these scripts your home repo runs are refreshed by content from this checkout and pushed only when they changed, so the cloud step next in line never runs a stale generation. Then the brief, which runs **in the cloud**: it needs the board-sweeping token, and that lives on your home repo, so here the step is the trigger and nothing else. `workkit setup` seeded the workflow, the code it runs and the two secrets there, and the runner composes the brief, sends it through headless Claude on a capped budget, and publishes it as a `brief: <date>` Discussion, so a closed lid no longer means a quiet morning (a 17:30 UTC cron backs the trigger up). A trigger that cannot be made is a briefless morning with the reason in the log, never a half-brief composed from what your machine could reach; `npm run brief` composes and sends one here whenever you want to see it. Then it rebuilds the tower project and pushes the site to the home repo's `gh-pages` branch, after the brief has gone, so a build can never delay nine o'clock. Last it writes down the date of the newest brief actually on the board, so that a cloud that quietly stopped posting is named at your next session start instead of going unnoticed for a week. `bash jobs/install.sh` renders the launchd plist and loads the schedule (macOS, re-run safe). Detail: [`jobs/README.md`](jobs/README.md).
-
-### Engine: `workflow/`
-
-Plain shell and Node, no Claude Code knowledge: `workkit.sh` (the one command: `setup` · `update` · `doctor` · `publish` · `tower` · `enable` · `decline` · `heal` · `note`), `labels.json` (the label SSOT), `standards.sh` (the idempotent heal, plus `--enable` / `--decline` / `--state`), `home.sh` + `lib/discussions.sh` + `publish.sh` (the home repo's lifecycle, its Discussions API, and the gh-pages publish), `changelog/changelog.js` (the entry-format linter the hooks call), `changelog/changelog-links.js` (release-time commit links and contributor handles), `ship/` (the ship's four helpers: the publish plan, the release commit's edits, the qa read, the CI watch), `wk.sh` (the capture CLI: `wk.sh note "the thought"` drops a bullet into the nearest participating repo's `capture.md`, or files an issue on the home repo outside one), and the templates a repo receives when it opts in.
-
-## The home repo
-
-`workkit setup` creates one private repo, `<login>/workkit`, and clones it into `~/.workkit/tower`: the one git repo in the global layer, seeded from this kit's own `tower/app` so it is a real site project you can open, edit and build. `~/.workkit` itself stays a plain folder holding what only this machine knows, split by who writes it: `settings.json` is yours to edit (the site options: which repo the site publishes from, whether it publishes at all, and any custom domain; setup asks that publish question once, at the end of the run that built the path for it, and never asks again. A fresh yes is also asked for the domain, and any run that leaves the switch on publishes the site before it exits), `.repos.json` is the engine's roster and your declines, `.cache.json` is throwaway state, and `jobs/` is the job state; the clone is engine territory and carries nothing hand-written, not even a `.workkit/` of its own. The repo is where the work that belongs to no single project lives: its ISSUES are the cross-project queue, the nursery for projects that do not exist yet, and where a capture made outside every project lands directly (drained by every triage run from any repo, which also proposes graduating a cluster of captures into a real repo, created only on your word), its DISCUSSIONS are where the daily summaries are published, and its `gh-pages` branch is the dashboard built locally and served by GitHub Pages, the board readable from a phone, which bakes no data at all and speaks GitHub live with a token you paste into that browser once, reading the issues and moving and filing them just as the dashboard on your machine does. Nothing generated is committed as source. `workkit doctor` reports where the clone stands; the engine never force-pushes main.
-
-## Opting a repo in
-
-Participation is deliberate. `workkit enable <repo>` writes that repo's `.workkit/settings.json` yes; `workkit decline <repo>` records your personal no in `~/.workkit/.repos.json` (the engine underneath is `workflow/standards.sh --enable` / `--decline`). A repo that has answered neither hears one offer per session and is never written to.
-
-## Layout
-
-```
-.claude-plugin/   plugin.json + marketplace.json (this repo is its own marketplace)
-hooks/            hooks.json + the hook groups, resolved via ${CLAUDE_PLUGIN_ROOT}
-agents/           the crew (namespaced workkit:<name>)
-briefs/           the role brief templates, one per crew job (the manager fills the slots)
-skills/           the nine workflow skills (namespaced workkit:<name>)
-workflow/         the agent-agnostic engine
-tower/            mission control: api/ (the JSON API) + app/ (the OMEGA dashboard)
-jobs/             the 9am job: summaries, brief, publish: payload builders, runners, launchd schedule
-scripts/          four scripts: the review and triage markers, red-proof (the verifier's red run), review-covers (the ship's review tier)
-docs/             project-state.md (the spec) · agents.md (the crew contract) · hooks.md (what each hook does) · history-purge.md (the rewrite runbook)
-tests/            npm test
-```
+It runs on macOS, on Linux, and on Windows under Git Bash. The 9am schedule on your own machine is macOS only; everywhere else the same brief runs in the cloud from your home repo.
 
 ## Docs
 
-- [`docs/project-state.md`](docs/project-state.md): the spec: labels, capture and triage, issue anatomy, queue semantics, `.workkit/`, plans, `_attic/`, the global layer, the migration recipe
-- [`AGENTS.md`](AGENTS.md): architecture overview for agent sessions
-- [`docs/agents.md`](docs/agents.md) · [`workflow/README.md`](workflow/README.md): the crew contract and the engine reference
-- [`docs/hooks.md`](docs/hooks.md): what each hook does, one section apiece: when it fires, what it blocks, and where it stands down
-- [`jobs/README.md`](jobs/README.md): the daily job: the summaries step, the brief, payloads, runners, schedule, install
+- [docs/setup.md](docs/setup.md): every install option, what setup does step by step, and the folder layout
+- [docs/project-state.md](docs/project-state.md): the rules: labels, capture and triage, specs, the proof, shipping
+- [docs/agents.md](docs/agents.md): the crew, how big a crew each job gets, and how work is handed to it
+- [docs/hooks.md](docs/hooks.md): what each hook does, when it fires, and where it stands down
+- [workflow/README.md](workflow/README.md): the engine behind the `workkit` command
+- [AGENTS.md](AGENTS.md): the architecture, for agent sessions
 
 ## License
 

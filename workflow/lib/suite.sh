@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # workflow/lib/suite.sh: the proved-tree record: the tree a green root suite
-# proved, where it is kept, and the two tree ids it is compared with. Sourced,
-# functions only, by script-shell.sh (the writer) and the hooks' _lib.sh (the
-# readers); it reads wk_jq, wk_marker_path and wk_git_path from platform.sh.
+# proved, where it is kept, and the two tree ids it is compared with, plus the
+# paths of the detached runs' logs and locks. Sourced, functions only, by
+# script-shell.sh (the writer), ship/ci-watch.sh and the hooks' _lib.sh; it reads
+# wk_jq, wk_marker_path and wk_git_path from platform.sh.
 
 # wk_has_test_script <dir>: <dir>/package.json declares scripts.test as a
 # non-empty string. Consumers: safety/commit-gate, hook_test_package_dir.
@@ -13,6 +14,24 @@ wk_has_test_script() {
 
 # wk_suite_marker_path <repo_root>: the record's file for the repo.
 wk_suite_marker_path() { wk_marker_path claude-suite-marker "$1"; }
+
+# wk_log_path <repo_root> <name>: where a detached run logs. Inside .workkit/
+# only when git ignores it there, else a marker file, so a log never changes
+# the tree hash.
+wk_log_path() {
+  if git -C "$1" check-ignore -q ".workkit/$2" 2>/dev/null; then
+    printf '%s\n' "$1/.workkit/$2"
+  else
+    wk_marker_path "claude-$2" "$1"
+  fi
+}
+
+# The root suite's log and lock, and the CI watch's twins. The lock is a
+# directory taken by mkdir (lib/detach.sh).
+wk_suite_log_path() { wk_log_path "$1" suite.log; }
+wk_suite_lock_path() { wk_marker_path claude-suite-lock "$1"; }
+wk_ci_log_path() { wk_log_path "$1" ci.log; }
+wk_ci_lock_path() { wk_marker_path claude-ci-watch-lock "$1"; }
 
 # wk_tree_hash <repo_root> [-u]: the WORKING tree's `git write-tree` id, from
 # a throwaway index seeded by a copy of the real one: untracked files count

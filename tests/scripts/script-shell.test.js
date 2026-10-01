@@ -1,77 +1,25 @@
 // Tests for workflow/script-shell.sh, npm's script shell: a green root `npm test`
 // records the tree it proved, and every other script passes straight through.
-// npm is spawned directly, with the wrapper named by `--script-shell`.
+// The detached run and the checks before it are script-shell-detached.test.js;
+// the world both run npm in is tests/lib/script-shell.js.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, skipSuite, summary, selfRun,
+  group, test, assert, assertEq, summary, selfRun,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NODE_DIR, NO_RC, SYSTEM_PATH, shellPath, which, joinPath, homeEnv,
+  IS_WINDOWS, BASH, NO_RC, shellPath, which, joinPath, stubTool, NODE_DIR, SYSTEM_PATH,
 } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
-const { suiteMarkerPath, reviewMarkerPath, treeHash } = require('../lib/suite-record');
+const { reviewMarkerPath, suiteLogPath, treeHash } = require('../lib/suite-record');
+const { scratchNpmrc, WRAPPER, EXE_ENV } = require('../hooks/commit-gate/helpers');
 const {
-  scratchNpmrc, WRAPPER, EXE_CLAUDE_HOME, EXE_ENV,
-} = require('../hooks/commit-gate/helpers');
+  cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded,
+} = require('../lib/script-shell');
 
 const ROOT = path.join(__dirname, '..', '..');
 const GATE = path.join(ROOT, 'hooks', 'safety', 'commit-gate', 'run.sh');
-
-const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
-
-const git = (dir, ...args) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args],
-  { cwd: dir, encoding: 'utf8' }).stdout.trim();
-
-const writeJson = (file, value) => {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(value));
-};
-
-// A committed repo: the root package.json (<pkg> merged over a name), app.js,
-// and any <extra> files by relative path.
-const mkRepo = (pkg, extra = {}) => {
-  const dir = mkTmp('script-shell-');
-  git(dir, 'init', '-q');
-  writeJson(path.join(dir, 'package.json'), { name: 'fixture', ...pkg });
-  fs.writeFileSync(path.join(dir, 'app.js'), 'const x = 1;\n');
-  for (const [rel, value] of Object.entries(extra)) writeJson(path.join(dir, rel), value);
-  git(dir, 'add', '-A');
-  git(dir, 'commit', '-q', '-m', 'seed');
-  return dir;
-};
-
-// A scratch machine: its own home and TMPDIR, node and npm on PATH; on Windows
-// a claude home through which the built executable reaches this checkout.
-const mkWorld = () => {
-  const root = mkTmp('script-shell-world-');
-  const home = path.join(root, 'home');
-  const tmp = path.join(root, 'tmp');
-  fs.mkdirSync(home, { recursive: true });
-  fs.mkdirSync(tmp, { recursive: true });
-  return {
-    root,
-    tmp,
-    env: homeEnv(home, {
-      TMPDIR: shellPath(tmp),
-      PATH: joinPath(NODE_DIR, SYSTEM_PATH),
-      ...(IS_WINDOWS ? { WORKFLOW_CLAUDE_HOME: EXE_CLAUDE_HOME } : {}),
-    }),
-  };
-};
-
-// npm run in <cwd> with <args>, through the wrapper unless `shell` names another,
-// with <extra> merged over the world's env. The flag goes first: after a `--`
-// npm hands it to the script instead.
-const npm = (world, cwd, args, shell = WRAPPER, extra = {}) => {
-  const res = spawnSync(BASH, [...NO_RC, '-c', 'exec npm "$@"', 'npm', `--script-shell=${shell}`, ...args], {
-    cwd, env: { ...world.env, ...extra }, encoding: 'utf8', timeout: 60000,
-  });
-  assert(res.status !== null, `npm ${args.join(' ')} finished: ${res.error || ''}`);
-  return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
-};
 
 // A copy of the wrapper and its libs under <world.root>/claude/workkit, so a
 // case may rewrite it. On Windows the built exe reaches the copy through
@@ -89,11 +37,6 @@ const mkWrapperCopy = (world) => {
     : { shell: shellPath(file), env: {}, file };
 };
 
-const recorded = (world, repo) => {
-  const marker = suiteMarkerPath(world.tmp, repo);
-  return fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8') : undefined;
-};
-
 // The commit gate asked about a plain code commit in <repo>, on a machine whose
 // npm names the wrapper, the gate helpers' default.
 const gateOn = (world, repo) => spawnSync(BASH, [...NO_RC, shellPath(GATE)], {
@@ -104,8 +47,7 @@ const gateOn = (world, repo) => spawnSync(BASH, [...NO_RC, shellPath(GATE)], {
 });
 
 const run = async () => {
-  if (!WRAPPER) skipSuite('no C# compiler on this Windows, so the script shell cannot be built');
-  if (!which('npm', NODE_DIR)) skipSuite('no npm beside this node, so no script shell is ever called');
+  skipWithoutWrapper();
 
   group('script-shell: the root test records the tree it proved');
 
@@ -136,21 +78,28 @@ const run = async () => {
     const res = npm(world, repo, ['test']);
     assertEq(res.code, 0, 'the run itself is green');
     assertEq(recorded(world, repo), undefined, 'the tree it ended on is not the tree it proved');
-    assert(res.err.includes('script-shell: the suite passed, but the tree changed during the run, so no record was written; run npm test again\n'),
-      `one stderr line says why, got: ${res.err}`);
+    assert(res.out.includes('script-shell: the suite passed, but the tree changed during the run, so no record was written; run npm test again\n'),
+      `one line on the terminal says why, got: ${res.out}`);
     cleanup(world.root); cleanup(repo);
   });
 
   await test('a tree that cannot be hashed after the run: exit 1, the line names the hash, no record', () => {
     const world = mkWorld();
-    // The suite turns the temp folder into a file, so the hash before it runs
-    // succeeds and the one after it fails at mktemp.
-    const repo = mkRepo({ scripts: { test: 'rm -rf "$TMPDIR" && : > "$TMPDIR"' } });
-    const res = npm(world, repo, ['test']);
-    assertEq(res.code, 1, `a green run with no hash is not green, got: ${res.code} ${res.err}`);
-    assert(res.err.includes('script-shell: the suite passed, but the tree of ')
-      && res.err.includes(' could not be hashed, so no record was written\n'), `the line names the hash, got: ${res.err}`);
-    assert(!res.err.includes('the tree changed during the run'), `never read as a changed tree, got: ${res.err}`);
+    // A git ahead on PATH refuses `add` once the suite has left its flag, so the
+    // hash before the run succeeds and the one after it fails.
+    const bin = path.join(world.root, 'git-shim');
+    const flag = path.join(world.root, 'break-hash');
+    fs.mkdirSync(bin);
+    stubTool(bin, 'git', ['#!/bin/bash',
+      `if [ -e "${shellPath(flag)}" ]; then for a in "$@"; do [ "$a" = add ] && { echo 'git: add refused' >&2; exit 1; }; done; fi`,
+      `exec "${shellPath(which('git'))}" "$@"`]);
+    const repo = mkRepo({ scripts: { test: ': > "$WK_FLAG"' } });
+    const res = npm(world, repo, ['test'], WRAPPER, { PATH: joinPath(bin, NODE_DIR, SYSTEM_PATH), WK_FLAG: shellPath(flag) });
+    assert(fs.existsSync(flag), 'the suite ran and left its flag');
+    assertEq(res.code, 1, `a green run with no hash is not green, got: ${res.code} ${res.out} ${res.err}`);
+    assert(res.out.includes('script-shell: the suite passed, but the tree of ')
+      && res.out.includes(' could not be hashed, so no record was written\n'), `the line names the hash, got: ${res.out}`);
+    assert(!res.out.includes('the tree changed during the run'), `never read as a changed tree, got: ${res.out}`);
     assertEq(recorded(world, repo), undefined, 'no record was written');
     cleanup(world.root); cleanup(repo);
   });
@@ -169,8 +118,10 @@ const run = async () => {
     assert(res.out.includes('rewrote'), `the suite ran to its end, got: ${res.out}`);
     assertEq(fs.readFileSync(kit.file, 'utf8').split('\n')[0], '# a line added while the suite ran',
       'the wrapper on disk was rewritten while it ran');
-    assert(!res.err.includes('command not found') && !res.err.includes('script-shell:'),
-      `the running shell read no fragment, got: ${res.err}`);
+    // The body's lines reach stdout through the log; its closing line is the one expected.
+    const shellLines = res.out.split('\n').filter((l) => l.startsWith('script-shell:'));
+    assert(!`${res.out}${res.err}`.includes('command not found') && !res.err.includes('script-shell:')
+      && shellLines.every((l) => l === 'script-shell: exit 0'), `the running shell read no fragment, got: ${res.out} ${res.err}`);
     assertEq(recorded(world, repo), `${tree}\n`, 'the record holds the tree it proved');
     cleanup(world.root); cleanup(repo);
   });
@@ -182,8 +133,8 @@ const run = async () => {
     fs.writeFileSync(path.join(world.tmp, 'claude-suite-marker'), '');
     const res = npm(world, repo, ['test'], kit.shell, kit.env);
     assertEq(res.code, 1, `a green run with no record is not green, got: ${res.code} ${res.err}`);
-    assert(res.err.includes('script-shell: the suite passed, but the record of ')
-      && res.err.includes(' could not be written'), `the script-shell line says why, got: ${res.err}`);
+    assert(res.out.includes('script-shell: the suite passed, but the record of ')
+      && res.out.includes(' could not be written'), `the script-shell line says why, got: ${res.out}`);
     assertEq(recorded(world, repo), undefined, 'no record was written');
     cleanup(world.root); cleanup(repo);
   });
@@ -231,6 +182,16 @@ const run = async () => {
     assertEq(wrapped.code, 4, `the script's code comes back, got: ${wrapped.code}`);
     assertEq(wrapped.out, plain.out, 'the wrapper adds nothing to stdout');
     assertEq(recorded(world, repo), undefined, 'only the test event records');
+    cleanup(world.root); cleanup(repo);
+  });
+
+  await test('a narrowed root run and another script run in the foreground: no suite log', () => {
+    const world = mkWorld();
+    const repo = mkRepo({ scripts: { build: 'echo built', test: 'echo ran' } });
+    assertEq(npm(world, repo, ['test', '--', 'only/one.test.js']).code, 0, 'the narrowed run is green');
+    assertEq(npm(world, repo, ['run', 'build']).code, 0, 'the other script is green');
+    assert(!fs.existsSync(suiteLogPath(world.tmp, repo)), 'no suite log under TMPDIR');
+    assert(!fs.existsSync(path.join(repo, '.workkit', 'suite.log')), 'no suite log in the repo');
     cleanup(world.root); cleanup(repo);
   });
 

@@ -334,27 +334,27 @@ if [ "$has_code" -eq 1 ] && [ "$bookkeeping" -eq 0 ]; then
   fi
 fi
 
-# 3. CHANGELOG entries this commit adds must match the format (the rules live in
-# workflow/changelog/changelog.js, shared with docs/changelog-guard; this is the
-# authority, since it sees hand edits). Under -a the working tree is judged.
-if linter="$(hook_changelog_linter 2>/dev/null)"; then
+# 3. CHANGELOG entries this commit adds must match the format: wk_changelog_lint
+# (workflow/lib/changelog.sh), shared with script-shell.sh; this is the
+# authority, since it sees hand edits. Under -a the working tree is judged.
+if wk_changelog_linter >/dev/null; then
   lint_source="--staged"
   [ "$has_all_flag" -eq 1 ] && lint_source=""
-  changelogs="$(printf '%s\n' "$files" | grep -E '(^|/)CHANGELOG\.md$' || true)"
+  lint_paths=()
+  while IFS= read -r path; do
+    if wk_is_changelog "$path"; then lint_paths+=("$path"); fi
+  done <<<"$files"
   # A pathspec commit bypasses staging, so the file list is unknowable: the
   # gate already treats those strictly. Judge the repo's own CHANGELOG from the
   # working tree, which is what such a commit would carry.
   if [ "$has_pathspec" -eq 1 ] && [ -f "$repo_root/CHANGELOG.md" ]; then
-    changelogs="CHANGELOG.md"
+    lint_paths=(CHANGELOG.md)
     lint_source=""
   fi
-  while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    # shellcheck disable=SC2086  # lint_source is one optional flag, not a path
-    if ! lint_out=$(cd "$repo_root" && node "$linter" "$repo_root/$path" --added-only $lint_source 2>&1); then
-      block "the CHANGELOG entry does not match the format (see docs/project-state.md). $lint_out"
-    fi
-  done <<<"$changelogs"
+  # shellcheck disable=SC2086  # lint_source is one optional flag, not a path
+  if ! lint_msg=$(wk_changelog_lint "$repo_root" $lint_source ${lint_paths[@]+"${lint_paths[@]}"} 2>&1); then
+    block "$lint_msg"
+  fi
 fi
 
 # 4. Collapse on ship: a commit closing an issue carries its CHANGELOG entry
@@ -364,7 +364,11 @@ fi
 trailer_re='(^|[^[:alnum:]])(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+#[0-9]+'
 if [ "$has_pathspec" -eq 0 ] && [ -f "$repo_root/CHANGELOG.md" ] \
   && printf '%s' "$cmd" | grep -Eqi "$trailer_re"; then
-  if ! printf '%s\n' "$files" | grep -Eq '(^|/)CHANGELOG\.md$'; then
+  changelog_staged=0
+  while IFS= read -r path; do
+    if wk_is_changelog "$path"; then changelog_staged=1; fi
+  done <<<"$files"
+  if [ "$changelog_staged" -eq 0 ]; then
     block "the message closes an issue (Fixes/Closes/Resolves #N) but no CHANGELOG.md is staged. An issue closes against its CHANGELOG entry (docs/project-state.md): add the entry under [Unreleased], stage CHANGELOG.md, then commit."
   fi
 fi
@@ -452,7 +456,7 @@ if [ "$has_code" -eq 1 ] && wk_has_test_script "$repo_root"; then
   elif script_shell_unwired; then
     block "the commit carries code and no green run proves this tree, and npm's script-shell does not point at the kit's wrapper, so a root \`npm test\` writes no record. Run \`workkit setup\` once, then \`npm test\` at the repo root, then commit."
   else
-    block "the commit carries code and no green run proves this tree. Run \`npm test\` at the repo root (once per tree; the shell records a green run), then commit."
+    block "the commit carries code and no green run proves this tree. Run \`npm test\` at the repo root (once per tree; the shell records a green run and writes its output to $(wk_suite_log_path "$repo_root")), then commit."
   fi
 elif wk_has_test_script "$repo_root"; then
   # The stand-down is deliberate but never silent: a repo that defines a suite

@@ -10,14 +10,14 @@ const {
   group, test, skip, assert, assertEq, summary, selfRun,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_BASH, NODE_DIR, which, joinPath, cygpathStub,
+  IS_WINDOWS, SYSTEM_BASH, NODE_DIR, shellPath, which, joinPath, cygpathStub,
 } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
 const {
   skipWithoutDigest, TMP, stage, stageDeep, touchMarker, dropMarker, runHook, standDownMessage, cleanup,
   pkg, suiteRan, mkReleaseRepo, WRAPPER, scratchNpmrc,
 } = require('./helpers');
-const { plantRecord } = require('../../lib/suite-record');
+const { plantRecord, suiteLogPath } = require('../../lib/suite-record');
 
 const PROVED = 'commit-gate: suite proved: a green root `npm test` recorded this tree.';
 const NO_CODE = 'commit-gate: suite not run: the commit carries no code (docs-only or version-stamp-only).';
@@ -289,6 +289,17 @@ const run = async () => {
     const out = runHook(dir, 'git commit -m "feat: thing"', undefined, npmEnv(scratchNpmrc(WRAPPER)));
     recordRequired(out, dir);
     assert(!out.stderr.includes('workkit setup'), `no setup hint, got: ${out.stderr}`);
+    cleanup(dir);
+  });
+
+  await (WRAPPER ? npmTest : (n) => skip(n, 'no C# compiler on this Windows, so the script shell cannot be built'))('no record, the wrapper wired: the bounce names the suite log', () => {
+    const dir = codeCommit();
+    const out = runHook(dir, 'git commit -m "feat: thing"', undefined, npmEnv(scratchNpmrc(WRAPPER)));
+    // A repo that does not ignore .workkit/ keeps its log under TMPDIR.
+    const log = shellPath(suiteLogPath(TMP, dir));
+    assertEq(out.code, 2, `no record blocks, got: ${out.stderr}`);
+    assert(out.stderr.includes(`the commit carries code and no green run proves this tree. Run \`npm test\` at the repo root (once per tree; the shell records a green run and writes its output to ${log}), then commit.`),
+      `the bounce names the log ${log}, got: ${out.stderr}`);
     cleanup(dir);
   });
 

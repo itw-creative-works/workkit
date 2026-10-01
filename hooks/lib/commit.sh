@@ -1,11 +1,10 @@
 #!/bin/bash
 # hooks/lib/commit.sh: the command-text reads the guards share: the heredoc and
 # quote strips, the `NAME=1` escape, the redirect `&` fold, the directory-change
-# test, the git-commit finder with its two internal helpers, the redirect-word
-# test, and hook_changelog_linter, the path to the engine's CHANGELOG linter.
-# SOURCED by hooks/_lib.sh, never executed, and it runs nothing at load: it
-# defines functions and sets nothing. It reads no name of the entry's; the
-# linter's path is resolved from this file's own location.
+# test, the git-commit finder with its two internal helpers, and the
+# redirect-word test. SOURCED by hooks/_lib.sh, never executed, and it runs
+# nothing at load: it defines functions and sets nothing. It reads no name of
+# the entry's.
 
 # hook_strip_heredocs <cmd>: remove heredoc bodies for command detection, since
 # a body is file content. Off entirely when a heredoc feeds an interpreter
@@ -286,18 +285,4 @@ hook_redirect_span() {
     attached) printf '1\n' ;;
     *) printf '0\n' ;;
   esac
-}
-
-# Resolve the workflow engine's CHANGELOG linter: the single home for the
-# entry rules, shared by the docs/changelog-guard hook (write time) and the
-# safety/commit-gate hook (commit time). Prints the path; returns non-zero when
-# node or the engine is missing, so both callers fail open the same way.
-hook_changelog_linter() {
-  command -v node >/dev/null 2>&1 || return 1
-  # Resolve from this file's physical location so the climb out of hooks/lib/
-  # lands on the real workflow/; WORKFLOW_DIR overrides it for tests.
-  local dir="${WORKFLOW_DIR:-}"
-  [ -n "$dir" ] || dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/../../workflow"
-  [ -f "$dir/changelog/changelog.js" ] || return 1
-  printf '%s\n' "$dir/changelog/changelog.js"
 }

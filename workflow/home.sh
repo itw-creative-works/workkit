@@ -46,6 +46,8 @@ WK_HOME_RUNNER_FILES=(
   'workflow/lib/participation.sh:brief/workflow/lib/participation.sh'
   'workflow/lib/slug.sh:brief/workflow/lib/slug.sh'
   'workflow/lib/suite.sh:brief/workflow/lib/suite.sh'
+  'workflow/lib/changelog.sh:brief/workflow/lib/changelog.sh'
+  'workflow/lib/detach.sh:brief/workflow/lib/detach.sh'
   'workflow/slug.js:brief/workflow/slug.js'
   'workflow/user-dir.js:brief/workflow/user-dir.js'
   'workflow/ship/semver.js:brief/workflow/ship/semver.js'

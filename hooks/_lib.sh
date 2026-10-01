@@ -71,6 +71,11 @@ hook_sha1() { wk_sha1 "$@"; }
 # shellcheck source=../workflow/changelog/changelog-job.sh
 . "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../workflow/changelog/changelog-job.sh"
 
+# The CHANGELOG format check (wk_changelog_lint and its linter), engine names;
+# commit-gate check 3 and docs/changelog-guard share it with script-shell.sh.
+# shellcheck source=../workflow/lib/changelog.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../workflow/lib/changelog.sh"
+
 # The helper groups: each defines functions and sets nothing, so sourcing runs
 # nothing and every name they read is defined above.
 # shellcheck source=./lib/markers.sh

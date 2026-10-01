@@ -26,6 +26,17 @@ const run = async () => {
     cleanup(dir);
   });
 
+  await test('a staged 62-word entry: blocked with the shared message and the linter\'s word-cap line', () => {
+    const dir = mkRepo();
+    stage(dir, 'CHANGELOG.md', CHANGELOG(`- ${ISSUE} - ${new Array(61).fill('word').join(' ')} end.`));
+    const { code, stderr } = runHook(dir, 'git commit -m "docs: changelog"');
+    assertEq(code, 2, 'blocked');
+    assert(stderr.startsWith('commit-gate: BLOCKED this commit: the CHANGELOG entry does not match the format (see docs/project-state.md). '),
+      `the gate's wording, got: ${stderr}`);
+    assert(stderr.includes('[word-cap] 62 words (max 50)'), `with the linter's line, got: ${stderr}`);
+    cleanup(dir);
+  });
+
   await test('a staged entry in the format commits', () => {
     const dir = mkRepo();
     stage(dir, 'CHANGELOG.md', CHANGELOG(`- ${ISSUE} - Plugins install from settings.json.`));
