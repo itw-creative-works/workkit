@@ -1,16 +1,24 @@
 // Tests for hooks/safety/suite-guard, the PreToolUse hook that bounces a REPEAT
 // full suite run (docs/project-state.md § The proof): the first full run on a
-// tree passes, and a second one on a tree the suite marker records as proved
-// bounces. A narrowed run and a mention always pass.
+// tree passes this check, and a second one on a tree the suite marker records as
+// proved bounces. A root run also bounces while an open issue is still building. A
+// narrowed run and a mention always pass.
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
-const { BASH, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../lib/platform');
+const {
+  BASH, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath, systemPathWith,
+} = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { suiteMarkerPath, plantRecord } = require('../lib/suite-record');
+const {
+  makeGhStub, ghCalls, pathWithoutGh, dropPathWithoutGh,
+} = require('../lib/gh-stub');
+const { isCall, fmtCalls } = require('../lib/argv-log');
+const { mkOriginRepo, FIXTURE_ORIGIN } = require('../lib/git-repo');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'suite-guard', 'run.sh');
 const LOADER = path.join(__dirname, '..', '..', 'hooks', 'loader.sh');
@@ -33,6 +41,19 @@ const prove = (dir) => {
   return dir;
 };
 const mkProved = (opts) => prove(mkRepo(opts));
+
+// A repo with an origin, the only kind whose open issues the guard asks gh for.
+const mkOrigin = (opts) => mkOriginRepo(mkRepo(opts), FIXTURE_ORIGIN);
+
+// gh's answer to `issue list --state open --json number,labels`.
+const issue = (number, ...labels) => ({ number, labels: labels.map((name) => ({ name })) });
+const BUILDING = [issue(12, 'status:qa', 'type:bug'), issue(7, 'status:building', 'type:feature')];
+const WORKING = [issue(9, 'status:qa', 'agent:working'), issue(10, 'status:complete', 'agent:working')];
+const SETTLED = [issue(12, 'status:qa', 'type:bug'), issue(14, 'status:complete', 'type:chore')];
+const BOUNCE = 'suite-guard: the full suite runs once, at the commit, after every item in the tree is parked and passed;';
+const NARROW = 'Run the narrowest test that proves the change (node tests/<dir>/<name>.test.js).';
+const withStub = (stub) => ({ PATH: systemPathWith(stub.binDir) });
+const listed = (stub) => ghCalls(stub).filter((c) => isCall(c, 'issue', 'list'));
 
 const runArgv = (argv, command, cwd, env = {}, bash = BASH) => {
   const res = spawnSync(bash, argv, {
@@ -212,6 +233,88 @@ const run = async () => {
     assertEq(runHook('npm test', path.join(dir, 'sub')).code, 2, 'a package without a script is no test boundary');
     cleanup(dir);
   });
+
+  group('suite-guard: a root run while an item is still building');
+
+  await test('a root run with an open issue at status:building bounces, naming it', () => {
+    const dir = mkOrigin();
+    const stub = makeGhStub({ list: BUILDING });
+    const { code, stderr } = runHook('npm test', dir, withStub(stub));
+    assertEq(code, 2, 'the full run waits until every item is parked and passed');
+    assert(stderr.startsWith(BOUNCE), `opens with the rule, got: ${stderr}`);
+    assert(stderr.includes('#7'), `names the building issue, got: ${stderr}`);
+    assert(stderr.includes('status:building'), `names its label, got: ${stderr}`);
+    assert(!stderr.includes('#12'), `names no issue that is not building, got: ${stderr}`);
+    assert(stderr.includes(NARROW), `names the narrow run, got: ${stderr}`);
+    assert(listed(stub).some((c) => c.includes('--label') && c.includes('status:building')),
+      `filtered on the server by the stage label, got: ${fmtCalls(ghCalls(stub))}`);
+    cleanup(stub.dir);
+    cleanup(dir);
+  });
+
+  await test('an open issue carrying agent:working past the park passes, silently', () => {
+    const dir = mkOrigin();
+    const stub = makeGhStub({ list: WORKING });
+    const { code, stderr } = runHook('npm test', dir, withStub(stub));
+    assertEq(code, 0, 'an agent:ok item keeps its claim through the park, and only status:building holds the run');
+    assertEq(stderr, '', 'and says nothing');
+    assert(listed(stub).length > 0, `asked gh for the open issues, got: ${fmtCalls(ghCalls(stub))}`);
+    cleanup(stub.dir);
+    cleanup(dir);
+  });
+
+  await test('no issue building and no record: the root run passes, silently', () => {
+    const dir = mkOrigin();
+    const stub = makeGhStub({ list: SETTLED });
+    const { code, stderr } = runHook('npm test', dir, withStub(stub));
+    assertEq(code, 0, 'every item is parked, so this is the one full run');
+    assertEq(stderr, '', 'and says nothing');
+    cleanup(stub.dir);
+    cleanup(dir);
+  });
+
+  await test('gh absent: the root run passes, silently', () => {
+    const dir = mkOrigin();
+    const { code, stderr } = runHook('npm test', dir, { PATH: pathWithoutGh() });
+    assertEq(code, 0, 'a missing gh fails open');
+    assertEq(stderr, '', 'and says nothing');
+    cleanup(dir);
+  });
+
+  await test('gh failing: the root run passes, silently', () => {
+    const dir = mkOrigin();
+    const stub = makeGhStub({ list: BUILDING, fails: true });
+    const { code, stderr } = runHook('npm test', dir, withStub(stub));
+    assertEq(code, 0, 'a gh that cannot answer fails open');
+    assertEq(stderr, '', 'and says nothing');
+    cleanup(stub.dir);
+    cleanup(dir);
+  });
+
+  await test('a repo with no origin passes without calling gh', () => {
+    const dir = mkRepo();
+    const stub = makeGhStub({ list: BUILDING });
+    const { code, stderr } = runHook('npm test', dir, withStub(stub));
+    assertEq(code, 0, 'a repo with no origin has no issues to ask about');
+    assertEq(stderr, '', 'and says nothing');
+    assertEq(ghCalls(stub).length, 0, `gh is never called, got: ${fmtCalls(ghCalls(stub))}`);
+    cleanup(stub.dir);
+    cleanup(dir);
+  });
+
+  await test('a narrowed run passes while an issue is building', () => {
+    const dir = mkOrigin();
+    const stub = makeGhStub({ list: BUILDING });
+    for (const c of ['npm test -- tests/hooks/suite-guard.test.js', 'node tests/hooks/suite-guard.test.js']) {
+      const { code, stderr } = runHook(c, dir, withStub(stub));
+      assertEq(code, 0, `the narrow run is the one to make mid-build: ${c}`);
+      assertEq(stderr, '', `and says nothing: ${c}`);
+    }
+    cleanup(stub.dir);
+    cleanup(dir);
+  });
+
+  dropPathWithoutGh();
 
   group('suite-guard: wiring and fail-open');
 

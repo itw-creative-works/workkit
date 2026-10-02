@@ -21,7 +21,7 @@ const { isSemver } = require('./semver');
 const USAGE = 'usage: release.js <x.y.z> [--keep N,M] [--dir <root>] [--dry-run]';
 // The files a repo keeps its version in, by path from the root: every one is in
 // the commit gate's version-stamp list (hooks/safety/commit-gate/run.sh), which
-// passes these bumps, and a nested package.json's, as bookkeeping.
+// passes these bumps, and a nested package.json's or plugin manifest's, as bookkeeping.
 const VERSION_FILES = ['package.json', '.claude-plugin/plugin.json'];
 const CATEGORY_RE = /^###\s+\S/;
 

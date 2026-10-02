@@ -15,7 +15,7 @@ const run = async () => {
   group('tower/app: github - the one door');
 
   /** Where the roster is read from: the home repo's default branch, through the API. */
-  const ROSTER_URL = 'https://api.github.com/repos/owner/workkit/contents/data/repos.json?ref=main';
+  const ROSTER_URL = 'https://api.github.com/repos/owner/workkit/contents/data/repos.json';
 
   await test('the roster feed is the private list, read from the home repo with the viewer’s token', async () => {
     // The site publishes only which repo is the home: the list is on that repo's
@@ -28,7 +28,7 @@ const run = async () => {
     assertEq(fetchImpl.calls[0].url, 'data/home.json', 'the only file published beside the pages');
     assert(!fetchImpl.calls[0].options.headers.authorization, 'read unauthenticated - it says what the site’s own URL says');
     assertEq(fetchImpl.calls[1].url, ROSTER_URL,
-      'and the list from the home repo’s default branch - `main` here, which is what a pointer naming no branch falls back to (issue #112)');
+      'and the list from the home repo’s default branch - a pointer naming no branch sends no ref, so GitHub picks it');
     assertEq(fetchImpl.calls[1].options.headers.authorization, 'Bearer fake-token-for-tests', 'with the viewer’s token, because the list is private');
     assertEq(fetchImpl.calls[1].options.headers.accept, 'application/vnd.github.raw+json', 'asked for raw, so the answer is the file itself');
     assert(!fetchImpl.calls.some((call) => call.url === 'data/repos.json'), 'and never from the published site');
@@ -70,8 +70,8 @@ const run = async () => {
     assertEq(answer.data.issues[0].number, 81, 'with the issues GitHub just returned');
     assertEq(fetchImpl.calls.filter((call) => call.url === USER_URL).length, 1, 'the login is asked exactly once');
     assertEq(fetchImpl.calls[1].url, USER_URL, 'straight after the missing pointer');
-    assertEq(fetchImpl.calls[2].url, 'https://api.github.com/repos/someone/workkit/contents/data/repos.json?ref=main',
-      'and the roster comes from <login>/workkit on main');
+    assertEq(fetchImpl.calls[2].url, 'https://api.github.com/repos/someone/workkit/contents/data/repos.json',
+      'and the roster comes from <login>/workkit on its default branch, with no ref');
     const slugs = await github.fetchSlugs({ token: 'door-central', fetch: central() });
     assertEq(slugs.source, 'login', 'the roster read says where the home came from');
   });

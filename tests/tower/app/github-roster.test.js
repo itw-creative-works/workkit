@@ -60,16 +60,16 @@ const run = async () => {
     return jsonResponse(200, { repos: ['owner/workkit'], home: '' });
   });
 
-  await test('a login names its home: <login>/workkit on main, and no login names nothing', () => {
+  await test('a login names its home: <login>/workkit on no named branch, and no login names nothing', () => {
     const home = github.homeFromLogin('ianwieds');
     assertEq(home.home, 'ianwieds/workkit', 'the viewer’s own workkit repo');
-    assertEq(home.branch, 'main', 'on main, the branch a pointer naming none falls back to');
+    assertEq(home.branch, null, 'with no branch named, so GitHub serves the repo’s default branch');
     // parseSlugs' convention for junk: nothing parses to nothing, never a throw
     // and never undefined, so no slug is invented from an empty login.
     assertEq(github.homeFromLogin('').home, '', 'an empty login names no home');
   });
 
-  await test('a copy with no home pointer reads the roster from the viewer’s own workkit', async () => {
+  await test('a copy with no home pointer reads the roster from the viewer’s own workkit, on its default branch', async () => {
     const fetchImpl = centralFetch(null, jsonResponse(200, { login: 'someone' }));
     const answer = await github.fetchSlugs({ token: 'login-fallback', fetch: fetchImpl });
     assertEq(answer.ok, true, `the central copy draws a board, got: ${answer.reason}`);
@@ -77,8 +77,8 @@ const run = async () => {
     const asked = fetchImpl.calls.find((call) => call.url === USER_URL);
     assert(asked, `the viewer was asked who they are, calls: ${fetchImpl.calls.map((call) => call.url).join(', ')}`);
     assertEq(asked.options.headers.authorization, 'Bearer login-fallback', 'with the viewer’s token - the only thing that knows the login');
-    assert(fetchImpl.calls.some((call) => call.url === 'https://api.github.com/repos/someone/workkit/contents/data/repos.json?ref=main'),
-      `the roster is read from <login>/workkit on main, calls: ${fetchImpl.calls.map((call) => call.url).join(', ')}`);
+    assert(fetchImpl.calls.some((call) => call.url === 'https://api.github.com/repos/someone/workkit/contents/data/repos.json'),
+      `the roster is read from <login>/workkit with no ref, so no branch is assumed, calls: ${fetchImpl.calls.map((call) => call.url).join(', ')}`);
   });
 
   await test('a baked home pointer wins, and the login is never asked', async () => {
@@ -87,8 +87,16 @@ const run = async () => {
     assertEq(answer.ok, true, `the published copy draws its board, got: ${answer.reason}`);
     assertEq(answer.source, 'home.json', 'and says the home came from the file');
     assert(!fetchImpl.calls.some((call) => call.url === USER_URL), `the login read is never made, calls: ${fetchImpl.calls.map((call) => call.url).join(', ')}`);
-    assert(fetchImpl.calls.some((call) => call.url === 'https://api.github.com/repos/other/workkit/contents/data/repos.json?ref=main'),
-      'the roster is read from the repo the file names');
+    assert(fetchImpl.calls.some((call) => call.url === 'https://api.github.com/repos/other/workkit/contents/data/repos.json'),
+      `the roster is read from the repo the file names, with no ref when it names no branch, calls: ${fetchImpl.calls.map((call) => call.url).join(', ')}`);
+  });
+
+  await test('a home pointer naming a branch reads the roster from that branch', async () => {
+    const fetchImpl = centralFetch({ home: 'other/workkit', branch: 'trunk' }, jsonResponse(200, { login: 'someone' }));
+    const answer = await github.fetchSlugs({ token: 't', fetch: fetchImpl });
+    assertEq(answer.ok, true, `the published copy draws its board, got: ${answer.reason}`);
+    assert(fetchImpl.calls.some((call) => call.url === 'https://api.github.com/repos/other/workkit/contents/data/repos.json?ref=trunk'),
+      `the named branch rides the read as its ref, calls: ${fetchImpl.calls.map((call) => call.url).join(', ')}`);
   });
 
   await test('the roster feed carries where its home came from, for Settings to name', async () => {

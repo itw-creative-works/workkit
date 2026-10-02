@@ -224,9 +224,9 @@ if [ -n "$files" ]; then
     # Not a doc, and not code either. Deliberately its own case: the classifier
     # above stays in step with docs/change-tracker's, and this carve-out is the
     # gate's alone. release.js's VERSION_FILES bumps the root two; a nested
-    # package.json is bumped by the consumer's own lockstep tooling.
+    # manifest is bumped by the consumer's own lockstep tooling.
     case "$path" in
-      package.json|*/package.json|.claude-plugin/plugin.json)
+      package.json|*/package.json|.claude-plugin/plugin.json|*/.claude-plugin/plugin.json)
         if [ "$is_doc" -eq 0 ] && version_bump_only "$path"; then is_doc=1; fi ;;
     esac
     if [ "$is_doc" -eq 0 ]; then has_code=1; break; fi

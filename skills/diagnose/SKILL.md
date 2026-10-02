@@ -31,10 +31,10 @@ The iron rule: **build a feedback loop that shows the failure BEFORE you form a 
 ## 4. Fix and prove
 
 - The repro from step 1 is the proof: red before the fix, green after, run in THIS session. Never declare fixed on reasoning alone.
-- Then run the surrounding suite for collateral damage.
+- Then run the touched test files for collateral damage, by path (`node --test <file>`), never an unscoped suite.
 
 ## 5. Clean up
 
 - Strip every `[DEBUG-xxxx]` line (grep the tag to find them all). Never leave tagged debug output in the tree.
 - Keep the repro test.
-- Done-criteria: repro test green in the suite, tag grep returns nothing, no unrelated lines changed.
+- Done-criteria: repro test green with the touched test files, tag grep returns nothing, no unrelated lines changed.

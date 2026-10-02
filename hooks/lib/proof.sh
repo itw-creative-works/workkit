@@ -1,6 +1,7 @@
 #!/bin/bash
-# hooks/lib/proof.sh: the issue read (hook_issue_view), its two answers (the
-# proof and the stage), and the shell home of the `Proof:` line pattern.
+# hooks/lib/proof.sh: the issue reads (hook_issue_view, hook_issues_building),
+# the view's two answers (the proof and the stage), and the shell home of the
+# `Proof:` line pattern.
 # SOURCED by hooks/_lib.sh, never executed: it defines functions and sets
 # nothing. It reads hook_jq from the entry.
 
@@ -17,6 +18,24 @@ hook_issue_view() {
   fi
   [ -n "$view" ] || return 2
   printf '%s\n' "$view"
+}
+
+# hook_issues_building [repo]: the open issues at status:building, run in the
+# current directory: one line each, the number, a tab and the matching label;
+# 2 when gh cannot answer. Never agent:working: an agent:ok item keeps that
+# claim through the park, so it would hold the ship's own run.
+hook_issues_building() {
+  local repo="${1:-}" list
+  command -v gh >/dev/null 2>&1 || return 2
+  command -v jq >/dev/null 2>&1 || return 2
+  if [ -n "$repo" ]; then
+    list=$(gh issue list --repo "$repo" --state open --label status:building --limit 1000 --json number,labels 2>/dev/null) || return 2
+  else
+    list=$(gh issue list --state open --label status:building --limit 1000 --json number,labels 2>/dev/null) || return 2
+  fi
+  [ -n "$list" ] || return 2
+  hook_jq -r '.[] | [.number, ([.labels[]?.name // "" | select(. == "status:building")] | join(","))]
+    | select(.[1] != "") | "\(.[0])\t\(.[1])"' <<<"$list" 2>/dev/null || return 2
 }
 
 # hook_view_has_proof: does the view on stdin carry a comment line starting

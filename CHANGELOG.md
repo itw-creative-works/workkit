@@ -7,6 +7,19 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#392](../../issues/392) - The full suite ran twice or more per change. `safety/suite-guard` now bounces a root `npm test` while any open issue is at `status:building`: park every item first, then the ship runs the suite once on the final tree.
+
+### Changed
+
+- [#390](../../issues/390) - Every name a user reads on the dashboard says Workkit, never Tower: the brand, the health page, the token notices, the roster notice and the default issue body. Folders, ids, classes and the `npm run tower` command keep their names.
+
+### Fixed
+
+- [#389](../../issues/389) - The commit gate's version-stamp carve-out missed a nested `.claude-plugin/plugin.json`, so a consumer's lockstep release commit needed a full suite run. A version-only bump in a nested manifest now passes with no record, like a root one.
+- [#391](../../issues/391) - The central dashboard read the roster from a branch named `main`, so a home repo with another default branch drew an empty board. With no branch named, the read sends no `ref` and GitHub serves the default branch.
+
 ## [0.68.0] - 2026-10-01
 
 ### Added

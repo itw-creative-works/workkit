@@ -20,12 +20,6 @@ export const HOME_NAME = 'workkit';
 export const ROSTER_PATH = 'data/repos.json';
 
 /**
- * The branch the roster is read from when the home pointer names none; asking
- * GitHub for the default branch would cost a request before the first row.
- */
-export const ROSTER_REF = 'main';
-
-/**
  * The slug list, as the roster shape every page already reads. A published
  * entry has no `path`, so nothing places a session in it: a published copy has
  * no sessions.
@@ -51,7 +45,7 @@ export const parseSlugs = (parsed) => {
  * @param {object} ctx
  * @param {Function} ctx.fetch
  * @param {string} [ctx.homePath]
- * @returns {Promise<{ok: boolean, home: string|null, branch: string, status: number|null, reason: string|null, missing?: boolean}>}
+ * @returns {Promise<{ok: boolean, home: string|null, branch: string|null, status: number|null, reason: string|null, missing?: boolean}>}
  */
 export const fetchHome = async (ctx = {}) => {
   const url = ctx.homePath || HOME_PATH;
@@ -59,39 +53,41 @@ export const fetchHome = async (ctx = {}) => {
   try {
     response = await ctx.fetch(url, { headers: { accept: 'application/json' } });
   } catch (error) {
-    return { ok: false, home: null, branch: ROSTER_REF, status: null, reason: `${url} did not answer (${error.message})` };
+    return { ok: false, home: null, branch: null, status: null, reason: `${url} did not answer (${error.message})` };
   }
   // Only a 404 is a site published without the file: any other refusal is a
   // pointer that failed to answer, never a reason to read the viewer's own board.
   if (response.status === 404) {
-    return { ok: false, home: null, branch: ROSTER_REF, status: response.status, reason: `${url} answered 404 - this site was published without its home repo`, missing: true };
+    return { ok: false, home: null, branch: null, status: response.status, reason: `${url} answered 404 - this site was published without its home repo`, missing: true };
   }
   if (!response.ok) {
-    return { ok: false, home: null, branch: ROSTER_REF, status: response.status, reason: `${url} answered ${response.status}` };
+    return { ok: false, home: null, branch: null, status: response.status, reason: `${url} answered ${response.status}` };
   }
   let parsed = null;
   try {
     parsed = await response.json();
   } catch (error) {
-    return { ok: false, home: null, branch: ROSTER_REF, status: response.status, reason: `${url} is not JSON (${error.message})` };
+    return { ok: false, home: null, branch: null, status: response.status, reason: `${url} is not JSON (${error.message})` };
   }
   const home = parsed && typeof parsed.home === 'string' && parsed.home.includes('/') ? parsed.home : null;
-  // A pointer naming no branch is the one case the fallback is for.
-  const branch = (parsed && typeof parsed.branch === 'string' && parsed.branch) ? parsed.branch : ROSTER_REF;
+  // A pointer naming no branch leaves it null, so the roster read asks for no
+  // ref and GitHub serves the home repo's default branch.
+  const branch = (parsed && typeof parsed.branch === 'string' && parsed.branch) ? parsed.branch : null;
   if (!home) return { ok: false, home: null, branch, status: response.status, reason: `${url} names no home repo, so there is nowhere to read the board's repositories from`, missing: true };
   return { ok: true, home, branch, status: response.status, reason: null };
 };
 
 /**
- * The home repo a login owns, on `main`: the central copy's answer when no file
- * names one. No login names no home, so no slug is invented from nothing.
+ * The home repo a login owns, on its default branch (a null `branch`, so the
+ * read sends no ref): the central copy's answer when no file names one. No
+ * login names no home, so no slug is invented from nothing.
  *
  * @param {string} login - the viewer's GitHub login
- * @returns {{home: string, branch: string}}
+ * @returns {{home: string, branch: null}}
  */
 export const homeFromLogin = (login) => ({
   home: typeof login === 'string' && login ? `${login}/${HOME_NAME}` : '',
-  branch: ROSTER_REF,
+  branch: null,
 });
 
 // The last token's login, so the central copy asks GET /user once per token
@@ -116,10 +112,10 @@ const loginFor = async (ctx) => {
 /**
  * Which repo is the home, and which tier said so. A published `data/home.json`
  * wins; a copy published without one (the central copy) asks GitHub whose token
- * this is and reads that viewer's own home repo on `main`.
+ * this is and reads that viewer's own home repo on its default branch.
  *
  * @param {object} ctx - `{ token, fetch, homePath }`
- * @returns {Promise<{ok: boolean, home: string|null, branch: string, status: number|null, reason: string|null, source: 'home.json'|'login'|null}>}
+ * @returns {Promise<{ok: boolean, home: string|null, branch: string|null, status: number|null, reason: string|null, source: 'home.json'|'login'|null}>}
  */
 export const resolveHome = async (ctx = {}) => {
   const pointer = await fetchHome(ctx);
@@ -133,7 +129,7 @@ export const resolveHome = async (ctx = {}) => {
     return {
       ok: false,
       home: null,
-      branch: ROSTER_REF,
+      branch: null,
       status: who.status,
       reason: `this copy names no home repo, and the token's own login could not be read to find one: ${why}`,
       source: null,
@@ -161,9 +157,10 @@ export const fetchSlugs = async (ctx = {}) => {
   const tier = { home: pointer.home, source: pointer.source };
 
   // The raw media type, so the answer is the file itself rather than GitHub's
-  // envelope with the bytes base64'd inside it.
+  // envelope with the bytes base64'd inside it. No branch sends no ref.
+  const ref = typeof pointer.branch === 'string' ? `?ref=${encodeURIComponent(pointer.branch)}` : '';
   const answer = await rest(
-    `/repos/${pointer.home}/contents/${ROSTER_PATH}?ref=${encodeURIComponent(pointer.branch)}`,
+    `/repos/${pointer.home}/contents/${ROSTER_PATH}${ref}`,
     ctx,
     { accept: 'application/vnd.github.raw+json' },
   );

@@ -40,7 +40,7 @@ export const loading = (message) => `<div class="d-flex flex-column align-items-
  * the spend, the git health): one sentence for the three pages and the Overview
  * panel that show that data.
  */
-export const LOCAL_ONLY_NOTICE = 'This reads the machine the tower runs on - its sessions, its transcripts, its working copies - so it is local only. Open the dashboard on that machine to see it.';
+export const LOCAL_ONLY_NOTICE = 'This reads the machine Workkit runs on - its sessions, its transcripts, its working copies - so it is local only. Open the dashboard on that machine to see it.';
 
 /** That sentence as markup, in the same muted voice as an empty state. */
 export const localOnlyNotice = () => `<p class="text-body-secondary mb-0">${esc(LOCAL_ONLY_NOTICE)}</p>`;
@@ -58,7 +58,7 @@ export const lockedNotice = () => `<p class="text-body-secondary mb-0">${esc(LOC
  * What a locked copy says where a write would be on this machine: the tower API
  * holds the `gh` login, so the answer is the one its body gives.
  */
-export const LOCAL_LOCKED_NOTICE = 'This copy has no data until the tower API is running - start it with npm run tower and connect this page to it. Then it files and moves issues exactly as it does with a tower.';
+export const LOCAL_LOCKED_NOTICE = 'This copy has no data until the Workkit API is running - start it with npm run tower and connect this page to it. Then it files and moves issues exactly as a connected copy does.';
 
 /** That sentence as markup. */
 export const localLockedNotice = () => `<p class="text-body-secondary mb-0">${esc(LOCAL_LOCKED_NOTICE)}</p>`;

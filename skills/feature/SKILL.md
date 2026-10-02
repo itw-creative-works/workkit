@@ -82,7 +82,7 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 
 ## 5. Verify + review
 
-- Each agent runs only the test files touched by the edit it made or checks, by path (`docs/project-state.md` § The proof). The flip to `status:qa` runs every test file the working diff touched (`safety/proof-guard`); the full suite runs once per tree as a root `npm test` before the commit, whose record the gate checks. So no brief asks an agent for the whole touched set.
+- Each agent runs only the test files touched by the edit it made or checks, by path (`docs/project-state.md` § The proof). The park runs no root suite: its proof is the flip to `status:qa`, which runs every test file the working diff touched (`safety/proof-guard`). The full suite runs once, a root `npm test` before the commit. So no brief asks an agent for the whole touched set.
 - Then [workkit:review](../review/SKILL.md) on the diff. Trivial tasks skip formal review.
 - A ≥80 finding is fixed in the batch or filed before calling it done, per the fix-or-file rule (`docs/project-state.md` § How big is one issue). The review's simplification lens covers post-green cleanup.
 - After the review: ONE light verification pass over the fixes (its brief from `briefs/fix-verifier.md`), ONE worker round for what it finds, then retouch the review marker so it covers the parked diff, with `full` only when that review was the full panel (the retouch closes its round; `workkit:review` § 5), then the park:

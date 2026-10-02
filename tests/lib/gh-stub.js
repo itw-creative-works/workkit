@@ -1,7 +1,8 @@
-// The PATH-shim `gh` the two label-gate suites (safety/proof-guard,
-// safety/spec-guard) run their hook against: the stub that answers `issue view`
-// from a fixture and records each call and the directory it ran in, the world
-// with no `gh` at all, and the runner that hands a hook one command.
+// The PATH-shim `gh` the hook suites (safety/proof-guard, safety/spec-guard,
+// safety/suite-guard) run their hook against: the stub that answers `issue view`
+// (and `issue list`, when handed one) from a fixture and records each call and
+// the directory it ran in, the world with no `gh` at all, and the runner that
+// hands a hook one command.
 
 const fs = require('fs');
 const os = require('os');
@@ -17,14 +18,16 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
 
 /**
  * A `gh` on its own bin folder that answers `issue view <N> --json <field>`
- * with `{ <field>: issues[N] }`, an unknown number exiting 1.
+ * with `{ <field>: issues[N] }`, an unknown number exiting 1, and, given
+ * `list`, answers every `issue list` with that array whatever its flags.
  * @param {object} [opts]
  * @param {string} [opts.field] - the JSON field the fixture fills (`comments`, `body`)
  * @param {object} [opts.issues] - issue number to that field's value
- * @param {boolean} [opts.fails] - every view exits 1 with a line on stderr, the way an offline gh does
+ * @param {object[]} [opts.list] - the `issue list` answer, shaped like gh's (`[{ number, labels: [{ name }] }]`)
+ * @param {boolean} [opts.fails] - every view (and list) exits 1 with a line on stderr, the way an offline gh does
  * @returns {{binDir: string, logFile: string, cwdFile: string, dir: string}}
  */
-const makeGhStub = ({ field, issues = {}, fails = false } = {}) => {
+const makeGhStub = ({ field, issues = {}, list = null, fails = false } = {}) => {
   const dir = mkTmp('gh-stub-');
   const logFile = path.join(dir, 'gh.log');
   const issuesDir = path.join(dir, 'issues');
@@ -35,6 +38,9 @@ const makeGhStub = ({ field, issues = {}, fails = false } = {}) => {
   const binDir = path.join(dir, 'bin');
   fs.mkdirSync(binDir, { recursive: true });
   const cwdFile = path.join(dir, 'cwd');
+  const listFile = path.join(dir, 'list.json');
+  if (list) fs.writeFileSync(listFile, JSON.stringify(list));
+  const offline = ['  echo "error connecting to api.github.com" >&2', '  exit 1'];
   // Every path here crosses into a shell, so each is spelled the way the shell
   // reads one; the values handed back stay native, because Node reads those.
   stubTool(binDir, 'gh', [
@@ -42,13 +48,18 @@ const makeGhStub = ({ field, issues = {}, fails = false } = {}) => {
     recordArgv(logFile),
     `printf '%s\\n' "$PWD" >> "${shellPath(cwdFile)}"`,
     'if [[ "$1 $2" == "issue view" ]]; then',
-    ...(fails ? ['  echo "error connecting to api.github.com" >&2', '  exit 1'] : [
+    ...(fails ? offline : [
       `  file="${shellPath(issuesDir)}/$3.json"`,
       '  [[ -f "$file" ]] || exit 1',
       '  cat "$file"',
       '  exit 0',
     ]),
     'fi',
+    ...(list ? [
+      'if [[ "$1 $2" == "issue list" ]]; then',
+      ...(fails ? offline : [`  cat "${shellPath(listFile)}"`, '  exit 0']),
+      'fi',
+    ] : []),
     'exit 0',
   ]);
   return { binDir, logFile, cwdFile, dir };

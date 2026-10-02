@@ -12,7 +12,7 @@
 {
   brand: {
     id: "workkit",
-    name: "Tower",
+    name: "Workkit",
     description: "Mission control for the workkit issue workflow - the board, the crew, token usage, repo health, and the daily brief.",
 
     // The one hex (issue #53, blue since #149): the framework composes both

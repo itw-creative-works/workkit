@@ -32,7 +32,7 @@ const run = async () => {
     const c = await start(w);
     await postJson(c, '/api/intake', { repo: SLUG, title: 'No body' });
     const [call] = ghCalls(w, 'issue');
-    assertEq(call[call.indexOf('--body') + 1], 'Filed from the tower.', 'the default body');
+    assertEq(call[call.indexOf('--body') + 1], 'Filed from Workkit.', 'the default body');
     await c.stop();
     cleanup(w.root);
   });

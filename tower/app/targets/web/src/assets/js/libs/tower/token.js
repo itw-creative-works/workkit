@@ -24,7 +24,7 @@ export const SETTINGS_LABEL = 'Settings';
 export const tokenCard = (options = {}) => `<div class="card h-100">
   <div class="card-body">
     <div class="omega-panel-head mb-3"><span>GitHub token</span></div>
-    <p>This copy of the tower has no data of its own - it reads your GitHub issues live from your browser, and moves and files them there too. Hand it a token and it works exactly like the dashboard on your machine.</p>
+    <p>This copy of Workkit has no data of its own - it reads your GitHub issues live from your browser, and moves and files them there too. Hand it a token and it works exactly like the dashboard on your machine.</p>
     ${options.problem ? `<div class="alert alert-warning" data-token-problem>${esc(options.problem)}</div>` : ''}
     <form data-token-form>
       <div class="mb-3">
@@ -62,11 +62,11 @@ export const tokenGuidance = () => `<div class="card h-100">
  *
  * @returns {string} markup
  */
-export const towerTokenNote = () => `<p class="text-body-secondary">This copy reads the tower API on this machine, which holds the gh login - it needs no token of its own. A token saved here is what a published copy of this dashboard uses.</p>`;
+export const towerTokenNote = () => `<p class="text-body-secondary">This copy reads the Workkit API on this machine, which holds the gh login - it needs no token of its own. A token saved here is what a published copy of this dashboard uses.</p>`;
 
 /** The tier's sentence, or '' while the home is not yet known. */
 const tierLine = (mode, roster) => {
-  if (mode === 'tower') return 'This is the local tower.';
+  if (mode === 'tower') return 'This is the local copy, on this machine.';
   if (mode !== 'github' || !roster || !roster.home) return '';
   if (roster.source === 'home.json') return `Published from ${roster.home}.`;
   if (roster.source === 'login') return `The central copy: your board is ${roster.home}.`;
@@ -128,10 +128,10 @@ export const connectHref = (href, origin = 'http://127.0.0.1:8693') => {
  */
 export const towerDownNotice = (href) => `<div class="card">
   <div class="card-body">
-    <div class="omega-panel-head mb-3"><span>The tower isn’t connected</span></div>
-    <p>The tower API on this machine isn’t running, or this copy of the dashboard isn’t pointed at it.</p>
+    <div class="omega-panel-head mb-3"><span>Workkit isn’t connected</span></div>
+    <p>The Workkit API on this machine isn’t running, or this copy of the dashboard isn’t pointed at it.</p>
     <p class="text-body-secondary">Start it with <code>npm run tower</code> from the workkit checkout, then connect this page to it.</p>
-    <a class="btn btn-adaptive btn-sm" href="${esc(connectHref(href))}">Connect to the tower</a>
+    <a class="btn btn-adaptive btn-sm" href="${esc(connectHref(href))}">Connect to Workkit</a>
   </div>
 </div>`;
 

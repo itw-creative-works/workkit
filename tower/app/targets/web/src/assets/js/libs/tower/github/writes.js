@@ -20,7 +20,7 @@ export const TITLE_MAX = 256;
 export const BODY_MAX = 4000;
 
 /** What a filed issue says when the dialog was submitted with no body. */
-export const DEFAULT_BODY = 'Filed from the tower.';
+export const DEFAULT_BODY = 'Filed from Workkit.';
 
 /** What every filed issue is labelled: captured, and an idea until triage says otherwise. */
 export const INTAKE_LABELS = ['status:inbox', 'type:idea'];

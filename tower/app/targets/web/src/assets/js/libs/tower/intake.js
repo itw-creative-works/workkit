@@ -41,7 +41,7 @@ const disableIntake = (dialog) => {
   }
   const select = dialog.querySelector('[data-intake-repo]');
   const local = isLocalHost(location.hostname);
-  select.innerHTML = `<option value="">${local ? 'no roster until the tower is running' : 'no roster until a token is added'}</option>`;
+  select.innerHTML = `<option value="">${local ? 'no roster until the Workkit API is running' : 'no roster until a token is added'}</option>`;
   showResult(dialog.querySelector('[data-intake-result]'), lockedIntakeNotice(location.hostname));
 };
 

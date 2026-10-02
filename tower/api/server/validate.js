@@ -6,7 +6,7 @@ const { LABELS_FILE } = require('../lib/board');
 
 const TITLE_MAX = 256;
 const BODY_MAX = 4000;
-const DEFAULT_BODY = 'Filed from the tower.';
+const DEFAULT_BODY = 'Filed from Workkit.';
 
 // The statuses an issue may be moved between, read from the label SSOT rather
 // than restated, the same file the sweep parses its vocabulary from. A require,

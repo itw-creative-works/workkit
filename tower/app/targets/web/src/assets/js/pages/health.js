@@ -25,7 +25,7 @@ const processLine = (meta) => {
 
 const restartNotice = (meta) => (stale(meta)
   ? `<div class="mb-4">
-      ${problem(`the tower API is running commit ${short(meta.bootCommit)}, and the checkout is at ${short(meta.currentHead)} - restart it with npm run tower`)}
+      ${problem(`the Workkit API is running commit ${short(meta.bootCommit)}, and the checkout is at ${short(meta.currentHead)} - restart it with npm run tower`)}
       ${processLine(meta)}
     </div>`
   : '');

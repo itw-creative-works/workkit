@@ -244,6 +244,30 @@ const run = async () => {
     cleanup(dir);
   });
 
+  // A plugin manifest nested in a monorepo, committed, so a case stages its bump.
+  const NESTED_MANIFEST = 'agent-plugins/claude/.claude-plugin/plugin.json';
+  const mkNestedPluginRepo = () => {
+    const dir = mkReleaseRepo();
+    stageDeep(dir, NESTED_MANIFEST, manifest('1.0.0'));
+    execSync('git commit -q -m "nested manifest" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+    return dir;
+  };
+
+  await test('a nested plugin.json version-only bump is a version stamp: no record required', () => {
+    const dir = mkNestedPluginRepo();
+    stageDeep(dir, NESTED_MANIFEST, manifest('1.0.1'));
+    dropMarker(dir);
+    recordNotRequired(runHook(dir, 'git commit -m "chore(release): 1.0.1"'), dir);
+    cleanup(dir);
+  });
+
+  await test('a nested plugin.json bump with an added key gates as code', () => {
+    const dir = mkNestedPluginRepo();
+    stageDeep(dir, NESTED_MANIFEST, manifest('1.0.1', { homepage: 'https://example.com' }));
+    gatesAsCode(dir);
+    cleanup(dir);
+  });
+
   group('commit-gate: the suite record');
 
   // A code commit, reviewed, everything staged.

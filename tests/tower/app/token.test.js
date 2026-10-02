@@ -90,7 +90,7 @@ const run = async () => {
 
   await test('a copy with a TOWER behind it is told the token is not its credential', () => {
     const note = token.towerTokenNote();
-    assert(/tower API on this machine/.test(note), 'the machine holds the gh login');
+    assert(/the Workkit API on this machine/.test(note), 'the machine holds the gh login');
     assert(/needs no token of its own/.test(note), 'so this copy needs nothing typed');
     assert(/published copy/.test(note), 'and what is saved here is for the copy that does');
   });
@@ -136,13 +136,13 @@ const run = async () => {
 
     const source = fs.readFileSync(path.join(libs, 'intake.js'), 'utf8');
     assert(/lockedIntakeNotice\(location\.hostname\)/.test(source), 'the dialog reads the fork rather than owning a second one');
-    assert(/no roster until the tower is running[\s\S]{0,60}no roster until a token is added/.test(source),
+    assert(/no roster until the Workkit API is running[\s\S]{0,60}no roster until a token is added/.test(source),
       'and the empty roster forks with it, so the two halves of the dialog cannot disagree');
   });
 
   await test('Settings names the tier the copy is, and a copy with no roster names none', () => {
     const textOf = (markup) => markup.replace(/<[^>]*>/g, '');
-    assert(/local tower/i.test(textOf(token.tierNote('tower', null))), 'a tower behind the page is the local tower');
+    assert(/This is the local copy, on this machine\./.test(textOf(token.tierNote('tower', null))), 'an API behind the page is the local copy');
     const published = textOf(token.tierNote('github', { ok: true, source: 'home.json', home: 'other/workkit' }));
     assert(/published from other\/workkit/i.test(published), `a baked pointer names its home, got: ${published}`);
     const central = textOf(token.tierNote('github', { ok: true, source: 'login', home: 'someone/workkit' }));
