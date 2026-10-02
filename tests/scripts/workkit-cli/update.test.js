@@ -287,7 +287,7 @@ const run = async () => {
       world.seedPlist(LABEL, '<!-- installed by a human, once -->\n');
       const { kit, script } = mkPartialKit({
         installer: [
-          'if [[ "$1" == \'--check\' ]]; then printf \'com.workkit.claude-daily → out of date for this checkout\\n\'; exit 0; fi',
+          'if [[ "$1" == \'--check\' ]]; then printf \'com.workkit.claude-daily → out of date for this kit\\n\'; exit 0; fi',
           'printf \'template missing\\n\' >&2',
           'exit 1',
         ],

@@ -24,3 +24,10 @@ wk_repo_slug() {
   url="$(git -C "$dir" remote get-url origin 2>/dev/null || true)"
   wk_slug_from_remote "$url"
 }
+
+# Whether <dir> lies in a git working tree whose origin names the workkit repo,
+# any owner, any letter case: a clone of the kit itself.
+wk_is_kit_checkout() {
+  [[ -n "${1:-}" ]] || return 1
+  wk_repo_slug "$1" | grep -Eiq '^[^/]+/workkit$'
+}

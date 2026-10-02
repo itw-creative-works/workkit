@@ -34,7 +34,7 @@ cmd_update() {
 cmd_publish() {
   PUBLISH_FAILED=0
   if [[ ! -f "$PUBLISH" ]]; then
-    wk_warn "site: publish.sh is missing at $PUBLISH; this checkout is incomplete"
+    wk_warn "site: publish.sh is missing at $PUBLISH; the kit is incomplete"
     PUBLISH_FAILED=1
     return 0
   fi
@@ -47,7 +47,7 @@ cmd_publish() {
 cmd_brief() {
   if [[ "${1:-}" == '--local' ]]; then
     if [[ ! -f "$MORNING" ]]; then
-      wk_error "no morning job beside this engine ($MORNING), and this command needs the workkit checkout"
+      wk_error "no morning job beside this engine ($MORNING), and this command needs the whole kit"
       exit 1
     fi
     exec bash "$MORNING" --now
@@ -57,7 +57,7 @@ cmd_brief() {
     exit 1
   fi
   if [[ ! -f "$BRIEF_DISPATCH" ]]; then
-    wk_error "no brief dispatch beside this engine ($BRIEF_DISPATCH), and this command needs the workkit checkout"
+    wk_error "no brief dispatch beside this engine ($BRIEF_DISPATCH), and this command needs the whole kit"
     exit 1
   fi
   # shellcheck source=../../jobs/brief-dispatch.sh
@@ -88,15 +88,20 @@ cmd_doctor() {
 
   check_gh
 
-  if [[ -L "$ENGINE_LINK" && "$(cd "$ENGINE_LINK" 2>/dev/null && pwd -P || true)" == "$SCRIPT_DIR" ]]; then
+  local linked command_target
+  linked="$(cd "$ENGINE_LINK" 2>/dev/null && pwd -P || true)"
+  if [[ -L "$ENGINE_LINK" && "$linked" == "$SCRIPT_DIR" ]]; then
     wk_ok "engine: $ENGINE_LINK → $SCRIPT_DIR"
+  elif [[ -L "$ENGINE_LINK" && -n "$linked" ]] && wk_clone_outranks "$KIT_DIR" "$linked"; then
+    wk_ok "engine: $ENGINE_LINK → $linked, the workkit clone, which outranks the plugin cache"
   else
-    wk_warn "engine: $ENGINE_LINK does not point at this checkout; run \`workkit update\`"
+    wk_warn "engine: $ENGINE_LINK does not point at this engine; run \`workkit update\`"
     attention=$((attention + 1))
   fi
 
-  if [[ -L "$BIN_LINK" && "$(readlink "$BIN_LINK" || true)" == "$SCRIPT_DIR/workkit.sh" ]]; then
-    wk_ok "command: $BIN_LINK → $SCRIPT_DIR/workkit.sh"
+  command_target="$(readlink "$BIN_LINK" 2>/dev/null || true)"
+  if [[ -L "$BIN_LINK" ]] && { [[ "$command_target" == "$SCRIPT_DIR/workkit.sh" ]] || wk_clone_outranks "$KIT_DIR" "${command_target%/*/*}"; }; then
+    wk_ok "command: $BIN_LINK → $command_target"
     case ":${PATH:-}:" in
       *":$BIN_DIR:"*) ;;
       *) wk_warn "command: $BIN_DIR is not on your PATH; add \`export PATH=\"\$HOME/.local/bin:\$PATH\"\` to your shell rc"
@@ -135,7 +140,7 @@ cmd_doctor() {
   # where that clone stands against its upstream.
   wk_section "🏠 Home repo"
   if [[ "$HOME_LIBS" -ne 1 ]]; then
-    wk_warn "home: the home-repo library is missing beside $SCRIPT_DIR; this checkout is incomplete"
+    wk_warn "home: the home-repo library is missing beside $SCRIPT_DIR; the kit is incomplete"
     attention=$((attention + 1))
   else
     local home_attention=0

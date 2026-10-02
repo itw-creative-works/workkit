@@ -13,7 +13,7 @@ refresh_engine_link() {
   # A missing engine is a broken checkout, never a machine that is up to date:
   # the two must not read the same, or a half-installed kit reports all-clear.
   if [[ ! -f "$STANDARDS" ]]; then
-    wk_warn "engine: standards.sh is missing at $STANDARDS; this checkout is incomplete, so the engine address cannot be maintained"
+    wk_warn "engine: standards.sh is missing at $STANDARDS; the kit is incomplete, so the engine address cannot be maintained"
     return 0
   fi
 
@@ -33,10 +33,14 @@ refresh_engine_link() {
   else
     # Silence is either a current address or a refusal to write it, so the
     # address is read back: a refusal must never read as up to date.
-    if [[ -L "$ENGINE_LINK" && "$(cd "$ENGINE_LINK" 2>/dev/null && pwd -P || true)" == "$SCRIPT_DIR" ]]; then
+    local linked
+    linked="$(cd "$ENGINE_LINK" 2>/dev/null && pwd -P || true)"
+    if [[ -L "$ENGINE_LINK" && "$linked" == "$SCRIPT_DIR" ]]; then
       wk_skip "engine: $ENGINE_LINK is current"
+    elif [[ -L "$ENGINE_LINK" && -n "$linked" ]] && wk_clone_outranks "$KIT_DIR" "$linked"; then
+      wk_skip "engine: $ENGINE_LINK is current: it names the workkit clone at $linked, which outranks the plugin cache"
     else
-      wk_skip "engine: $ENGINE_LINK was left as it is; this checkout does not take the engine's address"
+      wk_skip "engine: $ENGINE_LINK was left as it is; this engine does not take the address"
     fi
   fi
 }
@@ -56,6 +60,9 @@ link_command() {
     current="$(readlink "$BIN_LINK" || true)"
     if [[ "$current" == "$SCRIPT_DIR/workkit.sh" ]]; then
       wk_skip "command: $BIN_LINK is current"
+      make=0
+    elif wk_clone_outranks "$KIT_DIR" "${current%/*/*}"; then
+      wk_skip "command: $BIN_LINK is current: it names the workkit clone's $current, which outranks the plugin cache"
       make=0
     else
       verb=repointed

@@ -8,6 +8,8 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../lib/platform');
+const { mkTmp } = require('../lib/scratch');
+const { mkOriginRepo } = require('../lib/git-repo');
 
 const SLUG = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'slug.sh'));
 
@@ -40,14 +42,14 @@ const slug = (url) => {
 const run = async () => {
   group('slug.sh: sourcing it');
 
-  await test('sourcing defines the two functions', () => {
+  await test('sourcing defines the three functions', () => {
     // The contract this file shares with platform.sh and participation.sh: a
     // caller sources it at load time and gets functions, in a shell whose
     // options are its own.
     const out = inSeam("compgen -A function | grep '^wk_' | sort | tr '\\n' ' '");
     assertEq(out.code, 0, `it sources clean, stderr: ${out.err}`);
-    assertEq(out.out, 'wk_repo_slug wk_slug_from_remote ',
-      `the two, and nothing else named wk_*, got: ${out.out}`);
+    assertEq(out.out, 'wk_is_kit_checkout wk_repo_slug wk_slug_from_remote ',
+      `the three, and nothing else named wk_*, got: ${out.out}`);
   });
 
   await test('sourcing sets no variable and runs nothing', () => {
@@ -85,6 +87,16 @@ const run = async () => {
   await test('a remote with no owner segment answers nothing', () => {
     assertEq(slug(''), '', 'no remote at all');
     assertEq(slug('notaremote'), '', 'a bare word');
+  });
+
+  group('slug.sh: wk_is_kit_checkout');
+
+  await test('a git dir whose origin is a workkit repo is the kit; any other is not', () => {
+    const repoWith = (origin) => mkOriginRepo(mkTmp('slug-'), origin);
+    const answer = (dir) => inSeam('wk_is_kit_checkout "$1"', [dir]).code;
+    assertEq(answer(shellPath(repoWith('https://github.com/owner/workkit.git'))), 0, 'owner/workkit answers yes');
+    assertEq(answer(shellPath(repoWith('https://github.com/owner/other.git'))), 1, 'owner/other answers no');
+    assertEq(answer(''), 1, 'an empty argument answers no');
   });
 
   return summary();

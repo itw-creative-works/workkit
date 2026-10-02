@@ -275,6 +275,9 @@ const SLUGS = ['ITW-Creative-Works/workkit', 'owner/gone'];
 // window no fixture can sit either side of.
 const CLOSED_NOW = Date.parse('2026-07-29T11:00:00Z');
 
+/** The viewer's own login, the read a copy with no home pointer names its home from. */
+const USER_URL = 'https://api.github.com/user';
+
 /** Whether a URL is the roster read - the one call the private list costs. */
 const isRoster = (url) => url.startsWith('https://api.github.com/') && url.includes('contents/data/repos.json');
 
@@ -291,5 +294,5 @@ const mkSiteFetch = (list, graphqlBody) => mkFetch((url) => {
 
 module.exports = {
   libs, load, loadLibs, mkState, failed, ROSTER, drawnIndicator, openAgentDialog, NOW,
-  mkStorage, mkFetch, jsonResponse, SWEEP, SLUGS, CLOSED_NOW, isRoster, mkSiteFetch,
+  mkStorage, mkFetch, jsonResponse, SWEEP, SLUGS, CLOSED_NOW, USER_URL, isRoster, mkSiteFetch,
 };

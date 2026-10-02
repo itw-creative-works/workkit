@@ -9,6 +9,8 @@ const { group, test, assert, assertEq, summary, selfRun, skipSuite } = require('
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 const { BASH, NO_RC, shellPath, homeEnv, stubTool, pathWith } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
+const { mkPluginCopy } = require('../lib/plugin-copy');
+const { mkOriginRepo } = require('../lib/git-repo');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'install.sh');
 const REPO = path.join(__dirname, '..', '..');
@@ -31,14 +33,21 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
  * HOME here is never the account's home, so the installer's own guard would
  * skip every launchctl call: `launchdOk` sets the override the guard reads, and
  * every test that asserts on launchd behaviour is rehearsing against the
- * recorder rather than the machine.
+ * recorder rather than the machine. `engineLink` is the ~/.claude/workkit
+ * address the plist runs the job through, at this checkout's engine.
  */
-const mkWorld = ({ loaded = false, loadedPath = null, launchdOk = true } = {}) => {
+const mkWorld = ({
+  loaded = false, loadedPath = null, launchdOk = true, engineLink = true,
+} = {}) => {
   const root = mkTmp('workkit-install-');
   const bin = path.join(root, 'bin');
   const home = path.join(root, 'home');
   fs.mkdirSync(bin, { recursive: true });
   fs.mkdirSync(home, { recursive: true });
+  if (engineLink) {
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.symlinkSync(path.join(REPO, 'workflow'), path.join(home, '.claude', 'workkit'));
+  }
 
   const agents = path.join(home, 'Library', 'LaunchAgents');
   const body = loadedPath === null ? path.join(agents, `${LABEL}.plist`) : loadedPath;
@@ -82,14 +91,19 @@ const run = async () => {
 
   group('jobs/install: rendering');
 
-  await test('the daily agent is rendered, for this checkout and this home', () => {
+  // The job is reached through the engine address, which `workkit update`
+  // repoints; a plugin cache path changes with every version, so a plist that
+  // baked one in would run a removed copy after the next update.
+  await test('the daily agent is rendered through the engine address, for this home', () => {
     const world = mkWorld();
     const res = install(world);
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
 
     const plist = fs.readFileSync(world.plist(LABEL), 'utf8');
     assert(!plist.includes('{{'), `no placeholder survives: ${plist}`);
-    assert(plist.includes(`${fs.realpathSync(REPO)}/jobs/${AGENT.runner}`), `${AGENT.runner} is this checkout’s`);
+    const program = spawnSync('/usr/libexec/PlistBuddy', ['-c', 'Print :ProgramArguments:1', world.plist(LABEL)], { encoding: 'utf8' }).stdout.trim();
+    assertEq(program, `${world.home}/.claude/workkit/../jobs/${AGENT.runner}`, `${AGENT.runner} is reached through the engine address`);
+    assert(!plist.includes(fs.realpathSync(REPO)), `and no absolute kit path is baked in: ${plist}`);
     assert(plist.includes(`${world.home}/Library/Logs/${LABEL}.log`), 'and the log is under this home');
     cleanup(world.root);
   });
@@ -112,6 +126,70 @@ const run = async () => {
     install(world);
     assertEq(world.rendered().join(','), `${LABEL}.plist`, 'nothing else is rendered into LaunchAgents');
     cleanup(world.root);
+  });
+
+  // The plist reaches the job through the engine address, so a home without
+  // one would install a schedule that runs nothing: both modes name it.
+  await test('no engine address: install and --check both name the missing link', () => {
+    const world = mkWorld({ engineLink: false });
+    const link = `${world.home}/.claude/workkit`;
+    const res = install(world);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
+    const said = `${res.stdout}${res.stderr}`;
+    assert(said.split('\n').some((l) => l.includes('⚠') && l.includes(link)), `install warns, naming ${link}: ${said}`);
+    const checked = check(world);
+    const checkSaid = `${checked.stdout}${checked.stderr}`;
+    assert(checkSaid.split('\n').some((l) => l.includes('⚠') && l.includes(link)), `and so does --check: ${checkSaid}`);
+    cleanup(world.root);
+  });
+
+  await test('with the engine address in place, neither mode mentions it', () => {
+    const world = mkWorld();
+    const link = `${world.home}/.claude/workkit`;
+    const res = install(world);
+    const checked = check(world);
+    const said = `${res.stdout}${res.stderr}${checked.stdout}${checked.stderr}`;
+    assert(!said.includes(link), `no line names the link: ${said}`);
+    cleanup(world.root);
+  });
+
+  // A copy of the engine somewhere else: no git, no plugin cache around it.
+  const strayKit = () => {
+    const kit = mkTmp('workkit-install-');
+    fs.cpSync(path.join(REPO, 'workflow'), path.join(kit, 'workflow'), { recursive: true });
+    return path.join(kit, 'workflow');
+  };
+
+  await test('an engine address at some other copy: install names where it points', () => {
+    const world = mkWorld({ engineLink: false });
+    const other = strayKit();
+    fs.mkdirSync(path.join(world.home, '.claude'), { recursive: true });
+    fs.symlinkSync(other, path.join(world.home, '.claude', 'workkit'));
+    const res = install(world);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
+    const said = `${res.stdout}${res.stderr}`;
+    assert(said.split('\n').some((l) => l.includes('⚠') && l.includes(other)), `a warn names ${other}: ${said}`);
+    cleanup(world.root); cleanup(path.dirname(other));
+  });
+
+  // The plugin cache copy installs beside a clone its owner chose: the clone
+  // keeps the address, and that is the expected state, not a fault.
+  await test('an engine address at a workkit clone, installed from the plugin cache: no warn', () => {
+    const world = mkWorld({ engineLink: false });
+    const cloneRoot = mkTmp('workkit-install-');
+    fs.cpSync(path.join(REPO, 'workflow'), path.join(cloneRoot, 'workflow'), { recursive: true });
+    mkOriginRepo(cloneRoot, 'https://github.com/owner/workkit.git');
+    const claude = path.join(world.home, '.claude');
+    fs.mkdirSync(claude, { recursive: true });
+    fs.symlinkSync(path.join(cloneRoot, 'workflow'), path.join(claude, 'workkit'));
+    const cache = path.join(claude, 'plugins', 'cache', 'workkit', 'workkit', '0.0.0');
+    mkPluginCopy(cache, { dirs: ['workflow', 'jobs'] });
+    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(cache, 'jobs', 'install.sh'))], { encoding: 'utf8', timeout: 30000, env: world.env });
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
+    const said = `${res.stdout}${res.stderr}`;
+    assert(!said.includes('⚠'), `the clone outranks the cache copy, so nothing is wrong: ${said}`);
+    assert(fs.existsSync(world.installed), 'and the schedule is installed');
+    cleanup(world.root); cleanup(cloneRoot);
   });
 
   group('jobs/install: loading');

@@ -6,21 +6,32 @@
 
 const path = require('path');
 const os = require('os');
+const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../lib/platform');
+const { mkRepo } = require('../lib/git-repo');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'commit-language', 'run.sh');
 
-const runHook = (command) => {
-  const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command } });
+// `cwd` goes into the payload when given; `spawnCwd` is the hook process's own.
+const runHook = (command, { cwd, spawnCwd } = {}) => {
+  const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command }, ...(cwd ? { cwd: shellPath(cwd) } : {}) });
   const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
     input,
+    cwd: spawnCwd,
     env: { ...process.env, HOME: shellPath(os.homedir()) },
     encoding: 'utf8',
     timeout: 10000,
   });
-  return { code: res.status, stderr: res.stderr || '' };
+  return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
+};
+
+// A throwaway repo: the fixture repo with its origin taken away.
+const mkThrowawayRepo = () => {
+  const world = mkRepo('cl-test-', { 'README.md': '# fixture\n' });
+  world.git('remote', 'remove', 'origin');
+  return world;
 };
 
 const run = async () => {
@@ -282,6 +293,35 @@ const run = async () => {
   await test('leading whitespace is trimmed before judging: exit 0', () => {
     const { code, stderr } = runHook('git commit -m "  feat(hooks): trim the subject first"');
     assertEq(code, 0, `the trimmed form is judged, got: ${stderr}`);
+  });
+
+  group('commit-language: a repo with no origin');
+
+  await test('cwd in a repo with no origin, bad subject: exit 0 and silent', () => {
+    const { dir, repo } = mkThrowawayRepo();
+    const out = runHook('git commit -m "pub 1"', { cwd: repo });
+    assertEq(out.code, 0, `a throwaway repo is not held to the commit rules, got: ${out.stderr}`);
+    assertEq(out.stderr, '', 'no stderr');
+    assertEq(out.stdout, '', 'no stdout either');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  await test('cwd in a repo with an origin, bad subject: exit 2 as today', () => {
+    const { dir, repo } = mkRepo('cl-test-', { 'README.md': '# fixture\n' });
+    const { code, stderr } = runHook('git commit -m "pub 1"', { cwd: repo });
+    assertEq(code, 2, 'a project repo still gets its subject linted');
+    assert(stderr.includes('Conventional Commits'), `names the failure, got: ${stderr}`);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  await test('no cwd in the payload, run from a repo with no origin: still lints (exit 2)', () => {
+    // The hook process sits in a throwaway repo, so only the payload's cwd may
+    // turn the skip on.
+    const { dir, repo } = mkThrowawayRepo();
+    const { code, stderr } = runHook('git commit -m "pub 1"', { spawnCwd: repo });
+    assertEq(code, 2, 'no cwd → the subject is checked as today');
+    assert(stderr.includes('Conventional Commits'), `names the failure, got: ${stderr}`);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   group('commit-language: fail-open');

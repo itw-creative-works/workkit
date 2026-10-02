@@ -9,8 +9,10 @@
 
 set -euo pipefail
 
-# Resolve before any cd: BASH_SOURCE may be a relative path.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve before any cd: BASH_SOURCE may be a relative path. Physically, since
+# the schedule calls this as ~/.claude/workkit/../jobs/, and a logical `..`
+# would step out of the link instead of through it.
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE="$SCRIPT_DIR/../workflow"
 
 # The engine's voice. lib.sh is seeded onto the runner beside this file, and the
@@ -178,11 +180,11 @@ fi
 # clones or enables nothing (jobs/README.md § The morning on this machine).
 reconcile_runner() {
   if (( CLOUD )); then
-    note_skip 'runner: a runner IS the seeded copy of the cloud brief; there is no checkout here to reconcile it from, skipped'
+    note_skip 'runner: a runner IS the seeded copy of the cloud brief; there is no kit here to reconcile it from, skipped'
     return 0
   fi
   if [[ ! -f "$ENGINE/lib.sh" || ! -f "$ENGINE/home.sh" ]]; then
-    note_warn "runner: the engine libraries are missing at $ENGINE; the cloud brief's runner was not reconciled (a partial checkout)"
+    note_warn "runner: the engine libraries are missing at $ENGINE; the cloud brief's runner was not reconciled; the kit is incomplete"
     return 0
   fi
 
@@ -468,7 +470,7 @@ elif (( $# == 0 )) && (( MANUAL == 0 )); then
   if [[ -f "$SCRIPT_DIR/brief-dispatch.sh" ]]; then
     . "$SCRIPT_DIR/brief-dispatch.sh"
   else
-    DISPATCH_REASON="$SCRIPT_DIR/brief-dispatch.sh is missing; a partial checkout"
+    DISPATCH_REASON="$SCRIPT_DIR/brief-dispatch.sh is missing; the kit is incomplete"
     dispatch_brief() { return 1; }
   fi
   if dispatch_brief; then

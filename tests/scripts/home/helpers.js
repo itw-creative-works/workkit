@@ -52,10 +52,11 @@ const mkRemote = (root, { seed = null } = {}) => {
 /**
  * The tower app the seed copies from, the real one's shape without its weight:
  * a brand root whose manifests carry `file:` specs into a sibling framework
- * checkout, a target under targets/web, and the accretions the seed must leave
- * behind (node_modules at both levels, a lockfile, .omega, dist).
+ * checkout (or, given `registryPin`, that npm version instead), a target under
+ * targets/web, and the accretions the seed must leave behind (node_modules at
+ * both levels, a lockfile, .omega, dist, .claude).
  */
-const mkTowerApp = (root) => {
+const mkTowerApp = (root, { registryPin = null } = {}) => {
   const app = path.join(root, 'checkout', 'tower', 'app');
   const framework = path.join(root, 'omega', 'packages');
   fs.mkdirSync(path.join(framework, 'manager'), { recursive: true });
@@ -67,12 +68,12 @@ const mkTowerApp = (root) => {
     description: 'The tower UI.',
     workspaces: ['targets/*'],
     scripts: { build: 'omega build' },
-    devDependencies: { '@omega.js/manager': 'file:../../../omega/packages/manager' },
+    devDependencies: { '@omega.js/manager': registryPin || 'file:../../../omega/packages/manager' },
   });
   writeJson(path.join(app, 'targets', 'web', 'package.json'), {
     name: 'workkit-tower-web',
     private: true,
-    dependencies: { '@omega.js/web': 'file:../../../../../omega/packages/web' },
+    dependencies: { '@omega.js/web': registryPin || 'file:../../../../../omega/packages/web' },
     scripts: { build: 'omega build' },
   });
   fs.writeFileSync(path.join(app, '.gitignore'), 'node_modules/\npackage-lock.json\ndist/\n.omega/\n');
@@ -93,6 +94,8 @@ const mkTowerApp = (root) => {
   fs.writeFileSync(path.join(app, '.omega', 'runs', 'one.json'), '{}\n');
   fs.mkdirSync(path.join(app, 'targets', 'web', 'dist'), { recursive: true });
   fs.writeFileSync(path.join(app, 'targets', 'web', 'dist', 'index.html'), 'stale build\n');
+  fs.mkdirSync(path.join(app, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(app, '.claude', 'settings.json'), '{}\n');
 
   return { app, framework };
 };
@@ -102,12 +105,14 @@ const mkTowerApp = (root) => {
  * decides whether `gh repo view` finds the home repo already; `discussionsOn`
  * and `categories` are what the Discussions API reports; `pagesOn` whether Pages
  * is already configured, and `pagesFails` whether enabling it is refused (the
- * private-repo-on-a-free-plan case).
+ * private-repo-on-a-free-plan case). `registryPin` is the tower app fixture's
+ * npm version for both framework packages, in place of its `file:` specs.
  */
 const mkWorld = ({
   login = 'owner', repoExists = false, discussionsOn = false,
   categories = ['Daily', 'Weekly', 'Monthly', 'Brief'], pagesOn = false, pagesFails = false,
   settings = { version: 1, site: { repo: null, publish: false, url: null } }, remote = null, npmLinksOn = 1,
+  registryPin = null,
 } = {}) => {
   const root = mkTmp('workkit-home-');
   const bin = path.join(root, 'bin');
@@ -119,7 +124,7 @@ const mkWorld = ({
     fs.mkdirSync(workflowHome, { recursive: true });
     fs.writeFileSync(path.join(workflowHome, 'settings.json'), `${JSON.stringify(settings, null, 2)}\n`);
   }
-  const tower = mkTowerApp(root);
+  const tower = mkTowerApp(root, { registryPin });
 
   // npm is a shim throughout, so no install reaches the network. `npmLinksOn`
   // is which invocation links the workspace bin (1 ordinary, 2 a fresh tree, 0

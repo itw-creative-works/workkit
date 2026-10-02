@@ -130,10 +130,40 @@ while IFS= read -r -d '' rel; do
   fi
 done <"$tmp/paths"
 
-if [ -d "$root/node_modules" ] && [ ! -e "$copy/node_modules" ]; then
-  ln -s "$root/node_modules" "$copy/node_modules" || fail "could not link node_modules into the copy"
-  [ -L "$copy/node_modules" ] || fail "node_modules came back a copy, not a link"
-fi
+# fill_modules <rel> [scope]: <rel> becomes a real folder in the copy, each root
+# entry linked in absolutely; a workspace link (resolving inside the root and
+# outside every node_modules) points at the same path inside the copy instead,
+# and a scope folder is filled the same way, one level down.
+fill_modules() {
+  local rel="$1" entry name target plain=()
+  mkdir -p "$copy/$rel" || fail "could not make $rel in the copy"
+  for entry in "$root/$rel"/* "$root/$rel"/.[!.]* "$root/$rel"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    name="${entry##*/}"
+    if [ -L "$entry" ] && target=$(cd -P "$entry" 2>/dev/null && pwd -P) \
+      && [ "${target#"$root"/}" != "$target" ] && ! in_modules "${target#"$root"/}"; then
+      ln -s "$copy/${target#"$root"/}" "$copy/$rel/$name" || fail "could not link $rel/$name into the copy"
+    elif [ $# -eq 1 ] && [ "${name#@}" != "$name" ] && [ -d "$entry" ] && [ ! -L "$entry" ]; then
+      fill_modules "$rel/$name" scope
+    else
+      plain+=("$entry")
+    fi
+  done
+  [ ${#plain[@]} -eq 0 ] || ln -s "${plain[@]}" "$copy/$rel/" || fail "could not link $rel's entries into the copy"
+}
+
+in_modules() {
+  case "/$1/" in */node_modules/*) return 0 ;; esac
+  return 1
+}
+
+# Every node_modules whose folder is up to three levels down, never one inside
+# another, unless the copy already holds it or lacks the folder it sits in.
+while IFS= read -r -d '' dir; do
+  rel="${dir#"$root"/}"
+  [ -d "$dir" ] && [ ! -e "$copy/$rel" ] && [ ! -L "$copy/$rel" ] && [ -d "$(dirname "$copy/$rel")" ] || continue
+  fill_modules "$rel"
+done < <(find "$root" -maxdepth 4 \( -name .git -prune \) -o \( -name node_modules -prune -print0 \))
 
 cd "$copy/$prefix" 2>/dev/null \
   || fail "could not enter ${prefix:-the root} in the copy: HEAD and the working diff hold nothing there"

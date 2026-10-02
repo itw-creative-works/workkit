@@ -6,9 +6,9 @@
 // and brand.name are required by the schema. The tower is a localhost tool
 // with no cloud project.
 //
-// LOCAL ERA: every @omega.js/* dependency is a relative file: spec into the
-// sibling Omega checkout (see tower/app/README.md). The specs flip to registry
-// ranges when OMEGA publishes.
+// The two @omega.js packages pin an exact npm version. The maintainer links a
+// sibling omega checkout with `omega i local` at tower/app, and restores the
+// pins with `omega i live` before a commit (tower/README.md).
 {
   brand: {
     id: "workkit",

@@ -93,8 +93,7 @@ const run = async () => {
       `an absolute path, got: ${root.devDependencies['@omega.js/manager']}`);
     assert(web.dependencies['@omega.js/web'].startsWith('file:/'),
       `at every level, got: ${web.dependencies['@omega.js/web']}`);
-    assert(/Local era/.test(root.description), `and the note that says why, got: ${root.description}`);
-    assertEq(root.description.match(/Local era/g).length, 1, 'said once, however many runs there have been');
+    assert(!/Local era/.test(root.description), `and the description gains no Local era note, got: ${root.description}`);
     cleanup(world.root);
   });
 
@@ -159,7 +158,7 @@ const run = async () => {
     const said = out + err;
     assertEq(rc, 1, `the caller can tell it did not run: ${said}`);
     assert(said.includes('carries workkit 99.0.0'), `it names what the clone carries: ${said}`);
-    assert(said.includes(`this checkout is ${kitVersion()}`), `and what this checkout is: ${said}`);
+    assert(said.includes(`this kit is ${kitVersion()}`), `and what this kit is: ${said}`);
     assert(/not downgrading/.test(said), `and what it refused to do: ${said}`);
     assert(/workkit update/.test(said), `with the command that fixes it: ${said}`);
     assertEq(JSON.stringify(mtimes(world.clone)), JSON.stringify(before), 'and wrote nothing at all');

@@ -1,5 +1,6 @@
 // Tests for workflow/home.sh: the seed (the tower app becomes the project, its
-// file: specs resolved, and the first commit carries none of the working files).
+// file: specs resolved and registry specs kept, and the first commit carries
+// none of the working files).
 // The shared prologue is ./helpers.js.
 
 const fs = require('fs');
@@ -28,6 +29,7 @@ const run = async () => {
     assert(!fs.existsSync(path.join(world.tower, 'package-lock.json')), 'nor the lockfile');
     assert(!fs.existsSync(path.join(world.tower, '.omega')), 'nor the omega run machinery');
     assert(!fs.existsSync(path.join(world.tower, 'targets', 'web', 'dist')), 'nor a stale build');
+    assert(!fs.existsSync(path.join(world.tower, '.claude')), 'nor the checkout’s .claude folder');
     assert(/seeded the tower project/.test(out), `and it says what it did, got: ${out}`);
     cleanup(world.root);
   });
@@ -50,7 +52,22 @@ const run = async () => {
       `file:${shellPath(path.join(world.framework, 'web'))}`,
       'and so does every app, resolved from ITS own directory',
     );
-    assert(/Local era/.test(world.pkg().description), 'the description says why the manifest names a path');
+    cleanup(world.root);
+  });
+
+  await test('a registry spec passes the seed untouched, and the description gains no Local era note', () => {
+    const world = mkWorld({ registryPin: '0.54.1' });
+    world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
+    const { code, out } = inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed');
+    assertEq(code, 0, `exit 0: ${out}`);
+
+    assertEq(world.pkg().devDependencies['@omega.js/manager'], '0.54.1', 'the root manifest keeps its npm version');
+    assertEq(
+      world.pkg(path.join('targets', 'web', 'package.json')).dependencies['@omega.js/web'],
+      '0.54.1',
+      'and so does the app',
+    );
+    assert(!/Local era/.test(world.pkg().description), `no Local era sentence, got: ${world.pkg().description}`);
     cleanup(world.root);
   });
 

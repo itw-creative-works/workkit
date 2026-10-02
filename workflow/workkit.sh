@@ -115,7 +115,7 @@ usage: workkit <command> [args]
                        as an issue on the home repo outside every project
 
 The engine it drives lives beside this script; the spec both implement is
-docs/project-state.md in the checkout.
+docs/project-state.md in the kit.
 EOF
 }
 
@@ -182,10 +182,10 @@ case "${1:-help}" in
   brief)   shift; cmd_brief "$@" ;;
   tower)
     shift
-    # The tower lives in the checkout, not the engine: a partial checkout
-    # that copied only workflow/ has nothing to run.
+    # The tower lives in the kit, not the engine: a partial copy that holds
+    # only workflow/ has nothing to run.
     if [[ ! -f "$TOWER_START" ]]; then
-      wk_error "tower: no tower beside this engine ($TOWER_START), and this command needs the workkit checkout"
+      wk_error "tower: no tower beside this engine ($TOWER_START), and this command needs the whole kit"
       exit 1
     fi
     exec bash "$TOWER_START" "$@"

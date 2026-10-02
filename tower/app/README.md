@@ -32,24 +32,20 @@ for its one web target, so it cannot also be a member of workkit's root
 `package.json` - it gets its own `npm install`, and workkit's root install
 never reaches it.
 
-## The local era, and the flip to registry versions
+## The framework pins
 
-Every `@omega.js/*` dependency is a **relative `file:` spec** into the sibling
-Omega checkout, because OMEGA is not published yet:
+Both `@omega.js/*` dependencies pin an **exact npm version**, so `npm install`
+needs no Omega checkout:
 
 | package.json | dependency | spec |
 |---|---|---|
-| `tower/app/package.json` | `@omega.js/manager` | `file:../../../../Omega/omega/packages/manager` |
-| `tower/app/targets/web/package.json` | `@omega.js/web` | `file:../../../../../../Omega/omega/packages/web` |
+| `tower/app/package.json` | `@omega.js/manager` | `0.54.1` |
+| `tower/app/targets/web/package.json` | `@omega.js/web` | `0.54.1` |
 
-Both resolve against `~/Developer/Repositories`, where workkit and Omega are
-siblings. The cost is accepted deliberately: **building the tower UI requires
-the Omega checkout** until OMEGA publishes.
-
-**When OMEGA publishes**, replace both `file:` specs with registry ranges
-(`^1.0.0` or whatever the first published major is), run `npm install`, and
-delete this section's premise - nothing else in this app changes, because
-nothing here imports through a path.
+The maintainer with a sibling Omega checkout runs `omega i local` here to link
+the framework from it, and `omega i live` to restore the pins before a commit.
+`tower/README.md` § "Where a published copy comes from" has the longer
+explanation.
 
 ## The shape of it
 

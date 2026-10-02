@@ -1,10 +1,10 @@
 #!/bin/bash
 # hooks/lib/commit.sh: the command-text reads the guards share: the heredoc and
 # quote strips, the `NAME=1` escape, the redirect `&` fold, the directory-change
-# test, the git-commit finder with its two internal helpers, and the
-# redirect-word test. SOURCED by hooks/_lib.sh, never executed, and it runs
-# nothing at load: it defines functions and sets nothing. It reads no name of
-# the entry's.
+# test, the git-commit finder with its two internal helpers, the redirect-word
+# test, and the two origin tests that place a commit outside the pipeline.
+# SOURCED by hooks/_lib.sh, never executed, and it runs nothing at load: it
+# defines functions and sets nothing. It reads no name of the entry's.
 
 # hook_strip_heredocs <cmd>: remove heredoc bodies for command detection, since
 # a body is file content. Off entirely when a heredoc feeds an interpreter
@@ -285,4 +285,17 @@ hook_redirect_span() {
     attached) printf '1\n' ;;
     *) printf '0\n' ;;
   esac
+}
+
+# hook_repo_has_origin <dir>: does the repo at <dir> have an origin? One without
+# is a scratch or fixture repo, outside the pipeline, so the commit hooks skip it.
+hook_repo_has_origin() {
+  [ -n "$(wk_repo_slug "$1")" ]
+}
+
+# hook_originless_cwd <cwd>: is the hook input's cwd inside a git work tree with
+# no origin? An empty cwd or one in no repo is not, so the hook judges it as ever.
+hook_originless_cwd() {
+  [ -n "$1" ] && git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    && ! hook_repo_has_origin "$1"
 }

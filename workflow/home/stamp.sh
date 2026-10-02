@@ -46,7 +46,7 @@ wk_home_downgrades() {
   mine="$(wk_kit_version)"
   [[ -n "$mine" ]] || return 1
   wk_semver_gt "$stamp" "$mine" || return 1
-  wk_warn "home: the clone carries workkit $stamp and this checkout is $mine; not downgrading; run \`workkit update\` here"
+  wk_warn "home: the clone carries workkit $stamp and this kit is $mine; not downgrading; run \`workkit update\` here"
   return 0
 }
 

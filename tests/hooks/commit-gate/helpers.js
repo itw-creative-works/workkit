@@ -12,6 +12,7 @@ const {
 const { mkTmp } = require('../../lib/scratch');
 const { plantRecord, reviewMarkerPath } = require('../../lib/suite-record');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
+const { FIXTURE_ORIGIN } = require('../../lib/git-repo');
 
 const HOOK = path.join(__dirname, '..', '..', '..', 'hooks', 'safety', 'commit-gate', 'run.sh');
 // The gate's CHANGELOG check resolves the engine by path; point it at this
@@ -24,7 +25,7 @@ const TMP = mkTmp('cg-tmp-');
 
 const mkRepo = () => {
   const dir = mkTmp('cg-test-');
-  execSync('git init && git commit --allow-empty -m "init"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+  execSync(`git init && git commit --allow-empty -m "init" && git remote add origin ${FIXTURE_ORIGIN}`, { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
   return dir;
 };
 

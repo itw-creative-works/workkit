@@ -137,7 +137,7 @@ const run = async () => {
     // The checkout moved on: a `git pull` since the last setup.
     fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.sh'), '\n# a later change\n');
     const { out } = runnerDoctor(world);
-    assert(/brief runner is behind this checkout/.test(out), `it names the drift, got: ${out}`);
+    assert(/brief runner is behind this kit/.test(out), `it names the drift, got: ${out}`);
     assert(/1 of \d+ file\(s\) differ/.test(out), `and how much of it, got: ${out}`);
     assert(/workkit setup/.test(out), 'and the command that heals it');
     assert(/rc=1/.test(out), 'and counts');
@@ -178,7 +178,7 @@ const run = async () => {
     const world = withRunner();
     world.env.WORKKIT_KIT_DIR = path.join(world.root, 'not-a-checkout');
     const { out } = runnerDoctor(world);
-    assert(/plugin checkout could not be resolved/.test(out), `it says why it cannot compare, got: ${out}`);
+    assert(/the kit could not be resolved/.test(out), `it says why it cannot compare, got: ${out}`);
     assert(/rc=0/.test(out), 'and counts as nothing needing attention');
     cleanup(world.root);
   });

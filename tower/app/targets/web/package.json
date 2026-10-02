@@ -4,7 +4,7 @@
   "private": true,
   "description": "The tower dashboard - an OMEGA web app served on 4300, reading the tower API on 8693",
   "dependencies": {
-    "@omega.js/web": "file:../../../../../../Omega/omega/packages/web"
+    "@omega.js/web": "0.54.1"
   },
   "scripts": {
     "start": "omega dev",

@@ -63,7 +63,7 @@ wk_home_runner_doctor() {
     return 0
   }
   [[ -n "$WK_KIT_DIR" && -d "$WK_KIT_DIR" ]] || {
-    wk_skip "runner: the plugin checkout could not be resolved beside this engine; the cloud brief's runner cannot be compared"
+    wk_skip "runner: the kit could not be resolved beside this engine; the cloud brief's runner cannot be compared"
     return 0
   }
 
@@ -76,7 +76,7 @@ wk_home_runner_doctor() {
   done
 
   if [[ "$compared" -eq 0 ]]; then
-    wk_skip "runner: this checkout carries none of the cloud brief's runner files; nothing to compare"
+    wk_skip "runner: this kit carries none of the cloud brief's runner files; nothing to compare"
     return 0
   fi
 
@@ -87,9 +87,9 @@ wk_home_runner_doctor() {
   if [[ "$behind" -gt 0 || "$retired" -gt 0 ]]; then
     local detail="$behind of $compared file(s) differ"
     [[ "$retired" -gt 0 ]] && detail="$detail, $retired retired file(s) await pruning"
-    wk_warn "runner: the home repo's brief runner is behind this checkout ($detail); run \`workkit setup\`"
+    wk_warn "runner: the home repo's brief runner is behind this kit ($detail); run \`workkit setup\`"
     return 1
   fi
-  wk_ok "runner: the cloud brief's runner in $WK_HOME_DIR is current with this checkout"
+  wk_ok "runner: the cloud brief's runner in $WK_HOME_DIR is current with this kit"
   return 0
 }

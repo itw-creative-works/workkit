@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# workflow/workkit/schedule.sh: the 9am schedule, its drift against this
-# checkout, the installer run, the update that keeps an installed schedule
+# workflow/workkit/schedule.sh: the 9am schedule, its drift against the kit's
+# job template, the installer run, the update that keeps an installed schedule
 # current, and the first install that only `setup` makes. Sourced by
 # workkit.sh, functions only; JOBS_INSTALL, DAILY_PLIST and DAILY_LABEL are the
 # entry's.
 
-# What the installed schedule differs from this checkout in, one line per
+# What the installed schedule differs from the kit's template in, one line per
 # agent, empty when current. A missing installer or an unfinished check prints
 # its reason and returns 1, so neither reads as current.
 cron_drift() {
   if [[ ! -f "$JOBS_INSTALL" ]]; then
-    printf 'the installer is missing at %s; this checkout is incomplete\n' "$JOBS_INSTALL"
+    printf 'the installer is missing at %s; the kit is incomplete\n' "$JOBS_INSTALL"
     return 1
   fi
   bash "$JOBS_INSTALL" --check 2>/dev/null | wk_plain || {
@@ -30,9 +30,14 @@ run_installer() {
     return 0
   fi
   # "already installed and loaded" is the installer confirming a no-op; every
-  # other line is something it did.
-  printf '%s\n' "$out" | wk_plain | grep -v 'already installed and loaded' | grep -v '^[[:space:]]*$' \
-    | while IFS= read -r line; do wk_ok "schedule: $line"; done || true
+  # other line is something it did, and a warning stays a warning.
+  printf '%s\n' "$out" | sed $'s/\033\\[[0-9;]*m//g' | grep -v 'already installed and loaded' | grep -v '^[[:space:]]*$' \
+    | while IFS= read -r line; do
+        case "${line#"${line%%[![:space:]]*}"}" in
+          '⚠ '*) wk_warn "schedule: $(printf '%s\n' "$line" | wk_plain)" ;;
+          *) wk_ok "schedule: $(printf '%s\n' "$line" | wk_plain)" ;;
+        esac
+      done || true
 }
 
 # Re-render and reload only a schedule the machine already has: installing one
@@ -70,8 +75,8 @@ install_cron() {
   fi
 
   if [[ -f "$DAILY_PLIST" ]]; then
-    # Already installed: the only question left is whether it still matches this
-    # checkout, and a check that cannot answer stops the step rather than
+    # Already installed: the only question left is whether it still matches the
+    # kit's template, and a check that cannot answer stops the step rather than
     # reinstalling on a guess. Either way setup carries on: the steps after
     # this one have nothing to do with launchd.
     if ! drift="$(cron_drift)"; then
@@ -83,7 +88,7 @@ install_cron() {
       return 0
     fi
   elif [[ ! -f "$JOBS_INSTALL" ]]; then
-    wk_warn "schedule: the installer is missing at $JOBS_INSTALL; this checkout is incomplete"
+    wk_warn "schedule: the installer is missing at $JOBS_INSTALL; the kit is incomplete"
     return 0
   fi
 

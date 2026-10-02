@@ -5,7 +5,7 @@ Scheduled work the kit runs. **One job, at 9am, in five steps, and one script th
 | Step | What it needs | Where it runs |
 |---|---|---|
 | the **summaries** | this machine's session transcripts and git history | the Mac; a named skip on a runner |
-| the **runner** | the plugin checkout beside this script, and the home clone | the Mac; a named skip on a runner, which IS the seeded copy |
+| the **runner** | the kit beside this script, and the home clone | the Mac; a named skip on a runner, which IS the seeded copy |
 | the **brief** | the sweep token and the roster, which live on the home repo | the **cloud**; on the Mac the step is the dispatch and nothing else |
 | the **publish** | the home clone and its build tooling | the Mac; a named skip on a runner |
 | the **marker** | a home that outlives the job, for a session to read the file in | the Mac; a named skip on a runner |
@@ -22,9 +22,9 @@ It lives here rather than in a machine's own configuration because it is kit kno
 bash jobs/install.sh
 ```
 
-Renders the plist for THIS checkout into `~/Library/LaunchAgents/` and loads it. Idempotent: a second run with an unchanged plist confirms the agent is loaded and does nothing else. Re-run it after moving the checkout: the plist carries absolute paths, because launchd expands nothing.
+Renders the plist into `~/Library/LaunchAgents/` and loads it. Idempotent: a second run with an unchanged plist confirms the agent is loaded and does nothing else. launchd expands nothing, so the plist names the job through the engine's address (`~/.claude/workkit/../jobs/morning.sh`): a moved clone or a plugin update repoints that link and needs no re-run.
 
-**This script is also driven for you.** `workkit setup` runs it for the first install, and `workkit update` (which the standards hook calls once a day as `update --auto`) re-runs it when the machine has drifted from this checkout, so a moved clone or a changed template no longer waits for anyone to remember. The drift question is `bash jobs/install.sh --check`: the same render and compare with nothing written and launchd never asked, printing one line per agent that is missing or out of date, and nothing at all when the machine matches. The CLI carries no second copy of what a current install looks like; that answer lives here. A schedule is only ever installed FRESH by a human: the automatic path updates and never introduces one.
+**This script is also driven for you.** `workkit setup` runs it for the first install, and `workkit update` (which the standards hook calls once a day as `update --auto`) re-runs it when the job template changed, so a changed template no longer waits for anyone to remember; a moved clone needs no re-run, since the job is reached through the engine link. The drift question is `bash jobs/install.sh --check`: the same render and compare with nothing written and launchd never asked, printing one line per agent that is missing or out of date, and nothing at all when the machine matches. The CLI carries no second copy of what a current install looks like; that answer lives here. A schedule is only ever installed FRESH by a human: the automatic path updates and never introduces one.
 
 ## The pieces
 
@@ -40,7 +40,7 @@ Renders the plist for THIS checkout into `~/Library/LaunchAgents/` and loads it.
 | `../workflow/templates/github-workflows/brief.yml` | what runs `morning.sh` on a runner: `workflow_dispatch` for the machine's trigger, a 17:30 UTC cron as the backup. It lives on the HOME repo, seeded there by setup; this is its source |
 | `claude-nightly/nightly-payload.js` | the summaries payload: the reflection instruction, then the day's transcript INDEX and commits as JSON, or, with `--cadence weekly\|monthly`, the rollup instruction over the prior summaries handed in on stdin. Pure gather |
 | `claude-nightly.sh` | the summaries step: composes the day, sends it, and posts it as a Discussion on the home repo, logging what it decided to `~/Library/Logs/claude-nightly.log` |
-| `com.workkit.claude-daily.plist` | the schedule: 9:00 AM daily, `{{WORKKIT_DIR}}` and `{{HOME}}` rendered at install |
+| `com.workkit.claude-daily.plist` | the schedule: 9:00 AM daily, `{{HOME}}` rendered at install, the job reached through the engine link |
 | `install.sh` | render, compare, and only on change copy and reload, where "loaded" means loaded from THIS plist, so a label registered against some other path is re-registered rather than reported current. launchd is machine-global, so a run whose `$HOME` is not the account's real home renders and copies but asks launchd nothing, printing what it WOULD have loaded; `WORKKIT_LAUNCHD_OK=1` forces the calls. `--check` is the same comparison as a report, touching neither disk nor launchd |
 
 ## Where the output goes

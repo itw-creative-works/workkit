@@ -2,7 +2,7 @@
 
 <h1 align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/mark-dark.svg"><img src="docs/assets/mark.svg" height="28" alt=""></picture> workkit</h1>
 
-Install it, and every Claude Code session works the same way: each change starts as a GitHub issue, gets a spec you approve, is built and tested by a small crew of agents, and ships only when you say so.
+<p align="center">One plugin turns your GitHub Issues into an automated SDLC pipeline. Each issue is specced, built, reviewed &amp; tested by an agent crew.</p>
 
 workkit is a plugin for [Claude Code](https://code.claude.com/docs/en/overview), Anthropic's coding agent for the terminal.
 
@@ -78,7 +78,6 @@ Each is one `SKILL.md` of bullets, at most 120 non-blank lines with no line over
 - jq
 - Node.js with npm, a current LTS release
 - the Claude Code CLI (`claude`)
-- for the dashboard only: a checkout of the OMEGA framework, which it is built with ([tower/README.md](tower/README.md) says where)
 
 It runs on macOS, on Linux, and on Windows under Git Bash. The 9am schedule on your own machine is macOS only; everywhere else the same brief runs in the cloud from your home repo.
 

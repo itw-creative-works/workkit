@@ -18,7 +18,7 @@ WK_TOWER_APP="${WORKKIT_TOWER_APP:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../tower
 # What a copy of the app never carries: `tower/app/.gitignore` plus `.git` and
 # `.DS_Store`, matched by name at every depth. One list for the seed and the
 # sync on both sides, so they agree on what the project is.
-WK_TOWER_APP_EXCLUDE=(node_modules package-lock.json .omega .cache .temp dist .env '.env.*' logs .git .DS_Store)
+WK_TOWER_APP_EXCLUDE=(node_modules package-lock.json .omega .cache .temp dist .env '.env.*' logs .claude .git .DS_Store)
 
 # The gitignore's own `!` lines, root names only: what the exclusions would take
 # that the copy still needs.

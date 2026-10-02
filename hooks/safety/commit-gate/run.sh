@@ -53,13 +53,19 @@ trap 'gate_rc=$?; [ -z "$heal_tmp" ] || rm -rf "$heal_tmp"; if [ "$gate_rc" -eq 
 
 [ -n "$commit_clause" ] || exit 0
 
+# A cwd inside a repo with no origin is a scratch or fixture repo, outside the
+# pipeline: only the blocks that place the commit apply to it.
+cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
+no_origin=0
+if hook_originless_cwd "$cwd"; then no_origin=1; fi
+
 # The gate classifies the repo it stands in, so a commit aimed elsewhere (git -C,
 # or cd/pushd/popd earlier in the line) fails closed and asks for a plain commit.
 [ "$saw_cd" -eq 1 ] && block "the command changes directory before committing; run a plain 'git commit' with the session already in the repo so the gate can see its staging."
 
 # Stage-and-commit in one call is ungateable: the gate reads the index before
 # the in-command `git add` runs. Same ruling as -C and cd.
-[ "$saw_stage" -eq 1 ] && block "the command stages and commits in one call, so the gate cannot see what the commit will carry; stage first (its own command), then run a plain 'git commit'."
+[ "$saw_stage" -eq 1 ] && [ "$no_origin" -eq 0 ] && block "the command stages and commits in one call, so the gate cannot see what the commit will carry; stage first (its own command), then run a plain 'git commit'."
 
 # Walk the commit clause's tokens: detect -C/--git-dir/--work-tree/GIT_DIR=
 # (wrong-repo), -a/--all (include modified tracked files), and pathspec
@@ -113,13 +119,13 @@ done
 no_repo() {
   block "the session's directory is not inside a git repository, so the gate cannot see what this commit would carry. cd into the repo's root as its own command first, then run a plain 'git commit' there."
 }
-cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
 [ -n "$cwd" ] || exit 0
 cd "$cwd" 2>/dev/null || no_repo
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || no_repo
 # Everything below judges the REPO, not the session cwd, so a session in a
 # subdirectory is gated identically.
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || no_repo
+[ "$no_origin" -eq 0 ] || exit 0
 
 # Files going into the commit: staged, plus modified tracked files with -a/--all.
 files=$(git -c core.quotePath=false diff --cached --name-only 2>/dev/null || true)

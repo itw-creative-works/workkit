@@ -4,13 +4,14 @@
 # functions only. WK_TOWER_APP, WK_TOWER_APP_EXCLUDE, WK_TOWER_APP_KEEP and
 # WK_HOME_SYNC_MANIFESTS are the entry's; WK_HOME_DIR is lib.sh's.
 
-# The seed: README § The home repo's lifecycle, step 4. The one thing it adds
-# on top of the copy is the absolute `file:` specs.
+# The seed: README § The home repo's lifecycle, step 4. The npm pins travel as
+# they are; a `file:` spec, which only a maintainer tree in local mode carries,
+# is made absolute.
 wk_home_seed() {
   local pkg target_pkg name excludes=()
 
   [[ -n "$WK_TOWER_APP" && -d "$WK_TOWER_APP" ]] || {
-    wk_warn "home: the tower app is missing at ${WK_TOWER_APP:-this checkout}; nothing to seed the project from"
+    wk_warn "home: the tower app is missing at ${WK_TOWER_APP:-this kit}; nothing to seed the project from"
     return 1
   }
 
@@ -34,11 +35,11 @@ wk_home_seed() {
 
   # The manifests, root first and then every target: each spec resolves from the
   # directory of the manifest it was copied from, never from the clone.
-  wk_home_project_manifest "$WK_HOME_DIR/package.json" "$WK_TOWER_APP" --root
+  wk_home_repoint_file_specs "$WK_HOME_DIR/package.json" "$WK_TOWER_APP"
   for pkg in "$WK_HOME_DIR"/targets/*/package.json; do
     [[ -f "$pkg" ]] || continue
     target_pkg="${pkg#"$WK_HOME_DIR"/}"
-    wk_home_project_manifest "$pkg" "$WK_TOWER_APP/$(dirname "$target_pkg")"
+    wk_home_repoint_file_specs "$pkg" "$WK_TOWER_APP/$(dirname "$target_pkg")"
   done
 
   # From the very first commit the clone says which kit wrote it.
@@ -95,11 +96,7 @@ wk_home_sync() {
         rc=3
         break
       }
-      if [[ "$rel" == 'package.json' ]]; then
-        wk_home_project_manifest "$want" "$WK_TOWER_APP" --root
-      else
-        wk_home_project_manifest "$want" "$(dirname "$src")"
-      fi
+      wk_home_repoint_file_specs "$want" "$(dirname "$src")"
     fi
     cmp -s "$want" "$dest" 2>/dev/null && continue
     mkdir -p "$(dirname "$dest")" 2>/dev/null || true

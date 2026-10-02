@@ -20,7 +20,7 @@ BRIEF_WORKFLOW='brief.yml'
 
 # The engine beside this file: the same folder in a checkout and in the runner
 # tree setup seeds. Resolve before any cd: BASH_SOURCE may be a relative path.
-WK_DISPATCH_ENGINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../workflow" 2>/dev/null && pwd || printf '%s' "$(dirname "${BASH_SOURCE[0]}")/../workflow")"
+WK_DISPATCH_ENGINE="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../workflow" 2>/dev/null && pwd || printf '%s' "$(dirname "${BASH_SOURCE[0]}")/../workflow")"
 
 # Every reason the dispatch cannot be made is a named one: nothing is composed
 # anywhere to cover for it (jobs/README.md § The morning on this machine).

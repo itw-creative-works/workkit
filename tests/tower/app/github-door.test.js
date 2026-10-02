@@ -5,7 +5,9 @@
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { resetIn, clockAt } = require('../../lib/gh');
-const { loadLibs, mkFetch, jsonResponse, SWEEP, isRoster, mkSiteFetch } = require('./helpers');
+const {
+  loadLibs, mkFetch, jsonResponse, SWEEP, USER_URL, isRoster, mkSiteFetch,
+} = require('./helpers');
 
 const run = async () => {
   const { github } = await loadLibs();
@@ -54,13 +56,33 @@ const run = async () => {
     assertEq(fetchImpl.calls[2].options.headers.authorization, 'Bearer fake-token-for-tests', 'unlocked by the token and nothing else');
   });
 
-  await test('a site published without its home pointer says so, and reaches GitHub not at all', async () => {
+  await test('a copy with no home pointer asks the token who it is, and draws that viewer’s board', async () => {
+    const central = () => mkFetch((url) => {
+      if (url === 'data/home.json') return jsonResponse(404, {});
+      if (url === USER_URL) return jsonResponse(200, { login: 'someone' });
+      if (isRoster(url)) return jsonResponse(200, { repos: ['ITW-Creative-Works/workkit'], home: '' });
+      return jsonResponse(200, { data: SWEEP.data });
+    });
+    const fetchImpl = central();
+    // A token of its own: the login is remembered per token across every suite.
+    const answer = await github.readFeed('/api/board', { token: 'door-central', fetch: fetchImpl });
+    assertEq(answer.ok, true, `the central copy draws a board, got: ${answer.reason}`);
+    assertEq(answer.data.issues[0].number, 81, 'with the issues GitHub just returned');
+    assertEq(fetchImpl.calls.filter((call) => call.url === USER_URL).length, 1, 'the login is asked exactly once');
+    assertEq(fetchImpl.calls[1].url, USER_URL, 'straight after the missing pointer');
+    assertEq(fetchImpl.calls[2].url, 'https://api.github.com/repos/someone/workkit/contents/data/repos.json?ref=main',
+      'and the roster comes from <login>/workkit on main');
+    const slugs = await github.fetchSlugs({ token: 'door-central', fetch: central() });
+    assertEq(slugs.source, 'login', 'the roster read says where the home came from');
+  });
+
+  await test('a copy with no home pointer and no token reaches GitHub not at all', async () => {
     const missing = mkFetch((url) => (url === 'data/home.json'
       ? jsonResponse(404, {})
-      : jsonResponse(200, { repos: ['owner/workkit'], home: 'owner/workkit' })));
-    const answer = await github.readFeed('/api/board', { token: 't', fetch: missing });
-    assertEq(answer.ok, false, 'there is nowhere to read the roster from');
-    assert(/without its home repo/.test(answer.reason), `and it says which half is missing, got: ${answer.reason}`);
+      : jsonResponse(200, { login: 'someone', repos: ['owner/workkit'], home: 'owner/workkit' })));
+    const answer = await github.readFeed('/api/board', { token: '', fetch: missing });
+    assertEq(answer.ok, false, 'there is no login to name a home from');
+    assert(/token/.test(answer.reason || ''), `and the reason is the token the prompt asks for, got: ${answer.reason}`);
     assertEq(missing.calls.length, 1, 'nothing was asked of GitHub');
   });
 

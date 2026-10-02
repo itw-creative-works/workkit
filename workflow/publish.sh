@@ -200,7 +200,7 @@ publish_switch() {
     exit "$SOURCE_RC"
   fi
   if [[ ! -x "$OMEGA_BIN" ]]; then
-    wk_skip "publish: the tower project's build tooling is not installed at $WK_HOME_DIR (no node_modules/.bin/omega; its @omega.js deps resolve by file: spec from a sibling omega checkout); nothing is built here; \`(cd -P $WK_HOME_DIR && npm install)\` on a machine with that checkout installs it"
+    wk_skip "publish: there is no omega binary at $WK_HOME_DIR/node_modules/.bin/omega, so nothing is built here; run \`(cd -P $WK_HOME_DIR && npm install)\` and read its output"
     exit "$SOURCE_RC"
   fi
 }

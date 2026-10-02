@@ -49,7 +49,8 @@ export const readFeed = async (path, ctx = {}) => {
   const { repos, home } = list.data;
   const slugs = repos.map((repo) => repo.slug);
 
-  if (path === '/api/repos') return { ok: true, data: repos, status: 200, reason: null };
+  // The roster carries the tier it was resolved from, which Settings names.
+  if (path === '/api/repos') return { ok: true, data: repos, status: 200, reason: null, home: list.home, source: list.source };
 
   // The progress callback is the board feed's alone: a brief poll handing half
   // a board to the page would walk a finished board backwards.

@@ -28,7 +28,7 @@ wk_home_install() {
   if [[ -x "$WK_HOME_DIR/node_modules/.bin/omega" ]]; then
     wk_ok "home: the tower project can build here"
   else
-    wk_warn "home: the tower project's build tooling did not install (no node_modules/.bin/omega); its @omega.js deps resolve by file: link into the omega monorepo, so nothing publishes until that checkout is reachable"
+    wk_warn "home: the tower project's build tooling did not install (no node_modules/.bin/omega); \`npm install\` in $WK_HOME_DIR did not produce the omega binary, so nothing publishes until it does; run it there and read its output"
   fi
   return 0
 }

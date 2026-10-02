@@ -140,6 +140,22 @@ const run = async () => {
       'and the empty roster forks with it, so the two halves of the dialog cannot disagree');
   });
 
+  await test('Settings names the tier the copy is, and a copy with no roster names none', () => {
+    const textOf = (markup) => markup.replace(/<[^>]*>/g, '');
+    assert(/local tower/i.test(textOf(token.tierNote('tower', null))), 'a tower behind the page is the local tower');
+    const published = textOf(token.tierNote('github', { ok: true, source: 'home.json', home: 'other/workkit' }));
+    assert(/published from other\/workkit/i.test(published), `a baked pointer names its home, got: ${published}`);
+    const central = textOf(token.tierNote('github', { ok: true, source: 'login', home: 'someone/workkit' }));
+    assert(/central copy/i.test(central) && central.includes('someone/workkit'), `the login's home is the central copy, got: ${central}`);
+    assertEq(token.tierNote('locked', { ok: true, source: 'login', home: 'someone/workkit' }), '', 'a locked copy states no tier');
+    assertEq(token.tierNote('github', { ok: false }), '', 'nor does a copy whose login read was refused - there is no home to name');
+    const looked = textOf(token.tierNote('github', { ok: false, home: 'someone/workkit', source: 'login' }));
+    assert(looked.includes('someone/workkit'), `a home that was found is named even when its roster read failed, got: ${looked}`);
+    const hostile = token.tierNote('github', { ok: true, source: 'home.json', home: '<img src=x onerror=1>' });
+    assert(!hostile.includes('<img'), 'a hostile home is escaped');
+    assert(hostile.includes('&lt;img src=x'), 'and shows as what it says');
+  });
+
   await test('saving stores what was typed and reads the page again with it', () => {
     for (const hostname of ['alice.github.io', 'tower.example.com', '203.0.113.5']) {
       assert(!token.isLocalHost(hostname), `${hostname} is not this machine`);

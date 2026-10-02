@@ -70,7 +70,7 @@ const run = async () => {
     const { kit, script } = mkPartialKit();
     const { code, err } = runCli(world, ['brief'], { script });
     assertEq(code, 1, 'exit 1');
-    assert(err.includes('needs the workkit checkout'), `the error names the cause, got: ${err}`);
+    assert(err.includes('needs the whole kit'), `the error names the kit as the cause, got: ${err}`);
     cleanup(world.root); cleanup(kit);
   });
 
@@ -116,7 +116,7 @@ const run = async () => {
     const { script } = mkPartialKit();
     const { code, err } = runCli(world, ['tower'], { script });
     assertEq(code, 1, 'exit 1');
-    assert(err.includes('needs the workkit checkout'), `the error names the cause, got: ${err}`);
+    assert(err.includes('needs the whole kit'), `the error names the kit as the cause, got: ${err}`);
     cleanup(world.root);
   });
 

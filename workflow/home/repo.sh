@@ -63,7 +63,8 @@ wk_home_empty() {
 
 # Every `file:` spec in one package.json, repointed at the absolute path it
 # resolves to from the manifest it was copied from, since a relative one means
-# nothing in the clone. Not needed once OMEGA publishes to a registry.
+# nothing in the clone. Only a maintainer tree left in local mode carries one.
+# The seed applies it, and the sync applies it to a scratch copy to compare.
 # Usage: wk_home_repoint_file_specs <seeded package.json> <source package dir>
 wk_home_repoint_file_specs() {
   local pkg="$1" srcdir="$2" specs name spec rel abs
@@ -91,23 +92,5 @@ wk_home_repoint_file_specs() {
       | (if (.devDependencies // {} | has($n)) then .devDependencies[$n] = $v else . end)' \
       >/dev/null 2>&1 || true
   done <<<"$specs"
-  return 0
-}
-
-# The whole transform one manifest gets on its way out of the checkout. The
-# seed applies it, and the sync applies it to a scratch copy to compare what
-# would land.
-# Usage: wk_home_project_manifest <manifest> <source package dir> [--root]
-wk_home_project_manifest() {
-  local pkg="$1" srcdir="$2" root="${3:-}"
-  wk_home_repoint_file_specs "$pkg" "$srcdir"
-  [[ "$root" == '--root' ]] || return 0
-  [[ -f "$pkg" ]] || return 0
-  command -v jq >/dev/null 2>&1 || return 0
-
-  # The description tells a reader on another machine why the deps name a path.
-  wk_json_edit "$pkg" \
-    --arg note ' Local era: the @omega.js frameworks resolve by absolute file: link into the omega monorepo on the machine that seeded this repo, until OMEGA publishes.' \
-    '.description = ((.description // "") + $note)' >/dev/null 2>&1 || true
   return 0
 }

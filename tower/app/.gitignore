@@ -21,3 +21,6 @@ dist/
 
 # Run logs (truncated on every launch - never committed)
 logs/
+
+# omega install writes this for its own plugin; the repo does not carry it
+.claude/

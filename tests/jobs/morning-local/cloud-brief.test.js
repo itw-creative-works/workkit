@@ -81,7 +81,7 @@ const run = async () => {
     const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(stray, 'morning.sh'))], { encoding: 'utf8', timeout: 60000, env: world.env });
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(world.dispatched().length, 0, 'nothing was triggered');
-    assert(/partial checkout/.test(world.log()), `the reason names the missing lib: ${world.log()}`);
+    assert(/kit is incomplete/.test(world.log()), `the reason names the missing lib: ${world.log()}`);
     assert(/no brief this morning/.test(world.log()), `and the morning is briefless, not broken: ${world.log()}`);
     assert(/marker: the engine library is missing/.test(world.log()), `the marker names the missing lib: ${world.log()}`);
     await settle();

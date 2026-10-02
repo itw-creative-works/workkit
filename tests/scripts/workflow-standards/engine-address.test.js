@@ -10,6 +10,8 @@ const {
 } = require('../../lib/platform');
 const { WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, runScript } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
+const { mkPluginCopy } = require('../../lib/plugin-copy');
+const { mkOriginRepo } = require('../../lib/git-repo');
 
 const run = async () => {
   group("standards.sh: the engine's address");
@@ -209,8 +211,7 @@ const run = async () => {
     const copy = path.join(copyRoot, 'workflow');
     fs.mkdirSync(copy, { recursive: true });
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
-    spawnSync('git', ['init', '-q'], { cwd: copyRoot });
-    spawnSync('git', ['remote', 'add', 'origin', 'https://github.com/someone/not-the-kit.git'], { cwd: copyRoot });
+    mkOriginRepo(copyRoot, 'https://github.com/someone/not-the-kit.git');
     const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
       env: {
         ...process.env,
@@ -233,8 +234,7 @@ const run = async () => {
     const copy = path.join(copyRoot, 'workflow');
     fs.mkdirSync(copy, { recursive: true });
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
-    spawnSync('git', ['init', '-q'], { cwd: copyRoot });
-    spawnSync('git', ['remote', 'add', 'origin', 'git@github.com:ITW-Creative-Works/workkit.git'], { cwd: copyRoot });
+    mkOriginRepo(copyRoot, 'git@github.com:ITW-Creative-Works/workkit.git');
     runScript(repo, { claudeHome: claude });   // prime it with THIS engine first
     const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
       env: {
@@ -262,8 +262,7 @@ const run = async () => {
     const copy = path.join(copyRoot, 'workflow');
     fs.mkdirSync(copy, { recursive: true });
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
-    spawnSync('git', ['init', '-q'], { cwd: copyRoot });
-    spawnSync('git', ['remote', 'add', 'origin', 'C:\\Users\\x\\kits\\workkit.git'], { cwd: copyRoot });
+    mkOriginRepo(copyRoot, 'C:\\Users\\x\\kits\\workkit.git');
     runScript(repo, { claudeHome: claude });   // prime it with THIS engine first
     const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
       env: {
@@ -279,6 +278,74 @@ const run = async () => {
     assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(copy),
       'a natively spelled origin names the kit, so the checkout takes the address');
     cleanup(repo); cleanup(claude); cleanup(copyRoot);
+  });
+
+  // A plugin install is a copy with no git under it: Claude's plugin cache,
+  // `<claude home>/plugins/cache/<marketplace>/<plugin>/<version>/`, whose
+  // manifest names the kit. That place, not an origin, makes it the engine.
+  const engineLinkFrom = (copy, claude) => spawnSync(BASH, [...NO_RC, shellPath(path.join(copy, 'standards.sh')), '--engine-link'], {
+    env: {
+      ...process.env,
+      PATH: joinPath(SYSTEM_PATH, NODE_DIR),
+      WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')),
+      WORKFLOW_CLAUDE_HOME: shellPath(claude),
+    },
+    encoding: 'utf8',
+    timeout: 20000,
+  });
+
+  await test('a copy in the plugin cache takes the address', () => {
+    const { claude } = claudeHomeWith();
+    const copy = mkPluginCopy(path.join(claude, 'plugins', 'cache', 'workkit', 'workkit', '0.0.0'));
+    const res = engineLinkFrom(copy, claude);
+    assertEq(res.status, 0, `the step runs: ${res.stderr}`);
+    const link = path.join(claude, 'workkit');
+    assert(fs.existsSync(link) && fs.lstatSync(link).isSymbolicLink(), `the address is a symlink, got: ${res.stderr}`);
+    assertEq(fs.realpathSync(link), fs.realpathSync(copy), 'and it resolves to the cached engine');
+    assert(res.stderr.includes('engine: linked'), `and says so, got: ${res.stderr}`);
+    cleanup(claude);
+  });
+
+  // A claude home that is itself a symlink (a dotfiles-managed ~/.claude):
+  // the engine's own path is physical, the home's is not, and both name one place.
+  await test('a copy in the cache of a symlinked claude home takes the address', () => {
+    const { claude: real } = claudeHomeWith();
+    const claude = path.join(mkTmp('wf-std-'), '.claude');
+    fs.symlinkSync(real, claude);
+    const copy = mkPluginCopy(path.join(real, 'plugins', 'cache', 'workkit', 'workkit', '0.0.0'));
+    const res = engineLinkFrom(copy, claude);
+    assertEq(res.status, 0, `the step runs: ${res.stderr}`);
+    const link = path.join(claude, 'workkit');
+    assert(fs.existsSync(link) && fs.lstatSync(link).isSymbolicLink(), `the address is a symlink, got: ${res.stderr}`);
+    assertEq(fs.realpathSync(link), fs.realpathSync(copy), 'and it resolves to the cached engine');
+    cleanup(real); cleanup(path.dirname(claude));
+  });
+
+  // A clone is the machine engine its owner chose; a plugin install beside it
+  // must not take the address from under it.
+  await test('a clone keeps the address over a cache copy', () => {
+    const { claude } = claudeHomeWith();
+    const cloneRoot = mkTmp('wf-std-');
+    const clone = path.join(cloneRoot, 'workflow');
+    fs.cpSync(WORKFLOW_DIR, clone, { recursive: true });
+    mkOriginRepo(cloneRoot, 'https://github.com/owner/workkit.git');
+    fs.symlinkSync(clone, path.join(claude, 'workkit'));
+    const copy = mkPluginCopy(path.join(claude, 'plugins', 'cache', 'workkit', 'workkit', '0.0.0'));
+    const res = engineLinkFrom(copy, claude);
+    assertEq(res.status, 0, `the step runs: ${res.stderr}`);
+    assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(clone), 'the address still resolves to the clone');
+    assert(!(res.stdout + res.stderr).includes('engine:'), `and nothing is said about it, got: ${res.stderr}`);
+    cleanup(claude); cleanup(cloneRoot);
+  });
+
+  await test('the same copy outside the plugin cache leaves the address alone, silently', () => {
+    const { claude } = claudeHomeWith();
+    const copy = mkPluginCopy(path.join(mkTmp('wf-std-'), 'workkit', 'workkit', '0.0.0'));
+    const res = engineLinkFrom(copy, claude);
+    assertEq(res.status, 0, `the step runs: ${res.stderr}`);
+    assert(!fs.existsSync(path.join(claude, 'workkit')), 'a manifest alone does not make a copy the machine engine');
+    assert(!(res.stdout + res.stderr).includes('engine:'), `and says nothing: a skip, not a fault, got: ${res.stderr}`);
+    cleanup(claude);
   });
 
   return summary();

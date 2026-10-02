@@ -14,6 +14,7 @@ const {
 } = require('./platform');
 const { mkTmp } = require('./scratch');
 const { suiteMarkerPath } = require('./suite-record');
+const { FIXTURE_ORIGIN } = require('./git-repo');
 const { WRAPPER, EXE_CLAUDE_HOME } = require('../hooks/commit-gate/helpers');
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -48,6 +49,7 @@ const mkRepo = (pkg, extra = {}) => {
   }
   git(dir, 'add', '-A');
   git(dir, 'commit', '-q', '-m', 'seed');
+  git(dir, 'remote', 'add', 'origin', FIXTURE_ORIGIN);
   return dir;
 };
 

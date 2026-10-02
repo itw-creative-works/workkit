@@ -6,7 +6,9 @@
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { loadLibs, libs, mkFetch, jsonResponse, SWEEP, SLUGS, CLOSED_NOW } = require('./helpers');
+const {
+  loadLibs, libs, mkFetch, jsonResponse, SWEEP, SLUGS, CLOSED_NOW, USER_URL,
+} = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
 
 const apiBrief = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'brief.js'));
@@ -46,6 +48,88 @@ const run = async () => {
     assertEq(answer.ok, false, 'there is nothing to read it with');
     assert(/no GitHub token/.test(answer.reason), `the refusal is the one the prompt answers, got: ${answer.reason}`);
     assertEq(fetchImpl.calls.length, 1, 'and the unauthenticated read stopped at the public pointer');
+  });
+
+  // The login is remembered per token for the life of the module, and every
+  // suite shares that module, so each test asking the login brings its own token.
+
+  /** A site with or without its pointer, a viewer behind `user`, and a roster on any home. */
+  const centralFetch = (pointer, user) => mkFetch((url) => {
+    if (url === 'data/home.json') return pointer ? jsonResponse(200, pointer) : jsonResponse(404, { message: 'Not Found' });
+    if (url === USER_URL) return user;
+    return jsonResponse(200, { repos: ['owner/workkit'], home: '' });
+  });
+
+  await test('a login names its home: <login>/workkit on main, and no login names nothing', () => {
+    const home = github.homeFromLogin('ianwieds');
+    assertEq(home.home, 'ianwieds/workkit', 'the viewer’s own workkit repo');
+    assertEq(home.branch, 'main', 'on main, the branch a pointer naming none falls back to');
+    // parseSlugs' convention for junk: nothing parses to nothing, never a throw
+    // and never undefined, so no slug is invented from an empty login.
+    assertEq(github.homeFromLogin('').home, '', 'an empty login names no home');
+  });
+
+  await test('a copy with no home pointer reads the roster from the viewer’s own workkit', async () => {
+    const fetchImpl = centralFetch(null, jsonResponse(200, { login: 'someone' }));
+    const answer = await github.fetchSlugs({ token: 'login-fallback', fetch: fetchImpl });
+    assertEq(answer.ok, true, `the central copy draws a board, got: ${answer.reason}`);
+    assertEq(answer.source, 'login', 'and says the home came from the login');
+    const asked = fetchImpl.calls.find((call) => call.url === USER_URL);
+    assert(asked, `the viewer was asked who they are, calls: ${fetchImpl.calls.map((call) => call.url).join(', ')}`);
+    assertEq(asked.options.headers.authorization, 'Bearer login-fallback', 'with the viewer’s token - the only thing that knows the login');
+    assert(fetchImpl.calls.some((call) => call.url === 'https://api.github.com/repos/someone/workkit/contents/data/repos.json?ref=main'),
+      `the roster is read from <login>/workkit on main, calls: ${fetchImpl.calls.map((call) => call.url).join(', ')}`);
+  });
+
+  await test('a baked home pointer wins, and the login is never asked', async () => {
+    const fetchImpl = centralFetch({ home: 'other/workkit' }, jsonResponse(200, { login: 'someone' }));
+    const answer = await github.fetchSlugs({ token: 't', fetch: fetchImpl });
+    assertEq(answer.ok, true, `the published copy draws its board, got: ${answer.reason}`);
+    assertEq(answer.source, 'home.json', 'and says the home came from the file');
+    assert(!fetchImpl.calls.some((call) => call.url === USER_URL), `the login read is never made, calls: ${fetchImpl.calls.map((call) => call.url).join(', ')}`);
+    assert(fetchImpl.calls.some((call) => call.url === 'https://api.github.com/repos/other/workkit/contents/data/repos.json?ref=main'),
+      'the roster is read from the repo the file names');
+  });
+
+  await test('the roster feed carries where its home came from, for Settings to name', async () => {
+    const answer = await github.readFeed('/api/repos', { token: 'repos-feed', fetch: centralFetch(null, jsonResponse(200, { login: 'someone' })) });
+    assertEq(answer.ok, true, `answered, got: ${answer.reason}`);
+    assertEq(answer.home, 'someone/workkit', 'the home the roster was read from');
+    assertEq(answer.source, 'login', 'and the tier that named it');
+  });
+
+  await test('a refused login read is a failure that names the token', async () => {
+    const fetchImpl = centralFetch(null, jsonResponse(401, { message: 'Bad credentials' }));
+    const answer = await github.fetchSlugs({ token: 'refused-login', fetch: fetchImpl });
+    assertEq(answer.ok, false, 'with no login there is no home to read');
+    assert(/token/.test(answer.reason || ''), `and the reason points at the token, got: ${answer.reason}`);
+  });
+
+  await test('only a missing pointer falls back to the login - a pointer that errored is a failure', async () => {
+    const fetchImpl = centralFetch(null, jsonResponse(200, { login: 'someone' }));
+    const down = mkFetch((url, options) => (url === 'data/home.json' ? jsonResponse(503, { message: 'Service Unavailable' }) : fetchImpl(url, options)));
+    const answer = await github.fetchSlugs({ token: 'pointer-down', fetch: down });
+    assertEq(answer.ok, false, 'a site that did not answer is not a site with no pointer');
+    assert(/503/.test(answer.reason || ''), `the reason names the status, got: ${answer.reason}`);
+    assert(!down.calls.some((call) => call.url === USER_URL), `and the login is never asked, calls: ${down.calls.map((call) => call.url).join(', ')}`);
+  });
+
+  await test('the login is asked once per token, and a new token asks again', async () => {
+    const fetchImpl = centralFetch(null, jsonResponse(200, { login: 'someone' }));
+    const logins = () => fetchImpl.calls.filter((call) => call.url === USER_URL).length;
+    await github.fetchSlugs({ token: 'once-a', fetch: fetchImpl });
+    const again = await github.fetchSlugs({ token: 'once-a', fetch: fetchImpl });
+    assertEq(again.source, 'login', `the second read still names its home from the login, got: ${again.reason}`);
+    assertEq(logins(), 1, 'two reads with one token ask the login once');
+    await github.fetchSlugs({ token: 'once-b', fetch: fetchImpl });
+    assertEq(logins(), 2, 'and a different token is a different viewer, asked afresh');
+  });
+
+  await test('the home repo name is the one setup creates', () => {
+    const homeSh = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'workflow', 'home.sh'), 'utf8');
+    const pinned = (homeSh.match(/WK_HOME_REPO_NAME='(.+)'/) || [])[1];
+    assert(pinned, 'workflow/home.sh names the home repo');
+    assertEq(github.HOME_NAME, pinned, 'and the central copy reads <login>/ that same name');
   });
 
   await test('the brief the browser builds is the brief the tower builds', () => {

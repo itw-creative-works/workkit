@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install this checkout's LaunchAgent, the 9am daily job: renders
+# Install this kit's LaunchAgent, the 9am daily job: renders
 # jobs/<label>.plist into ~/Library/LaunchAgents/ and (re)loads it, only when
 # something changed. Copied, never symlinked: launchd expands nothing, and
 # `launchctl bootstrap` is unreliable with symlinked plists. launchd is
@@ -16,7 +16,7 @@ case "${1:-}" in
   --*) printf 'usage: install.sh [--check]\n' >&2; exit 1 ;;
 esac
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKKIT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # The engine's voice. `workkit update` relays these lines under its own glyph,
@@ -61,6 +61,22 @@ skip_launchd() {
   wk_ok "$1 → would $2 (skipped: HOME is not this account's home; set WORKKIT_LAUNCHD_OK=1 to force)"
 }
 
+# The plist reaches the job through ~/.claude/workkit, so a link that is missing
+# or names another kit runs no job or that kit's; a workkit clone outranking this
+# cached copy is the one other answer that holds. Both modes say it.
+# Usage: check_engine_link <label>
+check_engine_link() {
+  local link="$HOME/.claude/workkit" linked
+  linked="$(cd "$link" 2>/dev/null && pwd -P || true)"
+  [[ "$linked" == "$WORKKIT_DIR/workflow" ]] && return 0
+  wk_clone_outranks "$WORKKIT_DIR" "$linked" && return 0
+  if [[ -z "$linked" ]]; then
+    wk_warn "$1 → the job runs through $link, which does not resolve, so it cannot reach this kit; run \`workkit update\`"
+  else
+    wk_warn "$1 → the job runs through $link, which resolves to $linked, not this kit's $WORKKIT_DIR/workflow; run \`workkit update\`"
+  fi
+}
+
 # Render, compare, and only on change copy and reload.
 # Usage: install_agent <label> <schedule description>
 install_agent() {
@@ -73,18 +89,22 @@ install_agent() {
     exit 1
   fi
 
-  sed -e "s|{{WORKKIT_DIR}}|$WORKKIT_DIR|g" -e "s|{{HOME}}|$HOME|g" "$TEMPLATE" > "$RENDERED"
+  # The job runs through the engine link, never a baked kit path, so a moved
+  # kit or a plugin update that repoints the link needs no reinstall.
+  sed -e "s|{{HOME}}|$HOME|g" "$TEMPLATE" > "$RENDERED"
 
   if ! plutil -lint "$RENDERED" >/dev/null 2>&1; then
     wk_error "$LABEL → rendered plist fails plutil -lint"
     exit 1
   fi
 
+  check_engine_link "$LABEL"
+
   if [[ "$MODE" == "check" ]]; then
     if [[ ! -f "$TARGET" ]]; then
       wk_ok "$LABEL → not installed"
     elif ! cmp -s "$RENDERED" "$TARGET"; then
-      wk_ok "$LABEL → out of date for this checkout"
+      wk_ok "$LABEL → out of date for this kit"
     fi
     return 0
   fi

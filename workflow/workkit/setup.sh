@@ -14,7 +14,7 @@ report_globals() {
   # The roster's address is the engine's (WK_HOME_REPOS in lib.sh), so a
   # checkout without the library cannot name it.
   if [[ "$HOME_LIBS" -ne 1 ]]; then
-    wk_skip "roster: the engine library is missing beside $SCRIPT_DIR; this checkout cannot name the roster"
+    wk_skip "roster: the engine library is missing beside $SCRIPT_DIR; this engine cannot name the roster"
     return 0
   fi
   if [[ ! -f "$WK_HOME_REPOS" ]]; then
@@ -48,7 +48,7 @@ report_globals() {
 # to run once it has them, rather than silently getting no home.
 home_steps() {
   if [[ "$HOME_LIBS" -ne 1 ]]; then
-    wk_warn "home: the home-repo library is missing beside $SCRIPT_DIR; this checkout is incomplete"
+    wk_warn "home: the home-repo library is missing beside $SCRIPT_DIR; the kit is incomplete"
     return 0
   fi
   wk_home_setup

@@ -82,11 +82,13 @@ const dropPathWithoutGh = () => {
   noGhPath = null;
 };
 
-// Every run gets a disposable cache, home, WORKFLOW_HOME and claude home, so the
-// daily marker and the files the engine writes never leak between tests or
-// reach the developer's own. workflowDir: null drops WORKFLOW_DIR so the hook
-// resolves the engine beside itself.
-const runHook = (cwd, { cache, pathPrefix, home, workflowDir, workflowHome, setup = true } = {}) => {
+// Every run gets a disposable cache, home, WORKFLOW_HOME and claude home (or
+// the `claudeHome` given), so nothing the engine writes leaks between tests or
+// reaches the developer's own. workflowDir: null drops WORKFLOW_DIR so the
+// hook resolves the engine beside itself.
+const runHook = (cwd, {
+  cache, pathPrefix, home, workflowDir, workflowHome, claudeHome, setup = true,
+} = {}) => {
   const cacheDir = cache || mkTmp('wf-hook-');
   // The home stays native for anything this suite writes into it, and goes
   // through the shell's spelling only on the way into the child's environment.
@@ -97,7 +99,7 @@ const runHook = (cwd, { cache, pathPrefix, home, workflowDir, workflowHome, setu
     // Outside the marker cache: the engine seeds the user settings file there,
     // and the tests count one marker file per repo in the cache.
     WORKFLOW_HOME: shellPath(workflowHome || path.join(mkTmp('wf-hook-'), 'workflow-home')),
-    WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-hook-'), 'claude-home')),
+    WORKFLOW_CLAUDE_HOME: shellPath(claudeHome || path.join(mkTmp('wf-hook-'), 'claude-home')),
   });
   if (setup) seedSetup(homeDir);
   const dir = workflowDir === undefined ? WORKFLOW_DIR : workflowDir;

@@ -9,6 +9,7 @@ const {
   cleanup, makeRepo, decline, runHook, dropPathWithoutGh,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
+const { mkPluginCopy } = require('../../lib/plugin-copy');
 
 const run = async () => {
   group('workflow:standards: the setup pester (#72)');
@@ -62,6 +63,35 @@ const run = async () => {
     assert(ctx.includes('workkit.sh setup'), `the machine question is not the repo's to decline, got: ${ctx}`);
     assert(!ctx.includes('not in the issue workflow'), 'the decline still holds for the repo offer');
     cleanup(repo); cleanup(home); cleanup(cacheDir); cleanup(workflowHome);
+  });
+
+  // The command the pester hands over names where the engine lives, and a
+  // plugin install keeps it in Claude's plugin cache, not a checkout. The copy
+  // carries the plugin manifest a real install has.
+
+  await test('an engine in the plugin cache: the pester says so', () => {
+    const repo = makeRepo();
+    const home = mkTmp('wf-hook-');
+    const engine = mkPluginCopy(path.join(home, '.claude', 'plugins', 'cache', 'workkit', 'workkit', '0.0.0'));
+    const { code, stdout, cacheDir } = runHook(repo, {
+      home, claudeHome: path.join(home, '.claude'), workflowDir: engine, setup: false,
+    });
+    assertEq(code, 0, 'exit 0');
+    const line = contextOf(stdout).split('\n').find((l) => l.startsWith('SETUP:')) || '';
+    assert(line.includes('plugin cache'), `the nudge names the plugin cache, got: ${line}`);
+    assert(line.includes('workkit.sh setup'), `and still hands over the command, got: ${line}`);
+    cleanup(repo); cleanup(cacheDir); cleanup(home);
+  });
+
+  await test('an engine anywhere else: the pester never mentions the plugin cache', () => {
+    const repo = makeRepo();
+    const engine = mkPluginCopy(path.join(mkTmp('wf-hook-'), 'workkit'));
+    const { code, stdout, cacheDir } = runHook(repo, { workflowDir: engine, setup: false });
+    assertEq(code, 0, 'exit 0');
+    const line = contextOf(stdout).split('\n').find((l) => l.startsWith('SETUP:')) || '';
+    assert(line.includes('workkit.sh setup'), `the nudge is there, got: ${line}`);
+    assert(!line.includes('plugin cache'), `and says nothing of a plugin cache, got: ${line}`);
+    cleanup(repo); cleanup(cacheDir); cleanup(path.dirname(engine));
   });
 
   dropPathWithoutGh();

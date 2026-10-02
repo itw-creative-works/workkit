@@ -33,6 +33,37 @@ const mkWorld = () => mkRepo('red-proof-', {
   'tests/x.test.js': TEST_OF(1),
 });
 
+// Prints where `@scope/a` resolved and the root of the tree this file sits in,
+// then asserts the package's value.
+const WS_TEST_OF = (value) => [
+  "const fs = require('fs'), path = require('path');",
+  "console.log('resolved', require.resolve('@scope/a'));",
+  "console.log('root', fs.realpathSync(path.join(__dirname, '..')));",
+  "const a = require('@scope/a');",
+  `if (a !== ${value}) throw new Error('a is ' + a);`,
+  '',
+].join('\n');
+
+/**
+ * A scratch workspaces repo: a root package.json with `workspaces`, the package
+ * `packages/a` (exports 1) behind the relative link `node_modules/@scope/a`, and
+ * `packages/a/node_modules/dep` (exports 7). Both node_modules are ignored.
+ */
+const mkWorkspaces = () => {
+  const w = mkRepo('red-proof-ws-', {
+    'package.json': `${JSON.stringify({ name: 'root', private: true, workspaces: ['packages/*'] })}\n`,
+    '.gitignore': 'node_modules/\n',
+    'packages/a/package.json': `${JSON.stringify({ name: '@scope/a', main: 'index.js' })}\n`,
+    'packages/a/index.js': 'module.exports = 1;\n',
+    'packages/a/dep.test.js': "console.log('dep', require('dep'), require.resolve('dep'));\n",
+    'tests/a.test.js': WS_TEST_OF(1),
+  });
+  fs.mkdirSync(path.join(w.repo, 'node_modules', '@scope'), { recursive: true });
+  fs.symlinkSync(path.join('..', '..', 'packages', 'a'), path.join(w.repo, 'node_modules', '@scope', 'a'), 'dir');
+  w.write('packages/a/node_modules/dep/index.js', 'module.exports = 7;\n');
+  return w;
+};
+
 const runScript = (w, args, cwd = w.repo) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
     cwd, env: w.env, encoding: 'utf8', timeout: 60000,
@@ -42,6 +73,9 @@ const runScript = (w, args, cwd = w.repo) => {
 };
 
 const lines = (out) => out.split('\n').filter(Boolean);
+
+/** The value after `<tag> ` on the stdout line that starts with it. */
+const field = (out, tag) => (lines(out).find((l) => l.startsWith(`${tag} `)) || '').slice(tag.length + 1);
 
 /** The worktree is gone: one `git worktree list` line, nothing left in TMPDIR. */
 const assertNoWorktree = (w) => {
@@ -171,6 +205,38 @@ const run = async () => {
     const check = "process.exit(require('fs').lstatSync('src/dead.js').isSymbolicLink() ? 0 : 1)";
     const { code, out, err } = runScript(w, ['src/y.js', '--', 'node', '-e', check]);
     assertEq(code, 1, `exit 1, the copy holds the dangling link: ${out}${err}`);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  group('red-proof.sh: workspaces');
+
+  await test('a workspace package name loads the copy\'s files: red on its edited source, exit 0', () => {
+    const w = mkWorkspaces();
+    w.write('packages/a/index.js', 'module.exports = 2;\n');
+    w.write('tests/a.test.js', WS_TEST_OF(2));
+    const { code, out, err } = runScript(w, ['packages/a/index.js', '--', 'node', 'tests/a.test.js']);
+    const resolved = field(out, 'resolved');
+    const root = field(out, 'root');
+    assert(root !== '' && root !== w.repo, `the test ran in a copy, not the live root: ${out}`);
+    assert(resolved.startsWith(`${root}${path.sep}`), `@scope/a resolved under the copy ${root}: ${resolved}`);
+    assert(!resolved.startsWith(`${w.repo}${path.sep}`), `never under the live root ${w.repo}: ${resolved}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
+    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    assert(err.includes('a is 1'), `HEAD's package source ran: ${err}`);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  await test('a package\'s own node_modules is reachable from the copy: dep resolves, green, exit 1', () => {
+    const w = mkWorkspaces();
+    w.write('packages/a/index.js', 'module.exports = 2;\n');
+    const { code, out, err } = runScript(w, ['packages/a/index.js', '--', 'node', 'packages/a/dep.test.js']);
+    assert(out.includes('dep 7 '), `dep resolved through packages/a/node_modules: ${out}${err}`);
+    assert(field(out, 'dep').endsWith(path.join('packages', 'a', 'node_modules', 'dep', 'index.js')),
+      `the nested package's file: ${out}`);
+    assertEq(code, 1, `exit 1: ${out}${err}`);
+    assertEq(lines(out).pop(), 'red-proof: green: the tests pass without packages/a/index.js', `the last stdout line: ${out}`);
     assertNoWorktree(w);
     cleanup(w.dir);
   });

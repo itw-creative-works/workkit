@@ -34,6 +34,27 @@ wk_jq_default() {
   printf '%s' "$out"
 }
 
+# wk_in_plugin_cache <kit dir>: whether the kit is the workkit plugin's copy in
+# Claude's plugin cache: its manifest names workkit and its physical path lies
+# under the PHYSICAL <claude home>/plugins/cache/, since ~/.claude may be a
+# symlink. WORKFLOW_CLAUDE_HOME is the tests' seam, as everywhere it is read.
+wk_in_plugin_cache() {
+  local kit home manifest
+  kit="$(cd "$1" 2>/dev/null && pwd -P)" || return 1
+  manifest="$kit/.claude-plugin/plugin.json"
+  [[ -f "$manifest" ]] && command -v jq >/dev/null 2>&1 || return 1
+  [[ "$(wk_jq -r '.name // empty' "$manifest" 2>/dev/null)" == 'workkit' ]] || return 1
+  home="$(cd "${WORKFLOW_CLAUDE_HOME:-${HOME:-}/.claude}" 2>/dev/null && pwd -P)" || return 1
+  [[ -n "$home" && "$kit" == "$home/plugins/cache/"* ]]
+}
+
+# wk_clone_outranks <kit dir> <linked dir>: a clone outranks the plugin cache,
+# so a machine-wide link a cached kit finds naming a workkit clone is current.
+# The clone test is wk_is_kit_checkout in lib/slug.sh, sourced beside this.
+wk_clone_outranks() {
+  wk_in_plugin_cache "$1" && wk_is_kit_checkout "${2:-}"
+}
+
 # wk_mv_link: rename onto an address that may be a symlink without following
 # it, or the source lands inside the directory it points at. GNU spells it -T
 # and BSD -h, so `mv` itself is asked which it is.

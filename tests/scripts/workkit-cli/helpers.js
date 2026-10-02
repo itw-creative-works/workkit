@@ -13,6 +13,8 @@ const {
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { mkTmp } = require('../../lib/scratch');
+const { mkPluginCopy } = require('../../lib/plugin-copy');
+const { mkOriginRepo } = require('../../lib/git-repo');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 const CLI = path.join(WORKFLOW_DIR, 'workkit.sh');
@@ -279,10 +281,11 @@ const seedSettings = (world, site) => {
  * One of the CLI's own functions, called directly, the way the home suites call
  * the engine's libraries: sourcing with `help` loads every function. Answers
  * arrive on stdin from a file, not spawnSync's `input`: node's pipes are
- * socketpairs on macOS and BSD `script` refuses a socket for stdin.
+ * socketpairs on macOS and BSD `script` refuses a socket for stdin. `entry`
+ * is another copy of the CLI to source, a cache-shaped kit's for one.
  */
-const inCli = (world, script, { input = '', env } = {}) => {
-  const driver = `. ${JSON.stringify(CLI)} help >/dev/null\n${script}`;
+const inCli = (world, script, { input = '', env, entry = CLI } = {}) => {
+  const driver = `. ${JSON.stringify(entry)} help >/dev/null\n${script}`;
   const stdinFile = path.join(world.root, 'inCli-stdin');
   fs.writeFileSync(stdinFile, input);
   const fd = fs.openSync(stdinFile, 'r');
@@ -338,9 +341,24 @@ const mkPartialKit = ({ installer } = {}) => {
 const mkKit = (slug) => {
   const kit = mkTmp('workkit-cli-');
   fs.cpSync(WORKFLOW_DIR, path.join(kit, 'workflow'), { recursive: true });
-  spawnSync('git', ['init', '-q'], { cwd: kit });
-  spawnSync('git', ['remote', 'add', 'origin', `https://github.com/${slug}.git`], { cwd: kit });
+  mkOriginRepo(kit, `https://github.com/${slug}.git`);
   return { kit, script: path.join(kit, 'workflow', 'workkit.sh') };
+};
+
+/**
+ * The kit as a plugin install leaves it: a copy with no `.git` and no origin,
+ * in the world's own Claude plugin cache, whose manifest names the kit. The
+ * schedule installer and the tower are stubs that do nothing. Returns the
+ * entry point to run.
+ */
+const mkCacheKit = (world, version = '0.0.0') => {
+  const kit = path.join(world.claudeHome, 'plugins', 'cache', 'workkit', 'workkit', version);
+  const engine = mkPluginCopy(kit, { version });
+  fs.mkdirSync(path.join(kit, 'jobs'), { recursive: true });
+  writeStub(path.join(kit, 'jobs', 'install.sh'), ['exit 0']);
+  fs.mkdirSync(path.join(kit, 'tower'), { recursive: true });
+  writeStub(path.join(kit, 'tower', 'start.sh'), ['exit 0']);
+  return { kit, script: path.join(engine, 'workkit.sh') };
 };
 
 // The checkout's own origin, and the machine's home repo. The cloud secrets
@@ -358,5 +376,6 @@ const mkHomeWorld = (opts = {}) => {
 
 module.exports = {
   WORKFLOW_DIR, CLI, LABEL, cleanup, writeStub, mkWorld, withNpm, mintTest, runCli, ACTED, mkRepo,
-  installSchedule, seedSettings, inCli, AT_TERMINAL, mkPartialKit, mkKit, SLUG, HOME, mkHomeWorld,
+  installSchedule, seedSettings, inCli, AT_TERMINAL, mkPartialKit, mkKit, mkCacheKit, SLUG, HOME,
+  mkHomeWorld,
 };

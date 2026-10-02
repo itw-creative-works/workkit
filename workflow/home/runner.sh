@@ -27,7 +27,7 @@ wk_home_seed_runner() {
   local pair src dest found rel changed=0 removed=0 missing=''
 
   [[ -n "$WK_KIT_DIR" && -d "$WK_KIT_DIR" ]] || {
-    wk_warn "home: the plugin checkout could not be resolved beside this engine; the cloud brief's runner was not seeded"
+    wk_warn "home: the kit could not be resolved beside this engine; the cloud brief's runner was not seeded"
     return 1
   }
   # Never over a newer kit's work; rc=1, so no caller commits.
@@ -65,7 +65,7 @@ wk_home_seed_runner() {
   fi
 
   if [[ -n "$missing" ]]; then
-    wk_warn "home: this checkout is missing$missing; the cloud brief's runner is incomplete in $WK_HOME_DIR"
+    wk_warn "home: this kit is missing$missing; the cloud brief's runner is incomplete in $WK_HOME_DIR"
   fi
   # The stamp counts as a write of its own, so a bare version bump still
   # reaches the remote.

@@ -60,7 +60,7 @@ const run = async () => {
     const said = out + err;
     assert(/rc=1/.test(said), `the caller is told nothing was written: ${said}`);
     assert(said.includes('carries workkit 99.0.0'), `it names what the clone carries: ${said}`);
-    assert(said.includes(`this checkout is ${kitVersion()}`), `and what this checkout is: ${said}`);
+    assert(said.includes(`this kit is ${kitVersion()}`), `and what this kit is: ${said}`);
     assert(/not downgrading/.test(said), `and what it refused to do: ${said}`);
     assert(/workkit update/.test(said), `with the command that fixes it: ${said}`);
     assertEq(fs.readFileSync(dest, 'utf8'), '# the newer machine’s runner\n', 'the newer copy stands');

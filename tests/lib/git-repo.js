@@ -1,13 +1,18 @@
-// The throwaway git repo the script suites run against: a repo on `main` with
-// its own identity and one commit of the files a suite seeds, beside a scratch
-// home and TMPDIR, so no child reads the developer's gitconfig or leaves a
-// file in the real temp dir. Consumers: the red-proof and review-covers suites.
+// A throwaway git repo on `main`: its own identity, one commit of the seeded
+// files, the unfetched FIXTURE_ORIGIN every fixture repo carries, and a scratch
+// home and TMPDIR so no child reads the real gitconfig. Consumers: red-proof,
+// review-covers, commit-language; the commit-gate and script-shell fixtures.
+// `mkOriginRepo` is the minimal form: an init and an origin, nothing committed.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { shellPath, homeEnv } = require('./platform');
 const { mkTmp } = require('./scratch');
+
+// The origin every fixture repo carries, never fetched: a repo without one is a
+// throwaway the commit hooks skip.
+const FIXTURE_ORIGIN = 'https://example.invalid/owner/repo.git';
 
 /**
  * A scratch world whose repo holds `files` in one commit.
@@ -42,7 +47,23 @@ const mkRepo = (prefix, files, when) => {
   for (const [rel, body] of Object.entries(files)) write(rel, body, when);
   git('add', '-A');
   git('commit', '-q', '-m', 'init');
+  git('remote', 'add', 'origin', FIXTURE_ORIGIN);
   return { dir, repo, tmp, env, git, write };
 };
 
-module.exports = { mkRepo };
+/**
+ * A plain `git init` in `dir` with `origin` as its one remote, no commit: what a
+ * slug or kit-checkout read needs and nothing more.
+ * @param {string} dir - an existing folder
+ * @param {string} origin - the origin URL
+ * @returns {string} `dir`
+ */
+const mkOriginRepo = (dir, origin) => {
+  for (const args of [['init', '-q'], ['remote', 'add', 'origin', origin]]) {
+    const res = spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
+    if (res.status !== 0) throw new Error(`git ${args.join(' ')}: ${res.stderr}`);
+  }
+  return dir;
+};
+
+module.exports = { mkRepo, mkOriginRepo, FIXTURE_ORIGIN };

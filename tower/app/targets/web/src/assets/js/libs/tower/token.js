@@ -64,6 +64,30 @@ export const tokenGuidance = () => `<div class="card h-100">
  */
 export const towerTokenNote = () => `<p class="text-body-secondary">This copy reads the tower API on this machine, which holds the gh login - it needs no token of its own. A token saved here is what a published copy of this dashboard uses.</p>`;
 
+/** The tier's sentence, or '' while the home is not yet known. */
+const tierLine = (mode, roster) => {
+  if (mode === 'tower') return 'This is the local tower.';
+  if (mode !== 'github' || !roster || !roster.home) return '';
+  if (roster.source === 'home.json') return `Published from ${roster.home}.`;
+  if (roster.source === 'login') return `The central copy: your board is ${roster.home}.`;
+  return '';
+};
+
+/**
+ * The tier this copy is, one line under the token section: the local tower, a
+ * copy published from a home repo, or the central copy reading the viewer's
+ * own. It draws once the home is known, whether or not the roster read after
+ * it answered, and nothing before that.
+ *
+ * @param {'tower'|'github'|'locked'} mode - api.js's MODE
+ * @param {{home?: string, source?: string}|null} [roster] - the /api/repos result in github mode
+ * @returns {string} markup
+ */
+export const tierNote = (mode, roster = null) => {
+  const line = tierLine(mode, roster);
+  return line ? `<p class="text-body-secondary mt-3 mb-0" data-tower-tier-line>${esc(line)}</p>` : '';
+};
+
 /**
  * The one line every other page shows when this copy holds no token, and the
  * line left in place of the page when GitHub refuses the token: it points at

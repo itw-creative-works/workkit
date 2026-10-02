@@ -45,14 +45,16 @@ const run = async () => {
   });
 
   await test('no build tooling is a named skip that says what is missing', () => {
-    // The honest signal: `npm install` in the project exits 0 on a machine
-    // without the sibling omega checkout and leaves dangling symlinks, so the
-    // presence of the binary is the only thing worth checking.
+    // The honest signal: an `npm install` can exit 0 and still link no omega
+    // binary, so the binary's presence is the only thing worth checking.
     const world = mkWorld({ tooling: false });
     const { code, out } = publish(world);
     assertEq(code, 0, 'exit 0');
     assert(/node_modules\/\.bin\/omega/.test(out), `it names what is missing, got: ${out}`);
-    assert(/file: spec/.test(out), 'and why it is missing');
+    const line = out.split('\n').find((l) => /npm install/.test(l)) || '';
+    assert(line.includes(shellPath(world.tower)) && /omega/.test(line),
+      `it says \`npm install\` at the clone did not produce the omega binary, got: ${out}`);
+    assert(!/file:/.test(line), `and talks no file: specs, which the pins no longer are, got: ${line}`);
     assertEq(fromPages(world), null, 'nothing is published');
     cleanup(world.root);
   });

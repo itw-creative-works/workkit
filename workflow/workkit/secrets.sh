@@ -188,7 +188,7 @@ secrets_precheck() {
   # library cannot resolve a slug at all, which is not the same as a machine
   # that asked and has no home repo yet.
   if [[ "$HOME_LIBS" -ne 1 ]]; then
-    wk_skip "secrets: the home-repo library is missing beside $SCRIPT_DIR; this checkout cannot name the home repo the cloud brief's secrets live on"
+    wk_skip "secrets: the home-repo library is missing beside $SCRIPT_DIR; this engine cannot name the home repo the cloud brief's secrets live on"
     return 1
   fi
   SECRETS_SLUG="$(wk_home_slug 2>/dev/null || true)"

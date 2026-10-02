@@ -131,6 +131,16 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  await test('the never-linked warning names the clone and npm install, and no file: spec', () => {
+    const world = mkWorld({ login: 'owner', npmLinksOn: 0 });
+    const { out } = setup(world);
+    const line = out.split('\n').find((l) => /build tooling did not install/.test(l)) || '';
+    assert(line.includes(shellPath(world.tower)), `it names the clone, got: ${line}`);
+    assert(/npm install/.test(line) && /omega/.test(line), `and that npm install there left no omega, got: ${line}`);
+    assert(!/file:/.test(line), `and talks no file: specs, which the pins no longer are, got: ${line}`);
+    cleanup(world.root);
+  });
+
   await test('without a terminal it says what a terminal run would do, and asks nothing', () => {
     const world = mkWorld({ login: 'owner' });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);

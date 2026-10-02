@@ -53,19 +53,21 @@ claude plugin install workkit@workkit
 
 The `workkit` command, the schedule and the home repo still come from setup, and until it has run, every session asks you to run it.
 
+Setup runs from the plugin cache as it does from a clone: the engine's address (`~/.claude/workkit`) takes the cached copy, and the 9am job runs through that address, so a plugin update that repoints it keeps the schedule current with no reinstall.
+
 Plugins load when a session starts, so a new (or restarted) session is what puts an install or an update into effect.
 
 ## The engine's address
 
-The engine is the plain shell and Node code in `workflow/`. Its stable address is `~/.claude/workkit`, a link to this checkout's `workflow/` folder.
+The engine is the plain shell and Node code in `workflow/`. Its stable address is `~/.claude/workkit`, a link to the engine's `workflow/` folder, in a clone or in the plugin cache.
 
-- The daily heal installs the link itself the first time a session runs it in a repo that has workkit turned on. It does so only from a real checkout, so a test copy never takes the machine's address.
+- The daily heal installs the link itself the first time a session runs it in a repo that has workkit turned on. It does so only from a real engine (a clone of workkit or the plugin's cached copy), so a test copy never takes the machine's address, and a clone keeps it over the cache.
 - A machine whose repos have not joined yet gets the same link from `workkit setup` or `workkit update`.
 - The skills, and anything scripting the standard directly, reach the engine there. The hooks find it from their own location, so they never wait on the link.
 
 ## Keeping current
 
-Once a day per repo, the session-start heal runs `workkit update --auto`. It re-renders the 9am schedule when the checkout moved or the job template changed.
+Once a day per repo, the session-start heal runs `workkit update --auto`. It re-renders the 9am schedule when the job template changed; the job runs through the engine's address, so a moved kit or a plugin update needs nothing.
 
 - It only ever updates a schedule you already installed; a machine with none never gets one this way.
 - It never creates a folder your machine does not already have.

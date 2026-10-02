@@ -162,9 +162,12 @@ const mtimes = (dir) => {
  * `mintFails` makes that binary exit non-zero the way a mint over a broken SVG
  * would. `minted` seeds the clone with the output of a mint that already ran.
  * `installFails` makes the `npm install` half of the shim exit non-zero, the
- * way an unresolvable dependency would.
+ * way an unresolvable dependency would. `registryPin` is the npm version both
+ * framework packages pin, in the app and the seed alike.
  */
-const mkPublishWorld = ({ mintFails = false, minted = false, installFails = false } = {}) => {
+const mkPublishWorld = ({
+  mintFails = false, minted = false, installFails = false, registryPin = null,
+} = {}) => {
   const root = mkTmp('workkit-sync-');
   const kit = path.join(root, 'kit');
   const bin = path.join(root, 'bin');
@@ -182,11 +185,17 @@ const mkPublishWorld = ({ mintFails = false, minted = false, installFails = fals
   // exactly as it is in the real one. No `file:` specs: the manifest transform
   // has its own cases at the library layer, and here it would only add a
   // resolvable framework path to the fixture.
-  const app = path.join(kit, 'tower', 'app');
-  writeJson(path.join(app, 'package.json'), {
+  const rootManifest = {
     name: 'workkit-tower', private: true, description: 'The tower UI.', scripts: { build: 'omega build' },
-  });
-  writeJson(path.join(app, 'targets', 'web', 'package.json'), { name: 'workkit-tower-web', private: true });
+    ...(registryPin ? { devDependencies: { '@omega.js/manager': registryPin } } : {}),
+  };
+  const webManifest = {
+    name: 'workkit-tower-web', private: true,
+    ...(registryPin ? { dependencies: { '@omega.js/web': registryPin } } : {}),
+  };
+  const app = path.join(kit, 'tower', 'app');
+  writeJson(path.join(app, 'package.json'), rootManifest);
+  writeJson(path.join(app, 'targets', 'web', 'package.json'), webManifest);
   write(path.join(app, 'config', 'omega.json5'), '{ brand: { id: "workkit" } }\n');
   write(path.join(app, 'assets', 'logo', 'brandmark.svg'), '<svg/>\n');
   write(path.join(app, 'targets', 'web', 'src', 'index.html'), '<html>the current board</html>\n');
@@ -220,10 +229,8 @@ const mkPublishWorld = ({ mintFails = false, minted = false, installFails = fals
   // The clone, carrying what a seed left behind: the project as it looked the
   // day the home repo was made, the stale copy the sync has to bring current.
   const seed = path.join(root, 'seed');
-  writeJson(path.join(seed, 'package.json'), {
-    name: 'workkit-tower', private: true, description: 'The tower UI.', scripts: { build: 'omega build' },
-  });
-  writeJson(path.join(seed, 'targets', 'web', 'package.json'), { name: 'workkit-tower-web', private: true });
+  writeJson(path.join(seed, 'package.json'), rootManifest);
+  writeJson(path.join(seed, 'targets', 'web', 'package.json'), webManifest);
   write(path.join(seed, 'config', 'omega.json5'), '{ brand: { id: "workkit" } }\n');
   write(path.join(seed, 'assets', 'logo', 'brandmark.svg'), '<svg/>\n');
   write(path.join(seed, 'targets', 'web', 'src', 'index.html'), '<html>the board, as it was seeded</html>\n');

@@ -11,8 +11,8 @@ input=$(cat)
 
 command -v jq >/dev/null 2>&1 || exit 0
 
-# Sourced for hook_sha1 alone: the daily marker below is keyed by a digest, and
-# its spelling differs across the platforms this kit runs on.
+# Sourced for hook_sha1 (the daily marker below is keyed by a digest whose
+# spelling differs across platforms) and for wk_in_plugin_cache.
 . "${BASH_SOURCE[0]%/*}/../../_lib.sh"
 
 # The engine is this kit's own workflow/, resolved from this script's physical
@@ -32,7 +32,9 @@ if [ ! -x "$cli_link" ]; then
   # The command the user is told to paste resolves the ../.. climb first: the
   # raw ENGINE_DIR string executes fine but reads like a bug.
   engine_shown="$(cd "$ENGINE_DIR" 2>/dev/null && pwd -P || printf '%s' "$ENGINE_DIR")"
-  pester="SETUP: workkit is not set up on this machine ($cli_link is missing). The daily brief, the home repo, and the workkit command are all absent until it is. Tell the user to run \`bash $engine_shown/workkit.sh setup\` before continuing with other work."
+  where=""
+  wk_in_plugin_cache "$ENGINE_DIR/.." && where=" (the engine in the plugin cache)"
+  pester="SETUP: workkit is not set up on this machine ($cli_link is missing). The daily brief, the home repo, and the workkit command are all absent until it is. Tell the user to run \`bash $engine_shown/workkit.sh setup\`$where before continuing with other work."
 fi
 
 # Every exit from here down goes through emit, so the pester rides along with

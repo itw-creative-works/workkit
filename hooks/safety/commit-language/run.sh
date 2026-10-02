@@ -27,6 +27,11 @@ hook_find_git_commit "$cmd"
 # still a commit: scan it rather than stay silent.
 [ -n "$HOOK_COMMIT_CLAUSE" ] || [ "$HOOK_WRAPPED_COMMIT" -eq 1 ] || exit 0
 
+# A cwd inside a repo with no origin is a scratch or fixture repo, outside the
+# pipeline. With no cwd in the input, the message is still checked.
+cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
+if hook_originless_cwd "$cwd"; then exit 0; fi
+
 # --- Pull the MESSAGE spans: quoted values of -m/--message/-F/--file. ---
 # With nothing extracted, every quoted span, toward gating. PERL_FLAG_RE carries
 # the one regex into perl so the two passes never drift.

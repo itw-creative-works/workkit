@@ -7,6 +7,20 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#385](../../issues/385) - The dashboard installs its two framework packages from npm, so a plugin install builds it with no omega checkout. Setup, doctor and the 9am job work from the plugin cache, and a published copy with no home file reads the viewer's own `<login>/workkit`.
+
+### Changed
+
+- [#386](../../issues/386) - When a reply names issues from more than one repo, every issue link reads `repo#N` instead of a bare `#N`. The rule lives in the cold-reader line, and the manager profile hook carries it every prompt.
+- [#387](../../issues/387) - The dashboard's brandmark is the wireframe W: five nodes joined by struts, one brand fill, on a transparent square it fills edge to edge. The brand test pins the geometry.
+
+### Fixed
+
+- [#382](../../issues/382) - The commit hooks skip a repo with no origin remote, so a test fixture or scratch repo commits in peace, including `git add -A && git commit` in one call. A `cd` or `-C` commit still blocks everywhere, and a commit made by a script file is never seen.
+- [#384](../../issues/384) - The red-proof copy fills `node_modules` entry by entry and recreates a workspace link inside the copy, so a workspaces repo proves its tests against the copy's own packages, nested `node_modules` included, never the live tree.
+
 ## [0.66.1] - 2026-10-01
 
 ### Fixed
