@@ -7,13 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.68.0] - 2026-10-01
+
 ### Added
 
-- [#388](../../issues/388) - The dashboard has a central copy at `https://itw-creative-works.github.io/workkit/`, rebuilt on every release by a pages workflow: paste a token once and it draws your own board. The README and the setup doc name the three ways to see a board.
+- [#388](../../issues/388) [`edfa196`](../../commit/edfa196) Thanks [@ianwieds]! - The dashboard has a central copy at `https://itw-creative-works.github.io/workkit/`, rebuilt on every release by a pages workflow: paste a token once and it draws your own board. The README and the setup doc name the three ways to see a board.
 
 ### Fixed
 
-- [#388](../../issues/388) - The publish minted no brand assets on the npm-pinned framework: the bare `omega --service=assets` only printed help. It now runs `omega manage --service=assets`, a mint that leaves no logo fails loudly, and the build commands live once, in `workflow/publish/build.sh`.
+- [#388](../../issues/388) [`edfa196`](../../commit/edfa196) Thanks [@ianwieds]! - The publish minted no brand assets on the npm-pinned framework: the bare `omega --service=assets` only printed help. It now runs `omega manage --service=assets`, a mint that leaves no logo fails loudly, and the build commands live once, in `workflow/publish/build.sh`.
 
 ## [0.67.1] - 2026-10-01
 
