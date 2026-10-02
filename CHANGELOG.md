@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#385](../../issues/385) - On Windows the plugin-cache doctor test compared Node's spelling of a path to the one Git Bash prints, so CI went red there. The test now compares in the shell's spelling; the doctor itself was right.
+
 ## [0.67.0] - 2026-10-01
 
 ### Added

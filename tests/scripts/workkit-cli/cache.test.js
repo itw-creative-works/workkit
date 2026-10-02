@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { spawnSync } = require('child_process');
+const { shellPath } = require('../../lib/platform');
 const {
   cleanup, mkWorld, runCli, mkCacheKit, mkKit, seedSettings, inCli,
 } = require('./helpers');
@@ -55,7 +56,7 @@ const run = async () => {
     runCli(world, ['setup'], { script });
     const { said } = runCli(world, ['doctor'], { script });
     const lines = said.split('\n');
-    const engineDir = fs.realpathSync(path.join(kit, 'workflow'));
+    const engineDir = shellPath(fs.realpathSync(path.join(kit, 'workflow')));
     const engine = lines.find((l) => l.includes('engine:')) || '';
     assert(engine.includes(`→ ${engineDir}`), `the engine reads as current, got: ${engine}`);
     const command = lines.find((l) => l.includes('command:')) || '';
