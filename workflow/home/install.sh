@@ -15,15 +15,12 @@ wk_home_install() {
     return 0
   fi
   wk_info "home: installing the tower project's dependencies in $WK_HOME_DIR"
-  # Inside the clone with `cd -P`, never `--prefix`: `~/.workkit` can be a
-  # symlink, and npm given a prefix keys the tree from the caller's cwd,
-  # corrupting the lockfile.
-  (cd -P "$WK_HOME_DIR" && npm install) >/dev/null 2>&1 || true
+  bash "$WK_WORKFLOW_DIR/publish/build.sh" install "$WK_HOME_DIR" >/dev/null 2>&1 || true
   # The exit status proves nothing, so the binary is the check. One retry: on a
   # fresh tree npm's workspace linking can take two runs to fill
   # node_modules/.bin.
   if [[ ! -x "$WK_HOME_DIR/node_modules/.bin/omega" ]]; then
-    (cd -P "$WK_HOME_DIR" && npm install) >/dev/null 2>&1 || true
+    bash "$WK_WORKFLOW_DIR/publish/build.sh" install "$WK_HOME_DIR" >/dev/null 2>&1 || true
   fi
   if [[ -x "$WK_HOME_DIR/node_modules/.bin/omega" ]]; then
     wk_ok "home: the tower project can build here"

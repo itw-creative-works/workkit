@@ -13,6 +13,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 ```
 <repo>/
 ├── .claude-plugin/       # plugin.json + marketplace.json (this repo is its own marketplace)
+├── .github/workflows/    # checks.yml (the suite, every push and pull request) · changelog.yml (the reusable entry check) · pages.yml (the central dashboard, on a release)
 ├── hooks/                # hooks.json + the hook groups, resolved via ${CLAUDE_PLUGIN_ROOT}
 │   ├── loader.sh         # name → path router (docs:board-guard → docs/board-guard/run.sh)
 │   ├── _lib.sh           # shared helpers (sourced, never executed)
@@ -24,7 +25,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
 ├── briefs/               # the role brief templates, one per crew job, the manager fills the slots: docs/agents.md § File-handoff convention
 ├── skills/               # the nine workflow skills: surface as workkit:<name>
-├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/site-repos.js, lib.sh + lib/, changelog/, ship/, templates)
+├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/ (build.sh, site-repos.js), lib.sh + lib/, changelog/, ship/, templates)
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
 ├── jobs/                 # scheduled work: the 9am daily brief, its launchd plist, and install.sh
 ├── scripts/              # four scripts, the only platform-touching commands the skills and agents have: the two markers the skills call (review, triage), red-proof.sh (the verifier's red run), review-covers.sh (the ship's review tier)

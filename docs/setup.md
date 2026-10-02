@@ -4,17 +4,17 @@ How workkit gets onto a machine and into a repo. The short path is in the [READM
 
 ## What setup does
 
-`./workflow/workkit.sh setup`, run from a clone of this repo, goes through these steps in order, under five titles. Each step checks before it acts, so a second run only fixes what is missing.
+`./workflow/workkit.sh setup`, run from a clone of this repo or from the plugin cache (see [The plugin alone](#the-plugin-alone)), goes through these steps in order, under five titles. Each step checks before it acts, so a second run only fixes what is missing.
 
 **This machine**
 
-1. **The plugin.** Installs workkit into Claude Code from this checkout. A machine without the `claude` CLI gets a named skip, never a failure.
+1. **The plugin.** Installs workkit into Claude Code from the copy setup runs from, unless it is already installed. A machine without the `claude` CLI gets a named skip, never a failure.
 2. **GitHub.** Checks that `gh` is installed and signed in.
-3. **The engine's address.** Points `~/.claude/workkit` at this checkout's `workflow/` folder (see [The engine's address](#the-engines-address)).
+3. **The engine's address.** Points `~/.claude/workkit` at the `workflow/` folder of the copy setup runs from (see [The engine's address](#the-engines-address)).
 4. **The `workkit` command.** Links it into `~/.local/bin`. When that folder is not on your PATH, setup prints the `export` line to add; it never edits a shell rc file.
 5. **npm's script shell.** Points npm's `script-shell` setting at the kit's wrapper. From then on a root `npm test` records the tree it proved, lints any new CHANGELOG entry before the suite starts, keeps running if the call that started it is cut, and logs to `.workkit/suite.log`. A value someone else set is warned about and left alone. On Windows, setup first builds the kit's script shell with the compiler every Windows ships.
 6. **The 9am schedule.** Loads the daily-brief schedule through `jobs/install.sh`. This is macOS only (launchd); everywhere else the brief runs in the cloud.
-7. **The dashboard.** Says how to start it: `workkit tower`.
+7. **The dashboard.** Says how to start it: `workkit tower`, the local one of the [three ways to see your board](#three-ways-to-see-your-board).
 
 **Home repo**
 
@@ -27,7 +27,7 @@ How workkit gets onto a machine and into a repo. The short path is in the [READM
 
 **Dashboard site**
 
-11. **Publishing.** Asks once whether to publish the dashboard to GitHub Pages. A fresh yes also asks for a custom domain, then publishes the site and hands your `gh` login token to its Settings page.
+11. **Publishing.** Asks once whether to publish your own copy of the dashboard to GitHub Pages. A fresh yes also asks for a custom domain, then publishes the site and hands your `gh` login token to its Settings page.
 
 **This repo**
 
@@ -89,6 +89,14 @@ The clone is the dashboard as a real site project, seeded from this kit's `tower
 - `.cache.json` is throwaway state, and `jobs/` is the daily job's state.
 
 The full rules for this global layer: [`project-state.md`](project-state.md) § The global layer.
+
+## Three ways to see your board
+
+The dashboard comes in three tiers. Each reads the same issues on GitHub, so you can use any of them and switch any time.
+
+- **The central copy, out of the box.** Open <https://itw-creative-works.github.io/workkit/>, the kit's own GitHub Pages site for now, so the address may move. Paste a GitHub token once on its Settings page, which lists the permissions the token needs. The token stays in that browser. [`tower/README.md`](../tower/README.md#the-three-modes) has the detail on tokens. The site holds no data and reads GitHub live; it finds your home repo, `<login>/workkit`, from the token, so it needs no copy of your own. It is rebuilt on every workkit release.
+- **The local tower.** `workkit tower` serves the dashboard on this machine through your `gh` login, so it asks for no token. It is the only tier that shows the running agents, token spend and repo health, since those live on the machine.
+- **Your own published copy.** `workkit publish` puts the dashboard on your home repo's GitHub Pages, for a custom domain or full control over what is served. Setup asks once whether to publish (step 11). [The home repo](#the-home-repo) says how the copy is built and what it holds.
 
 ## Opting a repo in
 

@@ -56,6 +56,16 @@ Every piece of work travels one road, and each stop is a label on its GitHub iss
 Hooks guard each step on their own. For example, no code commits until the full test suite has passed on exactly what is being committed.
 The rules for every stop: [docs/project-state.md](docs/project-state.md).
 
+## Seeing your board
+
+The dashboard shows the board of every repo in one place, and it comes in three tiers. Use whichever suits you, and switch any time.
+
+- **The central copy, out of the box.** Open <https://itw-creative-works.github.io/workkit/> and paste a GitHub token once. That address is the kit's own GitHub Pages site for now, so it may move. The token stays in that browser. The site holds no data: it reads GitHub live, and finds your home repo (`<login>/workkit`) from the token.
+- **The local tower.** `workkit tower` runs it on your own machine, where it also shows the running agents, token spend and repo health.
+- **Your own published copy.** `workkit publish` puts it on your home repo's GitHub Pages, for a custom domain or full control.
+
+The token, and what each tier needs: [docs/setup.md](docs/setup.md#three-ways-to-see-your-board).
+
 ## What is inside
 
 | Part | Count | What it does |

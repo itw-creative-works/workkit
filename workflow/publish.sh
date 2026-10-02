@@ -16,6 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 . "$SCRIPT_DIR/home.sh"
 
 OMEGA_BIN="$WK_HOME_DIR/node_modules/.bin/omega"
+BUILD_SH="$SCRIPT_DIR/publish/build.sh"
 
 QUIET=0
 [[ "${1:-}" == "--quiet" ]] && QUIET=1
@@ -221,12 +222,10 @@ publish_dependencies() {
       fi
     done
   fi
-  # Inside the clone with `cd -P`, never `--prefix`: `~/.workkit` may be a
-  # symlink, and a prefixed npm keys the tree from the caller's cwd.
   if [[ "$INSTALL_NEEDED" -eq 1 ]]; then
     wk_info "publish: installing the tower project's dependencies in $WK_HOME_DIR"
     INSTALL_LOG="$(mktemp)"
-    if ! wk_spin "installing the tower project's dependencies" bash -c 'cd -P "$1" && npm install' _ "$WK_HOME_DIR" >"$INSTALL_LOG" 2>&1; then
+    if ! wk_spin "installing the tower project's dependencies" bash "$BUILD_SH" install "$WK_HOME_DIR" >"$INSTALL_LOG" 2>&1; then
       wk_warn "publish: the tower project's dependencies could not be installed in $WK_HOME_DIR; nothing was built or published, because a build over a half-installed tree is a broken site; \`npm install\` inside $WK_HOME_DIR reports it in full, and the last lines follow"
       tail -20 "$INSTALL_LOG" >&2
       rm -f "$INSTALL_LOG"
@@ -237,14 +236,14 @@ publish_dependencies() {
 }
 
 # ── The mint ──────────────────────────────────────────────────────────────────
-# At the brand root, the mirror of the build. The failed-mint marker under the
-# gitignored `.omega` keeps a failure sticky past tomorrow's "already current".
+# A mint that leaves no logo fails like any other. The failed-mint marker under
+# the gitignored `.omega` keeps a failure sticky past tomorrow's "already current".
 publish_mint() {
   MINT_FAILED_MARK="$WK_HOME_DIR/.omega/.mint-failed"
   if [[ "$SYNC_CHANGED" -eq 1 || ! -d "$WK_HOME_DIR/.omega/assets/logo" || -f "$MINT_FAILED_MARK" ]]; then
     wk_info "publish: minting the brand assets in $WK_HOME_DIR"
     MINT_LOG="$(mktemp)"
-    if ! wk_spin 'minting the brand assets' bash -c 'cd "$1" && "$2" --service=assets' _ "$WK_HOME_DIR" "$OMEGA_BIN" >"$MINT_LOG" 2>&1; then
+    if ! wk_spin 'minting the brand assets' bash "$BUILD_SH" mint "$WK_HOME_DIR" >"$MINT_LOG" 2>&1; then
       mkdir -p "$WK_HOME_DIR/.omega" && : >"$MINT_FAILED_MARK"
       wk_warn "publish: the brand assets could not be minted in $WK_HOME_DIR; nothing was built or published, because the sidebar and the social tags reference the minted paths unconditionally and a stale site beats one with a broken logo; the failure is remembered and every publish aborts here until a mint succeeds; the last lines follow"
       tail -20 "$MINT_LOG" >&2
@@ -271,13 +270,9 @@ publish_build() {
   wk_info "publish: the site serves at $PATH_PREFIX; the build is told so"
   BUILD_LOG="$(mktemp)"
   trap 'rm -f "$BUILD_LOG"' EXIT
-  if ! wk_spin 'building the dashboard' env OMEGA_PATH_PREFIX="$PATH_PREFIX" npm --prefix "$WK_HOME_TARGET" run build >"$BUILD_LOG" 2>&1; then
+  if ! wk_spin 'building the dashboard' bash "$BUILD_SH" build "$WK_HOME_DIR" "$PATH_PREFIX" >"$BUILD_LOG" 2>&1; then
     wk_warn "publish: the dashboard build failed; the last lines follow"
     tail -20 "$BUILD_LOG" >&2
-    exit 1
-  fi
-  if [[ ! -d "$WK_HOME_DIST" ]]; then
-    wk_warn "publish: the build finished but left no output at $WK_HOME_DIST"
     exit 1
   fi
 }

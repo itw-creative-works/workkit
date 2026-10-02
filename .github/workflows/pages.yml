@@ -1,0 +1,52 @@
+# Pages: builds the central dashboard from tower/app with workflow/publish/build.sh
+# and deploys it to this repo's GitHub Pages, on a published release or by hand.
+# It writes no data/home.json, no data/repos.json and no CNAME on purpose: with
+# no pointer the page resolves the home repo from the viewer's token, so one
+# copy serves every viewer. The prefix /workkit/ is this repo's name on
+# github.io, and it changes with the host.
+name: pages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, and a deploy in flight always finishes.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: tower/app/targets/web/.nvmrc
+      - name: Install
+        run: bash workflow/publish/build.sh install tower/app
+      - name: Mint
+        run: bash workflow/publish/build.sh mint tower/app
+      - name: Build
+        run: bash workflow/publish/build.sh build tower/app /workkit/
+      # Dot folders ride along (the build writes .well-known/), as they do in
+      # a copy published from a home repo.
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: tower/app/targets/web/dist
+          include-hidden-files: true
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v5

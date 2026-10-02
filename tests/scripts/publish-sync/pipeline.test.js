@@ -165,7 +165,7 @@ const run = async () => {
     publish(world);
     const mints = world.mints();
     assertEq(mints.length, 1, `one mint: ${mints.join(' | ')}`);
-    assertEq(mints[0], `${shellPath(world.tower)}|--service=assets`, 'the assets service, run at the clone’s brand root');
+    assertEq(mints[0], `${shellPath(world.tower)}|manage --service=assets`, 'the assets service, run at the clone’s brand root');
     cleanup(world.root);
   });
 
@@ -191,6 +191,24 @@ const run = async () => {
     assert(/brandmark could not be read/.test(out + err), `and what the mint said, got: ${out}${err}`);
     assertEq(fs.existsSync(world.dist), false, 'nothing was built on top of it');
     assertEq(fromPages(world), null, 'and a stale site beats one with a broken logo');
+    cleanup(world.root);
+  });
+
+  await test('a mint that exits 0 and leaves no logo aborts the publish before the build, marked failed', () => {
+    const world = mkPublishWorld();
+    const mintLog = path.join(world.root, 'mint.log');
+    writeStub(path.join(world.tower, 'node_modules', '.bin', 'omega'), [
+      `printf '%s|%s\\n' "$PWD" "$*" >> ${JSON.stringify(shellPath(mintLog))}`,
+      'exit 0',
+    ]);
+    const { code, out, err } = publish(world);
+    assert(code !== 0, `a mint that minted nothing is a failure: ${out}${err}`);
+    assertEq(world.mints().length, 1, 'the mint ran');
+    assertEq(world.npms().filter((call) => /run build/.test(call)).length, 0, 'and the build never did');
+    assertEq(fs.existsSync(world.dist), false, 'so nothing was built');
+    assertEq(fromPages(world), null, 'nor published');
+    assert(fs.existsSync(path.join(world.tower, '.omega', '.mint-failed')),
+      'and the failed-mint marker is set, so the next run mints again');
     cleanup(world.root);
   });
 

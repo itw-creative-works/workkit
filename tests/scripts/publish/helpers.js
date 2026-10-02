@@ -132,7 +132,12 @@ const mkWorld = ({
     cleanup(seed);
 
     spawnSync('git', ['clone', '-q', bare, tower], { encoding: 'utf8' });
-    if (tooling) writeStub(path.join(tower, 'node_modules', '.bin', 'omega'), ['exit 0']);
+    // The mint leaves what a real one leaves: a minted logo, which the build
+    // checks for before it builds.
+    if (tooling) {
+      writeStub(path.join(tower, 'node_modules', '.bin', 'omega'),
+        ['mkdir -p "$PWD/.omega/assets/logo"', 'exit 0']);
+    }
   }
 
   return {
@@ -210,5 +215,5 @@ const onMain = (world) => {
 };
 
 module.exports = {
-  REPO_ROOT, cleanup, git, mkWorld, binDirWithout, publish, setSite, fromPages, onMain,
+  REPO_ROOT, cleanup, git, writeStub, mkWorld, binDirWithout, publish, setSite, fromPages, onMain,
 };
