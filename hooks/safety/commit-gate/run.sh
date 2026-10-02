@@ -428,20 +428,20 @@ fi
 # the script-shell.exe setup builds, which must exist, compared by physical
 # path. No npm to ask: false.
 script_shell_unwired() {
-  local have dir want exe
+  local have want exe
   command -v npm >/dev/null 2>&1 || return 1
   have=$(wk_npm_script_shell) || return 1
   case "$have" in ''|null|undefined) return 0 ;; esac
   if hook_is_windows; then
     exe=$(wk_script_shell_exe)
     [ -f "$exe" ] || return 0
-    want="$(cd "${exe%/*}" 2>/dev/null && pwd -P)/${exe##*/}" || return 0
+    want=$(wk_physical_path "$exe") || return 0
     have=$(cygpath -u "$have" 2>/dev/null) || return 0
   else
-    want="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../workflow" 2>/dev/null && pwd -P)/script-shell.sh"
+    want=$(wk_physical_path "$(dirname "${BASH_SOURCE[0]}")/../../../workflow/script-shell.sh") || return 0
   fi
-  dir=$(cd "$(dirname "$have")" 2>/dev/null && pwd -P) || return 0
-  [ "$dir/$(basename "$have")" != "$want" ]
+  have=$(wk_physical_path "$have") || return 0
+  [ "$have" != "$want" ]
 }
 
 # 5. A commit carrying CODE, in a repo that defines tests, needs the record a

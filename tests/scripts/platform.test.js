@@ -191,6 +191,51 @@ const run = async () => {
       '/h/.workkit/script-shell.exe\n', 'else the home one');
   });
 
+  await test('wk_physical_path: a file named through a linked folder reads as the physical folder plus its name', () => {
+    const dir = mkTmp('wf-platform-');
+    const real = path.join(dir, 'real');
+    fs.mkdirSync(real);
+    fs.writeFileSync(path.join(real, 'shell.sh'), '');
+    // A junction on Windows, a symlink elsewhere (where the type is ignored).
+    const linked = path.join(dir, 'linked');
+    fs.symlinkSync(real, linked, 'junction');
+    const { code, out } = inPlatform(`wk_physical_path ${JSON.stringify(`${shellPath(linked)}/shell.sh`)}`);
+    assertEq(code, 0, 'the folder was entered');
+    assertEq(out, `${shellPath(fs.realpathSync(real))}/shell.sh`, `the real folder, no trailing newline, got: ${JSON.stringify(out)}`);
+    cleanup(dir);
+  });
+
+  // A file symlink needs a privilege Windows may not grant, so the probe asks once.
+  const NO_FILE_LINK = (() => {
+    const dir = mkTmp('wf-platform-');
+    fs.writeFileSync(path.join(dir, 'target'), '');
+    try { fs.symlinkSync(path.join(dir, 'target'), path.join(dir, 'link'), 'file'); return ''; }
+    catch (e) { return `this machine cannot make a file symlink (${e.code})`; }
+    finally { cleanup(dir); }
+  })();
+  await testUnless(Boolean(NO_FILE_LINK), NO_FILE_LINK)("wk_physical_path: a link to a file keeps the link's own folder and name", () => {
+    const dir = mkTmp('wf-platform-');
+    const away = path.join(dir, 'away');
+    const here = path.join(dir, 'here');
+    fs.mkdirSync(away);
+    fs.mkdirSync(here);
+    fs.writeFileSync(path.join(away, 'target.sh'), '');
+    fs.symlinkSync(path.join(away, 'target.sh'), path.join(here, 'link.sh'), 'file');
+    const { code, out } = inPlatform(`wk_physical_path ${JSON.stringify(`${shellPath(here)}/link.sh`)}`);
+    assertEq(code, 0, 'the folder was entered');
+    assertEq(out, `${shellPath(fs.realpathSync(here))}/link.sh`, `the link's folder and name, never the target's, got: ${JSON.stringify(out)}`);
+    cleanup(dir);
+  });
+
+  await test('wk_physical_path: a folder that does not exist returns non-zero and prints nothing', () => {
+    const dir = mkTmp('wf-platform-');
+    const { code, out, err } = inPlatform(`wk_physical_path ${JSON.stringify(`${shellPath(dir)}/missing/shell.sh`)}`);
+    assert(code !== 0, `non-zero, got: ${code}`);
+    assertEq(out, '', `nothing on stdout, got: ${JSON.stringify(out)}`);
+    assertEq(err, '', `nothing on stderr, got: ${JSON.stringify(err)}`);
+    cleanup(dir);
+  });
+
   group('platform.sh: wk_port_pids and wk_end_pid');
 
   await test('a port a real listener holds answers with its pid, and a free one answers nothing', async () => {

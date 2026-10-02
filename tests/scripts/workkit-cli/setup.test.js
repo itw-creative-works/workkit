@@ -316,15 +316,76 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  await npmTest('another spelling of the same file reads as current, and is left as written', () => {
+    const world = mkWorld();
+    const { npmrc, env } = withNpm(world);
+    const want = wantShell(world);
+    // A claude home lets setup lay the engine address, so the wanted path names
+    // a real file for the other spelling to reach.
+    fs.mkdirSync(world.claudeHome, { recursive: true });
+    const first = runCli(world, ['setup'], { env });
+    assertEq(first.code, 0, `exit 0, got: ${first.said}`);
+    // A directory link to the folder the wanted path names the file through: a
+    // junction on Windows, a symlink elsewhere (where the type is ignored).
+    const dir = IS_WINDOWS ? world.workflowHome : world.engineLink;
+    const file = IS_WINDOWS ? 'script-shell.exe' : 'script-shell.sh';
+    const link = path.join(world.root, 'other-spelling');
+    fs.symlinkSync(dir, link, 'junction');
+    assertEq(fs.realpathSync(path.join(link, file)), fs.realpathSync(path.join(dir, file)), 'both spellings reach one file');
+    const other = IS_WINDOWS ? gitPath(path.join(link, file)) : `${shellPath(link)}/${file}`;
+    assert(other !== want, `the other spelling differs from the wanted one: ${other}`);
+    fs.writeFileSync(npmrc, fs.readFileSync(npmrc, 'utf8').replace(/^script-shell=.*$/m, `script-shell=${other}`));
+    assertEq(npmrcShell(npmrc), other, 'the npmrc names the file through the link');
+    const second = runCli(world, ['setup'], { env });
+    assertEq(second.code, 0, `exit 0, got: ${second.said}`);
+    assert(/^ *· npm: script-shell is current$/m.test(second.out), `setup reads it as current at the skip level, got: ${second.said}`);
+    assert(!second.out.includes('set by someone else'), `no warning on stdout, got: ${second.out}`);
+    assert(!second.err.includes('set by someone else'), `no warning on stderr, got: ${second.err}`);
+    assert(!second.said.includes('npm config set script-shell'), `nor the command that changes it, got: ${second.said}`);
+    assertEq(npmrcShell(npmrc), other, 'the value is left as written');
+    const doctor = runCli(world, ['doctor'], { env });
+    assert(/^ *✓ npm: script-shell is current$/m.test(doctor.out), `doctor reports it at the ok level, got: ${doctor.said}`);
+    cleanup(world.root);
+  });
+
   await npmTest('a foreign value is warned about, named, and left', () => {
     const world = mkWorld();
     const { npmrc, env } = withNpm(world);
-    fs.writeFileSync(npmrc, 'script-shell=/opt/other/shell\n');
+    // A file that exists, so the warning is for another file, not a missing one.
+    const foreign = path.join(world.root, 'other-shell');
+    fs.writeFileSync(foreign, '');
+    const value = IS_WINDOWS ? gitPath(foreign) : shellPath(foreign);
+    fs.writeFileSync(npmrc, `script-shell=${value}\n`);
     const { code, err } = runCli(world, ['setup'], { env });
     assertEq(code, 0, 'exit 0');
-    assert(/npm: script-shell is \/opt\/other\/shell/.test(err), `a warning naming what is there, got: ${err}`);
+    assert(err.includes(`npm: script-shell is ${value}`), `a warning naming what is there, got: ${err}`);
     assert(err.includes('npm config set script-shell'), `and the command that changes it, got: ${err}`);
-    assertEq(npmrcShell(npmrc), '/opt/other/shell', 'the value is left as it is');
+    assertEq(npmrcShell(npmrc), value, 'the value is left as it is');
+    cleanup(world.root);
+  });
+
+  await npmTest("a link to the kit's shell file itself, in another folder, is someone else's value", () => {
+    const world = mkWorld();
+    const { npmrc, env } = withNpm(world);
+    // A claude home lets setup lay the engine address, so the shell file is real.
+    fs.mkdirSync(world.claudeHome, { recursive: true });
+    const first = runCli(world, ['setup'], { env });
+    assertEq(first.code, 0, `exit 0, got: ${first.said}`);
+    // A hard link on Windows, where a file symlink may need a privilege.
+    const shell = IS_WINDOWS ? path.join(world.workflowHome, 'script-shell.exe') : path.join(world.engineLink, 'script-shell.sh');
+    const elsewhere = path.join(world.root, 'elsewhere');
+    fs.mkdirSync(elsewhere);
+    const link = path.join(elsewhere, path.basename(shell));
+    if (IS_WINDOWS) fs.linkSync(shell, link); else fs.symlinkSync(shell, link);
+    const value = IS_WINDOWS ? gitPath(link) : shellPath(link);
+    fs.writeFileSync(npmrc, fs.readFileSync(npmrc, 'utf8').replace(/^script-shell=.*$/m, `script-shell=${value}`));
+    assertEq(npmrcShell(npmrc), value, 'the npmrc names the link');
+    const second = runCli(world, ['setup'], { env });
+    assertEq(second.code, 0, `exit 0, got: ${second.said}`);
+    assert(second.err.includes('set by someone else'), `the warning, got: ${second.said}`);
+    assert(second.err.includes(`npm: script-shell is ${value}`), `naming the value, got: ${second.err}`);
+    assert(!second.said.includes('npm: script-shell is current'), `never read as current, got: ${second.said}`);
+    assertEq(npmrcShell(npmrc), value, 'the value is left as written');
     cleanup(world.root);
   });
 

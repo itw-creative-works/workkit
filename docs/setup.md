@@ -12,7 +12,7 @@ How workkit gets onto a machine and into a repo. The short path is in the [READM
 2. **GitHub.** Checks that `gh` is installed and signed in.
 3. **The engine's address.** Points `~/.claude/workkit` at the `workflow/` folder of the copy setup runs from (see [The engine's address](#the-engines-address)).
 4. **The `workkit` command.** Links it into `~/.local/bin`. When that folder is not on your PATH, setup prints the `export` line to add; it never edits a shell rc file.
-5. **npm's script shell.** Points npm's `script-shell` setting at the kit's wrapper. From then on a root `npm test` records the tree it proved, lints any new CHANGELOG entry before the suite starts, keeps running if the call that started it is cut, and logs to `.workkit/suite.log`. A value someone else set is warned about and left alone. On Windows, setup first builds the kit's script shell with the compiler every Windows ships.
+5. **npm's script shell.** Points npm's `script-shell` setting at the kit's wrapper. From then on a root `npm test` records the tree it proved, lints any new CHANGELOG entry before the suite starts, keeps running if the call that started it is cut, and logs to `.workkit/suite.log`. The kit's own wrapper reached through a linked folder reads as current. A value someone else set is warned about and left alone. On Windows, setup first builds the kit's script shell with the compiler every Windows ships.
 6. **The 9am schedule.** Loads the daily-brief schedule through `jobs/install.sh`. This is macOS only (launchd); everywhere else the brief runs in the cloud.
 7. **The dashboard.** Says how to start it: `workkit tower`, the local one of the [three ways to see your board](#three-ways-to-see-your-board).
 

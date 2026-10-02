@@ -96,6 +96,15 @@ wk_npm_script_shell() {
   return "${PIPESTATUS[0]}"
 }
 
+# wk_physical_path <path>: <path> with its folder resolved through every link
+# and its file name kept as written, so a link to the file itself stays its own
+# path. The one compare of npm's script shell, for setup, doctor and the gate.
+wk_physical_path() {
+  local dir
+  dir="$(cd "$(dirname "$1")" 2>/dev/null && pwd -P)" || return 1
+  printf '%s/%s' "$dir" "$(basename "$1")"
+}
+
 # wk_port_pids: the pids listening on a TCP port, one per line, nothing when it
 # is free. netstat matches the `:<port>` suffix on either stack (`:18693` is not
 # 8693), each pid once; lsof `-b` skips stat() on every mount, which a stalled

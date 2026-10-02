@@ -121,7 +121,7 @@ script_shell_exe() {
 # human's run sets it (never --auto); someone else's value is reported, never
 # replaced; `doctor` reports and returns 1 on attention.
 script_shell() {
-  local want="$ENGINE_LINK/script-shell.sh" have note exe
+  local want="$ENGINE_LINK/script-shell.sh" have note exe have_path want_path
   case "${OSTYPE:-}" in
     msys*|cygwin*)
       exe="$(wk_script_shell_exe)" || return 0
@@ -143,6 +143,12 @@ script_shell() {
     wk_warn "npm: \`npm config get script-shell\` failed; run it to see why"
     [[ "${1:-}" == doctor ]] && return 1
     return 0
+  fi
+  # The kit's own shell reached through a linked folder is current too, by the
+  # gate's physical compare; the npmrc keeps the spelling it has.
+  if [[ "$have" != "$want" ]] && have_path="$(wk_physical_path "$have")" \
+    && want_path="$(wk_physical_path "$want")" && [[ "$have_path" == "$want_path" ]]; then
+    have="$want"
   fi
   case "$have" in
     "$want")
