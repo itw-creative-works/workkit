@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.70.0] - 2026-10-02
+
 ### Changed
 
-- [#393](../../issues/393) - The qa flip reran every touched test file at each flip, even on an unchanged tree. `safety/proof-guard` now runs them once per tree: a green run records the tree's hash, and a later flip on the same tree passes on that record.
+- [#393](../../issues/393) [`6d940ab`](../../commit/6d940ab) Thanks [@ianwieds]! - The qa flip reran every touched test file at each flip, even on an unchanged tree. `safety/proof-guard` now runs them once per tree: a green run records the tree's hash, and a later flip on the same tree passes on that record.
 
 ## [0.69.0] - 2026-10-01
 
