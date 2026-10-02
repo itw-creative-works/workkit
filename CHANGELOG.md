@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.70.1] - 2026-10-02
+
 ### Fixed
 
-- [#395](../../issues/395) - `setup` and `doctor` warned that npm's script-shell was set by someone else when it named the kit's own shell through a linked folder, such as the resolved path behind `~/.workkit`. That spelling now reads as current, compared as the commit gate compares, and the npmrc keeps it.
+- [#395](../../issues/395) [`8ab05da`](../../commit/8ab05da) Thanks [@ianwieds]! - `setup` and `doctor` warned that npm's script-shell was set by someone else when it named the kit's own shell through a linked folder, such as the resolved path behind `~/.workkit`. That spelling now reads as current, compared as the commit gate compares, and the npmrc keeps it.
 
 ## [0.70.0] - 2026-10-02
 
