@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# workflow/lib/suite.sh: the proved-tree record: the tree a green root suite
-# proved, where it is kept, and the two tree ids it is compared with, plus the
-# paths of the detached runs' logs and locks. Sourced, functions only, by
-# script-shell.sh (the writer), ship/ci-watch.sh and the hooks' _lib.sh; it reads
-# wk_jq, wk_marker_path and wk_git_path from platform.sh.
+# workflow/lib/suite.sh: the proved-tree records: the tree a green root suite
+# proved and the tree a green qa-flip touched-test run proved, where each is
+# kept, and the two tree ids they are compared with, plus the paths of the
+# detached runs' logs and locks. Sourced, functions only, by script-shell.sh
+# (the suite writer), ship/ci-watch.sh and the hooks' _lib.sh; it reads wk_jq,
+# wk_marker_path and wk_git_path from platform.sh.
 
 # wk_has_test_script <dir>: <dir>/package.json declares scripts.test as a
 # non-empty string. Consumers: safety/commit-gate, hook_test_package_dir.
@@ -12,8 +13,12 @@ wk_has_test_script() {
     && wk_jq -e '.scripts.test | type == "string" and length > 0' "$1/package.json" >/dev/null 2>&1
 }
 
-# wk_suite_marker_path <repo_root>: the record's file for the repo.
+# wk_suite_marker_path <repo_root>: the suite record's file for the repo.
 wk_suite_marker_path() { wk_marker_path claude-suite-marker "$1"; }
+
+# wk_qa_marker_path <repo_root>: the qa record's file, never the suite's: a
+# green root suite and a green touched-test run answer different questions.
+wk_qa_marker_path() { wk_marker_path claude-qa-marker "$1"; }
 
 # wk_log_path <repo_root> <name>: where a detached run logs. Inside .workkit/
 # only when git ignores it there, else a marker file, so a log never changes
@@ -54,16 +59,35 @@ wk_tree_hash() {
   printf '%s\n' "$tree"
 }
 
+# _wk_record_write <path_fn> <repo_root> <tree>: the one write both records
+# share, into the file <path_fn> names for the repo; an empty tree is refused.
+_wk_record_write() {
+  local marker
+  [ -n "$3" ] || return 1
+  marker=$("$1" "$2") || return 1
+  mkdir -p "${marker%/*}"
+  printf '%s\n' "$3" > "$marker"
+}
+
+# _wk_record_holds <path_fn> <repo_root> <tree>: the one read both records
+# share: the file <path_fn> names exists and holds <tree>.
+_wk_record_holds() {
+  local marker recorded
+  [ -n "$3" ] || return 1
+  marker=$("$1" "$2") || return 1
+  [ -f "$marker" ] || return 1
+  recorded=$(cat "$marker" 2>/dev/null) || return 1
+  [ -n "$recorded" ] && [ "$recorded" = "$3" ]
+}
+
 # wk_suite_marker_write <repo_root> <tree>: record <tree>, the id hashed
 # BEFORE the green run, so an edit made while it ran is never counted proved.
 # Consumer: script-shell.sh, the record's one writer.
-wk_suite_marker_write() {
-  local marker
-  [ -n "$2" ] || return 1
-  marker=$(wk_suite_marker_path "$1") || return 1
-  mkdir -p "${marker%/*}"
-  printf '%s\n' "$2" > "$marker"
-}
+wk_suite_marker_write() { _wk_record_write wk_suite_marker_path "$1" "$2"; }
+
+# wk_qa_marker_write <repo_root> <tree>: record <tree>, hashed BEFORE a green
+# touched-test run at the qa flip. Consumer: safety/proof-guard (qa-tests.sh).
+wk_qa_marker_write() { _wk_record_write wk_qa_marker_path "$1" "$2"; }
 
 # wk_suite_index_tree <repo_root>: the REAL index's `git write-tree` id, the
 # tree a plain commit carries. Consumer: safety/commit-gate (check 5).
@@ -74,11 +98,8 @@ wk_suite_index_tree() {
 # wk_suite_proved <repo_root> <tree>: the marker exists and holds <tree>. The
 # guard passes the working tree's hash, the gate the real index's id.
 # Consumers: safety/suite-guard, safety/commit-gate (check 5).
-wk_suite_proved() {
-  local marker recorded
-  [ -n "$2" ] || return 1
-  marker=$(wk_suite_marker_path "$1") || return 1
-  [ -f "$marker" ] || return 1
-  recorded=$(cat "$marker" 2>/dev/null) || return 1
-  [ -n "$recorded" ] && [ "$recorded" = "$2" ]
-}
+wk_suite_proved() { _wk_record_holds wk_suite_marker_path "$1" "$2"; }
+
+# wk_qa_proved <repo_root> <tree>: the qa record exists and holds <tree>, the
+# working tree's hash. Consumer: safety/proof-guard (qa-tests.sh).
+wk_qa_proved() { _wk_record_holds wk_qa_marker_path "$1" "$2"; }

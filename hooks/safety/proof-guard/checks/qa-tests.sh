@@ -1,9 +1,10 @@
 #!/bin/bash
 # hooks/safety/proof-guard/checks/qa-tests.sh: the check at the flip to
 # status:qa, which runs the test files the working diff touched with
-# `node --test` and blocks the flip when one is red. SOURCED by the entry
-# (run.sh), never executed, and it runs nothing at load: it defines functions
-# and sets nothing. It reads the entry's cwd and calls _lib.sh's helpers.
+# `node --test` once per tree (the qa record in workflow/lib/suite.sh) and
+# blocks the flip when one is red. SOURCED by the entry (run.sh), never
+# executed, and it runs nothing at load: it defines functions and sets nothing.
+# It reads the entry's cwd and calls _lib.sh's helpers.
 
 # The base the committed leg is read against: the merge base of HEAD with
 # origin's default branch, else with this branch's upstream. Sets qa_base, empty
@@ -91,6 +92,14 @@ check_qa_tests() {
     hook_pretool_notice "proof-guard: no touched test files in the working diff, so nothing ran at the qa flip.${qa_not_run}"
     return 0
   fi
+  # Once per tree: hashed before the run and again after a green one, and
+  # recorded only when the two match. A hash that cannot be taken before the
+  # run runs the files and records nothing.
+  qa_tree=$(wk_tree_hash "$qa_root") || qa_tree=""
+  if [ -n "$qa_tree" ] && wk_qa_proved "$qa_root" "$qa_tree"; then
+    hook_pretool_notice "proof-guard: the touched test files already ran green on this tree at an earlier qa flip, so they did not run again.${qa_not_run}"
+    return 0
+  fi
   if ! command -v node >/dev/null 2>&1; then
     hook_pretool_notice "proof-guard: node is not on PATH, so the touched-test run did not run at the qa flip."
     return 0
@@ -113,5 +122,15 @@ check_qa_tests() {
     exit 2
   fi
   rm -f "$qa_out"
-  hook_pretool_notice "proof-guard: ran ${#qa_run[@]} touched test file(s) green at the qa flip: ${qa_run[*]}.${qa_not_run}"
+  qa_unrecorded=""
+  if [ -n "$qa_tree" ]; then
+    if ! qa_after=$(wk_tree_hash "$qa_root"); then
+      qa_unrecorded=" The tree could not be hashed after the run, so no record was written and the next flip runs them again."
+    elif [ "$qa_after" != "$qa_tree" ]; then
+      qa_unrecorded=" The tree changed during the run, so no record was written and the next flip runs them again."
+    elif ! wk_qa_marker_write "$qa_root" "$qa_tree" 2>/dev/null; then
+      qa_unrecorded=" The record could not be written, so the next flip runs them again."
+    fi
+  fi
+  hook_pretool_notice "proof-guard: ran ${#qa_run[@]} touched test file(s) green at the qa flip: ${qa_run[*]}.${qa_not_run}${qa_unrecorded}"
 }

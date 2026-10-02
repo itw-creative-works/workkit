@@ -1,24 +1,22 @@
 /* eslint-disable no-console */
 // Tests for hooks/_lib.sh, the helper library every hook sources: one group per
 // helper, from the platform seam and hook_sha1 through hook_jq, the manager
-// config, the notice, the deadline wait, the test-path shapes, the marker paths
-// and the suite record.
+// config, the notice, the deadline wait, the test-path shapes and the marker
+// paths. The suite and qa records are tests/hooks/lib-record.test.js.
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
   group, test, assert, assertEq, skip, testUnless, skipSuite, selfRun, summary,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, SYSTEM_BASH, SYSTEM_PATH, NO_RC, NO_EXEC_BIT,
+  IS_WINDOWS, BASH, SYSTEM_PATH, NO_RC, NO_EXEC_BIT,
   shellPath, which, digestTool, stubTool, crlfJq, systemPathWith,
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
-const { plantRecord } = require('../lib/suite-record');
+const { runLib } = require('../lib/hook-lib');
 
-const LIB = shellPath(path.join(__dirname, '..', '..', 'hooks', '_lib.sh'));
 const SHA1_ABC = 'a9993e364706816aba3e25717850c26c9cd0d89d';
 
 // A tool this machine has, by absolute path, through the platform seam: the
@@ -33,17 +31,6 @@ const digestWorld = (name, real) => {
   // this machine ships, wearing the other machine's spelling.
   stubTool(dir, name, ['#!/bin/bash', `exec "${shellPath(real)}" "$@"`]);
   return dir;
-};
-
-// Run a snippet with hooks/_lib.sh sourced. bash is spawned by absolute path so
-// a case can hand over a PATH holding nothing at all.
-const runLib = (snippet, env = {}) => {
-  const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${LIB}"\n${snippet}`], {
-    env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), ...env },
-    encoding: 'utf8',
-    timeout: 10000,
-  });
-  return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
 };
 
 const run = async () => {
@@ -480,98 +467,6 @@ const run = async () => {
     assert(out.stdout.includes('p=[]'), `no path at all, got: ${out.stdout}`);
     assert(!out.stdout.includes('rc=0'), `and says so, got: ${out.stdout}`);
     fs.rmSync(world, { recursive: true, force: true });
-  });
-
-  group('_lib.sh: the suite record');
-
-  const git = (dir, ...args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' }).stdout.trim();
-  const treeHash = (dir) => runLib(`wk_tree_hash "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP) }).stdout.trim();
-
-  await test('the record and the test-script predicate keep their engine names, with no hook_ second name', () => {
-    const names = ['suite_marker_path', 'tree_hash', 'suite_index_tree', 'suite_proved', 'has_test_script'];
-    const out = runLib(names.map((n) => `declare -F wk_${n} hook_${n}`).join('; ')).stdout;
-    assertEq(out.trim(), names.map((n) => `wk_${n}`).join('\n'), `only the engine names, got: ${out}`);
-  });
-
-  await test('wk_tree_hash: the working tree as write-tree names it, untracked in, ignored out, index untouched', () => {
-    const dir = mkTmp('lib-tree-');
-    git(dir, 'init', '-q');
-    fs.writeFileSync(path.join(dir, '.gitignore'), 'ignored.txt\n');
-    fs.writeFileSync(path.join(dir, 'a.js'), 'one\n');
-    git(dir, 'add', '-A');
-    git(dir, 'commit', '-q', '-m', 'seed');
-    fs.writeFileSync(path.join(dir, 'a.js'), 'two\n');
-    const edited = treeHash(dir);
-    assert(/^[0-9a-f]{40,64}$/.test(edited), `a tree id, got: ${edited}`);
-    assertEq(git(dir, 'diff', '--cached', '--name-only'), '', 'the real index is never touched');
-    assertEq(git(dir, 'status', '--porcelain'), 'M a.js', 'and the edit is still unstaged');
-    fs.writeFileSync(path.join(dir, 'ignored.txt'), 'x\n');
-    assertEq(treeHash(dir), edited, 'an ignored file never counts');
-    fs.writeFileSync(path.join(dir, 'new.js'), 'x\n');
-    const untracked = treeHash(dir);
-    assert(untracked !== edited, 'an untracked file changes the hash');
-    const tracked = runLib(`wk_tree_hash "${shellPath(dir)}" -u`, { TMPDIR: shellPath(TMP) }).stdout.trim();
-    assertEq(tracked, edited, 'under -u, the tree `git commit -a` carries: the untracked file is out');
-    git(dir, 'add', '-A');
-    assertEq(untracked, git(dir, 'write-tree'), 'the hash is what a real add -A then write-tree names');
-  });
-
-  await test("wk_tree_hash: a same-size edit in the index's own second is still seen", () => {
-    const dir = mkTmp('lib-racy-');
-    git(dir, 'init', '-q');
-    fs.writeFileSync(path.join(dir, 'a.js'), 'one\n');
-    git(dir, 'add', '-A');
-    git(dir, 'commit', '-q', '-m', 'seed');
-    fs.writeFileSync(path.join(dir, 'a.js'), 'two\n');
-    // Past the index's second, so a copy stamped now would trust the stale stat.
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1100);
-    const index = path.join(mkTmp('lib-racy-index-'), 'index');
-    const fresh = { ...process.env, GIT_INDEX_FILE: index };
-    spawnSync('git', ['add', '-A'], { cwd: dir, env: fresh });
-    const want = spawnSync('git', ['write-tree'], { cwd: dir, env: fresh, encoding: 'utf8' }).stdout.trim();
-    assertEq(treeHash(dir), want, 'the edited content, not the stat cache');
-  });
-
-  await test("wk_suite_index_tree: the real index's write-tree id, never the edit on disk", () => {
-    const dir = mkTmp('lib-index-tree-');
-    git(dir, 'init', '-q');
-    fs.writeFileSync(path.join(dir, 'a.js'), 'one\n');
-    git(dir, 'add', '-A');
-    const staged = git(dir, 'write-tree');
-    fs.writeFileSync(path.join(dir, 'a.js'), 'two\n');
-    const out = runLib(`wk_suite_index_tree "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP) }).stdout.trim();
-    assertEq(out, staged, 'the staged content names the tree');
-    assert(out !== treeHash(dir), 'and the unstaged edit is not in it');
-  });
-
-  await test('wk_suite_proved: true only when the marker holds the tree it is handed', () => {
-    const dir = mkTmp('lib-proved-');
-    git(dir, 'init', '-q');
-    // The root as a hook hands it over, and the record planted at its native
-    // path: the lib answers a shell path, which Node on Windows cannot open.
-    const root = git(dir, 'rev-parse', '--show-toplevel');
-    const env = { TMPDIR: shellPath(TMP) };
-    const proved = (tree) => runLib(`wk_suite_proved "${root}" "${tree}"`, env).code === 0;
-    const id = '1111111111111111111111111111111111111111';
-    assert(!proved(id), 'no marker proves nothing');
-    const marker = plantRecord(TMP, dir, id);
-    assert(proved(id), 'the recorded tree is proved');
-    assert(!proved('2222222222222222222222222222222222222222'), 'another tree is not');
-    assert(!proved(''), 'an empty tree (a failed hash) is never a match');
-    fs.rmSync(marker);
-  });
-
-  await test('hook_suite_root_run: the root suite from the root or a nested dir, never a nested package npm run', () => {
-    const dir = mkTmp('lib-rootrun-');
-    git(dir, 'init', '-q');
-    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node tests/run.js' } }));
-    fs.mkdirSync(path.join(dir, 'sub'));
-    fs.writeFileSync(path.join(dir, 'sub', 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
-    const ask = (cmd, cwd) => runLib(`hook_suite_root_run "${cmd}" "${shellPath(dir)}" "${shellPath(cwd)}"`).stdout.trim();
-    assertEq(ask('npm test', dir), 'full', "npm at the root runs the root's suite");
-    assertEq(ask('node tests/run.js', dir), 'full', "the root's script run directly");
-    assertEq(ask('npm test', path.join(dir, 'sub')), '', "npm inside a nested tested package runs that package's suite");
-    assertEq(ask('cd .. && node tests/run.js', path.join(dir, 'sub')), 'full', "the root's script from a nested dir");
   });
 
   group('_lib.sh: the scripts');

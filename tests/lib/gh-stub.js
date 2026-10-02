@@ -86,15 +86,17 @@ const dropPathWithoutGh = () => {
  * and this run's node on the system PATH (no stub: the world without gh);
  * `envPath` replaces it whole, for the world a case builds itself.
  * @param {string} hook - the hook script's native path
+ * @param {object} [env] - more variables every run is handed (a scratch `TMPDIR`)
  * @returns {Function}
  */
-const hookRunner = (hook) => (command, stub, cwd = os.tmpdir(), envPath = null) => {
+const hookRunner = (hook, env = {}) => (command, stub, cwd = os.tmpdir(), envPath = null) => {
   const input = JSON.stringify({ tool_name: 'Bash', cwd: shellPath(cwd), tool_input: { command } });
   const home = mkTmp('gh-stub-');
   try {
     const res = spawnSync(BASH, [...NO_RC, shellPath(hook)], {
       input,
       env: homeEnv(home, {
+        ...env,
         PATH: envPath || (stub ? systemPathWith(stub.binDir, NODE_DIR) : pathWithoutGh()),
       }),
       encoding: 'utf8',

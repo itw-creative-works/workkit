@@ -68,7 +68,7 @@ Each group gets ONE pair (§ Crew sizing), a feature-developer brief and a test-
 
 Once every group's verifier has reported and its fix round has landed, ONE `workkit:review` full panel reads the whole batch diff, never one per issue; its marker is what the commit's gate reads. Then one light verification pass over the panel's fixes, one worker round, the review marker retouched so it covers the parked diff (`skills/feature/SKILL.md` § 5), and the park of every issue.
 
-The ends are per issue: the spec pass and the claim at the front; the park and the check at the back (the owner's check, or the agent's own under `agent:ok`). The commit is one per batch, proved by the root `npm test`. `agent:ok` decides who checks and whether the agent ships, never how the build runs. The qa flip's `safety/proof-guard` run covers every test file the working diff touched, which for a batch is the union of its groups.
+The ends are per issue: the spec pass and the claim at the front; the park and the check at the back (the owner's check, or the agent's own under `agent:ok`). The commit is one per batch, proved by the root `npm test`. `agent:ok` decides who checks and whether the agent ships, never how the build runs. The qa flip's `safety/proof-guard` run covers every test file the working diff touched, which for a batch is the union of its groups, and it runs once per tree: the batch's first flip runs the union, and every later flip on the same unchanged tree passes on its record.
 
 ### Questions to the owner
 

@@ -5,67 +5,22 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const {
-  SYSTEM_BASH, shellPath, basePathWithout, joinPath, homeEnv,
-} = require('../../lib/platform');
+const { shellPath, basePathWithout, joinPath } = require('../../lib/platform');
 const { fmtCalls } = require('../../lib/argv-log');
 const {
   cleanup, makeGhStub, ghCalls, dropPathWithoutGh, runHook, WORLD,
+  QA, RUN_LOG, GREEN, RED, DESCRIBE, UNPROVABLE, COMMIT, git, write, runs, mkQaRepo, notice,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
 
 const REPO = path.join(__dirname, '..', '..', '..');
-const QA = 'gh issue edit 3 --remove-label status:building --add-label status:qa';
 
-const RUN_LOG = "require('fs').appendFileSync(require('path').join(__dirname, '..', 'runs.log'), 'ran\\n');";
-// The fixtures name node:test, so the flip reads them as files it can prove.
-const GREEN = `require('node:test');\n${RUN_LOG}\n`;
-const RED = `require('node:test');\n${RUN_LOG}\nprocess.exit(1);\n`;
-// Shapes node --test cannot prove: another runner's describe/it file, and a
-// module that only exports its cases. Each would log a run if it were executed.
-const DESCRIBE = `${RUN_LOG}\ndescribe('x', () => { it('y', () => {}); });\n`;
+// A module that only exports its cases, a shape node --test cannot prove
+// beside DESCRIBE. It would log a run if it were executed.
 const EXPORTS = `${RUN_LOG}\nmodule.exports = { tests: [] };\n`;
 // A self-running suite, the shape this repo's own suites take.
 const SELF_RUN = `${RUN_LOG}\nconst run = () => 0;\nif (require.main===module) process.exit(run());\n`;
-const UNPROVABLE = 'node --test cannot prove a file that neither names node:test nor runs itself';
-
-// Fixture git runs in a scratch home, so the developer's gitconfig never
-// shapes a fixture; every commit names its own identity.
-const FIXTURE_HOME = mkTmp('proof-guard-');
-const COMMIT = '-c user.name=test -c user.email=test@example.com commit -q';
-const git = (dir, args) => execSync(`git ${args}`, {
-  cwd: dir, encoding: 'utf8', stdio: 'pipe', shell: SYSTEM_BASH, env: homeEnv(FIXTURE_HOME, { PATH: process.env.PATH }),
-});
-const write = (dir, name, content) => {
-  fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
-  fs.writeFileSync(path.join(dir, name), content);
-};
-const runs = (dir) => {
-  const file = path.join(dir, 'runs.log');
-  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).length : 0;
-};
-
-// A repo on `main` with a test script and one committed green test file.
-const mkQaRepo = () => {
-  const dir = mkTmp('proof-guard-');
-  git(dir, 'init -q');
-  git(dir, 'symbolic-ref HEAD refs/heads/main');
-  write(dir, 'package.json', `${JSON.stringify({ name: 'fixture', scripts: { test: 'node --test' } })}\n`);
-  write(dir, 'tests/a.test.js', GREEN);
-  git(dir, 'add -A');
-  git(dir, `${COMMIT} -m seed`);
-  return dir;
-};
-
-// The notice a hook exiting 0 is heard by, off its stdout JSON.
-const notice = (out) => {
-  const parsed = JSON.parse(out.stdout);
-  assertEq(parsed.hookSpecificOutput.hookEventName, 'PreToolUse', 'the event name the harness expects');
-  assertEq(parsed.hookSpecificOutput.additionalContext, parsed.systemMessage, 'the user and the model hear the same line');
-  return parsed.systemMessage;
-};
 
 // One fixture repo and one gh stub per case, both removed after it.
 const qaCase = (name, body) => test(name, () => {
@@ -420,7 +375,6 @@ const run = async () => {
 module.exports = async () => {
   await run();
   dropPathWithoutGh();
-  cleanup(FIXTURE_HOME);
   return summary();
 };
 
