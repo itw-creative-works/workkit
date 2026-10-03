@@ -21,6 +21,7 @@ KIT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 STANDARDS="$SCRIPT_DIR/standards.sh"
 CAPTURE="$SCRIPT_DIR/wk.sh"
 PUBLISH="$SCRIPT_DIR/publish.sh"
+PROVE="$SCRIPT_DIR/prove.sh"
 JOBS_INSTALL="$KIT_DIR/jobs/install.sh"
 TOWER_START="$KIT_DIR/tower/start.sh"
 # The same two files the 9am schedule runs, so `workkit brief` is that morning
@@ -113,6 +114,9 @@ usage: workkit <command> [args]
                        pass a session makes once a day, without the wait
   note <text...>       append one bullet to the nearest capture file, or file it
                        as an issue on the home repo outside every project
+  prove                run the root suite on exactly the staged tree, in a copy
+                       outside the repo, and record it on green, so a commit
+                       of it passes the gate while other work stays unstaged
 
 The engine it drives lives beside this script; the spec both implement is
 docs/project-state.md in the kit.
@@ -190,11 +194,12 @@ case "${1:-help}" in
     fi
     exec bash "$TOWER_START" "$@"
     ;;
-  # These four hand the whole run to another script, which speaks for itself.
+  # These five hand the whole run to another script, which speaks for itself.
   enable)  shift; exec bash "$STANDARDS" --enable "${1:-$PWD}" ;;
   decline) shift; exec bash "$STANDARDS" --decline "${1:-$PWD}" ;;
   heal)    shift; exec bash "$STANDARDS" "${1:-$PWD}" ;;
   note)    shift; exec bash "$CAPTURE" note "$@" ;;
+  prove)   shift; exec bash "$PROVE" "$@" ;;
   *)
     wk_error "unknown command $1"
     printf '\n' >&2

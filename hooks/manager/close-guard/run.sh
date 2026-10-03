@@ -33,8 +33,10 @@ case "$edit_threshold" in ''|*[!0-9]*) edit_threshold=5 ;; esac
 
 # One marker word per interesting entry, oldest first: PROMPT, EDIT,
 # SPAWN:<class> (bare and workkit: spellings alike), and MODEL:<id>, the
-# session's model read from this same pass.
-markers=$(tail -n "$SCAN_LINES" "$transcript_path" 2>/dev/null | hook_jq -R -r '
+# session's model read from this same pass. A PROMPT is the owner's: the
+# system-delivered shapes are hook_prompt_is_system's patterns.
+markers=$(tail -n "$SCAN_LINES" "$transcript_path" 2>/dev/null | hook_jq -R -r \
+  --arg tag "$HOOK_PROMPT_TAG_RE" --arg paste "$HOOK_PROMPT_PASTE_RE" --arg frame "$HOOK_PROMPT_FRAME_RE" '
   fromjson?
   | select(type == "object")
   | select(.isSidechain != true)
@@ -44,7 +46,8 @@ markers=$(tail -n "$SCAN_LINES" "$transcript_path" 2>/dev/null | hook_jq -R -r '
                  and (([.message.content[] | select(type == "object") | .type] | index("tool_result")) == null))))
     then (if (((if (.message.content | type) == "string" then .message.content
                 else ([.message.content[] | select(type == "object" and .type == "text") | .text] | join(""))
-                end) // "") | test("^[[:space:]]*<[A-Za-z][A-Za-z0-9_.:-]*>"))
+                end) // "")
+              | test($frame) or (test($tag) and (test($paste) | not)))
           then empty else "PROMPT" end)
     elif (.type == "assistant")
     then ((if (.message.model | type) == "string" then "MODEL:" + .message.model else empty end),
@@ -69,8 +72,8 @@ workers=$(printf '%s\n' "$window" | grep -c '^SPAWN:worker$' || true)
 verifiers=$(printf '%s\n' "$window" | grep -c '^SPAWN:verifier$' || true)
 
 # The session model from the tail's last assistant entry, which at Stop is the
-# model that ran this turn. hook_session_model is only the fallback: its
-# transcript path greps the whole file, seconds on a resumed session.
+# model that ran this turn. hook_session_model is only the fallback: the
+# statusline cache, then the transcript's last 200 lines.
 model=$(printf '%s\n' "$markers" | grep '^MODEL:' | tail -1 || true)
 model="${model#MODEL:}"
 if [ -z "$model" ]; then

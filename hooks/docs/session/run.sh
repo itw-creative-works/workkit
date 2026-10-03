@@ -13,34 +13,24 @@ input=$(cat)
 
 command -v jq >/dev/null 2>&1 || exit 0
 
-# The two engine seams, from this file's physical location: wk_jq, wk_user_dir
-# and wk_settings_declined. They define functions and set nothing, so this hook
-# still sources no hook helper. Unguarded: a missing one is an incomplete
-# plugin, which workflow:standards already names.
+# The engine seam, from this file's physical location: wk_jq and wk_user_dir.
+# It defines functions and sets nothing, so this hook still sources no hook
+# helper. Unguarded: a missing one is an incomplete plugin, which
+# workflow:standards already names.
 # shellcheck source=../../../workflow/lib/platform.sh
 . "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/lib/platform.sh"
-# shellcheck source=../../../workflow/lib/participation.sh
-. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/../../../workflow/lib/participation.sh"
 
 cwd=$(wk_jq -r '.cwd // ""' <<<"$input" 2>/dev/null || true)
 [ -n "$cwd" ] || exit 0
 
 # The repo root, so a session opened in a subdirectory still finds the file.
-# No git root, no repo: outside every repo the settings file is the machine's
-# own state (docs/hooks.md § docs:session), and only git can say which repo a
-# cwd sits in.
+# The loader starts this hook only in an opted-in repo.
 root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || root=""
 [ -n "$root" ] || exit 0
 
 # This hook sources no hook helper, so the directory name is spelled out; its
 # SSOT is WORKKIT_DIR in hooks/_lib.sh. Change both together.
-SETTINGS="$root/.workkit/settings.json"
 SESSION_FILE="$root/.workkit/agents/session.md"
-
-# Participation gate: the committed settings.json is the repo's yes, and
-# `"enabled": false`, read through wk_settings_declined, its no.
-[ -f "$SETTINGS" ] || exit 0
-wk_settings_declined "$SETTINGS" && exit 0
 
 # The MACHINE's folder, where the 9am job leaves the brief marker, through the
 # engine's one spelling of it (wk_user_dir in platform.sh, sourced above).

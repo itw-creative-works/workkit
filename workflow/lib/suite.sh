@@ -82,7 +82,8 @@ _wk_record_holds() {
 
 # wk_suite_marker_write <repo_root> <tree>: record <tree>, the id hashed
 # BEFORE the green run, so an edit made while it ran is never counted proved.
-# Consumer: script-shell.sh, the record's one writer.
+# Consumers: the record's two writers, script-shell.sh (the working tree a root
+# run started on) and prove.sh (the staged tree, proved in a copy).
 wk_suite_marker_write() { _wk_record_write wk_suite_marker_path "$1" "$2"; }
 
 # wk_qa_marker_write <repo_root> <tree>: record <tree>, hashed BEFORE a green

@@ -16,6 +16,8 @@ prompt=$(printf '%s' "$input" | hook_jq -r '.prompt // ""' 2>/dev/null || true)
 session_id=$(printf '%s' "$input" | hook_jq -r '.session_id // empty' 2>/dev/null || true)
 
 [ -n "$prompt" ] || exit 0
+# A hand-back or notification is not the owner's line, whatever words it holds.
+hook_prompt_is_system "$prompt" && exit 0
 
 # `compact` is a substring on purpose (`compaction`, `/compact`). `context` fires
 # only beside a follower on the same line, each bounded by a non-letter ("below"

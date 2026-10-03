@@ -1,8 +1,9 @@
 #!/bin/bash
 # hooks/lib/commit.sh: the command-text reads the guards share: the heredoc and
 # quote strips, the `NAME=1` escape, the redirect `&` fold, the directory-change
-# test, the git-commit finder with its two internal helpers, the redirect-word
-# test, and the two origin tests that place a commit outside the pipeline.
+# tests, the cd step, the step split and its folder walk, the interpreter test,
+# the git-commit finder with its two internal helpers, the redirect-word test,
+# and the two origin tests that place a commit outside the pipeline.
 # SOURCED by hooks/_lib.sh, never executed, and it runs nothing at load: it
 # defines functions and sets nothing. It reads no name of the entry's.
 
@@ -129,6 +130,99 @@ hook_clause_changes_dir() {
   return 1
 }
 
+# hook_names_dir_change <text>: does <text> name cd, pushd or popd as a word
+# (a hash or a path holding the letters is not one)? Pure expansion.
+hook_names_dir_change() {
+  local re='(^|[^[:alnum:]_.-])(cd|pushd|popd)([^[:alnum:]_.-]|$)'
+  [[ $1 =~ $re ]]
+}
+
+# hook_unquote_word <word>: the word less one pair of surrounding quotes.
+hook_unquote_word() {
+  _hook_unquote "$1"
+  printf '%s' "$HOOK_UNQUOTED"
+}
+
+# _hook_unquote <word>: hook_unquote_word into HOOK_UNQUOTED, for a caller
+# that must not fork.
+_hook_unquote() {
+  case "$1" in
+    \"*\"|\'*\') HOOK_UNQUOTED="${1:1:${#1}-2}" ;;
+    *) HOOK_UNQUOTED="$1" ;;
+  esac
+}
+
+# hook_cd_step <dir> <step>: HOOK_CD_DIR becomes the folder <dir> (empty for the
+# cwd, relative to it, absolute, or `?`) is after a step naming cd, pushd or popd:
+# a cd past the shared prefix peel to one plain folder moves it; any other form
+# (pushd, popd, env cd, a flag, ~, an expansion) leaves it `?`.
+hook_cd_step() {
+  local arg words
+  HOOK_CD_DIR="?"
+  read -r -a words <<<"$2"
+  hook_clause_changes_dir "${words[@]}" && [ "$HOOK_PEEL_WORD" = cd ] || return 0
+  case " ${words[*]:0:$HOOK_PEEL_SKIP} " in *" env "*) return 0 ;; esac
+  [ $(( ${#words[@]} - HOOK_PEEL_SKIP )) -eq 2 ] || return 0
+  _hook_unquote "${words[$((HOOK_PEEL_SKIP + 1))]}"
+  arg="$HOOK_UNQUOTED"
+  case "$arg" in
+    ''|-*|'~'*|*[\$\`\*\?\\]*) return 0 ;;
+    /*|[A-Za-z]:/*) HOOK_CD_DIR="$arg" ;;
+    *) case "$1" in '?') ;; '') HOOK_CD_DIR="$arg" ;; *) HOOK_CD_DIR="$1/$arg" ;; esac ;;
+  esac
+}
+
+# hook_cmd_steps <cmd>: <cmd>'s steps, one event per line: `open` and `close`
+# for a subshell's ( and ), and `step<US><text>` (US = \037) for each non-blank
+# step between them, split on ; & | and newlines. Fold a redirect's & away first.
+hook_cmd_steps() {
+  printf '%s' "$1" | awk '
+    function emit(s) { if (s ~ /[^[:space:]]/) print "step\037" s }
+    { text = text (NR > 1 ? "\n" : "") $0 }
+    END {
+      step = ""
+      n = length(text)
+      for (i = 1; i <= n; i++) {
+        c = substr(text, i, 1)
+        if (c == "(") { emit(step); step = ""; print "open" }
+        else if (c == ")") { emit(step); step = ""; print "close" }
+        else if (c == ";" || c == "&" || c == "|" || c == "\n") { emit(step); step = "" }
+        else step = step c
+      }
+      emit(step)
+    }
+  '
+}
+
+# hook_step_dirs <cmd>: hook_cmd_steps' steps as `step<US><dir><US><text>`, <dir>
+# the folder the step runs FROM (hook_cd_step's value, empty for the cwd). A step
+# naming cd, pushd or popd moves the folder for the steps after it; a subshell's
+# move is undone at its `)`. The one walk suite-guard and the loader share.
+hook_step_dirs() {
+  local line kind step depth=0 stack=("")
+  while IFS= read -r line; do
+    IFS=$'\037' read -r kind step <<<"$line"
+    case "$kind" in
+      open) depth=$((depth + 1)); stack[depth]="${stack[depth - 1]}" ;;
+      close) [ "$depth" -eq 0 ] || depth=$((depth - 1)) ;;
+      step)
+        printf 'step\037%s\037%s\n' "${stack[depth]}" "$step"
+        hook_names_dir_change "$step" || continue
+        hook_cd_step "${stack[depth]}" "$step"
+        stack[depth]="$HOOK_CD_DIR" ;;
+    esac
+  done < <(hook_cmd_steps "$1")
+}
+
+# hook_is_interpreter <word>: a shell that runs a -c string as code, by any
+# path. The one list the commit finder and the loader's opt-in check read.
+hook_is_interpreter() {
+  case "$1" in
+    sh|bash|zsh|dash|ksh|*/sh|*/bash|*/zsh|*/dash|*/ksh) return 0 ;;
+  esac
+  return 1
+}
+
 # hook_find_git_commit <cmd>: find a real `git ... commit` clause past the peeled
 # prefixes. Sets HOOK_COMMIT_CLAUSE (quote-stripped, or empty), HOOK_SAW_CD (a
 # cd/pushd/popd clause), HOOK_SAW_STAGE (add/rm/mv/stage before the commit), and
@@ -179,49 +273,47 @@ hook_find_git_commit() {
     fi
     # An interpreter in command position with a -c string is the same wrapped
     # shape: `sh -c "git commit …"`, `bash -lc '…'`, and the attached `bash -c"…"`.
-    case "${1:-}" in
-      sh|bash|zsh|dash|ksh|*/sh|*/bash|*/zsh|*/dash|*/ksh)
-        shift
-        expect=0
-        while [ $# -gt 0 ]; do
-          case "$1" in
-            _hookq_*|\"*|\'*)
-              # The string operand. Only a preceding -c cluster makes it
-              # executed code: `bash "script.sh"` names a FILE.
-              if [ "$expect" -eq 1 ] && _hook_span_is_commit "$src" "$((pi + ci))"; then
-                HOOK_WRAPPED_COMMIT=1
-              fi
+    if hook_is_interpreter "${1:-}"; then
+      shift
+      expect=0
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          _hookq_*|\"*|\'*)
+            # The string operand. Only a preceding -c cluster makes it
+            # executed code: `bash "script.sh"` names a FILE.
+            if [ "$expect" -eq 1 ] && _hook_span_is_commit "$src" "$((pi + ci))"; then
+              HOOK_WRAPPED_COMMIT=1
+            fi
+            break
+            ;;
+          -[!-]*)
+            # A short option cluster. With the string ATTACHED (`-c_hookq_`,
+            # or a raw quote when the strip did not run) the cluster before
+            # it must end in c; otherwise a cluster carrying c makes the
+            # NEXT operand the string.
+            pre="${1%%_hookq_*}"
+            [ "$pre" = "$1" ] && pre="${1%%[\"\']*}"
+            if [ "$pre" != "$1" ]; then
+              case "$pre" in
+                *c) if _hook_span_is_commit "$src" "$((pi + ci))"; then HOOK_WRAPPED_COMMIT=1; fi ;;
+              esac
               break
-              ;;
-            -[!-]*)
-              # A short option cluster. With the string ATTACHED (`-c_hookq_`,
-              # or a raw quote when the strip did not run) the cluster before
-              # it must end in c; otherwise a cluster carrying c makes the
-              # NEXT operand the string.
-              pre="${1%%_hookq_*}"
-              [ "$pre" = "$1" ] && pre="${1%%[\"\']*}"
-              if [ "$pre" != "$1" ]; then
-                case "$pre" in
-                  *c) if _hook_span_is_commit "$src" "$((pi + ci))"; then HOOK_WRAPPED_COMMIT=1; fi ;;
-                esac
-                break
-              fi
-              case "$1" in *c*) expect=1 ;; esac
-              shift
-              ;;
-            --*) _hook_count_placeholders "$1"; ci=$((ci + HOOK_PLACEHOLDER_COUNT)); shift ;;
-            *'>'*|*'<'*)
-              n=$(hook_redirect_span "$1")
-              [ "$n" -gt 0 ] || break
-              [ "$n" -le $# ] || n=$#
-              _hook_count_placeholders "${*:1:$n}"; ci=$((ci + HOOK_PLACEHOLDER_COUNT)); shift "$n" ;;
-            *) break ;;
-          esac
-        done
-        pi=$((pi + nc))
-        continue
-        ;;
-    esac
+            fi
+            case "$1" in *c*) expect=1 ;; esac
+            shift
+            ;;
+          --*) _hook_count_placeholders "$1"; ci=$((ci + HOOK_PLACEHOLDER_COUNT)); shift ;;
+          *'>'*|*'<'*)
+            n=$(hook_redirect_span "$1")
+            [ "$n" -gt 0 ] || break
+            [ "$n" -le $# ] || n=$#
+            _hook_count_placeholders "${*:1:$n}"; ci=$((ci + HOOK_PLACEHOLDER_COUNT)); shift "$n" ;;
+          *) break ;;
+        esac
+      done
+      pi=$((pi + nc))
+      continue
+    fi
     case "${1:-}" in
       git|*/git) ;;
       *) pi=$((pi + nc)); continue ;;

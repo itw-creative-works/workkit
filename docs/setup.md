@@ -2,9 +2,39 @@
 
 How workkit gets onto a machine and into a repo. The short path is in the [README](../README.md); this page is every step behind it. The engine's own reference, with each step's edge cases, is [`workflow/README.md`](../workflow/README.md).
 
+## Install
+
+Install the plugin from GitHub; no clone is needed:
+
+```sh
+claude plugin marketplace add ITW-Creative-Works/workkit
+claude plugin install workkit@workkit
+```
+
+That brings the hooks, agents and skills. The `workkit` command, the schedule and the home repo come from setup. Until setup has run, every session asks you to run it and names the command: `bash <the engine in the plugin cache>/workkit.sh setup`, its path spelled out for your machine.
+
+Setup runs from the plugin cache as it does from a clone: the engine's address (`~/.claude/workkit`) takes the cached copy, and the 9am job runs through that address, so a plugin update that repoints it keeps the schedule current with no reinstall.
+
+To work on workkit itself, install from a clone instead. Setup installs the plugin from that clone, and a clone outranks the plugin cache:
+
+```sh
+git clone https://github.com/ITW-Creative-Works/workkit.git
+cd workkit
+./workflow/workkit.sh setup
+```
+
+A checkout you already have registers the same way as GitHub does:
+
+```sh
+claude plugin marketplace add <path-to-checkout>
+claude plugin install workkit@workkit
+```
+
+Plugins load when a session starts, so a new (or restarted) session is what puts an install or an update into effect.
+
 ## What setup does
 
-`./workflow/workkit.sh setup`, run from a clone of this repo or from the plugin cache (see [The plugin alone](#the-plugin-alone)), goes through these steps in order, under five titles. Each step checks before it acts, so a second run only fixes what is missing.
+`./workflow/workkit.sh setup`, run from the plugin cache or from a clone of this repo (see [Install](#install)), goes through these steps in order, under five titles. Each step checks before it acts, so a second run only fixes what is missing.
 
 **This machine**
 
@@ -34,28 +64,6 @@ How workkit gets onto a machine and into a repo. The short path is in the [READM
 12. **Joining.** Offers to turn workkit on for the repo you are standing in.
 
 Afterwards, `workkit doctor` reports what is set up and what has drifted, and `workkit help` is the map of every command.
-
-## The plugin alone
-
-If you want only the hooks, agents and skills, install the plugin straight from GitHub, with no clone:
-
-```sh
-claude plugin marketplace add ITW-Creative-Works/workkit
-claude plugin install workkit@workkit
-```
-
-Or from a checkout you already have:
-
-```sh
-claude plugin marketplace add <path-to-checkout>
-claude plugin install workkit@workkit
-```
-
-The `workkit` command, the schedule and the home repo still come from setup, and until it has run, every session asks you to run it.
-
-Setup runs from the plugin cache as it does from a clone: the engine's address (`~/.claude/workkit`) takes the cached copy, and the 9am job runs through that address, so a plugin update that repoints it keeps the schedule current with no reinstall.
-
-Plugins load when a session starts, so a new (or restarted) session is what puts an install or an update into effect.
 
 ## The engine's address
 

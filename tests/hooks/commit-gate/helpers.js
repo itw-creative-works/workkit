@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync, execSync } = require('child_process');
-const { assert, assertEq, skipSuite } = require('../../lib/harness');
+const { assert, assertEq, skipSuite, WORKKIT_DIR } = require('../../lib/harness');
 const {
   IS_WINDOWS, BASH, SYSTEM_BASH, NO_RC, WINDOWS_CSC, shellPath, gitPath, digestTool, pathWith, stubTool,
 } = require('../../lib/platform');
@@ -23,9 +23,15 @@ const LIB = path.join(__dirname, '..', '..', '..', 'hooks', '_lib.sh');
 // read the same review marker: on Windows node's `/tmp` and Git Bash's differ.
 const TMP = mkTmp('cg-tmp-');
 
-const mkRepo = () => {
+// Opted in by a committed settings.json, since the loader steps aside in a repo
+// that is not; `optIn: false` leaves the init commit empty.
+const mkRepo = ({ optIn = true } = {}) => {
   const dir = mkTmp('cg-test-');
-  execSync(`git init && git commit --allow-empty -m "init" && git remote add origin ${FIXTURE_ORIGIN}`, { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+  if (optIn) {
+    fs.mkdirSync(path.join(dir, WORKKIT_DIR), { recursive: true });
+    fs.writeFileSync(path.join(dir, WORKKIT_DIR, 'settings.json'), '{ "version": 1, "enabled": true }\n');
+  }
+  execSync(`git init && git add -A && git commit --allow-empty -m "init" && git remote add origin ${FIXTURE_ORIGIN}`, { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
   return dir;
 };
 

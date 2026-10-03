@@ -47,6 +47,8 @@ The engine's stable filesystem address is `~/.claude/workkit` → this repo's `w
 
 Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh` so settings reference a hook by `prefix:name` rather than a path. A LOADER-level failure fails open (exit 0); the hook's own exit code passes through untouched, which blocking hooks (exit 2) need.
 
+A repo that has not opted in gets none of the hooks: the loader stands every one down there but the setup reminder and the restart notice (`docs/hooks.md` § Where every hook stands down).
+
 The index of all twenty-seven and what each one does: `docs/hooks.md`. Four carry a README beside the script as well: `tree-guard`, `release-taken`, `session-guard`, `change-tracker`.
 
 ## Agents
@@ -59,7 +61,7 @@ Nine, namespaced `workkit:<name>`: `feature` · `interview` · `diagnose` · `re
 
 ## The engine (`workflow/`)
 
-Agent-agnostic: shell + Node, no Claude Code knowledge, which is why the hooks call it rather than contain it. `workkit.sh` is the one command and the from-zero entry point: `setup [--token]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `tower` · `enable` · `decline` · `heal` · `note`.
+Agent-agnostic: shell + Node, no Claude Code knowledge, which is why the hooks call it rather than contain it. `workkit.sh` is the one command and the from-zero entry point: `setup [--token]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `tower` · `enable` · `decline` · `heal` · `note` · `prove`.
 
 Beside it live the label SSOT, the heal, the CHANGELOG linter in `changelog/`, the capture CLI, the ship's four helpers in `ship/` (`publish-plan.js`, `release.js`, `ship-items.sh`, `ci-watch.sh`), the templates a repo receives on enable, and the home repo's whole lifecycle. Every file and every step: `workflow/README.md`.
 

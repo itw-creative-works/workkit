@@ -7,8 +7,8 @@
 
 # hook_session_model <session_id> <transcript_path>: the CURRENT model into
 # HOOK_SESSION_MODEL (empty when unknowable) and HOOK_SESSION_MODEL_SRC (live |
-# transcript | none), from the statusline cache then the transcript, never the
-# launch-frozen env vars. The personal hooks carry a twin: change both together.
+# transcript | none), from the statusline cache then the transcript's last 200
+# lines, never the launch-frozen env vars.
 hook_session_model() {
   HOOK_SESSION_MODEL=""
   HOOK_SESSION_MODEL_SRC="none"
@@ -23,9 +23,10 @@ hook_session_model() {
     [ -n "$HOOK_SESSION_MODEL" ] && HOOK_SESSION_MODEL_SRC="live"
   fi
   if [ -z "$HOOK_SESSION_MODEL" ] && [ -n "$transcript_path" ] && [ -f "$transcript_path" ]; then
-    # Last assistant entry's message.model: grep narrows, jq validates real
-    # entries so quoted transcript content can never poison the value.
-    HOOK_SESSION_MODEL=$(grep '"type":"assistant"' "$transcript_path" 2>/dev/null | tail -20 \
+    # Last assistant entry's message.model: only the end is read, since a
+    # transcript runs to gigabytes; grep narrows, jq validates real entries so
+    # quoted transcript content can never poison the value.
+    HOOK_SESSION_MODEL=$(tail -n 200 "$transcript_path" 2>/dev/null | grep '"type":"assistant"' | tail -20 \
       | hook_jq -R -r 'fromjson? | select(.type == "assistant") | .message.model // empty' 2>/dev/null \
       | tail -1 || true)
     [ -n "$HOOK_SESSION_MODEL" ] && HOOK_SESSION_MODEL_SRC="transcript"

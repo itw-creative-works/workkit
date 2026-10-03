@@ -458,7 +458,7 @@ if [ "$has_code" -eq 1 ] && wk_has_test_script "$repo_root"; then
   if wk_suite_proved "$repo_root" "$commit_tree"; then
     stand_down "commit-gate: suite proved: a green root \`npm test\` recorded this tree."
   elif wk_suite_proved "$repo_root" "$(wk_tree_hash "$repo_root" || true)"; then
-    block "the green run proved the tree on disk, and this commit carries a different one (an untracked file or an unstaged edit the commit leaves out): stage everything that ran (\`git add -A\`) or stash what the commit leaves out, then commit."
+    block "the green run proved the tree on disk, and this commit carries a different one (an untracked file or an unstaged edit the commit leaves out): stage everything that ran (\`git add -A\`), or run \`workkit prove\` to prove the staged tree alone (the suite runs on a copy of the index, and the folder stays as it is), then commit."
   elif script_shell_unwired; then
     block "the commit carries code and no green run proves this tree, and npm's script-shell does not point at the kit's wrapper, so a root \`npm test\` writes no record. Run \`workkit setup\` once, then \`npm test\` at the repo root, then commit."
   else

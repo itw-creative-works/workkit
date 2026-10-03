@@ -1,29 +1,38 @@
 // A throwaway git repo on `main`: its own identity, one commit of the seeded
 // files, the unfetched FIXTURE_ORIGIN every fixture repo carries, and a scratch
-// home and TMPDIR so no child reads the real gitconfig. Consumers: red-proof,
-// review-covers, commit-language; the commit-gate and script-shell fixtures.
-// `mkOriginRepo` is the minimal form: an init and an origin, nothing committed.
+// home and TMPDIR so no child reads the real gitconfig. It is opted in to
+// workkit, since the hook loader steps aside in a repo that is not. Consumers:
+// red-proof, review-covers, commit-language, the loader; the commit-gate and
+// script-shell fixtures. `mkOriginRepo` is the minimal form: an init and an
+// origin, nothing committed.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { shellPath, homeEnv } = require('./platform');
 const { mkTmp } = require('./scratch');
+const { WORKKIT_DIR } = require('./harness');
 
 // The origin every fixture repo carries, never fetched: a repo without one is a
 // throwaway the commit hooks skip.
 const FIXTURE_ORIGIN = 'https://example.invalid/owner/repo.git';
+
+// A repo's opt-in, committed with the seeded files unless `files` names its own.
+const OPT_IN_FILE = `${WORKKIT_DIR}/settings.json`;
+const OPT_IN = '{ "version": 1, "enabled": true }\n';
 
 /**
  * A scratch world whose repo holds `files` in one commit.
  * @param {string} prefix - the scratch folder's name prefix
  * @param {object} files - root-relative path to content, all committed
  * @param {Date} [when] - the mtime every seeded file carries
+ * @param {object} [opts]
+ * @param {boolean} [opts.optIn=true] - false seeds no `.workkit/settings.json`
  * @returns {{dir: string, repo: string, tmp: string, env: object, git: Function, write: Function}}
  *   `git(...args)` runs in the repo and throws on a non-zero exit;
  *   `write(rel, body, when)` writes a file, dated `when` when given
  */
-const mkRepo = (prefix, files, when) => {
+const mkRepo = (prefix, files, when, { optIn = true } = {}) => {
   const dir = mkTmp(prefix);
   const repo = path.join(dir, 'repo');
   const home = path.join(dir, 'home');
@@ -44,7 +53,8 @@ const mkRepo = (prefix, files, when) => {
   git('init', '-q', '-b', 'main');
   git('config', 'user.email', 'test@example.com');
   git('config', 'user.name', 'Test');
-  for (const [rel, body] of Object.entries(files)) write(rel, body, when);
+  const seeded = optIn ? { [OPT_IN_FILE]: OPT_IN, ...files } : files;
+  for (const [rel, body] of Object.entries(seeded)) write(rel, body, when);
   git('add', '-A');
   git('commit', '-q', '-m', 'init');
   git('remote', 'add', 'origin', FIXTURE_ORIGIN);

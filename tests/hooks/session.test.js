@@ -11,6 +11,7 @@ const { BASH, SYSTEM_PATH, NO_RC, shellPath, homeEnv, joinPath } = require('../l
 const { mkTmp } = require('../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'session', 'run.sh');
+const LOADER = path.join(__dirname, '..', '..', 'hooks', 'loader.sh');
 const TEMPLATE = path.join(__dirname, '..', '..', 'workflow', 'templates', 'session.md');
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -63,8 +64,8 @@ const marker = (n, checkedDaysAgo = 0) => JSON.stringify({
   checkedAt: `${daysAgo(checkedDaysAgo)}T09:00:00Z`,
 });
 
-const runHook = (cwd, source = 'startup', home = BARE_HOME, env = {}) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
+const runScript = (args, cwd, source, home, env) => {
+  const res = spawnSync(BASH, [...NO_RC, ...args], {
     input: JSON.stringify({ cwd: shellPath(cwd), source, hook_event_name: 'SessionStart' }),
     env: homeEnv(home, { PATH: joinPath(SYSTEM_PATH, '/opt/homebrew/bin'), ...env }),
     encoding: 'utf8',
@@ -72,6 +73,13 @@ const runHook = (cwd, source = 'startup', home = BARE_HOME, env = {}) => {
   });
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
 };
+
+const runHook = (cwd, source = 'startup', home = BARE_HOME, env = {}) => (
+  runScript([shellPath(HOOK)], cwd, source, home, env));
+
+// Whether a repo has opted in is the loader's call, so a case about one that
+// has not runs the hook as a session does: through hooks/loader.sh.
+const runLoaded = (cwd, home = BARE_HOME) => runScript([shellPath(LOADER), 'docs:session'], cwd, 'startup', home, {});
 
 const ctxOf = (stdout) => JSON.parse(stdout).hookSpecificOutput.additionalContext;
 const msgOf = (stdout) => JSON.parse(stdout).systemMessage;
@@ -228,7 +236,7 @@ const run = async () => {
 
   await test('a repo that never opted in: silent, even with content', () => {
     const repo = mkRepo({ session: filled(['#12: mid-build']), optedIn: false });
-    const { code, stdout } = runHook(repo);
+    const { code, stdout } = runLoaded(repo);
     assertEq(code, 0, 'exit 0');
     assertEq(stdout, '', 'no committed settings.json means no injection');
     cleanup(repo);
@@ -236,7 +244,7 @@ const run = async () => {
 
   await test('a repo that turned the workflow off: silent', () => {
     const repo = mkRepo({ session: filled(['#12: mid-build']), enabled: false });
-    const { code, stdout } = runHook(repo);
+    const { code, stdout } = runLoaded(repo);
     assertEq(code, 0, 'exit 0');
     assertEq(stdout, '', 'enabled: false is a deliberate no');
     cleanup(repo);
@@ -251,14 +259,14 @@ const run = async () => {
     fs.mkdirSync(path.join(dir, W, 'agents'), { recursive: true });
     fs.writeFileSync(path.join(dir, W, 'settings.json'), JSON.stringify({ version: 1, site: {} }));
     fs.writeFileSync(path.join(dir, W, 'agents', 'session.md'), filled(['#12: mid-build']));
-    const { code, stdout } = runHook(dir);
+    const { code, stdout } = runLoaded(dir);
     assertEq(code, 0, 'exit 0');
     assertEq(stdout, '', 'nothing is injected and nothing is said about participation');
     cleanup(dir);
   });
 
   await test('no cwd in the payload: silent', () => {
-    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'docs:session'], {
       input: JSON.stringify({ source: 'startup' }),
       env: homeEnv(BARE_HOME, { PATH: joinPath(SYSTEM_PATH, '/opt/homebrew/bin') }),
       encoding: 'utf8',
@@ -472,7 +480,7 @@ const run = async () => {
   await test('a repo that never opted in hears nothing about the brief either', () => {
     const repo = mkRepo({ optedIn: false });
     const home = mkHome({ marker: marker(9) });
-    const { code, stdout } = runHook(repo, 'startup', home);
+    const { code, stdout } = runLoaded(repo, home);
     assertEq(code, 0, 'exit 0');
     assertEq(stdout, '', 'the participation gate is the whole hook’s gate');
     cleanup(repo);

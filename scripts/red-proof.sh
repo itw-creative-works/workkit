@@ -81,8 +81,8 @@ added=0
 cleanup() {
   cd "$root" 2>/dev/null || cd /
   if [ "$added" -eq 1 ]; then
-    git worktree remove --force "$copy" \
-      || echo "red-proof: could not remove the worktree at $copy (git worktree prune clears it)" >&2
+    hook_snapshot_worktree_remove "$root" "$copy" \
+      || echo "red-proof: git still lists the removed worktree $copy (run git -C $root worktree prune)" >&2
   fi
   rm -rf "$tmp"
 }
@@ -120,20 +120,13 @@ is_named() {
   return 1
 }
 
-# Another add or prune racing on the repo's worktree list fails an add, so it
-# is tried three times; the last failure carries git's own words.
-for try in 1 2 3; do
-  if add_err=$(git -C "$root" worktree add -q --no-checkout --detach "$copy" HEAD 2>&1); then
-    added=1
-    break
-  fi
-  [ "$try" -eq 3 ] || sleep 1
-done
-[ "$added" -eq 1 ] || fail "could not add a worktree of HEAD at $copy: $add_err"
+add_err=$(hook_snapshot_worktree_add "$root" "$copy" 2>&1) \
+  || fail "could not add a worktree of HEAD at $copy: $add_err"
+added=1
 # The index as HEAD has it, so git in the copy reads the copy's files against HEAD.
 git -C "$copy" read-tree HEAD || fail "could not read HEAD into the copy's index"
 
-fill_err=$(hook_snapshot_fill "$root" "$copy" 2>&1) \
+fill_err=$(hook_snapshot_fill "$snap/tree" "$root" "$copy" 2>&1) \
   || fail "could not fill the copy from the snapshot at $snap: $fill_err"
 
 # Every path changed since the snapshot, from three lists: the working diff now,

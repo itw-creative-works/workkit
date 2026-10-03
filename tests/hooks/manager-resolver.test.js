@@ -8,6 +8,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
+const { mkRepo } = require('../lib/git-repo');
 
 const REPO = path.join(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'hooks', 'manager', 'resolver', 'run.sh');
@@ -407,8 +408,9 @@ const run = async () => {
   await test('loader routes manager:resolver', () => {
     freshTmp();
     cacheSession('sess1', id('fable'));
+    const { repo } = mkRepo('resolver-loader-', {});
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:resolver'], {
-      input: JSON.stringify(payload('worker')),
+      input: JSON.stringify({ ...payload('worker'), cwd: shellPath(repo) }),
       env: { ...process.env, TMPDIR: shellPath(tmp) },
       encoding: 'utf8',
       timeout: 10000,
@@ -418,8 +420,9 @@ const run = async () => {
   });
   await test('HOOK_DISABLE=1 is a silent no-op', () => {
     freshTmp();
+    const { repo } = mkRepo('resolver-loader-', {});
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:resolver'], {
-      input: JSON.stringify(payload('worker')),
+      input: JSON.stringify({ ...payload('worker'), cwd: shellPath(repo) }),
       env: { ...process.env, TMPDIR: shellPath(tmp), HOOK_DISABLE: '1' },
       encoding: 'utf8',
       timeout: 10000,

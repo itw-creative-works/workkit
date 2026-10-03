@@ -9,10 +9,12 @@ workkit is a plugin for [Claude Code](https://code.claude.com/docs/en/overview),
 ## Install
 
 ```sh
-git clone https://github.com/ITW-Creative-Works/workkit.git
-cd workkit
-./workflow/workkit.sh setup
+claude plugin marketplace add ITW-Creative-Works/workkit
+claude plugin install workkit@workkit
 ```
+
+Then start Claude Code (`claude`) in any folder.
+The first session sees that setup has not run yet, and Claude hands you the one setup command to paste, with the path for your machine filled in.
 
 Setup prints one line per step, so you can see what it did.
 It asks before anything big: creating your home repo (a private GitHub repo for work that belongs to no single project), minting a Claude token, publishing the dashboard, and turning workkit on for the repo you are standing in.
@@ -22,7 +24,15 @@ When it finishes, the `workkit` command is in `~/.local/bin` (setup prints the P
 `workkit doctor` shows what is set up, and `workkit help` lists every command.
 Start a new Claude Code session so the plugin loads.
 
-The plugin on its own, every setup step, and how to turn workkit on in another repo: [docs/setup.md](docs/setup.md).
+To work on workkit itself, install from a clone instead; the clone then outranks the plugin copy:
+
+```sh
+git clone https://github.com/ITW-Creative-Works/workkit.git
+cd workkit
+./workflow/workkit.sh setup
+```
+
+Every setup step, and how to turn workkit on in another repo: [docs/setup.md](docs/setup.md).
 
 ## First use
 
@@ -54,6 +64,7 @@ Every piece of work travels one road, and each stop is a label on its GitHub iss
 6. **Ship.** Say `ship`. Claude writes the changelog entry, commits, releases, and closes the issue.
 
 Hooks guard each step on their own. For example, no code commits until the full test suite has passed on exactly what is being committed.
+A repo that has not turned workkit on gets none of its hooks.
 The rules for every stop: [docs/project-state.md](docs/project-state.md).
 
 ## Seeing your board

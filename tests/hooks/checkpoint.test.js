@@ -7,6 +7,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { BASH, SYSTEM_BASH, NO_RC, shellPath } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
+const { mkRepo } = require('../lib/git-repo');
 
 const REPO = path.join(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'hooks', 'docs', 'checkpoint', 'run.sh');
@@ -90,6 +91,20 @@ const run = async () => {
     });
   }
 
+  group('docs-checkpoint: a system-delivered prompt is silence');
+  await test('a hand-back that says compact prints nothing; the same words typed plain fire', () => {
+    freshTmp();
+    const words = 'the scout is done, should I compact before we continue?';
+    const handBack = runHook({ prompt: `[Subagent hand-back]\n${words}`, session_id: 'sess1' });
+    assertEq(handBack.code, 0, handBack.stderr);
+    assertEq(handBack.stdout, '', 'the agent\'s words are not the owner\'s');
+    assertEq(markers().join(','), '', 'a silent run must write no marker');
+    const typed = runHook({ prompt: words, session_id: 'sess1' });
+    assertEq(typed.code, 0, typed.stderr);
+    assert(contextOf(typed).includes('run the workkit:checkpoint skill before anything else'),
+      `the owner's line fires the full pass, got: ${typed.stdout}`);
+  });
+
   group('docs-checkpoint: the marker and the delta');
   await test('the first fire writes the marker and asks for the full pass', () => {
     freshTmp();
@@ -160,8 +175,9 @@ const run = async () => {
   group('docs-checkpoint: loader integration');
   await test('loader routes docs:checkpoint', () => {
     freshTmp();
+    const { repo } = mkRepo('checkpoint-loader-', {});
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'docs:checkpoint'], {
-      input: JSON.stringify({ prompt: 'compact', session_id: 'sess1' }),
+      input: JSON.stringify({ prompt: 'compact', session_id: 'sess1', cwd: shellPath(repo) }),
       env: { ...process.env, TMPDIR: shellPath(tmp) },
       encoding: 'utf8',
       timeout: 10000,

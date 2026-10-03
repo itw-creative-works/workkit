@@ -1,7 +1,8 @@
 #!/bin/bash
 # hooks/lib/snapshot.sh: the repo snapshot scripts/red-proof.sh runs against,
 # which workflow/snapshot takes at the claim to status:building: its folder,
-# take, add issues, the stale check, drop, and the per-run fill of a copy.
+# take, add issues, the stale check, drop, and the per-run copy's worktree and
+# fill, which workflow/prove.sh shares.
 # SOURCED by hooks/_lib.sh, never executed: it defines functions and sets
 # nothing. It reads hook_is_* (the entry), hook_working_paths (lib/tree.sh) and
 # hook_issues_building (lib/proof.sh).
@@ -20,14 +21,22 @@ hook_snapshot_root() {
 # and `issues` (one number a line). A snapshot is live while `tree` exists.
 hook_snapshot_dir() { wk_marker_path claude-red-snapshot "$1"; }
 
-# _hook_snapshot_copy <src> <dest>: every entry of <src> into the folder <dest>,
-# `.git` left out and symlinks kept. On Windows every node_modules at any depth
-# is left out too (red-proof's fill rebuilds those from the live repo's
-# entries). The tools' words go to stderr.
+# _hook_snapshot_copy <src> <dest> [rel]...: every entry of <src> (or each rel
+# whose parent <dest> holds) into <dest>, `.git` left out and symlinks kept. On
+# Windows each node_modules at any depth is left out too, for the fill to
+# rebuild from the live repo. The tools' words go to stderr.
 _hook_snapshot_copy() {
-  local entry flags=(-pPR)
+  local src="$1" dest="$2" entry rel flags=(-pPR) rels=()
+  shift 2
+  for rel in "$@"; do
+    rel="${rel%/}"
+    case "$rel" in */*) [ -d "$dest/${rel%/*}" ] || continue ;; esac
+    rels+=("$rel")
+  done
+  [ $# -eq 0 ] || [ ${#rels[@]} -gt 0 ] || return 0
   if hook_is_windows; then
-    (set -o pipefail; cd "$1" && tar -cf - --exclude=./.git --exclude=node_modules . | tar -xf - -C "$2")
+    [ ${#rels[@]} -gt 0 ] || rels=(.)
+    (set -o pipefail; cd "$src" && tar -cf - --exclude=./.git --exclude=node_modules -- "${rels[@]}" | tar -xf - -C "$dest")
     return
   fi
   if hook_is_macos; then
@@ -35,9 +44,16 @@ _hook_snapshot_copy() {
   elif hook_is_linux; then
     flags=(-a --reflink=auto)
   fi
+  if [ ${#rels[@]} -gt 0 ]; then
+    for rel in "${rels[@]}"; do
+      case "$rel" in */*) entry="$dest/${rel%/*}/" ;; *) entry="$dest/" ;; esac
+      cp "${flags[@]}" "$src/$rel" "$entry" || return 1
+    done
+    return 0
+  fi
   while IFS= read -r -d '' entry; do
-    cp "${flags[@]}" "$entry" "$2/" || return 1
-  done < <(find "$1" -mindepth 1 -maxdepth 1 ! -name .git -print0)
+    cp "${flags[@]}" "$entry" "$dest/" || return 1
+  done < <(find "$src" -mindepth 1 -maxdepth 1 ! -name .git -print0)
 }
 
 # hook_snapshot_take <root> [issue]...: a fresh snapshot of <root>, replacing
@@ -129,14 +145,37 @@ _hook_snapshot_in_modules() {
   return 1
 }
 
-# hook_snapshot_fill <root> <dest>: the folder <dest> filled from the snapshot's
-# tree. On Windows each node_modules the live repo holds becomes a real folder
-# wherever the copy holds its parent, its entries linked from the live repo and
-# its workspace links into <dest> (_hook_snapshot_modules).
+# hook_snapshot_worktree_add <root> <copy>: a detached worktree of <root>'s HEAD
+# at <copy>, nothing checked out. Another add or prune racing on the repo's
+# worktree list fails an add, so it is tried three times; 1 with the last
+# failure's words from git on stderr.
+hook_snapshot_worktree_add() {
+  local try err
+  for try in 1 2 3; do
+    err=$(git -C "$1" worktree add -q --no-checkout --detach "$2" HEAD 2>&1) && return 0
+    [ "$try" -eq 3 ] || sleep 1
+  done
+  printf '%s\n' "$err" >&2
+  return 1
+}
+
+# hook_snapshot_worktree_remove <root> <copy>: the worktree at <copy> gone from
+# <root>'s list; when git cannot remove it, the folder is deleted first so the
+# prune drops its entry. 1 when the prune fails too.
+hook_snapshot_worktree_remove() {
+  git -C "$1" worktree remove --force "$2" 2>/dev/null && return 0
+  rm -rf "$2"
+  git -C "$1" worktree prune 2>/dev/null
+}
+
+# hook_snapshot_fill <tree> <root> <dest> [rel]...: the folder <dest> filled from
+# the folder <tree> (only the rels, given any; _hook_snapshot_copy). On Windows
+# each node_modules the live repo <root> holds becomes a real folder wherever
+# the copy holds its parent (_hook_snapshot_modules).
 hook_snapshot_fill() {
-  local root="$1" dest="$2" dir found rel
-  dir=$(hook_snapshot_dir "$root") || return 1
-  _hook_snapshot_copy "$dir/tree" "$dest" || return 1
+  local tree="$1" root="$2" dest="$3" found rel
+  shift 3
+  _hook_snapshot_copy "$tree" "$dest" "$@" || return 1
   hook_is_windows || return 0
   while IFS= read -r -d '' found; do
     rel="${found#"$root"/}"

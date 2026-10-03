@@ -8,7 +8,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const {
+  group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR,
+} = require('../lib/harness');
 const {
   BASH, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath, systemPathWith,
 } = require('../lib/platform');
@@ -27,10 +29,13 @@ const TMP = mkTmp('suite-guard-tmp-');
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 // A repo the hook can read: a git repository, since the root is the git root
-// and the root suite is its package.json's test script.
+// and the root suite is its package.json's test script; opted in, since the
+// loader skips a repo that is not.
 const mkRepo = ({ scripts = { test: 'node tests/run.js' }, pkg = true } = {}) => {
   const dir = mkTmp('suite-guard-');
   spawnSync('git', ['init', '-q'], { cwd: dir });
+  fs.mkdirSync(path.join(dir, WORKKIT_DIR));
+  fs.writeFileSync(path.join(dir, WORKKIT_DIR, 'settings.json'), '{ "version": 1, "enabled": true }\n');
   if (pkg) fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts }));
   return dir;
 };
@@ -231,6 +236,137 @@ const run = async () => {
   await test('a nested package with no test script never hides the root suite', () => {
     const dir = prove(withSub(mkRepo(), { start: 'node index.js' }));
     assertEq(runHook('npm test', path.join(dir, 'sub')).code, 2, 'a package without a script is no test boundary');
+    cleanup(dir);
+  });
+
+  group('suite-guard: the folder a run really uses, from the root');
+
+  // A workspaces root with its own test script: packages/x declares its own,
+  // packages/y declares none.
+  const withMembers = (dir) => {
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({
+      name: 'fixture', workspaces: ['packages/*'], scripts: { test: 'node tests/run.js' },
+    }));
+    for (const [name, scripts] of [['x', { test: 'node --test' }], ['y', { start: 'node index.js' }]]) {
+      fs.mkdirSync(path.join(dir, 'packages', name), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'packages', name, 'package.json'), JSON.stringify({ name, scripts }));
+    }
+    return dir;
+  };
+
+  const MEMBER_RUNS = [
+    'cd packages/x && npm test',
+    'npm test --prefix packages/x',
+    'npm test -w x',
+    'npm test --workspace=x',
+    'npm test -ws',
+    '(cd packages/x; npm test)',
+  ];
+
+  await test('a run whose folder is a member with its own test script passes on a proved root', () => {
+    const dir = prove(withMembers(mkRepo()));
+    for (const c of MEMBER_RUNS) {
+      assertEq(runHook(c, dir).code, 0, `the member's suite, never the root's: ${c}`);
+    }
+    cleanup(dir);
+  });
+
+  await test('a run whose folder is a member with its own test script passes while an issue is building', () => {
+    const dir = withMembers(mkOrigin());
+    const stub = makeGhStub({ list: BUILDING });
+    for (const c of MEMBER_RUNS) {
+      const { code, stderr } = runHook(c, dir, withStub(stub));
+      assertEq(code, 0, `a member's run is never judged: ${c}`);
+      assertEq(stderr, '', `and says nothing: ${c}`);
+    }
+    cleanup(stub.dir);
+    cleanup(dir);
+  });
+
+  await test("a run that reaches the root's script is full, and bounces on a proved root", () => {
+    const dir = prove(withMembers(mkRepo()));
+    for (const c of [
+      'cd . && npm test',
+      `cd ${shellPath(dir)} && npm test`,
+      'cd packages/y && npm test',
+      'cd packages/nope && npm test',
+      'npm test -ws --include-workspace-root',
+      'cd packages/x && cd ../.. && npm test',
+    ]) {
+      assertEq(runHook(c, dir).code, 2, `the root's suite runs: ${c}`);
+    }
+    cleanup(dir);
+  });
+
+  await test('a cd back to the root in another spelling, or the root added back by flag or env, is full', () => {
+    const dir = prove(withMembers(mkRepo()));
+    for (const c of [
+      'cd packages/x && builtin cd ../.. && npm test',
+      'cd packages/x && command cd ../.. && npm test',
+      'cd packages/x && \\cd ../.. && npm test',
+      'cd packages/x && { cd ../..; npm test; }',
+      'cd packages/x && if cd ../..; then npm test; fi',
+      'cd packages/x && CDPATH= cd ../.. && npm test',
+      'npm test -ws --include-workspace',
+      'npm test -w x --include-workspace',
+      'npm_config_include_workspace_root=true npm test -ws',
+    ]) {
+      assertEq(runHook(c, dir).code, 2, `the root's suite runs: ${c}`);
+    }
+    cleanup(dir);
+  });
+
+  group('suite-guard: workkit prove is a full run');
+
+  await test('workkit prove on an unproved tree with nothing building passes: the deliberate run', () => {
+    const dir = mkRepo();
+    const { code, stderr } = runHook('workkit prove', dir);
+    assertEq(code, 0, 'the first full run on a tree passes');
+    assertEq(stderr, '', 'and says nothing');
+    cleanup(dir);
+  });
+
+  // prove proves the index, so its proved tree is `git write-tree`, never the folder's.
+  const stageAll = (dir) => {
+    spawnSync('git', ['add', '-A'], { cwd: dir });
+    return dir;
+  };
+  const indexTree = (dir) => spawnSync('git', ['write-tree'], { cwd: dir, encoding: 'utf8' }).stdout.trim();
+
+  await test('workkit prove with the index tree proved bounces', () => {
+    const dir = stageAll(mkRepo());
+    plantRecord(TMP, dir, indexTree(dir));
+    const { code, stderr } = runHook('workkit prove', dir);
+    assertEq(code, 2, 'the staged-tree proof is the full suite, once per tree');
+    assert(stderr.includes('already proved'), `names the rule, got: ${stderr}`);
+    cleanup(dir);
+  });
+
+  await test('workkit prove with only the working tree proved, the index another, passes', () => {
+    const dir = stageAll(mkRepo());
+    fs.writeFileSync(path.join(dir, 'held.js'), 'x\n');
+    prove(dir);
+    assertEq(runHook('npm test', dir).code, 2, 'the working tree is the proved one');
+    const { code, stderr } = runHook('workkit prove', dir);
+    assertEq(code, 0, 'the command the commit gate names for this gap is never bounced by it');
+    assertEq(stderr, '', 'and says nothing');
+    cleanup(dir);
+  });
+
+  await test('workkit prove while an issue is building bounces, naming it', () => {
+    const dir = mkOrigin();
+    const stub = makeGhStub({ list: BUILDING });
+    const { code, stderr } = runHook('workkit prove', dir, withStub(stub));
+    assertEq(code, 2, 'the full run waits until every item is parked and passed');
+    assert(stderr.startsWith(BOUNCE), `opens with the rule, got: ${stderr}`);
+    assert(stderr.includes('#7'), `names the building issue, got: ${stderr}`);
+    cleanup(stub.dir);
+    cleanup(dir);
+  });
+
+  await test('workkit prove named inside a quoted string passes on a proved tree', () => {
+    const dir = mkProved();
+    assertEq(runHook('git commit -m "feat: add workkit prove"', dir).code, 0, 'a mention is data, not a run');
     cleanup(dir);
   });
 

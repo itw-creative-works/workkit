@@ -30,12 +30,15 @@ const recordRequired = (out, dir) => {
   assert(!suiteRan(dir), 'the gate never runs the suite');
 };
 
-// The block when the record proves the disk tree and the commit carries another.
+// The block when the record proves the disk tree and the commit carries another:
+// stage the rest, or prove the staged tree, never stash.
 const diskProved = (out, dir) => {
   assertEq(out.code, 2, `the disk tree is not the commit's, got: ${out.stderr}`);
   assert(out.stderr.includes('the green run proved the tree on disk, and this commit carries a different one'),
     `for the gap reason, got: ${out.stderr}`);
   assert(out.stderr.includes('`git add -A`'), `naming the fix, got: ${out.stderr}`);
+  assert(out.stderr.includes('workkit prove'), `naming the staged-tree proof, got: ${out.stderr}`);
+  assert(!/stash/i.test(out.stderr), `never naming a stash, got: ${out.stderr}`);
   assert(!suiteRan(dir), 'the gate never runs the suite');
 };
 

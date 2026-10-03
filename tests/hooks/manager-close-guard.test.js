@@ -8,6 +8,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
+const { mkRepo } = require('../lib/git-repo');
 
 const REPO = path.join(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'hooks', 'manager', 'close-guard', 'run.sh');
@@ -226,6 +227,20 @@ const run = async () => {
     ])));
     assert(warn(out).includes('verifier'), out.stdout);
   });
+  await test('a subagent hand-back after the edits does not reset the window', () => {
+    freshTmp();
+    const handBack = injected('[Subagent hand-back]\nDONE: the brief is built.');
+    const out = runHook(payload(transcript([prompt(), ...edits(5, F), handBack])), { MANAGER_CLOSE_EDITS: '5' });
+    assert(warn(out).includes('5 edits'), `the hand-back started a new turn: ${out.stdout}`);
+  });
+  await test('an owner paste opening with <pasted_content counts as the turn\'s prompt', () => {
+    for (const open of ['<pasted_content>', '<pasted_content lines="2">']) {
+      freshTmp();
+      const paste = injected(`${open}\nline one\nline two\n</pasted_content>\nwhat does this do?`);
+      const out = runHook(payload(transcript([paste, ...edits(6, F)])));
+      assert(warn(out).includes('6 edits'), `${open}: the paste was read as no prompt: ${out.stdout}`);
+    }
+  });
   await test('a real prompt that merely MENTIONS a tag still resets the window', () => {
     freshTmp();
     const out = runHook(payload(transcript([
@@ -360,8 +375,9 @@ const run = async () => {
   group('manager-close-guard: loader integration');
   await test('loader routes manager:close-guard', () => {
     freshTmp();
+    const { repo } = mkRepo('close-guard-loader-', {});
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:close-guard'], {
-      input: JSON.stringify(payload(transcript([prompt(), ...edits(6, F)]))),
+      input: JSON.stringify(payload(transcript([prompt(), ...edits(6, F)]), { cwd: shellPath(repo) })),
       env: { ...process.env, TMPDIR: shellPath(tmp), MANAGER_USER_SETTINGS: shellPath(path.join(tmp, 'none.json')) },
       encoding: 'utf8',
       timeout: 10000,
@@ -371,8 +387,9 @@ const run = async () => {
   });
   await test('HOOK_DISABLE=1 is a silent no-op', () => {
     freshTmp();
+    const { repo } = mkRepo('close-guard-loader-', {});
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:close-guard'], {
-      input: JSON.stringify(payload(transcript([prompt(), ...edits(6, F)]))),
+      input: JSON.stringify(payload(transcript([prompt(), ...edits(6, F)]), { cwd: shellPath(repo) })),
       env: { ...process.env, TMPDIR: shellPath(tmp), HOOK_DISABLE: '1' },
       encoding: 'utf8',
       timeout: 10000,

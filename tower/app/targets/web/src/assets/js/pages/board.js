@@ -15,6 +15,7 @@ import { issueTrigger, externalLink } from '../libs/tower/modal.js';
 import { claimGlyph } from '../libs/tower/agent.js';
 import { boardGraph } from '../libs/tower/graphdef.js';
 import { WRITABLE, MOVABLE_STATUSES, moveRequest, postIssueStatus } from '../libs/tower/api.js';
+import { motionPlan } from '../libs/tower/board-motion.js';
 
 // The filter names, which are also their URL parameter names. `repo` is the
 // chrome's, and `view` is not something a filter clears.
@@ -203,6 +204,66 @@ const paintGraph = (root, state, definition) => {
   });
 };
 
+// ── Card motion ────────────────────────────────────────────────────────────
+// A drop or a refresh slides each card from its old spot to its new one; the
+// plan is `libs/tower/board-motion.js`'s, the measuring and playing are here.
+
+/**
+ * Where every card on the strip sits, by `data-issue`, plus the card and its
+ * size, which a card that leaves needs for the copy faded out in its place.
+ * @param {HTMLElement} root the page body
+ */
+const measure = (root) => {
+  const spots = new Map();
+  const cards = new Map();
+  for (const card of root.querySelectorAll('.omega-tower-board [data-issue]')) {
+    const { left, top, width, height } = card.getBoundingClientRect();
+    spots.set(card.dataset.issue, { x: left, y: top });
+    cards.set(card.dataset.issue, { card, width, height });
+  }
+  return { spots, cards };
+};
+
+/**
+ * Play the plan between the spots measured before the swap and the cards it
+ * just wrote, timed by the theme's own motion tokens.
+ * @param {HTMLElement} root the page body
+ * @param {{spots: Map, cards: Map}} first what `measure` read before the swap
+ */
+const play = (root, first) => {
+  const last = measure(root);
+  const { moved, entered, left } = motionPlan(first.spots, last.spots);
+  const tokens = getComputedStyle(document.documentElement);
+  const timing = {
+    duration: parseFloat(tokens.getPropertyValue('--omega-speed-slow')),
+    easing: tokens.getPropertyValue('--omega-ease').trim(),
+  };
+
+  for (const { key, dx, dy } of moved) {
+    last.cards.get(key).card.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], timing);
+  }
+  for (const key of entered) last.cards.get(key).card.animate([{ opacity: 0 }, { opacity: 1 }], timing);
+
+  // The card that left is gone with the old markup, so an inert copy stands
+  // at its old spot and fades; the next swap clears it if the fade has not.
+  for (const key of left) {
+    const { card, width, height } = first.cards.get(key);
+    const { x, y } = first.spots.get(key);
+    const ghost = card.cloneNode(true);
+    for (const name of ['draggable', 'role']) ghost.removeAttribute(name);
+    for (const node of [ghost, ...ghost.querySelectorAll('[data-issue]')]) node.removeAttribute('data-issue');
+    for (const node of [ghost, ...ghost.querySelectorAll('a[href], button, input, select, textarea, [tabindex]')]) node.setAttribute('tabindex', '-1');
+    ghost.setAttribute('aria-hidden', 'true');
+    Object.assign(ghost.style, {
+      position: 'fixed', left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px`, margin: '0', pointerEvents: 'none',
+    });
+    root.append(ghost);
+    const fade = ghost.animate([{ opacity: 1 }, { opacity: 0 }], { ...timing, fill: 'forwards' });
+    fade.onfinish = () => ghost.remove();
+    fade.oncancel = () => ghost.remove();
+  }
+};
+
 // Outside render, so a repaint before the next drop keeps the explanation.
 let moveError = null;
 
@@ -210,8 +271,10 @@ let moveError = null;
  * Draw the page.
  * @param {HTMLElement} root the page body
  * @param {object} state the runtime's feed state
+ * @param {{instant?: boolean}} [options] `instant` for a filter, search or
+ *   view change, which redraws without motion
  */
-const render = (root, state) => {
+const render = (root, state, { instant = false } = {}) => {
   const result = feed(state, 'board');
   const all = issuesFor(state);
   // The unlabelled are the alert's, and no filter narrows that.
@@ -243,6 +306,9 @@ const render = (root, state) => {
   const focusId = focused && root.contains(focused) ? focused.id : null;
   const caret = focusId && typeof focused.selectionStart === 'number' ? focused.selectionStart : null;
 
+  // Measured before the swap, unless this paint redraws instantly.
+  const first = instant || matchMedia('(prefers-reduced-motion: reduce)').matches ? null : measure(root);
+
   if (!swap(root, `${toolbar(labelled, filters, view)}${body}`)) return;
 
   if (focusId) {
@@ -259,20 +325,23 @@ const render = (root, state) => {
     const next = {};
     for (const control of form.querySelectorAll('[data-filter]')) next[control.dataset.filter] = control.value.trim();
     writeFilters(next);
-    render(root, state);
+    render(root, state, { instant: true });
   });
   root.querySelector('#board-clear').addEventListener('click', () => {
     writeFilters({});
-    render(root, state);
+    render(root, state, { instant: true });
   });
   for (const button of form.querySelectorAll('[data-view]')) {
     button.addEventListener('click', () => {
       writeView(button.dataset.view);
-      render(root, state);
+      render(root, state, { instant: true });
     });
   }
 
   wireDrag(root, state);
+
+  // A first paint had no cards to move from, so it lands without motion.
+  if (first && first.spots.size) play(root, first);
 
   // Only after a write: an unchanged diagram is left standing.
   if (view === 'graph' && definition) paintGraph(root, state, definition);

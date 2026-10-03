@@ -8,6 +8,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
+const { mkRepo } = require('../lib/git-repo');
 
 const REPO = path.join(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'hooks', 'manager', 'spawn-guard', 'run.sh');
@@ -209,8 +210,9 @@ const run = async () => {
   group('manager-spawn-guard: loader integration');
   await test('loader routes manager:spawn-guard', () => {
     freshTmp();
+    const { repo } = mkRepo('spawn-guard-loader-', {});
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:spawn-guard'], {
-      input: JSON.stringify(payload('worker', { model: 'haiku' })),
+      input: JSON.stringify({ ...payload('worker', { model: 'haiku' }), cwd: shellPath(repo) }),
       env: { ...process.env, TMPDIR: shellPath(tmp), MANAGER_USER_SETTINGS: shellPath(path.join(tmp, 'none.json')) },
       encoding: 'utf8',
       timeout: 10000,
@@ -220,8 +222,9 @@ const run = async () => {
   });
   await test('HOOK_DISABLE=1 is a silent no-op', () => {
     freshTmp();
+    const { repo } = mkRepo('spawn-guard-loader-', {});
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:spawn-guard'], {
-      input: JSON.stringify(payload('worker', { model: 'haiku' })),
+      input: JSON.stringify({ ...payload('worker', { model: 'haiku' }), cwd: shellPath(repo) }),
       env: { ...process.env, TMPDIR: shellPath(tmp), HOOK_DISABLE: '1' },
       encoding: 'utf8',
       timeout: 10000,

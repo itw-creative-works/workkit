@@ -11,6 +11,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
+const { mkRepo } = require('../lib/git-repo');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'tree-guard', 'run.sh');
 
@@ -351,8 +352,9 @@ const run = async () => {
 
   await test('the loader routes safety:tree-guard to the script', () => {
     const LOADER = path.join(__dirname, '..', '..', 'hooks', 'loader.sh');
+    const { repo } = mkRepo('tg-loader-', {});
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'safety:tree-guard'], {
-      input: JSON.stringify({ cwd: shellPath(os.tmpdir()), tool_input: { command: 'git stash' } }),
+      input: JSON.stringify({ cwd: shellPath(repo), tool_input: { command: 'git stash' } }),
       env: { ...process.env, HOME: shellPath(os.homedir()) },
       encoding: 'utf8',
       timeout: 10000,

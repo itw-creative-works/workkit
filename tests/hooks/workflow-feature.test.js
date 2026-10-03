@@ -7,6 +7,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { BASH, SYSTEM_BASH, NO_RC, shellPath } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
+const { mkRepo } = require('../lib/git-repo');
 
 const REPO = path.join(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'hooks', 'workflow', 'feature', 'run.sh');
@@ -143,6 +144,17 @@ const run = async () => {
     });
   }
 
+  group('workflow-feature: a system-delivered prompt is silence');
+  await test('a task notification holding "work on #12" prints nothing; the owner\'s line fires', () => {
+    freshTmp();
+    const notice = '<task-notification>\n<task-id>b1</task-id>\n<summary>the worker said: work on #12</summary>\n</task-notification>';
+    const out = runHook({ prompt: notice, session_id: 'sess-1' });
+    assertEq(out.code, 0, out.stderr);
+    assertEq(out.stdout, '', 'a notification is not the owner asking');
+    assertEq(markers().join(','), '', 'and spends no session load');
+    assertEq(contextOf(runHook({ prompt: 'work on #12', session_id: 'sess-1' })), LINE);
+  });
+
   group('workflow-feature: the marker');
   await test('the first fire writes one marker keyed by the session id', () => {
     freshTmp();
@@ -214,8 +226,9 @@ const run = async () => {
   group('workflow-feature: loader integration');
   await test('loader routes workflow:feature', () => {
     freshTmp();
+    const { repo } = mkRepo('feature-loader-', {});
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'workflow:feature'], {
-      input: JSON.stringify({ prompt: 'work on #12', session_id: 'sess1' }),
+      input: JSON.stringify({ prompt: 'work on #12', session_id: 'sess1', cwd: shellPath(repo) }),
       env: { ...process.env, TMPDIR: shellPath(tmp) },
       encoding: 'utf8',
       timeout: 10000,

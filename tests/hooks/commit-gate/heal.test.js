@@ -43,7 +43,7 @@ const run = async () => {
   });
 
   await test('NEW settings.json (the opt-in commit), no marker: exit 2', () => {
-    const dir = mkRepo();
+    const dir = mkRepo({ optIn: false });
     stageDeep(dir, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
     const { code } = runHook(dir, 'git commit -m "chore: opt in"');
     assertEq(code, 2, 'a first settings.json is not a stamp');

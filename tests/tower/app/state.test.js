@@ -194,7 +194,10 @@ const run = async () => {
     const fs = require('fs');
     const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
     assert(/const move = async \(key, to\) => \{\s*const issue = issueByKey\(state, key\);/.test(source), 'the issue is looked up when the drop happens');
-    assert(!source.includes('new Map('), 'and nothing holds a per-paint map of them');
+    // The card-motion maps hold on-screen spots; what is barred is a keyed
+    // store of the issues themselves, built from the list or filled one by one.
+    assert(!/new Map\([^)]*\bissues?\b/.test(source) && !/\.set\([^,]+,\s*issue\b/.test(source) && !/\]\s*=\s*issue\b/.test(source),
+      'and nothing holds a per-paint map of them');
     assert(source.includes('draggable="true"'), 'the cards are draggable');
     assert(source.includes('data-column='), 'the columns are drop targets');
     assert(source.includes('moveError = answer.reason'), 'a refused write becomes the line the page shows');
