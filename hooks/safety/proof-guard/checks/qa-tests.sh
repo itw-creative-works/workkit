@@ -4,7 +4,7 @@
 # `node --test` once per tree (the qa record in workflow/lib/suite.sh) and
 # blocks the flip when one is red. SOURCED by the entry (run.sh), never
 # executed, and it runs nothing at load: it defines functions and sets nothing.
-# It reads the entry's cwd and calls _lib.sh's helpers.
+# It calls _lib.sh's helpers.
 
 # The base the committed leg is read against: the merge base of HEAD with
 # origin's default branch, else with this branch's upstream. Sets qa_base, empty
@@ -39,11 +39,12 @@ qa_block() {
   } >&2
 }
 
-# The run under a fixed 540s deadline, inside the 600s the wiring gives the
-# hook, so a hung test bounces instead of being cancelled into an allow.
+# check_qa_tests <dir>: the run in the repo holding <dir>, under a fixed 540s
+# deadline inside the 600s the wiring gives the hook, so a hung test bounces
+# instead of being cancelled into an allow.
 check_qa_tests() {
-  if ! qa_root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null); then
-    hook_pretool_notice "proof-guard: the session's directory is inside no git repository, so the touched-test run did not run at the qa flip."
+  if ! qa_root=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null); then
+    hook_pretool_notice "proof-guard: $1 is inside no git repository, so the touched-test run did not run at the qa flip."
     return 0
   fi
   qa_find_base "$qa_root"

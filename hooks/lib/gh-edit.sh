@@ -1,9 +1,35 @@
 #!/bin/bash
-# hooks/lib/gh-edit.sh: the read of a `gh issue edit|close` command the two
-# label gates share (safety/proof-guard, safety/spec-guard): the clause split, a
-# flag's values, the repo, the issue numbers, and the bounce behind a cd.
+# hooks/lib/gh-edit.sh: the read of a `gh issue edit|close` command the label
+# hooks share (safety/proof-guard, safety/spec-guard, workflow/snapshot): the raw
+# match, the clause split and subcommand, a flag's values, the repo and whether
+# it is the session's, the issue numbers, and the bounce behind a cd.
 # SOURCED by hooks/_lib.sh, never executed: it defines functions and sets
-# nothing. It reads hook_redirect_span and hook_strip_quotes (lib/commit.sh).
+# nothing. It reads hook_redirect_span and hook_strip_quotes (lib/commit.sh) and
+# wk_repo_slug (workflow/lib/slug.sh).
+
+# hook_gh_names <text> <subs>: whether the text spells `gh issue <sub>` for one
+# of the |-separated subcommands as a command, not inside a path or a longer
+# name. The cheap read a hook makes on the raw command before any split.
+hook_gh_names() {
+  printf '%s' "$1" | grep -Eq "(^|[^[:alnum:]_./-])gh[[:space:]]+issue[[:space:]]+($2)([[:space:]]|\$)"
+}
+
+# hook_gh_clause_sub <stripped clause>: `edit` or `close`, whichever the clause
+# first runs as `gh issue <sub>`; nothing when it runs neither.
+hook_gh_clause_sub() {
+  printf '%s' "$1" \
+    | grep -Eo '(^|[^[:alnum:]_./-])gh[[:space:]]+issue[[:space:]]+(edit|close)([[:space:]]|$)' \
+    | head -n 1 | grep -Eo '(edit|close)$|(edit|close)[[:space:]]' | tr -d '[:space:]' || true
+}
+
+# hook_gh_repo_is_here <repo> <dir>: whether the repo value names the origin of
+# the tree at <dir>, owner/name in any letter case. No origin is never here.
+hook_gh_repo_is_here() {
+  local want here
+  here=$(wk_repo_slug "$2" | tr '[:upper:]' '[:lower:]')
+  want=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  [ -n "$here" ] && [ "$want" = "$here" ]
+}
 
 # hook_gh_clauses <text>: the clauses, one a line, in one awk pass whose cost
 # grows once with the command: a separator inside a quoted span is data, and a

@@ -31,3 +31,24 @@ wk_is_kit_checkout() {
   [[ -n "${1:-}" ]] || return 1
   wk_repo_slug "$1" | grep -Eiq '^[^/]+/workkit$'
 }
+
+# wk_roster_path <owner/name>: the folder of this machine's roster whose origin
+# is that slug, any letter case, enabled entries only; 1 when none is. Loads
+# platform.sh beside this when the caller has not, for wk_user_dir and wk_jq.
+wk_roster_path() {
+  local want key roster
+  [[ -n "${1:-}" ]] || return 1
+  declare -F wk_user_dir >/dev/null || . "${BASH_SOURCE[0]%/*}/platform.sh"
+  command -v jq >/dev/null 2>&1 || return 1
+  roster="$(wk_user_dir)/.repos.json"
+  [[ -r "$roster" ]] || return 1
+  want="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  while IFS= read -r key; do
+    [[ -n "$key" ]] || continue
+    if [[ "$(wk_repo_slug "$key" | tr '[:upper:]' '[:lower:]')" == "$want" ]]; then
+      printf '%s\n' "$key"
+      return 0
+    fi
+  done < <(wk_jq -r '(.repos // {}) | to_entries[] | select(.value == "enabled") | .key' "$roster" 2>/dev/null)
+  return 1
+}

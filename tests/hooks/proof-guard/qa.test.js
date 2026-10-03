@@ -9,8 +9,9 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const { shellPath, basePathWithout, joinPath } = require('../../lib/platform');
 const { fmtCalls } = require('../../lib/argv-log');
 const {
-  cleanup, makeGhStub, ghCalls, dropPathWithoutGh, runHook, WORLD,
+  cleanup, makeGhStub, ghCalls, dropPathWithoutGh, runHook, runHookIn, WORLD,
   QA, RUN_LOG, GREEN, RED, DESCRIBE, UNPROVABLE, COMMIT, git, write, runs, mkQaRepo, notice,
+  mkOtherRepo, mkRosterHome,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
 
@@ -221,11 +222,12 @@ const run = async () => {
     }
   });
 
-  await qaCase('--repo on the qa flip: exit 0, says the run did not run here', (dir, stub) => {
+  await qaCase('--repo naming a repo with no roster at all: exit 0, says it has not opted in', (dir, stub) => {
     write(dir, 'tests/a.test.js', RED);
     const out = runHook('gh issue edit 3 --repo owner/name --add-label status:qa', stub, dir);
-    assertEq(out.code, 0, `another repo's flip passes, got: ${out.stderr}`);
-    assert(notice(out).includes('did not run here'), `says so, got: ${out.stdout}`);
+    assertEq(out.code, 0, `a repo off the roster passes, got: ${out.stderr}`);
+    const msg = notice(out);
+    assert(msg.includes('not opted in') && msg.includes('owner/name'), `names it as not opted in, got: ${msg}`);
     assertEq(runs(dir), 0, 'no test ran');
   });
 
@@ -242,23 +244,24 @@ const run = async () => {
     });
   }
 
-  await qaCase('-R naming another repo than the origin: exit 0, says the run did not run here', (dir, stub) => {
+  await qaCase('-R naming another repo than the origin, with no roster: exit 0, says it has not opted in', (dir, stub) => {
     git(dir, `remote add origin ${THIS_REPO}`);
     write(dir, 'tests/a.test.js', RED);
     const out = runHook('gh issue edit 3 -R owner/other --add-label status:qa', stub, dir);
-    assertEq(out.code, 0, `another repo's flip passes, got: ${out.stderr}`);
-    assert(notice(out).includes('did not run here'), `says so, got: ${out.stdout}`);
+    assertEq(out.code, 0, `a repo off the roster passes, got: ${out.stderr}`);
+    const msg = notice(out);
+    assert(msg.includes('not opted in') && msg.includes('owner/other'), `names it as not opted in, got: ${msg}`);
     assertEq(runs(dir), 0, 'no test ran');
   });
 
-  for (const value of ['$D', '"$(cat repo.txt)"', '`cat repo.txt`']) {
-    await qaCase(`--repo ${value} on the qa flip: exit 0, says the value could not be read`, (dir, stub) => {
+  for (const value of ['"$R"', '$D', '"$(cat repo.txt)"', '`cat repo.txt`']) {
+    await qaCase(`--repo ${value} on the qa flip: exit 2, asking for the repo as owner/name`, (dir, stub) => {
       write(dir, 'tests/a.test.js', RED);
       const out = runHook(`gh issue edit 3 --repo ${value} --add-label status:qa`, stub, dir);
-      assertEq(out.code, 0, `an unread value never blocks, got: ${out.stderr}`);
-      assert(notice(out).includes('could not read the repo value, so the touched-test run did not run'),
-        `says the value was unread, got: ${out.stdout}`);
-      assert(!out.stdout.includes('another repo'), `never read as another repo, got: ${out.stdout}`);
+      assertEq(out.code, 2, `an unread value blocks the flip, got: ${out.stderr}`);
+      assert(out.stderr.includes('proof-guard') && out.stderr.includes('owner/name'),
+        `asks for the repo written as owner/name, got: ${out.stderr}`);
+      assertEq(out.stdout, '', `a block prints no notice, got: ${out.stdout}`);
       assertEq(runs(dir), 0, 'no test ran');
     });
   }
@@ -301,7 +304,8 @@ const run = async () => {
     write(dir, 'tests/a.test.js', RED);
     const out = runHook('gh issue edit 3 --body "pass it with -R when needed" --add-label status:qa', stub, dir);
     assertEq(out.code, 2, `the flip is this repo's, got: ${out.stderr}`);
-    assert(!out.stdout.includes('did not run here'), `never read as another repo, got: ${out.stdout}`);
+    assert(out.stderr.includes('tests/a.test.js'), `the red file here is the one named, got: ${out.stderr}`);
+    assertEq(runs(dir), 1, 'the touched file ran once, in this repo');
   });
 
   await qaCase('a body naming --add-label status:qa starts no run', (dir, stub) => {
@@ -330,6 +334,109 @@ const run = async () => {
       assertEq(out.stdout, '', `no notice: ${c}`);
     }
     assertEq(runs(dir), 0, 'no test ran');
+  });
+
+  group('proof-guard: a qa flip naming another repo on the roster');
+
+  // The session repo holds a red touched file, so a run there would block or
+  // log; the other repo is the one the flip names, found through the roster.
+  const OTHER = 'git@github.com:Owner/Other.git';
+  const crossCase = (name, body) => test(name, () => {
+    const session = mkQaRepo();
+    const other = mkOtherRepo(OTHER);
+    const tmp = mkTmp('proof-guard-tmp-');
+    const stub = makeGhStub(WORLD);
+    const homes = [];
+    const runnerFor = (entries) => {
+      homes.push(mkRosterHome(entries));
+      return runHookIn(tmp, homes[homes.length - 1]);
+    };
+    try {
+      write(session, 'tests/a.test.js', RED);
+      body({ session, other, tmp, stub, runnerFor });
+      assertEq(runs(session), 0, 'the session repo ran nothing');
+      assertEq(ghCalls(stub).length, 0, `a qa flip reads no issue, got: ${fmtCalls(ghCalls(stub))}`);
+    } finally {
+      for (const dir of [session, other, tmp, stub.dir, ...homes]) cleanup(dir);
+    }
+  });
+
+  for (const flip of [
+    'gh issue edit 3 --repo OWNER/other --add-label status:qa',
+    'gh issue edit 3 -R owner/OTHER --add-label status:qa',
+    'gh issue edit https://github.com/owner/other/issues/3 --add-label status:qa',
+  ]) {
+    await crossCase(`a red touched test in the named roster repo blocks: ${flip}`, ({ session, other, stub, runnerFor }) => {
+      write(other, 'tests/b.test.js', RED);
+      const out = runnerFor([[other, 'enabled']])(flip, stub, session);
+      assertEq(out.code, 2, `the named repo's red file blocks, got: ${out.stderr}`);
+      assert(out.stderr.includes('tests/b.test.js'), `names the file, got: ${out.stderr}`);
+      assertEq(runs(other), 1, 'the touched file ran once, in the named repo');
+    });
+  }
+
+  await crossCase('every touched test green in the named roster repo: passes, the record is that folder\'s', ({ session, other, tmp, stub, runnerFor }) => {
+    write(other, '.gitignore', 'runs.log\n');
+    git(other, 'add .gitignore');
+    git(other, `${COMMIT} -m ignore`);
+    write(other, 'tests/b.test.js', `${GREEN}// touched\n`);
+    const runIn = runnerFor([[session, 'enabled'], [other, 'enabled']]);
+    const out = runIn('gh issue edit 3 --repo owner/other --add-label status:qa', stub, session);
+    assertEq(out.code, 0, `green there passes, got: ${out.stderr}`);
+    const msg = notice(out);
+    assert(msg.includes('ran 1 touched test file(s) green') && msg.includes('tests/b.test.js'), `the green run, got: ${msg}`);
+    assertEq(runs(other), 1, 'the touched file ran once, in the named repo');
+    const marker = path.join(tmp, 'claude-qa-marker');
+    assertEq(fs.existsSync(marker) ? fs.readdirSync(marker).length : 0, 1, 'one record is written');
+    // A flip from the named folder itself on the same tree hits that record.
+    const again = runIn(QA, stub, other);
+    assertEq(again.code, 0, `the record passes the flip, got: ${again.stderr}`);
+    assert(notice(again).includes('already ran green on this tree'), `the record is the named folder's, got: ${again.stdout}`);
+    assertEq(runs(other), 1, 'the record hit ran nothing');
+  });
+
+  await crossCase('a repo off a roster that lists others: exit 0, says it has not opted in', ({ session, other, stub, runnerFor }) => {
+    write(other, 'tests/b.test.js', RED);
+    const out = runnerFor([[session, 'enabled']])('gh issue edit 3 --repo owner/other --add-label status:qa', stub, session);
+    assertEq(out.code, 0, `a repo off the roster passes, got: ${out.stderr}`);
+    const msg = notice(out);
+    assert(msg.includes('not opted in') && msg.includes('owner/other'), `names it as not opted in, got: ${msg}`);
+    assertEq(runs(other), 0, 'nothing ran in the repo off the roster');
+  });
+
+  await crossCase('a declined roster entry is never matched: exit 0, says it has not opted in', ({ session, other, stub, runnerFor }) => {
+    write(other, 'tests/b.test.js', RED);
+    const out = runnerFor([[session, 'enabled'], [other, 'declined']])('gh issue edit 3 --repo owner/other --add-label status:qa', stub, session);
+    assertEq(out.code, 0, `a declined repo passes, got: ${out.stderr}`);
+    const msg = notice(out);
+    assert(msg.includes('not opted in') && msg.includes('owner/other'), `names it as not opted in, got: ${msg}`);
+    assertEq(runs(other), 0, 'nothing ran in the declined repo');
+  });
+
+  // A command that flips status:qa in two repos is two runs the hook cannot
+  // judge as one, so it blocks before either and names both repos.
+  await crossCase('the cwd repo and a roster repo in one command: exit 2, naming both, no test run', ({ session, other, stub, runnerFor }) => {
+    git(session, `remote add origin ${THIS_REPO}`);
+    write(other, 'tests/b.test.js', RED);
+    const out = runnerFor([[session, 'enabled'], [other, 'enabled']])(
+      'gh issue edit 3 --add-label status:qa && gh issue edit 4 --repo owner/other --add-label status:qa', stub, session);
+    assertEq(out.code, 2, `a flip in two repos blocks, got: ${out.stderr}`);
+    const said = out.stderr.toLowerCase();
+    assert(said.includes('owner/other'), `names the roster repo, got: ${out.stderr}`);
+    assert(said.includes('owner/name') || out.stderr.includes(shellPath(session)), `names the cwd repo, got: ${out.stderr}`);
+    assertEq(out.stdout, '', `a block prints no notice, got: ${out.stdout}`);
+    assertEq(runs(other), 0, 'nothing ran in the roster repo');
+  });
+
+  await crossCase('two other repos in one command, one off the roster: exit 2, naming both, no test run', ({ session, other, stub, runnerFor }) => {
+    write(other, 'tests/b.test.js', RED);
+    const out = runnerFor([[session, 'enabled'], [other, 'enabled']])(
+      'gh issue edit 3 --repo owner/absent --add-label status:qa && gh issue edit 4 --repo owner/other --add-label status:qa', stub, session);
+    assertEq(out.code, 2, `a flip in two repos blocks, got: ${out.stderr}`);
+    const said = out.stderr.toLowerCase();
+    assert(said.includes('owner/absent') && said.includes('owner/other'), `names both repos, got: ${out.stderr}`);
+    assertEq(out.stdout, '', `a block prints no notice, got: ${out.stdout}`);
+    assertEq(runs(other), 0, 'nothing ran in the roster repo');
   });
 
   group('proof-guard: the qa run stands down out loud');

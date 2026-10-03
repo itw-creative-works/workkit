@@ -70,7 +70,7 @@ The token, and what each tier needs: [docs/setup.md](docs/setup.md#three-ways-to
 
 | Part | Count | What it does |
 |---|---|---|
-| [Hooks](docs/hooks.md) | 26 | Run by themselves: at session start, before edits and commits, and when a reply ends |
+| [Hooks](docs/hooks.md) | 27 | Run by themselves: at session start, before edits and commits, and when a reply ends |
 | [Agents](docs/agents.md) | 5 | The crew your chat delegates to, each briefed from a role template in [`briefs/`](briefs/) |
 | Skills | 9 | Procedures Claude follows when your words match, or when you type `/workkit:<name>` |
 | [Dashboard](tower/README.md) | 7 pages | `workkit tower` opens a local view of every board, the running agents, token spend, and repo health |

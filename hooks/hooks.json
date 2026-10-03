@@ -102,6 +102,16 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh safety:test-reminder"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/loader.sh workflow:snapshot",
+            "timeout": 600
+          }
+        ]
       }
     ],
     "SessionStart": [

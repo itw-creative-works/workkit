@@ -100,3 +100,5 @@ hook_sha1() { wk_sha1 "$@"; }
 . "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/lib/tree.sh"
 # shellcheck source=./lib/gh-edit.sh
 . "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/lib/gh-edit.sh"
+# shellcheck source=./lib/snapshot.sh
+. "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/lib/snapshot.sh"

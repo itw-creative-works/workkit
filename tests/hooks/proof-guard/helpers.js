@@ -11,13 +11,17 @@ const {
   cleanup, makeGhStub, ghCalls, pathWithoutGh, dropPathWithoutGh, hookRunner,
 } = require('../../lib/gh-stub');
 const { mkTmp } = require('../../lib/scratch');
+const { mkRosterHome } = require('../../lib/roster');
 
 const HOOK = path.join(__dirname, '..', '..', '..', 'hooks', 'safety', 'proof-guard', 'run.sh');
 // Every run keeps its records in a scratch TMPDIR, never this machine's own.
 const runHook = hookRunner(HOOK, { TMPDIR: shellPath(mkTmp('proof-guard-tmp-')) });
 
-/** The runner with TMPDIR at <tmp>, for a case that reads its own records. */
-const runHookIn = (tmp) => hookRunner(HOOK, { TMPDIR: shellPath(tmp) });
+/**
+ * The runner with TMPDIR at <tmp>, for a case that reads its own records, and
+ * from <home> when given, for a case whose roster the hook must read.
+ */
+const runHookIn = (tmp, home = null) => hookRunner(HOOK, { TMPDIR: shellPath(tmp) }, home);
 
 /** The `comments` value gh answers with, one comment per body. */
 const comments = (...bodies) => bodies.map((body) => ({ body }));
@@ -68,6 +72,13 @@ const mkQaRepo = () => {
   return dir;
 };
 
+// A fixture repo whose origin is <origin>, the other repo a cross-repo flip names.
+const mkOtherRepo = (origin) => {
+  const dir = mkQaRepo();
+  git(dir, `remote add origin ${origin}`);
+  return dir;
+};
+
 // The notice a hook exiting 0 is heard by, off its stdout JSON.
 const notice = (out) => {
   const parsed = JSON.parse(out.stdout);
@@ -79,4 +90,5 @@ const notice = (out) => {
 module.exports = {
   HOOK, cleanup, makeGhStub, ghCalls, pathWithoutGh, dropPathWithoutGh, runHook, runHookIn, WORLD, comments,
   QA, RUN_LOG, GREEN, RED, DESCRIBE, UNPROVABLE, COMMIT, git, write, runs, mkQaRepo, notice,
+  mkOtherRepo, mkRosterHome,
 };

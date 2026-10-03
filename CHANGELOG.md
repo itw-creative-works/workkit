@@ -7,6 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#397](../../issues/397) - A qa flip naming another repo skipped its touched-test rerun. `safety/proof-guard` now finds that repo on the machine roster and reruns there, notes a repo not opted in, and blocks an unreadable `--repo` or a flip spanning two repos.
+- [#396](../../issues/396) - A red proof could pass on a crash from a missing gitignored build file. A new hook, `workflow:snapshot`, copies the repo at the claim to `status:building`, gitignored files included; `scripts/red-proof.sh` runs in that copy with the changes since laid on top, and a module failing to load exits 2.
+
 ## [0.70.1] - 2026-10-02
 
 ### Fixed

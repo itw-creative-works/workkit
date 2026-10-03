@@ -1,6 +1,6 @@
 // Hooks index parity: the wiring in hooks/hooks.json is the roster, and
-// docs/hooks.md's index table and detail sections and the count AGENTS.md
-// § Hooks spells out are pinned to it in both directions.
+// docs/hooks.md's index table and detail sections, the count AGENTS.md
+// § Hooks spells out and README's Hooks row number are pinned to it.
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
@@ -9,13 +9,14 @@ const REPO = path.join(__dirname, '..', '..');
 const HOOKS_JSON = path.join(REPO, 'hooks', 'hooks.json');
 const HOOKS_DOC = path.join(REPO, 'docs', 'hooks.md');
 const AGENTS_DOC = path.join(REPO, 'AGENTS.md');
+const README_DOC = path.join(REPO, 'README.md');
 
 // The counts AGENTS.md § Hooks could plausibly spell out. The `(?!-)` in the
 // lookup below is what keeps `twenty` from matching inside `twenty-five`.
 const COUNT_WORDS = {
   fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
   'twenty-one': 21, 'twenty-two': 22, 'twenty-three': 23, 'twenty-four': 24, 'twenty-five': 25,
-  'twenty-six': 26,
+  'twenty-six': 26, 'twenty-seven': 27,
 };
 
 // The section of a markdown file under one heading, up to the next heading of
@@ -73,8 +74,16 @@ const run = async () => {
   await test('AGENTS.md § Hooks spells out the number of wired hooks', () => {
     const text = section(AGENTS_DOC, '## Hooks');
     const word = Object.keys(COUNT_WORDS).find((w) => new RegExp(`\\b${w}\\b(?!-)`).test(text));
-    assert(word, 'AGENTS.md § Hooks carries no count word this test recognises (fifteen through twenty-six)');
+    assert(word, 'AGENTS.md § Hooks carries no count word this test recognises (fifteen through twenty-seven)');
     assertEq(COUNT_WORDS[word], wiredHooks().length, `AGENTS.md § Hooks says "${word}"`);
+  });
+
+  group('hooks: README.md count');
+
+  await test("README's Hooks row carries the number of wired hooks", () => {
+    const match = fs.readFileSync(README_DOC, 'utf8').match(/^\|\s*\[Hooks\]\([^)]*\)\s*\|\s*(\d+)\s*\|/m);
+    assert(match, 'README.md has no "| [Hooks](...) | <n> |" row');
+    assertEq(Number(match[1]), wiredHooks().length, "README.md's Hooks row");
   });
 };
 

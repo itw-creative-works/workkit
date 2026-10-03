@@ -87,11 +87,13 @@ const dropPathWithoutGh = () => {
  * `envPath` replaces it whole, for the world a case builds itself.
  * @param {string} hook - the hook script's native path
  * @param {object} [env] - more variables every run is handed (a scratch `TMPDIR`)
+ * @param {string} [givenHome] - the home every run reads, the case's own and left
+ *   in place; without one, each run gets a fresh empty home, removed after it
  * @returns {Function}
  */
-const hookRunner = (hook, env = {}) => (command, stub, cwd = os.tmpdir(), envPath = null) => {
+const hookRunner = (hook, env = {}, givenHome = null) => (command, stub, cwd = os.tmpdir(), envPath = null) => {
   const input = JSON.stringify({ tool_name: 'Bash', cwd: shellPath(cwd), tool_input: { command } });
-  const home = mkTmp('gh-stub-');
+  const home = givenHome || mkTmp('gh-stub-');
   try {
     const res = spawnSync(BASH, [...NO_RC, shellPath(hook)], {
       input,
@@ -104,7 +106,7 @@ const hookRunner = (hook, env = {}) => (command, stub, cwd = os.tmpdir(), envPat
     });
     return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
   } finally {
-    cleanup(home);
+    if (!givenHome) cleanup(home);
   }
 };
 

@@ -24,6 +24,7 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 
 - Claim the issue before working it: assign yourself, move it to `status:building`, AND add `agent:working`:
   `gh issue edit <N> --add-assignee @me --remove-label status:specced --add-label status:building,agent:working`
+- That flip makes the `workflow:snapshot` hook take the snapshot the red proofs run against (`docs/hooks.md`).
 - Skip an issue already assigned to someone else. Re-read the label and the assignee when you start, not when you listed the queue.
 - `agent:working` tells an agent claim from a human one. An agent runs `gh` as the owner, so the assignee cannot.
 - Remove `agent:working` when you release the issue, finished or not. The standards heal sweeps a claim left idle for 24 hours.

@@ -268,16 +268,20 @@ const run = async () => {
     cleanup(stub.dir);
   });
 
-  await test('a --repo value the guard cannot read stands the gate down, never reads the local repo', () => {
+  await test('a --repo value the guard cannot read blocks, asking for owner/name, and reads no repo', () => {
+    // Issue 7 carries a proof, so only the unread repo can block.
     for (const c of [
-      'gh issue close 9 --repo "$TARGET_REPO"',
-      'gh issue edit 9 -R "$(gh repo view --json nameWithOwner -q .nameWithOwner)" --add-label status:complete',
+      'gh issue edit 7 --repo "$R" --add-label status:complete',
+      'gh issue close 7 --repo "$R"',
+      'gh issue close 7 --repo "$TARGET_REPO"',
+      'gh issue edit 7 -R "$(gh repo view --json nameWithOwner -q .nameWithOwner)" --add-label status:complete',
     ]) {
       const stub = makeGhStub(WORLD);
       const { code, stderr } = runHook(c, stub);
-      assertEq(code, 0, `an unreadable repo fails open: ${c}`);
-      assert(stderr.includes('did not run'), `says the gate stood down, got: ${stderr}`);
-      assertEq(ghCalls(stub).length, 0, `the local repo is never asked instead, got: ${fmtCalls(ghCalls(stub))}`);
+      assertEq(code, 2, `an unreadable repo blocks: ${c}, got: ${stderr}`);
+      assert(stderr.includes('proof-guard') && stderr.includes('owner/name'),
+        `asks for the repo written as owner/name: ${c}, got: ${stderr}`);
+      assertEq(ghCalls(stub).length, 0, `no repo is read, the local one included, got: ${fmtCalls(ghCalls(stub))}`);
       cleanup(stub.dir);
     }
   });

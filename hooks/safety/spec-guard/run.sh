@@ -21,7 +21,7 @@ cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" || true)
 
 # Cheap exits first, on the raw text: a flip has to spell `gh issue edit` and
 # `status:specced` for the label to apply, so nothing else pays for the walk.
-printf '%s' "$cmd" | grep -Eq '(^|[^[:alnum:]_./-])gh[[:space:]]+issue[[:space:]]+edit([[:space:]]|$)' || exit 0
+hook_gh_names "$cmd" edit || exit 0
 printf '%s' "$cmd" | grep -q 'status:specced' || exit 0
 
 cwd=$(hook_jq -r '.cwd // ""' <<<"$input" || true)
@@ -74,7 +74,7 @@ while IFS= read -r clause; do
   detect=$(hook_strip_quotes "$clause")
   # shellcheck disable=SC2086  # the stripped clause's words; globbing is off
   if hook_clause_changes_dir $detect; then saw_cd=1; continue; fi
-  printf '%s' "$detect" | grep -Eq '(^|[^[:alnum:]_./-])gh[[:space:]]+issue[[:space:]]+edit([[:space:]]|$)' || continue
+  hook_gh_names "$detect" edit || continue
 
   # The value is read whole (quoted or bare), so a `--remove-label
   # status:specced` or a body naming the label never reads as the flip.
