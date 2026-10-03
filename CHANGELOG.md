@@ -7,23 +7,25 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.71.0] - 2026-10-03
+
 ### Added
 
-- [#402](../../issues/402) - Board cards slide to their new column after a drag or a refresh, instead of vanishing and reappearing. New cards fade in and leaving ones fade out. Filter, search and view changes stay instant, and reduced motion turns the motion off.
-- [#401](../../issues/401) - Held work no longer blocks a commit. `workkit prove` runs the full suite on a throwaway copy of exactly what is staged and records it, so the commit gate accepts the commit while other changes stay in the folder. The gate's block names the command.
+- [#402](../../issues/402) [`fd97682`](../../commit/fd97682) Thanks [@ianwieds]! - Board cards slide to their new column after a drag or a refresh, instead of vanishing and reappearing. New cards fade in and leaving ones fade out. Filter, search and view changes stay instant, and reduced motion turns the motion off.
+- [#401](../../issues/401) [`fd97682`](../../commit/fd97682) Thanks [@ianwieds]! - Held work no longer blocks a commit. `workkit prove` runs the full suite on a throwaway copy of exactly what is staged and records it, so the commit gate accepts the commit while other changes stay in the folder. The gate's block names the command.
 
 ### Changed
 
-- [#385](../../issues/385) - The README and `docs/setup.md` now lead with the two `claude plugin` commands. The first session then names the setup command for your machine. A git clone is the path for working on workkit itself, listed below the plugin install.
+- [#385](../../issues/385) [`fd97682`](../../commit/fd97682) Thanks [@ianwieds]! - The README and `docs/setup.md` now lead with the two `claude plugin` commands. The first session then names the setup command for your machine. A git clone is the path for working on workkit itself, listed below the plugin install.
 
 ### Fixed
 
-- [#403](../../issues/403) - The manager hooks read the whole transcript on every step in VS Code chats, gigabytes on a long one. The model lookup now reads only the transcript's last 200 lines.
-- [#400](../../issues/400) - Hooks fired in repos that never opted in to workkit. Every hook, the safety guards included, now stands down unless the repo it acts on has a `.workkit/settings.json` that is not `"enabled": false`. Only the setup reminder and the restart notice run everywhere.
-- [#399](../../issues/399) - `safety/suite-guard` blocked a package's own `npm test` as a root run. It now follows `cd` steps, subshells and npm's `--prefix`, `-w` and `--workspace` flags to the folder the run really uses, and lets it through when that package has its own test script.
-- [#398](../../issues/398) - Prompt hooks fired on subagent hand-backs and task notifications as if the owner typed them. `docs:checkpoint` and `workflow:feature` now stay silent on a prompt Claude Code delivered itself, and `manager:close-guard` starts no turn on one. The dotfiles hooks share the same check.
-- [#397](../../issues/397) - A qa flip naming another repo skipped its touched-test rerun. `safety/proof-guard` now finds that repo on the machine roster and reruns there, and blocks an unreadable `--repo` or a flip spanning two repos.
-- [#396](../../issues/396) - A red proof could pass on a crash from a missing gitignored build file. A new hook, `workflow:snapshot`, copies the repo at the claim to `status:building`, gitignored files included; `scripts/red-proof.sh` runs in that copy with the changes since laid on top, and a module failing to load exits 2.
+- [#403](../../issues/403) [`fd97682`](../../commit/fd97682) Thanks [@ianwieds]! - The manager hooks read the whole transcript on every step in VS Code chats, gigabytes on a long one. The model lookup now reads only the transcript's last 200 lines.
+- [#400](../../issues/400) [`fd97682`](../../commit/fd97682) Thanks [@ianwieds]! - Hooks fired in repos that never opted in to workkit. Every hook, the safety guards included, now stands down unless the repo it acts on has a `.workkit/settings.json` that is not `"enabled": false`. Only the setup reminder and the restart notice run everywhere.
+- [#399](../../issues/399) [`fd97682`](../../commit/fd97682) Thanks [@ianwieds]! - `safety/suite-guard` blocked a package's own `npm test` as a root run. It now follows `cd` steps, subshells and npm's `--prefix`, `-w` and `--workspace` flags to the folder the run really uses, and lets it through when that package has its own test script.
+- [#398](../../issues/398) [`fd97682`](../../commit/fd97682) Thanks [@ianwieds]! - Prompt hooks fired on subagent hand-backs and task notifications as if the owner typed them. `docs:checkpoint` and `workflow:feature` now stay silent on a prompt Claude Code delivered itself, and `manager:close-guard` starts no turn on one. The dotfiles hooks share the same check.
+- [#397](../../issues/397) [`6590eef`](../../commit/6590eef) [`fd97682`](../../commit/fd97682) Thanks [@ianwieds]! - A qa flip naming another repo skipped its touched-test rerun. `safety/proof-guard` now finds that repo on the machine roster and reruns there, and blocks an unreadable `--repo` or a flip spanning two repos.
+- [#396](../../issues/396) [`6590eef`](../../commit/6590eef) [`fd97682`](../../commit/fd97682) Thanks [@ianwieds]! - A red proof could pass on a crash from a missing gitignored build file. A new hook, `workflow:snapshot`, copies the repo at the claim to `status:building`, gitignored files included; `scripts/red-proof.sh` runs in that copy with the changes since laid on top, and a module failing to load exits 2.
 
 ## [0.70.1] - 2026-10-02
 
