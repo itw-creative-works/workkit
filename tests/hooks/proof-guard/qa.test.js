@@ -31,9 +31,11 @@ const run = async () => {
     write(dir, 'tests/a.test.js', RED);
     const out = runHook(QA, stub, dir);
     assertEq(out.code, 2, `a red touched test blocks the flip, got: ${out.stderr}`);
-    for (const want of ['proof-guard', 'status:qa', 'tests/a.test.js', 'First failure:', 'not ok 1 - tests/a.test.js']) {
+    for (const want of ['proof-guard', 'status:qa', 'tests/a.test.js', 'First failure:']) {
       assert(out.stderr.includes(want), `stderr names ${want}, got: ${out.stderr}`);
     }
+    // Node names the file as it was passed, with TAP-escaped backslashes on Windows.
+    assert(/not ok 1 - tests[\\/]+a\.test\.js/.test(out.stderr), `the block carries the file's not ok entry, got: ${out.stderr}`);
     assertEq(out.stdout, '', 'a block speaks on stderr alone');
   });
 
