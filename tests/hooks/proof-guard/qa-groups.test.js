@@ -6,13 +6,13 @@ const fs = require('fs');
 const path = require('path');
 const { group, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  dropPathWithoutGh, runHook, QA, RUN_LOG, GREEN, COMMIT, git, write, runs, qaCase, notice,
+  dropPathWithoutGh, runHook, QA, runLog, RUN_LOG, GREEN, COMMIT, git, write, runs, qaCase, notice,
 } = require('./helpers');
 
 const PKG = 'packages/client';
 const WIN = `${PKG}/test/win.test.js`;
 // A nested test file sits three folders below the repo root, where runs.log is.
-const NESTED_RUN_LOG = "require('fs').appendFileSync(require('path').join(__dirname, '..', '..', '..', 'runs.log'), 'ran\\n');";
+const NESTED_RUN_LOG = runLog(3);
 // Green only where the package's setup file defined the global first.
 const WIN_TEST = `${NESTED_RUN_LOG}\nrequire('node:test').test('w', () => require('node:assert').equal(window.ready, 1));\n`;
 const SETUP_CJS = ['test/setup.js', 'global.window = { ready: 1 };\n'];

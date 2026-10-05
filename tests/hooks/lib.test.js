@@ -508,6 +508,14 @@ const run = async () => {
     assertEq(out.stdout.trim().split('\n').join(','), 'a.test.js,src/a.spec.ts,pkg/a_test.go', `got: ${out.stdout}|${out.stderr}`);
   });
 
+  await test('hook_is_fixture_path: a fixture folder at any depth, never the file name', () => {
+    const cases = ['fixtures/a.test.js', 'tests/_fixtures/x/test/a.test.js', 'pkg/__fixtures__/a.spec.js',
+      'tests/fixtures.test.js', 'tests/a.test.js', 'src/myfixtures/a.test.js'];
+    const out = runLib(`for p in ${cases.join(' ')}; do hook_is_fixture_path "$p" && echo "$p"; done; true`);
+    assertEq(out.stdout.trim().split('\n').join(','), 'fixtures/a.test.js,tests/_fixtures/x/test/a.test.js,pkg/__fixtures__/a.spec.js',
+      `got: ${out.stdout}|${out.stderr}`);
+  });
+
   await test('hook_is_test_path: a test name, or any test folder, the top level included', () => {
     const cases = ['a.test.js', 'tests/helpers.js', 'test/run.js', '__tests__/x.js', 'pkg/__tests__/x.js',
       'pkg/test/x.js', 'lib/x.js', 'contest/x.js', 'testing/x.js'];

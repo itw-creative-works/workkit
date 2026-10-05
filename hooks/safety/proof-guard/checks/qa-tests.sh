@@ -136,17 +136,25 @@ check_qa_tests() {
     return 0
   fi
   qa_find_base "$qa_root"
-  # Only test-shaped files run: a helper or a runner under a test folder
-  # (tests/run.js runs the whole suite) is named, never executed.
+  # Only test-shaped files outside a fixture folder run: a helper or a runner
+  # under a test folder (tests/run.js runs the whole suite) and a fixture are
+  # named, never executed.
   qa_run=()
   qa_skipped=""
   qa_helpers=""
+  qa_fixtures=""
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     hook_is_test_path "$path" || continue
     [ -f "$qa_root/$path" ] || continue
     if ! hook_is_test_name "$path"; then
       qa_helpers="$qa_helpers $path"
+      continue
+    fi
+    # A test-shaped file under a fixture folder is another test's input, and
+    # may fail on purpose.
+    if hook_is_fixture_path "$path"; then
+      qa_fixtures="$qa_fixtures $path"
       continue
     fi
     case "$path" in
@@ -160,6 +168,9 @@ check_qa_tests() {
   fi
   if [ -n "$qa_helpers" ]; then
     qa_not_run="${qa_not_run} Touched under a test folder but not a test file, so not run:${qa_helpers}."
+  fi
+  if [ -n "$qa_fixtures" ]; then
+    qa_not_run="${qa_not_run} A fixture, input to another test, so not run:${qa_fixtures}."
   fi
   if [ -z "$qa_base" ]; then
     qa_not_run="${qa_not_run} Commits since the default branch were not read: origin names no default branch and this branch has no upstream, or HEAD shares no merge base with it."

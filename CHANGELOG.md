@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#408](../../issues/408) - The qa flip ran test-shaped files under a fixture folder, and one that fails on purpose blocked the park. `safety/proof-guard` now names a file under `fixtures`, `_fixtures` or `__fixtures__` as a fixture and never runs it.
+
 ## [0.71.1] - 2026-10-05
 
 ### Fixed

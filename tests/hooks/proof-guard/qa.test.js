@@ -10,7 +10,7 @@ const { shellPath, basePathWithout, joinPath } = require('../../lib/platform');
 const { fmtCalls } = require('../../lib/argv-log');
 const {
   cleanup, makeGhStub, ghCalls, dropPathWithoutGh, runHook, runHookIn, WORLD,
-  QA, RUN_LOG, GREEN, RED, DESCRIBE, EXPORTS, UNPROVED, namesUnproved, COMMIT, git, write, runs, mkQaRepo,
+  QA, runLog, RUN_LOG, GREEN, RED, DESCRIBE, EXPORTS, UNPROVED, namesUnproved, COMMIT, git, write, runs, mkQaRepo,
   qaCase, notice, mkOtherRepo, mkRosterHome,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
@@ -137,6 +137,32 @@ const run = async () => {
       assertEq(runs(dir), 0, 'the helper never ran');
     });
   }
+
+  // A fixture four folders deep that would log a run at the repo root, then fail.
+  const FIXTURE = 'tests/_fixtures/fails/test/x.test.js';
+  const FIXTURE_RED = `require('node:test');\n${runLog(4)}\nprocess.exit(1);\n`;
+  const FIXTURE_NOTE = `A fixture, input to another test, so not run: ${FIXTURE}`;
+
+  await qaCase('a red test-shaped file under a fixture folder: never run, named, exit 0', (dir, stub) => {
+    write(dir, FIXTURE, FIXTURE_RED);
+    const out = runHook(QA, stub, dir);
+    assertEq(out.code, 0, `a fixture is data, never a block, got: ${out.stderr}`);
+    const msg = notice(out);
+    assert(msg.includes('nothing ran'), `nothing ran, got: ${msg}`);
+    assert(msg.includes(FIXTURE_NOTE), `names it as a fixture, got: ${msg}`);
+    assertEq(runs(dir), 0, 'the fixture never ran');
+  });
+
+  await qaCase('a fixture beside a green test file: the green one runs and counts, the fixture is named', (dir, stub) => {
+    write(dir, FIXTURE, FIXTURE_RED);
+    write(dir, 'tests/a.test.js', `${GREEN}// touched\n`);
+    const out = runHook(QA, stub, dir);
+    assertEq(out.code, 0, `the fixture never reds the run, got: ${out.stderr}`);
+    const msg = notice(out);
+    assert(msg.includes('ran 1 touched test file(s) green') && msg.includes('tests/a.test.js'), `the green one counts, got: ${msg}`);
+    assert(msg.includes(FIXTURE_NOTE), `names the fixture, got: ${msg}`);
+    assertEq(runs(dir), 1, 'only the green file ran');
+  });
 
   await qaCase('a red test file with a non-ASCII name: exit 2, named as written', (dir, stub) => {
     write(dir, 'tests/caf\u00e9.test.js', RED);

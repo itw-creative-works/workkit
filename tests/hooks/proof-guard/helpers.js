@@ -35,8 +35,10 @@ const WORLD = {
 
 const QA = 'gh issue edit 3 --remove-label status:building --add-label status:qa';
 
-// Each fixture test file appends to runs.log at its repo root, so a case counts runs.
-const RUN_LOG = "require('fs').appendFileSync(require('path').join(__dirname, '..', 'runs.log'), 'ran\\n');";
+// Each fixture test file appends to runs.log at its repo root, <depth> folders
+// above the file's own, so a case counts runs.
+const runLog = (depth) => `require('fs').appendFileSync(require('path').join(__dirname, ${"'..', ".repeat(depth)}'runs.log'), 'ran\\n');`;
+const RUN_LOG = runLog(1);
 // A green fixture registers one node:test case, so the run proves it.
 const GREEN = `require('node:test').test('green', () => {});\n${RUN_LOG}\n`;
 const RED = `require('node:test');\n${RUN_LOG}\nprocess.exit(1);\n`;
@@ -108,6 +110,6 @@ const notice = (out) => {
 
 module.exports = {
   HOOK, cleanup, makeGhStub, ghCalls, pathWithoutGh, dropPathWithoutGh, runHook, runHookIn, WORLD, comments,
-  QA, RUN_LOG, GREEN, RED, DESCRIBE, EXPORTS, UNPROVED, namesUnproved, COMMIT, git, write, runs, mkQaRepo,
+  QA, runLog, RUN_LOG, GREEN, RED, DESCRIBE, EXPORTS, UNPROVED, namesUnproved, COMMIT, git, write, runs, mkQaRepo,
   qaCase, notice, mkOtherRepo, mkRosterHome,
 };

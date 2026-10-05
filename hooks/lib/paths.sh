@@ -15,6 +15,16 @@ hook_is_test_name() {
   return 1
 }
 
+# hook_is_fixture_path <path>: a folder of the path is `fixtures`, `_fixtures`
+# or `__fixtures__`, at any depth: what sits there is input to another test.
+# Consumer: safety/proof-guard (the qa flip).
+hook_is_fixture_path() {
+  case "/$1" in
+    */fixtures/*|*/_fixtures/*|*/__fixtures__/*) return 0 ;;
+  esac
+  return 1
+}
+
 # hook_is_test_path <path>: a test file by name, or any file under a `test`,
 # `tests` or `__tests__` folder at any depth, the top level included.
 # Consumers: safety/commit-gate (check 1), safety/proof-guard (the qa flip),
