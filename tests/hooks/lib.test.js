@@ -583,6 +583,26 @@ const run = async () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
+  await test('hook_test_preloads: the preload flags of the node command alone, one word per line, quotes off', () => {
+    const root = mkTmp('lib-preloads-');
+    const cases = [
+      ['node --test', []],
+      ['node -r a --import=b --require c --test', ['-r', 'a', '--import=b', '--require', 'c']],
+      ['rm -r dist && node --test', []],
+      ['c8 -r text node --test', []],
+      ["node --require './s.js' --test", ['--require', './s.js']],
+      ['npm run prepare && node --require ./test/setup.js ../devkit/src/test/cli.js --isolation=process',
+        ['--require', './test/setup.js']],
+    ];
+    for (const [script, words] of cases) {
+      fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: script } }));
+      const res = runLib(`hook_test_preloads "${shellPath(root)}"`);
+      assertEq(res.code, 0, `${script}: a clean exit, got: ${res.stderr}`);
+      assertEq(res.stdout, words.map((w) => `${w}\n`).join(''), `${script}: got: ${JSON.stringify(res.stdout)}`);
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
   group('_lib.sh: the marker paths');
 
   const sha1 = (text) => spawnSync(BASH, [...NO_RC, '-c', `printf '%s' "$1" | "${shellPath(real)}"`, 'sh', text],

@@ -7,6 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#405](../../issues/405) - The qa flip ran every touched test file from the repo root, so a package whose test script preloads a setup file read red. `safety/proof-guard` now runs each package's files from its own folder under that script's `--require`, `-r` or `--import` preloads, and the notice names them.
+- [#404](../../issues/404) - The qa flip skipped a test file whose text never names `node:test`. `safety/proof-guard` now runs every touched `.js`, `.mjs` or `.cjs` test file and reads the result: a file that registered no test is named as not proved, and another runner's describe/it file goes red and blocks the flip.
+
 ## [0.71.0] - 2026-10-03
 
 ### Added

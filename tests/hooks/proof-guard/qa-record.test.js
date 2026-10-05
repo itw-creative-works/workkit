@@ -9,7 +9,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const { fmtCalls } = require('../../lib/argv-log');
 const {
   cleanup, makeGhStub, ghCalls, dropPathWithoutGh, runHookIn, WORLD,
-  QA, RUN_LOG, GREEN, RED, DESCRIBE, UNPROVABLE, COMMIT, git, write, runs, mkQaRepo, notice,
+  QA, GREEN, RED, EXPORTS, namesUnproved, COMMIT, git, write, runs, mkQaRepo, notice,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
 
@@ -118,7 +118,7 @@ const run = async () => {
   });
 
   await recordCase('a green run that left an untracked file: nothing recorded, the notice says the tree changed', ({ dir, tmp, flip }) => {
-    const LEAVES = `require('node:test');\n${RUN_LOG}\nrequire('fs').writeFileSync(require('path').join(__dirname, '..', 'left.txt'), 'x\\n');\n`;
+    const LEAVES = `${GREEN}require('fs').writeFileSync(require('path').join(__dirname, '..', 'left.txt'), 'x\\n');\n`;
     write(dir, 'tests/a.test.js', LEAVES);
     const out = flip();
     assertEq(out.code, 0, `the run is green, got: ${out.stderr}`);
@@ -131,15 +131,34 @@ const run = async () => {
     assertEq(runs(dir), 2, 'the tree as it stood before the first run runs the files again');
   });
 
-  await recordCase('a record hit beside a file node --test cannot prove: the hit leads, the file is named as not run', ({ dir, flip }) => {
-    write(dir, 'tests/d.test.js', DESCRIBE);
-    greenFlip(dir, flip);
+  await recordCase('a green run with an unproved module beside a proved file: recorded, the next flip hits', ({ dir, tmp, flip }) => {
+    write(dir, 'tests/d.test.js', EXPORTS);
+    write(dir, 'tests/a.test.js', `${GREEN}// touched\n`);
+    const first = flip();
+    assertEq(first.code, 0, `a green run passes, got: ${first.stderr}`);
+    const msg = notice(first);
+    assert(msg.includes(GREEN_RUN), `the proved file alone is counted, got: ${msg}`);
+    assert(namesUnproved(msg, 'tests/d.test.js'), `the module is named as not proved, got: ${msg}`);
+    assertEq(runs(dir), 2, 'the first flip ran both files');
+    assertEq(records(tmp).length, 1, `the green run records the tree, got: ${records(tmp)}`);
     const out = flip();
     assertEq(out.code, 0, `the record passes the flip, got: ${out.stderr}`);
-    const msg = notice(out);
-    assert(msg.startsWith(HIT), `the notice leads with the hit, got: ${msg}`);
-    assert(msg.includes(UNPROVABLE) && msg.includes('tests/d.test.js'), `names the file as not run, got: ${msg}`);
-    assertEq(runs(dir), 1, 'the hit ran nothing');
+    assert(notice(out).startsWith(HIT), `the notice leads with the hit, got: ${out.stdout}`);
+    assertEq(runs(dir), 2, 'the hit ran nothing');
+  });
+
+  await recordCase('a run where no file proved anything: nothing recorded, the next flip runs it again', ({ dir, tmp, flip }) => {
+    write(dir, 'tests/d.test.js', EXPORTS);
+    const first = flip();
+    assertEq(first.code, 0, `an unproved run passes, got: ${first.stderr}`);
+    const msg = notice(first);
+    assert(msg.includes('ran 0 touched test file(s) green'), `nothing counted green, got: ${msg}`);
+    assert(namesUnproved(msg, 'tests/d.test.js'), `the module is named as not proved, got: ${msg}`);
+    assert(msg.includes('no record was written'), `says the run was not recorded, got: ${msg}`);
+    assertEq(records(tmp).length, 0, `nothing proved, so nothing is recorded, got: ${records(tmp)}`);
+    const again = notice(flip());
+    assert(!again.startsWith(HIT) && namesUnproved(again, 'tests/d.test.js'), `the next flip runs and names it again, got: ${again}`);
+    assertEq(runs(dir), 2, 'the module ran on both flips');
   });
 
   // A file where the record's folder belongs breaks the record write alone:

@@ -1,9 +1,9 @@
 #!/bin/bash
 # hooks/lib/paths.sh: what a repo path IS: the test file shapes and the code
 # file shape, read off its shape alone, and the tested package it sits in, read
-# off the tree. SOURCED by
-# hooks/_lib.sh, never executed, and it runs nothing at load: it defines
-# functions and sets nothing. It reads no name of the entry's.
+# off the tree, with the preloads that package's test script runs under.
+# SOURCED by hooks/_lib.sh, never executed, and it runs nothing at load: it
+# defines functions and sets nothing. It reads no name of the entry's.
 
 # hook_is_test_name <path>: the basename is test-shaped (`*.test.*`,
 # `*.spec.*`, `*_test.*`), whatever folder it sits in.
@@ -54,17 +54,48 @@ hook_is_code_path() {
 
 # hook_test_script_text <dir>: prints <dir>/package.json's scripts.test text;
 # nothing when it is absent or unreadable, never what jq parsed before failing.
-# Consumer: hook_suite_root_run.
+# Consumers: hook_suite_root_run, hook_test_preloads.
 hook_test_script_text() {
   local text
   text=$(hook_jq -r '.scripts.test // ""' "$1/package.json" 2>/dev/null) || return 0
   printf '%s' "$text"
 }
 
+# hook_test_preloads <dir>: the preload flags of <dir>/package.json's test
+# script, one word per line, read only off a `node` command in it: `--require`,
+# `-r` or `--import` then its value unquoted, or `--require=X` and `--import=X`
+# as one word. Nothing else is carried. Consumer: safety/proof-guard.
+hook_test_preloads() {
+  local text word flag="" in_node="" words
+  text=$(hook_test_script_text "$1")
+  read -r -a words <<<"$text"
+  for word in ${words[@]+"${words[@]}"}; do
+    if [ -n "$flag" ]; then
+      printf '%s\n%s\n' "$flag" "$(hook_unquote_word "$word")"
+      flag=""
+      continue
+    fi
+    case "$word" in
+      '&&'|'||'|';'|'|'|'&') in_node=""; continue ;;
+    esac
+    # A node command opens at its word and closes at its first non-flag word.
+    if [ -z "$in_node" ]; then
+      case "$word" in node|*/node) in_node=1 ;; esac
+      continue
+    fi
+    case "$word" in
+      --require|-r|--import) flag="$word" ;;
+      --require=*|--import=*) printf '%s=%s\n' "${word%%=*}" "$(hook_unquote_word "${word#*=}")" ;;
+      -*) ;;
+      *) in_node="" ;;
+    esac
+  done
+}
+
 # hook_test_package_dir <root> <path>: the nearest folder at or above <path>
 # (relative to <root>), short of the root, whose package.json declares a test
 # script, relative to <root>. Nothing means the root's; nothing under
-# node_modules. Consumer: _hook_suite_at_root.
+# node_modules. Consumers: _hook_suite_at_root, safety/proof-guard.
 hook_test_package_dir() {
   local root dir
   root="$1"

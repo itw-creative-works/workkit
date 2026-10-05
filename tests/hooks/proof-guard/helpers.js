@@ -5,7 +5,8 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-const { assertEq } = require('../../lib/harness');
+const { test, assertEq } = require('../../lib/harness');
+const { fmtCalls } = require('../../lib/argv-log');
 const { SYSTEM_BASH, shellPath, homeEnv } = require('../../lib/platform');
 const {
   cleanup, makeGhStub, ghCalls, pathWithoutGh, dropPathWithoutGh, hookRunner,
@@ -36,13 +37,18 @@ const QA = 'gh issue edit 3 --remove-label status:building --add-label status:qa
 
 // Each fixture test file appends to runs.log at its repo root, so a case counts runs.
 const RUN_LOG = "require('fs').appendFileSync(require('path').join(__dirname, '..', 'runs.log'), 'ran\\n');";
-// The fixtures name node:test, so the flip reads them as files it can prove.
-const GREEN = `require('node:test');\n${RUN_LOG}\n`;
+// A green fixture registers one node:test case, so the run proves it.
+const GREEN = `require('node:test').test('green', () => {});\n${RUN_LOG}\n`;
 const RED = `require('node:test');\n${RUN_LOG}\nprocess.exit(1);\n`;
-// Another runner's describe/it file, a shape node --test cannot prove; it
-// would log a run if it were executed.
+// Another runner's describe/it file: node --test runs it, logging a run, and
+// with no describe defined it throws, so the run is red and blocks the flip.
 const DESCRIBE = `${RUN_LOG}\ndescribe('x', () => { it('y', () => {}); });\n`;
-const UNPROVABLE = 'node --test cannot prove a file that neither names node:test nor runs itself';
+// A module that only exports its cases: it runs green, logging a run, but
+// registers no test, so the flip names it as not proved and never counts it.
+const EXPORTS = `${RUN_LOG}\nmodule.exports = { tests: [] };\n`;
+const UNPROVED = 'Registered no test under node --test, so not proved (a module that only exports its cases):';
+// The notice names <file> after the not-proved phrase.
+const namesUnproved = (msg, file) => msg.includes(UNPROVED) && msg.indexOf(file, msg.indexOf(UNPROVED)) > -1;
 
 // Fixture git runs in a scratch home, so the developer's gitconfig never
 // shapes a fixture; every commit names its own identity.
@@ -79,6 +85,19 @@ const mkOtherRepo = (origin) => {
   return dir;
 };
 
+// One fixture repo and one gh stub per case, both removed after it.
+const qaCase = (name, body) => test(name, () => {
+  const dir = mkQaRepo();
+  const stub = makeGhStub(WORLD);
+  try {
+    body(dir, stub);
+    assertEq(ghCalls(stub).length, 0, `a qa flip reads no issue, got: ${fmtCalls(ghCalls(stub))}`);
+  } finally {
+    cleanup(dir);
+    cleanup(stub.dir);
+  }
+});
+
 // The notice a hook exiting 0 is heard by, off its stdout JSON.
 const notice = (out) => {
   const parsed = JSON.parse(out.stdout);
@@ -89,6 +108,6 @@ const notice = (out) => {
 
 module.exports = {
   HOOK, cleanup, makeGhStub, ghCalls, pathWithoutGh, dropPathWithoutGh, runHook, runHookIn, WORLD, comments,
-  QA, RUN_LOG, GREEN, RED, DESCRIBE, UNPROVABLE, COMMIT, git, write, runs, mkQaRepo, notice,
-  mkOtherRepo, mkRosterHome,
+  QA, RUN_LOG, GREEN, RED, DESCRIBE, EXPORTS, UNPROVED, namesUnproved, COMMIT, git, write, runs, mkQaRepo,
+  qaCase, notice, mkOtherRepo, mkRosterHome,
 };
