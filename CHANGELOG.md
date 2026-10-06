@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#411](../../issues/411) - The heal appends the changelog job to a `checks.yml` with CRLF line endings too: the last key is read without its carriage return, and the appended lines take the file's own ending.
+
 ## [0.73.0] - 2026-10-06
 
 ### Fixed

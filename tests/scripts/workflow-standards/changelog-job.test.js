@@ -315,6 +315,23 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
+  await test('a CRLF checks.yml that ends in its jobs: block gets the changelog job appended, in its own line endings', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const owned = 'name: checks\r\n\r\non:\r\n  pull_request:\r\n\r\njobs:\r\n  test:\r\n    runs-on: ubuntu-latest\r\n    steps:\r\n      - run: npm test\r\n';
+    fs.writeFileSync(file, owned);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    const healed = readFile(file);
+    assert(output.includes('added the changelog job'), `the job is appended, got: ${output}`);
+    assert(!output.includes('does not end in its jobs: block'), `a trailing \\r is not a different last key, got: ${output}`);
+    assert(healed.endsWith(`  changelog:\r\n    ${USES}\r\n`), `the job is the last block, got: ${JSON.stringify(healed.slice(-120))}`);
+    const bare = healed.split('\n').slice(0, -1).filter((line) => !line.endsWith('\r'));
+    assertEq(bare.length, 0, `every line keeps the file's CRLF ending, got LF-only: ${JSON.stringify(bare)}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
   group('standards.sh: the push trigger in checks.yml');
 
   // Current in every way but the trigger; its pull_request: has a child the

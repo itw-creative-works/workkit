@@ -72,7 +72,7 @@ ensure_changelog_separator() {
 # never the whole file. Appending is only safe while `jobs:` is the last
 # top-level block; without it the rewrite still runs, the job left by hand.
 ensure_changelog_job() {
-  local dest=".github/workflows/checks.yml" src block runs=0 noted=0 pushed=0 other=0 last tmp trig
+  local dest=".github/workflows/checks.yml" src block runs=0 noted=0 pushed=0 other=0 last tmp trig eol
   src="$(wk_checks_template)"
 
   [[ -f "$dest" ]] || return 0
@@ -87,14 +87,18 @@ ensure_changelog_job() {
   fi
 
   if ! grep -qE '^  changelog:' "$dest"; then
-    last="$(grep -E '^[A-Za-z_-]+:' "$dest" | tail -n 1)"
+    # A CRLF file's keys end in \r; read the last one bare, and append in the
+    # file's own line ending so the heal never mixes the two.
+    last="$(grep -E '^[A-Za-z_-]+:' "$dest" | tail -n 1 | tr -d '\r')"
     if [[ "$last" != "jobs:" ]]; then
       wk_skip "checks: $dest does not end in its jobs: block; add a changelog job whose one line is '$(grep -m 1 'uses:' <<<"$block" | sed 's/^ *//')' by hand"
     else
-      if [[ -n "$(tail -c 1 "$dest")" ]]; then
-        printf '\n' >>"$dest"
+      eol=$'\n'
+      if head -n 1 "$dest" | grep -q $'\r$'; then eol=$'\r\n'; fi
+      if [[ -n "$(tail -c 1 "$dest" | tr -d '\r\n')" ]]; then
+        printf '%s' "$eol" >>"$dest"
       fi
-      printf '%s\n' "$block" >>"$dest"
+      printf '%s' "${block//$'\n'/$eol}$eol" >>"$dest"
       wk_ok "checks: added the changelog job to $dest; commit it"
     fi
     noted=1
