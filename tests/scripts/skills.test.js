@@ -256,7 +256,7 @@ const run = async () => {
       ...markdownIn(BRIEFS_DIR), ...hookReadmes,
       ...['workflow', 'jobs', 'tower'].map((dir) => path.join(REPO, dir, 'README.md')),
     ].map((file) => path.relative(REPO, file));
-    assert(want.some((file) => file.startsWith('briefs/')), 'the briefs are there to scan');
+    assert(want.some((file) => file.startsWith(`briefs${path.sep}`)), 'the briefs are there to scan');
     assertEq(want.filter((file) => !scanned.has(file)).join(', '), '', 'files the scan leaves out');
   });
 
