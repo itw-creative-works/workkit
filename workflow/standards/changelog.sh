@@ -67,11 +67,12 @@ ensure_changelog_separator() {
 }
 
 # ── 2b-iii. The changelog job in the repo's checks.yml ──
-# checks.yml is the repo's own, so the heal appends the template's job or
-# rewrites an existing one (changelog-job.sh), never the whole file. Appending
-# is only safe while `jobs:` is the last top-level block.
+# checks.yml is the repo's own, so the heal appends the template's job, then
+# rewrites the file (changelog-job.sh: the job, the header, the push trigger),
+# never the whole file. Appending is only safe while `jobs:` is the last
+# top-level block; without it the rewrite still runs, the job left by hand.
 ensure_changelog_job() {
-  local dest=".github/workflows/checks.yml" src block runs=0 last tmp
+  local dest=".github/workflows/checks.yml" src block runs=0 noted=0 pushed=0 other=0 last tmp trig
   src="$(wk_checks_template)"
 
   [[ -f "$dest" ]] || return 0
@@ -85,43 +86,51 @@ ensure_changelog_job() {
     return 0
   fi
 
-  if grep -qE '^  changelog:' "$dest"; then
-    if wk_changelog_job_runs_copy "$dest"; then runs=1; fi
-    tmp="$dest.tmp.$$"
-    if ! wk_changelog_job_rewrite "$dest" "$src" >"$tmp" 2>/dev/null || [[ ! -s "$tmp" ]]; then
-      rm -f "$tmp"
-      wk_warn "checks: could not rewrite the changelog job in $dest; replace it with the template's job by hand"
-      needs_attention=1
-      return 0
-    fi
-    if cmp -s "$tmp" "$dest"; then
-      rm -f "$tmp"
-      wk_skip "checks: the changelog job is already in $dest"
-      return 0
-    fi
-    if ! mv "$tmp" "$dest"; then
-      rm -f "$tmp"
-      wk_warn "checks: could not write $dest"
-      needs_attention=1
-      return 0
-    fi
-    if [[ "$runs" -eq 1 ]]; then
-      wk_ok "checks: the changelog job in $dest now calls the kit's workflow; commit it"
+  if ! grep -qE '^  changelog:' "$dest"; then
+    last="$(grep -E '^[A-Za-z_-]+:' "$dest" | tail -n 1)"
+    if [[ "$last" != "jobs:" ]]; then
+      wk_skip "checks: $dest does not end in its jobs: block; add a changelog job whose one line is '$(grep -m 1 'uses:' <<<"$block" | sed 's/^ *//')' by hand"
     else
-      wk_ok "checks: the header comment in $dest now describes the kit's workflow; commit it"
+      if [[ -n "$(tail -c 1 "$dest")" ]]; then
+        printf '\n' >>"$dest"
+      fi
+      printf '%s\n' "$block" >>"$dest"
+      wk_ok "checks: added the changelog job to $dest; commit it"
     fi
-    return 0
+    noted=1
   fi
 
-  last="$(grep -E '^[A-Za-z_-]+:' "$dest" | tail -n 1)"
-  if [[ "$last" != "jobs:" ]]; then
-    wk_skip "checks: $dest does not end in its jobs: block; add a changelog job whose one line is '$(grep -m 1 'uses:' <<<"$block" | sed 's/^ *//')' by hand"
+  # The rewrite also adds the push trigger, so each change is named apart.
+  if wk_changelog_job_runs_copy "$dest"; then runs=1; fi
+  tmp="$dest.tmp.$$" trig="$dest.push.$$"
+  # A failed trigger read fails the rewrite below, which reports it.
+  wk_checks_push_trigger "$dest" >"$trig" 2>/dev/null || true
+  cmp -s "$trig" "$dest" || pushed=1
+  if ! wk_changelog_job_rewrite "$dest" "$src" >"$tmp" 2>/dev/null || [[ ! -s "$tmp" ]]; then
+    rm -f "$tmp" "$trig"
+    wk_warn "checks: could not rewrite the changelog job in $dest; replace it with the template's job by hand"
+    needs_attention=1
     return 0
   fi
-
-  if [[ -n "$(tail -c 1 "$dest")" ]]; then
-    printf '\n' >>"$dest"
+  if cmp -s "$tmp" "$dest"; then
+    rm -f "$tmp" "$trig"
+    [[ "$noted" -eq 1 ]] || wk_skip "checks: the changelog job is already in $dest"
+    return 0
   fi
-  printf '%s\n' "$block" >>"$dest"
-  wk_ok "checks: added the changelog job to $dest; commit it"
+  cmp -s "$trig" "$tmp" || other=1
+  rm -f "$trig"
+  if ! mv "$tmp" "$dest"; then
+    rm -f "$tmp"
+    wk_warn "checks: could not write $dest"
+    needs_attention=1
+    return 0
+  fi
+  if [[ "$other" -eq 1 && "$runs" -eq 1 ]]; then
+    wk_ok "checks: the changelog job in $dest now calls the kit's workflow; commit it"
+  elif [[ "$other" -eq 1 ]]; then
+    wk_ok "checks: the header comment in $dest now describes the kit's workflow; commit it"
+  fi
+  if [[ "$pushed" -eq 1 ]]; then
+    wk_ok "checks: $dest now also runs on a push to main; commit it"
+  fi
 }

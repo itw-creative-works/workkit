@@ -303,6 +303,8 @@ const run = async () => {
     const world = mkWorld();
     const { npmrc, env } = withNpm(world);
     const want = wantShell(world);
+    // A claude home lets setup lay the engine address the wrapper is named through.
+    fs.mkdirSync(world.claudeHome, { recursive: true });
     const first = runCli(world, ['setup'], { env });
     assertEq(first.code, 0, `exit 0, got: ${first.said}`);
     assertEq(npmrcShell(npmrc), want, 'the user npmrc names the wrapper through the engine address');
@@ -351,6 +353,7 @@ const run = async () => {
   await npmTest('a foreign value is warned about, named, and left', () => {
     const world = mkWorld();
     const { npmrc, env } = withNpm(world);
+    fs.mkdirSync(world.claudeHome, { recursive: true });
     // A file that exists, so the warning is for another file, not a missing one.
     const foreign = path.join(world.root, 'other-shell');
     fs.writeFileSync(foreign, '');
@@ -389,6 +392,20 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  await npmTest('no engine link: script-shell stays unset, and the skip names the missing link', () => {
+    // No claude home, so setup lays no engine address and the wrapper it would
+    // name (the Windows executable hands every call to it too) does not exist.
+    const world = mkWorld();
+    const { npmrc, env } = withNpm(world);
+    const { code, said, out } = runCli(world, ['setup'], { env });
+    assertEq(code, 0, `exit 0, got: ${said}`);
+    assert(!fs.existsSync(world.engineLink), `the precondition: no engine link at ${world.engineLink}`);
+    assertEq(npmrcShell(npmrc), undefined, 'npm is never pointed at a wrapper that is not there');
+    assert(!said.includes('script-shell set to'), `and setup never says it was, got: ${said}`);
+    assert(/^ *· npm:[^\n]*engine link[^\n]*missing/m.test(out), `a skip line naming the missing engine link, got: ${said}`);
+    cleanup(world.root);
+  });
+
   await (NO_CSC ? (n) => skip(n, NO_CSC) : (n, fn) => test(n, fn))('no npm on PATH: a named skip', () => {
     const world = mkWorld();
     const { code, said } = runCli(world, ['setup']);
@@ -402,6 +419,9 @@ const run = async () => {
   // Windows), and SYSTEMROOT holds a stub compiler that writes its -out: file.
   const winWorld = (world, { compiler = true } = {}) => {
     const { npmrc, env } = withNpm(world);
+    // The engine address the built executable hands every call through.
+    fs.mkdirSync(world.claudeHome, { recursive: true });
+    fs.symlinkSync(WORKFLOW_DIR, world.engineLink, 'junction');
     const cyg = path.join(world.root, 'cygpath-bin');
     fs.mkdirSync(cyg, { recursive: true });
     cygpathStub(cyg);

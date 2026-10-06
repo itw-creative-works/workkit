@@ -10,7 +10,10 @@ const { pathToFileURL } = require('url');
 const { spawnSync } = require('child_process');
 const { skipSuite } = require('../../lib/harness');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
-const { BASH, NO_RC, shellPath, homeEnv, stubTool, pathWith } = require('../../lib/platform');
+const {
+  BASH, NO_RC, SYSTEM_PATH, NODE_DIR, shellPath, homeEnv, stubTool, pathWith, systemPathWith, joinPath,
+} = require('../../lib/platform');
+const { noNodeTest, barePathTest } = require('../../lib/job-path');
 const { mkTmp } = require('../../lib/scratch');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.sh');
@@ -39,14 +42,16 @@ const today = () => new Date().toLocaleDateString('en-CA');
  * `secrets` is the names `gh secret list` reports, both by default. `homeClone`
  * adds a home clone at `<WORKFLOW_HOME>/tower` whose remote is a local bare repo
  * (WORKKIT_HOME_REMOTE), so every push runs offline. `ccChangelog` is the
- * upstream CHANGELOG the news read is pointed at.
+ * upstream CHANGELOG the news read is pointed at. `notifier` is where the
+ * fake Notifly sits: 'seam' names it through NOTIFLY, 'home-app' puts it inside
+ * ~/Applications/Notifly.app with no seam, 'none' leaves no notifier and no seam.
  */
 const mkWorld = ({
   response = 'HEADLINE: one thing today.\nIN FLIGHT: nothing.\n', status = 0, logsDir = true,
   home: homeRepo = null, posted = [], ghFails = false, ccChangelog = null, badSettings = false,
   dispatch = false, secrets = ['CLAUDE_CODE_OAUTH_TOKEN', 'WORKKIT_GITHUB_TOKEN'],
   secretsUnlistable = false,
-  transcripts = true, homeClone = false,
+  transcripts = true, homeClone = false, notifier = 'seam',
 } = {}) => {
   const root = mkTmp('morning-local-');
   const bin = path.join(root, 'bin');
@@ -81,16 +86,23 @@ const mkWorld = ({
   if (transcripts) fs.mkdirSync(path.join(home, '.claude', 'projects'), { recursive: true });
 
   const claudeLog = path.join(root, 'claude-argv.log');
+  const claudePathLog = path.join(root, 'claude-path.log');
   const notifLog = path.join(root, 'notifly-argv.log');
   const claude = stubTool(bin, 'claude', [
     '#!/usr/bin/env bash',
     recordArgv(claudeLog),
+    `printf '%s\\n' "$PATH" >> ${JSON.stringify(claudePathLog)}`,
     // %b, not %s: the escapes JSON.stringify wrote have to become real newlines,
     // or the whole response is one line and "first line" proves nothing.
     `printf '%b' ${JSON.stringify(response)}`,
     `exit ${status}`,
   ]);
-  const notifly = stubTool(bin, 'notifly', ['#!/usr/bin/env bash', recordArgv(notifLog), 'exit 0']);
+  // The app's own layout: the executable inside the bundle is Contents/MacOS/Notifly.
+  const notifierDir = notifier === 'home-app'
+    ? path.join(home, 'Applications', 'Notifly.app', 'Contents', 'MacOS') : bin;
+  fs.mkdirSync(notifierDir, { recursive: true });
+  const notifly = notifier === 'none' ? null : stubTool(notifierDir, notifier === 'home-app' ? 'Notifly' : 'notifly',
+    ['#!/usr/bin/env bash', recordArgv(notifLog), 'exit 0']);
 
   // The `gh` the publish speaks to and the news cursor reads back through. Every
   // world gets it: a recorder that logged nothing proves a skip, and it keeps
@@ -138,7 +150,7 @@ const mkWorld = ({
 
   const env = homeEnv(home, {
     ...process.env,
-    NOTIFLY: notifly,
+    ...(notifier === 'seam' ? { NOTIFLY: notifly } : {}),
     PATH: pathWith(bin),
     // The summaries step's one seam: where it looks for the home repo.
     WORKFLOW_HOME: workflowHome,
@@ -151,6 +163,7 @@ const mkWorld = ({
   // This suite is the machine's environment, and the script asks Actions' own
   // variable which one it woke up in.
   delete env.GITHUB_ACTIONS;
+  if (notifier !== 'seam') delete env.NOTIFLY;
 
   return {
     root,
@@ -161,6 +174,9 @@ const mkWorld = ({
     notifly,
     nightlyLog: path.join(home, 'Library', 'Logs', 'claude-nightly.log'),
     calls: () => readArgv(claudeLog),
+    // The PATH each send ran under, one entry per call.
+    sendPaths: () => (fs.existsSync(claudePathLog)
+      ? fs.readFileSync(claudePathLog, 'utf8').split('\n').filter(Boolean) : []),
     notifs: () => readArgv(notifLog),
     ghCalls: () => readArgv(ghLog),
     // What the publish doctrine actually claims about a machine with nowhere to
@@ -251,6 +267,13 @@ const notifiedMatching = async (world, pattern, ms = 5000) => {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 500));
 
+// The system tools and the fake ones: no node anywhere the case controls.
+const withoutNode = (world) => { world.env.PATH = systemPathWith(path.join(world.root, 'bin')); };
+
+// The system tools, the fake ones and the suite's node: no /usr/local/bin
+// unless the job adds it.
+const withBarePath = (world) => { world.env.PATH = joinPath(path.join(world.root, 'bin'), SYSTEM_PATH, NODE_DIR); };
+
 // Every suite asks this first: the machine leg is a macOS job.
 const skipUnlessDarwin = () => {
   if (process.platform !== 'darwin') skipSuite('the machine leg is a macOS launchd job (Notifly, ~/Library paths)');
@@ -259,4 +282,5 @@ const skipUnlessDarwin = () => {
 module.exports = {
   SCRIPT, INSTRUCTION, BRIEF_TITLE_PREFIX, cleanup, mkWorld, runJob, STALE_RUNNER, plantStaleRunner,
   pushFromElsewhere, subjects, REFRESH, notified, notifiedMatching, settle, skipUnlessDarwin,
+  noNodeTest, withoutNode, barePathTest, withBarePath,
 };

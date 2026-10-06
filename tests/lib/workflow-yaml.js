@@ -18,4 +18,23 @@ const childrenOf = (all, at) => {
   return out;
 };
 
-module.exports = { indentOf, isComment, isContent, childrenOf };
+const unquote = (word) => word.trim().replace(/^(['"])(.*)\1$/, '$2');
+
+// The lines nested under the first `key:` line at `indent` within `lines`, the
+// key line itself first; null when no such key.
+const block = (lines, key, indent) => {
+  const keyRe = new RegExp(`^ {${indent}}["']?${key.replace(/[.]/g, '\\.')}["']?:`);
+  const at = lines.findIndex((line) => keyRe.test(line));
+  return at === -1 ? null : [lines[at], ...childrenOf(lines, at)];
+};
+
+// A list value in either YAML spelling, `key: [a, b]` or `- a` lines below it.
+const listValue = (keyBlock) => {
+  const inline = keyBlock[0].replace(/\s#.*$/, '').split(':').slice(1).join(':').trim();
+  if (inline.startsWith('[')) {
+    return inline.replace(/^\[|\]$/g, '').split(',').map(unquote).filter(Boolean);
+  }
+  return keyBlock.slice(1).filter(isContent).map((line) => unquote(line.trim().replace(/^- /, '')));
+};
+
+module.exports = { indentOf, isComment, isContent, childrenOf, block, listValue };

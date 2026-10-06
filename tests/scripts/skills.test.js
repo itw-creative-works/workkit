@@ -1,6 +1,6 @@
 // Skills parity: the nine workflow skills ship here, each folder's name is the
 // frontmatter name (plugin namespacing supplies the `workkit:` prefix), and
-// nothing under agents/ or skills/ still points at the dotfiles they came from.
+// nothing that ships still points at the dotfiles they came from.
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
@@ -8,6 +8,7 @@ const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harn
 const REPO = path.join(__dirname, '..', '..');
 const SKILLS_DIR = path.join(REPO, 'skills');
 const AGENTS_DIR = path.join(REPO, 'agents');
+const BRIEFS_DIR = path.join(REPO, 'briefs');
 
 const SKILLS = ['feature', 'interview', 'diagnose', 'review', 'triage', 'status', 'checkpoint', 'migrate', 'ship'];
 
@@ -231,18 +232,47 @@ const run = async () => {
     path.join(REPO, 'AGENTS.md'),
   ];
 
+  // The README beside every hook, and the engine's, the jobs' and the dashboard's.
+  const shippedReadmes = () => [
+    ...markdownIn(path.join(REPO, 'hooks')).filter((file) => path.basename(file) === 'README.md'),
+    ...['workflow', 'jobs', 'tower'].map((dir) => path.join(REPO, dir, 'README.md')),
+  ];
+  const portable = () => [
+    ...markdownIn(SKILLS_DIR), ...markdownIn(AGENTS_DIR), ...markdownIn(BRIEFS_DIR), ...shippedDocs(), ...shippedReadmes(),
+  ];
+
+  // Nothing that ships may name one machine's filesystem or the owner's own
+  // repo: an absolute /Users/… path, a ~/Developer/… checkout, or the dotfiles
+  // this kit came from. Generic placeholders (`<path-to-checkout>`, `<owner>`)
+  // are how an example path is written instead.
+  const MACHINE_SPECIFIC = [/\.dotfiles\b/, /(?<![A-Za-z]:|\/[a-z])\/Users\//, /~\/Developer\//, /\bthe dotfiles repo\b/i];
+  const machineSpecific = (text) => MACHINE_SPECIFIC.some((pattern) => pattern.test(text));
+
+  await test('the scan reads the briefs, every hook README and the engine, jobs and tower READMEs', () => {
+    const scanned = new Set(portable().map((file) => path.relative(REPO, file)));
+    const hookReadmes = markdownIn(path.join(REPO, 'hooks')).filter((file) => path.basename(file) === 'README.md');
+    assert(hookReadmes.length > 0, 'the hooks carry READMEs to scan');
+    const want = [
+      ...markdownIn(BRIEFS_DIR), ...hookReadmes,
+      ...['workflow', 'jobs', 'tower'].map((dir) => path.join(REPO, dir, 'README.md')),
+    ].map((file) => path.relative(REPO, file));
+    assert(want.some((file) => file.startsWith('briefs/')), 'the briefs are there to scan');
+    assertEq(want.filter((file) => !scanned.has(file)).join(', '), '', 'files the scan leaves out');
+  });
+
+  await test('the scan bounces a /Users/ path and the owner\'s dotfiles repo, and passes their rewording', () => {
+    assert(machineSpecific('read /Users/someone/notes.md first'), 'an absolute home path');
+    assert(machineSpecific('in the dotfiles repo nothing under `setup/` ships'), 'the owner\'s repo, by name');
+    assert(machineSpecific('The dotfiles repo links it'), 'at the start of a sentence too');
+    assert(!machineSpecific('so `C:/Users/x` and the Git Bash `/c/Users/x` are one key'),
+      'a Windows example spelling passes');
+    assert(!machineSpecific("a repo's machine-setup scripts (a dotfiles-style repo's `setup/`)"),
+      'the general wording a stranger can read passes');
+  });
+
   await test('no machine-specific path appears in shipped content', () => {
-    // Nothing that ships may name one machine's filesystem: an absolute
-    // /Users/… path, a ~/Developer/… checkout, or the dotfiles this kit came
-    // from. Generic placeholders (`<path-to-checkout>`, `<owner>`) are how an
-    // example path is written instead.
-    const bad = [];
-    for (const file of [...markdownIn(SKILLS_DIR), ...markdownIn(AGENTS_DIR), ...shippedDocs()]) {
-      const text = fs.readFileSync(file, 'utf8');
-      if (/\.dotfiles\b/.test(text) || /\/Users\//.test(text) || /~\/Developer\//.test(text)) {
-        bad.push(path.relative(REPO, file));
-      }
-    }
+    const bad = portable().filter((file) => machineSpecific(fs.readFileSync(file, 'utf8')))
+      .map((file) => path.relative(REPO, file));
     assertEq(bad.join(', '), '', 'files carrying a machine-specific path');
   });
 

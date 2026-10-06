@@ -1,4 +1,5 @@
-# Checks (workflow spec): the test gate that runs on every pull request.
+# Checks (workflow spec): the test gate that runs on every pull request and
+# every push to the default branch.
 # Making it a REQUIRED check is a repo setting (branch protection / ruleset)
 # a human turns on; until then it runs and reports, and the ship skill treats
 # a red run as unmergeable.
@@ -12,6 +13,12 @@
 # checks exist so a pull request from ANY author (cloud agent, collaborator,
 # laptop without the hooks) meets the same bar before merge.
 #
+# A push to the default branch (main in the template) runs them too, so work a
+# local session commits direct gets the clean-runner suite; a push changing only
+# the CHANGELOG runs nothing. The heal adds this push trigger once to a
+# checks.yml that runs on pull requests only. A repo whose default branch is not
+# main edits its own copy.
+#
 # The `changelog` job is the only job the heal adds to an EXISTING checks.yml,
 # appended once at the end of `jobs:`. It calls the kit's reusable workflow,
 # which runs the kit's own changelog.js over this repo's [Unreleased] section,
@@ -20,6 +27,9 @@ name: checks
 
 on:
   pull_request:
+  push:
+    branches: [main]
+    paths-ignore: [CHANGELOG.md]
 
 jobs:
   test:

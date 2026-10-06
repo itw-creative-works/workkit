@@ -5,6 +5,7 @@
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { block, listValue } = require('../../lib/workflow-yaml');
 const { cleanup, makeRepo, makeGhStub, readFile, runScript } = require('./helpers');
 
 const run = async () => {
@@ -89,6 +90,24 @@ const run = async () => {
     assert(body.includes('pull_request'), 'runs on pull requests');
     assert(body.includes('npm test'), 'runs the test suite');
     assert(stdout.includes('checks: created'), `reported the install, got: ${stdout}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('the installed workflow runs on pull requests and on a push to main, a CHANGELOG-only push skipped', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    runScript(repo, { pathPrefix: stub.binDir });
+    const lines = readFile(path.join(repo, '.github', 'workflows', 'checks.yml')).split(/\r?\n/);
+    const on = block(lines, 'on', 0);
+    assert(on, 'the workflow has a top-level on:');
+    assert(block(on, 'pull_request', 2), `on: lists pull_request:, got: ${on.join('\n')}`);
+    const push = block(on, 'push', 2);
+    assert(push, `on: lists push:, got: ${on.join('\n')}`);
+    const branches = block(push, 'branches', 4);
+    const ignored = block(push, 'paths-ignore', 4);
+    assert(branches && ignored, `on.push carries branches and paths-ignore, got: ${push.join('\n')}`);
+    assertEq(listValue(branches).join(','), 'main', 'the push runs on the default branch');
+    assertEq(listValue(ignored).join(','), 'CHANGELOG.md', 'and skips a push touching only the CHANGELOG');
     cleanup(repo); cleanup(stub.dir);
   });
 

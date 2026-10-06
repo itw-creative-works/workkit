@@ -119,5 +119,5 @@ After **3 failed attempts** at the same obstacle, stop and return `BLOCKED` with
 - Frontmatter: `name`, `description`, `tools` (minimum set: the list is also what mechanically keeps an agent from spawning subagents), and for the class agents `model` (fallback only, § Classes) + `effort`.
 - **No knowledge in agent files**: agents define behavior and preloads; knowledge lives in skills/docs. The reviewer's "derive the checklist from live docs" pattern is the model.
 - **Every markdown file in `agents/` surfaces as an agent type**, which is why this document lives in `docs/` instead: a contract kept beside the definitions would become a definition.
-- **No machine-specific paths.** These files ship to any repo on any machine: no absolute paths, no pointers into a personal `~/.claude` tree beyond what every Claude Code install has.
+- **No machine-specific paths.** These files ship to any repo on any machine: no absolute paths, no pointers into a personal `~/.claude` tree beyond what every Claude Code install has, and no name of the owner's own repo. The same scan covers the skills, agents, briefs, shipped docs and the `hooks/`, `workflow/`, `jobs/` and `tower/` READMEs.
 - Repo-doc entry point: AGENTS.md. A repo carries no `CLAUDE.md`; one still present is healed by the spec's § Repo docs.

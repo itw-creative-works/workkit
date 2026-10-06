@@ -102,7 +102,8 @@ A missing `Proof:` line is a hard gate: `safety/proof-guard` holds the flip to c
 
 ## Conventions
 
-- **Portable by default.** macOS, Windows (Git Bash) and Linux all run the kit; a spelling that differs branches once, in `workflow/lib/platform.sh` and `hooks/_lib.sh` (`docs/hooks.md` § Platforms). Nothing under `hooks/`, `agents/`, or `skills/` may carry a machine-specific absolute path. Hook commands resolve through `${CLAUDE_PLUGIN_ROOT}`; the engine's stable address is `~/.claude/workkit`.
+- **Portable by default.** macOS, Windows (Git Bash) and Linux all run the kit; a spelling that differs branches once, in `workflow/lib/platform.sh` and `hooks/_lib.sh` (`docs/hooks.md` § Platforms). Hook commands resolve through `${CLAUDE_PLUGIN_ROOT}`; the engine's stable address is `~/.claude/workkit`.
+  - No shipped text (skills, agents, briefs, docs, the hook, workflow, jobs and tower READMEs) may carry a machine-specific absolute path or name the owner's own repo.
 - **Generic by construction.** No owner names and no personal paths anywhere in the kit; `~/.workkit` and `.workkit/` are the only filesystem anchors.
 - **One mechanism, branching by environment.** Never two parallel copies of the same job: one entry point, each step gated on what its environment can do.
 - **Idempotent.** Every heal checks before acting; running twice equals running once.

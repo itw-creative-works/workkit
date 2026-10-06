@@ -23,6 +23,7 @@ It is safe to run again: every step checks first and only fixes what is missing.
 When it finishes, the `workkit` command is in `~/.local/bin` (setup prints the PATH line to add if that folder is not on it).
 `workkit doctor` shows what is set up, and `workkit help` lists every command.
 Start a new Claude Code session so the plugin loads.
+The skills run `bash ~/.claude/workkit/...`, `node ~/.claude/workkit/...` and `gh issue ...` often; to skip most of those permission prompts, add `Bash(bash ~/.claude/workkit/*)`, `Bash(node ~/.claude/workkit/*)` and `Bash(gh issue *)` to `permissions.allow` in your `~/.claude/settings.json` (workkit writes nothing there). The review-marker calls spell the path through `CLAUDE_PLUGIN_ROOT`, so those still ask once per batch.
 
 To work on workkit itself, install from a clone instead; the clone then outranks the plugin copy:
 

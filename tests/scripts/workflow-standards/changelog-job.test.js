@@ -8,6 +8,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { WORKFLOW_DIR, cleanup, makeRepo, makeGhStub, readFile, runScript } = require('./helpers');
 const { stubTool } = require('../../lib/platform');
+const { childrenOf, isContent } = require('../../lib/workflow-yaml');
 
 const run = async () => {
   group('standards.sh: the retired CHANGELOG linter copy');
@@ -143,7 +144,7 @@ const run = async () => {
       const stub = makeGhStub();
       const file = path.join(repo, '.github', 'workflows', 'checks.yml');
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      const head = 'name: checks\n\non:\n  pull_request:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
+      const head = 'name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
       const tail = '\n\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run lint\n';
       fs.writeFileSync(file, `${head}${nodeJob(copy)}${tail}`);
       const { output } = runScript(repo, { pathPrefix: stub.binDir });
@@ -165,7 +166,7 @@ const run = async () => {
     const stub = makeGhStub();
     const file = path.join(repo, '.github', 'workflows', 'checks.yml');
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    const head = 'name: checks\n\non:\n  pull_request:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
+    const head = 'name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
     const tail = '\n\n  # end to end, on every pull request\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run e2e\n  lint.v2:\n    runs-on: ubuntu-latest\n';
     fs.writeFileSync(file, `${head}${nodeJob('.github/changelog-lint.cjs')}${tail}`);
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
@@ -189,7 +190,7 @@ const run = async () => {
     const newHeader = `${template.slice(from, to).join('\n')}\n`;
     assert(from !== -1 && newHeader !== oldHeader, 'the template carries a different paragraph');
     const intro = '# Checks: the repo\'s own words.\n#\n';
-    const body = 'name: checks\n\non:\n  pull_request:\n\njobs:\n';
+    const body = 'name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n';
     fs.writeFileSync(file, `${intro}${oldHeader}${body}${nodeJob('.github/changelog-lint.cjs')}\n`);
     runScript(repo, { pathPrefix: stub.binDir });
     assertEq(readFile(file), `${intro}${newHeader}${body}  changelog:\n    ${USES}\n`,
@@ -209,7 +210,7 @@ const run = async () => {
     const from = template.findIndex((l) => l.startsWith('# The `changelog` job is the only job'));
     const to = template.findIndex((l, i) => i > from && !l.startsWith('#'));
     const newHeader = `${template.slice(from, to).join('\n')}\n`;
-    const body = `name: checks\n\non:\n  pull_request:\n\njobs:\n  changelog:\n    ${USES}\n`;
+    const body = `name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n  changelog:\n    ${USES}\n`;
     fs.writeFileSync(file, `${older}${body}`);
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
     assertEq(readFile(file), `${newHeader}${body}`, `the header swapped and the job untouched, got: ${output}`);
@@ -239,7 +240,7 @@ const run = async () => {
     const stub = makeGhStub();
     const file = path.join(repo, '.github', 'workflows', 'checks.yml');
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    const head = 'name: checks\n\non:\n  pull_request:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
+    const head = 'name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
     fs.writeFileSync(file, `${head}${nodeJob('.github/changelog-lint.cjs')}\n`);
     runScript(repo, { pathPrefix: stub.binDir });
     assertEq(readFile(file), `${head}  changelog:\n    ${USES}\n`, 'the old job is replaced whole');
@@ -255,7 +256,7 @@ const run = async () => {
     const cjs = writeCopy(repo, 'changelog-lint.cjs', VENDORED_COPY);
     const file = path.join(repo, '.github', 'workflows', 'checks.yml');
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    const head = 'name: checks\n\non:\n  pull_request:\n\njobs:\n';
+    const head = 'name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n';
     fs.writeFileSync(file, `${head}${nodeJob('.github/changelog-lint.cjs')}\n`);
     git(repo, 'add', '.github');
     git(repo, 'commit', '-q', '-m', 'the vendored copy and the job running it');
@@ -271,7 +272,7 @@ const run = async () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     const cjs = writeCopy(repo, 'changelog-lint.cjs', VENDORED_COPY);
-    const head = 'name: checks\n\non:\n  pull_request:\n\njobs:\n';
+    const head = 'name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n';
     const checks = path.join(repo, '.github', 'workflows', 'checks.yml');
     fs.mkdirSync(path.dirname(checks), { recursive: true });
     fs.writeFileSync(checks, `${head}${nodeJob('.github/changelog-lint.cjs')}\n`);
@@ -300,7 +301,7 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('a workflow that does not end in its jobs: block is described, never rewritten', () => {
+  await test('a workflow that does not end in its jobs: block gets no changelog job appended, only the skip line', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     const file = path.join(repo, '.github', 'workflows', 'checks.yml');
@@ -308,10 +309,87 @@ const run = async () => {
     const owned = 'name: checks\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n\nconcurrency:\n  group: checks\n';
     fs.writeFileSync(file, owned);
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(readFile(file), owned, 'a layout the script cannot reason about is left exactly as found');
+    assertEq(readFile(file), owned, 'no job is appended, and with no on: block there is no trigger to add, so the file is left exactly as found');
     assert(output.includes('does not end in its jobs: block'), `says so, got: ${output}`);
     assert(output.includes(USES), `and names the line to add by hand, got: ${output}`);
     cleanup(repo); cleanup(stub.dir);
+  });
+
+  group('standards.sh: the push trigger in checks.yml');
+
+  // Current in every way but the trigger; its pull_request: has a child the
+  // push block must not split.
+  const PR_ONLY = 'name: checks\n\non:\n  pull_request:\n    branches: [main]\n\njobs:\n'
+    + `  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n  changelog:\n    ${USES}\n`;
+
+  // The heal kept every line of `original` in order and added one block inside
+  // on:, the template's own push trigger, splitting no trigger's children.
+  const assertPushAdded = (original, healed, output) => {
+    const before = original.split('\n');
+    const after = healed.split('\n');
+    // Every line the repo owned survives in order; the rest is the heal's addition.
+    const added = [];
+    let kept = 0;
+    after.forEach((l, i) => { if (kept < before.length && l === before[kept]) kept += 1; else added.push(i); });
+    assertEq(kept, before.length, `every line the repo owned survives, in order, got: ${healed}`);
+    const block = added.map((i) => after[i]);
+    assert(added.length && added.every((i, k) => i === added[0] + k), `one block was added, got: ${healed}`);
+    assert(added[0] > after.indexOf('on:') && added[0] < after.indexOf('jobs:'), `inside the on: block, got: ${healed}`);
+    assert(!/^ {3,}\S/.test(after[added[added.length - 1] + 1]), `never splitting pull_request:'s children, got: ${healed}`);
+    const tpl = readFile(path.join(WORKFLOW_DIR, 'templates', 'github-workflows', 'checks.yml')).split(/\r?\n/);
+    const at = tpl.indexOf('  push:');
+    assert(at !== -1, 'the template carries a push trigger');
+    assertEq(block.filter(isContent).join('\n'), [tpl[at], ...childrenOf(tpl, at)].filter(isContent).join('\n'),
+      `the template's own push trigger, got: ${output}`);
+  };
+
+  await test('a PR-only checks.yml gains the template\'s push trigger inside on:, once', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, PR_ONLY);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    const once = readFile(file);
+    assertPushAdded(PR_ONLY, once, output);
+    runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(readFile(file), once, 'a second heal changes nothing');
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a PR-only checks.yml whose jobs: is not last still gains the push trigger, and no changelog job', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const owned = 'name: checks\n\non:\n  pull_request:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n'
+      + '    steps:\n      - run: npm test\n\nconcurrency:\n  group: checks\n';
+    fs.writeFileSync(file, owned);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    const healed = readFile(file);
+    assertPushAdded(owned, healed, output);
+    assert(!/^ {2}changelog:/m.test(healed), `no changelog job is appended, got: ${healed}`);
+    assert(output.includes('does not end in its jobs: block'), `the job is still described, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a checks.yml that already has a push: trigger is left exactly as found', () => {
+    const jobs = `jobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n  changelog:\n    ${USES}\n`;
+    for (const on of [
+      'on:\n  push:\n    branches: [develop]\n  pull_request:\n',
+      'on:\n  pull_request:\n  push:\n    tags: [\'v*\']\n',
+      'on:\n  pull_request:\n  "push":\n    branches: [main]\n',
+    ]) {
+      const repo = makeRepo();
+      const stub = makeGhStub();
+      const file = path.join(repo, '.github', 'workflows', 'checks.yml');
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      const owned = `name: checks\n\n${on}\n${jobs}`;
+      fs.writeFileSync(file, owned);
+      const { output } = runScript(repo, { pathPrefix: stub.binDir });
+      assertEq(readFile(file), owned, `the repo's own push trigger stands, got: ${output}`);
+      cleanup(repo); cleanup(stub.dir);
+    }
   });
 
   return summary();

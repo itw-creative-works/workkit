@@ -84,7 +84,7 @@ if (( CLOUD )); then
   note_skip() { wk_skip "$1"; }
   note_warn() { wk_warn "$1"; }
 else
-  export PATH="$HOME/.local/bin:$HOME/.nvm/default-bin:/opt/homebrew/bin:$PATH"
+  export PATH="$HOME/.local/bin:$HOME/.nvm/default-bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
   export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 
   # Run from an empty scratch dir. Under launchd the default cwd is / and the job
@@ -115,15 +115,34 @@ else
   note()      { note_as wk_ok "$1"; }
   note_skip() { note_as wk_skip "$1"; }
   note_warn() { note_as wk_warn "$1"; }
+  # A skip a person at the terminal should see as well: logged, and said on stderr.
+  note_skip_said() { note_skip "$1"; printf '%s\n' "$1" >&2; }
+
+  # Notifly's binary: a per-user install first, then a machine-wide one.
+  # NOTIFLY is a seam, not a knob: the suite points it at a recorder so running
+  # the tests never puts a notification on your screen.
+  notify_app_path() {
+    local dir
+    if [[ -n "${NOTIFLY:-}" ]]; then printf '%s\n' "$NOTIFLY"; return 0; fi
+    for dir in "$HOME/Applications" /Applications; do
+      if [[ -x "$dir/Notifly.app/Contents/MacOS/Notifly" ]]; then
+        printf '%s\n' "$dir/Notifly.app/Contents/MacOS/Notifly"
+        return 0
+      fi
+    done
+    return 1
+  }
 
   # Desktop notification, backgrounded + fully detached from stdio: Notifly
   # doesn't return until the notification dismisses; never make the job wait.
-  # NOTIFLY is a seam, not a knob: the suite points it at a recorder so running
-  # the tests never puts a notification on your screen.
-  NOTIFLY="${NOTIFLY:-/Applications/Notifly.app/Contents/MacOS/Notifly}"
   notify() {
+    local app
+    if ! app="$(notify_app_path)"; then
+      note_skip "notify: Notifly is in neither $HOME/Applications nor /Applications; the notification was skipped"
+      return 0
+    fi
     unset ELECTRON_RUN_AS_NODE
-    "$NOTIFLY" \
+    "$app" \
       --title 'Claude Daily' \
       --message "${1:0:180}" \
       --appIcon "$HOME/.claude/icon.png" \
@@ -141,6 +160,15 @@ else
     TIMEOUT=(timeout 900)
   fi
 fi
+
+# node runs the payload and the marker's title read, and launchd's bare PATH is
+# where it goes missing: one named line, and the step that needed it ends. The
+# second argument is the line's level, a skip unless the caller names another.
+job_require_node() {
+  if command -v node >/dev/null 2>&1; then return 0; fi
+  "${2:-note_skip}" "$1: node is not on this machine's PATH: $PATH"
+  return 1
+}
 
 # ── 1. The summaries ──────────────────────────────────────────────────────────
 
@@ -359,6 +387,8 @@ cloud_brief() {
 
   cloud_machine
 
+  # A red run, like every other refusal here: the Actions log is the delivery.
+  job_require_node brief wk_error || exit 1
   message="$(compose)" || payload_status=$?
   payload_err="$(cat "$PAYLOAD_ERR_FILE" 2>/dev/null || true)"
   if (( payload_status != 0 )); then
@@ -416,6 +446,9 @@ local_send() {
   if (( $# > 0 )); then
     message="$*"
   else
+    # Only the rehearsal composes here, and it is run from a terminal, so its
+    # skip is said there too.
+    job_require_node brief note_skip_said || return 0
     # Guarded like the send below: a payload-builder crash must still log and
     # notify: a silent morning is the one failure mode this job exists to
     # prevent.
@@ -552,6 +585,7 @@ record_brief_status() {
   # The title prefix comes from the module that owns it rather than from a
   # second literal in a second language: tower/api/lib/history.js is where the
   # writer and every reader of these posts already agree.
+  job_require_node marker || return 0
   prefix="$(node -e 'process.stdout.write(require(process.argv[1]).BRIEF_TITLE_PREFIX)' \
     "$SCRIPT_DIR/../tower/api/lib/history.js" 2>/dev/null || true)"
   if [[ -z "$prefix" ]]; then

@@ -163,6 +163,13 @@ script_shell() {
         return 1
       fi
       [[ "$QUIET" -eq 1 ]] && return 0
+      # A wrapper that is not there fails every npm script. It is reached through
+      # the engine link, which a machine with no ~/.claude never gets; on
+      # Windows the exe hands every script to that same wrapper.
+      if [[ ! -f "$ENGINE_LINK/script-shell.sh" ]]; then
+        wk_skip "npm: the engine link $ENGINE_LINK is missing or points elsewhere, so the wrapper $ENGINE_LINK/script-shell.sh is not there to point npm at; script-shell stays unset"
+        return 0
+      fi
       if npm config set script-shell "$want" >/dev/null 2>&1; then
         wk_ok "npm: script-shell set to $want (a root npm test now records the tree it proved)"
       else

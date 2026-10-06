@@ -26,7 +26,7 @@ Finder lenses read the diff in parallel, a separate scorer rates every finding, 
 Downgrade to light ONLY when ALL of these hold (any miss = stay full):
 
 1. Small diff: under ~150 changed lines AND ~5 files.
-2. No guard surface touched: nothing under `.claude/` (hooks, skills, agents, `.claude/settings.json`), and in the dotfiles repo nothing under `setup/`. Those are the surfaces where a one-liner is catastrophic. Other repos' own config files are ordinary code, judged by criteria 1 and 3.
+2. No guard surface touched: nothing under `.claude/` (hooks, skills, agents, `.claude/settings.json`), and nothing in a repo's machine-setup scripts (a dotfiles-style repo's `setup/`). Those are the surfaces where a one-liner is catastrophic. Other repos' own config files are ordinary code, judged by criteria 1 and 3.
 3. Fix-scope: a bug fix or tweak to existing behavior, not a new feature or a new source file.
 
 - The light reviewer may return `NEEDS_FULL`, with one line of why, instead of a report. The skill then upgrades to the full panel immediately.

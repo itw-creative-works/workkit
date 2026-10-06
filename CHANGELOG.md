@@ -7,6 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#410](../../issues/410) - The scheduled jobs find node in `/usr/local/bin` too and name a missing one. The morning notification looks in `~/Applications` before `/Applications`. Setup leaves npm's script-shell unset when the engine link is missing. The README names the permission allow rules that stop most of the skills' prompts.
+- [#409](../../issues/409) - A local session now always commits direct to the default branch; a pull request is for a cloud agent, an outside contributor or the owner's `pr`. The installed `checks.yml` also runs on a push to `main`, and the heal adds that trigger once to an existing pull-request-only one.
+
 ## [0.72.0] - 2026-10-05
 
 ### Changed

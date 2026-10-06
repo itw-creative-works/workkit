@@ -167,6 +167,8 @@ const run = async () => {
     // The automatic path runs at session start, so the machine's npm config is
     // changed only on a human's run, and the commit gate is where it is named.
     const world = mkWorld();
+    // A claude home lets the update lay the engine address the wrapper is named through.
+    fs.mkdirSync(world.claudeHome, { recursive: true });
     const { npmrc, env } = withNpm(world);
     const auto = runCli(world, ['update', '--auto'], { env });
     assertEq(auto.code, 0, 'exit 0');

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# workflow/changelog/changelog-job.sh: the `changelog` job in a repo's
-# checks.yml, read and rewritten, and the retired linter copies. Sourced by
-# standards.sh and, for safety/commit-gate, by hooks/_lib.sh: one rewrite, so
-# the gate never accepts a change the heal would not make. Functions only.
+# workflow/changelog/changelog-job.sh: the `changelog` job and the push trigger
+# in a repo's checks.yml, read and rewritten, and the retired linter copies.
+# Sourced by standards.sh and, for safety/commit-gate, by hooks/_lib.sh: one
+# rewrite, so the gate never accepts a change the heal would not make.
+# Functions only.
 #
 # Every awk runs with `-v BINMODE=3`, so gawk on Windows keeps a file's own
 # line endings; each awk strips a trailing `\r` itself before comparing.
@@ -100,12 +101,62 @@ wk_checks_header() {
   ' "$1"
 }
 
+# wk_checks_push_trigger <checks.yml>: the file with the template's `push:`
+# trigger added at the end of its `on:` block, reindented to that block's keys,
+# when the block lists `pull_request:` and no `push:`, quoted or not; any other
+# file comes back byte for byte. Added lines take the file's own line ending.
+wk_checks_push_trigger() {
+  local push at
+  push="$(awk -v BINMODE=3 '
+    { sub(/\r$/, "") }
+    /^on:/ { f = 1; next }
+    f && /^[^ #]/ { exit }
+    f && /^  ["'\'']?push["'\'']?:/ { p = 1; print; next }
+    p && /^    / { print; next }
+    p && !/^[[:space:]]*(#.*)?$/ { exit }
+  ' "$(wk_checks_template)")" || return 1
+  [[ -n "$push" ]] || return 1
+
+  # The line the block goes before, a tab, and the indent of the on: keys.
+  at="$(awk -v BINMODE=3 '
+    { sub(/\r$/, "") }
+    !seen && /^["'\'']?on["'\'']?:[[:space:]]*(#.*)?$/ { f = 1; seen = 1; next }
+    f && /^[^ #]/ { f = 0; next }
+    !f || /^[[:space:]]*(#.*)?$/ { next }
+    {
+      match($0, /^ */); ind = RLENGTH
+      if (key == "") key = ind
+      if (ind == key && $0 ~ /^ *["'\'']?pull_request["'\'']?:/) pr = 1
+      if (ind == key && $0 ~ /^ *["'\'']?push["'\'']?:/) ps = 1
+      last = NR
+    }
+    END { if (pr && !ps) printf "%d\t%d\n", last + 1, key }
+  ' "$1")" || return 1
+  if [[ -z "$at" ]]; then
+    cat "$1"
+    return
+  fi
+
+  PUSH="$push" AT="${at%%$'\t'*}" KEY="${at#*$'\t'}" awk -v BINMODE=3 '
+    function insert(   i, n, l, pad) {
+      pad = sprintf("%" ENVIRON["KEY"] "s", "")
+      n = split(ENVIRON["PUSH"], l, "\n")
+      for (i = 1; i <= n; i++) printf "%s%s%s", pad, substr(l[i], 3), eol
+    }
+    BEGIN { eol = "\n" }
+    NR == 1 && /\r$/ { eol = "\r\n" }
+    NR == ENVIRON["AT"] + 0 { insert() }
+    { print }
+    END { if (NR < ENVIRON["AT"] + 0) insert() }
+  ' "$1"
+}
+
 # wk_changelog_job_rewrite <checks.yml> <template>: the file as the heal leaves
 # it, each swap only where it applies (`workflow/README.md`, the changelog-job
-# row). Lines are written back in the file's own ending, and awk's status is
-# the answer, so an unreadable file fails rather than coming back empty.
+# row), over the file with its push trigger in place. Lines are written back in
+# the file's own ending; a failed read in either step fails the rewrite.
 wk_changelog_job_rewrite() {
-  local block header retired runs="" asked=0
+  local block header retired runs="" asked=0 status
   block="$(wk_changelog_job_block "$2")" || return 1
   header="$(wk_checks_header "$2")" || return 1
   retired="$(wk_retired_checks_headers)"
@@ -113,7 +164,7 @@ wk_changelog_job_rewrite() {
   wk_changelog_job_runs_copy "$1" || asked=$?
   case "$asked" in 0) runs=1 ;; 1) ;; *) return 1 ;; esac
 
-  BLOCK="$block" HEADER="$header" RETIRED="$retired" RUNS="$runs" BOUNDARY="$(wk_job_boundary)" awk -v BINMODE=3 '
+  wk_checks_push_trigger "$1" | BLOCK="$block" HEADER="$header" RETIRED="$retired" RUNS="$runs" BOUNDARY="$(wk_job_boundary)" awk -v BINMODE=3 '
     function emit(s) { printf "%s%s", s, eol }
     function flush(   i) { for (i = 1; i <= m; i++) emit(pend[i]); m = 0 }
     # The retired paragraph the pending lines are a prefix of: a full match
@@ -167,5 +218,7 @@ wk_changelog_job_rewrite() {
     }
     { emit($0) }
     END { flush(); for (i = 1; i <= nhold; i++) emit(held[i]) }
-  ' "$1"
+  '
+  status=("${PIPESTATUS[@]}")
+  (( status[0] == 0 && status[1] == 0 ))
 }

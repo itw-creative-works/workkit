@@ -4,9 +4,11 @@
 
 const path = require('path');
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { SYSTEM_BASH, stubTool, pathWith, shellPath, which } = require('../../lib/platform');
+const {
+  BASH, NO_RC, SYSTEM_BASH, stubTool, pathWith, shellPath, which,
+} = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
 const {
   skipWithoutDigest, WORKFLOW_DIR, mkRepo, stage, stageDeep, proveTree, runHook, cleanup,
@@ -69,14 +71,29 @@ const run = async () => {
   const CHECKS_BODY = 'name: checks\n\non:\n  pull_request:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
   const oldChecks = (copy) => `${OLD_HEADER}${CHECKS_BODY}  changelog:\n    runs-on: ubuntu-latest\n    steps:\n`
     + `      - uses: actions/checkout@v5\n      - name: CHANGELOG entry format\n        run: node ${copy} CHANGELOG.md --unreleased-only\n`;
-  // What the heal writes over it: the template's header paragraph and its one-line job.
+  // The heal's push trigger over a body; the trigger's own shape is pinned by
+  // the standards suite, so here it is the heal's answer, whatever it is.
+  const withPushTrigger = (body) => {
+    const dir = mkTmp('cg-push-');
+    const file = path.join(dir, 'checks.yml');
+    fs.writeFileSync(file, body);
+    const seam = shellPath(path.join(WORKFLOW_DIR, 'changelog', 'changelog-job.sh'));
+    const res = spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(seam)}\nwk_checks_push_trigger "$1"`, 'bash', shellPath(file)],
+      { encoding: 'utf8', timeout: 30000 });
+    cleanup(dir);
+    assertEq(res.status, 0, `wk_checks_push_trigger answers, stderr: ${res.stderr}`);
+    return res.stdout;
+  };
+  // What the heal writes over it: the template's header paragraph, its one-line
+  // job, and the push trigger the PR-only body lacks.
   const healedChecks = () => {
     const template = fs.readFileSync(path.join(WORKFLOW_DIR, 'templates', 'github-workflows', 'checks.yml'), 'utf8').split('\n');
     const from = template.findIndex((l) => l.startsWith('# The `changelog` job is the only job'));
     const to = template.findIndex((l, i) => i > from && !l.startsWith('#'));
-    return `${template.slice(from, to).join('\n')}\n${CHECKS_BODY}  changelog:\n`
-      + '    uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main\n';
+    return withPushTrigger(`${template.slice(from, to).join('\n')}\n${CHECKS_BODY}  changelog:\n`
+      + '    uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main\n');
   };
+  const PUSH = /^ {2}push:/m;
   const CHECKS = '.github/workflows/checks.yml';
   const mkVendoredRepo = (name, { withChecks = true } = {}) => {
     const dir = mkStampedRepo();
@@ -93,6 +110,7 @@ const run = async () => {
     for (const name of ['changelog-lint.cjs', 'changelog-lint.js']) {
       const dir = mkVendoredRepo(name);
       execSync(`git rm -q .github/${name}`, { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+      assert(PUSH.test(healedChecks()) && !PUSH.test(oldChecks(`.github/${name}`)), 'the push trigger is in the diff');
       stage(dir, CHECKS, healedChecks());
       proveTree(dir);
       const heal = runHook(dir, 'git commit -m "chore(workflow): drop the linter copy"');
@@ -157,6 +175,21 @@ const run = async () => {
     proveTree(dir);
     const { code, stderr } = runHook(dir, 'git commit -m "chore(workflow): the header comment"');
     assertEq(code, 0, `the heal's header swap alone needs no review, stderr: ${stderr}`);
+    cleanup(dir);
+  });
+
+  await test('the push trigger added alone to a PR-only checks.yml, no marker: exit 0', () => {
+    const dir = mkStampedRepo();
+    stage(dir, 'package.json', '{ "scripts": { "test": "exit 0" } }\n');
+    const prOnly = `${CHECKS_BODY}  changelog:\n    uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main\n`;
+    stageDeep(dir, CHECKS, prOnly);
+    execSync('git commit -q -m "base"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
+    const healed = withPushTrigger(prOnly);
+    assert(PUSH.test(healed) && !PUSH.test(prOnly), `the trigger is in the diff, got: ${healed}`);
+    stage(dir, CHECKS, healed);
+    proveTree(dir);
+    const { code, stderr } = runHook(dir, 'git commit -m "chore(workflow): run checks on a push"');
+    assertEq(code, 0, `the heal's push trigger alone needs no review, stderr: ${stderr}`);
     cleanup(dir);
   });
 

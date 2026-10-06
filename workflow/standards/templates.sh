@@ -49,5 +49,5 @@ ensure_ci_workflow() {
   fi
   mkdir -p .github/workflows
   cp "$src" "$dest"
-  wk_ok "checks: created $dest; commit it so it runs on every pull request"
+  wk_ok "checks: created $dest; commit it so it runs on every pull request and push to main"
 }

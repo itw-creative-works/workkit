@@ -6,28 +6,9 @@
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
-const { indentOf, isContent, childrenOf } = require('../lib/workflow-yaml');
+const { indentOf, isContent, block, listValue } = require('../lib/workflow-yaml');
 
 const WORKFLOW = path.join(__dirname, '..', '..', '.github', 'workflows', 'checks.yml');
-
-const unquote = (word) => word.trim().replace(/^(['"])(.*)\1$/, '$2');
-
-// The lines nested under the first `key:` line at `indent` within `lines`, the
-// key line itself first; null when no such key.
-const block = (lines, key, indent) => {
-  const keyRe = new RegExp(`^ {${indent}}["']?${key.replace(/[.]/g, '\\.')}["']?:`);
-  const at = lines.findIndex((line) => keyRe.test(line));
-  return at === -1 ? null : [lines[at], ...childrenOf(lines, at)];
-};
-
-// A list value in either YAML spelling, `key: [a, b]` or `- a` lines below it.
-const listValue = (keyBlock) => {
-  const inline = keyBlock[0].replace(/\s#.*$/, '').split(':').slice(1).join(':').trim();
-  if (inline.startsWith('[')) {
-    return inline.replace(/^\[|\]$/g, '').split(',').map(unquote).filter(Boolean);
-  }
-  return keyBlock.slice(1).filter(isContent).map((line) => unquote(line.trim().replace(/^- /, '')));
-};
 
 // The children of a block, at the indent of its first content line.
 const childIndent = (keyBlock) => {

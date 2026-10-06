@@ -8,7 +8,9 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
 const { BASH, NO_RC, shellPath } = require('../../lib/platform');
-const { skipUnlessDarwin, SCRIPT, INSTRUCTION, cleanup, mkWorld, runJob } = require('./helpers');
+const {
+  skipUnlessDarwin, SCRIPT, INSTRUCTION, cleanup, mkWorld, runJob, barePathTest, withBarePath,
+} = require('./helpers');
 
 const run = async () => {
   skipUnlessDarwin();
@@ -41,6 +43,18 @@ const run = async () => {
   });
 
   group('jobs/morning (local): sending');
+
+  await barePathTest('the send runs on a PATH that carries /usr/local/bin', () => {
+    // Intel Homebrew and the nodejs.org installer both put node there.
+    const world = mkWorld();
+    withBarePath(world);
+    const res = runJob(world, ['hello']);
+    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
+    const seen = world.sendPaths();
+    assertEq(seen.length, 1, `claude ran once: ${seen.join(' | ')}`);
+    assert(seen[0].split(':').includes('/usr/local/bin'), `the job's own PATH adds it: ${seen[0]}`);
+    cleanup(world.root);
+  });
 
   await test('an argument overrides the payload and reaches claude verbatim', () => {
     const world = mkWorld();

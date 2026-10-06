@@ -54,7 +54,8 @@ const templateHeader = () => {
 };
 const NODE_JOB = '  changelog:\n    runs-on: ubuntu-latest\n    steps:\n      # the vendored copy\n'
   + '      - run: node .github/changelog-lint.cjs CHANGELOG.md --unreleased-only\n';
-const JOBS = 'name: checks\n\non:\n  pull_request:\n\njobs:\n';
+// The push trigger is already here, so these cases see only the changelog job.
+const JOBS = 'name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n';
 
 const run = async () => {
   group('changelog-job.sh: sourcing it');
@@ -63,7 +64,7 @@ const run = async () => {
     const fns = inSeam("compgen -A function | grep '^wk_' | sort | tr '\\n' ' '");
     assertEq(fns.code, 0, `it sources clean, stderr: ${fns.err}`);
     assertEq(fns.out, 'wk_changelog_job_block wk_changelog_job_rewrite wk_changelog_job_runs_copy '
-      + 'wk_checks_header wk_checks_template wk_job_boundary wk_linter_copies wk_names_linter_copy wk_retired_checks_headers '
+      + 'wk_checks_header wk_checks_push_trigger wk_checks_template wk_job_boundary wk_linter_copies wk_names_linter_copy wk_retired_checks_headers '
       + 'wk_workflows_run_copy ', `the functions, got: ${fns.out}`);
     const vars = (first) => spawnSync(BASH, [...NO_RC, '-c', `${first}\ncompgen -v | sort`],
       { env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: 20000 }).stdout;
@@ -136,6 +137,17 @@ const run = async () => {
     assertEq(code, 0, 'it answers');
     assertEq(out, crlf(`${templateHeader()}${JOBS}  changelog:\n${USES}\n${next}`),
       'header swapped, job rewritten, the next job intact, every line ending CRLF');
+  });
+
+  await test('the rewrite adds the push trigger to a PR-only file, once', () => {
+    const prOnly = `${JOBS.replace('  push:\n', '')}  changelog:\n${USES}\n`;
+    const { code, out } = rewrite(prOnly);
+    assertEq(code, 0, 'it answers');
+    assert(/^ {2}push:/m.test(out) && !/^ {2}push:/m.test(prOnly), `the push trigger is added, got: ${out}`);
+    const trigger = overFile(prOnly, 'wk_checks_push_trigger "$1"');
+    assertEq(trigger.code, 0, `wk_checks_push_trigger answers, stderr: ${trigger.err}`);
+    assertEq(out, trigger.out, 'the rewrite\'s change is wk_checks_push_trigger\'s');
+    assertEq(rewrite(out).out, out, 'and a second rewrite changes nothing');
   });
 
   await test('an unreadable file is a non-zero status, not an empty answer', () => {

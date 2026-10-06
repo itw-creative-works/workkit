@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-export PATH="$HOME/.local/bin:$HOME/.nvm/default-bin:/opt/homebrew/bin:$PATH"
+export PATH="$HOME/.local/bin:$HOME/.nvm/default-bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 
 # Resolved before any cd: BASH_SOURCE may be a relative path.
@@ -62,6 +62,14 @@ note()      { note_as wk_ok "$1"; }
 note_skip() { note_as wk_skip "$1"; }
 note_warn() { note_as wk_warn "$1"; }
 
+# node composes every payload, and launchd's bare PATH is where it goes missing:
+# one named line, and the step ends.
+job_require_node() {
+  if command -v node >/dev/null 2>&1; then return 0; fi
+  note_skip "$1: node is not on this machine's PATH: $PATH"
+  return 1
+}
+
 # The engine's home-repo libraries. A checkout missing them has no way to reach
 # the destination, which reads exactly like having no destination. The
 # destination is the repo, never the clone: a summary is a Discussion, posted
@@ -77,6 +85,8 @@ else
   note_warn "summaries: the engine's home-repo library is missing at $ENGINE_DIR; skipped"
   exit 0
 fi
+
+job_require_node summaries || exit 0
 
 HOME_REPO="$(wk_home_slug)"
 if [[ -z "$HOME_REPO" ]]; then

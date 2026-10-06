@@ -6,11 +6,14 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, skipSuite } = require('../lib/harness');
+const {
+  group, test, assert, assertEq, summary, selfRun, skipSuite,
+} = require('../lib/harness');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath,
 } = require('../lib/platform');
+const { noNodeTest, barePathTest, NO_NODE_LINE } = require('../lib/job-path');
 const { mkTmp } = require('../lib/scratch');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-nightly.sh');
@@ -82,6 +85,7 @@ const mkWorld = ({
 
   const claudeLog = path.join(root, 'claude-argv.log');
   const claudeCwdLog = path.join(root, 'claude-cwd.log');
+  const claudePathLog = path.join(root, 'claude-path.log');
   const ghLog = path.join(root, 'gh-argv.log');
   const notifLog = path.join(root, 'notifly-argv.log');
   const bodyLog = path.join(root, 'posted-body.md');
@@ -89,6 +93,7 @@ const mkWorld = ({
     '#!/usr/bin/env bash',
     recordArgv(claudeLog),
     `printf '%s\\n' "$PWD" >> "${claudeCwdLog}"`,
+    `printf '%s\\n' "$PATH" >> "${claudePathLog}"`,
     ...(claudeStderr ? [`printf '%s' ${JSON.stringify(claudeStderr)} >&2`] : []),
     `printf '%s' ${JSON.stringify(summary)}`,
     'exit 0',
@@ -134,6 +139,10 @@ const mkWorld = ({
     calls: () => readArgv(claudeLog),
     cwds: () => (fs.existsSync(claudeCwdLog)
       ? fs.readFileSync(claudeCwdLog, 'utf8').split('\n').filter(Boolean)
+      : []),
+    // The PATH each send ran under, one entry per call.
+    sendPaths: () => (fs.existsSync(claudePathLog)
+      ? fs.readFileSync(claudePathLog, 'utf8').split('\n').filter(Boolean)
       : []),
     ghCalls: () => readArgv(ghLog),
     postedBody: () => (fs.existsSync(bodyLog) ? fs.readFileSync(bodyLog, 'utf8') : ''),
@@ -319,6 +328,33 @@ const run = async () => {
     assert(/The suite is green/.test(body), `the summary is what was published: ${body}`);
     assert(!/deprecated flag/.test(body), `and the noise is not part of it: ${body}`);
     assert(/deprecated flag/.test(world.log()), `it is in the log instead: ${world.log()}`);
+    cleanup(world.root);
+  });
+
+  group('jobs/claude-nightly: node and the PATH');
+
+  await barePathTest('the send runs on a PATH that carries /usr/local/bin', () => {
+    // Intel Homebrew and the nodejs.org installer both put node there.
+    const world = mkWorld({ home: 'owner/private-home' });
+    runJob(world);
+    const seen = world.sendPaths();
+    assertEq(seen.length, 1, `the send happened once: ${fmtCalls(world.calls())}`);
+    assert(seen[0].split(':').includes('/usr/local/bin'), `the job's own PATH adds it: ${seen[0]}`);
+    cleanup(world.root);
+  });
+
+  await noNodeTest('a PATH without node: the named line, nothing sent or posted, exit 0', () => {
+    const world = mkWorld({ home: 'owner/private-home' });
+    world.env.PATH = joinPath(path.join(world.home, '.local', 'bin'), SYSTEM_PATH);
+    const res = runJob(world);
+    assertEq(res.status, 0, `a missing node never fails the morning: ${res.stderr}`);
+    const lines = [...world.log().matchAll(NO_NODE_LINE)];
+    assertEq(lines.length, 1, `one named line in the log: ${world.log()}`);
+    assert(lines[0][1].split(':').includes('/usr/bin'), `naming the PATH it searched: ${lines[0][1]}`);
+    assert(!/exit 127/.test(world.log()), `never the bare exit status of a missing command: ${world.log()}`);
+    assertEq(world.calls().length, 0, `nothing was sent: ${fmtCalls(world.calls())}`);
+    const created = world.ghCalls().filter((c) => c.join(' ').includes('createDiscussion'));
+    assertEq(created.length, 0, `and nothing was posted: ${fmtCalls(world.ghCalls())}`);
     cleanup(world.root);
   });
 

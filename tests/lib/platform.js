@@ -1,6 +1,6 @@
 // The platform seams every suite spawns through: one home for what differs
 // between the Mac and Windows (AGENTS.md § Tests). Every export is the identity
-// on macOS and Linux; the dotfiles repo carries the same seam, name for name.
+// on macOS and Linux; a dotfiles repo carries the same seam, name for name.
 
 const fs = require('fs');
 const path = require('path');
