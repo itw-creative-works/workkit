@@ -1,8 +1,9 @@
 // The suite marker read and written independently of workflow/lib/suite.sh: its
-// path (and the review marker's, the suite log's and the lock's) under a temp
-// dir, the working tree's hash by the temp-index recipe, and a record planted as
-// a green root `npm test` would leave it. Consumers: the suite-guard, commit-gate,
-// script-shell and _lib suites.
+// path (and the package record's, the review marker's, the suite log's and the
+// lock's) under a temp dir, the package record's lines, the working tree's hash
+// by the temp-index recipe, and the suite and package records planted as a green
+// `npm test` would leave them. Consumers: the suite-guard, commit-gate,
+// script-shell, proof-guard and _lib suites.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -19,6 +20,16 @@ const perRepo = (tmp, name, dir) => path.join(tmp, name,
 
 /** The marker file for <dir>'s repo under <tmp>, keyed by the sha1 of its root. */
 const suiteMarkerPath = (tmp, dir) => perRepo(tmp, 'claude-suite-marker', dir);
+
+/** The package record for <dir>'s repo under <tmp>, keyed the same way. */
+const pkgMarkerPath = (tmp, dir) => perRepo(tmp, 'claude-package-marker', dir);
+
+/** The package record's lines (the tree id, then one folder each), or undefined. */
+const pkgRecord = (tmp, dir) => {
+  const marker = pkgMarkerPath(tmp, dir);
+  if (!fs.existsSync(marker)) return undefined;
+  return fs.readFileSync(marker, 'utf8').replace(/\n$/, '').split('\n');
+};
 
 /** The review marker file for <dir>'s repo under <tmp>, keyed the same way. */
 const reviewMarkerPath = (tmp, dir) => perRepo(tmp, 'claude-review-marker', dir);
@@ -45,6 +56,15 @@ const plantRecord = (tmp, dir, tree = treeHash(dir)) => {
   return marker;
 };
 
+/** Plant the package record holding <pkgs> on <tree>, the working tree's hash by default. */
+const plantPkgRecord = (tmp, dir, pkgs, tree = treeHash(dir)) => {
+  const marker = pkgMarkerPath(tmp, dir);
+  fs.mkdirSync(path.dirname(marker), { recursive: true });
+  fs.writeFileSync(marker, `${[tree, ...pkgs].join('\n')}\n`);
+  return marker;
+};
+
 module.exports = {
-  suiteMarkerPath, reviewMarkerPath, suiteLogPath, suiteLockPath, ciLockPath, treeHash, plantRecord,
+  suiteMarkerPath, pkgMarkerPath, pkgRecord, reviewMarkerPath, suiteLogPath, suiteLockPath, ciLockPath, treeHash, plantRecord,
+  plantPkgRecord,
 };

@@ -40,7 +40,7 @@ else
 fi
 if wk_suite_proved "$repo_root" "$tree"; then
   marker=$(wk_suite_marker_path "$repo_root")
-  echo "suite-guard: this tree is already proved: the full suite ran green on it and $marker records it. Run the narrowest test that proves the change (node tests/<dir>/<name>.test.js); the commit gate reads the same record for a commit whose staged tree matches it." >&2
+  echo "suite-guard: this tree is already proved: the full suite ran green on it and $marker records it. Run the narrowest test that proves the change (\`npm test -- <file>\` from the package's folder); the commit gate reads the same record for a commit whose staged tree matches it." >&2
   exit 2
 fi
 
@@ -52,5 +52,5 @@ building=$(cd "$repo_root" && hook_issues_building) || exit 0
 [ -n "$building" ] || exit 0
 named=$(printf '%s\n' "$building" | awk -F'\t' 'NF { printf "%s#%s (%s)", (n++ ? ", " : ""), $1, $2 }')
 
-echo "suite-guard: the full suite runs once, at the commit, after every item in the tree is parked and passed; still building: $named. That work has to finish first: its tests green and its Proof: comment posted, then its own park moves it to status:qa. Never relabel an item to get past this guard. Run the narrowest test that proves the change (node tests/<dir>/<name>.test.js)." >&2
+echo "suite-guard: the full suite runs once, at the commit, after every item in the tree is parked and passed; still building: $named. That work has to finish first: its tests green and its Proof: comment posted, then its own park moves it to status:qa. Never relabel an item to get past this guard. Run the narrowest test that proves the change (\`npm test -- <file>\` from the package's folder)." >&2
 exit 2

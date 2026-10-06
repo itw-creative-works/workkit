@@ -1,5 +1,6 @@
 // Tests for workflow/script-shell.sh, npm's script shell: a green root `npm test`
-// records the tree it proved, and every other script passes straight through.
+// records the tree it proved, every other green test run records its package,
+// and every other script passes straight through.
 // The detached run and the checks before it are script-shell-detached.test.js;
 // the world both run npm in is tests/lib/script-shell.js.
 
@@ -15,7 +16,7 @@ const {
 const { reviewMarkerPath, suiteLogPath, treeHash } = require('../lib/suite-record');
 const { scratchNpmrc, WRAPPER, EXE_ENV } = require('../hooks/commit-gate/helpers');
 const {
-  cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded,
+  cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, packaged,
 } = require('../lib/script-shell');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -51,7 +52,7 @@ const run = async () => {
 
   group('script-shell: the root test records the tree it proved');
 
-  await test('a green root npm test: exit 0, output streamed, the record holds the tree', () => {
+  await test('a green root npm test: exit 0, output streamed, the record holds the tree, no package record', () => {
     const world = mkWorld();
     const repo = mkRepo({ scripts: { test: 'node -e "console.log(\'streamed-green\')"' } });
     const tree = treeHash(repo);
@@ -59,6 +60,7 @@ const run = async () => {
     assertEq(res.code, 0, `exit 0, got: ${res.err}`);
     assert(res.out.includes('streamed-green'), `the script's output reaches the caller, got: ${res.out}`);
     assertEq(recorded(world, repo), `${tree}\n`, 'the record holds the working tree it proved');
+    assertEq(packaged(world, repo), undefined, 'the whole root suite never writes the package record');
     cleanup(world.root); cleanup(repo);
   });
 
@@ -139,42 +141,97 @@ const run = async () => {
     cleanup(world.root); cleanup(repo);
   });
 
-  group('script-shell: everything else passes through');
+  group('script-shell: every other green test run records its package');
 
-  await test('a narrowed root run (npm test -- <file>) is green and writes no record', () => {
+  await test('a narrowed root run (npm test -- <file>) green: the package record holds `.` under the tree, no suite record', () => {
     const world = mkWorld();
     const repo = mkRepo({ scripts: { test: 'node -e "process.exit(0)"' } });
+    const tree = treeHash(repo);
     const res = npm(world, repo, ['test', '--', 'only/one.test.js']);
     assertEq(res.code, 0, `exit 0, got: ${res.err}`);
-    assertEq(recorded(world, repo), undefined, 'a narrowed run proves only what it ran');
+    assertEq(packaged(world, repo), JSON.stringify([tree, '.']), 'the tree it ran on, then the root package');
+    assertEq(recorded(world, repo), undefined, 'a narrowed run never touches the suite record');
     cleanup(world.root); cleanup(repo);
   });
 
-  await test('a nested package npm test writes no record', () => {
+  await test('a nested package npm test green, run from its folder: the package record holds its folder', () => {
     const world = mkWorld();
     const repo = mkRepo({ scripts: { test: 'exit 0' } }, {
       'packages/foo/package.json': { name: 'foo', scripts: { test: 'echo nested-ran' } },
     });
+    const tree = treeHash(repo);
     const res = npm(world, path.join(repo, 'packages', 'foo'), ['test']);
     assertEq(res.code, 0, `exit 0, got: ${res.err}`);
     assert(res.out.includes('nested-ran'), `the nested script ran, got: ${res.out}`);
+    assertEq(packaged(world, repo), JSON.stringify([tree, 'packages/foo']), 'the folder relative to the root');
     assertEq(recorded(world, repo), undefined, 'a nested suite is not the root suite');
     cleanup(world.root); cleanup(repo);
   });
 
-  await test('a workspace member run from the root (-w) writes no record', () => {
+  await test('a workspace member run from the root (-w) green: the package record holds its folder', () => {
     const world = mkWorld();
     const repo = mkRepo({ workspaces: ['packages/*'], scripts: { test: 'exit 0' } }, {
       'packages/foo/package.json': { name: 'foo', scripts: { test: 'echo member-ran' } },
     });
+    const tree = treeHash(repo);
     const res = npm(world, repo, ['test', '-w', 'foo']);
     assertEq(res.code, 0, `exit 0, got: ${res.err}`);
     assert(res.out.includes('member-ran'), `the member's script ran, got: ${res.out}`);
+    assertEq(packaged(world, repo), JSON.stringify([tree, 'packages/foo']), "the member's folder, never the root");
     assertEq(recorded(world, repo), undefined, "a member's suite is not the root suite");
     cleanup(world.root); cleanup(repo);
   });
 
-  await test('another script: stdout and exit code exactly as plain sh gives them, no record', () => {
+  await test("a red narrowed run: npm's exit code, no package record", () => {
+    const world = mkWorld();
+    const repo = mkRepo({ scripts: { test: 'node -e "process.exit(3)"' } });
+    const res = npm(world, repo, ['test', '--', 'only/one.test.js']);
+    assertEq(res.code, 3, `the script's code comes back, got: ${res.code} ${res.err}`);
+    assertEq(packaged(world, repo), undefined, 'a red run proves nothing');
+    assertEq(recorded(world, repo), undefined, 'and no suite record either');
+    cleanup(world.root); cleanup(repo);
+  });
+
+  await test('a narrowed run that edits a committed file writes no package record and says so', () => {
+    const world = mkWorld();
+    const repo = mkRepo({ scripts: { test: 'echo edited > app.js' } });
+    const res = npm(world, repo, ['test', '--', 'only/one.test.js']);
+    assertEq(fs.readFileSync(path.join(repo, 'app.js'), 'utf8').startsWith('edited'), true, 'the script edited the file');
+    assertEq(packaged(world, repo), undefined, 'the tree it ended on is not the tree it ran on');
+    assertEq(res.code, 0, `a green run whose tree changed still exits 0, got: ${res.code} ${res.err}`);
+    assert(/^script-shell: the run passed, but the tree changed during it, /m.test(`${res.out}\n${res.err}`),
+      `the package run's line says the tree changed, got: ${res.out} ${res.err}`);
+    cleanup(world.root); cleanup(repo);
+  });
+
+  await test('a second package green on the same tree is appended', () => {
+    const world = mkWorld();
+    const repo = mkRepo({ scripts: { test: 'node -e "process.exit(0)"' } }, {
+      'packages/foo/package.json': { name: 'foo', scripts: { test: 'exit 0' } },
+    });
+    const tree = treeHash(repo);
+    assertEq(npm(world, repo, ['test', '--', 'only/one.test.js']).code, 0, 'the narrowed root run is green');
+    assertEq(npm(world, path.join(repo, 'packages', 'foo'), ['test']).code, 0, 'the nested run is green');
+    assertEq(packaged(world, repo), JSON.stringify([tree, '.', 'packages/foo']), 'one tree line, then both packages');
+    cleanup(world.root); cleanup(repo);
+  });
+
+  await test('a green run on a changed tree starts the package record over', () => {
+    const world = mkWorld();
+    const repo = mkRepo({ scripts: { test: 'node -e "process.exit(0)"' } }, {
+      'packages/foo/package.json': { name: 'foo', scripts: { test: 'exit 0' } },
+    });
+    assertEq(npm(world, repo, ['test', '--', 'only/one.test.js']).code, 0, 'the narrowed root run is green');
+    fs.writeFileSync(path.join(repo, 'app.js'), 'const x = 2;\n');
+    const tree = treeHash(repo);
+    assertEq(npm(world, path.join(repo, 'packages', 'foo'), ['test']).code, 0, 'the nested run is green');
+    assertEq(packaged(world, repo), JSON.stringify([tree, 'packages/foo']), "the new tree's line and its package alone");
+    cleanup(world.root); cleanup(repo);
+  });
+
+  group('script-shell: everything else passes through');
+
+  await test('another script: stdout and exit code exactly as plain sh gives them, no record of either kind', () => {
     const world = mkWorld();
     const repo = mkRepo({ scripts: { build: 'echo built && exit 4', test: 'exit 0' } });
     const wrapped = npm(world, repo, ['run', 'build']);
@@ -182,6 +239,7 @@ const run = async () => {
     assertEq(wrapped.code, 4, `the script's code comes back, got: ${wrapped.code}`);
     assertEq(wrapped.out, plain.out, 'the wrapper adds nothing to stdout');
     assertEq(recorded(world, repo), undefined, 'only the test event records');
+    assertEq(packaged(world, repo), undefined, 'and only the test event writes the package record');
     cleanup(world.root); cleanup(repo);
   });
 

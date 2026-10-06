@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#407](../../issues/407) - The kit never runs a test of its own; every run it starts is a package's `npm test`, whole or narrowed. At the qa flip `safety/proof-guard` runs nothing and reads each touched package's own green record. `tests/run.js` takes suite paths. CI skips release-only pushes and tags.
+
 ## [0.71.2] - 2026-10-05
 
 ### Fixed

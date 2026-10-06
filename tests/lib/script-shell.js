@@ -1,7 +1,8 @@
 /**
  * The world the workflow/script-shell.sh suites run npm in: a scratch machine
  * (its own home and TMPDIR), a committed scratch repo, npm spawned with the
- * wrapper named by `--script-shell`, and the record a green root run leaves.
+ * wrapper named by `--script-shell`, the record a green root run leaves and the
+ * package record every other green test run leaves.
  * Consumers: tests/scripts/script-shell.test.js and script-shell-detached.test.js.
  */
 
@@ -13,7 +14,7 @@ const {
   IS_WINDOWS, BASH, NODE_DIR, NO_RC, SYSTEM_PATH, shellPath, which, joinPath, homeEnv,
 } = require('./platform');
 const { mkTmp } = require('./scratch');
-const { suiteMarkerPath } = require('./suite-record');
+const { suiteMarkerPath, pkgRecord } = require('./suite-record');
 const { FIXTURE_ORIGIN } = require('./git-repo');
 const { WRAPPER, EXE_CLAUDE_HOME } = require('../hooks/commit-gate/helpers');
 
@@ -93,6 +94,9 @@ const recorded = (world, repo) => {
   return fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8') : undefined;
 };
 
+/** The package record's lines for <repo> in <world>, as JSON so a case compares them whole. */
+const packaged = (world, repo) => JSON.stringify(pkgRecord(world.tmp, repo));
+
 module.exports = {
-  cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded,
+  cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, packaged,
 };

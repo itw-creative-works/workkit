@@ -1,10 +1,10 @@
 #!/bin/bash
 # hooks/safety/proof-guard/checks/qa-tests.sh: the check at the flip to
-# status:qa, which runs the test files the working diff touched with
-# `node --test` once per tree (the qa record in workflow/lib/suite.sh) and
-# blocks the flip when one is red. SOURCED by the entry (run.sh), never
-# executed, and it runs nothing at load: it defines functions and sets nothing.
-# It calls _lib.sh's helpers.
+# status:qa, which runs no test and reads two records: each package owning a
+# touched test file needs a green npm test recorded on this tree
+# (wk_pkg_proved), and a green whole root suite (wk_suite_proved) covers them
+# all. A missing record blocks the flip. SOURCED by the entry (run.sh), never
+# executed; it runs nothing at load, sets nothing and calls _lib.sh's helpers.
 
 # The base the committed leg is read against: the merge base of HEAD with
 # origin's default branch, else with this branch's upstream. Sets qa_base, empty
@@ -32,230 +32,111 @@ qa_touched_paths() {
   } | sort -u
 }
 
-qa_block() {
-  {
-    echo "proof-guard: BLOCKED this flip to status:qa: $1"
-    printf '  %s\n' "${qa_run[@]}"
-  } >&2
-}
-
-# qa_group_of <path>: the index into qa_groups of the package <path> runs in,
-# its folder added when it is new, and its preloads, if any, named in
-# qa_preloads for the pass notice.
-qa_group_of() {
+# qa_package_of <path>: the index into qa_pkgs of the package that owns <path>
+# (hook_test_package_dir, `.` for the root), added when it is new.
+qa_package_of() {
   qa_pkg=$(hook_test_package_dir "$qa_root" "$1")
-  qa_gi=0
-  while [ "$qa_gi" -lt "${#qa_groups[@]}" ]; do
-    [ "${qa_groups[$qa_gi]}" = "$qa_pkg" ] && return 0
-    qa_gi=$((qa_gi + 1))
+  [ -n "$qa_pkg" ] || qa_pkg="."
+  qa_pi=0
+  while [ "$qa_pi" -lt "${#qa_pkgs[@]}" ]; do
+    [ "${qa_pkgs[$qa_pi]}" = "$qa_pkg" ] && return 0
+    qa_pi=$((qa_pi + 1))
   done
-  qa_groups+=("$qa_pkg")
-  qa_shown=$(hook_test_preloads "$qa_root${qa_pkg:+/$qa_pkg}" | tr '\n' ' ')
-  if [ -n "$qa_shown" ]; then
-    qa_label="${qa_pkg:-the repo root}"
-    qa_preloads="${qa_preloads} Files in ${qa_label} ran under ${qa_label}'s test preloads (${qa_shown% })."
-  fi
+  qa_pkgs+=("$qa_pkg")
+  qa_pkg_files+=("")
+  qa_pkg_counts+=(0)
 }
 
-# qa_run_groups <dir>: each group in turn from its package folder, under its
-# preloads, its files relative to that folder, group N's TAP to <dir>/N. The
-# first red stops the sequence, so the last file written is the red group's.
-qa_run_groups() {
-  qa_gi=0
-  while [ "$qa_gi" -lt "${#qa_groups[@]}" ]; do
-    qa_pkg="${qa_groups[$qa_gi]}"
-    qa_pre=()
-    while IFS= read -r qa_word; do
-      [ -n "$qa_word" ] || continue
-      qa_pre+=("$qa_word")
-    done <<<"$(hook_test_preloads "$qa_root${qa_pkg:+/$qa_pkg}")"
-    qa_files=()
-    qa_i=0
-    while [ "$qa_i" -lt "${#qa_run[@]}" ]; do
-      if [ "${qa_file_group[$qa_i]}" -eq "$qa_gi" ]; then
-        qa_files+=("${qa_run[$qa_i]#"${qa_pkg:+$qa_pkg/}"}")
-      fi
-      qa_i=$((qa_i + 1))
-    done
-    (cd "$qa_root${qa_pkg:+/$qa_pkg}" \
-      && node ${qa_pre[@]+"${qa_pre[@]}"} --test --test-reporter=tap -- "${qa_files[@]}") >"$1/$qa_gi" 2>&1 || return 1
-    qa_gi=$((qa_gi + 1))
-  done
+# qa_label <pkg>: the package as a reader names it, the root as `the repo root`.
+qa_label() {
+  if [ "$1" = . ]; then printf 'the repo root'; else printf '%s' "$1"; fi
 }
 
-# qa_tap_empty <tap file> <name>: the TAP shows <name> as its own top-level
-# passed test, the flat shape a file that registered nothing prints. The name
-# is TAP-unescaped and a backslash read as `/`, the way Windows may print it.
-qa_tap_empty() {
-  qa_name="$2" awk '
-    /^ok [0-9]+ - / {
-      name = $0
-      sub(/^ok [0-9]+ - /, "", name)
-      gsub(/\\#/, "#", name)
-      gsub(/\\\\/, "/", name)
-      if (name == ENVIRON["qa_name"]) found = 1
-    }
-    END { exit found ? 0 : 1 }' "$1"
-}
-
-# qa_first_failure <tap file>: the first `not ok` entry through the `...` that
-# closes its YAML block, at most 25 lines, then the TAP's closing summary. A run
-# that printed no `not ok` died before any test (a preload that failed to
-# load), and its error sits near the top, so it shows its first lines instead.
-qa_first_failure() {
-  awk '
-    NR <= 15 { first[NR] = $0 }
-    !seen && /^ *not ok / {
-      seen = 1
-      open = 1
-      close_line = sprintf("%" (match($0, /[^ ]/) + 1) "s...", "")
-    }
-    open {
-      if (++n <= 25) print
-      if ($0 == close_line) open = 0
-      next
-    }
-    /^1\.\.[0-9]+$/ { summary = $0; next }
-    summary != "" && /^# / { summary = summary "\n" $0 }
-    END {
-      if (seen) {
-        if (summary != "") print summary
-        exit
-      }
-      print "No not ok entry in the output; its first lines:"
-      for (i = 1; i <= NR && i <= 15; i++) print first[i]
-    }' "$1"
-}
-
-# check_qa_tests <dir>: the run in the repo holding <dir>, under a fixed 540s
-# deadline inside the 600s the wiring gives the hook, so a hung test bounces
-# instead of being cancelled into an allow.
+# check_qa_tests <dir>: the record check in the repo holding <dir>. It runs no
+# test: the records are written by npm's script shell around the package's own
+# `npm test` (workflow/lib/suite.sh).
 check_qa_tests() {
   if ! qa_root=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null); then
-    hook_pretool_notice "proof-guard: $1 is inside no git repository, so the touched-test run did not run at the qa flip."
+    hook_pretool_notice "proof-guard: $1 is inside no git repository, so the park's test-record check did not run at the qa flip."
     return 0
   fi
   qa_find_base "$qa_root"
-  # Only test-shaped files outside a fixture folder run: a helper or a runner
-  # under a test folder (tests/run.js runs the whole suite) and a fixture are
-  # named, never executed.
-  qa_run=()
-  qa_skipped=""
+  # Any test-shaped file counts, whatever its extension; a helper or a runner
+  # under a test folder (tests/run.js) is named, never required.
+  qa_tests=()
   qa_helpers=""
-  qa_fixtures=""
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     hook_is_test_path "$path" || continue
     [ -f "$qa_root/$path" ] || continue
-    if ! hook_is_test_name "$path"; then
+    if hook_is_test_name "$path"; then
+      qa_tests+=("$path")
+    else
       qa_helpers="$qa_helpers $path"
-      continue
     fi
-    # A test-shaped file under a fixture folder is another test's input, and
-    # may fail on purpose.
-    if hook_is_fixture_path "$path"; then
-      qa_fixtures="$qa_fixtures $path"
-      continue
-    fi
-    case "$path" in
-      *.js|*.mjs|*.cjs) qa_run+=("$path") ;;
-      *) qa_skipped="$qa_skipped $path" ;;
-    esac
   done <<<"$(qa_touched_paths "$qa_root" "$qa_base")"
-  qa_not_run=""
-  if [ -n "$qa_skipped" ]; then
-    qa_not_run=" Not run, since node --test runs only .js, .mjs and .cjs:${qa_skipped}."
-  fi
+  qa_notes=""
   if [ -n "$qa_helpers" ]; then
-    qa_not_run="${qa_not_run} Touched under a test folder but not a test file, so not run:${qa_helpers}."
-  fi
-  if [ -n "$qa_fixtures" ]; then
-    qa_not_run="${qa_not_run} A fixture, input to another test, so not run:${qa_fixtures}."
+    qa_notes=" Touched under a test folder but not a test file, so not required:${qa_helpers}."
   fi
   if [ -z "$qa_base" ]; then
-    qa_not_run="${qa_not_run} Commits since the default branch were not read: origin names no default branch and this branch has no upstream, or HEAD shares no merge base with it."
+    qa_notes="${qa_notes} Commits since the default branch were not read: origin names no default branch and this branch has no upstream, or HEAD shares no merge base with it."
   fi
-  if [ "${#qa_run[@]}" -eq 0 ]; then
-    hook_pretool_notice "proof-guard: no touched test files in the working diff, so nothing ran at the qa flip.${qa_not_run}"
+  if [ "${#qa_tests[@]}" -eq 0 ]; then
+    hook_pretool_notice "proof-guard: no touched test files in the working diff, so the qa flip needs no test record.${qa_notes}"
     return 0
   fi
-  # Once per tree: hashed before the run and again after a green one, and
-  # recorded only when the two match. A hash that cannot be taken before the
-  # run runs the files and records nothing.
-  qa_tree=$(wk_tree_hash "$qa_root") || qa_tree=""
-  if [ -n "$qa_tree" ] && wk_qa_proved "$qa_root" "$qa_tree"; then
-    hook_pretool_notice "proof-guard: the touched test files already ran green on this tree at an earlier qa flip, so they did not run again.${qa_not_run}"
-    return 0
-  fi
-  if ! command -v node >/dev/null 2>&1; then
-    hook_pretool_notice "proof-guard: node is not on PATH, so the touched-test run did not run at the qa flip."
-    return 0
-  fi
-  # A package's files run from its own folder, so its test script's preloads
-  # resolve there; a file in no package keeps the root group.
-  qa_groups=()
-  qa_preloads=""
-  qa_file_group=()
-  for path in "${qa_run[@]}"; do
-    qa_group_of "$path"
-    qa_file_group+=("$qa_gi")
-  done
-  qa_dir=$(mktemp -d "${TMPDIR:-/tmp}/proof-guard-qa.XXXXXX")
-  qa_run_groups "$qa_dir" &
-  qa_pid=$!
-  if ! hook_wait_deadline "$qa_pid" 540; then
-    rm -rf "$qa_dir"
-    qa_block "the touched tests were still running at 540s, so the flip cannot prove them green. Run them yourself with node --test, fix what hangs, then flip again:"
+  if ! qa_tree=$(wk_tree_hash "$qa_root"); then
+    echo "proof-guard: BLOCKED this flip to status:qa: the working tree of $qa_root could not be hashed, so the park's test record cannot be read. Fix what stops git hashing the tree (git add -A into a throwaway index, then git write-tree), then flip again." >&2
     exit 2
   fi
-  if ! wait "$qa_pid"; then
-    qa_gi=0
-    while [ -f "$qa_dir/$((qa_gi + 1))" ]; do qa_gi=$((qa_gi + 1)); done
-    qa_pkg="${qa_groups[$qa_gi]}"
-    qa_block "a touched test file is red."
+  if wk_suite_proved "$qa_root" "$qa_tree"; then
+    hook_pretool_notice "proof-guard: the whole root suite is green on this tree, which covers the ${#qa_tests[@]} touched test file(s).${qa_notes}"
+    return 0
+  fi
+  qa_pkgs=()
+  qa_pkg_files=()
+  qa_pkg_counts=()
+  qa_unprovable=""
+  for path in "${qa_tests[@]}"; do
+    qa_package_of "$path"
+    # The root with no test script has no npm test to record a run.
+    if [ "$qa_pkg" = . ] && ! wk_has_test_script "$qa_root"; then
+      qa_unprovable="$qa_unprovable $path"
+      continue
+    fi
+    qa_pkg_files[$qa_pi]="${qa_pkg_files[$qa_pi]:+${qa_pkg_files[$qa_pi]} }${path#"$qa_pkg/"}"
+    qa_pkg_counts[$qa_pi]=$((qa_pkg_counts[qa_pi] + 1))
+  done
+  if [ -n "$qa_unprovable" ]; then
+    qa_notes=" Cannot be proved by npm test, since the repo root has no test script, so not required:${qa_unprovable}.${qa_notes}"
+  fi
+  qa_proved=""
+  qa_missing=()
+  qa_missing_count=0
+  qa_pi=0
+  while [ "$qa_pi" -lt "${#qa_pkgs[@]}" ]; do
+    qa_pkg="${qa_pkgs[$qa_pi]}"
+    if [ "${qa_pkg_counts[$qa_pi]}" -gt 0 ]; then
+      if wk_pkg_proved "$qa_root" "$qa_tree" "$qa_pkg"; then
+        qa_proved="${qa_proved:+$qa_proved, }$(qa_label "$qa_pkg") (${qa_pkg_counts[$qa_pi]} file(s))"
+      else
+        qa_missing+=("$(qa_label "$qa_pkg"): ${qa_pkg_files[$qa_pi]}")
+        qa_missing_count=$((qa_missing_count + qa_pkg_counts[qa_pi]))
+      fi
+    fi
+    qa_pi=$((qa_pi + 1))
+  done
+  if [ "${#qa_missing[@]}" -gt 0 ]; then
     {
-      echo "First failure${qa_pkg:+ (run from $qa_pkg)}:"
-      qa_first_failure "$qa_dir/$qa_gi"
+      echo "proof-guard: BLOCKED this flip to status:qa: the $qa_missing_count touched test file(s) below have no green test run recorded on this tree. In each package named, run its own tests narrowed to those files (\`npm test -- <files>\` from that folder, with the paths in the form its runner takes), then flip again."
+      printf '%s\n' "${qa_missing[@]}"
     } >&2
-    rm -rf "$qa_dir"
     exit 2
   fi
-  # A file that registered nothing passes as one test named by its path, and so
-  # does a self-running suite, whose exit code is its proof; only the text tells
-  # the two apart.
-  qa_self_re="require\.main[[:space:]]*===[[:space:]]*module"
-  qa_green=""
-  qa_green_n=0
-  qa_unproved=""
-  qa_i=0
-  while [ "$qa_i" -lt "${#qa_run[@]}" ]; do
-    path="${qa_run[$qa_i]}"
-    qa_gi="${qa_file_group[$qa_i]}"
-    qa_pkg="${qa_groups[$qa_gi]}"
-    if qa_tap_empty "$qa_dir/$qa_gi" "${path#"${qa_pkg:+$qa_pkg/}"}" \
-      && ! grep -Eq "$qa_self_re" "$qa_root/$path" 2>/dev/null; then
-      qa_unproved="$qa_unproved $path"
-    else
-      qa_green="${qa_green:+$qa_green }$path"
-      qa_green_n=$((qa_green_n + 1))
-    fi
-    qa_i=$((qa_i + 1))
-  done
-  rm -rf "$qa_dir"
-  if [ -n "$qa_unproved" ]; then
-    qa_unproved=" Registered no test under node --test, so not proved (a module that only exports its cases):${qa_unproved}."
+  if [ -z "$qa_proved" ]; then
+    hook_pretool_notice "proof-guard: no touched test file can be proved by npm test here, so the qa flip needs no test record.${qa_notes}"
+    return 0
   fi
-  qa_unrecorded=""
-  if [ "$qa_green_n" -eq 0 ]; then
-    qa_unrecorded=" Nothing was proved, so no record was written and the next flip runs them again."
-  elif [ -n "$qa_tree" ]; then
-    if ! qa_after=$(wk_tree_hash "$qa_root"); then
-      qa_unrecorded=" The tree could not be hashed after the run, so no record was written and the next flip runs them again."
-    elif [ "$qa_after" != "$qa_tree" ]; then
-      qa_unrecorded=" The tree changed during the run, so no record was written and the next flip runs them again."
-    elif ! wk_qa_marker_write "$qa_root" "$qa_tree" 2>/dev/null; then
-      qa_unrecorded=" The record could not be written, so the next flip runs them again."
-    fi
-  fi
-  hook_pretool_notice "proof-guard: ran ${qa_green_n} touched test file(s) green at the qa flip${qa_green:+: $qa_green}.${qa_preloads}${qa_unproved}${qa_not_run}${qa_unrecorded}"
+  hook_pretool_notice "proof-guard: every touched test file has a green npm test recorded on this tree: ${qa_proved}.${qa_notes}"
 }

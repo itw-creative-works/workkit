@@ -13,7 +13,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 ```
 <repo>/
 ├── .claude-plugin/       # plugin.json + marketplace.json (this repo is its own marketplace)
-├── .github/workflows/    # checks.yml (the suite, every push and pull request) · changelog.yml (the reusable entry check) · pages.yml (the central dashboard, on a release)
+├── .github/workflows/    # checks.yml (the suite, every pull request and every push to main but a release-only one) · changelog.yml (the reusable entry check) · pages.yml (the central dashboard, on a release)
 ├── hooks/                # hooks.json + the hook groups, resolved via ${CLAUDE_PLUGIN_ROOT}
 │   ├── loader.sh         # name → path router (docs:board-guard → docs/board-guard/run.sh)
 │   ├── _lib.sh           # shared helpers (sourced, never executed)
@@ -39,7 +39,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 
 From zero: clone, then `./workflow/workkit.sh setup`. One pass, each step checked before it acts. The steps in order, the plugin-only install, the home repo, opting a repo in and the layout: `docs/setup.md`. Every mechanic: `workflow/README.md`.
 
-A SHIP re-runs it: when the shipped diff touched the setup surface, the ship runs `workkit setup` itself once the release commit's CI is green, so the install follows the kit rather than waiting on the owner. The paths and the clause: `skills/ship/SKILL.md` Step 7.
+A SHIP re-runs it: when the shipped diff touched the setup surface, the ship runs `workkit setup` itself once the work commit's CI is green, so the install follows the kit rather than waiting on the owner. The paths and the clause: `skills/ship/SKILL.md` Step 7.
 
 The engine's stable filesystem address is `~/.claude/workkit` → this repo's `workflow/`; the hooks resolve the engine from their own location instead, so they never wait on it. Mechanics: `workflow/README.md` § How it is reached.
 
@@ -81,7 +81,7 @@ Each step is gated by what the environment it woke up in can do; the brief itsel
 
 `npm test` runs `tests/run.js`, which discovers every `tests/**/*.test.js` through `tests/lib/suites.js`. A suite whose precondition this machine cannot meet calls `skipSuite()` and the runner names the skip rather than hiding it. Suites live under `tests/hooks/`, `tests/scripts/`, `tests/tower/`, `tests/jobs/`, and `tests/docs/`, plus the runner's own suite at `tests/runner.test.js`.
 
-Every suite ends with `if (require.main === module) selfRun(<its export>);`, so `node tests/<path>.test.js` runs it alone; `tests/runner.test.js` fails naming a suite without the line.
+Every suite ends with `if (require.main === module) selfRun(<its export>);`. One suite runs alone as `npm test -- tests/<path>.test.js` (the runner takes suite paths after `--`, and exits 1 naming a path that matches no suite), and still as `node tests/<path>.test.js` through `selfRun`; `tests/runner.test.js` fails naming a suite without the line.
 
 Every suite runs on macOS and on Windows under Git Bash, or skips whole by name on the platform it cannot answer. Everything that differs (the shell a case spawns, a PATH it controls, the POSIX spelling a shell script sees, how a tool reaches a stub PATH) lives in `tests/lib/platform.js`, every export the identity on macOS and Linux.
 
@@ -89,7 +89,9 @@ A world a case spawns comes from the same seam: `homeEnv()` is the scratch home 
 
 A scratch folder has one writer as well: `mkTmp(prefix)` in `tests/lib/scratch.js`, which resolves the path and removes every folder it made when the process exits.
 
-A case only one platform can answer names its skip through the harness's `skip()`. The Windows lane runs in CI: `checks.yml` runs the suite on a Windows runner on every push, beside Linux. On a Windows machine `workkit setup` builds the kit's script shell (`workflow/script-shell.cs`) and points npm at it, so a root `npm test` there records its tree.
+A case only one platform can answer names its skip through the harness's `skip()`. On a Windows machine `workkit setup` builds the kit's script shell (`workflow/script-shell.cs`) and points npm at it, so a root `npm test` there records its tree.
+
+The Windows lane runs in CI: `checks.yml` runs the suite on Linux and Windows for every pull request and every push to `main`, except a push that changes only `CHANGELOG.md` and `.claude-plugin/plugin.json`; a tag push runs nothing.
 
 Lanes per layer (`docs/project-state.md` § The proof):
 - Unit: a module called directly.

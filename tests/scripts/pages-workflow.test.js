@@ -6,29 +6,16 @@
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { indentOf, isComment, isContent, childrenOf } = require('../lib/workflow-yaml');
 
 const ROOT = path.join(__dirname, '..', '..');
 const PAGES = path.join(ROOT, '.github', 'workflows', 'pages.yml');
 
 const lines = () => fs.readFileSync(PAGES, 'utf8').split('\n');
-const indentOf = (line) => line.match(/^ */)[0].length;
-const isComment = (line) => /^\s*#/.test(line);
-
-// The lines nested under the key on line `at`: every later line indented
-// deeper, blank and comment lines included, up to the first that is not.
-const childrenOf = (all, at) => {
-  const depth = indentOf(all[at]);
-  const out = [];
-  for (let i = at + 1; i < all.length; i++) {
-    if (all[i].trim() && !isComment(all[i]) && indentOf(all[i]) <= depth) break;
-    out.push(all[i]);
-  }
-  return out;
-};
 
 // The direct children of a block, as `key: value` with the indent dropped.
 const entriesOf = (block) => {
-  const real = block.filter((l) => l.trim() && !isComment(l));
+  const real = block.filter(isContent);
   if (!real.length) return [];
   const depth = indentOf(real[0]);
   return real.filter((l) => indentOf(l) === depth).map((l) => l.trim());
@@ -57,7 +44,7 @@ const stepOf = (all, at) => {
   assert(start >= 0, `line ${at + 1} sits in a step`);
   const depth = indentOf(all[start]);
   let end = start + 1;
-  while (end < all.length && !(all[end].trim() && !isComment(all[end]) && indentOf(all[end]) <= depth)) end++;
+  while (end < all.length && !(isContent(all[end]) && indentOf(all[end]) <= depth)) end++;
   return all.slice(start, end);
 };
 

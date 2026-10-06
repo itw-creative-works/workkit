@@ -3,9 +3,9 @@
 # proof rule (docs/project-state.md § The proof). Blocks the flip to
 # status:complete and `gh issue close <N>` while the issue carries no `Proof:`
 # line (the never-built closes pass), and the flip to status:qa while a touched
-# test file is red (checks/qa-tests.sh), in the roster folder of the repo the
-# flip names. Any of them behind a cd, or naming a repo it cannot read, bounces;
-# a failed read fails open, out loud.
+# test file has no green npm test recorded on the tree (checks/qa-tests.sh), in
+# the roster folder of the repo the flip names. Any of them behind a cd, or
+# naming a repo it cannot read, bounces; a failed read fails open, out loud.
 # Detail: docs/hooks.md § safety:proof-guard.
 
 set -euo pipefail
@@ -71,8 +71,8 @@ block() {
 # bounce) is spec-guard's too: hooks/lib/gh-edit.sh.
 clauses_text=$(hook_gh_clauses "$src")
 
-# The qa flips seen, here or in other repos (each once, lower case): the
-# touched-test run happens once per command, after the walk, in its one repo.
+# The qa flips seen, here or in other repos (each once, lower case): the park's
+# test-record check happens once per command, after the walk, in its one repo.
 # A repo flag that names this tree's origin is a flip here.
 qa_here=0
 qa_others=""
@@ -144,9 +144,9 @@ done <<EOF
 $clauses_text
 EOF
 
-# Flips in more than one repo bounce, since one run proves one repo. Another
-# repo's flip runs in its roster folder; one absent or declined there is not
-# opted in, so the run steps aside.
+# Flips in more than one repo bounce, since one check reads one repo. Another
+# repo's flip is checked in its roster folder; one absent or declined there is
+# not opted in, so the check steps aside.
 # shellcheck disable=SC2086  # the space-separated slugs; globbing is off
 set -- $qa_others
 if [ $((qa_here + $#)) -gt 1 ]; then
@@ -157,7 +157,7 @@ if [ $((qa_here + $#)) -gt 1 ]; then
     [ -n "$qa_here_name" ] || qa_here_name="the session's repo"
     qa_names="$qa_here_name, $qa_names"
   fi
-  echo "proof-guard: BLOCKED this command. Its flips to status:qa span more than one repo ($qa_names), and the touched-test run proves one repo per command. Run one command per repo, then each flip is proved in its own repo." >&2
+  echo "proof-guard: BLOCKED this command. Its flips to status:qa span more than one repo ($qa_names), and the park's test-record check reads one repo per command. Run one command per repo, then each flip is proved in its own repo." >&2
   exit 2
 fi
 if [ "$qa_here" -eq 1 ]; then
@@ -166,7 +166,7 @@ elif [ "$#" -eq 1 ]; then
   if qa_folder=$(wk_roster_path "$1"); then
     check_qa_tests "$qa_folder"
   else
-    hook_pretool_notice "proof-guard: $1 is not opted in on this machine's workkit roster (absent or declined), so the touched-test run did not run."
+    hook_pretool_notice "proof-guard: $1 is not opted in on this machine's workkit roster (absent or declined), so the park's test-record check did not run."
   fi
 fi
 

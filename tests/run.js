@@ -2,16 +2,35 @@
 /* eslint-disable no-console */
 // The test runner behind `npm test`: runs every `tests/**/*.test.js` (each
 // exports `async () => ({ passed, failed, failures })`), totals them, and exits
-// non-zero on any failure. The suite contract: AGENTS.md § Tests.
+// non-zero on any failure. Suite paths after `--` (repo-relative or absolute)
+// narrow the run to those suites. The suite contract: AGENTS.md § Tests.
 
 const path = require('path');
 const { findSuites } = require('./lib/suites');
 
 const TEST_DIR = __dirname;
+const ROOT = path.dirname(TEST_DIR);
+
+// The named suites, or every suite when none is named; a name that is no
+// suite ends the run before anything starts.
+const pickSuites = (args) => {
+  const all = findSuites(TEST_DIR);
+  if (args.length === 0) return all.sort();
+  const picked = new Set();
+  for (const arg of args) {
+    const full = path.resolve(ROOT, arg);
+    if (!all.includes(full)) {
+      console.error(`No suite matches ${arg}`);
+      process.exit(1);
+    }
+    picked.add(full);
+  }
+  return [...picked].sort();
+};
 
 (async () => {
   const start = Date.now();
-  const suites = findSuites(TEST_DIR).sort();
+  const suites = pickSuites(process.argv.slice(2).filter((arg) => arg !== '--'));
 
   if (suites.length === 0) {
     console.log('No *.test.js suites found under tests/.');

@@ -59,7 +59,7 @@ hook_jq() { wk_jq "$@"; }
 # hook_jq_default <default> <jq args...>: wk_jq_default under the hook name.
 hook_jq_default() { wk_jq_default "$@"; }
 # hook_sha1: the one digest; the body is wk_sha1, since the engine keys the
-# suite and qa records with it too.
+# suite and package records with it too.
 hook_sha1() { wk_sha1 "$@"; }
 
 # The participation predicates (wk_is_repo_root, wk_settings_declined,
@@ -74,8 +74,9 @@ hook_sha1() { wk_sha1 "$@"; }
 # shellcheck source=../workflow/lib/slug.sh
 . "$HOOK_LIB_DIR/../workflow/lib/slug.sh"
 
-# The proved-tree records (wk_tree_hash, wk_suite_proved, wk_qa_proved and the
-# rest), engine names for the same reason.
+# The proved-tree records, the suite record and the package record
+# (wk_tree_hash, wk_suite_proved, wk_pkg_proved and the rest), engine names for
+# the same reason.
 # shellcheck source=../workflow/lib/suite.sh
 . "$HOOK_LIB_DIR/../workflow/lib/suite.sh"
 
@@ -101,8 +102,6 @@ hook_sha1() { wk_sha1 "$@"; }
 . "$HOOK_LIB_DIR/lib/proof.sh"
 # shellcheck source=./lib/notice.sh
 . "$HOOK_LIB_DIR/lib/notice.sh"
-# shellcheck source=./lib/deadline.sh
-. "$HOOK_LIB_DIR/lib/deadline.sh"
 # shellcheck source=./lib/paths.sh
 . "$HOOK_LIB_DIR/lib/paths.sh"
 # shellcheck source=./lib/suite.sh

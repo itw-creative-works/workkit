@@ -12,14 +12,17 @@
 # a pull request from ANY author (cloud agent, collaborator, laptop without
 # the hooks) meets the same bar before merge.
 #
-# This repo also runs the suite on every push: the plugin ships the hooks that
-# gate everything else, so a red main has to be visible without waiting for
-# someone to open a pull request.
+# This repo also runs it on a push to main: the plugin ships the hooks that gate
+# everything else, so a red main must show without a pull request. A push that
+# changes only the CHANGELOG and the version file runs nothing (the work commit
+# before it already proved that code), and neither does a tag push.
 name: checks
 
 on:
   pull_request:
   push:
+    branches: [main]
+    paths-ignore: [CHANGELOG.md, .claude-plugin/plugin.json]
 
 jobs:
   suite:

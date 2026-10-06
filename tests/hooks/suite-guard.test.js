@@ -56,7 +56,7 @@ const BUILDING = [issue(12, 'status:qa', 'type:bug'), issue(7, 'status:building'
 const WORKING = [issue(9, 'status:qa', 'agent:working'), issue(10, 'status:complete', 'agent:working')];
 const SETTLED = [issue(12, 'status:qa', 'type:bug'), issue(14, 'status:complete', 'type:chore')];
 const BOUNCE = 'suite-guard: the full suite runs once, at the commit, after every item in the tree is parked and passed;';
-const NARROW = 'Run the narrowest test that proves the change (node tests/<dir>/<name>.test.js).';
+const NARROW = "Run the narrowest test that proves the change (`npm test -- <file>` from the package's folder).";
 const withStub = (stub) => ({ PATH: systemPathWith(stub.binDir) });
 const listed = (stub) => ghCalls(stub).filter((c) => isCall(c, 'issue', 'list'));
 
@@ -91,7 +91,7 @@ const run = async () => {
     assert(stderr.includes('suite-guard'), 'names itself');
     assert(stderr.includes('already proved'), `names the rule, got: ${stderr}`);
     assert(stderr.includes(shellPath(suiteMarkerPath(TMP, dir))), `names the marker path, got: ${stderr}`);
-    assert(stderr.includes('node tests/<dir>/<name>.test.js'), `names the narrow run, got: ${stderr}`);
+    assert(stderr.includes("(`npm test -- <file>` from the package's folder)"), `names the narrow run, got: ${stderr}`);
     assert(!stderr.includes('WORKKIT_SUITE'), `names no flag, got: ${stderr}`);
     assertEq(runHook('WORKKIT_SUITE=1 npm test', dir).code, 2, 'the old escape flag opens nothing');
     cleanup(dir);

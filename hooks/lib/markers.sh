@@ -17,7 +17,7 @@ _hook_write_marker() {
 # The skill marker paths: the writers (the two marker scripts) and the readers
 # (commit-gate, capture-guard, review-covers.sh for the full panel) name the file
 # here, so the two sides never drift apart. The proved-tree records' are
-# wk_suite_marker_path and wk_qa_marker_path (workflow/lib/suite.sh).
+# wk_suite_marker_path and wk_pkg_marker_path (workflow/lib/suite.sh).
 hook_review_marker_path() { wk_marker_path claude-review-marker "$1"; }
 hook_review_full_marker_path() { wk_marker_path claude-review-full-marker "$1"; }
 hook_triage_marker_path() { wk_marker_path claude-triage-marker "$1"; }

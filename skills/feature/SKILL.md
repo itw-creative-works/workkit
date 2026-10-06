@@ -79,11 +79,15 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 - Verify: one blind `workkit:verifier` per group over the pair's merged diff, its brief from `briefs/group-verifier.md`, red first proven through `scripts/red-proof.sh` (the form: `docs/agents.md` § Crew sizing), one fix round; then ONE review panel over the batch diff (phase 5), then park every issue.
 - The `workkit:verifier` runs twice: when the build claims done, and after the review (phase 5). The full review panel assembles only in phase 5. `workkit:scout` is recon: dispatch it at any point.
 - A finding that names a class ("one more site reads the value the same wrong way") gets one `workkit:scout` sweep of the whole class before the worker round, so the class is one round, never one round per instance.
-- An edit that touches many test files rides its own batch: the batch's first qa flip runs every test file the working diff touched, so a wide edit makes every other item in the batch wait on them.
+- An edit that touches many test files rides its own batch: the batch's first qa flip needs a green `npm test` recorded on the parked tree for every package owning a touched test file, so a wide edit makes every other item in the batch wait on those runs.
 
 ## 5. Verify + review
 
-- Each agent runs only the test files touched by the edit it made or checks, by path (`docs/project-state.md` § The proof). The park runs no root suite: its proof is the flip to `status:qa`, which runs every test file the working diff touched, once per tree (`safety/proof-guard`). The full suite runs once, a root `npm test` before the commit. So no brief asks an agent for the whole touched set.
+- Each agent runs only the test files touched by the edit it made or checks, as `npm test -- <files>` from that package's folder (`docs/project-state.md` § The proof).
+  - The park runs no root suite: its proof is the flip to `status:qa`, which runs nothing and needs a green `npm test` recorded on the parked tree for each package owning a touched test file (`safety/proof-guard`).
+  - A package the flip lists as missing, with its touched files, gets its own tests narrowed to those files, in the path form its runner takes, then the flip again.
+  - Any edit after the narrowed runs (a fix round, docs, the CHANGELOG) makes a new tree, so the narrowed runs come last, right before the flip.
+  - The full suite runs once, a root `npm test` before the commit. So no brief asks an agent for the whole touched set.
 - Then [workkit:review](../review/SKILL.md) on the diff. Trivial tasks skip formal review.
 - A ≥80 finding is fixed in the batch or filed before calling it done, per the fix-or-file rule (`docs/project-state.md` § How big is one issue). The review's simplification lens covers post-green cleanup.
 - After the review: ONE light verification pass over the fixes (its brief from `briefs/fix-verifier.md`), ONE worker round for what it finds, then retouch the review marker so it covers the parked diff, with `full` only when that review was the full panel (the retouch closes its round; `workkit:review` § 5), then the park:

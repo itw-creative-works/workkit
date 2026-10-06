@@ -1,7 +1,7 @@
 #!/bin/bash
 # hooks/lib/suite.sh: which command runs the ROOT suite, the guard's judgment.
 # The proved-tree record it is checked against is the engine's suite record
-# (workflow/lib/suite.sh), never its sibling qa record. Sourced by hooks/_lib.sh; defines functions only.
+# (workflow/lib/suite.sh), never its sibling package record. Sourced by hooks/_lib.sh; defines functions only.
 
 # _hook_suite_at_root <repo_root> <cwd>: <cwd>'s nearest tested package is the
 # root, so `npm test` there is the root's suite. A folder that cannot be

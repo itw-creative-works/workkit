@@ -1,8 +1,8 @@
 /* eslint-disable no-console */
 // Tests for hooks/_lib.sh, the helper library every hook sources: one group per
 // helper, from the platform seam and hook_sha1 through hook_jq, the manager
-// config, the prompt shape, the session model, the notice, the deadline wait,
-// the test-path shapes and the marker paths. The suite and qa records are
+// config, the prompt shape, the session model, the notice, the test-path
+// shapes and the marker paths. The suite and package records are
 // tests/hooks/lib-record.test.js.
 
 const fs = require('fs');
@@ -486,34 +486,12 @@ const run = async () => {
       'the model hears the same line, and nothing decides the call');
   });
 
-  group('_lib.sh: hook_wait_deadline and hook_end_tree');
-
-  await test('a child still running at a 1s deadline: returns 1, and the child is ended', () => {
-    const out = runLib('sleep 30 & pid=$!; hook_wait_deadline "$pid" 1; rc=$?; wait "$pid" 2>/dev/null; '
-      + 'if kill -0 "$pid" 2>/dev/null; then alive=1; else alive=0; fi; printf \'rc=%s alive=%s\' "$rc" "$alive"');
-    assertEq(out.stdout, 'rc=1 alive=0', `the deadline ended it, got: ${out.stdout}|${out.stderr}`);
-  });
-
-  await test('a quick child: returns 0 and leaves its exit status to wait', () => {
-    const out = runLib('(exit 3) & pid=$!; hook_wait_deadline "$pid" 5; rc=$?; wait "$pid"; '
-      + 'printf \'rc=%s status=%s\' "$rc" "$?"');
-    assertEq(out.stdout, 'rc=0 status=3', `it ended in time, got: ${out.stdout}|${out.stderr}`);
-  });
-
   group('_lib.sh: the test-path shapes');
 
   await test('hook_is_test_name: the basename shapes, at any depth, and nothing else', () => {
     const cases = ['a.test.js', 'src/a.spec.ts', 'pkg/a_test.go', 'tests/helpers.js', 'test/run.js', 'lib/x.js'];
     const out = runLib(`for p in ${cases.join(' ')}; do hook_is_test_name "$p" && echo "$p"; done; true`);
     assertEq(out.stdout.trim().split('\n').join(','), 'a.test.js,src/a.spec.ts,pkg/a_test.go', `got: ${out.stdout}|${out.stderr}`);
-  });
-
-  await test('hook_is_fixture_path: a fixture folder at any depth, never the file name', () => {
-    const cases = ['fixtures/a.test.js', 'tests/_fixtures/x/test/a.test.js', 'pkg/__fixtures__/a.spec.js',
-      'tests/fixtures.test.js', 'tests/a.test.js', 'src/myfixtures/a.test.js'];
-    const out = runLib(`for p in ${cases.join(' ')}; do hook_is_fixture_path "$p" && echo "$p"; done; true`);
-    assertEq(out.stdout.trim().split('\n').join(','), 'fixtures/a.test.js,tests/_fixtures/x/test/a.test.js,pkg/__fixtures__/a.spec.js',
-      `got: ${out.stdout}|${out.stderr}`);
   });
 
   await test('hook_is_test_path: a test name, or any test folder, the top level included', () => {
@@ -587,26 +565,6 @@ const run = async () => {
       const res = ask(d);
       assertEq(res.stdout, '', `${d}: nothing printed, got: ${JSON.stringify(res.stdout)}`);
       assertEq(res.code, 0, `${d}: and a clean exit, so a caller reads the empty text`);
-    }
-    fs.rmSync(root, { recursive: true, force: true });
-  });
-
-  await test('hook_test_preloads: the preload flags of the node command alone, one word per line, quotes off', () => {
-    const root = mkTmp('lib-preloads-');
-    const cases = [
-      ['node --test', []],
-      ['node -r a --import=b --require c --test', ['-r', 'a', '--import=b', '--require', 'c']],
-      ['rm -r dist && node --test', []],
-      ['c8 -r text node --test', []],
-      ["node --require './s.js' --test", ['--require', './s.js']],
-      ['npm run prepare && node --require ./test/setup.js ../devkit/src/test/cli.js --isolation=process',
-        ['--require', './test/setup.js']],
-    ];
-    for (const [script, words] of cases) {
-      fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: script } }));
-      const res = runLib(`hook_test_preloads "${shellPath(root)}"`);
-      assertEq(res.code, 0, `${script}: a clean exit, got: ${res.stderr}`);
-      assertEq(res.stdout, words.map((w) => `${w}\n`).join(''), `${script}: got: ${JSON.stringify(res.stdout)}`);
     }
     fs.rmSync(root, { recursive: true, force: true });
   });

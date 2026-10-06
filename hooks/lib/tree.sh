@@ -1,7 +1,7 @@
 #!/bin/bash
-# hooks/lib/tree.sh: the working diff's path list, the one spelling the qa run
-# at proof-guard's flip, hooks/lib/snapshot.sh, scripts/red-proof.sh and
-# scripts/review-covers.sh read.
+# hooks/lib/tree.sh: the working diff's path list, the one spelling the qa
+# record check at proof-guard's flip, hooks/lib/snapshot.sh,
+# scripts/red-proof.sh and scripts/review-covers.sh read.
 # SOURCED by hooks/_lib.sh, never executed: it defines functions and sets
 # nothing.
 

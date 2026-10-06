@@ -1,176 +1,78 @@
-// Tests for hooks/safety/proof-guard's record at the flip to status:qa: the
-// touched test files run once per tree, so a later flip on the same tree hash
-// passes on the record, and any change to the tree runs them again.
+// Tests for the staleness of the records hooks/safety/proof-guard reads at the
+// flip to status:qa: both are keyed by the working tree's id, so a record
+// written for one tree never passes a flip after the tree changed, and the
+// hook reads them and never writes one.
 // The shared prologue (the hook runner, the gh stub, the fixtures) is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { fmtCalls } = require('../../lib/argv-log');
+const { group, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  cleanup, makeGhStub, ghCalls, dropPathWithoutGh, runHookIn, WORLD,
-  QA, GREEN, RED, EXPORTS, namesUnproved, COMMIT, git, write, runs, mkQaRepo, notice,
+  dropPathWithoutGh, write, touch, treeHash, plantRecord, plantPkgRecord, recordCase, notice,
 } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
 
-const HIT = 'proof-guard: the touched test files already ran green on this tree at an earlier qa flip, so they did not run again.';
-const GREEN_RUN = 'ran 1 touched test file(s) green';
-
-// The records under a case's own TMPDIR, so none is another case's or this machine's.
-const records = (tmp) => {
-  const dir = path.join(tmp, 'claude-qa-marker');
-  return fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+// A touched root test file with the root's line recorded on this tree, the
+// flip passing on it; hands back the record's path and its bytes.
+const recordedRoot = (dir, tmp, flip) => {
+  touch(dir, 'tests/a.test.js');
+  const marker = plantPkgRecord(tmp, dir, ['.']);
+  const before = fs.readFileSync(marker, 'utf8');
+  assertEq(flip().code, 0, 'the record on this tree passes the flip');
+  return { marker, before };
 };
 
-// A fixture repo that ignores runs.log, since every run appends to it and the
-// tree hash counts untracked files; one scratch TMPDIR and one gh stub per case.
-const recordCase = (name, body) => test(name, () => {
-  const dir = mkQaRepo();
-  const tmp = mkTmp('proof-guard-tmp-');
-  const stub = makeGhStub(WORLD);
-  const runHook = runHookIn(tmp);
-  try {
-    write(dir, '.gitignore', 'runs.log\n');
-    git(dir, 'add .gitignore');
-    git(dir, `${COMMIT} -m ignore`);
-    body({ dir, tmp, flip: () => runHook(QA, stub, dir) });
-    assertEq(ghCalls(stub).length, 0, `a qa flip reads no issue, got: ${fmtCalls(ghCalls(stub))}`);
-  } finally {
-    cleanup(dir);
-    cleanup(tmp);
-    cleanup(stub.dir);
-  }
-});
-
-// A first flip over a touched green test file, which runs it and passes.
-const greenFlip = (dir, flip) => {
-  write(dir, 'tests/a.test.js', `${GREEN}// touched\n`);
-  const out = flip();
-  assertEq(out.code, 0, `a green run passes, got: ${out.stderr}`);
-  assert(notice(out).includes(GREEN_RUN), `the first flip runs the file, got: ${out.stdout}`);
-  assertEq(runs(dir), 1, 'the first flip ran the file once');
+const blocksOnRoot = (out) => {
+  assertEq(out.code, 2, `the record is another tree's, got: ${out.code} ${out.stderr}`);
+  assert(out.stderr.includes('the repo root: tests/a.test.js'), `asks for the run again, got: ${out.stderr}`);
 };
 
 const run = async () => {
-  group('proof-guard: the touched test files run once per tree');
+  group('proof-guard: a record holds only the tree it was written on');
 
-  await recordCase('two flips on one unchanged tree: the second runs nothing and says so', ({ dir, tmp, flip }) => {
-    greenFlip(dir, flip);
-    assertEq(records(tmp).length, 1, `a green run records the tree, got: ${records(tmp)}`);
-    const out = flip();
-    assertEq(out.code, 0, `the second flip passes, got: ${out.stderr}`);
-    const msg = notice(out);
-    assert(msg.includes(HIT), `the record-hit notice, got: ${msg}`);
-    assert(!msg.includes(GREEN_RUN), `never claims a run, got: ${msg}`);
-    assertEq(runs(dir), 1, 'the second flip ran nothing');
-  });
-
-  await recordCase('a tracked edit between two flips: the second runs the files again', ({ dir, flip }) => {
-    greenFlip(dir, flip);
+  await recordCase('a tracked edit after the record: the package line no longer passes', ({ dir, tmp, flip }) => {
+    recordedRoot(dir, tmp, flip);
     write(dir, 'package.json', `${JSON.stringify({ name: 'fixture', version: '1.0.0', scripts: { test: 'node --test' } })}\n`);
-    const out = flip();
-    assertEq(out.code, 0, `green again, got: ${out.stderr}`);
-    const msg = notice(out);
-    assert(msg.includes(GREEN_RUN) && !msg.includes(HIT), `a new tree runs again, got: ${msg}`);
-    assertEq(runs(dir), 2, 'the edit made the second flip run the file');
+    blocksOnRoot(flip());
   });
 
-  await recordCase('a new untracked file between two flips: the second runs the files again', ({ dir, flip }) => {
-    greenFlip(dir, flip);
+  await recordCase('a new untracked file after the record: the package line no longer passes', ({ dir, tmp, flip }) => {
+    recordedRoot(dir, tmp, flip);
     write(dir, 'notes.txt', 'new\n');
-    const out = flip();
-    assertEq(out.code, 0, `green again, got: ${out.stderr}`);
-    const msg = notice(out);
-    assert(msg.includes(GREEN_RUN) && !msg.includes(HIT), `a new tree runs again, got: ${msg}`);
-    assertEq(runs(dir), 2, 'the untracked file made the second flip run the file');
+    blocksOnRoot(flip());
   });
 
-  await recordCase('a red touched test file: blocked, nothing recorded, the same tree runs and blocks again', ({ dir, tmp, flip }) => {
-    write(dir, 'tests/a.test.js', RED);
-    for (const nth of [1, 2]) {
-      const out = flip();
-      assertEq(out.code, 2, `flip ${nth} is blocked, got: ${out.stderr}`);
-      assert(out.stderr.includes('tests/a.test.js'), `flip ${nth} names the file, got: ${out.stderr}`);
-      assertEq(runs(dir), nth, `flip ${nth} ran the file`);
-    }
-    assertEq(records(tmp).length, 0, `a blocked flip records nothing, got: ${records(tmp)}`);
-  });
-
-  await recordCase("no runnable touched test file: nothing recorded, today's notice", ({ dir, tmp, flip }) => {
-    write(dir, 'lib/x.js', 'module.exports = 1;\n');
-    const first = notice(flip());
-    assert(first.includes('nothing ran') && !first.includes(HIT), `today's notice, got: ${first}`);
-    assertEq(records(tmp).length, 0, `nothing ran, so nothing is recorded, got: ${records(tmp)}`);
-    assertEq(notice(flip()), first, 'the same tree flipped again hears the same notice');
-    assertEq(runs(dir), 0, 'no test ran');
-  });
-
-  await recordCase('an edit undone byte for byte: the next flip passes on the record', ({ dir, flip }) => {
-    greenFlip(dir, flip);
+  await recordCase('an edit undone byte for byte: the record holds the tree again', ({ dir, tmp, flip }) => {
+    recordedRoot(dir, tmp, flip);
     const pkg = path.join(dir, 'package.json');
     const before = fs.readFileSync(pkg);
     fs.writeFileSync(pkg, `${before}\n`);
+    blocksOnRoot(flip());
     fs.writeFileSync(pkg, before);
-    const out = flip();
-    assertEq(out.code, 0, `the record passes the flip, got: ${out.stderr}`);
-    assert(notice(out).includes(HIT), `the hash is the content, not its history, got: ${out.stdout}`);
-    assertEq(runs(dir), 1, 'the undone edit ran nothing');
+    assertEq(flip().code, 0, 'the tree id is the content, not its history');
   });
 
-  await recordCase('a green run that left an untracked file: nothing recorded, the notice says the tree changed', ({ dir, tmp, flip }) => {
-    const LEAVES = `${GREEN}require('fs').writeFileSync(require('path').join(__dirname, '..', 'left.txt'), 'x\\n');\n`;
-    write(dir, 'tests/a.test.js', LEAVES);
-    const out = flip();
-    assertEq(out.code, 0, `the run is green, got: ${out.stderr}`);
-    const msg = notice(out);
-    assert(msg.includes(GREEN_RUN) && msg.includes('tree changed'), `says the tree changed, got: ${msg}`);
-    assertEq(records(tmp).length, 0, `a changed tree records nothing, got: ${records(tmp)}`);
-    fs.rmSync(path.join(dir, 'left.txt'));
-    const again = notice(flip());
-    assert(!again.includes(HIT), `no record to hit, got: ${again}`);
-    assertEq(runs(dir), 2, 'the tree as it stood before the first run runs the files again');
+  await recordCase('a package record whose first line is another tree: blocks, though it lists the package', ({ dir, tmp, flip }) => {
+    touch(dir, 'tests/a.test.js');
+    const stale = treeHash(dir);
+    write(dir, 'notes.txt', 'new\n');
+    plantPkgRecord(tmp, dir, ['.'], stale);
+    blocksOnRoot(flip());
   });
 
-  await recordCase('a green run with an unproved module beside a proved file: recorded, the next flip hits', ({ dir, tmp, flip }) => {
-    write(dir, 'tests/d.test.js', EXPORTS);
-    write(dir, 'tests/a.test.js', `${GREEN}// touched\n`);
-    const first = flip();
-    assertEq(first.code, 0, `a green run passes, got: ${first.stderr}`);
-    const msg = notice(first);
-    assert(msg.includes(GREEN_RUN), `the proved file alone is counted, got: ${msg}`);
-    assert(namesUnproved(msg, 'tests/d.test.js'), `the module is named as not proved, got: ${msg}`);
-    assertEq(runs(dir), 2, 'the first flip ran both files');
-    assertEq(records(tmp).length, 1, `the green run records the tree, got: ${records(tmp)}`);
-    const out = flip();
-    assertEq(out.code, 0, `the record passes the flip, got: ${out.stderr}`);
-    assert(notice(out).startsWith(HIT), `the notice leads with the hit, got: ${out.stdout}`);
-    assertEq(runs(dir), 2, 'the hit ran nothing');
+  await recordCase('a whole suite record for another tree: blocks', ({ dir, tmp, flip }) => {
+    touch(dir, 'tests/a.test.js');
+    plantRecord(tmp, dir);
+    assertEq(flip().code, 0, 'the suite record on this tree passes the flip');
+    write(dir, 'notes.txt', 'new\n');
+    blocksOnRoot(flip());
   });
 
-  await recordCase('a run where no file proved anything: nothing recorded, the next flip runs it again', ({ dir, tmp, flip }) => {
-    write(dir, 'tests/d.test.js', EXPORTS);
-    const first = flip();
-    assertEq(first.code, 0, `an unproved run passes, got: ${first.stderr}`);
-    const msg = notice(first);
-    assert(msg.includes('ran 0 touched test file(s) green'), `nothing counted green, got: ${msg}`);
-    assert(namesUnproved(msg, 'tests/d.test.js'), `the module is named as not proved, got: ${msg}`);
-    assert(msg.includes('no record was written'), `says the run was not recorded, got: ${msg}`);
-    assertEq(records(tmp).length, 0, `nothing proved, so nothing is recorded, got: ${records(tmp)}`);
-    const again = notice(flip());
-    assert(!again.startsWith(HIT) && namesUnproved(again, 'tests/d.test.js'), `the next flip runs and names it again, got: ${again}`);
-    assertEq(runs(dir), 2, 'the module ran on both flips');
-  });
-
-  // A file where the record's folder belongs breaks the record write alone:
-  // the hook's other scratch files sit beside it in TMPDIR, untouched.
-  await recordCase('a record that cannot be written: the green flip passes and says so', ({ dir, tmp, flip }) => {
-    fs.writeFileSync(path.join(tmp, 'claude-qa-marker'), 'not a folder\n');
-    write(dir, 'tests/a.test.js', `${GREEN}// touched\n`);
-    const out = flip();
-    assertEq(out.code, 0, `an unwritten record never blocks, got: ${out.stderr}`);
-    const msg = notice(out);
-    assert(msg.includes(GREEN_RUN) && msg.includes('could not be written'), `says the record was not written, got: ${msg}`);
-    assertEq(runs(dir), 1, 'the file ran once');
+  await recordCase('the flip writes no record: a passing flip leaves the package record as it was', ({ dir, tmp, flip }) => {
+    const { marker, before } = recordedRoot(dir, tmp, flip);
+    assert(notice(flip()).startsWith('proof-guard:'), 'a second flip passes the same way');
+    assertEq(fs.readFileSync(marker, 'utf8'), before, 'the record is the script shell\'s, never the hook\'s');
+    assert(!fs.existsSync(path.join(tmp, 'claude-suite-marker')), 'and no suite record is written');
+    assert(!fs.existsSync(path.join(tmp, 'claude-qa-marker')), 'and no second record');
   });
 };
 

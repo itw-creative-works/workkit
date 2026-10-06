@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# workflow/lib/suite.sh: the proved-tree records: the tree a green root suite
-# proved and the tree a green qa-flip touched-test run proved, where each is
-# kept, and the two tree ids they are compared with, plus the paths of the
-# detached runs' logs and locks. Sourced, functions only, by script-shell.sh
-# (the suite writer), ship/ci-watch.sh and the hooks' _lib.sh; it reads wk_jq,
+# workflow/lib/suite.sh: the proved-tree records: the suite record (the tree a
+# green bare root run proved) and the package record (the tree any other green
+# test run proved, with each package folder it covered), where each is kept, and
+# the two tree ids they are compared with, plus the paths of the detached runs'
+# logs and locks. Sourced, functions only, by script-shell.sh (the records'
+# writer), ship/ci-watch.sh and the hooks' _lib.sh; it reads wk_jq,
 # wk_marker_path and wk_git_path from platform.sh.
 
 # wk_has_test_script <dir>: <dir>/package.json declares scripts.test as a
@@ -16,9 +17,9 @@ wk_has_test_script() {
 # wk_suite_marker_path <repo_root>: the suite record's file for the repo.
 wk_suite_marker_path() { wk_marker_path claude-suite-marker "$1"; }
 
-# wk_qa_marker_path <repo_root>: the qa record's file, never the suite's: a
-# green root suite and a green touched-test run answer different questions.
-wk_qa_marker_path() { wk_marker_path claude-qa-marker "$1"; }
+# wk_pkg_marker_path <repo_root>: the package record's file, never the suite's:
+# a green whole suite and a green package run answer different questions.
+wk_pkg_marker_path() { wk_marker_path claude-package-marker "$1"; }
 
 # wk_log_path <repo_root> <name>: where a detached run logs. Inside .workkit/
 # only when git ignores it there, else a marker file, so a log never changes
@@ -59,18 +60,19 @@ wk_tree_hash() {
   printf '%s\n' "$tree"
 }
 
-# _wk_record_write <path_fn> <repo_root> <tree>: the one write both records
-# share, into the file <path_fn> names for the repo; an empty tree is refused.
+# _wk_record_write <path_fn> <repo_root> <tree> [<line>...]: the one fresh write
+# both records share, into the file <path_fn> names for the repo, one line each,
+# the tree first; an empty tree is refused.
 _wk_record_write() {
   local marker
   [ -n "$3" ] || return 1
   marker=$("$1" "$2") || return 1
   mkdir -p "${marker%/*}"
-  printf '%s\n' "$3" > "$marker"
+  printf '%s\n' "${@:3}" > "$marker"
 }
 
-# _wk_record_holds <path_fn> <repo_root> <tree>: the one read both records
-# share: the file <path_fn> names exists and holds <tree>.
+# _wk_record_holds <path_fn> <repo_root> <tree>: the suite record's read: the
+# file <path_fn> names exists and holds <tree>.
 _wk_record_holds() {
   local marker recorded
   [ -n "$3" ] || return 1
@@ -86,9 +88,22 @@ _wk_record_holds() {
 # run started on) and prove.sh (the staged tree, proved in a copy).
 wk_suite_marker_write() { _wk_record_write wk_suite_marker_path "$1" "$2"; }
 
-# wk_qa_marker_write <repo_root> <tree>: record <tree>, hashed BEFORE a green
-# touched-test run at the qa flip. Consumer: safety/proof-guard (qa-tests.sh).
-wk_qa_marker_write() { _wk_record_write wk_qa_marker_path "$1" "$2"; }
+# wk_pkg_marker_write <repo_root> <tree> <pkg>: add <pkg>, a package folder
+# relative to the root (`.` for the root), under <tree>, hashed BEFORE its green
+# run. One file per repo: a different tree starts it over. Consumer:
+# script-shell.sh (every green test run but the bare root one).
+wk_pkg_marker_write() {
+  local marker first=""
+  [ -n "$2" ] && [ -n "$3" ] || return 1
+  if wk_pkg_proved "$1" "$2" "$3"; then return 0; fi
+  marker=$(wk_pkg_marker_path "$1") || return 1
+  if [ -f "$marker" ]; then IFS= read -r first < "$marker" || :; fi
+  if [ "$first" = "$2" ]; then
+    printf '%s\n' "$3" >> "$marker"
+  else
+    _wk_record_write wk_pkg_marker_path "$1" "$2" "$3"
+  fi
+}
 
 # wk_suite_index_tree <repo_root>: the REAL index's `git write-tree` id, the
 # tree a plain commit carries. Consumer: safety/commit-gate (check 5).
@@ -101,6 +116,21 @@ wk_suite_index_tree() {
 # Consumers: safety/suite-guard, safety/commit-gate (check 5).
 wk_suite_proved() { _wk_record_holds wk_suite_marker_path "$1" "$2"; }
 
-# wk_qa_proved <repo_root> <tree>: the qa record exists and holds <tree>, the
-# working tree's hash. Consumer: safety/proof-guard (qa-tests.sh).
-wk_qa_proved() { _wk_record_holds wk_qa_marker_path "$1" "$2"; }
+# wk_pkg_proved <repo_root> <tree> <pkg>: the package record's first line is
+# <tree>, the working tree's hash, and a later line is <pkg>. Consumer:
+# safety/proof-guard (qa-tests.sh).
+wk_pkg_proved() {
+  local marker line first=1
+  [ -n "$2" ] && [ -n "$3" ] || return 1
+  marker=$(wk_pkg_marker_path "$1") || return 1
+  [ -f "$marker" ] || return 1
+  while IFS= read -r line; do
+    if [ "$first" -eq 1 ]; then
+      [ "$line" = "$2" ] || return 1
+      first=0
+    elif [ "$line" = "$3" ]; then
+      return 0
+    fi
+  done < "$marker"
+  return 1
+}

@@ -31,7 +31,7 @@ The iron rule: **build a feedback loop that shows the failure BEFORE you form a 
 ## 4. Fix and prove
 
 - The repro from step 1 is the proof: red before the fix, green after, run in THIS session. Never declare fixed on reasoning alone.
-- Then run the touched test files for collateral damage, by path (`node --test <file>`), never an unscoped suite.
+- Then run the touched test files for collateral damage, as `npm test -- <file>` from that package's folder, never an unscoped suite.
 
 ## 5. Clean up
 

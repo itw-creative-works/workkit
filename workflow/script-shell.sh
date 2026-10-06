@@ -1,37 +1,57 @@
 #!/usr/bin/env bash
 # workflow/script-shell.sh: npm's script shell, once `npm config set
-# script-shell` names it. The proved-tree record (lib/suite.sh) is the
-# engine-agnostic contract and this file is npm's adapter: the root package's
-# `test` event records the tree it proved green; every other script is plain sh.
+# script-shell` names it. The proved-tree records (lib/suite.sh) are the
+# engine-agnostic contract and this file is npm's adapter: a green bare root
+# `npm test`, run detached, writes the suite record; every other green `test`
+# event (narrowed anywhere, or a nested package's bare run) runs in the
+# foreground and writes the package record; every other script is plain sh.
 
 # Functions only, called on the last line: bash reads a script as it runs, but
 # parses a function whole.
 
-# suite_body <root> -c <script>: the detached run: hash, run, hash, record.
-# Hashed before and after: an edit made while the suite runs is never proved.
-# A failed hash is its own answer, never an empty id read as a changed tree.
-# Its last line is always `script-shell: exit <code>`, for a reader of the log.
-suite_body() {
-  local root="$1" hashed=1 before after rc=0
-  shift
-  wk_body_traps script-shell
+# recorded_run <root> <pkg> -c <script>: hash, run, hash, record; an empty
+# <pkg> is the whole root suite. Hashed before and after: an edit made while it
+# runs is never proved. A failed hash is its own answer, never an empty id read
+# as a changed tree.
+recorded_run() {
+  local root="$1" pkg="$2" what=suite record=record hashed=1 before after rc=0
+  local changed='the tree changed during the run, so no record was written; run npm test again'
+  shift 2
+  if [ -n "$pkg" ]; then
+    what=run record='package record'
+    changed='the tree changed during it, so no record was written; run it again'
+  fi
   before=$(wk_tree_hash "$root") || hashed=0
   sh "$@" || rc=$?
   [ "$rc" -eq 0 ] || exit "$rc"
   after=$(wk_tree_hash "$root") || hashed=0
   if [ "$hashed" -eq 0 ]; then
-    printf 'script-shell: the suite passed, but the tree of %s could not be hashed, so no record was written\n' "$root" >&2
+    printf 'script-shell: the %s passed, but the tree of %s could not be hashed, so no record was written\n' "$what" "$root" >&2
     exit 1
   fi
   if [ "$before" != "$after" ]; then
-    printf 'script-shell: the suite passed, but the tree changed during the run, so no record was written; run npm test again\n' >&2
+    printf 'script-shell: the %s passed, but %s\n' "$what" "$changed" >&2
     exit 0
   fi
-  if ! wk_suite_marker_write "$root" "$before"; then
-    printf 'script-shell: the suite passed, but the record of %s could not be written\n' "$root" >&2
+  if [ -n "$pkg" ]; then
+    wk_pkg_marker_write "$root" "$before" "$pkg" || rc=1
+  else
+    wk_suite_marker_write "$root" "$before" || rc=1
+  fi
+  if [ "$rc" -ne 0 ]; then
+    printf 'script-shell: the %s passed, but the %s of %s could not be written\n' "$what" "$record" "$root" >&2
     exit 1
   fi
   exit 0
+}
+
+# suite_body <root> -c <script>: the detached whole root run. Its last line is
+# always `script-shell: exit <code>`, for a reader of the log.
+suite_body() {
+  local root="$1"
+  shift
+  wk_body_traps script-shell
+  recorded_run "$root" "" "$@"
 }
 
 load_libs() {
@@ -53,18 +73,27 @@ main() {
     suite_body "$@"
   fi
   [ "${npm_lifecycle_event:-}" = test ] || exec sh "$@"
-  # npm appends a narrowed run's arguments (`npm test -- <file>`) to the script
-  # text, so only the bare script is the whole suite.
-  [ "${2:-}" = "${npm_lifecycle_script:-}" ] || exec sh "$@"
   load_libs
 
-  # The package npm is running must be the git root's own: a nested package's or
-  # a workspace member's `test` is that package's suite, never the root's. npm may
-  # hand a native Windows path, so either separator ends the folder.
+  # The package npm is running, as a folder relative to the git root (`.` for the
+  # root). npm may hand a native Windows path, so either separator ends the
+  # folder; a package outside the root records nothing.
   root=$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null) || exec sh "$@"
   [ -n "${npm_package_json:-}" ] || exec sh "$@"
   pkg_dir=$(cd "${npm_package_json%[/\\]*}" 2>/dev/null && pwd -P) || exec sh "$@"
-  [ "$pkg_dir" = "$(cd "$root" && pwd -P)" ] || exec sh "$@"
+  real_root=$(cd "$root" && pwd -P) || exec sh "$@"
+  case "$pkg_dir" in
+    "$real_root") rel=. ;;
+    "$real_root"/*) rel=${pkg_dir#"$real_root"/} ;;
+    *) exec sh "$@" ;;
+  esac
+
+  # npm appends a narrowed run's arguments (`npm test -- <file>`) to the script
+  # text, so only the root's bare script is the whole suite. Every other test
+  # run is the package path: in the foreground, no CHANGELOG lint.
+  if [ "$rel" != . ] || [ "${2:-}" != "${npm_lifecycle_script:-}" ]; then
+    recorded_run "$root" "$rel" "$@"
+  fi
 
   # The gate's cheap check first, so a bad CHANGELOG entry costs a second, not
   # a suite: every tracked CHANGELOG.md the working tree modifies. -z keeps a
