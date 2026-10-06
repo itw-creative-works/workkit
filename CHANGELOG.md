@@ -7,6 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#412](../../issues/412) Thanks [@ianwieds]! - The published repo list on the home repo now holds one entry per machine under `machines`, and `repos` is their sorted union, so a second machine's publish no longer replaces the first machine's list.
+- [#413](../../issues/413) Thanks [@ianwieds]! - On a second machine, setup catches the home clone up with origin before it refreshes the cloud brief runner and the issue templates, so those pushes land instead of warning that the commit is local.
+
 ## [0.73.1] - 2026-10-06
 
 ### Fixed

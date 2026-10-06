@@ -236,12 +236,10 @@ reconcile_runner() {
       esac
       exit 0
     fi
-    # The seed judges from the working copy, so the clone is caught up first;
-    # --autostash because a hand-taken upstream change would read as a divergence.
-    # A pull that cannot finish is aborted and the seed skipped, clone untouched.
-    if ! wk_spin "catching the clone up with origin" git -C "$WK_HOME_DIR" pull --rebase --autostash --quiet 2>/dev/null; then
-      git -C "$WK_HOME_DIR" rebase --abort >/dev/null 2>&1 || true
-      wk_warn "runner: the clone could not be brought up to date; the runner was not refreshed"
+    # The seed judges from the working copy, so the clone is caught up first; a
+    # catch-up that cannot finish skips the seed.
+    if ! wk_home_catch_up runner; then
+      wk_skip "runner: the runner was not refreshed"
       exit 0
     fi
     rc=0

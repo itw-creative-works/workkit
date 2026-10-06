@@ -56,8 +56,16 @@ wk_home_setup() {
   fi
 
   wk_skip "home: the tower project is already in $WK_HOME_DIR"
-  # The second machine's path: the runner still tracks this checkout, so it is
-  # refreshed and pushed on its own.
+  # The second machine's path: caught up first, so the runner refresh and the
+  # heal push onto origin's tip. A clone that cannot catch up is left unwritten
+  # (a stale base would commit what it can never push); only the GitHub-side
+  # steps run, and the next setup finishes the job.
+  if ! wk_home_catch_up home; then
+    wk_skip "home: the clone in $WK_HOME_DIR was not written to; settle it and run \`workkit setup\` again for the runner refresh, the install and the heal"
+    wk_home_discussions "$slug"
+    wk_home_pages "$slug"
+    return 0
+  fi
   rc=0
   wk_home_seed_runner || rc=$?
   if [[ "$rc" -eq 0 ]]; then

@@ -103,27 +103,7 @@ fi
 # A pull that cannot finish (a divergence, offline, an auth refusal) publishes
 # nothing; `--autostash` keeps a hand-taken upstream edit from reading as one.
 publish_catch_up() {
-  PRE_HEAD="$(git -C "$WK_HOME_DIR" rev-parse HEAD 2>/dev/null || true)"
-  STASH_BEFORE="$(git -C "$WK_HOME_DIR" stash list 2>/dev/null || true)"
-  if ! wk_spin "catching the tower clone up with origin" git -C "$WK_HOME_DIR" pull --rebase --autostash --quiet 2>/dev/null; then
-    git -C "$WK_HOME_DIR" rebase --abort >/dev/null 2>&1 || true
-    wk_warn "publish: $WK_HOME_DIR could not catch up with its upstream; \`git -C $WK_HOME_DIR pull --rebase\` on a clean tree reports why and reconciles it; nothing was published and nothing was forced"
-    exit 0
-  fi
-
-  # A conflicting autostash exits 0 over a tree of conflict markers; the
-  # surviving stash entry is the tell. Reset to the start commit, then pop,
-  # which applies onto the stash's own base and cannot conflict again.
-  if [[ "$(git -C "$WK_HOME_DIR" stash list 2>/dev/null || true)" != "$STASH_BEFORE" ]]; then
-    if [[ -n "$PRE_HEAD" ]] \
-      && git -C "$WK_HOME_DIR" reset --hard "$PRE_HEAD" >/dev/null 2>&1 \
-      && git -C "$WK_HOME_DIR" stash pop >/dev/null 2>&1; then
-      wk_warn "publish: the uncommitted changes in $WK_HOME_DIR conflict with what its upstream now carries; the tree was put back exactly as this run found it; settle it with \`git -C $WK_HOME_DIR pull --rebase\` and run it again. Nothing was published and nothing was committed"
-    else
-      wk_warn "publish: the uncommitted changes in $WK_HOME_DIR conflict with what its upstream now carries, and putting the tree back did not finish; the changes are safe in \`git -C $WK_HOME_DIR stash list\`; settle it by hand. Nothing was published and nothing was committed"
-    fi
-    exit 0
-  fi
+  wk_home_catch_up publish || { wk_skip "publish: nothing was published and nothing was committed"; exit 0; }
 }
 
 # ── The home repo's own heal ──────────────────────────────────────────────────

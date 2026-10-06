@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# workflow/home/install.sh: the clone's dependencies, the commit and push every
-# writer ends on, and the clone's own heal. Sourced by home.sh, functions only.
+# workflow/home/install.sh: the clone's dependencies, the catch-up and the
+# commit and push its writers use, and the clone's own heal. Sourced by home.sh,
+# functions only.
 # WK_WORKFLOW_DIR is the entry's; WK_HOME_DIR is lib.sh's.
 
-# Run on both setup paths, since a clone another machine seeded arrives without
-# its dependencies. An installed omega binary is the gate.
+# Run on both setup paths (unless the clone could not catch up), since a clone
+# another machine seeded arrives without its dependencies. An installed omega
+# binary is the gate.
 wk_home_install() {
   if [[ -x "$WK_HOME_DIR/node_modules/.bin/omega" ]]; then
     wk_skip "home: the tower project's dependencies are already installed in $WK_HOME_DIR"
@@ -26,6 +28,36 @@ wk_home_install() {
     wk_ok "home: the tower project can build here"
   else
     wk_warn "home: the tower project's build tooling did not install (no node_modules/.bin/omega); \`npm install\` in $WK_HOME_DIR did not produce the omega binary, so nothing publishes until it does; run it there and read its output"
+  fi
+  return 0
+}
+
+# Catch the clone up with origin before anything writes into it; 1 means it
+# could not, and the warning says where the tree was left. `--autostash` keeps a
+# hand-taken upstream edit from reading as a divergence.
+# Usage: wk_home_catch_up <prefix>   (the warnings' prefix: publish, home, runner)
+wk_home_catch_up() {
+  local prefix="$1" pre_head stash_before
+  pre_head="$(git -C "$WK_HOME_DIR" rev-parse HEAD 2>/dev/null || true)"
+  stash_before="$(git -C "$WK_HOME_DIR" stash list 2>/dev/null || true)"
+  if ! wk_spin "catching the tower clone up with origin" git -C "$WK_HOME_DIR" pull --rebase --autostash --quiet 2>/dev/null; then
+    git -C "$WK_HOME_DIR" rebase --abort >/dev/null 2>&1 || true
+    wk_warn "$prefix: $WK_HOME_DIR could not catch up with its upstream; \`git -C $WK_HOME_DIR pull --rebase\` on a clean tree reports why and reconciles it; nothing was forced"
+    return 1
+  fi
+
+  # A conflicting autostash exits 0 over a tree of conflict markers; the
+  # surviving stash entry is the tell. Reset to the start commit, then pop,
+  # which applies onto the stash's own base and cannot conflict again.
+  if [[ "$(git -C "$WK_HOME_DIR" stash list 2>/dev/null || true)" != "$stash_before" ]]; then
+    if [[ -n "$pre_head" ]] \
+      && git -C "$WK_HOME_DIR" reset --hard "$pre_head" >/dev/null 2>&1 \
+      && git -C "$WK_HOME_DIR" stash pop >/dev/null 2>&1; then
+      wk_warn "$prefix: the uncommitted changes in $WK_HOME_DIR conflict with what its upstream now carries; the tree was put back exactly as this run found it; settle it with \`git -C $WK_HOME_DIR pull --rebase\` and run it again"
+    else
+      wk_warn "$prefix: the uncommitted changes in $WK_HOME_DIR conflict with what its upstream now carries, and putting the tree back did not finish; the changes are safe in \`git -C $WK_HOME_DIR stash list\`; settle it by hand"
+    fi
+    return 1
   fi
   return 0
 }

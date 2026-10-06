@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// The roster the published site sweeps: the `owner/name` slugs this machine's
-// board covers, read through the tower's own module, plus the home repo under
-// `home`. Written to the home repo's default branch, never beside the public
-// pages (`workflow/README.md` § Publishing the dashboard).
+// The roster the published site sweeps: one `owner/name` list per machine under
+// `machines` (this one's read through the tower's own module), their union as
+// `repos`, and the home repo under `home`. Written to the home repo's default
+// branch, never beside the public pages (`workflow/README.md` § Publishing the dashboard).
 //
 // Usage: node workflow/publish/site-repos.js <outfile> [workflow-home]
 
@@ -23,14 +23,24 @@ const readJson = (file) => {
 };
 
 /**
- * The slug list. The home repo is named twice on purpose: in `repos` for its
- * queue, and as `home` for its Discussions, even with no clone on this machine.
+ * The key a machine's entry is filed under: its hostname's first label,
+ * lowercased, so a `.local`, `.lan` or `.home` suffix reads as one machine.
+ *
+ * @param {string} hostname
+ * @returns {string}
+ */
+const machineKey = (hostname) => hostname.split('.')[0].toLowerCase();
+
+/**
+ * Each machine owns its `machines` entry; `repos` is their case-blind union plus `home`.
  *
  * @param {object} [opts]
  * @param {string} [opts.workflowHome] the user's ~/.workkit
  * @param {string} [opts.home] overrides ~ for the default
  * @param {Function} [opts.exec] (cmd, args) => stdout: the git seam
- * @returns {{repos: string[], home: string|null}}
+ * @param {object|null} [opts.previous] the parsed file already published, or null
+ * @param {string} [opts.hostname] this machine's hostname, default os.hostname()
+ * @returns {{repos: string[], home: string|null, machines: Object<string, string[]>}}
  * @throws when the roster could not be read, rather than composing an empty one
  */
 const composeSlugs = (opts = {}) => {
@@ -48,34 +58,52 @@ const composeSlugs = (opts = {}) => {
     .map((repo) => repo.slug)
     .filter((slug) => typeof slug === 'string' && slug.includes('/'));
 
+  // A file from before `machines` existed starts empty: the other machines'
+  // entries return on their own next publish.
+  const prior = opts.previous && opts.previous.machines;
+  const machines = prior && typeof prior === 'object' && !Array.isArray(prior) ? { ...prior } : {};
+  machines[machineKey(opts.hostname || os.hostname())] = slugs;
+
+  // Keyed by the lowercased slug, so the first spelling seen is the one kept.
+  const union = new Map();
+  for (const list of Object.values(machines)) {
+    if (!Array.isArray(list)) continue;
+    list.forEach((slug) => {
+      if (!union.has(slug.toLowerCase())) union.set(slug.toLowerCase(), slug);
+    });
+  }
+  // Code units, never the machine's ICU build, so two machines write the same bytes.
+  const repos = [...union.keys()].sort().map((key) => union.get(key));
+
   const settings = readJson(path.join(workflowHome, 'settings.json'));
   const site = (settings && settings.site) || {};
   const homeSlug = typeof site.repo === 'string' && site.repo.includes('/') ? site.repo : null;
-  if (homeSlug && !slugs.includes(homeSlug)) slugs.push(homeSlug);
+  if (homeSlug && !union.has(homeSlug.toLowerCase())) repos.push(homeSlug);
 
-  return { repos: slugs, home: homeSlug };
+  return { repos, home: homeSlug, machines };
 };
 
 /**
  * Write the slug list, making the directory it goes in, unless what is already
- * there says the same thing. A publish is a commit, and a roster nobody changed
- * must not produce one a day.
+ * there says the same thing. The file already there is read first and handed to
+ * composeSlugs as `previous`, so the other machines' entries survive. A publish
+ * is a commit, and a roster nobody changed must not produce one a day.
  *
  * @param {string} outfile
- * @param {object} [opts] passed through to composeSlugs
+ * @param {object} [opts] passed through to composeSlugs, `previous` set here
  * @returns {boolean} whether the file was written
  * @throws whatever composeSlugs raises: the outfile is untouched
  */
 const writeSlugs = (outfile, opts = {}) => {
-  const next = composeSlugs(opts);
   const previous = readJson(outfile);
+  const next = composeSlugs({ ...opts, previous });
   if (previous && JSON.stringify(previous) === JSON.stringify(next)) return false;
   fs.mkdirSync(path.dirname(outfile), { recursive: true });
   fs.writeFileSync(outfile, `${JSON.stringify(next, null, 2)}\n`);
   return true;
 };
 
-module.exports = { composeSlugs, writeSlugs };
+module.exports = { machineKey, composeSlugs, writeSlugs };
 
 if (require.main === module) {
   const outfile = process.argv[2];

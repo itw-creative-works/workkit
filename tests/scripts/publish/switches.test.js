@@ -12,14 +12,14 @@ const { cleanup, git, mkWorld, binDirWithout, publish, setSite, fromPages, onMai
 const run = async () => {
   group('workflow/publish: the owner’s switches');
 
-  await test('the slug list is written to the home repo’s default branch: names, and nothing else', () => {
+  await test('the slug list is written to the home repo’s default branch: names and each machine’s entry, nothing else', () => {
     const world = mkWorld({ roster: ['workkit', 'omega'] });
     publish(world);
     const list = JSON.parse(fs.readFileSync(path.join(onMain(world), 'data', 'repos.json'), 'utf8'));
     assertEq(list.repos.slice(0, 2).join(','), 'owner/omega,owner/workkit', 'every registered repo, as a slug');
     assert(list.repos.includes('owner/workkit'), 'and the home repo rides along: its issues are the cross-project queue');
     assertEq(list.home, 'owner/workkit', 'named again, because the summaries are Discussions on that one repo');
-    assertEq(Object.keys(list).sort().join(','), 'home,repos', 'and the file says nothing else at all');
+    assertEq(Object.keys(list).sort().join(','), 'home,machines,repos', 'and the file says nothing else at all');
     cleanup(world.root);
   });
 

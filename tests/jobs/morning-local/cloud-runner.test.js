@@ -94,7 +94,7 @@ const run = async () => {
 
     const res = runJob(world);
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assert(/could not be brought up to date/.test(world.log()), `the morning names the skip: ${world.log()}`);
+    assert(/^runner: .*could not catch up with its upstream/m.test(world.log()), `the morning names the skip: ${world.log()}`);
     assertEq(fs.readFileSync(dest, 'utf8'), STALE_RUNNER, 'and nothing was seeded into a clone that cannot push');
     assert(!subjects(world.tower).includes(REFRESH),
       `no commit it could never push: ${subjects(world.tower).join(' | ')}`);
