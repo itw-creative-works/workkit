@@ -6,7 +6,9 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../../lib/platform');
-const { KIT_DIR, cleanup, mkRemote, mkWorld, setup, runnerPairs, seeded, mkKitCopy } = require('./helpers');
+const {
+  KIT_DIR, cleanup, mkRemote, mkWorld, setup, runnerPairs, seeded, mkKitCopy, commitKit, kitCommitted,
+} = require('./helpers');
 
 const run = async () => {
   group('workflow/home: the cloud brief runner');
@@ -23,8 +25,8 @@ const run = async () => {
       assert(fs.existsSync(path.join(world.tower, dest)), `${dest} is in the clone`);
       assertEq(
         fs.readFileSync(path.join(world.tower, dest), 'utf8'),
-        fs.readFileSync(path.join(KIT_DIR, src), 'utf8'),
-        `${dest} is this checkout's ${src}, byte for byte`,
+        kitCommitted(world, src),
+        `${dest} is the kit's committed ${src}, byte for byte`,
       );
     }
     assert(fs.existsSync(path.join(world.tower, '.github', 'workflows', 'brief.yml')), 'the workflow is where Actions looks for it');
@@ -104,8 +106,8 @@ const run = async () => {
     assert(/rc=0/.test(refreshed.out), `the drift is healed: ${refreshed.out}`);
     assertEq(
       fs.readFileSync(dest, 'utf8'),
-      fs.readFileSync(path.join(KIT_DIR, 'jobs', 'morning.sh'), 'utf8'),
-      'back to the checkout’s copy',
+      kitCommitted(world, 'jobs/morning.sh'),
+      'back to the kit’s committed copy',
     );
     cleanup(world.root);
   });
@@ -162,6 +164,59 @@ const run = async () => {
     assert(/runner is incomplete/.test(out), `it names the state: ${out}`);
     assert(/brief-payload\.js/.test(out), `and what is missing: ${out}`);
     assert(fs.existsSync(path.join(world.tower, 'brief', 'jobs', 'morning.sh')), 'what was there still landed');
+    cleanup(world.root);
+  });
+
+  await test('a git-backed kit: an uncommitted edit is not the runner, the clone keeps the committed bytes', () => {
+    const world = mkWorld();
+    const script = path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.sh');
+    const before = fs.readFileSync(script, 'utf8');
+    const first = seeded(world);
+    assert(/rc=0/.test(first.out), `the first seed wrote the runner: ${first.out}`);
+
+    fs.appendFileSync(script, '# an edit not yet committed\n');
+    const again = seeded(world);
+    assert(/rc=2/.test(again.out), `the refresh is already current: ${again.out}`);
+    const clone = fs.readFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.sh'), 'utf8');
+    assert(!clone.includes('# an edit not yet committed'), 'the edit stayed in the kit folder');
+    assertEq(clone, before, 'the clone holds the committed bytes');
+    cleanup(world.root);
+  });
+
+  await test('a git-backed kit: a new commit is the runner the refresh writes', () => {
+    const world = mkWorld();
+    seeded(world);
+
+    fs.writeFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.sh'), '# a committed runner\n');
+    commitKit(world.env.WORKKIT_KIT_DIR, 'fix: a newer runner');
+    const { out } = seeded(world);
+    assert(/rc=0/.test(out), `the refresh wrote it: ${out}`);
+    assert(/seeded the cloud brief/.test(out), `and said so: ${out}`);
+    assertEq(fs.readFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.sh'), 'utf8'), '# a committed runner\n',
+      'the clone holds the new commit');
+    cleanup(world.root);
+  });
+
+  await test('a kit missing a listed file prunes nothing: the retired file waits, the rest lands', () => {
+    // A missing file is a broken kit, not a retirement, so the prune holds off
+    // until the kit is whole again.
+    const world = mkWorld();
+    const first = seeded(world);
+    assert(/rc=0/.test(first.out), `the whole kit seeded first: ${first.out}`);
+    const retired = path.join(world.tower, 'brief', 'jobs', 'claude-cloud.sh');
+    fs.writeFileSync(retired, '# last month’s runner\n');
+    const kit = world.env.WORKKIT_KIT_DIR;
+    fs.rmSync(path.join(kit, 'jobs', 'morning', 'brief', 'stats.js'));
+    fs.writeFileSync(path.join(kit, 'jobs', 'morning.sh'), '# a committed runner\n');
+    commitKit(kit, 'chore: a kit missing a file');
+
+    const { out } = seeded(world);
+    assert(out.includes('this kit is missing'), `it warns: ${out}`);
+    assert(out.includes('stats.js'), `and names what is missing: ${out}`);
+    assert(fs.existsSync(retired), 'the retired file is still there: the prune waited');
+    assertEq(fs.readFileSync(retired, 'utf8'), '# last month’s runner\n', 'untouched');
+    assertEq(fs.readFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.sh'), 'utf8'), '# a committed runner\n',
+      'what the kit has still landed');
     cleanup(world.root);
   });
 

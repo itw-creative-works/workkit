@@ -5,7 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { cleanup, git, mkRemote, mkWorld, inHome, mkKitCopy, STAMP } = require('./helpers');
+const {
+  cleanup, git, mkRemote, mkWorld, inHome, mkKitCopy, commitKit, STAMP,
+} = require('./helpers');
 
 const run = async () => {
   group('workflow/home: doctor');
@@ -115,11 +117,14 @@ const run = async () => {
   // reports drift the last morning could not heal.
   const runnerDoctor = (world) => inHome(world, 'rc=0; wk_home_runner_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
 
-  /** A world whose clone carries the runner, seeded from a copy of the checkout. */
-  const withRunner = () => {
+  /**
+   * A world whose clone carries the runner, seeded from a copy of the checkout:
+   * the world's git-backed one with `repo`, else a plain folder no repo tracks.
+   */
+  const withRunner = ({ repo = false } = {}) => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
-    world.env.WORKKIT_KIT_DIR = mkKitCopy(world.root);
+    if (!repo) world.env.WORKKIT_KIT_DIR = mkKitCopy(world.root);
     inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed_runner');
     return world;
   };
@@ -141,6 +146,26 @@ const run = async () => {
     assert(/1 of \d+ file\(s\) differ/.test(out), `and how much of it, got: ${out}`);
     assert(/workkit setup/.test(out), 'and the command that heals it');
     assert(/rc=1/.test(out), 'and counts');
+    cleanup(world.root);
+  });
+
+  await test('a git-backed kit: an uncommitted edit is not drift, the runner is current', () => {
+    const world = withRunner({ repo: true });
+    fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.sh'), '\n# an edit not yet committed\n');
+    const { out } = runnerDoctor(world);
+    assert(/runner: the cloud brief's runner in/.test(out) && /is current/.test(out), `it reports current, got: ${out}`);
+    assert(/rc=0/.test(out), `and nothing needs attention, got: ${out}`);
+    cleanup(world.root);
+  });
+
+  await test('a git-backed kit: a commit the clone lacks is reported as behind', () => {
+    const world = withRunner({ repo: true });
+    fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.sh'), '\n# a committed change\n');
+    commitKit(world.env.WORKKIT_KIT_DIR, 'fix: a later runner');
+    const { out } = runnerDoctor(world);
+    assert(/brief runner is behind this kit/.test(out), `it names the drift, got: ${out}`);
+    assert(/1 of \d+ file\(s\) differ/.test(out), `and how much of it, got: ${out}`);
+    assert(/rc=1/.test(out), `and counts, got: ${out}`);
     cleanup(world.root);
   });
 

@@ -4,14 +4,49 @@
 # functions only. WK_TOWER_APP, WK_TOWER_APP_EXCLUDE, WK_TOWER_APP_KEEP and
 # WK_HOME_SYNC_MANIFESTS are the entry's; WK_HOME_DIR is lib.sh's.
 
+# The folder a copy reads from. A folder a repo TRACKS gives HEAD's copy of it,
+# exported into <scratch dir>/src, so an uncommitted edit never travels; a
+# folder no repo tracks (even one sitting inside some other repo) is itself.
+# Usage: wk_home_source <scratch dir> <folder>
+wk_home_source() {
+  local scratch="$1" folder="$2"
+  git -C "$folder" ls-files --error-unmatch . >/dev/null 2>&1 || {
+    printf '%s\n' "$folder"
+    return 0
+  }
+
+  # Run from the folder, HEAD's archive holds that folder alone; autocrlf off
+  # keeps its line endings HEAD's under a Windows git too. A file first, so a
+  # failed archive is never masked by the extract; empty is a failure too. `-m`
+  # drops HEAD's commit time, so a synced manifest is newer than npm's stamp.
+  if git -c core.autocrlf=false -C "$folder" archive --format=tar HEAD >"$scratch/src.tar" 2>/dev/null \
+    && mkdir -p "$scratch/src" \
+    && tar -xmf "$scratch/src.tar" -C "$scratch/src" 2>/dev/null \
+    && [[ -n "$(find "$scratch/src" -type f -print -quit)" ]]; then
+    rm -f "$scratch/src.tar"
+    printf '%s\n' "$scratch/src"
+    return 0
+  fi
+  wk_warn "home: could not export the committed files from $folder (HEAD holds none of it, or the extract failed); nothing was copied from it"
+  return 1
+}
+
 # The seed: README § The home repo's lifecycle, step 4. The npm pins travel as
 # they are; a `file:` spec, which only a maintainer tree in local mode carries,
 # is made absolute.
 wk_home_seed() {
-  local pkg target_pkg name excludes=()
+  local pkg target_pkg name scratch app excludes=()
 
   [[ -n "$WK_TOWER_APP" && -d "$WK_TOWER_APP" ]] || {
     wk_warn "home: the tower app is missing at ${WK_TOWER_APP:-this kit}; nothing to seed the project from"
+    return 1
+  }
+  scratch="$(mktemp -d)" || {
+    wk_warn "home: could not make a scratch directory; nothing was seeded into $WK_HOME_DIR"
+    return 1
+  }
+  app="$(wk_home_source "$scratch" "$WK_TOWER_APP")" || {
+    rm -rf "$scratch"
     return 1
   }
 
@@ -20,18 +55,21 @@ wk_home_seed() {
   for name in "${WK_TOWER_APP_EXCLUDE[@]}"; do
     excludes+=(--exclude "./$name" --exclude "*/$name")
   done
-  (cd "$WK_TOWER_APP" && tar -cf - "${excludes[@]}" .) \
+  (cd "$app" && tar -cf - "${excludes[@]}" .) \
     | (cd "$WK_HOME_DIR" && tar -xf -) || {
     wk_warn "home: could not copy the tower app into $WK_HOME_DIR"
+    rm -rf "$scratch"
     return 1
   }
   for name in "${WK_TOWER_APP_KEEP[@]}"; do
-    [[ -f "$WK_TOWER_APP/$name" ]] || continue
-    cp -p "$WK_TOWER_APP/$name" "$WK_HOME_DIR/$name" || {
+    [[ -f "$app/$name" ]] || continue
+    cp -p "$app/$name" "$WK_HOME_DIR/$name" || {
       wk_warn "home: could not copy $name into $WK_HOME_DIR"
+      rm -rf "$scratch"
       return 1
     }
   done
+  rm -rf "$scratch"
 
   # The manifests, root first and then every target: each spec resolves from the
   # directory of the manifest it was copied from, never from the clone.
@@ -53,7 +91,7 @@ wk_home_seed() {
 # 0 changed, 2 already current, 1 nothing to sync from, 3 a mid-walk write
 # failed. Call it directly: a subshell loses WK_HOME_SYNC_MANIFESTS.
 wk_home_sync() {
-  local src rel dest want tmp top topname found excluded name manifest prune=()
+  local src rel dest want tmp app top topname found excluded name manifest prune=()
   local copied=0 removed=0 rc=0
   WK_HOME_SYNC_MANIFESTS=0
 
@@ -79,10 +117,14 @@ wk_home_sync() {
     wk_warn "sync: could not make a scratch directory; the tower project in $WK_HOME_DIR was not refreshed"
     return 1
   }
+  app="$(wk_home_source "$tmp" "$WK_TOWER_APP")" || {
+    rm -rf "$tmp"
+    return 1
+  }
 
   # Everything the app ships, in.
   while IFS= read -r src; do
-    rel="${src#"$WK_TOWER_APP"/}"
+    rel="${src#"$app"/}"
     dest="$WK_HOME_DIR/$rel"
     want="$src"
     manifest=0
@@ -96,7 +138,7 @@ wk_home_sync() {
         rc=3
         break
       }
-      wk_home_repoint_file_specs "$want" "$(dirname "$src")"
+      wk_home_repoint_file_specs "$want" "$(dirname "$WK_TOWER_APP/$rel")"
     fi
     cmp -s "$want" "$dest" 2>/dev/null && continue
     mkdir -p "$(dirname "$dest")" 2>/dev/null || true
@@ -109,21 +151,23 @@ wk_home_sync() {
     [[ "$manifest" -eq 1 ]] && WK_HOME_SYNC_MANIFESTS=1
     copied=$((copied + 1))
   done < <(
-    find "$WK_TOWER_APP" \( "${prune[@]}" \) -prune -o -type f -print
+    find "$app" \( "${prune[@]}" \) -prune -o -type f -print
     for name in "${WK_TOWER_APP_KEEP[@]}"; do
-      [[ -f "$WK_TOWER_APP/$name" ]] && printf '%s\n' "$WK_TOWER_APP/$name"
+      [[ -f "$app/$name" ]] && printf '%s\n' "$app/$name"
     done
   )
 
   # rc=3 is never the benign skip: committing or building it publishes half a
   # refresh.
-  rm -rf "$tmp"
-  [[ "$rc" -eq 0 ]] || return "$rc"
+  if [[ "$rc" -ne 0 ]]; then
+    rm -rf "$tmp"
+    return "$rc"
+  fi
 
   # What the app retired, out, inside its own top-level folders only: the root
   # is shared with other steps. Emptied directories stay, or a minted `.omega`
   # could go with them.
-  for top in "$WK_TOWER_APP"/*/; do
+  for top in "$app"/*/; do
     [[ -d "$top" ]] || continue
     topname="$(basename "$top")"
     excluded=0
@@ -135,14 +179,16 @@ wk_home_sync() {
 
     while IFS= read -r found; do
       rel="${found#"$WK_HOME_DIR"/}"
-      [[ -f "$WK_TOWER_APP/$rel" ]] && continue
+      [[ -f "$app/$rel" ]] && continue
       rm -f "$found" 2>/dev/null || {
         wk_warn "sync: could not remove the retired $rel from $WK_HOME_DIR"
+        rm -rf "$tmp"
         return 3
       }
       removed=$((removed + 1))
     done < <(find "$WK_HOME_DIR/$topname" \( "${prune[@]}" \) -prune -o -type f -print)
   done
+  rm -rf "$tmp"
 
   # The stamp last, counted as a write of its own: a kit that moved on reaches
   # the remote even when the app did not change.

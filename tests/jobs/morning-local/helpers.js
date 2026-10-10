@@ -15,6 +15,7 @@ const {
 } = require('../../lib/platform');
 const { noNodeTest, barePathTest } = require('../../lib/job-path');
 const { mkTmp } = require('../../lib/scratch');
+const { mkKitRepo } = require('../../scripts/home/helpers');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.sh');
 const { INSTRUCTION } = require(path.join(__dirname, '..', '..', '..', 'jobs', 'morning', 'brief', 'brief-payload.js'));
@@ -155,6 +156,9 @@ const mkWorld = ({
     // The summaries step's one seam: where it looks for the home repo.
     WORKFLOW_HOME: workflowHome,
     WORKKIT_CC_CHANGELOG: ccSource,
+    // The runner is read from a committed copy of the kit, never this checkout,
+    // whose HEAD lags its edits.
+    WORKKIT_KIT_DIR: mkKitRepo(root),
     ...(homeClone ? {
       WORKKIT_HOME_REMOTE: homeRemote,
       WORKKIT_TOWER_APP: path.join(root, 'tower-app'),

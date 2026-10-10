@@ -7,6 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#414](../../issues/414) - The publish and the seed copy the plugin checkout's committed `tower/app` (HEAD), never the folder on disk, so an uncommitted edit on one machine no longer reaches the home repo and flips back on every other machine's publish.
+- [#415](../../issues/415) - The cloud brief's runner refresh and `workkit doctor` read the plugin checkout's committed files (HEAD), never the files on disk, so an uncommitted edit to a runner script no longer reaches the home repo and flips back on a clean machine's next setup.
+
 ## [0.74.0] - 2026-10-06
 
 ### Fixed

@@ -6,7 +6,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  KIT_DIR, cleanup, git, mkRemote, mkWorld, inHome, setup, seeded, mkKitCopy, STAMP,
+  KIT_DIR, cleanup, git, mkRemote, mkWorld, inHome, setup, seeded, mkKitCopy, kitCommitted, STAMP,
 } = require('./helpers');
 
 const run = async () => {
@@ -79,8 +79,8 @@ const run = async () => {
     assert(/rc=0/.test(out + err), `it wrote: ${out}${err}`);
     assertEq(
       fs.readFileSync(dest, 'utf8'),
-      fs.readFileSync(path.join(KIT_DIR, 'jobs', 'morning.sh'), 'utf8'),
-      'the drift is healed from this checkout',
+      kitCommitted(world, 'jobs/morning.sh'),
+      'the drift is healed from the kit’s committed copy',
     );
     assertEq(stampOf(world), kitVersion(), 'and the clone now says which kit wrote it');
     cleanup(world.root);

@@ -56,7 +56,7 @@ wk_home_doctor() {
 # not heal, fixed by `workkit setup`. Returns 1 when the seeded copy is behind,
 # 0 otherwise (current, or a skip).
 wk_home_runner_doctor() {
-  local pair src dest behind=0 compared=0 retired=0
+  local pair src dest scratch kit behind=0 compared=0 retired=0
 
   wk_home_ready || {
     wk_skip "runner: no home clone at $WK_HOME_DIR; nothing to compare the cloud brief's runner against"
@@ -66,14 +66,25 @@ wk_home_runner_doctor() {
     wk_skip "runner: the kit could not be resolved beside this engine; the cloud brief's runner cannot be compared"
     return 0
   }
+  scratch="$(mktemp -d)" || {
+    wk_skip "runner: could not make a scratch directory; the cloud brief's runner cannot be compared"
+    return 0
+  }
+  # The export's own warning is the seed's voice; here a failure is a skip.
+  kit="$(wk_home_source "$scratch" "$WK_KIT_DIR" 2>/dev/null)" || {
+    rm -rf "$scratch"
+    wk_skip "runner: could not export the committed kit from $WK_KIT_DIR; the cloud brief's runner cannot be compared"
+    return 0
+  }
 
   for pair in "${WK_HOME_RUNNER_FILES[@]}"; do
-    src="$WK_KIT_DIR/${pair%%:*}"
+    src="$kit/${pair%%:*}"
     dest="$WK_HOME_DIR/${pair#*:}"
     [[ -f "$src" ]] || continue
     compared=$((compared + 1))
     cmp -s "$src" "$dest" 2>/dev/null || behind=$((behind + 1))
   done
+  rm -rf "$scratch"
 
   if [[ "$compared" -eq 0 ]]; then
     wk_skip "runner: this kit carries none of the cloud brief's runner files; nothing to compare"

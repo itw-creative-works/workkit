@@ -110,6 +110,25 @@ const mkSyncWorld = () => {
   };
 };
 
+/**
+ * Makes the sync world's `checkout` a git repo with `tower/app` committed on
+ * main, the accretions left untracked the way a real checkout leaves them.
+ * `app: false` commits only the root .gitignore, so HEAD lacks tower/app.
+ */
+const commitCheckout = (world, { app = true } = {}) => {
+  const checkout = path.join(world.root, 'checkout');
+  write(path.join(checkout, '.gitignore'), [
+    'node_modules/', 'package-lock.json', 'dist/', '.omega/', '.env', '.env.production',
+    '.cache/', '.temp/', '.DS_Store', '',
+  ].join('\n'));
+  git(checkout, 'init', '-q', '-b', 'main');
+  git(checkout, 'add', ...(app ? ['-A'] : ['.gitignore']));
+  const res = git(checkout, '-c', 'user.name=checkout', '-c', 'user.email=checkout@localhost',
+    'commit', '-q', '-m', 'chore: the tower app');
+  assert(res.status === 0, `the fixture checkout committed: ${res.stdout}${res.stderr}`);
+  return checkout;
+};
+
 /** Source the library and run one line of shell in it: how every caller uses it. */
 const inHome = (world, script, { env = {} } = {}) => {
   // A script path handed into a shell is POSIX: each of these sources its own
@@ -295,5 +314,6 @@ const fromPages = (world) => {
 };
 
 module.exports = {
-  REPO_ROOT, cleanup, writeJson, write, writeStub, mkSyncWorld, inHome, sync, mtimes, mkPublishWorld, publish, fromPages,
+  REPO_ROOT, cleanup, git, writeJson, write, writeStub, mkSyncWorld, commitCheckout, inHome, sync, mtimes,
+  mkPublishWorld, publish, fromPages,
 };

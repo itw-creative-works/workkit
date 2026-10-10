@@ -8,7 +8,7 @@ const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { shellPath } = require('../../lib/platform');
 const {
-  REPO_ROOT, cleanup, write, mkSyncWorld, inHome, sync, mtimes,
+  REPO_ROOT, cleanup, git, write, mkSyncWorld, commitCheckout, inHome, sync, mtimes,
 } = require('./helpers');
 
 const run = async () => {
@@ -162,6 +162,139 @@ const run = async () => {
     assert(/not downgrading/.test(said), `and what it refused to do: ${said}`);
     assert(/workkit update/.test(said), `with the command that fixes it: ${said}`);
     assertEq(JSON.stringify(mtimes(world.clone)), JSON.stringify(before), 'and wrote nothing at all');
+    cleanup(world.root);
+  });
+
+  group('workflow/home: a checkout in a git repo copies its committed tree');
+
+  // A missing file reads as null, so its assertEq names what was expected.
+  const read = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null);
+  const porcelain = (checkout) => git(checkout, 'status', '--porcelain').stdout;
+
+  await test('an uncommitted edit never reaches the clone, and the checkout is left as it was', () => {
+    const world = mkSyncWorld();
+    const checkout = commitCheckout(world);
+    write(path.join(world.app, 'README.md'), '# an uncommitted edit\n');
+    const before = porcelain(checkout);
+    assertEq(before, ' M tower/app/README.md\n', 'the fixture checkout is dirty in one tracked file');
+
+    const { rc, out, err } = sync(world);
+    assertEq(rc, 0, `something changed: ${out}${err}`);
+    assertEq(read(path.join(world.clone, 'README.md')), '# the tower\n', 'the clone holds the committed bytes');
+    assertEq(porcelain(checkout), ' M tower/app/README.md\n', 'the checkout status is unchanged by the run');
+    cleanup(world.root);
+  });
+
+  await test('a tracked file deleted on disk still reaches the clone, and no later run retires it', () => {
+    const world = mkSyncWorld();
+    commitCheckout(world);
+    fs.rmSync(path.join(world.app, 'targets', 'web', 'src', 'pages', 'board.js'));
+    const page = path.join(world.clone, 'targets', 'web', 'src', 'pages', 'board.js');
+
+    const first = sync(world);
+    assertEq(first.rc, 0, `something changed: ${first.out}${first.err}`);
+    assertEq(read(page), 'export default 1;\n', 'the clone received the committed page');
+    const second = sync(world);
+    assertEq(read(page), 'export default 1;\n',
+      `and the second run kept it: ${second.out}${second.err}`);
+    cleanup(world.root);
+  });
+
+  await test('an untracked file on disk is never copied', () => {
+    const world = mkSyncWorld();
+    commitCheckout(world);
+    write(path.join(world.app, 'targets', 'web', 'src', 'pages', 'draft.js'), 'export default 2;\n');
+    write(path.join(world.app, 'NOTES.md'), 'a scratch note\n');
+
+    const { rc, out, err } = sync(world);
+    assertEq(rc, 0, `something changed: ${out}${err}`);
+    assert(fs.existsSync(path.join(world.clone, 'README.md')), 'the committed app travelled');
+    assert(!fs.existsSync(path.join(world.clone, 'targets', 'web', 'src', 'pages', 'draft.js')),
+      'the untracked page never reached the clone');
+    assert(!fs.existsSync(path.join(world.clone, 'NOTES.md')), 'nor the untracked note at the app root');
+    cleanup(world.root);
+  });
+
+  await test('the seed from a dirty checkout writes the committed bytes', () => {
+    const world = mkSyncWorld();
+    commitCheckout(world);
+    write(path.join(world.app, 'README.md'), '# an uncommitted edit\n');
+    write(path.join(world.app, 'targets', 'web', 'src', 'index.html'), '<html>an uncommitted board</html>\n');
+
+    const { code, out, err } = inHome(world, 'wk_home_seed');
+    assertEq(code, 0, `the seed ran: ${out}${err}`);
+    assertEq(read(path.join(world.clone, 'README.md')), '# the tower\n', 'the seeded readme is the committed one');
+    assertEq(read(path.join(world.clone, 'targets', 'web', 'src', 'index.html')), '<html>the board</html>\n',
+      'and so is the seeded page');
+    cleanup(world.root);
+  });
+
+  await test('a manifest file: spec lands absolute under the checkout’s real path', () => {
+    const world = mkSyncWorld();
+    commitCheckout(world);
+    const { rc, out, err } = sync(world);
+    assertEq(rc, 0, `something changed: ${out}${err}`);
+    const packages = fs.realpathSync(path.join(world.root, 'omega', 'packages'));
+    const rootText = read(path.join(world.clone, 'package.json'));
+    const webText = read(path.join(world.clone, 'targets', 'web', 'package.json'));
+    assert(rootText !== null && webText !== null, 'both manifests reached the clone');
+    const root = JSON.parse(rootText);
+    const web = JSON.parse(webText);
+    assertEq(root.devDependencies['@omega.js/manager'], `file:${shellPath(path.join(packages, 'manager'))}`,
+      'the root spec resolves from the checkout, not a scratch copy');
+    assertEq(web.dependencies['@omega.js/web'], `file:${shellPath(path.join(packages, 'web'))}`,
+      'and so does the nested one');
+    cleanup(world.root);
+  });
+
+  await test('a second run on an unchanged git-backed checkout is already current', () => {
+    const world = mkSyncWorld();
+    commitCheckout(world);
+    const first = sync(world);
+    assertEq(first.rc, 0, `the first run synced: ${first.out}${first.err}`);
+    assertEq(read(path.join(world.clone, 'README.md')), '# the tower\n', 'the first run carried the app');
+    const { rc, out, err } = sync(world);
+    assertEq(rc, 2, `nothing to do: ${out}${err}`);
+    assert(/already current/.test(out + err), `and it says so, got: ${out}${err}`);
+    cleanup(world.root);
+  });
+
+  // The seed's rc, printed rather than ending the run, the way sync() reads the sync's.
+  const seedRc = (world) => {
+    const res = inHome(world, 'rc=0; wk_home_seed || rc=$?; printf "rc=%s\\n" "$rc"');
+    const rc = /rc=(\d+)/.exec(res.out + res.err);
+    return { ...res, rc: rc ? Number(rc[1]) : null };
+  };
+
+  await test('an app folder no repo tracks, though it sits inside one, is copied as it sits on disk', () => {
+    for (const copy of ['sync', 'seed']) {
+      const world = mkSyncWorld();
+      commitCheckout(world, { app: false });
+      write(path.join(world.app, 'README.md'), '# an edit no repo tracks\n');
+      const { rc, out, err } = copy === 'sync' ? sync(world) : seedRc(world);
+      assertEq(rc, 0, `the ${copy} ran: ${out}${err}`);
+      assertEq(read(path.join(world.clone, 'README.md')), '# an edit no repo tracks\n',
+        `the ${copy} carried the folder's readme, edit included`);
+      assertEq(read(path.join(world.clone, 'config', 'omega.json5')), '{ brand: { id: "workkit" } }\n',
+        `and the ${copy} carried the config`);
+      cleanup(world.root);
+    }
+  });
+
+  await test('an app the repo tracks but HEAD lacks is a loud stop, for the sync and the seed', () => {
+    const world = mkSyncWorld();
+    const checkout = commitCheckout(world, { app: false });
+    git(checkout, 'add', 'tower/app');
+    const { rc, out, err } = sync(world);
+    assertEq(rc, 1, `the caller can tell it did not run: ${out}${err}`);
+    assert((out + err).includes('could not export the committed'), `it names the failure, got: ${out}${err}`);
+    assertEq(read(path.join(world.clone, 'README.md')), null, 'the clone received no readme');
+    assertEq(read(path.join(world.clone, 'config', 'omega.json5')), null, 'nor the config');
+
+    const seed = seedRc(world);
+    assertEq(seed.rc, 1, `the seed stops too: ${seed.out}${seed.err}`);
+    assertEq(read(path.join(world.clone, 'README.md')), null, 'and the clone stays empty of the readme');
+    assertEq(read(path.join(world.clone, 'config', 'omega.json5')), null, 'and of the config');
     cleanup(world.root);
   });
 

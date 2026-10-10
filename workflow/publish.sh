@@ -188,8 +188,8 @@ publish_switch() {
 
 # ── The clone's dependencies ──────────────────────────────────────────────────
 # Runs when the sync wrote a manifest, or when a manifest is newer than npm's
-# own stamp (a run that ended before this step). The sync copies with -p, so a
-# synced manifest keeps its authored time. A failed install aborts the build.
+# own stamp (a run that ended before this step); a manifest the sync changed
+# carries the time it wrote it, so it is newer. A failed install aborts the build.
 publish_dependencies() {
   INSTALL_NEEDED="$WK_HOME_SYNC_MANIFESTS"
   INSTALL_STAMP="$WK_HOME_DIR/node_modules/.package-lock.json"

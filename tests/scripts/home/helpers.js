@@ -267,7 +267,9 @@ const mkWorld = ({
       PATH: joinPath(bin, SYSTEM_PATH, NODE_DIR),
       WORKFLOW_HOME: shellPath(workflowHome),
       WORKKIT_TOWER_APP: tower.app,
-      WORKKIT_KIT_DIR: KIT_DIR,
+      // The kit the runner is read from is a committed copy, never this
+      // checkout: the source reads HEAD, and this checkout's HEAD lags its edits.
+      WORKKIT_KIT_DIR: mkKitRepo(root),
       ...(remote ? { WORKKIT_HOME_REMOTE: remote } : {}),
     }),
   };
@@ -331,8 +333,8 @@ const seeded = (world) => {
  * The drift a later setup exists to heal is drift in the checkout, and the
  * real one is not a test's to edit.
  */
-const mkKitCopy = (root) => {
-  const kit = path.join(root, 'kit-copy');
+const mkKitCopy = (root, name = 'kit-copy') => {
+  const kit = path.join(root, name);
   for (const { src } of runnerPairs()) {
     const dest = path.join(kit, src);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
@@ -341,9 +343,39 @@ const mkKitCopy = (root) => {
   return kit;
 };
 
+/** One commit of everything in a kit copy, by a throwaway identity. */
+const commitKit = (kit, subject) => {
+  git(kit, 'add', '-A');
+  const res = git(kit, '-c', 'user.name=kit', '-c', 'user.email=kit@localhost', 'commit', '-q', '-m', subject);
+  assert(res.status === 0, `the kit copy committed: ${res.stdout}${res.stderr}`);
+};
+
+/**
+ * A kit copy a git repo tracks: the runner sources and the plugin manifest (the
+ * stamp's version) as they sit on disk, committed on main. The development
+ * checkout's shape, where the committed tree and the folder can differ.
+ */
+const mkKitRepo = (root) => {
+  const kit = mkKitCopy(root, 'kit-repo');
+  const manifest = path.join('.claude-plugin', 'plugin.json');
+  fs.mkdirSync(path.join(kit, '.claude-plugin'), { recursive: true });
+  fs.copyFileSync(path.join(KIT_DIR, manifest), path.join(kit, manifest));
+  git(kit, 'init', '-q', '-b', 'main');
+  commitKit(kit, 'chore: the kit');
+  return kit;
+};
+
+/** A file as the world's kit committed it: what the runner is read from. */
+const kitCommitted = (world, src) => {
+  const res = git(world.env.WORKKIT_KIT_DIR, 'show', `HEAD:${src}`);
+  assert(res.status === 0, `${src} is in the kit's HEAD: ${res.stderr}`);
+  return res.stdout;
+};
+
 /** Where the stamp lives and what it is called: the name is the contract. */
 const STAMP = '.workkit-version';
 
 module.exports = {
-  WORKFLOW_DIR, KIT_DIR, cleanup, git, mkRemote, mkWorld, inHome, setup, runnerPairs, seeded, mkKitCopy, STAMP,
+  WORKFLOW_DIR, KIT_DIR, cleanup, git, mkRemote, mkWorld, inHome, setup, runnerPairs, seeded, mkKitCopy,
+  mkKitRepo, commitKit, kitCommitted, STAMP,
 };
