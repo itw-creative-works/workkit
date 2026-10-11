@@ -328,14 +328,21 @@ const seeded = (world) => {
   return inHome(world, 'wk_home_clone owner/workkit\nrc=0\nwk_home_seed_runner || rc=$?\nprintf "rc=%s\\n" "$rc"');
 };
 
+/** Every file under this checkout's workflow/ folder, relative to the kit. */
+const workflowFiles = () => fs.readdirSync(WORKFLOW_DIR, { recursive: true })
+  .map((rel) => path.join('workflow', rel))
+  .filter((rel) => fs.statSync(path.join(KIT_DIR, rel)).isFile());
+
 /**
- * A copy of this checkout's runner sources, so a test can change one of them.
- * The drift a later setup exists to heal is drift in the checkout, and the
- * real one is not a test's to edit.
+ * A copy of this checkout's runner sources and its whole workflow/ folder (the
+ * heal's standards.sh, its siblings, forms and labels), so a test can change
+ * one of them. The drift a later setup exists to heal is drift in the
+ * checkout, and the real one is not a test's to edit.
  */
 const mkKitCopy = (root, name = 'kit-copy') => {
   const kit = path.join(root, name);
-  for (const { src } of runnerPairs()) {
+  const srcs = new Set([...runnerPairs().map(({ src }) => path.normalize(src)), ...workflowFiles()]);
+  for (const src of srcs) {
     const dest = path.join(kit, src);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.copyFileSync(path.join(KIT_DIR, src), dest);
@@ -351,9 +358,10 @@ const commitKit = (kit, subject) => {
 };
 
 /**
- * A kit copy a git repo tracks: the runner sources and the plugin manifest (the
- * stamp's version) as they sit on disk, committed on main. The development
- * checkout's shape, where the committed tree and the folder can differ.
+ * A kit copy a git repo tracks: the runner sources, the workflow/ folder and
+ * the plugin manifest (the stamp's version) as they sit on disk, committed on
+ * main. The development checkout's shape, where the committed tree and the
+ * folder can differ.
  */
 const mkKitRepo = (root) => {
   const kit = mkKitCopy(root, 'kit-repo');
@@ -372,10 +380,19 @@ const kitCommitted = (world, src) => {
   return res.stdout;
 };
 
+/** Drop one `src:dest` line from a kit copy's runner list, on disk only. */
+const dropRunnerLine = (kit, src) => {
+  const file = path.join(kit, 'workflow', 'home.sh');
+  const lines = fs.readFileSync(file, 'utf8').split('\n');
+  const kept = lines.filter((l) => !l.trim().startsWith(`'${src}:`));
+  assert(kept.length === lines.length - 1, `the kit's list named ${src} once`);
+  fs.writeFileSync(file, kept.join('\n'));
+};
+
 /** Where the stamp lives and what it is called: the name is the contract. */
 const STAMP = '.workkit-version';
 
 module.exports = {
   WORKFLOW_DIR, KIT_DIR, cleanup, git, mkRemote, mkWorld, inHome, setup, runnerPairs, seeded, mkKitCopy,
-  mkKitRepo, commitKit, kitCommitted, STAMP,
+  mkKitRepo, commitKit, kitCommitted, dropRunnerLine, STAMP,
 };

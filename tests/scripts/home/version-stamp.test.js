@@ -6,7 +6,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  KIT_DIR, cleanup, git, mkRemote, mkWorld, inHome, setup, seeded, mkKitCopy, kitCommitted, STAMP,
+  KIT_DIR, cleanup, git, mkRemote, mkWorld, inHome, setup, seeded, mkKitCopy, commitKit, kitCommitted, STAMP,
 } = require('./helpers');
 
 const run = async () => {
@@ -126,6 +126,59 @@ const run = async () => {
       '# the newer machine’s runner\n',
       'the newer runner is still what the clone carries',
     );
+    cleanup(world.root);
+  });
+
+  // The version is read from the same tree as the runner bytes: HEAD's
+  // manifest when a repo tracks the kit, the folder's when none does.
+  const writeVersion = (kit, version) => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(KIT_DIR, '.claude-plugin', 'plugin.json'), 'utf8'));
+    fs.mkdirSync(path.join(kit, '.claude-plugin'), { recursive: true });
+    fs.writeFileSync(path.join(kit, '.claude-plugin', 'plugin.json'),
+      `${JSON.stringify({ ...manifest, version }, null, 2)}\n`);
+  };
+
+  await test('a git-backed kit: an uncommitted version bump is not stamped, the committed version is', () => {
+    const world = mkWorld();
+    const kit = world.env.WORKKIT_KIT_DIR;
+    writeVersion(kit, '1.2.3');
+    commitKit(kit, 'chore(release): 1.2.3');
+    writeVersion(kit, '9.9.9');
+    const { out, err } = seeded(world);
+    assert(/rc=0/.test(out + err), `the seed ran: ${out}${err}`);
+    assertEq(stampOf(world), '1.2.3', 'the clone is stamped with the committed version');
+    cleanup(world.root);
+  });
+
+  await test('a git-backed kit: the downgrade check reads the committed version, not the folder’s', () => {
+    const world = mkWorld();
+    seeded(world);
+    const dest = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
+    fs.writeFileSync(dest, '# the newer machine’s runner\n');
+    fs.writeFileSync(path.join(world.tower, STAMP), '1.2.4\n');
+    const kit = world.env.WORKKIT_KIT_DIR;
+    writeVersion(kit, '1.2.3');
+    commitKit(kit, 'chore(release): 1.2.3');
+    writeVersion(kit, '9.9.9');
+
+    const { out, err } = seeded(world);
+    const said = out + err;
+    assert(/rc=1/.test(said), `the caller is told nothing was written: ${said}`);
+    assert(said.includes('carries workkit 1.2.4'), `it names what the clone carries: ${said}`);
+    assert(said.includes('this kit is 1.2.3'), `and the committed version this kit is: ${said}`);
+    assert(/not downgrading/.test(said), `and what it refused to do: ${said}`);
+    assertEq(fs.readFileSync(dest, 'utf8'), '# the newer machine’s runner\n', 'the clone’s runner is untouched');
+    assertEq(stampOf(world), '1.2.4', 'and so is its stamp');
+    cleanup(world.root);
+  });
+
+  await test('a kit copy no repo tracks is stamped with the folder’s version', () => {
+    const world = mkWorld();
+    world.env.WORKKIT_KIT_DIR = mkKitCopy(world.root);
+    writeVersion(world.env.WORKKIT_KIT_DIR, '4.5.6');
+    const { out, err } = seeded(world);
+    assert(/rc=0/.test(out + err), `the seed ran: ${out}${err}`);
+    assertEq(stampOf(world), '4.5.6', 'the folder’s manifest is the version');
     cleanup(world.root);
   });
 

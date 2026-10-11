@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # workflow/home/doctor.sh: the doctor lines for the home clone and the cloud
 # brief's runner, checked and never written. Sourced by home.sh, functions only.
-# WK_HOME_RUNNER_FILES and WK_KIT_DIR are the entry's; WK_HOME_DIR is lib.sh's.
+# WK_KIT_DIR is the entry's; WK_HOME_DIR is lib.sh's; the runner list is
+# runner.sh's wk_home_runner_list over the exported kit.
 
 # ── Doctor ────────────────────────────────────────────────────────────────────
 
@@ -53,10 +54,10 @@ wk_home_doctor() {
 }
 
 # The cloud brief's runner, read only: drift the last morning's reconcile could
-# not heal, fixed by `workkit setup`. Returns 1 when the seeded copy is behind,
-# 0 otherwise (current, or a skip).
+# not heal, fixed by `workkit setup`. Returns 1 when the seeded copy is behind
+# or the committed kit lacks a listed file, 0 otherwise (current, or a skip).
 wk_home_runner_doctor() {
-  local pair src dest scratch kit behind=0 compared=0 retired=0
+  local pair src dest scratch kit behind=0 compared=0 retired=0 missing='' pairs=()
 
   wk_home_ready || {
     wk_skip "runner: no home clone at $WK_HOME_DIR; nothing to compare the cloud brief's runner against"
@@ -76,24 +77,32 @@ wk_home_runner_doctor() {
     wk_skip "runner: could not export the committed kit from $WK_KIT_DIR; the cloud brief's runner cannot be compared"
     return 0
   }
+  while IFS= read -r pair; do pairs+=("$pair"); done < <(wk_home_runner_list "$kit")
+  [[ "${#pairs[@]}" -gt 0 ]] || {
+    rm -rf "$scratch"
+    wk_skip "runner: the committed kit at $WK_KIT_DIR carries no runner list; the cloud brief's runner cannot be compared"
+    return 0
+  }
 
-  for pair in "${WK_HOME_RUNNER_FILES[@]}"; do
+  for pair in "${pairs[@]}"; do
     src="$kit/${pair%%:*}"
     dest="$WK_HOME_DIR/${pair#*:}"
-    [[ -f "$src" ]] || continue
+    if [[ ! -f "$src" ]]; then missing="$missing ${pair%%:*}"; continue; fi
     compared=$((compared + 1))
     cmp -s "$src" "$dest" 2>/dev/null || behind=$((behind + 1))
   done
   rm -rf "$scratch"
 
-  if [[ "$compared" -eq 0 ]]; then
-    wk_skip "runner: this kit carries none of the cloud brief's runner files; nothing to compare"
-    return 0
+  # The seed's prune waits on a missing file, so setup cannot clear the retired
+  # files; the missing ones are what to fix.
+  if [[ -n "$missing" ]]; then
+    wk_warn "runner: the committed kit at $WK_KIT_DIR is missing${missing}; the cloud brief's runner is incomplete in $WK_HOME_DIR and its retired files wait until the kit is whole"
+    return 1
   fi
 
   # A retired file awaiting the prune is drift too, counted through the lister
   # the seed removes from.
-  retired=$(wk_home_runner_retired | awk 'END { print NR }')
+  retired=$(wk_home_runner_retired "${pairs[@]}" | awk 'END { print NR }')
 
   if [[ "$behind" -gt 0 || "$retired" -gt 0 ]]; then
     local detail="$behind of $compared file(s) differ"

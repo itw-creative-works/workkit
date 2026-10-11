@@ -4,13 +4,20 @@
 # functions only. WK_TOWER_APP, WK_TOWER_APP_EXCLUDE, WK_TOWER_APP_KEEP and
 # WK_HOME_SYNC_MANIFESTS are the entry's; WK_HOME_DIR is lib.sh's.
 
+# Does a git repo track the folder? The one test the copies below agree on: a
+# folder sitting untracked inside some other repo is not tracked.
+# Usage: wk_home_tracked <folder>
+wk_home_tracked() {
+  git -C "$1" ls-files --error-unmatch . >/dev/null 2>&1
+}
+
 # The folder a copy reads from. A folder a repo TRACKS gives HEAD's copy of it,
 # exported into <scratch dir>/src, so an uncommitted edit never travels; a
 # folder no repo tracks (even one sitting inside some other repo) is itself.
 # Usage: wk_home_source <scratch dir> <folder>
 wk_home_source() {
   local scratch="$1" folder="$2"
-  git -C "$folder" ls-files --error-unmatch . >/dev/null 2>&1 || {
+  wk_home_tracked "$folder" || {
     printf '%s\n' "$folder"
     return 0
   }
@@ -29,6 +36,20 @@ wk_home_source() {
   fi
   wk_warn "home: could not export the committed files from $folder (HEAD holds none of it, or the extract failed); nothing was copied from it"
   return 1
+}
+
+# One file's bytes by the same rule: HEAD's copy when a repo tracks the folder,
+# else the disk's. Nothing and 1 when that side lacks it; the caller decides
+# what an empty answer means. `./` keeps the path relative to the folder.
+# Usage: wk_home_file <folder> <relative path>
+wk_home_file() {
+  local folder="$1" rel="$2"
+  if wk_home_tracked "$folder"; then
+    git -C "$folder" show "HEAD:./$rel" 2>/dev/null || return 1
+    return 0
+  fi
+  [[ -f "$folder/$rel" ]] || return 1
+  cat "$folder/$rel" 2>/dev/null
 }
 
 # The seed: README § The home repo's lifecycle, step 4. The npm pins travel as

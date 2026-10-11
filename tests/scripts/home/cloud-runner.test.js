@@ -8,6 +8,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const { BASH, NO_RC, shellPath } = require('../../lib/platform');
 const {
   KIT_DIR, cleanup, mkRemote, mkWorld, setup, runnerPairs, seeded, mkKitCopy, commitKit, kitCommitted,
+  dropRunnerLine,
 } = require('./helpers');
 
 const run = async () => {
@@ -155,9 +156,10 @@ const run = async () => {
 
   await test('an incomplete checkout warns and seeds what it has', () => {
     const world = mkWorld();
-    const partial = path.join(world.root, 'partial-kit');
-    fs.mkdirSync(path.join(partial, 'jobs'), { recursive: true });
-    fs.writeFileSync(path.join(partial, 'jobs', 'morning.sh'), '# the runner\n');
+    // The list travels with the kit's workflow/ folder, so a partial kit keeps
+    // that folder and loses the composer's.
+    const partial = mkKitCopy(world.root, 'partial-kit');
+    fs.rmSync(path.join(partial, 'jobs', 'morning', 'brief'), { recursive: true });
     world.env.WORKKIT_KIT_DIR = partial;
 
     const { out } = seeded(world);
@@ -217,6 +219,42 @@ const run = async () => {
     assertEq(fs.readFileSync(retired, 'utf8'), '# last month’s runner\n', 'untouched');
     assertEq(fs.readFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.sh'), 'utf8'), '# a committed runner\n',
       'what the kit has still landed');
+    cleanup(world.root);
+  });
+
+  // The list is read from the same tree as the files: a line dropped from the
+  // kit's home.sh changes the runner only once it is committed.
+  const STATS = 'jobs/morning/brief/stats.js';
+
+  await test('a git-backed kit: a list line dropped but not committed retires nothing', () => {
+    const world = mkWorld();
+    const first = seeded(world);
+    assert(/rc=0/.test(first.out), `the whole kit seeded first: ${first.out}`);
+    dropRunnerLine(world.env.WORKKIT_KIT_DIR, STATS);
+
+    const { out } = seeded(world);
+    assert(/rc=2/.test(out) && /is current/.test(out), `the refresh is current: ${out}`);
+    assert(!out.includes('missing'), `with no missing warning: ${out}`);
+    const copy = path.join(world.tower, 'brief', 'jobs', 'morning', 'brief', 'stats.js');
+    assert(fs.existsSync(copy), 'the clone keeps the copy HEAD still ships');
+    assertEq(fs.readFileSync(copy, 'utf8'), kitCommitted(world, STATS), 'byte for byte as committed');
+    cleanup(world.root);
+  });
+
+  await test('a git-backed kit: a commit that drops a line and its file prunes the clone’s copy', () => {
+    const world = mkWorld();
+    seeded(world);
+    const kit = world.env.WORKKIT_KIT_DIR;
+    dropRunnerLine(kit, STATS);
+    fs.rmSync(path.join(kit, ...STATS.split('/')));
+    commitKit(kit, 'refactor: retire the stats module');
+
+    const { out } = seeded(world);
+    assert(/rc=0/.test(out), `the removal counts as a change: ${out}`);
+    assert(out.includes('1 retired'), `and is counted: ${out}`);
+    assert(!out.includes('missing'), `with no missing warning: ${out}`);
+    assert(!fs.existsSync(path.join(world.tower, 'brief', 'jobs', 'morning', 'brief', 'stats.js')),
+      'the clone’s copy is gone');
     cleanup(world.root);
   });
 

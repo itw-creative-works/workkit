@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 # workflow/home/stamp.sh: the clone's version stamp and the compare that refuses
 # a downgrade. Sourced by home.sh, functions only. WK_HOME_STAMP and WK_KIT_DIR
-# are the entry's; WK_HOME_DIR is lib.sh's.
+# are the entry's; WK_HOME_DIR is lib.sh's; the kit's manifest is read through
+# seed.sh's wk_home_file.
 
 # ── The version stamp ─────────────────────────────────────────────────────────
 
 # This checkout's kit version, or empty for "do not know", which nothing here
-# ever refuses on.
+# ever refuses on. The committed manifest's, so it agrees with the bytes the
+# writers copy.
 wk_kit_version() {
-  wk_json_get "$WK_KIT_DIR/.claude-plugin/plugin.json" '.version'
+  local manifest
+  command -v jq >/dev/null 2>&1 || return 0
+  manifest="$(wk_home_file "$WK_KIT_DIR" .claude-plugin/plugin.json)" || return 0
+  printf '%s' "$manifest" | wk_jq -r '.version // empty' 2>/dev/null || true
 }
 
 # The clone's stamp, or empty; an unstamped clone is written as usual.

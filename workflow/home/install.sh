@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # workflow/home/install.sh: the clone's dependencies, the catch-up and the
 # commit and push its writers use, and the clone's own heal. Sourced by home.sh,
-# functions only.
-# WK_WORKFLOW_DIR is the entry's; WK_HOME_DIR is lib.sh's.
+# functions only. WK_WORKFLOW_DIR (the install) and WK_KIT_DIR (the heal, read
+# through seed.sh's wk_home_source) are the entry's; WK_HOME_DIR is lib.sh's.
 
 # Run on both setup paths (unless the clone could not catch up), since a clone
 # another machine seeded arrives without its dependencies. An installed omega
@@ -86,24 +86,40 @@ wk_home_commit_push() {
   return 1
 }
 
-# The clone's own heal, `standards.sh --home` (README § The home repo's
-# lifecycle, step 14). Every failure is a named warning and exit 0.
+# The clone's own heal, the committed kit's `standards.sh --home` (README § The
+# home repo's lifecycle, step 14). Every failure is a named warning and exit 0.
 # Usage: wk_home_heal [--quiet]
 #   --quiet prints the heal's lines only when it failed or changed something.
 wk_home_heal() {
-  local quiet=0 rc=0 out changed=0
+  local quiet=0 rc=0 out changed=0 scratch kit
   [[ "${1:-}" == '--quiet' ]] && quiet=1
   wk_home_ready || {
     wk_warn "home: nothing is cloned at $WK_HOME_DIR; the home repo's labels and issue templates were not healed; \`workkit setup\` clones it"
     return 0
   }
-  [[ -n "$WK_WORKFLOW_DIR" && -f "$WK_WORKFLOW_DIR/standards.sh" ]] || {
-    wk_warn "home: the heal is missing at ${WK_WORKFLOW_DIR:-this engine}/standards.sh; the home repo's labels and issue templates were not healed"
+  [[ -n "$WK_KIT_DIR" && -d "$WK_KIT_DIR" ]] || {
+    wk_warn "home: the kit could not be resolved beside this engine; the home repo's labels and issue templates were not healed"
+    return 0
+  }
+  scratch="$(mktemp -d)" || {
+    wk_warn "home: could not make a scratch directory; the home repo's labels and issue templates were not healed"
+    return 0
+  }
+  # The heal, its templates and its labels all come from the one export.
+  kit="$(wk_home_source "$scratch" "$WK_KIT_DIR")" || {
+    wk_warn "home: the home repo's labels and issue templates were not healed"
+    rm -rf "$scratch"
+    return 0
+  }
+  [[ -f "$kit/workflow/standards.sh" ]] || {
+    wk_warn "home: the heal is missing at $kit/workflow/standards.sh; the home repo's labels and issue templates were not healed"
+    rm -rf "$scratch"
     return 0
   }
 
   # Captured, so a quiet run can decide whether there is anything to say.
-  out="$(bash "$WK_WORKFLOW_DIR/standards.sh" --home "$WK_HOME_DIR" 2>&1)" || rc=$?
+  out="$(bash "$kit/workflow/standards.sh" --home "$WK_HOME_DIR" 2>&1)" || rc=$?
+  rm -rf "$scratch"
 
   # Asked of the forms only, the one thing this heal writes into the tree, so a
   # half-finished edit elsewhere never triggers a commit about templates.

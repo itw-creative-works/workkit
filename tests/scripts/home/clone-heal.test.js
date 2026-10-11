@@ -7,7 +7,9 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../../lib/platform');
 const { fmtCalls } = require('../../lib/argv-log');
-const { WORKFLOW_DIR, cleanup, mkRemote, mkWorld, inHome } = require('./helpers');
+const {
+  WORKFLOW_DIR, cleanup, git, mkRemote, mkWorld, inHome, mkKitCopy, kitCommitted,
+} = require('./helpers');
 
 const run = async () => {
   group('workflow/home: the clone’s own heal');
@@ -129,6 +131,61 @@ const run = async () => {
     assertEq(res.status, 1, 'it refuses');
     assert(/not the tower clone/.test(res.stderr || ''), `and says why, got: ${res.stderr}`);
     assert(!fs.existsSync(path.join(other, '.github')), 'nothing was written into it');
+    cleanup(world.root);
+  });
+
+  // The forms come from the world's kit, read the way the runner is: HEAD's
+  // copy when a repo tracks the kit, the folder itself when none does.
+  const FORM = 'workflow/templates/issue-forms/bug.md';
+  const EDIT = '# an edit to the bug form not yet committed\n';
+  const healedBug = (world) => path.join(world.tower, '.github', 'ISSUE_TEMPLATE', 'bug.md');
+
+  await test('a git-backed kit: an uncommitted form edit is not healed in, the committed form is', () => {
+    const world = cloned();
+    fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, ...FORM.split('/')), EDIT);
+    const { code, out } = inHome(world, 'wk_home_heal');
+    assertEq(code, 0, `exit 0: ${out}`);
+    const body = fs.readFileSync(healedBug(world), 'utf8');
+    assertEq(body, kitCommitted(world, FORM), 'the clone holds the kit’s committed bug form, byte for byte');
+    assert(!body.includes('not yet committed'), 'and the edit stayed in the kit folder');
+    cleanup(world.root);
+  });
+
+  await test('a kit copy no repo tracks: the folder is the source, its edit is healed in', () => {
+    const world = cloned();
+    world.env.WORKKIT_KIT_DIR = mkKitCopy(world.root);
+    fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, ...FORM.split('/')), EDIT);
+    const { code, out } = inHome(world, 'wk_home_heal');
+    assertEq(code, 0, `exit 0: ${out}`);
+    assert(fs.readFileSync(healedBug(world), 'utf8').includes('not yet committed'),
+      'the folder’s bug form, edit included, reached the clone');
+    cleanup(world.root);
+  });
+
+  await test('a kit a repo tracks but HEAD lacks heals nothing, says so, and carries on', () => {
+    // The kit folder is staged in a repo whose only commit holds none of it, so
+    // the committed tree cannot be exported.
+    const world = cloned();
+    const holder = path.join(world.root, 'holder');
+    const kit = mkKitCopy(holder, 'kit');
+    fs.writeFileSync(path.join(holder, 'README.md'), '# not the kit\n');
+    git(holder, 'init', '-q', '-b', 'main');
+    git(holder, 'add', 'README.md');
+    const res = git(holder, '-c', 'user.name=kit', '-c', 'user.email=kit@localhost', 'commit', '-q', '-m', 'chore: a readme');
+    assertEq(res.status, 0, `the holder committed: ${res.stderr}`);
+    git(holder, 'add', 'kit');
+    world.env.WORKKIT_KIT_DIR = kit;
+    const head = git(world.tower, 'rev-parse', 'HEAD').stdout;
+    const before = world.ghCalls().length;
+
+    const { code, out } = inHome(world, 'wk_home_heal');
+    assertEq(code, 0, `a heal that cannot run never stops its caller: ${out}`);
+    assert(out.includes('labels and issue templates were not healed'), `it names what went unhealed, got: ${out}`);
+    assert(!fs.existsSync(path.join(world.tower, '.github', 'ISSUE_TEMPLATE')), 'no form was written');
+    assertEq(git(world.tower, 'rev-parse', 'HEAD').stdout, head, 'and nothing was committed');
+    const calls = world.ghCalls().slice(before).map((c) => c.join(' '));
+    assert(!calls.some((c) => c.startsWith('label create') || c.startsWith('label edit')),
+      `and no label was written, got: ${calls.join(' | ')}`);
     cleanup(world.root);
   });
 

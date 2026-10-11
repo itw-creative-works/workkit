@@ -6,7 +6,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  cleanup, git, mkRemote, mkWorld, inHome, mkKitCopy, commitKit, STAMP,
+  cleanup, git, mkRemote, mkWorld, inHome, mkKitCopy, commitKit, dropRunnerLine, STAMP,
 } = require('./helpers');
 
 const run = async () => {
@@ -179,6 +179,35 @@ const run = async () => {
     assert(/1 retired file\(s\) await pruning/.test(out), `it names the leftover, got: ${out}`);
     assert(/workkit setup/.test(out) && /rc=1/.test(out), `and warns, got: ${out}`);
     assert(fs.existsSync(retired), 'doctor only reads: the file is still there');
+    cleanup(world.root);
+  });
+
+  await test('a committed list naming a file HEAD lacks: the missing file is named, the prune waits', () => {
+    // setup cannot remove the retired file while the kit is incomplete, so the
+    // doctor names what the kit lacks instead of advising setup.
+    const world = withRunner({ repo: true });
+    const retired = path.join(world.tower, 'brief', 'jobs', 'claude-cloud.sh');
+    fs.writeFileSync(retired, '# last month’s runner\n');
+    const kit = world.env.WORKKIT_KIT_DIR;
+    fs.rmSync(path.join(kit, 'jobs', 'morning', 'brief', 'stats.js'));
+    commitKit(kit, 'chore: a kit missing a file');
+
+    const { out } = runnerDoctor(world);
+    assert(out.includes('is missing') && out.includes('stats.js'), `it names the missing file, got: ${out}`);
+    assert(out.includes('retired files wait until the kit is whole'), `and says the prune waits, got: ${out}`);
+    assert(!out.includes('await pruning'), `with no retired count, got: ${out}`);
+    assert(!out.includes('workkit setup'), `and no setup advice, got: ${out}`);
+    assert(/rc=1/.test(out), `and counts, got: ${out}`);
+    assert(fs.existsSync(retired), 'doctor only reads: the file is still there');
+    cleanup(world.root);
+  });
+
+  await test('a git-backed kit: a list line dropped but not committed is not drift', () => {
+    const world = withRunner({ repo: true });
+    dropRunnerLine(world.env.WORKKIT_KIT_DIR, 'jobs/morning/brief/stats.js');
+    const { out } = runnerDoctor(world);
+    assert(/runner: the cloud brief's runner in/.test(out) && /is current/.test(out), `it reports current, got: ${out}`);
+    assert(/rc=0/.test(out), `and nothing needs attention, got: ${out}`);
     cleanup(world.root);
   });
 

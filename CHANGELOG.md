@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#416](../../issues/416) - The home repo's heal, the cloud brief runner's file list, the version stamp and `workkit doctor` read the plugin checkout's committed tree (HEAD), so uncommitted templates, list lines or version bumps never reach the home repo, and the doctor names a listed file the commit lacks.
+
 ## [0.74.1] - 2026-10-10
 
 ### Fixed

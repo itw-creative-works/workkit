@@ -24,12 +24,12 @@ WK_TOWER_APP_EXCLUDE=(node_modules package-lock.json .omega .cache .temp dist .e
 # that the copy still needs.
 WK_TOWER_APP_KEEP=(.env.example)
 
-# The engine's own folder, where standards.sh (the clone's heal) sits. Resolved
-# from this file, since the engine travels as a folder.
+# The engine's own folder, where the stage files and the publish build sit.
+# Resolved from this file, since the engine travels as a folder.
 WK_WORKFLOW_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || printf '')"
 
-# The plugin checkout: the source of the cloud brief's runner. The override is
-# the suite's seam.
+# The plugin checkout: the source of the cloud brief's runner, the heal and the
+# version stamp, read at HEAD. The override is the suite's seam.
 WK_KIT_DIR="${WORKKIT_KIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd -P || printf '')}"
 
 # The cloud brief's runner, as relative `src:dest` pairs (README § The home
