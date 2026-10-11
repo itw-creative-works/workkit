@@ -66,14 +66,14 @@ Status changes ARE checkpoint work. Apply every owner word that moves an issue's
 
 - The trail reports actions; it is not an audit log. It is the reply's `**🗂️ Filed**` section, the one shape `workkit:triage` prints too.
 - ONE bullet per issue this run touched, listing everything done to it in plain words: comments, filings, flips. Never one line per action, never a raw URL.
-- Every bullet reads in the cold-reader line (`docs/project-state.md` § Restating an issue): its bold lead is the number, the issue link and five words.
+- Every bullet reads in the cold-reader line (`docs/project-state.md` § Restating an issue): its bold lead is the number, the issue link, the issue's status in square brackets and five words.
 - Items verified as already on the board get ONE closing count line, never a line each.
 
 ```
 **🗂️ Filed**
-- **1. [#209](url) parity lens parked**: the review skill's Parity lens is built and parked for your check. Commented your "watch it a few days" ruling, so it rides along unshipped until you pass it.
-- **2. [#637](url) palette failure line**: the palette failure line was overwritten on the desktop settings page. Quoted your "637 looks good" and flipped it to status:complete, so the next ship carries it.
-- **3. [#211](url) findings on the wrong repo**: findings about workkit made in another repo's session were filed on the home repo instead of the workkit repo. Filed as a bug, status:inbox, for triage to route.
+- **1. [#209](url) [qa] parity lens parked**: the review skill's Parity lens is built and parked for your check. Commented your "watch it a few days" ruling, so it rides along unshipped until you pass it.
+- **2. [#637](url) [complete] palette failure line**: the palette failure line was overwritten on the desktop settings page. Quoted your "637 looks good" and flipped it to status:complete, so the next ship carries it.
+- **3. [#211](url) [inbox] findings on the wrong repo**: findings about workkit made in another repo's session were filed on the home repo instead of the workkit repo. Filed as a bug, status:inbox, for triage to route.
 - **4. Verified six earlier items**: already on their issues.
 
 **✅ Safe to compact or continue in a new session.**

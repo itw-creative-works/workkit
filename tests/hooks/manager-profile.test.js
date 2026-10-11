@@ -129,11 +129,19 @@ const run = async () => {
     assert(/[Jj]udgment stays/.test(ctx), 'the judgment boundary is missing');
     assert(ctx.includes('self-contained'), 'the owner-question rule is missing');
     assert(ctx.includes('names the framework guide'), 'the brief routes the guide read');
-    assert(ctx.includes('ONE bullet, bold lead = number + link + five words, then two to three sentences for a cold reader') && ctx.includes('Restating an issue'), 'the cold-reader line rides every prompt (#221)');
+    assert(ctx.includes('ONE bullet, bold lead = number + link + [status] + five words, then two to three sentences for a cold reader') && ctx.includes('Restating an issue'), 'the cold-reader line, with the status token, rides every prompt (#221, #417)');
     assert(ctx.includes('link text #N, or repo#N on every link when the reply spans repos'), 'the repo prefix rule rides every prompt (#386)');
     for (const term of ['feature-developer', 'test-developer', 'scripts/red-proof.sh', 'docs/agents.md § Batches', 'briefs/']) {
       assert(ctx.includes(term), `the batch shape rides every prompt: "${term}" is missing`);
     }
+  });
+  await test('the bold lead without the status token is gone (#417)', () => {
+    // The old clause is not a substring of the new one, so a half-edit that
+    // keeps it alongside the new phrase still fails here.
+    freshTmp();
+    cacheSession('sess1', id('fable'));
+    const ctx = contextOf(runHook(payload()));
+    assert(!ctx.includes('bold lead = number + link + five words'), 'the bold lead still omits the status token');
   });
   await test('the visibility rules are present on both rungs (#154)', () => {
     // What a manager owes the chat while it delegates: the checklist that says

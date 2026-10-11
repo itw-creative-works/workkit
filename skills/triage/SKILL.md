@@ -76,11 +76,11 @@ The system proposes, the owner creates. No automation makes a repo or moves an i
 ## Always end with the Filed trail
 
 - The trail IS the reply's `**🗂️ Filed**` section: the same heading and bullet shape as every other Filed section the owner reads.
-- Each bullet's bold lead carries its number, the issue link and five words. The bullet reads in the cold-reader line (`docs/project-state.md` § Restating an issue). An entry that landed with no issue (a docs page, another repo's path) leads with that destination instead.
+- Each bullet's bold lead carries its number, the issue link, the issue's status in square brackets and five words. The bullet reads in the cold-reader line (`docs/project-state.md` § Restating an issue). An entry that landed with no issue (a docs page, another repo's path) leads with that destination instead.
 
 ```
 **🗂️ Filed**
-- **1. [#N](url) <five words>**: <what the entry is, what this run did with it, what is needed next>
+- **1. [#N](url) [<status>] <five words>**: <what the entry is, what this run did with it, what is needed next>
 - **2. <repo or docs path>**: <what the entry is and why it landed there>
 - ...
 ```
