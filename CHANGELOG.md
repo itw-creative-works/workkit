@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.74.3] - 2026-10-10
+
 ### Changed
 
-- [#417](../../issues/417) - A summary item's bold lead carries the issue's status in square brackets between the link and the five words (`[qa]`, `[closed]`, `[merged]`), read from the issue when the reply is written; the manager hook's one-sentence form and the triage and checkpoint trails carry it too.
+- [#417](../../issues/417) [`c366f48`](../../commit/c366f48) Thanks [@ianwieds]! - A summary item's bold lead carries the issue's status in square brackets between the link and the five words (`[qa]`, `[closed]`, `[merged]`), read from the issue when the reply is written; the manager hook's one-sentence form and the triage and checkpoint trails carry it too.
 
 ## [0.74.2] - 2026-10-10
 
