@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#418](../../issues/418) - A summary item's bold lead whose open linked issue has no `status:` label carries `[unlabeled]`, a nudge to label it; `[closed]` and `[merged]` win when they apply.
+
 ## [0.74.3] - 2026-10-10
 
 ### Changed
