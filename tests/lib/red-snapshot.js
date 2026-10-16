@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { IS_WINDOWS, BASH, NO_RC, shellPath } = require('./platform');
+const { BASH, NO_RC, shellPath } = require('./platform');
 
 const PLATFORM = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'platform.sh'));
 
@@ -27,7 +27,7 @@ const snapshotDir = (tmp, root) => {
   return path.join(tmp, 'claude-red-snapshot', path.basename(res.stdout.trim()));
 };
 
-/** The `node_modules` rule: Windows leaves every such folder out of a snapshot. */
+/** The `node_modules` rule: a snapshot leaves every such folder out, on every platform. */
 const isModules = (name) => name === 'node_modules';
 
 /**
@@ -55,21 +55,20 @@ const treeOf = (root, { skipModules = false } = {}) => {
 
 /**
  * Take the snapshot of a `mkRepo` world by hand, as the claim would: the repo
- * folder without `.git` as `tree/`, HEAD's sha, the working-change list
- * (NUL-separated: the diff against HEAD, then the untracked files) and the
- * issue numbers, one a line.
+ * folder without `.git` or any `node_modules` as `tree/`, HEAD's sha, the
+ * working-change list (NUL-separated: the diff against HEAD, then the
+ * untracked files) and the issue numbers, one a line.
  * @param {{repo: string, tmp: string, git: Function}} w
- * @param {{issues?: string[], skipModules?: boolean}} [opts] - `skipModules`
- *   leaves out every `node_modules` folder, as the Windows copy does
+ * @param {{issues?: string[]}} [opts]
  * @returns {string} the snapshot folder
  */
-const takeSnapshot = (w, { issues = ['5'], skipModules = IS_WINDOWS } = {}) => {
+const takeSnapshot = (w, { issues = ['5'] } = {}) => {
   const dir = snapshotDir(w.tmp, w.repo);
   fs.mkdirSync(dir, { recursive: true });
   fs.cpSync(w.repo, path.join(dir, 'tree'), {
     recursive: true,
     verbatimSymlinks: true,
-    filter: (src) => src !== path.join(w.repo, '.git') && !(skipModules && isModules(path.basename(src))),
+    filter: (src) => src !== path.join(w.repo, '.git') && !isModules(path.basename(src)),
   });
   fs.writeFileSync(path.join(dir, 'head'), `${w.git('rev-parse', 'HEAD').trim()}\n`);
   const paths = w.git('diff', 'HEAD', '--name-only', '--no-renames', '-z')

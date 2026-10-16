@@ -7,10 +7,10 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, skip, summary, selfRun,
+  group, test, assert, assertEq, skip, testUnless, summary, selfRun,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, NODE_DIR, NO_EXEC_BIT, shellPath, cygpathStub, systemPathWith, homeEnv,
+  IS_WINDOWS, BASH, NO_RC, NODE_DIR, NO_EXEC_BIT, SYSTEM_PATH, shellPath, which, stubTool, joinPath, systemPathWith, homeEnv,
 } = require('../lib/platform');
 const { makeGhStub, ghCalls, hookRunner } = require('../lib/gh-stub');
 const { fmtCalls } = require('../lib/argv-log');
@@ -25,6 +25,7 @@ const LOADER = path.join(REPO, 'hooks', 'loader.sh');
 
 const CLAIM = (n) => `gh issue edit ${n} --add-label status:building`;
 const QA = (n) => `gh issue edit ${n} --remove-label status:building --add-label status:qa`;
+const BLOCK = (n) => `gh issue edit ${n} --remove-label status:building --add-label status:blocked`;
 
 /** The `issue list` answer: each number open at status:building. */
 const building = (...numbers) => numbers.map((number) => ({ number, labels: [{ name: 'status:building' }] }));
@@ -81,15 +82,18 @@ const claim = (w, n, list) => {
 const run = async () => {
   group('workflow:snapshot: the claim');
 
-  await test('a claim with no snapshot takes one: the whole tree, gitignored files in, no .git, head, paths and issues recorded', () => {
+  await test('a claim with no snapshot takes one: the whole tree, gitignored files in, no node_modules, no .git, head, paths and issues recorded', () => {
     const w = mkWorld();
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('src/new.js', 'module.exports = 3;\n');
+    w.write('pkg/node_modules/dep/index.js', 'module.exports = 7;\n');
     claim(w, 5, building(5));
     const snap = snapshotDir(w.tmp, w.repo);
     assert(fs.existsSync(path.join(snap, 'tree')), `the snapshot's tree exists at ${snap}`);
     const tree = treeOf(path.join(snap, 'tree'));
-    assertEq(json(tree), json(treeOf(w.repo, { skipModules: IS_WINDOWS })), 'the snapshot tree is the repo folder');
+    assertEq(Object.keys(tree).filter((k) => k.split(path.sep).includes('node_modules')).join(','), '',
+      'no node_modules anywhere in the snapshot, on every platform');
+    assertEq(json(tree), json(treeOf(w.repo, { skipModules: true })), 'everything else is the repo folder');
     assertEq(tree[path.join('dist', 'out.js')], 'file module.exports = 1;\n', 'the gitignored dist/ is in it');
     assertEq(tree['.env'], 'file KEY="snap"\n', 'the gitignored .env is in it');
     assertEq(tree[path.join('src', 'x.js')], 'file module.exports = 2;\n', 'the working edit is in it');
@@ -125,10 +129,44 @@ const run = async () => {
     claim(w, 6, building(6));
     const snap = snapshotDir(w.tmp, w.repo);
     assertEq(read(path.join(snap, 'tree'), path.join('src', 'x.js')), 'module.exports = 9;\n', 'the new tree carries the later change');
-    assertEq(json(treeOf(path.join(snap, 'tree'))), json(treeOf(w.repo, { skipModules: IS_WINDOWS })), 'the tree is the repo now');
+    assertEq(json(treeOf(path.join(snap, 'tree'))), json(treeOf(w.repo, { skipModules: true })), 'the tree is the repo now');
     assertEq(json(issuesOf(snap)), json(['6']), 'issues is the new claim alone');
     assertEq(snapshots(w).length, 1, `one snapshot for the repo: ${snapshots(w)}`);
   });
+
+  await test('a take on top of a live snapshot replaces it whole: nothing of the old tree left, no temporary sibling', () => {
+    const w = mkWorld();
+    w.write('src/gone.js', 'module.exports = 8;\n');
+    claim(w, 5, building(5));
+    const snap = snapshotDir(w.tmp, w.repo);
+    assert(fs.existsSync(path.join(snap, 'tree', 'src', 'gone.js')), 'the first take holds src/gone.js');
+    fs.rmSync(path.join(w.repo, 'src', 'gone.js'));
+    w.write('src/x.js', 'module.exports = 9;\n');
+    claim(w, 6, building(6));
+    assert(!fs.existsSync(path.join(snap, 'tree', 'src', 'gone.js')), 'a file only the old tree held is gone');
+    assertEq(json(treeOf(path.join(snap, 'tree'))), json(treeOf(w.repo, { skipModules: true })), 'the tree is the repo now');
+    assertEq(json(snapshots(w)), json([path.basename(snap)]), 'one folder under the final name, no sibling');
+  });
+
+  // Every answer GitHub may give at the re-claim: the issue back at building,
+  // or a read that has not caught up, which makes the snapshot look stale.
+  for (const [label, list] of [['building again', building(5)], ['none building yet', []]]) {
+    await test(`a re-claim of a recorded issue after a block keeps the first tree, the number once (gh answers ${label})`, () => {
+      const w = mkWorld();
+      claim(w, 5, building(5));
+      const snap = snapshotDir(w.tmp, w.repo);
+      const before = treeOf(path.join(snap, 'tree'));
+      assertEq(runnerOf(w)(BLOCK(5), makeGhStub({ list: [] }), w.repo).code, 0, 'the block exits 0');
+      w.write('src/x.js', 'module.exports = 9;\n');
+      w.write('src/late.js', 'module.exports = 4;\n');
+      claim(w, 5, list);
+      assertEq(json(treeOf(path.join(snap, 'tree'))), json(before), 'the tree is as the first claim found it');
+      assertEq(read(path.join(snap, 'tree'), path.join('src', 'x.js')), 'module.exports = 1;\n', 'the edit since is not in it');
+      assert(!fs.existsSync(path.join(snap, 'tree', 'src', 'late.js')), 'the file made since is not in it');
+      assertEq(json(issuesOf(snap)), json(['5']), 'the number is recorded once');
+      assertEq(snapshots(w).length, 1, `one snapshot for the repo: ${snapshots(w)}`);
+    });
+  }
 
   await test('a failed GitHub read at a claim keeps the live snapshot and adds the number', () => {
     const w = mkWorld();
@@ -158,7 +196,7 @@ const run = async () => {
 
   group('workflow:snapshot: removal');
 
-  for (const flip of [QA(5), 'gh issue close 5', 'gh issue edit 5 --remove-label status:building']) {
+  for (const flip of [QA(5), 'gh issue edit 5 --remove-label status:qa --add-label status:complete', 'gh issue close 5']) {
     await test(`the last building issue leaving removes the snapshot: ${flip}`, () => {
       const w = mkWorld();
       claim(w, 5, building(5));
@@ -181,6 +219,28 @@ const run = async () => {
     assert(fs.existsSync(snap), 'the snapshot stays');
     assertEq(json(treeOf(path.join(snap, 'tree'))), json(before), 'its tree is intact');
   });
+
+  // Leaving building without reaching qa or complete ends no work, so GitHub
+  // answers that nothing is building and the snapshot must stay anyway.
+  for (const flip of [
+    BLOCK(5),
+    'gh issue edit 5 --remove-label status:building --add-label status:specced',
+    'gh issue edit 5 --remove-label status:building',
+  ]) {
+    await test(`a flip off building that adds neither qa nor complete leaves the snapshot and calls no gh: ${flip}`, () => {
+      const w = mkWorld();
+      claim(w, 5, building(5));
+      const snap = snapshotDir(w.tmp, w.repo);
+      const before = treeOf(path.join(snap, 'tree'));
+      const stub = makeGhStub({ list: [] });
+      const out = runnerOf(w)(flip, stub, w.repo);
+      assertEq(out.code, 0, `exit 0: ${out.stderr}`);
+      assert(fs.existsSync(snap), `the snapshot stays: ${snapshots(w)}`);
+      assertEq(json(treeOf(path.join(snap, 'tree'))), json(before), 'its tree is intact');
+      assertEq(json(issuesOf(snap)), json(['5']), 'its issues are intact');
+      assertEq(ghCalls(stub).length, 0, `no gh call: ${fmtCalls(ghCalls(stub))}`);
+    });
+  }
 
   await test('a failed GitHub read at removal leaves the snapshot, exit 0', () => {
     const w = mkWorld();
@@ -212,7 +272,7 @@ const run = async () => {
     assertEq(out.code, 0, `exit 0: ${out.stderr}`);
     const snap = snapshotDir(session.tmp, other.repo);
     assert(fs.existsSync(path.join(snap, 'tree')), `the other repo's snapshot exists: ${snapshots(session)}`);
-    assertEq(json(treeOf(path.join(snap, 'tree'))), json(treeOf(other.repo, { skipModules: IS_WINDOWS })),
+    assertEq(json(treeOf(path.join(snap, 'tree'))), json(treeOf(other.repo, { skipModules: true })),
       'the snapshot tree is the other repo');
     assertEq(json(issuesOf(snap)), json(['5']), 'issues records the claim');
     assert(!fs.existsSync(snapshotDir(session.tmp, session.repo)), 'the session repo has no snapshot');
@@ -266,23 +326,111 @@ const run = async () => {
     });
   }
 
-  group('workflow:snapshot: Windows (Git Bash)');
+  group('workflow:snapshot: a failed take');
 
-  await test('the Windows copy leaves out every node_modules folder and keeps every other gitignored file', () => {
+  // The copy tool each platform's take uses (tar on Git Bash, cp elsewhere),
+  // stubbed ahead on PATH to copy for real and then fail, so a whole tree is
+  // left under the temporary name for the take to clear. Each call is logged.
+  const failingCopy = () => {
+    const tool = IS_WINDOWS ? 'tar' : 'cp';
+    const bin = mkTmp(`snapshot-${tool}-`);
+    const log = path.join(bin, `${tool}.log`);
+    stubTool(bin, tool, ['#!/bin/bash', `echo "$*" >> "${shellPath(log)}"`,
+      `"${shellPath(which(tool, SYSTEM_PATH))}" "$@"`, `echo "${tool}: refused" >&2`, 'exit 1']);
+    return { tool, log, pathFor: (stub) => joinPath(bin, systemPathWith(stub.binDir, NODE_DIR)) };
+  };
+
+  await test('a take whose copy fails leaves no snapshot folder and no temporary sibling, exit 0', () => {
     const w = mkWorld();
-    w.write('pkg/node_modules/dep/index.js', 'module.exports = 7;\n');
-    const cyg = mkTmp('snapshot-cygpath-');
-    cygpathStub(cyg);
+    const copy = failingCopy();
     const stub = makeGhStub({ list: building(5) });
-    const out = runnerOf(w, null, { OSTYPE: 'msys' })(CLAIM(5), stub, w.repo, systemPathWith(stub.binDir, cyg, NODE_DIR));
+    const out = runnerOf(w)(CLAIM(5), stub, w.repo, copy.pathFor(stub));
     assertEq(out.code, 0, `exit 0: ${out.stderr}`);
+    assert(fs.existsSync(copy.log), `the take reached the failing ${copy.tool}`);
+    assertEq(json(snapshots(w)), json([]), 'no snapshot folder and no temporary sibling');
+  });
+
+  await test('a take whose copy fails on top of a live snapshot keeps that one whole and leaves no temporary sibling', () => {
+    const w = mkWorld();
+    claim(w, 5, building(5));
     const snap = snapshotDir(w.tmp, w.repo);
-    assert(fs.existsSync(path.join(snap, 'tree')), `the snapshot's tree exists at ${snap}`);
-    const tree = treeOf(path.join(snap, 'tree'));
-    assertEq(Object.keys(tree).filter((k) => k.split(path.sep).includes('node_modules')).join(','), '',
-      'no node_modules anywhere in the snapshot');
-    assertEq(json(tree), json(treeOf(w.repo, { skipModules: true })), 'everything else is the repo folder');
-    assert(path.join('dist', 'out.js') in tree && '.env' in tree, 'the other gitignored files are in it');
+    const before = { tree: treeOf(path.join(snap, 'tree')), head: read(snap, 'head'), issues: read(snap, 'issues') };
+    w.write('src/x.js', 'module.exports = 9;\n');
+    w.git('commit', '-q', '-am', 'later');
+    const copy = failingCopy();
+    const stub = makeGhStub({ list: building(6) });
+    const out = runnerOf(w)(CLAIM(6), stub, w.repo, copy.pathFor(stub));
+    assertEq(out.code, 0, `exit 0: ${out.stderr}`);
+    assert(fs.existsSync(copy.log), `the take reached the failing ${copy.tool}`);
+    assertEq(json(treeOf(path.join(snap, 'tree'))), json(before.tree), 'the live tree is as it was');
+    assertEq(read(snap, 'head'), before.head, 'head is as it was');
+    assertEq(read(snap, 'issues'), before.issues, 'issues is as it was');
+    assertEq(json(snapshots(w)), json([path.basename(snap)]), 'one folder under the final name, no sibling');
+  });
+
+  /** Every folder under `dir` made writable again, so the scratch can be removed. */
+  const unlock = (dir) => {
+    if (!fs.existsSync(dir)) return;
+    for (const rel of ['', ...fs.readdirSync(dir, { recursive: true })]) {
+      const full = path.join(dir, String(rel));
+      if (fs.lstatSync(full).isDirectory()) fs.chmodSync(full, 0o755);
+    }
+  };
+
+  const lockTest = testUnless(IS_WINDOWS || process.getuid() === 0,
+    'a read-only folder does not stop the removal here (Windows ignores the mode, root ignores it)');
+  /** The `<dir>.XXXXXX` siblings of snapshot folder `snap`, by name. */
+  const siblingsOf = (w, snap) => snapshots(w).filter((name) => name.startsWith(`${path.basename(snap)}.`));
+
+  await lockTest('a take over an old snapshot it cannot remove moves the remains to one sibling and takes the new one', () => {
+    const w = mkWorld();
+    claim(w, 5, building(5));
+    const snap = snapshotDir(w.tmp, w.repo);
+    fs.chmodSync(path.join(snap, 'tree', 'src'), 0o555);
+    try {
+      w.write('src/x.js', 'module.exports = 9;\n');
+      w.git('commit', '-q', '-am', 'later');
+      w.write('src/late.js', 'module.exports = 4;\n');
+      const out = claim(w, 6, building(6));
+      assert(!`${out.stdout}${out.stderr}`.includes('could not be taken'), `no notice of a failed take: ${out.stdout}${out.stderr}`);
+      assert(`${out.stdout}`.includes('moved aside to'), `the notice names where the remains went: ${out.stdout}`);
+      assertEq(json(issuesOf(snap)), json(['6']), 'the claim recorded the new number');
+      assertEq(json(treeOf(path.join(snap, 'tree'))), json(treeOf(w.repo, { skipModules: true })), 'the tree is the new take');
+      assertEq(read(snap, 'head'), `${w.git('rev-parse', 'HEAD').trim()}\n`, 'head is the new take\'s');
+      const paths = w.git('diff', 'HEAD', '--name-only', '--no-renames', '-z')
+        + w.git('ls-files', '--others', '--exclude-standard', '-z');
+      assertEq(read(snap, 'paths'), paths, 'paths is the new take\'s');
+      const siblings = siblingsOf(w, snap);
+      assertEq(siblings.length, 1, `exactly one sibling: ${snapshots(w)}`);
+      assert(/^\.[^.]{6}$/.test(siblings[0].slice(path.basename(snap).length)), `named <dir>.<six chars>: ${siblings[0]}`);
+      const sibling = path.join(path.dirname(snap), siblings[0]);
+      const isLocked = (rel) => fs.lstatSync(path.join(sibling, rel)).isDirectory()
+        // eslint-disable-next-line no-bitwise
+        && (fs.statSync(path.join(sibling, rel)).mode & 0o222) === 0;
+      const locked = fs.readdirSync(sibling, { recursive: true }).map(String)
+        .filter((rel) => path.basename(rel) === 'src' && isLocked(rel));
+      assertEq(locked.length, 1, `the sibling holds the read-only remains: ${fs.readdirSync(sibling, { recursive: true })}`);
+    } finally {
+      unlock(path.join(w.tmp, 'claude-red-snapshot'));
+    }
+  });
+
+  await test('a take clears a sibling older than 10 minutes and keeps a fresh one', () => {
+    const w = mkWorld();
+    claim(w, 5, building(5));
+    const snap = snapshotDir(w.tmp, w.repo);
+    const stale = `${snap}.abcdef`;
+    const fresh = `${snap}.ghijkl`;
+    const old = new Date(Date.now() - 20 * 60 * 1000);
+    for (const dir of [stale, fresh]) fs.mkdirSync(path.join(dir, 'tree'), { recursive: true });
+    fs.writeFileSync(path.join(stale, 'tree', 'left.js'), 'module.exports = 0;\n');
+    fs.writeFileSync(path.join(fresh, 'tree', 'left.js'), 'module.exports = 0;\n');
+    for (const p of [path.join(stale, 'tree', 'left.js'), path.join(stale, 'tree'), stale]) fs.utimesSync(p, old, old);
+    w.write('src/x.js', 'module.exports = 9;\n');
+    claim(w, 6, building(6));
+    assert(!fs.existsSync(stale), `the stale sibling is gone: ${snapshots(w)}`);
+    assert(fs.existsSync(path.join(fresh, 'tree', 'left.js')), `the fresh sibling stays: ${snapshots(w)}`);
+    assertEq(json(issuesOf(snap)), json(['6']), 'the take happened');
   });
 
   group('workflow:snapshot: wiring');

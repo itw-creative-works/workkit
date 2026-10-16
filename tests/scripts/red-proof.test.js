@@ -1,20 +1,20 @@
 // Tests for scripts/red-proof.sh: the tests run in a copy built from the repo's
 // snapshot, where the named source paths are as the snapshot holds them and
-// every other change since is live. Every case is a real throwaway git repo
+// every other change since is live; with --live they run in the live tree, the
+// named paths swapped for the run. Every case is a real throwaway git repo
 // whose snapshot is made by hand in the claim's layout, in a TMPDIR of its own,
 // so the worktree the script makes is seen to go; nothing is stubbed.
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawnSync, spawn } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun,
+  group, test, assert, assertEq, testUnless, summary, selfRun,
 } = require('../lib/harness');
 const {
-  BASH, NO_RC, shellPath, gitPath, cygpathStub, pathWith,
+  IS_WINDOWS, BASH, NO_RC, shellPath, gitPath,
 } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
-const { mkTmp } = require('../lib/scratch');
 const { treeOf, takeSnapshot } = require('../lib/red-snapshot');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'red-proof.sh');
@@ -122,12 +122,35 @@ const runScript = (w, args, cwd = w.repo, env = w.env) => {
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
-/** World `w`'s env as faked Git Bash sees it: `OSTYPE=msys` and a stub `cygpath` first on PATH. */
-const msysEnv = (w) => {
-  const cyg = mkTmp('red-proof-cygpath-');
-  cygpathStub(cyg);
-  return { ...w.env, OSTYPE: 'msys', PATH: pathWith(cyg) };
-};
+/**
+ * Run the script in the background and send it TERM once `marker` exists,
+ * which the command writes; resolves with its exit once it has gone.
+ */
+const termMidRun = (w, args, marker) => new Promise((resolve, reject) => {
+  const child = spawn(BASH, [...NO_RC, shellPath(SCRIPT), ...args], { cwd: w.repo, env: w.env });
+  let said = '';
+  child.stdout.on('data', (d) => { said += d; });
+  child.stderr.on('data', (d) => { said += d; });
+  const started = Date.now();
+  const poll = setInterval(() => {
+    if (fs.existsSync(marker)) {
+      clearInterval(poll);
+      child.kill('SIGTERM');
+    } else if (Date.now() - started > 30000) {
+      clearInterval(poll);
+      child.kill('SIGKILL');
+    }
+  }, 50);
+  const deadline = setTimeout(() => {
+    child.kill('SIGKILL');
+    reject(new Error(`the script did not exit after TERM: ${said}`));
+  }, 60000);
+  child.on('exit', (code, signal) => {
+    clearInterval(poll);
+    clearTimeout(deadline);
+    resolve({ code, signal, said, marked: fs.existsSync(marker) });
+  });
+});
 
 const lines = (out) => out.split('\n').filter(Boolean);
 
@@ -253,6 +276,20 @@ const run = async () => {
     cleanup(w.dir);
   });
 
+  await test('a tracked file the snapshot tree lacks is HEAD\'s in the copy: a test requiring it is green, exit 1', () => {
+    const w = mkWorld();
+    const snap = takeSnapshot(w);
+    fs.rmSync(path.join(snap, 'tree', 'src', 'helper.js'));
+    w.write('src/x.js', 'module.exports = 2;\n');
+    const check = "console.log('helper', require('./src/helper'));";
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '-e', check]);
+    assertEq(field(out, 'helper'), '0', `HEAD's src/helper.js loaded in the copy: ${out}${err}`);
+    assertEq(code, 1, `exit 1: ${out}${err}`);
+    assertEq(lines(out).pop(), 'red-proof: green: the tests pass without src/x.js', `the last stdout line: ${out}`);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
   await test('since the snapshot: a changed file is live, a deleted one absent, one dirty then and reverted since is HEAD\'s', () => {
     const w = mkWorld();
     w.write('src/w.js', 'module.exports = 999;\n');
@@ -312,17 +349,17 @@ const run = async () => {
     cleanup(w.dir);
   });
 
-  await test('Windows (Git Bash): a snapshot with no node_modules, the copy reaches each live one', () => {
+  await test('a snapshot with no node_modules: the copy reaches the root\'s and a nested package\'s live one', () => {
     const w = mkWorld();
     w.write('pkg/use.js', "module.exports = require('dep');\n");
     w.git('add', '-A');
     w.git('commit', '-q', '-m', 'pkg');
     w.write('node_modules/tiny/index.js', 'module.exports = 5;\n');
     w.write('pkg/node_modules/dep/index.js', 'module.exports = 7;\n');
-    const snap = takeSnapshot(w, { skipModules: true });
+    const snap = takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', `console.log('tiny', require('tiny'));\nconsole.log('dep', require('../pkg/use'));\n${TEST_OF(2)}`);
-    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js'], w.repo, msysEnv(w));
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
     assertEq(field(out, 'tiny'), '5', `the root node_modules reached: ${out}${err}`);
     assertEq(field(out, 'dep'), '7', `the nested node_modules reached: ${out}${err}`);
     assert(err.includes('x is 1'), `the assertion ran: ${err}`);
@@ -336,11 +373,11 @@ const run = async () => {
     cleanup(w.dir);
   });
 
-  await test('Windows (Git Bash): a workspace link reaches the copy\'s package, a plain and a scoped entry the live repo; rebuilt output is red', () => {
+  await test('a workspace link reaches the copy\'s package, a plain and a scoped entry the live repo; rebuilt output is red', () => {
     const w = mkBuilt();
     w.write('node_modules/tiny/index.js', 'module.exports = 5;\n');
     w.write('node_modules/@scope/ext/index.js', 'module.exports = 6;\n');
-    takeSnapshot(w, { skipModules: true });
+    takeSnapshot(w);
     w.write('packages/a/index.js', 'module.exports = 2;\n');
     w.write('packages/b/dist/index.js', BUILT('new'));
     w.write('tests/ab.test.js', [
@@ -349,7 +386,7 @@ const run = async () => {
       "for (const name of ['@scope/a', 'tiny', '@scope/ext']) console.log(name, require.resolve(name), require(name));",
       BUILT_TEST_OF(2),
     ].join('\n'));
-    const { code, out, err } = runScript(w, ['packages/a/index.js', '--', 'node', 'tests/ab.test.js'], w.repo, msysEnv(w));
+    const { code, out, err } = runScript(w, ['packages/a/index.js', '--', 'node', 'tests/ab.test.js']);
     const live = fs.realpathSync(w.repo);
     const root = field(out, 'root');
     assert(root !== '' && root !== live, `the test ran in a copy, not the live root: ${out}${err}`);
@@ -386,6 +423,25 @@ const run = async () => {
     cleanup(w.dir);
   });
 
+  await test('a file HEAD holds under a named folder the snapshot lacks is absent in the copy, the snapshot\'s own files there: red, exit 0', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/extra.js', 'module.exports = 5;\n');
+    w.git('add', '-A');
+    w.git('commit', '-q', '-m', 'extra');
+    w.write('src/x.js', 'module.exports = 2;\n');
+    const check = "const fs = require('fs'); console.log('extra', fs.existsSync('src/extra.js'));"
+      + " console.log('pair', require('./src/x'), require('./src/y')); require('./src/extra');";
+    const { code, out, err } = runScript(w, ['src', '--', 'node', '-e', check]);
+    assertEq(field(out, 'extra'), 'false', `HEAD's src/extra.js is absent in the copy: ${out}${err}`);
+    assertEq(field(out, 'pair'), '1 10', `the snapshot's own files under src are there: ${out}${err}`);
+    assert(err.includes('src/extra'), `the require saw it missing: ${err}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
+    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
   await test('the root node_modules is reachable from the copy', () => {
     const w = mkWorld();
     w.write('node_modules/tiny/index.js', 'module.exports = 5;\n');
@@ -398,6 +454,64 @@ const run = async () => {
     assertEq(lines(out).pop(), 'red-proof: red', `red on the edited source: ${out}`);
     assertEq(fs.readFileSync(path.join(w.repo, 'node_modules', 'tiny', 'index.js'), 'utf8'),
       'module.exports = 5;\n', 'the real node_modules is intact');
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  await test('a dependency installed after the snapshot is visible to the copy, the documented limit', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('node_modules/late/index.js', 'module.exports = 6;\n');
+    w.write('src/x.js', 'module.exports = 2;\n');
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '-e', "console.log('late', require('late'));"]);
+    assertEq(field(out, 'late'), '6', `the late dependency resolved in the copy: ${out}${err}`);
+    assertEq(code, 1, `exit 1: ${out}${err}`);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  // A path HEAD holds as one kind (file or folder) and the snapshot as the other.
+  for (const [label, head, held, check, want] of [
+    ['a file in HEAD, a folder at the claim', { conf: 'file\n' }, (w) => w.write('conf/inner.txt', 'inner\n'),
+      "const fs = require('fs'); console.log('kind', fs.statSync('conf').isDirectory(), fs.readFileSync('conf/inner.txt', 'utf8').trim());",
+      'true inner'],
+    ['a folder in HEAD, a file at the claim', { 'cfg/a.txt': 'a\n' }, (w) => w.write('cfg', 'flat\n'),
+      "const fs = require('fs'); console.log('kind', fs.statSync('cfg').isFile(), fs.readFileSync('cfg', 'utf8').trim());",
+      'true flat'],
+  ]) {
+    await test(`${label}: the copy holds the claim's kind, the command runs, green, exit 1`, () => {
+      const w = mkWorld();
+      for (const [rel, body] of Object.entries(head)) w.write(rel, body);
+      w.git('add', '-A');
+      w.git('commit', '-q', '-m', 'kind');
+      fs.rmSync(path.join(w.repo, Object.keys(head)[0].split('/')[0]), { recursive: true });
+      held(w);
+      takeSnapshot(w);
+      w.write('src/x.js', 'module.exports = 2;\n');
+      const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '-e', check]);
+      assertEq(field(out, 'kind'), want, `the command saw the claim's kind: ${out}${err}`);
+      assertEq(code, 1, `exit 1, never a stop from the fill: ${out}${err}`);
+      assertEq(lines(out).pop(), 'red-proof: green: the tests pass without src/x.js', `the last stdout line: ${out}`);
+      assertNoWorktree(w);
+      cleanup(w.dir);
+    });
+  }
+
+  await test('a file at the claim committed as a folder since: the copy holds the folder, a verdict, never a stop from the fill', () => {
+    const w = mkWorld();
+    w.write('src/a', 'file\n');
+    w.git('add', '-A');
+    w.git('commit', '-q', '-m', 'a file');
+    takeSnapshot(w);
+    w.git('rm', '-q', 'src/a');
+    w.write('src/a/inner.js', 'module.exports = 3;\n');
+    w.git('add', '-A');
+    w.git('commit', '-q', '-m', 'a folder');
+    w.write('src/x.js', 'module.exports = 2;\n');
+    const check = "const fs = require('fs'); console.log('kind', fs.statSync('src/a').isDirectory(), require('./src/a/inner'));";
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '-e', check]);
+    assertEq(field(out, 'kind'), 'true 3', `the copy holds the committed folder: ${out}${err}`);
+    assert(code === 0 || code === 1, `a verdict, exit 0 or 1: ${code} ${out}${err}`);
     assertNoWorktree(w);
     cleanup(w.dir);
   });
@@ -490,6 +604,37 @@ const run = async () => {
       `the nested package's file: ${out}`);
     assertEq(code, 1, `exit 1: ${out}${err}`);
     assertEq(lines(out).pop(), 'red-proof: green: the tests pass without packages/a/index.js', `the last stdout line: ${out}`);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  await test('a workspace package\'s bin runs the copy\'s code: red on its named source, exit 0', () => {
+    const w = mkRepo('red-proof-bin-', {
+      'package.json': ROOT_WS,
+      '.gitignore': 'node_modules/\n',
+      'packages/cli/package.json': `${JSON.stringify({ name: '@scope/cli', bin: { cli: 'bin.js' } })}\n`,
+      'packages/cli/bin.js': [
+        '#!/usr/bin/env node',
+        "const v = require('./lib');",
+        "console.log('lib', v);",
+        "if (v !== 2) { console.error('lib is ' + v); process.exit(1); }",
+        '',
+      ].join('\n'),
+      'packages/cli/lib.js': 'module.exports = 1;\n',
+    });
+    fs.chmodSync(path.join(w.repo, 'packages', 'cli', 'bin.js'), 0o755);
+    w.git('add', '-A');
+    w.git('commit', '-q', '-m', 'bin');
+    linkPackages(w, 'cli');
+    fs.mkdirSync(path.join(w.repo, 'node_modules', '.bin'));
+    fs.symlinkSync(path.join('..', '@scope', 'cli', 'bin.js'), path.join(w.repo, 'node_modules', '.bin', 'cli'));
+    takeSnapshot(w);
+    w.write('packages/cli/lib.js', 'module.exports = 2;\n');
+    const { code, out, err } = runScript(w, ['packages/cli/lib.js', '--', 'node_modules/.bin/cli']);
+    assertEq(field(out, 'lib'), '1', `the bin loaded the snapshot's lib: ${out}${err}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
+    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    assertEq(fs.readFileSync(path.join(w.repo, 'packages', 'cli', 'lib.js'), 'utf8'), 'module.exports = 2;\n', 'the live lib is intact');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
@@ -652,6 +797,112 @@ const run = async () => {
     assert(last.startsWith('red-proof: not runnable: a module failed to load: ') && last.endsWith('gone.mjs'),
       `the last stderr line names the module: ${err}`);
     assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  group('red-proof.sh --live');
+
+  // The live state a --live run must hand back: the named file's bytes, the
+  // working status and the worktree list.
+  const liveState = (w, rel) => ({
+    bytes: fs.readFileSync(path.join(w.repo, rel)),
+    status: w.git('status', '--short'),
+    worktrees: w.git('worktree', 'list'),
+  });
+  const assertRestored = (w, rel, before) => {
+    assert(fs.existsSync(path.join(w.repo, rel)), `${rel} is back in the live tree`);
+    assert(fs.readFileSync(path.join(w.repo, rel)).equals(before.bytes), `${rel} is back byte for byte`);
+    assertEq(w.git('status', '--short'), before.status, 'git status --short is unchanged');
+    assertEq(w.git('worktree', 'list'), before.worktrees, 'git worktree list is unchanged');
+  };
+  const LIVE_TEST_OF = (value) => `console.log('cwd', require('fs').realpathSync(process.cwd()));\n${TEST_OF(value)}`;
+
+  await test('--live on an edited source the new test needs: red, exit 0, run in the live tree, the file back byte for byte', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    w.write('tests/x.test.js', LIVE_TEST_OF(2));
+    const before = liveState(w, 'src/x.js');
+    const { code, out, err } = runScript(w, ['--live', 'src/x.js', '--', 'node', 'tests/x.test.js']);
+    assertEq(field(out, 'cwd'), fs.realpathSync(w.repo), `the command ran where the caller stands: ${out}${err}`);
+    assert(err.includes('x is 1'), `the snapshot's version ran in the live tree: ${err}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
+    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    assertRestored(w, 'src/x.js', before);
+    cleanup(w.dir);
+  });
+
+  await test('--live, a test tied to nothing the source changed: green, exit 1, the file back', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    w.write('tests/x.test.js', "console.log('x', require('../src/x'));\n");
+    const before = liveState(w, 'src/x.js');
+    const { code, out, err } = runScript(w, ['--live', 'src/x.js', '--', 'node', 'tests/x.test.js']);
+    assertEq(field(out, 'x'), '1', `the snapshot's version was in the live tree for the run: ${out}${err}`);
+    assertEq(code, 1, `exit 1: ${out}${err}`);
+    assertEq(lines(out).pop(), 'red-proof: green: the tests pass without src/x.js', `the last stdout line: ${out}`);
+    assertRestored(w, 'src/x.js', before);
+    cleanup(w.dir);
+  });
+
+  await test('--live naming a file the snapshot lacks: absent from the live tree for the run, back after', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/new.js', 'module.exports = 3;\n');
+    const before = liveState(w, 'src/new.js');
+    const check = "console.log('new', require('fs').existsSync('src/new.js'));";
+    const { code, out, err } = runScript(w, ['--live', 'src/new.js', '--', 'node', '-e', check]);
+    assertEq(field(out, 'new'), 'false', `the command saw it absent: ${out}${err}`);
+    assertEq(code, 1, `exit 1: ${out}${err}`);
+    assertRestored(w, 'src/new.js', before);
+    cleanup(w.dir);
+  });
+
+  await test('--live with a command not on PATH: exit 2, never a verdict, the file back', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    const before = liveState(w, 'src/x.js');
+    const { code, out, err } = runScript(w, ['--live', 'src/x.js', '--', 'definitely-not-a-command']);
+    assertEq(code, 2, `exit 2: ${out}${err}`);
+    assert(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`);
+    const last = lines(err).pop() || '';
+    assert(last.startsWith('red-proof: ') && last.includes('definitely-not-a-command'), `a red-proof: line naming the command last: ${err}`);
+    assertRestored(w, 'src/x.js', before);
+    cleanup(w.dir);
+  });
+
+  await test('--live naming a folder holding node_modules: exit 2, never a verdict, the live tree unchanged', () => {
+    const w = mkWorkspaces();
+    takeSnapshot(w);
+    w.write('packages/a/index.js', 'module.exports = 2;\n');
+    const tree = treeOf(w.repo);
+    const status = w.git('status', '--short');
+    const { code, out, err } = runScript(w, ['--live', 'packages/a', '--', 'node', 'tests/a.test.js']);
+    assertEq(code, 2, `exit 2: ${out}${err}`);
+    assert(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`);
+    assert((lines(err).pop() || '').startsWith('red-proof: --live cannot name a folder holding node_modules'),
+      `the last stderr line: ${err}`);
+    assertEq(JSON.stringify(treeOf(w.repo)), JSON.stringify(tree), 'no file in the live tree added, removed or altered');
+    assertEq(w.git('status', '--short'), status, 'git status --short is unchanged');
+    cleanup(w.dir);
+  });
+
+  const signalTest = testUnless(IS_WINDOWS, 'Node ends a Windows process outright, with no signal a trap can catch');
+  await signalTest('--live and a TERM to the script mid-run: the file back', async () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    const before = liveState(w, 'src/x.js');
+    const marker = path.join(w.dir, 'running');
+    // The command records the file it sees, then sleeps past the TERM.
+    const command = `require('fs').writeFileSync(${JSON.stringify(marker)}, require('fs').readFileSync('src/x.js'));`
+      + ' setTimeout(() => {}, 5000);';
+    const res = await termMidRun(w, ['--live', 'src/x.js', '--', 'node', '-e', command], marker);
+    assert(res.marked, `the command started and wrote its marker: ${res.said}`);
+    assertEq(fs.readFileSync(marker, 'utf8'), 'module.exports = 1;\n', 'the snapshot\'s version was live when TERM came');
+    assertRestored(w, 'src/x.js', before);
     cleanup(w.dir);
   });
 

@@ -1,10 +1,10 @@
 #!/bin/bash
 # workflow:snapshot: PostToolUse hook (Bash). The claim of an issue to
 # status:building takes the repo snapshot scripts/red-proof.sh runs against, or
-# adds its number to the live one (replacing it once stale); a flip that leaves
-# no issue in that repo at status:building drops it. The repo is the one the
-# flip names, another repo's through the roster. A repo it cannot place or a
-# failed copy is a notice; it never blocks and always exits 0.
+# adds its number to the live one (replacing it once stale); a release (a qa or
+# complete flip, or a close) leaving no issue there at status:building drops it.
+# The repo is the one the flip names, another repo's through the roster. A repo
+# it cannot place or a failed copy is a notice; it never blocks, always exits 0.
 # Detail: docs/hooks.md § workflow:snapshot.
 
 set -euo pipefail
@@ -19,7 +19,7 @@ cmd=$(hook_jq -r '.tool_input.command // ""' <<<"$input" 2>/dev/null || true)
 [ -n "$cmd" ] || exit 0
 
 # Cheap exits first, on the raw text: a claim spells status:building, and a
-# release spells it, a status:qa or status:complete add, or the close.
+# release a status:qa or status:complete add, or the close.
 hook_gh_names "$cmd" 'edit|close' || exit 0
 if ! printf '%s' "$cmd" | grep -Eq 'status:(building|qa|complete)' \
   && ! hook_gh_names "$cmd" close; then
@@ -72,12 +72,16 @@ place() {
 
 # claim <issue>...: take the snapshot when none is live; a live one gets the
 # numbers, unless none of its issues is still building, which replaces it. A
-# failed read keeps the live one.
+# live one already recording a claimed number is kept, stale or not, and a
+# failed read keeps it too.
 claim() {
-  local dir stale=0 err
+  local dir stale=0 err n
   dir=$(hook_snapshot_dir "$snap_root") || return 0
   if [ -d "$dir/tree" ]; then
-    hook_snapshot_stale "$snap_root" "$snap_repo" || stale=$?
+    for n in "$@"; do
+      grep -qx -- "$n" "$dir/issues" 2>/dev/null && { stale=1; break; }
+    done
+    [ "$stale" -ne 0 ] || hook_snapshot_stale "$snap_root" "$snap_repo" || stale=$?
     if [ "$stale" -ne 0 ]; then
       hook_snapshot_add "$snap_root" "$@" \
         || note "could not add issue $* to the snapshot of $snap_root."
@@ -86,6 +90,8 @@ claim() {
   fi
   if ! err=$(hook_snapshot_take "$snap_root" "$@" 2>&1); then
     note "the snapshot of $snap_root could not be taken, so red-proof has none for it: ${err:-the copy failed}"
+  elif [ -n "$err" ]; then
+    note "$err"
   fi
 }
 
@@ -111,11 +117,11 @@ while IFS= read -r clause; do
   kind=release
   if [ "$sub" = edit ]; then
     adds=$(hook_gh_flag_values "$clause" --add-label)
-    removes=$(hook_gh_flag_values "$clause" --remove-label)
+    # A release is the flip that ends the work; a remove of status:building
+    # alone (a block, a re-spec) is neither, and leaves the snapshot be.
     if has_label "$adds" status:building; then
       kind=claim
-    elif ! has_label "$removes" status:building && ! has_label "$adds" status:qa \
-      && ! has_label "$adds" status:complete; then
+    elif ! has_label "$adds" status:qa && ! has_label "$adds" status:complete; then
       continue
     fi
   fi

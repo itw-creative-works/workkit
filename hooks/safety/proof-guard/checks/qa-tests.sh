@@ -3,7 +3,8 @@
 # status:qa, which runs no test and reads two records: each package owning a
 # touched test file needs a green npm test recorded on this tree
 # (wk_pkg_proved), and a green whole root suite (wk_suite_proved) covers them
-# all. A missing record blocks the flip. SOURCED by the entry (run.sh), never
+# all; a package the settings declare under proof.rootOnly needs none. A
+# missing record blocks the flip. SOURCED by the entry (run.sh), never
 # executed; it runs nothing at load, sets nothing and calls _lib.sh's helpers.
 
 # The base the committed leg is read against: the merge base of HEAD with
@@ -45,6 +46,24 @@ qa_package_of() {
   qa_pkgs+=("$qa_pkg")
   qa_pkg_files+=("")
   qa_pkg_counts+=(0)
+}
+
+# qa_read_root_only: qa_root_only becomes the folders .workkit/settings.json
+# declares under proof.rootOnly, one a line, a trailing / dropped. A value that
+# is not an array of strings, or a file jq cannot read, declares nothing and
+# sets qa_shape_note, which the pass notice and the block both carry.
+qa_read_root_only() {
+  qa_root_only=""
+  qa_shape_note=""
+  [ -f "$qa_root/$WORKKIT_DIR/settings.json" ] || return 0
+  qa_root_only=$(hook_jq -r 'if has("proof") | not then empty
+    elif (.proof | type) == "object" and (.proof | has("rootOnly") | not) then empty
+    elif (.proof.rootOnly | type) == "array" and all(.proof.rootOnly[]; type == "string")
+    then .proof.rootOnly[] | sub("/+$"; "")
+    else error("proof.rootOnly") end' "$qa_root/$WORKKIT_DIR/settings.json" 2>/dev/null) && return 0
+  qa_root_only=""
+  qa_shape_note="The settings key proof.rootOnly in .workkit/settings.json is not an array of folder strings, so no package was taken as proved by the root run alone."
+  qa_notes="${qa_notes} ${qa_shape_note}"
 }
 
 # qa_label <pkg>: the package as a reader names it, the root as `the repo root`.
@@ -111,14 +130,18 @@ check_qa_tests() {
   if [ -n "$qa_unprovable" ]; then
     qa_notes=" Cannot be proved by npm test, since the repo root has no test script, so not required:${qa_unprovable}.${qa_notes}"
   fi
+  qa_read_root_only
   qa_proved=""
+  qa_rooted=""
   qa_missing=()
   qa_missing_count=0
   qa_pi=0
   while [ "$qa_pi" -lt "${#qa_pkgs[@]}" ]; do
     qa_pkg="${qa_pkgs[$qa_pi]}"
     if [ "${qa_pkg_counts[$qa_pi]}" -gt 0 ]; then
-      if wk_pkg_proved "$qa_root" "$qa_tree" "$qa_pkg"; then
+      if printf '%s\n' "$qa_root_only" | grep -Fxq -- "$qa_pkg"; then
+        qa_rooted="${qa_rooted} proved by the root run alone (settings proof.rootOnly): $qa_pkg."
+      elif wk_pkg_proved "$qa_root" "$qa_tree" "$qa_pkg"; then
         qa_proved="${qa_proved:+$qa_proved, }$(qa_label "$qa_pkg") (${qa_pkg_counts[$qa_pi]} file(s))"
       else
         qa_missing+=("$(qa_label "$qa_pkg"): ${qa_pkg_files[$qa_pi]}")
@@ -131,11 +154,19 @@ check_qa_tests() {
     {
       echo "proof-guard: BLOCKED this flip to status:qa: the $qa_missing_count touched test file(s) below have no green test run recorded on this tree. In each package named, run its own tests narrowed to those files (\`npm test -- <files>\` from that folder, with the paths in the form its runner takes), then flip again."
       printf '%s\n' "${qa_missing[@]}"
+      [ -z "$qa_shape_note" ] || printf '%s\n' "$qa_shape_note"
     } >&2
     exit 2
   fi
-  if [ -z "$qa_proved" ]; then
+  if [ -n "$qa_rooted" ]; then
+    qa_notes=" The root npm test before the commit is the proof of the package(s) the settings declare:${qa_rooted}${qa_notes}"
+  fi
+  if [ -z "$qa_proved" ] && [ -z "$qa_rooted" ]; then
     hook_pretool_notice "proof-guard: no touched test file can be proved by npm test here, so the qa flip needs no test record.${qa_notes}"
+    return 0
+  fi
+  if [ -z "$qa_proved" ]; then
+    hook_pretool_notice "proof-guard: no touched test file needs a package record on this tree.${qa_notes}"
     return 0
   fi
   hook_pretool_notice "proof-guard: every touched test file has a green npm test recorded on this tree: ${qa_proved}.${qa_notes}"

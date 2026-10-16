@@ -1,15 +1,26 @@
 // Tests for hooks/safety/proof-guard at the flip to status:qa over packages:
 // each package that owns a touched test file needs its own line in the package
 // record on this tree, the root's `.` included, and one missing blocks naming
-// the package and its files, with npm test narrowed to them as a hint.
+// the package and its files, with npm test narrowed to them as a hint. A
+// package the repo's settings declare in proof.rootOnly is proved by the root
+// run alone and needs no line.
 
 const { group, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  dropPathWithoutGh, ranNothing, write, touch, addPkg, plantPkgRecord, recordCase, notice,
+  dropPathWithoutGh, ranNothing, COMMIT, git, write, touch, addPkg, plantPkgRecord, recordCase, notice,
 } = require('./helpers');
 
 const CLIENT = 'packages/client';
 const SERVER = 'packages/server';
+const BACKEND = 'packages/backend';
+const ROOT_ONLY = 'proved by the root run alone (settings proof.rootOnly)';
+
+/** Commit `.workkit/settings.json` opted in, with `proof` as given (none when undefined). */
+const settings = (dir, proof) => {
+  write(dir, '.workkit/settings.json', `${JSON.stringify({ version: 1, enabled: true, proof })}\n`);
+  git(dir, 'add -A');
+  git(dir, `${COMMIT} -m settings`);
+};
 
 // The two nested packages, each with a touched test file.
 const twoPackages = (dir) => {
@@ -97,6 +108,66 @@ const run = async () => {
     assertEq(out.code, 2, `no record blocks, got: ${out.code} ${out.stderr}`);
     assert(out.stderr.includes(`${CLIENT}: test/a b.test.js test/c.test.js`), `both paths listed as they are, got: ${out.stderr}`);
   });
+
+  group('proof-guard: a package declared in settings proof.rootOnly');
+
+  await recordCase('a touched test file in a declared package with no record: exit 0, the notice names it as proved by the root run', ({ dir, flip }) => {
+    addPkg(dir, BACKEND);
+    settings(dir, { rootOnly: [BACKEND] });
+    touch(dir, `${BACKEND}/test/a.test.js`);
+    const out = flip();
+    assertEq(out.code, 0, `the declared package needs no line, got: ${out.code} ${out.stderr}`);
+    const msg = notice(out);
+    assert(msg.includes(`${ROOT_ONLY}: ${BACKEND}`), `the notice names the declared package, got: ${msg}`);
+    assert(ranNothing(dir), 'nothing ran');
+  });
+
+  await recordCase('a declared package beside an undeclared one, neither recorded: exit 2, naming only the undeclared one', ({ dir, flip }) => {
+    addPkg(dir, BACKEND);
+    addPkg(dir, CLIENT);
+    settings(dir, { rootOnly: [BACKEND] });
+    touch(dir, `${BACKEND}/test/a.test.js`);
+    touch(dir, `${CLIENT}/test/b.test.js`);
+    const out = flip();
+    assertEq(out.code, 2, `the undeclared package has no record, got: ${out.code} ${out.stderr}`);
+    assert(out.stderr.includes(`${CLIENT}: test/b.test.js`), `names the undeclared package and its file, got: ${out.stderr}`);
+    assert(!out.stderr.includes(BACKEND), `the declared package is never asked for, got: ${out.stderr}`);
+  });
+
+  await recordCase('settings with no proof key: a touched package with no record blocks, as with no settings', ({ dir, flip }) => {
+    addPkg(dir, BACKEND);
+    settings(dir, undefined);
+    touch(dir, `${BACKEND}/test/a.test.js`);
+    const out = flip();
+    assertEq(out.code, 2, `nothing is declared, got: ${out.code} ${out.stderr}`);
+    assert(out.stderr.includes(`${BACKEND}: test/a.test.js`), `names the package and its file, got: ${out.stderr}`);
+  });
+
+  await recordCase('"." declared covers a test file the root owns: exit 0, the notice names the root', ({ dir, flip }) => {
+    settings(dir, { rootOnly: ['.'] });
+    touch(dir, 'tests/a.test.js');
+    const out = flip();
+    assertEq(out.code, 0, `the root is declared, got: ${out.code} ${out.stderr}`);
+    const msg = notice(out);
+    assert(msg.includes(`${ROOT_ONLY}: .`), `the notice names the root, got: ${msg}`);
+  });
+
+  for (const rootOnly of [BACKEND, [BACKEND, 7]]) {
+    await recordCase(`a rootOnly that is not an array of strings (${JSON.stringify(rootOnly)}): one notice naming the key, checked as if nothing were declared`, ({ dir, tmp, flip }) => {
+      addPkg(dir, BACKEND);
+      settings(dir, { rootOnly });
+      touch(dir, `${BACKEND}/test/a.test.js`);
+      const blocked = flip();
+      assertEq(blocked.code, 2, `the package is not declared, got: ${blocked.code} ${blocked.stderr}`);
+      assert(blocked.stderr.includes(`${BACKEND}: test/a.test.js`), `names the package and its file, got: ${blocked.stderr}`);
+      plantPkgRecord(tmp, dir, [BACKEND]);
+      const passed = flip();
+      assertEq(passed.code, 0, `its own line passes, got: ${passed.code} ${passed.stderr}`);
+      const msg = notice(passed);
+      assertEq(msg.split('proof.rootOnly').length - 1, 1, `one mention of the key, got: ${msg}`);
+      assert(!msg.includes(ROOT_ONLY), `nothing is named as proved by the root run, got: ${msg}`);
+    });
+  }
 };
 
 module.exports = async () => {

@@ -22,14 +22,15 @@ hook_snapshot_root() {
 hook_snapshot_dir() { wk_marker_path claude-red-snapshot "$1"; }
 
 # _hook_snapshot_copy <src> <dest> [rel]...: every entry of <src> (or each rel
-# whose parent <dest> holds) into <dest>, `.git` left out and symlinks kept. On
-# Windows each node_modules at any depth is left out too, for the fill to
-# rebuild from the live repo. The tools' words go to stderr.
+# whose parent <dest> holds) into <dest>, `.git` and each node_modules at any
+# depth left out (the fill rebuilds those from the live repo), symlinks kept.
+# The tools' words go to stderr.
 _hook_snapshot_copy() {
-  local src="$1" dest="$2" entry rel flags=(-pPR) rels=()
+  local src="$1" dest="$2" entry rel held flags=(-pPR) rels=()
   shift 2
   for rel in "$@"; do
     rel="${rel%/}"
+    [ "${rel##*/}" != node_modules ] || continue
     case "$rel" in */*) [ -d "$dest/${rel%/*}" ] || continue ;; esac
     rels+=("$rel")
   done
@@ -44,52 +45,101 @@ _hook_snapshot_copy() {
   elif hook_is_linux; then
     flags=(-a --reflink=auto)
   fi
-  if [ ${#rels[@]} -gt 0 ]; then
-    for rel in "${rels[@]}"; do
-      case "$rel" in */*) entry="$dest/${rel%/*}/" ;; *) entry="$dest/" ;; esac
-      cp "${flags[@]}" "$src/$rel" "$entry" || return 1
-    done
-    return 0
+  if [ ${#rels[@]} -eq 0 ]; then
+    while IFS= read -r -d '' entry; do
+      rels+=("${entry##*/}")
+    done < <(find "$src" -mindepth 1 -maxdepth 1 ! -name .git -print0)
+    [ ${#rels[@]} -gt 0 ] || return 0
   fi
-  while IFS= read -r -d '' entry; do
-    cp "${flags[@]}" "$entry" "$dest/" || return 1
-  done < <(find "$src" -mindepth 1 -maxdepth 1 ! -name .git -print0)
+  held=$(cd "$src" && find "${rels[@]/#/./}" \( -name .git -prune \) -o \( -name node_modules -prune -print \)) \
+    || { echo "could not list the node_modules folders under $src" >&2; return 1; }
+  for rel in "${rels[@]}"; do
+    _hook_snapshot_put "$src" "$dest" "$rel" "$held" "${flags[@]}" || return 1
+  done
+}
+
+# _hook_snapshot_put <src> <dest> <rel> <held> <cp flag>...: <rel> copied whole
+# into <dest> by cp, unless it is a node_modules (left out) or a folder holding
+# one (<held>, the ./-led list), which is made and walked entry by entry.
+_hook_snapshot_put() {
+  local src="$1" dest="$2" rel="$3" held="$4" entry
+  shift 4
+  [ "${rel##*/}" != node_modules ] || return 0
+  case $'\n'"$held" in
+    *$'\n'"./$rel/"*)
+      mkdir -p "$dest/$rel" || return 1
+      while IFS= read -r -d '' entry; do
+        _hook_snapshot_put "$src" "$dest" "$rel/${entry##*/}" "$held" "$@" || return 1
+      done < <(find "$src/$rel" -mindepth 1 -maxdepth 1 -print0)
+      return 0
+      ;;
+  esac
+  case "$rel" in */*) entry="$dest/${rel%/*}/" ;; *) entry="$dest/" ;; esac
+  cp "$@" "$src/$rel" "$entry"
 }
 
 # hook_snapshot_take <root> [issue]...: a fresh snapshot of <root>, replacing
-# any there. head, paths and issues are written first and the tree last, copied
-# under a temporary name and renamed once whole, so a half copy is never found.
-# 1 with the error on stderr and nothing left behind.
+# any there. The whole folder (head, paths, issues, then the tree) is built in a
+# sibling <dir>.XXXXXX and moved into place last, so a half snapshot is never
+# found. 1 with the error on stderr, the sibling gone and any snapshot kept.
 hook_snapshot_take() {
-  local root="$1" dir head part
+  local root="$1" dir head part aside
   shift
   dir=$(hook_snapshot_dir "$root") || { echo "could not name the snapshot folder" >&2; return 1; }
-  { rm -rf "$dir" && mkdir -p "$dir"; } || { echo "could not make $dir" >&2; return 1; }
+  mkdir -p "${dir%/*}" || { echo "could not make ${dir%/*}" >&2; return 1; }
+  # A sibling older than the hook's 600s timeout is a killed take's, never a live one.
+  find "${dir%/*}" -maxdepth 1 -name "${dir##*/}.??????" -mmin +10 -exec rm -rf {} + 2>/dev/null || true
+  part=$(mktemp -d "$dir.XXXXXX") || { echo "could not make a folder beside $dir" >&2; return 1; }
   if ! head=$(git -C "$root" rev-parse --verify -q HEAD) || [ -z "$head" ]; then
     echo "$root has no HEAD commit" >&2
-  elif ! printf '%s\n' "$head" >"$dir/head" || ! : >"$dir/issues"; then
-    echo "could not write into $dir" >&2
-  elif ! hook_working_paths "$root" >"$dir/paths"; then
+  elif ! printf '%s\n' "$head" >"$part/head" || ! : >"$part/issues"; then
+    echo "could not write into $part" >&2
+  elif ! hook_working_paths "$root" >"$part/paths"; then
     echo "could not list the working diff of $root" >&2
-  elif ! hook_snapshot_add "$root" "$@"; then
-    echo "could not record the issues in $dir" >&2
-  elif part=$(mktemp -d "$dir/tree.XXXXXX") \
-    && _hook_snapshot_copy "$root" "$part" && mv "$part" "$dir/tree"; then
-    return 0
+  elif ! _hook_snapshot_record "$part/issues" "$@"; then
+    echo "could not record the issues in $part" >&2
+  elif mkdir "$part/tree" && _hook_snapshot_copy "$root" "$part/tree"; then
+    # What a failed remove leaves goes aside under a stale take's name, which the
+    # sweep above clears at a later take.
+    if ! rm -rf "$dir" 2>/dev/null; then
+      if aside=$(mktemp -u "$dir.XXXXXX") && mv "$dir" "$aside"; then
+        echo "the old snapshot at $dir could not be removed and was moved aside to $aside" >&2
+      else
+        rm -rf "$part"
+        echo "could not replace the snapshot at $dir" >&2
+        return 1
+      fi
+    fi
+    mv "$part" "$dir" 2>/dev/null || true
+    # A racing take that moved its folder in first holds ours nested inside it;
+    # drop that, and record this take's numbers on whichever snapshot won.
+    rm -rf "${dir:?}/${part##*/}" "$part"
+    if [ -d "$dir/tree" ]; then
+      hook_snapshot_add "$root" "$@" && return 0
+      echo "could not record the issues in $dir" >&2
+      return 1
+    fi
+    echo "could not move $part into place at $dir" >&2
   fi
-  rm -rf "$dir"
+  rm -rf "$part"
   return 1
 }
 
 # hook_snapshot_add <root> <issue>...: the numbers recorded on the snapshot's
 # issues list, each once.
 hook_snapshot_add() {
-  local dir n
+  local dir
   dir=$(hook_snapshot_dir "$1") || return 1
   shift
+  _hook_snapshot_record "$dir/issues" "$@"
+}
+
+_hook_snapshot_record() {
+  local file="$1" n
+  shift
   for n in "$@"; do
-    grep -qx -- "$n" "$dir/issues" 2>/dev/null && continue
-    printf '%s\n' "$n" >>"$dir/issues" || return 1
+    grep -qx -- "$n" "$file" 2>/dev/null && continue
+    printf '%s\n' "$n" >>"$file" || return 1
   done
 }
 
@@ -119,18 +169,19 @@ hook_snapshot_drop() {
 # _hook_snapshot_modules <root> <dest> <rel> [scope]: <rel> becomes a real
 # folder in <dest>, each live entry linked in absolutely; a workspace link
 # (resolving inside the root and outside every node_modules) points at the same
-# path inside <dest> instead, and a scope folder is filled one level down.
+# path inside <dest> instead, and a scope folder or .bin is filled one level down.
 _hook_snapshot_modules() {
   local root="$1" dest="$2" rel="$3" entry name target plain=()
   mkdir -p "$dest/$rel" || { echo "could not make $rel in the copy" >&2; return 1; }
   for entry in "$root/$rel"/* "$root/$rel"/.[!.]* "$root/$rel"/..?*; do
     [ -e "$entry" ] || [ -L "$entry" ] || continue
     name="${entry##*/}"
-    if [ -L "$entry" ] && target=$(cd -P "$entry" 2>/dev/null && pwd -P) \
+    if [ -L "$entry" ] && target=$(_hook_snapshot_target "$entry") \
       && [ "${target#"$root"/}" != "$target" ] && ! _hook_snapshot_in_modules "${target#"$root"/}"; then
       ln -s "$dest/${target#"$root"/}" "$dest/$rel/$name" \
         || { echo "could not link $rel/$name into the copy" >&2; return 1; }
-    elif [ $# -eq 3 ] && [ "${name#@}" != "$name" ] && [ -d "$entry" ] && [ ! -L "$entry" ]; then
+    elif [ $# -eq 3 ] && { [ "${name#@}" != "$name" ] || [ "$name" = .bin ]; } \
+      && [ -d "$entry" ] && [ ! -L "$entry" ]; then
       _hook_snapshot_modules "$root" "$dest" "$rel/$name" scope || return 1
     else
       plain+=("$entry")
@@ -138,6 +189,16 @@ _hook_snapshot_modules() {
   done
   [ ${#plain[@]} -eq 0 ] || ln -s "${plain[@]}" "$dest/$rel/" \
     || { echo "could not link $rel's entries into the copy" >&2; return 1; }
+}
+
+# _hook_snapshot_target <link>: the physical path <link> resolves to, a
+# folder's by cd -P, a file's (a .bin entry) through its folder's.
+_hook_snapshot_target() {
+  local t
+  (cd -P "$1" 2>/dev/null && pwd -P) && return 0
+  t=$(readlink "$1") || return 1
+  case "$t" in /*) ;; *) t="${1%/*}/$t" ;; esac
+  (cd -P "${t%/*}" 2>/dev/null && printf '%s/%s\n' "$(pwd -P)" "${t##*/}")
 }
 
 _hook_snapshot_in_modules() {
@@ -169,14 +230,13 @@ hook_snapshot_worktree_remove() {
 }
 
 # hook_snapshot_fill <tree> <root> <dest> [rel]...: the folder <dest> filled from
-# the folder <tree> (only the rels, given any; _hook_snapshot_copy). On Windows
-# each node_modules the live repo <root> holds becomes a real folder wherever
+# the folder <tree> (only the rels, given any; _hook_snapshot_copy). Each
+# node_modules the live repo <root> holds then becomes a real folder wherever
 # the copy holds its parent (_hook_snapshot_modules).
 hook_snapshot_fill() {
   local tree="$1" root="$2" dest="$3" found rel
   shift 3
   _hook_snapshot_copy "$tree" "$dest" "$@" || return 1
-  hook_is_windows || return 0
   while IFS= read -r -d '' found; do
     rel="${found#"$root"/}"
     [ -d "$found" ] && [ ! -e "$dest/$rel" ] && [ ! -L "$dest/$rel" ] && [ -d "$(dirname "$dest/$rel")" ] || continue
