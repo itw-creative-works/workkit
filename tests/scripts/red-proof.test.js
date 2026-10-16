@@ -622,15 +622,12 @@ const run = async () => {
       ].join('\n'),
       'packages/cli/lib.js': 'module.exports = 1;\n',
     });
-    fs.chmodSync(path.join(w.repo, 'packages', 'cli', 'bin.js'), 0o755);
-    w.git('add', '-A');
-    w.git('commit', '-q', '-m', 'bin');
     linkPackages(w, 'cli');
     fs.mkdirSync(path.join(w.repo, 'node_modules', '.bin'));
     fs.symlinkSync(path.join('..', '@scope', 'cli', 'bin.js'), path.join(w.repo, 'node_modules', '.bin', 'cli'));
     takeSnapshot(w);
     w.write('packages/cli/lib.js', 'module.exports = 2;\n');
-    const { code, out, err } = runScript(w, ['packages/cli/lib.js', '--', 'node_modules/.bin/cli']);
+    const { code, out, err } = runScript(w, ['packages/cli/lib.js', '--', 'node', 'node_modules/.bin/cli']);
     assertEq(field(out, 'lib'), '1', `the bin loaded the snapshot's lib: ${out}${err}`);
     assertEq(code, 0, `exit 0: ${out}${err}`);
     assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
