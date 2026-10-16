@@ -7,13 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.75.0] - 2026-10-16
+
 ### Added
-- [#419](../../issues/419) - `scripts/red-proof.sh --live` swaps the named source paths in the live tree for the run and restores them on exit, for a suite that talks to a running server (an OMEGA backend route suite), where the copy's red was hollow.
-- [#421](../../issues/421) - `.workkit/settings.json` takes `proof.rootOnly`, the packages the root `npm test` alone proves; `safety/proof-guard` skips their package record at the park.
+- [#419](../../issues/419) [`6958b42`](../../commit/6958b42) Thanks [@ianwieds]! - `scripts/red-proof.sh --live` swaps the named source paths in the live tree for the run and restores them on exit, for a suite that talks to a running server (an OMEGA backend route suite), where the copy's red was hollow.
+- [#421](../../issues/421) [`6958b42`](../../commit/6958b42) Thanks [@ianwieds]! - `.workkit/settings.json` takes `proof.rootOnly`, the packages the root `npm test` alone proves; `safety/proof-guard` skips their package record at the park.
 
 ### Fixed
-- [#420](../../issues/420) - The red-proof copy starts from a HEAD checkout, never copies `node_modules` on any platform (each live one is linked in, workspace links and `.bin` pointing inside the copy), and the take builds a sibling folder and moves it whole.
-- [#422](../../issues/422) - `workflow:snapshot` keeps the snapshot through a block or a re-spec and through the re-claim of a recorded issue, so the red proof still means the tests fail without the change.
+- [#420](../../issues/420) [`6958b42`](../../commit/6958b42) Thanks [@ianwieds]! - The red-proof copy starts from a HEAD checkout, never copies `node_modules` on any platform (each live one is linked in, workspace links and `.bin` pointing inside the copy), and the take builds a sibling folder and moves it whole.
+- [#422](../../issues/422) [`6958b42`](../../commit/6958b42) Thanks [@ianwieds]! - `workflow:snapshot` keeps the snapshot through a block or a re-spec and through the re-claim of a recorded issue, so the red proof still means the tests fail without the change.
 
 ## [0.74.4] - 2026-10-11
 
