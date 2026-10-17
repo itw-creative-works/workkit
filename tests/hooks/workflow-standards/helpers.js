@@ -11,6 +11,7 @@ const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, basePathWithout, joinPath,
 } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
+const { writeLogin } = require('../../lib/identity');
 
 const HOOK = path.join(__dirname, '..', '..', '..', 'hooks', 'workflow', 'standards', 'run.sh');
 
@@ -97,12 +98,16 @@ const runHook = (cwd, {
   // The home stays native for anything this suite writes into it, and goes
   // through the shell's spelling only on the way into the child's environment.
   const homeDir = home || mkTmp('wf-hook-');
+  // The user dir the run makes itself holds a sign-in, so an all-current machine
+  // is a signed-in one; a case passing its own `workflowHome` decides that itself.
+  const userDir = workflowHome || path.join(mkTmp('wf-hook-'), '.workkit');
+  if (!workflowHome) writeLogin(path.dirname(userDir), { token: 'ghu_hookuser', login: 'octocat' });
   const env = homeEnv(homeDir, {
     PATH: pathPrefix ? joinPath(pathPrefix, BASE_PATH) : joinPath(pathWithoutGh(), NODE_DIR),
     WORKFLOW_STANDARDS_CACHE: shellPath(cacheDir),
     // Outside the marker cache: the engine seeds the user settings file there,
     // and the tests count one marker file per repo in the cache.
-    WORKFLOW_HOME: shellPath(workflowHome || path.join(mkTmp('wf-hook-'), 'workflow-home')),
+    WORKFLOW_HOME: shellPath(userDir),
     WORKFLOW_CLAUDE_HOME: shellPath(claudeHome || path.join(mkTmp('wf-hook-'), 'claude-home')),
   });
   if (setup) seedSetup(homeDir);

@@ -20,6 +20,14 @@ cmd_update() {
   # Reported, never wired: the daily --auto run is the one path that must not
   # prompt or mint, so a missing value is a line and nothing else.
   secrets_report update || true
+  # The daily --auto run links the gh shim on a machine set up before the
+  # identity shipped, and this line is how that machine hears it must sign in.
+  # The ok line is stdout and --auto drops it; the warning rides stderr.
+  if [[ "$QUIET" -eq 1 ]]; then
+    identity_report machine >/dev/null || true
+  else
+    identity_report machine || true
+  fi
 
   # A human's update republishes from this checkout, so a shipped tower change
   # reaches the site; --auto leaves that to the daily job.

@@ -19,10 +19,9 @@ const { mkOriginRepo } = require('../../lib/git-repo');
 const { mkRosterHome } = require('../../lib/roster');
 const { mkTmp } = require('../../lib/scratch');
 const {
-  INSTALL_FIX, deviceFlowRoutes, writeLogin, useTokenService, startServer, PTY, atTerminal,
+  INSTALL_FIX, deviceFlowRoutes, writeLogin, readWrittenLogin, useTokenService, startServer, startService,
+  scratchKit, PTY, atTerminal,
 } = require('../../lib/identity');
-
-const KIT_DIR = path.join(__dirname, '..', '..', '..');
 
 // The client's cache, one token per repo, so a token names the repo it was read for.
 const CACHED = {
@@ -43,8 +42,7 @@ const NO_SERVICE = 'http://127.0.0.1:9/token';
  */
 const mkWorld = ({ signedIn = true, cache = true, tokenUrl = NO_SERVICE } = {}) => {
   const root = mkTmp('wk-gh-shim-');
-  const kit = path.join(root, 'kit');
-  fs.cpSync(path.join(KIT_DIR, 'workflow'), path.join(kit, 'workflow'), { recursive: true });
+  const kit = scratchKit();
 
   const repo = (name, slug) => {
     const dir = path.join(root, name);
@@ -167,6 +165,61 @@ const run = async () => {
     assertRan(runShim(world, byUrl), byUrl, 'ghs_othertoken', 'gh issue comment <url> from acme/rostered');
   });
 
+  await test('a pull request URL after a boolean flag names the repo: gh pr review --approve <url> gets that repo\'s token, from any cwd', async () => {
+    const world = mkWorld();
+    const review = ['pr', 'review', '--approve', 'https://github.com/other/rostered/pull/3'];
+    assertRan(runShim(world, review), review, 'ghs_othertoken', 'gh pr review --approve <url> from acme/rostered');
+    assertRan(runShim(world, review, { cwd: world.unrostered }), review, 'ghs_othertoken',
+      'gh pr review --approve <url> from acme/unrostered');
+  });
+
+  await test('an issue URL after a boolean flag names the repo: gh issue comment --edit-last <url> --body x gets that repo\'s token', async () => {
+    const world = mkWorld();
+    const edit = ['issue', 'comment', '--edit-last', 'https://github.com/other/rostered/issues/7', '--body', 'x'];
+    assertRan(runShim(world, edit), edit, 'ghs_othertoken', 'gh issue comment --edit-last <url> from acme/rostered');
+  });
+
+  await test('a URL with a fragment or a trailing path still names the repo: #issuecomment-<n> and /pull/<n>/files get that repo\'s token', async () => {
+    const world = mkWorld();
+    const calls = [
+      ['issue', 'comment', 'https://github.com/other/rostered/issues/7#issuecomment-123', '--body', 'x'],
+      ['pr', 'review', 'https://github.com/other/rostered/pull/3/files', '--approve'],
+    ];
+    for (const argv of calls) assertRan(runShim(world, argv), argv, 'ghs_othertoken', `gh ${argv.join(' ')} from acme/rostered`);
+  });
+
+  await test('a URL that is a body or title flag\'s whole value names no repo; a boolean flag\'s neighbour still does', async () => {
+    const world = mkWorld();
+    const values = [
+      ['issue', 'comment', '5', '--body', 'https://github.com/other/rostered/issues/3'],
+      ['issue', 'create', '--title', 'https://github.com/other/rostered/issues/3', '--body', 'x'],
+    ];
+    for (const argv of values) assertRan(runShim(world, argv), argv, 'ghs_testtoken', `gh ${argv.join(' ')} from acme/rostered`);
+    const review = ['pr', 'review', '--approve', 'https://github.com/other/rostered/pull/3'];
+    assertRan(runShim(world, review), review, 'ghs_othertoken', 'gh pr review --approve <url> from acme/rostered');
+  });
+
+  await test('a bare verb or a help flag runs the real gh as the owner and never asks the client, signed in or not', async () => {
+    const helps = [['issue'], ['label', '-h'], ['issue', 'comment', '--help']];
+    // The stand-in is the token service, so a call that asked the client would show as a request.
+    const service = await startService(200, { token: 'ghs_never', expires_at: '2099-01-01T00:00:00Z' });
+    try {
+      const signedIn = mkWorld({ cache: false, tokenUrl: `${service.url}/token` });
+      for (const argv of helps) assertRan(runShim(signedIn, argv), argv, null, `signed in, gh ${argv.join(' ')}`);
+      assertEq(service.requests().length, 0, `the client never asked the service, got: ${JSON.stringify(service.requests())}`);
+    } finally {
+      await service.close();
+    }
+    // Not signed in, a call that reached the client would exit 3; the stub's own 0 means gh answered.
+    const signedOut = mkWorld({ signedIn: false, cache: false });
+    for (const argv of helps) assertRan(runShim(signedOut, argv), argv, null, `not signed in, gh ${argv.join(' ')}`);
+  });
+
+  await test('gh issue list and gh pr create still run as the owner on a rostered repo', async () => {
+    const world = mkWorld();
+    for (const argv of [['issue', 'list'], ['pr', 'create']]) assertRan(runShim(world, argv), argv, null, `gh ${argv.join(' ')}`);
+  });
+
   await test('case 15: gh pr revert and gh pr update-branch run as the owner on a rostered repo', async () => {
     const world = mkWorld();
     for (const argv of [['pr', 'revert', '3'], ['pr', 'update-branch', '3']]) {
@@ -181,7 +234,7 @@ const run = async () => {
     }
   });
 
-  await test('case 17b: a github.com URL inside a flag value names no repo; the cwd\'s token is taken', async () => {
+  await test('case 17b: a github.com URL inside a body or title value\'s prose names no repo; the cwd\'s token is taken', async () => {
     const world = mkWorld();
     const calls = [
       ['issue', 'comment', '5', '--body', 'https://github.com/other/thing/issues/3 is related'],
@@ -256,7 +309,7 @@ const run = async () => {
         const res = runShim(world, comment, { keyboard: true, env: { GITHUB_SERVER_URL: stand.url, GITHUB_API_URL: stand.url } });
         assert(res.stderr.includes('https://github.com/login/device'), `the terminal shows the device page, got: ${res.stderr}`);
         assert(res.stderr.includes('SHIM-016A'), `and the user code, got: ${res.stderr}`);
-        const written = JSON.parse(fs.readFileSync(path.join(world.home, '.workkit', 'identity', 'login.json'), 'utf8'));
+        const written = readWrittenLogin(world.home);
         assertEq(written.login, 'hubot', 'the login file holds the stand-in\'s login');
         assertEq(written.token, 'ghu_shimkeyboard', 'and its token');
         // The stub exits 0 on a comment, so the shim's 0 is the stub's, handed on by exec.
@@ -271,12 +324,7 @@ const run = async () => {
   );
 
   await test('case 17: the service answers 412, the verb exits 4 with the install page, and gh never runs', async () => {
-    const service = await startServer([{
-      method: 'POST',
-      url: '/token',
-      status: 412,
-      body: JSON.stringify({ error: 'not installed', fix: INSTALL_FIX }),
-    }], mkTmp('wk-gh-shim-service-'));
+    const service = await startService(412, { error: 'not installed', fix: INSTALL_FIX });
     try {
       const world = mkWorld({ cache: false, tokenUrl: `${service.url}/token` });
       const res = runShim(world, ['issue', 'comment', '1', '--body', 'x']);
@@ -304,8 +352,7 @@ const run = async () => {
       [500, { error: 'github refused: Server Error from the stand-in', fix: 'try again shortly' }, 'Server Error from the stand-in'],
     ];
     for (const [status, body, message] of answers) {
-      const service = await startServer([{ method: 'POST', url: '/token', status, body: JSON.stringify(body) }],
-        mkTmp('wk-gh-shim-service-'));
+      const service = await startService(status, body);
       try {
         const world = mkWorld({ cache: false, tokenUrl: `${service.url}/token` });
         const res = runShim(world, ['issue', 'comment', '1', '--body', 'x']);

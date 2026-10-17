@@ -13,10 +13,11 @@ const {
 } = require('../../lib/platform');
 const { isCall, fmtCalls } = require('../../lib/argv-log');
 const {
-  WORKFLOW_DIR, CLI, LABEL, cleanup, mkWorld, withNpm, runCli, ACTED, mkRepo, installSchedule,
+  WORKFLOW_DIR, CLI, LABEL, cleanup, mkWorld, withNpm, runCli, signInEnv, ACTED, mkRepo, installSchedule,
   mkPartialKit, mkSetupKit,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
+const { writeLogin } = require('../../lib/identity');
 
 const run = async () => {
   group('workkit update: the three links');
@@ -227,6 +228,43 @@ const run = async () => {
     assertEq(world.launchctl().length, 0, `and launchd is not touched: ${fmtCalls(world.launchctl())}`);
     assert(!out.includes('schedule'), `the missing schedule is not news at session start, got: ${out}`);
     cleanup(world.root);
+  });
+
+  group('workkit update: the sign-in line');
+
+  await test('--auto with no login file warns naming workkit setup --login and still exits 0', () => {
+    const world = mkWorld();
+    try {
+      const { code, said } = runCli(world, ['update', '--auto'], { env: signInEnv(world) });
+      assertEq(code, 0, `exit 0, got: ${said}`);
+      assert(said.includes('identity: not signed in; run `workkit setup --login`'), `session start hears the sign-in is missing, got: ${said}`);
+    } finally {
+      cleanup(world.root);
+    }
+  });
+
+  await test('--auto with a login file holding a token prints no identity line', () => {
+    const world = mkWorld();
+    try {
+      writeLogin(world.home, { token: 'ghu_updateuser', login: 'octocat' });
+      const { code, said } = runCli(world, ['update', '--auto'], { env: signInEnv(world) });
+      assertEq(code, 0, `exit 0, got: ${said}`);
+      assert(!said.includes('identity:'), `a signed-in machine hears nothing about it at session start, got: ${said}`);
+    } finally {
+      cleanup(world.root);
+    }
+  });
+
+  await test('a human update with a login file holding octocat names the login', () => {
+    const world = mkWorld();
+    try {
+      writeLogin(world.home, { token: 'ghu_updateuser', login: 'octocat' });
+      const { code, said } = runCli(world, ['update'], { env: signInEnv(world) });
+      assertEq(code, 0, `exit 0, got: ${said}`);
+      assert(said.includes('identity: signed in as @octocat'), `a human run prints the ok line, got: ${said}`);
+    } finally {
+      cleanup(world.root);
+    }
   });
 
   // Everything below is launchd's: a machine without `launchctl` has no

@@ -1,7 +1,7 @@
 // workflow/identity/login.js: the user's sign-in. GitHub's device flow with
 // the App's Client ID gives a user token, kept in `identity/login.json`; the
 // token service trades it for the bot's per-repo token.
-// Usage: node login.js [--open <opener>] | --status
+// Usage: node login.js [--open <opener>]
 
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -15,7 +15,7 @@ const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
 // The device flow's own rule: a slow_down answer adds five seconds to the interval.
 const SLOW_DOWN_S = 5;
 const DEFAULT_INTERVAL_S = 5;
-const USAGE = 'usage: login.js [--open <opener>] | login.js --status';
+const USAGE = 'usage: login.js [--open <opener>]';
 // The command every not-signed-in message names.
 const LOGIN_FIX = 'workkit setup --login';
 
@@ -74,7 +74,7 @@ const writeLogin = (file, entry) => {
 };
 
 /**
- * What `--status` reports, here and in the client's own status.
+ * What the client's `--status` reports of the sign-in.
  * @param {string} file
  * @returns {{loginFile: string, signedIn: boolean, login: string|null}}
  */
@@ -225,8 +225,7 @@ const signIn = async ({
 };
 
 /**
- * The command forms: sign in (opening the page with `--open <opener>`), or the
- * status as JSON.
+ * The command form: sign in, opening the page with `--open <opener>`.
  * @param {string[]} argv
  * @returns {Promise<number>} the exit code
  */
@@ -237,10 +236,6 @@ const main = async (argv) => {
   }
   if (argv.length === 2 && argv[0] === '--open' && !argv[1].startsWith('-')) {
     await signIn({ open: argv[1] });
-    return 0;
-  }
-  if (argv.length === 1 && argv[0] === '--status') {
-    process.stdout.write(`${JSON.stringify(loginStatus(loginFile()))}\n`);
     return 0;
   }
   throw new Error(USAGE);

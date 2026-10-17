@@ -65,7 +65,7 @@ Downgrade to light ONLY when ALL of these hold (any miss = stay full):
 
 - One consolidated report:
   - findings **≥80**: actionable items (file:line, issue, fix);
-  - 40–79: compressed into a "lower confidence" note;
+  - 40–79: compressed into a "lower confidence" note. In a ship's review, what the ship does not fix goes on that ship's review-notes issue (`workkit:ship` step 3.2b); in a batch's review, the fix-or-file rule routes it (`docs/project-state.md` § How big is one issue);
   - below 40: dropped silently.
 - End with a verdict: ship / fix-then-ship / rework.
 - Every item in the report, and every issue one names, reads in the cold-reader line (`docs/project-state.md` § Restating an issue).

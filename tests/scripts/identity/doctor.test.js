@@ -4,15 +4,13 @@
 // ~/.workkit, and the token service a real local stand-in.
 // The shared prologue is ../workkit-cli/helpers.js.
 
-const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { NODE_DIR, joinPath, shellPath } = require('../../lib/platform');
 const {
-  INSTALL_FIX, writeLogin, useTokenService, startServer,
+  INSTALL_FIX, writeLogin, useTokenService, startService, attentionCount,
 } = require('../../lib/identity');
 const { mkOriginRepo } = require('../../lib/git-repo');
 const {
-  cleanup, mkWorld, runCli, mkRepo, rosterRepo, mkKit,
+  cleanup, mkWorld, runCli, signInEnv, mkRepo, rosterRepo, mkKit,
 } = require('../workkit-cli/helpers');
 
 /**
@@ -25,29 +23,17 @@ const mkScene = ({ rostered = true } = {}) => {
   const world = mkWorld();
   const { kit, script } = mkKit('owner/kit');
   const repo = mkRepo({ optIn: true });
-  const userEnv = { WORKFLOW_HOME: shellPath(path.join(world.home, '.workkit')) };
-  if (rostered) rosterRepo(world, repo, 'acme/rostered', { script, env: userEnv });
+  if (rostered) rosterRepo(world, repo, 'acme/rostered', { script, env: signInEnv(world, { node: false }) });
   else mkOriginRepo(repo, 'https://github.com/acme/rostered.git');
-  return { world, kit, script, repo, userEnv };
+  return { world, kit, script, repo };
 };
-
-/** A stand-in service answering `POST /token` with `status` and `body` (an object). */
-const startService = (scene, status, body) => startServer(
-  [{ method: 'POST', url: '/token', status, body: JSON.stringify(body) }], scene.world.root,
-);
 
 // The doctor's node is the one running this suite, after the world's stubs.
-const doctor = ({ world, script, repo, userEnv }) => runCli(world, ['doctor'], {
+const doctor = ({ world, script, repo }) => runCli(world, ['doctor'], {
   script,
   cwd: repo,
-  env: { PATH: joinPath(world.env.PATH, NODE_DIR), ...userEnv },
+  env: signInEnv(world),
 });
-
-const attentionCount = (said) => {
-  const m = said.match(/(\d+) item\(s\) need attention/);
-  assert(m, `the run counts what needs attention, got: ${said}`);
-  return Number(m[1]);
-};
 
 /** The lines under the doctor's section header naming `title`, up to the next header. */
 const section = (said, title) => {
@@ -71,7 +57,7 @@ const run = async () => {
 
   await test('case 19: This machine says signed in as @<login>, or not signed in; run workkit setup --login as one attention item', async () => {
     const scene = mkScene();
-    const service = await startService(scene, 200, { token: 'ghs_probe', expires_at: '2099-01-01T00:00:00Z' });
+    const service = await startService(200, { token: 'ghs_probe', expires_at: '2099-01-01T00:00:00Z' });
     try {
       useTokenService(scene.world.home, `${service.url}/token`);
       const bare = doctor(scene);
@@ -95,8 +81,8 @@ const run = async () => {
   await test('case 19: This repo, signed in with the origin on the roster: a 200 is installed and ok, a 412 a warning carrying the install page', async () => {
     const scene = mkScene();
     writeLogin(scene.world.home, { token: 'ghu_doctoruser', login: 'octocat' });
-    const installed = await startService(scene, 200, { token: 'ghs_probe', expires_at: '2099-01-01T00:00:00Z' });
-    const missing = await startService(scene, 412, { error: 'not installed', fix: INSTALL_FIX });
+    const installed = await startService(200, { token: 'ghs_probe', expires_at: '2099-01-01T00:00:00Z' });
+    const missing = await startService(412, { error: 'not installed', fix: INSTALL_FIX });
     try {
       useTokenService(scene.world.home, `${installed.url}/token`);
       const ok = doctor(scene);
@@ -122,7 +108,7 @@ const run = async () => {
   await test('case 19: This repo keeps the shim\'s rule: an opted-in repo off the roster gets no installation line and no ask', async () => {
     const scene = mkScene({ rostered: false });
     writeLogin(scene.world.home, { token: 'ghu_doctoruser', login: 'octocat' });
-    const service = await startService(scene, 200, { token: 'ghs_probe', expires_at: '2099-01-01T00:00:00Z' });
+    const service = await startService(200, { token: 'ghs_probe', expires_at: '2099-01-01T00:00:00Z' });
     try {
       useTokenService(scene.world.home, `${service.url}/token`);
       const res = doctor(scene);

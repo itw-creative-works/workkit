@@ -7,6 +7,16 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+- [#432](../../issues/432) Thanks [@ianwieds]! - A ship's review no longer files an inbox issue per finding scored under 80: the ship fixes the small ones and lists the rest on one `status:backlog` + `priority:low` issue, `review notes from the <version-or-commit> ship`.
+
+### Removed
+- [#431](../../issues/431) Thanks [@ianwieds]! - `identity/login.js --status` is gone; `identity/token.js --status`, which setup and doctor already read, is the one sign-in status.
+
+### Fixed
+- [#430](../../issues/430) Thanks [@ianwieds]! - `workkit update`, the daily `--auto` run included, now reports the bot sign-in, so a machine set up before the identity shipped is told to run `workkit setup --login` instead of failing its label and claim writes in silence.
+- [#429](../../issues/429) Thanks [@ianwieds]! - The `gh` shim reads the repo from an issue or pull request URL anywhere in the call but a body or title (`-R` still wins), and a bare `gh issue` or a `--help` call runs as you, showing gh's own help instead of exiting 3.
+
 ## [0.76.0] - 2026-10-16
 
 ### Added

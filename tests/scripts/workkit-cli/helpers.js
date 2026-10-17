@@ -288,6 +288,20 @@ const rosterRepo = (world, repo, slug, { script, env } = {}) => {
   assert(enabled.code === 0, `${slug} joins the roster, got: ${enabled.said}`);
 };
 
+/**
+ * The env a sign-in-aware run lays over `world.env`: the user dir at the scratch
+ * home's ~/.workkit where the login file lives, GitHub's hosts at nothing
+ * listening so no case reaches github.com, node on PATH unless `node` is false,
+ * and `extra` on top.
+ */
+const signInEnv = (world, { node = true, extra = {} } = {}) => ({
+  WORKFLOW_HOME: shellPath(path.join(world.home, '.workkit')),
+  GITHUB_SERVER_URL: 'http://127.0.0.1:9',
+  GITHUB_API_URL: 'http://127.0.0.1:9',
+  ...(node ? { PATH: joinPath(world.env.PATH, NODE_DIR) } : {}),
+  ...extra,
+});
+
 const installSchedule = (world) => spawnSync(BASH, [...NO_RC, shellPath(JOBS_INSTALL)], { env: world.env, encoding: 'utf8', timeout: 30000 });
 
 // The machine's hand-edited settings file, written the way a heal seeds it.
@@ -411,7 +425,7 @@ const mkHomeWorld = (opts = {}) => {
 };
 
 module.exports = {
-  WORKFLOW_DIR, CLI, LABEL, cleanup, writeStub, mkWorld, withNpm, mintTest, runCli, ACTED, mkRepo, rosterRepo,
+  WORKFLOW_DIR, CLI, LABEL, cleanup, writeStub, mkWorld, withNpm, mintTest, runCli, signInEnv, ACTED, mkRepo, rosterRepo,
   installSchedule, seedSettings, inCli, AT_TERMINAL, mkPartialKit, mkKit, mkSetupKit, mkCacheKit,
   SLUG, HOME, mkHomeWorld,
 };

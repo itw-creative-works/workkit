@@ -11,6 +11,7 @@ const { shellPath, joinPath, stubTool } = require('../../lib/platform');
 const {
   WORKFLOW_DIR, cleanup, mkWorld, runCli, mkRepo, mkKit, mkSetupKit,
 } = require('../workkit-cli/helpers');
+const { attentionCount } = require('../../lib/identity');
 
 const SHIM = path.join(WORKFLOW_DIR, 'identity', 'gh');
 
@@ -22,14 +23,6 @@ const mkSetupScene = () => {
   const world = mkWorld({ pluginInstalled: true, binOnPath: true });
   fs.mkdirSync(world.claudeHome, { recursive: true });
   return { world, repo: mkRepo({ optIn: true }), ...mkSetupKit() };
-};
-
-/** The count doctor's closing line gives, 0 when it reports everything current. */
-const attentionCount = (said) => {
-  const match = said.match(/(\d+) item\(s\) need attention/);
-  if (match) return Number(match[1]);
-  assert(said.includes('Everything this command can see is current'), `doctor neither counted nor cleared, got: ${said}`);
-  return 0;
 };
 
 const run = async () => {

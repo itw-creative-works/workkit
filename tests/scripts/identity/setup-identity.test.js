@@ -12,28 +12,17 @@ const {
   group, test, assert, assertEq, skip, summary, selfRun, WORKKIT_DIR: W,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, NO_NODE_STUB, NODE_DIR, shellPath, joinPath,
+  IS_WINDOWS, NO_NODE_STUB, shellPath,
 } = require('../../lib/platform');
 const {
-  INSTALL_FIX, deviceFlowRoutes, writeLogin, useTokenService, startServer,
+  INSTALL_FIX, deviceFlowRoutes, writeLogin, readWrittenLogin, useTokenService, startServer,
 } = require('../../lib/identity');
 const { mkOriginRepo } = require('../../lib/git-repo');
 const { until } = require('../../lib/process');
 const { isCall } = require('../../lib/argv-log');
 const {
-  cleanup, mkWorld, runCli, mkRepo, rosterRepo, mkSetupKit, inCli, AT_TERMINAL,
+  cleanup, mkWorld, runCli, signInEnv, mkRepo, rosterRepo, mkSetupKit, inCli, AT_TERMINAL,
 } = require('../workkit-cli/helpers');
-
-// GitHub's hosts for every run here, nothing listening, so no case can reach github.com.
-const NO_GITHUB = { GITHUB_SERVER_URL: 'http://127.0.0.1:9', GITHUB_API_URL: 'http://127.0.0.1:9' };
-
-/** The env a run gets: the user's dir under the scratch home, GitHub unreachable, and node when asked. */
-const envOf = (world, { node = true, extra = {} } = {}) => ({
-  WORKFLOW_HOME: shellPath(path.join(world.home, '.workkit')),
-  ...NO_GITHUB,
-  ...(node ? { PATH: joinPath(world.env.PATH, NODE_DIR) } : {}),
-  ...extra,
-});
 
 const hostsOf = (github) => ({ GITHUB_SERVER_URL: github.url, GITHUB_API_URL: github.url });
 
@@ -93,7 +82,7 @@ const setup = ({ node = true, before = () => {} } = {}) => withSetupScene(SIGN_I
   world, kit, script, repo, server,
 }) => {
   before(world);
-  const res = runCli(world, ['setup'], { cwd: repo, script, env: envOf(world, { node, extra: hostsOf(server) }) });
+  const res = runCli(world, ['setup'], { cwd: repo, script, env: signInEnv(world, { node, extra: hostsOf(server) }) });
   return {
     ...res, envMade: fs.existsSync(path.join(kit, '.env')), opened: world.openerCalls(), device: deviceRequests(server),
   };
@@ -126,7 +115,7 @@ const installSetup = ({
 }) => withSetupScene([{ method: 'POST', url: '/token', answers }], async ({
   world, script, repo, server,
 }) => {
-  const env = envOf(world);
+  const env = signInEnv(world);
   if (rostered) rosterRepo(world, repo, 'acme/rostered', { script, env });
   else mkOriginRepo(repo, 'https://github.com/acme/rostered.git');
   if (!optIn) fs.rmSync(path.join(repo, W, 'settings.json'));
@@ -171,12 +160,11 @@ const run = async () => {
       await withSetupScene(SIGN_IN_ROUTES, async ({
         world, script, repo, server,
       }) => {
-        const res = setupAtTerminal(world, { repo, script, input, env: envOf(world, { extra: hostsOf(server) }) });
+        const res = setupAtTerminal(world, { repo, script, input, env: signInEnv(world, { extra: hostsOf(server) }) });
         assert(res.said.includes(SIGN_IN_QUESTION), `${label}: setup puts the sign-in question, got: ${res.said}`);
         assert(res.said.includes('CLIX-0020'), `${label}: the sign-in prints the user code, got: ${res.said}`);
         assertEq(deviceRequests(server).length, 1, `${label}: one device-code request, got: ${JSON.stringify(server.requests())}`);
-        const written = JSON.parse(fs.readFileSync(path.join(world.home, '.workkit', 'identity', 'login.json'), 'utf8'));
-        assertEq(JSON.stringify(written), JSON.stringify({ token: 'ghu_fromcli', login: 'hubot' }), `${label}: the login file holds the stand-in's sign-in`);
+        assertEq(JSON.stringify(readWrittenLogin(world.home)), JSON.stringify({ token: 'ghu_fromcli', login: 'hubot' }), `${label}: the login file holds the stand-in's sign-in`);
         assert(res.said.includes('identity: signed in as @hubot'), `${label}: the step then says who is signed in, got: ${res.said}`);
         await assertDevicePageOpened(world, `case 22 ${label}`);
       });
@@ -189,7 +177,7 @@ const run = async () => {
       await withSetupScene(SIGN_IN_ROUTES, async ({
         world, script, repo, server,
       }) => {
-        const res = setupAtTerminal(world, { repo, script, input, env: envOf(world, { extra: hostsOf(server) }) });
+        const res = setupAtTerminal(world, { repo, script, input, env: signInEnv(world, { extra: hostsOf(server) }) });
         assert(res.said.includes(SIGN_IN_QUESTION), `${label}: setup puts the sign-in question, got: ${res.said}`);
         assert(/not signed in[^\n]*workkit setup --login/.test(res.said), `${label}: the warning naming workkit setup --login, got: ${res.said}`);
         assertEq(server.requests().length, 0, `${label}: no device-code request, got: ${JSON.stringify(server.requests())}`);
@@ -209,7 +197,7 @@ const run = async () => {
       assert(!/^ {2}login\b/m.test(help.out), `help lists no login command, got: ${help.out}`);
       assert(!/^ {2}logout\b/m.test(help.out), `help lists no logout command, got: ${help.out}`);
 
-      const login = runCli(world, ['login'], { env: envOf(world) });
+      const login = runCli(world, ['login'], { env: signInEnv(world) });
       assert(login.code !== 0, `workkit login exits non-zero, got ${login.code}: ${login.said}`);
       assert(login.err.includes('unknown command login'), `it is the unknown-command error, got: ${login.err}`);
     } finally {
@@ -219,16 +207,15 @@ const run = async () => {
 
   await test('case 20, 22: setup --login at a terminal asks nothing, opens the device page and runs the device flow into the login file, replacing the sign-in already there, and nothing else of setup', async () => {
     await withSetupScene(SIGN_IN_ROUTES, async ({ world, script, server }) => {
-      const loginFile = writeLogin(world.home, { token: 'ghu_cliuser', login: 'octocat' });
+      writeLogin(world.home, { token: 'ghu_cliuser', login: 'octocat' });
       const res = inCli(world, `${AT_TERMINAL}\ncmd_setup --login`, {
         entry: script,
-        env: envOf(world, { extra: hostsOf(server) }),
+        env: signInEnv(world, { extra: hostsOf(server) }),
       });
       assertEq(res.code, 0, `setup --login exits 0, got: ${res.said}`);
       assert(res.said.includes('CLIX-0020'), `it prints the user code, got: ${res.said}`);
       assertEq(deviceRequests(server).length, 1, `one device-code request although already signed in, got: ${JSON.stringify(server.requests())}`);
-      const written = JSON.parse(fs.readFileSync(loginFile, 'utf8'));
-      assertEq(JSON.stringify(written), JSON.stringify({ token: 'ghu_fromcli', login: 'hubot' }), 'the new sign-in replaces the old');
+      assertEq(JSON.stringify(readWrittenLogin(world.home)), JSON.stringify({ token: 'ghu_fromcli', login: 'hubot' }), 'the new sign-in replaces the old');
 
       assert(!fs.existsSync(world.link), 'no workkit symlink written');
       assert(!world.claudeCalls().some((c) => c.includes('install')), 'no plugin install');
@@ -244,14 +231,14 @@ const run = async () => {
     await withSetupScene(SIGN_IN_ROUTES, async ({
       world, script, repo, server,
     }) => {
-      const loginFile = writeLogin(world.home, { token: 'ghu_cliuser', login: 'octocat' });
+      writeLogin(world.home, { token: 'ghu_cliuser', login: 'octocat' });
       const res = runCli(world, ['setup', '--login'], {
-        cwd: repo, script, env: envOf(world, { extra: hostsOf(server) }),
+        cwd: repo, script, env: signInEnv(world, { extra: hostsOf(server) }),
       });
       assertEq(res.code, 0, `exit 0, got: ${res.said}`);
       assert(res.said.includes('CLIX-0020'), `it prints the user code, got: ${res.said}`);
       assertEq(deviceRequests(server).length, 1, `one device-code request, got: ${JSON.stringify(server.requests())}`);
-      assertEq(JSON.stringify(JSON.parse(fs.readFileSync(loginFile, 'utf8'))), JSON.stringify({ token: 'ghu_fromcli', login: 'hubot' }),
+      assertEq(JSON.stringify(readWrittenLogin(world.home)), JSON.stringify({ token: 'ghu_fromcli', login: 'hubot' }),
         'the new sign-in replaces the old');
       assert(!/needs a terminal/.test(res.said), `it names no terminal, got: ${res.said}`);
       await assertDevicePageOpened(world, 'case 20: no terminal');
@@ -268,7 +255,7 @@ const run = async () => {
       const loginFile = writeLogin(world.home, { token: 'ghu_cliuser', login: 'octocat' });
       const before = fs.readFileSync(loginFile, 'utf8');
       const res = runCli(world, ['setup', '--login'], {
-        cwd: repo, script, env: envOf(world, { extra: hostsOf(server) }),
+        cwd: repo, script, env: signInEnv(world, { extra: hostsOf(server) }),
       });
       assertEq(res.code, 1, `exit 1, got: ${res.said}`);
       assert(res.said.includes('the sign-in did not finish'), `it says the sign-in did not finish, got: ${res.said}`);

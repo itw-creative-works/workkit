@@ -87,7 +87,7 @@ The skills carry no platform-bound command at all: the two that record a marker 
 - Runs the engine's heal in a participating repo, once per repo per day. What the heal writes: `workflow/README.md`. The standard it heals to: the spec § Enforcement.
 - Adds the one check that is the hook layer's own: every wired hook resolves, is executable, parses, the pieces they source parse, and the tools they call are present.
 - Reports only what it fixed: the heal runs under `QUIET=1`, which is what silences its skips at the source, and the indent and the glyph every remaining line opens with are stripped before the report goes into the session's context. An undecided repo hears one offer and is never written to.
-- The same daily run calls `workkit update --auto`, the machine-side upkeep: it updates a schedule a human already installed, links the `workkit` command and the `gh` shim into an existing `~/.local/bin`, and installs no schedule fresh.
+- The same daily run calls `workkit update --auto`, the machine-side upkeep: it updates a schedule a human already installed, links the `workkit` command and the `gh` shim into an existing `~/.local/bin`, and installs no schedule fresh. It warns about a cloud secret that is missing or stale, and says `identity: not signed in` when the machine has no sign-in.
 - Above every gate sits the setup pester. A machine with no `~/.local/bin/workkit` is told, every session and in any directory, to run `workkit.sh setup` itself and hand the user only what it prints for them, a prompt, never an install.
 
 ## `docs:state-check`: SessionStart

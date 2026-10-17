@@ -11,14 +11,14 @@ const { spawnSync } = require('child_process');
 const {
   group, test, testUnless, assert, assertEq, summary, selfRun,
 } = require('../../lib/harness');
-const { IS_WINDOWS, homeEnv } = require('../../lib/platform');
+const { IS_WINDOWS } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
 const {
-  INSTALL_FIX, deviceFlowRoutes, writeLogin, useTokenService, collector, json, failureOf, startServer, PTY, atTerminal,
+  INSTALL_FIX, deviceFlowRoutes, writeLogin, readWrittenLogin, useTokenService, collector, json, failureOf, startServer,
+  startService, scratchKit, scratchEnv, PTY, atTerminal,
 } = require('../../lib/identity');
 
-const KIT = path.join(__dirname, '..', '..', '..');
-const MODULE = path.join(KIT, 'workflow', 'identity', 'token.js');
+const MODULE = path.join(__dirname, '..', '..', '..', 'workflow', 'identity', 'token.js');
 
 // Required per case, so a module not yet built fails each case by name.
 const load = () => require(MODULE);
@@ -77,35 +77,20 @@ const fakeService = (grants) => {
 };
 
 /**
- * A scratch copy of workflow/ and a scratch home for its settings, login and
- * cache; `command` runs the copy's token.js with that home.
+ * A scratch kit and a scratch home for its settings, login and cache; `command`
+ * runs the copy's token.js with that home.
  */
-const scratchKit = () => {
-  const kit = mkTmp('wk-identity-kit-');
-  fs.cpSync(path.join(KIT, 'workflow'), path.join(kit, 'workflow'), { recursive: true });
+const tokenKit = () => {
+  const kit = scratchKit();
   const home = mkTmp('wk-identity-kit-home-');
-  const envOf = (extra) => {
-    const env = homeEnv(home, { ...process.env, ...extra });
-    delete env.WORKFLOW_HOME;
-    if (!('GITHUB_SERVER_URL' in extra)) delete env.GITHUB_SERVER_URL;
-    if (!('GITHUB_API_URL' in extra)) delete env.GITHUB_API_URL;
-    return env;
-  };
   const tokenJs = path.join(kit, 'workflow', 'identity', 'token.js');
   const command = (args, extra = {}) => spawnSync(process.execPath, [tokenJs, ...args],
-    { env: envOf(extra), encoding: 'utf8', timeout: 30000 });
-  const atKeyboard = (args, extra = {}) => atTerminal([process.execPath, tokenJs, ...args], { env: envOf(extra), dir: home });
+    { env: scratchEnv(home, extra), encoding: 'utf8', timeout: 30000 });
+  const atKeyboard = (args, extra = {}) => atTerminal([process.execPath, tokenJs, ...args], { env: scratchEnv(home, extra), dir: home });
   return {
     kit, home, command, atKeyboard,
   };
 };
-
-
-/** A stand-in service answering `POST /token` with `status` and `body` (an object). */
-const startService = (status, body) => startServer(
-  [{ method: 'POST', url: '/token', status, body: JSON.stringify(body) }],
-  mkTmp('wk-identity-service-'),
-);
 
 const run = async () => {
   group('identity/token: the cache');
@@ -176,7 +161,7 @@ const run = async () => {
 
     // One stand-in is both the service and GitHub, so a sign-in started away
     // from a keyboard would show as a device-code request.
-    const { home, command } = scratchKit();
+    const { home, command } = tokenKit();
     const server = await startServer([
       { method: 'POST', url: '/token', status: 200, body: JSON.stringify({ token: 'ghs_never', expires_at: '2099-01-01T00:00:00Z' }) },
       ...KEYBOARD_FLOW,
@@ -236,7 +221,7 @@ const run = async () => {
 
   await testUnless(!PTY, 'no `script` here to hand the command a terminal')(
     'case 12a: the command at a keyboard with no login file says why, runs the device flow on stderr, writes the login, and prints only the token on stdout', async () => {
-      const { home, atKeyboard } = scratchKit();
+      const { home, atKeyboard } = tokenKit();
       const server = await startServer([
         ...KEYBOARD_FLOW,
         { method: 'POST', url: '/token', status: 200, body: JSON.stringify({ token: 'ghs_fromkeyboard', expires_at: '2099-01-01T00:00:00Z' }) },
@@ -251,8 +236,7 @@ const run = async () => {
         const now = res.terminal.indexOf('signing in now');
         const page = res.terminal.indexOf('Open https://github.com/login/device');
         assert(reason >= 0 && now > reason && page > now, `the not-signed-in line, then signing in now, then Open the page, got: ${res.terminal}`);
-        const written = JSON.parse(fs.readFileSync(path.join(home, '.workkit', 'identity', 'login.json'), 'utf8'));
-        assertEq(JSON.stringify(written), JSON.stringify({ token: 'ghu_fromkeyboard', login: 'hubot' }), 'the login file is written');
+        assertEq(JSON.stringify(readWrittenLogin(home)), JSON.stringify({ token: 'ghu_fromkeyboard', login: 'hubot' }), 'the login file is written');
         const device = server.requests().filter((r) => r.method === 'POST' && r.url === '/login/device/code');
         assertEq(device.length, 1, `one device-code request, got: ${JSON.stringify(server.requests())}`);
         const posts = server.requests().filter((r) => r.method === 'POST' && r.url === '/token');
@@ -323,7 +307,7 @@ const run = async () => {
       [500, { error: 'github refused: Server Error from the stand-in', fix: 'try again shortly' }, 1, /Server Error from the stand-in/],
     ];
     for (const [status, body, exit, pattern] of answers) {
-      const { home, command } = scratchKit();
+      const { home, command } = tokenKit();
       writeLogin(home, { token: USER_TOKEN, login: 'octocat' });
       const server = await startService(status, body);
       try {
@@ -352,7 +336,7 @@ const run = async () => {
     assertEq(tokenUrlOf({}), 'https://workkit.itwcreativeworks.com/token', 'the default token URL');
     assertEq(tokenUrlOf(SETTINGS), TOKEN_URL, 'identity.tokenUrl wins');
 
-    const { home, command } = scratchKit();
+    const { home, command } = tokenKit();
     const loginFile = path.join(home, '.workkit', 'identity', 'login.json');
     useTokenService(home, 'http://127.0.0.1:9/token');
     const status = () => {

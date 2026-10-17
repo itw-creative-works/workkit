@@ -62,13 +62,13 @@ Autonomous ship pipeline: read the config, pick the bump, then run every step de
 2. **Doc parity**: find behavior changes in the diff (new commands, flags, env vars, changed defaults, new patterns). Document any undocumented one in README.md, AGENTS.md or docs/*.md, in the same commit. Skip for internal refactors, test-only changes, and config or prompt tweaks with no user-facing impact.
 
 2b. **Review, every ship**: run `workkit:review` on the whole ship diff, before any commit this ship makes. `bash ~/.claude/workkit/../scripts/review-covers.sh` picks the tier (the allow-rule spelling, since `allowed-tools` matches literal text; other skills use the `CLAUDE_PLUGIN_ROOT` form): `covered` (exit 0) runs `workkit:review light`, anything else `workkit:review full`.
-   - Every finding scored ≥80 is fixed in this ship or filed before going on, per the fix-or-file rule (`docs/project-state.md` § How big is one issue); none is ever dropped. It runs EVERY time: an earlier review, a docs-only diff, or a covering marker exempts nothing; the marker only picks the tier. Only an EMPTY diff (a release-only ship, or only the version stamp) skips it, in one line.
+   - It runs EVERY time: an earlier review, a docs-only diff, or a covering marker exempts nothing; the marker only picks the tier. Only an EMPTY diff (a release-only ship, or only the version stamp) skips it, in one line. A finding scored ≥80 is fixed in this ship or filed before going on, per the fix-or-file rule (`docs/project-state.md` § How big is one issue); none is ever dropped.
+   - A finding under 80 is fixed in this ship if it is a few lines. The rest go on ONE issue per ship, `review notes from the <version-or-commit> ship` (search open titles; add to one found): a checklist line each with score and file:line, at `status:backlog` + `priority:low` + `type:enhancement`, never `status:inbox`. No repo or session file holds the notes: the backlog lane is the side lane.
    - `covered` means the diff is not empty and no path in it (modified, staged, untracked, deleted) changed after the full-panel marker, written by a full panel or its fix round's retouch: that makes the batch panel's review the ship's. The ship diff is the widest view of the wave, so it catches drift no single brief could name. The plain marker stays the gate's check for ordinary code commits.
 
 3. **CHANGELOG**: add the entry under `[Unreleased]` (§ CHANGELOG format). The release commit moves it to a version section, never the work commit.
 
-4. **Commit message**: Conventional Commits, types feat/fix/docs/chore/refactor/test; subject lowercase, imperative, ≤72 chars; no version numbers in ordinary commits. Write it straight into the commit, never printed in chat first.
-   - Add `Fixes #N` for every issue this ship completes: GitHub closes it when the commit lands on the default branch. Always a HEREDOC:
+4. **Commit message**: Conventional Commits, types feat/fix/docs/chore/refactor/test; subject lowercase, imperative, ≤72 chars; no version numbers in ordinary commits. Write it straight into the commit, never printed in chat first. Add `Fixes #N` for every issue this ship completes: GitHub closes it when the commit lands on the default branch. Always a HEREDOC:
    ```bash
    git commit -m "$(cat <<'EOF'
    <type>(<scope>): <subject>
@@ -145,7 +145,7 @@ Autonomous ship pipeline: read the config, pick the bump, then run every step de
 
 - The working is already written where it is read. Do NOT print the commit message, the diff or a narration of it, or the step 3.1 analysis. Nor the CHANGELOG entry, raw review output, or a file-by-file walk. Every issue the reply names reads in the cold-reader line (`docs/project-state.md` § Restating an issue).
 - DO print, briefly: the version and the bump picked, the commit shas, and what pushed. Add every direct push's CI conclusion (§ Watching a push's CI run), the issues closed, and every step deliberately skipped. A bump-skipped PR-path ship prints the PR checks' conclusion.
-- Also the one-line outcomes the steps name (the review tier `review-covers.sh` picked, the plan's lines, the missing allow rule, what published, Step 7). Name every ≥80 finding filed rather than fixed, with the issue it landed on (step 3.2b; this wins over the do-not-print list). Name anything that failed or needs the owner.
+- Also the one-line outcomes the steps name (the review tier `review-covers.sh` picked, the plan's lines, the missing allow rule, what published, Step 7). Name every ≥80 finding filed rather than fixed, with the issue it landed on, and the review-notes issue when one was filed or added to (step 3.2b; this wins over the do-not-print list). Name anything that failed or needs the owner.
 
 ## NEVER include Claude attribution
 

@@ -57,6 +57,17 @@ const run = async () => {
     cleanup(repo); cleanup(home); cleanup(first.cacheDir); cleanup(second.cacheDir);
   });
 
+  await test('a machine with no sign-in hears it at session start', () => {
+    // A home of our own holds no login.json, so runHook writes no sign-in.
+    const repo = makeRepo();
+    const home = mkTmp('wf-hook-');
+    const workflowHome = path.join(mkTmp('wf-hook-'), '.workkit');
+    const { code, stdout, cacheDir } = runHook(repo, { home, workflowHome });
+    assertEq(code, 0, 'exit 0');
+    assert(stdout.includes('identity: not signed in'), `the session is told to sign in, got: ${stdout}`);
+    cleanup(repo); cleanup(home); cleanup(path.dirname(workflowHome)); cleanup(cacheDir);
+  });
+
   // The plist itself is launchd's, and the engine re-renders one only where
   // launchd is (`schedule: launchd is macOS; nothing to keep current here`).
   // Off that machine there is no schedule to correct, so the case is named as a

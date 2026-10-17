@@ -1,13 +1,16 @@
 // The shared fixtures of the identity suites: the user's sign-in as the login
-// store holds it, the token service's address in the settings, a local HTTP
-// stand-in for GitHub or the token service with its device-flow routes, the
-// response and failure helpers, and a run at a keyboard for the sign-in that
-// starts on its own.
+// store holds and writes it, the token service's address in the settings, a local
+// HTTP stand-in for GitHub or the token service, a scratch kit and its scrubbed env,
+// doctor's attention count, the response and failure helpers, and a keyboard run.
 
 const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
-const { IS_WINDOWS, SYSTEM_PATH, which } = require('./platform');
+const { assert } = require('./harness');
+const { IS_WINDOWS, SYSTEM_PATH, which, homeEnv } = require('./platform');
+const { mkTmp } = require('./scratch');
+
+const KIT = path.join(__dirname, '..', '..');
 
 // GitHub's device-code answer, as its docs show one.
 const DEVICE_CODE = {
@@ -38,6 +41,9 @@ const writeLogin = (home, { token, login }) => {
   fs.writeFileSync(file, `${JSON.stringify({ token, login })}\n`);
   return file;
 };
+
+/** What `<home>/.workkit/identity/login.json` holds, parsed. */
+const readWrittenLogin = (home) => JSON.parse(fs.readFileSync(path.join(home, '.workkit', 'identity', 'login.json'), 'utf8'));
 
 /** Point `<home>/.workkit/settings.json` at the token service `url`, merged into what is there. */
 const useTokenService = (home, url) => {
@@ -129,6 +135,39 @@ const startServer = (routes, dir) => new Promise((resolve, reject) => {
   }));
 });
 
+/** A stand-in token service answering `POST /token` with `status` and `body` (an object). */
+const startService = (status, body) => startServer(
+  [{ method: 'POST', url: '/token', status, body: JSON.stringify(body) }],
+  mkTmp('wk-identity-service-'),
+);
+
+/** A scratch kit holding a copy of this checkout's `workflow/`; returns the kit folder. */
+const scratchKit = () => {
+  const kit = mkTmp('wk-identity-kit-');
+  fs.cpSync(path.join(KIT, 'workflow'), path.join(kit, 'workflow'), { recursive: true });
+  return kit;
+};
+
+/**
+ * This run's env with `home` its home and `extra` added, always minus the user
+ * dir, and minus the GitHub hosts this run may carry unless `extra` names them.
+ */
+const scratchEnv = (home, extra = {}) => {
+  const env = homeEnv(home, { ...process.env, ...extra });
+  delete env.WORKFLOW_HOME;
+  if (!('GITHUB_SERVER_URL' in extra)) delete env.GITHUB_SERVER_URL;
+  if (!('GITHUB_API_URL' in extra)) delete env.GITHUB_API_URL;
+  return env;
+};
+
+/** The count doctor's closing line gives, 0 when it reports everything current. */
+const attentionCount = (said) => {
+  const match = said.match(/(\d+) item\(s\) need attention/);
+  if (match) return Number(match[1]);
+  assert(said.includes('Everything this command can see is current'), `doctor neither counted nor cleared, got: ${said}`);
+  return 0;
+};
+
 const shQuote = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
 
 // `script` hands a command a terminal: BSD takes the command after the file,
@@ -164,6 +203,6 @@ const atTerminal = (argv, { env, cwd, dir }) => {
 };
 
 module.exports = {
-  DEVICE_CODE, INSTALL_FIX, deviceFlowRoutes, writeLogin, useTokenService, collector, json, failureOf, startServer, PTY,
-  atTerminal,
+  DEVICE_CODE, INSTALL_FIX, deviceFlowRoutes, writeLogin, readWrittenLogin, useTokenService, collector, json, failureOf,
+  startServer, startService, scratchKit, scratchEnv, attentionCount, PTY, atTerminal,
 };

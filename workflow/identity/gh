@@ -82,11 +82,13 @@ in_list() {
 }
 
 # bot_verb <args...>: whether the call is bookkeeping. The subcommand is the
-# first word after the verb that is neither a flag nor the value of `-R`/`--repo`.
+# first word after the verb that is neither a flag nor the value of `-R`/`--repo`;
+# no subcommand, or `-h`/`--help` anywhere after the verb, is the owner's.
 bot_verb() {
   local verb="${1:-}" arg skip=0
   in_list "$verb" "${BOT_VERBS[@]}" || return 1
   shift
+  in_list -h "$@" || in_list --help "$@" && return 1
   for arg in "$@"; do
     if [[ "$skip" -eq 1 ]]; then skip=0; continue; fi
     case "$arg" in
@@ -97,23 +99,21 @@ bot_verb() {
          return 0 ;;
     esac
   done
-  return 0
+  return 1
 }
 
-# url_repo <args...>: the owner/repo of the first positional github.com URL,
-# the issue or pull request gh acts on. A flag's value (a --body naming another
-# issue, say) names no repo, so every flag and the word after a bare one is skipped;
-# a URL right after a flag that takes no value is read as its value, so name the
-# repo with -R in that case.
+# url_repo <args...>: the owner/repo of the first argument that is a github.com
+# issue or pull request URL (a tail after the number allowed), whatever precedes
+# it, a flag's value included, except the value of a body or title flag, which is
+# prose; -R names another repo.
 url_repo() {
   local arg skip=0
   for arg in "$@"; do
     if [[ "$skip" -eq 1 ]]; then skip=0; continue; fi
     case "$arg" in
-      -*=*) continue ;;
-      -*) skip=1; continue ;;
+      --body|-b|--body-file|-F|--title|-t) skip=1; continue ;;
     esac
-    if [[ "$arg" =~ ^https://github\.com/([^/]+)/([^/]+)/ ]]; then
+    if [[ "$arg" =~ ^https://github\.com/([^/]+)/([^/]+)/(issues|pull)/[0-9]+([/?#].*)?$ ]]; then
       printf '%s/%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
       return 0
     fi
@@ -151,8 +151,8 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-# The repo in gh's own order: the flag, else GH_REPO, else a positional URL,
-# else the cwd's origin.
+# The repo: the flag, else GH_REPO, else any issue or pull request URL among
+# the arguments, else the cwd's origin.
 FLAG_REPO="$(flag_repo "$@")" || FLAG_REPO="${GH_REPO:-}"
 if [[ -n "$FLAG_REPO" ]]; then
   # The slug helper takes every spelling gh does (a URL, github.com/, .git); the

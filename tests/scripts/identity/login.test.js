@@ -9,13 +9,13 @@ const {
   group, test, testUnless, assert, assertEq, summary, selfRun,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, NO_NODE_STUB, homeEnv, stubTool, pathWith,
+  IS_WINDOWS, NO_NODE_STUB, stubTool, pathWith,
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { until } = require('../../lib/process');
 const { mkTmp } = require('../../lib/scratch');
 const {
-  DEVICE_CODE, deviceFlowRoutes, writeLogin, collector, json, failureOf, startServer,
+  DEVICE_CODE, deviceFlowRoutes, writeLogin, readWrittenLogin, collector, json, failureOf, startServer, scratchEnv,
 } = require('../../lib/identity');
 
 const KIT = path.join(__dirname, '..', '..', '..');
@@ -26,7 +26,7 @@ const APP = path.join(KIT, 'workflow', 'identity', 'app.js');
 const load = () => require(MODULE);
 
 const GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';
-const USAGE = 'usage: login.js [--open <opener>] | login.js --status';
+const USAGE = 'usage: login.js [--open <opener>]';
 
 /** A request body's fields, sent as JSON or form-encoded. */
 const fieldsOf = (body) => {
@@ -64,13 +64,8 @@ const fakeFlow = (polls) => {
 };
 
 /** Run `node login.js <args>` with `home` its scratch home, `extra` added to the env. */
-const command = (home, args, extra = {}) => {
-  const env = homeEnv(home, { ...process.env, ...extra });
-  delete env.WORKFLOW_HOME;
-  if (!('GITHUB_SERVER_URL' in extra)) delete env.GITHUB_SERVER_URL;
-  if (!('GITHUB_API_URL' in extra)) delete env.GITHUB_API_URL;
-  return spawnSync(process.execPath, [MODULE, ...args], { env, encoding: 'utf8', timeout: 30000 });
-};
+const command = (home, args, extra = {}) => spawnSync(process.execPath, [MODULE, ...args],
+  { env: scratchEnv(home, extra), encoding: 'utf8', timeout: 30000 });
 
 const run = async () => {
   // loginFile() resolves under ~/.workkit; this process's home is a scratch one.
@@ -126,7 +121,7 @@ const run = async () => {
     assert(String(user[0].headers.get('authorization')).includes('ghu_16C7e42F292c6912E7710c838347Ae178B4a'),
       `the /user read carries the new token, got: ${user[0].headers.get('authorization')}`);
 
-    const stored = JSON.parse(fs.readFileSync(loginPath, 'utf8'));
+    const stored = readWrittenLogin(home);
     assertEq(JSON.stringify(stored), JSON.stringify({ token: 'ghu_16C7e42F292c6912E7710c838347Ae178B4a', login: 'octocat' }), 'the file holds { token, login }');
     assertEq(JSON.stringify(entry), JSON.stringify(stored), 'signIn returns the entry it wrote');
 
@@ -137,8 +132,7 @@ const run = async () => {
       const res = command(cmdHome, [], { GITHUB_SERVER_URL: server.url, GITHUB_API_URL: server.url });
       assertEq(res.status, 0, `node login.js exits 0, stderr: ${res.stderr}`);
       assert(`${res.stdout}${res.stderr}`.includes('WDJB-MJHT'), `the command prints the user code, got: ${res.stdout}${res.stderr}`);
-      const written = JSON.parse(fs.readFileSync(path.join(cmdHome, '.workkit', 'identity', 'login.json'), 'utf8'));
-      assertEq(JSON.stringify(written), JSON.stringify({ token: 'ghu_fromcommand', login: 'hubot' }), 'the command writes { token, login }');
+      assertEq(JSON.stringify(readWrittenLogin(cmdHome)), JSON.stringify({ token: 'ghu_fromcommand', login: 'hubot' }), 'the command writes { token, login }');
       const posted = server.requests().find((r) => r.url === '/login/device/code');
       assert(posted && fieldsOf(posted.body).client_id === CLIENT_ID, `the command posts the Client ID, got: ${JSON.stringify(server.requests())}`);
     } finally {
@@ -168,46 +162,22 @@ const run = async () => {
 
   group('identity/login: the command form');
 
-  await test('case 10: --logout is the usage error, exit 1, and leaves the file; --status prints signedIn true only for a file holding a token', () => {
-    const cmdHome = mkTmp('wk-login-status-home-');
-    const file = path.join(cmdHome, '.workkit', 'identity', 'login.json');
-    const status = () => {
-      const res = command(cmdHome, ['--status']);
-      assertEq(res.status, 0, `--status exits 0, stderr: ${res.stderr}`);
-      return JSON.parse(res.stdout);
-    };
-
-    const none = status();
-    assertEq(none.loginFile, file, 'names the login file');
-    assertEq(none.signedIn, false, 'no file: not signed in');
-    assert(!none.login, `no file: no login, got: ${none.login}`);
-
-    assertEq(writeLogin(cmdHome, { token: 'ghu_status', login: 'octocat' }), file, 'the fixture writes where the store reads');
-    const signed = status();
-    assertEq(signed.signedIn, true, 'a file holding a token: signed in');
-    assertEq(signed.login, 'octocat', 'and the login it holds');
-
-    fs.writeFileSync(file, `${JSON.stringify({ login: 'octocat' })}\n`);
-    assertEq(status().signedIn, false, 'a file holding no token: not signed in');
-    writeLogin(cmdHome, { token: '', login: 'octocat' });
-    assertEq(status().signedIn, false, 'an empty token: not signed in');
-
+  await test('case 10: --logout is the usage error, exit 1, and leaves the file', () => {
+    const cmdHome = mkTmp('wk-login-logout-home-');
     // No logout form: removing the file is how one signs out.
     writeLogin(cmdHome, { token: 'ghu_status', login: 'octocat' });
     const out = command(cmdHome, ['--logout']);
     assertEq(out.status, 1, `--logout is the usage error, exit 1, stderr: ${out.stderr}`);
     assert(/usage/i.test(out.stderr), `stderr carries the usage, got: ${out.stderr}`);
     assertEq(out.stdout, '', `nothing on stdout, got: ${out.stdout}`);
-    assertEq(JSON.stringify(JSON.parse(fs.readFileSync(file, 'utf8'))), JSON.stringify({ token: 'ghu_status', login: 'octocat' }),
+    assertEq(JSON.stringify(readWrittenLogin(cmdHome)), JSON.stringify({ token: 'ghu_status', login: 'octocat' }),
       'the login file is left as it was');
-    assertEq(status().signedIn, true, 'still signed in');
   });
 
   group('identity/login: the browser opener');
 
   // The device-flow stand-in for the --open runs: a code, a granted first poll, /user as hubot.
   const OPEN_ROUTES = deviceFlowRoutes({ userCode: 'WDJB-MJHT', accessToken: 'ghu_opened', login: 'hubot' });
-  const openedLogin = (h) => JSON.parse(fs.readFileSync(path.join(h, '.workkit', 'identity', 'login.json'), 'utf8'));
 
   await testUnless(IS_WINDOWS, NO_NODE_STUB)(
     'case 21: --open <opener> prints the page and the code and runs the opener once with the page as its one argument; without --open nothing runs', async () => {
@@ -221,7 +191,7 @@ const run = async () => {
         const plainHome = mkTmp('wk-login-plain-home-');
         const plain = command(plainHome, [], env);
         assertEq(plain.status, 0, `node login.js with no --open exits 0, stderr: ${plain.stderr}`);
-        assertEq(JSON.stringify(openedLogin(plainHome)), JSON.stringify({ token: 'ghu_opened', login: 'hubot' }), 'the plain flow signs in');
+        assertEq(JSON.stringify(readWrittenLogin(plainHome)), JSON.stringify({ token: 'ghu_opened', login: 'hubot' }), 'the plain flow signs in');
 
         const cmdHome = mkTmp('wk-login-open-home-');
         const res = command(cmdHome, ['--open', 'wk-opener'], env);
@@ -229,7 +199,7 @@ const run = async () => {
         const said = `${res.stdout}${res.stderr}`;
         assert(said.includes('WDJB-MJHT'), `it prints the user code, got: ${said}`);
         assert(said.includes('https://github.com/login/device'), `and the verification page, got: ${said}`);
-        assertEq(JSON.stringify(openedLogin(cmdHome)), JSON.stringify({ token: 'ghu_opened', login: 'hubot' }), 'the flow finished into the login file');
+        assertEq(JSON.stringify(readWrittenLogin(cmdHome)), JSON.stringify({ token: 'ghu_opened', login: 'hubot' }), 'the flow finished into the login file');
 
         assert(await until(() => readArgv(openerLog).length > 0), 'the opener ran');
         await until(() => readArgv(openerLog).length > 1, 500);
@@ -241,7 +211,7 @@ const run = async () => {
     },
   );
 
-  await test('case 21: an opener that cannot start is one could-not-open line and the flow goes on; --open with no name, with two, or with a flag for one is the usage error, naming no node', async () => {
+  await test('case 21: an opener that cannot start is one could-not-open line and the flow goes on; --open with no name, with two, or with a flag for one, and --status, are the usage error, naming no node', async () => {
     const cmdHome = mkTmp('wk-login-noopen-home-');
     const server = await startServer(OPEN_ROUTES, mkTmp('wk-login-noopen-server-'));
     try {
@@ -250,7 +220,7 @@ const run = async () => {
       const lines = res.stderr.split('\n').filter((l) => l.includes('could not open the browser'));
       assertEq(lines.length, 1, `one could-not-open line on stderr, got: ${res.stderr}`);
       assert(`${res.stdout}${res.stderr}`.includes('WDJB-MJHT'), `the code is still printed, got: ${res.stdout}${res.stderr}`);
-      assertEq(JSON.stringify(openedLogin(cmdHome)), JSON.stringify({ token: 'ghu_opened', login: 'hubot' }), 'the flow finished into the login file');
+      assertEq(JSON.stringify(readWrittenLogin(cmdHome)), JSON.stringify({ token: 'ghu_opened', login: 'hubot' }), 'the flow finished into the login file');
     } finally {
       await server.close();
     }
@@ -259,7 +229,7 @@ const run = async () => {
     const usageHome = mkTmp('wk-login-open-usage-home-');
     const github = await startServer(OPEN_ROUTES, mkTmp('wk-login-open-usage-server-'));
     try {
-      for (const args of [['--open'], ['--open', 'open', 'xdg-open'], ['--open', '--status']]) {
+      for (const args of [['--open'], ['--open', 'open', 'xdg-open'], ['--open', '--status'], ['--status']]) {
         const out = command(usageHome, args, { GITHUB_SERVER_URL: github.url, GITHUB_API_URL: github.url });
         assertEq(out.status, 1, `${args.join(' ')}: the usage error, exit 1, stderr: ${out.stderr}`);
         assert(out.stderr.includes(USAGE), `${args.join(' ')}: stderr carries the usage, got: ${out.stderr}`);
