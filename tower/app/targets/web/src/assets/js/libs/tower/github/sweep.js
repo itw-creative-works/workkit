@@ -185,7 +185,7 @@ export const issueFrom = (node, slug, groups) => {
     type: (parsed.type || [])[0] || null,
     priority: (parsed.priority || [])[0] || null,
     agentOk: agent.includes('ok'),
-    agentWorking: agent.includes('working'),
+    agentClaimed: agent.includes('claimed'),
     // GitHub nulls out a node it could not deliver, at any depth, and reading a
     // field off one crashes the API: every connection here skips them.
     assignees: ((node.assignees || {}).nodes || []).filter(Boolean).map((a) => a.login),

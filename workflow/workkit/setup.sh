@@ -45,13 +45,15 @@ report_globals() {
 # The home repo half of setup: the private repo, the clone at ~/.workkit/tower,
 # the tower project seeded into it, its dependencies, Discussions and Pages. A
 # machine without the libraries (an incomplete checkout) is told which command
-# to run once it has them, rather than silently getting no home.
+# to run once it has them, rather than silently getting no home; forced, that
+# is a failure, as every stop of `setup --home` is.
 home_steps() {
   if [[ "$HOME_LIBS" -ne 1 ]]; then
     wk_warn "home: the home-repo library is missing beside $SCRIPT_DIR; the kit is incomplete"
-    return 0
+    [[ -z "${1:-}" ]]
+    return
   fi
-  wk_home_setup
+  wk_home_setup "$@"
 }
 
 cmd_setup() {
@@ -59,6 +61,16 @@ cmd_setup() {
     --token)
       wk_title "🔑 workkit setup --token: the cloud brief's Claude token"
       token_step
+      return 0
+      ;;
+    --login)
+      wk_title "🪪 workkit setup --login: the bot identity's sign-in"
+      identity_step force || return 1
+      return 0
+      ;;
+    --home)
+      wk_title "🏠 workkit setup --home: the home repo"
+      home_steps force || return 1
       return 0
       ;;
     '') ;;
@@ -72,6 +84,7 @@ cmd_setup() {
   check_gh
   refresh_engine_link
   link_command
+  link_gh_shim
   script_shell
   install_cron
   # The tower pointer is about this machine's dashboard, not the repo the shell
@@ -85,6 +98,9 @@ cmd_setup() {
   # After the home steps, because the repo it writes to is the home repo they
   # settle.
   secrets_step
+
+  wk_section "🪪 Identity"
+  identity_step
 
   wk_section "🌐 Dashboard site"
   offer_site_publish
@@ -103,5 +119,6 @@ cmd_setup() {
 
   wk_section "📁 This repo"
   offer_repo
+  identity_install_step
   wk_done "Setup is idempotent: re-run it any time. \`workkit doctor\` reports what is left."
 }

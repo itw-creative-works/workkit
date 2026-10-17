@@ -14,13 +14,14 @@ claude plugin install workkit@workkit
 ```
 
 Then start Claude Code (`claude`) in any folder.
-The first session sees that setup has not run yet, and Claude hands you the one setup command to paste, with the path for your machine filled in.
+The first session sees that setup has not run yet and Claude runs it for you, handing you only what you must do yourself.
 
 Setup prints one line per step, so you can see what it did.
 It asks before anything big: creating your home repo (a private GitHub repo for work that belongs to no single project), minting a Claude token, publishing the dashboard, and turning workkit on for the repo you are standing in.
 It is safe to run again: every step checks first and only fixes what is missing.
 
 When it finishes, the `workkit` command is in `~/.local/bin` (setup prints the PATH line to add if that folder is not on it).
+Setup also links a `gh` shim there: inside a Claude session it posts the agent's issue bookkeeping as `workkit-agent[bot]`, and everywhere else `gh` is yours as before. For that you sign in once per machine (setup asks, opens GitHub in your browser and finishes the sign-in itself; `workkit setup --login` does it again, and a bookkeeping call at a terminal signs you in itself), and the App must be installed once per account or org on the repos workkit works in, from <https://github.com/apps/workkit-agent> (setup offers that page for the repo you are standing in); without either, the agent's bookkeeping stops and tells you which ([docs/setup.md § The bot identity](docs/setup.md#the-bot-identity)).
 `workkit doctor` shows what is set up, and `workkit help` lists every command.
 Start a new Claude Code session so the plugin loads.
 The skills run `bash ~/.claude/workkit/...`, `node ~/.claude/workkit/...` and `gh issue ...` often; to skip most of those permission prompts, add `Bash(bash ~/.claude/workkit/*)`, `Bash(node ~/.claude/workkit/*)` and `Bash(gh issue *)` to `permissions.allow` in your `~/.claude/settings.json` (workkit writes nothing there). The review-marker calls spell the path through `CLAUDE_PLUGIN_ROOT`, so those still ask once per batch.

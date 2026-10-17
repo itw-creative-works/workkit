@@ -137,7 +137,7 @@ can_mint_claude_token() {
   return 0
 }
 
-# The offer. Default no, like every other question this command asks.
+# The offer. Default no, like every question setup asks but the bot identity's sign-in and install, which default yes.
 offer_claude_token() {
   local slug="$1" reason="$2" answer=''
 

@@ -1,8 +1,7 @@
-// The PATH-shim `gh` the hook suites (safety/proof-guard, safety/spec-guard,
-// safety/suite-guard) run their hook against: the stub that answers `issue view`
-// (and `issue list`, when handed one) from a fixture and records each call and
-// the directory it ran in, the world with no `gh` at all, and the runner that
-// hands a hook one command.
+// The PATH-shim `gh` the hook suites (safety/proof-guard, spec-guard, suite-guard)
+// and the identity shim suite run against: a stub answering `issue view` (and
+// `issue list`) from a fixture, recording each call, its directory and the env
+// names asked for; the world with no `gh` at all; the runner handing a hook one command.
 
 const fs = require('fs');
 const os = require('os');
@@ -25,9 +24,12 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
  * @param {object} [opts.issues] - issue number to that field's value
  * @param {object[]} [opts.list] - the `issue list` answer, shaped like gh's (`[{ number, labels: [{ name }] }]`)
  * @param {boolean} [opts.fails] - every view (and list) exits 1 with a line on stderr, the way an offline gh does
- * @returns {{binDir: string, logFile: string, cwdFile: string, dir: string}}
+ * @param {string[]} [opts.env] - variable names each call records, one JSON line per call, read by `ghEnvs`
+ * @returns {{binDir: string, logFile: string, cwdFile: string, envFile: string, dir: string}}
  */
-const makeGhStub = ({ field, issues = {}, list = null, fails = false } = {}) => {
+const makeGhStub = ({
+  field, issues = {}, list = null, fails = false, env = [],
+} = {}) => {
   const dir = mkTmp('gh-stub-');
   const logFile = path.join(dir, 'gh.log');
   const issuesDir = path.join(dir, 'issues');
@@ -38,6 +40,7 @@ const makeGhStub = ({ field, issues = {}, list = null, fails = false } = {}) => 
   const binDir = path.join(dir, 'bin');
   fs.mkdirSync(binDir, { recursive: true });
   const cwdFile = path.join(dir, 'cwd');
+  const envFile = path.join(dir, 'env.jsonl');
   const listFile = path.join(dir, 'list.json');
   if (list) fs.writeFileSync(listFile, JSON.stringify(list));
   const offline = ['  echo "error connecting to api.github.com" >&2', '  exit 1'];
@@ -47,6 +50,7 @@ const makeGhStub = ({ field, issues = {}, list = null, fails = false } = {}) => 
     '#!/usr/bin/env bash',
     recordArgv(logFile),
     `printf '%s\\n' "$PWD" >> "${shellPath(cwdFile)}"`,
+    ...(env.length ? recordEnv(envFile, env) : []),
     'if [[ "$1 $2" == "issue view" ]]; then',
     ...(fails ? offline : [
       `  file="${shellPath(issuesDir)}/$3.json"`,
@@ -62,11 +66,39 @@ const makeGhStub = ({ field, issues = {}, list = null, fails = false } = {}) => 
     ] : []),
     'exit 0',
   ]);
-  return { binDir, logFile, cwdFile, dir };
+  return { binDir, logFile, cwdFile, envFile, dir };
 };
+
+/**
+ * Bash lines appending one JSON object per call to `envFile`: each name in
+ * `names` mapped to its value, or to null when the variable is unset, so a
+ * blank value and an absent one read apart. Names must be plain identifiers.
+ * @param {string} envFile - absolute path to append to
+ * @param {string[]} names
+ * @returns {string[]} bash source
+ */
+const recordEnv = (envFile, names) => [
+  "line='{'; sep=''",
+  `for name in ${names.join(' ')}; do`,
+  '  if [[ -n "${!name+set}" ]]; then',
+  '    value=${!name//\\\\/\\\\\\\\}; value=${value//\\"/\\\\\\"}',
+  '    line+="$sep\\"$name\\":\\"$value\\""',
+  '  else',
+  '    line+="$sep\\"$name\\":null"',
+  '  fi',
+  "  sep=','",
+  'done',
+  `printf '%s}\\n' "$line" >> "${shellPath(envFile)}"`,
+];
 
 /** Every call the stub recorded, each an argv array. */
 const ghCalls = (stub) => readArgv(stub.logFile);
+
+/** Every call's recorded env, one object per call; a stub never called reads as none. */
+const ghEnvs = (stub) => {
+  if (!fs.existsSync(stub.envFile)) return [];
+  return fs.readFileSync(stub.envFile, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));
+};
 
 // The machine without `gh`: a runner ships the real one in /usr/bin, so a case
 // about its absence takes it off the PATH. Built once, dropped by the suite.
@@ -111,5 +143,5 @@ const hookRunner = (hook, env = {}, givenHome = null) => (command, stub, cwd = o
 };
 
 module.exports = {
-  cleanup, makeGhStub, ghCalls, pathWithoutGh, dropPathWithoutGh, hookRunner,
+  cleanup, makeGhStub, ghCalls, ghEnvs, pathWithoutGh, dropPathWithoutGh, hookRunner,
 };

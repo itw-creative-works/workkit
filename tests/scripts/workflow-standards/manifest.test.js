@@ -17,7 +17,7 @@ const run = async () => {
     assertEq(values('status'), 'backlog,blocked,building,complete,inbox,qa,specced', 'status values');
     assertEq(values('type'), 'bug,enhancement,idea', 'type values');
     assertEq(values('priority'), 'high,low', 'priority values');
-    assertEq(values('agent'), 'ok,working', 'agent values');
+    assertEq(values('agent'), 'claimed,ok', 'agent values');
   });
 
   await test('status:complete is the stage after qa, and its label teaches what it means (#196)', () => {

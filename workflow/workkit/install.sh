@@ -45,11 +45,17 @@ tower_pointer() {
   wk_info "tower: mission control is \`workkit tower\`; the API on 8693 and the dashboard on 4300 together, replacing any previous instance"
 }
 
+# The opt-in state of the repo the shell is standing in, as the engine reads it:
+# enabled, disabled, declined, undecided, or nogit.
+repo_state() {
+  bash "$STANDARDS" --state "$PWD" 2>/dev/null | tail -1 || printf 'nogit'
+}
+
 # The repo the shell is standing in. Undecided is the only state with anything
 # to ask, and the question is asked only where there is someone to answer it.
 offer_repo() {
   local state
-  state="$(bash "$STANDARDS" --state "$PWD" 2>/dev/null | tail -1 || printf 'nogit')"
+  state="$(repo_state)"
   case "$state" in
     enabled)  wk_skip "repo: $PWD is in the workflow" ;;
     disabled) wk_skip "repo: $PWD has a committed no; leaving it alone" ;;

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# workflow/workkit/links.sh: the three pointers this command maintains, the
+# workflow/workkit/links.sh: the four pointers this command maintains, the
 # engine's address (asked of standards.sh, which owns it), the
-# `~/.local/bin/workkit` command itself, and npm's script-shell (on Windows,
-# the executable it names). Sourced by workkit.sh, functions only; every name it
-# reads is the entry's.
+# `~/.local/bin/workkit` command itself, the `~/.local/bin/gh` shim, and npm's
+# script-shell (on Windows, the executable it names). Sourced by workkit.sh,
+# functions only; every name it reads is the entry's.
 
 # standards.sh owns the engine's address; `--engine-link` runs that step alone.
 # Its diagnostics arrive on stderr, so an action line is relayed and silence
@@ -45,46 +45,94 @@ refresh_engine_link() {
   fi
 }
 
-# ~/.local/bin/workkit → workkit.sh. A link pointing somewhere else is
-# repointed (a moved checkout is the ordinary case); a real file is a human's
-# and is only reported.
-link_command() {
-  local current verb=linked make=1
+# bin_link_current <target> <link>: whether <link> names <target>, or names the
+# same file in a workkit clone, which outranks the plugin cache.
+bin_link_current() {
+  local target="$1" link="$2" current dir rel
+  [[ -L "$link" ]] || return 1
+  current="$(readlink "$link" 2>/dev/null || true)"
+  [[ "$current" == "$target" ]] && return 0
+  # The clone's root is as many folders above <current> as <target> sits below this kit.
+  dir="$current" rel="${target#"$KIT_DIR"/}"
+  while [[ "$rel" == */* ]]; do rel="${rel#*/}"; dir="${dir%/*}"; done
+  wk_clone_outranks "$KIT_DIR" "${dir%/*}"
+}
+
+# bin_link_foreign <link> <label> [ours]: 0, with the warning, when <link> is a
+# link whose target misses the glob [ours]: a human's, reported and left.
+bin_link_foreign() {
+  local current
+  [[ -n "${3:-}" && -L "$1" ]] || return 1
+  current="$(readlink "$1" 2>/dev/null || true)"
+  # shellcheck disable=SC2053
+  [[ "$current" != $3 ]] || return 1
+  wk_warn "$2: $1 is someone else's link to $current; move it aside, then re-run \`workkit update\`"
+}
+
+# keep_bin_link <target> <link> <label> [ours]: a ~/.local/bin link kept at
+# <target>; one elsewhere is repointed (a moved checkout), a real file or a link
+# missing the glob [ours] is a human's and only reported. 1 when the address was
+# left alone: no ~/.local/bin on the automatic path, or a human's.
+keep_bin_link() {
+  local target="$1" link="$2" label="$3" ours="${4:-}" current verb=linked
   # The automatic path creates no ~/.local/bin, the same restraint the engine
   # shows with ~/.claude; a human's setup or update may.
   if [[ "$QUIET" -eq 1 && ! -d "$BIN_DIR" ]]; then
-    return 0
+    return 1
   fi
 
-  if [[ -L "$BIN_LINK" ]]; then
-    current="$(readlink "$BIN_LINK" || true)"
-    if [[ "$current" == "$SCRIPT_DIR/workkit.sh" ]]; then
-      wk_skip "command: $BIN_LINK is current"
-      make=0
-    elif wk_clone_outranks "$KIT_DIR" "${current%/*/*}"; then
-      wk_skip "command: $BIN_LINK is current: it names the workkit clone's $current, which outranks the plugin cache"
-      make=0
-    else
-      verb=repointed
+  if [[ -L "$link" ]]; then
+    current="$(readlink "$link" || true)"
+    if [[ "$current" == "$target" ]]; then
+      wk_skip "$label: $link is current"
+      return 0
+    elif bin_link_current "$target" "$link"; then
+      wk_skip "$label: $link is current: it names the workkit clone's $current, which outranks the plugin cache"
+      return 0
     fi
-  elif [[ -e "$BIN_LINK" ]]; then
-    wk_warn "command: $BIN_LINK is a real file; move it aside, then re-run \`workkit update\`"
-    return 0
+    bin_link_foreign "$link" "$label" "$ours" && return 1
+    verb=repointed
+  elif [[ -e "$link" ]]; then
+    wk_warn "$label: $link is a real file; move it aside, then re-run \`workkit update\`"
+    return 1
   else
     mkdir -p "$BIN_DIR"
   fi
 
-  # One atomic maker in lib/flows.sh for both machine-wide links, judged by
+  # One atomic maker in lib/flows.sh for every machine-wide link, judged by
   # what the address is afterwards, never by the command's status.
-  if [[ "$make" -eq 1 ]] && wk_link "$SCRIPT_DIR/workkit.sh" "$BIN_LINK"; then
-    wk_ok "command: $verb $BIN_LINK → $SCRIPT_DIR/workkit.sh"
+  if wk_link "$target" "$link"; then
+    wk_ok "$label: $verb $link → $target"
   fi
+}
 
+# report_bin_link <target> <link> <label> [ours]: doctor's line for a
+# ~/.local/bin link, [ours] as keep_bin_link takes it; 1 when it needs attention.
+report_bin_link() {
+  if bin_link_current "$1" "$2"; then
+    wk_ok "$3: $2 → $(readlink "$2")"
+    return 0
+  fi
+  bin_link_foreign "$2" "$3" "${4:-}" \
+    || wk_warn "$3: $2 is missing or points elsewhere; run \`workkit update\`"
+  return 1
+}
+
+# ~/.local/bin/workkit → workkit.sh, and the PATH line when ~/.local/bin is
+# not on PATH.
+link_command() {
+  keep_bin_link "$SCRIPT_DIR/workkit.sh" "$BIN_LINK" command || return 0
   case ":${PATH:-}:" in
     *":$BIN_DIR:"*) ;;
     *) wk_info "command: $BIN_DIR is not on your PATH; add it to your shell rc:
     export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
   esac
+}
+
+# ~/.local/bin/gh → identity/gh, the shim that outranks the real gh. Only a
+# link into a workkit kit's identity/gh is the kit's to repoint.
+link_gh_shim() {
+  keep_bin_link "$SCRIPT_DIR/identity/gh" "$GH_SHIM_LINK" 'gh shim' "$GH_SHIM_OURS" || true
 }
 
 # The Windows script shell is current when it exists and its source is not newer.

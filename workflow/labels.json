@@ -78,7 +78,7 @@
       "color": "A2EEEF",
       "values": {
         "ok": { "description": "An agent may work this issue autonomously. Absence means humans only." },
-        "working": { "description": "An agent claimed this issue. Applied at claim, removed at release; the heal clears it at 24h idle." }
+        "claimed": { "description": "The claim: an agent has this issue. On at claim, off at release; the heal clears it at 24h idle." }
       }
     }
   }

@@ -5,7 +5,9 @@
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { cleanup, mkWorld, runCli, mkRepo, mkPartialKit } = require('./helpers');
+const {
+  cleanup, mkWorld, runCli, mkRepo, mkPartialKit, mkSetupKit,
+} = require('./helpers');
 
 const run = async () => {
   group('workkit publish');
@@ -56,10 +58,12 @@ const run = async () => {
     const world = mkWorld({ pluginInstalled: true, binOnPath: true });
     fs.mkdirSync(world.claudeHome, { recursive: true });
     const repo = mkRepo({ optIn: true });
-    runCli(world, ['setup'], { cwd: repo });
-    const { out } = runCli(world, ['doctor'], { cwd: repo });
+    const { kit, script } = mkSetupKit();
+    runCli(world, ['setup'], { cwd: repo, script });
+    // The world has no node, so the identity check is a skip and counts nothing.
+    const { out } = runCli(world, ['doctor'], { cwd: repo, script });
     assert(out.includes('Everything this command can see is current'), `no drift after a setup, got: ${out}`);
-    cleanup(world.root); cleanup(repo);
+    cleanup(world.root); cleanup(kit); cleanup(repo);
   });
 
   await test('the global layer is reported: the roster count and the home repo', () => {

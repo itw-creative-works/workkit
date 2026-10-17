@@ -49,7 +49,7 @@ Status changes ARE checkpoint work. Apply every owner word that moves an issue's
 | "Park that", "not now" | → `status:backlog` |
 | Asks a question no one answered | → `status:blocked` |
 
-- One `status:` label per issue: remove the old one in the same command, `gh issue edit <N> --remove-label status:qa --add-label status:complete`.
+- One `status:` label per issue: remove the old one in the same command, `gh issue edit <N> --remove-label status:qa --add-label status:complete`. A flip to `status:blocked` takes `agent:claimed` off in the same edit: a block releases the claim (spec § Labels).
 - Never `agent:ok`, and never a flip the owner did not speak. A verdict is applied, never inferred.
 - One case where a spoken pass does NOT move the label: a `status:qa` item whose comments carry no line starting `Proof:`.
   - Quote the owner's words on the issue as always, then LEAVE it at `status:qa` and say so in the Filed trail.

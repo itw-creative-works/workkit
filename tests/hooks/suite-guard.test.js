@@ -53,7 +53,7 @@ const mkOrigin = (opts) => mkOriginRepo(mkRepo(opts), FIXTURE_ORIGIN);
 // gh's answer to `issue list --state open --json number,labels`.
 const issue = (number, ...labels) => ({ number, labels: labels.map((name) => ({ name })) });
 const BUILDING = [issue(12, 'status:qa', 'type:bug'), issue(7, 'status:building', 'type:feature')];
-const WORKING = [issue(9, 'status:qa', 'agent:working'), issue(10, 'status:complete', 'agent:working')];
+const WORKING = [issue(9, 'status:qa', 'agent:claimed'), issue(10, 'status:complete', 'agent:claimed')];
 const SETTLED = [issue(12, 'status:qa', 'type:bug'), issue(14, 'status:complete', 'type:chore')];
 const BOUNCE = 'suite-guard: the full suite runs once, at the commit, after every item in the tree is parked and passed;';
 const NARROW = "Run the narrowest test that proves the change (`npm test -- <file>` from the package's folder).";
@@ -388,7 +388,7 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await test('an open issue carrying agent:working past the park passes, silently', () => {
+  await test('an open issue carrying agent:claimed past the park passes, silently', () => {
     const dir = mkOrigin();
     const stub = makeGhStub({ list: WORKING });
     const { code, stderr } = runHook('npm test', dir, withStub(stub));

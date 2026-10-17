@@ -51,7 +51,7 @@ offer_site_publish() {
   esac
 
   if ! interactive; then
-    wk_info "site: nobody has been asked whether to publish the dashboard; a terminal run of \`workkit setup\` puts the question; until then nothing is published"
+    wk_info "site: nobody has been asked whether to publish the dashboard; without a terminal, set \`site.publish\` to true or false in $WK_HOME_SETTINGS to answer; until then nothing is published"
     return 0
   fi
 

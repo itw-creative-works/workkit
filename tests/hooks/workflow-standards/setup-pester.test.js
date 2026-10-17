@@ -90,6 +90,7 @@ const run = async () => {
     assertEq(code, 0, 'exit 0');
     const line = contextOf(stdout).split('\n').find((l) => l.startsWith('SETUP:')) || '';
     assert(line.includes('workkit.sh setup'), `the nudge is there, got: ${line}`);
+    assert(/setup` yourself/.test(line) && !/tell the user/i.test(line), `it tells the agent to run setup itself, got: ${line}`);
     assert(!line.includes('plugin cache'), `and says nothing of a plugin cache, got: ${line}`);
     cleanup(repo); cleanup(cacheDir); cleanup(path.dirname(engine));
   });

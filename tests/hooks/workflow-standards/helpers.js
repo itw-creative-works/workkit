@@ -66,6 +66,10 @@ const seedSetup = (home) => {
   fs.mkdirSync(dir, { recursive: true });
   const link = path.join(dir, 'workkit');
   if (!fs.existsSync(link)) fs.symlinkSync(path.join(WORKFLOW_DIR, 'workkit.sh'), link);
+  // Setup links the gh shim beside the command, so a set-up home has it too;
+  // without it the hook's upkeep links it and reports, on a machine with no news.
+  const gh = path.join(dir, 'gh');
+  if (!fs.existsSync(gh)) fs.symlinkSync(path.join(WORKFLOW_DIR, 'identity', 'gh'), gh);
   return link;
 };
 

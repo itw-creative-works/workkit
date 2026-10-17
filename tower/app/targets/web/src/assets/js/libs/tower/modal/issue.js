@@ -3,6 +3,7 @@
 // import. modal.js re-exports it by name; no piece imports modal.js.
 
 import { esc, issueChips, statusChip, issueKey, day } from '../format.js';
+import { CLAIM_HOLDER } from '../agent.js';
 
 /** The issues the current markup can open, keyed `repo#number`. */
 const registry = new Map();
@@ -149,7 +150,7 @@ export const issueDialog = (issue, renderBody, issues) => {
   const meta = [
     `filed ${day(issue.createdAt, '-')}`,
     `updated ${day(issue.updatedAt, '-')}`,
-    (issue.assignees || []).length ? `held by @${(issue.assignees || []).join(', @')}` : 'unclaimed',
+    issue.agentClaimed ? CLAIM_HOLDER : 'unclaimed',
   ];
 
   return {

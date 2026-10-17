@@ -91,7 +91,7 @@ Autonomous ship pipeline: read the config, pick the bump, then run every step de
    - Commit `chore(release): <x.y.z>` and push straight to the default branch, never a PR, while the work watch runs. It changes only the CHANGELOG and the version file: where CI skips that push (the kit's own `checks.yml`), never watch its sha. Where CI runs on it (the installed template skips only a CHANGELOG-only push), watch it once the work watch has printed its exit line.
 
 6. **Close**: every issue this ship completes (Step 0c's `status:complete` items) ends closed, pointing at its CHANGELOG entry. The trailer closes it on landing; close any still open: `gh issue close <N> --comment "Shipped in <version-or-commit>: see CHANGELOG [Unreleased]/<section>."` A partly addressed issue stays open with a progress comment.
-   - Release every claim: `gh issue edit <N> --remove-label status:complete,status:qa,status:building,agent:working`. Any of them can be there, and naming an absent one is harmless. A trailer never touches labels; per the spec, the ship close ENDS the working stage.
+   - Release every claim: `gh issue edit <N> --remove-label status:complete,status:qa,status:building,agent:claimed`. Any of them can be there, and naming an absent one is harmless. A trailer never touches labels; per the spec, the ship close ENDS the working stage.
    - Then PRUNE, if the repo participates: delete from `.workkit/agents/session.md` every entry this ship completed (the issues closed, the release cut). Their facts now live in the CHANGELOG and the issues; the file is the next session's queue, not an archive.
 
 7. **Verify**: `git status` shows a clean tree, and `git log --oneline -2` shows the expected commits on the default branch.

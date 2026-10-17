@@ -31,7 +31,7 @@ const run = async () => {
               totalCount: 2,
               nodes: [
                 issue(17, {
-                  labels: labels('status:specced', 'type:enhancement', 'priority:high', 'agent:ok', 'agent:working', 'area:tower'),
+                  labels: labels('status:specced', 'type:enhancement', 'priority:high', 'agent:ok', 'agent:claimed', 'area:tower'),
                   assignees: assignees('alice'),
                 }),
                 issue(18, { labels: labels('bug', 'wontfix') }),
@@ -46,12 +46,38 @@ const run = async () => {
     assertEq(a.type, 'enhancement', 'type');
     assertEq(a.priority, 'high', 'priority');
     assertEq(a.agentOk, true, 'agent:ok');
-    assertEq(a.agentWorking, true, 'agent:working');
+    assertEq(a.agentClaimed, true, 'agent:claimed');
     assertEq(a.assignees.join(','), 'alice', 'assignees are logins');
     assertEq(b.status, null, 'a bare label is not a group');
     assertEq(b.type, null, 'no type');
     assertEq(b.priority, null, 'absence of priority means normal');
     assertEq(b.agentOk, false, 'humans only');
+  });
+
+  // The claim is the agent:claimed label and an assignee is a person, so the
+  // projection's agentClaimed reads the label and nothing else.
+  await test('agentClaimed is the agent:claimed label, never the assignee', () => {
+    const res = fetchBoard([ROSTER[0]], {
+      exec: fakeGh({
+        data: {
+          r0: {
+            issues: {
+              totalCount: 3,
+              nodes: [
+                issue(17, { labels: labels('status:specced', 'agent:claimed'), assignees: assignees() }),
+                issue(18, { labels: labels('status:specced'), assignees: assignees('alice') }),
+                issue(19, { labels: labels('status:building', 'agent:claimed'), assignees: assignees('alice') }),
+              ],
+            },
+          },
+        },
+      }),
+    });
+    const by = Object.fromEntries(res.issues.map((i) => [i.number, i]));
+    assertEq(by[17].agentClaimed, true, 'the label with nobody assigned is a claim');
+    assertEq(by[18].agentClaimed, false, 'an assignee without the label is not');
+    assertEq(by[19].agentClaimed, true, 'and the label beside an assignee is still the claim');
+    assertEq(by[19].assignees.join(','), 'alice', 'while the assignee is carried as the person it is');
   });
 
   // Documentation, not a vocabulary proof: parseLabels matches on the group

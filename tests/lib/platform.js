@@ -306,7 +306,9 @@ const basePathWithout = (dir, command) => {
   const out = path.join(dir, `path-without-${command}`);
   fs.mkdirSync(out, { recursive: true });
   const dirs = SYSTEM_PATH.split(path.delimiter);
-  for (const tool of ['jq', 'gh', 'git', 'node']) {
+  // node's folder before gh's: a gh found in a shim folder (where the kit's own
+  // gh goes) must not outrank the real npm beside node with its own npm shim.
+  for (const tool of ['jq', 'git', 'node', 'gh']) {
     const real = which(tool);
     if (real) dirs.push(path.dirname(real));
   }

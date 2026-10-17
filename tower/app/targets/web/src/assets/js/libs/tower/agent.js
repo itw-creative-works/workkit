@@ -144,21 +144,27 @@ export const activityIcon = (phase, title = '', label = '') => {
 // a building card spins unconditionally.
 const CLAIMABLE = ['specced'];
 
+// Who holds an issue carrying `agent:claimed`: the agent's bookkeeping posts
+// as the bot, and an assignee is a person, never the claim. The issue dialog
+// says it in the same words.
+export const CLAIM_HOLDER = 'held by workkit-agent[bot]';
+
 /**
  * The Board's version of the glyph. A `building` card spins whether or not
- * anyone is assigned, since the status says the work is in motion; a `specced`
- * card with an assignee stays still, `claimed` to a screen reader.
+ * it carries the claim, since the status says the work is in motion; a
+ * `specced` card carrying `agent:claimed` stays still, `claimed` to a screen
+ * reader.
  *
  * @param {object} issue one issue from /api/board
  * @returns {string} markup, or '' when the issue is neither running nor claimed
  */
 export const claimGlyph = (issue) => {
-  const held = ((issue || {}).assignees || []);
+  const claimed = Boolean((issue || {}).agentClaimed);
   if ((issue || {}).status === 'building') {
-    return activityIcon('working', held.length ? `held by @${held.join(', @')}` : 'building', 'building');
+    return activityIcon('working', claimed ? CLAIM_HOLDER : 'building', 'building');
   }
-  if (!CLAIMABLE.includes((issue || {}).status) || !held.length) return '';
-  return activityIcon('idle', `held by @${held.join(', @')}`, 'claimed');
+  if (!CLAIMABLE.includes((issue || {}).status) || !claimed) return '';
+  return activityIcon('idle', CLAIM_HOLDER, 'claimed');
 };
 
 /**

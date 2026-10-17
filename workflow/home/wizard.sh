@@ -3,21 +3,23 @@
 # functions only. WK_HOME_REPO_NAME is the entry's; WK_HOME_DIR is lib.sh's.
 
 # Every failure warns and continues, except something already at the clone's
-# path, which stops the rest: every later step would write into it.
+# path, which stops the rest. `force` (setup --home) asks nothing, with or
+# without a terminal, and returns 1 when it stops before writing anything.
 wk_home_setup() {
-  local login slug rc=0
+  local force="${1:-}" fail=0 login slug rc=0
+  [[ -z "$force" ]] || fail=1
 
   login="$(wk_home_login)" || true
   if [[ -z "$login" ]]; then
     wk_info "home: gh could not say who you are; run \`gh auth login\`, then \`workkit setup\` again to create the home repo"
-    return 0
+    return "$fail"
   fi
   slug="$login/$WK_HOME_REPO_NAME"
 
-  # A non-interactive run prints what it would do and moves on.
-  if [[ "$(wk_home_slug)" != "$slug" ]]; then
+  # Unforced, a non-interactive run prints what it would do and moves on.
+  if [[ -z "$force" && "$(wk_home_slug)" != "$slug" ]]; then
     if declare -f interactive >/dev/null 2>&1 && ! interactive; then
-      wk_info "home: no home repo is configured; a terminal run of \`workkit setup\` creates the private $slug and makes $WK_HOME_DIR its clone"
+      wk_info "home: no home repo is configured; \`workkit setup --home\` creates the private $slug and makes $WK_HOME_DIR its clone"
       return 0
     fi
     printf 'Create the private home repo %s and make %s its clone? [y/N] ' "$slug" "$WK_HOME_DIR"
@@ -33,13 +35,13 @@ wk_home_setup() {
   case "$rc" in
     0) wk_ok "home: created the private repo $slug" ;;
     2) wk_skip "home: $slug already exists; using it" ;;
-    *) wk_warn "home: could not create $slug; \`gh repo create $slug --private\` reports why"; return 0 ;;
+    *) wk_warn "home: could not create $slug; \`gh repo create $slug --private\` reports why"; return "$fail" ;;
   esac
 
   rc=0
   wk_home_clone "$slug" || rc=$?
   # Neither 3 (something else at the path) nor 1 leaves anything safe to write.
-  [[ "$rc" -eq 0 ]] || return 0
+  [[ "$rc" -eq 0 ]] || return "$fail"
 
   wk_home_set_slug "$slug" >/dev/null 2>&1 || true
 

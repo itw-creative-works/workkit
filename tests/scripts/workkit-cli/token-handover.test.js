@@ -8,7 +8,7 @@ const { group, test, assert, assertEq, skip, summary, selfRun } = require('../..
 const { IS_WINDOWS } = require('../../lib/platform');
 const { isCall, fmtCalls } = require('../../lib/argv-log');
 const {
-  cleanup, writeStub, mkWorld, runCli, seedSettings, inCli, AT_TERMINAL, mkKit,
+  cleanup, writeStub, mkWorld, runCli, seedSettings, inCli, AT_TERMINAL, mkKit, mkSetupKit,
 } = require('./helpers');
 
 const run = async () => {
@@ -110,14 +110,15 @@ const run = async () => {
     // handover follows it. `runCli` is a pipe, the shape the ship's own run has,
     // so the whole step lands here and its success line makes the order readable.
     const world = mkPagesWorld(PUBLISHED, [['built', PUSHED]]);
-    const { code, out } = runCli(world, ['setup']);
+    const { kit, script } = mkSetupKit();
+    const { code, out } = runCli(world, ['setup'], { script });
     assertEq(code, 0, 'exit 0');
     const published = out.indexOf('publish: ');
     const handed = out.indexOf('the browser now holds it');
     assert(published !== -1, `the publish ran, got: ${out}`);
     assert(handed > published, `and the handover came after it, got: ${out}`);
     assert(!out.includes(HANDOVER), `no line of output carries the token, got: ${out}`);
-    cleanup(world.root);
+    cleanup(world.root); cleanup(kit);
   });
 
   await test('an interrupt while setup carries on takes the page with it', () => {

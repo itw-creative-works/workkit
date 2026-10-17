@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# workflow/lib/flows.sh: the browser flows and the atomic link maker. Sourced by
-# lib.sh, functions only. Reads lib.sh's WK_C_* palette, WK_LOG_INDENT,
-# WK_SPIN_FRAMES and WK_POLL_PID; calls wk_opener (lib/voice.sh) and wk_mv_link
-# (platform.sh).
+# workflow/lib/flows.sh: the browser flows, the yes/no question and the atomic
+# link maker. Sourced by lib.sh, functions only. Reads lib.sh's WK_C_* palette,
+# WK_LOG_INDENT, WK_SPIN_FRAMES and WK_POLL_PID; calls wk_opener (lib/voice.sh)
+# and wk_mv_link (platform.sh).
 
 # ── Browser flows ─────────────────────────────────────────────────────────────
 # omega's walkthrough shape (`packages/devkit/src/flows.js`,
@@ -11,17 +11,40 @@
 # The URL is printed either way, so a machine with no opener still has it.
 # Usage: wk_enter_to_open <url> <label> <what to do there>
 wk_enter_to_open() {
-  local url="$1" label="$2" prompt="$3" opener answer=''
+  local url="$1" label="$2" prompt="$3" answer=''
   # The palette's codes go in the format string, never a %s argument.
   printf "\n%s%s\n%sURL: ${WK_C_CYAN}%s${WK_C_OFF}\n\n" "$WK_LOG_INDENT" "$prompt" "$WK_LOG_INDENT" "$url" >&2
   printf "${WK_C_GREEN}?${WK_C_OFF} Press Enter to open %s in your browser... " "$label" >&2
   read -r answer || true
+  wk_open_url "$url"
+}
+
+# Hand a URL the caller has already printed to the browser opener; with none,
+# one dim line points back at the printed URL. Always returns 0.
+# Usage: wk_open_url <url>
+wk_open_url() {
+  local opener
   if opener="$(wk_opener)"; then
-    "$opener" "$url" >/dev/null 2>&1 || true
+    "$opener" "$1" >/dev/null 2>&1 || true
   else
     printf "%s${WK_C_DIM}(no browser could be launched: open the URL above by hand)${WK_C_OFF}\n" "$WK_LOG_INDENT" >&2
   fi
   return 0
+}
+
+# A yes/no question, for a caller that already knows it has a terminal. Empty
+# is the default; a failed read (Ctrl-D, a closed stdin) is no whatever it is.
+# Usage: wk_ask_yes <prompt> <default y|n>; returns 0 for yes
+wk_ask_yes() {
+  local prompt="$1" default="$2" hint='[y/N]' answer=''
+  [[ "$default" == 'y' ]] && hint='[Y/n]'
+  printf '%s %s ' "$prompt" "$hint" >&2
+  read -r answer || { printf '\n' >&2; return 1; }
+  [[ -n "$answer" ]] || answer="$default"
+  case "$answer" in
+    y|Y|yes|YES) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 # The countdown frame of a poll, run as a background job by wk_poll below: the

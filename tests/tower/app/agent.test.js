@@ -61,31 +61,39 @@ const run = async () => {
   });
 
   await test('the Board draws the glyph only for work an agent actually holds', () => {
-    const claimed = agent.claimGlyph({ status: 'specced', assignees: ['alice'] });
-    assert(claimed.includes('omega-tower-activity--idle'), 'a specced issue with an assignee carries the still glyph');
-    assert(claimed.includes('title="held by @alice"'), 'saying who has it');
-    assertEq(agent.claimGlyph({ status: 'specced', assignees: [] }), '', 'specced but unclaimed is not work in flight');
-    assertEq(agent.claimGlyph({ status: 'specced' }), '', 'and neither is one with no assignee field at all');
-    assertEq(agent.claimGlyph({ status: 'inbox', assignees: ['alice'] }), '', 'a claim before the spec is accepted is not either');
-    assertEq(agent.claimGlyph({ status: 'blocked', assignees: ['alice'] }), '', 'nor a claim on something blocked');
+    // The claim is the agent:claimed label; an assignee is a person, never a claim.
+    const claimed = agent.claimGlyph({ status: 'specced', agentClaimed: true, assignees: [] });
+    assert(claimed.includes('omega-tower-activity--idle'), 'a specced issue carrying agent:claimed wears the still glyph');
+    assertEq(agent.claimGlyph({ status: 'specced', agentClaimed: false, assignees: ['alice'] }), '', 'an assignee alone draws nothing');
+    assertEq(agent.claimGlyph({ status: 'specced', assignees: ['alice'] }), '', 'nor one with no agentClaimed field at all');
+    assertEq(agent.claimGlyph({ status: 'specced', agentClaimed: false, assignees: [] }), '', 'specced but unclaimed is not work in flight');
+    assertEq(agent.claimGlyph({ status: 'inbox', agentClaimed: true }), '', 'a claim before the spec is accepted is not either');
+    assertEq(agent.claimGlyph({ status: 'blocked', agentClaimed: true }), '', 'nor a claim on something blocked');
     assertEq(agent.claimGlyph({}), '', 'and an issue with nothing on it draws nothing');
   });
 
   await test('a building card spins the gear - the status says the work is in motion (#141)', () => {
-    const building = agent.claimGlyph({ status: 'building', assignees: ['alice'] });
+    const building = agent.claimGlyph({ status: 'building', agentClaimed: true, assignees: ['alice'] });
     assert(building.includes('omega-tower-activity--working'), 'a building issue wears the working glyph');
     assert(building.includes('fa-spin'), 'and the gear turns');
-    assert(building.includes('title="held by @alice"'), 'saying who has it');
+    assert(building.includes('title="held by workkit-agent[bot]"'), 'saying the agent has it, the label being the claim');
+    assert(!building.includes('@alice'), 'and never naming the assignee, who is a person, not the holder');
     assert(building.includes('<span class="visually-hidden">building</span>'), 'a screen reader hears the honest word');
+    const assigned = agent.claimGlyph({ status: 'building', agentClaimed: false, assignees: ['alice'] });
+    assert(assigned.includes('fa-spin'), 'building without the claim label is still work in flight, so it spins too');
+    assert(assigned.includes('title="building"'), 'with the status as its hover text: an assignee is not a holder');
     const unheld = agent.claimGlyph({ status: 'building', assignees: [] });
-    assert(unheld.includes('fa-spin'), 'building without a holder is still work in flight, so it spins too');
-    assert(unheld.includes('title="building"'), 'with the status as its hover text, having no holder to name');
+    assert(unheld.includes('fa-spin'), 'and so does one with nothing on it but the status');
+    assert(unheld.includes('title="building"'), 'with the same hover text');
   });
 
   await test('a claim announces itself as a claim, not as an idle agent', () => {
-    assert(agent.claimGlyph({ status: 'specced', assignees: ['alice'] }).includes('<span class="visually-hidden">claimed</span>'), 'the word a screen reader hears is the caller\'s');
+    assert(agent.claimGlyph({ status: 'specced', agentClaimed: true }).includes('<span class="visually-hidden">claimed</span>'), 'the word a screen reader hears is the caller\'s');
     assert(agent.activityIcon('idle').includes('<span class="visually-hidden">idle</span>'), 'and the phase name is still the default');
-    assert(!agent.claimGlyph({ status: 'specced', assignees: ['<img src=x>'] }).includes('<img'), 'a hostile handle is text in both the title and the label');
+    for (const status of ['specced', 'building']) {
+      assert(!agent.claimGlyph({ status, agentClaimed: true, assignees: ['<img src=x>'] }).includes('<img'),
+        `a hostile handle never reaches a ${status} glyph: the glyph reads no assignee`);
+    }
   });
 
   await test('a roster with no timestamps falls back to the word it does carry', () => {
@@ -348,7 +356,7 @@ const run = async () => {
   await test('the indicator is a gear, so a still one does not read as a broken spinner (#137)', () => {
     // A specced claim is still on purpose (work at rest), so its glyph has to
     // read at rest rather than as a stalled loading ring.
-    const held = agent.claimGlyph({ status: 'specced', assignees: ['alice'] });
+    const held = agent.claimGlyph({ status: 'specced', agentClaimed: true });
     assert(held.includes('fa-gear'), 'the Board says a claim with a gear at rest');
     assert(!held.includes('fa-spin'), 'still - a specced claim is held, not running');
     assert(agent.activityIcon('working').includes('fa-gear'), 'and the Crew turns the same one');

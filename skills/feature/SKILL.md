@@ -22,12 +22,14 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 
 ### The claim, and the road the labels take
 
-- Claim the issue before working it: assign yourself, move it to `status:building`, AND add `agent:working`:
-  `gh issue edit <N> --add-assignee @me --remove-label status:specced --add-label status:building,agent:working`
+- Claim the issue before working it: move it to `status:building` AND add `agent:claimed`, then say whose session holds it:
+  `gh issue edit <N> --remove-label status:specced --add-label status:building,agent:claimed`
+  `gh issue comment <N> --body "Claimed by workkit-agent[bot] for @<login>'s session."` (the login from `gh api user --jq .login`)
 - That flip makes the `workflow:snapshot` hook take the snapshot the red proofs run against (`docs/hooks.md`).
-- Skip an issue already assigned to someone else. Re-read the label and the assignee when you start, not when you listed the queue.
-- `agent:working` tells an agent claim from a human one. An agent runs `gh` as the owner, so the assignee cannot.
-- Remove `agent:working` when you release the issue, finished or not. The standards heal sweeps a claim left idle for 24 hours.
+- `agent:claimed` IS the claim. The assignee is a person's mark and never the claim: the bot that posts the agent's bookkeeping can never be an assignee, so the claim comment names it and the session's owner.
+- Skip an issue already carrying `agent:claimed`. Re-read the labels when you start, not when you listed the queue.
+- Remove `agent:claimed` when you release the issue, finished or not. The standards heal sweeps a claim left idle for 24 hours.
+- A block is a release. When the work needs a human decision, flip to `status:blocked` and take `agent:claimed` off in the same edit (`--remove-label status:building,agent:claimed --add-label status:blocked`), then put the question in a comment: the agent is waiting on a person, not working. The answered issue rejoins at `status:specced` and is claimed again.
 - Never take `status:building` off by hand. It carries build and verify, phase 6 flips it to `status:qa`, the owner's passing check moves it to `status:complete`, and the ship close ends it.
 - The road and the rules: the workkit plugin's `docs/project-state.md` § Labels.
 
@@ -110,10 +112,10 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 gh issue comment <N> --body "Proof: <one entry per layer: the command, or why it was skipped>; <the red-proof run>
 
 <what to check, and where>"
-gh issue edit <N> --remove-label status:building,agent:working --add-label status:qa
+gh issue edit <N> --remove-label status:building,agent:claimed --add-label status:qa
 ```
 
-- `agent:working` comes off with the flip: the agent is done and the wait is the owner's. The assignee stays, and the work stays in that tree.
+- `agent:claimed` comes off with the flip: the claim ends, the agent is done and the wait is the owner's. The work stays in that tree, and `status:qa` says so.
 - Do not ship, and do not ask in chat whether to ship. The owner's word runs [workkit:ship](../ship/SKILL.md), and asking for it asks them to approve their own gate (spec § Labels).
 - A failed check comes back here: fix it in place and re-comment; the label does not move.
 - A batch parks together: every issue goes to `status:qa` with its own comment once the batch's one panel and its fix round are done (`docs/agents.md` § Batches). The batch is the plan in `.workkit/agents/session.md`, or the Batches bullet of `docs/project-state.md` § Queue semantics when no plan is written.
@@ -134,5 +136,5 @@ gh issue comment <N> --body "QA passed by <owner>, <date>."
 ### The one exception: `agent:ok`
 
 - `agent:ok` is the owner's word given in advance, so the park is a pass-through.
-- Flip to `status:qa` and comment as always, but KEEP `agent:working` on that flip (`--remove-label status:building --add-label status:qa`). The claim holds because the agent is still working.
+- Flip to `status:qa` and comment as always, but KEEP `agent:claimed` on that flip (`--remove-label status:building --add-label status:qa`). The claim holds because the agent is still working.
 - Then perform the check yourself, flip to `status:complete` with the same pass comment, and ship and close in the same run. The ship close releases the labels (spec § the qa stage).

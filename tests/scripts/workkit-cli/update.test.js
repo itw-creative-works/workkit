@@ -1,4 +1,4 @@
-// Tests for workflow/workkit.sh: `update`: the two links, the quiet
+// Tests for workflow/workkit.sh: `update`: the three links, the quiet
 // `--auto` variant, and on macOS the schedule and a checkout or an installer
 // that cannot answer.
 // The shared prologue is ./helpers.js.
@@ -14,12 +14,12 @@ const {
 const { isCall, fmtCalls } = require('../../lib/argv-log');
 const {
   WORKFLOW_DIR, CLI, LABEL, cleanup, mkWorld, withNpm, runCli, ACTED, mkRepo, installSchedule,
-  mkPartialKit,
+  mkPartialKit, mkSetupKit,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
-  group('workkit update: the two links');
+  group('workkit update: the three links');
 
   await test('the engine address is pointed at this checkout', () => {
     const world = mkWorld();
@@ -92,16 +92,18 @@ const run = async () => {
     const world = mkWorld({ pluginInstalled: true, binOnPath: true });
     fs.mkdirSync(world.claudeHome, { recursive: true });
     const repo = mkRepo({ optIn: true });
-    runCli(world, ['setup'], { cwd: repo });
+    const { kit, script } = mkSetupKit();
+    runCli(world, ['setup'], { cwd: repo, script });
 
     const viaLink = runCli(world, ['update'], { cwd: repo, script: world.link });
     assertEq(viaLink.code, 0, `exit 0: stderr: ${viaLink.err}`);
-    assert(viaLink.out.includes(shellPath(path.dirname(WORKFLOW_DIR))), `it names the real checkout, got: ${viaLink.out}`);
-    assertEq(fs.readlinkSync(world.link), CLI, 'and its own address still points at the real CLI');
+    assert(viaLink.out.includes(shellPath(kit)), `it names the real checkout, got: ${viaLink.out}`);
+    assertEq(fs.readlinkSync(world.link), script, 'and its own address still points at the real CLI');
 
+    // The world has no node, so the identity check is a skip and counts nothing.
     const doctor = runCli(world, ['doctor'], { cwd: repo, script: world.link });
     assert(doctor.out.includes('Everything this command can see is current'), `no invented drift through the link, got: ${doctor.out}`);
-    cleanup(world.root); cleanup(repo);
+    cleanup(world.root); cleanup(kit); cleanup(repo);
   });
 
   await test('a PATH without ~/.local/bin gets the export line, and no rc file is touched', () => {

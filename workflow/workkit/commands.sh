@@ -14,6 +14,7 @@ cmd_update() {
   wk_title "🔄 workkit update in $KIT_DIR"
   refresh_engine_link
   link_command
+  link_gh_shim
   script_shell
   update_cron
   # Reported, never wired: the daily --auto run is the one path that must not
@@ -88,7 +89,7 @@ cmd_doctor() {
 
   check_gh
 
-  local linked command_target
+  local linked
   linked="$(cd "$ENGINE_LINK" 2>/dev/null && pwd -P || true)"
   if [[ -L "$ENGINE_LINK" && "$linked" == "$SCRIPT_DIR" ]]; then
     wk_ok "engine: $ENGINE_LINK → $SCRIPT_DIR"
@@ -99,16 +100,24 @@ cmd_doctor() {
     attention=$((attention + 1))
   fi
 
-  command_target="$(readlink "$BIN_LINK" 2>/dev/null || true)"
-  if [[ -L "$BIN_LINK" ]] && { [[ "$command_target" == "$SCRIPT_DIR/workkit.sh" ]] || wk_clone_outranks "$KIT_DIR" "${command_target%/*/*}"; }; then
-    wk_ok "command: $BIN_LINK → $command_target"
+  if report_bin_link "$SCRIPT_DIR/workkit.sh" "$BIN_LINK" command; then
     case ":${PATH:-}:" in
       *":$BIN_DIR:"*) ;;
       *) wk_warn "command: $BIN_DIR is not on your PATH; add \`export PATH=\"\$HOME/.local/bin:\$PATH\"\` to your shell rc"
          attention=$((attention + 1)) ;;
     esac
   else
-    wk_warn "command: $BIN_LINK is missing or points elsewhere; run \`workkit update\`"
+    attention=$((attention + 1))
+  fi
+  if report_bin_link "$SCRIPT_DIR/identity/gh" "$GH_SHIM_LINK" 'gh shim' "$GH_SHIM_OURS"; then
+    # The shim only runs when the gh PATH finds is the link itself.
+    local first_gh
+    first_gh="$(command -v gh 2>/dev/null || true)"
+    if [[ -n "$first_gh" && "$(wk_physical_path "$first_gh")" != "$(wk_physical_path "$GH_SHIM_LINK")" ]]; then
+      wk_warn "gh shim: $first_gh comes first on PATH, so the shim never runs; put ~/.local/bin ahead of it"
+      attention=$((attention + 1))
+    fi
+  else
     attention=$((attention + 1))
   fi
 
@@ -133,6 +142,10 @@ cmd_doctor() {
       attention=$((attention + 1))
     fi
   fi
+
+  local identity_attention=0
+  identity_report machine || identity_attention=$?
+  attention=$((attention + identity_attention))
 
   report_globals
 
@@ -160,12 +173,15 @@ cmd_doctor() {
 
   wk_section "📁 This repo"
   local state
-  state="$(bash "$STANDARDS" --state "$PWD" 2>/dev/null | tail -1 || printf 'nogit')"
+  state="$(repo_state)"
   case "$state" in
     enabled) wk_ok "repo: $PWD is in the workflow" ;;
     nogit)   wk_skip "repo: $PWD is not a git repo" ;;
     *)       wk_info "repo: $PWD is '$state'; \`workkit enable\` joins it" ;;
   esac
+  identity_attention=0
+  identity_report repo || identity_attention=$?
+  attention=$((attention + identity_attention))
 
   if [[ "$attention" -gt 0 ]]; then
     wk_warn "$attention item(s) need attention: the command to fix each is above."

@@ -216,15 +216,78 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('without a terminal it says what a terminal run would do, and asks nothing', () => {
+  await test('without a terminal it names workkit setup --home, and asks nothing', () => {
     const world = mkWorld({ login: 'owner' });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
 
     const { code, out } = inHome(world, 'interactive() { return 1; }\nwk_home_setup');
     assertEq(code, 0, 'it finishes rather than waiting for an answer');
-    assert(/workkit setup/.test(out), `and hands over the command, got: ${out}`);
+    assert(out.includes('`workkit setup --home`'), `and hands over the command that does it, got: ${out}`);
+    const calls = world.ghCalls().map((c) => c.join(' '));
+    assert(!calls.some((c) => c.includes('repo create')), `nothing is created: ${fmtCalls(world.ghCalls())}`);
     assertEq(world.settings().site.repo, null, 'a machine that never answered gets no home');
     assert(!fs.existsSync(world.tower), 'and nothing is cloned');
+    cleanup(world.root);
+  });
+
+  // `force` is `workkit setup --home`: the yes already given, so nothing asks
+  // and no terminal is needed.
+  const forced = (world) => {
+    if (!world.env.WORKKIT_HOME_REMOTE) world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
+    return inHome(world, 'interactive() { return 1; }\nwk_home_setup force');
+  };
+
+  await test('forced without a terminal, it creates, clones, records and seeds, asking nothing', () => {
+    const world = mkWorld({ login: 'owner' });
+    const { code, out } = forced(world);
+    assertEq(code, 0, `exit 0: ${out}`);
+    const calls = world.ghCalls().map((c) => c.join(' '));
+    assert(calls.some((c) => c.includes('repo create owner/workkit --private')), `the private repo is created: ${fmtCalls(world.ghCalls())}`);
+    assert(fs.existsSync(path.join(world.tower, '.git')), 'the clone landed');
+    assertEq(world.settings().site.repo, 'owner/workkit', 'the home slug is recorded');
+    assert(fs.existsSync(path.join(world.tower, 'targets', 'web', 'src', 'index.html')), 'the project is seeded');
+    assert(!/\[y\/N\]|Create the private home repo/.test(out), `no question is put, got: ${out}`);
+    assert(!/no home repo is configured/.test(out), `and no hand-over line, got: ${out}`);
+    cleanup(world.root);
+  });
+
+  await test('forced again with the clone there, it finds it and creates nothing twice', () => {
+    const world = mkWorld({ login: 'owner', repoExists: true, discussionsOn: true, pagesOn: true });
+    forced(world);
+    const head = spawnSync('git', ['-C', world.tower, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout;
+
+    const before = world.ghCalls().length;
+    const { code, out } = forced(world);
+    assertEq(code, 0, `exit 0: ${out}`);
+    assert(/is the clone of/.test(out), `it reports the clone it found, got: ${out}`);
+    // The world's repo already exists, so the create line can never print; the
+    // calls are what say nothing was created twice.
+    assert(!world.ghCalls().slice(before).some((c) => c.join(' ').includes('repo create')),
+      `nothing is created twice, got: ${fmtCalls(world.ghCalls().slice(before))}`);
+    assertEq(spawnSync('git', ['-C', world.tower, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout, head, 'the repo is untouched');
+    cleanup(world.root);
+  });
+
+  await test('forced, a gh that cannot say who you are is the login line and exit 1; unforced, the same line and exit 0', () => {
+    const world = mkWorld({ login: '' });
+    const hard = forced(world);
+    assertEq(hard.code, 1, `forced: exit 1, got: ${hard.out}`);
+    assert(/gh auth login/.test(hard.out), `forced: it prints the fix, got: ${hard.out}`);
+    const soft = inHome(world, 'interactive() { return 0; }\nwk_home_setup');
+    assertEq(soft.code, 0, `unforced: exit 0, got: ${soft.out}`);
+    assert(/gh auth login/.test(soft.out), `unforced: the same fix, got: ${soft.out}`);
+    cleanup(world.root);
+  });
+
+  await test('forced, something in the way of the clone stops it with exit 1 before it writes anything', () => {
+    const world = mkWorld({ login: 'owner' });
+    fs.mkdirSync(world.tower, { recursive: true });
+    fs.writeFileSync(path.join(world.tower, 'mine.txt'), 'mine\n');
+    const { code, out } = forced(world);
+    assertEq(code, 1, `exit 1, got: ${out}`);
+    assert(/move it aside/.test(out), `it names what is in the way, got: ${out}`);
+    assert(!/Discussions/.test(out), 'and no later step ran');
+    assert(!fs.existsSync(path.join(world.tower, 'package.json')), 'nothing was seeded over it');
     cleanup(world.root);
   });
 

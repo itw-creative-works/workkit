@@ -14,7 +14,7 @@ const {
 } = require('../../lib/argv-log');
 const {
   WORKFLOW_DIR, cleanup, mkWorld, withNpm, runCli, ACTED, mkRepo, seedSettings, inCli, AT_TERMINAL,
-  writeStub,
+  writeStub, mkSetupKit, mkPartialKit,
 } = require('./helpers');
 
 const run = async () => {
@@ -22,81 +22,119 @@ const run = async () => {
 
   await test('a machine without the plugin has it installed from this checkout', () => {
     const world = mkWorld({ pluginInstalled: false });
-    const { code, out } = runCli(world, ['setup']);
+    const { kit, script } = mkSetupKit();
+    const { code, out } = runCli(world, ['setup'], { script });
     assertEq(code, 0, `exit 0: stderr: ${out}`);
     const calls = world.claudeCalls();
-    assert(calls.some((c) => isCall(c, 'plugin', 'marketplace', 'add', shellPath(path.dirname(WORKFLOW_DIR)))), `the marketplace is this checkout: ${fmtCalls(calls)}`);
+    assert(calls.some((c) => isCall(c, 'plugin', 'marketplace', 'add', shellPath(kit))), `the marketplace is the checkout setup ran from: ${fmtCalls(calls)}`);
     assert(calls.some((c) => isCall(c, 'plugin', 'install', 'workkit@workkit')), `and the plugin is installed: ${fmtCalls(calls)}`);
-    cleanup(world.root);
+    cleanup(world.root); cleanup(kit);
   });
 
   await test('a machine that already has it is left alone', () => {
     const world = mkWorld({ pluginInstalled: true });
-    const { out } = runCli(world, ['setup']);
+    const { kit, script } = mkSetupKit();
+    const { out } = runCli(world, ['setup'], { script });
     const calls = world.claudeCalls();
     assert(!calls.some((c) => isCall(c, 'plugin', 'install')), `nothing is reinstalled: ${fmtCalls(calls)}`);
     assert(out.includes('is installed'), `and it says so, got: ${out}`);
-    cleanup(world.root);
+    cleanup(world.root); cleanup(kit);
   });
 
   await test('a machine with no claude CLI is a named skip, not a failure', () => {
     const world = mkWorld({ claude: false });
-    const { code, out } = runCli(world, ['setup']);
+    const { kit, script } = mkSetupKit();
+    const { code, out } = runCli(world, ['setup'], { script });
     assertEq(code, 0, 'exit 0');
     assert(out.includes('claude CLI is not on this machine'), `it names the skip, got: ${out}`);
     assert(fs.existsSync(world.link), 'and everything else still happens');
-    cleanup(world.root);
+    cleanup(world.root); cleanup(kit);
   });
 
   await test('an unauthenticated gh is reported with the command that fixes it', () => {
     const world = mkWorld({ ghAuthed: false });
-    const { out } = runCli(world, ['setup']);
+    const { kit, script } = mkSetupKit();
+    const { out } = runCli(world, ['setup'], { script });
     assert(out.includes('gh auth login'), `it prints the fix, got: ${out}`);
-    cleanup(world.root);
+    cleanup(world.root); cleanup(kit);
   });
 
   await test('without a terminal it prints the enable command instead of asking', () => {
     const world = mkWorld();
+    const { kit, script } = mkSetupKit();
     const repo = mkRepo();
-    const { code, out } = runCli(world, ['setup'], { cwd: repo });
+    const { code, out } = runCli(world, ['setup'], { cwd: repo, script });
     assertEq(code, 0, 'it finishes rather than waiting for an answer');
     assert(out.includes('workkit enable'), `and hands over the command, got: ${out}`);
     assert(!fs.existsSync(path.join(repo, W)), 'a repo that never answered is not written to');
-    cleanup(world.root); cleanup(repo);
+    cleanup(world.root); cleanup(kit); cleanup(repo);
   });
 
   await test('a repo already in the workflow is not offered again', () => {
     const world = mkWorld();
+    const { kit, script } = mkSetupKit();
     const repo = mkRepo({ optIn: true });
-    const { out } = runCli(world, ['setup'], { cwd: repo });
+    const { out } = runCli(world, ['setup'], { cwd: repo, script });
     assert(out.includes('is in the workflow'), `it reports the state, got: ${out}`);
     assert(!out.includes('workkit enable'), 'and asks nothing');
-    cleanup(world.root); cleanup(repo);
+    cleanup(world.root); cleanup(kit); cleanup(repo);
   });
 
   await test('a second setup reports nothing to do', () => {
     const world = mkWorld({ pluginInstalled: true, binOnPath: true });
+    const { kit, script } = mkSetupKit();
     fs.mkdirSync(world.claudeHome, { recursive: true });
     const repo = mkRepo({ optIn: true });
-    runCli(world, ['setup'], { cwd: repo });
-    const { code, said } = runCli(world, ['setup'], { cwd: repo });
+    runCli(world, ['setup'], { cwd: repo, script });
+    const { code, said } = runCli(world, ['setup'], { cwd: repo, script });
     assertEq(code, 0, 'exit 0');
     // `setup` has no quiet variant, so the verbs are the signal here: QUIET is
     // 0 and an action and a skip are the same shape of line.
     assert(!ACTED.test(said), `an already-set-up machine acts on nothing, got: ${said}`);
-    cleanup(world.root); cleanup(repo);
+    cleanup(world.root); cleanup(kit); cleanup(repo);
   });
 
-  await test('setup offers the home repo, and a non-interactive run only says what it would do', () => {
-    // The gh shim answers `auth status` only, so the home step has no login and
-    // hands over the command instead of guessing one. What this proves is the
-    // offer: the wizard reaches the home steps and creates nothing without a
-    // terminal (workflow/home.sh's own suite covers the steps themselves).
-    const world = mkWorld();
-    const { code, out } = runCli(world, ['setup']);
+  await test('setup offers the home repo, and a non-interactive run names workkit setup --home', () => {
+    // The gh shim says who you are, so the home step reaches its question and,
+    // with no terminal to put it to, hands over the command that answers it.
+    // What this proves is the offer: the wizard reaches the home steps and
+    // creates nothing without a terminal (workflow/home.sh's suite has the rest).
+    const world = mkWorld({ login: 'owner' });
+    const { kit, script } = mkSetupKit();
+    const { code, said: out } = runCli(world, ['setup'], { script });
     assertEq(code, 0, 'exit 0');
-    assert(/home:/.test(out), `the home repo is part of setup, got: ${out}`);
+    assert(/home:[^\n]*`workkit setup --home`/.test(out), `the home line names workkit setup --home, got: ${out}`);
     assert(!fs.existsSync(path.join(world.workflowHome, '.git')), 'and nothing was converted without an answer');
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('setup --home runs the home step alone, and a gh with no login is exit 1', () => {
+    // The gh shim answers `auth status` only, so the forced step has no login.
+    const world = mkWorld();
+    const { kit, script } = mkSetupKit();
+    const { code, said: out } = runCli(world, ['setup', '--home'], { script });
+    assertEq(code, 1, `exit 1, got: ${out}`);
+    assert(out.includes('🏠 workkit setup --home: the home repo'), `the title line, got: ${out}`);
+    assert(/^\s*\S+ home:/m.test(out), `the home line, got: ${out}`);
+    for (const step of ['plugin', 'gh', 'tower', 'site', 'repo']) {
+      assert(!new RegExp(`^\\s*\\S+ ${step}:`, 'm').test(out), `no ${step}: line, nothing else of setup ran, got: ${out}`);
+    }
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('setup --home on a kit without its home library warns and is exit 1', () => {
+    const world = mkWorld();
+    const { kit, script } = mkPartialKit();
+    const { code, said: out } = runCli(world, ['setup', '--home'], { script });
+    assertEq(code, 1, `exit 1, got: ${out}`);
+    assert(/home-repo library is missing/.test(out), `it names the missing library, got: ${out}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('workkit help lists setup --home', () => {
+    const world = mkWorld();
+    const help = runCli(world, ['help']);
+    assert(/^ {2}setup --home\b/m.test(help.out), `help lists setup --home, got: ${help.out}`);
     cleanup(world.root);
   });
 
@@ -106,47 +144,52 @@ const run = async () => {
     // Non-interactive is the piped run: the question waits for a terminal
     // rather than being decided by silence, so a later `workkit setup` asks.
     const world = mkWorld();
+    const { kit, script } = mkSetupKit();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
     const before = fs.readFileSync(file, 'utf8');
-    const { code, out } = runCli(world, ['setup']);
+    const { code, out } = runCli(world, ['setup'], { script });
     assertEq(code, 0, 'exit 0');
     assert(/site: nobody has been asked/.test(out), `it says the question is still open, got: ${out}`);
-    assert(/workkit setup/.test(out), 'and which run puts it');
+    assert(/site: nobody has been asked[^\n]*`site\.publish`[^\n]*until then nothing is published/.test(out),
+      `and it names site.publish as the answer without a terminal, nothing published until then, got: ${out}`);
     assertEq(fs.readFileSync(file, 'utf8'), before, 'nothing was written on the machine’s behalf');
-    cleanup(world.root);
+    cleanup(world.root); cleanup(kit);
   });
 
   await test('an answered switch is never asked again, either way', () => {
     for (const [answer, said] of [[true, 'publishing is on'], [false, 'publishing is off']]) {
       const world = mkWorld();
+      const { kit, script } = mkSetupKit();
       const file = seedSettings(world, { repo: 'owner/workkit', publish: answer, url: null });
       const before = fs.readFileSync(file, 'utf8');
-      const { out } = runCli(world, ['setup']);
+      const { out } = runCli(world, ['setup'], { script });
       assert(out.includes(`site: ${said}`), `${answer} reads back as the answer it is, got: ${out}`);
       assert(!/nobody has been asked/.test(out), 'and the question is not put again');
       assertEq(fs.readFileSync(file, 'utf8'), before, 'the file is left exactly as the owner has it');
-      cleanup(world.root);
+      cleanup(world.root); cleanup(kit);
     }
   });
 
   await test('no home repo, no question: there would be nowhere to publish from', () => {
     const world = mkWorld();
+    const { kit, script } = mkSetupKit();
     seedSettings(world, { repo: null, publish: null, url: null });
-    const { out } = runCli(world, ['setup']);
+    const { out } = runCli(world, ['setup'], { script });
     assert(/site: no home repo yet/.test(out), `it names why it did not ask, got: ${out}`);
     assert(!/nobody has been asked/.test(out), 'and does not hold the question open against nothing');
-    cleanup(world.root);
+    cleanup(world.root); cleanup(kit);
   });
 
   await test('a settings file that does not parse is reported, never written over', () => {
     const world = mkWorld();
+    const { kit, script } = mkSetupKit();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
     fs.writeFileSync(file, '{ "version": 1, "site": {\n');
-    const { code, said } = runCli(world, ['setup']);
+    const { code, said } = runCli(world, ['setup'], { script });
     assertEq(code, 0, 'a broken file is not a crash');
     assert(/site: .*does not parse as JSON/.test(said), `it says what is wrong, got: ${said}`);
     assertEq(fs.readFileSync(file, 'utf8'), '{ "version": 1, "site": {\n', 'and the owner’s file is untouched');
-    cleanup(world.root);
+    cleanup(world.root); cleanup(kit);
   });
 
   await test('the answer is recorded in the site options, and nothing else is', () => {
@@ -263,20 +306,22 @@ const run = async () => {
     // site back: the publish is not a question. The engine's own
     // script names why it stopped, which is how the call is seen from here.
     const world = mkWorld();
+    const { kit, script } = mkSetupKit();
     seedSettings(world, { repo: 'owner/workkit', publish: true, url: null });
-    const { code, out } = runCli(world, ['setup']);
+    const { code, out } = runCli(world, ['setup'], { script });
     assertEq(code, 0, 'exit 0');
     assert(/publish: nothing is cloned at/.test(out), `publish.sh ran and named its own skip, got: ${out}`);
-    cleanup(world.root);
+    cleanup(world.root); cleanup(kit);
   });
 
   await test('an off or unanswered switch adds no publish at all', () => {
     for (const publish of [false, null]) {
       const world = mkWorld();
+      const { kit, script } = mkSetupKit();
       seedSettings(world, { repo: 'owner/workkit', publish, url: null });
-      const { out } = runCli(world, ['setup']);
+      const { out } = runCli(world, ['setup'], { script });
       assert(!/^.*publish: /m.test(out), `${publish} publishes nothing, got: ${out}`);
-      cleanup(world.root);
+      cleanup(world.root); cleanup(kit);
     }
   });
 
@@ -301,31 +346,33 @@ const run = async () => {
 
   await npmTest('unset: set to the wrapper at the engine address, then current on a second run', () => {
     const world = mkWorld();
+    const { kit, script } = mkSetupKit();
     const { npmrc, env } = withNpm(world);
     const want = wantShell(world);
     // A claude home lets setup lay the engine address the wrapper is named through.
     fs.mkdirSync(world.claudeHome, { recursive: true });
-    const first = runCli(world, ['setup'], { env });
+    const first = runCli(world, ['setup'], { env, script });
     assertEq(first.code, 0, `exit 0, got: ${first.said}`);
     assertEq(npmrcShell(npmrc), want, 'the user npmrc names the wrapper through the engine address');
     assert(first.said.includes(`npm: script-shell set to ${want}`), `it says what it did, got: ${first.said}`);
-    const second = runCli(world, ['setup'], { env });
+    const second = runCli(world, ['setup'], { env, script });
     assert(second.said.includes('npm: script-shell is current'), `a second run is a skip, got: ${second.said}`);
     assert(!second.said.includes('script-shell set to'), 'and sets nothing');
-    const doctor = runCli(world, ['doctor'], { env });
+    const doctor = runCli(world, ['doctor'], { env, script });
     assert(/^ *✓ npm: script-shell is current$/m.test(doctor.out), `doctor reports it at the ok level, got: ${doctor.said}`);
     assert(/^ *· npm: script-shell is current$/m.test(second.out), `setup keeps the skip level, got: ${second.said}`);
-    cleanup(world.root);
+    cleanup(world.root); cleanup(kit);
   });
 
   await npmTest('another spelling of the same file reads as current, and is left as written', () => {
     const world = mkWorld();
+    const { kit, script } = mkSetupKit();
     const { npmrc, env } = withNpm(world);
     const want = wantShell(world);
     // A claude home lets setup lay the engine address, so the wanted path names
     // a real file for the other spelling to reach.
     fs.mkdirSync(world.claudeHome, { recursive: true });
-    const first = runCli(world, ['setup'], { env });
+    const first = runCli(world, ['setup'], { env, script });
     assertEq(first.code, 0, `exit 0, got: ${first.said}`);
     // A directory link to the folder the wanted path names the file through: a
     // junction on Windows, a symlink elsewhere (where the type is ignored).
@@ -338,20 +385,21 @@ const run = async () => {
     assert(other !== want, `the other spelling differs from the wanted one: ${other}`);
     fs.writeFileSync(npmrc, fs.readFileSync(npmrc, 'utf8').replace(/^script-shell=.*$/m, `script-shell=${other}`));
     assertEq(npmrcShell(npmrc), other, 'the npmrc names the file through the link');
-    const second = runCli(world, ['setup'], { env });
+    const second = runCli(world, ['setup'], { env, script });
     assertEq(second.code, 0, `exit 0, got: ${second.said}`);
     assert(/^ *· npm: script-shell is current$/m.test(second.out), `setup reads it as current at the skip level, got: ${second.said}`);
     assert(!second.out.includes('set by someone else'), `no warning on stdout, got: ${second.out}`);
     assert(!second.err.includes('set by someone else'), `no warning on stderr, got: ${second.err}`);
     assert(!second.said.includes('npm config set script-shell'), `nor the command that changes it, got: ${second.said}`);
     assertEq(npmrcShell(npmrc), other, 'the value is left as written');
-    const doctor = runCli(world, ['doctor'], { env });
+    const doctor = runCli(world, ['doctor'], { env, script });
     assert(/^ *✓ npm: script-shell is current$/m.test(doctor.out), `doctor reports it at the ok level, got: ${doctor.said}`);
-    cleanup(world.root);
+    cleanup(world.root); cleanup(kit);
   });
 
   await npmTest('a foreign value is warned about, named, and left', () => {
     const world = mkWorld();
+    const { kit, script } = mkSetupKit();
     const { npmrc, env } = withNpm(world);
     fs.mkdirSync(world.claudeHome, { recursive: true });
     // A file that exists, so the warning is for another file, not a missing one.
@@ -359,20 +407,21 @@ const run = async () => {
     fs.writeFileSync(foreign, '');
     const value = IS_WINDOWS ? gitPath(foreign) : shellPath(foreign);
     fs.writeFileSync(npmrc, `script-shell=${value}\n`);
-    const { code, err } = runCli(world, ['setup'], { env });
+    const { code, err } = runCli(world, ['setup'], { env, script });
     assertEq(code, 0, 'exit 0');
     assert(err.includes(`npm: script-shell is ${value}`), `a warning naming what is there, got: ${err}`);
     assert(err.includes('npm config set script-shell'), `and the command that changes it, got: ${err}`);
     assertEq(npmrcShell(npmrc), value, 'the value is left as it is');
-    cleanup(world.root);
+    cleanup(world.root); cleanup(kit);
   });
 
   await npmTest("a link to the kit's shell file itself, in another folder, is someone else's value", () => {
     const world = mkWorld();
+    const { kit, script } = mkSetupKit();
     const { npmrc, env } = withNpm(world);
     // A claude home lets setup lay the engine address, so the shell file is real.
     fs.mkdirSync(world.claudeHome, { recursive: true });
-    const first = runCli(world, ['setup'], { env });
+    const first = runCli(world, ['setup'], { env, script });
     assertEq(first.code, 0, `exit 0, got: ${first.said}`);
     // A hard link on Windows, where a file symlink may need a privilege.
     const shell = IS_WINDOWS ? path.join(world.workflowHome, 'script-shell.exe') : path.join(world.engineLink, 'script-shell.sh');
@@ -383,35 +432,37 @@ const run = async () => {
     const value = IS_WINDOWS ? gitPath(link) : shellPath(link);
     fs.writeFileSync(npmrc, fs.readFileSync(npmrc, 'utf8').replace(/^script-shell=.*$/m, `script-shell=${value}`));
     assertEq(npmrcShell(npmrc), value, 'the npmrc names the link');
-    const second = runCli(world, ['setup'], { env });
+    const second = runCli(world, ['setup'], { env, script });
     assertEq(second.code, 0, `exit 0, got: ${second.said}`);
     assert(second.err.includes('set by someone else'), `the warning, got: ${second.said}`);
     assert(second.err.includes(`npm: script-shell is ${value}`), `naming the value, got: ${second.err}`);
     assert(!second.said.includes('npm: script-shell is current'), `never read as current, got: ${second.said}`);
     assertEq(npmrcShell(npmrc), value, 'the value is left as written');
-    cleanup(world.root);
+    cleanup(world.root); cleanup(kit);
   });
 
   await npmTest('no engine link: script-shell stays unset, and the skip names the missing link', () => {
     // No claude home, so setup lays no engine address and the wrapper it would
     // name (the Windows executable hands every call to it too) does not exist.
     const world = mkWorld();
+    const { kit, script } = mkSetupKit();
     const { npmrc, env } = withNpm(world);
-    const { code, said, out } = runCli(world, ['setup'], { env });
+    const { code, said, out } = runCli(world, ['setup'], { env, script });
     assertEq(code, 0, `exit 0, got: ${said}`);
     assert(!fs.existsSync(world.engineLink), `the precondition: no engine link at ${world.engineLink}`);
     assertEq(npmrcShell(npmrc), undefined, 'npm is never pointed at a wrapper that is not there');
     assert(!said.includes('script-shell set to'), `and setup never says it was, got: ${said}`);
     assert(/^ *· npm:[^\n]*engine link[^\n]*missing/m.test(out), `a skip line naming the missing engine link, got: ${said}`);
-    cleanup(world.root);
+    cleanup(world.root); cleanup(kit);
   });
 
   await (NO_CSC ? (n) => skip(n, NO_CSC) : (n, fn) => test(n, fn))('no npm on PATH: a named skip', () => {
     const world = mkWorld();
-    const { code, said } = runCli(world, ['setup']);
+    const { kit, script } = mkSetupKit();
+    const { code, said } = runCli(world, ['setup'], { script });
     assertEq(code, 0, 'exit 0');
     assert(said.includes('npm: not on this machine'), `it names the skip, got: ${said}`);
-    cleanup(world.root);
+    cleanup(world.root); cleanup(kit);
   });
 
   // The Windows branch driven from any machine: OSTYPE is what the kit reads a

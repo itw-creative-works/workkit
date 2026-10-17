@@ -12,10 +12,10 @@ const run = async () => {
   group('standards.sh: the stale-claim sweep');
 
   // An agent that claimed an issue and then died leaves it locked against every
-  // other worker. The claim is the agent:working label (assignee accounts
-  // cannot tell an agent from a human: agents run gh as the owner) plus the
-  // assignee, and the heal releases both after 24 hours with no activity.
-  const CLAIM = 'agent:working';
+  // other worker. The claim is the agent:claimed label and the assignee is a
+  // person, so the heal releases the label after 24 hours with no activity and
+  // leaves whoever is assigned where they are.
+  const CLAIM = 'agent:claimed';
   const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString().replace(/\.\d+Z$/, 'Z');
   const claimStub = (carried, extra = {}) => makeGhStub({
     labels: desiredLabels(), labeled: { [CLAIM]: carried }, ...extra,
@@ -23,10 +23,10 @@ const run = async () => {
   const issueEdits = (stub) => ghCalls(stub).filter((c) => isCall(c, 'issue', 'edit'));
   const hasPair = (call, flag, value) => call.some((a, i) => a === flag && call[i + 1] === value);
 
-  await test('agent:working is a label the manifest creates', () => {
+  await test('agent:claimed is a label the manifest creates', () => {
     assert(desiredLabels().some((l) => l.name === CLAIM), 'the sweep queries a label the heal makes');
     assertEq(MANIFEST.groups.agent.exclusive, false, 'the claim marker is not exclusive with agent:ok');
-    assert(!Object.keys(MANIFEST.groups.status.values).includes('working'),
+    assert(!Object.keys(MANIFEST.groups.status.values).includes('claimed'),
       'a claim is not a status: the issue carries status:building while it is worked');
   });
 
@@ -40,7 +40,7 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('a claim idle past 24 hours loses the label, the assignee, and gets a comment', () => {
+  await test('a claim idle past 24 hours loses the label, keeps its assignee, and gets a comment', () => {
     const repo = makeRepo();
     const stub = claimStub([{ number: 8, updatedAt: hoursAgo(30), assignees: [{ login: 'someone' }] }]);
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
@@ -48,8 +48,8 @@ const run = async () => {
     const edits = issueEdits(stub);
     assertEq(edits.length, 1, `one release, got: ${fmtCalls(ghCalls(stub))}`);
     assert(hasPair(edits[0], '--remove-label', CLAIM), `the label comes off, got: ${fmtCalls(edits)}`);
-    assert(hasPair(edits[0], '--remove-assignee', 'someone'),
-      `and so does the assignee: one left behind still reads as a claim, got: ${fmtCalls(edits)}`);
+    assert(!edits[0].includes('--remove-assignee'),
+      `the assignee stays: an assignee is a person, not the claim, got: ${fmtCalls(edits)}`);
     const comments = ghCalls(stub).filter((c) => isCall(c, 'issue', 'comment'));
     assertEq(comments.length, 1, `the release is recorded on the issue, got: ${fmtCalls(ghCalls(stub))}`);
     assert(comments[0].some((a) => /stale-claim sweep/.test(a)), `naming the sweep, got: ${fmtCalls(comments)}`);
@@ -74,7 +74,7 @@ const run = async () => {
     const edits = issueEdits(stub);
     assertEq(edits.length, 1, `one edit, never two, got: ${fmtCalls(ghCalls(stub))}`);
     assert(hasPair(edits[0], '--remove-label', CLAIM), `the claim comes off, got: ${fmtCalls(edits)}`);
-    assert(hasPair(edits[0], '--remove-assignee', 'someone'), `and the assignee, got: ${fmtCalls(edits)}`);
+    assert(!edits[0].includes('--remove-assignee'), `the assignee stays, got: ${fmtCalls(edits)}`);
     assert(hasPair(edits[0], '--remove-label', 'status:building'),
       `building ends, got: ${fmtCalls(edits)}`);
     assert(hasPair(edits[0], '--add-label', 'status:specced'),
@@ -122,7 +122,7 @@ const run = async () => {
     const edits = issueEdits(stub);
     assertEq(edits.length, 1, `the claim is still released, got: ${fmtCalls(ghCalls(stub))}`);
     assert(hasPair(edits[0], '--remove-label', CLAIM), `the claim comes off, got: ${fmtCalls(edits)}`);
-    assert(hasPair(edits[0], '--remove-assignee', 'someone'), `and the assignee, got: ${fmtCalls(edits)}`);
+    assert(!edits[0].includes('--remove-assignee'), `the assignee stays, got: ${fmtCalls(edits)}`);
     assert(!edits[0].some((a) => /^status:/.test(a)),
       `and no status label is named at all: the edit must not fail on one, got: ${fmtCalls(edits)}`);
     const comments = ghCalls(stub).filter((c) => isCall(c, 'issue', 'comment'));
@@ -145,7 +145,7 @@ const run = async () => {
     const repo = makeRepo();
     const stub = makeGhStub({
       labels: desiredLabels(),
-      // Nothing carries agent:working; the human claim is only in the whole-repo
+      // Nothing carries agent:claimed; the human claim is only in the whole-repo
       // report, which the sweep never reads.
       issues: [{
         number: 9,
@@ -161,22 +161,37 @@ const run = async () => {
 
   group('standards.sh: the claimed-spec flip');
 
-  // status:specced is the authorization to start and the assignee is the claim,
-  // so an issue carrying both has started, and the flip is what lets the readers
-  // carry no claimed-specced tolerance.
+  // status:specced is the authorization to start and agent:claimed is the
+  // claim, so an issue carrying both has started, and the flip is what lets the
+  // readers carry no claimed-specced tolerance. An assignee is a person, never a
+  // claim, so an assignee alone moves nothing.
   const SPECCED = 'status:specced';
   const BUILDING = 'status:building';
+  const carries = (entry, label) => (entry.labels || []).some((l) => l.name === label);
+  // Each issue answers the status:specced query, and one carrying the claim
+  // answers the agent:claimed query too, fresh, so the stale sweep leaves it be.
   const speccedStub = (carried, extra = {}) => makeGhStub({
-    labels: desiredLabels(), labeled: { [SPECCED]: carried }, ...extra,
+    labels: desiredLabels(),
+    labeled: {
+      [SPECCED]: carried,
+      [CLAIM]: carried.filter((e) => carries(e, CLAIM)).map((e) => ({ ...e, updatedAt: hoursAgo(1) })),
+    },
+    ...extra,
+  });
+  const claimedSpec = (number) => ({
+    number,
+    assignees: [],
+    labels: [{ name: SPECCED }, { name: CLAIM }, { name: 'type:enhancement' }],
   });
 
-  await test('a specced issue with an assignee moves to building, with a comment', () => {
+  await test('a specced issue carrying agent:claimed and no assignee moves to building, with a comment', () => {
     const repo = makeRepo();
-    const stub = speccedStub([{ number: 21, assignees: [{ login: 'someone' }] }]);
+    const stub = speccedStub([claimedSpec(21)]);
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
     assertEq(code, 0, 'a flip is a heal, not a failure');
     const edits = issueEdits(stub);
     assertEq(edits.length, 1, `one flip, got: ${fmtCalls(ghCalls(stub))}`);
+    assert(edits[0].includes('21'), `the claimed issue is the one flipped, got: ${fmtCalls(edits)}`);
     assert(hasPair(edits[0], '--remove-label', SPECCED), `specced ends, got: ${fmtCalls(edits)}`);
     assert(hasPair(edits[0], '--add-label', BUILDING), `and building begins, got: ${fmtCalls(edits)}`);
     const comments = ghCalls(stub).filter((c) => isCall(c, 'issue', 'comment'));
@@ -186,9 +201,24 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
+  await test('a specced issue with an assignee and no agent:claimed is left exactly as it is', () => {
+    const repo = makeRepo();
+    const stub = speccedStub([{
+      number: 22,
+      assignees: [{ login: 'someone' }],
+      labels: [{ name: SPECCED }, { name: 'type:enhancement' }],
+    }]);
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 0, 'exit 0');
+    assertEq(issueEdits(stub).length, 0,
+      `an assignee is a person, not a claim: the spec is still the ready queue, got: ${fmtCalls(ghCalls(stub))}`);
+    assert(!output.includes('claims: flipped'), `and nothing is claimed about it, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
   await test('a specced issue nobody has claimed is left exactly as it is', () => {
     const repo = makeRepo();
-    const stub = speccedStub([{ number: 22, assignees: [] }]);
+    const stub = speccedStub([{ number: 22, assignees: [], labels: [{ name: SPECCED }, { name: 'type:bug' }] }]);
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
     assertEq(code, 0, 'exit 0');
     assertEq(issueEdits(stub).length, 0, `an unclaimed spec is the ready queue, got: ${fmtCalls(ghCalls(stub))}`);
@@ -201,7 +231,7 @@ const run = async () => {
     // have, so a flip attempted blind is an error report on exactly the repos
     // whose labels never reached GitHub.
     const repo = makeRepo();
-    const stub = speccedStub([{ number: 23, assignees: [{ login: 'someone' }] }], {
+    const stub = speccedStub([claimedSpec(23)], {
       labels: desiredLabels().filter((l) => l.name !== BUILDING),
     });
     const { code } = runScript(repo, { pathPrefix: stub.binDir });
@@ -212,8 +242,8 @@ const run = async () => {
 
   await test('a released claim is not re-promoted by the flip that follows it', () => {
     // The two sweeps run in one session and move issues in opposite directions.
-    // The release removes the assignee in the same edit that demotes the issue,
-    // so what it hands back carries no claim for the flip to find.
+    // The release removes agent:claimed in the same edit that demotes the issue,
+    // so what it hands back carries no claim for the flip to find, assignee or not.
     const repo = makeRepo();
     const stub = makeGhStub({
       labels: desiredLabels(),
@@ -224,8 +254,12 @@ const run = async () => {
           assignees: [{ login: 'someone' }],
           labels: [{ name: CLAIM }, { name: BUILDING }, { name: 'type:bug' }],
         }],
-        // What the release just made: specced again, and unassigned.
-        [SPECCED]: [{ number: 24, assignees: [] }],
+        // What the release just made: specced again, still assigned, unclaimed.
+        [SPECCED]: [{
+          number: 24,
+          assignees: [{ login: 'someone' }],
+          labels: [{ name: SPECCED }, { name: 'type:bug' }],
+        }],
       },
     });
     const { code } = runScript(repo, { pathPrefix: stub.binDir });
@@ -238,7 +272,7 @@ const run = async () => {
 
   await test('a failed specced query flips nothing and asks for another session', () => {
     const repo = makeRepo();
-    const stub = speccedStub([{ number: 25, assignees: [{ login: 'someone' }] }], { labelQueryFails: true });
+    const stub = speccedStub([claimedSpec(25)], { labelQueryFails: true });
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
     assertEq(code, 1, 'an unfinished heal reports itself');
     assertEq(issueEdits(stub).length, 0, 'an unreachable GitHub is not a claimed spec');

@@ -61,9 +61,9 @@ Nine, namespaced `workkit:<name>`: `feature` · `interview` · `diagnose` · `re
 
 ## The engine (`workflow/`)
 
-Agent-agnostic: shell + Node, no Claude Code knowledge, which is why the hooks call it rather than contain it. `workkit.sh` is the one command and the from-zero entry point: `setup [--token]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `tower` · `enable` · `decline` · `heal` · `note` · `prove`.
+Agent-agnostic: shell + Node, no Claude Code knowledge, which is why the hooks call it rather than contain it. `workkit.sh` is the one command and the from-zero entry point: `setup [--token | --login | --home]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `tower` · `enable` · `decline` · `heal` · `note` · `prove`.
 
-Beside it live the label SSOT, the heal, the CHANGELOG linter in `changelog/`, the capture CLI, the ship's four helpers in `ship/` (`publish-plan.js`, `release.js`, `ship-items.sh`, `ci-watch.sh`), the templates a repo receives on enable, and the home repo's whole lifecycle. Every file and every step: `workflow/README.md`.
+Beside it live the label SSOT, the heal, the CHANGELOG linter in `changelog/`, the capture CLI, the ship's four helpers in `ship/` (`publish-plan.js`, `release.js`, `ship-items.sh`, `ci-watch.sh`), the templates a repo receives on enable, the bot identity in `identity/` (`workflow/README.md` § The bot identity), and the home repo's whole lifecycle. Every file and every step: `workflow/README.md`.
 
 ## The tower (`tower/`)
 
@@ -107,6 +107,10 @@ A missing `Proof:` line is a hard gate: `safety/proof-guard` holds the flip to c
 - **Generic by construction.** No owner names and no personal paths anywhere in the kit; `~/.workkit` and `.workkit/` are the only filesystem anchors.
 - **One mechanism, branching by environment.** Never two parallel copies of the same job: one entry point, each step gated on what its environment can do.
 - **Idempotent.** Every heal checks before acting; running twice equals running once.
+- **Setup is the agent's to run.** Whenever a hook or a message says setup is needed, the agent runs `workkit setup` itself.
+  - Three choices setup asks only at a terminal (joining the repo, publishing the dashboard, creating the home repo) the agent asks the owner in chat. It applies all three itself: `workkit enable`, `site.publish` in `~/.workkit/settings.json`, and the home repo with `workkit setup --home`.
+  - A step only a human can finish prints the one human action for the agent to relay (approving the sign-in code in the browser, clicking the App's install on GitHub, running `claude setup-token`).
+  - The sign-in waits in the foreground until the code is approved, so the agent runs `workkit setup --login` in the background and reads its output for the page and the code while it waits.
 - **Comments are reminders and directions.** One to four lines saying the one thing the code cannot; a file header is one short paragraph. No issue numbers, dates or history in a comment: the why lives on the issue and in the commit. The owner's `code/lint` hook bounces a longer written run or history.
 - **No em dashes, no exceptions.** Prose, comments, printed strings, tests and `CHANGELOG.md` use a colon, a comma, parentheses, a spaced hyphen or a new sentence. The CHANGELOG entry separator is a spaced hyphen.
 - **The spec is the SSOT.** Rules live in `docs/project-state.md`; skills and hooks execute them and point at it rather than restating them.

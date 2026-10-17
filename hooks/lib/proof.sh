@@ -22,7 +22,7 @@ hook_issue_view() {
 
 # hook_issues_building [repo]: the open issues at status:building, run in the
 # current directory: one line each, the number, a tab and the matching label;
-# 2 when gh cannot answer. Never agent:working: an agent:ok item keeps that
+# 2 when gh cannot answer. Never agent:claimed: an agent:ok item keeps that
 # claim through the park, so it would hold the ship's own run.
 hook_issues_building() {
   local repo="${1:-}" list

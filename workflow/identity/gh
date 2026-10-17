@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+# workflow/identity/gh: the gh shim, linked to ~/.local/bin/gh so it outranks
+# the real gh. Inside a Claude session a bookkeeping verb on a rostered repo runs
+# the real gh as the workkit App, its token in GH_TOKEN for that one process, or
+# not at all; everything else runs the real gh untouched, as the owner.
+
+set -uo pipefail
+
+# The bookkeeping verbs, the `pr` subcommands that stay the owner's, and the
+# reads, which post nothing and so stay the owner's under every verb.
+BOT_VERBS=(issue label pr)
+PR_OWNER_SUBCOMMANDS=(create merge checkout revert update-branch)
+READ_SUBCOMMANDS=(list view status checks diff)
+
+# real_path <path>: <path> with every link in its chain walked; macOS has no
+# `readlink -f`, so each hop is read and joined by hand.
+real_path() {
+  local source="$1" target
+  while [[ -L "$source" ]]; do
+    target="$(readlink "$source")"
+    case "$target" in
+      /*) source="$target" ;;
+      *)  source="$(cd "$(dirname "$source")" && pwd -P)/$target" ;;
+    esac
+  done
+  printf '%s/%s\n' "$(cd "$(dirname "$source")" && pwd -P)" "${source##*/}"
+}
+
+SHIM="$(real_path "${BASH_SOURCE[0]}")"
+KIT_DIR="$(cd "${SHIM%/*}/../.." && pwd -P)"
+# norm_dir <dir>: NORM becomes <dir> as a PATH entry means it, an empty entry
+# the cwd and a trailing slash dropped.
+norm_dir() {
+  NORM="${1:-.}"
+  if [[ "$NORM" == ?*/ ]]; then NORM="${NORM%/}"; fi
+}
+
+# The folder PATH found this shim through, as PATH spells it.
+OWN_DIR=.
+if [[ "${BASH_SOURCE[0]}" == */* ]]; then OWN_DIR="${BASH_SOURCE[0]%/*}"; OWN_DIR="${OWN_DIR:-/}"; fi
+norm_dir "$OWN_DIR"
+OWN_DIR="$NORM"
+
+# The real gh: the first gh on PATH after the shim's own folder, skipping every
+# folder already met at or before it, so each hop through another shim lands
+# further down PATH and none loops. Called off PATH, the whole PATH is after it.
+real_gh() {
+  local i own=-1 met=$'\n' dirs=()
+  IFS=: read -r -a dirs <<<"${PATH:-}"
+  for ((i = 0; i < ${#dirs[@]}; i++)); do
+    norm_dir "${dirs[i]}"
+    if [[ "$NORM" == "$OWN_DIR" ]]; then own=$i; break; fi
+  done
+  for ((i = 0; i <= own; i++)); do
+    norm_dir "${dirs[i]}"
+    met+="$NORM"$'\n'
+  done
+  for ((i = own + 1; i < ${#dirs[@]}; i++)); do
+    norm_dir "${dirs[i]}"
+    case "$met" in *$'\n'"$NORM"$'\n'*) continue ;; esac
+    if [[ -f "$NORM/gh" && -x "$NORM/gh" ]]; then
+      printf '%s\n' "$NORM/gh"
+      return 0
+    fi
+  done
+  return 1
+}
+
+if ! GH="$(real_gh)"; then
+  printf 'gh: no gh on PATH after the workkit shim at %s\n' "$OWN_DIR/gh" >&2
+  exit 127
+fi
+
+# in_list <word> <list...>: whether <word> is one of the list.
+in_list() {
+  local word="$1" item
+  shift
+  for item in "$@"; do
+    [[ "$item" == "$word" ]] && return 0
+  done
+  return 1
+}
+
+# bot_verb <args...>: whether the call is bookkeeping. The subcommand is the
+# first word after the verb that is neither a flag nor the value of `-R`/`--repo`.
+bot_verb() {
+  local verb="${1:-}" arg skip=0
+  in_list "$verb" "${BOT_VERBS[@]}" || return 1
+  shift
+  for arg in "$@"; do
+    if [[ "$skip" -eq 1 ]]; then skip=0; continue; fi
+    case "$arg" in
+      -R|--repo) skip=1 ;;
+      -*) ;;
+      *) in_list "$arg" "${READ_SUBCOMMANDS[@]}" && return 1
+         [[ "$verb" == pr ]] && in_list "$arg" "${PR_OWNER_SUBCOMMANDS[@]}" && return 1
+         return 0 ;;
+    esac
+  done
+  return 0
+}
+
+# url_repo <args...>: the owner/repo of the first positional github.com URL,
+# the issue or pull request gh acts on. A flag's value (a --body naming another
+# issue, say) names no repo, so every flag and the word after a bare one is skipped;
+# a URL right after a flag that takes no value is read as its value, so name the
+# repo with -R in that case.
+url_repo() {
+  local arg skip=0
+  for arg in "$@"; do
+    if [[ "$skip" -eq 1 ]]; then skip=0; continue; fi
+    case "$arg" in
+      -*=*) continue ;;
+      -*) skip=1; continue ;;
+    esac
+    if [[ "$arg" =~ ^https://github\.com/([^/]+)/([^/]+)/ ]]; then
+      printf '%s/%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# flag_repo <args...>: the first `--repo`/`-R` value in any spelling gh takes.
+flag_repo() {
+  local want=0 arg
+  for arg in "$@"; do
+    if [[ "$want" -eq 1 ]]; then printf '%s\n' "$arg"; return 0; fi
+    case "$arg" in
+      -R|--repo) want=1 ;;
+      --repo=*) printf '%s\n' "${arg#--repo=}"; return 0 ;;
+      -R?*) printf '%s\n' "${arg#-R}"; return 0 ;;
+    esac
+  done
+  return 1
+}
+
+if [[ -z "${CLAUDECODE:-}" || "${WORKKIT_IDENTITY_OFF:-}" == 1 || "${1:-}" == auth ]] \
+  || ! bot_verb "$@"; then
+  exec "$GH" "$@"
+fi
+
+# shellcheck source=../lib/platform.sh
+. "$KIT_DIR/workflow/lib/platform.sh"
+# shellcheck source=../lib/slug.sh
+. "$KIT_DIR/workflow/lib/slug.sh"
+
+# Without jq the roster cannot be read, so whether the call is the bot's is unknown.
+if ! command -v jq >/dev/null 2>&1; then
+  printf 'gh: the workkit shim needs jq to read the roster\n' >&2
+  exit 1
+fi
+
+# The repo in gh's own order: the flag, else GH_REPO, else a positional URL,
+# else the cwd's origin.
+FLAG_REPO="$(flag_repo "$@")" || FLAG_REPO="${GH_REPO:-}"
+if [[ -n "$FLAG_REPO" ]]; then
+  # The slug helper takes every spelling gh does (a URL, github.com/, .git); the
+  # leading slash lets a bare owner/name through its path match.
+  REPO="$(wk_slug_from_remote "/$FLAG_REPO")"
+else
+  REPO="$(url_repo "$@" || wk_repo_slug .)"
+fi
+if [[ -z "$REPO" ]] || ! wk_roster_path "$REPO" >/dev/null; then
+  exec "$GH" "$@"
+fi
+
+# The client's exit says what to do: 0 hands over the token, which travels in
+# the environment only; any other code (3 not signed in, 4 the App not installed,
+# 1 the rest) stops here with the client's message. Such a call never runs as you.
+# Its stderr stays this terminal's, so the sign-in it starts at a keyboard reaches you.
+TOKEN="$(node "$KIT_DIR/workflow/identity/token.js" "$REPO")" || exit $?
+GH_TOKEN="$TOKEN" exec "$GH" "$@"

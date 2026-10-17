@@ -57,8 +57,8 @@ HOOKS_DIR="${WORKFLOW_HOOKS_DIR:-$SCRIPT_DIR/../hooks}"
 HOOK_TOOLS="jq git node shasum|sha1sum perl"
 
 # An agent's claim and how long it may sit idle before the heal releases it.
-# Agents run gh as the owner, so the claim needs a label of its own.
-CLAIM_LABEL="agent:working"
+# The label is the claim; an assignee is a person's mark and never read as one.
+CLAIM_LABEL="agent:claimed"
 CLAIM_STALE_SECONDS=86400
 # The two pipeline states a release moves between: an unclaimed issue whose spec
 # is still accepted is specced, not building.

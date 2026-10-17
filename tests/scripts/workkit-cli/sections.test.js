@@ -16,7 +16,8 @@ const run = async () => {
   // Where a section title sits in a transcript: a blank line, then the title
   // with its emoji and nothing else.
   const sectionAt = (text, title) => text.search(new RegExp(`\n\n${title}\n`));
-  const SETUP_SECTIONS = ['💻 This machine', '🏠 Home repo', '🔑 Cloud brief secrets', '🌐 Dashboard site', '📁 This repo'];
+  const SETUP_SECTIONS = ['💻 This machine', '🏠 Home repo', '🔑 Cloud brief secrets', '🪪 Identity', '🌐 Dashboard site',
+    '📁 This repo'];
   const DOCTOR_SECTIONS = ['💻 This machine', '🏠 Home repo', '🔑 Cloud brief secrets', '📁 This repo'];
 
   await test('a piped run is grouped into titled sections and carries no color', () => {

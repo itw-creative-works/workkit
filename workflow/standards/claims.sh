@@ -5,11 +5,12 @@
 # functions only. The claim labels and the staleness window are the entry's.
 
 # ── 3b. Agent claims that went quiet are released ──
-# Only an answer from GitHub licenses a write, and a human claim (no
-# CLAIM_LABEL) never answers the query. Why the release demotes building and
-# why jq judges staleness: `workflow/README.md`, the `standards/` row.
+# Only an answer from GitHub licenses a write. CLAIM_LABEL is the claim, so
+# the release takes it off and leaves every assignee, a person's mark. Why the
+# release demotes building and why jq judges staleness: `workflow/README.md`,
+# the `standards/` row.
 sweep_stale_claims() {
-  local issues stale n assignees args login building body can_flip="" moved=0 failed=0
+  local issues stale n args building body can_flip="" moved=0 failed=0
   command -v jq >/dev/null 2>&1 || return 0
   command -v gh >/dev/null 2>&1 || return 0
   wk_spin 'checking the gh login' gh auth status >/dev/null 2>&1 || return 0
@@ -25,7 +26,7 @@ sweep_stale_claims() {
     can_flip=1
   fi
 
-  if ! issues="$(wk_spin 'reading the claimed issues' gh issue list --state open --label "$CLAIM_LABEL" --json number,updatedAt,assignees,labels --limit 1000 2>/dev/null)"; then
+  if ! issues="$(wk_spin 'reading the claimed issues' gh issue list --state open --label "$CLAIM_LABEL" --json number,updatedAt,labels --limit 1000 2>/dev/null)"; then
     wk_warn "claims: could not list the issues carrying $CLAIM_LABEL; every claim is left in place"
     needs_attention=1
     return 0
@@ -36,14 +37,7 @@ sweep_stale_claims() {
 
   while read -r n; do
     [[ -n "$n" ]] || continue
-    # Every assignee comes off with the label: an assignee left behind still
-    # reads as a claim to everyone querying the queue.
-    assignees="$(wk_jq -r --argjson n "$n" '.[] | select(.number == $n) | .assignees[].login' <<<"$issues" 2>/dev/null || true)"
     args=(--remove-label "$CLAIM_LABEL")
-    while read -r login; do
-      [[ -n "$login" ]] || continue
-      args+=(--remove-assignee "$login")
-    done <<<"$assignees"
     # The status flip rides along in the same edit: two edits would leave a
     # window where the issue is unclaimed but still reads as in flight.
     building=""
@@ -61,7 +55,7 @@ sweep_stale_claims() {
     # The comment follows the release, never precedes it: a comment about a
     # release that then failed would be the issue's record of something that
     # did not happen.
-    body="Released by the standards stale-claim sweep: this issue carried $CLAIM_LABEL with no activity for 24 hours, so the label and any assignee were cleared. It is free to claim again."
+    body="Released by the standards stale-claim sweep: this issue carried $CLAIM_LABEL with no activity for 24 hours, so the label was cleared. Any assignee stays: an assignee is a person, never the claim. It is free to claim again."
     if [[ -n "$building" ]]; then
       body="$body It also went back from $BUILDING_LABEL to $SPECCED_LABEL: the spec is still accepted, the work is simply unclaimed; whatever partial progress exists is in this issue's own trail."
     fi
@@ -76,9 +70,10 @@ sweep_stale_claims() {
 }
 
 # ── 3c. A claimed spec is work in flight ──
-# Specced plus an assignee has started, so it flips to building. The release
-# sweep runs first and removes the assignee as it demotes, so the two never
-# fight. A repo missing BUILDING_LABEL is left alone.
+# Specced plus CLAIM_LABEL has started, so it flips to building; an assignee
+# alone is a person's mark and flips nothing. The release sweep runs first and
+# removes the label as it demotes, so the two never fight. A repo missing
+# BUILDING_LABEL or CLAIM_LABEL is left alone.
 flip_claimed_specced() {
   local issues claimed n moved=0 failed=0
   command -v jq >/dev/null 2>&1 || return 0
@@ -87,14 +82,16 @@ flip_claimed_specced() {
   git remote get-url origin >/dev/null 2>&1 || return 0
   [[ -n "$existing_labels" ]] || return 0
   wk_jq -e --arg n "$BUILDING_LABEL" 'any(.[]; .name == $n)' <<<"$existing_labels" >/dev/null 2>&1 || return 0
+  wk_jq -e --arg n "$CLAIM_LABEL" 'any(.[]; .name == $n)' <<<"$existing_labels" >/dev/null 2>&1 || return 0
 
-  if ! issues="$(wk_spin 'reading the specced issues' gh issue list --state open --label "$SPECCED_LABEL" --json number,assignees --limit 1000 2>/dev/null)"; then
-    wk_warn "claims: could not list the issues carrying $SPECCED_LABEL; nothing was flipped"
+  if ! issues="$(wk_spin 'reading the specced claims' gh issue list --state open --label "$CLAIM_LABEL" --json number,labels --limit 1000 2>/dev/null)"; then
+    wk_warn "claims: could not list the issues carrying $CLAIM_LABEL; nothing was flipped"
     needs_attention=1
     return 0
   fi
 
-  claimed="$(wk_jq -r '.[] | select((.assignees | length) > 0) | .number' <<<"$issues" 2>/dev/null || true)"
+  claimed="$(wk_jq -r --arg s "$SPECCED_LABEL" --arg c "$CLAIM_LABEL" '
+    .[] | select(any(.labels[]; .name == $s) and any(.labels[]; .name == $c)) | .number' <<<"$issues" 2>/dev/null || true)"
 
   while read -r n; do
     [[ -n "$n" ]] || continue
@@ -105,7 +102,7 @@ flip_claimed_specced() {
     fi
     # The comment follows the edit, never precedes it: the issue's trail records
     # what happened, not what was about to be tried.
-    wk_spin "commenting on #$n" gh issue comment "$n" --body "Flipped to $BUILDING_LABEL by the standards sweep: this issue was $SPECCED_LABEL with an assignee, which is a claim on an authorized spec, work in flight. If nobody is working on it, remove the assignee and put $SPECCED_LABEL back." >/dev/null 2>&1 \
+    wk_spin "commenting on #$n" gh issue comment "$n" --body "Flipped to $BUILDING_LABEL by the standards sweep: this issue was $SPECCED_LABEL and carried $CLAIM_LABEL, which is a claim on an authorized spec, work in flight. If nobody is working on it, remove $CLAIM_LABEL and put $SPECCED_LABEL back." >/dev/null 2>&1 \
       || wk_warn "claims: flipped #$n but could not comment on it"
     moved=$((moved + 1))
   done <<<"$claimed"

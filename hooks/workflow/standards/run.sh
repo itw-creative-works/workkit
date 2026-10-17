@@ -25,16 +25,16 @@ MANIFEST="$ENGINE_DIR/labels.json"
 # Setup pester, every session with no cache and no repo gate: a machine that
 # never ran `workkit setup` lacks it everywhere. The probe is the CLI setup
 # installs, one stat; a `~/.workkit` without it still pesters. The hook only
-# informs, the human runs the wizard.
+# informs; the agent runs the wizard itself and relays what it prints.
 pester=""
 cli_link="$HOME/.local/bin/workkit"
 if [ ! -x "$cli_link" ]; then
-  # The command the user is told to paste resolves the ../.. climb first: the
-  # raw ENGINE_DIR string executes fine but reads like a bug.
+  # The command handed over resolves the ../.. climb first: the raw
+  # ENGINE_DIR string executes fine but reads like a bug.
   engine_shown="$(cd "$ENGINE_DIR" 2>/dev/null && pwd -P || printf '%s' "$ENGINE_DIR")"
   where=""
   wk_in_plugin_cache "$ENGINE_DIR/.." && where=" (the engine in the plugin cache)"
-  pester="SETUP: workkit is not set up on this machine ($cli_link is missing). The daily brief, the home repo, and the workkit command are all absent until it is. Tell the user to run \`bash $engine_shown/workkit.sh setup\`$where before continuing with other work."
+  pester="SETUP: workkit is not set up on this machine ($cli_link is missing). The daily brief, the home repo, and the workkit command are all absent until it is. Run \`bash $engine_shown/workkit.sh setup\` yourself$where before other work, and hand the user only what it prints for them to do."
 fi
 
 # Every exit from here down goes through emit, so the pester rides along with

@@ -23,6 +23,7 @@ const brief = (issue) => ({
   type: issue.type || null,
   priority: issue.priority || null,
   agentOk: Boolean(issue.agentOk),
+  agentClaimed: Boolean(issue.agentClaimed),
   assignees: issue.assignees || [],
   blockedBy: issue.blockedBy || [],
 });
@@ -79,6 +80,7 @@ const nextUpFrom = (issues) => {
       repo: issue.repo,
       status: issue.status || null,
       priority: issue.priority || null,
+      agentClaimed: Boolean(issue.agentClaimed),
       url: issue.url,
       waitsOn: waitsOnFor(issue),
     });

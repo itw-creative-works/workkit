@@ -105,11 +105,23 @@ const run = async () => {
     assert(parts.actions.includes('target="_blank"'), 'the external button is the header action');
     assert(parts.body.includes('>specced<'), 'the status');
     assert(parts.body.includes('>enhancement<') && parts.body.includes('agent:ok'), 'and the chips');
-    assert(parts.body.includes('held by @alice'), 'who holds it');
+    assert(parts.body.includes('unclaimed') && !parts.body.includes('held by'),
+      'an assignee without agent:claimed holds nothing: an assignee is a person, not the claim');
     assert(/filed .* · updated /.test(parts.body), 'both dates');
     assertEq(rendered[rendered.length - 1], ISSUE.body, 'the renderer is handed the raw body, markdown and all');
     assert(parts.body.includes(`<div class="omega-tower-issue__body"><p data-rendered>${ISSUE.body}</p></div>`), 'and what it answers is the body of the dialog');
     assert(parts.body.includes('2 comments on GitHub'), 'and where the conversation is');
+  });
+
+  await test('the held line is the agent:claimed label, never an assignee', () => {
+    for (const status of ['specced', 'building']) {
+      const claimed = modal.issueDialog({ ...ISSUE, status, agentClaimed: true, assignees: [] }, render);
+      assert(claimed.body.includes('held by workkit-agent[bot]'), `a ${status} issue carrying the label is held by the agent`);
+      assert(!claimed.body.includes('unclaimed'), `and a ${status} claim never also reads as unclaimed`);
+      const assigned = modal.issueDialog({ ...ISSUE, status, agentClaimed: false, assignees: ['alice'] }, render);
+      assert(assigned.body.includes('unclaimed'), `a ${status} issue with an assignee alone is unclaimed`);
+      assert(!assigned.body.includes('held by'), `and its assignee is never named as the holder on a ${status} issue`);
+    }
   });
 
   await test('the dialog’s date rows say a dash where the issue carried no date', () => {

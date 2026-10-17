@@ -1,7 +1,7 @@
 // workflow/slug.js: what a repo is called, for the Node half of the kit.
 // The twin of workflow/lib/slug.sh, shape for shape: change one and change the
 // other. It requires nothing, so the engine stays self-contained.
-// Usage: const { slugFromRemote } = require('./slug');
+// Usage: const { slugFromRemote, splitRepo } = require('./slug');
 
 /**
  * `owner/repo` from a git remote URL, in either form git writes.
@@ -20,4 +20,16 @@ const slugFromRemote = (url) => {
   return m ? `${m[1]}/${m[2]}` : null;
 };
 
-module.exports = { slugFromRemote };
+/**
+ * `owner/name` split into its two parts, or a throw: a repo in any other shape
+ * is a caller's bug.
+ * @param {string} repo
+ * @returns {{owner: string, name: string}}
+ */
+const splitRepo = (repo) => {
+  const m = typeof repo === 'string' && repo.match(/^([^/\s]+)\/([^/\s]+)$/);
+  if (!m) throw new TypeError(`expected a repo as owner/name, got ${JSON.stringify(repo)}`);
+  return { owner: m[1], name: m[2] };
+};
+
+module.exports = { slugFromRemote, splitRepo };

@@ -20,7 +20,7 @@ const issue = (number, over = {}) => ({
   type: 'enhancement',
   priority: null,
   agentOk: false,
-  agentWorking: false,
+  agentClaimed: false,
   assignees: [],
   ...over,
 });
@@ -97,12 +97,30 @@ const run = async () => {
     // ready queue: started work carries `status:building`, which the claim sets
     // and the standards sweep heals to.
     const board = boardOf([
-      issue(7, { status: 'specced', agentWorking: true }),
-      issue(8, { status: 'building', agentWorking: true }),
+      issue(7, { status: 'specced', agentClaimed: true }),
+      issue(8, { status: 'building', agentClaimed: true }),
     ]);
     const out = buildBrief(board, {}, ROSTER, STAMP);
     assertEq(out.ready.map((i) => i.number).join(','), '7', 'the spec is still a spec');
     assertEq(out.inFlight.map((i) => i.number).join(','), '8', 'and only the label says otherwise');
+  });
+
+  await test('the claim label reaches every list the brief draws a row from', () => {
+    // The page draws the claim glyph from agentClaimed, so each row keeps it
+    // as the board projected it; an assignee alone is no claim.
+    const board = boardOf([
+      issue(7, { status: 'specced', agentClaimed: true }),
+      issue(8, { status: 'building', agentClaimed: true }),
+      issue(9, { status: 'specced', assignees: ['alice'] }),
+    ]);
+    const out = buildBrief(board, {}, ROSTER, STAMP);
+    const ready = Object.fromEntries(out.ready.map((i) => [i.number, i]));
+    assertEq(ready[7].agentClaimed, true, 'a claimed spec in the ready list carries the claim');
+    assertEq(ready[9].agentClaimed, false, 'an assigned one carries none');
+    assertEq(out.inFlight[0].agentClaimed, true, 'and so does a building issue in flight');
+    const next = Object.fromEntries(out.nextUp[0].items.map((i) => [i.number, i]));
+    assertEq(next[7].agentClaimed, true, 'the next-up item keeps the claim too');
+    assertEq(next[9].agentClaimed, false, 'and an assigned one keeps none');
   });
 
   await test('high priority leads, then the issue that has waited longest', () => {

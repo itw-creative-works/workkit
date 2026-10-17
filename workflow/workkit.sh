@@ -40,6 +40,9 @@ DAILY_PLIST="${HOME:-}/Library/LaunchAgents/$DAILY_LABEL.plist"
 # theirs.
 BIN_DIR="${HOME:-}/.local/bin"
 BIN_LINK="$BIN_DIR/workkit"
+GH_SHIM_LINK="$BIN_DIR/gh"
+# A gh link naming any workkit kit's shim is the kit's to repoint; any other is a human's.
+GH_SHIM_OURS='*/workflow/identity/gh'
 
 # Maintained by standards.sh; named here only so `doctor` can report it.
 CLAUDE_HOME="${WORKFLOW_CLAUDE_HOME:-${HOME:-}/.claude}"
@@ -88,16 +91,25 @@ usage: workkit <command> [args]
   help                 this map
   setup                from zero on this machine: the plugin, gh, the 9am
                        schedule, the home repo and whether it publishes its
-                       dashboard, the cloud brief's secrets, the tower pointer,
-                       this repo's opt-in, the workkit symlink, and npm's
-                       script-shell. Safe to re-run
+                       dashboard, the cloud brief's secrets, the bot identity's
+                       sign-in, the tower pointer, this repo's opt-in and the
+                       App's install page for it, the workkit and gh
+                       symlinks, and npm's script-shell. Safe to re-run
   setup --token        that wizard's Claude-token step alone, forced: mint a
                        new CLAUDE_CODE_OAUTH_TOKEN and push it to the home
                        repo, however young the one there is
+  setup --login        that wizard's sign-in step alone, forced: sign in to
+                       GitHub (the device flow) so the agent's issue
+                       bookkeeping posts as workkit-agent[bot], replacing any
+                       sign-in already here, with or without a terminal
+  setup --home         that wizard's home repo step alone, forced: create the
+                       private <login>/workkit and make ~/.workkit/tower its
+                       clone, asking nothing, with or without a terminal
   update [--auto]      re-run the machine-side installs: the engine address,
-                       the symlink, npm's script-shell, and the schedule (only
-                       where one is already installed). --auto is the quiet
-                       variant the standards hook runs once a day
+                       the workkit and gh symlinks, npm's script-shell, and
+                       the schedule (only where one is already installed).
+                       --auto is the quiet variant the standards hook runs
+                       once a day
   doctor               report what is set up, what has drifted, and the command
                        that fixes anything out of reach
   publish              build the dashboard and publish it from the home repo
@@ -142,8 +154,15 @@ SECRET_HOME='WORKKIT_GITHUB_TOKEN'
 # is worth offering: early enough that a morning brief never meets the expiry.
 SECRET_MAX_AGE_DAYS=330
 
-# The bound, in seconds, on every read of the cloud secrets (`bounded_read`).
+# The bound, in seconds, on every read of the cloud secrets and on the bot's
+# installation check (`bounded_read`).
 SECRETS_TIMEOUT="${WORKKIT_GH_TIMEOUT:-10}"
+
+# The agent's GitHub identity (workkit/identity.sh): the client, the sign-in,
+# and the App's constants (the install page is read from it when needed).
+IDENTITY_CLIENT="$SCRIPT_DIR/identity/token.js"
+IDENTITY_LOGIN="$SCRIPT_DIR/identity/login.js"
+IDENTITY_APP="$SCRIPT_DIR/identity/app.js"
 
 # How long the token handover waits for Pages to serve the publish before it
 # prints the URL instead. The override is the suite's seam.
@@ -153,6 +172,11 @@ PAGES_WAIT="${WORKKIT_PAGES_WAIT:-180}"
 # (workkit/secrets.sh) for its caller.
 SECRETS_SLUG=''
 SECRETS_JSON=''
+
+# The client's `token.js --status`, read once per run by `identity_read_status`
+# (workkit/identity.sh): whether the login file holds a sign-in, and whose.
+IDENTITY_SIGNED_IN=''
+IDENTITY_USER=''
 
 # ── The pieces ────────────────────────────────────────────────────────────────
 
@@ -170,6 +194,8 @@ SECRETS_JSON=''
 . "$SCRIPT_DIR/workkit/token.sh"
 # shellcheck source=./workkit/secrets.sh
 . "$SCRIPT_DIR/workkit/secrets.sh"
+# shellcheck source=./workkit/identity.sh
+. "$SCRIPT_DIR/workkit/identity.sh"
 # shellcheck source=./workkit/setup.sh
 . "$SCRIPT_DIR/workkit/setup.sh"
 # shellcheck source=./workkit/commands.sh

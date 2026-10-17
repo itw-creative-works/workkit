@@ -42,13 +42,15 @@ const secretList = (secrets) => JSON.stringify(secrets.map(({ name, days }) => (
  * `claudeToken` is what a stub `claude setup-token` prints, drawing the whole
  * screen with the token last; `mintExit` is a mint that did not finish.
  * `pagesRef` and `pagesBuilds` answer the token handover's reads, one
- * `[status, commit]` per poll with the last repeating. Both openers record and
- * copy the page they were handed, so no real browser opens.
+ * `[status, commit]` per poll with the last repeating. `login` is who `gh api
+ * user` says you are, and `ownerId` what `gh api users/<owner> --jq .id` prints;
+ * absent, each falls through to the stub's exit with nothing printed. Both
+ * openers record and copy the page they were handed, so no real browser opens.
  */
 const mkWorld = ({
   pluginInstalled = false, ghAuthed = true, claude = true, binOnPath = false,
   secrets = null, authToken = '', claudeToken = '', mintExit = 0,
-  pagesRef = '', pagesBuilds = [],
+  pagesRef = '', pagesBuilds = [], login = '', ownerId = '',
 } = {}) => {
   const root = mkTmp('workkit-cli-');
   const bin = path.join(root, 'bin');
@@ -106,6 +108,18 @@ const mkWorld = ({
       '  else',
       `    printf '%s\\n'${secrets.map(({ name }) => ` '${name}\tUpdated 2026-07-01'`).join('')}`,
       '  fi',
+      '  exit 0',
+      'fi',
+    ] : []),
+    ...(login ? [
+      'if [[ "$1" == \'api\' && "$2" == \'user\' ]]; then',
+      `  printf '%s\\n' '${login}'`,
+      '  exit 0',
+      'fi',
+    ] : []),
+    ...(ownerId ? [
+      'if [[ "$1" == \'api\' && "$2" == users/* && "$*" == *\' --jq .id\'* ]]; then',
+      `  printf '%s\\n' '${ownerId}'`,
       '  exit 0',
       'fi',
     ] : []),
@@ -264,6 +278,16 @@ const mkRepo = ({ optIn = false } = {}) => {
   return dir;
 };
 
+/**
+ * Give `repo` the origin github.com/`slug` and enable it on the roster through
+ * the CLI at `script`, with `env` naming the user's dir the roster lives in.
+ */
+const rosterRepo = (world, repo, slug, { script, env } = {}) => {
+  mkOriginRepo(repo, `https://github.com/${slug}.git`);
+  const enabled = runCli(world, ['enable', repo], { script, env });
+  assert(enabled.code === 0, `${slug} joins the roster, got: ${enabled.said}`);
+};
+
 const installSchedule = (world) => spawnSync(BASH, [...NO_RC, shellPath(JOBS_INSTALL)], { env: world.env, encoding: 'utf8', timeout: 30000 });
 
 // The machine's hand-edited settings file, written the way a heal seeds it.
@@ -346,6 +370,18 @@ const mkKit = (slug) => {
 };
 
 /**
+ * A kit `setup` runs against end to end, so nothing it writes lands in this
+ * checkout: mkKit's copy under an origin naming the workkit repo, which the
+ * engine address accepts, plus the schedule installer. Returns `{ kit, script }`.
+ */
+const mkSetupKit = () => {
+  const made = mkKit('checkout/workkit');
+  const root = path.dirname(WORKFLOW_DIR);
+  fs.cpSync(path.join(root, 'jobs'), path.join(made.kit, 'jobs'), { recursive: true });
+  return made;
+};
+
+/**
  * The kit as a plugin install leaves it: a copy with no `.git` and no origin,
  * in the world's own Claude plugin cache, whose manifest names the kit. The
  * schedule installer and the tower are stubs that do nothing. Returns the
@@ -375,7 +411,7 @@ const mkHomeWorld = (opts = {}) => {
 };
 
 module.exports = {
-  WORKFLOW_DIR, CLI, LABEL, cleanup, writeStub, mkWorld, withNpm, mintTest, runCli, ACTED, mkRepo,
-  installSchedule, seedSettings, inCli, AT_TERMINAL, mkPartialKit, mkKit, mkCacheKit, SLUG, HOME,
-  mkHomeWorld,
+  WORKFLOW_DIR, CLI, LABEL, cleanup, writeStub, mkWorld, withNpm, mintTest, runCli, ACTED, mkRepo, rosterRepo,
+  installSchedule, seedSettings, inCli, AT_TERMINAL, mkPartialKit, mkKit, mkSetupKit, mkCacheKit,
+  SLUG, HOME, mkHomeWorld,
 };

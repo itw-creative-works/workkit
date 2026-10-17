@@ -7,6 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+- [#394](../../issues/394) - The agent's issue bookkeeping posts as `workkit-agent[bot]`: a `gh` shim hands the App's token over inside Claude sessions, a client caches it per repo for its hour, `agent:claimed` replaces the assignee as the claim, and setup and doctor report the bot identity.
+- [#423](../../issues/423) - The bot's token comes from a hosted service at `workkit.itwcreativeworks.com`, which holds the App's key: setup asks, opens the browser and signs you in once per machine (`workkit setup --login` signs in again), offers the App's install page for the repo you stand in, and bookkeeping never posts as you.
+- [#425](../../issues/425) - `workkit setup --login` now signs in without a terminal, so an agent can run it and relay the code to you; setup is documented as the agent's to run, handing you only the steps a human must finish.
+- [#426](../../issues/426) - `workkit setup --home` creates the home repo without a terminal, so an agent can apply that choice itself, and setup's install page opens pre-selected on the repo's owner.
+
+### Changed
+- [#427](../../issues/427) - The claim label is `agent:claimed`, no longer `agent:working`. The heal creates the new label by itself; on a repo already using workkit, once every machine runs this version, move each open issue carrying `agent:working` over and delete the old label (the commands are on the issue).
+
 ## [0.75.0] - 2026-10-16
 
 ### Added
