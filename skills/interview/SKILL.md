@@ -79,7 +79,7 @@ The interview is done when the `## Spec` exists (a written one with its `### Con
    - A written Spec ends with its `### Contract` part: Files, Names, Cases (the shape's home is spec § Specs).
    - A small item's Spec stays the literal `None needed: small item.`, with no Contract.
 2. Post it and ask for acceptance in chat: a recognition pass, not a review.
-3. Durable rulings (preferences that outlive this task) get recorded verbatim and dated where they bind: `AGENTS.md`/`docs/` if doctrine, else a comment on the issue.
+3. Durable rulings (preferences that outlive this task) get recorded verbatim and dated where they bind: `AGENTS.md`/`docs/` if doctrine, else a comment on the issue under their `@<login>` (spec § The pass).
 4. Note rejected directions. A real proposal that died closes its issue as **not planned**, with the ruling in a comment.
 
 Done-criteria: zero open decisions, and a spec the human accepted, its Contract included when the Spec is written.

@@ -52,6 +52,13 @@ const templateHeader = () => {
   const to = lines.findIndex((l, i) => i > from && !l.startsWith('#'));
   return `${lines.slice(from, to).join('\n')}\n`;
 };
+const templateFirstLines = () => `${fs.readFileSync(TEMPLATE, 'utf8').split('\n').slice(0, 2).join('\n')}\n`;
+const RETIRED_FIRST_LINES = [
+  '# Checks (workflow spec): the test gate that runs on every pull request.',
+  '# Checks (workflow spec) \u2014 the test gate that runs on every pull request.',
+  '# Checks (workflow spec) - the test gate that runs on every pull request.',
+];
+const SECOND_LINE = '# Making it a REQUIRED check is a repo setting (branch protection / ruleset)\n';
 const NODE_JOB = '  changelog:\n    runs-on: ubuntu-latest\n    steps:\n      # the vendored copy\n'
   + '      - run: node .github/changelog-lint.cjs CHANGELOG.md --unreleased-only\n';
 // The push trigger is already here, so these cases see only the changelog job.
@@ -64,7 +71,7 @@ const run = async () => {
     const fns = inSeam("compgen -A function | grep '^wk_' | sort | tr '\\n' ' '");
     assertEq(fns.code, 0, `it sources clean, stderr: ${fns.err}`);
     assertEq(fns.out, 'wk_changelog_job_block wk_changelog_job_rewrite wk_changelog_job_runs_copy '
-      + 'wk_checks_header wk_checks_push_trigger wk_checks_template wk_job_boundary wk_linter_copies wk_names_linter_copy wk_retired_checks_headers '
+      + 'wk_checks_header wk_checks_push_trigger wk_checks_template wk_job_boundary wk_linter_copies wk_names_linter_copy wk_retired_checks_first_lines wk_retired_checks_headers '
       + 'wk_workflows_run_copy ', `the functions, got: ${fns.out}`);
     const vars = (first) => spawnSync(BASH, [...NO_RC, '-c', `${first}\ncompgen -v | sort`],
       { env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: 20000 }).stdout;
@@ -137,6 +144,46 @@ const run = async () => {
     assertEq(code, 0, 'it answers');
     assertEq(out, crlf(`${templateHeader()}${JOBS}  changelog:\n${USES}\n${next}`),
       'header swapped, job rewritten, the next job intact, every line ending CRLF');
+  });
+
+  await test('a retired first line, in any of its three spellings, becomes the template\'s first two lines', () => {
+    for (const retired of RETIRED_FIRST_LINES) {
+      const { code, out } = rewrite(`${retired}\n${SECOND_LINE}${OLD_HEADER}${JOBS}${NODE_JOB}`);
+      assertEq(code, 0, `it answers for: ${retired}`);
+      assertEq(out, `${templateFirstLines()}${SECOND_LINE}${templateHeader()}${JOBS}  changelog:\n${USES}\n`,
+        `the template's two lines in place of: ${retired}`);
+    }
+  });
+
+  await test('a file already starting with the template\'s first two lines keeps them byte for byte', () => {
+    const current = `${templateFirstLines()}${SECOND_LINE}${JOBS}  changelog:\n${USES}\n`;
+    const { code, out } = rewrite(current);
+    assertEq(code, 0, 'it answers');
+    assertEq(out, current, 'nothing doubled, nothing changed');
+  });
+
+  await test('a near miss of a retired first line is left alone', () => {
+    const near = RETIRED_FIRST_LINES[0].replace('every pull request', 'each pull request');
+    const { out } = rewrite(`${near}\n${SECOND_LINE}${JOBS}${NODE_JOB}`);
+    assertEq(out, `${near}\n${SECOND_LINE}${JOBS}  changelog:\n${USES}\n`, 'the line is not a retired one, so it stays');
+  });
+
+  await test('a CRLF file gets the template\'s first two lines with CRLF endings', () => {
+    const crlf = (s) => s.replace(/\n/g, '\r\n');
+    const { code, out } = rewrite(crlf(`${RETIRED_FIRST_LINES[0]}\n${SECOND_LINE}${JOBS}${NODE_JOB}`));
+    assertEq(code, 0, 'it answers');
+    assertEq(out, crlf(`${templateFirstLines()}${SECOND_LINE}${JOBS}  changelog:\n${USES}\n`),
+      'both new lines end CRLF, as does every other line');
+  });
+
+  await test('one rewrite swaps a retired first line and adds the missing push trigger', () => {
+    const prOnly = `${JOBS.replace('  push:\n', '')}  changelog:\n${USES}\n`;
+    const { code, out } = rewrite(`${RETIRED_FIRST_LINES[0]}\n${SECOND_LINE}${prOnly}`);
+    assertEq(code, 0, 'it answers');
+    const want = overFile(`${templateFirstLines()}${SECOND_LINE}${prOnly}`, 'wk_checks_push_trigger "$1"');
+    assertEq(want.code, 0, `wk_checks_push_trigger answers, stderr: ${want.err}`);
+    assert(/^ {2}push:/m.test(want.out), `the expected file has the push trigger, got: ${want.out}`);
+    assertEq(out, want.out, 'the first line swapped and the push trigger added, both in the one pass');
   });
 
   await test('the rewrite adds the push trigger to a PR-only file, once', () => {

@@ -7,6 +7,12 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+- [#435](../../issues/435) Thanks [@ianwieds]! - A bot comment that credits or quotes the owner now names them as `@<login>`, the handle the sign-in reports, instead of a plain name, so the mention links to them and notifies them. The pass comment reads `QA passed by @<login>, <date>`.
+
+### Fixed
+- [#436](../../issues/436) Thanks [@ianwieds]! - The heal added the push trigger to an existing `checks.yml` but left its first line saying the gate runs on pull requests only; it now swaps a retired first line (any of its three spellings) for the template's current two lines and reports the swap.
+
 ## [0.76.1] - 2026-10-17
 
 ### Changed

@@ -409,6 +409,51 @@ const run = async () => {
     }
   });
 
+  group('standards.sh: the retired first line of checks.yml');
+
+  // The template's first two lines, and a line 1 an earlier template wrote.
+  const TOP = readFile(path.join(WORKFLOW_DIR, 'templates', 'github-workflows', 'checks.yml'))
+    .split('\n').slice(0, 2).map((l) => `${l}\n`).join('');
+  const RETIRED_TAIL = ' the test gate that runs on every pull request.\n';
+  const FIRST_LINE_SWAPPED = 'checks: the first line of .github/workflows/checks.yml now says the gate runs on pushes too; commit it';
+
+  await test('a retired first line is swapped for the template\'s two, reported once, the rest untouched', () => {
+    const rest = `name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n  changelog:\n    ${USES}\n`;
+    for (const first of [`# Checks (workflow spec):${RETIRED_TAIL}`, `# Checks (workflow spec) \u2014${RETIRED_TAIL}`]) {
+      const repo = makeRepo();
+      const stub = makeGhStub();
+      const file = path.join(repo, '.github', 'workflows', 'checks.yml');
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, `${first}${rest}`);
+      const { output } = runScript(repo, { pathPrefix: stub.binDir });
+      assertEq(readFile(file), `${TOP}${rest}`, `${JSON.stringify(first)}: line 1 swapped, every other line byte for byte`);
+      assert(output.includes(FIRST_LINE_SWAPPED), `${JSON.stringify(first)}: reported, got: ${output}`);
+      assert(!output.includes('now describes the kit\'s workflow'), `${JSON.stringify(first)}: not as a header change, got: ${output}`);
+      const again = runScript(repo, { pathPrefix: stub.binDir }).output;
+      assertEq(readFile(file), `${TOP}${rest}`, `${JSON.stringify(first)}: a second heal changes nothing`);
+      assert(!again.includes(FIRST_LINE_SWAPPED), `${JSON.stringify(first)}: and says nothing of it, got: ${again}`);
+      assert(again.includes('changelog job is already in'), `${JSON.stringify(first)}: seen as current, got: ${again}`);
+      cleanup(repo); cleanup(stub.dir);
+    }
+  });
+
+  await test('a retired first line on a PR-only checks.yml: both fixed in one heal, both reported', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `# Checks (workflow spec):${RETIRED_TAIL}${PR_ONLY}`);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    const healed = readFile(file);
+    assert(healed.startsWith(TOP), `the template's first two lines lead, got: ${healed}`);
+    assertPushAdded(PR_ONLY, healed.slice(TOP.length), output);
+    assert(output.includes(FIRST_LINE_SWAPPED), `the first line is reported, got: ${output}`);
+    assert(output.includes('checks: .github/workflows/checks.yml now also runs on a push to main; commit it'),
+      `and the push trigger, got: ${output}`);
+    assert(!output.includes('now describes the kit\'s workflow'), `and no header change, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
   return summary();
 };
 

@@ -37,6 +37,17 @@ wk_retired_checks_headers() {
   done < <(wk_linter_copies)
 }
 
+# The first lines a checks.yml carried before its push trigger, one per line:
+# the colon, em dash and hyphen spellings. The rewrite swaps a line 1 equal to
+# one for the template's first two lines.
+wk_retired_checks_first_lines() {
+  local tail=' the test gate that runs on every pull request.'
+  printf '%s\n' \
+    "# Checks (workflow spec):$tail" \
+    "# Checks (workflow spec) "$'\xe2\x80\x94'"$tail" \
+    "# Checks (workflow spec) -$tail"
+}
+
 # The checks.yml template in the engine folder, the one home of the job's text.
 wk_checks_template() {
   printf '%s/templates/github-workflows/checks.yml\n' "$(cd "${BASH_SOURCE[0]%/*}/.." && pwd -P)"
@@ -153,18 +164,19 @@ wk_checks_push_trigger() {
 
 # wk_changelog_job_rewrite <checks.yml> <template>: the file as the heal leaves
 # it, each swap only where it applies (`workflow/README.md`, the changelog-job
-# row), over the file with its push trigger in place. Lines are written back in
-# the file's own ending; a failed read in either step fails the rewrite.
+# row; a retired line 1 included), over the file with its push trigger in place.
+# Lines are written back in the file's own ending; a failed read fails it.
 wk_changelog_job_rewrite() {
-  local block header retired runs="" asked=0 status
+  local block header retired top runs="" asked=0 status
   block="$(wk_changelog_job_block "$2")" || return 1
   header="$(wk_checks_header "$2")" || return 1
   retired="$(wk_retired_checks_headers)"
-  [[ -n "$block" && -n "$header" ]] || return 1
+  top="$(awk -v BINMODE=3 'NR > 2 { exit } { sub(/\r$/, ""); print }' "$2")" || return 1
+  [[ -n "$block" && -n "$header" && -n "$top" ]] || return 1
   wk_changelog_job_runs_copy "$1" || asked=$?
   case "$asked" in 0) runs=1 ;; 1) ;; *) return 1 ;; esac
 
-  wk_checks_push_trigger "$1" | BLOCK="$block" HEADER="$header" RETIRED="$retired" RUNS="$runs" BOUNDARY="$(wk_job_boundary)" awk -v BINMODE=3 '
+  wk_checks_push_trigger "$1" | BLOCK="$block" HEADER="$header" RETIRED="$retired" FIRSTS="$(wk_retired_checks_first_lines)" TOP="$top" RUNS="$runs" BOUNDARY="$(wk_job_boundary)" awk -v BINMODE=3 '
     function emit(s) { printf "%s%s", s, eol }
     function flush(   i) { for (i = 1; i <= m; i++) emit(pend[i]); m = 0 }
     # The retired paragraph the pending lines are a prefix of: a full match
@@ -189,10 +201,14 @@ wk_changelog_job_rewrite() {
       }
       nh = split(ENVIRON["HEADER"], hdr, "\n")
       nb = split(ENVIRON["BLOCK"], blk, "\n")
+      nf = split(ENVIRON["FIRSTS"], fl, "\n")
+      for (i = 1; i <= nf; i++) first[fl[i]] = 1
+      nt = split(ENVIRON["TOP"], top, "\n")
       eol = "\n"
     }
     NR == 1 && /\r$/ { eol = "\r\n" }
     { sub(/\r$/, "") }
+    NR == 1 && ($0 in first) { for (i = 1; i <= nt; i++) emit(top[i]); next }
     # A retired paragraph, matched line by line; a partial match is written
     # back exactly as it was read, and the line that broke it is tried as the
     # start of a new one before it goes on to the job rules.

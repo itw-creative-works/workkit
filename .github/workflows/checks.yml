@@ -1,4 +1,5 @@
-# Checks (workflow spec): the test gate that runs on every pull request.
+# Checks (workflow spec): the test gate that runs on every pull request and
+# every push to the default branch.
 # Making it a REQUIRED check is a repo setting (branch protection / ruleset)
 # a human turns on; until then it runs and reports, and the ship skill treats
 # a red run as unmergeable.

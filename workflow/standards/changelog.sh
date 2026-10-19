@@ -67,12 +67,11 @@ ensure_changelog_separator() {
 }
 
 # ── 2b-iii. The changelog job in the repo's checks.yml ──
-# checks.yml is the repo's own, so the heal appends the template's job, then
-# rewrites the file (changelog-job.sh: the job, the header, the push trigger),
-# never the whole file. Appending is only safe while `jobs:` is the last
-# top-level block; without it the rewrite still runs, the job left by hand.
+# checks.yml is the repo's own: the heal appends the template's job, then rewrites
+# the file (changelog-job.sh: the job, the header, the first line, the push trigger),
+# never whole. Appending needs `jobs:` last at top level; else the job is left by hand.
 ensure_changelog_job() {
-  local dest=".github/workflows/checks.yml" src block runs=0 noted=0 pushed=0 other=0 last tmp trig eol
+  local dest=".github/workflows/checks.yml" src block runs=0 noted=0 pushed=0 other=0 first=0 last tmp trig eol
   src="$(wk_checks_template)"
 
   [[ -f "$dest" ]] || return 0
@@ -121,7 +120,16 @@ ensure_changelog_job() {
     [[ "$noted" -eq 1 ]] || wk_skip "checks: the changelog job is already in $dest"
     return 0
   fi
-  cmp -s "$trig" "$tmp" || other=1
+  # A swapped line 1 is two lines in the result, so the rest is compared
+  # past it. Only that swap can change line 1: a retired header paragraph
+  # there opens with the same line as the template's, and the job rule
+  # needs an indented key.
+  if [[ "$(head -n 1 "$trig")" != "$(head -n 1 "$tmp")" ]]; then
+    first=1
+    cmp -s <(tail -n +2 "$trig") <(tail -n +3 "$tmp") || other=1
+  else
+    cmp -s "$trig" "$tmp" || other=1
+  fi
   rm -f "$trig"
   if ! mv "$tmp" "$dest"; then
     rm -f "$tmp"
@@ -133,6 +141,9 @@ ensure_changelog_job() {
     wk_ok "checks: the changelog job in $dest now calls the kit's workflow; commit it"
   elif [[ "$other" -eq 1 ]]; then
     wk_ok "checks: the header comment in $dest now describes the kit's workflow; commit it"
+  fi
+  if [[ "$first" -eq 1 ]]; then
+    wk_ok "checks: the first line of $dest now says the gate runs on pushes too; commit it"
   fi
   if [[ "$pushed" -eq 1 ]]; then
     wk_ok "checks: $dest now also runs on a push to main; commit it"

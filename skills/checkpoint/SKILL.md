@@ -33,13 +33,13 @@ A long chat holds verdicts and findings that exist NOWHERE ELSE, and compaction 
 
 Search first, open AND closed: `gh issue list --state all --search "<key words>" --limit 1000`. Then:
 
-- **An issue exists**: update it with whichever apply: a dated comment quoting the owner's words, a spec line, a label.
+- **An issue exists**: update it with whichever apply: a dated comment quoting the owner's words under their `@<login>` (spec § The pass), a spec line, a label.
 - **No issue exists**: file one through the `workkit:triage` routing table, the SSOT for destination, the filing litmus test, and the issue anatomy (spec § Issue anatomy). An entry for another repo or for the home repo routes the same way triage routes it.
-- **An unanswered owner question**: `status:blocked`, with the question in the owner's own words. A question the agent answered in chat is not blocked; the answer goes on the issue.
+- **An unanswered owner question**: `status:blocked`, with the question in the owner's own words under their `@<login>`. A question the agent answered in chat is not blocked; the answer goes on the issue.
 
 ## 3. Apply the status the owner spoke
 
-Status changes ARE checkpoint work. Apply every owner word that moves an issue's stage, with the words quoted on the issue, dated:
+Status changes ARE checkpoint work. Apply every owner word that moves an issue's stage, with the words quoted on the issue under their `@<login>`, dated:
 
 | The owner said | The flip |
 |---|---|
@@ -52,7 +52,7 @@ Status changes ARE checkpoint work. Apply every owner word that moves an issue's
 - One `status:` label per issue: remove the old one in the same command, `gh issue edit <N> --remove-label status:qa --add-label status:complete`. A flip to `status:blocked` takes `agent:claimed` off in the same edit: a block releases the claim (spec § Labels).
 - Never `agent:ok`, and never a flip the owner did not speak. A verdict is applied, never inferred.
 - One case where a spoken pass does NOT move the label: a `status:qa` item whose comments carry no line starting `Proof:`.
-  - Quote the owner's words on the issue as always, then LEAVE it at `status:qa` and say so in the Filed trail.
+  - Quote the owner's words under their `@<login>` on the issue as always, then LEAVE it at `status:qa` and say so in the Filed trail.
   - The proof is a hard gate (spec § The proof), so `safety/proof-guard` bounces the flip anyway.
   - The fix is a re-park: the agent that built the item runs its layers and comments the `Proof:` line, then the flip follows.
 

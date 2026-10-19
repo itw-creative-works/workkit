@@ -24,7 +24,7 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 
 - Claim the issue before working it: move it to `status:building` AND add `agent:claimed`, then say whose session holds it:
   `gh issue edit <N> --remove-label status:specced --add-label status:building,agent:claimed`
-  `gh issue comment <N> --body "Claimed by workkit-agent[bot] for @<login>'s session."` (the login from `gh api user --jq .login`)
+  `gh issue comment <N> --body "Claimed by workkit-agent[bot] for @<login>'s session."` (the login the sign-in status reports, spec § The pass)
 - That flip makes the `workflow:snapshot` hook take the snapshot the red proofs run against (`docs/hooks.md`).
 - `agent:claimed` IS the claim. The assignee is a person's mark and never the claim: the bot that posts the agent's bookkeeping can never be an assignee, so the claim comment names it and the session's owner.
 - Skip an issue already carrying `agent:claimed`. Re-read the labels when you start, not when you listed the queue.
@@ -127,7 +127,7 @@ gh issue edit <N> --remove-label status:building,agent:claimed --add-label statu
 
 ```
 gh issue edit <N> --remove-label status:qa --add-label status:complete
-gh issue comment <N> --body "QA passed by <owner>, <date>."
+gh issue comment <N> --body "QA passed by @<login>, <date>."
 ```
 
 - That stage means "checked, ready to ship", and the ship reads from it. Note the pass in the session notes too, so the next session knows the item is good to go.
