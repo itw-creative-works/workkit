@@ -104,7 +104,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('answered n, nothing is minted and the skip line says so', () => {
+  await mintTest('answered n, nothing is minted and the skip line says so', () => {
     const world = mkWorld({ claudeToken: MINTED });
     const { said } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'n\n' });
     assert(/secrets: CLAUDE_CODE_OAUTH_TOKEN left as it is/.test(said), `the skip line, got: ${said}`);
@@ -113,7 +113,7 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the secrets offer and its [y/N] hint are on stderr, none of it on stdout', () => {
+  await mintTest('the secrets offer and its [y/N] hint are on stderr, none of it on stdout', () => {
     const world = mkWorld();
     const { out, err } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'n\n' });
     assert(err.includes(`CLAUDE_CODE_OAUTH_TOKEN is not set on ${HOME}. Mint one now with \`claude setup-token\`? [y/N]`),
