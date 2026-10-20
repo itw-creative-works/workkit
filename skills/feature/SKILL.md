@@ -73,7 +73,7 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 ### Crew staging
 
 - Stage the class agents by phase, never all at once.
-- A batch builds in parallel groups on the shared tree, grouped and launched as `docs/agents.md` § Batches says.
+- A batch builds in parallel groups on the shared tree, grouped and launched as `docs/agents.md` § Batches says. It spawns by that section's start rule, its first paragraph: never held for a neighbour's Spec or a question about other work.
 - Build: ONE pair of `workkit:worker` briefs per group, a feature-developer and a test-developer on the shared tree. The rule is `docs/agents.md` § Crew sizing.
   - The feature-developer's brief starts from `briefs/feature-developer.md` and names its source paths and the issue's `### Contract`.
   - The test-developer's brief starts from `briefs/test-developer.md` and names its test paths, the Contract and the Description.

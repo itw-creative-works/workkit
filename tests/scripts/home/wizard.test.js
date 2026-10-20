@@ -291,12 +291,37 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('an answer that is not yes leaves everything alone', () => {
+  await test('the wizard question answered Y ensures the home repo', () => {
     const world = mkWorld({ login: 'owner' });
-    const { out } = setup(world, { input: 'n\n' });
-    assert(/left as it is/.test(out), `it says so, got: ${out}`);
-    assertEq(world.settings().site.repo, null, 'and no home is recorded');
-    assert(!fs.existsSync(world.tower), 'nothing is cloned');
+    const { code, out } = setup(world, { input: 'Y\n' });
+    assertEq(code, 0, `exit 0: ${out}`);
+    const calls = world.ghCalls().map((c) => c.join(' '));
+    assert(calls.some((c) => c.includes('repo create owner/workkit --private')), `the private repo is created: ${fmtCalls(world.ghCalls())}`);
+    assertEq(world.settings().site.repo, 'owner/workkit', 'and the home slug is recorded');
+    cleanup(world.root);
+  });
+
+  await test('an answer that is not yes leaves everything alone, and the function returns 0', () => {
+    for (const [label, input] of [['n', 'n\n'], ['maybe', 'maybe\n'], ['Enter alone', '\n'], ['a closed stdin', '']]) {
+      const world = mkWorld({ login: 'owner' });
+      const { code, out } = setup(world, { input });
+      assertEq(code, 0, `${label}: returns 0, got: ${out}`);
+      assert(/home: left as it is/.test(out), `${label}: the skip line says so, got: ${out}`);
+      assertEq(world.settings().site.repo, null, `${label}: and no home is recorded`);
+      assert(!fs.existsSync(world.tower), `${label}: nothing is cloned`);
+      cleanup(world.root);
+    }
+  });
+
+  await test('the wizard question and its [y/N] hint are on stderr, none of it on stdout', () => {
+    const world = mkWorld({ login: 'owner' });
+    const { out, err } = setup(world, { input: 'n\n' });
+    // `out` is stdout then stderr, so stdout is what comes before stderr's text.
+    const stdout = out.slice(0, out.length - err.length);
+    assert(/Create the private home repo owner\/workkit and make \S+ its clone\? \[y\/N\]/.test(err),
+      `the prompt and hint are on stderr, got: ${err}`);
+    assert(!stdout.includes('Create the private home repo'), `the prompt is not on stdout, got: ${stdout}`);
+    assert(!stdout.includes('[y/N]'), `nor the hint, got: ${stdout}`);
     cleanup(world.root);
   });
 

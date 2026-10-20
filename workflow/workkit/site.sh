@@ -55,13 +55,8 @@ offer_site_publish() {
     return 0
   fi
 
-  local answer="" value=false
-  printf 'Publish the dashboard site to GitHub Pages? [y/N] '
-  read -r answer || true
-  case "$answer" in
-    y|Y|yes|YES) value=true ;;
-    *) value=false ;;
-  esac
+  local value=false
+  wk_ask_yes 'Publish the dashboard site to GitHub Pages?' n && value=true
   set_site_publish "$value"
   SITE_PUBLISH="$value"
 

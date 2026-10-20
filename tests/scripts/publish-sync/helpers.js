@@ -148,9 +148,12 @@ const inHome = (world, script, { env = {} } = {}) => {
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
-/** `wk_home_sync`, with its return code printed rather than ending the run. */
-const sync = (world, { env = {} } = {}) => {
-  const res = inHome(world, 'rc=0\nwk_home_sync || rc=$?\nprintf \'rc=%s\\n\' "$rc"', { env });
+/**
+ * `wk_home_sync`, with its return code printed rather than ending the run.
+ * `prelude` is shell run after the library is sourced, before the sync.
+ */
+const sync = (world, { env = {}, prelude = '' } = {}) => {
+  const res = inHome(world, `${prelude}\nrc=0\nwk_home_sync || rc=$?\nprintf 'rc=%s\\n' "$rc"`, { env });
   const rc = /rc=(\d+)/.exec(res.out + res.err);
   return { ...res, rc: rc ? Number(rc[1]) : null };
 };

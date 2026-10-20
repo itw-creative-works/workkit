@@ -7,8 +7,10 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { WORKFLOW_DIR, cleanup, makeRepo, makeGhStub, readFile, runScript } = require('./helpers');
-const { stubTool } = require('../../lib/platform');
+const { BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, joinPath, stubTool } = require('../../lib/platform');
+const { mkTmp } = require('../../lib/scratch');
 const { childrenOf, isContent } = require('../../lib/workflow-yaml');
+const { openingLines, TOP_THREE } = require('../../lib/checks-template');
 
 const run = async () => {
   group('standards.sh: the retired CHANGELOG linter copy');
@@ -411,13 +413,13 @@ const run = async () => {
 
   group('standards.sh: the retired first line of checks.yml');
 
-  // The template's first two lines, and a line 1 an earlier template wrote.
-  const TOP = readFile(path.join(WORKFLOW_DIR, 'templates', 'github-workflows', 'checks.yml'))
-    .split('\n').slice(0, 2).map((l) => `${l}\n`).join('');
+  // The template's opening sentence, and a line 1 an earlier template wrote.
+  const TEMPLATE_REL = path.join('templates', 'github-workflows', 'checks.yml');
+  const TOP = openingLines(readFile(path.join(WORKFLOW_DIR, TEMPLATE_REL)));
   const RETIRED_TAIL = ' the test gate that runs on every pull request.\n';
   const FIRST_LINE_SWAPPED = 'checks: the first line of .github/workflows/checks.yml now says the gate runs on pushes too; commit it';
 
-  await test('a retired first line is swapped for the template\'s two, reported once, the rest untouched', () => {
+  await test('a retired first line is swapped for the template\'s opening sentence, reported once, the rest untouched', () => {
     const rest = `name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n  changelog:\n    ${USES}\n`;
     for (const first of [`# Checks (workflow spec):${RETIRED_TAIL}`, `# Checks (workflow spec) \u2014${RETIRED_TAIL}`]) {
       const repo = makeRepo();
@@ -445,13 +447,55 @@ const run = async () => {
     fs.writeFileSync(file, `# Checks (workflow spec):${RETIRED_TAIL}${PR_ONLY}`);
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
     const healed = readFile(file);
-    assert(healed.startsWith(TOP), `the template's first two lines lead, got: ${healed}`);
+    assert(healed.startsWith(TOP), `the template's opening sentence leads, got: ${healed}`);
     assertPushAdded(PR_ONLY, healed.slice(TOP.length), output);
     assert(output.includes(FIRST_LINE_SWAPPED), `the first line is reported, got: ${output}`);
     assert(output.includes('checks: .github/workflows/checks.yml now also runs on a push to main; commit it'),
       `and the push trigger, got: ${output}`);
     assert(!output.includes('now describes the kit\'s workflow'), `and no header change, got: ${output}`);
     cleanup(repo); cleanup(stub.dir);
+  });
+
+  // A copy of the engine whose template opens with TOP_THREE, run in place of
+  // the kit's, beside the kit's own hook layer.
+  const healFromCopy = (kit, repo, stub) => {
+    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(kit, 'standards.sh')), shellPath(repo)], {
+      env: {
+        ...process.env,
+        PATH: joinPath(stub.binDir, SYSTEM_PATH, NODE_DIR),
+        WORKFLOW_HOOKS_DIR: shellPath(path.join(WORKFLOW_DIR, '..', 'hooks')),
+        WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'workflow-home')),
+        WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'claude-home')),
+      },
+      encoding: 'utf8',
+      timeout: 20000,
+    });
+    return `${res.stdout || ''}${res.stderr || ''}`;
+  };
+
+  await test('a template rewrapped to three lines: the heal swaps in all three and reports it once', () => {
+    const root = mkTmp('wf-std-');
+    const kit = path.join(root, 'workflow');
+    fs.cpSync(WORKFLOW_DIR, kit, { recursive: true });
+    const shipped = readFile(path.join(kit, TEMPLATE_REL));
+    fs.writeFileSync(path.join(kit, TEMPLATE_REL), `${TOP_THREE}${shipped.slice(openingLines(shipped).length)}`);
+    const top = openingLines(readFile(path.join(kit, TEMPLATE_REL)));
+    assertEq(top, TOP_THREE, 'the copy\'s template opens with the three-line sentence');
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const rest = `name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n  changelog:\n    ${USES}\n`;
+    fs.writeFileSync(file, `# Checks (workflow spec):${RETIRED_TAIL}${rest}`);
+    const output = healFromCopy(kit, repo, stub);
+    assertEq(readFile(file), `${top}${rest}`, `line 1 became the three lines, every other line byte for byte, got: ${output}`);
+    assertEq(output.split(FIRST_LINE_SWAPPED).length - 1, 1, `the swap is reported once, got: ${output}`);
+    assert(!output.includes('now describes the kit\'s workflow'), `not as a header change, got: ${output}`);
+    const again = healFromCopy(kit, repo, stub);
+    assertEq(readFile(file), `${top}${rest}`, 'a second heal changes nothing');
+    assert(!again.includes(FIRST_LINE_SWAPPED), `and says nothing of it, got: ${again}`);
+    assert(again.includes('changelog job is already in'), `seen as current past all three lines, got: ${again}`);
+    cleanup(root); cleanup(repo); cleanup(stub.dir);
   });
 
   return summary();

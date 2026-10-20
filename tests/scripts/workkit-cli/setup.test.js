@@ -80,6 +80,42 @@ const run = async () => {
     cleanup(world.root); cleanup(kit); cleanup(repo);
   });
 
+  // `setup` at the terminal seam from an undecided repo, the answers on stdin.
+  // The world has no node, no home repo and no login, so every other question
+  // is a named skip and the one answer goes to the repo's.
+  const repoQuestion = (input) => {
+    const world = mkWorld();
+    const { kit, script } = mkSetupKit();
+    const repo = mkRepo();
+    const res = inCli(world, `${AT_TERMINAL}\ncd ${JSON.stringify(shellPath(repo))}\ncmd_setup`, { entry: script, input });
+    return { ...res, repo, done: () => { cleanup(world.root); cleanup(kit); cleanup(repo); } };
+  };
+
+  await test('the repo question answered YES enables the repo', () => {
+    const { code, said, repo, done } = repoQuestion('YES\n');
+    assertEq(code, 0, `exit 0, got: ${said}`);
+    const file = path.join(repo, W, 'settings.json');
+    assert(fs.existsSync(file), `the repo now carries its yes, got: ${said}`);
+    assertEq(JSON.parse(fs.readFileSync(file, 'utf8')).enabled, true, 'enabled: true');
+    done();
+  });
+
+  await test('the repo question answered with Enter alone leaves the repo as it is', () => {
+    const { code, said, repo, done } = repoQuestion('\n');
+    assertEq(code, 0, `exit 0, got: ${said}`);
+    assert(!fs.existsSync(path.join(repo, W)), 'nothing is written to the repo');
+    assert(/repo: left as it is/.test(said), `and the skip line says so, got: ${said}`);
+    done();
+  });
+
+  await test('the repo question and its [y/N] hint are on stderr, none of it on stdout', () => {
+    const { out, err, done } = repoQuestion('\n');
+    assert(/Add \S+ to the issue workflow\? \[y\/N\]/.test(err), `the prompt and hint are on stderr, got: ${err}`);
+    assert(!out.includes('to the issue workflow?'), `the prompt is not on stdout, got: ${out}`);
+    assert(!out.includes('[y/N]'), `nor the hint, got: ${out}`);
+    done();
+  });
+
   await test('a second setup reports nothing to do', () => {
     const world = mkWorld({ pluginInstalled: true, binOnPath: true });
     const { kit, script } = mkSetupKit();
@@ -284,6 +320,27 @@ const run = async () => {
     const { out } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'n\ntyped.example.com\n' });
     assert(!/Custom domain/.test(out), `no follow-up on the no leg, got: ${out}`);
     assertEq(JSON.parse(fs.readFileSync(file, 'utf8')).site.url, null, 'and nothing was read into the file');
+    cleanup(world.root);
+  });
+
+  await test('an empty answer or a closed stdin records the publish switch as false', () => {
+    for (const [label, input] of [['an empty answer', '\n'], ['a closed stdin', '']]) {
+      const world = mkWorld();
+      const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
+      const { code, said } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input });
+      assertEq(code, 0, `${label}: exit 0, got: ${said}`);
+      assertEq(JSON.parse(fs.readFileSync(file, 'utf8')).site.publish, false, `${label} is a no on disk: false, not null`);
+      cleanup(world.root);
+    }
+  });
+
+  await test('the publish question and its [y/N] hint are on stderr, none of it on stdout', () => {
+    const world = mkWorld();
+    seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
+    const { out, err } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'n\n' });
+    assert(err.includes('Publish the dashboard site to GitHub Pages? [y/N]'), `the prompt and hint are on stderr, got: ${err}`);
+    assert(!out.includes('Publish the dashboard'), `the prompt is not on stdout, got: ${out}`);
+    assert(!out.includes('[y/N]'), `nor the hint, got: ${out}`);
     cleanup(world.root);
   });
 
@@ -561,6 +618,18 @@ const run = async () => {
     assert(out.includes('rc=1'), `doctor asks for attention, got: ${out}`);
     assert(err.includes('is missing or older than script-shell.cs; run `workkit update`'), `naming the fix, got: ${err}`);
     cleanup(world.root);
+  });
+
+  group('the engine: one yes/no rule');
+
+  await test('the accepted yes spellings are written out in workflow/lib/flows.sh alone', () => {
+    const kitRoot = path.dirname(WORKFLOW_DIR);
+    const hits = fs.readdirSync(WORKFLOW_DIR, { recursive: true })
+      .map((rel) => path.join(WORKFLOW_DIR, rel))
+      .filter((file) => fs.statSync(file).isFile() && fs.readFileSync(file, 'utf8').includes('y|Y|yes|YES'))
+      .map((file) => path.relative(kitRoot, file).split(path.sep).join('/'))
+      .sort();
+    assertEq(JSON.stringify(hits), JSON.stringify(['workflow/lib/flows.sh']), 'the one home of the yes-parse');
   });
 
   return summary();

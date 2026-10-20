@@ -7,6 +7,7 @@ const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = requ
 const { BASH, NO_RC, shellPath } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { mkRepo } = require('../lib/git-repo');
+const { section } = require('../lib/markdown');
 
 const REPO = path.join(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'hooks', 'manager', 'profile', 'run.sh');
@@ -129,7 +130,7 @@ const run = async () => {
     assert(/[Jj]udgment stays/.test(ctx), 'the judgment boundary is missing');
     assert(ctx.includes('self-contained'), 'the owner-question rule is missing');
     assert(ctx.includes('names the framework guide'), 'the brief routes the guide read');
-    assert(ctx.includes('ONE bullet, bold lead = number + link + [status] + five words, then two to three sentences for a cold reader') && ctx.includes('Restating an issue'), 'the cold-reader line, with the status token, rides every prompt (#221, #417)');
+    assert(ctx.includes('ONE bullet, bold lead = number + link + [status] + five words') && ctx.includes('Restating an issue'), 'the cold-reader line, with the status token, rides every prompt (#221, #417)');
     assert(ctx.includes('link text #N, or repo#N on every link when the reply spans repos'), 'the repo prefix rule rides every prompt (#386)');
     for (const term of ['feature-developer', 'test-developer', 'scripts/red-proof.sh', 'docs/agents.md § Batches', 'briefs/']) {
       assert(ctx.includes(term), `the batch shape rides every prompt: "${term}" is missing`);
@@ -166,7 +167,7 @@ const run = async () => {
       assert(!ctx.includes(moved), `"${moved}" belongs in docs/agents.md, not the injection`);
     }
   });
-  await test('the injection stays under 1525 characters on both rungs', () => {
+  await test('the injection stays under 1600 characters on both rungs', () => {
     // The workhorse branch is the longer one (its advisor clause), so the cap
     // must be proven per rung: the frontier ctx alone leaves untested headroom,
     // and the next clause has to earn its place against the cap.
@@ -174,8 +175,42 @@ const run = async () => {
       freshTmp();
       cacheSession('sess1', id(rung));
       const ctx = contextOf(runHook(payload()));
-      assert(ctx.length < 1525, `${rung} injection is ${ctx.length} chars`);
+      assert(ctx.length < 1600, `${rung} injection is ${ctx.length} chars`);
     }
+  });
+
+  group('manager-profile: the batch start rule and the short issue line');
+  await test('a frontier session is told a batch is always one and spawns now', () => {
+    freshTmp();
+    cacheSession('sess1', id('fable'));
+    const ctx = contextOf(runHook(payload()));
+    for (const phrase of ['always one batch', 'spawns now', 'rides beside running work']) {
+      assert(ctx.includes(phrase), `the batch start clause is missing "${phrase}"`);
+    }
+  });
+  await test('the issue line is one to three sentences on both rungs', () => {
+    for (const rung of ['fable', 'opus']) {
+      freshTmp();
+      cacheSession('sess1', id(rung));
+      const ctx = contextOf(runHook(payload()));
+      assert(ctx.includes('one to three sentences'), `${rung}: the issue line does not say one to three sentences`);
+      assert(!ctx.includes('two to three'), `${rung}: the issue line still says two to three`);
+    }
+  });
+  await test('docs/agents.md opens § Batches with the start rule and rules on owner questions', () => {
+    const md = path.join(REPO, 'docs', 'agents.md');
+    const batches = section(md, '### Batches');
+    const firstParagraph = batches.split(/\n\s*\n/)[0];
+    assert(firstParagraph.includes('always one batch'), '§ Batches does not open with the start rule');
+    assert(section(md, '### Questions to the owner').includes('same turn'), '§ Questions to the owner lacks the ruling that authorized work starts in the same turn');
+  });
+  await test('docs/project-state.md points the Batches bullet at the start rule and shortens the issue line', () => {
+    const md = path.join(REPO, 'docs', 'project-state.md');
+    const queue = section(md, '## Queue semantics');
+    const bullet = queue.slice(queue.indexOf('- **Batches**')).split(/\n(?=- \*\*|\s*\n)/)[0];
+    assert(bullet.startsWith('- **Batches**'), 'the Batches bullet is missing from § Queue semantics');
+    assert(bullet.includes('start rule'), 'the Batches bullet does not point at the start rule');
+    assert(section(md, '## Restating an issue').includes('one to three sentences'), '§ Restating an issue does not say one to three sentences');
   });
 
   group('manager-profile: layered overrides (repo > user > ladder)');

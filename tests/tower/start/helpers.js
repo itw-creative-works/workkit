@@ -10,7 +10,7 @@ const { testUnless } = require('../../lib/harness');
 const { IS_WINDOWS, BASH, NO_RC, shellPath, which } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
 const {
-  alive, until, readPid, collect,
+  alive, until, elapsedUntil, readPid, collect,
 } = require('../../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'tower', 'start.sh');
@@ -21,6 +21,19 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
 // SIGKILL skips the trap that removes it, so every run is handed a tracked one.
 const TMP = mkTmp('tower-start-tmp-');
 const TMP_ENV = { TMPDIR: shellPath(TMP) };
+
+// The pid a script wrote to <file> once the whole line is there, else 0: the
+// file exists, empty, between the shell opening it and writing to it.
+const pidIn = (file) => {
+  let text = '';
+  try { text = fs.readFileSync(file, 'utf8'); } catch {}
+  return /^\d+\n$/.test(text) ? Number(text.trim()) : 0;
+};
+
+// The pid in <file> the moment it is written, so a signal sent on sight lands
+// right after the writer spawned. 0 if never.
+const pidOnSight = async (file, ms = 8000) => (
+  (await elapsedUntil(() => pidIn(file) > 0, ms)) === Infinity ? 0 : pidIn(file));
 
 // The port takeover is aimed at nothing unless a test says otherwise, so a
 // run here never touches whatever this machine really has on 8693/4300.
@@ -257,7 +270,7 @@ const hasExpect = () => Boolean(which('expect'));
 const pidTest = testUnless(IS_WINDOWS, 'a Git Bash $$ is an MSYS id, not a pid Node can query');
 
 module.exports = {
-  SCRIPT, TMP_ENV, cleanup, alive, until, readPid, start, standIn, collect, QUIET_PORTS,
+  SCRIPT, TMP_ENV, cleanup, alive, until, readPid, pidIn, pidOnSight, start, standIn, collect, QUIET_PORTS,
   NOISY_APP, FAILURE_SHAPES, FAILING_APP, REFUSING_APP, REFUSING_API, ANNOUNCED_APP, ANNOUNCING_APP,
   BENIGN_APP, WEB_APP, PHASED_APP, CHATTY_API, BUMPED_APP, STARTING, RED, CYAN, OFF, COLORED_APP,
   probeStub, ptyRun, hasExpect, pidTest,

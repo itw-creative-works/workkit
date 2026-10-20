@@ -9,6 +9,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
+const { openingLines, TOP_THREE } = require('../lib/checks-template');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SEAM = shellPath(path.join(ROOT, 'workflow', 'changelog', 'changelog-job.sh'));
@@ -28,20 +29,20 @@ const inSeam = (script, args = []) => {
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
-/** Write `body` to a scratch file, run `fn` in the seam over it, clean up. */
-const overFile = (body, script) => {
+/** Write `body` to a scratch file, run `fn` in the seam over it and `template`, clean up. */
+const overFile = (body, script, template = TEMPLATE) => {
   const dir = mkTmp('cl-job-');
   const file = path.join(dir, 'checks.yml');
   fs.writeFileSync(file, body);
   try {
-    return inSeam(script, [shellPath(file), shellPath(TEMPLATE)]);
+    return inSeam(script, [shellPath(file), shellPath(template)]);
   } finally {
     cleanup(dir);
   }
 };
 
 const block = (body) => overFile(body, 'wk_changelog_job_block "$1"');
-const rewrite = (body) => overFile(body, 'wk_changelog_job_rewrite "$1" "$2"');
+const rewrite = (body, template) => overFile(body, 'wk_changelog_job_rewrite "$1" "$2"', template);
 
 const OLD_HEADER = '# The `changelog` job is the only job the heal adds to an EXISTING checks.yml,\n'
   + '# appended once at the end of `jobs:`. Its linter is the copy of the kit\'s\n'
@@ -52,7 +53,15 @@ const templateHeader = () => {
   const to = lines.findIndex((l, i) => i > from && !l.startsWith('#'));
   return `${lines.slice(from, to).join('\n')}\n`;
 };
-const templateFirstLines = () => `${fs.readFileSync(TEMPLATE, 'utf8').split('\n').slice(0, 2).join('\n')}\n`;
+const templateFirstLines = () => openingLines(fs.readFileSync(TEMPLATE, 'utf8'));
+// The shipped template with its opening sentence rewrapped to `top`, in a scratch folder.
+const rewrappedTemplate = (top) => {
+  const dir = mkTmp('cl-job-');
+  const file = path.join(dir, 'checks.yml');
+  fs.writeFileSync(file, `${top}${fs.readFileSync(TEMPLATE, 'utf8').slice(templateFirstLines().length)}`);
+  return { dir, file };
+};
+const TOP_ONE = '# Checks (workflow spec): the test gate that runs on every pull request and every push to the default branch.\n';
 const RETIRED_FIRST_LINES = [
   '# Checks (workflow spec): the test gate that runs on every pull request.',
   '# Checks (workflow spec) \u2014 the test gate that runs on every pull request.',
@@ -71,7 +80,7 @@ const run = async () => {
     const fns = inSeam("compgen -A function | grep '^wk_' | sort | tr '\\n' ' '");
     assertEq(fns.code, 0, `it sources clean, stderr: ${fns.err}`);
     assertEq(fns.out, 'wk_changelog_job_block wk_changelog_job_rewrite wk_changelog_job_runs_copy '
-      + 'wk_checks_header wk_checks_push_trigger wk_checks_template wk_job_boundary wk_linter_copies wk_names_linter_copy wk_retired_checks_first_lines wk_retired_checks_headers '
+      + 'wk_checks_header wk_checks_push_trigger wk_checks_template wk_checks_top wk_checks_top_count wk_job_boundary wk_linter_copies wk_names_linter_copy wk_retired_checks_first_lines wk_retired_checks_headers '
       + 'wk_workflows_run_copy ', `the functions, got: ${fns.out}`);
     const vars = (first) => spawnSync(BASH, [...NO_RC, '-c', `${first}\ncompgen -v | sort`],
       { env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: 20000 }).stdout;
@@ -92,6 +101,34 @@ const run = async () => {
       const { code, out } = block(`${JOBS}${job}\n${next}\n    runs-on: ubuntu-latest\n`);
       assertEq(code, 0, 'it answers');
       assertEq(out, `${job}\n`, `every line up to ${next.trim()} and none after`);
+    });
+  }
+
+  group('changelog-job.sh: the template\'s opening sentence');
+
+  await test('wk_checks_top prints the shipped template\'s first two lines, and the count is 2', () => {
+    const top = inSeam('wk_checks_top "$1"', [shellPath(TEMPLATE)]);
+    assertEq(top.code, 0, `it answers, stderr: ${top.err}`);
+    assertEq(top.out, templateFirstLines(), 'the opening sentence, byte for byte');
+    assertEq(top.out.split('\n').length - 1, 2, `the shipped sentence wraps to two lines, got: ${top.out}`);
+    const count = inSeam('wk_checks_top_count "$1"', [shellPath(TEMPLATE)]);
+    assertEq(count.code, 0, `the count answers, stderr: ${count.err}`);
+    assertEq(count.out.trim(), '2', 'how many lines it is');
+  });
+
+  for (const [n, top] of [[3, TOP_THREE], [1, TOP_ONE]]) {
+    await test(`a template whose opening sentence wraps to ${n} line${n === 1 ? '' : 's'} gets ${n}, and nothing past it`, () => {
+      const { dir, file } = rewrappedTemplate(top);
+      try {
+        const got = inSeam('wk_checks_top "$1"', [shellPath(file)]);
+        assertEq(got.code, 0, `it answers, stderr: ${got.err}`);
+        assertEq(got.out, top, 'the rewrapped sentence, not the comment line after it');
+        assertEq(openingLines(fs.readFileSync(file, 'utf8')), top, 'and the rule this suite counts by agrees');
+        const count = inSeam('wk_checks_top_count "$1"', [shellPath(file)]);
+        assertEq(count.out.trim(), String(n), 'the count follows the wrap');
+      } finally {
+        cleanup(dir);
+      }
     });
   }
 
@@ -146,16 +183,16 @@ const run = async () => {
       'header swapped, job rewritten, the next job intact, every line ending CRLF');
   });
 
-  await test('a retired first line, in any of its three spellings, becomes the template\'s first two lines', () => {
+  await test('a retired first line, in any of its three spellings, becomes the template\'s opening sentence', () => {
     for (const retired of RETIRED_FIRST_LINES) {
       const { code, out } = rewrite(`${retired}\n${SECOND_LINE}${OLD_HEADER}${JOBS}${NODE_JOB}`);
       assertEq(code, 0, `it answers for: ${retired}`);
       assertEq(out, `${templateFirstLines()}${SECOND_LINE}${templateHeader()}${JOBS}  changelog:\n${USES}\n`,
-        `the template's two lines in place of: ${retired}`);
+        `the template's opening sentence in place of: ${retired}`);
     }
   });
 
-  await test('a file already starting with the template\'s first two lines keeps them byte for byte', () => {
+  await test('a file already starting with the template\'s opening sentence keeps it byte for byte', () => {
     const current = `${templateFirstLines()}${SECOND_LINE}${JOBS}  changelog:\n${USES}\n`;
     const { code, out } = rewrite(current);
     assertEq(code, 0, 'it answers');
@@ -168,7 +205,7 @@ const run = async () => {
     assertEq(out, `${near}\n${SECOND_LINE}${JOBS}  changelog:\n${USES}\n`, 'the line is not a retired one, so it stays');
   });
 
-  await test('a CRLF file gets the template\'s first two lines with CRLF endings', () => {
+  await test('a CRLF file gets the template\'s opening sentence with CRLF endings', () => {
     const crlf = (s) => s.replace(/\n/g, '\r\n');
     const { code, out } = rewrite(crlf(`${RETIRED_FIRST_LINES[0]}\n${SECOND_LINE}${JOBS}${NODE_JOB}`));
     assertEq(code, 0, 'it answers');
@@ -184,6 +221,19 @@ const run = async () => {
     assertEq(want.code, 0, `wk_checks_push_trigger answers, stderr: ${want.err}`);
     assert(/^ {2}push:/m.test(want.out), `the expected file has the push trigger, got: ${want.out}`);
     assertEq(out, want.out, 'the first line swapped and the push trigger added, both in the one pass');
+  });
+
+  await test('a template rewrapped to three lines: the retired first line becomes those three, once', () => {
+    const { dir, file } = rewrappedTemplate(TOP_THREE);
+    try {
+      const rest = `${SECOND_LINE}${JOBS}  changelog:\n${USES}\n`;
+      const { code, out } = rewrite(`${RETIRED_FIRST_LINES[0]}\n${rest}`, file);
+      assertEq(code, 0, 'it answers');
+      assertEq(out, `${openingLines(fs.readFileSync(file, 'utf8'))}${rest}`, 'the three lines in place of the retired one, the rest byte for byte');
+      assertEq(rewrite(out, file).out, out, 'and a second rewrite changes nothing');
+    } finally {
+      cleanup(dir);
+    }
   });
 
   await test('the rewrite adds the push trigger to a PR-only file, once', () => {
@@ -253,6 +303,16 @@ const run = async () => {
     assertEq(overFile(`${JOBS}  changelog:\n${USES}\n`, 'grep() { return 2; }\nwk_changelog_job_runs_copy "$1"').code, 2,
       'a job the grep could not read');
     cleanup(dir);
+  });
+
+  group('interview skill: the owner quoted in step 4');
+
+  await test('step 4\'s not-planned close quotes the owner under their @<login>', () => {
+    const lines = fs.readFileSync(path.join(ROOT, 'skills', 'interview', 'SKILL.md'), 'utf8').split('\n');
+    const steps = lines.filter((l) => /^\s*4\. /.test(l) && l.includes('not planned'));
+    assertEq(steps.length, 1, `one step 4 closes the issue as not planned, got: ${steps.join('\n')}`);
+    assert(steps[0].includes('with the ruling in a comment under their `@<login>` (spec \u00a7 The pass)'),
+      `its comment clause names the owner's login, got: ${steps[0]}`);
   });
 
   return summary();

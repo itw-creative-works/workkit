@@ -4,6 +4,7 @@
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
+const { section } = require('../lib/markdown');
 
 const REPO = path.join(__dirname, '..', '..');
 const HOOKS_JSON = path.join(REPO, 'hooks', 'hooks.json');
@@ -17,20 +18,6 @@ const COUNT_WORDS = {
   fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
   'twenty-one': 21, 'twenty-two': 22, 'twenty-three': 23, 'twenty-four': 24, 'twenty-five': 25,
   'twenty-six': 26, 'twenty-seven': 27,
-};
-
-// The section of a markdown file under one heading, up to the next heading of
-// the same or a higher level. The parity checks read one section each rather
-// than the whole file, so a name mentioned in prose elsewhere cannot stand in
-// for its row.
-const section = (file, heading) => {
-  const text = fs.readFileSync(file, 'utf8');
-  const level = heading.match(/^#+/)[0].length;
-  const start = text.indexOf(`\n${heading}`);
-  assert(start >= 0, `${path.relative(REPO, file)} has no "${heading}" heading`);
-  const rest = text.slice(start + 1 + heading.length);
-  const next = rest.search(new RegExp(`^#{1,${level}} `, 'm'));
-  return next < 0 ? rest : rest.slice(0, next);
 };
 
 // The wiring is the roster every check below derives from. Several hooks are

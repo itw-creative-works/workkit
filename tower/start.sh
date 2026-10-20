@@ -31,9 +31,6 @@ if [ -t 1 ] && [ -z "${FORCE_COLOR+set}" ]; then
   export FORCE_COLOR=1
 fi
 
-# Printed first, so a quiet startup never shows an empty terminal.
-wk_ok "starting the dashboard"
-
 # End the whole tree: npm and omega put children between our pid and the
 # server, and killing only the parent leaves them serving. Bare `kill`, not
 # `wk_end_pid`: these are this shell's own (MSYS) pids. Without pgrep (Git
@@ -74,28 +71,25 @@ reclaim() {
   fi
 }
 
-for port in $PORTS; do reclaim "$port"; done
-
 PIDS=()
-FILTERS=()
 FIFO_DIR="$(mktemp -d "${TMPDIR:-/tmp}/workkit-tower.XXXXXX")"
-# Set first in cleanup, which removes the announce marker the down-taker reads:
-# a tower killed from outside must read as a shutdown, not a failed boot.
-SHUTDOWN=''
+# Every job this shell spawned, halves and filters alike: a signal can land
+# between a half's spawn and its `PIDS+=`, and the job table already holds it.
 cleanup() {
   local pid
-  SHUTDOWN=1
-  # Guarded: bash 3.2 treats an empty array as unbound under `set -u`.
-  if [ "${#PIDS[@]}" -gt 0 ]; then
-    for pid in "${PIDS[@]}"; do end_tree "$pid"; done
-  fi
-  # The filters sit beside the halves, not in their trees, so end them by pid.
-  if [ "${#FILTERS[@]}" -gt 0 ]; then
-    for pid in "${FILTERS[@]}"; do kill "$pid" 2>/dev/null || true; done
-  fi
+  for pid in $(jobs -p); do end_tree "$pid"; done
   rm -rf "$FIFO_DIR"
 }
-trap cleanup EXIT INT TERM
+# A signal ends the run where it lands, so nothing spawns after the cleanup.
+# TERM's trap goes first: bash 3.2 hands every child a TERM handler when it is
+# set after EXIT's, and a child blocked opening its fifo swallows the signal.
+trap 'exit 0' INT TERM
+trap cleanup EXIT
+
+# Printed first, so a quiet startup never shows an empty terminal.
+wk_ok "starting the dashboard"
+
+for port in $PORTS; do reclaim "$port"; done
 
 # What survives the quiet phase: problem words, plus omega's own `omega: `
 # prefix, which carries its boot refusals (tower/README.md § Run).
@@ -155,7 +149,6 @@ start_half() {
   fifo="$FIFO_DIR/half-${#PIDS[@]}"
   mkfifo "$fifo"
   filter_output "$port" < "$fifo" &
-  FILTERS+=($!)
   "$@" > "$fifo" 2>&1 &
   PIDS+=($!)
 }
@@ -175,14 +168,17 @@ else
   start_half "$APP_PORT" app_default
 fi
 
-# Poll: macOS's bash 3.2 has no `wait -n`.
+# Poll: macOS's bash 3.2 has no `wait -n`. The nap is waited on, not run in
+# front: a trapped signal cuts `wait` short, while a foreground sleep holds the
+# trap until it ends.
 while kill -0 "${PIDS[0]}" 2>/dev/null && kill -0 "${PIDS[1]}" 2>/dev/null; do
-  sleep 1
+  sleep 1 &
+  wait "$!"
 done
 
 # A half that ended before any announce never came up: name it. Only in a
-# filtered run (verbose already showed everything) and not after a shutdown.
-if [ -z "$VERBOSE" ] && [ -z "$SHUTDOWN" ] && [ ! -e "$FIFO_DIR/announced" ]; then
+# filtered run (verbose already showed everything); a shutdown never gets here.
+if [ -z "$VERBOSE" ] && [ ! -e "$FIFO_DIR/announced" ]; then
   ended='app'
   kill -0 "${PIDS[0]}" 2>/dev/null || ended='API'
   wk_error "the $ended half ended before the dashboard came up; run \`npm run tower -- --verbose\` to see everything it printed"

@@ -113,9 +113,10 @@ The clone is the dashboard as a real site project, seeded from this kit's `tower
 
 `~/.workkit` itself is a plain folder holding what only this machine knows, split by who writes it:
 
-- `settings.json` is yours to edit: the site options (which repo the site publishes from, whether it publishes at all, and any custom domain) and the bot identity's `identity.tokenUrl`, the token service's address, the hosted one when absent. Setup asks the publish question once and never again.
+- `settings.json` is yours to edit: the site options (which repo the site publishes from, whether it publishes at all, any custom domain, and your own sidebar link groups: [`workflow/README.md`](../workflow/README.md#the-two-settings-files) § The two settings files) and the bot identity's `identity.tokenUrl`, the token service's address, the hosted one when absent. Setup asks the publish question once and never again.
 - `.repos.json` is the engine's list of repos on this machine, plus the ones you declined.
 - `.cache.json` is throwaway state, and `jobs/` is the daily job's state.
+- `morning.d/` is yours too: every executable `*.sh` in it runs after the 9am job's own steps, in name order ([`jobs/README.md`](../jobs/README.md#the-morning-on-this-machine)).
 
 The full rules for this global layer: [`project-state.md`](project-state.md) § The global layer.
 

@@ -5,8 +5,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { shellPath } = require('../../lib/platform');
+const { group, test, testUnless, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { IS_WINDOWS, shellPath } = require('../../lib/platform');
 const {
   REPO_ROOT, cleanup, git, write, mkSyncWorld, commitCheckout, inHome, sync, mtimes,
 } = require('./helpers');
@@ -141,7 +141,8 @@ const run = async () => {
     const world = mkSyncWorld();
     const { rc, out, err } = sync(world);
     assertEq(rc, 0, `something changed: ${out}${err}`);
-    assertEq(fs.readFileSync(path.join(world.clone, STAMP), 'utf8').trim(), kitVersion(),
+    // The version is the stamp's first line; the folder list may follow it.
+    assertEq(fs.readFileSync(path.join(world.clone, STAMP), 'utf8').split('\n')[0], kitVersion(),
       'the version rides with the content it describes');
     cleanup(world.root);
   });
@@ -295,6 +296,121 @@ const run = async () => {
     assertEq(seed.rc, 1, `the seed stops too: ${seed.out}${seed.err}`);
     assertEq(read(path.join(world.clone, 'README.md')), null, 'and the clone stays empty of the readme');
     assertEq(read(path.join(world.clone, 'config', 'omega.json5')), null, 'and of the config');
+    cleanup(world.root);
+  });
+
+  group('workflow/home: a top-level folder the app dropped');
+
+  const OK_LINE = /(\d+) file\(s\) from .*, (\d+) retired/;
+  const retiredCount = (said) => {
+    const match = OK_LINE.exec(said);
+    return match ? Number(match[2]) : null;
+  };
+
+  // A clone synced while the app shipped each named folder (two files deep),
+  // then an app without them: the stamp the first sync wrote is the only record.
+  const dropAfterSync = (names) => {
+    const world = mkSyncWorld();
+    for (const name of names) {
+      write(path.join(world.app, name, 'one.js'), 'export default 1;\n');
+      write(path.join(world.app, name, 'deep', 'two.js'), 'export default 2;\n');
+    }
+    const first = sync(world);
+    assertEq(first.rc, 0, `the first sync ran: ${first.out}${first.err}`);
+    for (const name of names) {
+      assert(fs.existsSync(path.join(world.clone, name, 'deep', 'two.js')), `${name}/ reached the clone first`);
+      fs.rmSync(path.join(world.app, name), { recursive: true, force: true });
+    }
+    return world;
+  };
+
+  await test('a folder the last sync wrote and the app dropped is removed whole, and counted as retired', () => {
+    const world = dropAfterSync(['legacy']);
+    write(path.join(world.app, 'README.md'), '# a newer tower\n');
+    const { rc, out, err } = sync(world);
+    assertEq(rc, 0, `the sync ran: ${out}${err}`);
+    assert(!fs.existsSync(path.join(world.clone, 'legacy')), 'the folder is gone, not merely emptied');
+    assertEq(retiredCount(out + err), 1, `the ok line counts the folder as retired: ${out}${err}`);
+    cleanup(world.root);
+  });
+
+  await test('a clone folder neither the stamp nor the retired list names is left alone', () => {
+    const world = dropAfterSync(['legacy']);
+    write(path.join(world.clone, 'notes', 'todo.md'), 'the clone’s own\n');
+    const { rc, out, err } = sync(world);
+    assertEq(rc, 0, `the sync ran: ${out}${err}`);
+    assert(!fs.existsSync(path.join(world.clone, 'legacy')), 'the listed folder went in the same run');
+    assertEq(read(path.join(world.clone, 'notes', 'todo.md')), 'the clone’s own\n',
+      'and the unlisted folder stayed, its file intact');
+    cleanup(world.root);
+  });
+
+  await test('an excluded folder is never retired, listed or not', () => {
+    const world = dropAfterSync(['legacy', 'drafts']);
+    // What an install and a mint leave in the clone: excluded, listed nowhere.
+    write(path.join(world.clone, 'node_modules', '.bin', 'omega'), '#!/bin/sh\n');
+    write(path.join(world.clone, '.omega', 'runs', 'one.json'), '{}\n');
+    // drafts/ is listed by the stamp, .omega/ by the retired list; both excluded.
+    const prelude = 'WK_TOWER_APP_EXCLUDE+=(drafts)\nWK_TOWER_APP_RETIRED+=(.omega)';
+    const { rc, out, err } = sync(world, { prelude });
+    assertEq(rc, 0, `the sync ran: ${out}${err}`);
+    assert(!fs.existsSync(path.join(world.clone, 'legacy')), 'the retirement ran: legacy/ went');
+    assertEq(read(path.join(world.clone, 'drafts', 'deep', 'two.js')), 'export default 2;\n',
+      'the stamp-listed excluded folder stayed');
+    assertEq(read(path.join(world.clone, '.omega', 'runs', 'one.json')), '{}\n',
+      'the retired-listed excluded folder stayed');
+    assertEq(read(path.join(world.clone, 'node_modules', '.bin', 'omega')), '#!/bin/sh\n',
+      'and the unlisted excluded folder stayed');
+    cleanup(world.root);
+  });
+
+  await test('a clone from before the stamp carried folders loses its apps/ folder', () => {
+    const world = mkSyncWorld();
+    // The old layout's leftover, under a stamp holding the version alone.
+    write(path.join(world.clone, STAMP), `${kitVersion()}\n`);
+    write(path.join(world.clone, 'apps', 'web', 'index.js'), 'the old layout\n');
+    const { rc, out, err } = sync(world);
+    assertEq(rc, 0, `the sync ran: ${out}${err}`);
+    assert(!fs.existsSync(path.join(world.clone, 'apps')), `apps/ is removed: ${out}${err}`);
+    cleanup(world.root);
+  });
+
+  await test('nothing to copy and one folder retired is a change, never the already-current skip', () => {
+    const world = dropAfterSync(['legacy']);
+    const { rc, out, err } = sync(world);
+    const said = out + err;
+    assertEq(rc, 0, `the retirement is a change: ${said}`);
+    assert(!/already current/.test(said), `and it is not reported as current: ${said}`);
+    assertEq(retiredCount(said), 1, `the ok line counts the one folder: ${said}`);
+    assert(!fs.existsSync(path.join(world.clone, 'legacy')), 'and the folder is gone');
+    cleanup(world.root);
+  });
+
+  // A read-only subfolder makes the removal fail; Windows and root ignore the mode.
+  const removalTest = testUnless(IS_WINDOWS || process.getuid() === 0,
+    'a read-only folder does not stop a removal here');
+
+  await removalTest('a folder removal that fails warns, cleans its temp folder and returns 3', () => {
+    const world = mkSyncWorld();
+    write(path.join(world.app, 'legacy', 'deep', 'two.js'), 'export default 2;\n');
+    const checkout = commitCheckout(world);
+    const first = sync(world);
+    assertEq(first.rc, 0, `the first sync ran: ${first.out}${first.err}`);
+    git(checkout, 'rm', '-rq', 'tower/app/legacy');
+    const res = git(checkout, '-c', 'user.name=checkout', '-c', 'user.email=checkout@localhost',
+      'commit', '-q', '-m', 'chore: drop legacy');
+    assert(res.status === 0, `the fixture dropped legacy/: ${res.stdout}${res.stderr}`);
+
+    const locked = path.join(world.clone, 'legacy', 'deep');
+    const tmp = path.join(world.root, 'tmp');
+    fs.mkdirSync(tmp);
+    fs.chmodSync(locked, 0o555);
+    const { rc, out, err } = sync(world, { env: { TMPDIR: tmp } });
+    fs.chmodSync(locked, 0o755);
+    const said = out + err;
+    assertEq(rc, 3, `a failed removal is rc=3: ${said}`);
+    assert(said.includes('legacy'), `the warning names the folder: ${said}`);
+    assertEq(fs.readdirSync(tmp).join(','), '', 'and the temp folder is cleaned');
     cleanup(world.root);
   });
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # jobs/morning.sh: the morning in one script, run by the 9am LaunchAgent and by
-# the brief.yml workflow on the home repo. Five steps, each gated on what the
+# the brief.yml workflow on the home repo. Six steps, each gated on what the
 # environment it woke up in can do: jobs/README.md tells which runs where.
 #
 # Usage: morning.sh [--now | message]. None is the scheduled morning; --now is
@@ -651,6 +651,49 @@ record_brief_status() {
 # is a prompt, and a prompt reads no board.
 if (( $# == 0 )); then
   record_brief_status
+fi
+
+# ── After the steps: morning.d ────────────────────────────────────────────────
+
+# The owner's own scripts, each in its own log block under the job's bound and
+# env. A failure or a hang is a warning naming it, and the next one still runs
+# (jobs/README.md § The morning on this machine).
+run_morning_d() {
+  local dir script name status
+  if (( CLOUD )); then
+    note_skip "morning.d: a runner owns no scripts folder; skipped"
+    return 0
+  fi
+  if ! declare -f wk_user_dir >/dev/null 2>&1; then
+    note_skip "morning.d: the engine library is missing beside $SCRIPT_DIR; skipped"
+    return 0
+  fi
+  dir="$(wk_user_dir)/morning.d"
+  [[ -d "$dir" ]] || return 0
+  for script in "$dir"/*.sh; do
+    [[ -f "$script" && -x "$script" ]] || continue
+    name="${script##*/}"
+    status=0
+    {
+      printf '%s\n' "--- $LOG_STAMP morning.d/$name ---"
+      LOG_FILE="$LOG_FILE" MANUAL="$MANUAL" WORK_DIR="$WORK_DIR" \
+        ${TIMEOUT[@]+"${TIMEOUT[@]}"} "$script" </dev/null || status=$?
+      printf '\n'
+    } >> "$LOG_FILE" 2>&1
+    # 124 is the bound only where there is one; without `timeout` it is any exit.
+    if (( status == 124 )) && (( ${#TIMEOUT[@]} > 0 )); then
+      note_warn "morning.d: $name ran past the job's bound and was ended; the next script still runs"
+    elif (( status != 0 )); then
+      note_warn "morning.d: $name exit $status; the next script still runs"
+    fi
+  done
+  return 0
+}
+
+# The scheduled morning and the rehearsal run them; the generic headless runner
+# is a prompt.
+if (( $# == 0 )); then
+  run_morning_d
 fi
 
 # The send's status is the run's status, on this machine, where a send happened

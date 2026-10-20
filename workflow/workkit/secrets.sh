@@ -139,16 +139,15 @@ can_mint_claude_token() {
 
 # The offer. Default no, like every question setup asks but the bot identity's sign-in and install, which default yes.
 offer_claude_token() {
-  local slug="$1" reason="$2" answer=''
+  local slug="$1" reason="$2"
 
   can_mint_claude_token "$slug" "$reason" || return 0
 
-  printf '%s %s on %s. Mint one now with `claude setup-token`? [y/N] ' "$SECRET_CLAUDE" "$reason" "$slug"
-  read -r answer || true
-  case "$answer" in
-    y|Y|yes|YES) mint_claude_token "$slug" ;;
-    *) wk_skip "secrets: $SECRET_CLAUDE left as it is; \`workkit setup\` offers again" ;;
-  esac
+  if wk_ask_yes "$SECRET_CLAUDE $reason on $slug. Mint one now with \`claude setup-token\`?" n; then
+    mint_claude_token "$slug"
+  else
+    wk_skip "secrets: $SECRET_CLAUDE left as it is; \`workkit setup\` offers again"
+  fi
 }
 
 # The cross-repo token, zero-click from the gh login: no API mints a narrower

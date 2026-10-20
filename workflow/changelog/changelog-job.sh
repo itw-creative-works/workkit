@@ -39,7 +39,7 @@ wk_retired_checks_headers() {
 
 # The first lines a checks.yml carried before its push trigger, one per line:
 # the colon, em dash and hyphen spellings. The rewrite swaps a line 1 equal to
-# one for the template's first two lines.
+# one for the template's opening sentence (wk_checks_top).
 wk_retired_checks_first_lines() {
   local tail=' the test gate that runs on every pull request.'
   printf '%s\n' \
@@ -112,6 +112,27 @@ wk_checks_header() {
   ' "$1"
 }
 
+# wk_checks_top <template>: the template's opening sentence, its leading `#`
+# lines up to and including the first that ends in a period, read without
+# carriage returns. Fails, printing nothing, when no such line opens the file.
+wk_checks_top() {
+  awk -v BINMODE=3 '
+    { sub(/\r$/, "") }
+    !/^#/ { exit 1 }
+    { s = s $0 "\n" }
+    /\.$/ { printf "%s", s; done = 1; exit }
+    END { if (!done) exit 1 }
+  ' "$1"
+}
+
+# wk_checks_top_count <template>: how many lines wk_checks_top prints, the
+# lines a swapped line 1 becomes.
+wk_checks_top_count() {
+  local top
+  top="$(wk_checks_top "$1")" || return 1
+  awk 'END { print NR }' <<<"$top"
+}
+
 # wk_checks_push_trigger <checks.yml>: the file with the template's `push:`
 # trigger added at the end of its `on:` block, reindented to that block's keys,
 # when the block lists `pull_request:` and no `push:`, quoted or not; any other
@@ -171,7 +192,7 @@ wk_changelog_job_rewrite() {
   block="$(wk_changelog_job_block "$2")" || return 1
   header="$(wk_checks_header "$2")" || return 1
   retired="$(wk_retired_checks_headers)"
-  top="$(awk -v BINMODE=3 'NR > 2 { exit } { sub(/\r$/, ""); print }' "$2")" || return 1
+  top="$(wk_checks_top "$2")" || return 1
   [[ -n "$block" && -n "$header" && -n "$top" ]] || return 1
   wk_changelog_job_runs_copy "$1" || asked=$?
   case "$asked" in 0) runs=1 ;; 1) ;; *) return 1 ;; esac

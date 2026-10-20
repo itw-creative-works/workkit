@@ -120,13 +120,13 @@ ensure_changelog_job() {
     [[ "$noted" -eq 1 ]] || wk_skip "checks: the changelog job is already in $dest"
     return 0
   fi
-  # A swapped line 1 is two lines in the result, so the rest is compared
-  # past it. Only that swap can change line 1: a retired header paragraph
+  # A swapped line 1 is the template's opening sentence in the result, so
+  # the rest is compared past that many lines. Only that swap can change line 1: a retired header paragraph
   # there opens with the same line as the template's, and the job rule
   # needs an indented key.
   if [[ "$(head -n 1 "$trig")" != "$(head -n 1 "$tmp")" ]]; then
     first=1
-    cmp -s <(tail -n +2 "$trig") <(tail -n +3 "$tmp") || other=1
+    cmp -s <(tail -n +2 "$trig") <(tail -n "+$(( $(wk_checks_top_count "$src") + 1 ))" "$tmp") || other=1
   else
     cmp -s "$trig" "$tmp" || other=1
   fi

@@ -89,6 +89,12 @@ wk_script_shell_exe() {
   printf '%s\n' "$(wk_user_dir)/script-shell.exe"
 }
 
+# wk_hooks_log: sets WK_HOOKS_LOG, the log hooks/loader.sh appends a line to per
+# hook fire, in wk_user_dir's folder.
+wk_hooks_log() {
+  WK_HOOKS_LOG="$(wk_user_dir)/hooks.log"
+}
+
 # wk_npm_script_shell: npm's script-shell value. npm on Windows ends it with a
 # CRLF a command substitution keeps half of; npm's own exit status comes back.
 wk_npm_script_shell() {

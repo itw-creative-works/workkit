@@ -118,6 +118,9 @@ usage: workkit <command> [args]
                        schedule dispatches. --local runs the local morning
                        instead, composed and sent from this machine, the
                        brief never posted to the home repo
+  log [-n N] [--follow]
+                       the hooks log: one line per hook fire, its last 40
+                       lines, or N; --follow keeps printing new ones
   tower [--verbose]    run the tower here: the JSON API and the dashboard
                        together, until one interrupt ends both
   enable [repo]        write the repo's committed opt-in, then heal it
@@ -178,6 +181,11 @@ SECRETS_JSON=''
 IDENTITY_SIGNED_IN=''
 IDENTITY_USER=''
 
+# The hooks log hooks/loader.sh writes, one line per hook fire (wk_hooks_log in
+# lib/platform.sh); empty when the library is missing.
+WK_HOOKS_LOG=''
+if declare -F wk_hooks_log >/dev/null; then wk_hooks_log; fi
+
 # ── The pieces ────────────────────────────────────────────────────────────────
 
 # Sourced plainly, never through the tolerant loop: the pieces are the command,
@@ -200,6 +208,8 @@ IDENTITY_USER=''
 . "$SCRIPT_DIR/workkit/setup.sh"
 # shellcheck source=./workkit/commands.sh
 . "$SCRIPT_DIR/workkit/commands.sh"
+# shellcheck source=./workkit/log.sh
+. "$SCRIPT_DIR/workkit/log.sh"
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 
@@ -210,6 +220,7 @@ case "${1:-help}" in
   doctor)  shift; cmd_doctor "$@" ;;
   publish) shift; cmd_publish "$@" ;;
   brief)   shift; cmd_brief "$@" ;;
+  log)     shift; cmd_log "$@" ;;
   tower)
     shift
     # The tower lives in the kit, not the engine: a partial copy that holds

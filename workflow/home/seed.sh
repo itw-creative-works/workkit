@@ -1,14 +1,37 @@
 #!/usr/bin/env bash
 # workflow/home/seed.sh: the one-time seed of the tower project into an empty
 # clone, and the by-content sync that keeps it current. Sourced by home.sh,
-# functions only. WK_TOWER_APP, WK_TOWER_APP_EXCLUDE, WK_TOWER_APP_KEEP and
-# WK_HOME_SYNC_MANIFESTS are the entry's; WK_HOME_DIR is lib.sh's.
+# functions only. WK_TOWER_APP, WK_TOWER_APP_EXCLUDE, WK_TOWER_APP_RETIRED,
+# WK_TOWER_APP_KEEP and WK_HOME_SYNC_MANIFESTS are the entry's; WK_HOME_DIR is
+# lib.sh's.
 
 # Does a git repo track the folder? The one test the copies below agree on: a
 # folder sitting untracked inside some other repo is not tracked.
 # Usage: wk_home_tracked <folder>
 wk_home_tracked() {
   git -C "$1" ls-files --error-unmatch . >/dev/null 2>&1
+}
+
+# Does WK_TOWER_APP_EXCLUDE name this top-level folder?
+# Usage: wk_home_excluded <name>
+wk_home_excluded() {
+  local name
+  for name in "${WK_TOWER_APP_EXCLUDE[@]}"; do
+    [[ "$1" == "$name" ]] && return 0
+  done
+  return 1
+}
+
+# The app's own top-level folders, one per line: undotted and not excluded.
+# What the seed and the sync record in the stamp, and where the sync retires.
+# Usage: wk_home_app_folders <app folder>
+wk_home_app_folders() {
+  local top topname
+  for top in "$1"/*/; do
+    [[ -d "$top" ]] || continue
+    topname="$(basename "$top")"
+    wk_home_excluded "$topname" || printf '%s\n' "$topname"
+  done
 }
 
 # The folder a copy reads from. A folder a repo TRACKS gives HEAD's copy of it,
@@ -56,7 +79,7 @@ wk_home_file() {
 # they are; a `file:` spec, which only a maintainer tree in local mode carries,
 # is made absolute.
 wk_home_seed() {
-  local pkg target_pkg name scratch app excludes=()
+  local pkg target_pkg name scratch app excludes=() folders=()
 
   [[ -n "$WK_TOWER_APP" && -d "$WK_TOWER_APP" ]] || {
     wk_warn "home: the tower app is missing at ${WK_TOWER_APP:-this kit}; nothing to seed the project from"
@@ -90,6 +113,9 @@ wk_home_seed() {
       return 1
     }
   done
+  while IFS= read -r name; do
+    folders+=("$name")
+  done < <(wk_home_app_folders "$app")
   rm -rf "$scratch"
 
   # The manifests, root first and then every target: each spec resolves from the
@@ -101,8 +127,9 @@ wk_home_seed() {
     wk_home_repoint_file_specs "$pkg" "$WK_TOWER_APP/$(dirname "$target_pkg")"
   done
 
-  # From the very first commit the clone says which kit wrote it.
-  wk_home_stamp_write || true
+  # From the very first commit the clone says which kit wrote it, and which
+  # folders, so the first sync agrees.
+  wk_home_stamp_write ${folders[@]+"${folders[@]}"} || true
 
   wk_ok "home: seeded the tower project in $WK_HOME_DIR from $WK_TOWER_APP"
   return 0
@@ -112,7 +139,7 @@ wk_home_seed() {
 # 0 changed, 2 already current, 1 nothing to sync from, 3 a mid-walk write
 # failed. Call it directly: a subshell loses WK_HOME_SYNC_MANIFESTS.
 wk_home_sync() {
-  local src rel dest want tmp app top topname found excluded name manifest prune=()
+  local src rel dest want tmp app topname found name manifest prune=() synced=()
   local copied=0 removed=0 rc=0
   WK_HOME_SYNC_MANIFESTS=0
 
@@ -188,14 +215,8 @@ wk_home_sync() {
   # What the app retired, out, inside its own top-level folders only: the root
   # is shared with other steps. Emptied directories stay, or a minted `.omega`
   # could go with them.
-  for top in "$app"/*/; do
-    [[ -d "$top" ]] || continue
-    topname="$(basename "$top")"
-    excluded=0
-    for name in "${WK_TOWER_APP_EXCLUDE[@]}"; do
-      [[ "$topname" == "$name" ]] && { excluded=1; break; }
-    done
-    [[ "$excluded" -eq 0 ]] || continue
+  while IFS= read -r topname; do
+    synced+=("$topname")
     [[ -d "$WK_HOME_DIR/$topname" ]] || continue
 
     while IFS= read -r found; do
@@ -208,12 +229,28 @@ wk_home_sync() {
       }
       removed=$((removed + 1))
     done < <(find "$WK_HOME_DIR/$topname" \( "${prune[@]}" \) -prune -o -type f -print)
-  done
+  done < <(wk_home_app_folders "$app")
+
+  # A whole folder the app dropped, out: one the last sync recorded or an older
+  # layout shipped, never one it did not write. A plain undotted name only, as
+  # the walk above records, so no stamp line reaches outside those folders.
+  while IFS= read -r name; do
+    [[ -n "$name" && "$name" != .* && "$name" != */* ]] || continue
+    wk_home_excluded "$name" && continue
+    [[ -d "$app/$name" || ! -d "$WK_HOME_DIR/$name" ]] && continue
+    rm -rf "${WK_HOME_DIR:?}/$name" 2>/dev/null || {
+      wk_warn "sync: could not remove the retired folder $name from $WK_HOME_DIR"
+      rm -rf "$tmp"
+      return 3
+    }
+    removed=$((removed + 1))
+  done < <(wk_home_stamp_folders; printf '%s\n' "${WK_TOWER_APP_RETIRED[@]}")
   rm -rf "$tmp"
 
   # The stamp last, counted as a write of its own: a kit that moved on reaches
-  # the remote even when the app did not change.
-  wk_home_stamp_write && copied=$((copied + 1))
+  # the remote even when the app did not change. It records what this sync
+  # synced, so the next one can retire a folder the app has since dropped.
+  wk_home_stamp_write ${synced[@]+"${synced[@]}"} && copied=$((copied + 1))
 
   if [[ $((copied + removed)) -eq 0 ]]; then
     wk_skip "sync: the tower project in $WK_HOME_DIR is already current with $WK_TOWER_APP"

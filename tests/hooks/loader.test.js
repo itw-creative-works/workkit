@@ -21,10 +21,13 @@ const { plantRecord } = require('../lib/suite-record');
 const KIT = path.join(__dirname, '..', '..');
 const LOADER = path.join(KIT, 'hooks', 'loader.sh');
 
+// A scratch workkit home per call, so the hook log never lands in the real one.
 const runLoader = (args, input = '{}', env = {}) => {
+  const { WK_HOOKS_LOG, ...inherited } = process.env;
+  const home = shellPath(path.join(mkTmp('loader-wfhome-'), 'workflow-home'));
   const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), ...args], {
     input,
-    env: { ...process.env, HOME: shellPath(os.homedir()), ...env },
+    env: { ...inherited, HOME: shellPath(os.homedir()), WORKFLOW_HOME: home, ...env },
     encoding: 'utf8',
     timeout: 30000,
   });
@@ -210,6 +213,39 @@ const assertStands = (loader, cwd, command, home) => {
   assert(!ran, `${JSON.stringify(command)} must stand the hook down, got ${said(out)}`);
 };
 
+// The hook log the loader writes, in a workkit home of the case's own. Each
+// fire is docs:checkpoint at `w.repo`, a hook that stands down where the repo
+// has not opted in. `log` reads the file back as lines, [] when absent.
+const mkLogged = (answer = 'enabled') => {
+  const w = mkWorld(answer);
+  const home = path.join(w.tmp, 'workkit-home');
+  const file = path.join(home, 'hooks.log');
+  const env = envOf(w, { WORKFLOW_HOME: shellPath(home) });
+  delete env.WK_HOOKS_LOG;
+  const prompt = { hook_event_name: 'UserPromptSubmit', cwd: shellPath(w.repo), session_id: 's-log', prompt: 'hi' };
+  return {
+    w,
+    file,
+    seed: (lines) => { fs.mkdirSync(home, { recursive: true }); fs.writeFileSync(file, `${lines.join('\n')}\n`); },
+    fire: (name = 'docs:checkpoint', extra = {}) => runIn(name, prompt, w.repo, { ...env, ...extra }),
+    log: () => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean) : []),
+  };
+};
+
+// One log line against the contract's shape: six tab-separated fields, an ISO
+// time, the hook as fired, the payload's event, session and cwd, then `verdict`.
+const assertLogLine = (line, w, hook, verdict) => {
+  const fields = (line || '').split('\t');
+  assertEq(fields.length, 6, `six tab-separated fields in ${JSON.stringify(line)}`);
+  const [iso, name, event, session, cwd, said] = fields;
+  assert(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(iso), `an ISO time first, got ${JSON.stringify(iso)}`);
+  assertEq(name.replace('/', ':'), hook, 'the hook name');
+  assertEq(event, 'UserPromptSubmit', 'the event name');
+  assertEq(session, 's-log', 'the session id');
+  assert([shellPath(w.repo), w.repo].includes(cwd), `the cwd, got ${JSON.stringify(cwd)}`);
+  assertEq(said, verdict, 'the verdict');
+};
+
 const run = async () => {
   group('loader: fail-open');
 
@@ -388,6 +424,53 @@ const run = async () => {
     const got = fs.readFileSync(capture);
     const shown = (buf) => JSON.stringify(buf.toString());
     assert(got.equals(input), `the bytes match: sent ${shown(input)}, got ${shown(got)}`);
+  });
+
+  group('loader: the hook log');
+
+  await test('a fire in an opted-in repo appends one six-field line ending in run', () => {
+    const l = mkLogged();
+    l.fire();
+    const lines = l.log();
+    assertEq(lines.length, 1, `one line appended, got ${JSON.stringify(lines)}`);
+    assertLogLine(lines[0], l.w, 'docs:checkpoint', 'run');
+  });
+
+  await test('a fire in a repo that has not opted in appends one line ending in stood-down', () => {
+    const l = mkLogged('none');
+    l.fire();
+    const lines = l.log();
+    assertEq(lines.length, 1, `one line appended, got ${JSON.stringify(lines)}`);
+    assertLogLine(lines[0], l.w, 'docs:checkpoint', 'stood-down');
+  });
+
+  await test('a hook whose script is missing appends one line ending in missing', () => {
+    const l = mkLogged();
+    l.fire('no-such-prefix:no-such-hook');
+    const lines = l.log();
+    assertEq(lines.length, 1, `one line appended, got ${JSON.stringify(lines)}`);
+    assertLogLine(lines[0], l.w, 'no-such-prefix:no-such-hook', 'missing');
+  });
+
+  await test('HOOK_DISABLE=1 appends nothing to a log the same fire otherwise grows', () => {
+    const l = mkLogged();
+    l.fire();
+    const before = l.log();
+    assertEq(before.length, 1, `the fire without the switch logs, got ${JSON.stringify(before)}`);
+    l.fire('docs:checkpoint', { HOOK_DISABLE: '1' });
+    assertEq(JSON.stringify(l.log()), JSON.stringify(before), 'the kill switch logs nothing');
+  });
+
+  await test('a log past 10,000 lines keeps its last 5,000 plus the new line', () => {
+    const l = mkLogged();
+    const old = Array.from({ length: 10001 }, (_, i) => `old line ${i + 1}`);
+    l.seed(old);
+    l.fire();
+    const lines = l.log();
+    assertEq(lines.length, 5001, 'the last 5,000 old lines plus the new one');
+    assertEq(lines[0], old[old.length - 5000], 'the oldest line kept is the 5,000th from the end');
+    assertEq(lines[4999], old[old.length - 1], 'the old lines end where the log did');
+    assertLogLine(lines[5000], l.w, 'docs:checkpoint', 'run');
   });
 
   group('loader: a Bash command that changes folder');

@@ -5,11 +5,22 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  cleanup, alive, until, readPid, start, standIn, pidTest,
+  group, test, testUnless, assert, assertEq, summary, selfRun,
+} = require('../../lib/harness');
+const { IS_WINDOWS } = require('../../lib/platform');
+const { elapsedUntil } = require('../../lib/process');
+const {
+  cleanup, alive, until, readPid, pidIn, pidOnSight, start, standIn, collect, STARTING, pidTest,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
+
+// A half stub that puts a child between itself and the sleeper, the way npm
+// and omega put children between the wrapper and the real server.
+const grandchild = (pidFile) => `bash -c "echo \\$\\$ > '${pidFile}'; exec sleep 30" & wait`;
+
+// The pids recorded so far by the grandchild stubs writing <files>.
+const recorded = (files) => files.map(pidIn).filter(Boolean);
 
 const run = async () => {
   group('tower/start: one command, both processes');
@@ -74,11 +85,7 @@ const run = async () => {
   await pidTest('ending a half ends its whole tree - a grandchild server dies with it', async () => {
     const dir = mkTmp('tower-start-');
     const kidPid = path.join(dir, 'kid.pid');
-    // The app stub puts a child between itself and the sleeper, the way npm
-    // and omega put children between the wrapper and the real server.
-    const child = start(dir,
-      'exec sleep 30',
-      `bash -c "echo \\$\\$ > '${kidPid}'; exec sleep 30" & wait`);
+    const child = start(dir, 'exec sleep 30', grandchild(kidPid));
     try {
       assert(await until(() => fs.existsSync(kidPid)), 'the grandchild started');
       const pid = readPid(kidPid);
@@ -87,6 +94,30 @@ const run = async () => {
     } finally {
       child.kill('SIGKILL');
       cleanup(dir);
+    }
+  });
+
+  await pidTest('a signal the instant a grandchild appears ends every tree promptly, ten times over', async () => {
+    // The signal goes the moment the app's grandchild records itself, and the
+    // trees must be gone well inside a second: a trap held behind a foreground
+    // wait still ends them, just late. Both halves carry a grandchild, so the
+    // case holds whichever half spawns first.
+    for (let round = 1; round <= 10; round += 1) {
+      const dir = mkTmp('tower-start-');
+      const kids = [path.join(dir, 'api-kid.pid'), path.join(dir, 'app-kid.pid')];
+      const child = start(dir, grandchild(kids[0]), grandchild(kids[1]));
+      try {
+        const pid = await pidOnSight(kids[1]);
+        child.kill('SIGTERM');
+        assert(pid > 0, `round ${round}: the app's grandchild started`);
+        const took = await elapsedUntil(() => recorded(kids).every((kid) => !alive(kid)));
+        assert(took !== Infinity, `round ${round}: every grandchild died with its tree, none orphaned`);
+        assert(took < 800, `round ${round}: and within 800 ms of the signal, not ${took} ms`);
+      } finally {
+        child.kill('SIGKILL');
+        recorded(kids).forEach((kid) => { try { process.kill(kid, 'SIGKILL'); } catch {} });
+        cleanup(dir);
+      }
     }
   });
 
@@ -134,6 +165,41 @@ const run = async () => {
       listener.kill('SIGKILL');
       cleanup(dir);
     }
+  });
+
+  await testUnless(IS_WINDOWS, 'Windows sends bash no TERM its trap can answer')(
+    'a signal before either half has spawned is a clean exit with no error line',
+    async () => {
+      // The signal goes on the tower's first line, before it has started a half,
+      // with no port to reclaim: the run must end there, spawning nothing into
+      // the fifo folder its cleanup already removed.
+      const dir = mkTmp('tower-start-');
+      const halves = [path.join(dir, 'api.pid'), path.join(dir, 'app.pid')];
+      const child = start(dir,
+        `echo $$ > '${halves[0]}'; exec sleep 30`,
+        `echo $$ > '${halves[1]}'; exec sleep 30`,
+        '', { capture: true });
+      const out = collect(child);
+      let signalled = false;
+      child.stdout.on('data', () => {
+        if (!signalled && out().split('\n').some((line) => STARTING.test(line))) { signalled = true; child.kill('SIGTERM'); }
+      });
+      let closed = false;
+      child.on('close', () => { closed = true; });
+      try {
+        assert(await until(() => signalled), 'the tower said it was starting');
+        assert(await until(() => child.exitCode !== null || child.signalCode !== null), 'the wrapper ended on the signal');
+        await until(() => closed, 3000);
+        assertEq(`${child.exitCode}/${child.signalCode}`, '0/null', 'with status 0, its own exit rather than the signal\'s');
+        const errors = out().split('\n').filter((line) => line.trim() && !STARTING.test(line));
+        assertEq(errors.join('\n'), '', 'and it printed no error line, only that it was starting');
+        // A half spawned late would still be writing its pid file; give it time.
+        await new Promise((resolve) => { setTimeout(resolve, 300); });
+        assert(halves.every((file) => !fs.existsSync(file)), 'nor spawned a half after the signal');
+      } finally {
+        child.kill('SIGKILL');
+        cleanup(dir);
+      }
   });
 
   return summary();

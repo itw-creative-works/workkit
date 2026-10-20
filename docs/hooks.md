@@ -43,6 +43,10 @@ One line per hook; the section below it carries the detail.
 - Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh`, so settings reference a hook by `prefix:name` rather than by a path.
 - A LOADER-level failure fails open (exit 0). The hook's own exit code passes through untouched, which blocking hooks (exit 2) need.
 
+### The hooks log
+
+Every fire the loader handles leaves one line in `hooks.log`, which lives in the workkit folder (`~/.workkit`; `WORKFLOW_HOME` moves it, and `wk_hooks_log` in `workflow/lib/platform.sh` is the one spelling of the path), written just before the loader starts the hook or exits. The line is tab-separated: `<iso>\t<hook>\t<event>\t<session_id>\t<cwd>\t<verdict>`, the time in UTC, the hook as settings name it (`docs:checkpoint`), the event, session and folder read from the input's `hook_event_name`, `session_id` and `cwd` without jq, and the verdict `run`, `stood-down` (not opted in, § Where every hook stands down) or `missing` (no runnable script by that name). `HOOK_DISABLE=1` leaves no line. A log past 10,000 lines is cut to its last 5,000 before the next line is added. A write that fails never stops the hook. `workkit log` prints the last 40 lines, `-n <N>` that many, and `--follow` keeps printing new ones.
+
 ## Where every hook stands down
 
 A hook runs only when the repo it acts on has opted in. The loader asks before it starts the hook, and steps aside silently when the answer is no. The check is `hook_optin_repo` and `hook_repo_opted_in` in [`hooks/lib/optin.sh`](../hooks/lib/optin.sh), which the loader sources without `_lib.sh`, so the check stays light.

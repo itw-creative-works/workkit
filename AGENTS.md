@@ -61,7 +61,7 @@ Nine, namespaced `workkit:<name>`: `feature` · `interview` · `diagnose` · `re
 
 ## The engine (`workflow/`)
 
-Agent-agnostic: shell + Node, no Claude Code knowledge, which is why the hooks call it rather than contain it. `workkit.sh` is the one command and the from-zero entry point: `setup [--token | --login | --home]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `tower` · `enable` · `decline` · `heal` · `note` · `prove`.
+Agent-agnostic: shell + Node, no Claude Code knowledge, which is why the hooks call it rather than contain it. `workkit.sh` is the one command and the from-zero entry point: `setup [--token | --login | --home]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `note` · `prove`.
 
 Beside it live the label SSOT, the heal, the CHANGELOG linter in `changelog/`, the capture CLI, the ship's four helpers in `ship/` (`publish-plan.js`, `release.js`, `ship-items.sh`, `ci-watch.sh`), the templates a repo receives on enable, the bot identity in `identity/` (`workflow/README.md` § The bot identity), and the home repo's whole lifecycle. Every file and every step: `workflow/README.md`.
 
@@ -73,7 +73,7 @@ A view, never a second store, one focus per page: Overview surveys and points, B
 
 ## The jobs (`jobs/`)
 
-ONE job, at 9am, in five steps (the summaries, the runner reconcile, the brief, the publish, the stale-brief marker) and ONE script that runs them: `morning.sh`, the entry point both schedulers invoke, this machine's launchd agent and the seeded `brief.yml` on a runner.
+ONE job, at 9am, in six steps (the summaries, the runner reconcile, the brief, the publish, the stale-brief marker, the owner's `morning.d` scripts) and ONE script that runs them: `morning.sh`, the entry point both schedulers invoke, this machine's launchd agent and the seeded `brief.yml` on a runner.
 
 Each step is gated by what the environment it woke up in can do; the brief itself runs in the CLOUD, on the home repo, since that is where the sweep token and the roster live. Every step, both environments, the payloads, the two tokens and the handover: `jobs/README.md`.
 

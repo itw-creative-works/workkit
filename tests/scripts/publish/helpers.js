@@ -5,6 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const { spawnSync } = require('child_process');
 const { assert } = require('../../lib/harness');
 const {
@@ -214,6 +215,12 @@ const onMain = (world) => {
   return check;
 };
 
+// A JSON5 file read as the JS object literal it is (comments, bare keys,
+// single quotes, trailing commas), returned as plain same-realm data.
+const readJson5 = (file) => JSON.parse(JSON.stringify(
+  vm.runInNewContext(`(${fs.readFileSync(file, 'utf8')}\n)`),
+));
+
 module.exports = {
-  REPO_ROOT, cleanup, git, writeStub, mkWorld, binDirWithout, publish, setSite, fromPages, onMain,
+  REPO_ROOT, cleanup, git, writeStub, mkWorld, binDirWithout, publish, setSite, fromPages, onMain, readJson5,
 };

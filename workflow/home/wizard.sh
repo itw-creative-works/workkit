@@ -22,13 +22,10 @@ wk_home_setup() {
       wk_info "home: no home repo is configured; \`workkit setup --home\` creates the private $slug and makes $WK_HOME_DIR its clone"
       return 0
     fi
-    printf 'Create the private home repo %s and make %s its clone? [y/N] ' "$slug" "$WK_HOME_DIR"
-    local answer=''
-    read -r answer || true
-    case "$answer" in
-      y|Y|yes|YES) ;;
-      *) wk_skip "home: left as it is; \`workkit setup\` offers again"; return 0 ;;
-    esac
+    if ! wk_ask_yes "Create the private home repo $slug and make $WK_HOME_DIR its clone?" n; then
+      wk_skip "home: left as it is; \`workkit setup\` offers again"
+      return 0
+    fi
   fi
 
   wk_home_ensure_repo "$slug" || rc=$?

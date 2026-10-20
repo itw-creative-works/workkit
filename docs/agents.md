@@ -62,6 +62,8 @@ A group with no test surface (docs, skills, agent files, issue forms) is ONE wor
 
 ### Batches
 
+Several authorized issues are always one batch when related (as `project-state.md` § Queue semantics defines related) and several batches otherwise, every batch built in parallel groups, never asked about. The start rule: a batch is what is specced and authorized the moment the manager has hands free, and it spawns then. A specced issue never waits for another issue's Spec, for an answer to a question about other work, or for a ship question about a parked batch. A member that arrives while the batch builds (a new Spec accepted, an inbox item the owner dictates) joins it as a new group when its seams are free of every running group's files, else it starts the next batch; the grouping comment on its claim says which. A parked batch on the tree is no reason to wait: the next batch builds on top of it, and the ship carries what passed. The one hold is `safety/suite-guard`'s: an issue at `status:building` holds the root `npm test`, so a ship waits until every running group has parked.
+
 A batch (`project-state.md` § Queue semantics, the Batches bullet) builds in parallel groups on the shared tree and rides one commit and one ship. The session is the only manager.
 
 Before any spawn the manager groups the batch's issues by three forces in order, a later one never overriding an earlier: dependency edges (a blocker and its dependent never in different concurrent groups), then shared seams (issues touching one file, module or package go in one group, so two workers never write one file or run one package's prepare or tests at the same moment), then size balance. The grouping is said in chat and recorded on each issue's claim comment.
@@ -75,6 +77,8 @@ The ends are per issue: the spec pass and the claim at the front; the park and t
 ### Questions to the owner
 
 A decision put to the owner is SELF-CONTAINED: the question carries its full background in plain words (what the item is, why it needs a decision now, and what each choice means in consequence) written for an owner who has read nothing else this session. The shape of the question itself (numbered, a plain paragraph first, options as nested bullets with the recommended one first and bold) is the `workkit:interview` skill's, § How questions are asked, and it binds every decision put to the owner. Unrelated decisions still batch into one pass: the questions arrive together, each standing alone.
+
+A question in the owner's prompt is answered first in the reply, and work the same prompt authorizes starts in the same turn.
 
 ## Agents from other repos
 

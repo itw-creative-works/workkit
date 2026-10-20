@@ -20,7 +20,8 @@ const run = async () => {
   ).version;
   const stampOf = (world) => {
     const file = path.join(world.tower, STAMP);
-    return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim() : null;
+    // The version is the stamp's first line; the sync's folder list follows it.
+    return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n')[0].trim() : null;
   };
 
   await test('the versions compare as numbers, never as text', () => {

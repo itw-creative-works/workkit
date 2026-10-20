@@ -7,6 +7,20 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+- [#41](../../issues/41) - Every hook fire writes one line to `~/.workkit/hooks.log` from the loader (time, hook, event, session, cwd, verdict: run, stood-down or missing), trimmed to its last 5,000 lines past 10,000; `workkit log [-n N] [--follow]` prints it. The log's one spelling is `wk_hooks_log` in `workflow/lib/platform.sh`.
+- [#109](../../issues/109) - The local morning run ends by running every executable script in `~/.workkit/morning.d/` in name order, each under the job's bound as its own block in `claude-daily.log`; a failure warns and the next still runs, a runner names the skip.
+- [#28](../../issues/28) - `site.sidebar` in `~/.workkit/settings.json` names link groups the dashboard build appends after the built-in sidebar groups, flattened into the app's header-row form; the merged file exists only for the build and the app's copy goes back on exit.
+
+### Changed
+- [#434](../../issues/434) - The batch start rule: related authorized issues are one batch, built in parallel groups and spawned the moment the manager has hands free; a specced issue never waits for a neighbour's Spec, and a ship waits for every running group to park. The issue line is one to three sentences.
+- [#424](../../issues/424) - The four older setup questions (the repo opt-in, the dashboard publish, the token mint offer, the home repo) ask through `wk_ask_yes`, so one yes rule and one stream serve every question; the free-text custom-domain prompt stays as it was.
+- [#438](../../issues/438) - The template's opening sentence has one home, `wk_checks_top`, which the rewrite, the heal and both tests read, so rewrapping it can no longer break the first-line swap quietly; the interview skill's step 4 names the owner's login beside the quoted ruling.
+
+### Fixed
+- [#428](../../issues/428) - The home sync retires a top-level folder the tower app dropped: the stamp's lines after the version list the folders the sync wrote, and `WK_TOWER_APP_RETIRED` names the folders earlier layouts shipped, so a clone still carrying `apps/` is cleaned on its next sync.
+- [#437](../../issues/437) - The tower wrapper ends its whole tree at once on a signal: the poll naps in the background so a trapped signal no longer waits out a foreground sleep, the TERM trap is set before the EXIT trap, and cleanup ends every job in the shell's job table.
+
 ## [0.76.2] - 2026-10-18
 
 ### Changed

@@ -65,13 +65,11 @@ offer_repo() {
         wk_info "repo: $PWD is not in the workflow; \`workkit enable\` joins it"
         return 0
       fi
-      printf 'Add %s to the issue workflow? [y/N] ' "$PWD"
-      local answer=""
-      read -r answer || true
-      case "$answer" in
-        y|Y|yes|YES) bash "$STANDARDS" --enable "$PWD" ;;
-        *) wk_skip "repo: left as it is; \`workkit enable\` joins it later" ;;
-      esac
+      if wk_ask_yes "Add $PWD to the issue workflow?" n; then
+        bash "$STANDARDS" --enable "$PWD"
+      else
+        wk_skip "repo: left as it is; \`workkit enable\` joins it later"
+      fi
       ;;
     *) wk_skip "repo: $PWD reports state '$state'; nothing to do" ;;
   esac

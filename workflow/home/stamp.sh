@@ -16,10 +16,18 @@ wk_kit_version() {
   printf '%s' "$manifest" | wk_jq -r '.version // empty' 2>/dev/null || true
 }
 
-# The clone's stamp, or empty; an unstamped clone is written as usual.
+# The clone's stamp, or empty; an unstamped clone is written as usual. The
+# version is the first line; the lines after it are the sync's folder list.
 wk_home_stamp_read() {
   [[ -f "$WK_HOME_DIR/$WK_HOME_STAMP" ]] || return 0
-  tr -d '[:space:]' <"$WK_HOME_DIR/$WK_HOME_STAMP" 2>/dev/null || true
+  head -n 1 "$WK_HOME_DIR/$WK_HOME_STAMP" 2>/dev/null | tr -d '[:space:]' || true
+}
+
+# The top-level app folders the last sync recorded, one per line; nothing for
+# a stamp from before the list.
+wk_home_stamp_folders() {
+  [[ -f "$WK_HOME_DIR/$WK_HOME_STAMP" ]] || return 0
+  tail -n +2 "$WK_HOME_DIR/$WK_HOME_STAMP" 2>/dev/null | tr -s '[:space:]' '\n' | grep -v '^$' || true
 }
 
 # Is a newer than b, on major.minor.patch only? Hand-rolled: BSD userland has
@@ -56,14 +64,21 @@ wk_home_downgrades() {
 }
 
 # Written by content beside the caller's write, so it rides the same commit.
-# Returns 0 when it wrote (the caller counts a change), 2 when there was
-# nothing to write.
+# The sync passes the folders it synced; a writer passing none keeps the list
+# already there. Returns 0 when it wrote (the caller counts a change), 2 when
+# there was nothing to write.
 wk_home_stamp_write() {
-  local mine
+  local mine body
   mine="$(wk_kit_version)"
   [[ -n "$mine" ]] || return 2
-  [[ "$(wk_home_stamp_read)" != "$mine" ]] || return 2
-  printf '%s\n' "$mine" >"$WK_HOME_DIR/$WK_HOME_STAMP" 2>/dev/null || {
+  if [[ "$#" -gt 0 ]]; then
+    body="$(printf '%s\n' "$mine" "$@")"
+  else
+    body="$(printf '%s\n' "$mine"; wk_home_stamp_folders)"
+  fi
+  # Compared as read, so a checkout's CRLF or spacing is never a change.
+  [[ "$(printf '%s\n' "$(wk_home_stamp_read)"; wk_home_stamp_folders)" != "$body" ]] || return 2
+  printf '%s\n' "$body" >"$WK_HOME_DIR/$WK_HOME_STAMP" 2>/dev/null || {
     wk_warn "home: could not write $WK_HOME_STAMP into $WK_HOME_DIR; the next machine to seed this clone cannot tell which kit wrote what is in it"
     return 2
   }

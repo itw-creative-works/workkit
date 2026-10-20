@@ -96,6 +96,34 @@ const run = async () => {
     cleanup(world.root);
   });
 
+  await mintTest('answered yes, the mint runs and its token is written', () => {
+    const world = mkWorld({ claudeToken: MINTED });
+    inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'yes\n' });
+    assert(world.claudeCalls().some((c) => isCall(c, 'setup-token')), `the mint ran: ${fmtCalls(world.claudeCalls())}`);
+    assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), MINTED, 'and the minted value was written');
+    cleanup(world.root);
+  });
+
+  await test('answered n, nothing is minted and the skip line says so', () => {
+    const world = mkWorld({ claudeToken: MINTED });
+    const { said } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'n\n' });
+    assert(/secrets: CLAUDE_CODE_OAUTH_TOKEN left as it is/.test(said), `the skip line, got: ${said}`);
+    assert(!world.claudeCalls().some((c) => isCall(c, 'setup-token')), 'nothing was minted');
+    assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), undefined, 'and no secret was written');
+    cleanup(world.root);
+  });
+
+  await test('the secrets offer and its [y/N] hint are on stderr, none of it on stdout', () => {
+    const world = mkWorld();
+    const { out, err } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'n\n' });
+    assert(err.includes(`CLAUDE_CODE_OAUTH_TOKEN is not set on ${HOME}. Mint one now with \`claude setup-token\`? [y/N]`),
+      `the prompt and hint are on stderr, got: ${err}`);
+    for (const part of ['is not set on', 'Mint one now', '[y/N]']) {
+      assert(!out.includes(part), `no "${part}" on stdout, got: ${out}`);
+    }
+    cleanup(world.root);
+  });
+
   await mintTest('a mint that printed no token warns instead of writing an empty secret', () => {
     // An empty `gh secret set` would overwrite a working token with nothing.
     const world = mkWorld();
