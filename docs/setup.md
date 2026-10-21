@@ -113,10 +113,10 @@ The clone is the dashboard as a real site project, seeded from this kit's `tower
 
 `~/.workkit` itself is a plain folder holding what only this machine knows, split by who writes it:
 
-- `settings.json` is yours to edit: the site options (which repo the site publishes from, whether it publishes at all, any custom domain, and your own sidebar link groups: [`workflow/README.md`](../workflow/README.md#the-two-settings-files) § The two settings files) and the bot identity's `identity.tokenUrl`, the token service's address, the hosted one when absent. Setup asks the publish question once and never again.
+- `settings.json` is yours to edit: the site options (which repo the site publishes from, whether it publishes at all, any custom domain, and your own sidebar link groups: [`workflow/README.md`](../workflow/README.md#the-two-settings-files) § The two settings files), the bot identity's `identity.tokenUrl`, the token service's address, the hosted one when absent, and `findings.file`, whether an agent files its findings as issues instead of saying them in chat (off when absent; a repo's own `.workkit/settings.json` can override it). Setup asks the publish question once and never again.
 - `.repos.json` is the engine's list of repos on this machine, plus the ones you declined.
 - `.cache.json` is throwaway state, and `jobs/` is the daily job's state.
-- `morning.d/` is yours too: every executable `*.sh` in it runs after the 9am job's own steps, in name order ([`jobs/README.md`](../jobs/README.md#the-morning-on-this-machine)).
+- `morning.d/` is yours too: every executable `*.sh` in it is the 9am job's sixth step, run in name order ([`jobs/README.md`](../jobs/README.md#the-morning-on-this-machine)).
 
 The full rules for this global layer: [`project-state.md`](project-state.md) § The global layer.
 

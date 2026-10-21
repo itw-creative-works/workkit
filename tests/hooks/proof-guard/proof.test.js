@@ -9,12 +9,17 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../../lib/platform');
+const {
+  BASH, SYSTEM_PATH, NO_RC, NODE_DIR, shellPath, loaderEnv, systemPathWith,
+} = require('../../lib/platform');
 const { isCall, fmtCalls } = require('../../lib/argv-log');
 const {
   HOOK, cleanup, makeGhStub, ghCalls, dropPathWithoutGh, runHook, WORLD, comments,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
+const { mkRepo } = require('../../lib/git-repo');
+
+const LOADER = path.join(__dirname, '..', '..', '..', 'hooks', 'loader.sh');
 
 const run = async () => {
   group('proof-guard: the flip to status:complete');
@@ -359,6 +364,33 @@ const run = async () => {
     assert(bash, 'a PreToolUse Bash block exists');
     assert(bash.hooks.some((h) => h.command.includes('safety:proof-guard')),
       'the Bash block routes safety:proof-guard through the loader');
+  });
+
+  await test('escaped quotes and a backtick inside single quotes: exit 0 through the loader, no parse error', () => {
+    // The loader must reach the guard, and the guard must judge the comment,
+    // never fail in bash's words.
+    const { repo, tmp } = mkRepo('proof-guard-loader-', {});
+    const stub = makeGhStub(WORLD);
+    const command = "gh issue comment 3 --body 'say \\\"hi\\\" `foo` \\\"bye\\\"'";
+    const workflowHome = mkTmp('proof-guard-wfhome-');
+    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'safety:proof-guard'], {
+      input: JSON.stringify({ tool_name: 'Bash', cwd: shellPath(repo), tool_input: { command } }),
+      env: loaderEnv({
+        TMPDIR: shellPath(tmp), PATH: systemPathWith(stub.binDir, NODE_DIR), WORKFLOW_HOME: shellPath(workflowHome),
+      }),
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+    assertEq(res.status, 0, `a comment passes the guard, got: ${res.stderr}`);
+    assert(!/unexpected EOF|syntax error/.test(res.stderr || ''), `no bash parse error, got: ${res.stderr}`);
+    // Exit 0 alone is also what a loader standing the guard down says; the
+    // log's verdict (the last of its tab-separated fields) proves it ran.
+    const logFile = path.join(workflowHome, 'hooks.log');
+    const lines = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8').split('\n').filter(Boolean) : [];
+    const ran = lines.map((l) => l.split('\t')).filter((f) => f[1] && f[1].replace('/', ':') === 'safety:proof-guard');
+    assertEq(ran.length, 1, `one log line for the guard, got: ${JSON.stringify(lines)}`);
+    assertEq(ran[0][ran[0].length - 1], 'run', `the guard ran, got: ${JSON.stringify(lines)}`);
+    cleanup(stub.dir);
   });
 
   await test('gh not on PATH: exit 0, and says the gate did not run', () => {

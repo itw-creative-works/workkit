@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
-const { BASH, NO_RC, shellPath } = require('../lib/platform');
+const { BASH, NO_RC, shellPath, loaderEnv } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 
 const HOOK = path.join(__dirname, '..', '..', 'hooks', 'workflow', 'reload-guard', 'run.sh');
@@ -47,12 +47,11 @@ const runHook = (event, { root, session, script = HOOK, args = [], env = {} } = 
   });
   const res = spawnSync(BASH, [...NO_RC, shellPath(script), ...args], {
     input,
-    env: {
-      ...process.env,
+    env: loaderEnv({
       RELOAD_GUARD_ROOT: shellPath(root),
       TMPDIR: shellPath(session.state),
       ...env,
-    },
+    }),
     encoding: 'utf8',
     timeout: 15000,
   });

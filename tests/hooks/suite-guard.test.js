@@ -12,7 +12,7 @@ const {
   group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR,
 } = require('../lib/harness');
 const {
-  BASH, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath, systemPathWith,
+  BASH, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath, systemPathWith, loaderEnv,
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { suiteMarkerPath, plantRecord } = require('../lib/suite-record');
@@ -61,9 +61,10 @@ const withStub = (stub) => ({ PATH: systemPathWith(stub.binDir) });
 const listed = (stub) => ghCalls(stub).filter((c) => isCall(c, 'issue', 'list'));
 
 const runArgv = (argv, command, cwd, env = {}, bash = BASH) => {
+  const base = loaderEnv();
   const res = spawnSync(bash, argv, {
     input: JSON.stringify({ tool_name: 'Bash', cwd: shellPath(cwd), tool_input: { command } }),
-    env: { HOME: shellPath(os.homedir()), PATH: SYSTEM_PATH, TMPDIR: shellPath(TMP), ...env },
+    env: { HOME: base.HOME, WORKFLOW_HOME: base.WORKFLOW_HOME, PATH: SYSTEM_PATH, TMPDIR: shellPath(TMP), ...env },
     encoding: 'utf8',
     timeout: 15000,
   });

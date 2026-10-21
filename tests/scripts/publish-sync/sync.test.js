@@ -7,8 +7,9 @@ const fs = require('fs');
 const path = require('path');
 const { group, test, testUnless, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { IS_WINDOWS, shellPath } = require('../../lib/platform');
+const { STAMP, readStamp, kitVersion } = require('../../lib/version-stamp');
 const {
-  REPO_ROOT, cleanup, git, write, mkSyncWorld, commitCheckout, inHome, sync, mtimes,
+  cleanup, git, write, mkSyncWorld, commitCheckout, inHome, sync, mtimes,
 } = require('./helpers');
 
 const run = async () => {
@@ -131,18 +132,11 @@ const run = async () => {
   // The sync writes the checkout's app over the clone's, so two machines seeding
   // one clone race; the stamp at the clone's root says which kit wrote what is there.
 
-  /** Where the stamp lives and what it is called: the name is the contract. */
-  const STAMP = '.workkit-version';
-  const kitVersion = () => JSON.parse(
-    fs.readFileSync(path.join(REPO_ROOT, '.claude-plugin', 'plugin.json'), 'utf8'),
-  ).version;
-
   await test('the sync stamps the clone with the kit version it wrote from', () => {
     const world = mkSyncWorld();
     const { rc, out, err } = sync(world);
     assertEq(rc, 0, `something changed: ${out}${err}`);
-    // The version is the stamp's first line; the folder list may follow it.
-    assertEq(fs.readFileSync(path.join(world.clone, STAMP), 'utf8').split('\n')[0], kitVersion(),
+    assertEq(readStamp(path.join(world.clone, STAMP)), kitVersion(),
       'the version rides with the content it describes');
     cleanup(world.root);
   });

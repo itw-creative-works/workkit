@@ -33,7 +33,7 @@ Score 0–100: how certain are you this is a REAL issue a maintainer would fix?
 - **40–69**: possible, needs a human look; report only if consequential.
 - **0–39**: speculative, do not report.
 
-**False-positive list, never report:** anything a linter/formatter would catch · style preferences with no written rule · hypothetical scenarios the codebase can't reach · a Parity finding whose file has no sibling. The score measures how real a problem is, never where it sits; what then happens to it is the fix-or-file rule's (`docs/project-state.md` § How big is one issue).
+**False-positive list, never report:** anything a linter/formatter would catch · style preferences with no written rule · hypothetical scenarios the codebase can't reach · a Parity finding whose file has no sibling. The score measures how real a problem is, never where it sits; what then happens to it is the fix-or-file rule's (`docs/project-state.md` § How big is one issue): BUILT, SAID, or FILED on the owner's word or when `findings.file` is on.
 
 ## Report format
 

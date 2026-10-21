@@ -9,7 +9,7 @@ const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
-const { BASH, NO_RC, shellPath } = require('../lib/platform');
+const { BASH, NO_RC, shellPath, loaderEnv } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { mkRepo } = require('../lib/git-repo');
 
@@ -355,7 +355,7 @@ const run = async () => {
     const { repo } = mkRepo('tg-loader-', {});
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'safety:tree-guard'], {
       input: JSON.stringify({ cwd: shellPath(repo), tool_input: { command: 'git stash' } }),
-      env: { ...process.env, HOME: shellPath(os.homedir()) },
+      env: loaderEnv(),
       encoding: 'utf8',
       timeout: 10000,
     });

@@ -16,14 +16,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
 SIDEBAR_REL='targets/web/src/_includes/backend/sections/sidebar.json'
 
-# jq: each row in the app file's own style, bare keys, single quotes, trailing
-# commas. tojson's escapes hold in a single-quoted string once \" is unescaped.
-SIDEBAR_JSON5='
-  def q: tojson | .[1:-1] | gsub("\\\\\""; "\"") | gsub("'"'"'"; "\\'"'"'") | "'"'"'\(.)'"'"'";
-  .[] | "    {",
-    (to_entries[] | "      \(.key | if test("^[A-Za-z_$][A-Za-z0-9_$]*$") then . else q end): \(.value | if type == "string" then q else tojson end),"),
-    "    },"'
-
 usage() {
   printf 'usage: build.sh <install|mint|build> <project dir> [path prefix]%s\n' "${1:+; $1}" >&2
   exit 2
@@ -31,8 +23,8 @@ usage() {
 
 # The rows before the links list's closing bracket, the app's text kept: the
 # file is JSON5, which jq cannot parse. Fails when the list is not last.
-# Usage: SIDEBAR_ITEMS=<rows> wk_sidebar_splice <app text>
-wk_sidebar_splice() {
+# Usage: SIDEBAR_ITEMS=<rows> build_sidebar_splice <app text>
+build_sidebar_splice() {
   printf '%s\n' "$1" | awk '
     { line[NR] = $0 }
     END {
@@ -50,8 +42,8 @@ wk_sidebar_splice() {
 
 # The app's copy back over the merged file, byte for byte, so the next sync and
 # mint see no change: the merged sidebar exists only for the build.
-# Usage: wk_sidebar_restore <clone>
-wk_sidebar_restore() {
+# Usage: build_sidebar_restore <clone>
+build_sidebar_restore() {
   wk_home_file "$WK_TOWER_APP" "$SIDEBAR_REL" >"$1/$SIDEBAR_REL" \
     || wk_warn "sidebar: could not put the app's $SIDEBAR_REL back in $1"
 }
@@ -59,16 +51,18 @@ wk_sidebar_restore() {
 # site.sidebar's groups after the built-in ones, rebuilt from the app's copy on
 # every run so a second build holds them once. The app itself is never touched:
 # the central copy builds it and never reads the setting.
-# Usage: wk_sidebar_merge <clone>
-wk_sidebar_merge() {
+# Usage: build_sidebar_merge <clone>
+build_sidebar_merge() {
   local clone="$1" raw items app out
   [[ "$(cd -P "$clone" && pwd)" == "$WK_TOWER_APP" ]] && return 0
-  raw="$(wk_json_get "$WK_HOME_SETTINGS" '.site.sidebar')"
+  raw="$(wk_site_sidebar)"
   [[ -n "$raw" ]] || return 0
-  items="$(printf '%s\n' "$raw" | wk_jq -c '
+  # One JSON row per line, each with the trailing comma the JSON5 app file allows.
+  items="$(printf '%s\n' "$raw" | wk_jq -r '
     if type == "array" and all(.[]; type == "object" and (.header | type) == "string"
       and (.links | type) == "array" and all(.links[]; type == "object"))
-    then [.[] | {header: true, label: .header}, .links[]] else error("not a list of groups") end' 2>/dev/null)" || {
+    then [.[] | {header: true, label: .header}, .links[]] else error("not a list of groups") end
+    | .[] | "    \(tojson),"' 2>/dev/null)" || {
     wk_warn 'sidebar: site.sidebar is not a list of groups; the built-in sidebar is published'
     return 0
   }
@@ -76,16 +70,12 @@ wk_sidebar_merge() {
     wk_warn "sidebar: the app's $SIDEBAR_REL could not be read; $clone keeps its own sidebar"
     return 0
   fi
-
-  # A JSON copy takes the items through jq; the shipped JSON5 one is spliced.
-  if printf '%s\n' "$app" | wk_jq empty >/dev/null 2>&1; then
-    out="$(printf '%s\n' "$app" | wk_jq --argjson items "$items" '.links += $items')"
-  elif ! out="$(SIDEBAR_ITEMS="$(printf '%s\n' "$items" | wk_jq -r "$SIDEBAR_JSON5")" wk_sidebar_splice "$app")"; then
+  if ! out="$(SIDEBAR_ITEMS="$items" build_sidebar_splice "$app")"; then
     wk_warn "sidebar: the app's $SIDEBAR_REL does not end in its links list; the built-in sidebar is published"
     return 0
   fi
   # shellcheck disable=SC2064  # expand $clone now: the trap runs after this call
-  trap "wk_sidebar_restore $(printf '%q' "$clone")" EXIT
+  trap "build_sidebar_restore $(printf '%q' "$clone")" EXIT
   printf '%s\n' "$out" >"$clone/$SIDEBAR_REL"
 }
 
@@ -123,7 +113,7 @@ case "$VERB" in
   # is the path the site serves at.
   build)
     [[ -n "$PREFIX" ]] || usage 'no path prefix'
-    wk_sidebar_merge "$DIR"
+    build_sidebar_merge "$DIR"
     OMEGA_PATH_PREFIX="$PREFIX" npm --prefix "$DIR/targets/web" run build
     if [[ ! -d "$DIR/targets/web/dist" ]]; then
       printf 'build: the build left no output at %s\n' "$DIR/targets/web/dist" >&2

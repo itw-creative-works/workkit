@@ -8,8 +8,9 @@
 
 set -euo pipefail
 
-# Sourced for hook_sha1 alone, which keys the state file by a digest of the
-# tree; a machine with no digest tool writes no state and hears every nudge.
+# Sourced for hook_sha1, which keys the state file by a digest of the tree (a
+# machine with no digest tool writes no state and hears every nudge), and for
+# hook_findings_on, which picks the FINDINGS line.
 . "${BASH_SOURCE[0]%/*}/../../_lib.sh"
 
 input=$(cat)
@@ -132,6 +133,18 @@ if [ ! -f "$PROMPT_FILE" ]; then
   exit 1
 fi
 CONTEXT=$(cat "$PROMPT_FILE")
+
+# Where a finding outside the issue in hand goes: findings.file, off unless a
+# settings file says true (docs/project-state.md § How big is one issue).
+if hook_findings_on "$cwd"; then
+  CONTEXT="$CONTEXT
+
+FINDINGS: findings.file is on. File each finding outside the issue in hand as a \`status:inbox\` issue and print the \`Filed:\` trail for what you filed. If GitHub cannot be reached, put the finding in chat and stop there. The owner decides."
+else
+  CONTEXT="$CONTEXT
+
+FINDINGS: findings.file is off. Build a finding that belongs to the issue in hand into it; say every other finding in chat under **🧭 Findings**, one bullet each in the cold-reader line, for the owner to answer file or drop. File nothing on your own."
+fi
 
 # Transition guard: this repo's board is deleted in the migration, but until it
 # is, the old rules still bind the turn that touches it.

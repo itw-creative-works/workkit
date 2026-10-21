@@ -653,7 +653,7 @@ if (( $# == 0 )); then
   record_brief_status
 fi
 
-# ── After the steps: morning.d ────────────────────────────────────────────────
+# ── 6. The morning.d scripts ──────────────────────────────────────────────────
 
 # The owner's own scripts, each in its own log block under the job's bound and
 # env. A failure or a hang is a warning naming it, and the next one still runs

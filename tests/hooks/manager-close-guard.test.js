@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
-const { BASH, NO_RC, shellPath } = require('../lib/platform');
+const { BASH, NO_RC, shellPath, loaderEnv } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { mkRepo } = require('../lib/git-repo');
 
@@ -378,7 +378,7 @@ const run = async () => {
     const { repo } = mkRepo('close-guard-loader-', {});
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:close-guard'], {
       input: JSON.stringify(payload(transcript([prompt(), ...edits(6, F)]), { cwd: shellPath(repo) })),
-      env: { ...process.env, TMPDIR: shellPath(tmp), MANAGER_USER_SETTINGS: shellPath(path.join(tmp, 'none.json')) },
+      env: loaderEnv({ TMPDIR: shellPath(tmp), MANAGER_USER_SETTINGS: shellPath(path.join(tmp, 'none.json')) }),
       encoding: 'utf8',
       timeout: 10000,
     });
@@ -390,7 +390,7 @@ const run = async () => {
     const { repo } = mkRepo('close-guard-loader-', {});
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:close-guard'], {
       input: JSON.stringify(payload(transcript([prompt(), ...edits(6, F)]), { cwd: shellPath(repo) })),
-      env: { ...process.env, TMPDIR: shellPath(tmp), HOOK_DISABLE: '1' },
+      env: loaderEnv({ TMPDIR: shellPath(tmp), HOOK_DISABLE: '1' }),
       encoding: 'utf8',
       timeout: 10000,
     });

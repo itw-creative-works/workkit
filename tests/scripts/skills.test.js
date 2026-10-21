@@ -211,6 +211,33 @@ const run = async () => {
     assertEq([...new Set(named)].sort().join(','), skillFolders().join(','), "README.md's skills enumeration");
   });
 
+  group('docs: the findings route and its findings.file toggle');
+
+  await test('the fix-or-file rule reads BUILT, SAID or FILED by findings.file', () => {
+    const rule = section(path.join(REPO, 'docs', 'project-state.md'), '## How big is one issue');
+    const missing = ['BUILT', 'SAID', 'FILED', 'findings.file'].filter((needle) => !rule.includes(needle));
+    assertEq(missing.join(', '), '', '§ How big is one issue lacks');
+  });
+
+  await test("the ~/.workkit table's settings.json row names findings.file beside the site options", () => {
+    const layer = section(path.join(REPO, 'docs', 'project-state.md'), '## The global layer');
+    const row = layer.split('\n').find((l) => l.startsWith('| `settings.json`'));
+    assert(row, '§ The global layer has no settings.json row');
+    assert(row.includes('site options') && row.includes('findings.file'), `the row names both, got: ${row}`);
+    assert(!row.includes('site options only'), `the row no longer says the site options only, got: ${row}`);
+  });
+
+  await test("workflow/README.md's two settings files both show findings.file", () => {
+    // A settings-file row may show the key dotted or as the JSON it is written in.
+    const table = section(path.join(REPO, 'workflow', 'README.md'), '## The two settings files');
+    for (const file of ['`<repo>/.workkit/settings.json`', '`~/.workkit/settings.json`']) {
+      const row = table.split('\n').find((l) => l.startsWith(`| ${file}`));
+      assert(row, `the table has no ${file} row`);
+      assert(row.includes('findings.file') || /"findings":\s*\{\s*"file"/.test(row),
+        `the ${file} row lacks findings.file, got: ${row}`);
+    }
+  });
+
   group('skills + agents + docs: portability');
 
   const shippedDocs = () => [

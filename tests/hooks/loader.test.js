@@ -11,7 +11,7 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
 const {
-  BASH, NO_RC, NODE_DIR, shellPath, homeEnv, basePathWithout, joinPath,
+  BASH, NO_RC, NODE_DIR, shellPath, homeEnv, basePathWithout, joinPath, loaderEnv,
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { mkRepo } = require('../lib/git-repo');
@@ -23,11 +23,9 @@ const LOADER = path.join(KIT, 'hooks', 'loader.sh');
 
 // A scratch workkit home per call, so the hook log never lands in the real one.
 const runLoader = (args, input = '{}', env = {}) => {
-  const { WK_HOOKS_LOG, ...inherited } = process.env;
-  const home = shellPath(path.join(mkTmp('loader-wfhome-'), 'workflow-home'));
   const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), ...args], {
     input,
-    env: { ...inherited, HOME: shellPath(os.homedir()), WORKFLOW_HOME: home, ...env },
+    env: loaderEnv(env),
     encoding: 'utf8',
     timeout: 30000,
   });
@@ -221,7 +219,6 @@ const mkLogged = (answer = 'enabled') => {
   const home = path.join(w.tmp, 'workkit-home');
   const file = path.join(home, 'hooks.log');
   const env = envOf(w, { WORKFLOW_HOME: shellPath(home) });
-  delete env.WK_HOOKS_LOG;
   const prompt = { hook_event_name: 'UserPromptSubmit', cwd: shellPath(w.repo), session_id: 's-log', prompt: 'hi' };
   return {
     w,
@@ -380,7 +377,7 @@ const run = async () => {
       PATH: joinPath(basePathWithout(mkTmp('loader-nogh-'), 'gh'), NODE_DIR),
       TMPDIR: shellPath(tmp),
       WORKFLOW_DIR: shellPath(path.join(KIT, 'workflow')),
-      WORKFLOW_HOME: shellPath(path.join(mkTmp('loader-wfhome-'), 'workflow-home')),
+      WORKFLOW_HOME: loaderEnv().WORKFLOW_HOME,
       WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('loader-claude-'), 'claude-home')),
       WORKFLOW_STANDARDS_CACHE: shellPath(mkTmp('loader-cache-')),
       RELOAD_GUARD_ROOT: shellPath(root),
@@ -471,6 +468,43 @@ const run = async () => {
     assertEq(lines[0], old[old.length - 5000], 'the oldest line kept is the 5,000th from the end');
     assertEq(lines[4999], old[old.length - 1], 'the old lines end where the log did');
     assertLogLine(lines[5000], l.w, 'docs:checkpoint', 'run');
+  });
+
+  group('loader: loaderEnv, the scratch workkit home a suite fires the loader with');
+
+  // The scratch home is in the shell's spelling, so the shell reads it back.
+  const readIn = (file) => {
+    const res = spawnSync(BASH, [...NO_RC, '-c', 'cat "$1" 2>/dev/null', '_', file], { encoding: 'utf8' });
+    return res.stdout || '';
+  };
+
+  await test('a fire with loaderEnv() logs under its WORKFLOW_HOME and adds no line of its own to the real hooks.log', () => {
+    const real = path.join(os.homedir(), '.workkit', 'hooks.log');
+    const read = () => (fs.existsSync(real) ? fs.readFileSync(real, 'utf8') : '');
+    const id = `s-loader-env-${process.pid}-${Date.now()}`;
+    const env = loaderEnv();
+    const prompt = { hook_event_name: 'UserPromptSubmit', cwd: shellPath(OPTED.repo), session_id: id, prompt: 'hi' };
+    const before = read();
+    const out = runIn('docs:checkpoint', prompt, OPTED.repo, env);
+    const after = read();
+    assertSilent(out, 'docs:checkpoint on a plain prompt');
+    const lines = readIn(`${env.WORKFLOW_HOME}/hooks.log`).split('\n').filter(Boolean);
+    assertEq(lines.length, 1, `one line under the scratch home, got ${JSON.stringify(lines)}`);
+    assert(lines[0].includes(`\t${id}\t`), `the fire's own line, got ${JSON.stringify(lines[0])}`);
+    // Live sessions keep writing the real log; a trim in between makes every line new.
+    const added = (after.startsWith(before) ? after.slice(before.length) : after).split('\n');
+    const leaked = added.filter((line) => line.includes(id));
+    assertEq(leaked.length, 0, `no line of the fire's in the real ${real}, got ${JSON.stringify(leaked)}`);
+  });
+
+  await test("loaderEnv({ WORKFLOW_HOME }) keeps the caller's home", () => {
+    assertEq(loaderEnv({ WORKFLOW_HOME: '/x/home' }).WORKFLOW_HOME, '/x/home', 'the override wins');
+  });
+
+  await test('loaderEnv() twice hands out two scratch homes', () => {
+    const a = loaderEnv().WORKFLOW_HOME;
+    const b = loaderEnv().WORKFLOW_HOME;
+    assert(a && b && a !== b, `two different homes, got ${JSON.stringify([a, b])}`);
   });
 
   group('loader: a Bash command that changes folder');

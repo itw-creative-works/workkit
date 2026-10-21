@@ -1,6 +1,6 @@
 // The snippet runner for hooks/_lib.sh: a bash with the library sourced runs
 // one snippet and hands back its exit code and both streams. Consumers: the
-// tests/hooks/lib and lib-record suites.
+// tests/hooks/lib, lib-record, commit-gate/quoting and settings-reader suites.
 
 const os = require('os');
 const path = require('path');

@@ -24,6 +24,10 @@ wk_site_host() {
   printf '%s' "${url%/}"
 }
 
+# The extra sidebar groups the publish build merges after the built-in ones, as
+# the JSON the settings hold, or empty.
+wk_site_sidebar() { wk_json_get "$WK_HOME_SETTINGS" '.site.sidebar'; }
+
 # The branch the clone is on, `main` with no clone to ask. symbolic-ref, not
 # rev-parse: on an unborn HEAD rev-parse prints `HEAD` and fails, so the
 # fallback would append a second line into a JSON string.

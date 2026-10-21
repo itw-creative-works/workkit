@@ -1,10 +1,21 @@
-// Tests for hooks/safety/commit-gate: a quoted message never hides a pathspec.
+// Tests for hooks/safety/commit-gate: a quoted message never hides a pathspec;
+// and hook_strip_quotes (hooks/lib/commit.sh), the strip that judgment reads.
 // The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { skipWithoutDigest, mkRepo, stage, runHook, cleanup } = require('./helpers');
+const { runLib } = require('../../lib/hook-lib');
+
+// What hook_strip_quotes hands a caller, read the way every caller reads it:
+// through a command substitution. The text rides in an env var, so no quoting
+// stands between a fixture and the strip.
+const strip = (text) => {
+  const out = runLib('printf \'%s\' "$(hook_strip_quotes "$STRIP_IN")"', { STRIP_IN: text });
+  assertEq(out.code, 0, `the strip runs clean, stderr: ${out.stderr}`);
+  return out.stdout;
+};
 
 const run = async () => {
   skipWithoutDigest();
@@ -63,6 +74,43 @@ const run = async () => {
     const { code, stderr } = runHook(dir, 'git com""mit -m "x"');
     assertEq(code, 2, `blocked, got: ${stderr}`);
     cleanup(dir);
+  });
+
+  group('hook_strip_quotes: a backslash outside quotes escapes one character, as in the shell');
+
+  await test('an escaped double quote outside quotes opens no span: the backticks stay, the real span goes', () => {
+    assertEq(strip("echo \\\"a `b` 'c d'"), 'echo \\\"a `b` _hookq_', 'only the single-quoted span is replaced');
+  });
+
+  await test('an escaped single quote outside quotes opens no span', () => {
+    // The Names rule: a backslash and the character after it pass through, so
+    // the quote that opens the real span is the one before `b`.
+    assertEq(strip("echo \\' a 'b c'"), "echo \\' a _hookq_", 'the escaped quote is a literal');
+  });
+
+  await test('escaped double quotes and a backtick inside single quotes are all one span', () => {
+    const command = "gh issue comment 3 --body 'say \\\"hi\\\" `foo` \\\"bye\\\"'";
+    assertEq(strip(command), 'gh issue comment 3 --body _hookq_', 'the whole body is data');
+  });
+
+  await test('escapes inside double quotes are unchanged: the span is one placeholder', () => {
+    assertEq(strip('"a \\"b\\" c"'), '_hookq_', 'the escaped quotes never close the span');
+  });
+
+  await test('after an escaped quote outside quotes, a wrapped commit is still found', () => {
+    // The span walk must count spans the way the strip does, or the Nth
+    // placeholder names the wrong span and the wrapped commit goes unseen.
+    const commands = [
+      "echo \\\" 'a b' ; echo \"c\" ; bash -c 'git commit -m x'",
+      "echo \\\"a\\\" && sh -c \"git commit -m x\"",
+      "echo \\' ; eval 'git commit -m y'",
+      "echo it\\'s 'done' && bash -c 'git commit -m x'",
+    ];
+    for (const command of commands) {
+      const out = runLib('hook_find_git_commit "$FIND_IN"; printf \'%s\' "$HOOK_WRAPPED_COMMIT"', { FIND_IN: command });
+      assertEq(out.code, 0, `the finder runs clean, stderr: ${out.stderr}`);
+      assertEq(out.stdout, '1', `wrapped commit found in: ${command}`);
+    }
   });
 
   return summary();

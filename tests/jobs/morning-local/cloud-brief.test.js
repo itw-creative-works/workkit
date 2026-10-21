@@ -84,6 +84,8 @@ const run = async () => {
     assert(/kit is incomplete/.test(world.log()), `the reason names the missing lib: ${world.log()}`);
     assert(/no brief this morning/.test(world.log()), `and the morning is briefless, not broken: ${world.log()}`);
     assert(/marker: the engine library is missing/.test(world.log()), `the marker names the missing lib: ${world.log()}`);
+    const said = [world.log(), res.stdout, res.stderr].join('\n');
+    assert(said.includes('morning.d: the engine library is missing'), `and so does the morning.d step: ${said}`);
     await settle();
     cleanup(world.root);
   });

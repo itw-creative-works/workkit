@@ -6,7 +6,7 @@ Keeps the work item true and checks documentation parity when the working tree h
 
 ## Two behaviors, one hook
 
-1. **Work-item tracking (always):** Nudges Claude to keep the GitHub issue true (exactly one `status:` label, the trail in comments) and to promote durable findings out of `.workkit/` onto the issue before stopping, with **collapse-on-ship** (the turn that writes the CHANGELOG entry closes the issue pointing at it). Unfiled entries in `.workkit/capture.md` are surfaced with an offer of the `workkit:triage` skill. A repo still carrying a `PROGRESS.md`/`INBOX.md` gets a migration reminder until it moves to issues.
+1. **Work-item tracking (always):** Nudges Claude to keep the GitHub issue true (exactly one `status:` label, the trail in comments) and to promote durable findings out of `.workkit/` onto the issue before stopping, with **collapse-on-ship** (the turn that writes the CHANGELOG entry closes the issue pointing at it). New findings follow `findings.file`: the FINDINGS line after the prompt has them said in chat under **🧭 Findings** (off, the default) or filed as `status:inbox` issues (on). Unfiled entries in `.workkit/capture.md` are surfaced with an offer of the `workkit:triage` skill. A repo still carrying a `PROGRESS.md`/`INBOX.md` gets a migration reminder until it moves to issues.
 2. **Doc parity (finalized only):** If work is finalized and behavior-affecting, nudges Claude to review `README.md`, `AGENTS.md`, `docs/<topic>.md`, and `CHANGELOG.md [Unreleased]`.
 
 Both share the same detection logic (dirty tree with non-doc changes) and fire once per response.
@@ -32,7 +32,7 @@ Pipeline: work item → docs → changelog.
 
 ## Files
 
-- `run.sh`: detection logic, reads `resources/prompt.md`, emits reminder
+- `run.sh`: detection logic, reads `resources/prompt.md`, appends the FINDINGS line, emits reminder
 - `resources/prompt.md`: the injected context (edit this to change the nudge)
 - `README.md`: this file
 - `.workkit/agents/.change-tracker`: not here but in the repo being watched: the fingerprint last nudged on, written only where `.workkit/` is gitignored like it should be

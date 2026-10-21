@@ -221,6 +221,39 @@ const run = async () => {
     assertAppSidebar(world, 'after build.sh exits the clone\'s file is the app\'s again, byte for byte');
   });
 
+  await test('each row the build adds to the app\'s sidebar parses as JSON on its own', () => {
+    // The app's own file is JSON5 (comments, bare keys), so the added rows are
+    // what can be held to JSON: each object after the app's text, parsed strictly.
+    const world = mkProject({ site: { repo: 'owner/workkit', sidebar: [ADS] } });
+    const { code, out, err } = build(world, ['build', shellPath(world.project), '/x/']);
+    assertBuilt(world, code, `${out}${err}`);
+    const text = fs.readFileSync(world.builtSidebar, 'utf8');
+    const at = text.lastIndexOf(ADS.header);
+    assert(at >= 0, `the merged file holds the group's header, got: ${text}`);
+    let i = text.lastIndexOf('{', at);
+    const rows = [];
+    while (rows.length < 1 + ADS.links.length) {
+      while (/[\s,]/.test(text[i])) i += 1;
+      assertEq(text[i], '{', `row ${rows.length + 1} opens an object in: ${text.slice(i - 40, i + 200)}`);
+      let depth = 0;
+      let end = i;
+      do {
+        if (text[end] === '{') depth += 1;
+        if (text[end] === '}') depth -= 1;
+        end += 1;
+      } while (depth > 0 && end < text.length);
+      const row = text.slice(i, end);
+      try {
+        rows.push(JSON.parse(row));
+      } catch (e) {
+        throw new Error(`row ${rows.length + 1} is not JSON: ${row} (${e.message})`);
+      }
+      i = end;
+    }
+    assertEq(JSON.stringify(canon(rows)), JSON.stringify(canon([{ header: true, label: ADS.header }, ...ADS.links])),
+      'the header row, then the two links, each whole');
+  });
+
   await test('no site.sidebar leaves the clone\'s sidebar.json byte-identical to the app\'s', () => {
     const world = mkProject({ site: { repo: 'owner/workkit' } });
     const { code, out, err } = build(world, ['build', shellPath(world.project), '/x/']);

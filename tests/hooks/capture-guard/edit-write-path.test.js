@@ -1,13 +1,15 @@
 // Tests for hooks/safety/capture-guard: the Edit and Write path, the drain's
 // marker-gated rewrite, and the append no marker opens because the agent never
-// adds to the capture file.
+// adds to the capture file; the finding route a refusal names, by findings.file.
 // The shared prologue (the scratch repo and TMPDIR, the marker helpers, the hook runner) is ./helpers.js.
 
+const fs = require('fs');
 const path = require('path');
 const {
   group, test, assert, assertEq, summary, WORKKIT_DIR: W, selfRun,
 } = require('../../lib/harness');
 const { shellPath } = require('../../lib/platform');
+const { mkTmp } = require('../../lib/scratch');
 const {
   REPO, CAPTURE, skipWithoutDigest, clearMarker, touchMarker, runHook, bash,
 } = require('./helpers');
@@ -81,9 +83,8 @@ const run = async () => {
     ];
     clearMarker();
     for (const c of captures) {
-      const { code, stderr } = bash(c);
-      assertEq(code, 2, `capture is the owner's: ${c}`);
-      assert(stderr.includes('status:inbox'), 'points at the issue instead');
+      // Where it points instead follows findings.file: the group below.
+      assertEq(bash(c).code, 2, `capture is the owner's: ${c}`);
     }
     touchMarker();
     for (const c of captures) {
@@ -159,6 +160,45 @@ const run = async () => {
     touchMarker();
     assertEq(bash(`tee -a ${W}/capture.md`).code, 2, 'and no marker opens the append');
     assertEq(bash(`sed -i '' s/a/b/ ${W}/capture.md`).code, 0, 'while the drain rewrites freely');
+  });
+
+  group('capture-guard: where a finding goes instead follows findings.file');
+
+  // Each refusal names the finding's route: chat with the setting off (no key
+  // at all), a status:inbox issue with it on. Both refusals are asked: the
+  // write (an append, the capture CLI) and the rewrite with no marker open.
+  const bashCall = (command) => ({ label: command, payload: { tool_name: 'Bash', tool_input: { command } } });
+  const denials = [
+    bashCall(`echo "- a thought" >> ${W}/capture.md`),
+    bashCall('workkit note "a thought"'),
+    bashCall(`echo x > ${W}/capture.md`),
+    { label: 'Edit of the capture file', payload: { tool_name: 'Edit', tool_input: { file_path: shellPath(CAPTURE) } } },
+  ];
+  const deny = ({ label, payload }, settings) => {
+    const workflowHome = mkTmp('capture-guard-wfhome-');
+    if (settings) fs.writeFileSync(path.join(workflowHome, 'settings.json'), JSON.stringify(settings));
+    const out = runHook(payload, { WORKFLOW_HOME: shellPath(workflowHome) });
+    assertEq(out.code, 2, `the capture is refused: ${label}`);
+    return out.stderr;
+  };
+
+  await test('findings.file off: the refusal names chat as the route, never a status:inbox issue', () => {
+    clearMarker();
+    for (const c of denials) {
+      for (const settings of [null, { version: 1 }]) {
+        const stderr = deny(c, settings);
+        assert(/\bchat\b/i.test(stderr), `names chat: ${c.label}, got: ${stderr}`);
+        assert(!stderr.includes('status:inbox'), `files nothing: ${c.label}, got: ${stderr}`);
+      }
+    }
+  });
+
+  await test('findings.file on: the refusal names the status:inbox route', () => {
+    clearMarker();
+    for (const c of denials) {
+      const stderr = deny(c, { findings: { file: true } });
+      assert(stderr.includes('status:inbox'), `points at the issue: ${c.label}, got: ${stderr}`);
+    }
   });
 
   return summary();

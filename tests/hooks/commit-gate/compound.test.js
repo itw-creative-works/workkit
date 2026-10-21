@@ -4,10 +4,9 @@
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { BASH, NO_RC, shellPath } = require('../../lib/platform');
+const { BASH, NO_RC, shellPath, loaderEnv } = require('../../lib/platform');
 const { skipWithoutDigest, TMP, mkRepo, stage, dropMarker, runHook, standDownMessage, cleanup, suiteRan, mkReleaseRepo } = require('./helpers');
 
 const run = async () => {
@@ -111,7 +110,7 @@ const run = async () => {
     const input = JSON.stringify({ cwd: shellPath(dir), tool_input: { command: 'git commit -m "x"' } });
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'safety:commit-gate'], {
       input,
-      env: { ...process.env, HOME: shellPath(os.homedir()), TMPDIR: shellPath(TMP) },
+      env: loaderEnv({ TMPDIR: shellPath(TMP) }),
       encoding: 'utf8',
       timeout: 60000,
     });

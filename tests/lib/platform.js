@@ -3,8 +3,10 @@
 // on macOS and Linux; a dotfiles repo carries the same seam, name for name.
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { mkTmp } = require('./scratch');
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -293,6 +295,20 @@ const homeEnv = (home, env = {}) => ({
 });
 
 /**
+ * A spawn env for a suite that fires hooks/loader.sh: this process's env with
+ * the real HOME (the machine's tools stay reachable) and a fresh scratch
+ * WORKFLOW_HOME, so the loader's hooks.log never lands in the real workkit home.
+ * @param {object} [overrides] - applied last, so a caller's WORKFLOW_HOME wins
+ * @returns {object} the env to spawn with
+ */
+const loaderEnv = (overrides = {}) => ({
+  ...process.env,
+  HOME: shellPath(os.homedir()),
+  WORKFLOW_HOME: shellPath(path.join(mkTmp('loader-wfhome-'), 'workflow-home')),
+  ...overrides,
+});
+
+/**
  * A mirror of the system PATH with one command left out: the machine without
  * `gh`, built rather than assumed, since many ship it in /usr/bin. It holds the
  * system directories plus wherever this machine keeps jq, gh, git and node,
@@ -351,6 +367,6 @@ const asWindows = (fn) => {
 module.exports = {
   IS_WINDOWS, BASH, SH, SYSTEM_BASH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
   shellPath, gitPath, which, digestTool, toolStem, linkTool, stubTool, crlfJq,
-  cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, basePathWithout,
+  cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, loaderEnv, basePathWithout,
   NO_EXEC_BIT, NO_NODE_STUB, asWindows,
 };

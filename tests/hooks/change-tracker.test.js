@@ -20,11 +20,22 @@ const mkTmpRepo = () => {
   return dir;
 };
 
-const runHook = (cwd) => {
+// The global settings layer every run reads: an empty scratch WORKFLOW_HOME by
+// default, so the machine's own ~/.workkit/settings.json never shapes a case.
+const NO_GLOBAL = mkTmp('ct-wfhome-');
+
+/** A scratch WORKFLOW_HOME whose settings.json is <settings>. */
+const globalWith = (settings) => {
+  const dir = mkTmp('ct-wfhome-');
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify(settings));
+  return dir;
+};
+
+const runHook = (cwd, workflowHome = NO_GLOBAL) => {
   const input = JSON.stringify({ cwd: shellPath(cwd), stop_hook_active: false });
   const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
     input,
-    env: { ...process.env, HOME: shellPath(os.homedir()) },
+    env: { ...process.env, HOME: shellPath(os.homedir()), WORKFLOW_HOME: shellPath(workflowHome) },
     encoding: 'utf8',
     timeout: 10000,
   });
@@ -175,6 +186,32 @@ const run = async () => {
     assert(res.stderr.includes('change-tracker: prompt missing at'), 'stderr names the missing prompt');
     assertEq(res.stdout, '', 'no block decision is printed');
     cleanup(dir);
+  });
+
+  group('change-tracker: the findings route follows findings.file');
+
+  // The stop text's two forms, read off the block a code change produces.
+  const stopText = (workflowHome) => {
+    const dir = mkTmpRepo();
+    fs.writeFileSync(path.join(dir, 'app.js'), 'console.log("hi")');
+    const { stdout } = runHook(dir, workflowHome);
+    cleanup(dir);
+    assert(stdout.includes('"block"'), `a code change blocks, got: ${stdout.slice(0, 200)}`);
+    return JSON.parse(stdout).hookSpecificOutput.additionalContext;
+  };
+
+  await test('no findings.file key anywhere: findings are said in chat under Findings, nothing filed', () => {
+    const ctx = stopText(globalWith({ version: 1 }));
+    assert(ctx.includes('Findings'), 'names the Findings section of the reply');
+    assert(/\bchat\b/i.test(ctx), 'names chat as the route');
+    assert(!ctx.includes('Filed'), 'asks for no Filed trail');
+    assert(ctx !== stopText(globalWith({ findings: { file: true } })), 'and is not the filing form');
+  });
+
+  await test('findings.file true in the global file: a status:inbox issue per finding, with the Filed trail', () => {
+    const ctx = stopText(globalWith({ findings: { file: true } }));
+    assert(ctx.includes('status:inbox'), 'asks for a status:inbox issue');
+    assert(ctx.includes('Filed'), 'with the Filed trail');
   });
 
   group('change-tracker: repeat only when something changed');

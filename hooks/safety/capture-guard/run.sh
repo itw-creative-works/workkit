@@ -33,9 +33,11 @@ capture_path=""
 mode="read"
 
 block_write() {
+  local route
+  route=$(hook_findings_route "$cwd")
   {
     echo "capture-guard: BLOCKED writing $CAPTURE_SUFFIX: it is the owner's capture surface, and the agent never adds to it."
-    echo "Its entries are cleared only by the triage drain: run the workkit:triage skill, which records the marker this guard checks. File a finding as a status:inbox issue with gh instead; where GitHub cannot be reached, put it in chat and let the owner decide."
+    echo "Its entries are cleared only by the triage drain: run the workkit:triage skill, which records the marker this guard checks. $route"
   } >&2
   exit 2
 }
@@ -44,9 +46,12 @@ block_write() {
 # which is the drain's own act and nobody else's, so the message names that,
 # not the append rule.
 block_rewrite() {
+  local route
+  route=$(hook_findings_route "$cwd")
+  route="$(printf '%s' "${route:0:1}" | tr '[:upper:]' '[:lower:]')${route:1}"
   {
     echo "capture-guard: BLOCKED rewriting $CAPTURE_SUFFIX: its entries are cleared only by the triage drain, and no drain is running."
-    echo "Run the workkit:triage skill, which records the marker this guard checks, and clear it there. Adding entries is never the agent's at all: file a finding as a status:inbox issue with gh instead."
+    echo "Run the workkit:triage skill, which records the marker this guard checks, and clear it there. Adding entries is never the agent's at all: $route"
   } >&2
   exit 2
 }

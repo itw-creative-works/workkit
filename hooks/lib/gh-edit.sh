@@ -1,8 +1,9 @@
 #!/bin/bash
-# hooks/lib/gh-edit.sh: the read of a `gh issue edit|close` command the label
-# hooks share (safety/proof-guard, safety/spec-guard, workflow/snapshot): the raw
-# match, the clause split and subcommand, a flag's values, the repo and whether
-# it is the session's, the issue numbers, and the bounce behind a cd.
+# hooks/lib/gh-edit.sh: the read of a `gh issue edit|close|create` command the
+# hooks share (safety/proof-guard, safety/spec-guard and workflow/snapshot on an
+# edit or close, safety/findings-guard on a create's title): the raw match, the
+# clause split and subcommand, a flag's values, the repo and whether it is the
+# session's, the issue numbers, and the bounce behind a cd.
 # SOURCED by hooks/_lib.sh, never executed: it defines functions and sets
 # nothing. It reads hook_redirect_span and hook_strip_quotes (lib/commit.sh) and
 # wk_repo_slug (workflow/lib/slug.sh).

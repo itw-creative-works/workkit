@@ -20,13 +20,13 @@ hook_strip_heredocs() {
   printf '%s' "$1" | perl -0777 -pe 's/(<<-?\s*(["\x27]?)([A-Za-z_][A-Za-z0-9_]*)\2).*?\n[\t ]*\3[\t ]*(?=\n|$)/$1/gs' 2>/dev/null || printf '%s' "$1"
 }
 
-# hook_strip_quotes <text>: each quoted span becomes one placeholder word, in one
-# left-to-right multiline pass, so a positional walk keeps its slots and a
-# mention never reads as a command; an empty span is deleted (`git com""mit`).
-# Perl failing passes the text unstripped; the no-perl sed is line-based.
+# hook_strip_quotes <text>: each quoted span becomes one placeholder word in one
+# multiline pass, so a positional walk keeps its slots and a mention never reads as a
+# command; an empty span is deleted (`git com""mit`). Perl keeps an escaped character
+# outside a span literal (failing, passes the text); line-based sed ignores escapes.
 hook_strip_quotes() {
   if command -v perl >/dev/null 2>&1; then
-    printf '%s' "$1" | perl -0777 -pe 's{"(?:[^"\\]|\\.)*"|\x27[^\x27]*\x27}{ length($&) > 2 ? "_hookq_" : "" }ges' 2>/dev/null || printf '%s' "$1"
+    printf '%s' "$1" | perl -0777 -pe 's{\\.(*SKIP)(*FAIL)|"(?:[^"\\]|\\.)*"|\x27[^\x27]*\x27}{ length($&) > 2 ? "_hookq_" : "" }ges' 2>/dev/null || printf '%s' "$1"
   else
     printf '%s' "$1" | sed -E "s/''|\"\"//g; s/'[^']*'|\"[^\"]*\"/_hookq_/g"
   fi
@@ -70,7 +70,7 @@ _hook_span_is_commit() {
   if command -v perl >/dev/null 2>&1; then
     out=$(printf '%s' "$1" | perl -0777 -ne '
       my $n = '"$2"'; my $i = 0;
-      while (/"(?:[^"\\]|\\.)*"|\x27[^\x27]*\x27/gs) {
+      while (/\\.(*SKIP)(*FAIL)|"(?:[^"\\]|\\.)*"|\x27[^\x27]*\x27/gs) {
         # Copy $& first: matching AGAINST $& would overwrite it mid-test.
         my $s = $&;
         next if length($s) <= 2;

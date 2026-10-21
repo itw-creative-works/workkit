@@ -11,6 +11,7 @@ const { assert } = require('../../lib/harness');
 const { BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { mkTmp } = require('../../lib/scratch');
+const { STAMP } = require('../../lib/version-stamp');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 // The plugin checkout the cloud brief's runner is seeded from: the real one,
@@ -388,9 +389,6 @@ const dropRunnerLine = (kit, src) => {
   assert(kept.length === lines.length - 1, `the kit's list named ${src} once`);
   fs.writeFileSync(file, kept.join('\n'));
 };
-
-/** Where the stamp lives and what it is called: the name is the contract. */
-const STAMP = '.workkit-version';
 
 module.exports = {
   WORKFLOW_DIR, KIT_DIR, cleanup, git, mkRemote, mkWorld, inHome, setup, runnerPairs, seeded, mkKitCopy,

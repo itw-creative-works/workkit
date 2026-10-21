@@ -65,12 +65,12 @@ Downgrade to light ONLY when ALL of these hold (any miss = stay full):
 
 - One consolidated report:
   - findings **≥80**: actionable items (file:line, issue, fix);
-  - 40–79: compressed into a "lower confidence" note. In a ship's review, what the ship does not fix goes on that ship's review-notes issue (`workkit:ship` step 3.2b); in a batch's review, the fix-or-file rule routes it (`docs/project-state.md` § How big is one issue);
+  - 40–79: compressed into a "lower confidence" note. In a ship's review, what the ship does not fix goes where `workkit:ship` step 3.2b sends it; in a batch's review, the fix-or-file rule routes it (`docs/project-state.md` § How big is one issue);
   - below 40: dropped silently.
 - End with a verdict: ship / fix-then-ship / rework.
 - Every item in the report, and every issue one names, reads in the cold-reader line (`docs/project-state.md` § Restating an issue).
 - Done-criteria: every ≥80 finding names its file:line and a concrete fix; no lens output pasted raw into chat.
-- Every finding ≥80 is fixed in the batch or filed per the fix-or-file rule (`docs/project-state.md` § How big is one issue), and the report names each filed one with the issue it landed on.
+- Every finding ≥80 is built in the batch, said or filed per the fix-or-file rule (`docs/project-state.md` § How big is one issue: filed only when `findings.file` is on or the owner says file), and the report lists each said one under **🧭 Findings** and names each filed one with the issue it landed on.
 
 ## 5. Marker (feeds the commit gate)
 

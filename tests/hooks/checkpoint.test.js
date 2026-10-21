@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
-const { BASH, SYSTEM_BASH, NO_RC, shellPath } = require('../lib/platform');
+const { BASH, SYSTEM_BASH, NO_RC, shellPath, loaderEnv } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { mkRepo } = require('../lib/git-repo');
 
@@ -178,7 +178,7 @@ const run = async () => {
     const { repo } = mkRepo('checkpoint-loader-', {});
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'docs:checkpoint'], {
       input: JSON.stringify({ prompt: 'compact', session_id: 'sess1', cwd: shellPath(repo) }),
-      env: { ...process.env, TMPDIR: shellPath(tmp) },
+      env: loaderEnv({ TMPDIR: shellPath(tmp) }),
       encoding: 'utf8',
       timeout: 10000,
     });

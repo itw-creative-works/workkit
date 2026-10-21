@@ -2,7 +2,8 @@
 # workflow/workkit/install.sh: setup's steps that check before they act on
 # this machine and this repo: the plugin, the gh login, the tower pointer, and
 # the repo the shell stands in. Sourced by workkit.sh, functions only; KIT_DIR,
-# PLUGIN_ID, STANDARDS and the `interactive` check are the entry's.
+# PLUGIN_ID, STANDARDS, HOME_LIBS, SCRIPT_DIR and the `interactive` check are the
+# entry's.
 
 # The plugin, on a machine that may not have Claude Code at all. Detection first,
 # because `marketplace add` on an installed marketplace is noise nobody needs to
@@ -55,6 +56,11 @@ repo_state() {
 # to ask, and the question is asked only where there is someone to answer it.
 offer_repo() {
   local state
+  # The question is the engine library's wk_ask_yes; without it there is none to ask.
+  if [[ "$HOME_LIBS" -ne 1 ]]; then
+    wk_skip "repo: the home-repo library is missing beside $SCRIPT_DIR; the kit is incomplete"
+    return 0
+  fi
   state="$(repo_state)"
   case "$state" in
     enabled)  wk_skip "repo: $PWD is in the workflow" ;;

@@ -91,10 +91,10 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
   - Any edit after the narrowed runs (a fix round, docs, the CHANGELOG) makes a new tree, so the narrowed runs come last, right before the flip.
   - The full suite runs once, a root `npm test` before the commit. So no brief asks an agent for the whole touched set.
 - Then [workkit:review](../review/SKILL.md) on the diff. Trivial tasks skip formal review.
-- A ≥80 finding is fixed in the batch or filed before calling it done, per the fix-or-file rule (`docs/project-state.md` § How big is one issue). The review's simplification lens covers post-green cleanup.
+- A ≥80 finding is built in the batch, or said in chat under **🧭 Findings** (filed only when `findings.file` is on or the owner says file), before calling it done, per the fix-or-file rule (`docs/project-state.md` § How big is one issue). The review's simplification lens covers post-green cleanup.
 - After the review: ONE light verification pass over the fixes (its brief from `briefs/fix-verifier.md`), ONE worker round for what it finds, then retouch the review marker so it covers the parked diff, with `full` only when that review was the full panel (the retouch closes its round; `workkit:review` § 5), then the park:
   `bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/workkit/..}/scripts/review-marker.sh"` (add `full` after a full panel)
-- A finding made after that round is filed per the fix-or-file rule and worked in the next batch, never in another round. The one exception is a bug in a `safety/` hook, fixed before the park.
+- A finding made after that round is said or filed per the fix-or-file rule, never worked in another round. The one exception is a bug in a `safety/` hook, fixed before the park.
 - Done-criteria:
   - green at every layer the change has a surface on (`docs/project-state.md` § The proof);
   - review verdict "ship";

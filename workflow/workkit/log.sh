@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # workflow/workkit/log.sh: `log`, the hooks log the loader writes, one line per
 # hook fire (docs/hooks.md § The hooks log). Sourced by workkit.sh, functions
-# only; WK_HOOKS_LOG and HOME_LIBS are the entry's.
+# only; the path is wk_hooks_log's (lib/platform.sh), the one library it needs.
 
 # workkit log [-n N] [--follow]: the log's last N lines, 40 unless -n says;
 # --follow keeps printing what the hooks append.
@@ -20,10 +20,11 @@ cmd_log() {
   done
 
   # The log's address is the engine's folder (wk_user_dir in lib/platform.sh).
-  if [[ "$HOME_LIBS" -ne 1 ]]; then
+  if ! declare -F wk_hooks_log >/dev/null; then
     wk_error "log: the engine library is missing beside $SCRIPT_DIR; this engine cannot name the hooks log"
     return 1
   fi
+  wk_hooks_log
   if [[ ! -f "$WK_HOOKS_LOG" ]]; then
     wk_skip "log: no hooks log at $WK_HOOKS_LOG yet; the first hook fire writes it"
     return 0

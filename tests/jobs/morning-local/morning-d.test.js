@@ -1,14 +1,13 @@
 // Tests for jobs/morning.sh as this machine runs it: the morning.d folder, the
-// user's own scripts run after the job's steps, each under its own log header.
-// The shared prologue (world factory, job runner) is ./helpers.js; the cloud
-// case borrows ../morning-cloud/'s, the world of a complete runner run.
+// user's own scripts run as the job's sixth step, each under its own log header.
+// The shared prologue (world factory, job runner) is ./helpers.js; a runner's
+// skip of the folder is ../morning-cloud/morning-d.test.js.
 
 const fs = require('fs');
 const path = require('path');
 const { group, test, testUnless, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { stubTool, which } = require('../../lib/platform');
 const { skipUnlessDarwin, cleanup, mkWorld, runJob } = require('./helpers');
-const cloud = require('../morning-cloud/helpers');
 
 // The job bounds a step only where a `timeout` exists, so the timeout case
 // needs a real one to hand the short bound to.
@@ -141,23 +140,6 @@ const run = async () => {
     // message's doing and not the fixture's.
     runJob(world);
     assertEq(ran(order).join(','), '10-a.sh', 'a scheduled run of the same world runs it');
-    cleanup(world.root);
-  });
-
-  await test('a cloud run does not read the folder, and names the skip', () => {
-    const world = cloud.mkWorld();
-    const order = path.join(world.root, 'order.log');
-    plant(world.workflowHome, '10-a.sh', { order });
-    const res = cloud.runJob(world);
-    assertEq(res.status, 0, `the cloud run went through: ${res.stderr}`);
-    assertEq(ran(order).length, 0, 'the script did not run');
-    const logFile = path.join(world.home, 'Library', 'Logs', 'claude-daily.log');
-    const log = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '';
-    // A step that died on the way in also runs nothing: the gate is proved by
-    // its own skip line, never by the silence of a crash.
-    assert(!/unbound variable/.test(`${res.stderr}\n${log}`), `nothing died on an unset name: ${res.stderr}\n${log}`);
-    const output = [res.stdout, res.stderr, log].join('\n');
-    assert(output.includes('morning.d: a runner owns no scripts folder; skipped'), `the step names its skip: ${output}`);
     cleanup(world.root);
   });
 

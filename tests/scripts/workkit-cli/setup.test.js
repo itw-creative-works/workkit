@@ -116,6 +116,22 @@ const run = async () => {
     done();
   });
 
+  await test('the repo question on a kit without lib.sh prints the skip line and asks nothing', () => {
+    // The prompt is lib.sh's, so a kit without it (HOME_LIBS at 0) can only take
+    // the no branch after a command-not-found; the guard names the library instead.
+    const world = mkWorld();
+    const { kit, script } = mkSetupKit();
+    fs.rmSync(path.join(kit, 'workflow', 'lib.sh'));
+    const repo = mkRepo();
+    const { said } = inCli(world, `${AT_TERMINAL}\ncd ${JSON.stringify(shellPath(repo))}\noffer_repo`, { entry: script, input: 'y\n' });
+    const line = `repo: the home-repo library is missing beside ${shellPath(path.join(kit, 'workflow'))}; the kit is incomplete`;
+    assert(said.split('\n').includes(line), `the skip line is the home wizard's, got: ${said}`);
+    assert(!said.includes('to the issue workflow?'), `nothing is asked, got: ${said}`);
+    assert(!/command not found/.test(said), `and nothing is called that is not there, got: ${said}`);
+    assert(!fs.existsSync(path.join(repo, W)), 'the repo is not written to');
+    cleanup(world.root); cleanup(kit); cleanup(repo);
+  });
+
   await test('a second setup reports nothing to do', () => {
     const world = mkWorld({ pluginInstalled: true, binOnPath: true });
     const { kit, script } = mkSetupKit();

@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { readStamp, kitVersion } = require('../../lib/version-stamp');
 const {
   KIT_DIR, cleanup, git, mkRemote, mkWorld, inHome, setup, seeded, mkKitCopy, commitKit, kitCommitted, STAMP,
 } = require('./helpers');
@@ -15,14 +16,7 @@ const run = async () => {
   // Two machines seed one clone, so the stamp is the tie-breaker: the clone says
   // which kit wrote what is in it, and an older checkout writes nothing at all.
 
-  const kitVersion = () => JSON.parse(
-    fs.readFileSync(path.join(KIT_DIR, '.claude-plugin', 'plugin.json'), 'utf8'),
-  ).version;
-  const stampOf = (world) => {
-    const file = path.join(world.tower, STAMP);
-    // The version is the stamp's first line; the sync's folder list follows it.
-    return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n')[0].trim() : null;
-  };
+  const stampOf = (world) => readStamp(path.join(world.tower, STAMP));
 
   await test('the versions compare as numbers, never as text', () => {
     const world = mkWorld();

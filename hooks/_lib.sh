@@ -116,3 +116,5 @@ hook_sha1() { wk_sha1 "$@"; }
 . "$HOOK_LIB_DIR/lib/snapshot.sh"
 # shellcheck source=./lib/prompt.sh
 . "$HOOK_LIB_DIR/lib/prompt.sh"
+# shellcheck source=./lib/settings.sh
+. "$HOOK_LIB_DIR/lib/settings.sh"

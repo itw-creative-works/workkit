@@ -7,6 +7,14 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+- [#443](../../issues/443) - A finding outside the issue in hand is said in chat under 🧭 Findings, never filed unasked: `findings.file` (default false, in `~/.workkit/settings.json`, the repo's `.workkit/settings.json` overriding) turns filing on. The fix-or-file rule, manager profile, change-tracker and capture-guard follow it; a new findings-guard hook bounces a review-notes issue while off.
+- [#442](../../issues/442) - The 10-18 batch's review leftovers: `workkit log` runs on the platform library alone, the sidebar build writes JSON rows and reads `site.sidebar` through one reader, `offer_repo` skips when the kit is incomplete, and `morning.d` is the sixth step in the job and the docs alike.
+
+### Fixed
+- [#439](../../issues/439) - Every hook suite that fires `hooks/loader.sh` spawns with `loaderEnv()`, a scratch `WORKFLOW_HOME` from `tests/lib/platform.js`, so a test run no longer appends fake session lines to the developer's own `~/.workkit/hooks.log`.
+- [#440](../../issues/440) - The quote strip the commit and proof guards share reads a backslash-escaped character outside quotes as a literal, the way the shell does, so an escaped `\"` no longer opens a span that swallows the backticks and clauses after it.
+
 ## [0.77.0] - 2026-10-19
 
 ### Added

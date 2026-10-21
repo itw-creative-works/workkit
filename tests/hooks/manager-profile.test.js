@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
-const { BASH, NO_RC, shellPath } = require('../lib/platform');
+const { BASH, NO_RC, shellPath, loaderEnv } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { mkRepo } = require('../lib/git-repo');
 const { section } = require('../lib/markdown');
@@ -178,6 +178,19 @@ const run = async () => {
       assert(ctx.length < 1600, `${rung} injection is ${ctx.length} chars`);
     }
   });
+  await test('a findings clause names chat as the route and findings.file as the toggle, on both rungs', () => {
+    // One sentence carries both, so "chat" said elsewhere in the injection
+    // cannot stand in for the route.
+    for (const rung of ['fable', 'opus']) {
+      freshTmp();
+      cacheSession('sess1', id(rung));
+      const ctx = contextOf(runHook(payload()));
+      const clause = ctx.split(/(?<=[.!?])\s+/).find((s) => s.includes('findings.file'));
+      assert(clause, `${rung}: no clause names findings.file`);
+      assert(/finding/i.test(clause.replace('findings.file', '')) && /\bchat\b/i.test(clause),
+        `${rung}: the findings.file clause does not route findings to chat: ${clause}`);
+    }
+  });
 
   group('manager-profile: the batch start rule and the short issue line');
   await test('a frontier session is told a batch is always one and spawns now', () => {
@@ -282,7 +295,7 @@ const run = async () => {
     const { repo } = mkRepo('profile-loader-', {});
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:profile'], {
       input: JSON.stringify({ ...payload(), cwd: shellPath(repo) }),
-      env: { ...process.env, TMPDIR: shellPath(tmp) },
+      env: loaderEnv({ TMPDIR: shellPath(tmp) }),
       encoding: 'utf8',
       timeout: 10000,
     });
@@ -295,7 +308,7 @@ const run = async () => {
     const { repo } = mkRepo('profile-loader-', {});
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:profile'], {
       input: JSON.stringify({ ...payload(), cwd: shellPath(repo) }),
-      env: { ...process.env, TMPDIR: shellPath(tmp), HOOK_DISABLE: '1' },
+      env: loaderEnv({ TMPDIR: shellPath(tmp), HOOK_DISABLE: '1' }),
       encoding: 'utf8',
       timeout: 10000,
     });

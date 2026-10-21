@@ -181,11 +181,6 @@ SECRETS_JSON=''
 IDENTITY_SIGNED_IN=''
 IDENTITY_USER=''
 
-# The hooks log hooks/loader.sh writes, one line per hook fire (wk_hooks_log in
-# lib/platform.sh); empty when the library is missing.
-WK_HOOKS_LOG=''
-if declare -F wk_hooks_log >/dev/null; then wk_hooks_log; fi
-
 # ── The pieces ────────────────────────────────────────────────────────────────
 
 # Sourced plainly, never through the tolerant loop: the pieces are the command,

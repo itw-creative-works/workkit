@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
-const { BASH, NO_RC, shellPath } = require('../lib/platform');
+const { BASH, NO_RC, shellPath, loaderEnv } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { mkRepo } = require('../lib/git-repo');
 
@@ -411,7 +411,7 @@ const run = async () => {
     const { repo } = mkRepo('resolver-loader-', {});
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:resolver'], {
       input: JSON.stringify({ ...payload('worker'), cwd: shellPath(repo) }),
-      env: { ...process.env, TMPDIR: shellPath(tmp) },
+      env: loaderEnv({ TMPDIR: shellPath(tmp) }),
       encoding: 'utf8',
       timeout: 10000,
     });
@@ -423,7 +423,7 @@ const run = async () => {
     const { repo } = mkRepo('resolver-loader-', {});
     const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:resolver'], {
       input: JSON.stringify({ ...payload('worker'), cwd: shellPath(repo) }),
-      env: { ...process.env, TMPDIR: shellPath(tmp), HOOK_DISABLE: '1' },
+      env: loaderEnv({ TMPDIR: shellPath(tmp), HOOK_DISABLE: '1' }),
       encoding: 'utf8',
       timeout: 10000,
     });

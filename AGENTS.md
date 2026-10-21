@@ -19,7 +19,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 │   ├── _lib.sh           # shared helpers (sourced, never executed)
 │   ├── lib/              # _lib.sh's helper groups, one file per concern (sourced by it, never a hook)
 │   ├── docs/             # board-guard, changelog-guard, change-tracker, checkpoint, session, session-guard, state-check
-│   ├── safety/           # vendor-guard, commit-gate, commit-language, release-taken, issue-guard, proof-guard, spec-guard, suite-guard, capture-guard, tree-guard, test-reminder
+│   ├── safety/           # vendor-guard, commit-gate, commit-language, release-taken, issue-guard, proof-guard, spec-guard, suite-guard, capture-guard, findings-guard, tree-guard, test-reminder
 │   ├── manager/          # resolver, profile, spawn-guard, close-guard, addon + resources/ladder.json (the tier SSOT)
 │   └── workflow/         # standards (the daily heal) + reload-guard + feature + snapshot (the red-proof copy)
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
@@ -49,7 +49,7 @@ Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh`
 
 A repo that has not opted in gets none of the hooks: the loader stands every one down there but the setup reminder and the restart notice (`docs/hooks.md` § Where every hook stands down).
 
-The index of all twenty-seven and what each one does: `docs/hooks.md`. Four carry a README beside the script as well: `tree-guard`, `release-taken`, `session-guard`, `change-tracker`.
+The index of all twenty-eight and what each one does: `docs/hooks.md`. Four carry a README beside the script as well: `tree-guard`, `release-taken`, `session-guard`, `change-tracker`.
 
 ## Agents
 
@@ -85,9 +85,13 @@ Every suite ends with `if (require.main === module) selfRun(<its export>);`. One
 
 Every suite runs on macOS and on Windows under Git Bash, or skips whole by name on the platform it cannot answer. Everything that differs (the shell a case spawns, a PATH it controls, the POSIX spelling a shell script sees, how a tool reaches a stub PATH) lives in `tests/lib/platform.js`, every export the identity on macOS and Linux.
 
-A world a case spawns comes from the same seam: `homeEnv()` is the scratch home in every spelling a tool reads one by (HOME, USERPROFILE, `GH_CONFIG_DIR`, no ambient token, Node's compile cache off), so no child of a test reads the developer's own home or reaches GitHub as them, and `stubTool()` is the one writer of a PATH stub, which a shell starts on either platform and Node starts on neither.
+A world a case spawns comes from the same seam:
 
-A scratch folder has one writer as well: `mkTmp(prefix)` in `tests/lib/scratch.js`, which resolves the path and removes every folder it made when the process exits.
+- `homeEnv()` is the scratch home in every spelling a tool reads one by (HOME, USERPROFILE, `GH_CONFIG_DIR`, no ambient token, Node's compile cache off), so no child of a test reads the developer's own home or reaches GitHub as them;
+- `loaderEnv()` is the env every suite that fires `hooks/loader.sh` spawns with (this process's env, the real HOME, a fresh scratch `WORKFLOW_HOME`), so no fire lands in the developer's own `hooks.log`;
+- and `stubTool()` is the one writer of a PATH stub, which a shell starts on either platform and Node starts on neither.
+
+A scratch folder has one writer as well: `mkTmp(prefix)` in `tests/lib/scratch.js`, which resolves the path and removes every folder it made when the process exits. The kit's version stamp has one reader as well: `tests/lib/version-stamp.js` holds `STAMP`, `readStamp(file)` and `kitVersion()`, so no suite spells the stamp file or its first-line read itself.
 
 A case only one platform can answer names its skip through the harness's `skip()`. On a Windows machine `workkit setup` builds the kit's script shell (`workflow/script-shell.cs`) and points npm at it, so a root `npm test` there records its tree.
 
