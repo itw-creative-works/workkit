@@ -14,14 +14,10 @@ WORKKIT_DIR=".workkit"
 # both read it, so one hook never accepts a release the other misses.
 readonly HOOK_VERSION_RE='v?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?'
 
-# The AGENTS.md budget: board-guard bounces a write past it and state-check
-# announces a file past it, both measuring through hook_agents_budget.
-readonly HOOK_AGENTS_MAX_LINES=250
-readonly HOOK_AGENTS_MAX_BYTES=400
-
 # A system-delivered prompt's shapes, as EREs bash `[[ =~ ]]` and jq `test()`
 # both read: hook_prompt_is_system and close-guard's jq pass take them from
-# here. An opening tag other than the owner's paste, or a frame line anywhere.
+# here, and hooks/mods/frame.js holds them for the hooks module. An opening tag
+# other than the owner's paste, or a frame line anywhere.
 readonly HOOK_PROMPT_TAG_RE='^[[:space:]]*<[A-Za-z][A-Za-z0-9_.:-]*>'
 readonly HOOK_PROMPT_PASTE_RE='^[[:space:]]*<pasted_content'
 readonly HOOK_PROMPT_FRAME_RE='\[SYSTEM NOTIFICATION - NOT USER INPUT\]|Another Claude session sent a message|<agent-message |\[Subagent hand-back\]'
@@ -86,7 +82,7 @@ hook_sha1() { wk_sha1 "$@"; }
 . "$HOOK_LIB_DIR/../workflow/changelog/changelog-job.sh"
 
 # The CHANGELOG format check (wk_changelog_lint and its linter), engine names;
-# commit-gate check 3 and docs/changelog-guard share it with script-shell.sh.
+# commit-gate check 3 shares it with script-shell.sh.
 # shellcheck source=../workflow/lib/changelog.sh
 . "$HOOK_LIB_DIR/../workflow/lib/changelog.sh"
 
@@ -106,8 +102,6 @@ hook_sha1() { wk_sha1 "$@"; }
 . "$HOOK_LIB_DIR/lib/paths.sh"
 # shellcheck source=./lib/suite.sh
 . "$HOOK_LIB_DIR/lib/suite.sh"
-# shellcheck source=./lib/agents.sh
-. "$HOOK_LIB_DIR/lib/agents.sh"
 # shellcheck source=./lib/tree.sh
 . "$HOOK_LIB_DIR/lib/tree.sh"
 # shellcheck source=./lib/gh-edit.sh

@@ -1,45 +1,32 @@
-// Tests for hooks/docs:changelog-guard: the PostToolUse hook that holds a
-// CHANGELOG entry to its format at write time. The rules are tested in
-// tests/scripts/changelog.test.js; these cover what the hook owns: which files
-// it reads, the exit 2, and judging only what a change added.
+// Tests for docs:changelog-guard's logic, changelogGuardVerdict(path,
+// lintResult) in hooks/mods/changelog-guard.js. The lint result is the real
+// linter's, run the way the module runs it (`node changelog.js <file>
+// --added-only`), so judging only what a change added is proved end to end.
+// The rules are tests/scripts/changelog.test.js's; the wiring cases (no
+// file_path, a file that is gone, the registration) are
+// hooks/post-tool-use.test.ts.
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { spawnSync, execFileSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
-const { BASH, NO_RC, shellPath } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
+const { mods, textOf, runResult } = require('../lib/mods-inputs');
 
-const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'changelog-guard', 'run.sh');
-// Point the hook at this checkout's engine rather than the installed symlink,
-// so the suite tests the code under review (same override the standards suite uses).
-const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
+const LINTER = path.join(__dirname, '..', '..', 'workflow', 'changelog', 'changelog.js');
+const ISSUE = '[#4](https://github.com/o/r/issues/4)';
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
-const ISSUE = '[#4](https://github.com/o/r/issues/4)';
+const doc = (...bullets) => ['# Changelog', '', '## [Unreleased]', '', '### Added', '', ...bullets.flatMap((b) => [b, ''])].join('\n');
 
-const doc = (...bullets) => [
-  '# Changelog',
-  '',
-  '## [Unreleased]',
-  '',
-  '### Added',
-  '',
-  ...bullets.flatMap((b) => [b, '']),
-].join('\n');
-
-const runHook = (filePath) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-    input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: shellPath(filePath) } }),
-    env: { ...process.env, HOME: shellPath(os.homedir()), WORKFLOW_DIR },
-    encoding: 'utf8',
-    timeout: 20000,
-  });
-  return { code: res.status, stderr: res.stderr || '' };
+/** The linter's run on `file`, as the process.run result the module receives. */
+const lint = (file) => {
+  const res = spawnSync(process.execPath, [LINTER, file, '--added-only'], { cwd: path.dirname(file), encoding: 'utf8', timeout: 20000 });
+  return runResult({ exitCode: res.status, stdout: res.stdout || '', stderr: res.stderr || '' });
 };
+const verdict = (file, result = lint(file)) => textOf(mods('changelog-guard').changelogGuardVerdict(file, result));
 
 /** A repo whose committed CHANGELOG is `initial`, so diffs are genuine. */
 const mkRepo = (initial) => {
@@ -62,108 +49,58 @@ const append = (dir, line) => {
 const run = async () => {
   group('changelog-guard: scope');
 
-  await test('a file that is not a CHANGELOG is ignored', () => {
-    const dir = mkTmp('clg-');
-    const file = path.join(dir, 'README.md');
-    fs.writeFileSync(file, '- an essay bullet with no issue link whatsoever.\n');
-    const { code, stderr } = runHook(file);
-    assertEq(code, 0, 'exit 0');
-    assertEq(stderr, '', 'silent');
-    cleanup(dir);
-  });
-
-  await test('no file_path in the input: fail open', () => {
-    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-      input: JSON.stringify({ tool_name: 'Write', tool_input: {} }),
-      env: { ...process.env, HOME: shellPath(os.homedir()), WORKFLOW_DIR },
-      encoding: 'utf8',
-      timeout: 10000,
-    });
-    assertEq(res.status, 0, 'exit 0');
-  });
-
-  await test('a CHANGELOG that no longer exists: fail open', () => {
-    const dir = mkTmp('clg-');
-    const { code } = runHook(path.join(dir, 'CHANGELOG.md'));
-    assertEq(code, 0, 'exit 0');
-    cleanup(dir);
+  await test('ports "a file that is not a CHANGELOG is ignored"', () => {
+    const failing = runResult({ exitCode: 1, stderr: 'issue-link: no issue link\n' });
+    assertEq(verdict('/w/repo/README.md', failing), '', 'the path decides, whatever a lint said');
   });
 
   group('changelog-guard: judging');
 
-  await test('a new entry in the format passes', () => {
+  await test('ports "a new entry in the format passes"', () => {
     const dir = mkRepo(doc());
     const file = append(dir, `- ${ISSUE} - Plugins install from settings.json.`);
-    const { code, stderr } = runHook(file);
-    assertEq(code, 0, `exit 0, got: ${stderr}`);
+    assertEq(verdict(file), '', 'passes');
     cleanup(dir);
   });
 
-  await test('a new essay entry blocks with exit 2 and names the rule', () => {
+  await test('ports "a new essay entry blocks with exit 2 and names the rule"', () => {
     const dir = mkRepo(doc());
     const file = append(dir, `- **Plugins are installed from a declaration.** ${new Array(60).fill('word').join(' ')}`);
-    const { code, stderr } = runHook(file);
-    assertEq(code, 2, 'exit 2 blocks the write');
-    assert(stderr.includes('issue-link'), `names the rule, got: ${stderr}`);
-    assert(stderr.includes('word-cap'), `names every broken rule at once, got: ${stderr}`);
+    const out = verdict(file);
+    assert(out.includes('issue-link'), `names the rule, got: ${out}`);
+    assert(out.includes('word-cap'), `names every broken rule at once, got: ${out}`);
     cleanup(dir);
   });
 
-  await test('a legacy entry the write did not touch does not block', () => {
-    // Adopting the format must never bounce a repo for its history.
+  // Adopting the format must never bounce a repo for its history.
+  await test('ports "a legacy entry the write did not touch does not block"', () => {
     const dir = mkRepo(doc('- A legacy essay entry with no issue link at all.'));
     const file = append(dir, `- ${ISSUE} - A properly formatted new entry.`);
-    const { code, stderr } = runHook(file);
-    assertEq(code, 0, `exit 0, got: ${stderr}`);
+    assertEq(verdict(file), '', 'passes');
     cleanup(dir);
   });
 
-  await test('a correct entry in a keepachangelog file with a link footer passes', () => {
-    // The footer is not part of the entry above it: correct work never bounces
-    // naming a rule its author did not break.
-    const dir = mkRepo([
-      '# Changelog',
-      '',
-      '## [Unreleased]',
-      '',
-      '### Added',
-      '',
-      '[Unreleased]: https://github.com/o/r/compare/v1.0.0...HEAD',
-      '',
-    ].join('\n'));
+  await test('ports "a correct entry in a keepachangelog file with a link footer passes"', () => {
+    const dir = mkRepo(['# Changelog', '', '## [Unreleased]', '', '### Added', '', '[Unreleased]: https://github.com/o/r/compare/v1.0.0...HEAD', ''].join('\n'));
     const file = path.join(dir, 'CHANGELOG.md');
-    fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(
-      '[Unreleased]:',
-      `- ${ISSUE} - A correct new entry.\n\n[Unreleased]:`,
-    ));
-    const { code, stderr } = runHook(file);
-    assertEq(code, 0, `exit 0, got: ${stderr}`);
+    fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('[Unreleased]:', `- ${ISSUE} - A correct new entry.\n\n[Unreleased]:`));
+    assertEq(verdict(file), '', 'passes');
     cleanup(dir);
   });
 
-  await test('hooks.json registers the hook under PostToolUse Edit|Write', () => {
-    const settings = JSON.parse(fs.readFileSync(
-      path.join(__dirname, '..', '..', 'hooks', 'hooks.json'), 'utf8'));
-    const entries = settings.hooks.PostToolUse.filter((e) => e.matcher === 'Edit|Write');
-    assert(
-      entries.some((e) => e.hooks.some((h) => h.command.includes('docs:changelog-guard'))),
-      'docs:changelog-guard is wired',
-    );
-  });
-
-  await test('a CHANGELOG outside git is judged in full', () => {
-    // With no git to ask, everything is new. A first CHANGELOG is still held
-    // to the format rather than slipping through unjudged.
+  // With no git to ask, everything is new: a first CHANGELOG is still judged.
+  await test('ports "a CHANGELOG outside git is judged in full"', () => {
     const dir = mkTmp('clg-');
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, doc('- An essay entry with no issue link.'));
-    assertEq(runHook(file).code, 2, 'blocked');
+    assert(verdict(file).length > 0, 'blocked');
     cleanup(dir);
   });
-
-  return summary();
 };
 
-module.exports = run;
+module.exports = async () => {
+  await run();
+  return summary();
+};
 
 if (require.main === module) selfRun(module.exports);

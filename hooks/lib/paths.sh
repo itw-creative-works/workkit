@@ -18,7 +18,7 @@ hook_is_test_name() {
 # hook_is_test_path <path>: a test file by name, or any file under a `test`,
 # `tests` or `__tests__` folder at any depth, the top level included.
 # Consumers: safety/commit-gate (check 1), safety/proof-guard (the qa flip),
-# safety/test-reminder, hook_is_code_path.
+# hook_is_code_path; the module's twin is isTestPath in hooks/mods/test-reminder.js.
 hook_is_test_path() {
   hook_is_test_name "$1" && return 0
   case "$1" in
@@ -27,8 +27,9 @@ hook_is_test_path() {
   return 1
 }
 
-# hook_has_code_ext <basename>: the name ends in a code extension, the one
-# list every code-versus-docs judgment reads.
+# hook_has_code_ext <basename>: the name ends in a code extension, the shell
+# list every code-versus-docs judgment reads (its module twin: CODE_EXT in
+# hooks/mods/test-reminder.js).
 # Consumers: hook_is_code_path, safety/commit-gate (the docs classifier),
 # docs/change-tracker.
 hook_has_code_ext() {
@@ -40,7 +41,8 @@ hook_has_code_ext() {
 
 # hook_is_code_path <path>: a source file the test obligation covers: a code
 # extension, never a test path, a `*.config.*` file, or anything under _attic/.
-# Consumers: safety/commit-gate (check 1), safety/test-reminder.
+# Consumer: safety/commit-gate (check 1); the module's twin is isCodePath in
+# hooks/mods/test-reminder.js, which safety:test-reminder reads.
 hook_is_code_path() {
   hook_is_test_path "$1" && return 1
   case "$1" in

@@ -7,9 +7,12 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, selfRun, summary } = require('./lib/harness');
+const {
+  group, test, testUnless, assert, assertEq, selfRun, summary,
+} = require('./lib/harness');
 const { findSuites } = require('./lib/suites');
 const { mkTmp } = require('./lib/scratch');
+const { which, basePathWithout } = require('./lib/platform');
 
 const RUNNER = path.join(__dirname, 'run.js');
 const LIB = path.join(__dirname, 'lib');
@@ -32,6 +35,28 @@ const runSuites = (suites, argsFor = () => []) => {
 };
 
 const runWithSuite = (body) => runSuites({ 'fixture.test.js': body });
+
+// A throwaway plugin repo for the mod half: one Node suite under tests/, and a
+// hooks module with one passing *.test.ts, run whole through the real runner
+// on `PATH`.
+const runModHalf = (PATH) => {
+  const root = mkTmp('runner-mod-');
+  const dir = path.join(root, 'tests');
+  fs.mkdirSync(dir);
+  spawnSync('git', ['init', '-q'], { cwd: root });
+  fs.copyFileSync(RUNNER, path.join(dir, 'run.js'));
+  fs.cpSync(LIB, path.join(dir, 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'node.test.js'), SUITE("  await test('the node case', () => { assert(true); });"));
+  fs.mkdirSync(path.join(root, '.claude-plugin'));
+  fs.writeFileSync(path.join(root, '.claude-plugin', 'plugin.json'), '{ "name": "fixture", "version": "0.0.1" }\n');
+  fs.mkdirSync(path.join(root, 'hooks'));
+  fs.writeFileSync(path.join(root, 'hooks', 'hooks.json'), '{ "modules": ["./register.js"] }\n');
+  fs.writeFileSync(path.join(root, 'hooks', 'register.js'), 'export function register(on) {}\n');
+  fs.writeFileSync(path.join(root, 'hooks', 'fixture.test.ts'), "import { test, expect } from 'claude-code/testing'\ntest('the mod case', async () => { expect(1).toBe(1) })\n");
+  const res = spawnSync('node', [path.join(dir, 'run.js')], { cwd: root, encoding: 'utf8', env: { ...process.env, PATH }, timeout: 120000 });
+  fs.rmSync(root, { recursive: true, force: true });
+  return { code: res.status, output: (res.stdout || '') + (res.stderr || '') };
+};
 
 const SELF_RUN = /^if \(require\.main === module\) selfRun\(/m;
 
@@ -127,6 +152,31 @@ const run = async () => {
     }
     assert(output.includes('7 passed, 0 failed'), `totals count all three, got: ${output}`);
     assert(output.includes('3 suites)'), `names three suites, got: ${output}`);
+  });
+
+  // `npm test` runs the Node suites, then `claude plugin test` over the hooks
+  // module's *.test.ts files, and reports both halves.
+  group('run.js: the mod half');
+
+  await testUnless(!which('claude'), 'no claude binary on this machine')('a whole run reports the mod half beside the Node suites', () => {
+    const { code, output } = runModHalf(process.env.PATH);
+    assertEq(code, 0, `exit 0, got: ${output}`);
+    assert(output.includes('the node case'), `the Node half ran, got: ${output}`);
+    assert(/mod half/.test(output), `the mod half is named, got: ${output}`);
+    assert(output.includes('the mod case'), `the mod suite ran, got: ${output}`);
+  });
+
+  await test('with no claude binary the mod half reads skipped with its reason and the Node half still runs', () => {
+    const tmp = mkTmp('runner-noclaude-');
+    const PATH = basePathWithout(tmp, 'claude');
+    assert(!which('claude', PATH), 'the fixture PATH holds no claude');
+    const { code, output } = runModHalf(PATH);
+    fs.rmSync(tmp, { recursive: true, force: true });
+    assertEq(code, 0, `a skip keeps the run green, got: ${output}`);
+    assert(output.includes('the node case'), `the Node half ran, got: ${output}`);
+    assert(!output.includes('the mod case'), 'the mod suite did not run');
+    const skipLine = output.split('\n').find((l) => /mod half/.test(l) && /skipped|\u2298/.test(l) && /claude/.test(l));
+    assert(skipLine, `a skip line names the mod half and claude as the reason, got: ${output}`);
   });
 
   // A suite is also run on its own by file (`node tests/<path>.test.js`); one

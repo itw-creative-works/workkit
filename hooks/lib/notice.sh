@@ -5,8 +5,8 @@
 
 # hook_pretool_notice <message> [event, default PreToolUse]: the line as stdout
 # JSON for the user and the model, since stderr from a hook exiting 0 reaches
-# neither. Consumers: safety/commit-gate, manager/spawn-guard,
-# safety/proof-guard, safety/tree-guard, workflow/snapshot (PostToolUse).
+# neither. Consumers: safety/commit-gate, safety/proof-guard,
+# safety/tree-guard, workflow/snapshot (PostToolUse).
 hook_pretool_notice() {
   hook_jq -n --arg m "$1" --arg e "${2:-PreToolUse}" '{
     "systemMessage": $m,

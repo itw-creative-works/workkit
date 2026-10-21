@@ -103,7 +103,7 @@ state=''
 owner=''
 if [ -f "$SESSION_FILE" ]; then
   # Content lines: the template's scaffolding counts zero. The count and the bar
-  # live in docs/session-guard too; change both together (a test pins them).
+  # live in hooks/mods/session-guard.js too; change both together (a test pins them).
   # grep -c prints its count even when exiting 1 on zero matches, so a fallback
   # echo would double it.
   lines=$(grep -cvE '^[[:space:]]*$|^[[:space:]]*#|^[[:space:]]*>|^[[:space:]]*<!--' "$SESSION_FILE" 2>/dev/null) || true

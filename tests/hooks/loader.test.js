@@ -2,8 +2,12 @@
 // script. Loader-level failures fail open (a broken loader must never wedge
 // the session); the hook's own exit code propagates untouched so blocking
 // hooks actually block. The loader also stands every hook down in a repo that
-// has not opted in, bar the two machine-level ones, and runs it for any command
-// whose target it cannot place for sure.
+// has not opted in, bar safety:issue-guard, which speaks to the machine, and
+// runs it for any command whose target it cannot place for sure.
+
+// Retired with the hooks module: the reload-guard and setup-reminder half of
+// "outside any git repo" (hooks/session-start.test.ts holds it as "outside any
+// git repo: standards returns the setup line only, reload-guard stamps ...").
 
 const fs = require('fs');
 const path = require('path');
@@ -98,20 +102,9 @@ const HOOKS = [
     input: (cwd) => bash(cwd, 'npm test'),
   },
   {
-    name: 'docs:checkpoint',
-    prep: () => {},
-    input: (cwd) => ({ hook_event_name: 'UserPromptSubmit', cwd: shellPath(cwd), session_id: 's1', prompt: 'compact' }),
-  },
-  {
-    name: 'manager:resolver',
-    prep: () => {},
-    input: (cwd) => ({
-      tool_name: 'Task',
-      cwd: shellPath(cwd),
-      session_id: 's1',
-      transcript_path: shellPath(path.join(cwd, 'no-transcript.jsonl')),
-      tool_input: { subagent_type: 'worker', prompt: 'do the thing' },
-    }),
+    name: 'docs:session',
+    prep: (w) => w.write(`${W}/agents/session.md`, '# Session\n\n## Active\n- #1: the queued entry.\n'),
+    input: (cwd) => ({ hook_event_name: 'SessionStart', cwd: shellPath(cwd), session_id: 's1', source: 'startup' }),
   },
 ];
 
@@ -146,21 +139,6 @@ const rosterWorld = () => {
   named.git('remote', 'set-url', 'origin', 'https://example.invalid/acme/tools.git');
   const home = mkRosterHome([[named.repo, 'enabled']]);
   return { cwd: cwd.repo, home, env: homeEnv(home, { PATH: process.env.PATH, TMPDIR: shellPath(cwd.tmp) }) };
-};
-
-// The three load-time surfaces workflow:reload-guard watches, in a checkout of
-// its own (RELOAD_GUARD_ROOT), so the kit's own files stay untouched.
-const mkReloadRoot = () => {
-  const dir = mkTmp('loader-reload-');
-  for (const [rel, body] of [
-    ['hooks/hooks.json', '{ "hooks": {} }\n'],
-    ['agents/worker.md', '# worker\n'],
-    ['skills/ship/SKILL.md', '# ship\n'],
-  ]) {
-    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
-    fs.writeFileSync(path.join(dir, rel), body);
-  }
-  return dir;
 };
 
 // A copy of the kit whose hooks folder holds one more hook, `fixture:capture`,
@@ -212,19 +190,19 @@ const assertStands = (loader, cwd, command, home) => {
 };
 
 // The hook log the loader writes, in a workkit home of the case's own. Each
-// fire is docs:checkpoint at `w.repo`, a hook that stands down where the repo
+// fire is docs:session at `w.repo`, a hook that stands down where the repo
 // has not opted in. `log` reads the file back as lines, [] when absent.
 const mkLogged = (answer = 'enabled') => {
   const w = mkWorld(answer);
   const home = path.join(w.tmp, 'workkit-home');
   const file = path.join(home, 'hooks.log');
   const env = envOf(w, { WORKFLOW_HOME: shellPath(home) });
-  const prompt = { hook_event_name: 'UserPromptSubmit', cwd: shellPath(w.repo), session_id: 's-log', prompt: 'hi' };
+  const start = { hook_event_name: 'SessionStart', cwd: shellPath(w.repo), session_id: 's-log', source: 'startup' };
   return {
     w,
     file,
     seed: (lines) => { fs.mkdirSync(home, { recursive: true }); fs.writeFileSync(file, `${lines.join('\n')}\n`); },
-    fire: (name = 'docs:checkpoint', extra = {}) => runIn(name, prompt, w.repo, { ...env, ...extra }),
+    fire: (name = 'docs:session', extra = {}) => runIn(name, start, w.repo, { ...env, ...extra }),
     log: () => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean) : []),
   };
 };
@@ -237,7 +215,7 @@ const assertLogLine = (line, w, hook, verdict) => {
   const [iso, name, event, session, cwd, said] = fields;
   assert(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(iso), `an ISO time first, got ${JSON.stringify(iso)}`);
   assertEq(name.replace('/', ':'), hook, 'the hook name');
-  assertEq(event, 'UserPromptSubmit', 'the event name');
+  assertEq(event, 'SessionStart', 'the event name');
   assertEq(session, 's-log', 'the session id');
   assert([shellPath(w.repo), w.repo].includes(cwd), `the cwd, got ${JSON.stringify(cwd)}`);
   assertEq(said, verdict, 'the verdict');
@@ -283,7 +261,7 @@ const run = async () => {
 
   group('loader: a repo that has not opted in');
 
-  await test('no settings file: commit-gate, suite-guard, checkpoint and resolver step aside', () => {
+  await test('no settings file: commit-gate, suite-guard and docs:session step aside', () => {
     for (const [name, out] of runEach('enabled')) assertSpoke(out, `${name} in an opted-in repo`);
     for (const [name, out] of runEach('none')) assertSilent(out, `${name} in a repo with no settings file`);
   });
@@ -369,29 +347,16 @@ const run = async () => {
     assertEq(foreign.code, 2, `a token in a write to a repo off the roster must block: ${said(foreign)}`);
   });
 
-  await test('outside any git repo: reload-guard and the setup reminder fire, nothing else', () => {
+  await test('outside any git repo: issue-guard fires, nothing else', () => {
     const cwd = mkTmp('loader-norepo-');
     const tmp = mkTmp('loader-norepo-tmp-');
-    const root = mkReloadRoot();
     const env = homeEnv(mkTmp('loader-norepo-home-'), {
       PATH: joinPath(basePathWithout(mkTmp('loader-nogh-'), 'gh'), NODE_DIR),
       TMPDIR: shellPath(tmp),
-      WORKFLOW_DIR: shellPath(path.join(KIT, 'workflow')),
       WORKFLOW_HOME: loaderEnv().WORKFLOW_HOME,
-      WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('loader-claude-'), 'claude-home')),
-      WORKFLOW_STANDARDS_CACHE: shellPath(mkTmp('loader-cache-')),
-      RELOAD_GUARD_ROOT: shellPath(root),
       MANAGER_USER_SETTINGS: shellPath(path.join(tmp, 'no-user-settings.json')),
       MANAGER_DEBUG: '',
     });
-    const start = { hook_event_name: 'SessionStart', cwd: shellPath(cwd), session_id: 's1', source: 'startup' };
-    const setup = runIn('workflow:standards', start, cwd, env);
-    assert(setup.stdout.includes('workkit.sh setup'), `the setup reminder still fires: ${said(setup)}`);
-    runIn('workflow:reload-guard', start, cwd, env);
-    fs.writeFileSync(path.join(root, 'hooks', 'hooks.json'), '{ "hooks": { "Stop": [] } }\n');
-    const prompt = { hook_event_name: 'UserPromptSubmit', cwd: shellPath(cwd), session_id: 's1', prompt: 'hi' };
-    const reload = runIn('workflow:reload-guard', prompt, cwd, env);
-    assert(reload.stdout.includes('/reload-plugins'), `the restart notice still fires: ${said(reload)}`);
     const others = [
       ...HOOKS.map((hook) => [hook.name, hook.input(cwd)]),
       ['safety:vendor-guard', editVendored(cwd, cwd)],
@@ -430,7 +395,7 @@ const run = async () => {
     l.fire();
     const lines = l.log();
     assertEq(lines.length, 1, `one line appended, got ${JSON.stringify(lines)}`);
-    assertLogLine(lines[0], l.w, 'docs:checkpoint', 'run');
+    assertLogLine(lines[0], l.w, 'docs:session', 'run');
   });
 
   await test('a fire in a repo that has not opted in appends one line ending in stood-down', () => {
@@ -438,7 +403,7 @@ const run = async () => {
     l.fire();
     const lines = l.log();
     assertEq(lines.length, 1, `one line appended, got ${JSON.stringify(lines)}`);
-    assertLogLine(lines[0], l.w, 'docs:checkpoint', 'stood-down');
+    assertLogLine(lines[0], l.w, 'docs:session', 'stood-down');
   });
 
   await test('a hook whose script is missing appends one line ending in missing', () => {
@@ -454,7 +419,7 @@ const run = async () => {
     l.fire();
     const before = l.log();
     assertEq(before.length, 1, `the fire without the switch logs, got ${JSON.stringify(before)}`);
-    l.fire('docs:checkpoint', { HOOK_DISABLE: '1' });
+    l.fire('docs:session', { HOOK_DISABLE: '1' });
     assertEq(JSON.stringify(l.log()), JSON.stringify(before), 'the kill switch logs nothing');
   });
 
@@ -467,7 +432,7 @@ const run = async () => {
     assertEq(lines.length, 5001, 'the last 5,000 old lines plus the new one');
     assertEq(lines[0], old[old.length - 5000], 'the oldest line kept is the 5,000th from the end');
     assertEq(lines[4999], old[old.length - 1], 'the old lines end where the log did');
-    assertLogLine(lines[5000], l.w, 'docs:checkpoint', 'run');
+    assertLogLine(lines[5000], l.w, 'docs:session', 'run');
   });
 
   group('loader: loaderEnv, the scratch workkit home a suite fires the loader with');
@@ -483,11 +448,11 @@ const run = async () => {
     const read = () => (fs.existsSync(real) ? fs.readFileSync(real, 'utf8') : '');
     const id = `s-loader-env-${process.pid}-${Date.now()}`;
     const env = loaderEnv();
-    const prompt = { hook_event_name: 'UserPromptSubmit', cwd: shellPath(OPTED.repo), session_id: id, prompt: 'hi' };
+    const start = { hook_event_name: 'SessionStart', cwd: shellPath(OPTED.repo), session_id: id, source: 'startup' };
     const before = read();
-    const out = runIn('docs:checkpoint', prompt, OPTED.repo, env);
+    const out = runIn('docs:session', start, OPTED.repo, env);
     const after = read();
-    assertSilent(out, 'docs:checkpoint on a plain prompt');
+    assertSilent(out, 'docs:session in a repo with no session.md');
     const lines = readIn(`${env.WORKFLOW_HOME}/hooks.log`).split('\n').filter(Boolean);
     assertEq(lines.length, 1, `one line under the scratch home, got ${JSON.stringify(lines)}`);
     assert(lines[0].includes(`\t${id}\t`), `the fire's own line, got ${JSON.stringify(lines[0])}`);

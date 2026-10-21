@@ -1,434 +1,94 @@
-// manager/resolver hook: spawn-time model resolution for the class agents:
-// the ladder manifest shape, the decision table in rewrite mode (both
-// session-detection paths), advise mode, and the pass-through invariants: never
-// touch a non-class spawn or break a session when preconditions are missing.
+// Tests for manager:resolver's logic: resolverModel(config, subagentType,
+// parentModel, givenModel) in hooks/mods/resolver.js, over managerConfig(
+// ladder, userSettings, repoSettings) and modelTier(id) in
+// hooks/mods/manager.js. The ladder's shape, the decision table, both class
+// spellings and the layer merge. The spawn itself (a given model, advise
+// mode, the layers read off disk) is hooks/agent-spawn.test.ts.
+
+// HEAD cases retired with the mod: "garbage stdin exits 0 silently", "empty stdin exits 0 silently" (the
+// engine parses the input); "no cache → session model from the last assistant entry" and "quoted transcript
+// content cannot poison the session model" (no transcript is read: the session model is e.parentModel);
+// "a non-Agent tool passes through" (agent.spawn fires only for a spawn).
+
+// HEAD cases ported under new names in hooks/agent-spawn.test.ts: "an explicit model param is the manager's
+// override (rewrite mode)" as "a spawn already carrying a model passes on unchanged"; "class spawn without the
+// resolved model blocks, naming it" as "mode advise refuses a class spawn with the re-issue text ...";
+// "loader routes manager:resolver" as "workkit:worker with no model under a sonnet parent ..." (its run line).
+
 const path = require('path');
 const fs = require('fs');
-const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
-const { BASH, NO_RC, shellPath, loaderEnv } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
-const { mkRepo } = require('../lib/git-repo');
+const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { mods } = require('../lib/mods-inputs');
 
-const REPO = path.join(__dirname, '..', '..');
-const HOOK = path.join(REPO, 'hooks', 'manager', 'resolver', 'run.sh');
-const LOADER = path.join(REPO, 'hooks', 'loader.sh');
-const LADDER_PATH = path.join(REPO, 'hooks', 'manager', 'resources', 'ladder.json');
+const LADDER_PATH = path.join(__dirname, '..', '..', 'hooks', 'manager', 'resources', 'ladder.json');
 const ladder = JSON.parse(fs.readFileSync(LADDER_PATH, 'utf8'));
 const id = (rung) => ladder.ladder[rung];
-// The fast tier's rung comes from the ladder, never hardcoded, so the scout
-// expectations below follow a tier retune without edits here.
+// The fast tier's rung comes from the ladder, so a tier retune needs no edit here.
 const FAST = ladder.tiers.fast;
+const MODELS = { fable: 'claude-fable-5[1m]', opus: 'claude-opus-4-7', sonnet: 'claude-sonnet-4-5', haiku: 'claude-haiku-4-5' };
 
-let tmp;
-const freshTmp = () => {
-  tmp = mkTmp('resolver-test-');
-  return tmp;
-};
-
-// Write a statusline-shaped session cache carrying the given model id.
-const cacheSession = (sid, modelId) => {
-  const dir = path.join(tmp, 'claude-session-state');
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(
-    path.join(dir, `${sid.replace(/[^a-zA-Z0-9]/g, '_')}.json`),
-    JSON.stringify({ model: { id: modelId }, thinking: { enabled: true } })
-  );
-};
-
-const payload = (subagentType, extra = {}) => ({
-  tool_name: 'Task',
-  session_id: 'sess1',
-  transcript_path: path.join(tmp, 'no-transcript.jsonl'),
-  tool_input: { subagent_type: subagentType, prompt: 'do the thing', ...extra },
-});
-
-// A settings file carrying a manager block, in its own directory's .workkit/.
-// `dir` doubles as the hook's cwd; git-init it to pin the repo-root resolution,
-// leave it plain to exercise the fallback (a bare tmpdir is in no repo).
-const settingsAt = (dir, manager, { git = false } = {}) => {
-  fs.mkdirSync(path.join(dir, W), { recursive: true });
-  fs.writeFileSync(
-    path.join(dir, W, 'settings.json'),
-    typeof manager === 'string' ? manager : JSON.stringify({ version: 1, enabled: true, manager })
-  );
-  if (git) spawnSync('git', ['-C', dir, 'init', '-q'], { encoding: 'utf8' });
-  return dir;
-};
-
-// A user-layer settings file (the MANAGER_USER_SETTINGS seam).
-const userSettings = (manager) => {
-  const p = path.join(tmp, 'user-settings.json');
-  fs.writeFileSync(p, typeof manager === 'string' ? manager : JSON.stringify({ version: 1, repos: {}, manager }));
-  return p;
-};
-
-const runHook = (input, env = {}) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-    input: typeof input === 'string' ? input : JSON.stringify(input),
-    // The user layer points at a nonexistent fixture by default, so the suite
-    // never reads the running machine's own ~/.workkit/settings.json.
-    env: {
-      ...process.env,
-      TMPDIR: shellPath(tmp),
-      MANAGER_DEBUG: '',
-      MANAGER_USER_SETTINGS: shellPath(path.join(tmp, 'no-user-settings.json')),
-      ...env,
-    },
-    encoding: 'utf8',
-    timeout: 10000,
-  });
-  return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
-};
-
-const resolvedModel = (out) => {
-  const parsed = JSON.parse(out.stdout);
-  return parsed.hookSpecificOutput.updatedInput.model;
-};
+const config = (user, repo) => mods('manager').managerConfig(ladder, user, repo);
+const resolve = (type, parent, cfg = config()) => mods('resolver').resolverModel(cfg, type, parent, undefined);
+const settings = (manager) => ({ version: 1, enabled: true, manager });
 
 const run = async () => {
   group('manager-resolver: ladder manifest shape');
-  await test('ladder.json carries note, mode, and the three maps', () => {
+  await test('ports "ladder.json carries note, mode, and the three maps"', () => {
     assert(typeof ladder.note === 'string' && ladder.note.length > 0, 'note missing');
     assert(['rewrite', 'advise'].includes(ladder.mode), `bad mode: ${ladder.mode}`);
     assert(ladder.ladder && ladder.classes && ladder.tiers, 'a map is missing');
   });
-  await test('all four classes map through tiers into the ladder', () => {
+  await test('ports "all four classes map through tiers into the ladder"', () => {
     for (const cls of ['scout', 'worker', 'verifier', 'advisor']) {
       const tier = ladder.classes[cls];
-      assert(tier, `class ${cls} missing`);
-      const rung = ladder.tiers[tier];
-      assert(rung, `tier ${tier} (class ${cls}) missing from tiers`);
-      assert(ladder.ladder[rung], `rung ${rung} (tier ${tier}) missing from ladder`);
+      assert(tier && ladder.tiers[tier] && ladder.ladder[ladder.tiers[tier]], `class ${cls} does not reach a rung`);
     }
   });
-  await test('ladder is ordered strongest first (fable at the top)', () => {
+  await test('ports "ladder is ordered strongest first (fable at the top)"', () => {
     assertEq(Object.keys(ladder.ladder)[0], 'fable');
   });
 
-  group('manager-resolver: decision table (rewrite, live cache)');
-  const table = [
-    // [class, session rung or null, expected rung]
-    ['advisor', 'fable', 'fable'],
-    ['advisor', 'sonnet', 'fable'],
-    ['scout', 'fable', FAST],
-    ['scout', 'sonnet', FAST],
-    ['worker', 'fable', 'opus'],
-    ['worker', 'opus', 'opus'],
-    ['worker', 'sonnet', 'sonnet'],
-    ['worker', 'haiku', 'haiku'],
-    ['verifier', 'sonnet', 'sonnet'],
-    ['verifier', 'fable', 'opus'],
-  ];
-  for (const [cls, sessionRung, expected] of table) {
-    await test(`${cls} under a ${sessionRung} session → ${expected}`, () => {
-      freshTmp();
-      cacheSession('sess1', `${id(sessionRung)}[1m]`);
-      const out = runHook(payload(cls));
-      assertEq(out.code, 0, out.stderr);
-      assertEq(resolvedModel(out), id(expected));
+  group('manager-resolver: the family matcher');
+  await test('modelTier reads the rung off a session model id, a [1m] suffix included', () => {
+    assertEq(mods('manager').modelTier(MODELS.fable), 'fable');
+    assertEq(mods('manager').modelTier(MODELS.opus), 'opus');
+    assertEq(mods('manager').modelTier(MODELS.sonnet), 'sonnet');
+    assertEq(mods('manager').modelTier(MODELS.haiku), 'haiku');
+    assert(!mods('manager').modelTier('gpt-4o'), 'an unknown family has no rung');
+  });
+
+  group('manager-resolver: decision table (rewrite)');
+  for (const [cls, sessionRung, expected] of [
+    ['advisor', 'fable', 'fable'], ['advisor', 'sonnet', 'fable'], ['scout', 'fable', FAST], ['scout', 'sonnet', FAST],
+    ['worker', 'fable', 'opus'], ['worker', 'opus', 'opus'], ['worker', 'sonnet', 'sonnet'], ['worker', 'haiku', 'haiku'],
+    ['verifier', 'sonnet', 'sonnet'], ['verifier', 'fable', 'opus'],
+  ]) {
+    await test(`ports "${cls} under a ${sessionRung} session → ${expected}"`, () => {
+      assertEq(resolve(`workkit:${cls}`, MODELS[sessionRung]), id(expected));
     });
   }
-  await test('unknown session (no cache, no transcript) → worker gets the workhorse default', () => {
-    freshTmp();
-    const out = runHook(payload('worker'));
-    assertEq(resolvedModel(out), id('opus'));
+  await test('ports "unknown session (no cache, no transcript) → worker gets the workhorse default"', () => {
+    assertEq(resolve('workkit:worker', ''), id('opus'));
   });
+
   group('manager-resolver: both class spellings');
-  // The classes answer to their bare names while they live in ~/.claude/agents,
-  // and to workkit:<name> once they ship with this plugin. Both resolve the
-  // same rung, and the prefixed spelling reaches the spawn unchanged.
   for (const [cls, expected] of [['advisor', 'fable'], ['scout', FAST], ['worker', 'opus']]) {
-    await test(`workkit:${cls} resolves like ${cls}`, () => {
-      freshTmp();
-      cacheSession('sess1', `${id('fable')}[1m]`);
-      const out = runHook(payload(`workkit:${cls}`));
-      assertEq(out.code, 0, out.stderr);
-      assertEq(resolvedModel(out), id(expected));
+    await test(`ports "workkit:${cls} resolves like ${cls}"`, () => {
+      assertEq(resolve(cls, MODELS.fable), id(expected), 'the bare name');
+      assertEq(resolve(`workkit:${cls}`, MODELS.fable), id(expected), 'the prefixed name');
     });
   }
-  await test('the prefixed subagent_type is passed through untouched', () => {
-    freshTmp();
-    cacheSession('sess1', id('fable'));
-    const parsed = JSON.parse(runHook(payload('workkit:scout')).stdout);
-    assertEq(parsed.hookSpecificOutput.updatedInput.subagent_type, 'workkit:scout');
-  });
-  await test('a workkit: prefix on a non-class type still passes through', () => {
-    freshTmp();
-    const out = runHook(payload('workkit:reviewer'));
-    assertEq(out.code, 0, out.stderr);
-    assertEq(out.stdout, '');
-  });
-
-  await test('updatedInput preserves prompt and subagent_type, and allows', () => {
-    freshTmp();
-    cacheSession('sess1', id('fable'));
-    const out = runHook(payload('scout'));
-    const parsed = JSON.parse(out.stdout);
-    assertEq(parsed.hookSpecificOutput.hookEventName, 'PreToolUse');
-    assertEq(parsed.hookSpecificOutput.permissionDecision, 'allow');
-    assertEq(parsed.hookSpecificOutput.updatedInput.prompt, 'do the thing');
-    assertEq(parsed.hookSpecificOutput.updatedInput.subagent_type, 'scout');
-  });
-
-  group('manager-resolver: transcript fallback');
-  await test('no cache → session model from the last assistant entry', () => {
-    freshTmp();
-    const transcript = path.join(tmp, 't.jsonl');
-    fs.writeFileSync(transcript, [
-      JSON.stringify({ type: 'user', message: 'hi' }),
-      JSON.stringify({ type: 'assistant', message: { model: id('sonnet') } }),
-    ].join('\n'));
-    const out = runHook({ ...payload('worker'), transcript_path: transcript });
-    assertEq(resolvedModel(out), id('sonnet'));
-  });
-  await test('quoted transcript content cannot poison the session model', () => {
-    freshTmp();
-    const transcript = path.join(tmp, 't.jsonl');
-    fs.writeFileSync(transcript, [
-      JSON.stringify({ type: 'assistant', message: { model: id('sonnet') } }),
-      // A tool-result line quoting an assistant entry that claims fable: the
-      // jq validation must reject it, leaving the real sonnet entry to win.
-      JSON.stringify({ type: 'user', toolUseResult: '{"type":"assistant","message":{"model":"claude-fable-5"}}' }),
-    ].join('\n'));
-    const out = runHook({ ...payload('worker'), transcript_path: transcript });
-    assertEq(resolvedModel(out), id('sonnet'));
-  });
-
-  group('manager-resolver: pass-through invariants');
-  for (const type of ['Explore', 'Plan', 'general-purpose', 'reviewer', 'claude', 'no-such-type']) {
-    await test(`subagent_type ${type} spawns untouched`, () => {
-      freshTmp();
-      const out = runHook(payload(type));
-      assertEq(out.code, 0, out.stderr);
-      assertEq(out.stdout, '');
-    });
-  }
-  await test('a non-Agent tool passes through', () => {
-    freshTmp();
-    const out = runHook({ ...payload('worker'), tool_name: 'Bash' });
-    assertEq(out.code, 0);
-    assertEq(out.stdout, '');
-  });
-  await test('an explicit model param is the manager\'s override (rewrite mode)', () => {
-    freshTmp();
-    const out = runHook(payload('worker', { model: 'haiku' }));
-    assertEq(out.code, 0);
-    assertEq(out.stdout, '');
-  });
-  await test('missing ladder file fails open', () => {
-    freshTmp();
-    const out = runHook(payload('worker'), { MANAGER_LADDER: path.join(tmp, 'nope.json') });
-    assertEq(out.code, 0);
-    assertEq(out.stdout, '');
-  });
-  await test('unparseable ladder fails open', () => {
-    freshTmp();
-    const bad = path.join(tmp, 'bad.json');
-    fs.writeFileSync(bad, 'not json {');
-    const out = runHook(payload('worker'), { MANAGER_LADDER: bad });
-    assertEq(out.code, 0);
-    assertEq(out.stdout, '');
-  });
-  await test('garbage stdin exits 0 silently', () => {
-    freshTmp();
-    const out = runHook('this is not json');
-    assertEq(out.code, 0);
-    assertEq(out.stdout, '');
-  });
-  await test('empty stdin exits 0 silently', () => {
-    freshTmp();
-    const out = runHook('');
-    assertEq(out.code, 0);
-    assertEq(out.stdout, '');
-  });
-
-  group('manager-resolver: advise mode');
-  const adviseLadder = () => {
-    const p = path.join(tmp, 'advise.json');
-    fs.writeFileSync(p, JSON.stringify({ ...ladder, mode: 'advise' }));
-    return p;
-  };
-  await test('class spawn without the resolved model blocks, naming it', () => {
-    freshTmp();
-    const out = runHook(payload('scout'), { MANAGER_LADDER: adviseLadder() });
-    assertEq(out.code, 2);
-    assert(out.stderr.includes(id(FAST)), `stderr lacks the model: ${out.stderr}`);
-    assert(out.stderr.includes('scout'), 'stderr lacks the class');
-  });
-  await test('class spawn with the WRONG model blocks', () => {
-    freshTmp();
-    const out = runHook(payload('scout', { model: id('opus') }), { MANAGER_LADDER: adviseLadder() });
-    assertEq(out.code, 2);
-  });
-  await test('class spawn already carrying the resolved model allows silently', () => {
-    freshTmp();
-    const out = runHook(payload('scout', { model: id(FAST) }), { MANAGER_LADDER: adviseLadder() });
-    assertEq(out.code, 0);
-    assertEq(out.stdout, '');
-  });
-  await test('non-class spawns still pass through in advise mode', () => {
-    freshTmp();
-    const out = runHook(payload('Explore'), { MANAGER_LADDER: adviseLadder() });
-    assertEq(out.code, 0);
-    assertEq(out.stdout, '');
+  await test('ports "a workkit: prefix on a non-class type still passes through"', () => {
+    assert(!resolve('workkit:reviewer', MODELS.fable), 'no model for a non-class type');
   });
 
   group('manager-resolver: layered overrides (repo > user > ladder)');
-  await test('a repo tiers override moves the worker rung (git-resolved root)', () => {
-    freshTmp();
-    const repo = settingsAt(path.join(tmp, 'repo'), { tiers: { workhorse: 'sonnet' } }, { git: true });
-    const out = runHook({ ...payload('worker'), cwd: repo });
-    assertEq(out.code, 0, out.stderr);
-    assertEq(resolvedModel(out), id('sonnet'));
+  await test('ports "an override of one tier leaves the others alone"', () => {
+    assertEq(resolve('workkit:scout', MODELS.fable, config(undefined, settings({ tiers: { workhorse: 'haiku' } }))), id(FAST));
   });
-  await test('a subdirectory cwd resolves to the repo root', () => {
-    freshTmp();
-    const repo = settingsAt(path.join(tmp, 'repo'), { tiers: { workhorse: 'sonnet' } }, { git: true });
-    const sub = path.join(repo, 'src', 'deep');
-    fs.mkdirSync(sub, { recursive: true });
-    const out = runHook({ ...payload('worker'), cwd: sub });
-    assertEq(resolvedModel(out), id('sonnet'));
-  });
-  await test('a plain (non-git) cwd carries no repo layer: its settings file is not read', () => {
-    // A settings file is a repo's, so no git toplevel means no repo layer at
-    // all. The file a non-repo cwd carries is the machine's own state, and on
-    // Windows every temp directory sits under the profile that holds it: read
-    // as a repo's, it would let the machine layer override itself.
-    freshTmp();
-    const dir = settingsAt(path.join(tmp, 'plain'), { tiers: { workhorse: 'haiku' } });
-    const out = runHook({ ...payload('worker'), cwd: dir });
-    assertEq(resolvedModel(out), id(ladder.tiers.workhorse), 'the ladder\'s own rung, unoverridden');
-  });
-  await test('the user layer applies when the repo carries no settings', () => {
-    freshTmp();
-    const dir = path.join(tmp, 'bare');
-    fs.mkdirSync(dir, { recursive: true });
-    const out = runHook({ ...payload('worker'), cwd: dir },
-      { MANAGER_USER_SETTINGS: shellPath(userSettings({ tiers: { workhorse: 'haiku' } })) });
-    assertEq(resolvedModel(out), id('haiku'));
-  });
-  await test('with no MANAGER_USER_SETTINGS the user layer is the machine folder, WORKFLOW_HOME first', () => {
-    freshTmp();
-    const dir = path.join(tmp, 'bare');
-    const home = path.join(tmp, 'machine-folder');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.mkdirSync(home, { recursive: true });
-    fs.copyFileSync(userSettings({ tiers: { workhorse: 'haiku' } }), path.join(home, 'settings.json'));
-    const out = runHook({ ...payload('worker'), cwd: dir },
-      { MANAGER_USER_SETTINGS: '', WORKFLOW_HOME: shellPath(home) });
-    assertEq(resolvedModel(out), id('haiku'));
-  });
-  await test('the repo layer beats the user layer', () => {
-    freshTmp();
-    const repo = settingsAt(path.join(tmp, 'repo'), { tiers: { workhorse: 'sonnet' } }, { git: true });
-    const out = runHook({ ...payload('worker'), cwd: repo },
-      { MANAGER_USER_SETTINGS: shellPath(userSettings({ tiers: { workhorse: 'haiku' } })) });
-    assertEq(resolvedModel(out), id('sonnet'));
-  });
-  await test('an override of one tier leaves the others alone', () => {
-    freshTmp();
-    const repo = settingsAt(path.join(tmp, 'repo'), { tiers: { workhorse: 'haiku' } }, { git: true });
-    const out = runHook({ ...payload('scout'), cwd: repo });
-    assertEq(resolvedModel(out), id(FAST));
-  });
-  await test('enabled: false passes a class spawn through untouched', () => {
-    freshTmp();
-    const repo = settingsAt(path.join(tmp, 'repo'), { enabled: false }, { git: true });
-    const out = runHook({ ...payload('worker'), cwd: repo });
-    assertEq(out.code, 0, out.stderr);
-    assertEq(out.stdout, '');
-  });
-  await test('enabled: false in the user layer is overridable by the repo', () => {
-    freshTmp();
-    const repo = settingsAt(path.join(tmp, 'repo'), { enabled: true }, { git: true });
-    const out = runHook({ ...payload('worker'), cwd: repo },
-      { MANAGER_USER_SETTINGS: shellPath(userSettings({ enabled: false })) });
-    assertEq(resolvedModel(out), id('opus'));
-  });
-  await test('a repo cannot redefine the ladder or the class map', () => {
-    freshTmp();
-    const repo = settingsAt(
-      path.join(tmp, 'repo'),
-      { classes: { worker: 'fast' }, ladder: { opus: 'haiku' } },
-      { git: true }
-    );
-    const out = runHook({ ...payload('worker'), cwd: repo });
-    assertEq(resolvedModel(out), id('opus'));
-  });
-  await test('a repo mode override switches the resolver to advise', () => {
-    freshTmp();
-    const repo = settingsAt(path.join(tmp, 'repo'), { mode: 'advise' }, { git: true });
-    const out = runHook({ ...payload('scout'), cwd: repo });
-    assertEq(out.code, 2);
-    assert(out.stderr.includes(id(FAST)), `stderr lacks the model: ${out.stderr}`);
-  });
-  await test('unparseable repo settings fall back to the ladder', () => {
-    freshTmp();
-    const repo = settingsAt(path.join(tmp, 'repo'), 'not json {', { git: true });
-    const out = runHook({ ...payload('worker'), cwd: repo });
-    assertEq(resolvedModel(out), id('opus'));
-  });
-  await test('settings without a manager block contribute nothing', () => {
-    freshTmp();
-    const repo = path.join(tmp, 'repo');
-    fs.mkdirSync(path.join(repo, W), { recursive: true });
-    fs.writeFileSync(path.join(repo, W, 'settings.json'), JSON.stringify({ version: 1, enabled: false }));
-    const out = runHook({ ...payload('worker'), cwd: repo });
-    assertEq(resolvedModel(out), id('opus'));
-  });
-  await test('a cwd that does not exist fails open to the ladder', () => {
-    freshTmp();
-    const out = runHook({ ...payload('worker'), cwd: path.join(tmp, 'nowhere') });
-    assertEq(resolvedModel(out), id('opus'));
-  });
-  // jq writes the values it parsed before it fails on a later one, so a layer
-  // read whose default is appended to that partial answer hands the merge two
-  // layers where it declared one, and the repo's own falls off the end of the
-  // three the merge reads. Each file is truncated mid-value to make jq do it.
-  await test('a ladder file with a severed tail still lets the repo layer win', () => {
-    freshTmp();
-    const severed = path.join(tmp, 'severed-ladder.json');
-    fs.writeFileSync(severed, `${JSON.stringify(ladder)}{`);
-    const repo = settingsAt(path.join(tmp, 'repo'), { tiers: { workhorse: 'sonnet' } }, { git: true });
-    const out = runHook({ ...payload('worker'), cwd: repo }, { MANAGER_LADDER: severed });
-    assertEq(resolvedModel(out), id('sonnet'), 'the repo override still reaches the merge');
-  });
-  await test('a user settings file with a severed tail still lets the repo layer win', () => {
-    freshTmp();
-    const user = userSettings(
-      `${JSON.stringify({ version: 1, repos: {}, manager: { tiers: { workhorse: 'haiku' } } })}{`
-    );
-    const repo = settingsAt(path.join(tmp, 'repo'), { tiers: { workhorse: 'sonnet' } }, { git: true });
-    const out = runHook({ ...payload('worker'), cwd: repo }, { MANAGER_USER_SETTINGS: shellPath(user) });
-    assertEq(resolvedModel(out), id('sonnet'), 'the repo override still reaches the merge');
-  });
-
-  group('manager-resolver: loader integration');
-  await test('loader routes manager:resolver', () => {
-    freshTmp();
-    cacheSession('sess1', id('fable'));
-    const { repo } = mkRepo('resolver-loader-', {});
-    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:resolver'], {
-      input: JSON.stringify({ ...payload('worker'), cwd: shellPath(repo) }),
-      env: loaderEnv({ TMPDIR: shellPath(tmp) }),
-      encoding: 'utf8',
-      timeout: 10000,
-    });
-    assertEq(res.status, 0, res.stderr);
-    assertEq(JSON.parse(res.stdout).hookSpecificOutput.updatedInput.model, id('opus'));
-  });
-  await test('HOOK_DISABLE=1 is a silent no-op', () => {
-    freshTmp();
-    const { repo } = mkRepo('resolver-loader-', {});
-    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:resolver'], {
-      input: JSON.stringify({ ...payload('worker'), cwd: shellPath(repo) }),
-      env: loaderEnv({ TMPDIR: shellPath(tmp), HOOK_DISABLE: '1' }),
-      encoding: 'utf8',
-      timeout: 10000,
-    });
-    assertEq(res.status, 0);
-    assertEq(res.stdout, '');
+  await test('ports "a repo cannot redefine the ladder or the class map"', () => {
+    const cfg = config(undefined, settings({ classes: { worker: 'fast' }, ladder: { opus: 'haiku' } }));
+    assertEq(resolve('workkit:worker', MODELS.fable, cfg), id('opus'));
   });
 };
 

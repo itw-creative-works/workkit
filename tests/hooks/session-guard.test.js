@@ -1,205 +1,108 @@
-// Tests for hooks/docs:session-guard: the PostToolUse hook that holds
-// `.workkit/agents/session.md` to the shape of a queue: short bullets, few lines.
-// The hook reads only the written file, so every case runs it against a fixture
-// with nothing stubbed.
+// Tests for docs:session-guard's logic, sessionGuardVerdict(path, text) in
+// hooks/mods/session-guard.js: `.workkit/agents/session.md` held to the shape
+// of a queue, short bullets and few lines. Each case ports the HEAD case its
+// name quotes; the wiring cases are hooks/post-tool-use.test.ts.
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
-const { BASH, SYSTEM_PATH, NO_RC, shellPath, joinPath } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
+const { mods, textOf } = require('../lib/mods-inputs');
 
-const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'session-guard', 'run.sh');
-
-const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
-
-// The tmp root each fixture file was made under, so a cleanup does not have to
-// know how deep the file sits.
-const ROOTS = new Map();
-
-/** A session.md (or any other name/dir) holding `content`, returning its path. */
-const mkFile = (content, { dir = path.join(W, 'agents'), name = 'session.md' } = {}) => {
-  const root = mkTmp('session-guard-');
-  fs.mkdirSync(path.join(root, dir), { recursive: true });
-  const file = path.join(root, dir, name);
-  fs.writeFileSync(file, content);
-  ROOTS.set(file, root);
-  return file;
-};
-
-/** Remove the tmp root `mkFile` created for `file`. */
-const cleanupFile = (file) => cleanup(ROOTS.get(file));
-
-const runHook = (filePath) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-    input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: shellPath(filePath) } }),
-    env: { HOME: shellPath(os.homedir()), PATH: joinPath(SYSTEM_PATH, '/opt/homebrew/bin') },
-    encoding: 'utf8',
-    timeout: 15000,
-  });
-  return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
-};
+const SESSION = `/w/repo/${W}/agents/session.md`;
+const verdict = (text, file = SESSION) => textOf(mods('session-guard').sessionGuardVerdict(file, text));
 
 /** The template's shape, with `bullets` as its Active entries. */
-const doc = (bullets) => [
-  '# Session',
-  '',
-  '## Active',
-  ...bullets,
-  '',
-  '## Queue',
-  '',
-  '## Notes',
-  '',
-].join('\n');
-
+const doc = (bullets) => ['# Session', '', '## Active', ...bullets, '', '## Queue', '', '## Notes', ''].join('\n');
 const notes = (n) => Array.from({ length: n }, (_, i) => `- #${i}: a queued entry.`);
 
 const run = async () => {
   group('session-guard: the line cap');
 
-  await test('a session.md left over 40 content lines is bounced, count named', () => {
-    const file = mkFile(doc(notes(45)));
-    const { code, stderr } = runHook(file);
-    assertEq(code, 2, 'exit 2 blocks the write');
-    assert(stderr.includes('45 content lines'), `names the count, got: ${stderr}`);
-    assert(stderr.includes('40'), `names the cap, got: ${stderr}`);
-    assert(/queue, not a journal/.test(stderr), `says what the file is, got: ${stderr}`);
-    cleanupFile(file);
+  await test('ports "a session.md left over 40 content lines is bounced, count named"', () => {
+    const out = verdict(doc(notes(45)));
+    assert(out.includes('45 content lines'), `names the count, got: ${out}`);
+    assert(out.includes('40'), `names the cap, got: ${out}`);
+    assert(/queue, not a journal/.test(out), `says what the file is, got: ${out}`);
   });
 
-  await test('at the cap there is no bounce', () => {
-    const file = mkFile(doc(notes(40)));
-    const { code, stderr } = runHook(file);
-    assertEq(code, 0, `exit 0, got: ${stderr}`);
-    assertEq(stderr, '', 'silent');
-    cleanupFile(file);
+  await test('a C:\\ spelled session.md gets the verdict the / spelling gets', () => {
+    const file = `C:\\Users\\ian\\repo\\${W}\\agents\\session.md`;
+    // The bounce names the file, so the two are compared with that name taken out.
+    const unnamed = (out) => out.replace(/^session-guard: \S+/, 'session-guard: <file>');
+    assertEq(unnamed(verdict(doc(notes(45)), file)), unnamed(verdict(doc(notes(45)))), 'over the cap, the same bounce');
+    assert(verdict(doc(notes(45)), file).includes('45 content lines'), 'and it is a bounce');
   });
 
-  await test('headings, blockquotes, comments and blank lines do not count', () => {
-    // Exactly 40 content lines beside the scaffolding: any scaffolding line
-    // wrongly counted makes 41 and bounces, so a weakened exclusion regex
-    // fails here, not just in the drift case.
-    const file = mkFile([
-      '# Session',
-      '',
-      '<!-- a seeded note about what this file is for -->',
-      '',
-      '## Active',
-      ...notes(40),
-      '',
-      '## Queue',
-      '',
-      '> This file is a queue, not a journal.',
-      '',
-      '### A sub-heading',
-      '',
-      '## Notes',
-      '',
-    ].join('\n'));
-    const { code, stderr } = runHook(file);
-    assertEq(code, 0, `exit 0, got: ${stderr}`);
-    cleanupFile(file);
+  await test('ports "at the cap there is no bounce"', () => {
+    assertEq(verdict(doc(notes(40))), '', 'silent');
+  });
+
+  // Exactly 40 content lines beside the scaffolding: any scaffolding line
+  // wrongly counted makes 41 and bounces.
+  await test('ports "headings, blockquotes, comments and blank lines do not count"', () => {
+    const text = [
+      '# Session', '', '<!-- a seeded note about what this file is for -->', '', '## Active', ...notes(40), '',
+      '## Queue', '', '> This file is a queue, not a journal.', '', '### A sub-heading', '', '## Notes', '',
+    ].join('\n');
+    assertEq(verdict(text), '', 'scaffolding is not content');
   });
 
   group('session-guard: the bullet cap');
 
-  await test('a bullet over 350 chars is bounced, with its length and its head', () => {
+  await test('ports "a bullet over 350 chars is bounced, with its length and its head"', () => {
     const long = `- #126 the entry that would not stop ${'x'.repeat(400)}`;
-    const file = mkFile(doc([long, '- #12: a short one.']));
-    const { code, stderr } = runHook(file);
-    assertEq(code, 2, 'exit 2 blocks the write');
-    assert(stderr.includes(`${long.length} chars`), `names the length ${long.length}, got: ${stderr}`);
-    assert(stderr.includes('350'), `names the cap, got: ${stderr}`);
-    assert(stderr.includes('#126 the entry that would not stop'), `names the offending bullet, got: ${stderr}`);
-    cleanupFile(file);
+    const out = verdict(doc([long, '- #12: a short one.']));
+    assert(out.includes(`${long.length} chars`), `names the length ${long.length}, got: ${out}`);
+    assert(out.includes('350'), `names the cap, got: ${out}`);
+    assert(out.includes('#126 the entry that would not stop'), `names the offending bullet, got: ${out}`);
   });
 
-  await test('a bullet at 350 chars passes', () => {
+  await test('ports "a bullet at 350 chars passes"', () => {
     const at = `- ${'x'.repeat(348)}`;
     assertEq(at.length, 350, 'the fixture is exactly at the cap');
-    const file = mkFile(doc([at]));
-    const { code, stderr } = runHook(file);
-    assertEq(code, 0, `exit 0, got: ${stderr}`);
-    cleanupFile(file);
+    assertEq(verdict(doc([at])), '', 'at the cap passes');
   });
 
-  await test('an indented `*` bullet is judged too', () => {
-    const file = mkFile(doc([`  * ${'y'.repeat(400)}`]));
-    assertEq(runHook(file).code, 2, 'exit 2 blocks the write');
-    cleanupFile(file);
+  await test('ports "an indented `*` bullet is judged too"', () => {
+    assert(verdict(doc([`  * ${'y'.repeat(400)}`])).length > 0, 'blocks');
   });
 
-  await test('a long line that is not a bullet is not judged as one', () => {
-    const file = mkFile(doc([`#126 ${'z'.repeat(400)}`]));
-    const { code, stderr } = runHook(file);
-    assertEq(code, 0, `exit 0, got: ${stderr}`);
-    cleanupFile(file);
+  await test('ports "a long line that is not a bullet is not judged as one"', () => {
+    assertEq(verdict(doc([`#126 ${'z'.repeat(400)}`])), '', 'not a bullet');
   });
 
   group('session-guard: scope');
 
-  await test('an under-cap session.md passes silently', () => {
-    const file = mkFile(doc(notes(6)));
-    const { code, stdout, stderr } = runHook(file);
-    assertEq(code, 0, `exit 0, got: ${stderr}`);
-    assertEq(stdout, '', 'says nothing');
-    assertEq(stderr, '', 'silent');
-    cleanupFile(file);
+  await test('ports "an under-cap session.md passes silently"', () => {
+    assertEq(verdict(doc(notes(6))), '', 'says nothing');
   });
 
-  await test('another file in .workkit/agents is ignored, however long', () => {
-    const file = mkFile(doc(notes(60)), { name: 'notes.md' });
-    assertEq(runHook(file).code, 0, 'exit 0');
-    cleanupFile(file);
+  await test('ports "another file in .workkit/agents is ignored, however long"', () => {
+    assertEq(verdict(doc(notes(60)), `/w/repo/${W}/agents/notes.md`), '', 'only session.md');
   });
 
-  await test('a session.md outside .workkit/agents is ignored, however long', () => {
-    const file = mkFile(doc(notes(60)), { dir: 'docs' });
-    assertEq(runHook(file).code, 0, 'exit 0');
-    cleanupFile(file);
+  await test('ports "a session.md outside .workkit/agents is ignored, however long"', () => {
+    assertEq(verdict(doc(notes(60)), '/w/repo/docs/session.md'), '', 'only the agents folder');
   });
 
-  await test('a session.md that no longer exists: fail open', () => {
-    const dir = mkTmp('session-guard-');
-    assertEq(runHook(path.join(dir, W, 'agents', 'session.md')).code, 0, 'exit 0');
-    cleanup(dir);
-  });
-
-  await test('no file_path in the input: fail open', () => {
-    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-      input: JSON.stringify({ tool_name: 'Write', tool_input: {} }),
-      env: { HOME: shellPath(os.homedir()), PATH: joinPath(SYSTEM_PATH, '/opt/homebrew/bin') },
-      encoding: 'utf8',
-      timeout: 15000,
-    });
-    assertEq(res.status, 0, 'exit 0');
-  });
-
-  await test('hooks.json registers the hook under PostToolUse Edit|Write', () => {
-    const settings = JSON.parse(fs.readFileSync(
-      path.join(__dirname, '..', '..', 'hooks', 'hooks.json'), 'utf8'));
-    const entries = settings.hooks.PostToolUse.filter((e) => e.matcher === 'Edit|Write');
-    assert(
-      entries.some((e) => e.hooks.some((h) => h.command.includes('docs:session-guard'))),
-      'docs:session-guard is wired',
-    );
-  });
-
-  await test('the caps and the content-line regex agree with the docs:session hook', () => {
-    // The bar lives in two places by design (each hook reads its own file with
-    // no shared library); this case is what keeps them from drifting.
-    const guard = fs.readFileSync(HOOK, 'utf8');
-    const session = fs.readFileSync(
-      path.join(__dirname, '..', '..', 'hooks', 'docs', 'session', 'run.sh'), 'utf8');
-    const regexOf = (src) => (src.match(/grep -cvE '([^']+)'/) || [])[1];
-    assert(regexOf(guard), 'the guard counts content lines with a grep -cvE');
-    assertEq(regexOf(guard), regexOf(session), 'the same content-line regex in both hooks');
+  // The bar lives in two places by design (docs:session stays a shell hook);
+  // this case keeps the two from drifting: the same count, the same caps.
+  await test('ports "the caps and the content-line regex agree with the docs:session hook"', () => {
+    const session = fs.readFileSync(path.join(__dirname, '..', '..', 'hooks', 'docs', 'session', 'run.sh'), 'utf8');
     assertEq((session.match(/LIGHT_BAR=(\d+)/) || [])[1], '40', "docs:session's bar is 40");
-    assertEq((guard.match(/MAX_CONTENT_LINES=(\d+)/) || [])[1], '40', "the guard's line cap is 40");
-    assertEq((guard.match(/MAX_BULLET_CHARS=(\d+)/) || [])[1], '350', "the guard's bullet cap is 350");
+    const ere = (session.match(/grep -cvE '([^']+)'/) || [])[1];
+    assert(ere, 'docs:session counts content lines with a grep -cvE');
+    const scaffold = new RegExp(ere.replace(/\[\[:space:\]\]/g, '\\s'));
+    const lines = [
+      '# Session', '  ## indented heading', '> quote', '   > indented quote', '<!-- note -->', '  <!-- indented -->',
+      '', '   ', '\t', ...notes(40),
+    ];
+    assertEq(lines.filter((l) => !scaffold.test(l)).length, 40, "docs:session counts 40 content lines here");
+    assertEq(verdict(lines.join('\n')), '', 'the guard counts the same 40: at the cap');
+    const over = verdict([...lines, '- #41: one more.'].join('\n'));
+    assert(over.includes('41 content lines'), `and one more is 41 to both, got: ${over}`);
+    const bullet = `- ${'x'.repeat(349)}`;
+    assert(verdict(doc([bullet])).includes('351 chars'), "the guard's bullet cap is 350");
   });
 };
 

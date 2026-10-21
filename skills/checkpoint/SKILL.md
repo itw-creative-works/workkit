@@ -17,7 +17,7 @@ A long chat holds verdicts and findings that exist NOWHERE ELSE, and compaction 
 
 - Any line that mentions compacting, in any form, fires it: compact, compaction, `/compact`, context full or low or running out, clear the chat, new chat, fresh session, start over.
 - A question form ("can I compact?", "should I compact?") is answered by running this skill first, then yes.
-- The `docs:checkpoint` hook (`hooks/docs/checkpoint/run.sh`) matches those phrases deterministically on every prompt and injects the instruction to run this skill.
+- The `docs:checkpoint` hook (`hooks/mods/checkpoint.js`) matches those phrases deterministically on every prompt and injects the instruction to run this skill.
 - The description above is the judgment fallback for a phrasing the pattern misses.
 
 ## 1. Enumerate FIRST, before touching anything

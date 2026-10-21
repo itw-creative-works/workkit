@@ -83,12 +83,14 @@ const run = async () => {
   });
 
   // The same convention, same sentence in AGENTS.md: hooks and skills ship on
-  // the same terms as the agents do, so they are scanned by the same walk.
+  // the same terms as the agents do, so they are scanned by the same walk. The
+  // hooks module's wiring suites (hooks/*.test.ts) are test fixtures like
+  // tests/, which the walk never covered: a Windows-path case spells a drive.
   for (const dir of ['hooks', 'skills']) {
     await test(`nothing under ${dir}/ carries a machine-specific absolute path`, () => {
       const full = path.join(REPO, dir);
       assert(fs.existsSync(full), `missing ${full}`);
-      const files = filesIn(full);
+      const files = filesIn(full, (name) => !name.endsWith('.test.ts'));
       assert(files.length > 0, `no files found under ${dir}/`);
       const bad = scan(files);
       assertEq(bad.join('\n'), '', `absolute paths under ${dir}/:\n${bad.join('\n')}`);

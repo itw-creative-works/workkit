@@ -139,10 +139,14 @@ const run = async () => {
 
   group('skills: no `workflow:` skill names survive');
   await test('nothing under skills/ names a workflow: skill', () => {
-    // A `workflow:` name with a folder under hooks/workflow/ is that hook
-    // (`workflow:feature` loads the feature skill) and keeps its name. Only
-    // the skill names carry the workkit: prefix.
-    const hooks = fs.readdirSync(path.join(REPO, 'hooks', 'workflow'));
+    // A `workflow:` name that is a hook, a folder under hooks/workflow/ or a
+    // module hook register.js names, keeps its name (`workflow:feature` loads
+    // the feature skill). Only the skill names carry the workkit: prefix.
+    const register = fs.readFileSync(path.join(REPO, 'hooks', 'register.js'), 'utf8');
+    const hooks = [
+      ...fs.readdirSync(path.join(REPO, 'hooks', 'workflow')),
+      ...[...register.matchAll(/'workflow:([a-z-]+)'/g)].map((m) => m[1]),
+    ];
     const bad = [];
     for (const file of markdownIn(SKILLS_DIR)) {
       const text = fs.readFileSync(file, 'utf8');

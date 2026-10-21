@@ -3,7 +3,8 @@
 # the family a model id belongs to, and the effective three-layer config.
 # Sourced by hooks/_lib.sh; defines functions and sets nothing. It reads
 # WORKKIT_DIR, hook_jq, hook_jq_default and wk_user_dir from the entry, and
-# hook_session_marker from lib/markers.sh.
+# hook_session_marker from lib/markers.sh. Consumers: manager/close-guard and
+# the dotfiles hooks; the hooks module's twin is hooks/mods/manager.js.
 
 # hook_session_model <session_id> <transcript_path>: the CURRENT model into
 # HOOK_SESSION_MODEL (empty when unknowable) and HOOK_SESSION_MODEL_SRC (live |

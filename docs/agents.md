@@ -94,7 +94,7 @@ A workkit agent is customized by STACKING onto it, never by replacing it: the fl
 - **How it arrives**: the `manager:addon` hook (SubagentStart) reads the file each time that agent spawns and adds its text to the agent's context, under a one-line header naming the file. One mechanism serves every workkit agent, present and future; there is no per-agent code.
 - **What it can do**: add context. Preloads, house rules, the skill or doc to read first, anything the agent should know before its first prompt.
 - **What it cannot do**: change the agent's `tools`, `model` or `effort`, or remove anything the shipped definition says. Those stay the agent file's (and the resolver's, for the model).
-- **No file, or a blank one**: the agent runs exactly as shipped, which is the normal case. A file that exists but cannot be read is an error, shown as a hook error notice in that agent's transcript, never a silent skip.
+- **No file, or a blank one**: the agent runs exactly as shipped, which is the normal case. A file that exists but cannot be read is an error, a `manager:addon:` line naming it in the session's transcript (through `$.ui.log`), never a silent skip; the agent then runs as shipped, with no add-on context.
 - A change to the file lands on the next spawn; no restart needed.
 
 ## File-handoff convention (all dispatches)

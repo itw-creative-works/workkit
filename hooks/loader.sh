@@ -67,12 +67,12 @@ if [[ -z "$HOOK_NAME" ]]; then
 fi
 
 # The hooks that run in every repo, opted in or not: each speaks to the machine
-# (the setup reminder, the restart notice, its secrets leaving), never to a repo.
-OPTIN_EXEMPT="workflow:standards workflow:reload-guard safety:issue-guard"
+# (its secrets leaving), never to a repo.
+OPTIN_EXEMPT="safety:issue-guard"
 EXEMPT=0
 [[ " $OPTIN_EXEMPT " == *" $HOOK_NAME "* ]] && EXEMPT=1
 
-# Hooks nest by prefix on disk: docs:board-guard resolves to docs/board-guard.
+# Hooks nest by prefix on disk: docs:session resolves to docs/session.
 HOOK_SCRIPT="$SCRIPT_DIR/${HOOK_NAME//://}/run.sh"
 
 shift

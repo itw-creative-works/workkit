@@ -24,8 +24,8 @@ hook_triage_marker_path() { wk_marker_path claude-triage-marker "$1"; }
 
 # hook_session_marker <dir-name> <session_id>: the per-session file under
 # ${TMPDIR:-/tmp}/<dir-name>, the id with every non-alphanumeric as `_`. Prints
-# the path; the caller makes the directory. Consumers: safety/test-reminder,
-# docs/checkpoint, workflow/reload-guard, workflow/feature, hook_session_model.
+# the path; the caller makes the directory. Consumers: hook_session_model
+# and the dotfiles hooks.
 hook_session_marker() {
   printf '%s\n' "${TMPDIR:-/tmp}/$1/${2//[^a-zA-Z0-9]/_}"
 }

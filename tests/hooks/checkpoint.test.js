@@ -1,67 +1,48 @@
-// docs/checkpoint hook: the compaction line fires the workkit:checkpoint skill
-// deterministically, and the second fire in one session asks for a delta
-// instead of a whole-chat pass.
-const path = require('path');
+// Tests for docs:checkpoint's logic, checkpointContext(prompt, marker) in
+// hooks/mods/checkpoint.js, and the prompt-shape test it stands on,
+// isSystemPrompt(text) in hooks/mods/frame.js: a compaction line fires the
+// workkit:checkpoint skill. The marker and the delta it asks for are
+// per-session state, hooks/user-prompt-submit.test.ts.
+
+// HEAD cases retired with the mod (the engine parses the input; a module has no jq):
+// "garbage stdin exits 0 silently", "no jq on PATH exits 0 silently".
+// HEAD cases ported under new names in hooks/user-prompt-submit.test.ts:
+// "loader routes docs:checkpoint" and "valid UserPromptSubmit JSON shape" as "an opted-in repo: the contexts arrive in the order ...".
+
 const fs = require('fs');
-const { spawnSync } = require('child_process');
+const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
-const { BASH, SYSTEM_BASH, NO_RC, shellPath, loaderEnv } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
-const { mkRepo } = require('../lib/git-repo');
+const { mods, textOf } = require('../lib/mods-inputs');
 
-const REPO = path.join(__dirname, '..', '..');
-const HOOK = path.join(REPO, 'hooks', 'docs', 'checkpoint', 'run.sh');
-const LOADER = path.join(REPO, 'hooks', 'loader.sh');
-const MARKER_DIR = 'claude-checkpoint-marker';
+const KIT = path.join(__dirname, '..', '..');
+const say = (prompt, marker) => textOf(mods('checkpoint').checkpointContext(prompt, marker));
 
-let tmp;
-const freshTmp = () => {
-  tmp = mkTmp('checkpoint-test-');
-  return tmp;
+// One HOOK_PROMPT_* pattern's text as hooks/_lib.sh states it, its one POSIX
+// class spelled as a JS regex spells it.
+const shellPattern = (name) => {
+  const m = new RegExp(`^readonly ${name}='(.*)'$`, 'm').exec(fs.readFileSync(path.join(KIT, 'hooks', '_lib.sh'), 'utf8'));
+  assert(m, `hooks/_lib.sh defines ${name}`);
+  return m[1].replace(/\[\[:space:\]\]/g, '\\s');
 };
 
-const runHook = (input, env = {}, bin = BASH) => {
-  const res = spawnSync(bin, [...NO_RC, shellPath(HOOK)], {
-    input: typeof input === 'string' ? input : JSON.stringify(input),
-    env: { ...process.env, TMPDIR: shellPath(tmp), ...env },
-    encoding: 'utf8',
-    timeout: 10000,
-  });
-  return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
+// Every regex literal hooks/mods/frame.js carries, as source text.
+const frameRegexTexts = () => {
+  const source = fs.readFileSync(path.join(KIT, 'hooks', 'mods', 'frame.js'), 'utf8');
+  return [...source.matchAll(/\/((?:\\.|\[[^\]]*\]|[^/\\\n[])+)\/[a-z]*/g)].map((m) => m[1]);
 };
 
-const contextOf = (out) => JSON.parse(out.stdout).hookSpecificOutput.additionalContext;
-const markers = () => {
-  const dir = path.join(tmp, MARKER_DIR);
-  return fs.existsSync(dir) ? fs.readdirSync(dir).sort() : [];
-};
-
-// Every phrase the skill's own trigger paragraph names, plus the forms the
-// pattern is meant to carry with them: the question form, the slash command,
-// the noun, and an uppercase line (the prompt is lowercased before it matches).
+// Every phrase the skill's own trigger paragraph names, plus the question
+// form, the slash command, the noun, and an uppercase line.
 const FIRING = [
-  'Can I compact?',
-  '/compact',
-  'compaction',
-  'should I compact before we continue?',
-  'my context is running out',
-  'context window is full',
-  'the context is low',
-  'we are running out of context here',
-  'I am running low on context',
-  'almost out of context, what next',
-  'clear the chat',
-  'clear this chat',
-  'new chat',
-  'fresh session',
-  'start over',
+  'Can I compact?', '/compact', 'compaction', 'should I compact before we continue?', 'my context is running out',
+  'context window is full', 'the context is low', 'we are running out of context here', 'I am running low on context',
+  'almost out of context, what next', 'clear the chat', 'clear this chat', 'new chat', 'fresh session', 'start over',
   'CONTEXT IS RUNNING OUT, WHAT NOW',
 ];
 
+// `context` with none of its four followers, and words that contain one.
 const SILENT = [
   'ship the release when CI is green',
-  // `context` with none of its four followers, including the words that
-  // contain one ("below" is not "low", "follow" is not "low").
   'in this context, follow the steps below',
   'the context of the bug is issue #12',
   'give me more context on the resolver',
@@ -70,120 +51,47 @@ const SILENT = [
 const run = async () => {
   group('docs-checkpoint: the compaction phrases fire');
   for (const prompt of FIRING) {
-    await test(`fires on "${prompt}"`, () => {
-      freshTmp();
-      const out = runHook({ prompt, session_id: 'sess1' });
-      assertEq(out.code, 0, out.stderr);
-      const ctx = contextOf(out);
-      assert(ctx.includes('workkit:checkpoint'), 'the injection must name the skill');
+    await test(`ports "fires on "${prompt}""`, () => {
+      const ctx = say(prompt);
+      assert(ctx.includes('workkit:checkpoint'), `the injection must name the skill, got: ${ctx}`);
       assert(ctx.includes('#238'), 'the injection must cite its issue');
     });
   }
 
   group('docs-checkpoint: everything else is silence');
   for (const prompt of SILENT) {
-    await test(`silent on "${prompt}"`, () => {
-      freshTmp();
-      const out = runHook({ prompt, session_id: 'sess1' });
-      assertEq(out.code, 0, out.stderr);
-      assertEq(out.stdout, '', 'an unrelated prompt must produce no output');
-      assertEq(markers().join(','), '', 'a silent run must write no marker');
+    await test(`ports "silent on "${prompt}""`, () => {
+      assertEq(say(prompt), '', 'an unrelated prompt produces nothing');
     });
   }
 
   group('docs-checkpoint: a system-delivered prompt is silence');
-  await test('a hand-back that says compact prints nothing; the same words typed plain fire', () => {
-    freshTmp();
+  await test("isSystemPrompt's three patterns equal hooks/_lib.sh's HOOK_PROMPT_TAG_RE, HOOK_PROMPT_PASTE_RE and HOOK_PROMPT_FRAME_RE", () => {
+    const texts = frameRegexTexts();
+    for (const name of ['HOOK_PROMPT_TAG_RE', 'HOOK_PROMPT_PASTE_RE', 'HOOK_PROMPT_FRAME_RE']) {
+      const shell = shellPattern(name);
+      assert(texts.includes(shell), `frame.js carries ${name}'s text ${shell}, found: ${JSON.stringify(texts)}`);
+    }
+    for (const alt of shellPattern('HOOK_PROMPT_FRAME_RE').split('|')) {
+      const words = alt.replace(/\\(.)/g, '$1');
+      assertEq(mods('frame').isSystemPrompt(`${words}\ncompact`), true, `a prompt framed by ${words} is Claude Code's`);
+    }
+    assertEq(mods('frame').isSystemPrompt('<pasted_content>compact</pasted_content>'), false, "the owner's paste is the owner's");
+    assertEq(mods('frame').isSystemPrompt('<task-notification>compact</task-notification>'), true, 'another opening tag is not');
+  });
+
+  await test('ports "a hand-back that says compact prints nothing; the same words typed plain fire"', () => {
     const words = 'the scout is done, should I compact before we continue?';
-    const handBack = runHook({ prompt: `[Subagent hand-back]\n${words}`, session_id: 'sess1' });
-    assertEq(handBack.code, 0, handBack.stderr);
-    assertEq(handBack.stdout, '', 'the agent\'s words are not the owner\'s');
-    assertEq(markers().join(','), '', 'a silent run must write no marker');
-    const typed = runHook({ prompt: words, session_id: 'sess1' });
-    assertEq(typed.code, 0, typed.stderr);
-    assert(contextOf(typed).includes('run the workkit:checkpoint skill before anything else'),
-      `the owner's line fires the full pass, got: ${typed.stdout}`);
-  });
-
-  group('docs-checkpoint: the marker and the delta');
-  await test('the first fire writes the marker and asks for the full pass', () => {
-    freshTmp();
-    const ctx = contextOf(runHook({ prompt: 'lets compact', session_id: 'sess-1' }));
-    assert(ctx.includes('run the workkit:checkpoint skill before anything else'), `first fire said: ${ctx}`);
-    assert(!ctx.includes('already issued'), 'the first fire is not a delta');
-    assertEq(markers().join(','), 'sess_1', 'the marker is named by the sanitized session id');
-  });
-
-  await test('the second fire in the same session asks for a delta, naming the time', () => {
-    freshTmp();
-    runHook({ prompt: 'compact', session_id: 'sess-1' });
-    const ctx = contextOf(runHook({ prompt: 'compact', session_id: 'sess-1' }));
-    assert(ctx.includes('already issued this session at'), `second fire said: ${ctx}`);
-    assert(/already issued this session at \d\d:\d\d\./.test(ctx), `no HH:MM time in: ${ctx}`);
-    assert(ctx.includes('delta'), 'the second fire must ask for a delta');
-  });
-
-  await test('two session ids do not share a marker', () => {
-    freshTmp();
-    runHook({ prompt: 'compact', session_id: 'sess-1' });
-    const ctx = contextOf(runHook({ prompt: 'compact', session_id: 'sess-2' }));
-    assert(ctx.includes('run the workkit:checkpoint skill before anything else'), `other session said: ${ctx}`);
-    assertEq(markers().join(','), 'sess_1,sess_2', 'each session keys its own marker');
-  });
-
-  await test('an empty session id fires the full line and writes no marker', () => {
-    freshTmp();
-    const ctx = contextOf(runHook({ prompt: 'compact' }));
-    assert(ctx.includes('run the workkit:checkpoint skill before anything else'), `no-id fire said: ${ctx}`);
-    assertEq(markers().join(','), '', 'nothing to key a marker by');
+    const handBack = `[Subagent hand-back]\n${words}`;
+    assertEq(mods('frame').isSystemPrompt(handBack), true, 'a hand-back is a system prompt');
+    assertEq(mods('frame').isSystemPrompt(words), false, "the owner's words are not");
+    assertEq(say(handBack), '', "the agent's words are not the owner's");
+    assert(say(words).includes('run the workkit:checkpoint skill before anything else'), "the owner's line fires the full pass");
   });
 
   group('docs-checkpoint: robustness');
-  await test('valid UserPromptSubmit JSON shape', () => {
-    freshTmp();
-    const parsed = JSON.parse(runHook({ prompt: 'compact', session_id: 'sess1' }).stdout);
-    assertEq(parsed.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
-  });
-
-  await test('a payload with no prompt key is silent', () => {
-    freshTmp();
-    const out = runHook({ session_id: 'sess1' });
-    assertEq(out.code, 0, out.stderr);
-    assertEq(out.stdout, '');
-  });
-
-  for (const [label, input] of [['garbage stdin', 'not json at all'], ['empty stdin', '']]) {
-    await test(`${label} exits 0 silently`, () => {
-      freshTmp();
-      const out = runHook(input);
-      assertEq(out.code, 0, out.stderr);
-      assertEq(out.stdout, '');
-    });
-  }
-
-  await test('no jq on PATH exits 0 silently', () => {
-    // PATH points at an empty directory, so the hook finds no jq (and no cat);
-    // bash itself is reached by its absolute path, the way a hook command is.
-    freshTmp();
-    const empty = path.join(tmp, 'empty-path');
-    fs.mkdirSync(empty, { recursive: true });
-    const out = runHook({ prompt: 'compact', session_id: 'sess1' }, { PATH: empty }, SYSTEM_BASH);
-    assertEq(out.code, 0, out.stderr);
-    assertEq(out.stdout, '');
-  });
-
-  group('docs-checkpoint: loader integration');
-  await test('loader routes docs:checkpoint', () => {
-    freshTmp();
-    const { repo } = mkRepo('checkpoint-loader-', {});
-    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'docs:checkpoint'], {
-      input: JSON.stringify({ prompt: 'compact', session_id: 'sess1', cwd: shellPath(repo) }),
-      env: loaderEnv({ TMPDIR: shellPath(tmp) }),
-      encoding: 'utf8',
-      timeout: 10000,
-    });
-    assertEq(res.status, 0, res.stderr);
-    assert((res.stdout || '').includes('workkit:checkpoint'), 'loader run should inject');
+  await test('ports "empty stdin exits 0 silently": an empty prompt is silence', () => {
+    assertEq(say(''), '', 'nothing to match');
   });
 };
 

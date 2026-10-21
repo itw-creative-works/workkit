@@ -2,24 +2,15 @@
 
 The behavior detail behind `AGENTS.md` § Hooks, which keeps one line per hook. The rules they enforce live in [`project-state.md`](project-state.md); this file describes how each hook executes them.
 
-Four hooks carry a README of their own beside the script, and it is their deeper home: [`hooks/safety/tree-guard/README.md`](../hooks/safety/tree-guard/README.md), [`hooks/safety/release-taken/README.md`](../hooks/safety/release-taken/README.md), [`hooks/docs/session-guard/README.md`](../hooks/docs/session-guard/README.md), [`hooks/docs/change-tracker/README.md`](../hooks/docs/change-tracker/README.md).
+The hooks come in two kinds. Fifteen are shell hooks, each a `run.sh` that `hooks/hooks.json` wires as a command through `hooks/loader.sh`; thirteen run in process, in the hooks module (§ The hooks module). Three shell hooks carry a README of their own beside the script, and it is their deeper home: [`hooks/safety/tree-guard/README.md`](../hooks/safety/tree-guard/README.md), [`hooks/safety/release-taken/README.md`](../hooks/safety/release-taken/README.md), [`hooks/docs/change-tracker/README.md`](../hooks/docs/change-tracker/README.md).
 
 ## The index
 
-One line per hook; the section below it carries the detail.
+One line per shell hook; the section below it carries the detail. The hooks module keeps its own index, under § The hooks module.
 
 | Hook | Event | What it does |
 |---|---|---|
-| `workflow:standards` | SessionStart | The daily heal in a participating repo, the hook-layer self-check beside it, `workkit update --auto`, and the setup pester above every gate |
-| `docs:state-check` | SessionStart | Announces open `status:inbox` issues, a non-empty `.workkit/capture.md`, a repo `CLAUDE.md` to delete, rename or merge, an AGENTS.md over its line or density budget |
 | `docs:session` | SessionStart | Injects `.workkit/agents/session.md` (the queue a compacted session reads first) closing with one line for the manager and one for the owner, and leads with a line when the cloud brief has gone stale |
-| `workflow:reload-guard` | SessionStart + UserPromptSubmit | Nags once when a surface that loads at session start has changed: the case `/reload-plugins` exists for |
-| `manager:resolver` | PreToolUse (Task/Agent) | Supplies each crew spawn's model from `manager/resources/ladder.json` and the live session model |
-| `manager:spawn-guard` | PreToolUse (Task/Agent) | Warns (never blocks) on a hand-passed spawn `model`, or a frontier session spawning the advisor |
-| `manager:addon` | SubagentStart (`^workkit:`) | Stacks a personal add-on (`~/.workkit/agents/<name>.md`) onto a `workkit:<name>` spawn as added context |
-| `manager:profile` | UserPromptSubmit | Injects the manager standing instruction in frontier/workhorse sessions only |
-| `docs:checkpoint` | UserPromptSubmit | Fires the `workkit:checkpoint` skill on any line about compacting, clearing or restarting the chat, as a delta after the first run |
-| `workflow:feature` | UserPromptSubmit | Loads the `workkit:feature` skill on any line about working an issue or the queue, once per session |
 | `safety:vendor-guard` | PreToolUse (Edit/Write) | Blocks edits to generated, vendored, and gitignored files (`_attic/`, `.workkit/`, `.env*` excepted) |
 | `safety:commit-gate` | PreToolUse (Bash) | Blocks a `git commit` the work is not ready for (the proved-tree record, test files, review marker, CHANGELOG entry, the issue it closes and its proof, an issue it names that the owner has not passed) and one the gate cannot place |
 | `safety:commit-language` | PreToolUse (Bash) | Bounces kill/destroy/dead wording, and a subject line that is not Conventional Commits or carries a version outside `chore(release)` |
@@ -31,26 +22,22 @@ One line per hook; the section below it carries the detail.
 | `safety:suite-guard` | PreToolUse (Bash) | Blocks a second full suite run (the root `npm test`) on a tree a green root `npm test` already recorded, and any root run while an open issue is at `status:building` |
 | `safety:capture-guard` | PreToolUse (Read/Grep/Bash/Edit/Write) | Gates `.workkit/capture.md` in both directions: the owner's surface, whose one sanctioned touch is the triage drain |
 | `safety:findings-guard` | PreToolUse (Bash) | Blocks the `gh issue create` of a `review notes from` issue while `findings.file` is not on, so findings go to chat under 🧭 Findings |
-| `docs:board-guard` | PostToolUse (Edit/Write) | Bounces an `AGENTS.md` write that breaks the 250-line budget or the 400-byte density rule |
-| `docs:changelog-guard` | PostToolUse (Edit/Write) | Bounces an added CHANGELOG entry that is an essay instead of one short linked paragraph |
-| `docs:session-guard` | PostToolUse (Edit/Write) | Bounces a write that leaves `.workkit/agents/session.md` past either cap: a 350-char bullet or 40 content lines |
-| `safety:test-reminder` | PostToolUse (Edit/Write) | Asks once per file per session, never bouncing, whether a written code file that no test names needs a test |
 | `workflow:snapshot` | PostToolUse (Bash) | Copies the repo folder, gitignored files included and every `node_modules` left out, when an issue moves to `status:building`, and removes the copy at a release (a qa or complete flip, or a close) that leaves none building; a block keeps it: the snapshot `scripts/red-proof.sh` runs against |
 | `docs:change-tracker` | Stop | Nags once per change about uncommitted work, keeping the issue true, promoting findings, and unfiled captures |
 | `manager:close-guard` | Stop | Warns (never blocks) when a frontier session did the bulk editing, or when worker output ended the turn with no verifier pass |
 
 ## How they are wired
 
-- Registered in `hooks/hooks.json`, every command routed through `hooks/loader.sh`, so settings reference a hook by `prefix:name` rather than by a path.
+- `hooks/hooks.json` holds both kinds: its `hooks` block wires every shell hook as a command routed through `hooks/loader.sh`, so settings reference a hook by `prefix:name` rather than by a path, and its `modules` list names the hooks module, `./register.js` (§ The hooks module).
 - A LOADER-level failure fails open (exit 0). The hook's own exit code passes through untouched, which blocking hooks (exit 2) need.
 
 ### The hooks log
 
-Every fire the loader handles leaves one line in `hooks.log`, which lives in the workkit folder (`~/.workkit`; `WORKFLOW_HOME` moves it, and `wk_hooks_log` in `workflow/lib/platform.sh` is the one spelling of the path), written just before the loader starts the hook or exits. The line is tab-separated: `<iso>\t<hook>\t<event>\t<session_id>\t<cwd>\t<verdict>`, the time in UTC, the hook as settings name it (`docs:checkpoint`), the event, session and folder read from the input's `hook_event_name`, `session_id` and `cwd` without jq, and the verdict `run`, `stood-down` (not opted in, § Where every hook stands down) or `missing` (no runnable script by that name). `HOOK_DISABLE=1` leaves no line. A log past 10,000 lines is cut to its last 5,000 before the next line is added. A write that fails never stops the hook. `workkit log` prints the last 40 lines, `-n <N>` that many, and `--follow` keeps printing new ones.
+Every hook fire leaves one line in `hooks.log`, which lives in the workkit folder (`~/.workkit`; `WORKFLOW_HOME` moves it, and `wk_hooks_log` in `workflow/lib/platform.sh` is the one spelling of the path). It has two writers, one line shape. The loader writes a shell hook's line just before it starts the hook or exits; the hooks module writes each fire's line through `logFire` in `hooks/register.js`, its one writer, with `$.fs` (the line and the cap are `hooks/mods/log.js`'s). The line is tab-separated: `<iso>\t<hook>\t<event>\t<session_id>\t<cwd>\t<verdict>`, the time in UTC, the hook as settings name it (`docs:checkpoint`), the event, session and folder (the loader reads the input's `hook_event_name`, `session_id` and `cwd` without jq; the module names the classic event, or `agent.spawn`, asks the session for an id the event does not carry, and logs the session's folder from `$.session.cwd()` for `agent.spawn` and the Agent tool's `PreToolUse`, whose `cwd` is a subagent's), and the verdict `run`, `stood-down` (not opted in, § Where every hook stands down) or, from the loader alone, `missing` (no runnable script by that name). `HOOK_DISABLE=1` leaves no line. A log past 10,000 lines is cut to its last 5,000 before the next line is added. A write that fails never stops the hook. The module's write is a read and a whole-file write, since `$.fs` has no append: two sessions writing at the same moment can lose one of their lines, which the log accepts. `workkit log` prints the last 40 lines, `-n <N>` that many, and `--follow` keeps printing new ones.
 
 ## Where every hook stands down
 
-A hook runs only when the repo it acts on has opted in. The loader asks before it starts the hook, and steps aside silently when the answer is no. The check is `hook_optin_repo` and `hook_repo_opted_in` in [`hooks/lib/optin.sh`](../hooks/lib/optin.sh), which the loader sources without `_lib.sh`, so the check stays light.
+A hook runs only when the repo it acts on has opted in. The loader asks before it starts a shell hook, and steps aside silently when the answer is no. The check is `hook_optin_repo` and `hook_repo_opted_in` in [`hooks/lib/optin.sh`](../hooks/lib/optin.sh), which the loader sources without `_lib.sh`, so the check stays light. The hooks module asks the same question through its own gate, `optedIn($, cwd)` in `hooks/register.js` (§ The hooks module); the rules below are the loader's.
 
 - Opted in: a `.workkit/settings.json` at the repo root that is not `"enabled": false`. A file with no `enabled` key counts as opted in, the legacy format. The reads are the engine's (`workflow/lib/participation.sh`).
 - The repo it acts on:
@@ -61,7 +48,7 @@ A hook runs only when the repo it acts on has opted in. The loader asks before i
     - A command the walk cannot place runs the hook, so a guard fails closed. The fail-closed forms: any step naming `cd`, `pushd` or `popd` as a word that is not a plain `cd` it can follow (`pushd`, `popd`, `env cd`, a bare `cd`, a flag, `~`, a variable or substitution, a quoted folder, a folder with a space or a trailing redirect, `echo cd`), and a relative `cd` with no `cwd`; git's `-C`, `--git-dir` or `--work-tree`; a `GIT_DIR=`, `GIT_WORK_TREE=` or `CDPATH=` assignment; `eval`; an interpreter's `-c` string (`hook_is_interpreter`); a quoted command word; and a backtick, or a `$(` inside quotes, in a command the cheap test below flags.
     - The `gh` repo read comes first. Then a cheap test spares most commands the walk: it flags `cd`, `pushd` and `popd` matched as whole words (`hook_names_dir_change`), `eval`, a short flag cluster holding `c` or `C`, `--git-dir`, `--work-tree` and the three assignments. A command whose text holds no `--repo`, `-R` or issue or pull request URL, and that the cheap test does not flag, adds no fork, so a hash or a path holding the letters "cd" costs nothing;
   - anything else: the repo holding the input's `cwd`. A payload with no `cwd`, and a `cwd` outside every repo, stand down.
-- The safety and manager hooks stand down with the rest. Three run everywhere, since they speak to the machine rather than to a repo: `workflow:standards` (its setup reminder; its own gate keeps the heal per repo), `workflow:reload-guard` (the restart notice) and `safety:issue-guard` (the machine's secrets must not leave it, whatever repo a `gh` write names). The loader names them once, in `OPTIN_EXEMPT`.
+- The safety and manager hooks stand down with the rest. Three run everywhere, since they speak to the machine rather than to a repo: `workflow:standards` (its setup reminder; its own gate keeps the heal per repo), `workflow:reload-guard` (the restart notice) and `safety:issue-guard` (the machine's secrets must not leave it, whatever repo a `gh` write names). The loader names its one, `safety:issue-guard`, in `OPTIN_EXEMPT`; the module names its two in `hooks/mods/gate.js`.
 - `hook_optin_repo` prints each repo root it found, one per line, and the loader runs the hook when any of them opted in. It returns 2 for a Bash command it cannot place (the fail-closed forms above, and a `gh` repo value it cannot read), and the loader runs the hook. It returns 1 when it cannot decide (no `jq`, input that does not parse), and the loader skips the hook, as any loader-level failure does.
 - The hook gets its input byte for byte.
 
@@ -71,38 +58,153 @@ The hooks run on macOS, on Windows under Git Bash, and on Linux. Where a spellin
 
 - `hook_is_macos` / `hook_is_windows` / `hook_is_linux`, over `hook_uname_s`: the platform reading. `$OSTYPE` answers first (the shell sets it, so it costs no fork and needs no PATH) and `uname -s` only for a name that split does not know. The dotfiles hooks load these helpers from this lib through `~/.claude/workkit`, so one mechanism spans both sides.
 - `hook_sha1`: the one digest. macOS ships `shasum` and no `sha1sum`, a Linux machine often the reverse, and a key computed with a different tool is a different key. Every marker and cache name goes through the same digest, the four markers through `hook_review_marker_path`, `hook_triage_marker_path` (above it) and the suite and package record paths in the engine's `workflow/lib/suite.sh`, each built by `wk_marker_path`: a skill writes the first two, the engine's npm `script-shell` wrapper (`workflow/script-shell.sh`) and `workkit prove` (`workflow/prove.sh`) the suite marker, and the same wrapper the package record (`wk_pkg_marker_path`), the packages a green `npm test` other than the bare root run proved on a tree, which `safety/proof-guard` reads at the qa flip. The same derivation names the two run locks and the TMPDIR fallback logs of the detached suite run and CI watch (`workflow/lib/suite.sh`). A machine with neither tool is refused loudly rather than keyed to an empty string, which would be one marker shared by every repo on it. The engine keys the suite record with the same digest, so the body is `wk_sha1` in `workflow/lib/platform.sh`, beside `wk_marker_path`, the one derivation of a marker's path, and `hook_sha1` is one line pointing at it, the way `hook_jq` points at `wk_jq`.
-- `hook_jq`: the CRLF-safe jq. jq on Windows is a native program whose stdout is in text mode, so it writes CRLF and a value read bare carries a `\r` into whatever is compared or written next. The engine reads the same JSON with the same tool, so the body is `wk_jq` in `workflow/lib/platform.sh` and `hook_jq` is one line pointing at it: the strip has one home, and jq's own exit status comes back, so a predicate still answers what it answered. `hook_jq_default <default> <jq args...>` is the same pointer for the read that carries a default: jq writes the values it parsed before it fails on a later one, so a `|| printf <default>` in the substitution hands back that partial answer with the default stuck on the end of it, and the default is taken here only when jq wrote nothing. Three hooks call `wk_jq` by that name instead, sourcing the seam directly: `docs/session`, `docs/session-guard` and `safety/vendor-guard` each promise in their header to source no shared hook helper, so they take the body from its own file rather than through a library they do not load.
+- `hook_jq`: the CRLF-safe jq. jq on Windows is a native program whose stdout is in text mode, so it writes CRLF and a value read bare carries a `\r` into whatever is compared or written next. The engine reads the same JSON with the same tool, so the body is `wk_jq` in `workflow/lib/platform.sh` and `hook_jq` is one line pointing at it: the strip has one home, and jq's own exit status comes back, so a predicate still answers what it answered. `hook_jq_default <default> <jq args...>` is the same pointer for the read that carries a default: jq writes the values it parsed before it fails on a later one, so a `|| printf <default>` in the substitution hands back that partial answer with the default stuck on the end of it, and the default is taken here only when jq wrote nothing. Two hooks call `wk_jq` by that name instead, sourcing the seam directly: `docs/session` and `safety/vendor-guard` each promise in their header to source no shared hook helper, so they take the body from its own file rather than through a library they do not load.
 - `wk_repo_slug` / `wk_slug_from_remote`: what a repo is CALLED, which is platform-shaped too. git stores a remote exactly as it was typed, so a Windows checkout's origin comes back a native path with backslashes, and a reader that took only a forward slash answered nothing about it. The rule lives once in the engine's [`workflow/lib/slug.sh`](../workflow/lib/slug.sh) (its Node twin is `slugFromRemote` in `workflow/slug.js`), and `safety/release-taken` reaches it by its ENGINE name through this library rather than parsing an origin of its own: a hand-rolled parse beside the one home is drift spelled shorter.
 - `hook_file_mtime`: BSD `stat -f` against GNU `stat -c`, each spelling accepted only when its output is digits, since the GNU one prints `?` and exits 0 for the flag it does not mean.
 - `_hook_snapshot_copy` in `hooks/lib/snapshot.sh`: the snapshot copy. macOS clones with `cp -c` and Linux copies with `cp --reflink=auto`, walking into a folder only where it holds a `node_modules`; Windows streams through `tar`. Every platform leaves out `.git` and every `node_modules` (the fill rebuilds those: § `workflow:snapshot`). Given paths after its two folders, it copies only those, each one whose parent folder the destination holds.
-- `docs:checkpoint`'s `date -r <epoch>` against `date -d @<epoch>` chain, and `docs:session`'s date maths done in jq, are the portable form of a clock question.
+- `docs:session`'s date maths done in jq are the portable form of a clock question.
 
-`hooks/_lib.sh` is the library's entry and keeps the seam, `hook_jq`, the engine sources and the constants; it sources its helper groups (the markers, the command-text reads, the manager's reads, the proof read, the hook notice (PreToolUse unless a PostToolUse hook names its event), the test-path shapes, the working-diff path list, the red-proof snapshot, the `gh issue` command read (an `edit` or `close` for the label guards, a `create` for `safety:findings-guard`), the full-run judgment, the AGENTS.md budget measurement, the prompt shape, the settings read) from [`hooks/lib/`](../hooks/lib/), one file per group, so a hook still sources `_lib.sh` alone. The loader's opt-in check, [`hooks/lib/optin.sh`](../hooks/lib/optin.sh), is the one group `_lib.sh` does not source.
+`hooks/_lib.sh` is the library's entry and keeps the seam, `hook_jq`, the engine sources and the constants; it sources its helper groups (the markers, the command-text reads, the manager's reads, the proof read, the hook notice (PreToolUse unless a PostToolUse hook names its event), the test-path shapes, the working-diff path list, the red-proof snapshot, the `gh issue` command read (an `edit` or `close` for the label guards, a `create` for `safety:findings-guard`), the full-run judgment, the prompt shape, the settings read) from [`hooks/lib/`](../hooks/lib/), one file per group, so a hook still sources `_lib.sh` alone. The loader's opt-in check, [`hooks/lib/optin.sh`](../hooks/lib/optin.sh), is the one group `_lib.sh` does not source.
 
-- The prompt shape is `hook_prompt_is_system <text>` in `hooks/lib/prompt.sh`: exit 0 for a prompt Claude Code delivered itself (a task notification, a subagent hand-back, an agent message), 1 for the owner's. It reads three constants the entry keeps, EREs that bash `[[ =~ ]]` and jq `test()` both read: `HOOK_PROMPT_TAG_RE` (an opening tag), `HOOK_PROMPT_PASTE_RE` (the owner's `<pasted_content` opening, which is not one) and `HOOK_PROMPT_FRAME_RE` (a frame line anywhere in the text). `manager:close-guard` hands the same three to its jq pass, so the two never disagree.
+- The prompt shape is `hook_prompt_is_system <text>` in `hooks/lib/prompt.sh`: exit 0 for a prompt Claude Code delivered itself (a task notification, a subagent hand-back, an agent message), 1 for the owner's.
+  - It reads three constants the entry keeps, EREs bash `[[ =~ ]]` and jq `test()` both read: `HOOK_PROMPT_TAG_RE` (an opening tag), `HOOK_PROMPT_PASTE_RE` (the owner's `<pasted_content` opening, which is not one) and `HOOK_PROMPT_FRAME_RE` (a frame line anywhere in the text).
+  - No shell hook calls `hook_prompt_is_system` any more: `manager:close-guard` reads the three constants in its jq pass. Both JS copies, `isSystemPrompt` in `hooks/mods/frame.js` and the dotfiles harness plugin's `frame.js`, are pinned to them by test, so all three change together.
 - The command-text reads (`hooks/lib/commit.sh`) include the step split, `hook_cmd_steps` (each step between `;`, `&`, `|` and newlines, a subshell's `(` and `)` as their own events); the word test, `hook_names_dir_change` (`cd`, `pushd` or `popd` as a whole word); the cd step, `hook_cd_step` over `_hook_unquote`, the no-fork form of `hook_unquote_word` (the folder a plain `cd` lands in, else unknown); the shared walk, `hook_step_dirs` (each step with the folder it runs from); and `hook_is_interpreter`, the one interpreter list (`sh`, `bash`, `zsh`, `dash`, `ksh`, by any path) the commit finder and the loader's opt-in check read. `safety:suite-guard` and the loader's opt-in check both follow a command's folder through `hook_step_dirs`.
-- The manager's reads include `hook_session_model`, the session's current model: the status line cache first, else the last assistant entry in the transcript's last 200 lines, so a transcript of any size costs one tail read.
+- The manager's reads include `hook_session_model`, the session's current model: the status line cache first, else the last assistant entry in the transcript's last 200 lines, so a transcript of any size costs one tail read. `manager:close-guard` and the dotfiles hooks read it; the hooks module asks the session itself (`$.session.model()`, or the spawn's `parentModel`). `hook_manager_config` and `hook_model_tier` beside it have a module twin in `hooks/mods/manager.js`, and the two change together.
 - The settings read is `hook_setting_get <jq path> <cwd>` in `hooks/lib/settings.sh`: one key's value from the `.workkit/settings.json` at the git root of `<cwd>` (required: the hook's `cwd`, the argument `hook_manager_config` takes too) when the key is there, else from `~/.workkit/settings.json` (`WORKFLOW_HOME` moves it), else nothing, a literal `false` being a value. It picks one layer where `hook_manager_config` deep-merges three; `docs:change-tracker`, `safety:capture-guard` and `safety:findings-guard` read `findings.file` through it, by way of the two helpers beside it, `hook_findings_on <cwd>` (true when the setting reads `true`, the one read all three make) and `hook_findings_route <cwd>` (the route sentence the two guards print; the change-tracker's stop instruction words its own: a `status:inbox` issue while on, chat under 🧭 Findings for the owner to answer file or drop while off).
 
 On Windows the engine's address must be a real symlink: Git Bash answers a plain `ln -s` with a copy unless the MSYS runtime is told otherwise, and a copy of the engine at `~/.claude/workkit` hides the `scripts/` folder beside it, which is what the skills' fallback resolves through. The daily heal sets that flag and, when a link still could not be made, removes the copy and says so rather than leaving a stale engine at the address.
 
 The skills carry no platform-bound command at all: the two that record a marker run [`scripts/review-marker.sh`](../scripts/review-marker.sh) and [`scripts/triage-marker.sh`](../scripts/triage-marker.sh), which source `hooks/_lib.sh` and write exactly the path the guard reads.
 
-## `workflow:standards`: SessionStart
+## The hooks module
 
-- Runs the engine's heal in a participating repo, once per repo per day. What the heal writes: `workflow/README.md`. The standard it heals to: the spec § Enforcement.
-- Adds the one check that is the hook layer's own: every wired hook resolves, is executable, parses, the pieces they source parse, and the tools they call are present.
-- Reports only what it fixed: the heal runs under `QUIET=1`, which is what silences its skips at the source, and the indent and the glyph every remaining line opens with are stripped before the report goes into the session's context. An undecided repo hears one offer and is never written to.
-- The same daily run calls `workkit update --auto`, the machine-side upkeep: it updates a schedule a human already installed, links the `workkit` command and the `gh` shim into an existing `~/.local/bin`, and installs no schedule fresh. It warns about a cloud secret that is missing or stale, and says `identity: not signed in` when the machine has no sign-in.
-- Above every gate sits the setup pester. A machine with no `~/.local/bin/workkit` is told, every session and in any directory, to run `workkit.sh setup` itself and hand the user only what it prints for them, a prompt, never an install.
+Thirteen hooks run inside Claude Code itself, in one hooks module: `hooks/hooks.json` names it under `modules` (`./register.js`), and the session loads it once, so a fire costs no loader, no bash, no jq and no engine library. [`hooks/register.js`](../hooks/register.js) is the one file that touches `$`, the engine's interface: it gathers each hook's facts (a file's text, a `git` or `gh` answer, a stored marker), gates the hook, logs the fire and answers the event. Each hook's logic is plain functions over plain data in `hooks/mods/<name>.js`, so the logic suites under `tests/hooks/` `require()` them straight, and only the wiring suites need the engine: `hooks/*.test.ts`, run by `claude plugin test` (`npm test`'s mod half, AGENTS.md § Tests). An edit to the module reaches a session only on `/reload-plugins`, which is why `workflow:reload-guard` counts its files among the load-time surfaces.
 
-## `docs:state-check`: SessionStart
+| Hook | Event | What it does |
+|---|---|---|
+| `workflow:standards` | `classic.SessionStart` | The daily heal in a participating repo, `workkit update --auto`, and the setup pester above every gate |
+| `docs:state-check` | `classic.SessionStart` | Announces open `status:inbox` issues, a non-empty `.workkit/capture.md`, a repo `CLAUDE.md` to delete, rename or merge, an AGENTS.md over its line or density budget |
+| `workflow:reload-guard` | `classic.SessionStart` + `classic.UserPromptSubmit` | Nags once when a surface that loads at session start has changed: the case `/reload-plugins` exists for |
+| `manager:resolver` | `agent.spawn` | Supplies each crew spawn's model from `manager/resources/ladder.json` and the session's own model |
+| `manager:spawn-guard` | `classic.PreToolUse` (Task/Agent) | Warns (never blocks) on a hand-passed spawn `model`, or a frontier session spawning the advisor |
+| `manager:addon` | `classic.SubagentStart` (`^workkit:`) | Stacks a personal add-on (`~/.workkit/agents/<name>.md`) onto a `workkit:<name>` spawn as added context |
+| `manager:profile` | `classic.UserPromptSubmit` | Injects the manager standing instruction in frontier/workhorse sessions only |
+| `docs:checkpoint` | `classic.UserPromptSubmit` | Fires the `workkit:checkpoint` skill on any line about compacting, clearing or restarting the chat, as a delta after the first run |
+| `workflow:feature` | `classic.UserPromptSubmit` | Loads the `workkit:feature` skill on any line about working an issue or the queue, once per session |
+| `docs:board-guard` | `classic.PostToolUse` (Edit/Write) | Bounces an `AGENTS.md` write that breaks the 250-line budget or the 400-byte density rule |
+| `docs:changelog-guard` | `classic.PostToolUse` (Edit/Write) | Bounces an added CHANGELOG entry that is an essay instead of one short linked paragraph |
+| `docs:session-guard` | `classic.PostToolUse` (Edit/Write) | Bounces a write that leaves `.workkit/agents/session.md` past either cap: a 350-char bullet or 40 content lines |
+| `safety:test-reminder` | `classic.PostToolUse` (Edit/Write) | Asks once per file per session, never bouncing, whether a written code file that no test names needs a test |
+
+The module registers one handler per event, and each runs its hooks in a fixed order:
+
+| Handler | Its hooks, in order |
+|---|---|
+| `classic.PostToolUse` (Edit/Write) | `docs:board-guard`, `docs:changelog-guard`, `docs:session-guard`, `safety:test-reminder`: the first block wins, and the hooks after it do not run |
+| `classic.SessionStart` | `docs:state-check`, `workflow:standards`, then `workflow:reload-guard`'s stamp on a `startup` or `resume` source |
+| `classic.UserPromptSubmit` | `manager:profile`, `workflow:reload-guard`, `docs:checkpoint`, `workflow:feature`, their contexts in that order |
+| `classic.SubagentStart` (`^workkit:`) | `manager:addon` |
+| `classic.PreToolUse` (Task/Agent) | `manager:spawn-guard`: its warning as `additionalContext`, and one `$.ui.log` line the owner sees |
+| `agent.spawn` | `manager:resolver`: `next({ ...e, model })`, or `{ deny }` in advise mode |
+| `session.end` | none: it deletes every `$.store` key of the ending session |
+
+- **The answer.** Every handler calls `next(e)`, so the settings hooks beneath still run, and puts its hooks' contexts ahead of theirs; a block joins any block from beneath. A hook adds one `additionalContext` entry or nothing. There is no `systemMessage` in a module's answer, which is why spawn-guard's warning reaches the owner through `$.ui.log`.
+- **The gate.** `optedIn($, cwd)` in `register.js`: the repo root is `git rev-parse --show-toplevel` run through `$.process.run` from the event's `cwd` (the written file's folder for an Edit or Write, the file read where it really is, so a linked file names its target's repo and a path not there yet keeps its spelling; the session's folder for `agent.spawn` and the Agent tool's `classic.PreToolUse`), and it opted in when `<root>/.workkit/settings.json` exists and does not hold `"enabled": false` (`settingsOptedIn` in `hooks/mods/gate.js`, the rule `hook_repo_opted_in` applies). `workflow:standards` and `workflow:reload-guard` are exempt. A hook that stands down says nothing and still leaves its line in the hooks log.
+- **The kill switch.** `HOOK_DISABLE=1` in Claude Code's own environment makes every handler pass its event straight on, with no line in the hooks log.
+- **Failure.** Each hook inside a handler fails open on its own, as the shell hooks did: an error goes to the debug log and the hook says nothing. The one exception is a failure of a whole `classic.PostToolUse` or `agent.spawn` handler, which refuses (a block, a deny) through its `.catch`, as the mods reference requires of a guard; every other handler's `.catch` passes the event on.
+- **The wave boundary.** Seven rules have a shell twin and a module twin while shell hooks still read them: the prompt shape (`hooks/mods/frame.js`, `HOOK_PROMPT_*_RE`), the manager config and model tier (`hooks/mods/manager.js`, `hooks/lib/manager.sh`), the code and test path shapes (`hooks/mods/test-reminder.js`, `hooks/lib/paths.sh`), the opt-in rule (`hooks/mods/gate.js`, `hook_repo_opted_in`), the machine folder (`userDir`, `wk_user_dir`), the CHANGELOG path test (`isChangelog`, `wk_is_changelog`) and the linter's path (`register.js`'s changelog-guard, `wk_changelog_linter`). Each pair changes together, and the shell side goes once its consumers (`manager:close-guard`, `safety:commit-gate`, `safety:proof-guard`, the dotfiles statusline) port in the later waves of dotfiles#176.
+- **State.** Per-session state lives in `$.store` under `workkit:<session_id>:` (`test-reminder`, `checkpoint`, `feature`, `reload-guard`), and `session.end` drops it. The two caches outlive a session and stay files, written with `$.fs`: the inbox count under `~/.claude/logs/state-check` (`STATE_CHECK_CACHE` moves it) and the heal's daily marker under `~/.claude/logs/workflow-standards` (`WORKFLOW_STANDARDS_CACHE`), each named by the SHA-1 of its folder, as the shell hooks named them.
+- **The variables it reads**, each through `$.env.get`: `HOOK_DISABLE`, `WORKFLOW_HOME`, `HOME` (`USERPROFILE` where there is none), `TMPDIR`, `WORKFLOW_DIR` (the engine folder, the tests' override), `WORKFLOW_CLAUDE_HOME`, the two cache folders, `RELOAD_GUARD_ROOT` (the folder whose surfaces reload-guard reads, the plugin root by default), `MANAGER_LADDER`, `MANAGER_USER_SETTINGS` and `MANAGER_DEBUG`. `claude plugin validate .` lists them, with the seven events and every `$` call.
+
+### `workflow:standards`: SessionStart
+
+- Runs the engine's heal in a participating repo, once per repo per day: `bash workflow/standards.sh <root>` under `QUIET=1`, through `$.process.run` with its ten-minute ceiling, past the heal's worst case. What the heal writes: `workflow/README.md`. The standard it heals to: the spec § Enforcement.
+- The heal includes the one check that is the hook layer's own: every wired shell hook resolves, is executable, parses, the pieces they source parse, and the tools they call are present (`workflow/standards/hooks.sh`).
+- Reports only what it fixed: `QUIET=1` silences the heal's skips at the source, only the lines opening with the engine's ✓ or ⚠ are kept, and their indent and glyph are stripped before the report goes into the session's context (`engineLines` in `hooks/mods/standards.js`). A heal that exits non-zero is reported as unfinished and retries next session; only a clean one writes the day's marker. An undecided repo hears one offer and is never written to.
+- The same daily run calls `workkit update --auto`, the machine-side upkeep, under the same ceiling: it updates a schedule a human already installed, links the `workkit` command and the `gh` shim into an existing `~/.local/bin`, and installs no schedule fresh. It warns about a cloud secret that is missing or stale, and says `identity: not signed in` when the machine has no sign-in.
+- Above every gate sits the setup pester. A machine with no `~/.local/bin/workkit` is told, every session and in any directory, to run `workkit.sh setup` itself and hand the user only what it prints for them, a prompt, never an install. Outside a repo the pester is all it says.
+- A missing `standards.sh` or unreadable `labels.json` is a broken install, said once, only for a repo whose settings said yes.
+
+### `docs:state-check`: SessionStart
 
 - Announces open `status:inbox` issues, a non-empty `.workkit/capture.md`, a repo `CLAUDE.md`, and an AGENTS.md that breaks its budget.
 - A repo `CLAUDE.md` is announced with the one fix its shape calls for (the spec § Repo docs): pointer only (every non-blank line the bare `@AGENTS.md`) says delete it with `git rm`; content with no `AGENTS.md` beside it says `git mv CLAUDE.md AGENTS.md`; content beside an `AGENTS.md` says merge it by hand. The user-level `~/.claude/CLAUDE.md` is never announced.
-- The AGENTS.md announcement covers both halves of that budget: a file over 250 lines, and a file carrying any line over 400 bytes: the density rule, since a markdown paragraph is one source line. It names the rule and says `docs:board-guard` bounces writes until it fits. The limits and the measurement are the ones board-guard reads: `HOOK_AGENTS_MAX_LINES` and `HOOK_AGENTS_MAX_BYTES` in `hooks/_lib.sh`, measured by `hook_agents_budget` in `hooks/lib/agents.sh`.
-- It measures in BYTES, pinned with `LC_ALL=C`, the same unit and the same pin board-guard uses.
-- The inbox count is cached about 30 minutes per repo, and only silence is cached: triage drains `status:inbox` on GitHub and leaves no local trace, so a non-empty count is asked again every session, and the first session after the drain goes quiet with no help from the skill.
+- The AGENTS.md announcement covers both halves of that budget: a file over 250 lines, and a file carrying any line over 400 bytes: the density rule, since a markdown paragraph is one source line. It names the rule and says `docs:board-guard` bounces writes until it fits. The limits and the measurement are the ones board-guard reads: `AGENTS_MAX_LINES`, `AGENTS_MAX_BYTES` and `agentsBudget` in `hooks/mods/board-guard.js`, in BYTES, the same unit board-guard uses.
+- The inbox count is the one network call: `gh issue list` through `$.process.run` with a 5-second limit, inside a git work tree only; a `gh` that is missing, fails or runs out of time is a silent skip. The count is cached about 30 minutes per repo, and only silence is cached: triage drains `status:inbox` on GitHub and leaves no local trace, so a non-empty count empties the cache file (`$.fs` has no delete) and is asked again every session, and the first session after the drain goes quiet with no help from the skill.
+
+### `workflow:reload-guard`: SessionStart + UserPromptSubmit
+
+- Stamps the load-time surfaces at a `startup` or `resume` session start, into the session's `$.store` record: `hooks/hooks.json` by content, plus the file list and mtimes of `agents/*.md`, `skills/*/SKILL.md`, `hooks/register.js` and `hooks/mods/*.js`, digested.
+- Injects one line when they change. Shell hook scripts, skill bodies and engine edits are already live, so only these need `/reload-plugins`. A prompt in a session with no stamp re-stamps silently.
+- Each change nags once: the record keeps the fingerprint last told.
+
+### `manager:resolver`: agent.spawn
+
+- Supplies each crew spawn's model from `hooks/manager/resources/ladder.json` and the session's own model, the spawn's `parentModel`. The crew contract: [`agents.md`](agents.md).
+- The config is three layers deep-merged, each beating the one before: the ladder (`MANAGER_LADDER` overrides its path), the `manager` block of `~/.workkit/settings.json` (`WORKFLOW_HOME` moves the folder, `MANAGER_USER_SETTINGS` names the file), then the one at the repo's git root (`managerConfig` in `hooks/mods/manager.js`). A layer overrides only `mode`, `enabled` and the three `tiers`; `classes` and `ladder` stay global. No git root means no repo layer, since a non-repo directory's settings file is the machine's own.
+- A merged `enabled: false` turns this hook, `manager:spawn-guard` and `manager:profile` off; a layer that cannot be read adds nothing.
+- Per class, either spelling (`worker`, `workkit:worker`): the advisor gets the frontier rung, the scout the fast rung, and the worker and verifier the weaker of the workhorse rung and the session's own, so the crew never outspends the session. Any other agent type, a resumed run and a fork pass through untouched (`resolverModel` in `hooks/mods/resolver.js`).
+- `mode: rewrite` answers `next({ ...e, model })`, and a spawn that already carries a model is the manager's deliberate override and passes unchanged; `mode: advise` denies a class spawn not already carrying the resolved model, naming the model to re-issue with. The Agent tool's model is an alias enum (`sonnet`, `opus`, `haiku`, `fable`), so the ladder's values are aliases. `MANAGER_DEBUG=1` logs one decision line per resolved spawn to `${TMPDIR:-/tmp}/claude-manager-resolver.log`.
+
+### `manager:spawn-guard`: PreToolUse (Task/Agent)
+
+- Warns (never blocks, never decides a permission) when a crew spawn carries a hand-passed `model` param, silent in advise mode, which asks for one; or when a frontier session, read from `$.session.model()`, spawns the advisor. The warning goes to the model as `additionalContext` and to the owner as one `$.ui.log` line.
+
+### `manager:addon`: SubagentStart (`^workkit:`)
+
+- For a spawn whose `agent_type` is `workkit:<name>`, reads `${WORKFLOW_HOME:-~/.workkit}/agents/<name>.md` and returns its text as `additionalContext`, under a one-line header: `Personal add-on for workkit:<name> (from <path>):`. What an add-on is for and what it cannot change: [`agents.md`](agents.md) § Personal add-ons.
+- No file, or a blank one, adds nothing: the normal case. Any other agent type adds nothing the same way, so the matcher is the first filter, not the only one.
+- A file that exists but cannot be read: a `manager:addon:` line naming it, through `$.ui.log`, and no context. SubagentStart cannot block a spawn, so the agent runs as shipped.
+
+### `manager:profile`: UserPromptSubmit
+
+- Injects the manager standing instruction in frontier/workhorse sessions only, the session model read from `$.session.model()`: delegate to the crew, keep the todo checklist current, announce each spawn. An unknown model hears it as a frontier session does.
+
+### `docs:checkpoint`: UserPromptSubmit
+
+- Matches the compaction phrases on every prompt, line by line and case-insensitively: `compact` (which carries `compaction` and `/compact`), `context` beside `full`, `low`, `running out` or `window` on the same line (and the spoken order, `running out of context`, `out of context`, `low on context`), `clear the chat`, `clear this chat`, `new chat`, `fresh session`, `start over`.
+- Silent on a prompt Claude Code delivered itself, whatever words it holds: one carrying a frame line, or opening with a tag other than `<pasted_content` (`isSystemPrompt` in `hooks/mods/frame.js`, § Platforms). The check runs before any phrase is matched.
+- A match injects one instruction: run the `workkit:checkpoint` skill before anything else in the turn, then answer the line. What the skill does with the chat is its own home, [`skills/checkpoint/SKILL.md`](../skills/checkpoint/SKILL.md).
+- The session's `workkit:<session_id>:checkpoint` key holds the time of the last fire. The second fire in a session asks for a DELTA instead, naming the time the instruction was last issued, so the second run files only what has been spoken since. A payload with no session id gets the full line and writes no marker.
+- It never blocks a prompt.
+
+### `workflow:feature`: UserPromptSubmit
+
+- Matches an issue-work line on every prompt, line by line and case-insensitively, with a curly apostrophe read as a straight one. A STRONG match is `#N` or a queue phrase as whole words; a WEAK match is a bare number.
+  - The bare number is 2 to 4 digits bounded by non-alphanumerics. Single digits (`1.2.3`) and digits glued to letters (`a1234b`) stay silent, while a year, a port, a time or a two-digit version part fires.
+  - The phrases: `work on`, `work the`, `do issue`, `the issues`, `next issue`, `what next`, `what's next` and `what's left` (each with or without the apostrophe), `continue`, `resume`, `keep going`, `what now`, `next one`, `go now`, `lets do`, `let's do`, `finish up`, `task list`, `the queue`, `the batch`, `open items`, `the board`. A phrase inside a longer word is silent: `framework only`, `presume`, `discontinued`.
+- Silent on a prompt Claude Code delivered itself (a frame line, or an opening tag other than `<pasted_content`), through `isSystemPrompt` before any match: a task notification saying "work on #12" is not the owner asking.
+- A match injects one instruction: load the `workkit:feature` skill before working the issue. The build procedure itself is the skill's own home, [`skills/feature/SKILL.md`](../skills/feature/SKILL.md).
+- The session's `workkit:<session_id>:feature` key makes every later fire in the session silent: the skill is already in context, and a compaction summary keeps the skills invoked. Only a STRONG match writes it. A weak match injects the line and leaves no marker, so a false fire (`port 8080`) never spends the session's one load and a later `work on #374` still fires. A payload with no session id gets the full line every time and writes no marker.
+- It never blocks a prompt.
+
+### `docs:board-guard`: PostToolUse (Edit/Write)
+
+- Bounces an `AGENTS.md` write that breaks the spec's budget (§ Repo docs). A `CLAUDE.md` write passes: `docs:state-check` names its fix at session start.
+- `AGENTS.md`: the size budget, ≤250 lines, and the DENSITY rule beside it: no line over 400 bytes, since a markdown paragraph is one source line and a file can pass the line count while carrying a book in fourteen of them.
+- A density violation lists the first few offenders as `line N (M bytes)` and says to bulletize or move the detail into `docs/<topic>.md`. The bounce names the spec file, the plugin's own `docs/project-state.md`.
+- The unit is BYTES, each line's UTF-8 length, so the same file is judged alike on every platform. One rule, one unit, everywhere it is described.
+
+### `docs:changelog-guard`: PostToolUse (Edit/Write)
+
+- Bounces a CHANGELOG entry that is an essay instead of one short linked paragraph, only entries the write ADDED.
+- It runs the linter `safety:commit-gate` check 3 and `script-shell.sh` resolve through `workflow/lib/changelog.sh`, `node workflow/changelog/changelog.js <file> --added-only`, through `$.process.run`, and stands aside when `node` cannot start. `WORKFLOW_DIR` names another engine folder.
+
+### `docs:session-guard`: PostToolUse (Edit/Write)
+
+- Holds `.workkit/agents/session.md` to the shape it exists in: the task queue a compacted or restarted session reads first. Left alone it grows into a journal of what already shipped, whose facts live in the CHANGELOG and the closed issue.
+- Bounces a write that leaves it past either cap, both named at once: a bullet (optional indent, then `- ` or `* `) over 350 chars (`MAX_BULLET_CHARS`), named with its length and its first 60 characters; or the file over 40 content lines (`MAX_CONTENT_LINES`): non-blank, not a heading, not a blockquote, not an HTML comment, so the seeded template counts zero. The bounce says to promote anything durable to its issue or the CHANGELOG, delete what has already shipped, and split or trim the oversized bullet.
+- It judges the resulting file, which is why it is POST: only the file on disk knows the length an edit leaves behind. A write that shrinks an oversized file but leaves it over still bounces.
+- The content-line count and its bar of 40 are also `docs:session`'s, which warns past the same bar at session start; the two change together. The `workkit:ship` prune is what normally keeps the file under.
+
+### `safety:test-reminder`: PostToolUse (Edit/Write)
+
+- Asks at edit time whether a written code file needs a test, with one line in the agent's context: `<path> has no test naming it. Does this change need one? If not, say why in the Proof: line.` The rule it serves is the spec's (§ The proof): whether a change needs a test stays judgment, and a "no" is recorded in the `Proof:` line.
+- A code file is the one `safety:commit-gate` check 1 asks about: a code extension, outside a test folder and a test name, never a `*.config.*` file or anything under `_attic/`. `isCodePath` in `hooks/mods/test-reminder.js` is the module's copy of `hook_is_code_path` in `hooks/lib/paths.sh`; the two change together.
+- A test NAMES the file when its text carries the basename with its extension as a whole word (`thing.js`, `run.sh`; `index.json` never names `index.js`, nor `webapp.js` `app.js`), or `<parent>/<base>` when more than one repo file shares the basename (a root-level file keeps the basename), or a require or import path ending in the stem (`require('../lib/thing')`). The tests read are the repo's tracked and untracked test-shaped files.
+- Once per file per session: the session's `workkit:<session_id>:test-reminder` key lists each file already asked about. A payload with no session id is asked every time, since silence would hide the question.
+- Never a bounce: the answer is the agent's. Silent for no file path, a file that does not exist, a directory inside no git repository, or a file whose repository is not the session directory's (a multi-root session's other repo is left alone).
 
 ## `docs:session`: SessionStart
 
@@ -116,52 +218,6 @@ The skills carry no platform-bound command at all: the two that record a marker 
 - The marker's OWN age is part of the answer: past the same bar, `checkedAt` older than a whole day swaps the diagnosis for `this machine last checked <date>` (a laptop that was off is not a token that expired) and the check clause rides either wording.
 - That half is a FILE read and nothing else. A session start never waits on the network. A marker that is missing, unreadable, or missing either date says nothing at all; the line rides alone in a repo with no session state, and alone it carries no `systemMessage`.
 - The one-whole-day bar is `FRESH_DAYS` in `tower/api/lib/history.js`, which asks the same question for the tower's pages. Change both together. What they count diverges on purpose: the tower reads briefs carrying a stats line, the marker counts any `brief: `-titled Discussion.
-
-## `workflow:reload-guard`: SessionStart + UserPromptSubmit
-
-- Stamps the load-time surfaces at session start: `hooks.json` content, plus the `agents/` and `skills/` file list and mtimes.
-- Injects one line when they change. Hook-script, skill-body, and engine edits are already live, so only these need `/reload-plugins`.
-- Each change nags once.
-
-## `manager:resolver`: PreToolUse (Task/Agent)
-
-- Supplies each crew spawn's model from `hooks/manager/resources/ladder.json` and the live session model. The crew contract: [`agents.md`](agents.md).
-- The config is three layers deep-merged, each beating the one before: the ladder (`MANAGER_LADDER` overrides its path), the `manager` block of `~/.workkit/settings.json` (`WORKFLOW_HOME` moves the folder, `MANAGER_USER_SETTINGS` names the file), then the one at the repo's git root. A layer overrides only `mode`, `enabled` and the three `tiers`; `classes` and `ladder` stay global. No git root means no repo layer, since a non-repo directory's settings file is the machine's own.
-- A merged `enabled: false` turns this hook and `manager:profile` off; a layer that cannot be read adds nothing.
-- Per class: the advisor gets the frontier rung, the scout the fast rung, and the worker and verifier the weaker of the workhorse rung and the session's own, so the crew never outspends the session. Any other agent type passes through untouched.
-- `mode: rewrite` emits `updatedInput` carrying the model; `mode: advise` blocks a class spawn not already carrying it, naming the model to re-issue with. The Agent tool's model is an alias enum (`sonnet`, `opus`, `haiku`, `fable`), so the ladder's values are aliases. `MANAGER_DEBUG=1` logs one decision line per spawn to `${TMPDIR:-/tmp}/claude-manager-resolver.log`.
-
-## `manager:spawn-guard`: PreToolUse (Task/Agent)
-
-- Warns (never blocks) when a crew spawn carries a hand-passed `model` param, or when a frontier session spawns the advisor.
-
-## `manager:addon`: SubagentStart (`^workkit:`)
-
-- For a spawn whose `agent_type` is `workkit:<name>`, reads `${WORKFLOW_HOME:-~/.workkit}/agents/<name>.md` and returns its text as `additionalContext`, under a one-line header: `Personal add-on for workkit:<name> (from <path>):`. What an add-on is for and what it cannot change: [`agents.md`](agents.md) § Personal add-ons.
-- No file, or a blank one: exit 0 with no output, the normal case. Any other agent type exits 0 the same way, so the matcher is the first filter, not the only one.
-- A file that exists but cannot be read: a `manager:addon:` line naming it on stderr and exit 1. SubagentStart cannot block a spawn, so Claude Code shows that line as a hook error notice in the subagent's own transcript and the agent runs as shipped.
-
-## `manager:profile`: UserPromptSubmit
-
-- Injects the manager standing instruction in frontier/workhorse sessions only: delegate to the crew, keep the todo checklist current, announce each spawn.
-
-## `docs:checkpoint`: UserPromptSubmit
-
-- Matches the compaction phrases on every prompt, case-insensitively: `compact` (which carries `compaction` and `/compact`), `context` beside `full`, `low`, `running out` or `window` on the same line (and the spoken order, `running out of context`, `out of context`, `low on context`), `clear the chat`, `clear this chat`, `new chat`, `fresh session`, `start over`.
-- Silent on a prompt Claude Code delivered itself, whatever words it holds: one carrying a frame line, or opening with a tag other than `<pasted_content` (`hook_prompt_is_system`, § Platforms). The check runs before any phrase is matched.
-- A match injects one instruction: run the `workkit:checkpoint` skill before anything else in the turn, then answer the line. What the skill does with the chat is its own home, [`skills/checkpoint/SKILL.md`](../skills/checkpoint/SKILL.md).
-- A marker under `${TMPDIR:-/tmp}/claude-checkpoint-marker`, keyed by session id, holds the time of the last fire. The second fire in a session asks for a DELTA instead, naming the time the instruction was last issued, so the second run files only what has been spoken since. A payload with no session id gets the full line and writes no marker.
-- Fails open: no `jq`, no prompt, or a payload that does not parse is silence. It never exits 2, so a prompt is never blocked.
-
-## `workflow:feature`: UserPromptSubmit
-
-- Matches an issue-work line on every prompt, case-insensitively, with a curly apostrophe read as a straight one. A STRONG match is `#N` or a queue phrase as whole words; a WEAK match is a bare number.
-  - The bare number is 2 to 4 digits bounded by non-alphanumerics. Single digits (`1.2.3`) and digits glued to letters (`a1234b`) stay silent, while a year, a port, a time or a two-digit version part fires.
-  - The phrases: `work on`, `work the`, `do issue`, `the issues`, `next issue`, `what next`, `what's next` and `what's left` (each with or without the apostrophe), `continue`, `resume`, `keep going`, `what now`, `next one`, `go now`, `lets do`, `let's do`, `finish up`, `task list`, `the queue`, `the batch`, `open items`, `the board`. A phrase inside a longer word is silent: `framework only`, `presume`, `discontinued`.
-- Silent on a prompt Claude Code delivered itself (a frame line, or an opening tag other than `<pasted_content`), through `hook_prompt_is_system` before any match: a task notification saying "work on #12" is not the owner asking.
-- A match injects one instruction: load the `workkit:feature` skill before working the issue. The build procedure itself is the skill's own home, [`skills/feature/SKILL.md`](../skills/feature/SKILL.md).
-- A marker under `${TMPDIR:-/tmp}/claude-feature-marker`, keyed by session id, makes every later fire in the session silent: the skill is already in context, and a compaction summary keeps the skills invoked. Only a STRONG match writes it. A weak match injects the line and leaves no marker, so a false fire (`port 8080`) never spends the session's one load and a later `work on #374` still fires. A payload with no session id gets the full line every time and writes no marker.
-- Fails open: no `jq`, no prompt, or a payload that does not parse is silence. It never exits 2, so a prompt is never blocked.
 
 ## `safety:vendor-guard`: PreToolUse (Edit/Write)
 
@@ -277,32 +333,6 @@ The skills carry no platform-bound command at all: the two that record a marker 
 - The bounce names the route, the findings said in chat under 🧭 Findings for the owner to answer file or drop, and the toggle: `findings.file: true` in the repo's `.workkit/settings.json` or `~/.workkit/settings.json` turns filing on (`docs/project-state.md` § How big is one issue).
 - The title is read off each create clause's raw shell words (`--title`, `--title=` or `-t`; `hook_gh_flag_values` in `hooks/lib/gh-edit.sh`), a heredoc body stripped first, so a body naming the phrase is data. A tripwire, not a sandbox: the title is read in the quoting an agent writes (a plain or quoted word); an escaped or substituted title passes. Two literal tests on the raw command come first, `gh issue create` and the phrase, so no other command reaches the walk.
 - Everything else passes silently: another title, a title where the phrase is not at the start, a `gh issue comment` or `edit` carrying it, and any create while the setting reads `true`. No `jq` passes too. It runs in an opted-in repo only (§ Where every hook stands down).
-
-## `docs:board-guard`: PostToolUse (Edit/Write)
-
-- Bounces an `AGENTS.md` write that breaks the spec's budget (§ Repo docs). A `CLAUDE.md` write passes: `docs:state-check` names its fix at session start.
-- `AGENTS.md`: the size budget, ≤250 lines, and the DENSITY rule beside it: no line over 400 bytes, since a markdown paragraph is one source line and a file can pass the line count while carrying a book in fourteen of them.
-- A density violation lists the first few offenders as `line N (M bytes)` and says to bulletize or move the detail into `docs/<topic>.md`.
-- The unit is BYTES, and the measure is pinned to it with `LC_ALL=C`: one-true-awk counts bytes while gawk counts characters under a UTF-8 locale, so an unpinned rule would judge the same file differently on macOS and Linux. One rule, one unit, everywhere it is described.
-
-## `docs:changelog-guard`: PostToolUse (Edit/Write)
-
-- Bounces a CHANGELOG entry that is an essay instead of one short linked paragraph, only entries the write ADDED.
-- It lints through `wk_changelog_lint_file` in `workflow/lib/changelog.sh`, the linter resolution `safety:commit-gate` check 3 and `script-shell.sh` share, and stands aside with no `node` on PATH.
-
-## `docs:session-guard`: PostToolUse (Edit/Write)
-
-- Bounces a write that leaves `.workkit/agents/session.md` past either cap: a bullet over 350 chars, or the file over 40 content lines.
-- It judges the resulting file, which is why it is POST.
-- The same bar `docs:session` warns at; the `workkit:ship` prune is what normally keeps it under.
-
-## `safety:test-reminder`: PostToolUse (Edit/Write)
-
-- Asks at edit time whether a written code file needs a test, with one line in the agent's context: `<path> has no test naming it. Does this change need one? If not, say why in the Proof: line.` The rule it serves is the spec's (§ The proof): whether a change needs a test stays judgment, and a "no" is recorded in the `Proof:` line.
-- A code file is the one `safety:commit-gate` check 1 asks about, through the same helper, `hook_is_code_path` in `hooks/lib/paths.sh`: a code extension, outside a test folder and a test name, never a `*.config.*` file or anything under `_attic/`.
-- A test NAMES the file when its text carries the basename with its extension as a whole word (`thing.js`, `run.sh`; `index.json` never names `index.js`, nor `webapp.js` `app.js`), or `<parent>/<base>` when more than one repo file shares the basename (a root-level file keeps the basename), or a require or import path ending in the stem (`require('../lib/thing')`). The tests read are the repo's tracked and untracked test-shaped files, the `hook_is_test_path` shape; the first hit ends the search.
-- Once per file per session: a marker under `${TMPDIR:-/tmp}/workkit-test-reminder`, keyed by session id, holds each file already asked about. A payload with no session id is asked every time, since silence would hide the question.
-- Never a bounce: it always exits 0, and the answer is the agent's. Fails open and silent: no `jq`, no file path, a file that does not exist, a directory inside no git repository, or a file whose repository is not the session directory's (a multi-root session's other repo is left alone).
 
 ## `workflow:snapshot`: PostToolUse (Bash)
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # workflow/lib/changelog.sh: the CHANGELOG format check, its one resolution of
-# the linter and its message, for the commit gate (check 3), docs/changelog-guard
-# and script-shell.sh (before a root suite). Sourced, functions only; the rules
-# themselves are ../changelog/changelog.js.
+# the linter and its message, for the commit gate (check 3) and script-shell.sh
+# (before a root suite); the hooks module's changelog-guard resolves the linter
+# itself. Sourced, functions only; the rules themselves are ../changelog/changelog.js.
 
 # wk_is_changelog <path>: <path> names a CHANGELOG.md, at the root or below.
 wk_is_changelog() {
@@ -14,7 +14,7 @@ wk_is_changelog() {
 
 # wk_changelog_linter: the linter's path, the workflow folder beside this lib
 # or WORKFLOW_DIR (the tests' override). Returns 1 when node or the linter is
-# missing, which the two hooks read as standing aside.
+# missing, which the gate and the wrapper read as standing aside.
 wk_changelog_linter() {
   local dir="${WORKFLOW_DIR:-}"
   command -v node >/dev/null 2>&1 || return 1
