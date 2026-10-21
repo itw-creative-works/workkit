@@ -12,7 +12,7 @@ const {
 } = require('./lib/harness');
 const { findSuites } = require('./lib/suites');
 const { mkTmp } = require('./lib/scratch');
-const { which, basePathWithout } = require('./lib/platform');
+const { which, basePathWithout, joinPath, NODE_DIR } = require('./lib/platform');
 
 const RUNNER = path.join(__dirname, 'run.js');
 const LIB = path.join(__dirname, 'lib');
@@ -168,7 +168,9 @@ const run = async () => {
 
   await test('with no claude binary the mod half reads skipped with its reason and the Node half still runs', () => {
     const tmp = mkTmp('runner-noclaude-');
-    const PATH = basePathWithout(tmp, 'claude');
+    // node's own folder beside the built PATH: a linked node is not startable
+    // by name from Node on Windows (the loader suite's no-gh case does the same).
+    const PATH = joinPath(basePathWithout(tmp, 'claude'), NODE_DIR);
     assert(!which('claude', PATH), 'the fixture PATH holds no claude');
     const { code, output } = runModHalf(PATH);
     fs.rmSync(tmp, { recursive: true, force: true });
