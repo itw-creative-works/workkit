@@ -7,8 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.79.0] - 2026-10-20
+
 ### Changed
-- [#444](../../issues/444) - The thirteen in-process hooks run as one hooks module inside Claude Code (`hooks/register.js`, logic in `hooks/mods/`), so a fire spawns no loader, bash or jq. The resolver moves to `agent.spawn`, session markers live in the plugin's store, and `npm test` gains a `claude plugin test` half.
+- [#444](../../issues/444) [`a0cbcf0`](../../commit/a0cbcf0) Thanks [@ianwieds]! - The thirteen in-process hooks run as one hooks module inside Claude Code (`hooks/register.js`, logic in `hooks/mods/`), so a fire spawns no loader, bash or jq. The resolver moves to `agent.spawn`, session markers live in the plugin's store, and `npm test` gains a `claude plugin test` half.
 
 ## [0.78.0] - 2026-10-20
 
