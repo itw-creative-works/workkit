@@ -1,7 +1,7 @@
 // Tests for workflow:standards's logic: healing a repo, and relaying only the
 // lines the engine itself printed, with the indent and the glyph taken off.
 // The heal results are the real engine's. The shared prologue is ./helpers.js;
-// "a subdirectory session resolves to the repo root" is hooks/session-start.test.ts.
+// "a subdirectory session resolves to the repo root" is tests/mods/session-start.test.ts.
 
 const path = require('path');
 const fs = require('fs');

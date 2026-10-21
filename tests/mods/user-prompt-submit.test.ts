@@ -3,7 +3,7 @@
 // gate and its log verdicts, and the per-session markers kept in $.store.
 
 import { test, expect, describe } from 'claude-code/testing'
-import { mkWorld, hooksLog, contextOf, REPO, SID, MODELS, OPTED_OUT } from '../tests/lib/mod-world.ts'
+import { mkWorld, hooksLog, contextOf, REPO, SID, MODELS, OPTED_OUT } from '../lib/mod-world.ts'
 
 const prompt = ($: any, text: string | undefined, extra: any = {}) => $.classic.UserPromptSubmit({
   ...(text === undefined ? {} : { prompt: text }), session_id: SID, cwd: REPO, ...extra,

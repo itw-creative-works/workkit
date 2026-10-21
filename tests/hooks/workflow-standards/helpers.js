@@ -2,7 +2,7 @@
 // standardsContext(state, healResult, updateResult) in hooks/mods/standards.js
 // fed the engine's real output. The engine's own suites are
 // tests/scripts/workflow-standards/; the session-start wiring (the daily
-// marker, the gate, the pester's every-session rule) is hooks/session-start.test.ts.
+// marker, the gate, the pester's every-session rule) is tests/mods/session-start.test.ts.
 
 const path = require('path');
 const fs = require('fs');

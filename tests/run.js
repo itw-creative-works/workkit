@@ -2,7 +2,7 @@
 /* eslint-disable no-console */
 // The test runner behind `npm test`: runs every `tests/**/*.test.js` (each
 // exports `async () => ({ passed, failed, failures })`), then the mod half,
-// `claude plugin test` over the hooks module's `hooks/*.test.ts`, totals them,
+// `claude plugin test` over the hooks module's wiring suites, `tests/mods/*.test.ts`, totals them,
 // and exits non-zero on any failure. Suite paths after `--` (repo-relative or
 // absolute) narrow the run to those suites. The suite contract: AGENTS.md § Tests.
 
@@ -12,7 +12,7 @@ const { findSuites, findModSuites } = require('./lib/suites');
 
 const TEST_DIR = __dirname;
 const ROOT = path.dirname(TEST_DIR);
-const MOD_DIR = path.join(ROOT, 'hooks');
+const MOD_DIR = path.join(TEST_DIR, 'mods');
 
 // The named suites, or every suite when none is named; a name that is no
 // suite ends the run before anything starts. A named `.test.ts` picks the mod

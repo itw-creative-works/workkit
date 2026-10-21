@@ -7,6 +7,9 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+- [#444](../../issues/444) - The hooks module's wiring suites live under `tests/mods/` with the other suites, not beside `hooks/register.js`; `claude plugin test` still runs them from the kit root.
+
 ## [0.79.0] - 2026-10-20
 
 ### Changed

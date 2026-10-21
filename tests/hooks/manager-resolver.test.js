@@ -3,14 +3,14 @@
 // ladder, userSettings, repoSettings) and modelTier(id) in
 // hooks/mods/manager.js. The ladder's shape, the decision table, both class
 // spellings and the layer merge. The spawn itself (a given model, advise
-// mode, the layers read off disk) is hooks/agent-spawn.test.ts.
+// mode, the layers read off disk) is tests/mods/agent-spawn.test.ts.
 
 // HEAD cases retired with the mod: "garbage stdin exits 0 silently", "empty stdin exits 0 silently" (the
 // engine parses the input); "no cache → session model from the last assistant entry" and "quoted transcript
 // content cannot poison the session model" (no transcript is read: the session model is e.parentModel);
 // "a non-Agent tool passes through" (agent.spawn fires only for a spawn).
 
-// HEAD cases ported under new names in hooks/agent-spawn.test.ts: "an explicit model param is the manager's
+// HEAD cases ported under new names in tests/mods/agent-spawn.test.ts: "an explicit model param is the manager's
 // override (rewrite mode)" as "a spawn already carrying a model passes on unchanged"; "class spawn without the
 // resolved model blocks, naming it" as "mode advise refuses a class spawn with the re-issue text ...";
 // "loader routes manager:resolver" as "workkit:worker with no model under a sonnet parent ..." (its run line).

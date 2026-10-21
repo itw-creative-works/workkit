@@ -2,7 +2,7 @@
 // state (every store key under workkit:<session_id>:) is dropped.
 
 import { test, expect } from 'claude-code/testing'
-import { mkWorld } from '../tests/lib/mod-world.ts'
+import { mkWorld } from '../lib/mod-world.ts'
 
 test("session.end deletes every workkit:<sid>: key and leaves other sessions' keys", async ($, on) => {
   const w = mkWorld(on, {

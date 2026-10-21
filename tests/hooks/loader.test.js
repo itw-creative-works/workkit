@@ -6,7 +6,7 @@
 // runs it for any command whose target it cannot place for sure.
 
 // Retired with the hooks module: the reload-guard and setup-reminder half of
-// "outside any git repo" (hooks/session-start.test.ts holds it as "outside any
+// "outside any git repo" (tests/mods/session-start.test.ts holds it as "outside any
 // git repo: standards returns the setup line only, reload-guard stamps ...").
 
 const fs = require('fs');

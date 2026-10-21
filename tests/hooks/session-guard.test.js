@@ -1,7 +1,7 @@
 // Tests for docs:session-guard's logic, sessionGuardVerdict(path, text) in
 // hooks/mods/session-guard.js: `.workkit/agents/session.md` held to the shape
 // of a queue, short bullets and few lines. Each case ports the HEAD case its
-// name quotes; the wiring cases are hooks/post-tool-use.test.ts.
+// name quotes; the wiring cases are tests/mods/post-tool-use.test.ts.
 
 const fs = require('fs');
 const path = require('path');

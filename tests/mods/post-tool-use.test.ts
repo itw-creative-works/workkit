@@ -3,7 +3,7 @@
 // written file and the first block wins.
 
 import { test, expect, describe } from 'claude-code/testing'
-import { mkWorld, contextOf, HOME, REPO, PLAIN, SID, OPTED_IN } from '../tests/lib/mod-world.ts'
+import { mkWorld, contextOf, HOME, REPO, PLAIN, SID, OPTED_IN } from '../lib/mod-world.ts'
 
 const write = ($: any, filePath: string | undefined, extra: any = {}) => $.classic.PostToolUse({
   tool_name: 'Write',

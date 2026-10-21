@@ -1,10 +1,10 @@
 // Tests for manager:addon's logic, addonContext(text) in hooks/mods/addon.js:
 // a blank add-on adds nothing. The header, which file is read, the default
 // home, the foreign agent types and the unreadable file are
-// hooks/subagent-start.test.ts.
+// tests/mods/subagent-start.test.ts.
 
 // HEAD case retired with the mod (the engine parses the input): "garbage stdin exits 0 silently".
-// HEAD case ported under new names in hooks/subagent-start.test.ts: "hooks.json registers the hook
+// HEAD case ported under new names in tests/mods/subagent-start.test.ts: "hooks.json registers the hook
 // under SubagentStart, matcher ^workkit:" as the "agent_type <type> gets nothing" cases and
 // "loader routes manager:addon": the fire leaves a run line.
 

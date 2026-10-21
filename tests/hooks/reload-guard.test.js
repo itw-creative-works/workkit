@@ -1,12 +1,12 @@
 // Tests for workflow:reload-guard's logic, reloadGuardContext(stamp,
 // fingerprint) in hooks/mods/reload-guard.js: the one-line notice when the
 // kit's load-time surfaces differ from what the session stamped. What counts
-// as a change, the stamp, and nagging once are hooks/user-prompt-submit.test.ts.
+// as a change, the stamp, and nagging once are tests/mods/user-prompt-submit.test.ts.
 
 // HEAD cases retired with the mod: "garbage stdin: exit 0, silent" (the engine
 // parses the input), "an unexpected event name: exit 0, silent" (the module hooks only its two).
 // HEAD cases ported under new names: "the loader routes workflow:reload-guard and the notice comes through"
-// as hooks/user-prompt-submit.test.ts "an opted-in repo: the contexts arrive in the order ...";
+// as tests/mods/user-prompt-submit.test.ts "an opted-in repo: the contexts arrive in the order ...";
 
 // "hooks.json wires it on both events, through the loader" as user-prompt-submit's
 // "SessionStart writes the stamp and says nothing" with the notice cases, and

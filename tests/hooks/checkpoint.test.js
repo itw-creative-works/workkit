@@ -2,11 +2,11 @@
 // hooks/mods/checkpoint.js, and the prompt-shape test it stands on,
 // isSystemPrompt(text) in hooks/mods/frame.js: a compaction line fires the
 // workkit:checkpoint skill. The marker and the delta it asks for are
-// per-session state, hooks/user-prompt-submit.test.ts.
+// per-session state, tests/mods/user-prompt-submit.test.ts.
 
 // HEAD cases retired with the mod (the engine parses the input; a module has no jq):
 // "garbage stdin exits 0 silently", "no jq on PATH exits 0 silently".
-// HEAD cases ported under new names in hooks/user-prompt-submit.test.ts:
+// HEAD cases ported under new names in tests/mods/user-prompt-submit.test.ts:
 // "loader routes docs:checkpoint" and "valid UserPromptSubmit JSON shape" as "an opted-in repo: the contexts arrive in the order ...".
 
 const fs = require('fs');

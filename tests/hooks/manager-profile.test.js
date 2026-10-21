@@ -3,10 +3,10 @@
 // repoSettings) in hooks/mods/manager.js: the manager standing instruction,
 // injected only in manager-capable sessions (frontier or workhorse tier, or
 // unknown). The session model's source ($.session.model()), the gate and
-// HOOK_DISABLE are hooks/user-prompt-submit.test.ts.
+// HOOK_DISABLE are tests/mods/user-prompt-submit.test.ts.
 
 // HEAD cases retired with the mod (the engine parses the input): "garbage stdin exits 0", "empty stdin exits 0".
-// HEAD cases ported under new names in hooks/user-prompt-submit.test.ts: "loader routes manager:profile" and
+// HEAD cases ported under new names in tests/mods/user-prompt-submit.test.ts: "loader routes manager:profile" and
 // "valid UserPromptSubmit JSON shape" as "an opted-in repo: the contexts arrive in the order ...";
 // "transcript fallback drives the tier too" as "the tier now comes from $.session.model()".
 

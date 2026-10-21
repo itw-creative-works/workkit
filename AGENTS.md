@@ -16,7 +16,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 ├── .github/workflows/    # checks.yml (the suite, every pull request and every push to main but a release-only one) · changelog.yml (the reusable entry check) · pages.yml (the central dashboard, on a release)
 ├── hooks/                # hooks.json + the hooks module + the shell hook groups, resolved via ${CLAUDE_PLUGIN_ROOT}
 │   ├── register.js       # the hooks module: the thirteen in-process hooks, the one file that touches `$`
-│   ├── mods/             # each module hook's logic, plain functions over plain data (+ the module's *.test.ts wiring suites beside register.js)
+│   ├── mods/             # each module hook's logic, plain functions over plain data
 │   ├── loader.sh         # name → path router for the shell hooks (docs:session → docs/session/run.sh)
 │   ├── _lib.sh           # shared helpers (sourced, never executed)
 │   ├── lib/              # _lib.sh's helper groups, one file per concern (sourced by it, never a hook)
@@ -83,9 +83,9 @@ Each step is gated by what the environment it woke up in can do; the brief itsel
 
 ## Tests
 
-`npm test` runs `tests/run.js`, which discovers every `tests/**/*.test.js` through `tests/lib/suites.js`. A suite whose precondition this machine cannot meet calls `skipSuite()` and the runner names the skip rather than hiding it. Suites live under `tests/hooks/`, `tests/scripts/`, `tests/tower/`, `tests/jobs/`, and `tests/docs/`, plus the runner's own suite at `tests/runner.test.js`.
+`npm test` runs `tests/run.js`, which discovers every `tests/**/*.test.js` through `tests/lib/suites.js`. A suite whose precondition this machine cannot meet calls `skipSuite()`, and the runner names the skip. Suites live under `tests/hooks/`, `tests/scripts/`, `tests/tower/`, `tests/jobs/`, `tests/docs/` and `tests/mods/`, plus the runner's own suite at `tests/runner.test.js`.
 
-Then the mod half: `claude plugin test` on the kit root runs the hooks module's wiring suites, `hooks/*.test.ts`, inside the engine, and the runner adds its counts beside the Node suites'. With no `claude` on PATH it is a named skip and the Node half still runs. A named `hooks/<name>.test.ts` after `--` runs the whole mod half, since `claude plugin test` takes a folder.
+Then the mod half: `claude plugin test` on the kit root runs the hooks module's wiring suites, `tests/mods/*.test.ts`, inside the engine, and the runner adds its counts beside the Node suites'. With no `claude` on PATH it is a named skip and the Node half still runs. A named `tests/mods/<name>.test.ts` after `--` runs the whole mod half, since `claude plugin test` takes a folder.
 
 Every suite ends with `if (require.main === module) selfRun(<its export>);`. One suite runs alone as `npm test -- tests/<path>.test.js` (the runner takes suite paths after `--`, and exits 1 naming a path that matches no suite), and still as `node tests/<path>.test.js` through `selfRun`; `tests/runner.test.js` fails naming a suite without the line.
 
@@ -97,7 +97,7 @@ A world a case spawns comes from the same seam:
 - `loaderEnv()` is the env every suite that fires `hooks/loader.sh` spawns with (this process's env, the real HOME, a fresh scratch `WORKFLOW_HOME`), so no fire lands in the developer's own `hooks.log`;
 - `stubTool()` is the one writer of a PATH stub, which a shell starts on either platform and Node starts on neither;
 - `tests/lib/mods-inputs.js` is the one builder of the arguments the logic suites hand the `hooks/mods/` functions (`mods(name)`, `stateFacts`, `reminderFacts`, `standardsState`, `runResult`), so every suite spells a shape the same way;
-- and `tests/lib/mod-world.ts` is the one world beneath the hooks module for the `hooks/*.test.ts` wiring suites (`mkWorld(on)`: files, git, gh, the engine scripts, the store and the session, answered from memory).
+- and `tests/lib/mod-world.ts` is the one world beneath the hooks module for the `tests/mods/*.test.ts` wiring suites (`mkWorld(on)`: files, git, gh, the engine scripts, the store and the session, answered from memory).
 
 A scratch folder has one writer as well: `mkTmp(prefix)` in `tests/lib/scratch.js`, which resolves the path and removes every folder it made when the process exits. The kit's version stamp has one reader as well: `tests/lib/version-stamp.js` holds `STAMP`, `readStamp(file)` and `kitVersion()`, so no suite spells the stamp file or its first-line read itself.
 

@@ -3,7 +3,7 @@
 // call as additionalContext plus a $.ui.log line, and never decides the call.
 
 import { test, expect, describe } from 'claude-code/testing'
-import { mkWorld, hooksLog, spied, SPY, MODELS } from '../tests/lib/mod-world.ts'
+import { mkWorld, hooksLog, spied, SPY, MODELS } from '../lib/mod-world.ts'
 
 const agentCall = ($: any, subagentType: string, extra: any = {}) => $.tool.call({
   tool: 'Agent', subagent_type: subagentType, prompt: 'do the thing', description: 'a task', ...extra,

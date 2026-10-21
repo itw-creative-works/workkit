@@ -3,7 +3,7 @@
 // cache and the standards daily marker are files under ~/.claude/logs.
 
 import { test, expect, describe } from 'claude-code/testing'
-import { mkWorld, contextOf, HOME, REPO, PLAIN, SID, OPTED_OUT } from '../tests/lib/mod-world.ts'
+import { mkWorld, contextOf, HOME, REPO, PLAIN, SID, OPTED_OUT } from '../lib/mod-world.ts'
 
 const start = ($: any, cwd: string, extra: any = {}) => $.classic.SessionStart({ source: 'startup', session_id: SID, cwd, ...extra })
 const HEAL = { exitCode: 0, stdout: '', stderr: '  ✓ issue forms: installed\n  ✓ gitignore: added .workkit/*\n' }

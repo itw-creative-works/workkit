@@ -2,7 +2,7 @@
 // hooks/mods/state-check.js: the announcements a session start makes about
 // the inbox count, the capture file, a repo CLAUDE.md and an AGENTS.md past
 // its budget. The facts' shape is tests/lib/mods-inputs.js's. The cases about
-// gh, the cache and the folder are hooks/session-start.test.ts.
+// gh, the cache and the folder are tests/mods/session-start.test.ts.
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { mods, textOf, stateFacts } = require('../lib/mods-inputs');

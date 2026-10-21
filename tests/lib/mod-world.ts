@@ -1,4 +1,4 @@
-// The world beneath the kit's hooks module for the hooks/*.test.ts wiring
+// The world beneath the kit's hooks module for the tests/mods/*.test.ts wiring
 // suites: a file tree, git, gh, the engine scripts, the store and the session,
 // each answered from memory through the test kit's `on`. World paths live
 // under /w/; any other path is the kit's own folder, answered from KIT.

@@ -4,7 +4,7 @@
 // --added-only`), so judging only what a change added is proved end to end.
 // The rules are tests/scripts/changelog.test.js's; the wiring cases (no
 // file_path, a file that is gone, the registration) are
-// hooks/post-tool-use.test.ts.
+// tests/mods/post-tool-use.test.ts.
 
 const path = require('path');
 const fs = require('fs');

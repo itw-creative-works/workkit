@@ -1,6 +1,6 @@
 // Suite discovery for the Node runner (tests/run.js) and the runner's own
 // suite (tests/runner.test.js), so which files count as a suite has one home:
-// the Node suites, and the mod half's `hooks/*.test.ts`.
+// the Node suites, and the mod half's `tests/mods/*.test.ts`.
 
 const fs = require('fs');
 const path = require('path');
@@ -20,7 +20,7 @@ const findSuites = (dir) => {
 };
 
 // The mod half's wiring suites: every `*.test.ts` and `*.test.tsx` in the
-// hooks folder, which `claude plugin test` runs; none when there is no folder.
+// tests/mods/ folder, which `claude plugin test` runs; none when there is no folder.
 const findModSuites = (dir) => {
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir, { withFileTypes: true })

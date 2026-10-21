@@ -1,7 +1,7 @@
 // Tests for safety:test-reminder's logic, testReminderContext(facts, seen)
 // in hooks/mods/test-reminder.js: whether a written code file that no test
 // names gets its one line. The facts' shape is tests/lib/mods-inputs.js's.
-// The per-session and wiring cases are hooks/post-tool-use.test.ts.
+// The per-session and wiring cases are tests/mods/post-tool-use.test.ts.
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const {

@@ -2,11 +2,11 @@
 // subagentType, givenModel, parentModel) in hooks/mods/spawn-guard.js: the
 // warn-only companion to the resolver. Both rules, both class spellings, and
 // the silence everywhere else. The warning's delivery, the never-a-decision
-// invariant and the ladder read are hooks/pre-tool-use.test.ts.
+// invariant and the ladder read are tests/mods/pre-tool-use.test.ts.
 
 // HEAD cases retired with the mod (the engine parses the input): "garbage stdin exits 0 silently",
 // "empty stdin exits 0 silently". The other HEAD cases this file does not hold keep their names in
-// hooks/pre-tool-use.test.ts.
+// tests/mods/pre-tool-use.test.ts.
 
 const path = require('path');
 const fs = require('fs');

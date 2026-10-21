@@ -3,7 +3,7 @@
 // also carries the hooks-log cases: where the line lands and the cap.
 
 import { test, expect, describe } from 'claude-code/testing'
-import { mkWorld, hooksLog, contextOf, HOME, REPO, SID } from '../tests/lib/mod-world.ts'
+import { mkWorld, hooksLog, contextOf, HOME, REPO, SID } from '../lib/mod-world.ts'
 
 const start = ($: any, agentType: string) => $.classic.SubagentStart({
   agent_id: 'agent-abc123', agent_type: agentType, session_id: SID, cwd: REPO,

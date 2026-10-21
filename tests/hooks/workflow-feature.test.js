@@ -2,11 +2,11 @@
 // hooks/mods/feature.js: a line about working an issue loads the
 // workkit:feature skill. With no marker given, every match answers the line;
 // the marker, its strong-only write and the later silence are per-session
-// state, hooks/user-prompt-submit.test.ts.
+// state, tests/mods/user-prompt-submit.test.ts.
 
 // HEAD cases retired with the mod (the engine parses the input; a module has no jq):
 // "garbage stdin exits 0 silently", "no jq on PATH exits 0 silently".
-// HEAD case ported under a new name in hooks/user-prompt-submit.test.ts:
+// HEAD case ported under a new name in tests/mods/user-prompt-submit.test.ts:
 // "loader routes workflow:feature" as "an opted-in repo: the contexts arrive in the order ...".
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');

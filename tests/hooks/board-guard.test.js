@@ -1,7 +1,7 @@
 // Tests for docs:board-guard's logic, boardGuardVerdict(path, text) in
 // hooks/mods/board-guard.js: AGENTS.md held to its size and density budget.
 // Each case ports the HEAD case its name quotes; the wiring cases (no
-// file_path, a file that is gone) are hooks/post-tool-use.test.ts.
+// file_path, a file that is gone) are tests/mods/post-tool-use.test.ts.
 
 const path = require('path');
 const fs = require('fs');

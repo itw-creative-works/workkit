@@ -1,7 +1,7 @@
 // Tests for workflow:standards's logic: the setup pester's wording for an
 // engine kept in Claude's plugin cache. The pester's every-session rule, the
 // non-git and declined cases and the wording anywhere else are
-// hooks/session-start.test.ts. The shared prologue is ./helpers.js.
+// tests/mods/session-start.test.ts. The shared prologue is ./helpers.js.
 
 const { group, test, assert, summary, selfRun } = require('../../lib/harness');
 const { say, dropPathWithoutGh } = require('./helpers');

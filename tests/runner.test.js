@@ -37,7 +37,7 @@ const runSuites = (suites, argsFor = () => []) => {
 const runWithSuite = (body) => runSuites({ 'fixture.test.js': body });
 
 // A throwaway plugin repo for the mod half: one Node suite under tests/, and a
-// hooks module with one passing *.test.ts, run whole through the real runner
+// hooks module with one passing tests/mods/*.test.ts, run whole through the real runner
 // on `PATH`.
 const runModHalf = (PATH) => {
   const root = mkTmp('runner-mod-');
@@ -52,7 +52,8 @@ const runModHalf = (PATH) => {
   fs.mkdirSync(path.join(root, 'hooks'));
   fs.writeFileSync(path.join(root, 'hooks', 'hooks.json'), '{ "modules": ["./register.js"] }\n');
   fs.writeFileSync(path.join(root, 'hooks', 'register.js'), 'export function register(on) {}\n');
-  fs.writeFileSync(path.join(root, 'hooks', 'fixture.test.ts'), "import { test, expect } from 'claude-code/testing'\ntest('the mod case', async () => { expect(1).toBe(1) })\n");
+  fs.mkdirSync(path.join(dir, 'mods'));
+  fs.writeFileSync(path.join(dir, 'mods', 'fixture.test.ts'), "import { test, expect } from 'claude-code/testing'\ntest('the mod case', async () => { expect(1).toBe(1) })\n");
   const res = spawnSync('node', [path.join(dir, 'run.js')], { cwd: root, encoding: 'utf8', env: { ...process.env, PATH }, timeout: 120000 });
   fs.rmSync(root, { recursive: true, force: true });
   return { code: res.status, output: (res.stdout || '') + (res.stderr || '') };
