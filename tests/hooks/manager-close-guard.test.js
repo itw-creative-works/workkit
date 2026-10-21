@@ -1,196 +1,136 @@
-// manager/close-guard hook: the warn-only end-of-turn read of the manager's
-// own behavior: both rules over fixture transcripts, the turn window (after the
-// last real user prompt, sidechains excluded), the threshold override, the
-// fail-open preconditions, and that the hook never continues a turn.
-const path = require('path');
+// Tests for manager:close-guard's logic: turnFacts(messages, isSystemPrompt) and closeGuardWarning(facts, { tier,
+// frontier, closeEdits }) in hooks/mods/close-guard.js, over $.session.messages() rows. Both rules, the turn window
+// (after the last owner prompt) and the threshold. Each case ports the HEAD case its name quotes; the event, the
+// session model, the settings and the log are tests/mods/stop.test.ts.
+
+// HEAD cases retired with the transcript scan: "a meta user entry is not a turn boundary" and "a subagent's own edits
+// (isSidechain) do not count" (the rows carry no isMeta or isSidechain), "a pseudo-prompt in array (text block) form
+// is rejected too" (a row's text is its blocks joined), "the read stops at the tail: a turn beyond it is not seen",
+// and the fail-open cases "a missing transcript", "an absent transcript_path", "a garbage transcript", "garbage lines".
+
+// Also retired: "garbage stdin is silent" (the engine parses the input); the statusline fallback, "the tail's own
+// assistant model wins over the statusline cache", "a sonnet tail is silent even with a frontier cache", "assistant
+// entries carrying no model fall back to the cache" (the model is $.session.model()); the loader integration, "loader
+// routes manager:close-guard".
+
+// HEAD cases ported in tests/mods/stop.test.ts: "stop_hook_active is silent (the turn was judged once)", "enabled:
+// false silences the guard", "the output never continues the turn", "HOOK_DISABLE=1 is a silent no-op".
+
 const fs = require('fs');
-const { spawnSync } = require('child_process');
+const path = require('path');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
-const { BASH, NO_RC, shellPath, loaderEnv } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
-const { mkRepo } = require('../lib/git-repo');
+const {
+  mods, textOf, MODELS, row,
+} = require('../lib/mods-inputs');
 
-const REPO = path.join(__dirname, '..', '..');
-const HOOK = path.join(REPO, 'hooks', 'manager', 'close-guard', 'run.sh');
-const LOADER = path.join(REPO, 'hooks', 'loader.sh');
-const ladder = JSON.parse(fs.readFileSync(path.join(REPO, 'hooks', 'manager', 'resources', 'ladder.json'), 'utf8'));
-const id = (rung) => ladder.ladder[rung];
+const KIT = path.join(__dirname, '..', '..');
+const ladder = JSON.parse(fs.readFileSync(path.join(KIT, 'hooks', 'manager', 'resources', 'ladder.json'), 'utf8'));
 const FRONTIER = ladder.tiers.frontier;
+const FRONTIER_MODEL = MODELS[FRONTIER];
 
-let tmp;
-const freshTmp = () => {
-  tmp = mkTmp('close-guard-test-');
-  return tmp;
+const edit = () => row.tool('Edit', { file_path: '/x', old_string: 'a', new_string: 'b' });
+const edits = (n) => Array.from({ length: n }, () => [edit(), row.result()]).flat();
+const spawn = (type, tool = 'Task') => row.tool(tool, type === undefined ? { prompt: 'brief' } : { subagent_type: type, prompt: 'brief' });
+
+/** The warning for a turn's rows in a session on `model`, '' for silence. */
+const warn = (rows, { model = FRONTIER_MODEL, closeEdits = 5 } = {}) => {
+  const facts = mods('close-guard').turnFacts(rows, mods('frame').isSystemPrompt);
+  const tier = mods('manager').modelTier(model);
+  return textOf(mods('close-guard').closeGuardWarning(facts, { tier, frontier: FRONTIER, closeEdits }));
 };
-
-// Transcript entry builders: the shapes a real .jsonl carries.
-const prompt = (text = 'do the thing') => ({ type: 'user', message: { role: 'user', content: text } });
-const meta = () => ({ type: 'user', isMeta: true, message: { role: 'user', content: [{ type: 'text', text: 'system reminder' }] } });
-// The system-injected pseudo-prompts: ordinary user entries by every field the
-// hook can see (isMeta null, isSidechain false), told apart only by the tag
-// their text opens with. Both content spellings occur in real transcripts.
-const injected = (text, asArray = false) => ({
-  type: 'user',
-  message: { role: 'user', content: asArray ? [{ type: 'text', text }] : text },
-});
-const result = () => ({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'ok' }] } });
-const toolUse = (name, model, input = {}, extra = {}) => ({
-  type: 'assistant',
-  message: { model, content: [{ type: 'tool_use', id: `t${Math.random().toString(36).slice(2)}`, name, input }] },
-  ...extra,
-});
-const edit = (model) => toolUse('Edit', model, { file_path: '/x', old_string: 'a', new_string: 'b' });
-const spawn = (cls, model) => toolUse('Task', model, { subagent_type: cls, prompt: 'brief' });
-const edits = (n, model) => Array.from({ length: n }, () => [edit(model), result()]).flat();
-
-// Writes a transcript and returns its path. `model` rides on every assistant
-// entry, which is where hook_session_model reads the session tier from.
-const transcript = (entries) => {
-  const p = path.join(tmp, 't.jsonl');
-  fs.writeFileSync(p, entries.map((e) => JSON.stringify(e)).join('\n'));
-  return p;
-};
-
-const runHook = (input, env = {}) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-    input: typeof input === 'string' ? input : JSON.stringify(input),
-    env: {
-      ...process.env,
-      TMPDIR: shellPath(tmp),
-      MANAGER_USER_SETTINGS: shellPath(path.join(tmp, 'no-user-settings.json')),
-      ...env,
-    },
-    encoding: 'utf8',
-    timeout: 10000,
-  });
-  return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
-};
-
-// The Stop payload. The session cache is never written by this suite, so the
-// tier always comes from the transcript's own assistant entries.
-const payload = (transcriptPath, extra = {}) => ({
-  session_id: 'sess1',
-  transcript_path: shellPath(transcriptPath),
-  hook_event_name: 'Stop',
-  stop_hook_active: false,
-  ...extra,
-});
-
-const warn = (out) => (out.stdout ? JSON.parse(out.stdout).systemMessage : '');
 
 const run = async () => {
-  const F = id(FRONTIER);
-
   group('manager-close-guard: rule 3, the frontier model implementing itself');
-  await test('6 edits and no worker in a frontier session warns', () => {
-    freshTmp();
-    const out = runHook(payload(transcript([prompt(), ...edits(6, F)])));
-    assertEq(out.code, 0, out.stderr);
-    const msg = warn(out);
-    assert(msg.includes('6 edits'), msg);
-    assert(msg.includes('workkit:worker'), msg);
+
+  await test('ports "6 edits and no worker in a frontier session warns"', () => {
+    const msg = warn([row.user(), ...edits(6)]);
+    const rule3 = 'the frontier model made 6 edits itself this turn with no worker spawn: implementation belongs with workkit:worker';
+    assert(msg.includes(rule3), `rule 3, in its own words: ${msg}`);
   });
-  await test('6 edits WITH a worker spawn is silent on rule 3', () => {
-    freshTmp();
-    const out = runHook(payload(transcript([
-      prompt(), ...edits(6, F), spawn('worker', F), result(), spawn('verifier', F), result(),
-    ])));
-    assertEq(out.code, 0, out.stderr);
-    assertEq(out.stdout, '');
+
+  await test('ports "6 edits WITH a worker spawn is silent on rule 3"', () => {
+    const rows = [row.user(), ...edits(6), spawn('worker'), row.result(), spawn('verifier'), row.result()];
+    assertEq(warn(rows), '', 'a worker spawn clears rule 3, a verifier clears rule 4');
   });
-  await test('4 edits stays under the default threshold', () => {
-    freshTmp();
-    const out = runHook(payload(transcript([prompt(), ...edits(4, F)])));
-    assertEq(out.stdout, '');
+
+  await test('ports "4 edits stays under the default threshold"', () => {
+    assertEq(warn([row.user(), ...edits(4)]), '', 'four is under five');
   });
-  await test('a sonnet session doing the same editing is silent', () => {
-    freshTmp();
-    const out = runHook(payload(transcript([prompt(), ...edits(6, id('sonnet'))])));
-    assertEq(out.code, 0, out.stderr);
-    assertEq(out.stdout, '');
+
+  await test('five edits is the default threshold', () => {
+    assert(warn([row.user(), ...edits(5)]).includes('made 5 edits'), 'five warns');
   });
-  await test('MANAGER_CLOSE_EDITS lowers the threshold', () => {
-    freshTmp();
-    const t = transcript([prompt(), ...edits(2, F)]);
-    assertEq(runHook(payload(t)).stdout, '');
-    assert(warn(runHook(payload(t), { MANAGER_CLOSE_EDITS: '2' })).includes('2 edits'));
+
+  await test('ports "a sonnet session doing the same editing is silent"', () => {
+    assertEq(warn([row.user(), ...edits(6)], { model: MODELS.sonnet }), '', 'rule 3 is the frontier model\'s');
   });
-  await test('a Write call counts as an edit', () => {
-    freshTmp();
-    const t = transcript([prompt(), toolUse('Write', F, { file_path: '/x', content: 'y' })]);
-    assert(warn(runHook(payload(t), { MANAGER_CLOSE_EDITS: '1' })).includes('1 edits'));
+
+  await test('ports "MANAGER_CLOSE_EDITS lowers the threshold"', () => {
+    const rows = [row.user(), ...edits(2)];
+    assertEq(warn(rows), '', 'two is under the default');
+    assert(warn(rows, { closeEdits: 2 }).includes('2 edits'), 'and at a threshold of two it warns');
   });
-  await test('a Read call does not', () => {
-    freshTmp();
-    const t = transcript([prompt(), toolUse('Read', F, { file_path: '/x' })]);
-    assertEq(runHook(payload(t), { MANAGER_CLOSE_EDITS: '1' }).stdout, '');
+
+  await test('ports "a Write call counts as an edit"', () => {
+    const rows = [row.user(), row.tool('Write', { file_path: '/x', content: 'y' })];
+    assert(warn(rows, { closeEdits: 1 }).includes('1 edits'), 'a Write is an edit');
+  });
+
+  await test('ports "a Read call does not"', () => {
+    assertEq(warn([row.user(), row.tool('Read', { file_path: '/x' })], { closeEdits: 1 }), '', 'a Read is no edit');
+  });
+
+  await test('a spawn naming no subagent_type is no worker: rule 3 still warns', () => {
+    assert(warn([row.user(), ...edits(6), spawn(undefined), row.result()]).includes('6 edits'), 'an untyped spawn clears nothing');
   });
 
   group('manager-close-guard: rule 4, built work ending unreviewed');
-  await test('a worker with no verifier warns', () => {
-    freshTmp();
-    const out = runHook(payload(transcript([prompt(), spawn('worker', F), result()])));
-    assertEq(out.code, 0, out.stderr);
-    const msg = warn(out);
+
+  await test('ports "a worker with no verifier warns"', () => {
+    const msg = warn([row.user(), spawn('worker'), row.result()]);
     assert(msg.includes('verifier'), msg);
     assert(msg.includes('consider'), `the wording should suggest, not scold: ${msg}`);
   });
-  await test('workkit:worker (the prefixed spelling) reads the same', () => {
-    freshTmp();
-    const out = runHook(payload(transcript([prompt(), spawn('workkit:worker', F), result()])));
-    assert(warn(out).includes('verifier'), out.stdout);
+
+  await test('ports "workkit:worker (the prefixed spelling) reads the same"', () => {
+    assert(warn([row.user(), spawn('workkit:worker'), row.result()]).includes('verifier'), 'the prefix is stripped');
   });
-  await test('a worker followed by a verifier is silent', () => {
-    freshTmp();
-    const out = runHook(payload(transcript([
-      prompt(), spawn('worker', F), result(), spawn('workkit:verifier', F), result(),
-    ])));
-    assertEq(out.code, 0, out.stderr);
-    assertEq(out.stdout, '');
+
+  await test('an Agent tool use is a spawn as a Task one is', () => {
+    assert(warn([row.user(), spawn('workkit:worker', 'Agent'), row.result()]).includes('verifier'), 'an Agent worker arms rule 4');
+    assertEq(warn([row.user(), spawn('worker', 'Agent'), row.result(), spawn('workkit:verifier', 'Agent'), row.result()]), '',
+      'and an Agent verifier clears it');
   });
-  await test('a scout alone is silent', () => {
-    freshTmp();
-    const out = runHook(payload(transcript([prompt(), spawn('scout', F), result()])));
-    assertEq(out.stdout, '');
+
+  await test('ports "a worker followed by a verifier is silent"', () => {
+    assertEq(warn([row.user(), spawn('worker'), row.result(), spawn('workkit:verifier'), row.result()]), '', 'reviewed');
   });
-  await test('rule 4 fires in a sonnet session too', () => {
-    freshTmp();
-    const s = id('sonnet');
-    assert(warn(runHook(payload(transcript([prompt(), spawn('worker', s), result()])))).includes('verifier'));
+
+  await test('ports "a scout alone is silent"', () => {
+    assertEq(warn([row.user(), spawn('scout'), row.result()]), '', 'a scout builds nothing');
   });
-  await test('a heavy-editing turn that DID spawn a worker warns once, on rule 4', () => {
-    freshTmp();
-    // A frontier turn that edited heavily and spawned only a verifier-less
-    // worker fires rule 4 alone (the worker spawn clears rule 3).
-    const out = runHook(payload(transcript([prompt(), ...edits(6, F), spawn('worker', F), result()])));
-    const msg = warn(out);
+
+  await test('ports "rule 4 fires in a sonnet session too"', () => {
+    assert(warn([row.user(), spawn('worker'), row.result()], { model: MODELS.sonnet }).includes('verifier'), 'any tier');
+  });
+
+  await test('ports "a heavy-editing turn that DID spawn a worker warns once, on rule 4"', () => {
+    const msg = warn([row.user(), ...edits(6), spawn('worker'), row.result()]);
     assertEq(msg.split('\n').length, 1, `one line per stop: ${msg}`);
     assert(msg.includes('verifier'), msg);
     assert(!msg.includes('6 edits'), msg);
   });
 
   group('manager-close-guard: the turn window');
-  await test('a previous turn\'s edits do not count', () => {
-    freshTmp();
-    const out = runHook(payload(transcript([
-      prompt(), ...edits(6, F), prompt('and now something else'), ...edits(1, F),
-    ])));
-    assertEq(out.stdout, '');
+
+  await test('ports "a previous turn\'s edits do not count"', () => {
+    assertEq(warn([row.user(), ...edits(6), row.user('and now something else'), ...edits(1)]), '', 'the window opens at the last prompt');
   });
-  await test('a previous turn\'s worker does not count', () => {
-    freshTmp();
-    const out = runHook(payload(transcript([
-      prompt(), spawn('worker', F), result(), prompt('next'), ...edits(1, F),
-    ])));
-    assertEq(out.stdout, '');
+
+  await test('ports "a previous turn\'s worker does not count"', () => {
+    assertEq(warn([row.user(), spawn('worker'), row.result(), row.user('next'), ...edits(1)]), '', 'the worker was last turn\'s');
   });
-  await test('a meta user entry is not a turn boundary', () => {
-    freshTmp();
-    const out = runHook(payload(transcript([
-      prompt(), ...edits(3, F), meta(), ...edits(3, F),
-    ])));
-    assert(warn(out).includes('6 edits'), out.stdout);
-  });
+
   // The IDE injects these constantly mid-turn; counting one as a prompt would
   // reset the window exactly when a VS Code session is editing heavily.
   const PSEUDO = [
@@ -203,199 +143,46 @@ const run = async () => {
     '<local-command-stdout>Compacted the conversation</local-command-stdout>',
     '<system-reminder>keep the issue true</system-reminder>',
   ];
-  for (const text of PSEUDO) {
-    const tag = text.slice(0, text.indexOf('>') + 1);
-    await test(`${tag} mid-turn does not reset the window`, () => {
-      freshTmp();
-      const out = runHook(payload(transcript([
-        prompt(), ...edits(3, F), injected(text), ...edits(3, F),
-      ])));
-      assert(warn(out).includes('6 edits'), `window was reset by ${tag}: ${out.stdout}`);
-    });
-  }
-  await test('a pseudo-prompt in array (text block) form is rejected too', () => {
-    freshTmp();
-    const out = runHook(payload(transcript([
-      prompt(), ...edits(3, F), injected(PSEUDO[0], true), ...edits(3, F),
-    ])));
-    assert(warn(out).includes('6 edits'), out.stdout);
+  await test('ports "<tag> mid-turn does not reset the window", each of the eight tags', () => {
+    for (const text of PSEUDO) {
+      const tag = text.slice(0, text.indexOf('>') + 1);
+      assert(warn([row.user(), ...edits(3), row.user(text), ...edits(3)]).includes('6 edits'), `window was reset by ${tag}`);
+    }
   });
-  await test('a pseudo-prompt between a worker and the stop still leaves rule 4 armed', () => {
-    freshTmp();
-    const out = runHook(payload(transcript([
-      prompt(), spawn('worker', F), result(), injected(PSEUDO[2]),
-    ])));
-    assert(warn(out).includes('verifier'), out.stdout);
+
+  await test('ports "a pseudo-prompt between a worker and the stop still leaves rule 4 armed"', () => {
+    assert(warn([row.user(), spawn('worker'), row.result(), row.user(PSEUDO[2])]).includes('verifier'), 'the notification is no prompt');
   });
-  await test('a subagent hand-back after the edits does not reset the window', () => {
-    freshTmp();
-    const handBack = injected('[Subagent hand-back]\nDONE: the brief is built.');
-    const out = runHook(payload(transcript([prompt(), ...edits(5, F), handBack])), { MANAGER_CLOSE_EDITS: '5' });
-    assert(warn(out).includes('5 edits'), `the hand-back started a new turn: ${out.stdout}`);
+
+  await test('ports "a subagent hand-back after the edits does not reset the window"', () => {
+    const handBack = row.user('[Subagent hand-back]\nDONE: the brief is built.');
+    assert(warn([row.user(), ...edits(5), handBack]).includes('5 edits'), 'the hand-back started a new turn');
   });
-  await test('an owner paste opening with <pasted_content counts as the turn\'s prompt', () => {
+
+  await test('ports "an owner paste opening with <pasted_content counts as the turn\'s prompt"', () => {
     for (const open of ['<pasted_content>', '<pasted_content lines="2">']) {
-      freshTmp();
-      const paste = injected(`${open}\nline one\nline two\n</pasted_content>\nwhat does this do?`);
-      const out = runHook(payload(transcript([paste, ...edits(6, F)])));
-      assert(warn(out).includes('6 edits'), `${open}: the paste was read as no prompt: ${out.stdout}`);
-    }
-  });
-  await test('a real prompt that merely MENTIONS a tag still resets the window', () => {
-    freshTmp();
-    const out = runHook(payload(transcript([
-      prompt(), ...edits(6, F), prompt('why does <ide_opened_file> show up?'), ...edits(1, F),
-    ])));
-    assertEq(out.stdout, '');
-  });
-  await test('a subagent\'s own edits (isSidechain) do not count', () => {
-    freshTmp();
-    const side = edits(6, F).map((e) => ({ ...e, isSidechain: true }));
-    const out = runHook(payload(transcript([prompt(), ...side, spawn('worker', F), result(), spawn('verifier', F)])));
-    assertEq(out.stdout, '');
-  });
-  await test('a transcript with no user prompt in view is silent', () => {
-    freshTmp();
-    const out = runHook(payload(transcript(edits(6, F))));
-    assertEq(out.code, 0, out.stderr);
-    assertEq(out.stdout, '');
-  });
-
-  group('manager-close-guard: the session model comes from the tail');
-  // A statusline cache exists in terminal sessions and is empty in VS Code
-  // ones, so it can never be the source this hook depends on; the tail it
-  // already read is. These pin that order, and that a whole-file read is not
-  // on the normal path.
-  const cacheSession = (modelId) => {
-    const dir = path.join(tmp, 'claude-session-state');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'sess1.json'), JSON.stringify({ model: { id: modelId }, thinking: { enabled: true } }));
-  };
-  await test('the tail\'s own assistant model wins over the statusline cache', () => {
-    freshTmp();
-    cacheSession(id('sonnet'));
-    const out = runHook(payload(transcript([prompt(), ...edits(6, F)])));
-    assert(warn(out).includes('6 edits'), `the frontier tail should have decided: ${out.stdout}`);
-  });
-  await test('a sonnet tail is silent even with a frontier cache', () => {
-    freshTmp();
-    cacheSession(id(FRONTIER));
-    const out = runHook(payload(transcript([prompt(), ...edits(6, id('sonnet'))])));
-    assertEq(out.stdout, '');
-  });
-  await test('assistant entries carrying no model fall back to the cache', () => {
-    freshTmp();
-    cacheSession(id(FRONTIER));
-    const out = runHook(payload(transcript([prompt(), ...edits(6, undefined)])));
-    assert(warn(out).includes('6 edits'), out.stdout);
-  });
-  await test('no model anywhere is silent on rule 3', () => {
-    freshTmp();
-    const out = runHook(payload(transcript([prompt(), ...edits(6, undefined)])));
-    assertEq(out.stdout, '');
-  });
-  await test('the read stops at the tail: a turn beyond it is not seen', () => {
-    freshTmp();
-    // The turn worth warning about sits in the head; 4200 lines of quiet
-    // tool-result traffic follow it. Reading the whole file would warn.
-    const head = [prompt(), ...edits(6, F)];
-    const filler = Array.from({ length: 4200 }, () => result());
-    const p = path.join(tmp, 'long.jsonl');
-    fs.writeFileSync(p, [...head, ...filler].map((e) => JSON.stringify(e)).join('\n'));
-    const out = runHook(payload(p));
-    assertEq(out.code, 0, out.stderr);
-    assertEq(out.stdout, '');
-  });
-
-  group('manager-close-guard: fail open');
-  await test('a missing transcript is silent', () => {
-    freshTmp();
-    const out = runHook(payload(path.join(tmp, 'nope.jsonl')));
-    assertEq(out.code, 0, out.stderr);
-    assertEq(out.stdout, '');
-  });
-  await test('an absent transcript_path is silent', () => {
-    freshTmp();
-    const out = runHook({ session_id: 'sess1', hook_event_name: 'Stop' });
-    assertEq(out.code, 0);
-    assertEq(out.stdout, '');
-  });
-  await test('a garbage transcript is silent', () => {
-    freshTmp();
-    const p = path.join(tmp, 'junk.jsonl');
-    fs.writeFileSync(p, 'not json\n{half written');
-    const out = runHook(payload(p));
-    assertEq(out.code, 0, out.stderr);
-    assertEq(out.stdout, '');
-  });
-  await test('garbage lines among good ones are ignored', () => {
-    freshTmp();
-    const p = path.join(tmp, 'mixed.jsonl');
-    fs.writeFileSync(p, ['{oops', ...[prompt(), ...edits(6, F)].map((e) => JSON.stringify(e)), '{half'].join('\n'));
-    assert(warn(runHook(payload(p))).includes('6 edits'));
-  });
-  await test('garbage stdin is silent', () => {
-    freshTmp();
-    const out = runHook('this is not json');
-    assertEq(out.code, 0);
-    assertEq(out.stdout, '');
-  });
-  await test('stop_hook_active is silent (the turn was judged once)', () => {
-    freshTmp();
-    const out = runHook(payload(transcript([prompt(), ...edits(6, F)]), { stop_hook_active: true }));
-    assertEq(out.code, 0);
-    assertEq(out.stdout, '');
-  });
-  await test('enabled: false silences the guard', () => {
-    freshTmp();
-    const settings = path.join(tmp, 'user-settings.json');
-    fs.writeFileSync(settings, JSON.stringify({ version: 1, manager: { enabled: false } }));
-    const out = runHook(payload(transcript([prompt(), ...edits(6, F)])), { MANAGER_USER_SETTINGS: shellPath(settings) });
-    assertEq(out.code, 0, out.stderr);
-    assertEq(out.stdout, '');
-  });
-
-  group('manager-close-guard: warn-only invariant');
-  await test('the output never continues the turn', () => {
-    freshTmp();
-    for (const entries of [
-      [prompt(), ...edits(6, F)],
-      [prompt(), spawn('worker', F), result()],
-    ]) {
-      const out = runHook(payload(transcript(entries)));
-      assertEq(out.code, 0, out.stderr);
-      assert(out.stdout.length > 0, 'expected a warning for this case');
-      const parsed = JSON.parse(out.stdout);
-      assertEq(parsed.decision, undefined, 'decision must be absent');
-      assertEq(parsed.hookSpecificOutput, undefined, 'additionalContext would continue the turn');
-      assert(typeof parsed.systemMessage === 'string', 'the warning is a systemMessage');
+      const paste = row.user(`${open}\nline one\nline two\n</pasted_content>\nwhat does this do?`);
+      assert(warn([paste, ...edits(6)]).includes('6 edits'), `${open}: the paste was read as no prompt`);
     }
   });
 
-  group('manager-close-guard: loader integration');
-  await test('loader routes manager:close-guard', () => {
-    freshTmp();
-    const { repo } = mkRepo('close-guard-loader-', {});
-    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:close-guard'], {
-      input: JSON.stringify(payload(transcript([prompt(), ...edits(6, F)]), { cwd: shellPath(repo) })),
-      env: loaderEnv({ TMPDIR: shellPath(tmp), MANAGER_USER_SETTINGS: shellPath(path.join(tmp, 'none.json')) }),
-      encoding: 'utf8',
-      timeout: 10000,
-    });
-    assertEq(res.status, 0, res.stderr);
-    assert(JSON.parse(res.stdout).systemMessage.includes('manager:close-guard'), res.stdout);
+  await test('ports "a real prompt that merely MENTIONS a tag still resets the window"', () => {
+    assertEq(warn([row.user(), ...edits(6), row.user('why does <ide_opened_file> show up?'), ...edits(1)]), '', 'a new turn');
   });
-  await test('HOOK_DISABLE=1 is a silent no-op', () => {
-    freshTmp();
-    const { repo } = mkRepo('close-guard-loader-', {});
-    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'manager:close-guard'], {
-      input: JSON.stringify(payload(transcript([prompt(), ...edits(6, F)]), { cwd: shellPath(repo) })),
-      env: loaderEnv({ TMPDIR: shellPath(tmp), HOOK_DISABLE: '1' }),
-      encoding: 'utf8',
-      timeout: 10000,
-    });
-    assertEq(res.status, 0);
-    assertEq(res.stdout, '');
+
+  await test('a user row answering a tool is no prompt, whatever its text', () => {
+    const answered = { ...row.result(), text: 'tool output that reads like a prompt' };
+    assert(warn([row.user(), ...edits(3), answered, ...edits(3)]).includes('6 edits'), 'the window stays open');
+  });
+
+  await test('ports "a transcript with no user prompt in view is silent"', () => {
+    assertEq(warn(edits(6)), '', 'no owner prompt, no turn');
+  });
+
+  group('manager-close-guard: the session model');
+
+  await test('ports "no model anywhere is silent on rule 3"', () => {
+    assertEq(warn([row.user(), ...edits(6)], { model: '' }), '', 'an unknown model is no frontier model');
   });
 };
 

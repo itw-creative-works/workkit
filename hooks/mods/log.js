@@ -8,6 +8,24 @@ const LOG_MAX_LINES = 10000;
 const LOG_KEEP_LINES = 5000;
 
 /**
+ * A clock field two digits wide (`07`), the shape every stamp here writes.
+ * @param {number} n the hour, minute, second, month or day
+ * @returns {string}
+ */
+export function pad(n) {
+  return String(n).padStart(2, '0');
+}
+
+/**
+ * The home folder: HOME, else USERPROFILE (Windows), else nothing.
+ * @param {object} env the variables the module read
+ * @returns {string}
+ */
+export function homeOf(env) {
+  return env.HOME || env.USERPROFILE || '';
+}
+
+/**
  * The machine folder, wk_user_dir's rule: WORKFLOW_HOME, else ~/.workkit.
  * @param {string|undefined} workflowHome WORKFLOW_HOME
  * @param {string|undefined} home the home folder
@@ -15,6 +33,16 @@ const LOG_KEEP_LINES = 5000;
  */
 export function userDir(workflowHome, home) {
   return workflowHome || `${home ?? ''}/.workkit`;
+}
+
+/**
+ * The machine folder for the variables the module read: userDir over
+ * WORKFLOW_HOME and homeOf.
+ * @param {object} env the variables the module read
+ * @returns {string}
+ */
+export function userDirOf(env) {
+  return userDir(env.WORKFLOW_HOME, homeOf(env));
 }
 
 /**

@@ -7,6 +7,12 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+- [#445](../../issues/445) - The daily self-check loads the hooks module in `node`, so a syntax error in `hooks/register.js` or any `hooks/mods/*.js` flags the heal instead of staying green; its summary line ends `; the hooks module loads`.
+
+### Changed
+- [#446](../../issues/446) - `docs:session` and `manager:close-guard` run in the hooks module: the carried-over line and the close warning reach the owner through `$.ui.log`, and close-guard reads `$.session.messages()` instead of the transcript. The shell manager and prompt helpers go; an unreadable settings file reads declined on both sides.
+
 ## [0.79.1] - 2026-10-21
 
 ### Changed

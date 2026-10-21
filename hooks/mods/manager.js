@@ -1,8 +1,7 @@
 /**
  * hooks/mods/manager.js: the manager system's reads: the family a model id
  * belongs to, a crew class by either spelling, and the effective config, three
- * layers deep-merged (docs/hooks.md § manager:resolver). The shell twin that
- * manager:close-guard still reads is hooks/lib/manager.sh; change both together.
+ * layers deep-merged (docs/hooks.md § manager:resolver).
  */
 
 const CLASSES = new Set(['scout', 'worker', 'verifier', 'advisor']);
@@ -10,11 +9,11 @@ const CLASSES = new Set(['scout', 'worker', 'verifier', 'advisor']);
 // The rungs a ladder with no tiers falls back to, as the shell reads default.
 export const DEFAULT_TIERS = { frontier: 'fable', workhorse: 'opus' };
 
-const isPlain = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+export const isPlain = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 // A layer as the hook reads it: the parsed file, or its text; anything else,
 // or text that does not parse, adds nothing.
-const parsed = (layer) => {
+export const parsed = (layer) => {
   if (typeof layer !== 'string') return layer;
   try {
     return JSON.parse(layer);

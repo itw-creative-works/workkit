@@ -142,7 +142,7 @@ const briefHistory = (opts = {}) => {
 };
 
 // How old the newest brief may be, in whole UTC calendar days, before the cloud
-// brief is judged stopped. `hooks/docs/session/run.sh` holds the same bar off the
+// brief is judged stopped. `hooks/mods/session.js` holds the same bar off the
 // 9am marker (which counts any `brief: ` post): change both together.
 const FRESH_DAYS = 1;
 const DAY_MS = 86400000;

@@ -1,7 +1,6 @@
 /**
  * hooks/mods/frame.js: whose words a prompt is, the owner's or Claude Code's
- * own. The three shapes are HOOK_PROMPT_*_RE in hooks/_lib.sh, which
- * manager:close-guard still reads; change both together.
+ * own. The dotfiles harness's frame.js is pinned to these three shapes by test.
  */
 
 // An opening tag other than the owner's paste, or a frame line anywhere.

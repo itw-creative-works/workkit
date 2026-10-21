@@ -181,7 +181,7 @@ case "$state" in
   home)       wk_skip "standards: $root is the tower clone; engine territory, nothing to heal"; exit 0 ;;
   undecided)  wk_info "$(offer_line)"; exit 0 ;;
   disabled|declined) exit 0 ;;
-  unreadable) wk_warn "standards: $REPO_SETTINGS is not valid JSON; fix or remove it; healing nothing until then"; exit 0 ;;
+  unreadable) wk_warn "standards: $REPO_SETTINGS cannot be read as JSON (unreadable or not valid JSON); fix or remove it; healing nothing until then"; exit 0 ;;
   *)          wk_warn "standards: unrecognized participation state '$state'; healing nothing; this is a bug worth reporting"; exit 0 ;;
 esac
 

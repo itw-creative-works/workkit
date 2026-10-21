@@ -143,14 +143,15 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await testUnless(IS_WINDOWS, NO_EXEC_BIT)('an unreadable file is no answer, and says nothing on stderr', () => {
+  await testUnless(IS_WINDOWS, NO_EXEC_BIT)('an unreadable file reads as declined, and says nothing on stderr', () => {
     // A guard reading this must not print the shell's complaint into a session's
-    // context, so the silencing lives in the seam rather than at each call.
+    // context, so the silencing lives in the seam rather than at each call. The
+    // text says enabled, so only the unreadable read can make it a decline.
     const dir = mkTmp('wf-participation-');
-    const file = settingsFile(dir, '{ "enabled": false }\n');
+    const file = settingsFile(dir, '{ "enabled": true }\n');
     fs.chmodSync(file, 0o000);
     const out = inSeam(`wk_settings_declined ${JSON.stringify(shellPath(file))}; printf 'rc=%s' "$?"`);
-    assertEq(out.out, 'rc=1', 'unreadable is not a decline');
+    assertEq(out.out, 'rc=0', 'unreadable is a decline, as the hooks module reads it');
     assertEq(out.err, '', `and nothing reaches stderr, got: ${out.err}`);
     fs.chmodSync(file, 0o600);
     cleanup(dir);

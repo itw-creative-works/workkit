@@ -3,10 +3,8 @@
 // of a queue, short bullets and few lines. Each case ports the HEAD case its
 // name quotes; the wiring cases are tests/mods/post-tool-use.test.ts.
 
-const fs = require('fs');
-const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
-const { mods, textOf } = require('../lib/mods-inputs');
+const { mods, textOf, sessionFacts } = require('../lib/mods-inputs');
 
 const SESSION = `/w/repo/${W}/agents/session.md`;
 const verdict = (text, file = SESSION) => textOf(mods('session-guard').sessionGuardVerdict(file, text));
@@ -85,22 +83,20 @@ const run = async () => {
     assertEq(verdict(doc(notes(60)), '/w/repo/docs/session.md'), '', 'only the agents folder');
   });
 
-  // The bar lives in two places by design (docs:session stays a shell hook);
-  // this case keeps the two from drifting: the same count, the same caps.
-  await test('ports "the caps and the content-line regex agree with the docs:session hook"', () => {
-    const session = fs.readFileSync(path.join(__dirname, '..', '..', 'hooks', 'docs', 'session', 'run.sh'), 'utf8');
-    assertEq((session.match(/LIGHT_BAR=(\d+)/) || [])[1], '40', "docs:session's bar is 40");
-    const ere = (session.match(/grep -cvE '([^']+)'/) || [])[1];
-    assert(ere, 'docs:session counts content lines with a grep -cvE');
-    const scaffold = new RegExp(ere.replace(/\[\[:space:\]\]/g, '\\s'));
+  // docs:session warns past the same bar from the same constants: the scaffolding
+  // fixture is 40 content lines to both, and one more is 41 to both.
+  await test('ports "the caps and the content-line regex agree with the docs:session hook": its NOTE bar and this bounce agree', () => {
+    const note = (text) => (mods('session').sessionContext(sessionFacts({ state: text })).context || '')
+      .split('\n').some((l) => l.startsWith('NOTE:'));
     const lines = [
       '# Session', '  ## indented heading', '> quote', '   > indented quote', '<!-- note -->', '  <!-- indented -->',
       '', '   ', '\t', ...notes(40),
     ];
-    assertEq(lines.filter((l) => !scaffold.test(l)).length, 40, "docs:session counts 40 content lines here");
-    assertEq(verdict(lines.join('\n')), '', 'the guard counts the same 40: at the cap');
-    const over = verdict([...lines, '- #41: one more.'].join('\n'));
-    assert(over.includes('41 content lines'), `and one more is 41 to both, got: ${over}`);
+    assertEq(verdict(lines.join('\n')), '', 'the guard counts 40: at the cap');
+    assertEq(note(lines.join('\n')), false, 'docs:session counts 40: no NOTE');
+    const over = [...lines, '- #41: one more.'].join('\n');
+    assert(verdict(over).includes('41 content lines'), `one more is 41 to the guard, got: ${verdict(over)}`);
+    assertEq(note(over), true, 'and 41 to docs:session');
     const bullet = `- ${'x'.repeat(349)}`;
     assert(verdict(doc([bullet])).includes('351 chars'), "the guard's bullet cap is 350");
   });

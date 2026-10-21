@@ -72,7 +72,7 @@ OPTIN_EXEMPT="safety:issue-guard"
 EXEMPT=0
 [[ " $OPTIN_EXEMPT " == *" $HOOK_NAME "* ]] && EXEMPT=1
 
-# Hooks nest by prefix on disk: docs:session resolves to docs/session.
+# Hooks nest by prefix on disk: docs:change-tracker resolves to docs/change-tracker.
 HOOK_SCRIPT="$SCRIPT_DIR/${HOOK_NAME//://}/run.sh"
 
 shift

@@ -10,11 +10,12 @@ wk_is_repo_root() {
 }
 
 # wk_settings_declined <file> / wk_settings_enabled <file>: the `enabled` key,
-# read without jq. An unreadable file answers 1, never grep's 2. Not each
-# other's negation: a file with no key is the legacy opt-in, so declined is the
-# only no.
+# read without jq, never grep's 2. A file that is there but unreadable is
+# declined, as the hooks module's gate reads it. Not each other's negation: a
+# file with no key is the legacy opt-in, so declined is the only no.
 wk_settings_declined() {
-  [ -r "$1" ] || return 1
+  [ -e "$1" ] || return 1
+  [ -r "$1" ] || return 0
   grep -qE '"enabled"[[:space:]]*:[[:space:]]*false' "$1" 2>/dev/null
 }
 

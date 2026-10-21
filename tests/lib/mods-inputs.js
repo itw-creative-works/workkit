@@ -73,6 +73,23 @@ const standardsState = ({
   isSetUp, cliLink, engine, isInCache, root, ...(broken === undefined ? {} : { broken }), participation, offer,
 });
 
+const {
+  MODELS, SESSION_NOW, daysBefore, briefMarker, row,
+} = require('./mod-fixtures.mjs');
+
+/**
+ * sessionContext's facts: `state` the text of .workkit/agents/session.md (null
+ * when absent), `brief` the parsed ~/.workkit/brief-status.json (null when
+ * absent or unparsed), `repoSlug` the machine settings' `site.repo` (null when
+ * unset), `now` the clock in milliseconds since the epoch.
+ */
+const sessionFacts = ({
+  state = null, brief = null, repoSlug = null, now = SESSION_NOW,
+} = {}) => ({
+  state, brief, repoSlug, now,
+});
+
 module.exports = {
   mods, textOf, runResult, stateFacts, reminderFacts, standardsState, REMINDER_ROOT,
+  sessionFacts, daysBefore, briefMarker, MODELS, row,
 };

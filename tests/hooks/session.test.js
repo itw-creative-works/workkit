@@ -1,88 +1,33 @@
-// Tests for hooks/docs:session: the SessionStart hook that hands a session
-// back its own `.workkit/agents/session.md`, run against a fixture repo with
-// nothing stubbed. HOME is scratch in every case, so the brief marker
-// (`~/.workkit/brief-status.json`) is never this machine's own.
+// Tests for docs:session's logic: sessionContext({ path, state, brief, repoSlug, now }) and briefLine(brief, repoSlug, now)
+// in hooks/mods/session.js. The state handed back with its closing lines, the light bar, and the line naming a cloud
+// brief that stopped arriving. Each case ports the HEAD case its name quotes; every date counts from SESSION_NOW.
+
+// HEAD cases ported in tests/mods/session-start.test.ts: "a compaction gets it too: every source, not just startup",
+// "a session opened in a subdirectory finds the repo root", "hooks.json registers the hook under SessionStart, for
+// every source", "the owner hears it: the resume line rides the visible channel too", "a repo that never opted in:
+// silent, even with content", "a repo that turned the workflow off: silent".
+
+// Also ported there: "a settings file in a cwd that is no git repo: silent", "no cwd in the payload: silent", "the
+// marker is read from WORKFLOW_HOME, the folder the 9am job writes it to", "a marker that does not parse: silent", "a
+// repo that never opted in hears nothing about the brief either", "the hook reaches no network: the marker is the
+// only source".
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
-const { BASH, SYSTEM_PATH, NO_RC, shellPath, homeEnv, joinPath } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
+const {
+  mods, textOf, sessionFacts, daysBefore, briefMarker,
+} = require('../lib/mods-inputs');
 
-const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'session', 'run.sh');
-const LOADER = path.join(__dirname, '..', '..', 'hooks', 'loader.sh');
 const TEMPLATE = path.join(__dirname, '..', '..', 'workflow', 'templates', 'session.md');
+const OWNER = 'Owner: state carried over. Say "continue" and this session resumes the queue above.';
+const MANAGER = 'Manager: open your first reply after a restart or compaction with this state in plain words.';
 
-const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
-
-/**
- * A git repo that has opted in, optionally holding a session.md.
- * `optedIn: false` leaves out the committed settings.json; `enabled: false`
- * writes the project-level no.
- */
-const mkRepo = ({ session, optedIn = true, enabled = true } = {}) => {
-  const dir = mkTmp('session-hook-');
-  spawnSync('git', ['init', '-q'], { cwd: dir });
-  fs.mkdirSync(path.join(dir, W), { recursive: true });
-  if (optedIn) {
-    fs.writeFileSync(path.join(dir, W, 'settings.json'), JSON.stringify({ version: 1, enabled }));
-  }
-  if (session !== undefined) {
-    fs.mkdirSync(path.join(dir, W, 'agents'), { recursive: true });
-    fs.writeFileSync(path.join(dir, W, 'agents', 'session.md'), session);
-  }
-  return dir;
-};
-
-// The home every case runs against unless it wants a marker: an empty scratch
-// directory, so `~/.workkit/brief-status.json` is absent and the brief half of
-// the hook says nothing.
-const BARE_HOME = mkTmp('session-hook-');
-
-/**
- * A scratch home carrying the cloud brief's marker and the machine's settings.
- * `marker` and `settings` are written VERBATIM. A case about a file that does
- * not parse is one of the cases.
- */
-const mkHome = ({ marker, settings } = {}) => {
-  const home = mkTmp('session-hook-');
-  fs.mkdirSync(path.join(home, W), { recursive: true });
-  if (marker !== undefined) fs.writeFileSync(path.join(home, W, 'brief-status.json'), marker);
-  if (settings !== undefined) fs.writeFileSync(path.join(home, W, 'settings.json'), settings);
-  return home;
-};
-
-// A date N whole days back, in UTC, the calendar the hook counts in.
-const daysAgo = (n) => new Date(Date.now() - (n * 86400000)).toISOString().slice(0, 10);
-
-// The marker the 9am job writes: a brief N days back, read off the board M days
-// back, which is today unless the case is about a machine that was off.
-const marker = (n, checkedDaysAgo = 0) => JSON.stringify({
-  version: 1,
-  lastBrief: daysAgo(n),
-  checkedAt: `${daysAgo(checkedDaysAgo)}T09:00:00Z`,
-});
-
-const runScript = (args, cwd, source, home, env) => {
-  const res = spawnSync(BASH, [...NO_RC, ...args], {
-    input: JSON.stringify({ cwd: shellPath(cwd), source, hook_event_name: 'SessionStart' }),
-    env: homeEnv(home, { PATH: joinPath(SYSTEM_PATH, '/opt/homebrew/bin'), ...env }),
-    encoding: 'utf8',
-    timeout: 15000,
-  });
-  return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
-};
-
-const runHook = (cwd, source = 'startup', home = BARE_HOME, env = {}) => (
-  runScript([shellPath(HOOK)], cwd, source, home, env));
-
-// Whether a repo has opted in is the loader's call, so a case about one that
-// has not runs the hook as a session does: through hooks/loader.sh.
-const runLoaded = (cwd, home = BARE_HOME) => runScript([shellPath(LOADER), 'docs:session'], cwd, 'startup', home, {});
-
-const ctxOf = (stdout) => JSON.parse(stdout).hookSpecificOutput.additionalContext;
-const msgOf = (stdout) => JSON.parse(stdout).systemMessage;
+// The state file's absolute path, which the SESSION STATE line names; every call carries it.
+const STATE_PATH = `/w/repo/${W}/agents/session.md`;
+const session = (facts) => mods('session').sessionContext({ ...sessionFacts(facts), path: STATE_PATH });
+const ctx = (facts) => session(facts).context || '';
+const brief = (marker, repoSlug = null) => textOf(mods('session').briefLine(marker, repoSlug, sessionFacts().now));
 
 const filled = (lines) => [
   '# Session',
@@ -96,406 +41,180 @@ const filled = (lines) => [
   '',
 ].join('\n');
 
+const notes = (n) => Array.from({ length: n }, (_, i) => `note ${i}`);
+
 const run = async () => {
   group('session: the file is injected when it has content');
 
-  await test('a non-empty session.md is handed back, with the path named', () => {
-    const repo = mkRepo({ session: filled(['#12: the board sweep, mid-build']) });
-    const { code, stdout } = runHook(repo);
-    assertEq(code, 0, 'exit 0');
-    const ctx = ctxOf(stdout);
-    assert(ctx.includes('#12: the board sweep, mid-build'), 'the content is in the context');
-    assert(ctx.includes(`${W}/agents/session.md`), 'the preamble names the file');
-    assertEq(JSON.parse(stdout).hookSpecificOutput.hookEventName, 'SessionStart', 'correct event name');
-    cleanup(repo);
-  });
-
-  await test('a compaction gets it too: every source, not just startup', () => {
-    const repo = mkRepo({ session: filled(['#12: mid-build']) });
-    const { stdout } = runHook(repo, 'compact');
-    assert(ctxOf(stdout).includes('#12: mid-build'), 'injected after a compaction');
-    cleanup(repo);
-  });
-
-  await test('a session opened in a subdirectory finds the repo root', () => {
-    const repo = mkRepo({ session: filled(['#12: mid-build']) });
-    const sub = path.join(repo, 'src', 'deep');
-    fs.mkdirSync(sub, { recursive: true });
-    const { stdout } = runHook(sub);
-    assert(ctxOf(stdout).includes('#12: mid-build'), 'resolved from the subdirectory');
-    cleanup(repo);
-  });
-
-  await test('hooks.json registers the hook under SessionStart, for every source', () => {
-    const settings = JSON.parse(fs.readFileSync(
-      path.join(__dirname, '..', '..', 'hooks', 'hooks.json'), 'utf8'));
-    const entry = settings.hooks.SessionStart
-      .find((e) => e.hooks.some((h) => h.command.includes('docs:session')));
-    assert(entry, 'docs:session is wired');
-    assert(!entry.matcher, 'no matcher: a compacted session is the case it exists for');
+  await test('ports "a non-empty session.md is handed back, with the path named"', () => {
+    const out = session({ state: filled(['#12: the board sweep, mid-build']) });
+    assert(out.context.includes('#12: the board sweep, mid-build'), `the content is in the context: ${out.context}`);
+    assert(out.context.includes(`SESSION STATE: ${STATE_PATH}`), `the preamble names the file by its path: ${out.context}`);
+    assertEq(out.carried, true, 'a state file with content is carried over');
   });
 
   group('session: the closing lines');
 
-  await test('the context ends with the owner resume line', () => {
-    const repo = mkRepo({ session: filled(['#12: the board sweep, mid-build']) });
-    const ctx = ctxOf(runHook(repo).stdout);
-    assertEq(
-      ctx.split('\n').pop(),
-      'Owner: state carried over. Say "continue" and this session resumes the queue above.',
-      'the last line is addressed to the owner',
-    );
-    cleanup(repo);
+  await test('ports "the context ends with the owner resume line"', () => {
+    const lines = ctx({ state: filled(['#12: the board sweep, mid-build']) }).trimEnd().split('\n');
+    assertEq(lines.pop(), OWNER, 'the last line is addressed to the owner');
   });
 
-  await test('the context carries the manager duty line', () => {
-    const repo = mkRepo({ session: filled(['#12: mid-build']) });
-    const ctx = ctxOf(runHook(repo).stdout);
-    assert(
-      ctx.includes('Manager: open your first reply after a restart or compaction with this state in plain words.'),
-      'the first reply after a restart opens with the state',
-    );
-    cleanup(repo);
+  await test('ports "the context carries the manager duty line"', () => {
+    assert(ctx({ state: filled(['#12: mid-build']) }).includes(MANAGER), 'the first reply after a restart opens with the state');
   });
 
-  await test('the owner hears it: the resume line rides the visible channel too', () => {
-    const repo = mkRepo({ session: filled(['#12: the board sweep, mid-build']) });
-    const { stdout } = runHook(repo);
-    assertEq(
-      msgOf(stdout),
-      'workkit: state carried over. Say "continue" to resume the session queue',
-      'the systemMessage is the owner line',
-    );
-    cleanup(repo);
-  });
-
-  await test('a rule separates the file body from the closing lines', () => {
-    const repo = mkRepo({ session: filled(['#12: mid-build']) });
-    const lines = ctxOf(runHook(repo).stdout).split('\n');
+  await test('ports "a rule separates the file body from the closing lines"', () => {
+    const lines = ctx({ state: filled(['#12: mid-build']) }).split('\n');
     const rule = lines.indexOf('---');
     assert(rule > 0, 'the injection carries a --- rule');
-    assert(lines.findIndex((l) => l.includes('#12: mid-build')) < rule,
-      'the file body is above the rule');
-    assert(lines.findIndex((l) => l.startsWith('Manager:')) > rule,
-      'the closing lines are below it');
-    cleanup(repo);
+    assert(lines.findIndex((l) => l.includes('#12: mid-build')) < rule, 'the file body is above the rule');
+    assert(lines.findIndex((l) => l.startsWith('Manager:')) > rule, 'the closing lines are below it');
   });
 
-  await test('a silent path says nothing on either channel', () => {
-    const repo = mkRepo({ session: filled([]) });
-    const { code, stdout } = runHook(repo);
-    assertEq(code, 0, 'exit 0');
-    assertEq(stdout, '', 'no JSON at all: no context and no systemMessage');
-    cleanup(repo);
+  await test('ports "a silent path says nothing on either channel"', () => {
+    const out = session({ state: filled([]) });
+    assertEq(out.context || '', '', 'no context');
+    assertEq(out.carried, false, 'and no owner line: a header-only file carries nothing over');
   });
 
-  await test('the closing lines follow the oversize warning, owner last', () => {
-    const many = Array.from({ length: 45 }, (_, i) => `note ${i}`);
-    const repo = mkRepo({ session: filled(many) });
-    const ctx = ctxOf(runHook(repo).stdout);
-    assert(/queue, not a journal/.test(ctx), 'the warning is still there');
-    assert(ctx.indexOf('queue, not a journal') < ctx.indexOf('Manager: open your first reply'),
+  await test('ports "the closing lines follow the oversize warning, owner last"', () => {
+    const text = ctx({ state: filled(notes(45)) });
+    assert(/queue, not a journal/.test(text), 'the warning is still there');
+    assert(text.indexOf('queue, not a journal') < text.indexOf('Manager: open your first reply'),
       'the warning comes before the closing lines');
-    assert(ctx.trimEnd().endsWith('resumes the queue above.'), 'the owner line is still last');
-    cleanup(repo);
+    assert(text.trimEnd().endsWith('resumes the queue above.'), 'the owner line is still last');
   });
 
   group('session: silence');
 
-  await test('no session.md at all: silent exit 0', () => {
-    const repo = mkRepo();
-    const { code, stdout } = runHook(repo);
-    assertEq(code, 0, 'exit 0');
-    assertEq(stdout, '', 'says nothing');
-    cleanup(repo);
+  await test('ports "no session.md at all: silent exit 0"', () => {
+    const out = session({ state: null });
+    assertEq(out.context || '', '', 'says nothing');
+    assertEq(out.carried, false, 'nothing carried over');
   });
 
-  await test('an empty session.md: silent', () => {
-    const repo = mkRepo({ session: '' });
-    const { code, stdout } = runHook(repo);
-    assertEq(code, 0, 'exit 0');
-    assertEq(stdout, '', 'says nothing');
-    cleanup(repo);
+  await test('ports "an empty session.md: silent"', () => {
+    const out = session({ state: '' });
+    assertEq(out.context || '', '', 'says nothing');
+    assertEq(out.carried, false, 'nothing carried over');
   });
 
-  await test('the shipped template, untouched: headings and notes only, silent', () => {
-    const repo = mkRepo({ session: fs.readFileSync(TEMPLATE, 'utf8') });
-    const { code, stdout } = runHook(repo);
-    assertEq(code, 0, 'exit 0');
-    assertEq(stdout, '', 'a freshly seeded file counts zero content lines');
-    cleanup(repo);
+  await test('ports "the shipped template, untouched: headings and notes only, silent"', () => {
+    const out = session({ state: fs.readFileSync(TEMPLATE, 'utf8') });
+    assertEq(out.context || '', '', 'a freshly seeded file counts zero content lines');
+    assertEq(out.carried, false, 'nothing carried over');
   });
 
-  await test('a header-only session.md: silent, and the closing lines do not leak', () => {
-    const repo = mkRepo({ session: filled([]) });
-    const { code, stdout } = runHook(repo);
-    assertEq(code, 0, 'exit 0');
-    assertEq(stdout, '', 'headings alone say nothing, not even the owner line');
-    cleanup(repo);
-  });
-
-  await test('a repo that never opted in: silent, even with content', () => {
-    const repo = mkRepo({ session: filled(['#12: mid-build']), optedIn: false });
-    const { code, stdout } = runLoaded(repo);
-    assertEq(code, 0, 'exit 0');
-    assertEq(stdout, '', 'no committed settings.json means no injection');
-    cleanup(repo);
-  });
-
-  await test('a repo that turned the workflow off: silent', () => {
-    const repo = mkRepo({ session: filled(['#12: mid-build']), enabled: false });
-    const { code, stdout } = runLoaded(repo);
-    assertEq(code, 0, 'exit 0');
-    assertEq(stdout, '', 'enabled: false is a deliberate no');
-    cleanup(repo);
-  });
-
-  await test('a settings file in a cwd that is no git repo: silent', () => {
-    // A `.workkit/settings.json` is a repo's opt-in, so no git root means no
-    // repo layer at all. Outside a repo the file the cwd carries is the
-    // machine's own state, and every Windows temp directory sits under the
-    // profile that holds it: read as a repo's, it is a yes nothing opted into.
-    const dir = mkTmp('session-hook-');
-    fs.mkdirSync(path.join(dir, W, 'agents'), { recursive: true });
-    fs.writeFileSync(path.join(dir, W, 'settings.json'), JSON.stringify({ version: 1, site: {} }));
-    fs.writeFileSync(path.join(dir, W, 'agents', 'session.md'), filled(['#12: mid-build']));
-    const { code, stdout } = runLoaded(dir);
-    assertEq(code, 0, 'exit 0');
-    assertEq(stdout, '', 'nothing is injected and nothing is said about participation');
-    cleanup(dir);
-  });
-
-  await test('no cwd in the payload: silent', () => {
-    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'docs:session'], {
-      input: JSON.stringify({ source: 'startup' }),
-      env: homeEnv(BARE_HOME, { PATH: joinPath(SYSTEM_PATH, '/opt/homebrew/bin') }),
-      encoding: 'utf8',
-      timeout: 15000,
-    });
-    assertEq(res.status, 0, 'exit 0');
-    assertEq(res.stdout || '', '', 'says nothing');
+  await test('ports "a header-only session.md: silent, and the closing lines do not leak"', () => {
+    const out = session({ state: filled([]) });
+    assertEq(out.context || '', '', 'headings alone say nothing, not even the owner line');
+    assertEq(out.carried, false, 'and the owner hears nothing either');
   });
 
   group('session: the light bar');
 
-  await test('past ~40 content lines the injection says it is a queue, not a journal', () => {
-    const many = Array.from({ length: 45 }, (_, i) => `note ${i}`);
-    const repo = mkRepo({ session: filled(many) });
-    const { stdout } = runHook(repo);
-    const ctx = ctxOf(stdout);
-    assert(ctx.includes('note 44'), 'the content is still handed back');
-    assert(/queue, not a journal/.test(ctx), 'the warning is appended');
-    assert(ctx.includes('45 content lines'), 'the warning counts content lines only');
-    cleanup(repo);
+  await test('ports "past ~40 content lines the injection says it is a queue, not a journal"', () => {
+    const text = ctx({ state: filled(notes(45)) });
+    assert(text.includes('note 44'), 'the content is still handed back');
+    assert(text.split('\n').some((l) => l.startsWith('NOTE:')), `a NOTE: line is appended: ${text}`);
+    assert(/queue, not a journal/.test(text), 'the warning says what the file is');
+    assert(text.includes('45 content lines'), 'the warning counts content lines only');
   });
 
-  await test('at the bar there is no warning', () => {
-    const many = Array.from({ length: 40 }, (_, i) => `note ${i}`);
-    const repo = mkRepo({ session: filled(many) });
-    const ctx = ctxOf(runHook(repo).stdout);
-    assert(!/queue, not a journal/.test(ctx), '40 lines is still light');
-    cleanup(repo);
+  await test('ports "at the bar there is no warning"', () => {
+    const text = ctx({ state: filled(notes(40)) });
+    assert(!/queue, not a journal/.test(text), '40 lines is still light');
+    assert(!text.split('\n').some((l) => l.startsWith('NOTE:')), 'no NOTE: line');
+  });
+
+  await test('one more than the bar is the first warning: 41 content lines', () => {
+    const text = ctx({ state: filled(notes(41)) });
+    assert(text.includes('41 content lines'), `41 is past the bar: ${text}`);
   });
 
   group('session: the cloud brief went quiet');
 
-  // The brief runs in the cloud and its failures are silent: the 9am job leaves
-  // a marker, and this hook reads that file, never the network.
-
-  await test('a brief days old is named, with the fix and the check', () => {
-    const repo = mkRepo();
-    const home = mkHome({
-      marker: marker(10),
-      settings: JSON.stringify({ version: 1, site: { repo: 'owner/private-home' } }),
-    });
-    const { code, stdout } = runHook(repo, 'startup', home);
-    assertEq(code, 0, 'exit 0');
-    const ctx = ctxOf(stdout);
-    assert(ctx.includes(`cloud brief: last posted ${daysAgo(10)} (10 days ago)`),
-      `the line names the date and the gap: ${ctx}`);
-    assert(ctx.includes('workkit setup --token'), `the fix is the token mint: ${ctx}`);
-    assert(ctx.includes('gh run list --repo owner/private-home --workflow brief.yml'),
-      `and the check names the home repo: ${ctx}`);
-    cleanup(repo);
-    cleanup(home);
+  await test('ports "a brief days old is named, with the fix and the check"', () => {
+    const text = ctx({ brief: briefMarker(10), repoSlug: 'owner/private-home' });
+    assert(text.includes(`cloud brief: last posted ${daysBefore(10)} (10 days ago)`), `the line names the date and the gap: ${text}`);
+    assert(text.includes('workkit setup --token'), `the fix is the token mint: ${text}`);
+    assert(text.includes('gh run list --repo owner/private-home --workflow brief.yml'), `and the check names the home repo: ${text}`);
   });
 
-  await test('the marker is read from WORKFLOW_HOME, the folder the 9am job writes it to', () => {
-    const repo = mkRepo();
-    const moved = mkHome({ marker: marker(10) });
-    const { stdout } = runHook(repo, 'startup', BARE_HOME, { WORKFLOW_HOME: shellPath(path.join(moved, W)) });
-    assert(stdout && ctxOf(stdout).startsWith('cloud brief: last posted'), `the moved folder's marker is heard: ${stdout}`);
-    cleanup(repo);
-    cleanup(moved);
+  await test('ports "the line rides alone: no session.md is still a session that hears it"', () => {
+    const out = session({ brief: briefMarker(4) });
+    assert(out.context.startsWith('cloud brief: last posted'), `the alert is the whole context: ${out.context}`);
+    assert(!out.context.includes('SESSION STATE'), 'there is no state to hand back');
+    assertEq(out.carried, false, 'an alert-only injection speaks to the model alone');
   });
 
-  await test('the line rides alone: no session.md is still a session that hears it', () => {
-    const repo = mkRepo();
-    const home = mkHome({ marker: marker(4) });
-    const { stdout } = runHook(repo, 'startup', home);
-    const ctx = ctxOf(stdout);
-    assert(ctx.startsWith('cloud brief: last posted'), `the alert is the whole context: ${ctx}`);
-    assert(!ctx.includes('SESSION STATE'), 'there is no state to hand back');
-    // The owner line rides the visible channel only where there is state to
-    // resume; a stale brief is the manager's to report in its own words.
-    assert(!('systemMessage' in JSON.parse(stdout)),
-      `an alert-only injection speaks to the model alone: ${stdout}`);
-    cleanup(repo);
-    cleanup(home);
+  await test('ports "a machine that has not checked in days names itself, not the runner"', () => {
+    const text = ctx({ brief: briefMarker(10, 5), repoSlug: 'owner/private-home' });
+    assert(text.includes(`last posted ${daysBefore(10)} (10 days ago)`), `the staleness is still reported: ${text}`);
+    assert(text.includes(`this machine last checked ${daysBefore(5)}`), `and the marker's own age is named: ${text}`);
+    assert(!text.includes('fresh token'), 'the runner is not blamed for a machine that was off');
+    assert(!text.includes('workkit setup --token'), 'and no token is minted over it');
+    assert(text.includes('gh run list --repo owner/private-home --workflow brief.yml'), `the check still rides: ${text}`);
   });
 
-  await test('a machine that has not checked in days names itself, not the runner', () => {
-    // The board is read by the 9am job and by nothing else, so a laptop shut for
-    // a long weekend has an old answer, not a broken runner, and sending the
-    // owner to mint a token that was never the problem is the one way this line
-    // could cost more than it is worth.
-    const repo = mkRepo();
-    const home = mkHome({
-      marker: marker(10, 5),
-      settings: JSON.stringify({ version: 1, site: { repo: 'owner/private-home' } }),
-    });
-    const ctx = ctxOf(runHook(repo, 'startup', home).stdout);
-    assert(ctx.includes(`last posted ${daysAgo(10)} (10 days ago)`), `the staleness is still reported: ${ctx}`);
-    assert(ctx.includes(`this machine last checked ${daysAgo(5)}`), `and the marker's own age is named: ${ctx}`);
-    assert(!ctx.includes('fresh token'), 'the runner is not blamed for a machine that was off');
-    assert(!ctx.includes('workkit setup --token'), 'and no token is minted over it');
-    assert(ctx.includes('gh run list --repo owner/private-home --workflow brief.yml'),
-      `the check still rides. The runs are worth reading either way: ${ctx}`);
-    cleanup(repo);
-    cleanup(home);
+  await test('ports "a check from yesterday is a current marker: the runner wording stands"', () => {
+    const text = brief(briefMarker(9, 1));
+    assert(text.includes('the runner likely needs a fresh token; fix: workkit setup --token'),
+      `one day is the ordinary morning on this side of the marker too: ${text}`);
+    assert(!text.includes('this machine last checked'), 'the machine is not blamed for a board it did read');
   });
 
-  await test('a check from yesterday is a current marker: the runner wording stands', () => {
-    const repo = mkRepo();
-    const home = mkHome({ marker: marker(9, 1) });
-    const ctx = ctxOf(runHook(repo, 'startup', home).stdout);
-    assert(ctx.includes('the runner likely needs a fresh token; fix: workkit setup --token'),
-      `one day is the ordinary morning on this side of the marker too: ${ctx}`);
-    assert(!ctx.includes('this machine last checked'), 'the machine is not blamed for a board it did read');
-    cleanup(repo);
-    cleanup(home);
-  });
-
-  await test('a marker with no checkedAt at all: silent', () => {
-    const repo = mkRepo();
-    const home = mkHome({ marker: JSON.stringify({ version: 1, lastBrief: daysAgo(8) }) });
-    assertEq(runHook(repo, 'startup', home).stdout, '',
+  await test('ports "a marker with no checkedAt at all: silent"', () => {
+    assertEq(brief({ version: 1, lastBrief: daysBefore(8) }), '',
       'without knowing when it was written, the marker cannot say whose silence it is');
-    cleanup(repo);
-    cleanup(home);
+    assertEq(ctx({ brief: { version: 1, lastBrief: daysBefore(8) } }), '', 'and the whole context is silent');
   });
 
-  await test('with no home repo named, the check clause is left off rather than guessed', () => {
-    const repo = mkRepo();
-    const home = mkHome({ marker: marker(3) });
-    const ctx = ctxOf(runHook(repo, 'startup', home).stdout);
-    assert(ctx.includes('workkit setup --token'), 'the fix is still there');
-    assert(!ctx.includes('gh run list'), `and nothing is invented to check: ${ctx}`);
-    cleanup(repo);
-    cleanup(home);
+  await test('ports "with no home repo named, the check clause is left off rather than guessed"', () => {
+    const text = brief(briefMarker(3));
+    assert(text.includes('workkit setup --token'), 'the fix is still there');
+    assert(!text.includes('gh run list'), `and nothing is invented to check: ${text}`);
   });
 
-  await test('the alert leads, and the session state keeps its own closing lines', () => {
-    const repo = mkRepo({ session: filled(['#12: mid-build']) });
-    const home = mkHome({ marker: marker(5) });
-    const { stdout } = runHook(repo, 'startup', home);
-    const ctx = ctxOf(stdout);
-    assert(ctx.startsWith('cloud brief: last posted'), `the alert is first: ${ctx.slice(0, 80)}`);
-    assert(ctx.includes('#12: mid-build'), 'the state is still handed back');
-    assert(ctx.trimEnd().endsWith('resumes the queue above.'), 'and the owner line is still last');
-    assertEq(
-      msgOf(stdout),
-      'workkit: state carried over. Say "continue" to resume the session queue',
-      'the visible channel still carries the owner line',
-    );
-    cleanup(repo);
-    cleanup(home);
+  await test('ports "the alert leads, and the session state keeps its own closing lines"', () => {
+    const out = session({ state: filled(['#12: mid-build']), brief: briefMarker(5) });
+    assert(out.context.startsWith('cloud brief: last posted'), `the alert is first: ${out.context.slice(0, 80)}`);
+    assert(out.context.includes('#12: mid-build'), 'the state is still handed back');
+    assert(out.context.trimEnd().endsWith('resumes the queue above.'), 'and the owner line is still last');
+    assertEq(out.carried, true, 'the visible channel still carries the owner line');
   });
 
-  await test('a brief posted yesterday is not stale: one day is the ordinary morning', () => {
-    // The marker is written by the 9am job, and the cloud posts minutes after
-    // it: on any ordinary morning the newest brief on the board is yesterday's.
-    const repo = mkRepo();
-    const home = mkHome({ marker: marker(1) });
-    const { code, stdout } = runHook(repo, 'startup', home);
-    assertEq(code, 0, 'exit 0');
-    assertEq(stdout, '', 'says nothing');
-    cleanup(repo);
-    cleanup(home);
+  await test('ports "a brief posted yesterday is not stale: one day is the ordinary morning"', () => {
+    assertEq(brief(briefMarker(1)), '', 'says nothing');
   });
 
-  await test("today's brief says nothing at all", () => {
-    const repo = mkRepo();
-    const home = mkHome({ marker: marker(0) });
-    assertEq(runHook(repo, 'startup', home).stdout, '', 'says nothing');
-    cleanup(repo);
-    cleanup(home);
+  await test('ports "today\'s brief says nothing at all"', () => {
+    assertEq(brief(briefMarker(0)), '', 'says nothing');
   });
 
-  await test('two days is the first stale morning', () => {
-    const repo = mkRepo();
-    const home = mkHome({ marker: marker(2) });
-    const ctx = ctxOf(runHook(repo, 'startup', home).stdout);
-    assert(ctx.includes('(2 days ago)'), `the bar is one whole day: ${ctx}`);
-    cleanup(repo);
-    cleanup(home);
+  await test('ports "two days is the first stale morning"', () => {
+    const text = brief(briefMarker(2));
+    assert(text.includes('(2 days ago)'), `the bar is one whole day: ${text}`);
   });
 
-  await test('no marker at all: silent, the machine that has never run the job', () => {
-    const repo = mkRepo();
-    const home = mkHome();
-    const { code, stdout } = runHook(repo, 'startup', home);
-    assertEq(code, 0, 'exit 0');
-    assertEq(stdout, '', 'nothing is claimed about a board nobody has read');
-    cleanup(repo);
-    cleanup(home);
+  await test('ports "no marker at all: silent, the machine that has never run the job"', () => {
+    assertEq(brief(null), '', 'nothing is claimed about a board nobody has read');
+    assertEq(ctx({ brief: null }), '', 'and the whole context is silent');
   });
 
-  await test('a marker that does not parse: silent', () => {
-    const repo = mkRepo();
-    const home = mkHome({ marker: '{ "version": 1, "lastBrief": ' });
-    const { code, stdout } = runHook(repo, 'startup', home);
-    assertEq(code, 0, 'exit 0');
-    assertEq(stdout, '', 'an unreadable marker is not a stale brief');
-    cleanup(repo);
-    cleanup(home);
+  // Each HEAD marker, then the same marker checked today, so a missing checkedAt is not what silences it.
+  await test('ports "a marker whose date is not one: silent"', () => {
+    assertEq(brief({ version: 1, lastBrief: 'never' }), '', 'nothing is counted from a non-date');
+    assertEq(brief({ version: 1, lastBrief: 'never', checkedAt: `${daysBefore(0)}T09:00:00Z` }), '',
+      'nor from a non-date checked today');
   });
 
-  await test('a marker whose date is not one: silent', () => {
-    const repo = mkRepo();
-    const home = mkHome({ marker: JSON.stringify({ version: 1, lastBrief: 'never' }) });
-    assertEq(runHook(repo, 'startup', home).stdout, '', 'nothing is counted from a non-date');
-    cleanup(repo);
-    cleanup(home);
+  await test('ports "a marker dated in the future: silent"', () => {
+    assertEq(brief({ version: 1, lastBrief: daysBefore(-3) }), '', 'a negative gap is nobody\'s stale brief');
+    assertEq(brief({ version: 1, lastBrief: daysBefore(-3), checkedAt: `${daysBefore(0)}T09:00:00Z` }), '',
+      'checked today or not');
   });
-
-  await test('a marker dated in the future: silent', () => {
-    const repo = mkRepo();
-    const home = mkHome({ marker: JSON.stringify({ version: 1, lastBrief: daysAgo(-3) }) });
-    assertEq(runHook(repo, 'startup', home).stdout, '', 'a negative gap is nobody’s stale brief');
-    cleanup(repo);
-    cleanup(home);
-  });
-
-  await test('a repo that never opted in hears nothing about the brief either', () => {
-    const repo = mkRepo({ optedIn: false });
-    const home = mkHome({ marker: marker(9) });
-    const { code, stdout } = runLoaded(repo, home);
-    assertEq(code, 0, 'exit 0');
-    assertEq(stdout, '', 'the participation gate is the whole hook’s gate');
-    cleanup(repo);
-    cleanup(home);
-  });
-
-  await test('the hook reaches no network: the marker is the only source', () => {
-    // Command position only: `gh run list` is in the message the line carries,
-    // and the whole point is that this hook never runs it.
-    const text = fs.readFileSync(HOOK, 'utf8');
-    assert(!/(^|[;&|(]|\$\()\s*(gh|curl|git ls-remote)\b/m.test(text),
-      'a session start never waits on GitHub');
-  });
-
-  cleanup(BARE_HOME);
 };
 
 module.exports = async () => {

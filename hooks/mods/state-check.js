@@ -6,13 +6,9 @@
  */
 
 import { AGENTS_MAX_BYTES, AGENTS_MAX_LINES, agentsBudget } from './board-guard.js';
+import { rowsOf } from './session-guard.js';
 
 const plural = (n) => (n === 1 ? '' : 's');
-const rowsOf = (text) => {
-  const rows = text === '' ? [] : text.split('\n');
-  if (rows.at(-1) === '') rows.pop();
-  return rows;
-};
 
 /**
  * The open inbox count `gh issue list --json number` printed; 0 for anything

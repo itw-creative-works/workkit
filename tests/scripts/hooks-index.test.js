@@ -14,12 +14,15 @@ const AGENTS_DOC = path.join(REPO, 'AGENTS.md');
 const README_DOC = path.join(REPO, 'README.md');
 const MODULE_HEADING = '## The hooks module';
 
-// The thirteen hooks the module carries, as settings named them.
+// The fifteen hooks the module carries, as settings named them.
 const MODULE_HOOKS = [
-  'docs:board-guard', 'docs:changelog-guard', 'docs:checkpoint', 'docs:session-guard', 'docs:state-check',
-  'manager:addon', 'manager:profile', 'manager:resolver', 'manager:spawn-guard', 'safety:test-reminder',
-  'workflow:feature', 'workflow:reload-guard', 'workflow:standards',
+  'docs:board-guard', 'docs:changelog-guard', 'docs:checkpoint', 'docs:session', 'docs:session-guard', 'docs:state-check',
+  'manager:addon', 'manager:close-guard', 'manager:profile', 'manager:resolver', 'manager:spawn-guard',
+  'safety:test-reminder', 'workflow:feature', 'workflow:reload-guard', 'workflow:standards',
 ];
+
+// The shell hooks left once the module carries its fifteen.
+const SHELL_COUNT = 13;
 
 // The counts AGENTS.md § Hooks could plausibly spell out. The `(?!-)` in the
 // lookup below is what keeps `twenty` from matching inside `twenty-five`.
@@ -76,22 +79,26 @@ const run = async () => {
     assert(fs.existsSync(path.join(REPO, 'hooks', 'register.js')), 'hooks/register.js exists');
   });
 
-  await test('the module registers on the seven events and nothing else', () => {
-    const seven = [
+  await test('the module registers on the eight events and nothing else', () => {
+    const eight = [
       'agent.spawn', 'classic.PostToolUse', 'classic.PreToolUse', 'classic.SessionStart',
-      'classic.SubagentStart', 'classic.UserPromptSubmit', 'session.end',
+      'classic.Stop', 'classic.SubagentStart', 'classic.UserPromptSubmit', 'session.end',
     ];
-    assertEq(moduleEvents().join(','), seven.join(','), 'the events hooks/register.js hooks');
+    assertEq(moduleEvents().join(','), eight.join(','), 'the events hooks/register.js hooks');
   });
 
-  await test('no hooks.json command names one of the thirteen', () => {
+  await test('no hooks.json command names one of the fifteen, docs:session and manager:close-guard among them', () => {
     const left = shellHooks().filter((name) => MODULE_HOOKS.includes(name));
     assertEq(left.join(','), '', 'the module carries these now');
+    const commands = JSON.stringify(wiring().hooks);
+    for (const name of ['docs:session', 'manager:close-guard']) {
+      assert(!new RegExp(`${name}(?![-\\w])`).test(commands), `no hooks.json command names ${name}`);
+    }
   });
 
   group('hooks: docs/hooks.md parity');
 
-  await test("the index table's rows are the shell hooks and the module's thirteen", () => {
+  await test("the index table's rows are the shell hooks and the module's fifteen", () => {
     const rows = [...section(HOOKS_DOC, '## The index').matchAll(/^\|\s*`([^`]+)`/gm)].map((m) => m[1]);
     const missing = shellHooks().filter((name) => !rows.includes(name));
     assertEq(missing.join(','), '', 'every shell hook has its index row');
@@ -99,10 +106,11 @@ const run = async () => {
     assertEq(stray.join(','), '', 'every index row is a hook the kit runs');
   });
 
-  await test('the top-level detail sections are exactly the shell hooks', () => {
+  await test('the top-level detail sections are exactly the thirteen shell hooks', () => {
     // Keyed on the backticked name, which keeps the prose headings out of the set.
     const text = fs.readFileSync(HOOKS_DOC, 'utf8');
     const headings = [...text.matchAll(/^## `([^`]+)`/gm)].map((m) => m[1]).sort();
+    assertEq(shellHooks().length, SHELL_COUNT, 'hooks.json wires the thirteen shell hooks');
     assertEq(headings.join(','), shellHooks().join(','), "docs/hooks.md's detail sections");
   });
 
@@ -114,7 +122,7 @@ const run = async () => {
     assertEq(missing.join(','), '', `the handlers with no row under ${MODULE_HEADING}`);
   });
 
-  await test(`each of the thirteen has its entry under ${MODULE_HEADING}`, () => {
+  await test(`each of the fifteen has its entry under ${MODULE_HEADING}`, () => {
     const body = section(HOOKS_DOC, MODULE_HEADING);
     const entry = (name) => new RegExp(`^(###+ |\\|\\s*)\`${name}\``, 'm').test(body);
     const missing = MODULE_HOOKS.filter((name) => !entry(name));

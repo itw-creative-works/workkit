@@ -13,7 +13,7 @@ wk_json_edit() {
   command -v jq >/dev/null 2>&1 || return 1
   target=$(readlink -f "$file" 2>/dev/null || printf '%s' "$file")
   if ! wk_jq empty "$target" 2>/dev/null; then
-    wk_warn "settings: $target is not valid JSON; fix or remove it, then try again"
+    wk_warn "settings: $target cannot be read as JSON (unreadable or not valid JSON); fix or remove it, then try again"
     return 1
   fi
   tmp="$target.tmp.$$"

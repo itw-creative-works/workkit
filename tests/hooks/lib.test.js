@@ -1,19 +1,18 @@
 /* eslint-disable no-console */
 // Tests for hooks/_lib.sh, the helper library every hook sources: one group per
-// helper, from the platform seam and hook_sha1 through hook_jq, the manager
-// config, the prompt shape, the session model, the notice, the test-path
-// shapes and the marker paths. The suite and package records are
-// tests/hooks/lib-record.test.js.
+// helper, from the platform seam and hook_sha1 through hook_jq, the notice, the
+// test-path shapes and the marker paths, and the retired helpers left undefined.
+// The suite and package records are tests/hooks/lib-record.test.js.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, skip, testUnless, skipSuite, selfRun, summary,
+  group, test, assert, assertEq, skip, skipSuite, selfRun, summary,
 } = require('../lib/harness');
 const {
   IS_WINDOWS, BASH, SYSTEM_PATH, NO_RC, NO_EXEC_BIT,
-  shellPath, which, digestTool, stubTool, crlfJq, systemPathWith,
+  shellPath, digestTool, stubTool, crlfJq, systemPathWith,
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { runLib } = require('../lib/hook-lib');
@@ -21,9 +20,7 @@ const { runLib } = require('../lib/hook-lib');
 const SHA1_ABC = 'a9993e364706816aba3e25717850c26c9cd0d89d';
 
 // A tool this machine has, by absolute path, through the platform seam: the
-// digest lookups ask SYSTEM_PATH, the world the shims below are built against;
-// everything else asks the session's own PATH, since jq is a Homebrew or winget
-// install, never in /usr/bin.
+// digest lookups ask SYSTEM_PATH, the world the shims below are built against.
 
 // A PATH world holding exactly one digest tool, under the name given.
 const digestWorld = (name, real) => {
@@ -173,134 +170,15 @@ const run = async () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  group('_lib.sh: hook_manager_config');
+  group('_lib.sh: the retired helpers');
 
-  // The three layers are read from files, so the case plants its own and points
-  // the machine layer at one of them: the developer's real ~/.workkit is never
-  // part of an answer here. jq and git are the real ones, since what is being
-  // asked is which file was read.
-  const jq = which('jq');
-  await testUnless(!jq, 'this machine has no jq, and the config is read with it')(
-    'a settings file in a cwd that is no git repo is not the repo layer', () => {
-      // No git root, no repo layer. The file a non-repo cwd carries is the
-      // machine's own state (on Windows the user profile holds it and every
-      // temp directory sits under that profile), and read as the repo layer it
-      // overrides the machine's own config with itself.
-      const dir = mkTmp('lib-manager-');
-      const ladder = path.join(dir, 'ladder.json');
-      fs.writeFileSync(ladder, JSON.stringify({ tiers: { fast: 'ladder-fast' } }));
-      const user = path.join(dir, 'user-settings.json');
-      fs.writeFileSync(user, JSON.stringify({ manager: { tiers: { frontier: 'machine-frontier' } } }));
-      const cwd = path.join(dir, 'not-a-repo');
-      fs.mkdirSync(path.join(cwd, '.workkit'), { recursive: true });
-      fs.writeFileSync(path.join(cwd, '.workkit', 'settings.json'),
-        JSON.stringify({ version: 1, manager: { tiers: { workhorse: 'from-a-non-repo' } } }));
-
-      const ask = () => runLib(
-        `hook_manager_config "${shellPath(ladder)}" "${shellPath(cwd)}"; printf '%s' "$HOOK_MANAGER_CONFIG"`,
-        { PATH: systemPathWith(path.dirname(jq)), MANAGER_USER_SETTINGS: shellPath(user) },
-      ).stdout;
-
-      const outside = ask();
-      assert(!outside.includes('from-a-non-repo'),
-        `the file in a directory that is no repo is no repo layer, got: ${outside}`);
-      assert(outside.includes('machine-frontier'),
-        `and the machine layer is still taken outside a repo, got: ${outside}`);
-
-      // The control: the same file, one `git init` later, is that repo's layer.
-      spawnSync('git', ['init', '-q', cwd], { encoding: 'utf8' });
-      const inside = ask();
-      assert(inside.includes('from-a-non-repo'),
-        `a repo's own settings file is still read, got: ${inside}`);
-      fs.rmSync(dir, { recursive: true, force: true });
-    });
-
-  group('_lib.sh: hook_prompt_is_system');
-
-  // [label, prompt text, delivered by Claude Code itself]. The text rides in an
-  // env var, so no quoting stands between a fixture and the helper.
-  const PROMPTS = [
-    ['the notification frame alone', '[SYSTEM NOTIFICATION - NOT USER INPUT]', true],
-    ['the notification frame in longer text', 'A background task ended.\n[SYSTEM NOTIFICATION - NOT USER INPUT]\nIt exited 0.', true],
-    ['the session frame alone', 'Another Claude session sent a message', true],
-    ['the session frame in longer text', 'Heads up. Another Claude session sent a message:\nthe build is green', true],
-    ['the agent-message frame alone', '<agent-message ', true],
-    ['the agent-message frame in longer text', 'From the scout:\n<agent-message from="scout">recon done</agent-message>', true],
-    ['the hand-back frame alone', '[Subagent hand-back]', true],
-    ['the hand-back frame in longer text', 'DONE: the brief is built.\n[Subagent hand-back]\nall four suites green', true],
-    ['a task-notification opening', '<task-notification>\n<task-id>b1</task-id>\nfinished\n</task-notification>', true],
-    ['a pasted_content opening', '<pasted_content lines="2">\nline one\nline two\n</pasted_content>\nwhat does this do?', false],
-    ['a bare pasted_content opening', '<pasted_content>\nline one\n</pasted_content>\nwhat does this do?', false],
-    ['plain text', 'work on #12 and then compact', false],
-    ['plain text that mentions a tag', 'why does <ide_opened_file> show up?', false],
-  ];
-  const promptWorld = () => ({ PATH: systemPathWith(path.dirname(jq)) });
-
-  await test('a frame line, alone or inside longer text, or a tag opening is system; a paste or plain text is the owner\'s', () => {
-    for (const [label, text, system] of PROMPTS) {
-      const out = runLib('hook_prompt_is_system "$PROMPT_TEXT"; printf \'%s\' "$?"', { PROMPT_TEXT: text });
-      assertEq(out.stdout, system ? '0' : '1', `${label}, got: ${out.stdout}|${out.stderr}`);
-    }
+  await test('hook_manager_config, hook_model_tier, hook_session_model, hook_prompt_is_system and HOOK_PROMPT_FRAME_RE are undefined', () => {
+    const names = ['hook_manager_config', 'hook_model_tier', 'hook_session_model', 'hook_prompt_is_system'];
+    const out = runLib(`${names.map((n) => `declare -F ${n} >/dev/null && echo "${n} is defined"`).join('\n')}
+[ -n "\${HOOK_PROMPT_FRAME_RE+set}" ] && echo "HOOK_PROMPT_FRAME_RE is set"
+echo done`);
+    assertEq(out.stdout, 'done\n', `the library still defines: ${out.stdout}${out.stderr}`);
   });
-
-  await testUnless(!jq, 'this machine has no jq, and the close-guard pass is a jq read')(
-    'the bash helper and a jq pass over the three constants agree on every fixture', () => {
-      for (const name of ['HOOK_PROMPT_TAG_RE', 'HOOK_PROMPT_PASTE_RE', 'HOOK_PROMPT_FRAME_RE']) {
-        const decl = runLib(`declare -p ${name}`).stdout;
-        assert(/^declare -[a-zA-Z]*r[a-zA-Z]* /.test(decl), `${name} is a readonly constant, got: ${decl}`);
-        assert(!/=""$/.test(decl.trim()), `${name} holds a pattern, got: ${decl}`);
-      }
-      // The jq answer is the Spec's rule spelled in jq: a frame line anywhere,
-      // or a tag opening that is not the owner's paste.
-      const filter = '($s | test($f)) or (($s | test($t)) and ($s | test($p) | not))';
-      for (const [label, text, system] of PROMPTS) {
-        const env = { ...promptWorld(), PROMPT_TEXT: text };
-        const bash = runLib('hook_prompt_is_system "$PROMPT_TEXT" && printf true || printf false', env);
-        const viaJq = runLib('hook_jq -n --arg s "$PROMPT_TEXT" --arg t "$HOOK_PROMPT_TAG_RE" '
-          + `--arg p "$HOOK_PROMPT_PASTE_RE" --arg f "$HOOK_PROMPT_FRAME_RE" '${filter}'`, env);
-        assertEq(viaJq.stdout.trim(), String(system), `${label}: the jq pass, got: ${viaJq.stdout}|${viaJq.stderr}`);
-        assertEq(bash.stdout, viaJq.stdout.trim(), `${label}: bash and jq agree, got: ${bash.stdout}|${bash.stderr}`);
-      }
-    });
-
-  group('_lib.sh: hook_session_model');
-
-  // The statusline cache sits under TMPDIR, so every case plants its own world
-  // there; the transcript is assistant entries among tool-result filler.
-  const filler = (n) => Array.from({ length: n },
-    () => ({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'ok' }] } }));
-  const assistant = (model) => ({ type: 'assistant', message: { model, content: [{ type: 'text', text: 'hi' }] } });
-  const sessionModel = (entries, cacheModel) => {
-    const dir = mkTmp('lib-model-');
-    const t = path.join(dir, 't.jsonl');
-    fs.writeFileSync(t, `${entries.map((e) => JSON.stringify(e)).join('\n')}\n`);
-    if (cacheModel) {
-      fs.mkdirSync(path.join(dir, 'claude-session-state'));
-      fs.writeFileSync(path.join(dir, 'claude-session-state', 'sess1.json'), JSON.stringify({ model: { id: cacheModel } }));
-    }
-    const out = runLib(`hook_session_model sess1 "${shellPath(t)}"; printf '%s|%s' "$HOOK_SESSION_MODEL" "$HOOK_SESSION_MODEL_SRC"`,
-      { TMPDIR: shellPath(dir), PATH: systemPathWith(path.dirname(jq)) });
-    fs.rmSync(dir, { recursive: true, force: true });
-    return out;
-  };
-
-  await testUnless(!jq, 'this machine has no jq, and the model is read with it')(
-    'an assistant entry inside the last 200 lines gives its model, from the transcript', () => {
-      const out = sessionModel([...filler(500), assistant('model-in-tail'), ...filler(199)]);
-      assertEq(out.stdout, 'model-in-tail|transcript', `got: ${out.stdout}|${out.stderr}`);
-    });
-
-  await testUnless(!jq, 'this machine has no jq, and the model is read with it')(
-    'an assistant entry only before the last 200 lines gives no model, source none', () => {
-      const out = sessionModel([...filler(500), assistant('model-in-head'), ...filler(200)]);
-      assertEq(out.stdout, '|none', `only the end is read, got: ${out.stdout}|${out.stderr}`);
-    });
-
-  await testUnless(!jq, 'this machine has no jq, and the cache is read with it')(
-    'the statusline cache still wins when it holds a model', () => {
-      const out = sessionModel([...filler(10), assistant('model-in-tail')], 'model-from-cache');
-      assertEq(out.stdout, 'model-from-cache|live', `got: ${out.stdout}|${out.stderr}`);
-    });
 
   group('_lib.sh: hook_redirect_word');
 

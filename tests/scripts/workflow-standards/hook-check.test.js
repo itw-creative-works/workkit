@@ -11,7 +11,7 @@ const {
   IS_WINDOWS, SYSTEM_BASH, NO_RC, NO_EXEC_BIT, shellPath, stubTool, joinPath,
 } = require('../../lib/platform');
 const {
-  SCRIPT, cleanup, makeRepo, makeGhStub, binDirWithout, runScript,
+  WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, makeGhStub, binDirWithout, runScript,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
 
@@ -26,12 +26,17 @@ const run = async () => {
   // error, or a missing tool disables a safety layer with nothing watching.
   // This is the once-a-day assertion that the layer is alive.
   const HOOK_NAMES = ['docs:one', 'safety:two'];
-  // badPieces: sourced files (paths under the hooks dir) written with a syntax error.
+  // badPieces: sourced files (paths under the hooks dir) written with a syntax error;
+  // badModule: the hooks module, register.js, written with one.
   const makeHooksDir = ({
-    missing = [], notExecutable = [], badSyntax = [], badPieces = [],
+    missing = [], notExecutable = [], badSyntax = [], badPieces = [], badModule = false,
   } = {}) => {
     const dir = mkTmp('wf-std-');
+    fs.writeFileSync(path.join(dir, 'register.js'), badModule
+      ? 'export function register(on {\n'
+      : 'export function register(on) {}\n');
     fs.writeFileSync(path.join(dir, 'hooks.json'), `${JSON.stringify({
+      modules: ['./register.js'],
       hooks: {
         SessionStart: [{
           hooks: HOOK_NAMES.map((n) => ({
@@ -81,7 +86,35 @@ const run = async () => {
       `and the count is a skip line, which the session never sees, got: ${output}`);
     assert(/; [1-9]\d* sourced pieces parse/.test(output),
       `and the sourced pieces are counted apart, got: ${output}`);
+    const line = output.split('\n').find((l) => /hooks: \d+ hook scripts resolve/.test(l)) || '';
+    assert(line.trimEnd().endsWith('; the hooks module loads'), `and the module is named as loading, got: ${line}`);
     cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('the shipped hooks module imports as ESM with no module-type warning', () => {
+    // The self-check passes --no-warnings, and an older node fails a typeless
+    // import outright, so this import is plain node, warnings and all.
+    const registerJs = path.join(WORKFLOW_DIR, '..', 'hooks', 'register.js');
+    const res = spawnSync(process.execPath, [
+      '--input-type=module',
+      '-e', 'const { pathToFileURL } = await import("node:url"); await import(pathToFileURL(process.argv[1]).href);',
+      registerJs,
+    ], { encoding: 'utf8', timeout: 20000 });
+    assertEq(res.status, 0, `the module imports, stderr: ${res.stderr}`);
+    assert(!res.stderr.includes('MODULE_TYPELESS'), `and node knows its type up front, got: ${res.stderr}`);
+  });
+
+  await test('a hooks module that does not load is flagged, with its first stderr line', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const hooks = makeHooksDir({ badModule: true });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir, hooksDir: hooks });
+    assertEq(code, 1, 'a module that cannot load is a dead safety layer: attention is set');
+    const line = output.split('\n').find((l) => l.includes('hooks: the hooks module fails to load:')) || '';
+    assert(line, `the flag line names the module, got: ${output}`);
+    assert(line.replace(/.*hooks: the hooks module fails to load:/, '').trim().length > 0, `and carries a stderr line, got: ${line}`);
+    assert(!output.includes('; the hooks module loads'), `and the summary does not call it loaded, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir); cleanup(hooks);
   });
 
   await strippedBitTest('a chmod-stripped hook script is named, with the chmod that fixes it', () => {

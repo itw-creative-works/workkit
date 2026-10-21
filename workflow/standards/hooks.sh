@@ -34,6 +34,10 @@ check_hook_layer() {
     wk_warn "hooks: the hook layer needs$missing; without them the hooks exit 0 and their checks silently do not run"
   fi
 
+  # Loading the module needs node alone, so it runs ahead of the jq gate.
+  local module=""
+  check_hook_module && module="; the hooks module loads"
+
   # Everything below reads the manifest, which needs jq. Without it the tool
   # warning above has already said what is wrong.
   command -v jq >/dev/null 2>&1 || return 0
@@ -70,8 +74,28 @@ check_hook_layer() {
     wk_warn "hooks: $wired commands are wired through loader.sh but only $((hooks_checked - 1)) resolved to checkable names; a hook name the checker cannot parse is going unchecked"
   fi
 
-  [[ "$hooks_checked" -gt 0 ]] && wk_skip "hooks: $hooks_checked hook scripts resolve, are executable, and parse; $pieces_checked sourced pieces parse"
+  [[ "$hooks_checked" -gt 0 ]] && wk_skip "hooks: $hooks_checked hook scripts resolve, are executable, and parse; $pieces_checked sourced pieces parse$module"
   return 0
+}
+
+# The hooks module, loaded the way node loads it, which pulls in every
+# hooks/mods/*.js. 0 when it loads; 1 when there is no module or no node to try
+# it with (the tool warning names a missing node), or when it fails, flagged.
+check_hook_module() {
+  local module="$HOOKS_DIR/register.js" err line
+  [[ -f "$module" ]] && command -v node >/dev/null 2>&1 || return 1
+  # The path rides argv, so node builds the file URL and no quoting reaches it.
+  if err="$(node --no-warnings --input-type=module \
+    -e 'const { pathToFileURL } = await import("node:url"); await import(pathToFileURL(process.argv[1]).href);' \
+    "$module" 2>&1 >/dev/null)"; then
+    return 0
+  fi
+  # The error's own line names the cause; a missing import's first line is node's internals.
+  line="$(printf '%s\n' "$err" | tr -d '\r' | grep -m 1 -E '^[A-Za-z]*Error( \[[A-Z_]+\])?:' || true)"
+  [[ -n "$line" ]] || line="$(printf '%s\n' "$err" | tr -d '\r' | head -n 1)"
+  wk_warn "hooks: the hooks module fails to load: $line"
+  needs_attention=1
+  return 1
 }
 
 # One wired hook, by the three ways it can be dead. Counts into hooks_checked.

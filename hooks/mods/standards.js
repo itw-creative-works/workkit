@@ -5,7 +5,18 @@
  * (docs/hooks.md § workflow:standards).
  */
 
+import { settingsOptedIn } from './gate.js';
+import { homeOf, pad } from './log.js';
+import { parsed } from './manager.js';
+
 const ANSI = /\x1b\[[0-9;]*m/g;
+// The heal and the upkeep get process.run's ceiling, past the heal's worst case.
+const HEAL_TIMEOUT_MS = 600000;
+
+const localDay = (ms) => {
+  const at = new Date(ms);
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+};
 
 /**
  * The engine's report lines: colors stripped, only the lines opening with its
@@ -63,4 +74,64 @@ export function standardsContext(state, healResult, updateResult) {
   const pester = state.isSetUp ? '' : setupLine(state);
   const ctx = [pester, msg].filter(Boolean).join('\n\n');
   return ctx || null;
+}
+
+// Whether the engine is the workkit plugin's copy in Claude's plugin cache.
+async function inPluginCache(io, env, engine) {
+  const [kit, claudeHome] = await Promise.all([
+    io.real(`${engine}/..`), io.real(env.WORKFLOW_CLAUDE_HOME || `${homeOf(env)}/.claude`),
+  ]);
+  if (!kit || !claudeHome || !kit.startsWith(`${claudeHome}/plugins/cache/`)) return false;
+  return parsed(await io.read(`${kit}/.claude-plugin/plugin.json`))?.name === 'workkit';
+}
+
+/**
+ * The hook: the setup state, the participation the engine reports, then the
+ * day's heal and upkeep, once per repo per day; the report returned.
+ * @param {object} io the engine calls as plain functions: `top(cwd)`,
+ *   `read(path)`, `exists(path)`, `real(path)` (the physical path, null when
+ *   absent), `run(argv, init)`, `write(path, text)`, `sha1(text)`, `now()`;
+ *   and `pluginRoot`, the plugin's folder
+ * @param {object} env the variables the module read
+ * @param {object} e the SessionStart input, for its `cwd`
+ * @returns {Promise<string|null>}
+ */
+export async function standardsGather(io, env, e) {
+  const engine = env.WORKFLOW_DIR || `${io.pluginRoot}/workflow`;
+  const cliLink = `${homeOf(env)}/.local/bin/workkit`;
+  const isSetUp = await io.exists(cliLink);
+  const state = { isSetUp, cliLink, engine, isInCache: false, root: null, broken: null, offer: '' };
+  if (!isSetUp) {
+    state.engine = (await io.real(engine)) ?? engine;
+    state.isInCache = await inPluginCache(io, env, engine);
+  }
+  state.root = await io.top(e.cwd);
+  const { root } = state;
+  if (!root) return standardsContext(state, null, null);
+  const standards = `${engine}/standards.sh`;
+  const manifest = `${engine}/labels.json`;
+  // A broken install speaks once, only for a repo that said yes.
+  let broken = null;
+  if (!(await io.exists(standards))) broken = `workflow engine not found at ${standards}. Reinstall the workkit plugin.`;
+  else if ((await io.read(manifest)) === null) broken = `workflow manifest missing or unreadable at ${manifest}. Reinstall the workkit plugin.`;
+  if (broken) {
+    state.broken = settingsOptedIn(await io.read(`${root}/.workkit/settings.json`)) ? broken : null;
+    return standardsContext(state, null, null);
+  }
+  // The engine owns the participation states; its answer is stdout's last line.
+  const asked = await io.run(['bash', standards, '--state', root]);
+  const participation = asked.exitCode === 0 ? asked.stdout.trimEnd().split('\n').pop() : 'nogit';
+  if (participation === 'undecided') {
+    state.offer = (await io.run(['bash', standards, '--announce', root])).stdout.trimEnd();
+  }
+  if (participation !== 'enabled') return standardsContext(state, null, null);
+  const marker = `${env.WORKFLOW_STANDARDS_CACHE || `${homeOf(env)}/.claude/logs/workflow-standards`}/${await io.sha1(root)}`;
+  const today = localDay(await io.now());
+  if ((await io.read(marker)) === today) return standardsContext(state, null, null);
+  // Only a clean heal caches the day, so a partial one retries next session.
+  const heal = await io.run(['bash', standards, root], { env: { QUIET: '1' }, timeoutMs: HEAL_TIMEOUT_MS });
+  if (heal.exitCode === 0) await io.write(marker, today);
+  const cli = `${engine}/workkit.sh`;
+  const update = (await io.exists(cli)) ? await io.run(['bash', cli, 'update', '--auto'], { timeoutMs: HEAL_TIMEOUT_MS }) : null;
+  return standardsContext(state, heal, update);
 }

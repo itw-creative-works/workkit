@@ -10,7 +10,7 @@
 
 // "hooks.json wires it on both events, through the loader" as user-prompt-submit's
 // "SessionStart writes the stamp and says nothing" with the notice cases, and
-// tests/scripts/hooks-index.test.js "the module registers on the seven events and nothing else".
+// tests/scripts/hooks-index.test.js "the module registers on the eight events and nothing else".
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { mods, textOf } = require('../lib/mods-inputs');

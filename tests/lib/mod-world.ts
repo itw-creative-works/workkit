@@ -4,6 +4,9 @@
 // under /w/; any other path is the kit's own folder, answered from KIT.
 
 import { mock } from 'claude-code/testing'
+import { MODELS } from './mod-fixtures.mjs'
+
+export { MODELS, row, SESSION_NOW, daysBefore, briefMarker } from './mod-fixtures.mjs'
 
 // hooks/manager/resources/ladder.json, the fields the module reads; the test
 // environment has no fs, so the fixture carries its own copy.
@@ -19,9 +22,6 @@ export const HOME = '/w/home'
 export const REPO = '/w/repo'
 export const PLAIN = '/w/plain'
 export const SID = 'sess-1'
-export const MODELS = {
-  fable: 'claude-fable-5[1m]', opus: 'claude-opus-4-7', sonnet: 'claude-sonnet-4-5', haiku: 'claude-haiku-4-5',
-}
 export const OPTED_IN = '{ "version": 1, "enabled": true }\n'
 export const OPTED_OUT = '{ "version": 1, "enabled": false }\n'
 
@@ -64,7 +64,9 @@ const norm = (raw: string, cwd: string): string => {
 /**
  * Registers the world on the test's `on` and hands back its state: `files`
  * (path to text), `mtimes`, `store`, `calls` (every process.run argv and
- * init), `logs` ($.ui.log lines), `spawned` (what reached the engine's spawn).
+ * init), `logs` ($.ui.log lines), `spawned` (what reached the engine's spawn),
+ * `reached` (each classic event that got past the module), and `messages`
+ * (what $.session.messages() answers, `opts.messages`: rows as `row` builds).
  * `opts.links` maps a link path to its target: every read goes through it and
  * a resolving stat answers the target as `realPath`.
  */
@@ -88,7 +90,8 @@ export const mkWorld = (on: any, opts: any = {}) => {
   const world: any = {
     env, files, mtimes, kit, kitMtimes, unreadable, repos, now,
     store: new Map<string, unknown>(Object.entries(opts.store || {})),
-    calls: [] as any[], logs: [] as string[], spawned: [] as any[],
+    calls: [] as any[], logs: [] as string[], spawned: [] as any[], reached: [] as string[],
+    messages: opts.messages ?? [],
     cwd: opts.cwd ? norm(opts.cwd, '/') : REPO,
     model: opts.model ?? MODELS.opus,
     gh: opts.gh ?? { issues: [] },
@@ -234,11 +237,13 @@ export const mkWorld = (on: any, opts: any = {}) => {
   on('session.cwd', () => ({ value: world.cwd }))
   on('session.root', () => ({ value: world.cwd }))
   on('session.id', () => ({ value: SID }))
+  on('session.messages', () => ({ value: world.messages }))
   on('ui.log', ($: any, e: any) => { world.logs.push(e.text); return { value: undefined } })
 
-  // The engine beneath every event the module hooks: it answers as given.
-  for (const ev of ['UserPromptSubmit', 'SessionStart', 'PostToolUse', 'SubagentStart', 'PreToolUse']) {
-    on(`classic.${ev}`, () => ({}))
+  // The engine beneath every event the module hooks: it answers as given, and
+  // `reached` names each event that got this far.
+  for (const ev of ['UserPromptSubmit', 'SessionStart', 'PostToolUse', 'SubagentStart', 'PreToolUse', 'Stop']) {
+    on(`classic.${ev}`, () => { world.reached.push(`classic.${ev}`); return {} })
   }
   on('tool.call', ($: any, e: any) => { world.toolRan = e; return { result: { text: 'ran' } } })
   on('agent.spawn', ($: any, e: any) => { world.spawned.push(e); return { model: e.model ?? 'inherit', agentId: 'agent-1' } })

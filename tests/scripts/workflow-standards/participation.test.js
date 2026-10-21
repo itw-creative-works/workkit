@@ -5,10 +5,14 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W,
+  group, test, assert, assertEq, testUnless, summary, selfRun, WORKKIT_DIR: W,
 } = require('../../lib/harness');
-const { gitPath } = require('../../lib/platform');
-const { cleanup, rosterOf, makeRepo, runScript, STANDARD_VERSION } = require('./helpers');
+const {
+  IS_WINDOWS, SYSTEM_BASH, NO_RC, gitPath, shellPath,
+} = require('../../lib/platform');
+const {
+  WORKFLOW_DIR, cleanup, rosterOf, makeRepo, binDirWithout, runScript, STANDARD_VERSION,
+} = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
@@ -220,6 +224,28 @@ const run = async () => {
     assertEq(parsed.enabled, true, 'flipped');
     assertEq(parsed.keep, 'me', 'other repo settings survive');
     cleanup(repo);
+  });
+
+  const unreadableTest = testUnless(IS_WINDOWS || process.getuid() === 0,
+    'a mode-000 file is still readable here (Windows ignores the mode, root ignores it)');
+
+  await unreadableTest('without jq an unreadable settings file reads unreadable, as it does with jq', () => {
+    // standards/state.sh sourced after participation.sh, as standards.sh sources
+    // them. The text says enabled, so only the unreadable read can answer.
+    const dir = mkTmp('wf-std-');
+    const file = path.join(dir, 'settings.json');
+    fs.writeFileSync(file, '{ "version": 1, "enabled": true }\n');
+    fs.chmodSync(file, 0o000);
+    const binDir = binDirWithout('jq');
+    const res = spawnSync(SYSTEM_BASH, [
+      ...NO_RC, '-c', '. "$1"; . "$2"; repo_enabled_flag "$3"', 'bash',
+      shellPath(path.join(WORKFLOW_DIR, 'lib', 'participation.sh')),
+      shellPath(path.join(WORKFLOW_DIR, 'standards', 'state.sh')),
+      shellPath(file),
+    ], { env: { PATH: binDir }, encoding: 'utf8', timeout: 20000 });
+    assertEq(res.stdout, 'unreadable', `never a decline or the legacy yes, stderr: ${res.stderr}`);
+    fs.chmodSync(file, 0o600);
+    cleanup(dir); cleanup(binDir);
   });
 
   await test('--state on a non-git directory says so instead of guessing', () => {

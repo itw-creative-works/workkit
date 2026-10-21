@@ -4,6 +4,8 @@
  * (docs/hooks.md § docs:board-guard).
  */
 
+import { rowsOf } from './session-guard.js';
+
 export const AGENTS_MAX_LINES = 250;
 export const AGENTS_MAX_BYTES = 400;
 
@@ -19,8 +21,7 @@ const baseName = (path) => String(path ?? '').split(/[\\/]/).pop();
  *   lines over AGENTS_MAX_BYTES, and the first three as `line N (M bytes)`
  */
 export function agentsBudget(text) {
-  const rows = text === '' ? [] : text.split('\n');
-  if (rows.at(-1) === '') rows.pop();
+  const rows = rowsOf(text);
   const offenders = [];
   rows.forEach((row, i) => {
     const bytes = encoder.encode(row).length;

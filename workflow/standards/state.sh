@@ -45,7 +45,9 @@ offer_line() {
 
 # true | false | absent | unreadable: the `enabled` key of a settings file,
 # this repo's by default. jq when present, the no-jq readers otherwise, so a
-# machine without jq still honors a deliberate `enabled: false`.
+# machine without jq still honors a deliberate `enabled: false`; a file there
+# but unreadable is `unreadable` on both paths, so the prune leaves it
+# alone; the opt-in read (participation.sh) counts the same file a decline.
 repo_enabled_flag() {
   local settings="${1:-$REPO_SETTINGS}"
   if command -v jq >/dev/null 2>&1; then
@@ -53,6 +55,8 @@ repo_enabled_flag() {
     # reads `unreadable`, never the legacy opt-in, unless jq already read a no.
     wk_jq_default 'unreadable' \
       -r 'if has("enabled") then (.enabled | tostring) else "absent" end' "$settings"
+  elif [[ -e "$settings" && ! -r "$settings" ]]; then
+    printf 'unreadable'
   elif wk_settings_declined "$settings"; then
     printf 'false'
   elif wk_settings_enabled "$settings"; then
@@ -178,9 +182,9 @@ register_in_roster() {
   seed_user_repos
   [[ -f "$USER_REPOS" ]] || return 0
 
-  # An unparseable file is reported, or the roster would go stale unseen.
+  # A file jq cannot read is reported, or the roster would go stale unseen.
   if ! keys="$(wk_jq -r '(.repos // {}) | to_entries[] | select(.value != "declined") | .key' "$USER_REPOS" 2>/dev/null)"; then
-    wk_warn "roster: $USER_REPOS is not valid JSON; fix or remove it; until then this machine's roster is not maintained"
+    wk_warn "roster: $USER_REPOS cannot be read as JSON (unreadable or not valid JSON); fix or remove it; until then this machine's roster is not maintained"
     return 0
   fi
 

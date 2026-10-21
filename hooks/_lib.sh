@@ -14,14 +14,6 @@ WORKKIT_DIR=".workkit"
 # both read it, so one hook never accepts a release the other misses.
 readonly HOOK_VERSION_RE='v?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?'
 
-# A system-delivered prompt's shapes, as EREs bash `[[ =~ ]]` and jq `test()`
-# both read: hook_prompt_is_system and close-guard's jq pass take them from
-# here, and hooks/mods/frame.js holds them for the hooks module. An opening tag
-# other than the owner's paste, or a frame line anywhere.
-readonly HOOK_PROMPT_TAG_RE='^[[:space:]]*<[A-Za-z][A-Za-z0-9_.:-]*>'
-readonly HOOK_PROMPT_PASTE_RE='^[[:space:]]*<pasted_content'
-readonly HOOK_PROMPT_FRAME_RE='\[SYSTEM NOTIFICATION - NOT USER INPUT\]|Another Claude session sent a message|<agent-message |\[Subagent hand-back\]'
-
 # This file's physical folder, resolved once for every source line below: each
 # lookup is a fork, slow on Windows. A bare `. _lib.sh` has no folder to strip.
 HOOK_LIB_DIR="${BASH_SOURCE[0]%/*}"
@@ -92,8 +84,6 @@ hook_sha1() { wk_sha1 "$@"; }
 . "$HOOK_LIB_DIR/lib/markers.sh"
 # shellcheck source=./lib/commit.sh
 . "$HOOK_LIB_DIR/lib/commit.sh"
-# shellcheck source=./lib/manager.sh
-. "$HOOK_LIB_DIR/lib/manager.sh"
 # shellcheck source=./lib/proof.sh
 . "$HOOK_LIB_DIR/lib/proof.sh"
 # shellcheck source=./lib/notice.sh
@@ -108,7 +98,5 @@ hook_sha1() { wk_sha1 "$@"; }
 . "$HOOK_LIB_DIR/lib/gh-edit.sh"
 # shellcheck source=./lib/snapshot.sh
 . "$HOOK_LIB_DIR/lib/snapshot.sh"
-# shellcheck source=./lib/prompt.sh
-. "$HOOK_LIB_DIR/lib/prompt.sh"
 # shellcheck source=./lib/settings.sh
 . "$HOOK_LIB_DIR/lib/settings.sh"

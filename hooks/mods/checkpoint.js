@@ -5,14 +5,13 @@
  */
 
 import { isSystemPrompt } from './frame.js';
+import { pad } from './log.js';
 
 // `compact` is a substring on purpose (`compaction`, `/compact`); `context`
 // fires only beside a follower on the same line, each bounded by a non-letter.
 const PATTERN = /compact|clear the chat|clear this chat|new chat|fresh session|start over|context.*(^|[^a-z])(full|low|running out|window)([^a-z]|$)|(running out of|out of|low on) context/;
 
 const FIRST = '[Compaction line detected (#238): run the workkit:checkpoint skill before anything else in this turn, then answer the line. It files every verdict, decision and question from this chat onto its issue and trims session.md, so nothing is lost when the context is compacted.]';
-
-const pad = (n) => String(n).padStart(2, '0');
 
 /**
  * The instruction for a prompt, or null when it is no compaction line or

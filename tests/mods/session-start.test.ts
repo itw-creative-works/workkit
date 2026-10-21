@@ -1,9 +1,11 @@
 // classic.SessionStart through the hooks module: docs:state-check, then
-// workflow:standards, then workflow:reload-guard's stamp. The state-check
-// cache and the standards daily marker are files under ~/.claude/logs.
+// workflow:standards, then workflow:reload-guard's stamp, then docs:session. The
+// state-check cache and the standards daily marker are files under ~/.claude/logs.
 
 import { test, expect, describe } from 'claude-code/testing'
-import { mkWorld, contextOf, HOME, REPO, PLAIN, SID, OPTED_OUT } from '../lib/mod-world.ts'
+import {
+  mkWorld, contextOf, hooksLog, HOME, REPO, PLAIN, SID, OPTED_OUT, SESSION_NOW as NOW, daysBefore, briefMarker,
+} from '../lib/mod-world.ts'
 
 const start = ($: any, cwd: string, extra: any = {}) => $.classic.SessionStart({ source: 'startup', session_id: SID, cwd, ...extra })
 const HEAL = { exitCode: 0, stdout: '', stderr: '  ✓ issue forms: installed\n  ✓ gitignore: added .workkit/*\n' }
@@ -306,5 +308,132 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
     const w = mkWorld(on, { gh: 'absent', standards: { heal: HEAL } })
     expect(contextOf(await start($, REPO))).toContain('issue forms')
     expect(heals(w)[0].init.env?.QUIET).toBe('1')
+  })
+})
+
+// docs:session: .workkit/agents/session.md handed back with its closing lines,
+// the carried-over line the owner sees, and the stale cloud brief line.
+const STATE = `${REPO}/.workkit/agents/session.md`
+const CARRIED = 'workkit: state carried over. Say "continue" to resume the session queue'
+const marker = (n: number) => JSON.stringify(briefMarker(n))
+const filled = (n: number) => ['# Session', '', '## Active', ...Array.from({ length: n }, (_, i) => `- #${i}: a queued entry.`), '', '## Queue', ''].join('\n')
+const carried = (w: any) => w.logs.filter((l: string) => l === CARRIED)
+
+describe('classic.SessionStart: docs:session (the Contract cases)', () => {
+  test('a 10-line session.md: SESSION STATE with the body and both closing lines, and the carried-over line', async ($, on) => {
+    const w = mkWorld(on, { now: NOW, files: { [STATE]: filled(10) } })
+    const ctx = contextOf(await start($, REPO))
+    expect(ctx).toContain('SESSION STATE: ')
+    expect(ctx).toContain('.workkit/agents/session.md')
+    expect(ctx).toContain('- #9: a queued entry.')
+    expect(ctx).toContain('Manager: open your first reply after a restart or compaction with this state in plain words.')
+    expect(ctx).toContain('Owner: state carried over. Say "continue" and this session resumes the queue above.')
+    expect(carried(w)).toHaveLength(1)
+    expect(hooksLog(w).some((l: any) => l.hook === 'docs:session' && l.verdict === 'run')).toBe(true)
+  })
+
+  test('no session.md: no SESSION STATE and no carried-over line', async ($, on) => {
+    const w = mkWorld(on, { now: NOW })
+    expect(contextOf(await start($, REPO))).not.toContain('SESSION STATE')
+    expect(carried(w)).toHaveLength(0)
+  })
+
+  test('41 content lines: the NOTE: line', async ($, on) => {
+    mkWorld(on, { now: NOW, files: { [STATE]: filled(41) } })
+    const ctx = contextOf(await start($, REPO))
+    expect(ctx.split('\n').some((l: string) => l.startsWith('NOTE:'))).toBe(true)
+    expect(ctx).toContain('41 content lines')
+  })
+
+  test('brief-status.json three days old and site.repo set: the stale-brief line first, with the gh run list check', async ($, on) => {
+    mkWorld(on, {
+      now: NOW,
+      files: {
+        [STATE]: filled(3),
+        [`${HOME}/.workkit/brief-status.json`]: marker(3),
+        [`${HOME}/.workkit/settings.json`]: JSON.stringify({ version: 1, site: { repo: 'owner/private-home' } }),
+      },
+    })
+    const ctx = contextOf(await start($, REPO))
+    expect(ctx.startsWith(`cloud brief: last posted ${daysBefore(3)} (3 days ago)`)).toBe(true)
+    expect(ctx).toContain('gh run list --repo owner/private-home --workflow brief.yml')
+    expect(ctx.indexOf('cloud brief:')).toBeLessThan(ctx.indexOf('SESSION STATE'))
+  })
+})
+
+describe('classic.SessionStart: docs:session (session suite)', () => {
+  test('ports "a compaction gets it too: every source, not just startup" and "hooks.json registers the hook under SessionStart, for every source"', async ($, on) => {
+    mkWorld(on, { now: NOW, files: { [STATE]: filled(2) } })
+    for (const source of ['startup', 'resume', 'clear', 'compact']) {
+      expect(contextOf(await start($, REPO, { source }))).toContain('- #1: a queued entry.')
+    }
+  })
+
+  test('ports "a session opened in a subdirectory finds the repo root"', async ($, on) => {
+    mkWorld(on, { now: NOW, files: { [STATE]: filled(2) } })
+    expect(contextOf(await start($, `${REPO}/src/deep`))).toContain('- #1: a queued entry.')
+  })
+
+  test('ports "the owner hears it: the resume line rides the visible channel too"', async ($, on) => {
+    const w = mkWorld(on, { now: NOW, files: { [STATE]: filled(2) } })
+    await start($, REPO)
+    expect(w.logs).toContain(CARRIED)
+  })
+
+  for (const [name, settings] of [
+    ['a repo that never opted in: silent, even with content', null],
+    ['a repo that turned the workflow off: silent', OPTED_OUT],
+  ] as const) {
+    test(`ports "${name}"`, async ($, on) => {
+      const w = mkWorld(on, { now: NOW, repos: { [REPO]: settings }, standards: { state: settings ? 'disabled' : 'undecided' }, files: { [STATE]: filled(2) } })
+      expect(contextOf(await start($, REPO))).not.toContain('SESSION STATE')
+      expect(carried(w)).toHaveLength(0)
+      expect(hooksLog(w).some((l: any) => l.hook === 'docs:session' && l.verdict === 'stood-down')).toBe(true)
+    })
+  }
+
+  test('ports "a settings file in a cwd that is no git repo: silent"', async ($, on) => {
+    const w = mkWorld(on, {
+      now: NOW,
+      standards: { state: 'nogit' },
+      files: { [`${PLAIN}/.workkit/settings.json`]: '{ "version": 1, "site": {} }\n', [`${PLAIN}/.workkit/agents/session.md`]: filled(2) },
+    })
+    expect(contextOf(await start($, PLAIN))).not.toContain('SESSION STATE')
+    expect(carried(w)).toHaveLength(0)
+  })
+
+  test('ports "no cwd in the payload: silent"', async ($, on) => {
+    const w = mkWorld(on, { now: NOW, cwd: PLAIN, standards: { state: 'nogit' }, files: { [STATE]: filled(2) } })
+    expect(contextOf(await start($, ''))).not.toContain('SESSION STATE')
+    expect(carried(w)).toHaveLength(0)
+  })
+
+  test('ports "the marker is read from WORKFLOW_HOME, the folder the 9am job writes it to"', async ($, on) => {
+    mkWorld(on, { now: NOW, env: { WORKFLOW_HOME: '/w/moved' }, files: { '/w/moved/brief-status.json': marker(10) } })
+    expect(contextOf(await start($, REPO)).startsWith('cloud brief: last posted')).toBe(true)
+  })
+
+  test('ports "a marker that does not parse: silent"', async ($, on) => {
+    mkWorld(on, { now: NOW, files: { [`${HOME}/.workkit/brief-status.json`]: '{ "version": 1, "lastBrief": ' } })
+    expect(contextOf(await start($, REPO))).toBe('')
+  })
+
+  test('ports "a repo that never opted in hears nothing about the brief either"', async ($, on) => {
+    mkWorld(on, { now: NOW, repos: { [REPO]: null }, standards: { state: 'undecided' }, files: { [`${HOME}/.workkit/brief-status.json`]: marker(9) } })
+    expect(contextOf(await start($, REPO))).not.toContain('cloud brief')
+  })
+
+  test('ports "the hook reaches no network: the marker is the only source"', async ($, on) => {
+    const w = mkWorld(on, {
+      now: NOW,
+      files: {
+        [`${HOME}/.workkit/brief-status.json`]: marker(10),
+        [`${HOME}/.workkit/settings.json`]: JSON.stringify({ version: 1, site: { repo: 'owner/private-home' } }),
+      },
+    })
+    expect(contextOf(await start($, REPO))).toContain('gh run list')
+    const base = (c: any) => c.argv[0].split('/').pop()
+    expect(w.calls.filter((c: any) => base(c) === 'curl' || c.argv.includes('ls-remote'))).toHaveLength(0)
+    expect(w.ghCalls().filter((c: any) => c.argv.includes('run'))).toHaveLength(0)
   })
 })

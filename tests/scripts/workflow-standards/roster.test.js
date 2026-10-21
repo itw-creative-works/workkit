@@ -260,7 +260,7 @@ const run = async () => {
     const stub = makeGhStub({ authed: false });
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
     assertEq(code, 0, 'a broken index never fails a heal');
-    assert(/not valid JSON/.test(output), `it says what is wrong, got: ${output}`);
+    assert(output.includes('cannot be read as JSON (unreadable or not valid JSON)'), `it says what is wrong, got: ${output}`);
     assertEq(fs.readFileSync(path.join(home, '.repos.json'), 'utf8'), '{ not json', 'and the file is left alone');
     assertEq(fs.readdirSync(home).sort().join(','), '.repos.json,settings.json', 'with no temp file left behind');
     cleanup(repo); cleanup(home); cleanup(stub.dir);

@@ -102,9 +102,9 @@ const HOOKS = [
     input: (cwd) => bash(cwd, 'npm test'),
   },
   {
-    name: 'docs:session',
-    prep: (w) => w.write(`${W}/agents/session.md`, '# Session\n\n## Active\n- #1: the queued entry.\n'),
-    input: (cwd) => ({ hook_event_name: 'SessionStart', cwd: shellPath(cwd), session_id: 's1', source: 'startup' }),
+    name: 'docs:change-tracker',
+    prep: (w) => w.write('src/x.js', 'x\n'),
+    input: (cwd) => ({ hook_event_name: 'Stop', cwd: shellPath(cwd), session_id: 's1', stop_hook_active: false }),
   },
 ];
 
@@ -190,19 +190,19 @@ const assertStands = (loader, cwd, command, home) => {
 };
 
 // The hook log the loader writes, in a workkit home of the case's own. Each
-// fire is docs:session at `w.repo`, a hook that stands down where the repo
-// has not opted in. `log` reads the file back as lines, [] when absent.
+// fire is docs:change-tracker's Stop at `w.repo`, a hook that stands down where
+// the repo has not opted in. `log` reads the file back as lines, [] when absent.
 const mkLogged = (answer = 'enabled') => {
   const w = mkWorld(answer);
   const home = path.join(w.tmp, 'workkit-home');
   const file = path.join(home, 'hooks.log');
   const env = envOf(w, { WORKFLOW_HOME: shellPath(home) });
-  const start = { hook_event_name: 'SessionStart', cwd: shellPath(w.repo), session_id: 's-log', source: 'startup' };
+  const start = { hook_event_name: 'Stop', cwd: shellPath(w.repo), session_id: 's-log', stop_hook_active: false };
   return {
     w,
     file,
     seed: (lines) => { fs.mkdirSync(home, { recursive: true }); fs.writeFileSync(file, `${lines.join('\n')}\n`); },
-    fire: (name = 'docs:session', extra = {}) => runIn(name, start, w.repo, { ...env, ...extra }),
+    fire: (name = 'docs:change-tracker', extra = {}) => runIn(name, start, w.repo, { ...env, ...extra }),
     log: () => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean) : []),
   };
 };
@@ -215,7 +215,7 @@ const assertLogLine = (line, w, hook, verdict) => {
   const [iso, name, event, session, cwd, said] = fields;
   assert(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(iso), `an ISO time first, got ${JSON.stringify(iso)}`);
   assertEq(name.replace('/', ':'), hook, 'the hook name');
-  assertEq(event, 'SessionStart', 'the event name');
+  assertEq(event, 'Stop', 'the event name');
   assertEq(session, 's-log', 'the session id');
   assert([shellPath(w.repo), w.repo].includes(cwd), `the cwd, got ${JSON.stringify(cwd)}`);
   assertEq(said, verdict, 'the verdict');
@@ -261,7 +261,7 @@ const run = async () => {
 
   group('loader: a repo that has not opted in');
 
-  await test('no settings file: commit-gate, suite-guard and docs:session step aside', () => {
+  await test('no settings file: commit-gate, suite-guard and docs:change-tracker step aside', () => {
     for (const [name, out] of runEach('enabled')) assertSpoke(out, `${name} in an opted-in repo`);
     for (const [name, out] of runEach('none')) assertSilent(out, `${name} in a repo with no settings file`);
   });
@@ -395,7 +395,7 @@ const run = async () => {
     l.fire();
     const lines = l.log();
     assertEq(lines.length, 1, `one line appended, got ${JSON.stringify(lines)}`);
-    assertLogLine(lines[0], l.w, 'docs:session', 'run');
+    assertLogLine(lines[0], l.w, 'docs:change-tracker', 'run');
   });
 
   await test('a fire in a repo that has not opted in appends one line ending in stood-down', () => {
@@ -403,7 +403,7 @@ const run = async () => {
     l.fire();
     const lines = l.log();
     assertEq(lines.length, 1, `one line appended, got ${JSON.stringify(lines)}`);
-    assertLogLine(lines[0], l.w, 'docs:session', 'stood-down');
+    assertLogLine(lines[0], l.w, 'docs:change-tracker', 'stood-down');
   });
 
   await test('a hook whose script is missing appends one line ending in missing', () => {
@@ -419,7 +419,7 @@ const run = async () => {
     l.fire();
     const before = l.log();
     assertEq(before.length, 1, `the fire without the switch logs, got ${JSON.stringify(before)}`);
-    l.fire('docs:session', { HOOK_DISABLE: '1' });
+    l.fire('docs:change-tracker', { HOOK_DISABLE: '1' });
     assertEq(JSON.stringify(l.log()), JSON.stringify(before), 'the kill switch logs nothing');
   });
 
@@ -432,7 +432,7 @@ const run = async () => {
     assertEq(lines.length, 5001, 'the last 5,000 old lines plus the new one');
     assertEq(lines[0], old[old.length - 5000], 'the oldest line kept is the 5,000th from the end');
     assertEq(lines[4999], old[old.length - 1], 'the old lines end where the log did');
-    assertLogLine(lines[5000], l.w, 'docs:session', 'run');
+    assertLogLine(lines[5000], l.w, 'docs:change-tracker', 'run');
   });
 
   group('loader: loaderEnv, the scratch workkit home a suite fires the loader with');
@@ -448,11 +448,11 @@ const run = async () => {
     const read = () => (fs.existsSync(real) ? fs.readFileSync(real, 'utf8') : '');
     const id = `s-loader-env-${process.pid}-${Date.now()}`;
     const env = loaderEnv();
-    const start = { hook_event_name: 'SessionStart', cwd: shellPath(OPTED.repo), session_id: id, source: 'startup' };
+    const start = { hook_event_name: 'Stop', cwd: shellPath(OPTED.repo), session_id: id, stop_hook_active: false };
     const before = read();
-    const out = runIn('docs:session', start, OPTED.repo, env);
+    const out = runIn('docs:change-tracker', start, OPTED.repo, env);
     const after = read();
-    assertSilent(out, 'docs:session in a repo with no session.md');
+    assertSilent(out, 'docs:change-tracker on a clean tree');
     const lines = readIn(`${env.WORKFLOW_HOME}/hooks.log`).split('\n').filter(Boolean);
     assertEq(lines.length, 1, `one line under the scratch home, got ${JSON.stringify(lines)}`);
     assert(lines[0].includes(`\t${id}\t`), `the fire's own line, got ${JSON.stringify(lines[0])}`);

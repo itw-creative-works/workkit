@@ -29,7 +29,7 @@ report_globals() {
 
   count="$(wk_jq -r '[(.repos // {}) | to_entries[] | select(.value != "declined")] | length' "$WK_HOME_REPOS" 2>/dev/null || printf '')"
   if [[ -z "$count" ]]; then
-    wk_warn "roster: $WK_HOME_REPOS is not valid JSON; fix or remove it, then re-run a session in any repo"
+    wk_warn "roster: $WK_HOME_REPOS cannot be read as JSON (unreadable or not valid JSON); fix or remove it, then re-run a session in any repo"
     return 0
   fi
   # Zero is the one count worth a different voice: an empty roster means the

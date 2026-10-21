@@ -1,24 +1,27 @@
 /**
- * hooks/register.js: the workkit hooks module, the thirteen in-process hooks
- * on seven events (docs/hooks.md § The hooks module). The one file that
+ * hooks/register.js: the workkit hooks module, the fifteen in-process hooks
+ * on eight events (docs/hooks.md § The hooks module). The one file that
  * touches `$`: each hook's logic is plain functions in hooks/mods/<name>.js,
- * and this file gathers their facts, gates them, logs each fire and answers.
+ * and this file gathers their facts (or hands a mods gatherer the engine calls
+ * as plain functions), gates them, logs each fire and answers.
  */
 
 import { addonContext, addonPath } from './mods/addon.js';
 import { boardGuardVerdict } from './mods/board-guard.js';
 import { changelogGuardVerdict, isChangelog } from './mods/changelog-guard.js';
 import { checkpointContext } from './mods/checkpoint.js';
+import { closeGuardGather } from './mods/close-guard.js';
 import { featureContext, featureMatch } from './mods/feature.js';
 import { isExempt, settingsOptedIn } from './mods/gate.js';
-import { appendLog, logLine, userDir } from './mods/log.js';
+import { appendLog, homeOf, logLine, pad, userDirOf } from './mods/log.js';
 import { crewClass, isAdvise, managerConfig } from './mods/manager.js';
 import { profileContext } from './mods/profile.js';
 import { reloadFingerprint, reloadGuardContext } from './mods/reload-guard.js';
 import { resolverAdvice, resolverModel } from './mods/resolver.js';
+import { sessionGather } from './mods/session.js';
 import { sessionGuardVerdict } from './mods/session-guard.js';
 import { spawnGuardWarning } from './mods/spawn-guard.js';
-import { standardsContext } from './mods/standards.js';
+import { standardsGather } from './mods/standards.js';
 import { inboxCount, stateCheckContext } from './mods/state-check.js';
 import { isCodePath, isTestPath, testReminderContext } from './mods/test-reminder.js';
 
@@ -29,6 +32,7 @@ const HOOK = {
   sessionGuard: 'docs:session-guard',
   testReminder: 'safety:test-reminder',
   stateCheck: 'docs:state-check',
+  session: 'docs:session',
   standards: 'workflow:standards',
   reloadGuard: 'workflow:reload-guard',
   profile: 'manager:profile',
@@ -37,10 +41,9 @@ const HOOK = {
   addon: 'manager:addon',
   resolver: 'manager:resolver',
   spawnGuard: 'manager:spawn-guard',
+  closeGuard: 'manager:close-guard',
 };
 
-// The heal and the upkeep get process.run's ceiling, past the heal's worst case.
-const HEAL_TIMEOUT_MS = 600000;
 const GH_TIMEOUT_MS = 5000;
 const INBOX_CACHE_MS = 30 * 60 * 1000;
 
@@ -50,14 +53,7 @@ const dirOf = (path) => {
   if (cut <= 0) return '/';
   return /^[A-Za-z]:$/.test(path.slice(0, cut)) ? path.slice(0, cut + 1) : path.slice(0, cut);
 };
-const homeOf = (env) => env.HOME || env.USERPROFILE || '';
-const userDirOf = (env) => userDir(env.WORKFLOW_HOME, homeOf(env));
 const verdictOf = (hook, opted) => (isExempt(hook) || opted ? 'run' : 'stood-down');
-const pad = (n) => String(n).padStart(2, '0');
-const localDay = (ms) => {
-  const at = new Date(ms);
-  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
-};
 const storeKey = (sid, name) => `workkit:${sid}:${name}`;
 const failedRun = (err) => ({ exitCode: 1, stdout: '', stderr: String(err?.message ?? err), isStarted: false });
 const quiet = (promise) => promise.catch(() => undefined);
@@ -86,19 +82,19 @@ async function envOf($) {
   const [
     HOOK_DISABLE, WORKFLOW_HOME, HOME, USERPROFILE, TMPDIR, WORKFLOW_DIR, WORKFLOW_CLAUDE_HOME,
     STATE_CHECK_CACHE, WORKFLOW_STANDARDS_CACHE, RELOAD_GUARD_ROOT,
-    MANAGER_LADDER, MANAGER_USER_SETTINGS, MANAGER_DEBUG,
+    MANAGER_LADDER, MANAGER_USER_SETTINGS, MANAGER_DEBUG, MANAGER_CLOSE_EDITS,
   ] = await Promise.all([
     quiet($.env.get('HOOK_DISABLE')), quiet($.env.get('WORKFLOW_HOME')), quiet($.env.get('HOME')),
     quiet($.env.get('USERPROFILE')), quiet($.env.get('TMPDIR')), quiet($.env.get('WORKFLOW_DIR')),
     quiet($.env.get('WORKFLOW_CLAUDE_HOME')), quiet($.env.get('STATE_CHECK_CACHE')),
     quiet($.env.get('WORKFLOW_STANDARDS_CACHE')), quiet($.env.get('RELOAD_GUARD_ROOT')),
     quiet($.env.get('MANAGER_LADDER')), quiet($.env.get('MANAGER_USER_SETTINGS')),
-    quiet($.env.get('MANAGER_DEBUG')),
+    quiet($.env.get('MANAGER_DEBUG')), quiet($.env.get('MANAGER_CLOSE_EDITS')),
   ]);
   return {
     HOOK_DISABLE, WORKFLOW_HOME, HOME, USERPROFILE, TMPDIR, WORKFLOW_DIR, WORKFLOW_CLAUDE_HOME,
     STATE_CHECK_CACHE, WORKFLOW_STANDARDS_CACHE, RELOAD_GUARD_ROOT,
-    MANAGER_LADDER, MANAGER_USER_SETTINGS, MANAGER_DEBUG,
+    MANAGER_LADDER, MANAGER_USER_SETTINGS, MANAGER_DEBUG, MANAGER_CLOSE_EDITS,
   };
 }
 
@@ -243,7 +239,7 @@ export async function optedIn($, cwd) {
 }
 
 // The classic events whose input carries the session's folder as `cwd`.
-const CARRIES_CWD = new Set(['PostToolUse', 'SessionStart', 'UserPromptSubmit', 'SubagentStart']);
+const CARRIES_CWD = new Set(['PostToolUse', 'SessionStart', 'UserPromptSubmit', 'SubagentStart', 'Stop']);
 
 /**
  * Writes one fire's line to the hooks log, the loader's line and cap: the one
@@ -282,6 +278,16 @@ async function configOf($, env, cwd) {
   ]);
   return managerConfig(ladderText, userText, repoText);
 }
+
+// The engine calls a mods gatherer makes, as plain functions: `$` stays here.
+const ioOf = ($, env) => ({
+  pluginRoot: $.plugin.root,
+  top: (cwd) => gitTop($, cwd), read: (path) => readText($, path), now: () => now($),
+  exists: (path) => exists($, path), real: (path) => realPath($, path), run: (argv, init) => run($, argv, init),
+  write: (path, text) => quiet($.fs.write(path, text)), sha1: sha1Hex,
+  config: (cwd) => configOf($, env, cwd), model: () => sessionModel($),
+  messages: () => $.session.messages(), log: (text) => $.ui.log(text),
+});
 
 async function changelogGuardHook($, env, file, text) {
   if (!isChangelog(file) || text === null) return null;
@@ -344,58 +350,6 @@ async function stateCheckHook($, env, e) {
   const here = claude === null ? null : await realPath($, cwd);
   const isUserClaude = here !== null && here === (await realPath($, `${homeOf(env)}/.claude`));
   return stateCheckContext({ cwd, inbox, capture, claude, agents, isUserClaude });
-}
-
-async function inPluginCache($, env, engine) {
-  const [kit, claudeHome] = await Promise.all([
-    realPath($, `${engine}/..`), realPath($, env.WORKFLOW_CLAUDE_HOME || `${homeOf(env)}/.claude`),
-  ]);
-  if (!kit || !claudeHome || !kit.startsWith(`${claudeHome}/plugins/cache/`)) return false;
-  try {
-    return JSON.parse(await $.fs.read(`${kit}/.claude-plugin/plugin.json`)).name === 'workkit';
-  } catch {
-    return false;
-  }
-}
-
-async function standardsHook($, env, e) {
-  const engine = env.WORKFLOW_DIR || `${$.plugin.root}/workflow`;
-  const cliLink = `${homeOf(env)}/.local/bin/workkit`;
-  const isSetUp = await exists($, cliLink);
-  const state = { isSetUp, cliLink, engine, isInCache: false, root: null, broken: null, offer: '' };
-  if (!isSetUp) {
-    state.engine = (await realPath($, engine)) ?? engine;
-    state.isInCache = await inPluginCache($, env, engine);
-  }
-  state.root = await gitTop($, e.cwd);
-  const { root } = state;
-  if (!root) return standardsContext(state, null, null);
-  const standards = `${engine}/standards.sh`;
-  const manifest = `${engine}/labels.json`;
-  // A broken install speaks once, only for a repo that said yes.
-  let broken = null;
-  if (!(await exists($, standards))) broken = `workflow engine not found at ${standards}. Reinstall the workkit plugin.`;
-  else if ((await readText($, manifest)) === null) broken = `workflow manifest missing or unreadable at ${manifest}. Reinstall the workkit plugin.`;
-  if (broken) {
-    state.broken = settingsOptedIn(await readText($, `${root}/.workkit/settings.json`)) ? broken : null;
-    return standardsContext(state, null, null);
-  }
-  // The engine owns the participation states; its answer is stdout's last line.
-  const asked = await run($, ['bash', standards, '--state', root]);
-  const participation = asked.exitCode === 0 ? asked.stdout.trimEnd().split('\n').pop() : 'nogit';
-  if (participation === 'undecided') {
-    state.offer = (await run($, ['bash', standards, '--announce', root])).stdout.trimEnd();
-  }
-  if (participation !== 'enabled') return standardsContext(state, null, null);
-  const marker = `${env.WORKFLOW_STANDARDS_CACHE || `${homeOf(env)}/.claude/logs/workflow-standards`}/${await sha1Hex(root)}`;
-  const today = localDay(await now($));
-  if ((await readText($, marker)) === today) return standardsContext(state, null, null);
-  // Only a clean heal caches the day, so a partial one retries next session.
-  const heal = await run($, ['bash', standards, root], { env: { QUIET: '1' }, timeoutMs: HEAL_TIMEOUT_MS });
-  if (heal.exitCode === 0) await quiet($.fs.write(marker, today));
-  const cli = `${engine}/workkit.sh`;
-  const update = (await exists($, cli)) ? await run($, ['bash', cli, 'update', '--auto'], { timeoutMs: HEAL_TIMEOUT_MS }) : null;
-  return standardsContext(state, heal, update);
 }
 
 // The load-time surfaces' fingerprint, digested: the files a session reads
@@ -549,10 +503,12 @@ export function register(on) {
     const stamps = e.source === 'startup' || e.source === 'resume';
     const fires = [[HOOK.stateCheck, verdictOf(HOOK.stateCheck, opted)], [HOOK.standards, 'run']];
     if (stamps) fires.push([HOOK.reloadGuard, 'run']);
+    fires.push([HOOK.session, verdictOf(HOOK.session, opted)]);
     const contexts = await Promise.all([
       opted ? caught($, HOOK.stateCheck, stateCheckHook($, env, e)) : null,
-      caught($, HOOK.standards, standardsHook($, env, e)),
+      caught($, HOOK.standards, standardsGather(ioOf($, env), env, e)),
       stamps ? caught($, HOOK.reloadGuard, reloadStampHook($, env, e)) : null,
+      opted ? caught($, HOOK.session, sessionGather(ioOf($, env), env, e)) : null,
     ]);
     await logFires($, 'SessionStart', e, fires);
     return withContext(await next(e), contexts.filter(Boolean));
@@ -607,6 +563,16 @@ export function register(on) {
   }).catch(($, e, next) => (next.called
     ? next(e)
     : { deny: 'manager:resolver failed before this spawn started; re-issue the Agent call.' }));
+
+  // The warning reaches the owner alone: a Stop context would continue the turn.
+  on('classic.Stop', async ($, e, next) => {
+    const env = await envOf($);
+    if (env.HOOK_DISABLE === '1') return next(e);
+    const opted = await optedIn($, e.cwd);
+    if (opted) await caught($, HOOK.closeGuard, closeGuardGather(ioOf($, env), env, e));
+    await logFires($, 'Stop', e, [[HOOK.closeGuard, verdictOf(HOOK.closeGuard, opted)]]);
+    return next(e);
+  }).catch(passOn);
 
   on('session.end', async ($, e, next) => {
     if ((await envOf($)).HOOK_DISABLE === '1') return next(e);
