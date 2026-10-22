@@ -197,6 +197,48 @@ const run = async () => {
     assertEq(await markers().sessionMarker('workkit-thing', 'ab-12/c.d e', TMP), `${TMP}/workkit-thing/ab_12_c_d_e`, 'the path');
   });
 
+  group('markers: tempDirOf, the folder Git Bash means by ${TMPDIR:-/tmp}');
+
+  // The Windows inputs are handed over, so every branch runs on any platform.
+  const WIN = { TEMP: 'D:\\a\\_temp', LOCALAPPDATA: 'C:\\Users\\x\\AppData\\Local' };
+
+  await test('off Windows TMPDIR is the answer as given, /tmp when unset', () => {
+    assertEq(markers().tempDirOf({ TMPDIR: '/var/folders/gx/T/', ...WIN }, 'darwin'), '/var/folders/gx/T/', 'as given');
+    assertEq(markers().tempDirOf({ ...WIN }, 'linux'), '/tmp', 'unset reads /tmp, whatever TEMP says');
+  });
+
+  await test('on Windows /tmp, unset or with a rest, is the Windows temp folder plus the rest', () => {
+    assertEq(markers().tempDirOf({ ...WIN }, 'win32'), 'D:/a/_temp', 'unset is TEMP');
+    assertEq(markers().tempDirOf({ TMPDIR: '/tmp', ...WIN }, 'win32'), 'D:/a/_temp', '/tmp is TEMP');
+    assertEq(markers().tempDirOf({ TMPDIR: '/tmp/cg-x/', ...WIN }, 'win32'), 'D:/a/_temp/cg-x', 'the rest kept, its trailing slash off');
+    const local = { LOCALAPPDATA: WIN.LOCALAPPDATA };
+    assertEq(markers().tempDirOf({ TMPDIR: '/tmp/cg-x', ...local }, 'win32'), 'C:/Users/x/AppData/Local/Temp/cg-x', 'no TEMP: %LOCALAPPDATA%\\Temp');
+    assertEq(markers().tempDirOf({ TEMP: '/tmp', ...local }, 'win32'), 'C:/Users/x/AppData/Local/Temp', 'a POSIX TEMP names no Windows folder');
+  });
+
+  await test('on Windows a native TMP outranks TEMP, as Git Bash mounts /tmp on it', () => {
+    assertEq(markers().tempDirOf({ TMPDIR: '/tmp/cg-x', TMP: 'C:\\Users\\x\\Tmp', ...WIN }, 'win32'), 'C:/Users/x/Tmp/cg-x', 'TMP first');
+    assertEq(markers().tempDirOf({ TMP: '/tmp', ...WIN }, 'win32'), 'D:/a/_temp', 'a POSIX TMP falls through to TEMP');
+  });
+
+  await test('on Windows the /<drive>/ form is that drive', () => {
+    assertEq(markers().tempDirOf({ TMPDIR: '/d/a/_temp/cg-x', ...WIN }, 'win32'), 'D:/a/_temp/cg-x', 'the drive form');
+  });
+
+  await test('on Windows a native path is as given, in forward slashes', () => {
+    assertEq(markers().tempDirOf({ TMPDIR: 'D:\\a\\_temp\\cg-x\\', ...WIN }, 'win32'), 'D:/a/_temp/cg-x', 'backslashes');
+    assertEq(markers().tempDirOf({ TMPDIR: 'E:/scratch', ...WIN }, 'win32'), 'E:/scratch', 'forward slashes');
+  });
+
+  await test('guards: the facts carry TMPDIR as the folder it names, by the kit root\'s spelling', async () => {
+    const io = { pluginRoot: 'C:/kit', top: async () => null, read: async () => null, run: async () => null, stat: async () => null, now: () => 0 };
+    const call = { command: 'true', cwd: '/r' };
+    assertEq(mods('guards').bashFacts(io, { TMPDIR: '/tmp/cg-x', ...WIN }, call).env.TMPDIR, 'D:/a/_temp/cg-x', 'a drive-letter kit translates');
+    assertEq(mods('guards').bashFacts({ ...io, pluginRoot: '/kit' }, { TMPDIR: '/tmp/cg-x', ...WIN }, call).env.TMPDIR, '/tmp/cg-x', 'a POSIX kit reads it as given');
+    const chain = await mods('guards').runChain(io, { TMPDIR: '/tmp/cg-x', ...WIN }, [{ hook: 'safety:issue-guard', run: async (facts) => ({ context: facts.env.TMPDIR }) }], { tool: 'Write', gateDir: undefined });
+    assertEq(chain.notice, 'D:/a/_temp/cg-x', 'the file chain\'s facts translate the same');
+  });
+
   group('tree-hash.sh: the module\'s entry to wk_tree_hash');
 
   await test('given bash workflow/lib/tree-hash.sh <repo> and wk_tree_hash on the same tree, then equal ids', () => {

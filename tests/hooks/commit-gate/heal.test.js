@@ -175,6 +175,16 @@ const run = async () => {
     blocks(await judge(r, 'git commit -m "chore: drop the copy"'), T.noReview, 'a commit that breaks the CI job is not bookkeeping');
   });
 
+  await test('the still-runs question hands the entry its texts on stdin as `names -`, never a /dev/stdin path', async () => {
+    const r = mkVendoredRepo('changelog-lint.cjs');
+    gitRm(r, '.github/changelog-lint.cjs');
+    await judge(r, 'git commit -m "chore: drop the copy"');
+    const asked = r.calls.run.find((c) => c.argv.some((a) => a.endsWith('changelog-job.sh')) && c.argv.includes('names'));
+    assert(asked !== undefined, 'the entry was asked');
+    assertEq(asked.argv.slice(asked.argv.indexOf('names')).join(' '), 'names - .github/changelog-lint.cjs', 'the stdin marker, then the copy');
+    assert(asked.init.stdin.includes('.github/changelog-lint.cjs'), 'the workflow texts ride on stdin');
+  });
+
   await test('ports "checks.yml rewritten with one more changed line, no marker: exit 2"', async () => {
     const r = mkVendoredRepo('changelog-lint.cjs');
     gitRm(r, '.github/changelog-lint.cjs');

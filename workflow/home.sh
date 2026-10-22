@@ -72,6 +72,8 @@ WK_HOME_RUNNER_FILES=(
   'workflow/home/wizard.sh:brief/workflow/home/wizard.sh'
   'workflow/home/doctor.sh:brief/workflow/home/doctor.sh'
   'tower/api/lib/repos.js:brief/tower/api/lib/repos.js'
+  'hooks/mods/markers.js:brief/hooks/mods/markers.js'
+  'hooks/package.json:brief/hooks/package.json'
   'tower/api/lib/board.js:brief/tower/api/lib/board.js'
   'tower/app/targets/web/src/assets/js/libs/tower/github/sweep.js:brief/tower/app/targets/web/src/assets/js/libs/tower/github/sweep.js'
   'tower/api/lib/health.js:brief/tower/api/lib/health.js'

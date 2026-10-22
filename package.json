@@ -1,6 +1,9 @@
 {
   "name": "workkit",
   "private": true,
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
     "brief": "bash jobs/morning.sh --now",
     "nightly": "bash jobs/claude-nightly.sh --now",

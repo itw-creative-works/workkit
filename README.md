@@ -99,7 +99,7 @@ Each is one `SKILL.md` of bullets, at most 120 non-blank lines with no line over
 - git
 - the GitHub CLI (`gh`), signed in with `gh auth login`
 - jq
-- Node.js with npm, a current LTS release
+- Node.js with npm, 22.12 or newer (the root `package.json` names the floor)
 - the Claude Code CLI (`claude`)
 
 It runs on macOS, on Linux, and on Windows under Git Bash. The 9am schedule on your own machine is macOS only; everywhere else the same brief runs in the cloud from your home repo.

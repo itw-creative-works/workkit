@@ -262,19 +262,24 @@ wk_changelog_job_rewrite() {
 
 # The entry the hooks module runs, each mode the function it names, its stdout
 # and exit status passed through: `rewrite <checks.yml> [template]` (the
-# template wk_checks_template names by default), `copies`, and `names <file>
-# [copy]` over the file's text. Run as a file only: sourced, this does nothing.
+# template wk_checks_template names by default), `copies`, and `names <file|->
+# [copy]` over the file's text, or with `-` over its own stdin. Run as a file
+# only: sourced, this does nothing.
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${#BASH_SOURCE[@]}" -eq 1 ]; then
   set -uo pipefail
   set -f
-  usage() { echo "changelog-job.sh: usage: rewrite <checks.yml> [template] | copies | names <file> [copy]" >&2; exit 64; }
+  usage() { echo "changelog-job.sh: usage: rewrite <checks.yml> [template] | copies | names <file|-> [copy]" >&2; exit 64; }
   case "${1:-}" in
     rewrite) [ -n "${2:-}" ] || usage; wk_changelog_job_rewrite "$2" "${3:-$(wk_checks_template)}" ;;
     copies) wk_linter_copies ;;
     names)
       [ -n "${2:-}" ] || usage
-      { exec 3< "$2"; } 2>/dev/null || { echo "changelog-job.sh: cannot read $2" >&2; exit 2; }
-      wk_names_linter_copy "${@:3}" <&3 ;;
+      # A socket stdin (Linux, Git Bash) cannot be reopened by path, so `-` reads fd 0 as it is.
+      if [ "$2" = - ]; then wk_names_linter_copy "${@:3}"
+      else
+        { exec 3< "$2"; } 2>/dev/null || { echo "changelog-job.sh: cannot read $2" >&2; exit 2; }
+        wk_names_linter_copy "${@:3}" <&3
+      fi ;;
     *) usage ;;
   esac
 fi

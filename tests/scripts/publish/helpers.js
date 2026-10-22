@@ -50,6 +50,12 @@ const mkWorld = ({
   fs.mkdirSync(path.join(kit, 'tower'), { recursive: true });
   spawnSync('cp', ['-R', path.join(REPO_ROOT, 'workflow'), kit]);
   spawnSync('cp', ['-R', path.join(REPO_ROOT, 'tower', 'api'), path.join(kit, 'tower')]);
+  // The tower's temp folder rule lives in the hooks module, which the home
+  // runner seeds the same way (workflow/home.sh); the package.json makes the
+  // copy a module.
+  fs.mkdirSync(path.join(kit, 'hooks', 'mods'), { recursive: true });
+  fs.copyFileSync(path.join(REPO_ROOT, 'hooks', 'package.json'), path.join(kit, 'hooks', 'package.json'));
+  fs.copyFileSync(path.join(REPO_ROOT, 'hooks', 'mods', 'markers.js'), path.join(kit, 'hooks', 'mods', 'markers.js'));
 
   // The build: an `npm --prefix <clone>/targets/web run build` that writes dist/
   // beside src/, as `omega build` does. It records the path prefix its env

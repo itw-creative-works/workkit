@@ -16,6 +16,7 @@ const { execFileSync } = require('child_process');
 // runner seed keeps both trees at the same relative depth, so this resolves there too.
 const { slugFromRemote } = require('../../../workflow/slug');
 const { homeUserDir } = require('../../../workflow/user-dir');
+const { tempDirOf } = require('../../../hooks/mods/markers.js');
 
 const WORKKIT_DIR = '.workkit';
 
@@ -38,8 +39,8 @@ const gitPath = (p) => (process.platform === 'win32' ? p.replace(/\\/g, '/') : p
 /**
  * This machine's temp root, where the harness keeps its per-session files:
  * `TMPDIR`, else the Darwin per-user temp dir, else `os.tmpdir()`. On Windows a
- * POSIX answer (Git Bash exports `TMP=/tmp`) becomes `%LOCALAPPDATA%\Temp`,
- * which is what Git Bash's `/tmp` is. Platform read at call time, as `gitPath`.
+ * POSIX answer (Git Bash exports `TMP=/tmp`) becomes the folder Git Bash means by
+ * it, through the hooks' `tempDirOf`. Platform read at call time, as `gitPath`.
  * @param {Function} [exec] (cmd, args) => stdout: the `getconf` seam
  * @returns {string}
  */
@@ -53,8 +54,9 @@ const tempRoot = (exec = defaultExec) => {
     }
   }
   base = base || os.tmpdir();
-  if (process.platform === 'win32' && base.startsWith('/') && process.env.LOCALAPPDATA) {
-    return path.join(process.env.LOCALAPPDATA, 'Temp');
+  if (process.platform === 'win32' && base.startsWith('/')) {
+    const { TMP, TEMP, LOCALAPPDATA } = process.env;
+    return tempDirOf({ TMPDIR: base, TMP, TEMP, LOCALAPPDATA }, 'win32');
   }
   return base;
 };

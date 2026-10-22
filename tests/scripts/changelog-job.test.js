@@ -278,6 +278,17 @@ const run = async () => {
       'a run: line in a CRLF file');
   });
 
+  await test('`changelog-job.sh names -` reads the text from its own stdin; a file argument, the file', () => {
+    const entry = (text, ...copy) => spawnSync(BASH, [...NO_RC, SEAM, 'names', '-', ...copy],
+      { input: text, env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: 20000 });
+    const runs = 'jobs:\n  x:\n    steps:\n      - run: node .github/changelog-lint.cjs CHANGELOG.md\n';
+    const hit = entry(runs, '.github/changelog-lint.cjs');
+    assertEq(hit.status, 0, `a text naming the copy, stderr: ${hit.stderr}`);
+    assertEq(entry(runs, '.github/changelog-lint.js').status, 1, 'a text naming another copy');
+    assertEq(entry('jobs:\n  x:\n    steps:\n      - run: npm test\n').status, 1, 'a text naming no copy');
+    assertEq(overFile(runs, `bash ${JSON.stringify(SEAM)} names "$1" .github/changelog-lint.cjs`).code, 0, 'a file argument still reads the file');
+  });
+
   await test('a workflow folder runs a copy when any file in it names one', () => {
     const dir = mkTmp('cl-job-');
     const wf = path.join(dir, '.github', 'workflows');

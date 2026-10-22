@@ -2,8 +2,10 @@
  * hooks/mods/markers.js: the files the hooks name by content, the port of
  * hooks/lib/markers.sh and the engine's wk_marker_path: the review, full-panel
  * and triage marker paths, the suite and package record paths, the
- * per-session marker path, and a file's age. Writers and readers name each
- * file through the one derivation, so the two sides never drift apart.
+ * per-session marker path, a file's age, and the folder they all live under
+ * (the one Git Bash means by `${TMPDIR:-/tmp}`, with the Windows test that
+ * decides it). Writers and readers name each file through the one derivation,
+ * so the two sides never drift apart.
  */
 
 /**
@@ -15,6 +17,34 @@
 export async function sha1Hex(text) {
   const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(text));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Whether the kit runs on Windows: its folder starts with a drive letter, the
+ * one signal the module has.
+ * @param {string} kit the plugin's root folder
+ * @returns {boolean}
+ */
+export const windowsKit = (kit) => /^[A-Za-z]:[\\/]/.test(kit);
+
+/**
+ * The folder the module reads markers under: the real folder Git Bash's
+ * `${TMPDIR:-/tmp}` names. Off Windows that is TMPDIR, `/tmp` when unset. On
+ * Windows Git Bash mounts `/tmp` on the Windows temp folder (the first native
+ * TMP or TEMP, else `%LOCALAPPDATA%\Temp`) and reads `/c/x` as `C:/x`; a native
+ * path is as given. A Windows answer is in forward slashes, trailing slash trimmed.
+ * @param {{TMPDIR?: string, TMP?: string, TEMP?: string, LOCALAPPDATA?: string}} env each unset when absent
+ * @param {string} platform `win32` on Windows
+ * @returns {string}
+ */
+export function tempDirOf({ TMPDIR, TMP, TEMP, LOCALAPPDATA }, platform) {
+  if (platform !== 'win32') return TMPDIR || '/tmp';
+  const given = (TMPDIR || '/tmp').replace(/\\/g, '/');
+  const winTemp = [TMP, TEMP].find((dir) => dir && !dir.startsWith('/')) || (LOCALAPPDATA && `${LOCALAPPDATA}/Temp`);
+  const mounted = (given === '/tmp' || given.startsWith('/tmp/')) && winTemp
+    ? `${winTemp.replace(/\\/g, '/').replace(/\/+$/, '')}${given.slice('/tmp'.length)}`
+    : given.replace(/^\/([A-Za-z])(\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`);
+  return mounted.replace(/([^:/])\/+$/, '$1');
 }
 
 /**

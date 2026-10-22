@@ -366,7 +366,8 @@ const run = async () => {
   await test('on Windows a POSIX temp answer is refused for the directory Git Bash means by it', () => {
     // Git for Windows exports `TMP=/tmp` to every login shell, so `os.tmpdir()`
     // hands back that string and `path.join` turns it into `C:\tmp`, a
-    // directory nothing writes to. Git Bash's `/tmp` is `%LOCALAPPDATA%\Temp`.
+    // directory nothing writes to. Git Bash's `/tmp` is the Windows temp folder:
+    // the first native TMP or TEMP, else `%LOCALAPPDATA%\Temp`.
     const saved = { ...process.env };
     try {
       delete process.env.TMPDIR;
@@ -375,8 +376,8 @@ const run = async () => {
       process.env.LOCALAPPDATA = 'C:\\Users\\x\\AppData\\Local';
       assertEq(
         asWindows(() => tempRoot(noGetconf)),
-        path.join('C:\\Users\\x\\AppData\\Local', 'Temp'),
-        'the directory Git Bash calls /tmp',
+        'C:/Users/x/AppData/Local/Temp',
+        'the directory Git Bash calls /tmp, in forward slashes',
       );
       // A native answer is already the right one and is left alone.
       process.env.TEMP = 'C:\\Users\\x\\AppData\\Local\\Temp';

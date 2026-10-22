@@ -14,6 +14,7 @@ import { commitLanguageGuard } from './commit-language.js';
 import { findingsGuardGuard } from './findings-guard.js';
 import { settingsOptedIn } from './gate.js';
 import { issueGuardGuard } from './issue-guard.js';
+import { tempDirOf, windowsKit } from './markers.js';
 import { isOptinExempt, optinRepo, rootOf, rosterOf } from './optin.js';
 import { proofGuardGuard } from './proof-guard.js';
 import { releaseTakenGuard } from './release-taken.js';
@@ -84,6 +85,12 @@ export async function folderOpted(io, dir) {
   return root !== null && settingsOptedIn(await io.read(`${root}/.workkit/settings.json`));
 }
 
+// The variables as a guard reads them: TMPDIR the folder Git Bash means by it,
+// so every marker read lands where the shell wrote.
+const guardEnv = (io, env) => ({
+  ...env, TMPDIR: tempDirOf(env, windowsKit(io.pluginRoot) ? 'win32' : 'posix'),
+});
+
 /**
  * The Bash guards' facts: the command and its folder, the variables, the
  * reads, a scratch write and the kit's folder; the origin is asked once, and
@@ -98,7 +105,7 @@ export function bashFacts(io, env, { command, cwd }) {
   return {
     command,
     cwd,
-    env,
+    env: guardEnv(io, env),
     originless: () => (origin ??= originless(cwd, io.run)),
     exists: (rel) => io.exists(`${cwd}/${rel}`),
     top: io.top,
@@ -132,7 +139,7 @@ export async function runChain(io, env, guards, facts) {
   const isBash = typeof facts.command === 'string';
   const opted = isBash ? await bashOpted(io, env, facts) : await folderOpted(io, facts.gateDir);
   const gathered = isBash ? bashFacts(io, env, facts) : {
-    ...facts, env, read: io.read, run: io.run, top: io.top, stat: io.stat, now: io.now,
+    ...facts, env: guardEnv(io, env), read: io.read, run: io.run, top: io.top, stat: io.stat, now: io.now,
   };
   const notices = [];
   for (const { hook, run } of guards) {

@@ -95,7 +95,7 @@ export function healArms(facts, root, all) {
     const texts = (await workflowTexts(check)).join('');
     // No workflow text names nothing, and an empty stdin reaches the entry closed.
     if (texts === '') return true;
-    return (await ask(check, 1, `wk_names_linter_copy ${path}`, job(['names', '/dev/stdin', path], { stdin: texts }))).exitCode === 1;
+    return (await ask(check, 1, `wk_names_linter_copy ${path}`, job(['names', '-', path], { stdin: texts }))).exitCode === 1;
   }
 
   // The copies an earlier heal vendored, asked once.

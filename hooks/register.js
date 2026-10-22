@@ -79,19 +79,20 @@ const withContext = (result, contexts) => (contexts.length === 0
 // Every variable the module reads, once per dispatch; an unreadable one is unset.
 async function envOf($) {
   const [
-    HOOK_DISABLE, WORKFLOW_HOME, HOME, USERPROFILE, TMPDIR, WORKFLOW_DIR, WORKFLOW_CLAUDE_HOME,
+    HOOK_DISABLE, WORKFLOW_HOME, HOME, USERPROFILE, TMPDIR, TMP, TEMP, LOCALAPPDATA, WORKFLOW_DIR, WORKFLOW_CLAUDE_HOME,
     STATE_CHECK_CACHE, WORKFLOW_STANDARDS_CACHE, RELOAD_GUARD_ROOT,
     MANAGER_LADDER, MANAGER_USER_SETTINGS, MANAGER_DEBUG, MANAGER_CLOSE_EDITS,
   ] = await Promise.all([
     quiet($.env.get('HOOK_DISABLE')), quiet($.env.get('WORKFLOW_HOME')), quiet($.env.get('HOME')),
-    quiet($.env.get('USERPROFILE')), quiet($.env.get('TMPDIR')), quiet($.env.get('WORKFLOW_DIR')),
+    quiet($.env.get('USERPROFILE')), quiet($.env.get('TMPDIR')), quiet($.env.get('TMP')),
+    quiet($.env.get('TEMP')), quiet($.env.get('LOCALAPPDATA')), quiet($.env.get('WORKFLOW_DIR')),
     quiet($.env.get('WORKFLOW_CLAUDE_HOME')), quiet($.env.get('STATE_CHECK_CACHE')),
     quiet($.env.get('WORKFLOW_STANDARDS_CACHE')), quiet($.env.get('RELOAD_GUARD_ROOT')),
     quiet($.env.get('MANAGER_LADDER')), quiet($.env.get('MANAGER_USER_SETTINGS')),
     quiet($.env.get('MANAGER_DEBUG')), quiet($.env.get('MANAGER_CLOSE_EDITS')),
   ]);
   return {
-    HOOK_DISABLE, WORKFLOW_HOME, HOME, USERPROFILE, TMPDIR, WORKFLOW_DIR, WORKFLOW_CLAUDE_HOME,
+    HOOK_DISABLE, WORKFLOW_HOME, HOME, USERPROFILE, TMPDIR, TMP, TEMP, LOCALAPPDATA, WORKFLOW_DIR, WORKFLOW_CLAUDE_HOME,
     STATE_CHECK_CACHE, WORKFLOW_STANDARDS_CACHE, RELOAD_GUARD_ROOT,
     MANAGER_LADDER, MANAGER_USER_SETTINGS, MANAGER_DEBUG, MANAGER_CLOSE_EDITS,
   };

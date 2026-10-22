@@ -9,7 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { BASH, NO_RC, shellPath } = require('../../lib/platform');
+const { BASH, NO_RC, shellPath, gitPath } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
 const { mods } = require('../../lib/mods-inputs');
 const { mkRepo: mkGitRepo } = require('../../lib/git-repo');
@@ -56,7 +56,11 @@ const run = async () => {
   await test('ports "the review skill\'s own line writes the marker this gate checks": at the path markers.js names', async () => {
     const world = mkGitRepo('cg-skill-', { 'app.js': 'const x = 1;\n' });
     const tmp = mkTmp('cg-skill-tmp-');
-    const marker = await mods('markers').reviewMarkerPath(world.repo, tmp);
+    // As the live sides build it: the root in git's spelling, under the folder
+    // the module reads for the TMPDIR the script is handed.
+    const { TMP, TEMP, LOCALAPPDATA } = process.env;
+    const tmpdir = mods('markers').tempDirOf({ TMPDIR: shellPath(tmp), TMP, TEMP, LOCALAPPDATA }, process.platform);
+    const marker = await mods('markers').reviewMarkerPath(gitPath(world.repo), tmpdir);
     const r = mkRepo();
     stage(r, 'app.js', 'const x = 2;\n');
     r.headTime = Number(world.git('log', '-1', '--format=%ct').trim());

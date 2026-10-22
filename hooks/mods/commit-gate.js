@@ -15,7 +15,7 @@ import { closedIssues, closesAny, commitFlags, isDocPath, isManifest, namedIssue
 import { HealHeld, healArms } from './commit-gate/heal.js';
 import { issueView } from './gh.js';
 import { userDirOf } from './log.js';
-import { markerPath, reviewMarkerPath, suiteMarkerPath } from './markers.js';
+import { markerPath, reviewMarkerPath, suiteMarkerPath, windowsKit } from './markers.js';
 import { viewHasProof, viewStage } from './proof.js';
 import { parseJson } from './settings.js';
 import { LONG_RUN_MS, hasTestScript, suiteProved, treeHash } from './suite.js';
@@ -235,7 +235,7 @@ async function rewriteOf(g, at, kit, text, template) {
   const made = await g.run(['mktemp', '-d'], { timeoutMs: LONG_RUN_MS });
   if (made.exitCode !== 0) return made;
   let dir = made.stdout.trim();
-  if (/^[A-Za-z]:[\\/]/.test(kit)) dir = (await g.run(['cygpath', '-m', dir])).stdout.trim() || dir;
+  if (windowsKit(kit)) dir = (await g.run(['cygpath', '-m', dir])).stdout.trim() || dir;
   try {
     await g.write(`${dir}/checks-head`, text);
     return await at(['bash', `${kit}/workflow/changelog/changelog-job.sh`, 'rewrite', `${dir}/checks-head`, ...(template ? [template] : [])], { timeoutMs: LONG_RUN_MS });
@@ -294,7 +294,7 @@ export async function commitGateGuard(g) {
     get treeId() { return treeId(); },
     indexTreeId: once(async () => treeHash(g.run, kit, await top(), '-u')),
     get scriptShell() { return scriptShell(); },
-    isWindows: /^[A-Za-z]:[\\/]/.test(kit),
+    isWindows: windowsKit(kit),
     kitRoot: kit,
     scriptShellExe: `${userDirOf(g.env)}/script-shell.exe`,
     real: g.real,
