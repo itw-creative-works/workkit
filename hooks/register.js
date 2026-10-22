@@ -17,7 +17,7 @@ import { isExempt } from './mods/gate.js';
 import { BASH_GUARDS, FILE_GUARDS, GUARDS_FAILED, POST_BASH_GUARDS, READ_GUARDS, folderOpted, runChain } from './mods/guards.js';
 import { appendLog, homeOf, logLine, pad, userDirOf } from './mods/log.js';
 import { crewClass, isAdvise, managerConfig } from './mods/manager.js';
-import { sha1Hex } from './mods/markers.js';
+import { sha1Hex, shellEnvOf, windowsKit } from './mods/markers.js';
 import { profileContext } from './mods/profile.js';
 import { reloadFingerprint, reloadGuardContext, surfacePaths } from './mods/reload-guard.js';
 import { resolverAdvice, resolverModel } from './mods/resolver.js';
@@ -76,7 +76,8 @@ const withContext = (result, contexts) => (contexts.length === 0
   ? result
   : { ...result, additionalContext: [...contexts, ...(result?.additionalContext ?? [])] });
 
-// Every variable the module reads, once per dispatch; an unreadable one is unset.
+// Every variable the module reads, once per dispatch, each folder the shell
+// spelled translated to the one it names; an unreadable one is unset.
 async function envOf($) {
   const [
     HOOK_DISABLE, WORKFLOW_HOME, HOME, USERPROFILE, TMPDIR, TMP, TEMP, LOCALAPPDATA, WORKFLOW_DIR, WORKFLOW_CLAUDE_HOME,
@@ -91,11 +92,11 @@ async function envOf($) {
     quiet($.env.get('MANAGER_LADDER')), quiet($.env.get('MANAGER_USER_SETTINGS')),
     quiet($.env.get('MANAGER_DEBUG')), quiet($.env.get('MANAGER_CLOSE_EDITS')),
   ]);
-  return {
+  return shellEnvOf({
     HOOK_DISABLE, WORKFLOW_HOME, HOME, USERPROFILE, TMPDIR, TMP, TEMP, LOCALAPPDATA, WORKFLOW_DIR, WORKFLOW_CLAUDE_HOME,
     STATE_CHECK_CACHE, WORKFLOW_STANDARDS_CACHE, RELOAD_GUARD_ROOT,
     MANAGER_LADDER, MANAGER_USER_SETTINGS, MANAGER_DEBUG, MANAGER_CLOSE_EDITS,
-  };
+  }, windowsKit($.plugin.root) ? 'win32' : 'posix');
 }
 
 async function readText($, path) {
@@ -414,7 +415,7 @@ async function resolverHook($, env, e, cwd) {
   if (env.MANAGER_DEBUG === '1') {
     const at = new Date(await now($));
     const line = `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())} class=${crewClass(e.subagentType)} mode=${isAdvise(config) ? 'advise' : 'rewrite'} model=${model} session=${e.parentModel || '?'}\n`;
-    const path = `${env.TMPDIR || '/tmp'}/claude-manager-resolver.log`;
+    const path = `${env.TMPDIR}/claude-manager-resolver.log`;
     await quiet($.fs.write(path, `${(await readText($, path)) ?? ''}${line}`));
   }
   return { model, isAdvise: isAdvise(config) };

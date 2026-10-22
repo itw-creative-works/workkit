@@ -197,7 +197,7 @@ const run = async () => {
     assertEq(await markers().sessionMarker('workkit-thing', 'ab-12/c.d e', TMP), `${TMP}/workkit-thing/ab_12_c_d_e`, 'the path');
   });
 
-  group('markers: tempDirOf, the folder Git Bash means by ${TMPDIR:-/tmp}');
+  group('markers: shellDirOf and tempDirOf, the folder Git Bash means by a path and by ${TMPDIR:-/tmp}');
 
   // The Windows inputs are handed over, so every branch runs on any platform.
   const WIN = { TEMP: 'D:\\a\\_temp', LOCALAPPDATA: 'C:\\Users\\x\\AppData\\Local' };
@@ -230,11 +230,24 @@ const run = async () => {
     assertEq(markers().tempDirOf({ TMPDIR: 'E:/scratch', ...WIN }, 'win32'), 'E:/scratch', 'forward slashes');
   });
 
+  await test('shellEnvOf: TMPDIR, WORKFLOW_HOME and HOME are the folders they name; an unset one stays unset', () => {
+    const got = markers().shellEnvOf({ TMPDIR: '/tmp/cg-x', WORKFLOW_HOME: '/c/Users/x/wk', HOME: '/c/Users/x', X: '1', ...WIN }, 'win32');
+    assertEq(got.TMPDIR, 'D:/a/_temp/cg-x', 'TMPDIR');
+    assertEq(got.WORKFLOW_HOME, 'C:/Users/x/wk', 'WORKFLOW_HOME');
+    assertEq(got.HOME, 'C:/Users/x', 'HOME');
+    assertEq(got.X, '1', 'the rest rides along');
+    const unset = markers().shellEnvOf({ ...WIN }, 'win32');
+    assertEq(unset.TMPDIR, 'D:/a/_temp', 'TMPDIR unset reads /tmp');
+    assert(!('WORKFLOW_HOME' in unset) && !('HOME' in unset), 'an unset folder is not added');
+    assertEq(markers().shellEnvOf({ TMPDIR: '/var/t', HOME: '/Users/x' }, 'darwin').HOME, '/Users/x', 'off Windows as given');
+  });
+
   await test('guards: the facts carry TMPDIR as the folder it names, by the kit root\'s spelling', async () => {
     const io = { pluginRoot: 'C:/kit', top: async () => null, read: async () => null, run: async () => null, stat: async () => null, now: () => 0 };
     const call = { command: 'true', cwd: '/r' };
     assertEq(mods('guards').bashFacts(io, { TMPDIR: '/tmp/cg-x', ...WIN }, call).env.TMPDIR, 'D:/a/_temp/cg-x', 'a drive-letter kit translates');
     assertEq(mods('guards').bashFacts({ ...io, pluginRoot: '/kit' }, { TMPDIR: '/tmp/cg-x', ...WIN }, call).env.TMPDIR, '/tmp/cg-x', 'a POSIX kit reads it as given');
+    assertEq(mods('guards').bashFacts(io, { WORKFLOW_HOME: '/c/Users/x/wk', ...WIN }, call).env.WORKFLOW_HOME, 'C:/Users/x/wk', 'the machine folder too');
     const chain = await mods('guards').runChain(io, { TMPDIR: '/tmp/cg-x', ...WIN }, [{ hook: 'safety:issue-guard', run: async (facts) => ({ context: facts.env.TMPDIR }) }], { tool: 'Write', gateDir: undefined });
     assertEq(chain.notice, 'D:/a/_temp/cg-x', 'the file chain\'s facts translate the same');
   });

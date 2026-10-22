@@ -14,7 +14,7 @@ import { commitLanguageGuard } from './commit-language.js';
 import { findingsGuardGuard } from './findings-guard.js';
 import { settingsOptedIn } from './gate.js';
 import { issueGuardGuard } from './issue-guard.js';
-import { tempDirOf, windowsKit } from './markers.js';
+import { shellEnvOf, windowsKit } from './markers.js';
 import { isOptinExempt, optinRepo, rootOf, rosterOf } from './optin.js';
 import { proofGuardGuard } from './proof-guard.js';
 import { releaseTakenGuard } from './release-taken.js';
@@ -85,11 +85,9 @@ export async function folderOpted(io, dir) {
   return root !== null && settingsOptedIn(await io.read(`${root}/.workkit/settings.json`));
 }
 
-// The variables as a guard reads them: TMPDIR the folder Git Bash means by it,
-// so every marker read lands where the shell wrote.
-const guardEnv = (io, env) => ({
-  ...env, TMPDIR: tempDirOf(env, windowsKit(io.pluginRoot) ? 'win32' : 'posix'),
-});
+// The variables as a guard reads them: each folder the one Git Bash means, so
+// every marker read and every machine-folder read lands where the shell wrote.
+const guardEnv = (io, env) => shellEnvOf(env, windowsKit(io.pluginRoot) ? 'win32' : 'posix');
 
 /**
  * The Bash guards' facts: the command and its folder, the variables, the
