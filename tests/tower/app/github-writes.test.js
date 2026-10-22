@@ -191,8 +191,8 @@ const run = async () => {
     // is a vocabulary word: both pinned, so a change to either cannot leave the
     // board and the hooks disagreeing with every test green.
     const fs = require('fs');
-    const libSrc = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'hooks', 'lib', 'proof.sh'), 'utf8');
-    assert(libSrc.includes('(^|\\n)[ \\t]*Proof:'), 'hooks/lib/proof.sh looks for the same line');
+    const libSrc = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'hooks', 'mods', 'proof.js'), 'utf8');
+    assert(libSrc.includes('(^|\\n)[ \\t]*Proof:'), 'hooks/mods/proof.js looks for the same line');
     const statusWords = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'workflow', 'labels.json'), 'utf8')).groups.status.values);
     assert(statusWords.includes('complete'), 'and the gated status is one the vocabulary names');
   });
@@ -298,19 +298,16 @@ const run = async () => {
     const statusWords = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'workflow', 'labels.json'), 'utf8')).groups.status.values);
     assert(statusWords.includes('specced'), 'and the gated status is one the vocabulary names');
 
-    // The rule's spellings: both headings and the small-item line, the same in each
-    // JS copy and in the hook's own dialect. The walk around them is held by the shared bodies.
+    // The rule's spellings: both headings and the small-item line, the same in
+    // each copy. The walk around them is held by the shared bodies.
     const root = path.join(__dirname, '..', '..', '..');
     const pageSrc = fs.readFileSync(path.join(root, 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'libs', 'tower', 'github', 'writes.js'), 'utf8');
-    const hookSrc = fs.readFileSync(path.join(root, 'hooks', 'safety', 'spec-guard', 'run.sh'), 'utf8');
-    for (const [home, src] of [['the endpoint', serverSrc], ['the page-side copy', pageSrc]]) {
+    const hookSrc = fs.readFileSync(path.join(root, 'hooks', 'mods', 'spec-guard.js'), 'utf8');
+    for (const [home, src] of [['the endpoint', serverSrc], ['the page-side copy', pageSrc], ['the hook', hookSrc]]) {
       assert(src.includes('/^## Spec\\s*$/'), `${home} opens the section on the Spec heading`);
       assert(src.includes('/^### Contract\\s*$/'), `${home} looks for the Contract heading`);
       assert(src.includes("=== 'None needed: small item.'"), `${home} passes the small-item line and nothing near it`);
     }
-    assert(hookSrc.includes('/^## Spec[[:space:]]*$/'), 'the hook opens the section on the same heading');
-    assert(hookSrc.includes("'^### Contract[[:space:]]*$'"), 'looks for the same Contract heading');
-    assert(hookSrc.includes("= 'None needed: small item.'"), 'and passes the same small-item line');
   });
 
   await test('intake files the issue the endpoint files - same labels, same default body', async () => {

@@ -16,10 +16,10 @@ const {
 const { mkRepo } = require('../lib/git-repo');
 const { treeOf } = require('../lib/red-snapshot');
 const { suiteMarkerPath, reviewMarkerPath } = require('../lib/suite-record');
-const { skipWithoutWrapper } = require('../lib/script-shell');
 const {
-  runHook, standDownMessage, scratchNpmrc, WRAPPER, EXE_ENV, EXE_CLAUDE_HOME,
-} = require('../hooks/commit-gate/helpers');
+  skipWithoutWrapper, scratchNpmrc, WRAPPER, EXE_ENV, EXE_CLAUDE_HOME,
+} = require('../lib/script-shell');
+const { gateOn } = require('../lib/real-gate');
 
 const CLI = path.join(__dirname, '..', '..', 'workflow', 'workkit.sh');
 
@@ -116,7 +116,7 @@ const run = async () => {
 
   group('workkit prove: the staged tree, never the folder');
 
-  await test('held work breaking a test in the folder, passing work staged: green, the index tree recorded, check 5 passes', () => {
+  await test('held work breaking a test in the folder, passing work staged: green, the index tree recorded, check 5 passes', async () => {
     const w = mkWorld();
     stagePassing(w);
     holdBreaking(w);
@@ -129,9 +129,9 @@ const run = async () => {
     const review = reviewMarkerPath(w.tmp, w.repo);
     fs.mkdirSync(path.dirname(review), { recursive: true });
     fs.writeFileSync(review, '');
-    const out = runHook(w.repo, 'git commit -m "feat: thing"', undefined, { TMPDIR: shellPath(w.tmp) });
-    assertEq(out.code, 0, `the commit of the staged tree passes the gate, got: ${out.stderr}`);
-    assert(standDownMessage(out).includes('suite proved'), `check 5 stands down on the record, got: ${out.stdout}`);
+    const out = await gateOn(w.repo, 'git commit -m "feat: thing"', { ...proveEnv(w), TMPDIR: shellPath(w.tmp) });
+    assertEq(out.deny, null, 'the commit of the staged tree passes the gate');
+    assert(out.context.includes('suite proved'), `check 5 stands down on the record, got: ${out.context}`);
     cleanup(w.dir);
   });
 

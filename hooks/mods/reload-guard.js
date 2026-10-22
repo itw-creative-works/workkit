@@ -3,7 +3,27 @@
  * surface that loads at session start (docs/hooks.md § workflow:reload-guard).
  */
 
-const NOTICE = 'workkit changed since this session loaded. /reload-plugins picks up new agents/skills, hook wiring and the hooks module; engine and shell hook script edits are already live';
+const NOTICE = 'workkit changed since this session loaded. /reload-plugins picks up new agents/skills, hook wiring and the hooks module; engine edits are already live';
+
+/**
+ * The load-time surface files, relative to the plugin root: `agents/*.md`,
+ * each skill's SKILL.md, hooks/register.js, and every file under hooks/mods
+ * at any depth.
+ * @param {function} list async, a folder's entries (`{ name, kind }`) by its
+ *   path from the root, [] when it cannot be read
+ * @returns {Promise<string[]>}
+ */
+export async function surfacePaths(list) {
+  const under = async (dir) => (await Promise.all((await list(dir)).map((f) => (f.kind === 'dir'
+    ? under(`${dir}/${f.name}`) : [`${dir}/${f.name}`])))).flat();
+  const [agents, skills, mods] = await Promise.all([list('agents'), list('skills'), under('hooks/mods')]);
+  return [
+    ...agents.filter((f) => f.name.endsWith('.md')).map((f) => `agents/${f.name}`),
+    ...skills.map((f) => `skills/${f.name}/SKILL.md`),
+    'hooks/register.js',
+    ...mods,
+  ];
+}
 
 /**
  * The load-time surfaces as one text: hooks.json by CONTENT, since a rewrite

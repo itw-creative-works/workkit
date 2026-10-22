@@ -8,7 +8,7 @@
 # the workflow core's template.
 #
 # The jobs mirror what the local hooks run: the npm test suite
-# (safety/commit-gate) and the CHANGELOG entry format (docs/changelog-guard).
+# (safety:commit-gate) and the CHANGELOG entry format (docs:changelog-guard).
 # A repo without a test script or without a CHANGELOG passes trivially. The
 # checks exist so a pull request from ANY author (cloud agent, collaborator,
 # laptop without the hooks) meets the same bar before merge.

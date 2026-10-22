@@ -6,21 +6,19 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const {
   group, test, assert, assertEq, summary, selfRun,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, shellPath, which, joinPath, stubTool, NODE_DIR, SYSTEM_PATH,
+  IS_WINDOWS, shellPath, which, joinPath, stubTool, NODE_DIR, SYSTEM_PATH,
 } = require('../lib/platform');
 const { reviewMarkerPath, suiteLogPath, treeHash } = require('../lib/suite-record');
-const { scratchNpmrc, WRAPPER, EXE_ENV } = require('../hooks/commit-gate/helpers');
 const {
-  cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, packaged,
+  scratchNpmrc, WRAPPER, EXE_ENV, cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, packaged,
 } = require('../lib/script-shell');
+const { gateOn: gateIn } = require('../lib/real-gate');
 
 const ROOT = path.join(__dirname, '..', '..');
-const GATE = path.join(ROOT, 'hooks', 'safety', 'commit-gate', 'run.sh');
 
 // A copy of the wrapper and its libs under <world.root>/claude/workkit, so a
 // case may rewrite it. On Windows the built exe reaches the copy through
@@ -38,14 +36,10 @@ const mkWrapperCopy = (world) => {
     : { shell: shellPath(file), env: {}, file };
 };
 
-// The commit gate asked about a plain code commit in <repo>, on a machine whose
-// npm names the wrapper, the gate helpers' default.
-const gateOn = (world, repo) => spawnSync(BASH, [...NO_RC, shellPath(GATE)], {
-  input: JSON.stringify({ cwd: shellPath(repo), tool_input: { command: 'git commit -m "feat: x"' } }),
-  env: { ...world.env, NPM_CONFIG_USERCONFIG: scratchNpmrc(WRAPPER), ...EXE_ENV },
-  encoding: 'utf8',
-  timeout: 30000,
-});
+// The commit gate, through the hooks module, asked about a plain code commit in
+// <repo>, on a machine whose npm names the wrapper.
+const gateOn = (world, repo) => gateIn(repo, 'git commit -m "feat: x"',
+  { ...world.env, NPM_CONFIG_USERCONFIG: scratchNpmrc(WRAPPER), ...EXE_ENV });
 
 const run = async () => {
   skipWithoutWrapper();
@@ -255,7 +249,7 @@ const run = async () => {
 
   group('script-shell: the commit gate honors the record');
 
-  await test('the gate blocks a staged code change, and after a green root run stands down', () => {
+  await test('the gate blocks a staged code change, and after a green root run stands down', async () => {
     const world = mkWorld();
     const repo = mkRepo({ scripts: { test: 'exit 0' } });
     fs.writeFileSync(path.join(repo, 'app.js'), 'const x = 2;\n');
@@ -264,14 +258,13 @@ const run = async () => {
     const review = reviewMarkerPath(world.tmp, repo);
     fs.mkdirSync(path.dirname(review), { recursive: true });
     fs.writeFileSync(review, '');
-    const before = gateOn(world, repo);
-    assertEq(before.status, 2, `no green run yet, got: ${before.stderr}`);
-    assert(before.stderr.includes('Run `npm test` at the repo root'), `naming the fix, got: ${before.stderr}`);
+    const before = await gateOn(world, repo);
+    assert(before.deny !== null, `no green run yet, so the commit is denied, got: ${before.context}`);
+    assert(before.deny.includes('Run `npm test` at the repo root'), `naming the fix, got: ${before.deny}`);
     assertEq(npm(world, repo, ['test']).code, 0, 'the root suite ran green');
-    const after = gateOn(world, repo);
-    assertEq(after.status, 0, `the record proves the staged tree, got: ${after.stderr}`);
-    assertEq(JSON.parse(after.stdout).systemMessage,
-      'commit-gate: suite proved: a green root `npm test` recorded this tree.', 'the stand-down line');
+    const after = await gateOn(world, repo);
+    assertEq(after.deny, null, 'the record proves the staged tree');
+    assertEq(after.context, 'commit-gate: suite proved: a green root `npm test` recorded this tree.', 'the stand-down line');
     cleanup(world.root); cleanup(repo);
   });
 

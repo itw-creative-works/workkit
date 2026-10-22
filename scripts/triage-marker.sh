@@ -1,7 +1,7 @@
 #!/bin/bash
 # scripts/triage-marker.sh: record that a workkit:triage drain is under way. The
-# safety/capture-guard hook reads the marker through the same helper before it
-# opens `.workkit/capture.md`; the skill calls this because the hash command
+# safety:capture-guard hook reads the marker at the same path (triageMarkerPath
+# in hooks/mods/markers.js) before it opens `.workkit/capture.md`; the skill calls this because the hash command
 # differs by platform (shasum, sha1sum). The anchor is the repo root, or $HOME
 # outside every repo, the same one the guard derives from the capture path.
 

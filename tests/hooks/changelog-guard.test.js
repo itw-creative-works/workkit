@@ -96,6 +96,14 @@ const run = async () => {
     assert(verdict(file).length > 0, 'blocked');
     cleanup(dir);
   });
+
+  group('changelog-guard.js: linterPath');
+
+  await test('linterPath is the plugin\'s workflow/changelog/changelog.js, and WORKFLOW_DIR wins over <pluginRoot>/workflow', () => {
+    const { linterPath } = mods('changelog-guard');
+    assertEq(linterPath({}, '/k'), '/k/workflow/changelog/changelog.js', 'the plugin root\'s engine');
+    assertEq(linterPath({ WORKFLOW_DIR: '/e' }, '/k'), '/e/changelog/changelog.js', 'WORKFLOW_DIR names another engine');
+  });
 };
 
 module.exports = async () => {

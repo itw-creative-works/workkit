@@ -1,11 +1,12 @@
 #!/bin/bash
 # hooks/lib/snapshot.sh: the repo snapshot scripts/red-proof.sh runs against,
-# which workflow/snapshot takes at the claim to status:building: its folder,
+# which workflow:snapshot takes at the claim to status:building: its folder,
 # take, add issues, the stale check, drop, and the per-run copy's worktree and
 # fill, which workflow/prove.sh shares.
-# SOURCED by hooks/_lib.sh, never executed: it defines functions and sets
-# nothing. It reads hook_is_* (the entry), hook_working_paths (lib/tree.sh) and
-# hook_issues_building (lib/proof.sh).
+# SOURCED by hooks/_lib.sh, where it defines functions and sets nothing. It
+# reads hook_is_* and hook_jq (the entry) and hook_working_paths (lib/tree.sh).
+# RUN directly, the hooks module's entry: `bash snapshot.sh
+# take|add|stale|drop <root> [args]` (the foot of the file).
 
 # hook_snapshot_root <dir>: the root of the repo holding <dir>, spelled by
 # pwd -P, the one key the hook and red-proof both find a snapshot by; 1 when
@@ -143,6 +144,25 @@ _hook_snapshot_record() {
   done
 }
 
+# hook_issues_building [repo]: the open issues at status:building, run in the
+# current directory: one line each, the number, a tab and the matching label;
+# 2 when gh cannot answer. Never agent:claimed: an agent:ok item keeps that
+# claim through the park. Consumer: hook_snapshot_stale. Its gh argv changes
+# together with buildingList in hooks/mods/gh.js.
+hook_issues_building() {
+  local repo="${1:-}" list
+  command -v gh >/dev/null 2>&1 || return 2
+  command -v jq >/dev/null 2>&1 || return 2
+  if [ -n "$repo" ]; then
+    list=$(gh issue list --repo "$repo" --state open --label status:building --limit 1000 --json number,labels 2>/dev/null) || return 2
+  else
+    list=$(gh issue list --state open --label status:building --limit 1000 --json number,labels 2>/dev/null) || return 2
+  fi
+  [ -n "$list" ] || return 2
+  hook_jq -r '.[] | [.number, ([.labels[]?.name // "" | select(. == "status:building")] | join(","))]
+    | select(.[1] != "") | "\(.[0])\t\(.[1])"' <<<"$list" 2>/dev/null || return 2
+}
+
 # hook_snapshot_stale <root> [repo]: 0 when none of the snapshot's issues is
 # still at status:building, 1 while one is or none is recorded (a claim whose
 # numbers could not be read), 2 when GitHub cannot answer. The read runs in
@@ -243,3 +263,26 @@ hook_snapshot_fill() {
     _hook_snapshot_modules "$root" "$dest" "$rel" || return 1
   done < <(find "$root" \( -name .git -prune \) -o \( -name node_modules -prune -print0 \))
 }
+
+# The entry the hooks module runs: `take <root> [issue]...`, `add <root>
+# <issue>...`, `stale <root> [repo]` and `drop <root>`, each the function of
+# that name, its exit status passed through. Run as a file only: sourced, from
+# _lib.sh or under it, this does nothing.
+if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${#BASH_SOURCE[@]}" -eq 1 ]; then
+  set -uo pipefail
+  set -f
+  snapshot_dir="${BASH_SOURCE[0]%/*}"
+  [ "$snapshot_dir" != "${BASH_SOURCE[0]}" ] || snapshot_dir="."
+  # shellcheck source=../_lib.sh
+  . "$snapshot_dir/../_lib.sh"
+  [ $# -ge 2 ] && [ -n "$2" ] || { echo "snapshot.sh: usage: take|add|stale|drop <root> [args]" >&2; exit 64; }
+  mode="$1"
+  shift
+  case "$mode" in
+    take) hook_snapshot_take "$@" ;;
+    add) hook_snapshot_add "$@" ;;
+    stale) hook_snapshot_stale "$@" ;;
+    drop) hook_snapshot_drop "$@" ;;
+    *) echo "snapshot.sh: unknown mode $mode (take, add, stale or drop)" >&2; exit 64 ;;
+  esac
+fi

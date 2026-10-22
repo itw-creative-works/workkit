@@ -223,6 +223,15 @@ describe('classic.SessionStart + UserPromptSubmit: workflow:reload-guard (reload
     })
   }
 
+  // The module's files at any depth are load-time surfaces, a mods subfolder's included.
+  for (const rel of ['hooks/mods/commit-gate/checks.js', 'hooks/mods/change-tracker/prompt.md']) {
+    test(`an edited ${rel} triggers the reload notice`, async ($, on) => {
+      const w = await stamped($, on, { kit: { [rel]: '// one\n' } })
+      w.touchKit(rel, '// two\n')
+      expect(noticed(await prompt($, 'hello'))).toBe(true)
+    })
+  }
+
   test('ports "a second session started after the change is current, and hears nothing"', async ($, on) => {
     const w = await stamped($, on)
     w.touchKit('agents/advisor.md', '# advisor\n')

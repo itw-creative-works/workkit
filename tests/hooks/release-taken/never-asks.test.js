@@ -1,69 +1,44 @@
-// Tests for hooks/safety/release-taken, the PreToolUse hook that refuses a
-// release whose version a provider already has: what it never asks about.
-// The shared prologue (the npm and gh stubs, the repo factory, the hook runner, the release command) is ./helpers.js.
+// Tests for safety:release-taken's logic: what it never asks about. Each case
+// ports the HEAD case its name quotes.
+// The shared prologue (the lookups, the verdict call, the texts) is ./helpers.js.
 
 const { group, test, assertEq, summary, selfRun } = require('../../lib/harness');
-const { fmtCalls } = require('../../lib/argv-log');
-const {
-  cleanup, makeStubs, npmCalls, ghCalls, mkRepo, runHook,
-} = require('./helpers');
+const { judge } = require('./helpers');
+
+const TAKEN_WORLD = { npmTaken: ['widget@1.2.3'], tags: ['v1.2.3'] };
+
+// Silence, and neither provider asked.
+const neverAsks = async (command, world = TAKEN_WORLD) => {
+  const { deny, text, calls } = await judge(command, world);
+  assertEq(deny, null, `not this hook's business: ${command}`);
+  assertEq(text, '', `and nothing said: ${command}`);
+  assertEq(calls.npm.length, 0, `npm is never asked for ${command}, got: ${calls.npm.join(' ')}`);
+  assertEq(calls.github.length, 0, `gh is never asked for ${command}, got: ${calls.github.join(' ')}`);
+};
 
 const run = async () => {
   group('release-taken: what it never asks about');
 
-  await test('a commit that is not a release, and a command that is no commit at all', () => {
-    const stubs = makeStubs({ npmTaken: ['widget@1.2.3'], tags: ['v1.2.3'] });
-    const dir = mkRepo();
-    for (const c of [
-      'git commit -m "feat: x"',
-      'git status',
-      'npm run build',
-    ]) {
-      assertEq(runHook(c, dir, stubs).code, 0, `not this hook's business: ${c}`);
-    }
-    assertEq(npmCalls(stubs).length, 0, `npm is never asked, got: ${fmtCalls(npmCalls(stubs))}`);
-    assertEq(ghCalls(stubs).length, 0, `gh is never asked, got: ${fmtCalls(ghCalls(stubs))}`);
-    cleanup(dir);
-    cleanup(stubs.dir);
+  await test('ports "a commit that is not a release, and a command that is no commit at all"', async () => {
+    for (const c of ['git commit -m "feat: x"', 'git status', 'npm run build']) await neverAsks(c);
   });
 
-  await test('the release subject mentioned mid-message is not a subject', () => {
-    const stubs = makeStubs({ npmTaken: ['widget@1.2.3'], tags: ['v1.2.3'] });
-    const dir = mkRepo();
-    const { code } = runHook(
-      'git commit -m "docs(ship): explain how chore(release): 1.2.3 is judged"', dir, stubs);
-    assertEq(code, 0, 'a commit ABOUT the release rule is not the release commit');
-    assertEq(npmCalls(stubs).length, 0, `npm is never asked, got: ${fmtCalls(npmCalls(stubs))}`);
-    assertEq(ghCalls(stubs).length, 0, `gh is never asked, got: ${fmtCalls(ghCalls(stubs))}`);
-    cleanup(dir);
-    cleanup(stubs.dir);
+  await test('ports "the release subject mentioned mid-message is not a subject"', async () => {
+    await neverAsks('git commit -m "docs(ship): explain how chore(release): 1.2.3 is judged"');
   });
 
-  await test('a dry run publishes nothing, so it is not a publish', () => {
-    const stubs = makeStubs({ npmTaken: ['widget@1.2.3'] });
-    const dir = mkRepo();
-    for (const c of ['npm publish --dry-run', 'npm publish --dry-run=true']) {
-      assertEq(runHook(c, dir, stubs).code, 0, `nothing is published: ${c}`);
-    }
-    assertEq(npmCalls(stubs).length, 0, `npm is never asked, got: ${fmtCalls(npmCalls(stubs))}`);
-    cleanup(dir);
-    cleanup(stubs.dir);
+  await test('ports "a dry run publishes nothing, so it is not a publish"', async () => {
+    for (const c of ['npm publish --dry-run', 'npm publish --dry-run=true']) await neverAsks(c, { npmTaken: ['widget@1.2.3'] });
   });
 
-  await test('a quoted mention of the release subject is not a commit', () => {
-    const stubs = makeStubs({ npmTaken: ['widget@1.2.3'], tags: ['v1.2.3'] });
-    const dir = mkRepo();
-    const { code } = runHook('echo "chore(release): 1.2.3"', dir, stubs);
-    assertEq(code, 0, 'talking about a release is not cutting one');
-    assertEq(npmCalls(stubs).length, 0, `npm is never asked, got: ${fmtCalls(npmCalls(stubs))}`);
-    assertEq(ghCalls(stubs).length, 0, `gh is never asked, got: ${fmtCalls(ghCalls(stubs))}`);
-    cleanup(dir);
-    cleanup(stubs.dir);
+  await test('ports "a quoted mention of the release subject is not a commit"', async () => {
+    await neverAsks('echo "chore(release): 1.2.3"');
   });
+};
 
+module.exports = async () => {
+  await run();
   return summary();
 };
 
-module.exports = run;
-
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(module.exports);

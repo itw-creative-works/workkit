@@ -1,10 +1,10 @@
 // A throwaway git repo on `main`: its own identity, one commit of the seeded
 // files, the unfetched FIXTURE_ORIGIN every fixture repo carries, and a scratch
 // home and TMPDIR so no child reads the real gitconfig. It is opted in to
-// workkit, since the hook loader steps aside in a repo that is not. Consumers:
-// red-proof, review-covers, commit-language, the loader; the commit-gate and
-// script-shell fixtures. `mkOriginRepo` is the minimal form: an init and an
-// origin, nothing committed.
+// workkit, since the hooks module stands down in a repo that is not. Consumers:
+// every suite that needs a real repo (red-proof, review-covers, prove, slug, the
+// identity and workkit-cli suites, the snapshot and command logic suites).
+// `mkOriginRepo` is the minimal form: an init and an origin, nothing committed.
 
 const fs = require('fs');
 const path = require('path');

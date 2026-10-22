@@ -1,7 +1,6 @@
 // Tests for the suite record and the package record that hooks/_lib.sh sources
 // from workflow/lib/suite.sh: the tree hash, the two records' paths, their write
-// and their read, and which command runs the root suite. The rest of _lib.sh is
-// tests/hooks/lib.test.js.
+// and their read. The rest of _lib.sh is tests/hooks/lib.test.js.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -106,19 +105,6 @@ const run = async () => {
     assert(!proved(OTHER_ID), 'another tree is not');
     assert(!proved(''), 'an empty tree (a failed hash) is never a match');
     fs.rmSync(marker);
-  });
-
-  await test('hook_suite_root_run: the root suite from the root or a nested dir, never a nested package npm run', () => {
-    const dir = mkTmp('lib-rootrun-');
-    git(dir, 'init', '-q');
-    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node tests/run.js' } }));
-    fs.mkdirSync(path.join(dir, 'sub'));
-    fs.writeFileSync(path.join(dir, 'sub', 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
-    const ask = (cmd, cwd) => runLib(`hook_suite_root_run "${cmd}" "${shellPath(dir)}" "${shellPath(cwd)}"`).stdout.trim();
-    assertEq(ask('npm test', dir), 'full', "npm at the root runs the root's suite");
-    assertEq(ask('node tests/run.js', dir), 'full', "the root's script run directly");
-    assertEq(ask('npm test', path.join(dir, 'sub')), '', "npm inside a nested tested package runs that package's suite");
-    assertEq(ask('cd .. && node tests/run.js', path.join(dir, 'sub')), 'full', "the root's script from a nested dir");
   });
 
   group('_lib.sh: the package record');

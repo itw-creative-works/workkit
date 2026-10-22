@@ -7,11 +7,10 @@
 
 import { settingsOptedIn } from './gate.js';
 import { homeOf, pad } from './log.js';
-import { parsed } from './manager.js';
+import { parseJson } from './settings.js';
+import { LONG_RUN_MS } from './suite.js';
 
 const ANSI = /\x1b\[[0-9;]*m/g;
-// The heal and the upkeep get process.run's ceiling, past the heal's worst case.
-const HEAL_TIMEOUT_MS = 600000;
 
 const localDay = (ms) => {
   const at = new Date(ms);
@@ -25,7 +24,7 @@ const localDay = (ms) => {
  * @param {string} text what the engine printed
  * @returns {string}
  */
-export function engineLines(text) {
+function engineLines(text) {
   return String(text ?? '').replace(ANSI, '').split('\n')
     .filter((line) => /^\s*(✓|⚠) /.test(line))
     .map((line) => line.replace(/^ *(✓|·|›|⚠|✖|⏳) /, ''))
@@ -82,7 +81,7 @@ async function inPluginCache(io, env, engine) {
     io.real(`${engine}/..`), io.real(env.WORKFLOW_CLAUDE_HOME || `${homeOf(env)}/.claude`),
   ]);
   if (!kit || !claudeHome || !kit.startsWith(`${claudeHome}/plugins/cache/`)) return false;
-  return parsed(await io.read(`${kit}/.claude-plugin/plugin.json`))?.name === 'workkit';
+  return parseJson(await io.read(`${kit}/.claude-plugin/plugin.json`))?.name === 'workkit';
 }
 
 /**
@@ -129,9 +128,9 @@ export async function standardsGather(io, env, e) {
   const today = localDay(await io.now());
   if ((await io.read(marker)) === today) return standardsContext(state, null, null);
   // Only a clean heal caches the day, so a partial one retries next session.
-  const heal = await io.run(['bash', standards, root], { env: { QUIET: '1' }, timeoutMs: HEAL_TIMEOUT_MS });
+  const heal = await io.run(['bash', standards, root], { env: { QUIET: '1' }, timeoutMs: LONG_RUN_MS });
   if (heal.exitCode === 0) await io.write(marker, today);
   const cli = `${engine}/workkit.sh`;
-  const update = (await io.exists(cli)) ? await io.run(['bash', cli, 'update', '--auto'], { timeoutMs: HEAL_TIMEOUT_MS }) : null;
+  const update = (await io.exists(cli)) ? await io.run(['bash', cli, 'update', '--auto'], { timeoutMs: LONG_RUN_MS }) : null;
   return standardsContext(state, heal, update);
 }

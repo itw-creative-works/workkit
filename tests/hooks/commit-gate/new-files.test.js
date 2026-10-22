@@ -1,121 +1,95 @@
-// Tests for hooks/safety/commit-gate: new source files need tests (the test-type proxy).
-// The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
+// Tests for safety:commit-gate's logic, commitGateVerdict(facts) in
+// hooks/mods/commit-gate.js: new source files need tests (the test-type
+// proxy, check 1). Each case ports the HEAD case its name quotes; every HEAD
+// case's mechanism survives.
+// The shared prologue (the repo in memory, the facts, the texts) is ./helpers.js.
 
-const path = require('path');
-const fs = require('fs');
-const { execSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { SYSTEM_BASH } = require('../../lib/platform');
+const { group, test, summary, selfRun } = require('../../lib/harness');
 const {
-  skipWithoutDigest, mkRepo, stage, touchMarker, proveTree, runHook, cleanup,
+  ROOT, T, NOTICE, mkRepo, stage, gitRm, commit, touchMarker, proveTree, judge, blocks, passes,
 } = require('./helpers');
 
-const run = async () => {
-  skipWithoutDigest();
+const TEST_SCRIPT = '{"scripts":{"test":"exit 0"}}';
 
+const run = async () => {
   group('commit-gate: new source files need tests (test-TYPE proxy)');
 
-  await test('new .js file, no test file staged: exit 2', () => {
-    const dir = mkRepo();
-    stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
-    stage(dir, 'thing.js', 'module.exports = 1;\n');
-    touchMarker(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m "x"');
-    assertEq(code, 2, 'new source without tests must block');
-    assert(stderr.includes('test file'), 'names the missing tests');
-    assert(stderr.includes('thing.js'), 'names the offending file');
-    cleanup(dir);
+  await test('ports "new .js file, no test file staged: exit 2"', async () => {
+    const r = mkRepo();
+    stage(r, 'package.json', TEST_SCRIPT);
+    stage(r, 'thing.js', 'module.exports = 1;\n');
+    touchMarker(r);
+    blocks(await judge(r, 'git commit -m "x"'), T.newFiles('thing.js'), 'new source without tests must block, naming the file');
   });
 
-  await test('new .js file WITH a test file staged: exit 0', () => {
-    const dir = mkRepo();
-    stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
-    stage(dir, 'thing.js', 'module.exports = 1;\n');
-    stage(dir, 'thing.test.js', 'require("./thing");\n');
-    touchMarker(dir);
-    proveTree(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m "x"');
-    assertEq(code, 0, `test file present → passes, stderr: ${stderr}`);
-    cleanup(dir);
+  await test('ports "new .js file WITH a test file staged: exit 0"', async () => {
+    const r = mkRepo();
+    stage(r, 'package.json', TEST_SCRIPT);
+    stage(r, 'thing.js', 'module.exports = 1;\n');
+    stage(r, 'thing.test.js', 'require("./thing");\n');
+    touchMarker(r);
+    proveTree(r);
+    passes(await judge(r, 'git commit -m "x"'), NOTICE.proved, 'a test file present passes');
   });
 
-  await test('new .js file in a repo with NO test script: proxy skipped, exit 0', () => {
-    const dir = mkRepo();
-    stage(dir, 'thing.js', 'module.exports = 1;\n');
-    touchMarker(dir);
-    const { code } = runHook(dir, 'git commit -m "x"');
-    assertEq(code, 0, 'repos without a test script are not asked to start here');
-    cleanup(dir);
+  await test('ports "new .js file in a repo with NO test script: proxy skipped, exit 0"', async () => {
+    const r = mkRepo();
+    stage(r, 'thing.js', 'module.exports = 1;\n');
+    touchMarker(r);
+    passes(await judge(r, 'git commit -m "x"'), '', 'repos without a test script are not asked to start here');
   });
 
-  await test('MODIFIED .js file (not added): proxy skipped, exit 0', () => {
-    const dir = mkRepo();
-    stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
-    stage(dir, 'thing.js', 'module.exports = 1;\n');
-    execSync('git commit -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    stage(dir, 'thing.js', 'module.exports = 2;\n');
-    touchMarker(dir);
-    proveTree(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m "x"');
-    assertEq(code, 0, `only ADDED files trigger the proxy, stderr: ${stderr}`);
-    cleanup(dir);
+  await test('ports "MODIFIED .js file (not added): proxy skipped, exit 0"', async () => {
+    const r = mkRepo();
+    stage(r, 'package.json', TEST_SCRIPT);
+    stage(r, 'thing.js', 'module.exports = 1;\n');
+    commit(r);
+    stage(r, 'thing.js', 'module.exports = 2;\n');
+    touchMarker(r);
+    proveTree(r);
+    passes(await judge(r, 'git commit -m "x"'), NOTICE.proved, 'only ADDED files trigger the proxy');
   });
 
-  await test('commit from a SUBDIRECTORY is gated identically (review regression)', () => {
-    // package.json and npm test are judged at the repo root, not the session
-    // cwd: a session sitting in repo/src must not slip past the proxy.
-    const dir = mkRepo();
-    stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
-    stage(dir, 'thing.js', 'module.exports = 1;\n');
-    fs.mkdirSync(path.join(dir, 'src'));
-    touchMarker(dir);
-    const { code, stderr } = runHook(path.join(dir, 'src'), 'git commit -m "x"');
-    assertEq(code, 2, 'subdir cwd must not skip the proxy');
-    assert(stderr.includes('test file'), 'same proxy message as from the root');
-    cleanup(dir);
+  await test('ports "commit from a SUBDIRECTORY is gated identically (review regression)"', async () => {
+    const r = mkRepo();
+    stage(r, 'package.json', TEST_SCRIPT);
+    stage(r, 'thing.js', 'module.exports = 1;\n');
+    touchMarker(r);
+    blocks(await judge(r, 'git commit -m "x"', { cwd: `${ROOT}/src` }), T.newFiles('thing.js'), 'a subdirectory cwd must not skip the proxy');
   });
 
-  await test('staged test-file DELETION does not satisfy the proxy (review regression)', () => {
-    const dir = mkRepo();
-    stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
-    fs.mkdirSync(path.join(dir, 'tests'));
-    stage(dir, 'tests/old.test.js', 'x;\n');
-    execSync('git commit -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    execSync('git rm -q tests/old.test.js', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    stage(dir, 'thing.js', 'module.exports = 1;\n');
-    touchMarker(dir);
-    const { code } = runHook(dir, 'git commit -m "x"');
-    assertEq(code, 2, 'a deleted test file is not "touching tests"');
-    cleanup(dir);
+  await test('ports "staged test-file DELETION does not satisfy the proxy (review regression)"', async () => {
+    const r = mkRepo();
+    stage(r, 'package.json', TEST_SCRIPT);
+    stage(r, 'tests/old.test.js', 'x;\n');
+    commit(r);
+    gitRm(r, 'tests/old.test.js');
+    stage(r, 'thing.js', 'module.exports = 1;\n');
+    touchMarker(r);
+    blocks(await judge(r, 'git commit -m "x"'), T.newFiles('thing.js'), 'a deleted test file is not "touching tests"');
   });
 
-  await test('new config/test-named files are exempt: exit 0', () => {
-    const dir = mkRepo();
-    stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
-    stage(dir, 'eslint.config.mjs', 'export default [];\n');
-    touchMarker(dir);
-    proveTree(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m "x"');
-    assertEq(code, 0, `config files need no tests, stderr: ${stderr}`);
-    cleanup(dir);
+  await test('ports "new config/test-named files are exempt: exit 0"', async () => {
+    const r = mkRepo();
+    stage(r, 'package.json', TEST_SCRIPT);
+    stage(r, 'eslint.config.mjs', 'export default [];\n');
+    touchMarker(r);
+    proveTree(r);
+    passes(await judge(r, 'git commit -m "x"'), NOTICE.proved, 'config files need no tests');
   });
 
-  await test('a new non-ASCII file name is named unquoted: exit 2', () => {
-    // git quotes a non-ASCII path in octal escapes by default, so the bounce
-    // would name a file that does not exist under that spelling.
-    const dir = mkRepo();
-    stage(dir, 'package.json', '{"scripts":{"test":"exit 0"}}');
-    stage(dir, 'café.js', 'module.exports = 1;\n');
-    touchMarker(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m "x"');
-    assertEq(code, 2, 'new source without tests must block');
-    assert(stderr.includes('café.js'), `names the file as spelled, got: ${stderr}`);
-    cleanup(dir);
+  await test('ports "a new non-ASCII file name is named unquoted: exit 2"', async () => {
+    const r = mkRepo();
+    stage(r, 'package.json', TEST_SCRIPT);
+    stage(r, 'café.js', 'module.exports = 1;\n');
+    touchMarker(r);
+    blocks(await judge(r, 'git commit -m "x"'), T.newFiles('café.js'), 'names the file as spelled');
   });
+};
 
+module.exports = async () => {
+  await run();
   return summary();
 };
 
-module.exports = run;
-
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(module.exports);

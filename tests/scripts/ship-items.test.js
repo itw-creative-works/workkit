@@ -1,7 +1,7 @@
 // Tests for workflow/ship/ship-items.sh: the ship's Step 0c read, the open qa and
 // complete issues one line each with the proof call made. `gh` is a stub answering
 // from fixtures; jq is the machine's own, since the proof read is a jq expression.
-// The proof rule is hooks/lib/proof.sh's, cased in tests/hooks/proof-guard/.
+// The proof rule is hooks/mods/proof.js's, cased in tests/hooks/proof-guard/.
 
 const fs = require('fs');
 const path = require('path');
@@ -218,14 +218,14 @@ const run = async () => {
 
   group('ship-items.sh: the script itself');
 
-  await test('its Proof: pattern is the one hooks/lib/proof.sh reads', () => {
-    // The pattern has four homes (hooks/lib/proof.sh, this script, and PROOF_LINE in
+  await test('its Proof: pattern is the one hooks/mods/proof.js reads', () => {
+    // The pattern has four homes (hooks/mods/proof.js, this script, and PROOF_LINE in
     // tower/api/server/validate.js and the dashboard's libs/tower/github/writes.js). The tower's
-    // two are pinned to hooks/lib/proof.sh in tests/tower/app/github-writes.test.js; this pins the ship's,
+    // two are pinned to hooks/mods/proof.js in tests/tower/app/github-writes.test.js; this pins the ship's,
     // so a change to one cannot leave the ship and the gate disagreeing.
     const pattern = '(^|\\n)[ \\t]*Proof:';
-    const libSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'hooks', 'lib', 'proof.sh'), 'utf8');
-    assert(libSrc.includes(pattern), `hooks/lib/proof.sh carries ${pattern}`);
+    const libSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'hooks', 'mods', 'proof.js'), 'utf8');
+    assert(libSrc.includes(pattern), `hooks/mods/proof.js carries ${pattern}`);
     assert(fs.readFileSync(SCRIPT, 'utf8').includes(pattern), `ship-items.sh carries ${pattern}`);
   });
 

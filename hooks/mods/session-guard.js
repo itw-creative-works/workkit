@@ -5,7 +5,7 @@
  */
 
 // The content-line count and its bar are docs:session's too (mods/session.js).
-export const MAX_BULLET_CHARS = 350;
+const MAX_BULLET_CHARS = 350;
 export const MAX_CONTENT_LINES = 40;
 
 const BULLET = /^[ \t]*[-*][ \t]/;

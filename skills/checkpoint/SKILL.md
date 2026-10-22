@@ -53,7 +53,7 @@ Status changes ARE checkpoint work. Apply every owner word that moves an issue's
 - Never `agent:ok`, and never a flip the owner did not speak. A verdict is applied, never inferred.
 - One case where a spoken pass does NOT move the label: a `status:qa` item whose comments carry no line starting `Proof:`.
   - Quote the owner's words under their `@<login>` on the issue as always, then LEAVE it at `status:qa` and say so in the Filed trail.
-  - The proof is a hard gate (spec § The proof), so `safety/proof-guard` bounces the flip anyway.
+  - The proof is a hard gate (spec § The proof), so `safety:proof-guard` bounces the flip anyway.
   - The fix is a re-park: the agent that built the item runs its layers and comments the `Proof:` line, then the flip follows.
 
 ## 4. Update `.workkit/agents/session.md`

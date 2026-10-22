@@ -20,8 +20,8 @@ FULL drain only; a scoped run sets none (§ Scoped mode). Run it before reading 
 bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/workkit/..}/scripts/triage-marker.sh"
 ```
 
-- It records that triage is running. `safety/capture-guard` checks it before a read of `.workkit/capture.md` or the rewrite that clears drained entries. That rewrite is an agent's only write to the file. Adding to it is the owner's alone; it is their capture surface at every other moment.
-- The script keys the marker to the session's repo root, which the capture file belongs to (`$HOME` outside every repo). It names the marker through the hook's own helper, so the two cannot drift.
+- It records that triage is running. `safety:capture-guard` checks it before a read of `.workkit/capture.md` or the rewrite that clears drained entries. That rewrite is an agent's only write to the file. Adding to it is the owner's alone; it is their capture surface at every other moment.
+- The script keys the marker to the session's repo root, which the capture file belongs to (`$HOME` outside every repo). It names the marker by the same key rule the hook reads it with (`wk_marker_path`, `triageMarkerPath` in the hooks module), so the two cannot drift.
 - `CLAUDE_PLUGIN_ROOT` is set only inside hook commands. The fallback reaches the plugin root through the engine's stable address. `~/.claude/workkit` is the engine folder INSIDE the plugin; its parent is the plugin.
 
 ## Sources to drain (the FULL drain; § Scoped mode reads only the named issues)
@@ -104,7 +104,7 @@ Instead of draining the inbox, sweep the OPEN board and apply the same litmus te
 1. List and read the open issues (`gh issue list --state open --json number,title,labels,body --limit 1000`). Group them by the test: *would closing one of these automatically mean the other is done too?*
 2. Present a merge PLAN and stop: **merge these** (which survives, which closes, what moves), **attach that** (an issue that becomes a checklist line or a comment on another), **keep these separate**. Every group gets one line of why, separations included.
 3. Execute ONLY on the owner's approval, group by group. Content moves to the survivor BEFORE the close: `gh issue comment <N> --body "Merged into #<survivor>."` then `gh issue close <N> --reason "not planned"`.
-   - GitHub files a duplicate under that reason, and nothing was built on the duplicate. So `safety/proof-guard` passes the close without a `Proof:` line. End with the Filed trail.
+   - GitHub files a duplicate under that reason, and nothing was built on the duplicate. So `safety:proof-guard` passes the close without a `Proof:` line. End with the Filed trail.
 
 ## Rules
 

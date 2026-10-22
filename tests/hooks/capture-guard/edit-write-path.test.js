@@ -1,60 +1,37 @@
-// Tests for hooks/safety/capture-guard: the Edit and Write path, the drain's
-// marker-gated rewrite, and the append no marker opens because the agent never
-// adds to the capture file; the finding route a refusal names, by findings.file.
-// The shared prologue (the scratch repo and TMPDIR, the marker helpers, the hook runner) is ./helpers.js.
+// Tests for safety:capture-guard's logic on the Edit and Write path and the
+// Bash writes: the drain's marker-gated rewrite, the append no marker opens,
+// and the finding route each refusal names, handed over as `route`. Each case
+// ports the HEAD case its name quotes; reading findings.file for the route is
+// the wiring's, in tests/mods/guards-capture-guard.test.ts. Shared facts: ./helpers.js.
 
-const fs = require('fs');
-const path = require('path');
 const {
   group, test, assert, assertEq, summary, WORKKIT_DIR: W, selfRun,
 } = require('../../lib/harness');
-const { shellPath } = require('../../lib/platform');
-const { mkTmp } = require('../../lib/scratch');
 const {
-  REPO, CAPTURE, skipWithoutDigest, clearMarker, touchMarker, runHook, bash,
+  REPO, CAPTURE, FRESH, ROUTE_OFF, ROUTE_ON, WRITE, REWRITE, bash, edit, write, denyOf, refuses, allows,
 } = require('./helpers');
 
-const edit = (file) => runHook({ tool_name: 'Edit', tool_input: { file_path: shellPath(file) } });
-const write = (file) => runHook({ tool_name: 'Write', tool_input: { file_path: shellPath(file) } });
-
 const run = async () => {
-  skipWithoutDigest();
-
   group('capture-guard: the Edit and Write path');
 
-  // The drain is the one write the file takes from an agent, so Edit/Write
-  // ride the same marker the reads do.
-  await test('editing or writing the capture file with no marker: exit 2', () => {
-    clearMarker();
-    for (const call of [() => edit(CAPTURE), () => write(CAPTURE), () => edit(`${W}/capture.md`)]) {
-      const { code, stderr } = call();
-      assertEq(code, 2, 'an unannounced write must block');
-      assert(stderr.includes('capture-guard'), 'names itself');
-      assert(stderr.includes('triage'), 'names the sanctioned path');
-      // The branch is the rewrite gate, so the refusal names the rewrite:
-      // the append rule is a different act and a different message.
-      assert(stderr.includes('BLOCKED rewriting'), 'the message matches the act');
-    }
+  await test('ports "editing or writing the capture file with no marker: exit 2": the refusal names the rewrite', async () => {
+    await refuses(edit(CAPTURE), REWRITE(), 'Edit');
+    await refuses(write(CAPTURE), REWRITE(), 'Write');
+    await refuses(edit(`${W}/capture.md`), REWRITE(), 'Edit, relative');
   });
 
-  await test('editing or writing it with a fresh marker: exit 0', () => {
-    touchMarker();
-    for (const call of [() => edit(CAPTURE), () => write(CAPTURE)]) {
-      const { code, stderr } = call();
-      assertEq(code, 0, `the triage drain clears entries, got: ${stderr}`);
-    }
+  await test('ports "editing or writing it with a fresh marker: exit 0"', async () => {
+    await allows(edit(CAPTURE, { markerAgeS: FRESH }), 'Edit');
+    await allows(write(CAPTURE, { markerAgeS: FRESH }), 'Write');
   });
 
-  await test('writing another file in .workkit/: exit 0', () => {
-    clearMarker();
-    assertEq(write(path.join(REPO, W, 'agents', 'session.md')).code, 0, 'only the capture file is gated');
+  await test('ports "writing another file in .workkit/: exit 0"', async () => {
+    await allows(write(`${REPO}/${W}/agents/session.md`), 'only the capture file is gated');
   });
 
   group('capture-guard: the agent never adds to the capture file');
 
-  // The capture file is cleared on triage, never added to. No marker opens an
-  // append: the marker means a drain is running, not a capture.
-  await test('an append into the capture file: exit 2 with and without a marker', () => {
+  await test('ports "an append into the capture file: exit 2 with and without a marker"', async () => {
     const appends = [
       `echo "- a thought" >> ${W}/capture.md`,
       `echo "- a thought" >>${W}/capture.md`,
@@ -62,85 +39,53 @@ const run = async () => {
       `echo x | tee -a ${W}/capture.md`,
       `cd ${W} && echo hi >> capture.md`,
     ];
-    clearMarker();
-    for (const c of appends) {
-      const { code, stderr } = bash(c);
-      assertEq(code, 2, `an append is never the agent's: ${c}`);
-      assert(stderr.includes('never adds to it'), 'states the rule');
-    }
-    touchMarker();
-    for (const c of appends) {
-      assertEq(bash(c).code, 2, `and a triage run does not open it either: ${c}`);
-    }
+    for (const c of appends) await refuses(bash(c), WRITE(), c);
+    for (const c of appends) await refuses(bash(c, { markerAgeS: FRESH }), WRITE(), `with a marker: ${c}`);
   });
 
-  await test('the capture CLI run by the agent: exit 2 with and without a marker', () => {
+  await test('ports "the capture CLI run by the agent: exit 2 with and without a marker"', async () => {
     const captures = [
       'bash ~/.claude/workkit/wk.sh note "a thought"',
       'workkit note "a thought"',
       'wk.sh note the thought',
       'cd /tmp && wk note "a thought"',
     ];
-    clearMarker();
-    for (const c of captures) {
-      // Where it points instead follows findings.file: the group below.
-      assertEq(bash(c).code, 2, `capture is the owner's: ${c}`);
-    }
-    touchMarker();
-    for (const c of captures) {
-      assertEq(bash(c).code, 2, `and a triage run does not open it either: ${c}`);
-    }
+    for (const c of captures) await refuses(bash(c), WRITE(), c);
+    for (const c of captures) await refuses(bash(c, { markerAgeS: FRESH }), WRITE(), `with a marker: ${c}`);
   });
 
-  // The CLI is caught where it is run, not where it is mentioned: prose about
-  // capture in an issue body, and a search for it, touch no capture file.
-  await test('the capture CLI merely named: exit 0', () => {
-    clearMarker();
+  await test('ports "the capture CLI merely named: exit 0"', async () => {
     for (const c of [
       `gh issue create --body 'the owner runs wk.sh note "x" to capture'`,
       'gh issue comment 1 --body "use workkit note for capture"',
       'rg wk.sh note docs/',
     ]) {
-      const { code, stderr } = bash(c);
-      assertEq(code, 0, `a mention runs nothing: ${c}, got: ${stderr}`);
+      await allows(bash(c), c);
     }
   });
 
-  await test('a rewrite of the capture file: marker-gated like a read', () => {
+  await test('ports "a rewrite of the capture file: marker-gated like a read"', async () => {
     const rewrites = [
       `echo x > ${W}/capture.md`,
       `echo x | tee ${W}/capture.md`,
       `sed -i '' 's/a/b/' ${W}/capture.md`,
       `perl -pi -e 's/a/b/' ${W}/capture.md`,
     ];
-    clearMarker();
-    for (const c of rewrites) {
-      assertEq(bash(c).code, 2, `a rewrite outside a triage run blocks: ${c}`);
-    }
-    touchMarker();
-    for (const c of rewrites) {
-      const { code, stderr } = bash(c);
-      assertEq(code, 0, `the drain rewrites freely: ${c}, got: ${stderr}`);
-    }
+    for (const c of rewrites) await refuses(bash(c), REWRITE(), c);
+    for (const c of rewrites) await allows(bash(c, { markerAgeS: FRESH }), `the drain rewrites freely: ${c}`);
   });
 
-  await test('a command redirecting elsewhere while naming the capture file: exit 0', () => {
-    clearMarker();
+  await test('ports "a command redirecting elsewhere while naming the capture file: exit 0"', async () => {
     for (const c of [
       `echo "${W}/capture.md" > /dev/null`,
       `echo "the captures live at ${W}/capture.md" >> notes.txt`,
       `ls -la ${W}/capture.md`,
     ]) {
-      const { code, stderr } = bash(c);
-      assertEq(code, 0, `only a write TO the capture file is gated: ${c}, got: ${stderr}`);
+      await allows(bash(c), c);
     }
   });
 
-  // tee, sed -i and perl -i are judged by their own argument: a pipeline whose
-  // writer points at another file writes to that file, whatever the command
-  // line mentions elsewhere.
-  await test('a writer keyword pointed at another file: exit 0', () => {
-    clearMarker();
+  await test('ports "a writer keyword pointed at another file: exit 0"', async () => {
     for (const c of [
       `wc -l ${W}/capture.md | tee -a /tmp/log`,
       `wc -l ${W}/capture.md | tee /tmp/log`,
@@ -148,56 +93,42 @@ const run = async () => {
       `ls ${W}/capture.md; sed -i '' s/a/b/ other.txt`,
       `git log --oneline -- ${W}/capture.md | tee changes.log`,
     ]) {
-      const { code, stderr } = bash(c);
-      assertEq(code, 0, `the keyword's own target decides: ${c}, got: ${stderr}`);
+      await allows(bash(c), c);
     }
   });
 
-  await test('the same keywords pointed AT the capture file: still gated', () => {
-    clearMarker();
-    assertEq(bash(`tee -a ${W}/capture.md`).code, 2, 'an append is never the agent\'s');
-    assertEq(bash(`sed -i '' s/a/b/ ${W}/capture.md`).code, 2, 'a rewrite needs the marker');
-    touchMarker();
-    assertEq(bash(`tee -a ${W}/capture.md`).code, 2, 'and no marker opens the append');
-    assertEq(bash(`sed -i '' s/a/b/ ${W}/capture.md`).code, 0, 'while the drain rewrites freely');
+  await test('ports "the same keywords pointed AT the capture file: still gated"', async () => {
+    await refuses(bash(`tee -a ${W}/capture.md`), WRITE(), 'an append is never the agent\'s');
+    await refuses(bash(`sed -i '' s/a/b/ ${W}/capture.md`), REWRITE(), 'a rewrite needs the marker');
+    await refuses(bash(`tee -a ${W}/capture.md`, { markerAgeS: FRESH }), WRITE(), 'and no marker opens the append');
+    await allows(bash(`sed -i '' s/a/b/ ${W}/capture.md`, { markerAgeS: FRESH }), 'while the drain rewrites freely');
   });
 
-  group('capture-guard: where a finding goes instead follows findings.file');
+  group('capture-guard: where a finding goes instead follows the route');
 
-  // Each refusal names the finding's route: chat with the setting off (no key
-  // at all), a status:inbox issue with it on. Both refusals are asked: the
-  // write (an append, the capture CLI) and the rewrite with no marker open.
-  const bashCall = (command) => ({ label: command, payload: { tool_name: 'Bash', tool_input: { command } } });
-  const denials = [
-    bashCall(`echo "- a thought" >> ${W}/capture.md`),
-    bashCall('workkit note "a thought"'),
-    bashCall(`echo x > ${W}/capture.md`),
-    { label: 'Edit of the capture file', payload: { tool_name: 'Edit', tool_input: { file_path: shellPath(CAPTURE) } } },
+  // Both refusals carry the route: the write (an append, the capture CLI) and
+  // the rewrite with no marker open.
+  const denials = (route) => [
+    [bash(`echo "- a thought" >> ${W}/capture.md`, { route }), WRITE(route), 'an append'],
+    [bash('workkit note "a thought"', { route }), WRITE(route), 'the capture CLI'],
+    [bash(`echo x > ${W}/capture.md`, { route }), REWRITE(route), 'a rewrite'],
+    [edit(CAPTURE, { route }), REWRITE(route), 'an Edit of the capture file'],
   ];
-  const deny = ({ label, payload }, settings) => {
-    const workflowHome = mkTmp('capture-guard-wfhome-');
-    if (settings) fs.writeFileSync(path.join(workflowHome, 'settings.json'), JSON.stringify(settings));
-    const out = runHook(payload, { WORKFLOW_HOME: shellPath(workflowHome) });
-    assertEq(out.code, 2, `the capture is refused: ${label}`);
-    return out.stderr;
-  };
 
-  await test('findings.file off: the refusal names chat as the route, never a status:inbox issue', () => {
-    clearMarker();
-    for (const c of denials) {
-      for (const settings of [null, { version: 1 }]) {
-        const stderr = deny(c, settings);
-        assert(/\bchat\b/i.test(stderr), `names chat: ${c.label}, got: ${stderr}`);
-        assert(!stderr.includes('status:inbox'), `files nothing: ${c.label}, got: ${stderr}`);
-      }
+  await test('ports "findings.file off: the refusal names chat as the route, never a status:inbox issue"', async () => {
+    for (const [call, expected, label] of denials(ROUTE_OFF)) {
+      const deny = denyOf(await call);
+      assertEq(deny, expected, `must block: ${label}`);
+      assert(/\bchat\b/i.test(deny), `names chat: ${label}`);
+      assert(!deny.includes('status:inbox'), `files nothing: ${label}`);
     }
   });
 
-  await test('findings.file on: the refusal names the status:inbox route', () => {
-    clearMarker();
-    for (const c of denials) {
-      const stderr = deny(c, { findings: { file: true } });
-      assert(stderr.includes('status:inbox'), `points at the issue: ${c.label}, got: ${stderr}`);
+  await test('ports "findings.file on: the refusal names the status:inbox route"', async () => {
+    for (const [call, expected, label] of denials(ROUTE_ON)) {
+      const deny = denyOf(await call);
+      assertEq(deny, expected, `must block: ${label}`);
+      assert(deny.includes('status:inbox'), `points at the issue: ${label}`);
     }
   });
 

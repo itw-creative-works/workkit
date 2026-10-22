@@ -1,196 +1,183 @@
-/* eslint-disable no-console */
-// Tests for hooks/safety/vendor-guard: the PreToolUse hook that blocks edits
-// to generated/vendor/installed files (node_modules, dist, build, vendor,
-// .bundle, lockfiles) before they happen. _attic/ is exempt by design.
+// Tests for safety:vendor-guard's logic, vendorGuardVerdict({ file, root,
+// ignored, kindOf }) in hooks/mods/vendor-guard.js: an edit to generated,
+// vendored or installed output (node_modules, vendor, .bundle, a dist/ or
+// build/ directly under a package root, lockfiles, gitignored files) is
+// refused; _attic/, .workkit/ and .env* are the allowlist. Each case ports the
+// HEAD case its name quotes, the tree it walked now a table of kinds; the
+// check-ignore and kind probes run in tests/mods/pre-tool-use-files.test.ts.
+// Nothing is dropped: "missing file_path: exit 0" is a null file here.
 
-const path = require('path');
-const os = require('os');
-const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
-const { BASH, SYSTEM_BASH, NO_RC, shellPath } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
+const { group, test, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
+const { mods } = require('../lib/mods-inputs');
 
-const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'vendor-guard', 'run.sh');
+const TAIL = 'Edit the SOURCE, not the output; a bug in a dependency gets fixed upstream, never patched in place.';
+const BLOCK = (file, why) => `vendor-guard: BLOCKED edit to ${file}: ${why} ${TAIL}`;
+const NODE_MODULES = 'node_modules/ is installed output.';
+const VENDORED = 'generated/vendored directory.';
+const OUTPUT_DIR = 'a dist/ or build/ directly under a package root is generated output.';
+const LOCKFILE = 'lockfiles are owned by their package managers.';
+const IGNORED = 'the file is gitignored: generated/runtime files are not hand-edited (designed exceptions: _attic/, .workkit/, .env*).';
 
-const runHook = (filePath) => {
-  const input = JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: shellPath(filePath) } });
-  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-    input,
-    env: { ...process.env, HOME: shellPath(os.homedir()) },
-    encoding: 'utf8',
-    timeout: 10000,
-  });
-  return { code: res.status, stderr: res.stderr || '' };
+// A tree of kinds: every path not listed is absent (null), the answer a path
+// that does not exist gives, so its dist/ cannot be disproved.
+const kinds = (table) => async (path) => (path in table ? table[path] : null);
+const NOTHING = kinds({ '/': 'dir' });
+const never = async () => false;
+
+const judge = (file, { root = null, ignored = never, kindOf = NOTHING } = {}) => mods('vendor-guard')
+  .vendorGuardVerdict({ file, root, ignored, kindOf });
+
+const denyOf = (r) => (r && typeof r.deny === 'string' ? r.deny.replace(/\n$/, '') : null);
+
+const blocks = async (file, why, facts) => {
+  assertEq(denyOf(await judge(file, facts)), BLOCK(file, why), `must block: ${file}`);
+};
+
+const passes = async (file, facts) => {
+  const r = await judge(file, facts);
+  assertEq(denyOf(r), null, `must pass: ${file}`);
+};
+
+// A monorepo: a repo root holding a package.json and a build/, a package with
+// its own package.json and dist/, and source trees whose paths merely hold a build/.
+const MONO = '/w/mono';
+const MONO_FACTS = {
+  root: MONO,
+  kindOf: kinds({
+    '/': 'dir',
+    '/w': 'dir',
+    [MONO]: 'dir',
+    [`${MONO}/.git`]: 'dir',
+    [`${MONO}/package.json`]: 'file',
+    [`${MONO}/build`]: 'dir',
+    [`${MONO}/packages`]: 'dir',
+    [`${MONO}/packages/foo`]: 'dir',
+    [`${MONO}/packages/foo/package.json`]: 'file',
+    [`${MONO}/packages/foo/dist`]: 'dir',
+    [`${MONO}/packages/foo/src`]: 'dir',
+    [`${MONO}/packages/foo/src/test`]: 'dir',
+    [`${MONO}/packages/foo/src/test/suites`]: 'dir',
+    [`${MONO}/packages/foo/src/test/suites/build`]: 'dir',
+    [`${MONO}/src`]: 'dir',
+    [`${MONO}/src/assets`]: 'dir',
+    [`${MONO}/src/assets/build`]: 'dir',
+  }),
+};
+
+// A repo whose .gitignore holds generated.json and .env.
+const GIT = '/w/git';
+const GIT_FACTS = {
+  root: GIT,
+  ignored: async (path) => [`${GIT}/generated.json`, `${GIT}/.env`].includes(path),
+  kindOf: kinds({ '/': 'dir', '/w': 'dir', [GIT]: 'dir', [`${GIT}/.git`]: 'dir' }),
 };
 
 const run = async () => {
   group('vendor-guard: blocked paths');
 
-  await test('node_modules/: exit 2', () => {
-    const { code, stderr } = runHook('/repo/node_modules/lodash/index.js');
-    assertEq(code, 2, 'node_modules edits must block');
-    assert(stderr.includes('vendor-guard'), 'names itself');
-    assert(stderr.includes('SOURCE'), 'points at the source-not-output rule');
+  await test('ports "node_modules/: exit 2": names itself and points at the source-not-output rule', async () => {
+    await blocks('/repo/node_modules/lodash/index.js', NODE_MODULES);
   });
 
-  await test('dist/, build/, vendor/, .bundle/ segments: exit 2', () => {
-    for (const p of ['/repo/dist/app.js', '/repo/build/out.css', '/repo/vendor/lib.rb', '/repo/.bundle/config']) {
-      const { code } = runHook(p);
-      assertEq(code, 2, `${p} must block`);
-    }
+  await test('ports "dist/, build/, vendor/, .bundle/ segments: exit 2"', async () => {
+    await blocks('/repo/dist/app.js', OUTPUT_DIR);
+    await blocks('/repo/build/out.css', OUTPUT_DIR);
+    await blocks('/repo/vendor/lib.rb', VENDORED);
+    await blocks('/repo/.bundle/config', VENDORED);
   });
 
-  await test('lockfiles: exit 2', () => {
+  await test('ports "lockfiles: exit 2": explains lockfile ownership', async () => {
     for (const p of ['/repo/package-lock.json', '/repo/yarn.lock', '/repo/pnpm-lock.yaml', '/repo/Gemfile.lock']) {
-      const { code, stderr } = runHook(p);
-      assertEq(code, 2, `${p} must block`);
-      assert(stderr.includes('package managers'), 'explains lockfile ownership');
+      await blocks(p, LOCKFILE);
     }
   });
 
-  await test('RELATIVE vendor paths blocked; relative _attic/ exempt (review regression)', () => {
-    assertEq(runHook('node_modules/foo/index.js').code, 2, 'relative node_modules must block');
-    assertEq(runHook('dist/app.js').code, 2, 'relative dist must block');
-    assertEq(runHook('_attic/old.js').code, 0, 'relative _attic is exempt');
+  await test('ports "RELATIVE vendor paths blocked; relative _attic/ exempt (review regression)"', async () => {
+    await blocks('node_modules/foo/index.js', NODE_MODULES);
+    await blocks('dist/app.js', OUTPUT_DIR);
+    await passes('_attic/old.js');
   });
 
   group('vendor-guard: allowed paths');
 
-  await test('ordinary source file: exit 0', () => {
-    const { code, stderr } = runHook('/repo/src/index.js');
-    assertEq(code, 0, 'source edits pass');
-    assertEq(stderr, '', 'silent');
+  await test('ports "ordinary source file: exit 0": silent', async () => {
+    const r = await judge('/repo/src/index.js');
+    assertEq(r ?? null, null, 'a source edit says nothing');
   });
 
-  await test('_attic/ is exempt even with vendor segments: exit 0', () => {
-    const { code } = runHook('/repo/_attic/dist/old-thing.js');
-    assertEq(code, 0, '_attic writes are by design');
+  await test('ports "_attic/ is exempt even with vendor segments: exit 0"', async () => {
+    await passes('/repo/_attic/dist/old-thing.js');
   });
 
-  await test('.workkit/ is exempt: agent state and the capture file (workflow spec, 2026-07-24)', () => {
-    assertEq(runHook(`/repo/${W}/fable-cutover.md`).code, 0, `absolute ${W} is exempt`);
-    assertEq(runHook(`${W}/capture.md`).code, 0, `relative ${W} is exempt`);
-    assertEq(runHook(`/repo/${W}/settings.json`).code, 0, 'the committed opt-in is editable');
+  // The repo gitignores .workkit/ as the workflow spec says; the exemption
+  // stands ahead of the gitignore check.
+  await test('ports ".workkit/ is exempt: agent state and the capture file"', async () => {
+    const facts = {
+      root: '/repo',
+      ignored: async (path) => path.includes(`/${W}/`),
+      kindOf: kinds({ '/': 'dir', '/repo': 'dir', '/repo/.git': 'dir' }),
+    };
+    await passes(`/repo/${W}/fable-cutover.md`, facts);
+    await passes(`${W}/capture.md`, facts);
+    await passes(`/repo/${W}/settings.json`, facts);
   });
 
-  await test('.workkit/ nested in a vendor directory still blocks (review regression)', () => {
-    for (const p of [
-      `/repo/node_modules/pkg/${W}/notes.md`,
-      `/repo/dist/${W}/capture.md`,
-      `node_modules/pkg/${W}/settings.json`,
-    ]) {
-      assertEq(runHook(p).code, 2, `${p} is installed output, exception or not`);
-    }
-    // _attic/ keeps its precedence: a parked attic may legitimately hold a dist/.
-    assertEq(runHook(`/repo/_attic/dist/${W}/notes.md`).code, 0, '_attic still outranks');
+  await test('ports ".workkit/ nested in a vendor directory still blocks (review regression)"', async () => {
+    await blocks(`/repo/node_modules/pkg/${W}/notes.md`, NODE_MODULES);
+    await blocks(`/repo/dist/${W}/capture.md`, OUTPUT_DIR);
+    await blocks(`node_modules/pkg/${W}/settings.json`, NODE_MODULES);
+    await passes(`/repo/_attic/dist/${W}/notes.md`);
   });
 
-  await test('file merely NAMED dist.js: exit 0 (segment match only)', () => {
-    const { code } = runHook('/repo/src/dist.js');
-    assertEq(code, 0, 'only directory segments match, not basenames');
+  await test('ports "file merely NAMED dist.js: exit 0 (segment match only)"', async () => {
+    await passes('/repo/src/dist.js');
   });
 
-  group('vendor-guard: dist/ and build/ anchored to package roots (#63)');
+  group('vendor-guard: dist/ and build/ anchored to package roots');
 
-  const fsp = require('fs');
-  // A monorepo fixture: repo root (git + package.json), a package with its own
-  // package.json, and a committed source tree whose path merely holds a build/.
-  const mkMonorepo = () => {
-    const dir = mkTmp('vg-pkg-');
-    fsp.mkdirSync(path.join(dir, '.git'), { recursive: true });
-    fsp.writeFileSync(path.join(dir, 'package.json'), '{}\n');
-    fsp.mkdirSync(path.join(dir, 'build'), { recursive: true });
-    fsp.mkdirSync(path.join(dir, 'packages', 'foo'), { recursive: true });
-    fsp.writeFileSync(path.join(dir, 'packages', 'foo', 'package.json'), '{}\n');
-    fsp.mkdirSync(path.join(dir, 'packages', 'foo', 'dist'), { recursive: true });
-    fsp.mkdirSync(path.join(dir, 'packages', 'foo', 'src', 'test', 'suites', 'build'), { recursive: true });
-    fsp.mkdirSync(path.join(dir, 'src', 'assets', 'build'), { recursive: true });
-    return dir;
-  };
-  const rmTree = (dir) => { try { fsp.rmSync(dir, { recursive: true, force: true }); } catch {} };
-
-  await test('src/test/suites/build/ is committed source: exit 0', () => {
-    const dir = mkMonorepo();
-    const p = path.join(dir, 'packages', 'foo', 'src', 'test', 'suites', 'build', 'x.test.js');
-    assertEq(runHook(p).code, 0, 'a build/ whose parent is not a package root is source');
-    rmTree(dir);
+  await test('ports "src/test/suites/build/ is committed source: exit 0"', async () => {
+    await passes(`${MONO}/packages/foo/src/test/suites/build/x.test.js`, MONO_FACTS);
   });
 
-  await test('build/ at the repo root still bounces: exit 2', () => {
-    const dir = mkMonorepo();
-    const { code, stderr } = runHook(path.join(dir, 'build', 'out.js'));
-    assertEq(code, 2, 'the repo root is a package root');
-    assert(stderr.includes('package root'), 'names the anchor');
-    rmTree(dir);
+  await test('ports "build/ at the repo root still bounces: exit 2": names the package-root anchor', async () => {
+    await blocks(`${MONO}/build/out.js`, OUTPUT_DIR, MONO_FACTS);
   });
 
-  await test('packages/<pkg>/dist/ with a package.json present: exit 2', () => {
-    const dir = mkMonorepo();
-    assertEq(runHook(path.join(dir, 'packages', 'foo', 'dist', 'index.js')).code, 2, 'a package output dir blocks');
-    rmTree(dir);
+  await test('ports "packages/<pkg>/dist/ with a package.json present: exit 2"', async () => {
+    await blocks(`${MONO}/packages/foo/dist/index.js`, OUTPUT_DIR, MONO_FACTS);
   });
 
-  await test('nested non-output build/ under a non-package dir: exit 0', () => {
-    const dir = mkMonorepo();
-    assertEq(runHook(path.join(dir, 'src', 'assets', 'build', 'tool.js')).code, 0, 'assets/build is not output');
-    rmTree(dir);
+  await test('ports "nested non-output build/ under a non-package dir: exit 0"', async () => {
+    await passes(`${MONO}/src/assets/build/tool.js`, MONO_FACTS);
   });
 
-  await test('unresolvable path with a dist/ segment stays blocked: exit 2 (default-deny)', () => {
-    assertEq(runHook('/nope/does-not-exist/dist/app.js').code, 2, 'what cannot be disproved stays blocked');
+  await test('ports "unresolvable path with a dist/ segment stays blocked: exit 2 (default-deny)"', async () => {
+    await blocks('/nope/does-not-exist/dist/app.js', OUTPUT_DIR);
   });
 
   group('vendor-guard: gitignored files');
 
-  const fs = require('fs');
-  const { execSync } = require('child_process');
-  const mkRepo = () => {
-    const dir = mkTmp('vg-test-');
-    execSync('git init', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    fs.writeFileSync(path.join(dir, '.gitignore'), 'generated.json\n.env\n');
-    return dir;
-  };
-  const rmDir = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
-
-  await test('gitignored file in a repo: exit 2', () => {
-    const dir = mkRepo();
-    const { code, stderr } = runHook(path.join(dir, 'generated.json'));
-    assertEq(code, 2, 'gitignored files must block');
-    assert(stderr.includes('gitignored'), 'names the reason');
-    rmDir(dir);
+  await test('ports "gitignored file in a repo: exit 2": names the reason', async () => {
+    await blocks(`${GIT}/generated.json`, IGNORED, GIT_FACTS);
   });
 
-  await test('.env is allowed even though gitignored', () => {
-    const dir = mkRepo();
-    const { code } = runHook(path.join(dir, '.env'));
-    assertEq(code, 0, '.env is a designed exception');
-    rmDir(dir);
+  await test('ports ".env is allowed even though gitignored"', async () => {
+    await passes(`${GIT}/.env`, GIT_FACTS);
   });
 
-  await test('tracked file in a repo: exit 0', () => {
-    const dir = mkRepo();
-    const { code } = runHook(path.join(dir, 'src.js'));
-    assertEq(code, 0, 'non-ignored files pass');
-    rmDir(dir);
+  await test('ports "tracked file in a repo: exit 0"', async () => {
+    await passes(`${GIT}/src.js`, GIT_FACTS);
   });
 
-  await test('file outside any git repo: exit 0', () => {
-    const dir = mkTmp('vg-norepo-');
-    const { code } = runHook(path.join(dir, 'scratch.txt'));
-    assertEq(code, 0, 'non-repo files pass (scratchpad, tmp)');
-    rmDir(dir);
+  await test('ports "file outside any git repo: exit 0"', async () => {
+    await passes('/w/norepo/scratch.txt', { root: null });
   });
 
   group('vendor-guard: fail-open');
 
-  await test('missing file_path: exit 0', () => {
-    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-      input: JSON.stringify({ tool_input: {} }),
-      env: { ...process.env, HOME: shellPath(os.homedir()) },
-      encoding: 'utf8',
-      timeout: 10000,
-    });
-    assertEq(res.status, 0, 'no file_path → fail open');
+  await test('ports "missing file_path: exit 0"', async () => {
+    const r = await judge(null);
+    assertEq(r ?? null, null, 'no file, no verdict');
   });
 };
 

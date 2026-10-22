@@ -86,7 +86,7 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 ## 5. Verify + review
 
 - Each agent runs only the test files touched by the edit it made or checks, as `npm test -- <files>` from that package's folder (`docs/project-state.md` § The proof).
-  - The park runs no root suite: its proof is the flip to `status:qa`, which runs nothing and needs a green `npm test` recorded on the parked tree for each package owning a touched test file (`safety/proof-guard`).
+  - The park runs no root suite: its proof is the flip to `status:qa`, which runs nothing and needs a green `npm test` recorded on the parked tree for each package owning a touched test file (`safety:proof-guard`).
   - A package the flip lists as missing, with its touched files, gets its own tests narrowed to those files, in the path form its runner takes, then the flip again.
   - Any edit after the narrowed runs (a fix round, docs, the CHANGELOG) makes a new tree, so the narrowed runs come last, right before the flip.
   - The full suite runs once, a root `npm test` before the commit. So no brief asks an agent for the whole touched set.
@@ -94,7 +94,7 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 - A ≥80 finding is built in the batch, or said in chat under **🧭 Findings** (filed only when `findings.file` is on or the owner says file), before calling it done, per the fix-or-file rule (`docs/project-state.md` § How big is one issue). The review's simplification lens covers post-green cleanup.
 - After the review: ONE light verification pass over the fixes (its brief from `briefs/fix-verifier.md`), ONE worker round for what it finds, then retouch the review marker so it covers the parked diff, with `full` only when that review was the full panel (the retouch closes its round; `workkit:review` § 5), then the park:
   `bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/workkit/..}/scripts/review-marker.sh"` (add `full` after a full panel)
-- A finding made after that round is said or filed per the fix-or-file rule, never worked in another round. The one exception is a bug in a `safety/` hook, fixed before the park.
+- A finding made after that round is said or filed per the fix-or-file rule, never worked in another round. The one exception is a bug in a `safety:` hook, fixed before the park.
 - Done-criteria:
   - green at every layer the change has a surface on (`docs/project-state.md` § The proof);
   - review verdict "ship";
@@ -102,7 +102,7 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 
 ## 6. Park at `status:qa`: the flow ends here, not at a ship
 
-- Build done, tests green, review passed: the work STAYS IN THE WORKING TREE, uncommitted until the owner's pass. `safety/commit-gate` bounces a commit whose message names an open issue not at `status:complete`.
+- Build done, tests green, review passed: the work STAYS IN THE WORKING TREE, uncommitted until the owner's pass. `safety:commit-gate` bounces a commit whose message names an open issue not at `status:complete`.
 - The park is MECHANICAL, not a question. It happens the moment the done-criteria above are met.
 - Say what to check, then flip. The comment lands FIRST so the park carries the record: the proof is a hard gate, and without it an item can neither reach `status:complete` nor close (spec § The proof).
 - The comment's first line is `Proof:`, one entry per layer: the command, or the reason it was skipped, and beside them the red-proof run (the `scripts/red-proof.sh` line the verifier printed). The check reads it first.

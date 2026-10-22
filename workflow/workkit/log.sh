@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# workflow/workkit/log.sh: `log`, the hooks log the loader and the hooks module
-# write, one line per hook fire (docs/hooks.md § The hooks log). Sourced by workkit.sh, functions
+# workflow/workkit/log.sh: `log`, the hooks log the hooks module writes, one
+# line per hook fire (docs/hooks.md § The hooks log). Sourced by workkit.sh, functions
 # only; the path is wk_hooks_log's (lib/platform.sh), the one library it needs.
 
 # workkit log [-n N] [--follow]: the log's last N lines, 40 unless -n says;

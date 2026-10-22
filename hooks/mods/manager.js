@@ -4,23 +4,16 @@
  * layers deep-merged (docs/hooks.md § manager:resolver).
  */
 
+import { isPlain, parseJson } from './settings.js';
+
 const CLASSES = new Set(['scout', 'worker', 'verifier', 'advisor']);
 
 // The rungs a ladder with no tiers falls back to, as the shell reads default.
 export const DEFAULT_TIERS = { frontier: 'fable', workhorse: 'opus' };
 
-export const isPlain = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
-
 // A layer as the hook reads it: the parsed file, or its text; anything else,
 // or text that does not parse, adds nothing.
-export const parsed = (layer) => {
-  if (typeof layer !== 'string') return layer;
-  try {
-    return JSON.parse(layer);
-  } catch {
-    return undefined;
-  }
-};
+const parsed = (layer) => (typeof layer === 'string' ? parseJson(layer) : layer);
 
 // jq's `*`: objects merge key by key, recursively; any other value replaces.
 const deepMerge = (base, over) => {

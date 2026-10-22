@@ -4,11 +4,12 @@
 # test run proved, with each package folder it covered), where each is kept, and
 # the two tree ids they are compared with, plus the paths of the detached runs'
 # logs and locks. Sourced, functions only, by script-shell.sh (the records'
-# writer), ship/ci-watch.sh and the hooks' _lib.sh; it reads wk_jq,
+# writer), ship/ci-watch.sh, tree-hash.sh and the hooks' _lib.sh; it reads wk_jq,
 # wk_marker_path and wk_git_path from platform.sh.
 
 # wk_has_test_script <dir>: <dir>/package.json declares scripts.test as a
-# non-empty string. Consumers: safety/commit-gate, hook_test_package_dir.
+# non-empty string. Consumers: prove.sh, hook_test_package_dir; the module's
+# twin is hasTestScript in hooks/mods/suite.js.
 wk_has_test_script() {
   [ -f "$1/package.json" ] \
     && wk_jq -e '.scripts.test | type == "string" and length > 0' "$1/package.json" >/dev/null 2>&1
@@ -106,19 +107,20 @@ wk_pkg_marker_write() {
 }
 
 # wk_suite_index_tree <repo_root>: the REAL index's `git write-tree` id, the
-# tree a plain commit carries. Consumer: safety/commit-gate (check 5).
+# tree a plain commit carries. Consumer: prove.sh.
 wk_suite_index_tree() {
   git -C "$1" write-tree 2>/dev/null
 }
 
 # wk_suite_proved <repo_root> <tree>: the marker exists and holds <tree>. The
-# guard passes the working tree's hash, the gate the real index's id.
-# Consumers: safety/suite-guard, safety/commit-gate (check 5).
+# guards read it through its module twin, suiteProved in hooks/mods/suite.js:
+# suite-guard with the working tree's hash, commit-gate with the real index's id.
 wk_suite_proved() { _wk_record_holds wk_suite_marker_path "$1" "$2"; }
 
 # wk_pkg_proved <repo_root> <tree> <pkg>: the package record's first line is
 # <tree>, the working tree's hash, and a later line is <pkg>. Consumer:
-# safety/proof-guard (qa-tests.sh).
+# wk_pkg_marker_write; safety:proof-guard reads it through pkgProved in
+# hooks/mods/suite.js.
 wk_pkg_proved() {
   local marker line first=1
   [ -n "$2" ] && [ -n "$3" ] || return 1

@@ -11,6 +11,7 @@ const {
 } = require('../lib/harness');
 const { SYSTEM_PATH, homeEnv } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
+const { mods } = require('../lib/mods-inputs');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'release.js');
 
@@ -408,18 +409,16 @@ const run = async () => {
   group('release: the script itself');
 
   await test('its version files are the ones the commit gate passes as bookkeeping', () => {
-    // The gate's version-stamp case arm is VERSION_FILES plus the nested package.json
-    // and plugin manifest and nothing else; a comment at each home ties them, and
-    // this pins them, the way the Proof pattern's twins are pinned in ship-items.test.js.
+    // The gate's version manifests (isManifest in hooks/mods/commit-gate/checks.js)
+    // are VERSION_FILES at the root and nested, and nothing else.
     const files = /const VERSION_FILES = \[([^\]]+)\]/.exec(fs.readFileSync(SCRIPT, 'utf8'));
     assert(files, 'release.js declares VERSION_FILES');
     const names = files[1].split(',').map((s) => s.trim().replace(/^'|'$/g, ''));
-    const gate = fs.readFileSync(path.join(__dirname, '..', '..', 'hooks', 'safety', 'commit-gate', 'run.sh'), 'utf8');
-    const arm = /^ {6}(\S*package\.json\S*)\)$/m.exec(gate);
-    assert(arm, "the gate declares its version-stamp case arm");
-    const alternatives = arm[1].split('|').sort();
-    const expected = [...names, '*/package.json', '*/.claude-plugin/plugin.json'].sort();
-    assertEq(alternatives.join('|'), expected.join('|'), "the gate's case arm");
+    const { isManifest } = mods('commit-gate/checks');
+    const missed = names.flatMap((n) => [n, `packages/a/${n}`]).filter((p) => !isManifest(p));
+    assertEq(missed.join(', '), '', 'every version file, at the root and nested, is a manifest to the gate');
+    const others = ['package-lock.json', 'plugin.json', 'packages/a/package.json.bak', 'claude-plugin/plugin.json', 'app.js'];
+    assertEq(others.filter((p) => isManifest(p)).join(', '), '', 'and nothing beside them is');
   });
 };
 

@@ -89,7 +89,7 @@ wk_script_shell_exe() {
   printf '%s\n' "$(wk_user_dir)/script-shell.exe"
 }
 
-# wk_hooks_log: sets WK_HOOKS_LOG, the log hooks/loader.sh appends a line to per
+# wk_hooks_log: sets WK_HOOKS_LOG, the log the hooks module writes a line to per
 # hook fire, in wk_user_dir's folder.
 wk_hooks_log() {
   WK_HOOKS_LOG="$(wk_user_dir)/hooks.log"

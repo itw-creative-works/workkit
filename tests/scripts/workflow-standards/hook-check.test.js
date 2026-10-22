@@ -1,14 +1,15 @@
-// Tests for standards.sh: the hook layer self-check.
+// Tests for standards.sh: the hook layer self-check, over a layer with no loader:
+// the hooks module and the shell pieces the scripts still source.
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, testUnless, summary, selfRun,
+  group, test, assert, assertEq, summary, selfRun,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_BASH, NO_RC, NO_EXEC_BIT, shellPath, stubTool, joinPath,
+  SYSTEM_BASH, NO_RC, shellPath, stubTool, joinPath,
 } = require('../../lib/platform');
 const {
   WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, makeGhStub, binDirWithout, runScript,
@@ -16,46 +17,23 @@ const {
 const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
-  // A case that strips a file's executable bit to see what the heal says about
-  // it. There is no bit to strip on Windows, so the whole case is the skip.
-  const strippedBitTest = testUnless(IS_WINDOWS, `${NO_EXEC_BIT}, so no script can be stripped of one`);
-
   group('standards.sh: the hook layer self-check');
 
-  // Every hook fails open by design, so a chmod-stripped script, a syntax
-  // error, or a missing tool disables a safety layer with nothing watching.
-  // This is the once-a-day assertion that the layer is alive.
-  const HOOK_NAMES = ['docs:one', 'safety:two'];
-  // badPieces: sourced files (paths under the hooks dir) written with a syntax error;
-  // badModule: the hooks module, register.js, written with one.
-  const makeHooksDir = ({
-    missing = [], notExecutable = [], badSyntax = [], badPieces = [], badModule = false,
-  } = {}) => {
+  // Every guard fails open by design, so a module that cannot load, a shell
+  // piece with a syntax error, or a missing tool disables a safety layer with
+  // nothing watching. This is the once-a-day assertion that the layer is alive.
+
+  // badPieces: shell pieces (paths under the hooks dir) written with a syntax
+  // error; badModule: the hooks module, register.js, written with one.
+  const makeHooksDir = ({ badPieces = [], badModule = false } = {}) => {
     const dir = mkTmp('wf-std-');
     fs.writeFileSync(path.join(dir, 'register.js'), badModule
       ? 'export function register(on {\n'
       : 'export function register(on) {}\n');
-    fs.writeFileSync(path.join(dir, 'hooks.json'), `${JSON.stringify({
-      modules: ['./register.js'],
-      hooks: {
-        SessionStart: [{
-          hooks: HOOK_NAMES.map((n) => ({
-            type: 'command',
-            command: `"\${CLAUDE_PLUGIN_ROOT}"/hooks/loader.sh ${n}`,
-          })),
-        }],
-      },
-    }, null, 2)}\n`);
-    fs.writeFileSync(path.join(dir, 'loader.sh'), '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 });
-    for (const name of HOOK_NAMES) {
-      if (missing.includes(name)) continue;
-      const hookDir = path.join(dir, ...name.split(':'));
-      fs.mkdirSync(hookDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(hookDir, 'run.sh'),
-        badSyntax.includes(name) ? '#!/bin/bash\nif [ 1 ; then\n' : '#!/bin/bash\nexit 0\n',
-        { mode: notExecutable.includes(name) ? 0o644 : 0o755 },
-      );
+    fs.writeFileSync(path.join(dir, 'hooks.json'), `${JSON.stringify({ modules: ['./register.js'] }, null, 2)}\n`);
+    for (const piece of ['_lib.sh', 'lib/markers.sh']) {
+      fs.mkdirSync(path.dirname(path.join(dir, piece)), { recursive: true });
+      fs.writeFileSync(path.join(dir, piece), '#!/bin/bash\nhook_ok() { :; }\n');
     }
     for (const piece of badPieces) {
       fs.mkdirSync(path.dirname(path.join(dir, piece)), { recursive: true });
@@ -64,13 +42,13 @@ const run = async () => {
     return dir;
   };
 
-  await test('a healthy hook layer says nothing at all', () => {
+  await test('a healthy hook layer with no loader passes and says nothing at all', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     const hooks = makeHooksDir();
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir, hooksDir: hooks });
     assertEq(code, 0, 'exit 0');
-    assert(!output.includes('⚠'), `a live layer is not news, got: ${output}`);
+    assert(!output.includes('⚠'), `a live layer is not news, and no loader is no fault, got: ${output}`);
     cleanup(repo); cleanup(stub.dir); cleanup(hooks);
   });
 
@@ -81,13 +59,8 @@ const run = async () => {
     const stub = makeGhStub();
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
     assertEq(code, 0, 'exit 0');
-    assert(!output.includes('⚠'), `every wired hook resolves and parses, got: ${output}`);
-    assert(/hooks: \d+ hook scripts resolve/.test(output),
-      `and the count is a skip line, which the session never sees, got: ${output}`);
-    assert(/; [1-9]\d* sourced pieces parse/.test(output),
-      `and the sourced pieces are counted apart, got: ${output}`);
-    const line = output.split('\n').find((l) => /hooks: \d+ hook scripts resolve/.test(l)) || '';
-    assert(line.trimEnd().endsWith('; the hooks module loads'), `and the module is named as loading, got: ${line}`);
+    assert(!output.includes('⚠'), `the module loads and every shell piece parses, got: ${output}`);
+    assert(output.includes('the hooks module loads'), `and the module is named as loading, got: ${output}`);
     cleanup(repo); cleanup(stub.dir);
   });
 
@@ -117,41 +90,8 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir); cleanup(hooks);
   });
 
-  await strippedBitTest('a chmod-stripped hook script is named, with the chmod that fixes it', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    const hooks = makeHooksDir({ notExecutable: ['safety:two'] });
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir, hooksDir: hooks });
-    assertEq(code, 1, 'a dead safety layer is not a standardized repo');
-    assert(output.includes('safety:two is not executable'), `names the hook, got: ${output}`);
-    assert(output.includes('chmod +x'), `and the fix, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir); cleanup(hooks);
-  });
-
-  await test('a hook wired with no script behind it is named', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    const hooks = makeHooksDir({ missing: ['docs:one'] });
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir, hooksDir: hooks });
-    assertEq(code, 1, 'reported as unfinished');
-    assert(output.includes('docs:one is wired in hooks.json'), `names the hook, got: ${output}`);
-    assert(output.includes('reinstall'), `and what to do, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir); cleanup(hooks);
-  });
-
-  await test('a hook script that does not parse is named', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    const hooks = makeHooksDir({ badSyntax: ['docs:one'] });
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir, hooksDir: hooks });
-    assertEq(code, 1, 'reported as unfinished');
-    assert(output.includes('docs:one has a syntax error'), `names the hook, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir); cleanup(hooks);
-  });
-
-  // `bash -n` on a run.sh never follows its `source`, so the pieces are parsed on their own.
-  for (const piece of ['_lib.sh', 'lib/broken.sh', 'safety/two/checks/broken.sh']) {
-    await test(`a sourced piece that does not parse is named: ${piece}`, () => {
+  for (const piece of ['_lib.sh', 'lib/broken.sh']) {
+    await test(`a staying shell piece that does not parse is named and marks the run unfinished: ${piece}`, () => {
       const repo = makeRepo();
       const stub = makeGhStub();
       const hooks = makeHooksDir({ badPieces: [piece] });
@@ -162,25 +102,15 @@ const run = async () => {
     });
   }
 
-  await strippedBitTest('the loader itself is checked: nothing runs without it', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    const hooks = makeHooksDir();
-    fs.chmodSync(path.join(hooks, 'loader.sh'), 0o644);
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir, hooksDir: hooks });
-    assertEq(code, 1, 'reported as unfinished');
-    assert(output.includes('loader.sh is not executable'), `names the router, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir); cleanup(hooks);
-  });
-
-  await test('a missing tool is named loudly, without holding the repo back', () => {
-    // A tool the machine lacks is not the repo's fault, so it warns like
-    // everything else here but never flags the run: the version stamp and the
-    // drift report must not wait on something no repo can install for it.
+  await test('a missing tool the shell pieces need is named loudly, without holding the repo back', () => {
+    // A tool the machine lacks is not the repo's fault, so it warns but never
+    // flags the run: the version stamp and the drift report must not wait on
+    // something no repo can install. The marker paths still need a digest tool.
     const repo = makeRepo();
     const hooks = makeHooksDir();
     const stub = makeGhStub();
-    const binDir = binDirWithout('node');
+    const binDir = binDirWithout('shasum');
+    fs.rmSync(path.join(binDir, 'sha1sum'), { force: true });
     const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
       env: {
         PATH: joinPath(stub.binDir, binDir),
@@ -193,8 +123,7 @@ const run = async () => {
     });
     const out = (res.stdout || '') + (res.stderr || '');
     assertEq(res.status, 0, 'a machine condition never fails the run');
-    assert(/hooks: the hook layer needs.*node/.test(out), `names the missing tool, got: ${out}`);
-    assert(out.includes('silently do not run'), `and what its absence costs, got: ${out}`);
+    assert(/⚠.*hooks: the hook layer needs.*shasum or sha1sum/.test(out), `warns, naming the missing tool, got: ${out}`);
     cleanup(repo); cleanup(hooks); cleanup(binDir); cleanup(stub.dir);
   });
 

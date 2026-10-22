@@ -83,7 +83,7 @@ The token, and what each tier needs: [docs/setup.md](docs/setup.md#three-ways-to
 
 | Part | Count | What it does |
 |---|---|---|
-| [Hooks](docs/hooks.md) | 28 | Run by themselves: at session start, before edits and commits, and when a reply ends. Fifteen run inside Claude Code as one module, the rest as shell scripts |
+| [Hooks](docs/hooks.md) | 28 | Run by themselves: at session start, before edits and commits, and when a reply ends. All of them run inside Claude Code as one module |
 | [Agents](docs/agents.md) | 5 | The crew your chat delegates to, each briefed from a role template in [`briefs/`](briefs/) |
 | Skills | 9 | Procedures Claude follows when your words match, or when you type `/workkit:<name>` |
 | [Dashboard](tower/README.md) | 7 pages | `workkit tower` opens a local view of every board, the running agents, token spend, and repo health |

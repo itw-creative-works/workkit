@@ -1,132 +1,110 @@
-// Tests for hooks/safety/commit-gate: check 7, an issue the message names is at
-// status:complete, read once per issue beside check 6's proof read.
-// The shared prologue (the hook runner, the gh stub, the ship-ready repo) is ./helpers.js.
+// Tests for safety:commit-gate's logic, commitGateVerdict(facts) in
+// hooks/mods/commit-gate.js: check 7, an issue the message names is at
+// status:complete, read once per issue through `issueView`, beside check 6's
+// proof read. Each case ports the HEAD case its name quotes; every HEAD
+// case's mechanism survives.
+// The shared prologue (the repo in memory, the facts, the texts) is ./helpers.js.
 
-const fs = require('fs');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  skipWithoutDigest, mkRepo, stage, touchMarker, runHook, standDownMessage, ghStub, ghCalls, shipReadyRepo, cleanup,
+  T, NOTICE, mkRepo, stage, touchMarker, judge, blocks, passes, shipReadyRepo,
 } = require('./helpers');
 
 const PROVED = ['Proof: unit: node tests/hooks/x.test.js'];
 
-const run = async () => {
-  skipWithoutDigest();
+/** One commit message against one fixture board, on a ship-ready repo. */
+const commit = async (message, { issues = {}, fails = false } = {}) => {
+  const r = shipReadyRepo();
+  r.issues = issues;
+  r.ghFails = fails;
+  return { r, v: await judge(r, `git commit -m "${message}"`) };
+};
 
+const run = async () => {
   group('commit-gate: check 7, a named issue is at status:complete');
 
-  /** Run one commit message against one fixture board, then clean up. */
-  const commit = (message, board) => {
-    const dir = shipReadyRepo();
-    const stub = ghStub(board);
-    try {
-      return runHook(dir, `git commit -m "${message}"`, undefined, stub.env);
-    } finally {
-      cleanup(dir);
-      fs.rmSync(stub.dir, { recursive: true, force: true });
-    }
-  };
-
-  await test('an open issue at status:qa named by Refs blocks, naming it and its stage', () => {
-    const { code, stderr } = commit('feat: a thing\n\nRefs #12', { issues: { 12: { labels: ['status:qa'] } } });
-    assertEq(code, 2, `blocked, got: ${stderr}`);
-    assert(stderr.includes('#12 is at status:qa'), `names the issue and its stage, got: ${stderr}`);
-    assert(stderr.includes("owner's pass"), `and what moves it, got: ${stderr}`);
+  await test('ports "an open issue at status:qa named by Refs blocks, naming it and its stage"', async () => {
+    const { v } = await commit('feat: a thing\n\nRefs #12', { issues: { 12: { labels: ['status:qa'] } } });
+    blocks(v, T.unpassed('#12 is at status:qa'), 'names the issue, its stage and what moves it');
   });
 
-  await test('a Fixes trailer on a proved issue still at status:qa blocks on the stage', () => {
-    const { code, stderr } = commit('feat: a thing\n\nFixes #4',
-      { issues: { 4: { comments: PROVED, labels: ['status:qa', 'type:bug'] } } });
-    assertEq(code, 2, `blocked, got: ${stderr}`);
-    assert(stderr.includes('#4 is at status:qa'), `names the stage, got: ${stderr}`);
+  await test('ports "a Fixes trailer on a proved issue still at status:qa blocks on the stage"', async () => {
+    const { v } = await commit('feat: a thing\n\nFixes #4', { issues: { 4: { comments: PROVED, labels: ['status:qa', 'type:bug'] } } });
+    blocks(v, T.unpassed('#4 is at status:qa'), 'names the stage');
   });
 
-  await test('one read per issue serves the stage and the proof, however often it is named', () => {
-    const dir = shipReadyRepo();
-    const stub = ghStub({ issues: { 4: { comments: PROVED } } });
-    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing for #4\n\nFixes #4\nRefs #4"', undefined, stub.env);
-    assertEq(code, 0, `a proved, passed issue commits, got: ${stderr}`);
-    const calls = ghCalls(stub).map((argv) => argv.join(' '));
-    assertEq(calls.join('; '), 'issue view 4 --json state,labels,comments,url', 'one view, with every field both checks read');
-    cleanup(dir);
-    fs.rmSync(stub.dir, { recursive: true, force: true });
+  await test('ports "one read per issue serves the stage and the proof, however often it is named"', async () => {
+    const { r, v } = await commit('feat: a thing for #4\n\nFixes #4\nRefs #4', { issues: { 4: { comments: PROVED } } });
+    passes(v, '', 'a proved, passed issue commits');
+    assertEq(r.calls.issueView.join('; '), '4', 'one view of #4');
   });
 
-  await test('an issue at status:complete passes', () => {
-    const { code, stderr } = commit('feat: a thing\n\nRefs #12', { issues: { 12: { labels: ['status:complete'] } } });
-    assertEq(code, 0, `allowed, got: ${stderr}`);
+  await test('ports "an issue at status:complete passes"', async () => {
+    const { v } = await commit('feat: a thing\n\nRefs #12', { issues: { 12: { labels: ['status:complete'] } } });
+    passes(v, '', 'allowed');
   });
 
-  await test('a closed issue passes, whatever label it kept', () => {
-    const { code, stderr } = commit('feat: a thing\n\nsee #12', { issues: { 12: { state: 'CLOSED', labels: ['status:qa'] } } });
-    assertEq(code, 0, `history references are fine, got: ${stderr}`);
+  await test('ports "a closed issue passes, whatever label it kept"', async () => {
+    const { v } = await commit('feat: a thing\n\nsee #12', { issues: { 12: { state: 'CLOSED', labels: ['status:qa'] } } });
+    passes(v, '', 'history references are fine');
   });
 
-  await test('every unpassed issue is named with its stage, an unlabelled one as having none', () => {
-    const { code, stderr } = commit('feat: a thing\n\nRefs #12 #13, #14',
+  await test('ports "every unpassed issue is named with its stage, an unlabelled one as having none"', async () => {
+    const { v } = await commit('feat: a thing\n\nRefs #12 #13, #14',
       { issues: { 12: { labels: ['status:qa'] }, 13: { labels: ['status:complete'] }, 14: { labels: [] } } });
-    assertEq(code, 2, `blocked, got: ${stderr}`);
-    assert(stderr.includes('#12 is at status:qa'), `names the first, got: ${stderr}`);
-    assert(stderr.includes('#14 has no status label'), `names the unlabelled one, got: ${stderr}`);
-    assert(!stderr.includes('#13'), `never the passed one, got: ${stderr}`);
+    blocks(v, T.unpassed('#12 is at status:qa, #14 has no status label'), 'names both, never the passed one');
   });
 
-  await test('a pull request is not a work item: a merged one and an open one both pass', () => {
-    // gh answers a PR number too, with its own state and no status label.
+  await test('ports "a pull request is not a work item: a merged one and an open one both pass"', async () => {
     const pull = (state) => ({ issues: { 12: { state, labels: [], url: 'https://github.com/o/r/pull/12' } } });
-    assertEq(commit('feat: a thing\n\nRefs #12', pull('MERGED')).code, 0, 'a merged PR');
-    assertEq(commit('feat: a thing\n\nRefs #12', pull('OPEN')).code, 0, 'an open PR');
-    assertEq(commit('feat: a thing\n\nFixes #12', pull('MERGED')).code, 0, 'a trailer naming a PR asks no proof');
+    passes((await commit('feat: a thing\n\nRefs #12', pull('MERGED'))).v, '', 'a merged PR');
+    passes((await commit('feat: a thing\n\nRefs #12', pull('OPEN'))).v, '', 'an open PR');
+    passes((await commit('feat: a thing\n\nFixes #12', pull('MERGED'))).v, '', 'a trailer naming a PR asks no proof');
   });
 
-  await test('owner/repo#N is another repo and is never read', () => {
-    const { code, stderr } = commit('feat: a thing\n\nRefs ITW-Creative-Works/other#12',
-      { issues: { 12: { labels: ['status:qa'] } } });
-    assertEq(code, 0, `another repo's issue is not checked, got: ${stderr}`);
+  await test('ports "owner/repo#N is another repo and is never read"', async () => {
+    const { r, v } = await commit('feat: a thing\n\nRefs ITW-Creative-Works/other#12', { issues: { 12: { labels: ['status:qa'] } } });
+    passes(v, '', "another repo's issue is not checked");
+    assertEq(r.calls.issueView.length, 0, 'and never read');
   });
 
-  await test('a #N inside a URL or after a $ is not an issue; one in a code span is', () => {
+  await test('ports "a #N inside a URL or after a $ is not an issue; one in a code span is"', async () => {
     const board = { issues: { 12: { labels: ['status:qa'] } } };
-    assertEq(commit('docs: see https://example.com/page#12 and \\$#12', board).code, 0, 'a URL fragment and $#');
-    assertEq(commit('docs: the \\`#12\\` reference', board).code, 2, 'a code span still names the issue');
-    assertEq(commit('docs: see &#12 and a/b#12 and owner/repo2#12', board).code, 0, 'an entity, a path and a repo ending in a digit');
+    passes((await commit('docs: see https://example.com/page#12 and \\$#12', board)).v, '', 'a URL fragment and $#');
+    blocks((await commit('docs: the \\`#12\\` reference', board)).v, T.unpassed('#12 is at status:qa'), 'a code span still names the issue');
+    passes((await commit('docs: see &#12 and a/b#12 and owner/repo2#12', board)).v, '', 'an entity, a path and a repo ending in a digit');
   });
 
-  await test('two references glued together are both read, never a phantom from their digits', () => {
-    const { code, stderr } = commit('feat: a thing\n\nRefs #123#456',
+  await test('ports "two references glued together are both read, never a phantom from their digits"', async () => {
+    const { v } = await commit('feat: a thing\n\nRefs #123#456',
       { issues: { 123: { labels: ['status:qa'] }, 456: { labels: ['status:building'] }, 12: { labels: ['status:qa'] } } });
-    assertEq(code, 2, `blocked, got: ${stderr}`);
-    assert(stderr.includes('#123 is at status:qa') && stderr.includes('#456 is at status:building'), `names both, got: ${stderr}`);
-    assert(!stderr.includes('#12 '), `and no phantom #12, got: ${stderr}`);
+    blocks(v, T.unpassed('#123 is at status:qa, #456 is at status:building'), 'names both, and no phantom #12');
   });
 
-  await test('a message naming no issue passes without a read', () => {
-    const { code, stderr } = commit('chore(release): 1.2.3', { fails: true });
-    assertEq(code, 0, `allowed, got: ${stderr}`);
-    assertEq(stderr, '', 'nothing named, nothing read');
+  await test('ports "a message naming no issue passes without a read"', async () => {
+    const { r, v } = await commit('chore(release): 1.2.3', { fails: true });
+    passes(v, '', 'nothing named, nothing said');
+    assertEq(r.calls.issueView.length, 0, 'and nothing read');
   });
 
-  await test('a gh that cannot answer fails open, out loud on the visible notice', () => {
-    const out = commit('feat: a thing\n\nRefs #12', { fails: true });
-    assertEq(out.code, 0, `an unreachable gh never blocks, got: ${out.stderr}`);
-    const msg = standDownMessage(out);
-    assert(msg.includes('could not read issue #12') && msg.includes('did not run'), `and says so, got: ${out.stdout}`);
+  await test('ports "a gh that cannot answer fails open, out loud on the visible notice"', async () => {
+    const { v } = await commit('feat: a thing\n\nRefs #12', { fails: true });
+    passes(v, NOTICE.unread(12), 'an unreachable gh never blocks, and says so');
   });
 
-  await test('a repo that keeps no CHANGELOG.md is outside the pipeline and never asked', () => {
-    const dir = mkRepo();
-    stage(dir, 'app.js', 'const x = 1;\n');
-    touchMarker(dir);
-    const stub = ghStub({ issues: { 12: { labels: ['status:qa'] } } });
-    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nRefs #12"', undefined, stub.env);
-    assertEq(code, 0, `allowed, got: ${stderr}`);
-    cleanup(dir);
-    fs.rmSync(stub.dir, { recursive: true, force: true });
+  await test('ports "a repo that keeps no CHANGELOG.md is outside the pipeline and never asked"', async () => {
+    const r = mkRepo();
+    stage(r, 'app.js', 'const x = 1;\n');
+    touchMarker(r);
+    r.issues = { 12: { labels: ['status:qa'] } };
+    passes(await judge(r, 'git commit -m "feat: a thing\n\nRefs #12"'), '', 'allowed');
+    assertEq(r.calls.issueView.length, 0, 'and gh is never asked');
   });
+};
 
+module.exports = async () => {
+  await run();
   return summary();
 };
 
-module.exports = run;
-
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(module.exports);

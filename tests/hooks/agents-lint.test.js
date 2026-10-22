@@ -61,7 +61,7 @@ const run = async () => {
   await test('the portable idioms are not flagged', () => {
     const portable = [
       'The engine lives at ~/.claude/workkit.',
-      'command: ${CLAUDE_PLUGIN_ROOT}/hooks/loader.sh docs:session',
+      'command: bash ${CLAUDE_PLUGIN_ROOT}/workflow/standards.sh',
       'Write the brief to a temp file and hand the worker its path.',
     ].join('\n');
     assertEq(violations('a.md', portable).join(', '), '', 'portable paths must pass');

@@ -34,6 +34,22 @@ const run = async () => {
     assert(out.includes('already live'), 'and says what does NOT need a reload');
     assertEq(out.split('\n').length, 1, 'exactly one line');
   });
+
+  group('reload-guard.js: surfacePaths');
+
+  await test('surfacePaths lists agents/*.md, each SKILL.md, hooks/register.js and every file under hooks/mods at any depth', async () => {
+    const tree = {
+      agents: [{ name: 'worker.md', kind: 'file' }, { name: 'notes.txt', kind: 'file' }],
+      skills: [{ name: 'ship', kind: 'dir' }],
+      'hooks/mods': [{ name: 'a.js', kind: 'file' }, { name: 'commit-gate', kind: 'dir' }],
+      'hooks/mods/commit-gate': [{ name: 'checks.js', kind: 'file' }, { name: 'deep', kind: 'dir' }],
+      'hooks/mods/commit-gate/deep': [{ name: 'prompt.md', kind: 'file' }],
+    };
+    const paths = await mods('reload-guard').surfacePaths(async (dir) => tree[dir] ?? []);
+    const want = ['agents/worker.md', 'skills/ship/SKILL.md', 'hooks/register.js', 'hooks/mods/a.js',
+      'hooks/mods/commit-gate/checks.js', 'hooks/mods/commit-gate/deep/prompt.md'];
+    assertEq(JSON.stringify([...paths].sort()), JSON.stringify([...want].sort()), 'the surfaces, a non-.md agent file left out');
+  });
 };
 
 module.exports = async () => {

@@ -1,167 +1,141 @@
-// Tests for hooks/safety/suite-guard, the PreToolUse hook that bounces a REPEAT
-// full suite run (docs/project-state.md § The proof): the first full run on a
-// tree passes this check, and a second one on a tree the suite marker records as
-// proved bounces. A root run also bounces while an open issue is still building. A
-// narrowed run and a mention always pass.
+// Tests for safety:suite-guard's logic, suiteGuardVerdict({ command, cwd,
+// root, testScript, memberDirs, suiteRecord, treeId, building }) in
+// hooks/mods/suite-guard.js: a repeat root run on a recorded tree bounces, and
+// so does a root run while an issue is building; a narrowed run and a mention
+// pass. `memberDirs` maps each package folder under the root to its `{ name,
+// test }`, `real(path)` (async) its physical spelling or null. Each case ports
+// the HEAD case its name quotes. Dropped with the shell: "no jq", "malformed
+// JSON". In tests/mods/guards-suite-guard.test.ts: the loader's bounce, the
+// tree read for `workkit prove`, "no origin".
 
-const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
-const {
-  group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR,
-} = require('../lib/harness');
-const {
-  BASH, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath, systemPathWith, loaderEnv,
-} = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
-const { suiteMarkerPath, plantRecord } = require('../lib/suite-record');
-const {
-  makeGhStub, ghCalls, pathWithoutGh, dropPathWithoutGh,
-} = require('../lib/gh-stub');
-const { isCall, fmtCalls } = require('../lib/argv-log');
-const { mkOriginRepo, FIXTURE_ORIGIN } = require('../lib/git-repo');
+const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { mods, textOf } = require('../lib/mods-inputs');
 
-const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'suite-guard', 'run.sh');
-const LOADER = path.join(__dirname, '..', '..', 'hooks', 'loader.sh');
-// One temp dir handed to every child, so the record and the guard read one marker.
-const TMP = mkTmp('suite-guard-tmp-');
-const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
+const ROOT = '/w/repo';
+const TREE = 'a'.repeat(40);
+const OTHER_TREE = 'b'.repeat(40);
+const MARKER = '/claude-suite-marker/2d98e56dc36b7431b8f668bf4d7715c564698d73';
 
-// A repo the hook can read: a git repository, since the root is the git root
-// and the root suite is its package.json's test script; opted in, since the
-// loader skips a repo that is not.
-const mkRepo = ({ scripts = { test: 'node tests/run.js' }, pkg = true } = {}) => {
-  const dir = mkTmp('suite-guard-');
-  spawnSync('git', ['init', '-q'], { cwd: dir });
-  fs.mkdirSync(path.join(dir, WORKKIT_DIR));
-  fs.writeFileSync(path.join(dir, WORKKIT_DIR, 'settings.json'), '{ "version": 1, "enabled": true }\n');
-  if (pkg) fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts }));
-  return dir;
-};
-
-// The record a green root `npm test` leaves: the tree is proved.
-const prove = (dir) => {
-  plantRecord(TMP, dir);
-  return dir;
-};
-const mkProved = (opts) => prove(mkRepo(opts));
-
-// A repo with an origin, the only kind whose open issues the guard asks gh for.
-const mkOrigin = (opts) => mkOriginRepo(mkRepo(opts), FIXTURE_ORIGIN);
-
-// gh's answer to `issue list --state open --json number,labels`.
+// gh's answer to `issue list --json number,labels`.
 const issue = (number, ...labels) => ({ number, labels: labels.map((name) => ({ name })) });
 const BUILDING = [issue(12, 'status:qa', 'type:bug'), issue(7, 'status:building', 'type:feature')];
 const WORKING = [issue(9, 'status:qa', 'agent:claimed'), issue(10, 'status:complete', 'agent:claimed')];
 const SETTLED = [issue(12, 'status:qa', 'type:bug'), issue(14, 'status:complete', 'type:chore')];
-const BOUNCE = 'suite-guard: the full suite runs once, at the commit, after every item in the tree is parked and passed;';
-const NARROW = "Run the narrowest test that proves the change (`npm test -- <file>` from the package's folder).";
-const withStub = (stub) => ({ PATH: systemPathWith(stub.binDir) });
-const listed = (stub) => ghCalls(stub).filter((c) => isCall(c, 'issue', 'list'));
 
-const runArgv = (argv, command, cwd, env = {}, bash = BASH) => {
-  const base = loaderEnv();
-  const res = spawnSync(bash, argv, {
-    input: JSON.stringify({ tool_name: 'Bash', cwd: shellPath(cwd), tool_input: { command } }),
-    env: { HOME: base.HOME, WORKFLOW_HOME: base.WORKFLOW_HOME, PATH: SYSTEM_PATH, TMPDIR: shellPath(TMP), ...env },
-    encoding: 'utf8',
-    timeout: 15000,
-  });
-  return { code: res.status, stderr: res.stderr || '' };
+const NARROW = "Run the narrowest test that proves the change (`npm test -- <file>` from the package's folder)";
+const PROVED_HEAD = 'suite-guard: this tree is already proved: the full suite ran green on it and ';
+const PROVED_TAIL = ` records it. ${NARROW}; the commit gate reads the same record for a commit whose staged tree matches it.`;
+const HOLD = (named) => `suite-guard: the full suite runs once, at the commit, after every item in the tree is parked and passed; still building: ${named}. That work has to finish first: its tests green and its Proof: comment posted, then its own park moves it to status:qa. Never relabel an item to get past this guard. ${NARROW}.`;
+
+// The workspaces root: packages/x declares its own test script, packages/y none.
+const MEMBERS = {
+  'packages/x': { name: 'x', test: 'node --test' },
+  'packages/y': { name: 'y', test: null },
 };
 
-const runHook = (command, cwd, env = {}, bash = BASH) => runArgv([HOOK], command, cwd, env, bash);
-const runLoader = (command, cwd) => runArgv([LOADER, 'safety:suite-guard'], command, cwd);
+/**
+ * The `real` fact over a fixture: the physical spelling (`toPhys` of the
+ * path, normalized) of a folder the fixture holds (the root, the cwd, each
+ * package folder and those between), null for one that does not exist.
+ */
+const realOf = ({ root, cwd, memberDirs }, toPhys = (p) => p) => {
+  const known = new Set([root, cwd]);
+  for (const dir of Object.keys(memberDirs || {})) {
+    const segs = dir.split('/');
+    segs.forEach((_, i) => known.add(`${root}/${segs.slice(0, i + 1).join('/')}`));
+  }
+  return async (p) => {
+    const phys = path.posix.normalize(toPhys(p)).replace(/\/$/, '');
+    return known.has(phys) ? phys : null;
+  };
+};
+
+/**
+ * One verdict over `command` in the repo root with its own test script, no
+ * record and nothing building, `over` replacing any fact; `list` is gh's
+ * building answer (null when gh cannot answer). Hands back the verdict, its
+ * deny and how often the building list was read.
+ */
+const judged = async (command, over = {}, list = []) => {
+  let asked = 0;
+  const building = async () => { asked++; return list === null ? null : JSON.stringify(list); };
+  const r = await mods('suite-guard').suiteGuardVerdict({
+    command, cwd: ROOT, root: ROOT, testScript: 'node tests/run.js', memberDirs: {}, suiteRecord: null, treeId: TREE, building, ...over, real: over.real || realOf({ root: ROOT, memberDirs: {}, ...over }),
+  });
+  return { r, asked: () => asked, deny: r && typeof r.deny === 'string' ? r.deny.replace(/\n$/, '') : null };
+};
+const proved = { suiteRecord: `${TREE}\n` };
+
+const assertProved = (deny, what) => {
+  assert(typeof deny === 'string' && deny.startsWith(PROVED_HEAD) && deny.endsWith(PROVED_TAIL) && deny.includes(MARKER),
+    `the proved-tree bounce naming the marker: ${what}, got: ${deny}`);
+};
+const blocks = async (command, over = proved) => assertProved((await judged(command, over)).deny, command);
+const silent = async (command, over = proved, list = []) => {
+  const { r, deny } = await judged(command, over, list);
+  assertEq(deny, null, `must pass: ${command}`);
+  assertEq(textOf(r), '', `and say nothing: ${command}`);
+};
 
 const run = async () => {
   group('suite-guard: a repeat on a proved tree');
 
-  await test('a first full run passes: no marker records the tree', () => {
-    const dir = mkRepo();
-    const { code, stderr } = runHook('npm test', dir);
-    assertEq(code, 0, 'the first full run on a tree is the deliberate one');
-    assertEq(stderr, '', 'and says nothing');
-    cleanup(dir);
+  await test('ports "a first full run passes: no marker records the tree"', async () => {
+    await silent('npm test', {});
   });
 
-  await test('a repeat on a proved tree bounces, naming the marker and the narrow run', () => {
-    const dir = mkProved();
-    const { code, stderr } = runHook('npm test', dir);
-    assertEq(code, 2, 'the tree is already proved');
-    assert(stderr.includes('suite-guard'), 'names itself');
-    assert(stderr.includes('already proved'), `names the rule, got: ${stderr}`);
-    assert(stderr.includes(shellPath(suiteMarkerPath(TMP, dir))), `names the marker path, got: ${stderr}`);
-    assert(stderr.includes("(`npm test -- <file>` from the package's folder)"), `names the narrow run, got: ${stderr}`);
-    assert(!stderr.includes('WORKKIT_SUITE'), `names no flag, got: ${stderr}`);
-    assertEq(runHook('WORKKIT_SUITE=1 npm test', dir).code, 2, 'the old escape flag opens nothing');
-    cleanup(dir);
+  await test('ports "a repeat on a proved tree bounces, naming the marker and the narrow run"', async () => {
+    const { deny } = await judged('npm test', proved);
+    assertProved(deny, 'npm test');
+    assert(!deny.includes('WORKKIT_SUITE'), `names no flag, got: ${deny}`);
+    await blocks('WORKKIT_SUITE=1 npm test');
   });
 
-  await test('a tree change passes the same command again', () => {
-    const dir = mkProved();
-    fs.writeFileSync(path.join(dir, 'new.js'), 'x\n');
-    assertEq(runHook('npm test', dir).code, 0, 'a changed tree is not proved');
-    cleanup(dir);
+  await test('ports "a tree change passes the same command again"', async () => {
+    await silent('npm test', { suiteRecord: `${TREE}\n`, treeId: OTHER_TREE });
   });
 
-  await test('a stale marker, holding another tree, passes', () => {
-    const dir = mkRepo();
-    plantRecord(TMP, dir, '0000000000000000000000000000000000000000');
-    assertEq(runHook('npm test', dir).code, 0, 'only the tree the marker names is proved');
-    cleanup(dir);
+  await test('ports "a stale marker, holding another tree, passes"', async () => {
+    await silent('npm test', { suiteRecord: `${'0'.repeat(40)}\n` });
   });
 
   group('suite-guard: what a full run is, on a proved tree');
 
-  await test('npm run test bounces, the same run spelled out', () => {
-    const dir = mkProved();
-    assertEq(runHook('npm run test', dir).code, 2, 'the long spelling is the same suite');
-    cleanup(dir);
+  await test('ports "npm run test bounces, the same run spelled out"', async () => {
+    await blocks('npm run test');
   });
 
-  await test("the repo's own test script run directly bounces", () => {
-    const dir = mkProved();
-    assertEq(runHook('node tests/run.js', dir).code, 2, 'scripts.test is read from package.json');
-    cleanup(dir);
+  await test('ports "the repo\'s own test script run directly bounces"', async () => {
+    await blocks('node tests/run.js');
   });
 
-  await test('another repo, another script, the same bounce', () => {
-    const dir = mkProved({ scripts: { test: 'jest --runInBand' } });
-    assertEq(runHook('jest --runInBand', dir).code, 2, 'the script is whatever this repo declares');
-    assertEq(runHook('ls node_modules/.bin/jest --runInBand', dir).code, 0, 'a path ending in the script is not a run');
-    cleanup(dir);
+  await test('ports "another repo, another script, the same bounce"', async () => {
+    const over = { ...proved, testScript: 'jest --runInBand' };
+    await blocks('jest --runInBand', over);
+    await silent('ls node_modules/.bin/jest --runInBand', over);
   });
 
-  await test('a full run inside a compound bounces too', () => {
-    const dir = mkProved();
-    assertEq(runHook('git status && npm test', dir).code, 2, 'a clause is still the whole suite');
-    assertEq(runHook('npm test 2>&1 | tail -20', dir).code, 2, 'so is a piped one');
-    assertEq(runHook('npm test>out.log', dir).code, 2, 'a redirect glued to the word is not a scope');
-    assertEq(runHook('node tests/run.js 2>&1 | tail -20', dir).code, 2, 'the script run directly, into a pipe');
-    assertEq(runHook('node tests/run.js > out.txt', dir).code, 2, 'the script run directly, into a file');
-    assertEq(runHook('echo xnode tests/run.js', dir).code, 0, 'the script inside another word is not a run');
-    cleanup(dir);
+  await test('ports "a full run inside a compound bounces too"', async () => {
+    for (const c of ['git status && npm test', 'npm test 2>&1 | tail -20', 'npm test>out.log',
+      'node tests/run.js 2>&1 | tail -20', 'node tests/run.js > out.txt']) {
+      await blocks(c);
+    }
+    await silent('echo xnode tests/run.js');
   });
 
-  await test("npm's own spellings of the same run bounce", () => {
-    const dir = mkProved();
-    assertEq(runHook('npm t', dir).code, 2, 'the t alias runs the same script');
-    assertEq(runHook('npm --silent test', dir).code, 2, "npm's own flags do not narrow it");
-    cleanup(dir);
+  await test('ports "npm\'s own spellings of the same run bounce"', async () => {
+    await blocks('npm t');
+    await blocks('npm --silent test');
   });
 
-  await test('EVERY occurrence is judged, not the first', () => {
-    const dir = mkProved();
-    assertEq(runHook('npm test -- tests/hooks/suite-guard.test.js && npm test', dir).code, 2,
-      'the narrowed run first does not carry the full one through');
-    cleanup(dir);
+  await test('ports "EVERY occurrence is judged, not the first"', async () => {
+    await blocks('npm test -- tests/hooks/suite-guard.test.js && npm test');
   });
 
   group('suite-guard: the narrow run passes, proved tree or not');
 
-  await test('every narrowed spelling passes', () => {
-    const dir = mkProved();
+  await test('ports "every narrowed spelling passes"', async () => {
     for (const c of [
       'npm test -- tests/hooks/suite-guard.test.js',
       'node --test tests/hooks/suite-guard.test.js',
@@ -169,91 +143,59 @@ const run = async () => {
       'npx omega test unit',
       'node tests/run.js hooks',
     ]) {
-      assertEq(runHook(c, dir).code, 0, `a scoped run is the proof of a change: ${c}`);
+      await silent(c);
     }
-    cleanup(dir);
   });
 
-  await test('a script whose name only starts with test is another script', () => {
-    const dir = mkProved();
-    assertEq(runHook('npm run test:unit', dir).code, 0, 'test:unit is not the full suite');
-    cleanup(dir);
+  await test('ports "a script whose name only starts with test is another script"', async () => {
+    await silent('npm run test:unit');
   });
 
   group('suite-guard: a mention is not a run');
 
-  await test('the suite named inside a quoted string passes', () => {
-    const dir = mkProved();
+  await test('ports "the suite named inside a quoted string passes"', async () => {
     for (const c of [
       'git commit -m "test: cover npm test wiring"',
       'gh issue comment 243 --body "Proof: unit: npm test ran green at the gate"',
       'echo "reminder: npm test belongs to the commit gate"',
     ]) {
-      assertEq(runHook(c, dir).code, 0, `a quoted span is data, not a command: ${c}`);
+      await silent(c);
     }
-    cleanup(dir);
   });
 
-  await test('the suite named inside a heredoc body passes', () => {
-    const dir = mkProved();
-    const { code } = runHook('cat <<EOF > notes.md\nnpm test\nEOF', dir);
-    assertEq(code, 0, 'a heredoc body is file content, not a command');
-    cleanup(dir);
+  await test('ports "the suite named inside a heredoc body passes"', async () => {
+    await silent('cat <<EOF > notes.md\nnpm test\nEOF');
   });
 
-  await test('ordinary commands pass, silently', () => {
-    const dir = mkProved();
+  await test('ports "ordinary commands pass, silently": and never read the building list', async () => {
     for (const c of ['git status', 'ls -la', 'gh issue list --label status:qa', 'cat package.json']) {
-      const { code, stderr } = runHook(c, dir);
-      assertEq(code, 0, `must pass: ${c}`);
-      assertEq(stderr, '', `and say nothing: ${c}`);
+      const out = await judged(c, proved, BUILDING);
+      assertEq(out.deny, null, `must pass: ${c}`);
+      assertEq(textOf(out.r), '', `and say nothing: ${c}`);
+      assertEq(out.asked(), 0, `no root run, no gh read: ${c}`);
     }
-    cleanup(dir);
   });
 
   group('suite-guard: nested packages');
 
-  const withSub = (dir, scripts) => {
-    fs.mkdirSync(path.join(dir, 'sub'));
-    fs.writeFileSync(path.join(dir, 'sub', 'package.json'), JSON.stringify({ name: 'sub', scripts }));
-    return dir;
-  };
+  const SUB = { sub: { name: 'sub', test: 'node --test' } };
 
-  await test("a nested package's own npm test passes from inside it, even on a proved root", () => {
-    const dir = prove(withSub(mkRepo(), { test: 'node --test' }));
-    assertEq(runHook('npm test', path.join(dir, 'sub')).code, 0, "npm there runs the package's suite, never the root's");
-    cleanup(dir);
+  await test('ports "a nested package\'s own npm test passes from inside it, even on a proved root"', async () => {
+    await silent('npm test', { ...proved, cwd: `${ROOT}/sub`, memberDirs: SUB });
   });
 
-  await test("the root's script run from inside a nested package is judged by the marker", () => {
-    const dir = withSub(mkRepo(), { test: 'node --test' });
-    assertEq(runHook('cd .. && node tests/run.js', path.join(dir, 'sub')).code, 0, 'the first run on the tree passes');
-    prove(dir);
-    assertEq(runHook('cd .. && node tests/run.js', path.join(dir, 'sub')).code, 2, "the root's suite is a full run from anywhere in the repo");
-    assertEq(runHook('node --test tests/a.test.js', path.join(dir, 'sub')).code, 0, 'a narrowed run of the nested script still passes');
-    cleanup(dir);
+  await test('ports "the root\'s script run from inside a nested package is judged by the marker"', async () => {
+    const inSub = { cwd: `${ROOT}/sub`, memberDirs: SUB };
+    await silent('cd .. && node tests/run.js', inSub);
+    await blocks('cd .. && node tests/run.js', { ...inSub, ...proved });
+    await silent('node --test tests/a.test.js', { ...inSub, ...proved });
   });
 
-  await test('a nested package with no test script never hides the root suite', () => {
-    const dir = prove(withSub(mkRepo(), { start: 'node index.js' }));
-    assertEq(runHook('npm test', path.join(dir, 'sub')).code, 2, 'a package without a script is no test boundary');
-    cleanup(dir);
+  await test('ports "a nested package with no test script never hides the root suite"', async () => {
+    await blocks('npm test', { ...proved, cwd: `${ROOT}/sub`, memberDirs: { sub: { name: 'sub', test: null } } });
   });
 
   group('suite-guard: the folder a run really uses, from the root');
-
-  // A workspaces root with its own test script: packages/x declares its own,
-  // packages/y declares none.
-  const withMembers = (dir) => {
-    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({
-      name: 'fixture', workspaces: ['packages/*'], scripts: { test: 'node tests/run.js' },
-    }));
-    for (const [name, scripts] of [['x', { test: 'node --test' }], ['y', { start: 'node index.js' }]]) {
-      fs.mkdirSync(path.join(dir, 'packages', name), { recursive: true });
-      fs.writeFileSync(path.join(dir, 'packages', name, 'package.json'), JSON.stringify({ name, scripts }));
-    }
-    return dir;
-  };
 
   const MEMBER_RUNS = [
     'cd packages/x && npm test',
@@ -264,43 +206,28 @@ const run = async () => {
     '(cd packages/x; npm test)',
   ];
 
-  await test('a run whose folder is a member with its own test script passes on a proved root', () => {
-    const dir = prove(withMembers(mkRepo()));
-    for (const c of MEMBER_RUNS) {
-      assertEq(runHook(c, dir).code, 0, `the member's suite, never the root's: ${c}`);
-    }
-    cleanup(dir);
+  await test('ports "a run whose folder is a member with its own test script passes on a proved root"', async () => {
+    for (const c of MEMBER_RUNS) await silent(c, { ...proved, memberDirs: MEMBERS });
   });
 
-  await test('a run whose folder is a member with its own test script passes while an issue is building', () => {
-    const dir = withMembers(mkOrigin());
-    const stub = makeGhStub({ list: BUILDING });
-    for (const c of MEMBER_RUNS) {
-      const { code, stderr } = runHook(c, dir, withStub(stub));
-      assertEq(code, 0, `a member's run is never judged: ${c}`);
-      assertEq(stderr, '', `and says nothing: ${c}`);
-    }
-    cleanup(stub.dir);
-    cleanup(dir);
+  await test('ports "a run whose folder is a member with its own test script passes while an issue is building"', async () => {
+    for (const c of MEMBER_RUNS) await silent(c, { memberDirs: MEMBERS }, BUILDING);
   });
 
-  await test("a run that reaches the root's script is full, and bounces on a proved root", () => {
-    const dir = prove(withMembers(mkRepo()));
+  await test('ports "a run that reaches the root\'s script is full, and bounces on a proved root"', async () => {
     for (const c of [
       'cd . && npm test',
-      `cd ${shellPath(dir)} && npm test`,
+      `cd ${ROOT} && npm test`,
       'cd packages/y && npm test',
       'cd packages/nope && npm test',
       'npm test -ws --include-workspace-root',
       'cd packages/x && cd ../.. && npm test',
     ]) {
-      assertEq(runHook(c, dir).code, 2, `the root's suite runs: ${c}`);
+      await blocks(c, { ...proved, memberDirs: MEMBERS });
     }
-    cleanup(dir);
   });
 
-  await test('a cd back to the root in another spelling, or the root added back by flag or env, is full', () => {
-    const dir = prove(withMembers(mkRepo()));
+  await test('ports "a cd back to the root in another spelling, or the root added back by flag or env, is full"', async () => {
     for (const c of [
       'cd packages/x && builtin cd ../.. && npm test',
       'cd packages/x && command cd ../.. && npm test',
@@ -312,215 +239,109 @@ const run = async () => {
       'npm test -w x --include-workspace',
       'npm_config_include_workspace_root=true npm test -ws',
     ]) {
-      assertEq(runHook(c, dir).code, 2, `the root's suite runs: ${c}`);
+      await blocks(c, { ...proved, memberDirs: MEMBERS });
     }
-    cleanup(dir);
   });
+
+  group('suite-guard: a folder spelled through a link');
+
+  // /tmp links to /private/tmp, as on a Mac: git names the root physically,
+  // the command and the cwd may spell it through the link; `real` resolves.
+  // The package's name is not its folder's, so `-w pkg` must find the folder.
+  const PHYS = '/private/tmp/fx';
+  const LINK = '/tmp/fx';
+  const linked = {
+    root: PHYS,
+    cwd: PHYS,
+    memberDirs: { pkg: { name: '@fx/pkg', test: 'node --test' } },
+  };
+  linked.real = realOf(linked, (p) => (p === '/tmp' || p.startsWith('/tmp/') ? `/private${p}` : p));
+
+  for (const [label, command, cwd] of [
+    ['npm test in the linked package cwd', 'npm test', `${LINK}/pkg`],
+    ['npm -w pkg test from the linked root', 'npm -w pkg test', LINK],
+    ['cd <linked pkg> && npm test', `cd ${LINK}/pkg && npm test`, PHYS],
+    ['npm --prefix <linked pkg> test', `npm --prefix ${LINK}/pkg test`, PHYS],
+  ]) {
+    await test(`a package's own npm test spelled through a link passes while an issue is building: ${label}`, async () => {
+      await silent(command, { ...linked, cwd }, BUILDING);
+    });
+  }
 
   group('suite-guard: workkit prove is a full run');
 
-  await test('workkit prove on an unproved tree with nothing building passes: the deliberate run', () => {
-    const dir = mkRepo();
-    const { code, stderr } = runHook('workkit prove', dir);
-    assertEq(code, 0, 'the first full run on a tree passes');
-    assertEq(stderr, '', 'and says nothing');
-    cleanup(dir);
+  await test('ports "workkit prove on an unproved tree with nothing building passes: the deliberate run"', async () => {
+    await silent('workkit prove', {});
   });
 
-  // prove proves the index, so its proved tree is `git write-tree`, never the folder's.
-  const stageAll = (dir) => {
-    spawnSync('git', ['add', '-A'], { cwd: dir });
-    return dir;
-  };
-  const indexTree = (dir) => spawnSync('git', ['write-tree'], { cwd: dir, encoding: 'utf8' }).stdout.trim();
-
-  await test('workkit prove with the index tree proved bounces', () => {
-    const dir = stageAll(mkRepo());
-    plantRecord(TMP, dir, indexTree(dir));
-    const { code, stderr } = runHook('workkit prove', dir);
-    assertEq(code, 2, 'the staged-tree proof is the full suite, once per tree');
-    assert(stderr.includes('already proved'), `names the rule, got: ${stderr}`);
-    cleanup(dir);
+  await test('ports "workkit prove with the index tree proved bounces": treeId is the index tree prove proves', async () => {
+    await blocks('workkit prove', { suiteRecord: `${OTHER_TREE}\n`, treeId: OTHER_TREE });
   });
 
-  await test('workkit prove with only the working tree proved, the index another, passes', () => {
-    const dir = stageAll(mkRepo());
-    fs.writeFileSync(path.join(dir, 'held.js'), 'x\n');
-    prove(dir);
-    assertEq(runHook('npm test', dir).code, 2, 'the working tree is the proved one');
-    const { code, stderr } = runHook('workkit prove', dir);
-    assertEq(code, 0, 'the command the commit gate names for this gap is never bounced by it');
-    assertEq(stderr, '', 'and says nothing');
-    cleanup(dir);
+  await test('ports "workkit prove with only the working tree proved, the index another, passes"', async () => {
+    await blocks('npm test', { suiteRecord: `${TREE}\n`, treeId: TREE });
+    await silent('workkit prove', { suiteRecord: `${TREE}\n`, treeId: OTHER_TREE });
   });
 
-  await test('workkit prove while an issue is building bounces, naming it', () => {
-    const dir = mkOrigin();
-    const stub = makeGhStub({ list: BUILDING });
-    const { code, stderr } = runHook('workkit prove', dir, withStub(stub));
-    assertEq(code, 2, 'the full run waits until every item is parked and passed');
-    assert(stderr.startsWith(BOUNCE), `opens with the rule, got: ${stderr}`);
-    assert(stderr.includes('#7'), `names the building issue, got: ${stderr}`);
-    cleanup(stub.dir);
-    cleanup(dir);
+  await test('ports "workkit prove while an issue is building bounces, naming it"', async () => {
+    assertEq((await judged('workkit prove', {}, BUILDING)).deny, HOLD('#7 (status:building)'), 'opens with the rule, names #7');
   });
 
-  await test('workkit prove named inside a quoted string passes on a proved tree', () => {
-    const dir = mkProved();
-    assertEq(runHook('git commit -m "feat: add workkit prove"', dir).code, 0, 'a mention is data, not a run');
-    cleanup(dir);
+  await test('ports "workkit prove named inside a quoted string passes on a proved tree"', async () => {
+    await silent('git commit -m "feat: add workkit prove"');
   });
 
   group('suite-guard: a root run while an item is still building');
 
-  await test('a root run with an open issue at status:building bounces, naming it', () => {
-    const dir = mkOrigin();
-    const stub = makeGhStub({ list: BUILDING });
-    const { code, stderr } = runHook('npm test', dir, withStub(stub));
-    assertEq(code, 2, 'the full run waits until every item is parked and passed');
-    assert(stderr.startsWith(BOUNCE), `opens with the rule, got: ${stderr}`);
-    assert(stderr.includes('#7'), `names the building issue, got: ${stderr}`);
-    assert(stderr.includes('status:building'), `names its label, got: ${stderr}`);
-    assert(!stderr.includes('#12'), `names no issue that is not building, got: ${stderr}`);
-    assert(stderr.includes(NARROW), `names the narrow run, got: ${stderr}`);
-    assert(listed(stub).some((c) => c.includes('--label') && c.includes('status:building')),
-      `filtered on the server by the stage label, got: ${fmtCalls(ghCalls(stub))}`);
-    cleanup(stub.dir);
-    cleanup(dir);
+  await test('ports "a root run with an open issue at status:building bounces, naming it"', async () => {
+    const out = await judged('npm test', {}, BUILDING);
+    assertEq(out.deny, HOLD('#7 (status:building)'), 'names #7 and its label, never #12');
+    assertEq(out.asked(), 1, 'one building read');
   });
 
-  await test('an open issue carrying agent:claimed past the park passes, silently', () => {
-    const dir = mkOrigin();
-    const stub = makeGhStub({ list: WORKING });
-    const { code, stderr } = runHook('npm test', dir, withStub(stub));
-    assertEq(code, 0, 'an agent:ok item keeps its claim through the park, and only status:building holds the run');
-    assertEq(stderr, '', 'and says nothing');
-    assert(listed(stub).length > 0, `asked gh for the open issues, got: ${fmtCalls(ghCalls(stub))}`);
-    cleanup(stub.dir);
-    cleanup(dir);
+  await test('ports "an open issue carrying agent:claimed past the park passes, silently"', async () => {
+    const out = await judged('npm test', {}, WORKING);
+    assertEq(out.deny, null, 'only status:building holds the run');
+    assertEq(textOf(out.r), '', 'and says nothing');
+    assertEq(out.asked(), 1, 'asked for the open issues');
   });
 
-  await test('no issue building and no record: the root run passes, silently', () => {
-    const dir = mkOrigin();
-    const stub = makeGhStub({ list: SETTLED });
-    const { code, stderr } = runHook('npm test', dir, withStub(stub));
-    assertEq(code, 0, 'every item is parked, so this is the one full run');
-    assertEq(stderr, '', 'and says nothing');
-    cleanup(stub.dir);
-    cleanup(dir);
+  await test('ports "no issue building and no record: the root run passes, silently"', async () => {
+    await silent('npm test', {}, SETTLED);
   });
 
-  await test('gh absent: the root run passes, silently', () => {
-    const dir = mkOrigin();
-    const { code, stderr } = runHook('npm test', dir, { PATH: pathWithoutGh() });
-    assertEq(code, 0, 'a missing gh fails open');
-    assertEq(stderr, '', 'and says nothing');
-    cleanup(dir);
+  await test('ports "gh absent" and "gh failing": the root run passes', async () => {
+    assertEq((await judged('npm test', {}, null)).deny, null, 'a gh that cannot answer fails open');
   });
 
-  await test('gh failing: the root run passes, silently', () => {
-    const dir = mkOrigin();
-    const stub = makeGhStub({ list: BUILDING, fails: true });
-    const { code, stderr } = runHook('npm test', dir, withStub(stub));
-    assertEq(code, 0, 'a gh that cannot answer fails open');
-    assertEq(stderr, '', 'and says nothing');
-    cleanup(stub.dir);
-    cleanup(dir);
-  });
-
-  await test('a repo with no origin passes without calling gh', () => {
-    const dir = mkRepo();
-    const stub = makeGhStub({ list: BUILDING });
-    const { code, stderr } = runHook('npm test', dir, withStub(stub));
-    assertEq(code, 0, 'a repo with no origin has no issues to ask about');
-    assertEq(stderr, '', 'and says nothing');
-    assertEq(ghCalls(stub).length, 0, `gh is never called, got: ${fmtCalls(ghCalls(stub))}`);
-    cleanup(stub.dir);
-    cleanup(dir);
-  });
-
-  await test('a narrowed run passes while an issue is building', () => {
-    const dir = mkOrigin();
-    const stub = makeGhStub({ list: BUILDING });
+  await test('ports "a narrowed run passes while an issue is building"', async () => {
     for (const c of ['npm test -- tests/hooks/suite-guard.test.js', 'node tests/hooks/suite-guard.test.js']) {
-      const { code, stderr } = runHook(c, dir, withStub(stub));
-      assertEq(code, 0, `the narrow run is the one to make mid-build: ${c}`);
-      assertEq(stderr, '', `and says nothing: ${c}`);
+      const out = await judged(c, {}, BUILDING);
+      assertEq(out.deny, null, `the narrow run is the one to make mid-build: ${c}`);
+      assertEq(textOf(out.r), '', `and says nothing: ${c}`);
+      assertEq(out.asked(), 0, `no gh read: ${c}`);
     }
-    cleanup(stub.dir);
-    cleanup(dir);
   });
-
-  dropPathWithoutGh();
 
   group('suite-guard: wiring and fail-open');
 
-  await test('hooks.json registers the guard under PreToolUse Bash, after proof-guard', () => {
-    const wiring = JSON.parse(fs.readFileSync(
-      path.join(__dirname, '..', '..', 'hooks', 'hooks.json'), 'utf8'));
-    const bash = (wiring.hooks.PreToolUse || []).find((b) => b.matcher === 'Bash');
-    assert(bash, 'a PreToolUse Bash block exists');
-    const names = bash.hooks.map((h) => h.command);
-    const proof = names.findIndex((c) => c.includes('safety:proof-guard'));
-    const suite = names.findIndex((c) => c.includes('safety:suite-guard'));
-    assert(suite >= 0, 'the Bash block routes safety:suite-guard through the loader');
-    assert(suite > proof, `suite-guard is wired after proof-guard, got proof at ${proof} and suite at ${suite}`);
+  await test('ports "hooks.json registers the guard under PreToolUse Bash, after proof-guard": BASH_GUARDS holds the order', async () => {
+    const hooks = mods('guards').BASH_GUARDS.map((g) => g.hook);
+    const proof = hooks.indexOf('safety:proof-guard');
+    const suite = hooks.indexOf('safety:suite-guard');
+    assert(proof >= 0 && suite > proof, `suite-guard runs after proof-guard, got: ${hooks.join(', ')}`);
   });
 
-  await test('the loader routes safety:suite-guard and propagates the bounce', () => {
-    const dir = mkProved();
-    assertEq(runLoader('npm test', dir).code, 2,
-      'safety:suite-guard resolves to safety/suite-guard/run.sh and blocks');
-    cleanup(dir);
+  await test('ports "a repo declaring no test script passes" and "a repo with no package.json at its root passes"', async () => {
+    await silent('npm test', { ...proved, testScript: null }, BUILDING);
   });
 
-  await test('a repo declaring no test script passes', () => {
-    const dir = mkRepo({ scripts: { start: 'node index.js' } });
-    assertEq(runHook('npm test', dir).code, 0, 'there is no suite here to own');
-    cleanup(dir);
+  await test('ports "a directory inside no git repository passes"', async () => {
+    await silent('npm test', { ...proved, root: null, cwd: '/w/plain' }, BUILDING);
   });
 
-  await test('a repo with no package.json at its root passes', () => {
-    const dir = mkRepo({ pkg: false });
-    assertEq(runHook('npm test', dir).code, 0, 'nothing to read means nothing to judge');
-    cleanup(dir);
-  });
-
-  await test('a directory inside no git repository passes', () => {
-    const dir = mkTmp('suite-guard-bare-');
-    assertEq(runHook('npm test', dir).code, 0, 'the repo is resolved from the git root, or not at all');
-    cleanup(dir);
-  });
-
-  await test('no jq: exit 0', () => {
-    // PATH points at an empty directory, so the hook finds no jq (and no cat);
-    // bash itself is reached by its absolute path, the way a hook command is.
-    // `/bin` alone would not do: on a merged-usr Linux it is `/usr/bin`, jq and all.
-    const dir = mkProved();
-    const empty = path.join(dir, 'empty-path');
-    fs.mkdirSync(empty);
-    assertEq(runHook('npm test', dir, { PATH: empty }, SYSTEM_BASH).code, 0, 'a missing tool never wedges a session');
-    cleanup(dir);
-  });
-
-  await test('missing command, exit 0', () => {
-    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-      input: JSON.stringify({ tool_input: {} }),
-      env: { HOME: shellPath(os.homedir()), PATH: SYSTEM_PATH },
-      encoding: 'utf8',
-      timeout: 15000,
-    });
-    assertEq(res.status, 0, 'no command means fail open');
-  });
-
-  await test('malformed JSON, exit 0', () => {
-    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-      input: 'not json',
-      env: { HOME: shellPath(os.homedir()), PATH: SYSTEM_PATH },
-      encoding: 'utf8',
-      timeout: 15000,
-    });
-    assertEq(res.status, 0, 'bad input means fail open');
+  await test('ports "missing command, exit 0"', async () => {
+    await silent('', proved, BUILDING);
   });
 };
 

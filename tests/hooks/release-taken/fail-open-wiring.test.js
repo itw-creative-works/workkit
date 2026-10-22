@@ -1,101 +1,71 @@
-// Tests for hooks/safety/release-taken, the PreToolUse hook that refuses a
-// release whose version a provider already has: failing open out loud, and
-// its wiring in hooks.json.
-// The shared prologue (the npm and gh stubs, the repo factory, the hook runner, the release command) is ./helpers.js.
+// Tests for safety:release-taken's logic: failing open out loud, and its place
+// in the module's Bash chain. Each case ports the HEAD case its name quotes;
+// "malformed JSON, exit 0" is dropped with the shell spawn.
+// The shared prologue (the lookups, the verdict call, the texts) is ./helpers.js.
 
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { BASH, NO_RC, shellPath, systemPathWith } = require('../../lib/platform');
-const { fmtCalls } = require('../../lib/argv-log');
-const {
-  HOOK, cleanup, makeStubs, npmCalls, mkRepo, runHook, RELEASE,
-} = require('./helpers');
+const { mods } = require('../../lib/mods-inputs');
+const { RELEASE, judge } = require('./helpers');
 
 const run = async () => {
   group('release-taken: fail-open');
 
-  await test('a provider that cannot tell stands down out loud, and the commit stands', () => {
-    const stubs = makeStubs({ npmFails: true, ghFails: true });
-    const dir = mkRepo();
-    const { code, stderr } = runHook(RELEASE, dir, stubs);
-    assertEq(code, 0, 'an unanswerable check never blocks a release');
-    assert(/npm[\s\S]*stood down/.test(stderr), `the npm check says it stood down, got: ${stderr}`);
-    assert(/github-release[\s\S]*stood down/.test(stderr),
-      `the github-release check says it stood down, got: ${stderr}`);
-    cleanup(dir);
-    cleanup(stubs.dir);
-  });
-
-  await test('a publish behind a cd cannot be placed, so it stands down out loud', () => {
-    const stubs = makeStubs({ npmTaken: ['widget@1.2.3'] });
-    const dir = mkRepo();
-    const { code, stderr } = runHook('cd /other && npm publish', dir, stubs);
-    assertEq(code, 0, 'the package the command would publish is not the one here');
-    assert(stderr.includes('stood down'), `says the check did not run, got: ${stderr}`);
-    assertEq(npmCalls(stubs).length, 0,
-      `the session directory package is never judged instead, got: ${fmtCalls(npmCalls(stubs))}`);
-    cleanup(dir);
-    cleanup(stubs.dir);
-  });
-
-  await test('a message in a file leaves no subject to read, and says so', () => {
-    const stubs = makeStubs({ npmTaken: ['widget@1.2.3'], tags: ['v1.2.3'] });
-    const dir = mkRepo();
-    for (const c of ['git commit -F msg.txt', 'git commit --file=msg.txt']) {
-      const { code, stderr } = runHook(c, dir, stubs);
-      assertEq(code, 0, `an unreadable subject never blocks: ${c}`);
-      assert(stderr.includes('stood down'), `says the check did not run for ${c}, got: ${stderr}`);
+  await test('ports "a provider that cannot tell stands down out loud, and the commit stands"', async () => {
+    const { deny, text } = await judge(RELEASE, { npmFails: true, ghFails: true });
+    assertEq(deny, null, 'an unanswerable check never blocks a release');
+    for (const line of [
+      'release-taken: the npm check stood down for widget@1.2.3: npm error code ENOTFOUND request to https://registry.npmjs.org failed',
+      'release-taken: the github-release check stood down for v1.2.3: gh: To get started with GitHub CLI, please run: gh auth login',
+    ]) {
+      assert(text.split('\n').includes(line), `says "${line}", got: ${text}`);
     }
-    assertEq(npmCalls(stubs).length, 0, `nothing is asked, got: ${fmtCalls(npmCalls(stubs))}`);
-    cleanup(dir);
-    cleanup(stubs.dir);
   });
 
-  await test('a workspace member that is not there is named, never skipped in silence', () => {
-    const stubs = makeStubs();
-    const dir = mkRepo({
+  await test('ports "a publish behind a cd cannot be placed, so it stands down out loud"', async () => {
+    const { deny, text, calls } = await judge('cd /other && npm publish', { npmTaken: ['widget@1.2.3'] });
+    assertEq(deny, null, 'the package the command would publish is not the one here');
+    assertEq(text, 'release-taken: the command changes directory, so the package being published could not be placed and the check stood down.',
+      'says the check did not run');
+    assertEq(calls.npm.length, 0, `the session directory package is never judged instead, got: ${calls.npm.join(' ')}`);
+  });
+
+  await test('ports "a message in a file leaves no subject to read, and says so"', async () => {
+    for (const c of ['git commit -F msg.txt', 'git commit --file=msg.txt']) {
+      const { deny, text, calls } = await judge(c, { npmTaken: ['widget@1.2.3'], tags: ['v1.2.3'] });
+      assertEq(deny, null, `an unreadable subject never blocks: ${c}`);
+      assertEq(text, 'release-taken: the commit message is in a file, so the release subject could not be read and the check stood down.',
+        `says the check did not run for ${c}`);
+      assertEq(calls.npm.length + calls.github.length, 0, `nothing is asked for ${c}`);
+    }
+  });
+
+  await test('ports "a workspace member that is not there is named, never skipped in silence"', async () => {
+    const { deny, text } = await judge('git commit -m "chore(release): 2.0.0"', {
       pkg: { name: 'family', version: '2.0.0', private: true, workspaces: ['packages/gone', 'apps/*'] },
     });
-    const { code, stderr } = runHook('git commit -m "chore(release): 2.0.0"', dir, stubs);
-    assertEq(code, 0, 'a member that is not there takes nothing with it');
-    assert(stderr.includes('packages/gone'), `names the missing member, got: ${stderr}`);
-    assert(stderr.includes('apps/*'), `names the pattern that matched nothing, got: ${stderr}`);
-    cleanup(dir);
-    cleanup(stubs.dir);
-  });
-
-  await test('malformed JSON, exit 0', () => {
-    const stubs = makeStubs();
-    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-      input: 'not json',
-      env: { HOME: shellPath(os.homedir()), PATH: systemPathWith(stubs.binDir) },
-      encoding: 'utf8',
-      timeout: 30000,
-    });
-    assertEq(res.status, 0, 'bad input means fail open');
-    cleanup(stubs.dir);
+    assertEq(deny, null, 'a member that is not there takes nothing with it');
+    for (const line of [
+      'release-taken: the workspace member packages/gone holds no package.json, so it was not checked.',
+      'release-taken: the workspace pattern apps/* matched no package, so nothing under it was checked.',
+    ]) {
+      assert(text.split('\n').includes(line), `says "${line}", got: ${text}`);
+    }
   });
 
   group('release-taken: wiring');
 
-  await test('hooks.json registers the hook under PreToolUse Bash, after commit-language', () => {
-    const wiring = JSON.parse(fs.readFileSync(
-      path.join(__dirname, '..', '..', '..', 'hooks', 'hooks.json'), 'utf8'));
-    const bash = (wiring.hooks.PreToolUse || []).find((b) => b.matcher === 'Bash');
-    assert(bash, 'a PreToolUse Bash block exists');
-    const names = bash.hooks.map((h) => h.command);
-    const mine = names.findIndex((c) => c.includes('safety:release-taken'));
-    assert(mine > 0, `the Bash block routes safety:release-taken through the loader, got: ${names.join(' ')}`);
-    assert(names[mine - 1].includes('safety:commit-language'),
-      `it sits after safety:commit-language, got: ${names.join(' ')}`);
+  await test('ports "hooks.json registers the hook under PreToolUse Bash, after commit-language": BASH_GUARDS order', () => {
+    const hooks = mods('guards').BASH_GUARDS.map((g) => g.hook);
+    const mine = hooks.indexOf('safety:release-taken');
+    assert(mine > 0, `BASH_GUARDS names safety:release-taken, got: ${hooks.join(' ')}`);
+    assertEq(hooks[mine - 1], 'safety:commit-language', 'it sits right after safety:commit-language');
+    assertEq(typeof mods('guards').BASH_GUARDS[mine].run, 'function', 'its entry carries a run function');
   });
+};
 
+module.exports = async () => {
+  await run();
   return summary();
 };
 
-module.exports = run;
-
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(module.exports);

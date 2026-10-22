@@ -5,8 +5,8 @@
  */
 
 import { userDirOf } from './log.js';
-import { isPlain, parsed } from './manager.js';
 import { MAX_CONTENT_LINES, contentLineCount } from './session-guard.js';
+import { isPlain, parseJson } from './settings.js';
 
 // How old the newest brief may be, in whole UTC calendar days, before it is
 // judged stopped: one day is the ordinary morning. FRESH_DAYS in
@@ -105,9 +105,9 @@ export async function sessionGather(io, env, e) {
   const [state, brief, settings, now] = await Promise.all([
     io.read(path), io.read(`${machine}/brief-status.json`), io.read(`${machine}/settings.json`), io.now(),
   ]);
-  const slug = parsed(settings)?.site?.repo;
+  const slug = parseJson(settings)?.site?.repo;
   const repoSlug = typeof slug === 'string' ? slug : null;
-  const { context, carried } = sessionContext({ state, path, brief: parsed(brief) ?? null, repoSlug, now });
+  const { context, carried } = sessionContext({ state, path, brief: parseJson(brief), repoSlug, now });
   if (carried) io.log('workkit: state carried over. Say "continue" to resume the session queue');
   return context;
 }

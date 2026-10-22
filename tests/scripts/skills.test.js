@@ -139,14 +139,14 @@ const run = async () => {
 
   group('skills: no `workflow:` skill names survive');
   await test('nothing under skills/ names a workflow: skill', () => {
-    // A `workflow:` name that is a hook, a folder under hooks/workflow/ or a
-    // module hook register.js names, keeps its name (`workflow:feature` loads
-    // the feature skill). Only the skill names carry the workkit: prefix.
-    const register = fs.readFileSync(path.join(REPO, 'hooks', 'register.js'), 'utf8');
-    const hooks = [
-      ...fs.readdirSync(path.join(REPO, 'hooks', 'workflow')),
-      ...[...register.matchAll(/'workflow:([a-z-]+)'/g)].map((m) => m[1]),
-    ];
+    // A `workflow:` name that is a hook the module names (hooks/register.js and
+    // hooks/mods/) keeps its name (`workflow:feature` loads the feature skill).
+    // Only the skill names carry the workkit: prefix.
+    const moduleFiles = [path.join(REPO, 'hooks', 'register.js'),
+      ...fs.readdirSync(path.join(REPO, 'hooks', 'mods'), { recursive: true })
+        .filter((f) => f.endsWith('.js')).map((f) => path.join(REPO, 'hooks', 'mods', f))];
+    const hooks = moduleFiles.flatMap((f) => [...fs.readFileSync(f, 'utf8').matchAll(/'workflow:([a-z-]+)'/g)].map((m) => m[1]));
+    assert(hooks.includes('feature'), `the module names workflow:feature, got: ${hooks.join(', ')}`);
     const bad = [];
     for (const file of markdownIn(SKILLS_DIR)) {
       const text = fs.readFileSync(file, 'utf8');
@@ -266,12 +266,10 @@ const run = async () => {
   const MACHINE_SPECIFIC = [/\.dotfiles\b/, /(?<![A-Za-z]:|\/[a-z])\/Users\//, /~\/Developer\//, /\bthe dotfiles repo\b/i];
   const machineSpecific = (text) => MACHINE_SPECIFIC.some((pattern) => pattern.test(text));
 
-  await test('the scan reads the briefs, every hook README and the engine, jobs and tower READMEs', () => {
+  await test('the scan reads the briefs and the engine, jobs and tower READMEs', () => {
     const scanned = new Set(portable().map((file) => path.relative(REPO, file)));
-    const hookReadmes = markdownIn(path.join(REPO, 'hooks')).filter((file) => path.basename(file) === 'README.md');
-    assert(hookReadmes.length > 0, 'the hooks carry READMEs to scan');
     const want = [
-      ...markdownIn(BRIEFS_DIR), ...hookReadmes,
+      ...markdownIn(BRIEFS_DIR),
       ...['workflow', 'jobs', 'tower'].map((dir) => path.join(REPO, dir, 'README.md')),
     ].map((file) => path.relative(REPO, file));
     assert(want.some((file) => file.startsWith(`briefs${path.sep}`)), 'the briefs are there to scan');

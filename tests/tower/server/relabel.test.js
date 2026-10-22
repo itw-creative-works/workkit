@@ -152,7 +152,7 @@ const run = async () => {
 
   // ── The proof gate on the drag ───────────────────────────────────────────
   // The board is the second door into the flip the hooks hold on the shell path
-  // (safety/proof-guard, safety/commit-gate check 6): nothing reaches Complete
+  // (safety:proof-guard, safety:commit-gate check 6): nothing reaches Complete
   // without a `Proof:` comment, whichever door it comes through.
 
   /** The `gh issue` calls a move makes, told apart by their subcommand. */
@@ -233,7 +233,7 @@ const run = async () => {
   });
 
   // ── The Spec gate on the drag ────────────────────────────────────────────
-  // The board's door into status:specced holds the rule safety/spec-guard holds
+  // The board's door into status:specced holds the rule safety:spec-guard holds
   // on the shell path: a written `## Spec` carries a `### Contract`, or is the
   // small-item line, and an issue with no Spec has nothing to be specced on.
 
@@ -255,7 +255,7 @@ const run = async () => {
     const views = moveCalls(w, 'view');
     assertEq(views.length, 1, 'one read');
     assertEq(views[0].join(' '), `gh issue view 17 --repo ${SLUG} --json body`,
-      'of the issue’s own body, the same read safety/spec-guard makes');
+      'of the issue’s own body, the same read safety:spec-guard makes');
     const [edit] = moveCalls(w, 'edit');
     assertEq(edit && edit.join(' '),
       `gh issue edit 17 --repo ${SLUG} --remove-label status:inbox --add-label status:specced`,
@@ -296,7 +296,7 @@ const run = async () => {
     assertEq(body.ok, false, 'the gate refused it - a Contract outside the Spec does not count');
     assertEq(body.reason, CONTRACT_REASON, 'the reason names what is missing and the fix');
     assertEq(moveCalls(w, 'view').length, 1, 'the body was read');
-    assertEq(moveCalls(w, 'edit').length, 0, 'the drag is not a door around safety/spec-guard');
+    assertEq(moveCalls(w, 'edit').length, 0, 'the drag is not a door around safety:spec-guard');
     await c.stop();
     cleanup(w.root);
   });

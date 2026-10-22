@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # workflow/changelog/changelog-job.sh: the `changelog` job and the push trigger
 # in a repo's checks.yml, read and rewritten, and the retired linter copies.
-# Sourced by standards.sh and, for safety/commit-gate, by hooks/_lib.sh: one
-# rewrite, so the gate never accepts a change the heal would not make.
-# Functions only.
+# SOURCED by standards.sh, where it defines functions and sets nothing. RUN directly, the hooks module's entry for safety:commit-gate:
+# `bash changelog-job.sh rewrite|copies|names [args]` (the foot of the
+# file). One rewrite, so the gate never accepts a change the heal would not make.
 #
 # Every awk runs with `-v BINMODE=3`, so gawk on Windows keeps a file's own
 # line endings; each awk strips a trailing `\r` itself before comparing.
@@ -259,3 +259,22 @@ wk_changelog_job_rewrite() {
   status=("${PIPESTATUS[@]}")
   (( status[0] == 0 && status[1] == 0 ))
 }
+
+# The entry the hooks module runs, each mode the function it names, its stdout
+# and exit status passed through: `rewrite <checks.yml> [template]` (the
+# template wk_checks_template names by default), `copies`, and `names <file>
+# [copy]` over the file's text. Run as a file only: sourced, this does nothing.
+if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${#BASH_SOURCE[@]}" -eq 1 ]; then
+  set -uo pipefail
+  set -f
+  usage() { echo "changelog-job.sh: usage: rewrite <checks.yml> [template] | copies | names <file> [copy]" >&2; exit 64; }
+  case "${1:-}" in
+    rewrite) [ -n "${2:-}" ] || usage; wk_changelog_job_rewrite "$2" "${3:-$(wk_checks_template)}" ;;
+    copies) wk_linter_copies ;;
+    names)
+      [ -n "${2:-}" ] || usage
+      { exec 3< "$2"; } 2>/dev/null || { echo "changelog-job.sh: cannot read $2" >&2; exit 2; }
+      wk_names_linter_copy "${@:3}" <&3 ;;
+    *) usage ;;
+  esac
+fi

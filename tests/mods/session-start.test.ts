@@ -234,7 +234,7 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
   })
 
   test('ports "a subdirectory session resolves to the repo root"', async ($, on) => {
-    const w = mkWorld(on, { standards: { heal: HEAL } })
+    const w = mkWorld(on, { standards: { heal: HEAL }, dirs: [`${REPO}/src/deep`] })
     await start($, `${REPO}/src/deep`)
     const run = heals(w)[0]
     expect(run.argv.includes(REPO) || run.init.cwd === REPO).toBe(true)
@@ -370,7 +370,7 @@ describe('classic.SessionStart: docs:session (session suite)', () => {
   })
 
   test('ports "a session opened in a subdirectory finds the repo root"', async ($, on) => {
-    mkWorld(on, { now: NOW, files: { [STATE]: filled(2) } })
+    mkWorld(on, { now: NOW, files: { [STATE]: filled(2) }, dirs: [`${REPO}/src/deep`] })
     expect(contextOf(await start($, `${REPO}/src/deep`))).toContain('- #1: a queued entry.')
   })
 

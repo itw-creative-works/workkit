@@ -1,6 +1,6 @@
 /**
- * hooks/register.js: the workkit hooks module, the fifteen in-process hooks
- * on eight events (docs/hooks.md § The hooks module). The one file that
+ * hooks/register.js: the workkit hooks module, the twenty-eight in-process
+ * hooks on nine events (docs/hooks.md § The hooks module). The one file that
  * touches `$`: each hook's logic is plain functions in hooks/mods/<name>.js,
  * and this file gathers their facts (or hands a mods gatherer the engine calls
  * as plain functions), gates them, logs each fire and answers.
@@ -8,15 +8,18 @@
 
 import { addonContext, addonPath } from './mods/addon.js';
 import { boardGuardVerdict } from './mods/board-guard.js';
-import { changelogGuardVerdict, isChangelog } from './mods/changelog-guard.js';
+import { changeTrackerGather } from './mods/change-tracker.js';
+import { changelogGuardVerdict, isChangelog, linterPath } from './mods/changelog-guard.js';
 import { checkpointContext } from './mods/checkpoint.js';
 import { closeGuardGather } from './mods/close-guard.js';
 import { featureContext, featureMatch } from './mods/feature.js';
-import { isExempt, settingsOptedIn } from './mods/gate.js';
+import { isExempt } from './mods/gate.js';
+import { BASH_GUARDS, FILE_GUARDS, GUARDS_FAILED, POST_BASH_GUARDS, READ_GUARDS, folderOpted, runChain } from './mods/guards.js';
 import { appendLog, homeOf, logLine, pad, userDirOf } from './mods/log.js';
 import { crewClass, isAdvise, managerConfig } from './mods/manager.js';
+import { sha1Hex } from './mods/markers.js';
 import { profileContext } from './mods/profile.js';
-import { reloadFingerprint, reloadGuardContext } from './mods/reload-guard.js';
+import { reloadFingerprint, reloadGuardContext, surfacePaths } from './mods/reload-guard.js';
 import { resolverAdvice, resolverModel } from './mods/resolver.js';
 import { sessionGather } from './mods/session.js';
 import { sessionGuardVerdict } from './mods/session-guard.js';
@@ -42,6 +45,7 @@ const HOOK = {
   resolver: 'manager:resolver',
   spawnGuard: 'manager:spawn-guard',
   closeGuard: 'manager:close-guard',
+  changeTracker: 'docs:change-tracker',
 };
 
 const GH_TIMEOUT_MS = 5000;
@@ -59,7 +63,7 @@ const failedRun = (err) => ({ exitCode: 1, stdout: '', stderr: String(err?.messa
 const quiet = (promise) => promise.catch(() => undefined);
 
 // The written file, absolute and in one spelling, every backslash a slash (as
-// hooks/lib/optin.sh spells it), so the mods see `C:/...` on Windows too; a
+// optin.js folds it), so the mods see `C:/...` on Windows too; a
 // relative one is the session directory's.
 const filePathOf = (e) => {
   const path = e.tool_input?.file_path?.replace(/\\/g, '/');
@@ -71,11 +75,6 @@ const filePathOf = (e) => {
 const withContext = (result, contexts) => (contexts.length === 0
   ? result
   : { ...result, additionalContext: [...contexts, ...(result?.additionalContext ?? [])] });
-
-async function sha1Hex(text) {
-  const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(text));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
 
 // Every variable the module reads, once per dispatch; an unreadable one is unset.
 async function envOf($) {
@@ -114,7 +113,7 @@ async function exists($, path) {
   }
 }
 
-// The written file where it really is, as hooks/lib/optin.sh reads it: a
+// The written file where it really is: a
 // linked file names its target's repo; a path not there yet keeps its spelling.
 async function physicalPath($, file) {
   if (!file) return null;
@@ -161,8 +160,10 @@ async function sessionModel($) {
   }
 }
 
-// The session's own folder. `agent.spawn`'s and the Agent tool's `cwd` is the
-// subagent's override, never the session's, so those two handlers ask here.
+// The session's own folder, '' when the engine cannot say: the quiet form, for
+// where no folder is a stand-down (the hooks log, agent.spawn, the Agent tool's
+// PreToolUse, test-reminder). The tool.call chains ask $.session.cwd() bare, so
+// a throw there fails them closed.
 async function sessionCwd($) {
   try {
     return await $.session.cwd();
@@ -214,8 +215,8 @@ async function storeSet($, sid, name, value) {
   }
 }
 
-// Each hook fails open on its own, the shell hooks' posture: the error goes to
-// the debug log and the hook says nothing.
+// Each hook fails open on its own: the error goes to the debug log and the
+// hook says nothing.
 async function caught($, hook, work) {
   try {
     return await work;
@@ -225,48 +226,25 @@ async function caught($, hook, work) {
   }
 }
 
-/**
- * The gate: the repo holding `cwd` opted in (gate.js). An answer the module
- * cannot get is a no.
- * @param {object} $ the engine interface
- * @param {string} cwd the folder the hook acts on
- * @returns {Promise<boolean>}
- */
-export async function optedIn($, cwd) {
-  const root = await gitTop($, cwd);
-  if (!root) return false;
-  return settingsOptedIn(await readText($, `${root}/.workkit/settings.json`));
-}
-
 // The classic events whose input carries the session's folder as `cwd`.
 const CARRIES_CWD = new Set(['PostToolUse', 'SessionStart', 'UserPromptSubmit', 'SubagentStart', 'Stop']);
 
-/**
- * Writes one fire's line to the hooks log, the loader's line and cap: the one
- * writer every handler calls. It reads and rewrites the whole file, so two
- * sessions writing at once may lose a line (docs/hooks.md § The hooks log).
- * @param {object} $ the engine interface
- * @param {string} hook the hook (`docs:checkpoint`)
- * @param {string} event the event it fired on
- * @param {object} e the event's input, for its session and folder
- * @param {string} verdict `run` or `stood-down`
- * @returns {Promise<void>}
- */
-export async function logFire($, hook, event, e, verdict) {
+// Every fire of a dispatch in the hooks log, the one writer every handler
+// calls: one line per fire (log.js's line and cap), the session and folder
+// asked once, then one read and one whole-file write, so two sessions writing
+// at once may lose a line (docs/hooks.md § The hooks log).
+async function logFires($, env, event, e, fires) {
+  if (fires.length === 0) return;
   try {
     const folder = CARRIES_CWD.has(event) ? e.cwd ?? '' : sessionCwd($);
-    const [env, sid, cwd, at] = await Promise.all([envOf($), sessionId($, e), folder, now($)]);
+    const [sid, cwd, at] = await Promise.all([sessionId($, e), folder, now($)]);
     const iso = new Date(at).toISOString().replace(/\.\d{3}Z$/, 'Z');
     const path = `${userDirOf(env)}/hooks.log`;
-    await $.fs.write(path, appendLog((await readText($, path)) ?? '', logLine(iso, hook, event, sid, cwd, verdict)));
+    const lines = fires.map(([hook, verdict]) => logLine(iso, hook, event, sid, cwd, verdict)).join('');
+    await $.fs.write(path, appendLog((await readText($, path)) ?? '', lines));
   } catch {
     // A write that fails never stops the hook.
   }
-}
-
-// Each fire of a dispatch, in order: one read and one write apiece.
-async function logFires($, event, e, fires) {
-  for (const [hook, verdict] of fires) await logFire($, hook, event, e, verdict);
 }
 
 async function configOf($, env, cwd) {
@@ -284,14 +262,15 @@ const ioOf = ($, env) => ({
   pluginRoot: $.plugin.root,
   top: (cwd) => gitTop($, cwd), read: (path) => readText($, path), now: () => now($),
   exists: (path) => exists($, path), real: (path) => realPath($, path), run: (argv, init) => run($, argv, init),
-  write: (path, text) => quiet($.fs.write(path, text)), sha1: sha1Hex,
+  list: (path) => $.fs.list(path).then((entries) => entries.map((f) => f.name), () => []),
+  write: (path, text) => quiet($.fs.write(path, text)), sha1: sha1Hex, stat: (path) => $.fs.stat(path).catch(() => null),
   config: (cwd) => configOf($, env, cwd), model: () => sessionModel($),
   messages: () => $.session.messages(), log: (text) => $.ui.log(text),
 });
 
 async function changelogGuardHook($, env, file, text) {
   if (!isChangelog(file) || text === null) return null;
-  const linter = `${env.WORKFLOW_DIR || `${$.plugin.root}/workflow`}/changelog/changelog.js`;
+  const linter = linterPath(env, $.plugin.root);
   if (!(await exists($, linter))) return null;
   const lint = await run($, ['node', linter, file, '--added-only'], { cwd: dirOf(file) });
   // No node to run the linter, or a run past its timeout: the guard stands aside.
@@ -363,15 +342,7 @@ async function fingerprintOf($, env) {
       return [];
     }
   };
-  const [agents, skills, mods, hooksJson] = await Promise.all([
-    listed('agents'), listed('skills'), listed('hooks/mods'), readText($, `${root}/hooks/hooks.json`),
-  ]);
-  const paths = [
-    ...agents.filter((f) => f.name.endsWith('.md')).map((f) => `agents/${f.name}`),
-    ...skills.map((f) => `skills/${f.name}/SKILL.md`),
-    'hooks/register.js',
-    ...mods.filter((f) => f.name.endsWith('.js')).map((f) => `hooks/mods/${f.name}`),
-  ];
+  const [paths, hooksJson] = await Promise.all([surfacePaths(listed), readText($, `${root}/hooks/hooks.json`)]);
   const surfaces = await Promise.all(paths.map(async (path) => {
     try {
       return { path, mtimeMs: (await $.fs.stat(`${root}/${path}`)).mtimeMs };
@@ -457,13 +428,44 @@ async function dropSessionKeys($, sid) {
 
 // A hook that never refuses passes the event on when it fails.
 const passOn = ($, e, next) => next(e);
+const NOT_INPUT = new Set(['tool', 'tool_use_id', 'agentId']);
+// A guard chain that failed before its answer refuses, naming the failure's kind.
+const failClosed = ($, e, next) => (next.called ? next(e) : { deny: `${GUARDS_FAILED}${next.error.kind}` });
+
+// One guard chain (guards.js) over the facts `facts()` gathers: every fire
+// logged, a guard's throw rethrown for the .catch, the first deny answered,
+// else the event passed on with the notices as one entry and one owner line.
+async function guardChain($, e, next, event, guards, facts) {
+  const env = await envOf($);
+  if (env.HOOK_DISABLE === '1') return next(e);
+  const chain = await runChain(ioOf($, env), env, guards, await facts());
+  await logFires($, env, event === 'tool.call' ? 'PreToolUse' : event, e, chain.fires);
+  if (chain.error) throw chain.error;
+  if (chain.deny) return { deny: chain.deny };
+  if (!chain.notice) return next(e);
+  $.ui.log(chain.notice);
+  const result = await next(e);
+  return event === 'tool.call' ? { ...result, context: [chain.notice, ...(result?.context ?? [])] } : withContext(result, [chain.notice]);
+}
+
+// A file guard's facts. `tool.call` carries the input flat beside `tool`,
+// `tool_use_id` and `agentId`, and no folder: the cwd is the session's. An
+// Edit or Write is gated by the file's repo, a Read or Grep by the cwd's.
+// `file` is where the file really is, `typed` the path as the input spells it.
+async function fileFacts($, e) {
+  const input = Object.fromEntries(Object.entries(e).filter(([key]) => !NOT_INPUT.has(key)));
+  const cwd = await $.session.cwd();
+  const file = await physicalPath($, filePathOf({ tool_input: input, cwd }));
+  const dir = file ? dirOf(file) : cwd;
+  return { tool: e.tool, input, cwd, file, typed: filePathOf({ tool_input: input, cwd }), dir, gateDir: e.tool === 'Read' || e.tool === 'Grep' ? cwd : dir };
+}
 
 export function register(on) {
   on('classic.PostToolUse', { tool_name: ['Edit', 'Write'] }, async ($, e, next) => {
     const env = await envOf($);
     if (env.HOOK_DISABLE === '1') return next(e);
     const file = await physicalPath($, filePathOf(e));
-    const opted = await optedIn($, file ? dirOf(file) : e.cwd);
+    const opted = await folderOpted(ioOf($, env), file ? dirOf(file) : e.cwd);
     const fires = [];
     let block = null;
     let context = null;
@@ -487,7 +489,7 @@ export function register(on) {
         context = await caught($, HOOK.testReminder, testReminderHook($, e, file));
       }
     }
-    await logFires($, 'PostToolUse', e, fires);
+    await logFires($, env, 'PostToolUse', e, fires);
     const result = await next(e);
     if (block) return { ...result, block: [block, result?.block].filter(Boolean).join('\n\n') };
     return withContext(result, context ? [context] : []);
@@ -498,7 +500,7 @@ export function register(on) {
   on('classic.SessionStart', async ($, e, next) => {
     const env = await envOf($);
     if (env.HOOK_DISABLE === '1') return next(e);
-    const opted = await optedIn($, e.cwd);
+    const opted = await folderOpted(ioOf($, env), e.cwd);
     // The reload stamp is taken only where the session loads its surfaces.
     const stamps = e.source === 'startup' || e.source === 'resume';
     const fires = [[HOOK.stateCheck, verdictOf(HOOK.stateCheck, opted)], [HOOK.standards, 'run']];
@@ -510,14 +512,14 @@ export function register(on) {
       stamps ? caught($, HOOK.reloadGuard, reloadStampHook($, env, e)) : null,
       opted ? caught($, HOOK.session, sessionGather(ioOf($, env), env, e)) : null,
     ]);
-    await logFires($, 'SessionStart', e, fires);
+    await logFires($, env, 'SessionStart', e, fires);
     return withContext(await next(e), contexts.filter(Boolean));
   }).catch(passOn);
 
   on('classic.UserPromptSubmit', async ($, e, next) => {
     const env = await envOf($);
     if (env.HOOK_DISABLE === '1') return next(e);
-    const opted = await optedIn($, e.cwd);
+    const opted = await folderOpted(ioOf($, env), e.cwd);
     const fires = [HOOK.profile, HOOK.reloadGuard, HOOK.checkpoint, HOOK.feature].map((hook) => [hook, verdictOf(hook, opted)]);
     const contexts = await Promise.all([
       opted ? caught($, HOOK.profile, profileHook($, env, e)) : null,
@@ -525,16 +527,16 @@ export function register(on) {
       opted ? caught($, HOOK.checkpoint, checkpointHook($, e)) : null,
       opted ? caught($, HOOK.feature, featureHook($, e)) : null,
     ]);
-    await logFires($, 'UserPromptSubmit', e, fires);
+    await logFires($, env, 'UserPromptSubmit', e, fires);
     return withContext(await next(e), contexts.filter(Boolean));
   }).catch(passOn);
 
   on('classic.SubagentStart', { agent_type: /^workkit:/ }, async ($, e, next) => {
     const env = await envOf($);
     if (env.HOOK_DISABLE === '1') return next(e);
-    const opted = await optedIn($, e.cwd);
+    const opted = await folderOpted(ioOf($, env), e.cwd);
     const context = opted ? await caught($, HOOK.addon, addonHook($, env, e)) : null;
-    await logFires($, 'SubagentStart', e, [[HOOK.addon, verdictOf(HOOK.addon, opted)]]);
+    await logFires($, env, 'SubagentStart', e, [[HOOK.addon, verdictOf(HOOK.addon, opted)]]);
     return withContext(await next(e), context ? [context] : []);
   }).catch(passOn);
 
@@ -542,18 +544,30 @@ export function register(on) {
     const env = await envOf($);
     if (env.HOOK_DISABLE === '1') return next(e);
     const cwd = await sessionCwd($);
-    const opted = await optedIn($, cwd);
+    const opted = await folderOpted(ioOf($, env), cwd);
     const warning = opted ? await caught($, HOOK.spawnGuard, spawnGuardHook($, env, e, cwd)) : null;
-    await logFires($, 'PreToolUse', e, [[HOOK.spawnGuard, verdictOf(HOOK.spawnGuard, opted)]]);
+    await logFires($, env, 'PreToolUse', e, [[HOOK.spawnGuard, verdictOf(HOOK.spawnGuard, opted)]]);
     return withContext(await next(e), warning ? [warning] : []);
   }).catch(passOn);
+
+  // tool.call carries no cwd: the folder is the session's, or the subagent's in a subagent.
+  on('tool.call', { tool: 'Bash' }, ($, e, next) => guardChain($, e, next, 'tool.call', BASH_GUARDS,
+    async () => ({ command: e.command ?? '', cwd: await $.session.cwd() }))).catch(failClosed);
+
+  on('tool.call', { tool: ['Edit', 'Write'] }, ($, e, next) => guardChain($, e, next, 'tool.call', FILE_GUARDS, () => fileFacts($, e))).catch(failClosed);
+
+  on('tool.call', { tool: ['Read', 'Grep'] }, ($, e, next) => guardChain($, e, next, 'tool.call', READ_GUARDS, () => fileFacts($, e))).catch(failClosed);
+
+  // Never a block: a hook here acts after the command ran.
+  on('classic.PostToolUse', { tool_name: 'Bash' }, ($, e, next) => guardChain($, e, next, 'PostToolUse', POST_BASH_GUARDS,
+    async () => ({ command: e.tool_input?.command ?? '', cwd: e.cwd ?? '' }))).catch(passOn);
 
   on('agent.spawn', async ($, e, next) => {
     const env = await envOf($);
     if (env.HOOK_DISABLE === '1') return next(e);
     const cwd = await sessionCwd($);
-    const opted = await optedIn($, cwd);
-    await logFires($, 'agent.spawn', e, [[HOOK.resolver, verdictOf(HOOK.resolver, opted)]]);
+    const opted = await folderOpted(ioOf($, env), cwd);
+    await logFires($, env, 'agent.spawn', e, [[HOOK.resolver, verdictOf(HOOK.resolver, opted)]]);
     // A resumed run or a fork keeps the model it has.
     if (!opted || e.resume || e.fork) return next(e);
     const decision = await caught($, HOOK.resolver, resolverHook($, env, e, cwd));
@@ -564,14 +578,16 @@ export function register(on) {
     ? next(e)
     : { deny: 'manager:resolver failed before this spawn started; re-issue the Agent call.' }));
 
-  // The warning reaches the owner alone: a Stop context would continue the turn.
+  // close-guard's warning reaches the owner alone, since a Stop context would
+  // continue the turn; the change tracker's nag is a block, continuing it on purpose.
   on('classic.Stop', async ($, e, next) => {
     const env = await envOf($);
     if (env.HOOK_DISABLE === '1') return next(e);
-    const opted = await optedIn($, e.cwd);
+    const opted = await folderOpted(ioOf($, env), e.cwd);
     if (opted) await caught($, HOOK.closeGuard, closeGuardGather(ioOf($, env), env, e));
-    await logFires($, 'Stop', e, [[HOOK.closeGuard, verdictOf(HOOK.closeGuard, opted)]]);
-    return next(e);
+    const nag = opted ? await caught($, HOOK.changeTracker, changeTrackerGather(ioOf($, env), env, e)) : null;
+    await logFires($, env, 'Stop', e, [HOOK.closeGuard, HOOK.changeTracker].map((hook) => [hook, verdictOf(hook, opted)]));
+    return nag ? next(e).then((r) => ({ ...r, block: [nag.block, r?.block].filter(Boolean).join('\n\n') })) : next(e);
   }).catch(passOn);
 
   on('session.end', async ($, e, next) => {

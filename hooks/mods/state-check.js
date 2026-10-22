@@ -6,7 +6,9 @@
  */
 
 import { AGENTS_MAX_BYTES, AGENTS_MAX_LINES, agentsBudget } from './board-guard.js';
+import { unfiledCount } from './change-tracker.js';
 import { rowsOf } from './session-guard.js';
+import { parseJson } from './settings.js';
 
 const plural = (n) => (n === 1 ? '' : 's');
 
@@ -17,12 +19,8 @@ const plural = (n) => (n === 1 ? '' : 's');
  * @returns {number}
  */
 export function inboxCount(stdout) {
-  try {
-    const issues = JSON.parse(stdout);
-    return Array.isArray(issues) ? issues.length : 0;
-  } catch {
-    return 0;
-  }
+  const issues = parseJson(stdout);
+  return Array.isArray(issues) ? issues.length : 0;
 }
 
 /**
@@ -43,7 +41,7 @@ export function stateCheckContext(facts) {
   if (inbox > 0) {
     msg.push(`ISSUES: ${inbox} open status:inbox issue${plural(inbox)}. Run triage (workkit:triage) to route them.`);
   }
-  if (typeof capture === 'string' && rowsOf(capture).some((row) => !/^\s*$|^#|^>/.test(row))) {
+  if (unfiledCount(capture) > 0) {
     msg.push(`SCRATCH: the local capture file has entries (${cwd}/.workkit/capture.md): triage drains it.`);
   }
   // Claude Code reads AGENTS.md itself, and a project CLAUDE.md stops that read.

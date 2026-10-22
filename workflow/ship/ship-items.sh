@@ -40,9 +40,9 @@ done
 errfile="$(mktemp)"
 trap 'rm -f "$errfile"' EXIT
 
-# One stage's lines. The proof test is safety/proof-guard's regex, with four
-# homes that change together: this, hook_view_has_proof in hooks/lib/proof.sh,
-# and PROOF_LINE in tower/api/server/validate.js and the dashboard's
+# One stage's lines. The proof test is safety:proof-guard's regex, with four
+# homes that change together: this, PROOF_RE in hooks/mods/proof.js, and
+# PROOF_LINE in tower/api/server/validate.js and the dashboard's
 # libs/tower/github/writes.js. jq's test is not multiline, hence the newline branch.
 stage_lines() {
   local stage="$1" json reason

@@ -1,476 +1,217 @@
-/* eslint-disable no-console */
-// Tests for hooks/docs:change-tracker: the Stop hook that, when code changes
-// sit uncommitted, blocks with the prompt.md nudge to keep the issue true,
-// promote durable findings out of .workkit/, and check doc-parity.
+// Tests for docs:change-tracker's logic, changeTrackerVerdict({
+// stopHookActive, porcelain, diff, untracked, inbox, capture, previous, prompt
+// }) in hooks/mods/change-tracker.js: uncommitted code or unfiled entries
+// block the stop with the nag, once per fingerprint of the state. Each case
+// ports the HEAD case its name quotes. Gathering is the wiring's, in
+// tests/mods/stop-change-tracker.test.ts: the git repo, the .workkit/ state
+// file and the folder with none, the counts, the FINDINGS and BOARD lines, the
+// prompt's read, the session, never calling gh. Every HEAD case is ported.
 
-const path = require('path');
 const fs = require('fs');
-const os = require('os');
-const { spawnSync, execSync } = require('child_process');
+const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
-const { BASH, SYSTEM_BASH, NO_RC, shellPath } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
+const { mods } = require('../lib/mods-inputs');
 
-const HOOK = path.join(__dirname, '..', '..', 'hooks', 'docs', 'change-tracker', 'run.sh');
-const PROMPT = path.join(__dirname, '..', '..', 'hooks', 'docs', 'change-tracker', 'resources', 'prompt.md');
+const PROMPT_FILE = path.join(__dirname, '..', '..', 'hooks', 'mods', 'change-tracker', 'prompt.md');
+const PROMPT = 'The working tree has uncommitted code/config changes. Keep the issue true before you stop.';
 
-const mkTmpRepo = () => {
-  const dir = mkTmp('ct-test-');
-  execSync('git init && git commit --allow-empty -m "init"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-  return dir;
+const CODE = 'Change tracker: uncommitted code changes detected.';
+const ENTRIES = 'Change tracker: unfiled entries detected.';
+const BOTH = 'Change tracker: uncommitted code changes + unfiled entries detected.';
+
+const judge = (facts) => mods('change-tracker').changeTrackerVerdict({
+  stopHookActive: false, porcelain: '', diff: '', untracked: [], inbox: 0, capture: 0, previous: null, prompt: PROMPT, ...facts,
+});
+
+// A new app.js, untracked: a name in the status, its content in the file alone.
+const NEW_APP = { porcelain: '?? app.js\n', untracked: [{ path: 'app.js', text: 'console.log("hi")' }] };
+// A committed app.js edited in place: a status line and a diff.
+const EDITED = (to) => ({ porcelain: ' M app.js\n', diff: `diff --git a/app.js b/app.js\n--- a/app.js\n+++ b/app.js\n@@ -1 +1 @@\n-one\n+${to}\n` });
+
+const blocksWith = async (facts, reason) => {
+  const r = await judge(facts);
+  assert(r && typeof r.block === 'string', `must block, got: ${JSON.stringify(r)}`);
+  assertEq(r.block, reason, 'the reason');
+  return r;
 };
 
-// The global settings layer every run reads: an empty scratch WORKFLOW_HOME by
-// default, so the machine's own ~/.workkit/settings.json never shapes a case.
-const NO_GLOBAL = mkTmp('ct-wfhome-');
-
-/** A scratch WORKFLOW_HOME whose settings.json is <settings>. */
-const globalWith = (settings) => {
-  const dir = mkTmp('ct-wfhome-');
-  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify(settings));
-  return dir;
+const silent = async (facts, label) => {
+  const r = await judge(facts);
+  assertEq(r ?? null, null, label);
 };
 
-const runHook = (cwd, workflowHome = NO_GLOBAL) => {
-  const input = JSON.stringify({ cwd: shellPath(cwd), stop_hook_active: false });
-  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-    input,
-    env: { ...process.env, HOME: shellPath(os.homedir()), WORKFLOW_HOME: shellPath(workflowHome) },
-    encoding: 'utf8',
-    timeout: 10000,
-  });
-  return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
-};
-
-const writeScratch = (dir, body) => {
-  fs.mkdirSync(path.join(dir, W), { recursive: true });
-  fs.writeFileSync(path.join(dir, W, 'capture.md'), body);
-};
-
-const cleanup = (dir) => {
-  try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
-};
+const prompt = () => fs.readFileSync(PROMPT_FILE, 'utf8');
 
 const run = async () => {
   group('change-tracker: dirty tree detection');
 
-  await test('clean repo: no output (no block)', () => {
-    const dir = mkTmpRepo();
-    const { stdout } = runHook(dir);
-    assert(!stdout.includes('block'), 'clean repo should not block');
-    cleanup(dir);
+  await test('ports "clean repo: no output (no block)"', async () => {
+    await silent({}, 'a clean repo does not block');
   });
 
-  await test('code change: outputs block decision', () => {
-    const dir = mkTmpRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'console.log("hi")');
-    const { stdout } = runHook(dir);
-    assert(stdout.includes('"block"'), `code change should produce block, got: ${stdout.slice(0, 200)}`);
-    assert(stdout.includes('additionalContext'), 'should include context');
-    cleanup(dir);
+  await test('ports "code change: outputs block decision": the reason and the nag', async () => {
+    const r = await blocksWith(NEW_APP, CODE);
+    assert(r.context.includes(PROMPT), 'the context carries the nag');
   });
 
-  await test('doc-only changes: no block (only code triggers)', () => {
-    const dir = mkTmpRepo();
-    fs.writeFileSync(path.join(dir, 'README.md'), '# hi');
-    const { stdout } = runHook(dir);
-    assert(!stdout.includes('"block"'), 'doc-only changes should not block');
-    cleanup(dir);
+  await test('ports "doc-only changes: no block (only code triggers)"', async () => {
+    await silent({ porcelain: '?? README.md\n', untracked: [{ path: 'README.md', text: '# hi' }] }, 'doc-only changes do not block');
   });
 
-  await test('a script under a docs PATH is code: blocks (review finding)', () => {
-    // hooks/docs/*/run.sh is executable bash living under a docs directory.
-    // Seeded and committed first: an untracked directory collapses to its own
-    // name in porcelain output, which would classify as code for the wrong
-    // reason.
-    const dir = mkTmpRepo();
-    fs.mkdirSync(path.join(dir, 'hooks', 'docs', 'x'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'hooks', 'docs', 'x', 'run.sh'), '#!/bin/bash\necho hi\n');
-    execSync('git add -A && git commit -q -m "seed"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    fs.writeFileSync(path.join(dir, 'hooks', 'docs', 'x', 'run.sh'), '#!/bin/bash\necho tweaked\n');
-    const { stdout } = runHook(dir);
-    assert(stdout.includes('"block"'), `a code extension wins over the docs path, got: ${stdout.slice(0, 200)}`);
-    cleanup(dir);
+  await test('ports "a script under a docs PATH is code: blocks (review finding)"', async () => {
+    await blocksWith({ porcelain: ' M hooks/docs/x/run.sh\n', diff: '-echo hi\n+echo tweaked\n' }, CODE);
   });
 
-  await test('a .md under a docs path is still docs: no block', () => {
-    const dir = mkTmpRepo();
-    fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'docs', 'notes.md'), '# notes\n');
-    execSync('git add -A && git commit -q -m "seed"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    fs.writeFileSync(path.join(dir, 'docs', 'notes.md'), '# notes, edited\n');
-    const { stdout } = runHook(dir);
-    assert(!stdout.includes('"block"'), 'the docs basenames are unchanged');
-    cleanup(dir);
+  await test('ports "a .md under a docs path is still docs: no block"', async () => {
+    await silent({ porcelain: ' M docs/notes.md\n', diff: '-# notes\n+# notes, edited\n' }, 'the docs basenames are unchanged');
   });
 
-  await test('mixed code + docs: triggers block', () => {
-    const dir = mkTmpRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
-    fs.writeFileSync(path.join(dir, 'README.md'), 'docs');
-    const { stdout } = runHook(dir);
-    assert(stdout.includes('"block"'), 'mixed changes should block');
-    cleanup(dir);
+  await test('ports "mixed code + docs: triggers block"', async () => {
+    await blocksWith({
+      porcelain: '?? README.md\n?? app.js\n',
+      untracked: [{ path: 'README.md', text: 'docs' }, { path: 'app.js', text: 'code' }],
+    }, CODE);
   });
 
   group('change-tracker: prompt.md content');
 
-  await test('prompt.md exists and is non-empty', () => {
-    assert(fs.existsSync(PROMPT), 'prompt.md should exist');
-    const content = fs.readFileSync(PROMPT, 'utf8');
-    assert(content.length > 100, 'prompt.md should have substantial content');
+  await test('ports "prompt.md exists and is non-empty"', () => {
+    assert(fs.existsSync(PROMPT_FILE), `prompt.md should exist at ${PROMPT_FILE}`);
+    assert(prompt().length > 100, 'prompt.md should have substantial content');
   });
 
-  await test('prompt.md points at issues as the work-item home', () => {
-    const content = fs.readFileSync(PROMPT, 'utf8');
+  await test('ports "prompt.md points at issues as the work-item home"', () => {
+    const content = prompt();
     assert(/GitHub issues/i.test(content), 'should name issues as the SSOT');
     assert(content.includes('status:'), 'should name the status label vocabulary');
     assert(content.includes('CHANGELOG'), 'should require the CHANGELOG entry on ship');
   });
 
-  await test('prompt.md requires promoting durable findings out of .workkit/', () => {
-    const content = fs.readFileSync(PROMPT, 'utf8');
+  await test('ports "prompt.md requires promoting durable findings out of .workkit/"', () => {
+    const content = prompt();
     assert(content.includes(`${W}/`), 'should reference scratch');
     assert(/promote/i.test(content), 'should state the promotion rule');
   });
 
-  await test('prompt.md never offers the capture file as a filing destination', () => {
-    const content = fs.readFileSync(PROMPT, 'utf8');
-    // capture.md is the owner's capture surface: a finding is filed as an
-    // issue, and where GitHub is out of reach it goes in chat, never here.
+  await test('ports "prompt.md never offers the capture file as a filing destination"', () => {
+    const content = prompt();
     assert(/never write to `?\.workkit\/capture\.md/i.test(content), 'the rule is stated outright');
     for (const line of content.split('\n').filter((l) => /capture\.md/.test(l))) {
       assert(/never write to/i.test(line), `capture.md is only ever named to forbid it, got: ${line}`);
     }
   });
 
-  await test('prompt.md carries no board instructions', () => {
-    const content = fs.readFileSync(PROMPT, 'utf8');
+  await test('ports "prompt.md carries no board instructions"', () => {
+    const content = prompt();
     assert(!content.includes('PROGRESS.md'), 'the board is not the prompt\'s business anymore');
     assert(!content.includes('INBOX.md'), 'nor the retired inbox file');
   });
 
-  await test('prompt.md mentions doc parity', () => {
-    const content = fs.readFileSync(PROMPT, 'utf8');
-    assert(
-      content.includes('doc parity') || content.includes('Doc parity'),
-      'should reference the doc parity system'
-    );
+  await test('ports "prompt.md mentions doc parity"', () => {
+    const content = prompt();
+    assert(content.includes('doc parity') || content.includes('Doc parity'), 'should reference the doc parity system');
   });
 
-  await test('the code-change block carries prompt.md itself, not the fallback', () => {
-    const dir = mkTmpRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'console.log("hi")');
-    const { stdout } = runHook(dir);
-    const ctx = JSON.parse(stdout).hookSpecificOutput.additionalContext;
-    assert(ctx.includes(fs.readFileSync(PROMPT, 'utf8').trim()), 'the hook reads the prompt from its resources/ path');
-    cleanup(dir);
-  });
-
-  await test('a missing prompt file fails loudly, never a built-in string', () => {
-    const dir = mkTmpRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'console.log("hi")');
-    const copy = mkTmp('ct-hooks-');
-    // The hook library sources workflow/lib/ and workflow/changelog/ beside hooks/, so the copy carries them.
-    fs.cpSync(path.join(__dirname, '..', '..', 'hooks'), path.join(copy, 'hooks'), { recursive: true });
-    for (const sub of ['lib', 'changelog']) {
-      fs.cpSync(path.join(__dirname, '..', '..', 'workflow', sub), path.join(copy, 'workflow', sub), { recursive: true });
-    }
-    fs.rmSync(path.join(copy, 'hooks', 'docs', 'change-tracker', 'resources', 'prompt.md'));
-    const hook = path.join(copy, 'hooks', 'docs', 'change-tracker', 'run.sh');
-    const input = JSON.stringify({ cwd: shellPath(dir), stop_hook_active: false });
-    const res = spawnSync(BASH, [...NO_RC, shellPath(hook)], {
-      input, env: { ...process.env, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: 10000,
-    });
-    assertEq(res.status, 1, 'exit 1');
-    assert(res.stderr.includes('change-tracker: prompt missing at'), 'stderr names the missing prompt');
-    assertEq(res.stdout, '', 'no block decision is printed');
-    cleanup(dir);
-  });
-
-  group('change-tracker: the findings route follows findings.file');
-
-  // The stop text's two forms, read off the block a code change produces.
-  const stopText = (workflowHome) => {
-    const dir = mkTmpRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'console.log("hi")');
-    const { stdout } = runHook(dir, workflowHome);
-    cleanup(dir);
-    assert(stdout.includes('"block"'), `a code change blocks, got: ${stdout.slice(0, 200)}`);
-    return JSON.parse(stdout).hookSpecificOutput.additionalContext;
-  };
-
-  await test('no findings.file key anywhere: findings are said in chat under Findings, nothing filed', () => {
-    const ctx = stopText(globalWith({ version: 1 }));
-    assert(ctx.includes('Findings'), 'names the Findings section of the reply');
-    assert(/\bchat\b/i.test(ctx), 'names chat as the route');
-    assert(!ctx.includes('Filed'), 'asks for no Filed trail');
-    assert(ctx !== stopText(globalWith({ findings: { file: true } })), 'and is not the filing form');
-  });
-
-  await test('findings.file true in the global file: a status:inbox issue per finding, with the Filed trail', () => {
-    const ctx = stopText(globalWith({ findings: { file: true } }));
-    assert(ctx.includes('status:inbox'), 'asks for a status:inbox issue');
-    assert(ctx.includes('Filed'), 'with the Filed trail');
+  await test('ports "the code-change block carries prompt.md itself, not the fallback": the prompt it is handed', async () => {
+    const text = prompt();
+    const r = await blocksWith({ ...NEW_APP, prompt: text }, CODE);
+    assert(r.context.includes(text.trim()), 'the context carries the prompt whole');
   });
 
   group('change-tracker: repeat only when something changed');
 
-  // The hook nudges once per fingerprint of the state it nags about: the
-  // porcelain status, the diff behind it, and the capture file's content, and
-  // remembers the last one under the repo's own .workkit/agents/.
-  const STATE = path.join(W, 'agents', '.change-tracker');
-
-  // A participating repo: .workkit/ exists and is gitignored, and app.js is
-  // committed so an edit to it moves the diff without moving the status line.
-  const mkStateRepo = () => {
-    const dir = mkTmpRepo();
-    fs.writeFileSync(path.join(dir, '.gitignore'), `${W}/*\n`);
-    fs.writeFileSync(path.join(dir, 'app.js'), 'one\n');
-    execSync('git add -A && git commit -m "app"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    fs.mkdirSync(path.join(dir, W), { recursive: true });
-    return dir;
-  };
-
-  const stateOf = (dir) => {
-    const file = path.join(dir, STATE);
-    return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim() : null;
-  };
-
-  await test('first stop with changes: blocks and records the fingerprint', () => {
-    const dir = mkStateRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'two\n');
-    const { stdout } = runHook(dir);
-    assert(stdout.includes('"block"'), 'the first stop on a new state nudges');
-    assert(stateOf(dir), `the fingerprint is recorded in ${STATE}`);
-    cleanup(dir);
+  await test('ports "first stop with changes: blocks and records the fingerprint": a SHA-1', async () => {
+    const r = await blocksWith(EDITED('two'), CODE);
+    assert(/^[0-9a-f]{40}$/.test(r.fingerprint), `the fingerprint is a sha1, got: ${r.fingerprint}`);
   });
 
-  await test('unchanged tree on the next stop: silent', () => {
-    const dir = mkStateRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'two\n');
-    const first = runHook(dir);
-    assert(first.stdout.includes('"block"'), 'first run should block');
-    const before = stateOf(dir);
-    const second = runHook(dir);
-    assert(!second.stdout.includes('"block"'), 'nothing changed, so nothing to say');
-    assertEq(second.code, 0, 'silent run should exit 0');
-    assertEq(stateOf(dir), before, 'the remembered fingerprint stands');
-    cleanup(dir);
+  await test('ports "unchanged tree on the next stop: silent"', async () => {
+    const first = await blocksWith(EDITED('two'), CODE);
+    await silent({ ...EDITED('two'), previous: first.fingerprint }, 'nothing changed, so nothing to say');
   });
 
-  await test('a new edit behind an identical status line: blocks again', () => {
-    const dir = mkStateRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'two\n');
-    runHook(dir);
-    const before = stateOf(dir);
-    // Same porcelain (' M app.js'), different content: only the diff sees it.
-    fs.writeFileSync(path.join(dir, 'app.js'), 'six\n');
-    const rerun = runHook(dir);
-    assert(rerun.stdout.includes('"block"'), 'a real edit re-arms the nudge');
-    assert(stateOf(dir) !== before, 'and the new fingerprint replaces the old');
-    cleanup(dir);
+  await test('ports "a new edit behind an identical status line: blocks again"', async () => {
+    const first = await blocksWith(EDITED('two'), CODE);
+    const rerun = await blocksWith({ ...EDITED('six'), previous: first.fingerprint }, CODE);
+    assert(rerun.fingerprint !== first.fingerprint, 'and the new fingerprint replaces the old');
   });
 
-  await test('a new file: blocks again', () => {
-    const dir = mkStateRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'two\n');
-    runHook(dir);
-    fs.writeFileSync(path.join(dir, 'lib.js'), 'more code');
-    const rerun = runHook(dir);
-    assert(rerun.stdout.includes('"block"'), 'a new file is a new state');
-    cleanup(dir);
+  await test('ports "a new file: blocks again"', async () => {
+    const first = await blocksWith(EDITED('two'), CODE);
+    await blocksWith({
+      porcelain: ' M app.js\n?? lib.js\n',
+      diff: EDITED('two').diff,
+      untracked: [{ path: 'lib.js', text: 'more code' }],
+      previous: first.fingerprint,
+    }, CODE);
   });
 
-  await test('an untracked file rewritten in place: blocks again', () => {
-    const dir = mkStateRepo();
-    fs.writeFileSync(path.join(dir, 'lib.js'), 'one\n');
-    const first = runHook(dir);
-    assert(first.stdout.includes('"block"'), 'the new file nudges');
-    const before = stateOf(dir);
-    // Same porcelain ('?? lib.js') and nothing in the diff at all. An
-    // untracked file's content lives only in the file, so building one across
-    // turns would go silent after the first nudge.
-    fs.writeFileSync(path.join(dir, 'lib.js'), 'two\n');
-    const rerun = runHook(dir);
-    assert(rerun.stdout.includes('"block"'), 'an edit to an untracked file re-arms the nudge');
-    assert(stateOf(dir) !== before, 'and the new fingerprint replaces the old');
-    cleanup(dir);
+  await test('ports "an untracked file rewritten in place: blocks again"', async () => {
+    const lib = (text) => ({ porcelain: '?? lib.js\n', untracked: [{ path: 'lib.js', text }] });
+    const first = await blocksWith(lib('one\n'), CODE);
+    const rerun = await blocksWith({ ...lib('two\n'), previous: first.fingerprint }, CODE);
+    assert(rerun.fingerprint !== first.fingerprint, 'and the new fingerprint replaces the old');
   });
 
-  await test('a new capture entry: blocks again', () => {
-    const dir = mkStateRepo();
-    writeScratch(dir, '# capture\n> header\n\na finding\n');
-    const first = runHook(dir);
-    assert(first.stdout.includes('SCRATCH: 1 unfiled'), 'first capture nudges');
-    assert(!runHook(dir).stdout.includes('"block"'), 'the same capture does not nudge twice');
-    writeScratch(dir, '# capture\n> header\n\na finding\nanother finding\n');
-    const rerun = runHook(dir);
-    assert(rerun.stdout.includes('"block"'), 'a new capture re-arms the nudge');
-    assert(rerun.stdout.includes('SCRATCH: 2 unfiled'), 'and carries the new count');
-    cleanup(dir);
+  // The re-arm on a changed capture file is the wiring's: the file's text is
+  // the gatherer's to fold in, the count alone is what this function sees.
+  await test('ports "a new capture entry: blocks again": the count, and silence on the same state', async () => {
+    const first = await blocksWith({ capture: 1 }, ENTRIES);
+    assert(first.context.includes('SCRATCH: 1 unfiled'), 'first capture nudges');
+    await silent({ capture: 1, previous: first.fingerprint }, 'the same capture does not nudge twice');
+    const second = await blocksWith({ capture: 2 }, ENTRIES);
+    assert(second.context.includes('SCRATCH: 2 unfiled'), 'and carries the new count');
   });
 
-  await test('clean tree, empty capture file: silent and no state file written', () => {
-    const dir = mkStateRepo();
-    const { code, stdout } = runHook(dir);
-    assertEq(code, 0, 'a clean repo exits 0');
-    assert(!stdout.includes('block'), 'nothing to nudge about');
-    assertEq(stateOf(dir), null, 'nothing to remember, so nothing is written');
-    cleanup(dir);
+  await test('ports "clean tree, empty capture file: silent and no state file written": no fingerprint to keep', async () => {
+    await silent({ capture: 0 }, 'nothing to nudge about');
   });
 
-  await test('the memory is the repo\'s, not the session\'s', () => {
-    const dir = mkStateRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'two\n');
-    const runSession = (sessionId) => {
-      const input = JSON.stringify({ cwd: shellPath(dir), stop_hook_active: false, session_id: sessionId });
-      const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-        input,
-        env: { ...process.env, HOME: shellPath(os.homedir()) },
-        encoding: 'utf8',
-        timeout: 10000,
-      });
-      return res.stdout || '';
-    };
-    assert(runSession('sess-a').includes('"block"'), 'first session nudges');
-    assert(!runSession('sess-b').includes('"block"'), 'a second session over the same state stays silent');
-    cleanup(dir);
+  await test('ports "no .workkit/: nudges every stop and writes nothing": with no state to read, every stop nudges', async () => {
+    const first = await blocksWith(NEW_APP, CODE);
+    const second = await blocksWith({ ...NEW_APP, previous: null }, CODE);
+    assertEq(second.fingerprint, first.fingerprint, 'the same state, nudged again');
   });
 
-  await test('no .workkit/: nudges every stop and writes nothing', () => {
-    const dir = mkTmpRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
-    assert(runHook(dir).stdout.includes('"block"'), 'an undecided repo still hears it');
-    assert(runHook(dir).stdout.includes('"block"'), 'and hears it again: it has no memory');
-    assert(!fs.existsSync(path.join(dir, W)), 'an undecided repo is never written to');
-    cleanup(dir);
-  });
+  group('change-tracker: guards');
 
-  await test('.workkit/ present but not gitignored: nudges every stop, writes nothing', () => {
-    const dir = mkTmpRepo();
-    fs.mkdirSync(path.join(dir, W), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
-    assert(runHook(dir).stdout.includes('"block"'), 'the first stop nudges');
-    assert(runHook(dir).stdout.includes('"block"'), 'and so does the next: no memory without a gitignore');
-    assert(runHook(dir).stdout.includes('"block"'), 'and the one after that');
-    assertEq(stateOf(dir), null, 'the memory is never a file the repo would commit');
-    cleanup(dir);
-  });
-
-  group('change-tracker: fail-open / guards');
-
-  await test('non-git directory: exits 0 silently (fail open)', () => {
-    const dir = mkTmp('ct-nogit-');
-    const { code, stdout } = runHook(dir);
-    assertEq(code, 0, 'non-git dir should exit 0');
-    assert(!stdout.includes('block'), 'should not block');
-    cleanup(dir);
-  });
-
-  await test('stop_hook_active=true: exits 0 (prevents recursion)', () => {
-    const dir = mkTmpRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
-    const input = JSON.stringify({ cwd: shellPath(dir), stop_hook_active: true });
-    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-      input,
-      env: { ...process.env, HOME: shellPath(os.homedir()) },
-      encoding: 'utf8',
-      timeout: 10000,
-    });
-    assertEq(res.status, 0, 'should exit 0 when stop_hook_active');
-    assert(!res.stdout.includes('block'), 'should not block on re-entry');
-    cleanup(dir);
+  await test('ports "stop_hook_active=true: exits 0 (prevents recursion)"', async () => {
+    await silent({ ...NEW_APP, inbox: 2, capture: 2, stopHookActive: true }, 'should not block on re-entry');
   });
 
   group('change-tracker: unfiled inbox surfacing');
 
-  await test('clean tree + unfiled INBOX entries: blocks with INBOX count', () => {
-    const dir = mkTmpRepo();
-    fs.writeFileSync(path.join(dir, 'INBOX.md'), '# INBOX\n> header line\n\nan idea\nanother note\n');
-    execSync('git add -A && git commit -m "inbox"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    const { stdout } = runHook(dir);
-    assert(stdout.includes('"block"'), 'unfiled inbox should nudge even with a clean tree');
-    assert(stdout.includes('INBOX: 2 unfiled'), `context carries the count, got: ${stdout.slice(0, 300)}`);
-    assert(stdout.includes('workkit:triage'), 'offers the triage skill');
-    cleanup(dir);
+  await test('ports "clean tree + unfiled INBOX entries: blocks with INBOX count"', async () => {
+    const r = await blocksWith({ inbox: 2 }, ENTRIES);
+    assert(r.context.includes('INBOX: 2 unfiled'), `context carries the count, got: ${r.context}`);
+    assert(r.context.includes('workkit:triage'), 'offers the triage skill');
   });
 
-  await test('clean tree + header-only INBOX: no block', () => {
-    const dir = mkTmpRepo();
-    fs.writeFileSync(path.join(dir, 'INBOX.md'), '# INBOX\n> Dump anything here.\n\n');
-    execSync('git add -A && git commit -m "inbox"', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    const { code, stdout } = runHook(dir);
-    assertEq(code, 0, 'empty inbox exits 0');
-    assert(!stdout.includes('block'), 'no nudge for an empty inbox');
-    cleanup(dir);
+  await test('ports "clean tree + header-only INBOX: no block"', async () => {
+    await silent({ inbox: 0 }, 'no nudge for an empty inbox');
   });
 
-  await test('code change + unfiled INBOX: one block carrying both', () => {
-    const dir = mkTmpRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
-    fs.writeFileSync(path.join(dir, 'INBOX.md'), '# INBOX\nnote\n');
-    const { stdout } = runHook(dir);
-    assert(stdout.includes('"block"'), 'blocks');
-    assert(stdout.includes('INBOX: 1 unfiled'), 'inbox line rides the code nudge');
-    cleanup(dir);
+  await test('ports "code change + unfiled INBOX: one block carrying both"', async () => {
+    const r = await blocksWith({ ...NEW_APP, inbox: 1 }, BOTH);
+    assert(r.context.includes('INBOX: 1 unfiled'), 'inbox line rides the code nudge');
   });
 
   group('change-tracker: local .workkit/capture.md');
 
-  await test('clean tree + scratch entries: blocks with the count', () => {
-    const dir = mkTmpRepo();
-    writeScratch(dir, '# capture\n> header\n\na finding\nan idea\n');
-    const { stdout } = runHook(dir);
-    assert(stdout.includes('"block"'), 'a non-empty capture file nudges on its own');
-    assert(stdout.includes('SCRATCH: 2 unfiled'), `context carries the count, got: ${stdout.slice(0, 400)}`);
-    assert(stdout.includes('workkit:triage'), 'offers the triage skill');
-    assert(stdout.includes('never drain'), 'draining stays deliberate');
-    cleanup(dir);
+  await test('ports "clean tree + scratch entries: blocks with the count"', async () => {
+    const r = await blocksWith({ capture: 2 }, ENTRIES);
+    assert(r.context.includes('SCRATCH: 2 unfiled'), `context carries the count, got: ${r.context}`);
+    assert(r.context.includes('workkit:triage'), 'offers the triage skill');
+    assert(r.context.includes('never drain'), 'draining stays deliberate');
   });
 
-  await test('clean tree + header-only capture file: no block', () => {
-    const dir = mkTmpRepo();
-    writeScratch(dir, '# capture\n> dump anything here\n\n');
-    const { code, stdout } = runHook(dir);
-    assertEq(code, 0, 'exits 0');
-    assert(!stdout.includes('block'), 'no nudge for an empty capture file');
-    cleanup(dir);
+  await test('ports "clean tree + header-only capture file: no block"', async () => {
+    await silent({ capture: 0 }, 'no nudge for an empty capture file');
   });
 
-  await test('code change + scratch entries: one block carrying both', () => {
-    const dir = mkTmpRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
-    writeScratch(dir, 'note\n');
-    const { stdout } = runHook(dir);
-    assert(stdout.includes('"block"'), 'blocks');
-    assert(stdout.includes('SCRATCH: 1 unfiled'), 'scratch line rides the code nudge');
-    cleanup(dir);
-  });
-
-  group('change-tracker: board transition guard');
-
-  await test('PROGRESS.md present: the board reminder rides along', () => {
-    const dir = mkTmpRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
-    fs.writeFileSync(path.join(dir, 'PROGRESS.md'), '# PROGRESS\n');
-    const { stdout } = runHook(dir);
-    assert(stdout.includes('BOARD: PROGRESS.md still exists'), `pre-migration turn is not lawless, got: ${stdout.slice(0, 400)}`);
-    cleanup(dir);
-  });
-
-  await test('no PROGRESS.md: no board reminder', () => {
-    const dir = mkTmpRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'code');
-    const { stdout } = runHook(dir);
-    assert(stdout.includes('"block"'), 'still nudges on the code change');
-    assert(!stdout.includes('BOARD:'), 'the board line is file-existence gated');
-    cleanup(dir);
-  });
-
-  await test('the hook never calls gh', () => {
-    const hook = fs.readFileSync(HOOK, 'utf8');
-    assert(!/\bgh\b/.test(hook.replace(/^#.*$/gm, '')), 'a Stop hook pays no network latency');
+  await test('ports "code change + scratch entries: one block carrying both"', async () => {
+    const r = await blocksWith({ ...NEW_APP, capture: 1 }, BOTH);
+    assert(r.context.includes('SCRATCH: 1 unfiled'), 'scratch line rides the code nudge');
   });
 };
 

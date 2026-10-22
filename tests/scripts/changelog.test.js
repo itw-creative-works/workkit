@@ -1,5 +1,5 @@
 // Tests for workflow/changelog/changelog.js: the CHANGELOG entry rules and the CLI
-// docs:changelog-guard and safety/commit-gate call. The added-only tests build
+// docs:changelog-guard and safety:commit-gate call. The added-only tests build
 // real git repos: which lines a change added is a question only git answers.
 
 const path = require('path');

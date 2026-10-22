@@ -1,349 +1,230 @@
-/* eslint-disable no-console */
-// Tests for hooks/safety/commit-language: the PreToolUse hook that bounces a
-// git commit whose quoted message uses non-neutral vocabulary (kill/destroy/dead
-// → terminate/remove/stale), or whose subject is not Conventional Commits or
-// carries a version outside a release commit. Only quoted spans are scanned.
+// Tests for safety:commit-language's logic, commitLanguageVerdict({ command,
+// cwd, originless }) in hooks/mods/commit-language.js: a git commit whose
+// quoted message uses kill/destroy/dead wording, or whose subject is not
+// Conventional Commits or carries a version outside a release commit, is
+// denied. Each case ports the HEAD case its name quotes; "malformed JSON:
+// exit 0" is dropped with the shell spawn, and the wiring (the originless read
+// through git, the chain) is tests/mods/guards-commit-language.test.ts.
 
-const path = require('path');
-const os = require('os');
-const fs = require('fs');
-const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
-const { BASH, NO_RC, shellPath } = require('../lib/platform');
-const { mkRepo } = require('../lib/git-repo');
+const { group, test, assertEq, summary, selfRun } = require('../lib/harness');
+const { mods, textOf } = require('../lib/mods-inputs');
 
-const HOOK = path.join(__dirname, '..', '..', 'hooks', 'safety', 'commit-language', 'run.sh');
+// `originless` is the fact the module gathers: the cwd sits in a repo with no origin.
+const judge = (command, { cwd = '/w/repo', originless = false } = {}) => mods('commit-language')
+  .commitLanguageVerdict({ command, cwd, originless });
 
-// `cwd` goes into the payload when given; `spawnCwd` is the hook process's own.
-const runHook = (command, { cwd, spawnCwd } = {}) => {
-  const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command }, ...(cwd ? { cwd: shellPath(cwd) } : {}) });
-  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-    input,
-    cwd: spawnCwd,
-    env: { ...process.env, HOME: shellPath(os.homedir()) },
-    encoding: 'utf8',
-    timeout: 10000,
-  });
-  return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
+const denyOf = (r) => (r && typeof r.deny === 'string' ? r.deny.replace(/\n$/, '') : null);
+
+// The HEAD hook's stderr, byte for byte: `found` keeps the trailing space its
+// word list carried.
+const VOCAB = (found) => `commit-language: BLOCKED this commit: the message uses non-neutral vocabulary: ${found} \nReword per the AGENTS.md neutral-language rule (terminate not kill, remove not destroy, stale not dead) and commit again. If a listed word is a literal file/identifier name, keep it unquoted in the command or rephrase around it.`;
+const FORMAT = (subject) => `commit-language: BLOCKED this commit: the subject line is not Conventional Commits: ${subject}\nWrite it as <type>(<scope>): <subject> with type one of feat/fix/docs/chore/refactor/test and a lowercase first word, e.g. fix(hooks): bounce the empty span.`;
+const LENGTH = (n) => `commit-language: BLOCKED this commit: the subject line is ${n} characters, over the 72-character limit.\nShorten the subject and move the detail into the commit body.`;
+const VERSION = (subject) => `commit-language: BLOCKED this commit: the subject line carries a version number: ${subject}\nOnly the release commit names a version, as chore(release): <x.y.z>. Describe the change instead; the version bump is its own commit.`;
+
+const bounces = async (command, want, facts) => {
+  assertEq(denyOf(await judge(command, facts)), want, `must bounce: ${command}`);
 };
 
-// A throwaway repo: the fixture repo with its origin taken away.
-const mkThrowawayRepo = () => {
-  const world = mkRepo('cl-test-', { 'README.md': '# fixture\n' });
-  world.git('remote', 'remove', 'origin');
-  return world;
+const passes = async (command, facts) => {
+  const r = await judge(command, facts);
+  assertEq(denyOf(r), null, `must pass: ${command}`);
+  assertEq(textOf(r), '', `silently: ${command}`);
 };
 
 const run = async () => {
   group('commit-language: bounced messages');
 
-  await test('kill in -m message: exit 2 with replacement guidance', () => {
-    const { code, stderr } = runHook('git commit -m "fix: kill the stuck watcher process"');
-    assertEq(code, 2, 'kill must bounce');
-    assert(stderr.includes('commit-language'), 'names itself');
-    assert(stderr.includes('terminate'), 'suggests the neutral replacement');
+  await test('ports "kill in -m message: exit 2 with replacement guidance"', async () => {
+    await bounces('git commit -m "fix: kill the stuck watcher process"', VOCAB('kill'));
   });
 
-  await test('word variants and case: killed, Destroyed, DEAD all bounce', () => {
-    for (const msg of ['killed the daemon', 'Destroyed old config', 'remove DEAD code']) {
-      const { code } = runHook(`git commit -m "chore: ${msg}"`);
-      assertEq(code, 2, `"${msg}" must bounce`);
+  await test('ports "word variants and case: killed, Destroyed, DEAD all bounce"', async () => {
+    for (const [msg, word] of [['killed the daemon', 'killed'], ['Destroyed old config', 'Destroyed'], ['remove DEAD code', 'DEAD']]) {
+      await bounces(`git commit -m "chore: ${msg}"`, VOCAB(word));
     }
   });
 
-  await test('HEREDOC body: exit 2', () => {
-    const cmd = 'git commit -m "$(cat <<\'EOF\'\nfix(hooks): restart watcher\n\nKills the stale process before relaunch.\nEOF\n)"';
-    const { code } = runHook(cmd);
-    assertEq(code, 2, 'HEREDOC message text is scanned');
+  await test('ports "HEREDOC body: exit 2"', async () => {
+    await bounces('git commit -m "$(cat <<\'EOF\'\nfix(hooks): restart watcher\n\nKills the stale process before relaunch.\nEOF\n)"', VOCAB('Kills'));
   });
 
   group('commit-language: allowed');
 
-  await test('neutral message: exit 0', () => {
-    const { code, stderr } = runHook('git commit -m "fix: terminate the stale watcher and remove old config"');
-    assertEq(code, 0, 'neutral vocabulary passes');
-    assertEq(stderr, '', 'silent');
+  await test('ports "neutral message: exit 0"', async () => {
+    await passes('git commit -m "fix: terminate the stale watcher and remove old config"');
   });
 
-  await test('substring inside longer words (deadline, killarney): exit 0', () => {
-    const { code } = runHook('git commit -m "feat: deadline reminder for killarney branch"');
-    assertEq(code, 0, 'whole-word match only');
+  await test('ports "substring inside longer words (deadline, killarney): exit 0"', async () => {
+    await passes('git commit -m "feat: deadline reminder for killarney branch"');
   });
 
-  await test('unquoted file path with listed word: exit 0', () => {
-    const { code } = runHook('git add kill-switch.md && git commit -m "docs: describe the hook disable flag"');
-    assertEq(code, 0, 'unquoted paths are never scanned');
+  await test('ports "unquoted file path with listed word: exit 0"', async () => {
+    await passes('git add kill-switch.md && git commit -m "docs: describe the hook disable flag"');
   });
 
-  await test('non-commit git command with listed word quoted: exit 0', () => {
-    const { code } = runHook('git grep "killed" -- src/');
-    assertEq(code, 0, 'only commit commands are gated');
+  await test('ports "non-commit git command with listed word quoted: exit 0"', async () => {
+    await passes('git grep "killed" -- src/');
   });
 
-  await test('mention of git commit inside quotes, no real commit: exit 0', () => {
-    const { code } = runHook('echo "run git commit -m kill later"');
-    assertEq(code, 0, 'stripped-quote detection ignores mentions');
+  await test('ports "mention of git commit inside quotes, no real commit: exit 0"', async () => {
+    await passes('echo "run git commit -m kill later"');
   });
 
-  await test('MULTI-LINE quoted mention: exit 0 (review regression)', () => {
-    // The tail lines of a multi-line quoted string stay quoted, so this echo
-    // never reads as a real commit.
-    const { code } = runHook('echo "todo list\ngit commit the fix that kills the watcher"');
-    assertEq(code, 0, 'multi-line quoted text is stripped like single-line');
+  await test('ports "MULTI-LINE quoted mention: exit 0"', async () => {
+    await passes('echo "todo list\ngit commit the fix that kills the watcher"');
   });
 
-  await test('heredoc BODY with git commit example and listed word: exit 0 (gotchas-sweep regression)', () => {
-    // Appending skill prose via `cat >> file <<EOF` whose body holds a
-    // literal `git commit` line plus a guarded word is file content, not a
-    // commit: detection must strip heredoc bodies before clause-splitting.
-    const cmd = 'cat >> SKILL.md <<\'EOF\'\n- when the gate bounces `git add -A && git commit -m "kill"`, re-stage\nEOF';
-    const { code } = runHook(cmd);
-    assertEq(code, 0, 'heredoc bodies are not commands');
+  await test('ports "heredoc BODY with git commit example and listed word: exit 0"', async () => {
+    await passes('cat >> SKILL.md <<\'EOF\'\n- when the gate bounces `git add -A && git commit -m "kill"`, re-stage\nEOF');
   });
 
-  await test('commit inside interpreter-fed heredoc with listed word: exit 2 (light-review finding)', () => {
-    // A heredoc body piped into a shell is executed code: the detection
-    // strip must not hide a real commit phrased this way.
-    const cmd = 'bash <<\'EOF\'\ngit commit -m "kill the watcher"\nEOF';
-    const { code } = runHook(cmd);
-    assertEq(code, 2, 'interpreter-fed heredoc bodies are commands and must be scanned');
+  await test('ports "commit inside interpreter-fed heredoc with listed word: exit 2"', async () => {
+    await bounces('bash <<\'EOF\'\ngit commit -m "kill the watcher"\nEOF', VOCAB('kill'));
   });
 
-  await test('quote character inside single quotes before a commit with a listed word: exit 2 (strip-ordering regression)', () => {
-    const { code } = runHook('grep \'"\' notes.txt; git commit -m "kill the watcher"');
-    assertEq(code, 2, 'detection must survive mixed quote nesting and scan the message');
+  await test('ports "quote character inside single quotes before a commit with a listed word: exit 2"', async () => {
+    await bounces('grep \'"\' notes.txt; git commit -m "kill the watcher"', VOCAB('kill'));
   });
 
-  group('commit-language: hardening 2026-07-25');
+  group('commit-language: the message scope');
 
-  await test('listed word in OTHER quoted text on the line: exit 0 (message-scope regression)', () => {
-    // Only the commit's own message span is scanned, so the echo text never
-    // bounces a clean commit message.
-    const { code, stderr } = runHook('git commit -m "docs: tidy" && echo "killing the old server"');
-    assertEq(code, 0, `only message spans are judged, got: ${stderr}`);
+  await test('ports "listed word in OTHER quoted text on the line: exit 0"', async () => {
+    await passes('git commit -m "docs: tidy" && echo "killing the old server"');
   });
 
-  await test('unquoted message falls back to the whole-command scan: exit 2', () => {
-    // No extractable -m span → every quoted span is judged, toward gating.
-    const { code } = runHook('git commit -m tidy && echo "killing the old server"');
-    assertEq(code, 2, 'extraction failure must gate, never go silent');
+  await test('ports "unquoted message falls back to the whole-command scan: exit 2"', async () => {
+    await bounces('git commit -m tidy && echo "killing the old server"', VOCAB('killing'));
   });
 
-  await test('interpreter-string commit with a listed word: exit 2 (wrapper regression)', () => {
-    // `sh -c "git commit …"` has no visible clause after the quote strip, and
-    // the wrapped commit must still be scanned.
-    const { code } = runHook('sh -c \'git commit -m "kill the watcher"\'');
-    assertEq(code, 2, 'wrapped commits are still scanned');
+  await test('ports "interpreter-string commit with a listed word: exit 2"', async () => {
+    await bounces('sh -c \'git commit -m "kill the watcher"\'', VOCAB('kill'));
   });
 
-  await test('interpreter-string commit with a neutral message: exit 0', () => {
-    const { code, stderr } = runHook('sh -c "git commit -m \'docs: tidy\'"');
-    assertEq(code, 0, `neutral wrapped message passes, got: ${stderr}`);
+  await test('ports "interpreter-string commit with a neutral message: exit 0"', async () => {
+    await passes('sh -c "git commit -m \'docs: tidy\'"');
   });
 
-  await test('prefixed commit spellings are scanned: env/path (prefix regression)', () => {
-    // These first words hide git from a first-word-is-git test.
+  await test('ports "prefixed commit spellings are scanned: env/path"', async () => {
     for (const c of ['env git commit -m "kill the watcher"', '/usr/bin/git commit -m "kill the watcher"']) {
-      const { code } = runHook(c);
-      assertEq(code, 2, `must bounce: ${c}`);
+      await bounces(c, VOCAB('kill'));
     }
   });
 
-  await test('unquoted eval commit with a listed word: exit 2 (eval-peel regression)', () => {
-    // `eval git commit -m "kill …"` executes the words essentially as
-    // written, so eval is peeled and the message is scanned.
-    const { code } = runHook('eval git commit -m "kill the watcher"');
-    assertEq(code, 2, 'eval over plain words is a commit and must be scanned');
+  await test('ports "unquoted eval commit with a listed word: exit 2"', async () => {
+    await bounces('eval git commit -m "kill the watcher"', VOCAB('kill'));
   });
 
-  await test('attached -c string with a listed word: exit 2 (no-space regression)', () => {
-    // `bash -c"git commit …"` runs the string: no whitespace is needed between
-    // the option cluster and the quotes.
-    const { code } = runHook('bash -c"git commit -m \'kill the watcher\'"');
-    assertEq(code, 2, 'the attached option-argument form is still a wrapped commit');
+  await test('ports "attached -c string with a listed word: exit 2"', async () => {
+    await bounces('bash -c"git commit -m \'kill the watcher\'"', VOCAB('kill'));
   });
 
-  group('commit-language: subject format (#58)');
+  group('commit-language: subject format');
 
-  await test('conventional subject with scope: exit 0', () => {
-    const { code, stderr } = runHook('git commit -m "feat(hooks): check the subject line format"');
-    assertEq(code, 0, `conventional subject passes, got: ${stderr}`);
+  await test('ports "conventional subject with scope: exit 0"', async () => {
+    await passes('git commit -m "feat(hooks): check the subject line format"');
   });
 
-  await test('unknown type: exit 2', () => {
-    const { code, stderr } = runHook('git commit -m "feature: check the subject line format"');
-    assertEq(code, 2, 'a type outside the vocabulary bounces');
-    assert(stderr.includes('Conventional Commits'), 'names the failure');
+  await test('ports "unknown type: exit 2"', async () => {
+    await bounces('git commit -m "feature: check the subject line format"', FORMAT('feature: check the subject line format'));
   });
 
-  await test('uppercase subject start: exit 2', () => {
-    const { code } = runHook('git commit -m "feat: Check the subject line format"');
-    assertEq(code, 2, 'the subject must start lowercase');
+  await test('ports "uppercase subject start: exit 2"', async () => {
+    await bounces('git commit -m "feat: Check the subject line format"', FORMAT('feat: Check the subject line format'));
   });
 
-  await test('no type prefix at all: exit 2', () => {
-    const { code } = runHook('git commit -m "check the subject line format"');
-    assertEq(code, 2, 'a bare sentence is not a conventional subject');
+  await test('ports "no type prefix at all: exit 2"', async () => {
+    await bounces('git commit -m "check the subject line format"', FORMAT('check the subject line format'));
   });
 
-  await test('subject over 72 characters: exit 2 naming the length', () => {
-    const { code, stderr } = runHook(`git commit -m "feat: ${'a'.repeat(70)}"`);
-    assertEq(code, 2, 'an over-long subject bounces');
-    assert(stderr.includes('72-character'), 'names the limit');
+  await test('ports "subject over 72 characters: exit 2 naming the length"', async () => {
+    await bounces(`git commit -m "feat: ${'a'.repeat(70)}"`, LENGTH(76));
   });
 
-  await test('breaking marker and multi-word scope: exit 0', () => {
-    const { code, stderr } = runHook('git commit -m "refactor(hooks/safety)!: fold the format check in"');
-    assertEq(code, 0, `the ! marker and a slashed scope pass, got: ${stderr}`);
+  await test('ports "breaking marker and multi-word scope: exit 0"', async () => {
+    await passes('git commit -m "refactor(hooks/safety)!: fold the format check in"');
   });
 
-  await test('version number in a feat subject: exit 2', () => {
-    const { code, stderr } = runHook('git commit -m "feat: bump the engine to 1.2.3"');
-    assertEq(code, 2, 'ordinary commits carry no version number');
-    assert(stderr.includes('version number'), 'names the failure');
+  await test('ports "version number in a feat subject: exit 2"', async () => {
+    await bounces('git commit -m "feat: bump the engine to 1.2.3"', VERSION('feat: bump the engine to 1.2.3'));
   });
 
-  await test('chore(release) subject with a version: exit 0', () => {
-    for (const s of ['chore(release): 1.2.3', 'chore(release): v0.7.0']) {
-      const { code, stderr } = runHook(`git commit -m "${s}"`);
-      assertEq(code, 0, `the release commit names its version, got: ${stderr}`);
-    }
+  await test('ports "chore(release) subject with a version: exit 0"', async () => {
+    for (const s of ['chore(release): 1.2.3', 'chore(release): v0.7.0']) await passes(`git commit -m "${s}"`);
   });
 
-  await test('Merge and Revert subjects pass unexamined: exit 0', () => {
+  await test('ports "Merge and Revert subjects pass unexamined: exit 0"', async () => {
     for (const s of ['Merge branch main into topic', 'Revert \\"feat: the thing\\"', 'fixup! feat: the thing']) {
-      const { code, stderr } = runHook(`git commit -m "${s}"`);
-      assertEq(code, 0, `"${s}" is exempt, got: ${stderr}`);
+      await passes(`git commit -m "${s}"`);
     }
   });
 
-  await test('HEREDOC message: the subject under the opener is judged (exit 0)', () => {
-    const cmd = 'git commit -m "$(cat <<\'EOF\'\nfix(hooks): restart the watcher\n\nBody prose, sentence-cased and long.\nEOF\n)"';
-    const { code, stderr } = runHook(cmd);
-    assertEq(code, 0, `the heredoc body's first line is the subject, got: ${stderr}`);
+  await test('ports "HEREDOC message: the subject under the opener is judged (exit 0)"', async () => {
+    await passes('git commit -m "$(cat <<\'EOF\'\nfix(hooks): restart the watcher\n\nBody prose, sentence-cased and long.\nEOF\n)"');
   });
 
-  await test('body carries a version, subject does not: exit 0', () => {
-    const cmd = 'git commit -m "$(cat <<\'EOF\'\nfix(hooks): restart the watcher\n\nRegression since 1.2.3.\nEOF\n)"';
-    const { code, stderr } = runHook(cmd);
-    assertEq(code, 0, `only the subject line is judged, got: ${stderr}`);
+  await test('ports "body carries a version, subject does not: exit 0"', async () => {
+    await passes('git commit -m "$(cat <<\'EOF\'\nfix(hooks): restart the watcher\n\nRegression since 1.2.3.\nEOF\n)"');
   });
 
-  await test('fallback path does NOT format-judge a quoted span: exit 0', () => {
-    // No extractable -m span; the remaining quoted text is not a subject.
-    const { code, stderr } = runHook('git commit -m tidy && echo "all done here"');
-    assertEq(code, 0, `no clean span → no format verdict, got: ${stderr}`);
+  await test('ports "fallback path does NOT format-judge a quoted span: exit 0"', async () => {
+    await passes('git commit -m tidy && echo "all done here"');
   });
 
-  await test('fallback path still runs the vocabulary scan: exit 2', () => {
-    const { code, stderr } = runHook('git commit -m tidy && echo "killing the old server"');
-    assertEq(code, 2, 'the vocabulary scan is untouched by the format check');
-    assert(stderr.includes('terminate'), 'the vocabulary bounce, not a format bounce');
+  await test('ports "fallback path still runs the vocabulary scan: exit 2"', async () => {
+    await bounces('git commit -m tidy && echo "killing the old server"', VOCAB('killing'));
   });
 
-  group('commit-language: subject format hardening (#58 review)');
+  group('commit-language: subject format hardening');
 
-  await test('command-substitution subject that is not the heredoc idiom: exit 0', () => {
-    // The hook cannot expand `$(cat …)`, so the span it holds is shell text,
-    // not a subject; judging it would bounce a message never actually read.
-    const { code, stderr } = runHook('git commit -m "$(cat /tmp/msg.txt)"');
-    assertEq(code, 0, `an unexpandable subject fails open, got: ${stderr}`);
+  await test('ports "command-substitution subject that is not the heredoc idiom: exit 0"', async () => {
+    await passes('git commit -m "$(cat /tmp/msg.txt)"');
   });
 
-  await test('flag-shaped span BEFORE the commit is not judged as the subject: exit 0', () => {
-    // The format extraction reads the commit's own message, so grep's -F value
-    // is never format-judged.
-    const { code, stderr } = runHook('grep -F "Some Thing" f && git commit -m "feat: fine"');
-    assertEq(code, 0, `only spans after the commit token are judged, got: ${stderr}`);
+  await test('ports "flag-shaped span BEFORE the commit is not judged as the subject: exit 0"', async () => {
+    await passes('grep -F "Some Thing" f && git commit -m "feat: fine"');
   });
 
-  await test('the real subject after the commit token is still judged: exit 2', () => {
-    const { code, stderr } = runHook('grep -F "Some Thing" f && git commit -m "feat: Bad subject start"');
-    assertEq(code, 2, 'scoping the extraction must not stop the format check');
-    assert(stderr.includes('Conventional Commits'), 'names the failure');
+  await test('ports "the real subject after the commit token is still judged: exit 2"', async () => {
+    await bounces('grep -F "Some Thing" f && git commit -m "feat: Bad subject start"', FORMAT('feat: Bad subject start'));
   });
 
-  await test('two -m flags with "commit" in the subject: the FIRST is the subject (exit 0)', () => {
-    // A last-to-first offset walk would start inside the subject text and take
-    // the body flag for the subject.
-    const { code, stderr } = runHook('git commit -m "fix(hooks): scan the commit message" -m "Body here."');
-    assertEq(code, 0, `the first -m is the subject, got: ${stderr}`);
+  await test('ports "two -m flags with "commit" in the subject: the FIRST is the subject (exit 0)"', async () => {
+    await passes('git commit -m "fix(hooks): scan the commit message" -m "Body here."');
   });
 
-  await test('two -m flags, the SUBJECT itself is bad: exit 2', () => {
-    const { code, stderr } = runHook('git commit -m "Scan the commit message" -m "Body here."');
-    assertEq(code, 2, 'the first -m is still judged');
-    assert(stderr.includes('Conventional Commits'), 'names the failure');
+  await test('ports "two -m flags, the SUBJECT itself is bad: exit 2"', async () => {
+    await bounces('git commit -m "Scan the commit message" -m "Body here."', FORMAT('Scan the commit message'));
   });
 
-  await test('72 characters of multi-byte text under LC_ALL=C: exit 0', () => {
-    // `${#subject}` counts bytes: a subject with a multi-byte character measured 74.
-    const subject = `feat: ${'a'.repeat(62)} … b`; // 6 + 62 + 4 = 72 characters
-    assertEq(subject.length, 72, 'the fixture is exactly at the limit');
-    const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command: `git commit -m "${subject}"` } });
-    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-      input,
-      env: { ...process.env, HOME: shellPath(os.homedir()), LC_ALL: 'C' },
-      encoding: 'utf8',
-      timeout: 10000,
-    });
-    assertEq(res.status, 0, `characters, not bytes, got: ${res.stderr}`);
+  await test('ports "72 characters of multi-byte text under LC_ALL=C: exit 0": characters, not bytes', async () => {
+    const subject = `feat: ${'a'.repeat(62)} ${String.fromCharCode(0x2026)} b`;
+    assertEq([...subject].length, 72, 'the fixture is exactly at the limit');
+    await passes(`git commit -m "${subject}"`);
   });
 
-  await test('leading whitespace is trimmed before judging: exit 0', () => {
-    const { code, stderr } = runHook('git commit -m "  feat(hooks): trim the subject first"');
-    assertEq(code, 0, `the trimmed form is judged, got: ${stderr}`);
+  await test('ports "leading whitespace is trimmed before judging: exit 0"', async () => {
+    await passes('git commit -m "  feat(hooks): trim the subject first"');
   });
 
   group('commit-language: a repo with no origin');
 
-  await test('cwd in a repo with no origin, bad subject: exit 0 and silent', () => {
-    const { dir, repo } = mkThrowawayRepo();
-    const out = runHook('git commit -m "pub 1"', { cwd: repo });
-    assertEq(out.code, 0, `a throwaway repo is not held to the commit rules, got: ${out.stderr}`);
-    assertEq(out.stderr, '', 'no stderr');
-    assertEq(out.stdout, '', 'no stdout either');
-    fs.rmSync(dir, { recursive: true, force: true });
+  await test('ports "cwd in a repo with no origin, bad subject: exit 0 and silent"', async () => {
+    await passes('git commit -m "pub 1"', { originless: true });
   });
 
-  await test('cwd in a repo with an origin, bad subject: exit 2 as today', () => {
-    const { dir, repo } = mkRepo('cl-test-', { 'README.md': '# fixture\n' });
-    const { code, stderr } = runHook('git commit -m "pub 1"', { cwd: repo });
-    assertEq(code, 2, 'a project repo still gets its subject linted');
-    assert(stderr.includes('Conventional Commits'), `names the failure, got: ${stderr}`);
-    fs.rmSync(dir, { recursive: true, force: true });
+  await test('ports "cwd in a repo with an origin, bad subject: exit 2 as today"', async () => {
+    await bounces('git commit -m "pub 1"', FORMAT('pub 1'), { originless: false });
   });
 
-  await test('no cwd in the payload, run from a repo with no origin: still lints (exit 2)', () => {
-    // The hook process sits in a throwaway repo, so only the payload's cwd may
-    // turn the skip on.
-    const { dir, repo } = mkThrowawayRepo();
-    const { code, stderr } = runHook('git commit -m "pub 1"', { spawnCwd: repo });
-    assertEq(code, 2, 'no cwd → the subject is checked as today');
-    assert(stderr.includes('Conventional Commits'), `names the failure, got: ${stderr}`);
-    fs.rmSync(dir, { recursive: true, force: true });
+  await test('ports "no cwd in the payload, run from a repo with no origin: still lints (exit 2)"', async () => {
+    await bounces('git commit -m "pub 1"', FORMAT('pub 1'), { cwd: '', originless: false });
   });
 
   group('commit-language: fail-open');
 
-  await test('missing command: exit 0', () => {
-    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-      input: JSON.stringify({ tool_input: {} }),
-      env: { ...process.env, HOME: shellPath(os.homedir()) },
-      encoding: 'utf8',
-      timeout: 10000,
-    });
-    assertEq(res.status, 0, 'no command → fail open');
-  });
-
-  await test('malformed JSON: exit 0', () => {
-    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-      input: 'not json',
-      env: { ...process.env, HOME: shellPath(os.homedir()) },
-      encoding: 'utf8',
-      timeout: 10000,
-    });
-    assertEq(res.status, 0, 'bad input → fail open');
+  await test('ports "missing command: exit 0": an empty command is silence', async () => {
+    await passes('');
   });
 };
 

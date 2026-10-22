@@ -142,7 +142,7 @@ The commands underneath are `workflow/standards.sh --enable` and `--decline`.
 
 ```
 .claude-plugin/   plugin.json + marketplace.json (this repo is its own marketplace)
-hooks/            hooks.json + the hook groups, resolved via ${CLAUDE_PLUGIN_ROOT}
+hooks/            hooks.json + the hooks module (register.js, mods/) + the shell library the scripts source
 agents/           the crew (namespaced workkit:<name>)
 briefs/           the role brief templates, one per crew job (the manager fills the slots)
 skills/           the nine workflow skills (namespaced workkit:<name>)

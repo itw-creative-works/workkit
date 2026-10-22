@@ -1,27 +1,29 @@
-// Tests for hooks/workflow/snapshot/run.sh: the claim to status:building takes
-// the repo's red-proof snapshot, a later claim adds to it, and the flip of the
-// last building issue drops it. Real git repos; only `gh` is stubbed, and each
-// case keeps its snapshots in its own TMPDIR.
+// Tests for workflow:snapshot: snapshotPlan({ command, cwd, roster, slugOf,
+// building }) in hooks/mods/snapshot.js decides a take at a claim and a drop at
+// the release of the last building issue, and the copy runs for real through
+// `bash hooks/lib/snapshot.sh take|add|stale|drop <root> ...` in a temp repo
+// with its own TMPDIR. Each case ports the HEAD case its name quotes. Dropped:
+// "run.sh is executable", and "a claim from a folder inside no git repo" (the
+// gate stands it down). In tests/mods/post-tool-use-bash.test.ts: the wiring,
+// the loader's take and which mode a claim runs.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, skip, testUnless, summary, selfRun,
+  group, test, assert, assertEq, testUnless, summary, selfRun,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, NODE_DIR, NO_EXEC_BIT, SYSTEM_PATH, shellPath, which, stubTool, joinPath, systemPathWith, homeEnv,
+  IS_WINDOWS, BASH, NO_RC, SYSTEM_PATH, shellPath, which, stubTool, joinPath,
 } = require('../lib/platform');
-const { makeGhStub, ghCalls, hookRunner } = require('../lib/gh-stub');
-const { fmtCalls } = require('../lib/argv-log');
+const { makeGhStub, ghCalls } = require('../lib/gh-stub');
 const { mkRepo } = require('../lib/git-repo');
-const { mkRosterHome } = require('../lib/roster');
 const { mkTmp } = require('../lib/scratch');
 const { snapshotDir, treeOf } = require('../lib/red-snapshot');
+const { mods } = require('../lib/mods-inputs');
 
-const REPO = path.join(__dirname, '..', '..');
-const HOOK = path.join(REPO, 'hooks', 'workflow', 'snapshot', 'run.sh');
-const LOADER = path.join(REPO, 'hooks', 'loader.sh');
+const KIT = path.join(__dirname, '..', '..');
+const SNAPSHOT = path.join(KIT, 'hooks', 'lib', 'snapshot.sh');
 
 const CLAIM = (n) => `gh issue edit ${n} --add-label status:building`;
 const QA = (n) => `gh issue edit ${n} --remove-label status:building --add-label status:qa`;
@@ -29,6 +31,35 @@ const BLOCK = (n) => `gh issue edit ${n} --remove-label status:building --add-la
 
 /** The `issue list` answer: each number open at status:building. */
 const building = (...numbers) => numbers.map((number) => ({ number, labels: [{ name: 'status:building' }] }));
+const json = (o) => JSON.stringify(o);
+
+// The plan's world: the session repo and another, both on the roster.
+const HERE = '/w/repo';
+const OTHER = '/w/other';
+const ROSTER = { version: 1, repos: { [HERE]: 'enabled', [OTHER]: 'enabled' } };
+const SLUGS = { [HERE]: 'acme/repo', [OTHER]: 'owner/other' };
+
+/**
+ * snapshotPlan over `command` from the session repo, gh's building answer
+ * `list` (null when it cannot answer); hands back the plan and how often the
+ * building list was read.
+ */
+const planOf = async (command, { list = [], roster = ROSTER, cwd = HERE } = {}) => {
+  let asked = 0;
+  const plan = await mods('snapshot').snapshotPlan({
+    command,
+    cwd,
+    roster,
+    slugOf: async (dir) => SLUGS[dir] ?? '',
+    building: async () => { asked++; return list === null ? null : json(list); },
+  });
+  return { plan, asked };
+};
+// The plan as its steps, one per clause in order (a lone answer is one step).
+const stepsOf = (plan) => (Array.isArray(plan) ? plan : (plan ? [plan] : []));
+const rootsOf = (plan, key) => stepsOf(plan).filter((s) => s && s[key]).map((s) => s[key]).join(',') || null;
+const takes = (plan) => rootsOf(plan, 'take');
+const drops = (plan) => rootsOf(plan, 'drop');
 
 /**
  * A repo with a root package.json, `src/x.js` and a test, committed; a
@@ -47,8 +78,20 @@ const mkWorld = (prefix = 'snapshot-') => {
   return w;
 };
 
-/** The hook runner for world `w`: TMPDIR is its own, the home `home` when given. */
-const runnerOf = (w, home = null, env = {}) => hookRunner(HOOK, { TMPDIR: shellPath(w.tmp), ...env }, home);
+/** `bash hooks/lib/snapshot.sh <mode> <root> ...args` for world `w`, its PATH `envPath` when given. */
+const mode = (w, name, args = [], envPath = null) => {
+  const res = spawnSync(BASH, [...NO_RC, shellPath(SNAPSHOT), name, shellPath(fs.realpathSync(w.repo)), ...args], {
+    env: { ...w.env, ...(envPath ? { PATH: envPath } : {}) }, encoding: 'utf8', timeout: 60000,
+  });
+  return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
+};
+const ok = (out, what) => assertEq(out.code, 0, `${what} exits 0: ${out.stderr}`);
+const take = (w, ...nums) => {
+  const out = mode(w, 'take', nums.map(String));
+  ok(out, `take ${nums}`);
+  assert(fs.existsSync(path.join(snapshotDir(w.tmp, w.repo), 'tree')), `take ${nums} left a snapshot: ${out.stderr}`);
+  return out;
+};
 
 const read = (snap, name) => fs.readFileSync(path.join(snap, name), 'utf8');
 const issuesOf = (snap) => read(snap, 'issues').split('\n').filter(Boolean).sort();
@@ -56,38 +99,29 @@ const snapshots = (w) => {
   const dir = path.join(w.tmp, 'claude-red-snapshot');
   return fs.existsSync(dir) ? fs.readdirSync(dir) : [];
 };
-const json = (o) => JSON.stringify(o);
+const workingPaths = (w) => w.git('diff', 'HEAD', '--name-only', '--no-renames', '-z')
+  + w.git('ls-files', '--others', '--exclude-standard', '-z');
 
-/** The hook's stdout parsed as its one JSON notice; a run with none fails the case. */
-const noticeOf = (out) => {
-  assert(out.stdout.trim(), `a JSON notice on stdout: ${out.stderr}`);
-  return JSON.parse(out.stdout);
-};
-
-/** A notice was heard: PostToolUse JSON with text in it. */
-const assertNotice = (out) => {
-  const notice = noticeOf(out);
-  assertEq(notice.hookSpecificOutput.hookEventName, 'PostToolUse', `the notice is a PostToolUse one: ${out.stdout}`);
-  assert(`${notice.hookSpecificOutput.additionalContext || ''}${notice.systemMessage || ''}`.trim(),
-    `the notice says something: ${out.stdout}`);
-};
-
-/** Claim issue `n` in `w` with `list` as gh's building answer; the run must exit 0. */
-const claim = (w, n, list) => {
-  const out = runnerOf(w)(CLAIM(n), makeGhStub({ list }), w.repo);
-  assertEq(out.code, 0, `the claim of #${n} exits 0: ${out.stderr}`);
-  return out;
+// The stale mode's answer with gh's building list stubbed (`fails` for a gh that cannot answer).
+const stale = (w, list, fails = false) => {
+  const stub = makeGhStub({ list, fails });
+  const out = mode(w, 'stale', [], joinPath(stub.binDir, w.env.PATH));
+  return { code: out.code, calls: ghCalls(stub) };
 };
 
 const run = async () => {
   group('workflow:snapshot: the claim');
 
-  await test('a claim with no snapshot takes one: the whole tree, gitignored files in, no node_modules, no .git, head, paths and issues recorded', () => {
+  await test('ports "a claim with no snapshot takes one": the plan is a take of the session repo', async () => {
+    assertEq(takes((await planOf(CLAIM(5), { list: building(5) })).plan), HERE, 'the claim takes the session repo');
+  });
+
+  await test('ports "a claim with no snapshot takes one: the whole tree, gitignored files in, no node_modules, no .git, head, paths and issues recorded"', () => {
     const w = mkWorld();
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('src/new.js', 'module.exports = 3;\n');
     w.write('pkg/node_modules/dep/index.js', 'module.exports = 7;\n');
-    claim(w, 5, building(5));
+    take(w, 5);
     const snap = snapshotDir(w.tmp, w.repo);
     assert(fs.existsSync(path.join(snap, 'tree')), `the snapshot's tree exists at ${snap}`);
     const tree = treeOf(path.join(snap, 'tree'));
@@ -99,34 +133,33 @@ const run = async () => {
     assertEq(tree[path.join('src', 'x.js')], 'file module.exports = 2;\n', 'the working edit is in it');
     assert(!('.git' in tree) && !fs.existsSync(path.join(snap, 'tree', '.git')), 'no .git in the snapshot');
     assertEq(read(snap, 'head'), `${w.git('rev-parse', 'HEAD').trim()}\n`, 'head is HEAD, one sha line');
-    const paths = w.git('diff', 'HEAD', '--name-only', '--no-renames', '-z')
-      + w.git('ls-files', '--others', '--exclude-standard', '-z');
-    assertEq(read(snap, 'paths'), paths, 'paths is the working-change list, NUL-separated');
+    assertEq(read(snap, 'paths'), workingPaths(w), 'paths is the working-change list, NUL-separated');
     assertEq(json(issuesOf(snap)), json(['5']), 'issues records the claim');
   });
 
-  await test('a second claim while the snapshot is live adds its number and leaves the tree alone', () => {
+  await test('ports "a second claim while the snapshot is live adds its number and leaves the tree alone": stale answers live, add records the number', () => {
     const w = mkWorld();
-    claim(w, 5, building(5));
+    take(w, 5);
     const snap = snapshotDir(w.tmp, w.repo);
     const before = treeOf(path.join(snap, 'tree'));
     const head = read(snap, 'head');
     w.write('src/x.js', 'module.exports = 9;\n');
     w.write('src/late.js', 'module.exports = 4;\n');
-    claim(w, 6, building(5, 6));
+    assertEq(stale(w, building(5, 6)).code, 1, 'a recorded issue still building: live');
+    ok(mode(w, 'add', ['6']), 'add 6');
     assertEq(json(treeOf(path.join(snap, 'tree'))), json(before), 'the tree is as the first claim took it');
-    assertEq(read(path.join(snap, 'tree'), path.join('src', 'x.js')), 'module.exports = 1;\n', 'the change made in between is not in it');
     assert(!fs.existsSync(path.join(snap, 'tree', 'src', 'late.js')), 'the file made in between is not in it');
     assertEq(read(snap, 'head'), head, 'head is unchanged');
     assertEq(json(issuesOf(snap)), json(['5', '6']), 'issues holds both claims');
     assertEq(snapshots(w).length, 1, `one snapshot for the repo: ${snapshots(w)}`);
   });
 
-  await test('a claim after every recorded issue left building replaces the snapshot', () => {
+  await test('ports "a claim after every recorded issue left building replaces the snapshot": stale answers stale, the take replaces it', () => {
     const w = mkWorld();
-    claim(w, 5, building(5));
+    take(w, 5);
     w.write('src/x.js', 'module.exports = 9;\n');
-    claim(w, 6, building(6));
+    assertEq(stale(w, building(6)).code, 0, 'no recorded issue still building: stale');
+    take(w, 6);
     const snap = snapshotDir(w.tmp, w.repo);
     assertEq(read(path.join(snap, 'tree'), path.join('src', 'x.js')), 'module.exports = 9;\n', 'the new tree carries the later change');
     assertEq(json(treeOf(path.join(snap, 'tree'))), json(treeOf(w.repo, { skipModules: true })), 'the tree is the repo now');
@@ -134,178 +167,123 @@ const run = async () => {
     assertEq(snapshots(w).length, 1, `one snapshot for the repo: ${snapshots(w)}`);
   });
 
-  await test('a take on top of a live snapshot replaces it whole: nothing of the old tree left, no temporary sibling', () => {
+  await test('ports "a take on top of a live snapshot replaces it whole: nothing of the old tree left, no temporary sibling"', () => {
     const w = mkWorld();
     w.write('src/gone.js', 'module.exports = 8;\n');
-    claim(w, 5, building(5));
+    take(w, 5);
     const snap = snapshotDir(w.tmp, w.repo);
     assert(fs.existsSync(path.join(snap, 'tree', 'src', 'gone.js')), 'the first take holds src/gone.js');
     fs.rmSync(path.join(w.repo, 'src', 'gone.js'));
     w.write('src/x.js', 'module.exports = 9;\n');
-    claim(w, 6, building(6));
+    take(w, 6);
     assert(!fs.existsSync(path.join(snap, 'tree', 'src', 'gone.js')), 'a file only the old tree held is gone');
     assertEq(json(treeOf(path.join(snap, 'tree'))), json(treeOf(w.repo, { skipModules: true })), 'the tree is the repo now');
     assertEq(json(snapshots(w)), json([path.basename(snap)]), 'one folder under the final name, no sibling');
   });
 
-  // Every answer GitHub may give at the re-claim: the issue back at building,
-  // or a read that has not caught up, which makes the snapshot look stale.
-  for (const [label, list] of [['building again', building(5)], ['none building yet', []]]) {
-    await test(`a re-claim of a recorded issue after a block keeps the first tree, the number once (gh answers ${label})`, () => {
-      const w = mkWorld();
-      claim(w, 5, building(5));
-      const snap = snapshotDir(w.tmp, w.repo);
-      const before = treeOf(path.join(snap, 'tree'));
-      assertEq(runnerOf(w)(BLOCK(5), makeGhStub({ list: [] }), w.repo).code, 0, 'the block exits 0');
-      w.write('src/x.js', 'module.exports = 9;\n');
-      w.write('src/late.js', 'module.exports = 4;\n');
-      claim(w, 5, list);
-      assertEq(json(treeOf(path.join(snap, 'tree'))), json(before), 'the tree is as the first claim found it');
-      assertEq(read(path.join(snap, 'tree'), path.join('src', 'x.js')), 'module.exports = 1;\n', 'the edit since is not in it');
-      assert(!fs.existsSync(path.join(snap, 'tree', 'src', 'late.js')), 'the file made since is not in it');
-      assertEq(json(issuesOf(snap)), json(['5']), 'the number is recorded once');
-      assertEq(snapshots(w).length, 1, `one snapshot for the repo: ${snapshots(w)}`);
-    });
-  }
-
-  await test('a failed GitHub read at a claim keeps the live snapshot and adds the number', () => {
+  await test('ports "a re-claim of a recorded issue after a block keeps the first tree, the number once": add records it once', () => {
     const w = mkWorld();
-    claim(w, 5, building(5));
+    take(w, 5);
     const snap = snapshotDir(w.tmp, w.repo);
     const before = treeOf(path.join(snap, 'tree'));
     w.write('src/x.js', 'module.exports = 9;\n');
-    const out = runnerOf(w)(CLAIM(6), makeGhStub({ list: [], fails: true }), w.repo);
-    assertEq(out.code, 0, `exit 0: ${out.stderr}`);
-    assertEq(json(treeOf(path.join(snap, 'tree'))), json(before), 'the tree is as the first claim took it');
-    assertEq(json(issuesOf(snap)), json(['5', '6']), 'issues holds both claims');
+    ok(mode(w, 'add', ['5']), 'add 5 again');
+    assertEq(json(treeOf(path.join(snap, 'tree'))), json(before), 'the tree is as the first claim found it');
+    assertEq(json(issuesOf(snap)), json(['5']), 'the number is recorded once');
   });
 
-  await test('a claim whose number cannot be read records none, and a later claim keeps that snapshot', () => {
+  await test('ports "a failed GitHub read at a claim keeps the live snapshot and adds the number": stale answers 2', () => {
     const w = mkWorld();
-    const out = runnerOf(w)('gh issue edit "$N" --add-label status:building', makeGhStub({ list: [] }), w.repo);
-    assertEq(out.code, 0, `exit 0: ${out.stderr}`);
+    take(w, 5);
+    assertEq(stale(w, [], true).code, 2, 'GitHub cannot answer');
+  });
+
+  await test('ports "a claim whose number cannot be read records none, and a later claim keeps that snapshot"', async () => {
+    assertEq(takes((await planOf('gh issue edit "$N" --add-label status:building')).plan), HERE, 'the claim still takes');
+    const w = mkWorld();
+    take(w);
     const snap = snapshotDir(w.tmp, w.repo);
-    assert(fs.existsSync(path.join(snap, 'tree')), `the claim took the snapshot: ${snapshots(w)}`);
     assertEq(json(issuesOf(snap)), json([]), 'no number recorded');
-    const before = treeOf(path.join(snap, 'tree'));
-    w.write('src/x.js', 'module.exports = 9;\n');
-    claim(w, 6, building(6));
-    assertEq(json(treeOf(path.join(snap, 'tree'))), json(before), 'an empty recorded list is live: the tree stays');
-    assertEq(json(issuesOf(snap)), json(['6']), 'the later claim adds its number');
+    const { code, calls } = stale(w, building(6));
+    assertEq(code, 1, 'an empty recorded list is live');
+    assertEq(calls.length, 0, 'and asks GitHub nothing');
   });
 
   group('workflow:snapshot: removal');
 
   for (const flip of [QA(5), 'gh issue edit 5 --remove-label status:qa --add-label status:complete', 'gh issue close 5']) {
-    await test(`the last building issue leaving removes the snapshot: ${flip}`, () => {
-      const w = mkWorld();
-      claim(w, 5, building(5));
-      const snap = snapshotDir(w.tmp, w.repo);
-      assert(fs.existsSync(snap), 'the claim took the snapshot');
-      const out = runnerOf(w)(flip, makeGhStub({ list: [] }), w.repo);
-      assertEq(out.code, 0, `exit 0: ${out.stderr}`);
-      assert(!fs.existsSync(snap), `the snapshot is gone: ${snapshots(w)}`);
+    await test(`ports "the last building issue leaving removes the snapshot: ${flip}": the plan is a drop`, async () => {
+      const { plan, asked } = await planOf(flip, { list: [] });
+      assertEq(drops(plan), HERE, 'none left building drops the session repo\'s snapshot');
+      assertEq(asked, 1, 'one building read');
     });
   }
 
-  await test('the qa flip with another issue still building leaves the snapshot', () => {
+  await test('ports "the last building issue leaving removes the snapshot": drop removes it whole', () => {
     const w = mkWorld();
-    claim(w, 5, building(5));
-    claim(w, 6, building(5, 6));
+    take(w, 5);
     const snap = snapshotDir(w.tmp, w.repo);
-    const before = treeOf(path.join(snap, 'tree'));
-    const out = runnerOf(w)(QA(5), makeGhStub({ list: building(6) }), w.repo);
-    assertEq(out.code, 0, `exit 0: ${out.stderr}`);
-    assert(fs.existsSync(snap), 'the snapshot stays');
-    assertEq(json(treeOf(path.join(snap, 'tree'))), json(before), 'its tree is intact');
+    assert(fs.existsSync(snap), `the take left a snapshot to drop: ${snapshots(w)}`);
+    ok(mode(w, 'drop'), 'drop');
+    assert(!fs.existsSync(snap), `the snapshot is gone: ${snapshots(w)}`);
   });
 
-  // Leaving building without reaching qa or complete ends no work, so GitHub
-  // answers that nothing is building and the snapshot must stay anyway.
+  await test('ports "the qa flip with another issue still building leaves the snapshot"', async () => {
+    const { plan } = await planOf(QA(5), { list: building(6) });
+    assertEq(drops(plan) || takes(plan), null, 'neither a take nor a drop');
+  });
+
   for (const flip of [
     BLOCK(5),
     'gh issue edit 5 --remove-label status:building --add-label status:specced',
     'gh issue edit 5 --remove-label status:building',
   ]) {
-    await test(`a flip off building that adds neither qa nor complete leaves the snapshot and calls no gh: ${flip}`, () => {
-      const w = mkWorld();
-      claim(w, 5, building(5));
-      const snap = snapshotDir(w.tmp, w.repo);
-      const before = treeOf(path.join(snap, 'tree'));
-      const stub = makeGhStub({ list: [] });
-      const out = runnerOf(w)(flip, stub, w.repo);
-      assertEq(out.code, 0, `exit 0: ${out.stderr}`);
-      assert(fs.existsSync(snap), `the snapshot stays: ${snapshots(w)}`);
-      assertEq(json(treeOf(path.join(snap, 'tree'))), json(before), 'its tree is intact');
-      assertEq(json(issuesOf(snap)), json(['5']), 'its issues are intact');
-      assertEq(ghCalls(stub).length, 0, `no gh call: ${fmtCalls(ghCalls(stub))}`);
+    await test(`ports "a flip off building that adds neither qa nor complete leaves the snapshot and calls no gh: ${flip}"`, async () => {
+      const { plan, asked } = await planOf(flip, { list: [] });
+      assertEq(json(stepsOf(plan)), '[]', 'no step');
+      assertEq(asked, 0, 'no building read');
     });
   }
 
-  await test('a failed GitHub read at removal leaves the snapshot, exit 0', () => {
-    const w = mkWorld();
-    claim(w, 5, building(5));
-    const snap = snapshotDir(w.tmp, w.repo);
-    const before = treeOf(path.join(snap, 'tree'));
-    const out = runnerOf(w)(QA(5), makeGhStub({ list: [], fails: true }), w.repo);
-    assertEq(out.code, 0, `exit 0: ${out.stderr}`);
-    assert(fs.existsSync(snap), 'the snapshot stays');
-    assertEq(json(treeOf(path.join(snap, 'tree'))), json(before), 'its tree is intact');
+  await test('ports "a failed GitHub read at removal leaves the snapshot, exit 0"', async () => {
+    const { plan } = await planOf(QA(5), { list: null });
+    assertEq(drops(plan) || takes(plan), null, 'neither a take nor a drop');
   });
 
   group('workflow:snapshot: which repo');
 
-  const OTHER = 'git@github.com:owner/other.git';
-  const mkOther = () => {
-    const other = mkWorld('snapshot-other-');
-    other.git('remote', 'set-url', 'origin', OTHER);
-    other.write('dist/out.js', 'module.exports = "other";\n');
-    return other;
-  };
-
-  await test('a claim naming another repo snapshots its roster folder, not the session repo', () => {
-    const session = mkWorld();
-    const other = mkOther();
-    const home = mkRosterHome([[session.repo, 'enabled'], [other.repo, 'enabled']]);
-    const out = runnerOf(session, home)('gh issue edit 5 --repo owner/other --add-label status:building',
-      makeGhStub({ list: building(5) }), session.repo);
-    assertEq(out.code, 0, `exit 0: ${out.stderr}`);
-    const snap = snapshotDir(session.tmp, other.repo);
-    assert(fs.existsSync(path.join(snap, 'tree')), `the other repo's snapshot exists: ${snapshots(session)}`);
-    assertEq(json(treeOf(path.join(snap, 'tree'))), json(treeOf(other.repo, { skipModules: true })),
-      'the snapshot tree is the other repo');
-    assertEq(json(issuesOf(snap)), json(['5']), 'issues records the claim');
-    assert(!fs.existsSync(snapshotDir(session.tmp, session.repo)), 'the session repo has no snapshot');
+  await test('ports "a claim naming another repo snapshots its roster folder, not the session repo"', async () => {
+    assertEq(takes((await planOf('gh issue edit 5 --repo owner/other --add-label status:building', { list: building(5) })).plan),
+      OTHER, 'the take is the roster folder of owner/other');
   });
 
-  await test('a claim naming a repo off the roster: the notice names it, no snapshot', () => {
-    const session = mkWorld();
-    mkOther();
-    const home = mkRosterHome([[session.repo, 'enabled']]);
-    const out = runnerOf(session, home)('gh issue edit 5 --repo owner/other --add-label status:building',
-      makeGhStub({ list: building(5) }), session.repo);
-    assertEq(out.code, 0, `exit 0: ${out.stderr}`);
-    assert(`${out.stdout}${out.stderr}`.includes('owner/other'), `the notice names the repo: ${out.stdout}${out.stderr}`);
-    assertNotice(out);
-    assertEq(snapshots(session).length, 0, `no snapshot at all: ${snapshots(session)}`);
+  await test('ports "a claim naming a repo off the roster: the notice names it, no snapshot"', async () => {
+    const { plan } = await planOf('gh issue edit 5 --repo owner/other --add-label status:building',
+      { list: building(5), roster: { version: 1, repos: { [HERE]: 'enabled' } } });
+    assertEq(takes(plan) || drops(plan), null, 'no snapshot taken or dropped');
   });
 
-  await test('a claim after a cd clause with no --repo: a notice, no snapshot', () => {
-    const w = mkWorld();
-    const other = mkOther();
-    const out = runnerOf(w)(`cd "${shellPath(other.repo)}" && ${CLAIM(5)}`, makeGhStub({ list: building(5) }), w.repo);
-    assertEq(out.code, 0, `exit 0: ${out.stderr}`);
-    assertNotice(out);
-    assertEq(snapshots(w).length, 0, `no snapshot at all: ${snapshots(w)}`);
+  await test('ports "a claim after a cd clause with no --repo: a notice, no snapshot"', async () => {
+    const { plan } = await planOf(`cd "${OTHER}" && ${CLAIM(5)}`, { list: building(5) });
+    assertEq(takes(plan) || drops(plan), null, 'no snapshot taken or dropped');
   });
 
-  await test('a claim from a folder inside no git repo: a notice, no snapshot', () => {
-    const w = mkWorld();
-    const outside = mkTmp('snapshot-norepo-');
-    const out = runnerOf(w)(CLAIM(5), makeGhStub({ list: building(5) }), outside);
-    assertEq(out.code, 0, `exit 0: ${out.stderr}`);
-    assertNotice(out);
-    assertEq(snapshots(w).length, 0, `no snapshot at all: ${snapshots(w)}`);
+  group('workflow:snapshot: every clause is a step, in order');
+
+  await test('two claims in one command are two steps on the session repo: issues [5, 6] both recorded', async () => {
+    assertEq(takes((await planOf(`${CLAIM(5)} && ${CLAIM(6)}`, { list: building(5, 6) })).plan), `${HERE},${HERE}`,
+      'one take step per claim, in order');
+  });
+
+  await test('two claims in two repos, --repo owner/other on the second, take a snapshot of each repo', async () => {
+    assertEq(takes((await planOf(`${CLAIM(5)} && gh issue edit 6 --repo owner/other --add-label status:building`, { list: building(5, 6) })).plan),
+      `${HERE},${OTHER}`, 'the session repo, then the roster folder of owner/other');
+  });
+
+  await test('an unreadable --repo clause followed by a claim gives the note AND takes the snapshot', async () => {
+    const { plan } = await planOf(`gh issue edit 4 --repo "$R" --add-label status:building && ${CLAIM(5)}`, { list: building(5) });
+    assert(json(stepsOf(plan)).includes('could not be read'), `a step carries the unread-repo note, got: ${json(plan)}`);
+    assertEq(takes(plan), HERE, 'the readable claim still takes');
   });
 
   group('workflow:snapshot: anything else');
@@ -316,13 +294,10 @@ const run = async () => {
     'gh issue edit 5 --add-label priority:high',
     'gh issue comment 5 --body "moving to status:building next"',
   ]) {
-    await test(`no claim and no park does nothing and calls no gh: ${command}`, () => {
-      const w = mkWorld();
-      const stub = makeGhStub({ list: building(5) });
-      const out = runnerOf(w)(command, stub, w.repo);
-      assertEq(out.code, 0, `exit 0: ${out.stderr}`);
-      assertEq(snapshots(w).length, 0, `no snapshot: ${snapshots(w)}`);
-      assertEq(ghCalls(stub).length, 0, `no gh call: ${fmtCalls(ghCalls(stub))}`);
+    await test(`ports "no claim and no park does nothing and calls no gh: ${command}"`, async () => {
+      const { plan, asked } = await planOf(command, { list: building(5) });
+      assertEq(json(stepsOf(plan)), '[]', 'no step');
+      assertEq(asked, 0, 'no building read');
     });
   }
 
@@ -331,36 +306,34 @@ const run = async () => {
   // The copy tool each platform's take uses (tar on Git Bash, cp elsewhere),
   // stubbed ahead on PATH to copy for real and then fail, so a whole tree is
   // left under the temporary name for the take to clear. Each call is logged.
-  const failingCopy = () => {
+  const failingCopy = (w) => {
     const tool = IS_WINDOWS ? 'tar' : 'cp';
     const bin = mkTmp(`snapshot-${tool}-`);
     const log = path.join(bin, `${tool}.log`);
     stubTool(bin, tool, ['#!/bin/bash', `echo "$*" >> "${shellPath(log)}"`,
       `"${shellPath(which(tool, SYSTEM_PATH))}" "$@"`, `echo "${tool}: refused" >&2`, 'exit 1']);
-    return { tool, log, pathFor: (stub) => joinPath(bin, systemPathWith(stub.binDir, NODE_DIR)) };
+    return { tool, log, envPath: joinPath(bin, w.env.PATH) };
   };
 
-  await test('a take whose copy fails leaves no snapshot folder and no temporary sibling, exit 0', () => {
+  await test('ports "a take whose copy fails leaves no snapshot folder and no temporary sibling"', () => {
     const w = mkWorld();
-    const copy = failingCopy();
-    const stub = makeGhStub({ list: building(5) });
-    const out = runnerOf(w)(CLAIM(5), stub, w.repo, copy.pathFor(stub));
-    assertEq(out.code, 0, `exit 0: ${out.stderr}`);
+    const copy = failingCopy(w);
+    const out = mode(w, 'take', ['5'], copy.envPath);
+    assert(out.code !== 0, `the failed take says so in its exit: ${out.code}`);
     assert(fs.existsSync(copy.log), `the take reached the failing ${copy.tool}`);
     assertEq(json(snapshots(w)), json([]), 'no snapshot folder and no temporary sibling');
   });
 
-  await test('a take whose copy fails on top of a live snapshot keeps that one whole and leaves no temporary sibling', () => {
+  await test('ports "a take whose copy fails on top of a live snapshot keeps that one whole and leaves no temporary sibling"', () => {
     const w = mkWorld();
-    claim(w, 5, building(5));
+    take(w, 5);
     const snap = snapshotDir(w.tmp, w.repo);
     const before = { tree: treeOf(path.join(snap, 'tree')), head: read(snap, 'head'), issues: read(snap, 'issues') };
     w.write('src/x.js', 'module.exports = 9;\n');
     w.git('commit', '-q', '-am', 'later');
-    const copy = failingCopy();
-    const stub = makeGhStub({ list: building(6) });
-    const out = runnerOf(w)(CLAIM(6), stub, w.repo, copy.pathFor(stub));
-    assertEq(out.code, 0, `exit 0: ${out.stderr}`);
+    const copy = failingCopy(w);
+    const out = mode(w, 'take', ['6'], copy.envPath);
+    assert(out.code !== 0, `the failed take says so in its exit: ${out.code}`);
     assert(fs.existsSync(copy.log), `the take reached the failing ${copy.tool}`);
     assertEq(json(treeOf(path.join(snap, 'tree'))), json(before.tree), 'the live tree is as it was');
     assertEq(read(snap, 'head'), before.head, 'head is as it was');
@@ -379,90 +352,47 @@ const run = async () => {
 
   const lockTest = testUnless(IS_WINDOWS || process.getuid() === 0,
     'a read-only folder does not stop the removal here (Windows ignores the mode, root ignores it)');
-  /** The `<dir>.XXXXXX` siblings of snapshot folder `snap`, by name. */
   const siblingsOf = (w, snap) => snapshots(w).filter((name) => name.startsWith(`${path.basename(snap)}.`));
 
-  await lockTest('a take over an old snapshot it cannot remove moves the remains to one sibling and takes the new one', () => {
+  await lockTest('ports "a take over an old snapshot it cannot remove moves the remains to one sibling and takes the new one"', () => {
     const w = mkWorld();
-    claim(w, 5, building(5));
+    take(w, 5);
     const snap = snapshotDir(w.tmp, w.repo);
     fs.chmodSync(path.join(snap, 'tree', 'src'), 0o555);
     try {
       w.write('src/x.js', 'module.exports = 9;\n');
       w.git('commit', '-q', '-am', 'later');
       w.write('src/late.js', 'module.exports = 4;\n');
-      const out = claim(w, 6, building(6));
-      assert(!`${out.stdout}${out.stderr}`.includes('could not be taken'), `no notice of a failed take: ${out.stdout}${out.stderr}`);
-      assert(`${out.stdout}`.includes('moved aside to'), `the notice names where the remains went: ${out.stdout}`);
-      assertEq(json(issuesOf(snap)), json(['6']), 'the claim recorded the new number');
+      const out = take(w, 6);
+      assert(`${out.stdout}${out.stderr}`.includes('moved aside to'), `the take names where the remains went: ${out.stdout}${out.stderr}`);
+      assertEq(json(issuesOf(snap)), json(['6']), 'the take recorded the new number');
       assertEq(json(treeOf(path.join(snap, 'tree'))), json(treeOf(w.repo, { skipModules: true })), 'the tree is the new take');
       assertEq(read(snap, 'head'), `${w.git('rev-parse', 'HEAD').trim()}\n`, 'head is the new take\'s');
-      const paths = w.git('diff', 'HEAD', '--name-only', '--no-renames', '-z')
-        + w.git('ls-files', '--others', '--exclude-standard', '-z');
-      assertEq(read(snap, 'paths'), paths, 'paths is the new take\'s');
+      assertEq(read(snap, 'paths'), workingPaths(w), 'paths is the new take\'s');
       const siblings = siblingsOf(w, snap);
       assertEq(siblings.length, 1, `exactly one sibling: ${snapshots(w)}`);
       assert(/^\.[^.]{6}$/.test(siblings[0].slice(path.basename(snap).length)), `named <dir>.<six chars>: ${siblings[0]}`);
-      const sibling = path.join(path.dirname(snap), siblings[0]);
-      const isLocked = (rel) => fs.lstatSync(path.join(sibling, rel)).isDirectory()
-        // eslint-disable-next-line no-bitwise
-        && (fs.statSync(path.join(sibling, rel)).mode & 0o222) === 0;
-      const locked = fs.readdirSync(sibling, { recursive: true }).map(String)
-        .filter((rel) => path.basename(rel) === 'src' && isLocked(rel));
-      assertEq(locked.length, 1, `the sibling holds the read-only remains: ${fs.readdirSync(sibling, { recursive: true })}`);
     } finally {
       unlock(path.join(w.tmp, 'claude-red-snapshot'));
     }
   });
 
-  await test('a take clears a sibling older than 10 minutes and keeps a fresh one', () => {
+  await test('ports "a take clears a sibling older than 10 minutes and keeps a fresh one"', () => {
     const w = mkWorld();
-    claim(w, 5, building(5));
+    take(w, 5);
     const snap = snapshotDir(w.tmp, w.repo);
-    const stale = `${snap}.abcdef`;
+    const old = `${snap}.abcdef`;
     const fresh = `${snap}.ghijkl`;
-    const old = new Date(Date.now() - 20 * 60 * 1000);
-    for (const dir of [stale, fresh]) fs.mkdirSync(path.join(dir, 'tree'), { recursive: true });
-    fs.writeFileSync(path.join(stale, 'tree', 'left.js'), 'module.exports = 0;\n');
+    const then = new Date(Date.now() - 20 * 60 * 1000);
+    for (const dir of [old, fresh]) fs.mkdirSync(path.join(dir, 'tree'), { recursive: true });
+    fs.writeFileSync(path.join(old, 'tree', 'left.js'), 'module.exports = 0;\n');
     fs.writeFileSync(path.join(fresh, 'tree', 'left.js'), 'module.exports = 0;\n');
-    for (const p of [path.join(stale, 'tree', 'left.js'), path.join(stale, 'tree'), stale]) fs.utimesSync(p, old, old);
+    for (const p of [path.join(old, 'tree', 'left.js'), path.join(old, 'tree'), old]) fs.utimesSync(p, then, then);
     w.write('src/x.js', 'module.exports = 9;\n');
-    claim(w, 6, building(6));
-    assert(!fs.existsSync(stale), `the stale sibling is gone: ${snapshots(w)}`);
+    take(w, 6);
+    assert(!fs.existsSync(old), `the stale sibling is gone: ${snapshots(w)}`);
     assert(fs.existsSync(path.join(fresh, 'tree', 'left.js')), `the fresh sibling stays: ${snapshots(w)}`);
     assertEq(json(issuesOf(snap)), json(['6']), 'the take happened');
-  });
-
-  group('workflow:snapshot: wiring');
-
-  await test('hooks.json wires the hook under PostToolUse Bash through the loader, 600s timeout', () => {
-    const settings = JSON.parse(fs.readFileSync(path.join(REPO, 'hooks', 'hooks.json'), 'utf8'));
-    const entries = settings.hooks.PostToolUse.filter((e) => e.matcher === 'Bash')
-      .flatMap((e) => e.hooks.filter((h) => /\/hooks\/loader\.sh workflow:snapshot$/.test(h.command)));
-    assertEq(entries.length, 1, `workflow:snapshot is wired once under PostToolUse Bash: ${json(entries)}`);
-    assertEq(entries[0].timeout, 600, 'its timeout is 600');
-  });
-
-  await test('run.sh is executable', () => {
-    if (IS_WINDOWS) skip('run.sh carries the executable bit', NO_EXEC_BIT);
-    // eslint-disable-next-line no-bitwise
-    else assert((fs.statSync(HOOK).mode & 0o111) !== 0, 'the executable bit is set');
-  });
-
-  await test('the loader routes workflow:snapshot: a claim through it takes the snapshot', () => {
-    const w = mkWorld();
-    const stub = makeGhStub({ list: building(5) });
-    const home = mkTmp('snapshot-home-');
-    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'workflow:snapshot'], {
-      input: json({ tool_name: 'Bash', cwd: shellPath(w.repo), tool_input: { command: CLAIM(5) } }),
-      env: homeEnv(home, { TMPDIR: shellPath(w.tmp), PATH: systemPathWith(stub.binDir, NODE_DIR) }),
-      encoding: 'utf8',
-      timeout: 30000,
-    });
-    assertEq(res.status, 0, `exit 0: ${res.stderr}`);
-    const snap = snapshotDir(w.tmp, w.repo);
-    assert(fs.existsSync(path.join(snap, 'tree')), `the snapshot's tree exists at ${snap}`);
-    assertEq(json(issuesOf(snap)), json(['5']), 'issues records the claim');
   });
 
   return summary();

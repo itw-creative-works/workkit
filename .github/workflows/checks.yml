@@ -8,7 +8,7 @@
 # the workflow core's template.
 #
 # The job runs the root npm test suite, the same proof the local
-# safety/commit-gate hook requires a record of before a code commit. A repo
+# safety:commit-gate hook requires a record of before a code commit. A repo
 # without a test script passes trivially. The check exists so
 # a pull request from ANY author (cloud agent, collaborator, laptop without
 # the hooks) meets the same bar before merge.

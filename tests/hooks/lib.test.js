@@ -1,8 +1,8 @@
 /* eslint-disable no-console */
-// Tests for hooks/_lib.sh, the helper library every hook sources: one group per
-// helper, from the platform seam and hook_sha1 through hook_jq, the notice, the
-// test-path shapes and the marker paths, and the retired helpers left undefined.
-// The suite and package records are tests/hooks/lib-record.test.js.
+// Tests for hooks/_lib.sh, the helper library the scripts and the dotfiles hooks
+// source: one group per helper, from the platform seam and hook_sha1 through
+// hook_jq, the test package and the marker paths, and the retired helpers left
+// undefined. The suite and package records are tests/hooks/lib-record.test.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -132,8 +132,8 @@ const run = async () => {
   await test('hook_jq hands back jq\'s own exit status, never the strip\'s', () => {
     // A caller that asks a question (`jq -e`, `jq empty`) reads the status and
     // nothing else, and a wrapper ending in a pipe would answer every one of
-    // them yes. safety/release-taken leans on it: `patterns=$(hook_jq ...) ||
-    // patterns=""` is how it survives a package.json it cannot read.
+    // them yes. hook_issues_building in hooks/lib/snapshot.sh leans on it: a
+    // failed read there is its `|| return 2`.
     const dir = crlfWorld();
     const env = { PATH: systemPathWith(dir) };
     const ask = (json) => runLib(`printf '%s' '${json}' | hook_jq -e '.v' >/dev/null; printf '%s' "$?"`, env).stdout;
@@ -180,220 +180,21 @@ echo done`);
     assertEq(out.stdout, 'done\n', `the library still defines: ${out.stdout}${out.stderr}`);
   });
 
-  group('_lib.sh: hook_redirect_word');
-
-  // One judgment per word, spelled the way a guard's walk hands it over: the
-  // quote strip has already turned a quoted span into `_hookq_`.
-  const redirectVerdicts = (words) => runLib(`for w in ${words.map((w) => `'${w}'`).join(' ')}; do `
-    + 'printf \'%s=%s\\n\' "$w" "$(hook_redirect_word "$w" || echo no)"; done');
-
-  await test('a bare operator hands its target to the next word', () => {
-    const words = ['>', '>>', '<', '<<<', '&>', '&>>', '>|', '2>', '2>>', '0<', '<<'];
-    const out = redirectVerdicts(words);
-    assertEq(out.stdout.trim(), words.map((w) => `${w}=bare`).join('\n'), `got: ${out.stdout}|${out.stderr}`);
+  await test('the helpers of the seven retired groups are undefined, hook_test_package_dir alone kept of paths.sh', () => {
+    // Public names of each retired file (commit, gh-edit, notice, optin, proof,
+    // settings, suite) and every paths.sh helper but the package lookup.
+    const names = ['hook_find_git_commit', 'hook_cmd_steps', 'hook_redirect_word', 'hook_originless_cwd',
+      'hook_gh_repo', 'hook_gh_issue_numbers', 'hook_pretool_notice', 'hook_issue_view', 'hook_view_has_proof',
+      'hook_setting_get', 'hook_findings_route', 'hook_suite_root_run', 'hook_suite_prove_run',
+      'hook_is_test_name', 'hook_is_test_path', 'hook_has_code_ext', 'hook_is_code_path', 'hook_test_script_text',
+      'hook_optin_repo', 'hook_repo_opted_in'];
+    const out = runLib(`${names.map((n) => `declare -F ${n} >/dev/null && echo "${n} is defined"`).join('\n')}
+declare -F hook_test_package_dir >/dev/null || echo "hook_test_package_dir is gone"
+echo done`);
+    assertEq(out.stdout, 'done\n', `the library still defines: ${out.stdout}${out.stderr}`);
   });
 
-  await test('an attached operator carries its target', () => {
-    const words = ['2>&1', '>file', '2>>err', '&>all', '0<in', '3>&-', '<<<msg', '>_hookq_'];
-    const out = redirectVerdicts(words);
-    assertEq(out.stdout.trim(), words.map((w) => `${w}=attached`).join('\n'), `got: ${out.stdout}|${out.stderr}`);
-  });
-
-  await test('a plain argument or a quoted placeholder is no redirect', () => {
-    const words = ['app.js', '-m', '-', '2', '_hookq_', 'a>b', '&'];
-    const out = redirectVerdicts(words);
-    assertEq(out.stdout.trim(), words.map((w) => `${w}=no`).join('\n'), `got: ${out.stdout}|${out.stderr}`);
-  });
-
-  await test("hook_fold_redirect_amp: a redirect's & is folded, a clause separator is kept", () => {
-    const out = runLib("hook_fold_redirect_amp 'git clean 2>&1 -f &>/dev/null <&3 & ls && pwd'");
-    assertEq(out.stdout, 'git clean 2>1 -f >/dev/null <3 & ls && pwd', `got: ${out.stdout}|${out.stderr}`);
-  });
-
-  await test('hook_redirect_span: 2 for bare, 1 for attached, 0 for no redirect, and exit 0 always', () => {
-    const words = { '>': 2, '2>': 2, '<<<': 2, '2>&1': 1, '>file': 1, '2>1': 1, 'app.js': 0, 'a>b': 0, '_hookq_': 0 };
-    const out = runLib(`for w in ${Object.keys(words).map((w) => `'${w}'`).join(' ')}; do `
-      + 'n=$(hook_redirect_span "$w"); printf \'%s=%s:%s\\n\' "$w" "$n" "$?"; done');
-    assertEq(out.stdout.trim(), Object.entries(words).map(([w, n]) => `${w}=${n}:0`).join('\n'),
-      `got: ${out.stdout}|${out.stderr}`);
-  });
-
-  await test('hook_find_git_commit: a redirect between git and its subcommand never hides it', () => {
-    for (const cmd of ['git 2>&1 commit -m "x"', 'git > /tmp/o commit -m "x"', 'git -C . 2>/dev/null commit -m "x"']) {
-      const out = runLib(`hook_find_git_commit '${cmd}'; printf '%s' "$HOOK_COMMIT_CLAUSE"`);
-      assert(/commit/.test(out.stdout), `${cmd} is a commit clause, got: ${out.stdout}|${out.stderr}`);
-    }
-  });
-
-  await test('hook_find_git_commit: a redirect between an interpreter and its -c string never hides it', () => {
-    for (const cmd of ['bash 2>&1 -c "git commit -m x"', 'sh > /tmp/o -c "git commit -m x"']) {
-      const out = runLib(`hook_find_git_commit '${cmd}'; printf '%s' "$HOOK_WRAPPED_COMMIT"`);
-      assertEq(out.stdout, '1', `${cmd} wraps a commit, got: ${out.stdout}|${out.stderr}`);
-    }
-  });
-
-  await test('hook_find_git_commit: a quoted redirect target is counted, so the right span is judged', () => {
-    for (const [cmd, want] of [
-      ['bash > "out file" -c "git commit -m x"', '1'],
-      ['bash > "git commit" -c "echo hi"', '0'],
-      ['> "git commit" bash -c "echo hi"', '0'],
-    ]) {
-      const out = runLib(`hook_find_git_commit '${cmd}'; printf '%s' "$HOOK_WRAPPED_COMMIT"`);
-      assertEq(out.stdout, want, `${cmd}, got: ${out.stdout}|${out.stderr}`);
-    }
-  });
-
-  await test('hook_find_git_commit: a redirect before the command word never ends the peel', () => {
-    for (const cmd of ['2>&1 git commit -m "x"', '> /tmp/out git commit -m "x"']) {
-      const out = runLib(`hook_find_git_commit '${cmd}'; printf '%s' "$HOOK_COMMIT_CLAUSE"`);
-      assert(/git commit/.test(out.stdout), `${cmd} is a commit clause, got: ${out.stdout}|${out.stderr}`);
-    }
-  });
-
-  await test('hook_clause_changes_dir: a cd, pushd or popd past the peeled prefixes, and nothing else', () => {
-    const ask = (clause) => runLib(`set -f; c='${clause}'; hook_clause_changes_dir $c && printf yes || printf no`).stdout;
-    for (const clause of ['cd /x', 'pushd /x', 'popd', '(cd /x', '( cd /x', '{ cd /x', 'command cd /x',
-      'env cd /x', 'X=1 cd /x', '2>/dev/null cd /x', '> out cd /x', 'builtin cd /x', 'time cd /x', '! cd /x',
-      '\\cd /x', '(\\cd /x', 'if cd /x', 'then cd /x', 'elif cd /x', 'else cd /x', 'do cd /x', 'while cd /x',
-      'until cd /x']) {
-      assertEq(ask(clause), 'yes', `${clause} changes directory`);
-    }
-    for (const clause of ['gh issue close 7', 'echo cd', 'git commit -m _hookq_', 'cdx /x', '']) {
-      assertEq(ask(clause), 'no', `${clause || '(empty)'} changes no directory`);
-    }
-  });
-
-  await test('hook_find_git_commit: the one peel reads a commit, and a cd before it, past every prefix', () => {
-    for (const cmd of ['time git commit -m x', 'if git commit -m x', '\\git commit -m x', '! git commit -m x']) {
-      const out = runLib(`hook_find_git_commit '${cmd}'; printf '%s' "$HOOK_COMMIT_CLAUSE"`);
-      assert(/git commit/.test(out.stdout), `${cmd} is a commit clause, got: ${out.stdout}|${out.stderr}`);
-    }
-    for (const cmd of ['builtin cd /x && git commit -m x', 'X=1 cd /x && git commit -m x']) {
-      const out = runLib(`hook_find_git_commit '${cmd}'; printf '%s' "$HOOK_SAW_CD"`);
-      assertEq(out.stdout, '1', `${cmd} changes directory before the commit`);
-    }
-  });
-
-  group('_lib.sh: the command walk');
-
-  // The command rides in an env var, so no quoting stands between a fixture and
-  // the helper. Events are one per line, fields split by the unit separator.
-  const US = '\x1f';
-  const events = (snippet, cmd) => {
-    const out = runLib(snippet, { CMD: cmd });
-    return { out, lines: out.stdout.split('\n').filter((l) => l !== '') };
-  };
-  const stepsOf = (cmd) => {
-    const { out, lines } = events('hook_cmd_steps "$CMD"', cmd);
-    const shown = lines.map((l) => {
-      const [kind, ...rest] = l.split(US);
-      return kind === 'step' ? `step:${rest.join(US).trim()}` : kind;
-    });
-    return { out, shown };
-  };
-
-  await test('hook_cmd_steps: one step per ;, &&, ||, | and newline', () => {
-    const { out, shown } = stepsOf('a 1 ; b 2 && c || d | e\nf');
-    assertEq(shown.join(','), 'step:a 1,step:b 2,step:c,step:d,step:e,step:f', `got: ${out.stdout}|${out.stderr}`);
-  });
-
-  await test('hook_cmd_steps: open and close for each parenthesis, nested', () => {
-    const { out, shown } = stepsOf('( (cd /x) ; b ) && c');
-    assertEq(shown.join(','), 'open,open,step:cd /x,close,step:b,close,step:c', `got: ${out.stdout}|${out.stderr}`);
-  });
-
-  await test('hook_cmd_steps: a blank step is dropped', () => {
-    const { out, shown } = stepsOf('\na ;\n\n ; b ;');
-    assertEq(shown.join(','), 'step:a,step:b', `got: ${out.stdout}|${out.stderr}`);
-  });
-
-  const cdDir = (base, step) => runLib('hook_cd_step "$BASE" "$STEP"; printf \'%s\' "$HOOK_CD_DIR"',
-    { BASE: base, STEP: step }).stdout;
-
-  await test('hook_cd_step: an absolute folder, or a relative one joined to its base', () => {
-    assertEq(cdDir('/b/base', 'cd /abs/x'), '/abs/x', 'an absolute folder is itself');
-    assertEq(cdDir('/b/base', 'cd sub/x'), '/b/base/sub/x', 'a relative folder joins a non-empty base');
-    assertEq(cdDir('', 'cd sub/x'), 'sub/x', 'a relative folder with an empty base stays relative');
-    assertEq(cdDir('?', 'cd sub/x'), '?', 'a relative folder from an unknown base is unknown');
-  });
-
-  await test('hook_cd_step: every form it cannot follow is ?', () => {
-    for (const step of ['pushd /x', 'popd', 'env cd /x', 'cd -P /x', 'cd ~/x', 'cd $X', 'cd a b']) {
-      assertEq(cdDir('/b/base', step), '?', `${step} is refused`);
-    }
-  });
-
-  await test('hook_unquote_word: one pair of matching quotes is stripped, anything else is left alone', () => {
-    for (const [word, want] of [['"cd"', 'cd'], ["'cd'", 'cd'], ['""', ''], ['"\'cd\'"', "'cd'"],
-      ['cd', 'cd'], ['"cd\'', '"cd\''], ['"cd', '"cd'], ['"a"b', '"a"b'], ['"', '"']]) {
-      const out = runLib('hook_unquote_word "$W"', { W: word });
-      assertEq(out.stdout, want, `${word}, got: ${out.stdout}|${out.stderr}`);
-    }
-  });
-
-  // Each step as `folder|text`; the empty folder is the session's own.
-  const dirsOf = (cmd) => {
-    const { out, lines } = events('hook_step_dirs "$CMD"', cmd);
-    const shown = lines.filter((l) => l.startsWith(`step${US}`)).map((l) => {
-      const [, dir, ...text] = l.split(US);
-      return `${dir}|${text.join(US).trim()}`;
-    });
-    return { out, shown };
-  };
-
-  await test('hook_step_dirs: each step with the folder it runs in, two cd steps chained', () => {
-    const { out, shown } = dirsOf('ls ; cd /a && cd b && ls');
-    assertEq(shown.join(','), '|ls,|cd /a,/a|cd b,/a/b|ls', `got: ${out.stdout}|${out.stderr}`);
-  });
-
-  await test('hook_step_dirs: a subshell\'s cd is undone at its )', () => {
-    const { out, shown } = dirsOf('(cd /a && ls) ; ls');
-    assertEq(shown.join(','), '|cd /a,/a|ls,|ls', `got: ${out.stdout}|${out.stderr}`);
-  });
-
-  group('_lib.sh: hook_pretool_notice');
-
-  await test('prints the two-field JSON a PreToolUse hook exiting 0 is heard by', () => {
-    const out = runLib("hook_pretool_notice 'a line: with \"quotes\"'");
-    assertEq(out.code, 0, `it prints, got: ${out.stderr}`);
-    const parsed = JSON.parse(out.stdout);
-    assertEq(Object.keys(parsed).sort().join(','), 'hookSpecificOutput,systemMessage', 'two top-level fields');
-    assertEq(parsed.systemMessage, 'a line: with "quotes"', 'the message, escaped by jq');
-    assertEq(JSON.stringify(parsed.hookSpecificOutput),
-      JSON.stringify({ hookEventName: 'PreToolUse', additionalContext: 'a line: with "quotes"' }),
-      'the model hears the same line, and nothing decides the call');
-  });
-
-  group('_lib.sh: the test-path shapes');
-
-  await test('hook_is_test_name: the basename shapes, at any depth, and nothing else', () => {
-    const cases = ['a.test.js', 'src/a.spec.ts', 'pkg/a_test.go', 'tests/helpers.js', 'test/run.js', 'lib/x.js'];
-    const out = runLib(`for p in ${cases.join(' ')}; do hook_is_test_name "$p" && echo "$p"; done; true`);
-    assertEq(out.stdout.trim().split('\n').join(','), 'a.test.js,src/a.spec.ts,pkg/a_test.go', `got: ${out.stdout}|${out.stderr}`);
-  });
-
-  await test('hook_is_test_path: a test name, or any test folder, the top level included', () => {
-    const cases = ['a.test.js', 'tests/helpers.js', 'test/run.js', '__tests__/x.js', 'pkg/__tests__/x.js',
-      'pkg/test/x.js', 'lib/x.js', 'contest/x.js', 'testing/x.js'];
-    const out = runLib(`for p in ${cases.join(' ')}; do hook_is_test_path "$p" && echo "$p"; done; true`);
-    assertEq(out.stdout.trim().split('\n').join(','),
-      'a.test.js,tests/helpers.js,test/run.js,__tests__/x.js,pkg/__tests__/x.js,pkg/test/x.js', `got: ${out.stdout}|${out.stderr}`);
-  });
-
-  await test('hook_is_code_path: a code extension, never a test path, a config file or the attic', () => {
-    const cases = ['lib/x.js', 'run.sh', 'a/b.tsx', 'tool.py', 'README.md', 'data.json', 'a.test.js', 'tests/helpers.js',
-      'eslint.config.js', '_attic/old.js', 'pkg/_attic/old.sh'];
-    const out = runLib(`for p in ${cases.join(' ')}; do hook_is_code_path "$p" && echo "$p"; done; true`);
-    assertEq(out.stdout.trim().split('\n').join(','), 'lib/x.js,run.sh,a/b.tsx,tool.py', `got: ${out.stdout}|${out.stderr}`);
-  });
-
-  await test('hook_has_code_ext: the code extensions, read off the basename alone', () => {
-    const cases = ['x.js', 'x.cjs', 'x.mjs', 'x.ts', 'x.jsx', 'x.tsx', 'run.sh', 'rc.zsh', 'tool.py', 'gem.rb',
-      'README.md', 'data.json', 'x.json.bak', 'Makefile'];
-    const out = runLib(`for p in ${cases.join(' ')}; do hook_has_code_ext "$p" && echo "$p"; done; true`);
-    assertEq(out.stdout.trim().split('\n').join(','), 'x.js,x.cjs,x.mjs,x.ts,x.jsx,x.tsx,run.sh,rc.zsh,tool.py,gem.rb',
-      `got: ${out.stdout}|${out.stderr}`);
-  });
+  group('_lib.sh: the test package');
 
   await test('hook_test_package_dir: the nearest package declaring a test script, below the root', () => {
     const root = mkTmp('lib-pkgdir-');
@@ -426,24 +227,6 @@ echo done`);
     const root = mkTmp('lib-emptyscript-');
     fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: '' } }));
     assertEq(runLib(`wk_has_test_script "${shellPath(root)}"`).code, 1, 'wk_has_test_script answers no');
-    fs.rmSync(root, { recursive: true, force: true });
-  });
-
-  await test('hook_test_script_text: the scripts.test text, empty when absent, unreadable or with no package.json', () => {
-    const root = mkTmp('lib-scripttext-');
-    for (const d of ['tested', 'bare', 'broken', 'none']) fs.mkdirSync(path.join(root, d));
-    fs.writeFileSync(path.join(root, 'tested', 'package.json'), JSON.stringify({ scripts: { test: 'node tests/run.js' } }));
-    fs.writeFileSync(path.join(root, 'bare', 'package.json'), JSON.stringify({ name: 'bare', scripts: { lint: 'x' } }));
-    // jq answers the first value before failing on the second: that half answer is never the text.
-    fs.writeFileSync(path.join(root, 'broken', 'package.json'), '{"scripts":{"test":"half"}} {');
-    const ask = (d) => runLib(`hook_test_script_text "${shellPath(path.join(root, d))}"`);
-    const tested = ask('tested');
-    assertEq(tested.stdout, 'node tests/run.js', `the script text, got: ${tested.stdout}|${tested.stderr}`);
-    for (const d of ['bare', 'broken', 'none']) {
-      const res = ask(d);
-      assertEq(res.stdout, '', `${d}: nothing printed, got: ${JSON.stringify(res.stdout)}`);
-      assertEq(res.code, 0, `${d}: and a clean exit, so a caller reads the empty text`);
-    }
     fs.rmSync(root, { recursive: true, force: true });
   });
 

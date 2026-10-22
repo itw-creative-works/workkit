@@ -1,18 +1,13 @@
 #!/bin/bash
-# hooks/_lib.sh: the helpers every hook sources, never executes:
-#   . "${BASH_SOURCE[0]%/*}/../../_lib.sh"   (from a depth-2 hook dir)
-# Helpers fail toward the safe side for guards. The constants, the platform
-# seam, hook_jq and the engine sources live here; the helper groups live one
-# file per concern under hooks/lib/, sourced at the foot. Add a helper only
-# with a second named consumer.
+# hooks/_lib.sh: the hook library's entry, sourced and never executed, by the
+# shell that still needs it: scripts/*.sh, workflow/prove.sh, snapshot.sh's
+# entry and the dotfiles hooks. The constants, the platform seam, hook_jq and the engine sources live
+# here; the helper groups live one file per concern under hooks/lib/, sourced
+# at the foot. Add a helper only with a second named consumer.
 
 # The hook layer's copy of the state directory name; the engine and the test
 # harness hold their own, and a test asserts all three agree.
 WORKKIT_DIR=".workkit"
-
-# A release subject's version, as an ERE: commit-language and release-taken
-# both read it, so one hook never accepts a release the other misses.
-readonly HOOK_VERSION_RE='v?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?'
 
 # This file's physical folder, resolved once for every source line below: each
 # lookup is a fork, slow on Windows. A bare `. _lib.sh` has no folder to strip.
@@ -58,45 +53,23 @@ hook_sha1() { wk_sha1 "$@"; }
 . "$HOOK_LIB_DIR/../workflow/lib/participation.sh"
 
 # The slug rule (wk_slug_from_remote, wk_repo_slug), engine names for the same
-# reason; release-taken reads it rather than parsing an origin of its own.
+# reason.
 # shellcheck source=../workflow/lib/slug.sh
 . "$HOOK_LIB_DIR/../workflow/lib/slug.sh"
 
 # The proved-tree records, the suite record and the package record
-# (wk_tree_hash, wk_suite_proved, wk_pkg_proved and the rest), engine names for
-# the same reason.
+# (wk_tree_hash, wk_suite_marker_write, wk_has_test_script and the rest),
+# engine names for the same reason; workflow/prove.sh reads them through here.
 # shellcheck source=../workflow/lib/suite.sh
 . "$HOOK_LIB_DIR/../workflow/lib/suite.sh"
-
-# The changelog job helpers, engine names; commit-gate's heal-bookkeeping arms
-# read them to prove a commit is exactly the heal's output.
-# shellcheck source=../workflow/changelog/changelog-job.sh
-. "$HOOK_LIB_DIR/../workflow/changelog/changelog-job.sh"
-
-# The CHANGELOG format check (wk_changelog_lint and its linter), engine names;
-# commit-gate check 3 shares it with script-shell.sh.
-# shellcheck source=../workflow/lib/changelog.sh
-. "$HOOK_LIB_DIR/../workflow/lib/changelog.sh"
 
 # The helper groups: each defines functions and sets nothing, so sourcing runs
 # nothing and every name they read is defined above.
 # shellcheck source=./lib/markers.sh
 . "$HOOK_LIB_DIR/lib/markers.sh"
-# shellcheck source=./lib/commit.sh
-. "$HOOK_LIB_DIR/lib/commit.sh"
-# shellcheck source=./lib/proof.sh
-. "$HOOK_LIB_DIR/lib/proof.sh"
-# shellcheck source=./lib/notice.sh
-. "$HOOK_LIB_DIR/lib/notice.sh"
 # shellcheck source=./lib/paths.sh
 . "$HOOK_LIB_DIR/lib/paths.sh"
-# shellcheck source=./lib/suite.sh
-. "$HOOK_LIB_DIR/lib/suite.sh"
 # shellcheck source=./lib/tree.sh
 . "$HOOK_LIB_DIR/lib/tree.sh"
-# shellcheck source=./lib/gh-edit.sh
-. "$HOOK_LIB_DIR/lib/gh-edit.sh"
 # shellcheck source=./lib/snapshot.sh
 . "$HOOK_LIB_DIR/lib/snapshot.sh"
-# shellcheck source=./lib/settings.sh
-. "$HOOK_LIB_DIR/lib/settings.sh"

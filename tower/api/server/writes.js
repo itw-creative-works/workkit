@@ -87,7 +87,7 @@ const createWrites = ({ exec, slugsNow }) => {
     }
 
     // The proof gate (docs/project-state.md § The proof) on the drag, as
-    // safety/proof-guard holds it on the shell. Here, not in the pure
+    // safety:proof-guard holds it on the shell. Here, not in the pure
     // validateMove, because it is a read only a move to complete pays for.
     if (checked.to === PROOF_GATED) {
       const seen = readGated(res, checked, 'comments', 'proof');
@@ -105,7 +105,7 @@ const createWrites = ({ exec, slugsNow }) => {
     }
 
     // The Contract rule (docs/project-state.md § Specs) on the drag, as
-    // safety/spec-guard holds it on the shell, read only by a move to specced.
+    // safety:spec-guard holds it on the shell, read only by a move to specced.
     if (checked.to === SPEC_GATED) {
       const seen = readGated(res, checked, 'body', 'Spec');
       if (!seen.ok) return;

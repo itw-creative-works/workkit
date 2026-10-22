@@ -2,8 +2,10 @@
  * The world the workflow/script-shell.sh suites run npm in: a scratch machine
  * (its own home and TMPDIR), a committed scratch repo, npm spawned with the
  * wrapper named by `--script-shell`, the record a green root run leaves and the
- * package record every other green test run leaves.
- * Consumers: tests/scripts/script-shell.test.js and script-shell-detached.test.js.
+ * package record every other green test run leaves, and npm's script shell as
+ * setup wires it (the wrapper, or on Windows the built executable).
+ * Consumers: tests/scripts/script-shell.test.js, script-shell-detached.test.js
+ * and prove.test.js.
  */
 
 const fs = require('fs');
@@ -11,12 +13,48 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { assert, skipSuite } = require('./harness');
 const {
-  IS_WINDOWS, BASH, NODE_DIR, NO_RC, SYSTEM_PATH, shellPath, which, joinPath, homeEnv,
+  IS_WINDOWS, BASH, NODE_DIR, NO_RC, SYSTEM_PATH, WINDOWS_CSC, shellPath, gitPath, which, joinPath, homeEnv,
 } = require('./platform');
 const { mkTmp } = require('./scratch');
 const { suiteMarkerPath, pkgRecord } = require('./suite-record');
 const { FIXTURE_ORIGIN } = require('./git-repo');
-const { WRAPPER, EXE_CLAUDE_HOME } = require('../hooks/commit-gate/helpers');
+
+const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
+
+// npm's script shell as setup wires it: the wrapper beside this checkout's
+// engine, or on Windows the executable built into a scratch machine folder
+// (null with no compiler), which reaches this checkout's wrapper through a
+// scratch claude home whose `workkit` is a junction to it.
+const EXE_TMP = mkTmp('script-shell-exe-');
+const EXE_HOME = path.join(EXE_TMP, 'workkit-home');
+const EXE_CLAUDE_HOME = path.join(EXE_TMP, 'claude-home');
+const EXE = path.join(EXE_HOME, 'script-shell.exe');
+fs.mkdirSync(EXE_HOME, { recursive: true });
+const buildExe = () => {
+  if (!fs.existsSync(WINDOWS_CSC)) return null;
+  const cli = path.join(WORKFLOW_DIR, 'workkit.sh');
+  const res = spawnSync(BASH, [...NO_RC, '-c', `. "${shellPath(cli)}" help >/dev/null; script_shell_exe`], {
+    env: { ...process.env, WORKFLOW_HOME: shellPath(EXE_HOME) }, encoding: 'utf8', timeout: 60000,
+  });
+  // A compile error must never read as a machine without a compiler.
+  if (!fs.existsSync(EXE)) throw new Error(`${WINDOWS_CSC} built no ${EXE}: ${res.stderr || res.error || ''}`);
+  fs.mkdirSync(EXE_CLAUDE_HOME, { recursive: true });
+  fs.symlinkSync(path.resolve(WORKFLOW_DIR), path.join(EXE_CLAUDE_HOME, 'workkit'), 'junction');
+  return gitPath(EXE);
+};
+const WRAPPER = IS_WINDOWS ? buildExe() : path.join(WORKFLOW_DIR, 'script-shell.sh');
+// The gate compares npm's value with the machine folder's executable on Windows.
+const EXE_ENV = IS_WINDOWS ? { WORKFLOW_HOME: shellPath(EXE_HOME) } : {};
+// The gate asks only that the executable exists before it compares paths, so
+// with no compiler an empty stand-in wires it.
+if (IS_WINDOWS && !fs.existsSync(EXE)) fs.writeFileSync(EXE, '');
+
+/** A scratch user npmrc naming <shell>, so npm's config is never the machine's. */
+const scratchNpmrc = (shell) => {
+  const file = path.join(mkTmp('script-shell-npmrc-'), 'npmrc');
+  fs.writeFileSync(file, shell ? `script-shell=${shell}\n` : '');
+  return file;
+};
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
@@ -98,5 +136,6 @@ const recorded = (world, repo) => {
 const packaged = (world, repo) => JSON.stringify(pkgRecord(world.tmp, repo));
 
 module.exports = {
+  WRAPPER, EXE_ENV, EXE_CLAUDE_HOME, scratchNpmrc,
   cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, packaged,
 };

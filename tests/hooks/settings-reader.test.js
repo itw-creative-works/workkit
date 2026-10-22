@@ -1,103 +1,104 @@
-// Tests for hook_setting_get <jq path> <cwd> (hooks/lib/settings.sh, sourced by
-// hooks/_lib.sh): the layered one-key reader. The settings.json of the repo
-// holding <cwd> wins when it has the key, else the global file under
-// WORKFLOW_HOME, else nothing; a literal false is a value. Then the two
-// findings.file helpers read through it, hook_findings_on and hook_findings_route.
+// Tests for the layered settings read in hooks/mods/settings.js, over plain
+// facts: settingsLayers(cwd, env, { top, read }) reads the repo's
+// .workkit/settings.json at the folder's git root and the machine's file, and
+// settingGet(path, repo, user) answers the repo file's value when it has the key,
+// else the machine file's, else nothing; a literal false is a value. Then the two
+// findings.file readers built on it, findingsOn and findingsRoute. Ports the cases
+// of the shell reader's suite this module replaced.
 
-const fs = require('fs');
-const path = require('path');
-const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, selfRun, summary, WORKKIT_DIR: W,
+  group, test, assert, assertEq, selfRun, summary,
 } = require('../lib/harness');
-const { shellPath } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
-const { runLib } = require('../lib/hook-lib');
+const { mods } = require('../lib/mods-inputs');
 
-// One scratch world per case: a home, a WORKFLOW_HOME and a working folder,
-// each settings file written only when the case gives it a body. The real
-// ~/.workkit is never part of an answer.
-const world = ({ global, repo, git = true }) => {
-  const dir = mkTmp('settings-reader-');
-  const home = path.join(dir, 'home');
-  const workflowHome = path.join(dir, 'workflow-home');
-  const cwd = path.join(dir, 'work');
-  for (const d of [home, workflowHome, cwd]) fs.mkdirSync(d, { recursive: true });
-  if (global !== undefined) fs.writeFileSync(path.join(workflowHome, 'settings.json'), JSON.stringify(global));
-  if (repo !== undefined) {
-    fs.mkdirSync(path.join(cwd, W), { recursive: true });
-    fs.writeFileSync(path.join(cwd, W, 'settings.json'), JSON.stringify(repo));
-  }
-  if (git) spawnSync('git', ['init', '-q', cwd], { encoding: 'utf8' });
-  return { home, workflowHome, cwd };
+const settings = () => mods('settings');
+
+const HOME = '/w/home';
+const ROOT = '/w/repo';
+const CWD = `${ROOT}/src`;
+
+// One world: `repo` and `user` the two files' bodies (a string as written, an
+// object as JSON, undefined for no file), `git` false for a folder in no repo.
+const world = ({ repo, user, git = true, env = { HOME } }) => {
+  const machine = env.WORKFLOW_HOME || `${env.HOME}/.workkit`;
+  const files = {};
+  const put = (p, body) => { if (body !== undefined) files[p] = typeof body === 'string' ? body : JSON.stringify(body); };
+  put(`${machine}/settings.json`, user);
+  // Outside a repo the folder's own settings file is still there, for a reader to wrongly take.
+  put(git ? `${ROOT}/.workkit/settings.json` : `${CWD}/.workkit/settings.json`, repo);
+  const io = {
+    top: async (dir) => (git && dir.startsWith(ROOT) ? ROOT : null),
+    read: async (p) => files[p] ?? null,
+  };
+  return { env, io };
 };
 
-// The reader's answer as a caller takes it, through a command substitution,
-// handed the world's working folder as its cwd and asked from somewhere else.
-// Empty stderr in every case: a missing reader also prints nothing to stdout.
-const ask = (w, key = '.findings.file') => askSnippet(w, `printf '%s' "$(hook_setting_get '${key}' "$ASK_CWD")"`);
-
-// Any snippet run in the world the same way, $ASK_CWD its working folder.
-const askSnippet = ({ home, workflowHome, cwd }, snippet) => {
-  const out = runLib(`cd "${shellPath(home)}" || exit 9\n${snippet}`, {
-    HOME: shellPath(home),
-    WORKFLOW_HOME: shellPath(workflowHome),
-    GIT_CEILING_DIRECTORIES: shellPath(path.dirname(cwd)),
-    ASK_CWD: shellPath(cwd),
-  });
-  assertEq(out.code, 0, `the reader runs clean, stderr: ${out.stderr}`);
-  assertEq(out.stderr, '', 'the reader says nothing on stderr');
-  return out.stdout;
+// The read as a hook takes it: the two layers for CWD, then one key across them.
+const ask = async (w, key = 'findings.file') => {
+  const { settingsLayers, settingGet } = settings();
+  return settingGet(key, ...(await settingsLayers(CWD, w.env, w.io)));
 };
 
 const run = async () => {
-  group('hook_setting_get: the repo file over the global file');
+  group('settingsLayers and settingGet: the repo file over the machine file');
 
-  await test('no key in either file: prints nothing', () => {
-    const w = world({ global: { version: 1 }, repo: { version: 1, enabled: true } });
-    assertEq(ask(w), '', 'an absent key is no answer');
+  await test('ports "no key in either file: prints nothing"', async () => {
+    assertEq(await ask(world({ repo: { version: 1, enabled: true }, user: { version: 1 } })), undefined,
+      'an absent key is no answer');
   });
 
-  await test('true in the global file and no repo key: prints true', () => {
-    const w = world({ global: { findings: { file: true } }, repo: { version: 1, enabled: true } });
-    assertEq(ask(w), 'true', 'the global file answers');
+  await test('ports "true in the global file and no repo key: prints true"', async () => {
+    assertEq(await ask(world({ repo: { version: 1, enabled: true }, user: { findings: { file: true } } })), true,
+      'the machine file answers');
   });
 
-  await test('false globally and true in the repo file: prints true', () => {
-    const w = world({ global: { findings: { file: false } }, repo: { version: 1, enabled: true, findings: { file: true } } });
-    assertEq(ask(w), 'true', 'the repo file wins');
+  await test('ports "false globally and true in the repo file: prints true"', async () => {
+    const w = world({ repo: { version: 1, enabled: true, findings: { file: true } }, user: { findings: { file: false } } });
+    assertEq(await ask(w), true, 'the repo file wins');
   });
 
-  await test('true globally and false in the repo file: prints false', () => {
+  await test('ports "true globally and false in the repo file: prints false"', async () => {
     // A literal false is a value, never "absent": falling through to the
-    // global file here would turn the repo's override off.
-    const w = world({ global: { findings: { file: true } }, repo: { version: 1, enabled: true, findings: { file: false } } });
-    assertEq(ask(w), 'false', 'the repo file wins with false');
+    // machine file here would turn the repo's override off.
+    const w = world({ repo: { version: 1, enabled: true, findings: { file: false } }, user: { findings: { file: true } } });
+    assertEq(await ask(w), false, 'the repo file wins with false');
   });
 
-  await test('outside any git repo: the global file alone', () => {
-    // The working folder carries a settings file of its own, so a reader that
-    // took it as the repo layer would print false.
-    const w = world({ global: { findings: { file: true } }, repo: { findings: { file: false } }, git: false });
-    assertEq(ask(w), 'true', 'a folder that is no repo is no repo layer');
+  await test('ports "outside any git repo: the global file alone"', async () => {
+    // The folder carries a settings file of its own, so a reader that took it
+    // as the repo layer would answer false.
+    const w = world({ repo: { findings: { file: false } }, user: { findings: { file: true } }, git: false });
+    assertEq(await ask(w), true, 'a folder that is no repo is no repo layer');
+    assertEq((await settings().settingsLayers(CWD, w.env, w.io))[0], null, 'and the repo layer is null');
   });
 
-  group('hook_findings_on and hook_findings_route: the findings.file helpers');
-
-  await test('hook_findings_on: true only when the setting reads true', () => {
-    const on = 'if hook_findings_on "$ASK_CWD"; then printf on; else printf off; fi';
-    assertEq(askSnippet(world({ global: { findings: { file: true } } }), on), 'on', 'true reads on');
-    assertEq(askSnippet(world({ global: { findings: { file: false } } }), on), 'off', 'false reads off');
-    assertEq(askSnippet(world({ global: { version: 1 } }), on), 'off', 'an absent key reads off');
+  await test('the machine file is the one WORKFLOW_HOME names, and a file that does not parse adds nothing', async () => {
+    const moved = world({ user: { findings: { file: true } }, env: { HOME, WORKFLOW_HOME: '/w/moved' } });
+    assertEq(await ask(moved), true, 'WORKFLOW_HOME moves the machine file');
+    const broken = world({ repo: '{ "findings": ', user: { findings: { file: true } } });
+    assertEq(await ask(broken), true, 'an unreadable repo file falls through to the machine file');
   });
 
-  await test('hook_findings_route: off and absent both print the chat route', () => {
-    const route = 'printf \'%s\' "$(hook_findings_route "$ASK_CWD")"';
-    for (const global of [{ findings: { file: false } }, { version: 1 }]) {
-      const said = askSnippet(world({ global }), route);
+  group('findingsOn and findingsRoute: the findings.file readers');
+
+  const layers = async (w) => settings().settingsLayers(CWD, w.env, w.io);
+
+  await test('ports "hook_findings_on: true only when the setting reads true"', async () => {
+    const { findingsOn } = settings();
+    assertEq(findingsOn(...(await layers(world({ user: { findings: { file: true } } })))), true, 'true reads on');
+    assertEq(findingsOn(...(await layers(world({ user: { findings: { file: false } } })))), false, 'false reads off');
+    assertEq(findingsOn(...(await layers(world({ user: { version: 1 } })))), false, 'an absent key reads off');
+  });
+
+  await test('ports "hook_findings_route: off and absent both print the chat route"', async () => {
+    const { findingsRoute } = settings();
+    for (const user of [{ findings: { file: false } }, { version: 1 }]) {
+      const said = findingsRoute(...(await layers(world({ user }))));
       assert(said.includes('chat under 🧭 Findings') && said.includes('file or drop'), `the chat route, got: ${said}`);
       assert(!said.includes('status:inbox'), `files nothing, got: ${said}`);
     }
+    const on = findingsRoute(...(await layers(world({ user: { findings: { file: true } } }))));
+    assert(on.includes('status:inbox'), `and on files a status:inbox issue, got: ${on}`);
   });
 
   return summary();

@@ -15,7 +15,7 @@ const DEFAULT_BODY = 'Filed from Workkit.';
 const MOVE_STATUSES = Object.keys(require(LABELS_FILE).groups.status.values);
 
 // The line that proves an item was built (docs/project-state.md § The proof).
-// Its shell twin is `hook_view_has_proof` in hooks/lib/proof.sh: the two change together.
+// Its hook twin is `PROOF_RE` in hooks/mods/proof.js: the two change together.
 const PROOF_LINE = /(^|\n)[ \t]*Proof:/;
 
 // The status a move has to show a `Proof:` line to reach. The board is the second
@@ -23,12 +23,12 @@ const PROOF_LINE = /(^|\n)[ \t]*Proof:/;
 const PROOF_GATED = 'complete';
 
 // The status a move has to show a Contract to reach (docs/project-state.md § Specs).
-// The board is the second door into the gate safety/spec-guard holds on the shell path.
+// The board is the second door into the gate safety:spec-guard holds on the shell path.
 const SPEC_GATED = 'specced';
 
 /**
  * Does the body's `## Spec` hold a `### Contract` heading, or say only the
- * small-item line? Its shell twin is `sg_spec_ok` in hooks/safety/spec-guard/run.sh
+ * small-item line? Its hook twin is `specOk` in hooks/mods/spec-guard.js
  * and the dashboard restates it: the three change together. A `## ` line
  * inside a code fence is never the next section.
  * @param {string} body the issue body

@@ -1,450 +1,334 @@
-// Tests for hooks/safety/commit-gate check 5: a commit carrying code needs the
-// record a green root `npm test` wrote for the tree it carries; the gate runs no
-// suite itself. The shared prologue (the hook runner, the repo and marker
-// factories, the fixtures) is ./helpers.js.
+// Tests for safety:commit-gate's logic, commitGateVerdict(facts) in
+// hooks/mods/commit-gate.js, check 5: a commit carrying code needs the record a
+// green root `npm test` wrote for the tree it carries (the index's write-tree,
+// or `indexTreeId()` under -a; `treeId` is the working tree); the gate runs no
+// suite. Each case ports the HEAD case its name quotes; the script-shell compare
+// reads physical paths through `real`. The prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
-const { execSync } = require('child_process');
-const {
-  group, test, skip, assert, assertEq, summary, selfRun,
-} = require('../../lib/harness');
-const {
-  IS_WINDOWS, SYSTEM_BASH, NODE_DIR, shellPath, which, joinPath, cygpathStub,
-} = require('../../lib/platform');
+const { group, test, assert, summary, selfRun } = require('../../lib/harness');
 const { mkTmp } = require('../../lib/scratch');
 const {
-  skipWithoutDigest, TMP, stage, stageDeep, touchMarker, dropMarker, runHook, standDownMessage, cleanup,
-  pkg, suiteRan, mkReleaseRepo, WRAPPER, scratchNpmrc,
+  T, NOTICE, stage, write, commit, touchMarker, proveTree, factsOf, judge, denyOf, blocks, passes, recordBlocks,
+  suiteRan, pkg, mkReleaseRepo,
 } = require('./helpers');
-const { plantRecord, suiteLogPath } = require('../../lib/suite-record');
-
-const PROVED = 'commit-gate: suite proved: a green root `npm test` recorded this tree.';
-const NO_CODE = 'commit-gate: suite not run: the commit carries no code (docs-only or version-stamp-only).';
-
-// The block check 5 bounces with, and proof the gate ran nothing on the way.
-const recordRequired = (out, dir) => {
-  assertEq(out.code, 2, `no record for this tree blocks, got: ${out.stderr}`);
-  assert(out.stderr.includes('no green run proves this tree'), `for the record reason, got: ${out.stderr}`);
-  assert(out.stderr.includes('Run `npm test` at the repo root'), `naming the fix, got: ${out.stderr}`);
-  assert(!suiteRan(dir), 'the gate never runs the suite');
-};
-
-// The block when the record proves the disk tree and the commit carries another:
-// stage the rest, or prove the staged tree, never stash.
-const diskProved = (out, dir) => {
-  assertEq(out.code, 2, `the disk tree is not the commit's, got: ${out.stderr}`);
-  assert(out.stderr.includes('the green run proved the tree on disk, and this commit carries a different one'),
-    `for the gap reason, got: ${out.stderr}`);
-  assert(out.stderr.includes('`git add -A`'), `naming the fix, got: ${out.stderr}`);
-  assert(out.stderr.includes('workkit prove'), `naming the staged-tree proof, got: ${out.stderr}`);
-  assert(!/stash/i.test(out.stderr), `never naming a stash, got: ${out.stderr}`);
-  assert(!suiteRan(dir), 'the gate never runs the suite');
-};
 
 // A no-code commit passes with the stand-down line and no suite.
-const recordNotRequired = (out, dir) => {
-  assertEq(out.code, 0, `allowed, got: ${out.stderr}`);
-  assertEq(standDownMessage(out), NO_CODE, 'the no-code stand-down');
-  assert(!suiteRan(dir), 'the gate never runs the suite');
+const recordNotRequired = (v, r) => {
+  passes(v, NOTICE.noCode, 'the no-code stand-down');
+  assert(!suiteRan(r), 'the gate never runs the suite');
+};
+
+// The record block, and proof the gate ran nothing on the way.
+const recordRequired = (v, r) => {
+  recordBlocks(v);
+  assert(!suiteRan(r), 'the gate never runs the suite');
+};
+
+// The block when the record proves the disk tree and the commit carries another.
+const diskProved = (v, r) => {
+  blocks(v, T.disk, 'the disk tree is not the commit\'s');
+  assert(!suiteRan(r), 'the gate never runs the suite');
+};
+
+// A plugin repo's manifest, the other file a repo keeps its version in.
+const manifest = (version, extra) => `${JSON.stringify({ name: 'fixture', version, description: 'a plugin', ...extra }, null, 2)}\n`;
+const mkPluginRepo = () => {
+  const r = mkReleaseRepo();
+  stage(r, '.claude-plugin/plugin.json', manifest('1.0.0'));
+  commit(r);
+  return r;
+};
+
+// A workspace member's package.json, committed, so a case stages its bump.
+const DEPS = { '@fixture/other': '1.0.0', lodash: '^4.0.0' };
+const mkWorkspaceRepo = (member) => {
+  const r = mkReleaseRepo();
+  stage(r, 'sub/package.json', member);
+  commit(r);
+  return r;
+};
+
+// A nested bump is gated as code: the marker first, then the record.
+const gatesAsCode = async (r) => {
+  blocks(await judge(r, 'git commit -m "chore: bump sub"'), T.noReview, 'the nested file is code: the review marker is demanded');
+  touchMarker(r);
+  recordRequired(await judge(r, 'git commit -m "chore: bump sub"'), r);
+};
+
+const NESTED_MANIFEST = 'agent-plugins/claude/.claude-plugin/plugin.json';
+const mkNestedPluginRepo = () => {
+  const r = mkReleaseRepo();
+  stage(r, NESTED_MANIFEST, manifest('1.0.0'));
+  commit(r);
+  return r;
+};
+
+// A code commit, reviewed, everything staged.
+const codeCommit = () => {
+  const r = mkReleaseRepo();
+  stage(r, 'app.js', 'const x = 2;\n');
+  touchMarker(r);
+  return r;
 };
 
 const run = async () => {
-  skipWithoutDigest();
-
   group('commit-gate: the record is required only for commits carrying code');
 
-  // The fixture's test script leaves a sentinel, so a suite the gate ran would
-  // be visible; every case asserts it never is.
-  await test('docs-only commit: no record required', () => {
-    const dir = mkReleaseRepo();
-    stage(dir, 'README.md', '# docs\n');
-    dropMarker(dir);
-    recordNotRequired(runHook(dir, 'git commit -m "docs: readme"'), dir);
-    cleanup(dir);
+  await test('ports "docs-only commit: no record required"', async () => {
+    const r = mkReleaseRepo();
+    stage(r, 'README.md', '# docs\n');
+    recordNotRequired(await judge(r, 'git commit -m "docs: readme"'), r);
   });
 
-  await test('version-only root package.json bump: no record required', () => {
-    const dir = mkReleaseRepo();
-    stage(dir, 'package.json', pkg('1.0.1'));
-    dropMarker(dir);
-    recordNotRequired(runHook(dir, 'git commit -m "chore(release): 1.0.1"'), dir);
-    cleanup(dir);
+  await test('ports "version-only root package.json bump: no record required"', async () => {
+    const r = mkReleaseRepo();
+    stage(r, 'package.json', pkg('1.0.1'));
+    recordNotRequired(await judge(r, 'git commit -m "chore(release): 1.0.1"'), r);
   });
 
-  await test('version bump plus a second changed key: gates as code', () => {
-    const dir = mkReleaseRepo();
-    stage(dir, 'package.json', pkg('1.0.1', { description: 'now with a second change' }));
-    dropMarker(dir);
-    const first = runHook(dir, 'git commit -m "chore: bump"');
-    assertEq(first.code, 2, 'any second change restores code classification');
-    assert(first.stderr.includes('workkit:review'), `the review marker is demanded as today, got: ${first.stderr}`);
-    touchMarker(dir);
-    recordRequired(runHook(dir, 'git commit -m "chore: bump"'), dir);
-    cleanup(dir);
+  await test('ports "version bump plus a second changed key: gates as code"', async () => {
+    const r = mkReleaseRepo();
+    stage(r, 'package.json', pkg('1.0.1', { description: 'now with a second change' }));
+    blocks(await judge(r, 'git commit -m "chore: bump"'), T.noReview, 'any second change restores code classification');
+    touchMarker(r);
+    recordRequired(await judge(r, 'git commit -m "chore: bump"'), r);
   });
 
-  await test('a code file alongside the version bump: record required', () => {
-    const dir = mkReleaseRepo();
-    stage(dir, 'package.json', pkg('1.0.1'));
-    stage(dir, 'app.js', 'const x = 2;\n');
-    touchMarker(dir);
-    recordRequired(runHook(dir, 'git commit -m "feat: thing"'), dir);
-    cleanup(dir);
+  await test('ports "a code file alongside the version bump: record required"', async () => {
+    const r = mkReleaseRepo();
+    stage(r, 'package.json', pkg('1.0.1'));
+    stage(r, 'app.js', 'const x = 2;\n');
+    touchMarker(r);
+    recordRequired(await judge(r, 'git commit -m "feat: thing"'), r);
   });
 
-  // The other file a repo keeps its version in: a plugin repo (this one
-  // included) bumps both in the same release commit.
-  const manifest = (version, extra) => `${JSON.stringify({
-    name: 'fixture', version, description: 'a plugin', ...extra,
-  }, null, 2)}\n`;
-
-  const mkPluginRepo = () => {
-    const dir = mkReleaseRepo();
-    stageDeep(dir, '.claude-plugin/plugin.json', manifest('1.0.0'));
-    execSync('git commit -q -m "manifest" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    return dir;
-  };
-
-  await test('version-only plugin.json bump: no record required', () => {
-    const dir = mkPluginRepo();
-    stage(dir, 'package.json', pkg('1.0.1'));
-    stageDeep(dir, '.claude-plugin/plugin.json', manifest('1.0.1'));
-    dropMarker(dir);
-    recordNotRequired(runHook(dir, 'git commit -m "chore(release): 1.0.1"'), dir);
-    cleanup(dir);
+  await test('ports "version-only plugin.json bump: no record required"', async () => {
+    const r = mkPluginRepo();
+    stage(r, 'package.json', pkg('1.0.1'));
+    stage(r, '.claude-plugin/plugin.json', manifest('1.0.1'));
+    recordNotRequired(await judge(r, 'git commit -m "chore(release): 1.0.1"'), r);
   });
 
-  await test('plugin.json version bump plus a second changed key: gates as code', () => {
-    const dir = mkPluginRepo();
-    stageDeep(dir, '.claude-plugin/plugin.json', manifest('1.0.1', { description: 'reworded' }));
-    dropMarker(dir);
-    const first = runHook(dir, 'git commit -m "chore: bump"');
-    assertEq(first.code, 2, 'any second change restores code classification');
-    assert(first.stderr.includes('workkit:review'), `the review marker is demanded, got: ${first.stderr}`);
-    touchMarker(dir);
-    recordRequired(runHook(dir, 'git commit -m "chore: bump"'), dir);
-    cleanup(dir);
+  await test('ports "plugin.json version bump plus a second changed key: gates as code"', async () => {
+    const r = mkPluginRepo();
+    stage(r, '.claude-plugin/plugin.json', manifest('1.0.1', { description: 'reworded' }));
+    blocks(await judge(r, 'git commit -m "chore: bump"'), T.noReview, 'any second change restores code classification');
+    touchMarker(r);
+    recordRequired(await judge(r, 'git commit -m "chore: bump"'), r);
   });
 
-  await test('a script under a docs PATH is code: record required', () => {
-    // hooks/docs/*/run.sh is executable bash living under a docs directory.
-    // Seeded first, then modified, so check 1 (new source needs tests) is not
-    // what answers.
-    const dir = mkReleaseRepo();
-    stageDeep(dir, 'hooks/docs/x/run.sh', '#!/bin/bash\necho hi\n');
-    execSync('git commit -q -m "hook" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    stageDeep(dir, 'hooks/docs/x/run.sh', '#!/bin/bash\necho tweaked\n');
-    dropMarker(dir);
-    const first = runHook(dir, 'git commit -m "fix: the hook"');
-    assertEq(first.code, 2, 'a code extension wins over the docs path');
-    assert(first.stderr.includes('workkit:review'), `the review marker is demanded, got: ${first.stderr}`);
-    touchMarker(dir);
-    recordRequired(runHook(dir, 'git commit -m "fix: the hook"'), dir);
-    cleanup(dir);
+  await test('ports "a script under a docs PATH is code: record required"', async () => {
+    const r = mkReleaseRepo();
+    stage(r, 'hooks/docs/x/run.sh', '#!/bin/bash\necho hi\n');
+    commit(r);
+    stage(r, 'hooks/docs/x/run.sh', '#!/bin/bash\necho tweaked\n');
+    blocks(await judge(r, 'git commit -m "fix: the hook"'), T.noReview, 'a code extension wins over the docs path');
+    touchMarker(r);
+    recordRequired(await judge(r, 'git commit -m "fix: the hook"'), r);
   });
 
-  await test('a .md under a docs path is still docs: no record required', () => {
-    const dir = mkReleaseRepo();
-    stageDeep(dir, 'docs/notes.md', '# notes\n');
-    dropMarker(dir);
-    recordNotRequired(runHook(dir, 'git commit -m "docs: notes"'), dir);
-    cleanup(dir);
+  await test('ports "a .md under a docs path is still docs: no record required"', async () => {
+    const r = mkReleaseRepo();
+    stage(r, 'docs/notes.md', '# notes\n');
+    recordNotRequired(await judge(r, 'git commit -m "docs: notes"'), r);
   });
 
-  await test('-am: the working tree decides the version bump, not the index', () => {
-    // The -a/--all arm of the helper: what the commit carries is the working
-    // tree, so an edit past the version there is code even when the index holds
-    // a clean bump.
+  await test('ports "-am: the working tree decides the version bump, not the index"', async () => {
     const clean = mkReleaseRepo();
     stage(clean, 'package.json', pkg('1.0.1'));
-    dropMarker(clean);
-    recordNotRequired(runHook(clean, 'git commit -am "chore(release): 1.0.1"'), clean);
-    cleanup(clean);
+    recordNotRequired(await judge(clean, 'git commit -am "chore(release): 1.0.1"'), clean);
 
-    const dir = mkReleaseRepo();
-    stage(dir, 'package.json', pkg('1.0.1'));
-    fs.writeFileSync(path.join(dir, 'package.json'), pkg('1.0.1', { description: 'edited past the bump' }));
-    touchMarker(dir);
-    recordRequired(runHook(dir, 'git commit -am "chore(release): 1.0.1"'), dir);
-    cleanup(dir);
+    const r = mkReleaseRepo();
+    stage(r, 'package.json', pkg('1.0.1'));
+    write(r, 'package.json', pkg('1.0.1', { description: 'edited past the bump' }));
+    touchMarker(r);
+    recordRequired(await judge(r, 'git commit -am "chore(release): 1.0.1"'), r);
   });
 
-  // A workspace member's package.json, committed, so a case stages its bump.
-  const DEPS = { '@fixture/other': '1.0.0', lodash: '^4.0.0' };
-  const mkWorkspaceRepo = (member) => {
-    const dir = mkReleaseRepo();
-    stageDeep(dir, 'sub/package.json', member);
-    execSync('git commit -q -m "sub" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    return dir;
-  };
-
-  // A nested bump is gated as code: the marker first, then the record.
-  const gatesAsCode = (dir) => {
-    dropMarker(dir);
-    const first = runHook(dir, 'git commit -m "chore: bump sub"');
-    assertEq(first.code, 2, `the nested file is code, got: ${first.stderr}`);
-    assert(first.stderr.includes('workkit:review'), `the review marker is demanded, got: ${first.stderr}`);
-    touchMarker(dir);
-    recordRequired(runHook(dir, 'git commit -m "chore: bump sub"'), dir);
-  };
-
-  await test('a nested package.json version bump is a version stamp: no record required', () => {
-    const dir = mkWorkspaceRepo(pkg('1.0.0'));
-    stageDeep(dir, 'sub/package.json', pkg('1.0.1'));
-    dropMarker(dir);
-    recordNotRequired(runHook(dir, 'git commit -m "chore: bump sub"'), dir);
-    cleanup(dir);
+  await test('ports "a nested package.json version bump is a version stamp: no record required"', async () => {
+    const r = mkWorkspaceRepo(pkg('1.0.0'));
+    stage(r, 'sub/package.json', pkg('1.0.1'));
+    recordNotRequired(await judge(r, 'git commit -m "chore: bump sub"'), r);
   });
 
-  await test('a nested package.json lockstep bump moves version and exact pins together: no record required', () => {
-    const dir = mkWorkspaceRepo(pkg('1.0.0', { dependencies: DEPS }));
-    stageDeep(dir, 'sub/package.json', pkg('1.0.1', { dependencies: { ...DEPS, '@fixture/other': '1.0.1' } }));
-    dropMarker(dir);
-    recordNotRequired(runHook(dir, 'git commit -m "chore: bump sub"'), dir);
-    cleanup(dir);
+  await test('ports "a nested package.json lockstep bump moves version and exact pins together: no record required"', async () => {
+    const r = mkWorkspaceRepo(pkg('1.0.0', { dependencies: DEPS }));
+    stage(r, 'sub/package.json', pkg('1.0.1', { dependencies: { ...DEPS, '@fixture/other': '1.0.1' } }));
+    recordNotRequired(await judge(r, 'git commit -m "chore: bump sub"'), r);
   });
 
-  await test('a version bumped alone past a pin equal to the old version: no record required', () => {
-    // The pin stays put, so only the lockstep reading would call it moved.
-    const dir = mkReleaseRepo(pkg('1.0.0', { dependencies: { foo: '1.0.0' } }));
-    stage(dir, 'package.json', pkg('1.0.1', { dependencies: { foo: '1.0.0' } }));
-    dropMarker(dir);
-    recordNotRequired(runHook(dir, 'git commit -m "chore(release): 1.0.1"'), dir);
-    cleanup(dir);
+  await test('ports "a version bumped alone past a pin equal to the old version: no record required"', async () => {
+    const r = mkReleaseRepo(pkg('1.0.0', { dependencies: { foo: '1.0.0' } }));
+    stage(r, 'package.json', pkg('1.0.1', { dependencies: { foo: '1.0.0' } }));
+    recordNotRequired(await judge(r, 'git commit -m "chore(release): 1.0.1"'), r);
   });
 
-  await test('a nested package.json lockstep bump moves a devDependencies pin too: no record required', () => {
-    const dir = mkWorkspaceRepo(pkg('1.0.0', { devDependencies: DEPS }));
-    stageDeep(dir, 'sub/package.json', pkg('1.0.1', { devDependencies: { ...DEPS, '@fixture/other': '1.0.1' } }));
-    dropMarker(dir);
-    recordNotRequired(runHook(dir, 'git commit -m "chore: bump sub"'), dir);
-    cleanup(dir);
+  await test('ports "a nested package.json lockstep bump moves a devDependencies pin too: no record required"', async () => {
+    const r = mkWorkspaceRepo(pkg('1.0.0', { devDependencies: DEPS }));
+    stage(r, 'sub/package.json', pkg('1.0.1', { devDependencies: { ...DEPS, '@fixture/other': '1.0.1' } }));
+    recordNotRequired(await judge(r, 'git commit -m "chore: bump sub"'), r);
   });
 
-  await test('a range pin moved with the version gates as code: only exact pins are lockstep', () => {
+  await test('ports "a range pin moved with the version gates as code: only exact pins are lockstep"', async () => {
     const range = { ...DEPS, '@fixture/other': '^1.0.0' };
-    const dir = mkWorkspaceRepo(pkg('1.0.0', { dependencies: range }));
-    stageDeep(dir, 'sub/package.json', pkg('1.0.1', { dependencies: { ...range, '@fixture/other': '^1.0.1' } }));
-    gatesAsCode(dir);
-    cleanup(dir);
+    const r = mkWorkspaceRepo(pkg('1.0.0', { dependencies: range }));
+    stage(r, 'sub/package.json', pkg('1.0.1', { dependencies: { ...range, '@fixture/other': '^1.0.1' } }));
+    await gatesAsCode(r);
   });
 
-  await test('a pin moved to a value other than the version gates as code', () => {
-    const dir = mkWorkspaceRepo(pkg('1.0.0', { dependencies: DEPS }));
-    stageDeep(dir, 'sub/package.json', pkg('1.0.1', { dependencies: { ...DEPS, '@fixture/other': '1.0.2' } }));
-    gatesAsCode(dir);
-    cleanup(dir);
+  await test('ports "a pin moved to a value other than the version gates as code"', async () => {
+    const r = mkWorkspaceRepo(pkg('1.0.0', { dependencies: DEPS }));
+    stage(r, 'sub/package.json', pkg('1.0.1', { dependencies: { ...DEPS, '@fixture/other': '1.0.2' } }));
+    await gatesAsCode(r);
   });
 
-  await test('a dependency added beside the bump gates as code', () => {
-    // The added pin equals the new version, so only the new key tells it apart.
-    const dir = mkWorkspaceRepo(pkg('1.0.0', { dependencies: DEPS }));
-    stageDeep(dir, 'sub/package.json', pkg('1.0.1', {
-      dependencies: { ...DEPS, '@fixture/other': '1.0.1', '@fixture/third': '1.0.1' },
-    }));
-    gatesAsCode(dir);
-    cleanup(dir);
+  await test('ports "a dependency added beside the bump gates as code"', async () => {
+    const r = mkWorkspaceRepo(pkg('1.0.0', { dependencies: DEPS }));
+    stage(r, 'sub/package.json', pkg('1.0.1', { dependencies: { ...DEPS, '@fixture/other': '1.0.1', '@fixture/third': '1.0.1' } }));
+    await gatesAsCode(r);
   });
 
-  // A plugin manifest nested in a monorepo, committed, so a case stages its bump.
-  const NESTED_MANIFEST = 'agent-plugins/claude/.claude-plugin/plugin.json';
-  const mkNestedPluginRepo = () => {
-    const dir = mkReleaseRepo();
-    stageDeep(dir, NESTED_MANIFEST, manifest('1.0.0'));
-    execSync('git commit -q -m "nested manifest" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    return dir;
-  };
-
-  await test('a nested plugin.json version-only bump is a version stamp: no record required', () => {
-    const dir = mkNestedPluginRepo();
-    stageDeep(dir, NESTED_MANIFEST, manifest('1.0.1'));
-    dropMarker(dir);
-    recordNotRequired(runHook(dir, 'git commit -m "chore(release): 1.0.1"'), dir);
-    cleanup(dir);
+  await test('ports "a nested plugin.json version-only bump is a version stamp: no record required"', async () => {
+    const r = mkNestedPluginRepo();
+    stage(r, NESTED_MANIFEST, manifest('1.0.1'));
+    recordNotRequired(await judge(r, 'git commit -m "chore(release): 1.0.1"'), r);
   });
 
-  await test('a nested plugin.json bump with an added key gates as code', () => {
-    const dir = mkNestedPluginRepo();
-    stageDeep(dir, NESTED_MANIFEST, manifest('1.0.1', { homepage: 'https://example.com' }));
-    gatesAsCode(dir);
-    cleanup(dir);
+  await test('ports "a nested plugin.json bump with an added key gates as code"', async () => {
+    const r = mkNestedPluginRepo();
+    stage(r, NESTED_MANIFEST, manifest('1.0.1', { homepage: 'https://example.com' }));
+    await gatesAsCode(r);
   });
 
   group('commit-gate: the suite record');
 
-  // A code commit, reviewed, everything staged.
-  const codeCommit = () => {
-    const dir = mkReleaseRepo();
-    stage(dir, 'app.js', 'const x = 2;\n');
-    touchMarker(dir);
-    return dir;
-  };
-
-  await test('a record holding the index tree: exit 0 and the stand-down line', () => {
-    const dir = codeCommit();
-    plantRecord(TMP, dir);
-    const out = runHook(dir, 'git commit -m "feat: thing"');
-    assertEq(out.code, 0, `a proved tree passes, got: ${out.stderr}`);
-    assertEq(standDownMessage(out), PROVED, 'the stand-down line');
-    assert(!suiteRan(dir), 'the gate never runs the suite');
-    cleanup(dir);
+  await test('ports "a record holding the index tree: exit 0 and the stand-down line"', async () => {
+    const r = codeCommit();
+    proveTree(r);
+    passes(await judge(r, 'git commit -m "feat: thing"'), NOTICE.proved, 'a proved tree passes');
+    assert(!suiteRan(r), 'the gate never runs the suite');
   });
 
-  await test('no record: blocked, naming npm test at the repo root', () => {
-    const dir = codeCommit();
-    recordRequired(runHook(dir, 'git commit -m "feat: thing"'), dir);
-    cleanup(dir);
+  await test('ports "no record: blocked, naming npm test at the repo root"', async () => {
+    const r = codeCommit();
+    recordRequired(await judge(r, 'git commit -m "feat: thing"'), r);
   });
 
-  // npm beside this node answers the hint's config read, from <npmrc>.
-  const npmEnv = (npmrc) => ({ PATH: joinPath(NODE_DIR, process.env.PATH), NPM_CONFIG_USERCONFIG: npmrc });
-  const npmTest = (name, fn) => (which('npm', NODE_DIR) ? test(name, fn) : skip(name, 'no npm beside this node'));
-
-  await npmTest("no record and npm's script-shell unset: blocked, naming workkit setup", () => {
-    const dir = codeCommit();
-    const out = runHook(dir, 'git commit -m "feat: thing"', undefined, npmEnv(scratchNpmrc('')));
-    assertEq(out.code, 2, `no record blocks, got: ${out.stderr}`);
-    assert(out.stderr.includes("the commit carries code and no green run proves this tree, and npm's script-shell does not point at the kit's wrapper, so a root `npm test` writes no record. Run `workkit setup` once, then `npm test` at the repo root, then commit."),
-      `the cause and its fix, got: ${out.stderr}`);
-    assert(!suiteRan(dir), 'the gate never runs the suite');
-    cleanup(dir);
+  await test('ports "no record and npm\'s script-shell unset: blocked, naming workkit setup"', async () => {
+    const r = codeCommit();
+    r.scriptShell = '';
+    blocks(await judge(r, 'git commit -m "feat: thing"'), T.unwired, 'the cause and its fix');
+    assert(!suiteRan(r), 'the gate never runs the suite');
   });
 
-  await (WRAPPER ? npmTest : (n) => skip(n, 'no C# compiler on this Windows, so the script shell cannot be built'))("no record and npm's script-shell set to the wrapper: the plain block", () => {
-    const dir = codeCommit();
-    const out = runHook(dir, 'git commit -m "feat: thing"', undefined, npmEnv(scratchNpmrc(WRAPPER)));
-    recordRequired(out, dir);
-    assert(!out.stderr.includes('workkit setup'), `no setup hint, got: ${out.stderr}`);
-    cleanup(dir);
+  await test('ports "no record and npm\'s script-shell set to the wrapper: the plain block"', async () => {
+    const r = codeCommit();
+    const v = await judge(r, 'git commit -m "feat: thing"');
+    recordRequired(v, r);
+    assert(!denyOf(v).includes('workkit setup'), `no setup hint, got: ${denyOf(v)}`);
   });
 
-  await (WRAPPER ? npmTest : (n) => skip(n, 'no C# compiler on this Windows, so the script shell cannot be built'))('no record, the wrapper wired: the bounce names the suite log', () => {
-    const dir = codeCommit();
-    const out = runHook(dir, 'git commit -m "feat: thing"', undefined, npmEnv(scratchNpmrc(WRAPPER)));
-    // A repo that does not ignore .workkit/ keeps its log under TMPDIR.
-    const log = shellPath(suiteLogPath(TMP, dir));
-    assertEq(out.code, 2, `no record blocks, got: ${out.stderr}`);
-    assert(out.stderr.includes(`the commit carries code and no green run proves this tree. Run \`npm test\` at the repo root (once per tree; the shell records a green run and writes its output to ${log}), then commit.`),
-      `the bounce names the log ${log}, got: ${out.stderr}`);
-    cleanup(dir);
+  await test('ports "no record, the wrapper wired: the bounce names the suite log"', async () => {
+    const r = codeCommit();
+    const deny = denyOf(await judge(r, 'git commit -m "feat: thing"'));
+    recordBlocks({ deny });
+    const log = deny.slice(deny.indexOf('writes its output to ') + 'writes its output to '.length, deny.length - T.recordTail.length);
+    assert(log.includes('suite.log'), `the bounce names the suite log, got: ${log}`);
   });
 
-  // The Windows compare driven from any machine: the platform the hooks read,
-  // a stub cygpath inverting its own `C:` prefix, and a scratch machine folder
-  // holding the built executable unless <built> is false.
-  const onWindows = (npmrcShell, { built = true } = {}) => {
+  // The Windows compare: npm's value spelled with a drive, read through cygpath,
+  // against the executable setup builds into the machine folder.
+  const onWindows = (shellOf, { built = true } = {}) => {
     const home = mkTmp('cg-workkit-home-');
-    const cyg = mkTmp('cg-cygpath-');
-    cygpathStub(cyg);
-    if (built) fs.writeFileSync(path.join(home, 'script-shell.exe'), '');
-    const shell = npmrcShell(path.join(home, 'script-shell.exe'));
-    return {
-      home,
-      env: {
-        ...npmEnv(scratchNpmrc(shell)), PATH: joinPath(cyg, NODE_DIR, process.env.PATH), HOOK_UNAME_S: 'MSYS', WORKFLOW_HOME: home,
-      },
-    };
-  };
-  const stubWindowsTest = (name, fn) => {
-    if (IS_WINDOWS) return skip(name, 'a stub cygpath cannot shadow the real one on Windows');
-    return npmTest(name, fn);
+    const exe = path.join(home, 'script-shell.exe');
+    if (built) fs.writeFileSync(exe, '');
+    const r = codeCommit();
+    r.isWindows = true;
+    r.scriptShell = `C:${shellOf(exe)}`;
+    r.scriptShellExe = exe;
+    return r;
   };
 
-  await stubWindowsTest("Windows, npm's script-shell naming the built executable: the plain block", () => {
-    const dir = codeCommit();
-    const { home, env } = onWindows((exe) => `C:${exe}`);
-    const out = runHook(dir, 'git commit -m "feat: thing"', undefined, env);
-    recordRequired(out, dir);
-    assert(!out.stderr.includes('workkit setup'), `no setup hint, got: ${out.stderr}`);
-    cleanup(dir); cleanup(home);
+  await test('ports "Windows, npm\'s script-shell naming the built executable: the plain block"', async () => {
+    const r = onWindows((exe) => exe);
+    const v = await judge(r, 'git commit -m "feat: thing"');
+    recordRequired(v, r);
+    assert(!denyOf(v).includes('workkit setup'), `no setup hint, got: ${denyOf(v)}`);
   });
 
-  await stubWindowsTest("Windows, npm's script-shell naming the executable, deleted: blocked, naming workkit setup", () => {
-    const dir = codeCommit();
-    const { home, env } = onWindows((exe) => `C:${exe}`, { built: false });
-    const out = runHook(dir, 'git commit -m "feat: thing"', undefined, env);
-    assertEq(out.code, 2, `no record blocks, got: ${out.stderr}`);
-    assert(out.stderr.includes('Run `workkit setup` once'), `the setup hint, got: ${out.stderr}`);
-    cleanup(dir); cleanup(home);
+  await test('ports "Windows, npm\'s script-shell naming the executable, deleted: blocked, naming workkit setup"', async () => {
+    blocks(await judge(onWindows((exe) => exe, { built: false }), 'git commit -m "feat: thing"'), T.unwired, 'a deleted executable is not the wrapper');
   });
 
-  await stubWindowsTest("Windows, npm's script-shell naming another program: blocked, naming workkit setup", () => {
-    const dir = codeCommit();
-    // A file that exists, so the compare answers rather than a failed `cd`.
-    const { home, env } = onWindows((exe) => {
+  await test('ports "Windows, npm\'s script-shell naming another program: blocked, naming workkit setup"', async () => {
+    const r = onWindows((exe) => {
       const other = path.join(path.dirname(exe), 'other.exe');
       fs.writeFileSync(other, '');
-      return `C:${other}`;
+      return other;
     });
-    const out = runHook(dir, 'git commit -m "feat: thing"', undefined, env);
-    assertEq(out.code, 2, `no record blocks, got: ${out.stderr}`);
-    assert(out.stderr.includes('Run `workkit setup` once'), `the setup hint, got: ${out.stderr}`);
-    cleanup(dir); cleanup(home);
+    blocks(await judge(r, 'git commit -m "feat: thing"'), T.unwired, 'another program is not the wrapper');
   });
 
-  await test('a stale record, holding another tree: blocked', () => {
-    const dir = codeCommit();
-    plantRecord(TMP, dir, '0000000000000000000000000000000000000000');
-    recordRequired(runHook(dir, 'git commit -m "feat: thing"'), dir);
-    cleanup(dir);
+  await test('ports "a stale record, holding another tree: blocked"', async () => {
+    const r = codeCommit();
+    proveTree(r, '0000000000000000000000000000000000000000');
+    recordRequired(await judge(r, 'git commit -m "feat: thing"'), r);
   });
 
-  await test('a record holding the disk tree while the index holds another: blocked, naming the gap', () => {
-    const dir = codeCommit();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'const x = 3;\n');
-    plantRecord(TMP, dir);
-    const out = runHook(dir, 'git commit -m "feat: thing"');
-    diskProved(out, dir);
-    assert(!out.stdout.includes('suite proved'), `no stand-down line, got: ${out.stdout}`);
-    cleanup(dir);
+  await test('ports "a record holding the disk tree while the index holds another: blocked, naming the gap"', async () => {
+    const r = codeCommit();
+    write(r, 'app.js', 'const x = 3;\n');
+    proveTree(r);
+    diskProved(await judge(r, 'git commit -m "feat: thing"'), r);
   });
 
-  await test('an untracked file the green run saw: blocked, naming the gap', () => {
-    const dir = codeCommit();
-    fs.writeFileSync(path.join(dir, 'notes.txt'), 'scratch\n');
-    plantRecord(TMP, dir);
-    diskProved(runHook(dir, 'git commit -m "feat: thing"'), dir);
-    cleanup(dir);
+  await test('ports "an untracked file the green run saw: blocked, naming the gap"', async () => {
+    const r = codeCommit();
+    write(r, 'notes.txt', 'scratch\n');
+    proveTree(r);
+    diskProved(await judge(r, 'git commit -m "feat: thing"'), r);
   });
 
-  await test('a pathspec code commit: blocked even when the record matches the index', () => {
-    const dir = codeCommit();
-    plantRecord(TMP, dir);
-    const out = runHook(dir, 'git commit -m "feat: thing" -- app.js');
-    assertEq(out.code, 2, `a pathspec tree is never compared, got: ${out.stderr}`);
-    assert(out.stderr.includes('a pathspec commit carries a tree the gate cannot compare with the record'),
-      `for the pathspec reason, got: ${out.stderr}`);
-    assert(out.stderr.includes('stage the files and commit from the index'), `naming the fix, got: ${out.stderr}`);
-    assert(!suiteRan(dir), 'the gate never runs the suite');
-    cleanup(dir);
+  await test('ports "a pathspec code commit: blocked even when the record matches the index"', async () => {
+    const r = codeCommit();
+    proveTree(r);
+    blocks(await judge(r, 'git commit -m "feat: thing" -- app.js'), T.pathspec, 'a pathspec tree is never compared');
+    assert(!suiteRan(r), 'the gate never runs the suite');
   });
 
-  await test('-a: the record proves the tree -a carries, the tracked edits on disk', () => {
-    const dir = mkReleaseRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'const x = 2;\n');
-    touchMarker(dir);
-    recordRequired(runHook(dir, 'git commit -am "feat: thing"'), dir);
-    plantRecord(TMP, dir);
-    const out = runHook(dir, 'git commit -am "feat: thing"');
-    assertEq(out.code, 0, `the working tree is what -a commits, got: ${out.stderr}`);
-    assertEq(standDownMessage(out), PROVED, 'the stand-down line');
-    cleanup(dir);
+  await test('ports "-a: the record proves the tree -a carries, the tracked edits on disk"', async () => {
+    const r = mkReleaseRepo();
+    write(r, 'app.js', 'const x = 2;\n');
+    touchMarker(r);
+    recordRequired(await judge(r, 'git commit -am "feat: thing"'), r);
+    proveTree(r);
+    passes(await judge(r, 'git commit -am "feat: thing"'), NOTICE.proved, 'the working tree is what -a commits');
   });
 
-  await test('a repo with no root test script: code commits need no record', () => {
-    const dir = mkReleaseRepo(`${JSON.stringify({ name: 'fixture', version: '1.0.0' }, null, 2)}\n`);
-    stage(dir, 'app.js', 'const x = 2;\n');
-    touchMarker(dir);
-    const out = runHook(dir, 'git commit -m "feat: thing"');
-    assertEq(out.code, 0, `there is no suite to prove, got: ${out.stderr}`);
-    assertEq(standDownMessage(out), '', 'and says nothing about one');
-    cleanup(dir);
+  await test('-a with tracked edits and an untracked file: the record of the tree -a carries passes, the disk tree\'s names the gap', async () => {
+    const r = mkReleaseRepo();
+    write(r, 'app.js', 'const x = 2;\n');
+    write(r, 'notes.txt', 'scratch\n');
+    touchMarker(r);
+    proveTree(r);
+    blocks(await judge(r, 'git commit -am "feat: thing"'), T.disk, 'the untracked file is not in what -a carries');
+    proveTree(r, await factsOf(r, 'git commit -am "feat: thing"').indexTreeId());
+    passes(await judge(r, 'git commit -am "feat: thing"'), NOTICE.proved, 'the tree -a carries is proved');
   });
 
+  await test('ports "a repo with no root test script: code commits need no record"', async () => {
+    const r = mkReleaseRepo(`${JSON.stringify({ name: 'fixture', version: '1.0.0' }, null, 2)}\n`);
+    stage(r, 'app.js', 'const x = 2;\n');
+    touchMarker(r);
+    passes(await judge(r, 'git commit -m "feat: thing"'), '', 'there is no suite to prove, and nothing said about one');
+  });
+};
+
+module.exports = async () => {
+  await run();
   return summary();
 };
 
-module.exports = run;
-
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(module.exports);

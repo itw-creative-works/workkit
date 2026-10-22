@@ -1,12 +1,12 @@
 /**
  * hooks/mods/test-reminder.js: safety:test-reminder's question, asked once per
  * file per session, whether a written code file that no test names needs a
- * test (docs/hooks.md § safety:test-reminder). The path shapes are the
- * hook_is_* helpers in hooks/lib/paths.sh, which the commit gate reads; change
- * both together.
+ * test (docs/hooks.md § safety:test-reminder). Its path shapes are the one
+ * home the commit gate and the change tracker read too.
  */
 
-const CODE_EXT = /\.(js|cjs|mjs|ts|jsx|tsx|sh|zsh|py|rb)$/;
+/** A code extension: the one list every code-versus-docs judgment reads (the commit gate, the change tracker). */
+export const CODE_EXT = /\.(js|cjs|mjs|ts|jsx|tsx|sh|zsh|py|rb)$/;
 const WORD = 'A-Za-z0-9_';
 
 const escaped = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

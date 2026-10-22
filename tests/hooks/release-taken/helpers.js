@@ -1,97 +1,63 @@
-// The shared prologue of the hooks/safety/release-taken suites beside this one.
-// Every case runs against PATH-shim `npm` and `gh` stubs answering from a
-// fixture, so nothing here reaches a registry or GitHub.
+// The shared prologue of the safety:release-taken logic suites beside this one:
+// releaseTakenVerdict({ command, cwd, packageJson, members, lookups, origin }) in
+// hooks/mods/release-taken.js, called over plain facts. The providers are
+// `lookups`, each answering { exitCode, stdout, stderr } as `npm view` and
+// `gh release view` do, so nothing here reaches a registry or GitHub.
 
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const { spawnSync } = require('child_process');
-const { BASH, NO_RC, shellPath, stubTool, systemPathWith } = require('../../lib/platform');
-const { recordArgv, readArgv } = require('../../lib/argv-log');
-const { mkTmp } = require('../../lib/scratch');
+const { mods, runResult, textOf } = require('../../lib/mods-inputs');
 
-const HOOK = path.join(__dirname, '..', '..', '..', 'hooks', 'safety', 'release-taken', 'run.sh');
-const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
-
-// PATH shims answering `npm view <name>@<version> version` and `gh release view
-// v<version>`, each recording its argv; `npmFails` / `ghFails` answer the way an
-// offline one does. A free version is either an E404 (unknown package) or exit
-// 0 with nothing printed (`npmKnown`), and the provider must read both.
-const makeStubs = ({ npmTaken = [], npmKnown = [], tags = [], npmFails = false, ghFails = false } = {}) => {
-  const dir = mkTmp('release-taken-bin-');
-  const binDir = path.join(dir, 'bin');
-  fs.mkdirSync(binDir, { recursive: true });
-  const npmLog = path.join(dir, 'npm.log');
-  const ghLog = path.join(dir, 'gh.log');
-  const arm = (values) => (values.length ? values.join('|') : '__none__');
-
-  stubTool(binDir, 'npm', [
-    '#!/usr/bin/env bash',
-    recordArgv(npmLog),
-    '[[ "$1" == "view" ]] || exit 0',
-    'spec=""',
-    'for a in "$@"; do case "$a" in -*|view|version) ;; *) spec="$a" ;; esac; done',
-    ...(npmFails ? [
-      'echo "npm error code ENOTFOUND request to https://registry.npmjs.org failed" >&2',
-      'exit 1',
-    ] : [
-      `case "$spec" in ${arm(npmTaken)}) printf '%s\\n' "\${spec##*@}"; exit 0 ;; esac`,
-      `case "\${spec%@*}" in ${arm(npmKnown)}) exit 0 ;; esac`,
-      `echo "npm error code E404" >&2`,
-      'exit 1',
-    ]),
-  ]);
-
-  stubTool(binDir, 'gh', [
-    '#!/usr/bin/env bash',
-    recordArgv(ghLog),
-    '[[ "$1 $2" == "release view" ]] || exit 0',
-    ...(ghFails ? [
-      'echo "gh: To get started with GitHub CLI, please run: gh auth login" >&2',
-      'exit 1',
-    ] : [
-      `case "$3" in ${arm(tags)}) printf '%s\\n' "$3"; exit 0 ;; esac`,
-      'echo "release not found" >&2',
-      'exit 1',
-    ]),
-  ]);
-
-  return { binDir, npmLog, ghLog, dir };
-};
-
-const npmCalls = (stubs) => readArgv(stubs.npmLog);
-const ghCalls = (stubs) => readArgv(stubs.ghLog);
-
-// A repo the hook can read: a git repository with an origin (the slug the
-// github-release bounce names) and a package.json, plus any workspace members.
+const ROOT = '/w/repo';
 const PKG = { name: 'widget', version: '1.2.3', private: false, files: ['dist'] };
-const mkRepo = ({ pkg = PKG, members = {}, origin = 'https://github.com/acme/widgets.git' } = {}) => {
-  const dir = mkTmp('release-taken-');
-  spawnSync('git', ['init', '-q'], { cwd: dir });
-  if (origin) spawnSync('git', ['remote', 'add', 'origin', origin], { cwd: dir });
-  if (pkg) fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg));
-  for (const [rel, member] of Object.entries(members)) {
-    fs.mkdirSync(path.join(dir, rel), { recursive: true });
-    fs.writeFileSync(path.join(dir, rel, 'package.json'), JSON.stringify(member));
-  }
-  return dir;
-};
-
-const runHook = (command, cwd, stubs) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-    input: JSON.stringify({ tool_name: 'Bash', cwd: shellPath(cwd), tool_input: { command } }),
-    env: {
-      HOME: shellPath(os.homedir()),
-      PATH: systemPathWith(stubs.binDir),
-    },
-    encoding: 'utf8',
-    timeout: 30000,
-  });
-  return { code: res.status, stderr: res.stderr || '' };
-};
-
 const RELEASE = 'git commit -m "chore(release): 1.2.3"';
 
+// The line every bounce ends on names HOOK_DISABLE=1 as the override, and the
+// retired loader nowhere.
+const isOverride = (line) => typeof line === 'string' && line.includes('HOOK_DISABLE=1') && !/loader/i.test(line);
+// A bounce's lines above its override line, byte for byte the HEAD hook's.
+const TAKEN = (what, ...hits) => hits.map((hit) => `release-taken: BLOCKED ${what}: ${hit}`).join('\n');
+
+// The providers as the HEAD stubs answered: a taken version prints itself; a
+// free one is an E404 or, for a package npm knows (`npmKnown`), exit 0 with
+// nothing printed; `npmFails` / `ghFails` answer the way an offline one does.
+const makeLookups = ({ npmTaken = [], npmKnown = [], tags = [], npmFails = false, ghFails = false } = {}) => {
+  const calls = { npm: [], github: [] };
+  const lookups = {
+    npm: async (name, version) => {
+      const spec = `${name}@${version}`;
+      calls.npm.push(spec);
+      if (npmFails) return runResult({ exitCode: 1, stderr: 'npm error code ENOTFOUND request to https://registry.npmjs.org failed\n' });
+      if (npmTaken.includes(spec)) return runResult({ stdout: `${version}\n` });
+      if (npmKnown.includes(name)) return runResult();
+      return runResult({ exitCode: 1, stderr: 'npm error code E404\n' });
+    },
+    github: async (tag) => {
+      calls.github.push(tag);
+      if (ghFails) return runResult({ exitCode: 1, stderr: 'gh: To get started with GitHub CLI, please run: gh auth login\n' });
+      if (tags.includes(tag)) return runResult({ stdout: `${tag}\n` });
+      return runResult({ exitCode: 1, stderr: 'release not found\n' });
+    },
+  };
+  return { lookups, calls };
+};
+
+/**
+ * One verdict over a repo at ROOT: `pkg` its package.json (null for none),
+ * `members` the workspace package files by folder from the root, `origin` the
+ * remote url (null for no origin), the rest the providers' world.
+ * Answers the raw result, its `deny` above the override line (null for none),
+ * that `override` line, every line it said, and the providers' calls.
+ */
+const judge = async (command, { pkg = PKG, members = {}, origin = 'https://github.com/acme/widgets.git', ...world } = {}) => {
+  const { lookups, calls } = makeLookups(world);
+  const result = await mods('release-taken').releaseTakenVerdict({
+    command, cwd: ROOT, packageJson: pkg, members, lookups, origin,
+  });
+  const bounce = result && typeof result.deny === 'string' ? result.deny.replace(/\n$/, '').split('\n') : null;
+  const override = bounce ? bounce.pop() : null;
+  const deny = bounce ? bounce.join('\n') : null;
+  return { result, deny, override, text: textOf(result).replace(/\n$/, ''), calls };
+};
+
 module.exports = {
-  HOOK, cleanup, makeStubs, npmCalls, ghCalls, PKG, mkRepo, runHook, RELEASE,
+  ROOT, PKG, RELEASE, TAKEN, isOverride, makeLookups, judge,
 };

@@ -1,74 +1,54 @@
-// The shared prologue of the hooks/safety/capture-guard suites beside this one,
-// one suite per path the capture file is reached by.
+// The shared prologue of the safety:capture-guard suites beside this one, one
+// suite per path the capture file is reached by: the facts
+// captureGuardVerdict({ tool, input, cwd, root, markerAgeS, route }) in
+// hooks/mods/capture-guard.js takes, the three refusals, and the two route
+// sentences findingsRoute in hooks/mods/settings.js answers.
 
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const { spawnSync } = require('child_process');
-const { skipSuite, WORKKIT_DIR: W } = require('../../lib/harness');
-const { BASH, NO_RC, shellPath, digestTool } = require('../../lib/platform');
-const { mkTmp } = require('../../lib/scratch');
+const { assertEq, WORKKIT_DIR: W } = require('../../lib/harness');
+const { mods } = require('../../lib/mods-inputs');
 
-const HOOK = path.join(__dirname, '..', '..', '..', 'hooks', 'safety', 'capture-guard', 'run.sh');
+const REPO = '/w/repo';
+const HOME = '/w/home';
+const CAPTURE = `${REPO}/${W}/capture.md`;
+const HOME_CAPTURE = `${HOME}/${W}/capture.md`;
 
-// One throwaway git repo holding the capture file, plus a TMPDIR of its own so
-// the marker this suite writes can never be the machine's real one.
-const TMP = mkTmp('capture-guard-tmp-');
-const REPO = mkTmp('capture-guard-');
-spawnSync('git', ['init', '-q'], { cwd: REPO });
-fs.mkdirSync(path.join(REPO, W, 'agents'), { recursive: true });
-fs.writeFileSync(path.join(REPO, W, 'capture.md'), '# capture\n\n- a private thought\n');
-fs.writeFileSync(path.join(REPO, W, 'agents', 'session.md'), '# Session\n');
+// A marker written this moment, and one past the 30 minutes a triage run holds.
+const FRESH = 0;
+const STALE = 31 * 60;
 
-// The repo root as git reports it: on macOS the temp dir is reached through a
-// symlink, and the marker's name is the sha of the physical path.
-const REPO_ROOT = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: REPO, encoding: 'utf8' })
-  .stdout.trim();
-const MARKER_DIR = path.join(TMP, 'claude-triage-marker');
-const DIGEST = digestTool();
+const ROUTE_OFF = 'Say findings in chat under 🧭 Findings instead, one bullet each, for the owner to answer file or drop; file nothing on your own.';
+const ROUTE_ON = 'File a finding as a status:inbox issue with gh instead; where GitHub cannot be reached, put it in chat and let the owner decide.';
+const lower = (s) => `${s[0].toLowerCase()}${s.slice(1)}`;
 
-// Every suite asks this first: without a digest tool no marker path can be named.
-const skipWithoutDigest = () => {
-  if (!DIGEST) {
-    skipSuite('this machine has neither shasum nor sha1sum, so no marker path can be named');
-  }
+const READ = `capture-guard: BLOCKED reading ${W}/capture.md: it is the owner's capture surface, and its contents are read only during a triage run.\nRun the workkit:triage skill, which records the marker this guard checks, and read it there. Counting the entries (wc -l) stays open.`;
+const WRITE = (route = ROUTE_OFF) => `capture-guard: BLOCKED writing ${W}/capture.md: it is the owner's capture surface, and the agent never adds to it.\nIts entries are cleared only by the triage drain: run the workkit:triage skill, which records the marker this guard checks. ${route}`;
+const REWRITE = (route = ROUTE_OFF) => `capture-guard: BLOCKED rewriting ${W}/capture.md: its entries are cleared only by the triage drain, and no drain is running.\nRun the workkit:triage skill, which records the marker this guard checks, and clear it there. Adding entries is never the agent's at all: ${lower(route)}`;
+
+/** The verdict on one call; `markerAgeS` null is no marker at all. */
+const judge = (tool, input, { markerAgeS = null, route = ROUTE_OFF, cwd = REPO, root = REPO } = {}) => mods('capture-guard')
+  .captureGuardVerdict({ tool, input, cwd, root, markerAgeS, route });
+
+const denyOf = (r) => (r && typeof r.deny === 'string' ? r.deny.replace(/\n$/, '') : null);
+
+const bash = (command, facts) => judge('Bash', { command }, facts);
+const read = (file, facts) => judge('Read', { file_path: file }, facts);
+const edit = (file, facts) => judge('Edit', { file_path: file, old_string: 'a', new_string: 'b' }, facts);
+const write = (file, facts) => judge('Write', { file_path: file, content: '' }, facts);
+const grep = (input, facts) => judge('Grep', input, facts);
+
+/** Asserts the call is refused with exactly `expected`. */
+const refuses = async (call, expected, label) => {
+  assertEq(denyOf(await call), expected, `must block: ${label}`);
 };
 
-// The marker's name is the sha of the anchor: the capture file's repo root, or the
-// .workkit directory's own parent outside a repo.
-const markerFor = (anchor) => path.join(
-  MARKER_DIR,
-  DIGEST ? spawnSync(DIGEST, [], { input: anchor, encoding: 'utf8' }).stdout.split(' ')[0] : 'no-digest',
-);
-const MARKER = markerFor(REPO_ROOT);
-const CAPTURE = path.join(REPO, W, 'capture.md');
-
-const clearMarker = (marker = MARKER) => fs.rmSync(marker, { force: true });
-const touchMarker = (ageSeconds = 0, marker = MARKER) => {
-  fs.mkdirSync(MARKER_DIR, { recursive: true });
-  fs.writeFileSync(marker, '');
-  if (ageSeconds) {
-    const when = new Date(Date.now() - ageSeconds * 1000);
-    fs.utimesSync(marker, when, when);
-  }
+/** Asserts the call passes, saying nothing. */
+const allows = async (call, label) => {
+  const r = await call;
+  assertEq(denyOf(r), null, `must pass: ${label}`);
+  assertEq(r ?? null, null, `silently: ${label}`);
 };
-
-const runHook = (payload, env = {}) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-    input: JSON.stringify({ cwd: shellPath(REPO), ...payload }),
-    env: {
-      ...process.env, HOME: shellPath(os.homedir()), TMPDIR: shellPath(TMP), ...env,
-    },
-    encoding: 'utf8',
-    timeout: 10000,
-  });
-  return { code: res.status, stderr: res.stderr || '' };
-};
-
-const read = (file) => runHook({ tool_name: 'Read', tool_input: { file_path: shellPath(file) } });
-const bash = (command) => runHook({ tool_name: 'Bash', tool_input: { command } });
 
 module.exports = {
-  HOOK, TMP, REPO, MARKER, CAPTURE, skipWithoutDigest, markerFor, clearMarker, touchMarker,
-  runHook, read, bash,
+  REPO, HOME, CAPTURE, HOME_CAPTURE, FRESH, STALE, ROUTE_OFF, ROUTE_ON, READ, WRITE, REWRITE,
+  judge, denyOf, bash, read, edit, write, grep, refuses, allows,
 };

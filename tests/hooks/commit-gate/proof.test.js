@@ -1,97 +1,71 @@
-// Tests for hooks/safety/commit-gate: check 6, a closed issue carries its Proof:
-// comment, and the hook registered on PreToolUse Bash.
-// The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
+// Tests for safety:commit-gate's logic, commitGateVerdict(facts) in
+// hooks/mods/commit-gate.js: check 6, a closed issue carries its Proof:
+// comment, read through `issueView`; and the guard on the module's Bash
+// chain. Each case ports the HEAD case its name quotes; "hooks.json registers
+// the gate under PreToolUse Bash" reads BASH_GUARDS now.
+// The shared prologue (the repo in memory, the facts, the texts) is ./helpers.js.
 
-const path = require('path');
-const fs = require('fs');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assertEq, summary, selfRun } = require('../../lib/harness');
+const { mods } = require('../../lib/mods-inputs');
 const {
-  skipWithoutDigest, mkRepo, stage, touchMarker, runHook, standDownMessage, ghStub, shipReadyRepo, cleanup,
+  T, NOTICE, mkRepo, stage, touchMarker, judge, blocks, passes, shipReadyRepo,
 } = require('./helpers');
 
-const run = async () => {
-  skipWithoutDigest();
+// Each issue OPEN at status:complete, carrying the given comments.
+const withComments = (r, map) => {
+  r.issues = Object.fromEntries(Object.entries(map).map(([n, comments]) => [n, { comments }]));
+  return r;
+};
 
+const run = async () => {
   group('commit-gate: check 6, a closed issue carries its Proof: comment (issue #233)');
 
-  // A proof is a hard gate: the trailer is its third stage, after the complete
-  // flip and the close that safety/proof-guard holds. The stub answers the
-  // guard's read, so nothing here reaches GitHub.
-  const withComments = (map) => ({ issues: Object.fromEntries(Object.entries(map).map(([n, comments]) => [n, { comments }])) });
-
-  await test('a Fixes trailer whose issue has no Proof: comment blocks', () => {
-    const dir = shipReadyRepo();
-    const stub = ghStub(withComments({ 4: ['QA passed by the owner, 2026-09-10.'] }));
-    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4"', undefined, stub.env);
-    assertEq(code, 2, `blocked, got: ${stderr}`);
-    assert(stderr.includes('#4'), `names the issue, got: ${stderr}`);
-    assert(stderr.includes('Proof:'), `names what is missing, got: ${stderr}`);
-    cleanup(dir);
-    fs.rmSync(stub.dir, { recursive: true, force: true });
+  await test('ports "a Fixes trailer whose issue has no Proof: comment blocks"', async () => {
+    const r = withComments(shipReadyRepo(), { 4: ['QA passed by the owner, 2026-09-10.'] });
+    blocks(await judge(r, 'git commit -m "feat: a thing\n\nFixes #4"'), T.unproved(' #4'), 'names the issue and what is missing');
   });
 
-  await test('a repo that keeps no CHANGELOG.md is never asked for a proof, even when gh can answer', () => {
-    const dir = mkRepo();
-    stage(dir, 'app.js', 'const x = 1;\n');
-    touchMarker(dir);
-    const stub = ghStub(withComments({ 4: ['looks good to me'] }));
-    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4"', undefined, stub.env);
-    assertEq(code, 0, `allowed outside the pipeline, got: ${stderr}`);
-    cleanup(dir);
-    fs.rmSync(stub.dir, { recursive: true, force: true });
+  await test('ports "a repo that keeps no CHANGELOG.md is never asked for a proof, even when gh can answer"', async () => {
+    const r = mkRepo();
+    stage(r, 'app.js', 'const x = 1;\n');
+    touchMarker(r);
+    withComments(r, { 4: ['looks good to me'] });
+    passes(await judge(r, 'git commit -m "feat: a thing\n\nFixes #4"'), '', 'allowed outside the pipeline');
+    assertEq(r.calls.issueView.length, 0, 'and gh is never asked');
   });
 
-  await test('the same commit passes once the issue carries its proof', () => {
-    const dir = shipReadyRepo();
-    const stub = ghStub(withComments({ 4: ['Proof: unit: node tests/hooks/x.test.js'] }));
-    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4"', undefined, stub.env);
-    assertEq(code, 0, `allowed, got: ${stderr}`);
-    cleanup(dir);
-    fs.rmSync(stub.dir, { recursive: true, force: true });
+  await test('ports "the same commit passes once the issue carries its proof"', async () => {
+    const r = withComments(shipReadyRepo(), { 4: ['Proof: unit: node tests/hooks/x.test.js'] });
+    passes(await judge(r, 'git commit -m "feat: a thing\n\nFixes #4"'), '', 'allowed');
   });
 
-  await test('every unproved issue in the message is named', () => {
-    const dir = shipReadyRepo();
-    const stub = ghStub(withComments({ 4: ['Proof: unit: node tests/hooks/x.test.js'], 9: ['looks good'], 12: ['ok'] }));
-    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4\nCloses #9\nResolves #12"', undefined, stub.env);
-    assertEq(code, 2, `blocked, got: ${stderr}`);
-    assert(stderr.includes('#9') && stderr.includes('#12'), `names both, got: ${stderr}`);
-    assert(!stderr.includes('#4'), `never names the proved one, got: ${stderr}`);
-    cleanup(dir);
-    fs.rmSync(stub.dir, { recursive: true, force: true });
+  await test('ports "every unproved issue in the message is named"', async () => {
+    const r = withComments(shipReadyRepo(), { 4: ['Proof: unit: node tests/hooks/x.test.js'], 9: ['looks good'], 12: ['ok'] });
+    blocks(await judge(r, 'git commit -m "feat: a thing\n\nFixes #4\nCloses #9\nResolves #12"'), T.unproved(' #9 #12'), 'names both, never the proved one');
   });
 
-  await test('a gh that cannot answer stands the check down, and the commit is not blocked', () => {
-    const dir = shipReadyRepo();
-    const stub = ghStub({ fails: true });
-    const out = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4"', undefined, stub.env);
-    assertEq(out.code, 0, `an unreachable gh fails open, got: ${out.stderr}`);
-    assert(standDownMessage(out).includes('did not run'), `and says so on the visible notice, got: ${out.stdout}`);
-    cleanup(dir);
-    fs.rmSync(stub.dir, { recursive: true, force: true });
+  await test('ports "a gh that cannot answer stands the check down, and the commit is not blocked"', async () => {
+    const r = shipReadyRepo();
+    r.ghFails = true;
+    passes(await judge(r, 'git commit -m "feat: a thing\n\nFixes #4"'), NOTICE.unread(4), 'an unreachable gh fails open, out loud');
   });
 
-  await test('no trailer, no proof read', () => {
-    const dir = shipReadyRepo();
-    const stub = ghStub(withComments({}));
-    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing that closes nothing"', undefined, stub.env);
-    assertEq(code, 0, `allowed, got: ${stderr}`);
-    assertEq(stderr, '', 'a commit closing nothing is never asked for a proof');
-    cleanup(dir);
-    fs.rmSync(stub.dir, { recursive: true, force: true });
+  await test('ports "no trailer, no proof read"', async () => {
+    const r = withComments(shipReadyRepo(), {});
+    passes(await judge(r, 'git commit -m "feat: a thing that closes nothing"'), '', 'a commit closing nothing is never asked for a proof');
+    assertEq(r.calls.issueView.length, 0, 'and nothing is read');
   });
 
-  await test('hooks.json registers the gate under PreToolUse Bash', () => {
-    const settings = JSON.parse(fs.readFileSync(
-      path.join(__dirname, '..', '..', '..', 'hooks', 'hooks.json'), 'utf8'));
-    const bashEntries = settings.hooks.PreToolUse.filter((e) => e.matcher === 'Bash');
-    const wired = bashEntries.some((e) => e.hooks.some((h) => h.command.includes('safety:commit-gate')));
-    assert(wired, 'safety:commit-gate is registered on PreToolUse Bash');
+  await test('ports "hooks.json registers the gate under PreToolUse Bash": BASH_GUARDS runs safety:commit-gate first', () => {
+    const guards = mods('guards').BASH_GUARDS;
+    assertEq(guards[0].hook, 'safety:commit-gate', `the chain opens with the gate, hooks.json's order, got: ${guards.map((g) => g.hook).join(' ')}`);
+    assertEq(guards[0].run, mods('commit-gate').commitGateGuard, 'its entry runs commitGateGuard');
   });
+};
 
+module.exports = async () => {
+  await run();
   return summary();
 };
 
-module.exports = run;
-
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(module.exports);

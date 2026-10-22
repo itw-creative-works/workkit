@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# workflow/lib/changelog.sh: the CHANGELOG format check, its one resolution of
-# the linter and its message, for the commit gate (check 3) and script-shell.sh
-# (before a root suite); the hooks module's changelog-guard resolves the linter
-# itself. Sourced, functions only; the rules themselves are ../changelog/changelog.js.
+# workflow/lib/changelog.sh: the CHANGELOG format check script-shell.sh runs
+# before a root suite: the linter's resolution and its message. The hooks
+# module resolves the linter itself (linterPath in hooks/mods/changelog-guard.js),
+# for docs:changelog-guard and commit-gate check 3. Sourced, functions only; the
+# rules themselves are ../changelog/changelog.js.
 
 # wk_is_changelog <path>: <path> names a CHANGELOG.md, at the root or below.
 wk_is_changelog() {
@@ -47,6 +48,7 @@ wk_changelog_lint() {
   fi
   for path in "$@"; do
     if ! out=$(wk_changelog_lint_file "$root/$path" "$staged" 2>&1); then
+      # Changes together with lintText in hooks/mods/commit-gate.js.
       printf 'the CHANGELOG entry does not match the format (see docs/project-state.md). %s\n' "$out" >&2
       return 1
     fi

@@ -7,7 +7,7 @@ const { group, test, assert, summary, selfRun } = require('../../lib/harness');
 
 const REPO = path.join(__dirname, '..', '..', '..');
 const SKILL = path.join(REPO, 'skills', 'feature', 'SKILL.md');
-const PROMPT = path.join(REPO, 'hooks', 'docs', 'change-tracker', 'resources', 'prompt.md');
+const PROMPT = path.join(REPO, 'hooks', 'mods', 'change-tracker', 'prompt.md');
 const SPEC = path.join(REPO, 'docs', 'project-state.md');
 
 const read = (file) => fs.readFileSync(file, 'utf8');

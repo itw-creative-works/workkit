@@ -173,7 +173,7 @@ export const moveIssueStatus = async (move, ctx = {}) => {
   if (!read.ok) return read;
 
   // The Contract gate, off the body this read already carries: the endpoint
-  // refuses in the same words, and safety/spec-guard holds it on the shell path.
+  // refuses in the same words, and safety:spec-guard holds it on the shell path.
   if (to === SPEC_GATED) {
     const spec = specOk((read.data || {}).body);
     if (!spec.ok) {

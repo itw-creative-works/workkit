@@ -1,15 +1,10 @@
-// The PATH-shim `gh` the hook suites (safety/proof-guard, spec-guard, suite-guard)
-// and the identity shim suite run against: a stub answering `issue view` (and
-// `issue list`) from a fixture, recording each call, its directory and the env
-// names asked for; the world with no `gh` at all; the runner handing a hook one command.
+// The PATH-shim `gh` the workflow-snapshot and identity shim suites run against:
+// a stub answering `issue view` (and `issue list`) from a fixture, recording each
+// call, its directory and the env names asked for; the world with no `gh` at all.
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
-const {
-  BASH, NO_RC, NODE_DIR, shellPath, stubTool, basePathWithout, systemPathWith, homeEnv,
-} = require('./platform');
+const { shellPath, stubTool, basePathWithout } = require('./platform');
 const { recordArgv, readArgv } = require('./argv-log');
 const { mkTmp } = require('./scratch');
 
@@ -112,36 +107,6 @@ const dropPathWithoutGh = () => {
   noGhPath = null;
 };
 
-/**
- * The runner for one hook: `runHook(command, stub, cwd, envPath)` feeds the
- * hook a Bash PreToolUse input from a scratch home. The PATH is the stub's bin
- * and this run's node on the system PATH (no stub: the world without gh);
- * `envPath` replaces it whole, for the world a case builds itself.
- * @param {string} hook - the hook script's native path
- * @param {object} [env] - more variables every run is handed (a scratch `TMPDIR`)
- * @param {string} [givenHome] - the home every run reads, the case's own and left
- *   in place; without one, each run gets a fresh empty home, removed after it
- * @returns {Function}
- */
-const hookRunner = (hook, env = {}, givenHome = null) => (command, stub, cwd = os.tmpdir(), envPath = null) => {
-  const input = JSON.stringify({ tool_name: 'Bash', cwd: shellPath(cwd), tool_input: { command } });
-  const home = givenHome || mkTmp('gh-stub-');
-  try {
-    const res = spawnSync(BASH, [...NO_RC, shellPath(hook)], {
-      input,
-      env: homeEnv(home, {
-        ...env,
-        PATH: envPath || (stub ? systemPathWith(stub.binDir, NODE_DIR) : pathWithoutGh()),
-      }),
-      encoding: 'utf8',
-      timeout: 30000,
-    });
-    return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
-  } finally {
-    if (!givenHome) cleanup(home);
-  }
-};
-
 module.exports = {
-  cleanup, makeGhStub, ghCalls, ghEnvs, pathWithoutGh, dropPathWithoutGh, hookRunner,
+  cleanup, makeGhStub, ghCalls, ghEnvs, pathWithoutGh, dropPathWithoutGh,
 };

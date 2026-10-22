@@ -1,188 +1,126 @@
-// Tests for hooks/safety/commit-gate: the CHANGELOG entry format, and a Fixes #N
-// commit staging its CHANGELOG entry.
-// The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
+// Tests for safety:commit-gate's logic, commitGateVerdict(facts) in
+// hooks/mods/commit-gate.js: the CHANGELOG entry format (check 3, the real
+// linter run over a scratch copy of the repo through `lint`), and a Fixes #N
+// commit staging its CHANGELOG entry (check 4). Each case ports the HEAD case
+// its name quotes. Dropped with the shell mechanism: "reads a file mtime
+// under either stat dialect" (the module stats through $.fs, with no stat
+// tool to read).
+// The shared prologue (the repo in memory, the facts, the texts) is ./helpers.js.
 
-const path = require('path');
-const fs = require('fs');
-const { spawnSync, execSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { BASH, SYSTEM_BASH, NO_RC, shellPath, pathWith, stubTool } = require('../../lib/platform');
-const { skipWithoutDigest, LIB, mkRepo, stage, touchMarker, runHook, cleanup, CHANGELOG, ISSUE, ENTRY } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
+const { group, test, assert, summary, selfRun } = require('../../lib/harness');
+const {
+  PREFIX, T, NOTICE, mkRepo, stage, write, commit, touchMarker, judge, denyOf, blocks, passes,
+  CHANGELOG, ISSUE, ENTRY,
+} = require('./helpers');
+
+const LINT = `${PREFIX}${T.lint}`;
+const lintBlocks = (v, what) => {
+  const deny = denyOf(v);
+  assert(deny !== null && deny.startsWith(LINT), `${what}: the gate's wording, got: ${deny}`);
+  return deny;
+};
+
+// CHANGELOG.md committed as `text`, app.js staged, the review marker fresh.
+const committedLog = (text) => {
+  const r = mkRepo();
+  stage(r, 'CHANGELOG.md', text);
+  commit(r);
+  stage(r, 'app.js', 'const x = 1;\n');
+  touchMarker(r);
+  return r;
+};
 
 const run = async () => {
-  skipWithoutDigest();
-
   group('commit-gate: CHANGELOG entry format');
 
-  // The gate is the authority for the format: the docs/changelog-guard hook
-  // sees only writes made through the tools, and everything reaches git here.
-  await test('a staged essay entry blocks the commit', () => {
-    const dir = mkRepo();
-    stage(dir, 'CHANGELOG.md', CHANGELOG(`- **An essay entry.** ${new Array(60).fill('word').join(' ')}`));
-    const { code, stderr } = runHook(dir, 'git commit -m "docs: changelog"');
-    assertEq(code, 2, 'blocked');
-    assert(stderr.includes('word-cap'), `names the rule, got: ${stderr}`);
-    cleanup(dir);
+  await test('ports "a staged essay entry blocks the commit"', async () => {
+    const r = mkRepo();
+    stage(r, 'CHANGELOG.md', CHANGELOG(`- **An essay entry.** ${new Array(60).fill('word').join(' ')}`));
+    const deny = lintBlocks(await judge(r, 'git commit -m "docs: changelog"'), 'blocked');
+    assert(deny.includes('word-cap'), `names the rule, got: ${deny}`);
   });
 
-  await test('a staged 62-word entry: blocked with the shared message and the linter\'s word-cap line', () => {
-    const dir = mkRepo();
-    stage(dir, 'CHANGELOG.md', CHANGELOG(`- ${ISSUE} - ${new Array(61).fill('word').join(' ')} end.`));
-    const { code, stderr } = runHook(dir, 'git commit -m "docs: changelog"');
-    assertEq(code, 2, 'blocked');
-    assert(stderr.startsWith('commit-gate: BLOCKED this commit: the CHANGELOG entry does not match the format (see docs/project-state.md). '),
-      `the gate's wording, got: ${stderr}`);
-    assert(stderr.includes('[word-cap] 62 words (max 50)'), `with the linter's line, got: ${stderr}`);
-    cleanup(dir);
+  await test('ports "a staged 62-word entry: blocked with the shared message and the linter\'s word-cap line"', async () => {
+    const r = mkRepo();
+    stage(r, 'CHANGELOG.md', CHANGELOG(`- ${ISSUE} - ${new Array(61).fill('word').join(' ')} end.`));
+    const deny = lintBlocks(await judge(r, 'git commit -m "docs: changelog"'), 'blocked');
+    assert(deny.includes('[word-cap] 62 words (max 50)'), `with the linter's line, got: ${deny}`);
   });
 
-  await test('a staged entry in the format commits', () => {
-    const dir = mkRepo();
-    stage(dir, 'CHANGELOG.md', CHANGELOG(`- ${ISSUE} - Plugins install from settings.json.`));
-    const { code, stderr } = runHook(dir, 'git commit -m "docs: changelog"');
-    assertEq(code, 0, `allowed, got: ${stderr}`);
-    cleanup(dir);
+  await test('ports "a staged entry in the format commits"', async () => {
+    const r = mkRepo();
+    stage(r, 'CHANGELOG.md', CHANGELOG(`- ${ISSUE} - Plugins install from settings.json.`));
+    passes(await judge(r, 'git commit -m "docs: changelog"'), '', 'allowed');
   });
 
-  await test('a legacy entry the commit did not touch does not block', () => {
-    const dir = mkRepo();
-    stage(dir, 'CHANGELOG.md', CHANGELOG('- A legacy essay entry with no issue link.'));
-    execSync('git commit -q -m "legacy" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    stage(dir, 'CHANGELOG.md', CHANGELOG('- A legacy essay entry with no issue link.', `- ${ISSUE} - A new entry.`));
-    const { code, stderr } = runHook(dir, 'git commit -m "docs: changelog"');
-    assertEq(code, 0, `allowed, got: ${stderr}`);
-    cleanup(dir);
+  await test('ports "a legacy entry the commit did not touch does not block"', async () => {
+    const r = mkRepo();
+    stage(r, 'CHANGELOG.md', CHANGELOG('- A legacy essay entry with no issue link.'));
+    commit(r);
+    stage(r, 'CHANGELOG.md', CHANGELOG('- A legacy essay entry with no issue link.', `- ${ISSUE} - A new entry.`));
+    passes(await judge(r, 'git commit -m "docs: changelog"'), '', 'allowed');
   });
 
-  await test('a -am commit is judged from the working tree, which is what it carries', () => {
-    const dir = mkRepo();
-    stage(dir, 'CHANGELOG.md', CHANGELOG());
-    execSync('git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), CHANGELOG('- An unstaged essay entry with no issue link.'));
-    const { code, stderr } = runHook(dir, 'git commit -am "docs: changelog"');
-    assertEq(code, 2, `blocked, got: ${stderr}`);
-    cleanup(dir);
+  await test('ports "a -am commit is judged from the working tree, which is what it carries"', async () => {
+    const r = mkRepo();
+    stage(r, 'CHANGELOG.md', CHANGELOG());
+    commit(r);
+    write(r, 'CHANGELOG.md', CHANGELOG('- An unstaged essay entry with no issue link.'));
+    lintBlocks(await judge(r, 'git commit -am "docs: changelog"'), 'blocked');
   });
 
-  await test('a CRLF CHANGELOG is judged, not waved through', () => {
-    // A CRLF file read as zero entries would pass anything in it: a guard
-    // failing open in silence.
-    const dir = mkRepo();
-    stage(dir, 'CHANGELOG.md', CHANGELOG('- an essay entry with no issue link.').replace(/\n/g, '\r\n'));
-    const { code, stderr } = runHook(dir, 'git commit -m "docs: changelog"');
-    assertEq(code, 2, `blocked, got: ${stderr}`);
-    cleanup(dir);
+  await test('ports "a CRLF CHANGELOG is judged, not waved through"', async () => {
+    const r = mkRepo();
+    stage(r, 'CHANGELOG.md', CHANGELOG('- an essay entry with no issue link.').replace(/\n/g, '\r\n'));
+    lintBlocks(await judge(r, 'git commit -m "docs: changelog"'), 'blocked');
   });
 
-  await test('a pathspec commit still has its CHANGELOG judged', () => {
-    // Pathspec commits bypass staging, so the file list is unknowable; the gate
-    // treats them strictly everywhere else and must here too.
-    const dir = mkRepo();
-    fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), CHANGELOG('- an essay entry with no issue link.'));
-    touchMarker(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m docs CHANGELOG.md');
-    assertEq(code, 2, `blocked, got: ${stderr}`);
-    assert(stderr.includes('CHANGELOG'), `for the CHANGELOG reason, got: ${stderr}`);
-    cleanup(dir);
-  });
-
-  // Reading an mtime must survive both stat dialects: GNU's `stat -f %m` prints
-  // `?` and exits 0, so a BSD-first `||` chain hands back a non-numeric string
-  // and every comparison passes. Each PATH below offers one dialect only.
-  await test('reads a file mtime under either stat dialect', () => {
-    const dir = mkTmp('mtime-');
-    const file = path.join(dir, 'f');
-    fs.writeFileSync(file, 'x');
-    const when = 1600000000;
-    fs.utimesSync(file, when, when);
-
-    const readWith = (dialect) => {
-      const binDir = mkTmp('statbin-');
-      // BSD: -c is unknown, so it errors out. GNU: -f is filesystem status,
-      // which answers `?` for %m and exits 0: the trap this helper avoids.
-      const arms = dialect === 'bsd'
-        ? `case "$1" in -c) echo "stat: illegal option" >&2; exit 1 ;; -f) echo ${when}; exit 0 ;; esac`
-        : `case "$1" in -f) echo '?'; exit 0 ;; -c) echo ${when}; exit 0 ;; esac`;
-      stubTool(binDir, 'stat', ['#!/bin/sh', arms, 'exit 1']);
-      const res = spawnSync(BASH, [...NO_RC, '-c',
-        `. "${shellPath(LIB)}" && hook_file_mtime "${shellPath(file)}"`],
-      { encoding: 'utf8', env: { ...process.env, PATH: pathWith(binDir) } });
-      fs.rmSync(binDir, { recursive: true, force: true });
-      return res.stdout.trim();
-    };
-
-    assertEq(readWith('gnu'), String(when), 'GNU: skips the `?` from -f and uses -c');
-    assertEq(readWith('bsd'), String(when), 'BSD: falls past the unknown -c to -f');
-    fs.rmSync(dir, { recursive: true, force: true });
+  await test('ports "a pathspec commit still has its CHANGELOG judged"', async () => {
+    const r = mkRepo();
+    write(r, 'CHANGELOG.md', CHANGELOG('- an essay entry with no issue link.'));
+    touchMarker(r);
+    lintBlocks(await judge(r, 'git commit -m docs CHANGELOG.md', { lintSource: 'work' }), 'blocked for the CHANGELOG reason');
   });
 
   group('commit-gate: a Fixes #N commit stages its CHANGELOG entry');
 
-  // Collapse on ship: the turn that closes an issue writes the entry the issue
-  // closes against.
-
-  await test('a Fixes trailer with no CHANGELOG staged blocks', () => {
-    const dir = mkRepo();
-    fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), ENTRY);
-    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    stage(dir, 'app.js', 'const x = 1;\n');
-    touchMarker(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4"');
-    assertEq(code, 2, `blocked, got: ${stderr}`);
-    assert(stderr.includes('CHANGELOG'), `names the rule, got: ${stderr}`);
-    assert(stderr.includes('Unreleased'), `and names the fix, got: ${stderr}`);
-    cleanup(dir);
+  await test('ports "a Fixes trailer with no CHANGELOG staged blocks"', async () => {
+    blocks(await judge(committedLog(ENTRY), 'git commit -m "feat: a thing\n\nFixes #4"'), T.fixes, 'names the rule and the fix');
   });
 
-  await test('the same commit with the entry staged passes', () => {
-    const dir = mkRepo();
-    fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), CHANGELOG());
-    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    stage(dir, 'app.js', 'const x = 1;\n');
-    stage(dir, 'CHANGELOG.md', ENTRY);
-    touchMarker(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4"');
-    assertEq(code, 0, `allowed, got: ${stderr}`);
-    cleanup(dir);
+  await test('given Fixes #N with no CHANGELOG staged: that deny', async () => {
+    const r = committedLog(CHANGELOG());
+    blocks(await judge(r, 'git commit -m "fix(x): mend it\n\nFixes #31"'), T.fixes, 'an issue closes against its entry');
   });
 
-  await test('Closes and Resolves are the same trailer', () => {
-    const dir = mkRepo();
-    fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), ENTRY);
-    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    stage(dir, 'app.js', 'const x = 1;\n');
-    touchMarker(dir);
+  await test('ports "the same commit with the entry staged passes": a gh that cannot answer leaves one line', async () => {
+    const r = committedLog(CHANGELOG());
+    stage(r, 'CHANGELOG.md', ENTRY);
+    r.ghFails = true;
+    passes(await judge(r, 'git commit -m "feat: a thing\n\nFixes #4"'), NOTICE.unread(4), 'allowed');
+  });
+
+  await test('ports "Closes and Resolves are the same trailer"', async () => {
     for (const word of ['Closes', 'Resolves', 'closes']) {
-      const { code } = runHook(dir, `git commit -m "feat: a thing\n\n${word} #12"`);
-      assertEq(code, 2, `${word} #N closes an issue too`);
+      blocks(await judge(committedLog(ENTRY), `git commit -m "feat: a thing\n\n${word} #12"`), T.fixes, `${word} #N closes an issue too`);
     }
-    cleanup(dir);
   });
 
-  await test('no trailer: the commit is not asked for an entry', () => {
-    const dir = mkRepo();
-    fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), ENTRY);
-    execSync('git add CHANGELOG.md && git commit -q -m "seed" --no-verify', { cwd: dir, stdio: 'pipe', shell: SYSTEM_BASH });
-    stage(dir, 'app.js', 'const x = 1;\n');
-    touchMarker(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing that closes nothing"');
-    assertEq(code, 0, `allowed, got: ${stderr}`);
-    cleanup(dir);
+  await test('ports "no trailer: the commit is not asked for an entry"', async () => {
+    passes(await judge(committedLog(ENTRY), 'git commit -m "feat: a thing that closes nothing"'), '', 'allowed');
   });
 
-  await test('a repo that keeps no CHANGELOG.md is never asked for one', () => {
-    const dir = mkRepo();
-    stage(dir, 'app.js', 'const x = 1;\n');
-    touchMarker(dir);
-    const { code, stderr } = runHook(dir, 'git commit -m "feat: a thing\n\nFixes #4"');
-    assertEq(code, 0, `allowed, got: ${stderr}`);
-    cleanup(dir);
+  await test('ports "a repo that keeps no CHANGELOG.md is never asked for one"', async () => {
+    const r = mkRepo();
+    stage(r, 'app.js', 'const x = 1;\n');
+    touchMarker(r);
+    passes(await judge(r, 'git commit -m "feat: a thing\n\nFixes #4"'), '', 'allowed');
   });
+};
 
+module.exports = async () => {
+  await run();
   return summary();
 };
 
-module.exports = run;
-
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(module.exports);

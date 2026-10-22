@@ -1,7 +1,8 @@
 /**
  * hooks/mods/changelog-guard.js: docs:changelog-guard's verdict on a CHANGELOG
- * write, from the linter workflow/lib/changelog.sh resolves for the commit gate
- * too (workflow/changelog/changelog.js, run with `--added-only`).
+ * write, from the linter (workflow/changelog/changelog.js, run with
+ * `--added-only`), and the two reads safety:commit-gate check 3 shares: the
+ * CHANGELOG path test and the linter's path.
  */
 
 /**
@@ -11,6 +12,17 @@
  */
 export function isChangelog(path) {
   return /(^|[\\/])CHANGELOG\.md$/.test(String(path ?? ''));
+}
+
+/**
+ * The CHANGELOG linter: `<engine>/changelog/changelog.js`, the engine folder
+ * `WORKFLOW_DIR` names, else the plugin's own `workflow/`.
+ * @param {object} env the variables the module read
+ * @param {string} pluginRoot the plugin's root
+ * @returns {string}
+ */
+export function linterPath(env, pluginRoot) {
+  return `${env.WORKFLOW_DIR || `${pluginRoot}/workflow`}/changelog/changelog.js`;
 }
 
 /**

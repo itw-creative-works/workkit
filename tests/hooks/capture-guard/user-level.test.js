@@ -1,209 +1,107 @@
-// Tests for hooks/safety/capture-guard: the user-level capture file keyed to
-// $HOME, the hook's wiring and the triage skill's marker line, and the
-// fail-open cases.
-// The shared prologue (the scratch repo and TMPDIR, the marker helpers, the hook runner) is ./helpers.js.
+// Tests for safety:capture-guard's logic on the user-level capture file, the
+// triage skill's marker line against the module's marker path, and the
+// fail-open cases. Each case ports the HEAD case its name quotes. The keying
+// of the ~/ and $HOME spellings, and "a cwd outside any git repo still keys
+// off the .workkit parent", are the wiring's, in tests/mods/guards-capture-guard.test.ts.
+// Dropped with the shell spawn: "hooks.json registers the guard on every tool",
+// "a machine with neither shasum nor sha1sum" (crypto.subtle) and malformed JSON.
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
   group, test, assert, assertEq, summary, WORKKIT_DIR: W, selfRun,
 } = require('../../lib/harness');
-const { BASH, NO_RC, shellPath, which, linkTool } = require('../../lib/platform');
-const {
-  HOOK, TMP, REPO, MARKER, CAPTURE, skipWithoutDigest, markerFor, clearMarker, touchMarker,
-  runHook, read, bash,
-} = require('./helpers');
+const { BASH, NO_RC, shellPath } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
-
-// The user-level capture file: a stray ~/.workkit/capture.md made by hand.
-// wk.sh never writes there (outside a repo it files on the home repo), but the
-// guard gates it anyway. $HOME is not a git repo, so the anchor is $HOME itself.
-const HOME = mkTmp('capture-guard-home-');
-fs.mkdirSync(path.join(HOME, W), { recursive: true });
-fs.writeFileSync(path.join(HOME, W, 'capture.md'), '# capture\n\n- a private thought\n');
-const HOME_CAPTURE = path.join(HOME, W, 'capture.md');
-const HOME_MARKER = markerFor(shellPath(HOME));
+const { mods } = require('../../lib/mods-inputs');
+const {
+  HOME_CAPTURE, FRESH, READ, judge, read, bash, refuses, allows,
+} = require('./helpers');
 
 // The marker script the triage skill calls, and the skill's own line calling
-// it: the test runs the line, so the skill and the script cannot drift apart.
-// CLAUDE_PLUGIN_ROOT is handed over the way a hook command hands it over.
+// it: the test runs the line, so the skill and the module's marker path cannot
+// drift apart. CLAUDE_PLUGIN_ROOT is handed over the way a hook hands it over.
 const PLUGIN_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPT = path.join(PLUGIN_ROOT, 'scripts', 'triage-marker.sh');
+const SKILL = path.join(PLUGIN_ROOT, 'skills', 'triage', 'SKILL.md');
 const skillLine = () => {
-  const skill = fs.readFileSync(path.join(PLUGIN_ROOT, 'skills', 'triage', 'SKILL.md'), 'utf8');
-  const line = skill.split('\n').find((l) => l.includes('scripts/triage-marker.sh') && l.startsWith('bash '));
+  const line = fs.readFileSync(SKILL, 'utf8').split('\n').find((l) => l.includes('scripts/triage-marker.sh') && l.startsWith('bash '));
   assert(line, 'the skill carries the marker line');
   return line;
 };
+
+const TMP = mkTmp('capture-guard-tmp-');
+const SCRATCH_HOME = mkTmp('capture-guard-home-');
 const runSkillLine = (cwd) => spawnSync(BASH, [...NO_RC, '-c', skillLine()], {
   cwd,
   env: {
-    ...process.env, HOME: shellPath(HOME), TMPDIR: shellPath(TMP), CLAUDE_PLUGIN_ROOT: shellPath(PLUGIN_ROOT),
+    ...process.env, HOME: shellPath(SCRATCH_HOME), TMPDIR: shellPath(TMP), CLAUDE_PLUGIN_ROOT: shellPath(PLUGIN_ROOT),
   },
   encoding: 'utf8',
   timeout: 10000,
 });
+const markerOf = (anchor) => mods('markers').triageMarkerPath(anchor, TMP);
 
 const run = async () => {
-  skipWithoutDigest();
-
   group('capture-guard: the user-level capture file');
 
-  // A hand-made ~/.workkit/capture.md sits in no repo, and $HOME is not a git
-  // repo: keyed to a repo root alone, this file was read ungated.
-  await test('reading the user capture file with no marker: exit 2', () => {
-    clearMarker(HOME_MARKER);
-    const { code, stderr } = read(HOME_CAPTURE);
-    assertEq(code, 2, 'the user capture file is gated like any other');
-    assert(stderr.includes('capture-guard'), 'names itself');
+  await test('ports "reading the user capture file with no marker: exit 2"', async () => {
+    await refuses(read(HOME_CAPTURE), READ, 'the user capture file is gated like any other');
   });
 
-  await test('reading it with a fresh $HOME-keyed marker: exit 0', () => {
-    touchMarker(0, HOME_MARKER);
-    const { code, stderr } = read(HOME_CAPTURE);
-    assertEq(code, 0, `a triage run reads freely, got: ${stderr}`);
-    clearMarker(HOME_MARKER);
+  await test('ports "reading it with a fresh $HOME-keyed marker: exit 0"', async () => {
+    await allows(read(HOME_CAPTURE, { markerAgeS: FRESH }), 'a triage run reads freely');
   });
 
-  await test('cat of the user capture file: blocked without the marker, open with it', () => {
-    clearMarker(HOME_MARKER);
-    assertEq(bash(`cat ${shellPath(HOME_CAPTURE)}`).code, 2, 'blocked with no marker');
-    touchMarker(0, HOME_MARKER);
-    assertEq(bash(`cat ${shellPath(HOME_CAPTURE)}`).code, 0, 'open during a triage run');
-    clearMarker(HOME_MARKER);
+  await test('ports "cat of the user capture file: blocked without the marker, open with it"', async () => {
+    await refuses(bash(`cat ${HOME_CAPTURE}`), READ, 'blocked with no marker');
+    await allows(bash(`cat ${HOME_CAPTURE}`, { markerAgeS: FRESH }), 'open during a triage run');
   });
 
-  await test('the ~/ spelling resolves to the same anchor', () => {
-    const tilde = () => runHook(
-      { cwd: shellPath(REPO), tool_name: 'Bash', tool_input: { command: `cat ~/${W}/capture.md` } },
-      { HOME: shellPath(HOME) },
-    ).code;
-    clearMarker(HOME_MARKER);
-    assertEq(tilde(), 2, 'the tilde form is the same file and the same gate');
-    // The $HOME-keyed marker opens it, which is what proves the tilde expanded
-    // (a path left unexpanded would key somewhere else and stay blocked).
-    touchMarker(0, HOME_MARKER);
-    assertEq(tilde(), 0, 'and the user capture file marker is the one that opens it');
-    clearMarker(HOME_MARKER);
+  await test('ports "the ~/ spelling resolves to the same anchor": the same gate', async () => {
+    await refuses(bash(`cat ~/${W}/capture.md`), READ, 'the tilde form is the same file and the same gate');
+    await allows(bash(`cat ~/${W}/capture.md`, { markerAgeS: FRESH }), 'and a marker opens it');
   });
 
-  await test('the braced HOME spelling resolves like the bare one', () => {
-    const forms = [`cat "$HOME/${W}/capture.md"`, `cat "\${HOME}/${W}/capture.md"`];
-    const call = (c) => runHook(
-      { cwd: shellPath(REPO), tool_name: 'Bash', tool_input: { command: c } },
-      { HOME: shellPath(HOME) },
-    );
-    clearMarker(HOME_MARKER);
-    for (const c of forms) {
-      assertEq(call(c).code, 2, `braced or bare, the gate is the same: ${c}`);
+  await test('ports "the braced HOME spelling resolves like the bare one": the same gate', async () => {
+    for (const c of [`cat "$HOME/${W}/capture.md"`, `cat "\${HOME}/${W}/capture.md"`]) {
+      await refuses(bash(c), READ, `braced or bare, the gate is the same: ${c}`);
+      await allows(bash(c, { markerAgeS: FRESH }), `and a marker opens both: ${c}`);
     }
-    touchMarker(0, HOME_MARKER);
-    for (const c of forms) {
-      const { code, stderr } = call(c);
-      assertEq(code, 0, `and the user capture file marker opens both: ${c}, got: ${stderr}`);
-    }
-    clearMarker(HOME_MARKER);
   });
 
-  await test("the skill's own line, run in $HOME, writes the file this hook checks", () => {
-    clearMarker(HOME_MARKER);
-    const res = runSkillLine(HOME);
+  await test('ports "the skill\'s own line, run in $HOME, writes the file this hook checks"', async () => {
+    const res = runSkillLine(SCRATCH_HOME);
     assertEq(res.status, 0, `the script runs outside a repo, got: ${res.stderr}`);
-    assert(fs.existsSync(HOME_MARKER), 'and writes exactly the marker the hook looks for');
-    assertEq(read(HOME_CAPTURE).code, 0, 'so the guard opens');
-    clearMarker(HOME_MARKER);
+    const marker = await markerOf(shellPath(SCRATCH_HOME));
+    assert(fs.existsSync(marker), `and writes exactly the marker the module names: ${marker}`);
   });
 
-  group('capture-guard: wiring and fail-open');
+  group('capture-guard: the skill and fail-open');
 
-  await test('hooks.json registers the guard on every tool that reaches the capture file', () => {
-    const wiring = JSON.parse(fs.readFileSync(
-      path.join(__dirname, '..', '..', '..', 'hooks', 'hooks.json'), 'utf8'));
-    for (const matcher of ['Read', 'Grep', 'Bash', 'Edit', 'Write']) {
-      const block = (wiring.hooks.PreToolUse || [])
-        .find((b) => (b.matcher || '').split('|').includes(matcher));
-      assert(block, `a PreToolUse ${matcher} block exists`);
-      assert(block.hooks.some((h) => h.command.includes('safety:capture-guard')),
-        `the ${matcher} block routes safety:capture-guard through the loader`);
-    }
-  });
-
-  await test('the triage skill records the marker through the plugin script', () => {
-    const skill = fs.readFileSync(
-      path.join(__dirname, '..', '..', '..', 'skills', 'triage', 'SKILL.md'), 'utf8');
+  await test('ports "the triage skill records the marker through the plugin script"', () => {
+    const skill = fs.readFileSync(SKILL, 'utf8');
     assert(skill.includes('scripts/triage-marker.sh'), 'the skill calls the marker script');
     assert(!skill.includes('shasum'), 'and spells no platform-bound command itself');
     assert(fs.existsSync(SCRIPT), `the script the skill names exists: ${SCRIPT}`);
   });
 
-  await test('the same line, run inside the repo, opens the repo capture file', () => {
-    clearMarker();
-    assertEq(read(CAPTURE).code, 2, 'blocked with no marker');
-    const res = runSkillLine(REPO);
+  await test('ports "the same line, run inside the repo, opens the repo capture file"', async () => {
+    const repo = mkTmp('capture-guard-repo-');
+    spawnSync('git', ['init', '-q'], { cwd: repo });
+    const root = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+    const res = runSkillLine(repo);
     assertEq(res.status, 0, `the script runs inside a repo, got: ${res.stderr}`);
-    assert(fs.existsSync(MARKER), 'and writes the repo-keyed marker the hook looks for');
-    assertEq(read(CAPTURE).code, 0, 'so the guard opens');
-    clearMarker();
+    const marker = await markerOf(root);
+    assert(fs.existsSync(marker), `and writes the repo-keyed marker the module names: ${marker}`);
   });
 
-  await test('a machine with neither shasum nor sha1sum: exit 0, the guard fails open', () => {
-    // No digest tool means no marker can be named, on either side: the skill
-    // cannot write one and this guard cannot look one up. That is the same
-    // class as "no anchor to key on at all", and this guard fails open on its
-    // own errors rather than wedging the session.
-    const bin = mkTmp('capture-guard-nosha-');
-    for (const tool of ['bash', 'jq', 'git', 'dirname', 'basename', 'cat', 'grep', 'sed', 'tr', 'date', 'stat']) {
-      const real = which(tool);
-      if (real) linkTool(bin, real);
-    }
-    clearMarker();
-    const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-      input: JSON.stringify({ cwd: shellPath(REPO), tool_name: 'Read', tool_input: { file_path: shellPath(CAPTURE) } }),
-      env: { PATH: bin, HOME: shellPath(os.homedir()), TMPDIR: shellPath(TMP) },
-      encoding: 'utf8',
-      timeout: 10000,
-    });
-    assertEq(res.status, 0, `allowed, not wedged, got: ${res.stderr}`);
-    fs.rmSync(bin, { recursive: true, force: true });
-  });
-
-  await test('a cwd outside any git repo still keys off the .workkit parent', () => {
-    const bare = mkTmp('capture-guard-bare-');
-    const bareMarker = markerFor(shellPath(bare));
-    clearMarker(bareMarker);
-    const call = () => spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-      input: JSON.stringify({
-        tool_name: 'Bash', cwd: shellPath(bare), tool_input: { command: `cat ${W}/capture.md` },
-      }),
-      env: { ...process.env, HOME: shellPath(os.homedir()), TMPDIR: shellPath(TMP) },
-      encoding: 'utf8',
-      timeout: 10000,
-    }).status;
-    assertEq(call(), 2, 'no repo is not a way past the gate');
-    touchMarker(0, bareMarker);
-    assertEq(call(), 0, 'and its own marker opens it');
-    clearMarker(bareMarker);
-    fs.rmSync(bare, { recursive: true, force: true });
-  });
-
-  await test('another tool, a missing input, malformed JSON: exit 0', () => {
-    for (const input of [
-      JSON.stringify({ tool_name: 'Glob', cwd: shellPath(REPO), tool_input: { pattern: '**/capture.md' } }),
-      JSON.stringify({ tool_name: 'Read', cwd: shellPath(REPO), tool_input: {} }),
-      JSON.stringify({ tool_name: 'Write', cwd: shellPath(REPO), tool_input: {} }),
-      JSON.stringify({ tool_name: 'Bash', cwd: shellPath(REPO), tool_input: {} }),
-      'not json',
-    ]) {
-      const res = spawnSync(BASH, [...NO_RC, shellPath(HOOK)], {
-        input,
-        env: { ...process.env, HOME: shellPath(os.homedir()), TMPDIR: shellPath(TMP) },
-        encoding: 'utf8',
-        timeout: 10000,
-      });
-      assertEq(res.status, 0, `must fail open: ${input}`);
-    }
+  await test('ports "another tool, a missing input, malformed JSON: exit 0": another tool and a missing input', async () => {
+    await allows(judge('Glob', { pattern: '**/capture.md' }), 'Glob');
+    await allows(judge('Read', {}), 'Read with no file_path');
+    await allows(judge('Write', {}), 'Write with no file_path');
+    await allows(judge('Bash', {}), 'Bash with no command');
   });
 
   return summary();

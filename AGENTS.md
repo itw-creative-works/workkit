@@ -14,16 +14,12 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 <repo>/
 ├── .claude-plugin/       # plugin.json + marketplace.json (this repo is its own marketplace)
 ├── .github/workflows/    # checks.yml (the suite, every pull request and every push to main but a release-only one) · changelog.yml (the reusable entry check) · pages.yml (the central dashboard, on a release)
-├── hooks/                # hooks.json + the hooks module + the shell hook groups, resolved via ${CLAUDE_PLUGIN_ROOT}
-│   ├── register.js       # the hooks module: the fifteen in-process hooks, the one file that touches `$`
-│   ├── mods/             # each module hook's logic, plain functions over plain data
-│   ├── loader.sh         # name → path router for the shell hooks (docs:change-tracker → docs/change-tracker/run.sh)
-│   ├── _lib.sh           # shared helpers (sourced, never executed)
-│   ├── lib/              # _lib.sh's helper groups, one file per concern (sourced by it, never a hook)
-│   ├── docs/             # change-tracker
-│   ├── safety/           # vendor-guard, commit-gate, commit-language, release-taken, issue-guard, proof-guard, spec-guard, suite-guard, capture-guard, findings-guard, tree-guard
-│   ├── manager/          # resources/ladder.json (the tier SSOT)
-│   └── workflow/         # snapshot (the red-proof copy)
+├── hooks/                # hooks.json (its `modules` list) + the hooks module + the shell library the scripts source, resolved via ${CLAUDE_PLUGIN_ROOT}
+│   ├── register.js       # the hooks module: the twenty-eight in-process hooks, the one file that touches `$`
+│   ├── mods/             # each hook's logic and the reads they share, plain functions over plain data
+│   ├── _lib.sh           # the shell library's entry (sourced by scripts/, prove.sh and the snapshot entry, never a hook)
+│   ├── lib/              # _lib.sh's helper groups, one file per concern: markers, paths, tree, snapshot
+│   └── manager/          # resources/ladder.json (the tier SSOT)
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
 ├── briefs/               # the role brief templates, one per crew job, the manager fills the slots: docs/agents.md § File-handoff convention
 ├── skills/               # the nine workflow skills: surface as workkit:<name>
@@ -47,13 +43,11 @@ The engine's stable filesystem address is `~/.claude/workkit` → this repo's `w
 
 ## Hooks
 
-Registered in `hooks/hooks.json`, in two kinds:
-- Fifteen run in process, in the hooks module its `modules` list names (`hooks/register.js`, each hook's logic in `hooks/mods/`), loaded once per session.
-- The rest are shell hooks, every command routed through `hooks/loader.sh` so settings reference a hook by `prefix:name` rather than a path. A LOADER-level failure fails open (exit 0); the hook's own exit code passes through untouched, which blocking hooks (exit 2) need.
+All twenty-eight run in process, in the hooks module the `modules` list of `hooks/hooks.json` names (`hooks/register.js`, each hook's logic in `hooks/mods/`), loaded once per session. Settings and the hooks log name a hook by `prefix:name`.
 
-A repo that has not opted in gets none of the hooks: the loader and the module's gate stand every one down there but the setup reminder, the restart notice and the secrets guard (`docs/hooks.md` § Where every hook stands down).
+A repo that has not opted in gets none of the hooks: the module's gate stands every one down there but the setup reminder, the restart notice and the secrets guard (`docs/hooks.md` § Where every hook stands down).
 
-The index of all twenty-eight and what each one does: `docs/hooks.md`, the module's under § The hooks module. Three shell hooks carry a README beside the script as well: `tree-guard`, `release-taken`, `change-tracker`.
+The index of all twenty-eight and what each one does: `docs/hooks.md` § The hooks module.
 
 ## Agents
 
@@ -94,7 +88,6 @@ Every suite runs on macOS and on Windows under Git Bash, or skips whole by name 
 A world a case spawns comes from the same seam:
 
 - `homeEnv()` is the scratch home in every spelling a tool reads one by (HOME, USERPROFILE, `GH_CONFIG_DIR`, no ambient token, Node's compile cache off), so no child of a test reads the developer's own home or reaches GitHub as them;
-- `loaderEnv()` is the env every suite that fires `hooks/loader.sh` spawns with (this process's env, the real HOME, a fresh scratch `WORKFLOW_HOME`), so no fire lands in the developer's own `hooks.log`;
 - `stubTool()` is the one writer of a PATH stub, which a shell starts on either platform and Node starts on neither;
 - `tests/lib/mods-inputs.js` is the one builder of the arguments the logic suites hand the `hooks/mods/` functions (`mods(name)`, `textOf`, `stateFacts`, `reminderFacts`, `standardsState`, `runResult`, `sessionFacts`, `briefMarker`, `daysBefore`, `row` (`row.user`, `row.result`, `row.tool`), `MODELS`, `REMINDER_ROOT`), so every suite spells a shape the same way;
 - `tests/lib/mod-fixtures.mjs` is the one home of the fixtures both halves share (`MODELS`, `SESSION_NOW`, `daysBefore`, `briefMarker`, `row`), which `mod-world.ts` re-exports whole and `mods-inputs.js` all but `SESSION_NOW`;
@@ -111,11 +104,11 @@ Lanes per layer (`docs/project-state.md` § The proof):
 - Integration: a script run whole with a stubbed `gh`.
 - End to end: no lane here (a live session is the only surface), so a park names that layer as skipped.
 
-A missing `Proof:` line is a hard gate: `safety/proof-guard` holds the flip to complete and the close, and `safety/commit-gate` check 6 holds the `Fixes #N` trailer.
+A missing `Proof:` line is a hard gate: `safety:proof-guard` holds the flip to complete and the close, and `safety:commit-gate` check 6 holds the `Fixes #N` trailer.
 
 ## Conventions
 
-- **Portable by default.** macOS, Windows (Git Bash) and Linux all run the kit; a spelling that differs branches once, in `workflow/lib/platform.sh` and `hooks/_lib.sh` (`docs/hooks.md` § Platforms). Hook commands resolve through `${CLAUDE_PLUGIN_ROOT}`; the engine's stable address is `~/.claude/workkit`.
+- **Portable by default.** macOS, Windows (Git Bash) and Linux all run the kit; a spelling that differs branches once, in `workflow/lib/platform.sh` and `hooks/_lib.sh` (`docs/hooks.md` § Platforms). The hooks module resolves the kit through `$.plugin.root`; the engine's stable address is `~/.claude/workkit`.
   - No shipped text (skills, agents, briefs, docs, the hook, workflow, jobs and tower READMEs) may carry a machine-specific absolute path or name the owner's own repo.
 - **Generic by construction.** No owner names and no personal paths anywhere in the kit; `~/.workkit` and `.workkit/` are the only filesystem anchors.
 - **One mechanism, branching by environment.** Never two parallel copies of the same job: one entry point, each step gated on what its environment can do.

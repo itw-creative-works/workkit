@@ -25,8 +25,8 @@ CHANGELOG_LINTER="$SCRIPT_DIR/changelog/changelog.js"
 # shellcheck source=./lib.sh
 . "$SCRIPT_DIR/lib.sh"
 
-# Its own file because safety/commit-gate sources it too, to prove a staged
-# checks.yml is exactly the rewrite this heal writes.
+# Its own file because safety:commit-gate runs it too, as a program through its
+# entry, to prove a staged checks.yml is exactly the rewrite this heal writes.
 # shellcheck source=./changelog/changelog-job.sh
 . "$SCRIPT_DIR/changelog/changelog-job.sh"
 
@@ -52,9 +52,10 @@ CHANGELOG_LINTER="$SCRIPT_DIR/changelog/changelog.js"
 # The hook layer beside this engine; the self-check skips silently without it.
 # WORKFLOW_HOOKS_DIR is the tests' seam.
 HOOKS_DIR="${WORKFLOW_HOOKS_DIR:-$SCRIPT_DIR/../hooks}"
-# Each hook fails open without these, so this list makes a missing one visible.
-# A `|` joins one tool's spellings across platforms; any one satisfies it.
-HOOK_TOOLS="jq git node shasum|sha1sum perl"
+# The hooks module and the hook library's scripts fail open without these, so
+# this list makes a missing one visible. A `|` joins one tool's spellings
+# across platforms; any one satisfies it.
+HOOK_TOOLS="jq git node shasum|sha1sum"
 
 # An agent's claim and how long it may sit idle before the heal releases it.
 # The label is the claim; an assignee is a person's mark and never read as one.
@@ -136,8 +137,6 @@ GITIGNORE_BASICS=".DS_Store .env"
 # `gh label list`, kept from the sync for the steps below. Empty means the sync
 # never reached GitHub.
 existing_labels=""
-
-hooks_checked=0
 
 # Set by any heal that could not finish on its own: the run stays exit 0 (a
 # session start must never wedge) but says plainly that a human is needed.

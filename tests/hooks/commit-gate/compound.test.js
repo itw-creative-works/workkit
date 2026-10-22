@@ -1,127 +1,71 @@
-// Tests for hooks/safety/commit-gate: stage-and-commit compounds fail closed,
-// check 5 never stands down silently, and the loader wiring.
-// The shared prologue (the hook runner, the repo and marker factories, the fixtures) is ./helpers.js.
+// Tests for safety:commit-gate's logic, commitGateVerdict(facts) in
+// hooks/mods/commit-gate.js: stage-and-commit compounds fail closed, and check
+// 5 never stands down silently. Each case ports the HEAD case its name
+// quotes. Dropped with the shell spawn: "loader routes safety:commit-gate to
+// the script (colon spelling)" (its run line is tests/mods/guards-commit-gate.test.ts).
+// The shared prologue (the repo in memory, the facts, the texts) is ./helpers.js.
 
-const path = require('path');
-const fs = require('fs');
-const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { BASH, NO_RC, shellPath, loaderEnv } = require('../../lib/platform');
-const { skipWithoutDigest, TMP, mkRepo, stage, dropMarker, runHook, standDownMessage, cleanup, suiteRan, mkReleaseRepo } = require('./helpers');
+const { group, test, assert, summary, selfRun } = require('../../lib/harness');
+const {
+  T, NOTICE, mkRepo, stage, write, judge, blocks, passes, suiteRan, mkReleaseRepo,
+} = require('./helpers');
+
+const docsStaged = () => {
+  const r = mkRepo();
+  stage(r, 'README.md', '# docs\n');
+  return r;
+};
 
 const run = async () => {
-  skipWithoutDigest();
-
   group('commit-gate: stage-and-commit compounds fail closed (issue #155)');
 
-  await test('git add -A && git commit over a CLEAN index: exit 2', () => {
-    // The gate is PreToolUse, so it reads the index before the `add` runs: a
-    // clean index must not hit the fail-open and stand every check down.
-    const dir = mkRepo();
-    fs.writeFileSync(path.join(dir, 'app.js'), 'const x = 1;\n');
-    const { code, stderr } = runHook(dir, 'git add -A && git commit -m "feat(x): y"');
-    assertEq(code, 2, 'a command that stages its own content is ungateable and must fail closed');
-    assert(stderr.includes('stages and commits'), `names the rule, got: ${stderr}`);
-    cleanup(dir);
+  await test('ports "git add -A && git commit over a CLEAN index: exit 2"', async () => {
+    const r = mkRepo();
+    write(r, 'app.js', 'const x = 1;\n');
+    blocks(await judge(r, 'git add -A && git commit -m "feat(x): y"'), T.stage, 'a command that stages its own content fails closed');
   });
 
-  await test('the same compound with the change ALREADY staged: still exit 2', () => {
-    // A populated index is no answer: the `add` may stage more than the gate saw.
-    const dir = mkRepo();
-    stage(dir, 'README.md', '# docs\n');
-    const { code, stderr } = runHook(dir, 'git add -A && git commit -m "docs: readme"');
-    assertEq(code, 2, 'the add could still widen what the commit carries');
-    assert(stderr.includes('stages and commits'), `names the rule, got: ${stderr}`);
-    cleanup(dir);
+  await test('ports "the same compound with the change ALREADY staged: still exit 2"', async () => {
+    blocks(await judge(docsStaged(), 'git add -A && git commit -m "docs: readme"'), T.stage, 'the add could still widen what the commit carries');
   });
 
-  await test('rm / mv / stage compounds are the same shape: exit 2', () => {
+  await test('ports "rm / mv / stage compounds are the same shape: exit 2"', async () => {
     for (const c of ['git rm old.js && git commit -m "chore: drop it"',
       'git mv a.js b.js && git commit -m "chore: move it"',
       'git stage app.js; git commit -m "feat: thing"']) {
-      const dir = mkRepo();
-      const { code, stderr } = runHook(dir, c);
-      assertEq(code, 2, `must fail closed: ${c}, got: ${stderr}`);
-      assert(stderr.includes('stages and commits'), `names the rule: ${c}, got: ${stderr}`);
-      cleanup(dir);
+      blocks(await judge(mkRepo(), c), T.stage, `must fail closed: ${c}`);
     }
   });
 
-  await test('a staging clause AFTER the commit is not the rule: exit 0', () => {
-    // The clause walk breaks at the commit, so only what precedes it can change
-    // what the commit carries.
-    const dir = mkRepo();
-    stage(dir, 'README.md', '# docs\n');
-    const { code, stderr } = runHook(dir, 'git commit -m "docs: readme" && git add -A');
-    assertEq(code, 0, `staging after the commit changes nothing it carries, got: ${stderr}`);
-    cleanup(dir);
+  await test('ports "a staging clause AFTER the commit is not the rule: exit 0"', async () => {
+    passes(await judge(docsStaged(), 'git commit -m "docs: readme" && git add -A'), '', 'staging after the commit changes nothing it carries');
   });
 
-  await test('a quoted MENTION of staging does not trigger the rule: exit 0', () => {
-    const dir = mkRepo();
-    stage(dir, 'README.md', '# docs\n');
-    const { code, stderr } = runHook(dir, 'git commit -m "then git add -A"');
-    assertEq(code, 0, `the quote strip hides the mention, got: ${stderr}`);
-    cleanup(dir);
+  await test('ports "a quoted MENTION of staging does not trigger the rule: exit 0"', async () => {
+    passes(await judge(docsStaged(), 'git commit -m "then git add -A"'), '', 'the quote strip hides the mention');
   });
 
   group('commit-gate: check 5 never stands down silently (issue #155)');
 
-  await test('docs-only commit in a repo with a test script: exit 0, and says why', () => {
-    const dir = mkReleaseRepo();
-    stage(dir, 'README.md', '# docs\n');
-    dropMarker(dir);
-    const out = runHook(dir, 'git commit -m "docs: readme"');
-    assertEq(out.code, 0, `allowed, got: ${out.stderr}`);
-    assert(!suiteRan(dir), 'the suite still stands down');
-    const msg = standDownMessage(out);
-    assert(msg.includes('suite not run'), `and names the stand-down, got: ${out.stdout}`);
-    assert(msg.includes('no code'), `with its classification, got: ${out.stdout}`);
-    cleanup(dir);
+  await test('ports "docs-only commit in a repo with a test script: exit 0, and says why"', async () => {
+    const r = mkReleaseRepo();
+    stage(r, 'README.md', '# docs\n');
+    passes(await judge(r, 'git commit -m "docs: readme"'), NOTICE.noCode, 'allowed, naming the stand-down and its classification');
+    assert(!suiteRan(r), 'the suite still stands down');
   });
 
-  await test('nothing staged in a repo with a test script: exit 0, and says why', () => {
-    const dir = mkReleaseRepo();
-    dropMarker(dir);
-    const out = runHook(dir, 'git commit -m "chore: nothing"');
-    assertEq(out.code, 0, `an empty index passes through, got: ${out.stderr}`);
-    const msg = standDownMessage(out);
-    assert(msg.includes('nothing to judge'), `names what stood down, got: ${out.stdout}`);
-    assert(msg.includes('nothing staged'), `with its reason, got: ${out.stdout}`);
-    cleanup(dir);
+  await test('ports "nothing staged in a repo with a test script: exit 0, and says why"', async () => {
+    passes(await judge(mkReleaseRepo(), 'git commit -m "chore: nothing"'), NOTICE.nothing, 'an empty index passes through, naming what stood down');
   });
 
-  await test('a repo with NO test script is never told about a suite: exit 0, silent', () => {
-    const dir = mkRepo();
-    stage(dir, 'README.md', '# docs\n');
-    const out = runHook(dir, 'git commit -m "docs: readme"');
-    assertEq(out.code, 0, 'docs-only commit passes');
-    assertEq(standDownMessage(out), '', `a repo without tests is not asked about them, got: ${out.stdout}`);
-    cleanup(dir);
+  await test('ports "a repo with NO test script is never told about a suite: exit 0, silent"', async () => {
+    passes(await judge(docsStaged(), 'git commit -m "docs: readme"'), '', 'a repo without tests is not asked about them');
   });
+};
 
-  group('commit-gate: wiring (loader + settings)');
-
-  const LOADER = path.join(__dirname, '..', '..', '..', 'hooks', 'loader.sh');
-
-  await test('loader routes safety:commit-gate to the script (colon spelling)', () => {
-    const dir = mkRepo();
-    stage(dir, 'app.js', 'const x = 1;\n');
-    const input = JSON.stringify({ cwd: shellPath(dir), tool_input: { command: 'git commit -m "x"' } });
-    const res = spawnSync(BASH, [...NO_RC, shellPath(LOADER), 'safety:commit-gate'], {
-      input,
-      env: loaderEnv({ TMPDIR: shellPath(TMP) }),
-      encoding: 'utf8',
-      timeout: 60000,
-    });
-    assertEq(res.status, 2, 'the loader must reach the gate and propagate its block');
-    assert((res.stderr || '').includes('workkit:review'), 'the gate answered, not the loader fail-open');
-    cleanup(dir);
-  });
-
+module.exports = async () => {
+  await run();
   return summary();
 };
 
-module.exports = run;
-
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(module.exports);

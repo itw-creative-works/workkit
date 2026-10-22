@@ -1,7 +1,7 @@
 /**
- * hooks/mods/gate.js: the opt-in rule the module's gate applies, the same as
- * hook_repo_opted_in in hooks/lib/optin.sh: a repo opted in when its
- * .workkit/settings.json exists and does not hold `"enabled": false`.
+ * hooks/mods/gate.js: the opt-in rule the module's gate applies: a repo opted
+ * in when its .workkit/settings.json exists and does not hold
+ * `"enabled": false`: the engine's wk_settings_declined, turned round.
  */
 
 // The hooks that run in every repo, opted in or not: each speaks to the
@@ -11,6 +11,7 @@ const EXEMPT = new Set(['workflow:standards', 'workflow:reload-guard']);
 /**
  * Whether a repo's settings text opts it in; a file with no `enabled` key is
  * the legacy yes, so a declined file is the only no.
+ * The module's one opt-in reader, the engine's no-jq text read (wk_settings_declined).
  * @param {string|null|undefined} text the settings file's text, null when absent
  * @returns {boolean}
  */

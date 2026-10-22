@@ -48,7 +48,7 @@ const readJson = (file) => {
  * The workspace member directories a root declares, expanded for a literal
  * directory and `dir/*`, refusing every other glob shape and a literal member
  * with no package.json. A `dir/*` that matches nothing is a note, never a
- * silence: the same line the `safety/release-taken` hook prints.
+ * silence: the same line the `safety:release-taken` hook prints.
  */
 const expandWorkspaces = (root, workspaces, notes) => {
   let patterns = [];
@@ -191,7 +191,7 @@ const npmEnd = (res) => {
 };
 
 /**
- * Is `name@version` already on the registry? The `safety/release-taken` hook's
+ * Is `name@version` already on the registry? The `safety:release-taken` hook's
  * npm question, flag for flag, asked here since that hook never sees a publish
  * inside this run. E404 answers free; any other failure stands the check down
  * on stderr and answers free, so npm itself refuses a taken version.

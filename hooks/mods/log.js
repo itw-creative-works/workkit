@@ -1,7 +1,6 @@
 /**
- * hooks/mods/log.js: the hooks log line and its cap, the same line and the same
- * cut hooks/loader.sh writes (docs/hooks.md § The hooks log), and the machine
- * folder it lives in.
+ * hooks/mods/log.js: the hooks log line and its cap (docs/hooks.md § The
+ * hooks log), and the machine folder it lives in.
  */
 
 const LOG_MAX_LINES = 10000;
@@ -56,7 +55,7 @@ export function logLine(iso, hook, event, sid, cwd, verdict) {
 
 /**
  * The log after `lines` are added: a log past 10,000 lines is first cut to its
- * last 5,000, as the loader's `tail -n 5000` cuts it.
+ * last 5,000.
  * @param {string} text the log as it stands, '' when there is none
  * @param {string} lines the lines to add, each ending in a newline
  * @returns {string}

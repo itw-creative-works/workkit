@@ -17,9 +17,9 @@ const { recordArgv, readArgv } = require('../lib/argv-log');
 const {
   until, alive, readPid, collect,
 } = require('../lib/process');
-const { WRAPPER, CHANGELOG, ISSUE } = require('../hooks/commit-gate/helpers');
+const { CHANGELOG, ISSUE } = require('../hooks/commit-gate/helpers');
 const {
-  cleanup, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded,
+  WRAPPER, cleanup, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded,
 } = require('../lib/script-shell');
 
 // The suite log of a repo that does not ignore .workkit/, the lock's pid, and
