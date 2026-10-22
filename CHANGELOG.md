@@ -12,7 +12,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ### Changed
 - [#446](../../issues/446) - `docs:session` and `manager:close-guard` run in the hooks module: the carried-over line and the close warning reach the owner through `$.ui.log`, and close-guard reads `$.session.messages()` instead of the transcript. The shell manager and prompt helpers go; an unreadable settings file reads declined on both sides.
-- [#448](../../issues/448) - Every remaining hook runs in the hooks module, the Bash guards as one `tool.call` chain that refuses the call when a guard crashes. `hooks/hooks.json` lists only the module; the shell loader and its libraries are removed, the remaining bash runs behind entry modes, and the daily heal checks the module.
+- [#448](../../issues/448) - Every remaining hook runs in the hooks module, the Bash guards as one `tool.call` chain that refuses the call when a guard crashes. `hooks/hooks.json` lists only the module; the shell loader and its libraries are removed, and the daily heal parses the shell the scripts still source.
 
 ## [0.79.1] - 2026-10-21
 
