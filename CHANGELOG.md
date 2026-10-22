@@ -7,12 +7,14 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.80.0] - 2026-10-21
+
 ### Added
-- [#445](../../issues/445) - The daily self-check loads the hooks module in `node`, so a syntax error in `hooks/register.js` or any `hooks/mods/*.js` flags the heal instead of staying green; its summary line ends `; the hooks module loads`.
+- [#445](../../issues/445) [`f3b2dec`](../../commit/f3b2dec) Thanks [@ianwieds]! - The daily self-check loads the hooks module in `node`, so a syntax error in `hooks/register.js` or any `hooks/mods/*.js` flags the heal instead of staying green; its summary line ends `; the hooks module loads`.
 
 ### Changed
-- [#446](../../issues/446) - `docs:session` and `manager:close-guard` run in the hooks module: the carried-over line and the close warning reach the owner through `$.ui.log`, and close-guard reads `$.session.messages()` instead of the transcript. The shell manager and prompt helpers go; an unreadable settings file reads declined on both sides.
-- [#448](../../issues/448) - Every remaining hook runs in the hooks module, the Bash guards as one `tool.call` chain that refuses the call when a guard crashes. `hooks/hooks.json` lists only the module; the shell loader and its libraries are removed, and the daily heal parses the shell the scripts still source.
+- [#446](../../issues/446) [`f3b2dec`](../../commit/f3b2dec) Thanks [@ianwieds]! - `docs:session` and `manager:close-guard` run in the hooks module: the carried-over line and the close warning reach the owner through `$.ui.log`, and close-guard reads `$.session.messages()` instead of the transcript. The shell manager and prompt helpers go; an unreadable settings file reads declined on both sides.
+- [#448](../../issues/448) [`f3b2dec`](../../commit/f3b2dec) Thanks [@ianwieds]! - Every remaining hook runs in the hooks module, the Bash guards as one `tool.call` chain that refuses the call when a guard crashes. `hooks/hooks.json` lists only the module; the shell loader and its libraries are removed, and the daily heal parses the shell the scripts still source.
 
 ## [0.79.1] - 2026-10-21
 
