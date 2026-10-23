@@ -7,6 +7,8 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.80.1] - 2026-10-22
+
 ### Fixed
 - (no issue) - The commit gate's linter-copy arm hands `changelog-job.sh names` its workflow texts as `-`, read from its own stdin, instead of reopening `/dev/stdin`, which fails on Linux and Git Bash where the spawned stdin is a socket and held every heal commit there.
 - (no issue) - On Windows the hooks module reads markers, records and the machine folder where Git Bash put them: a `TMPDIR`, `WORKFLOW_HOME` or `HOME` of `/tmp/...` or `/c/...` is read as the folder it names. The tower shares the rule; the root `package.json` names the Node floor (22.12).
